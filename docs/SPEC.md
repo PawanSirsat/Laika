@@ -2013,6 +2013,51 @@ hold a result that is legitimately many.
   awaiting them, and `unlisted[]` from `log_unlisted_work`. Answers "who takes
   the next thing" and "what is stuck with nobody on it".
 
+  **Since LAI-767 each entry also carries**, in one pass over the people (a
+  fixed number of queries whatever the headcount):
+
+  - `email` and `org_role` — what the member list already shows every role.
+  - **`last_seen`, redefined**: the newest of the person's last **sign-in**
+    (their newest session row's `created_at`), their last **activity-log
+    row** (§4.8 — a web session's, or an agent's only while the token that
+    wrote it can still make a request), and their agents' last **heartbeat,
+    `/mcp` call or REST write** on a token that can still make a request
+    (D-076, D-081) — at any age, not only inside the window. A session's `updated_at`
+    does **not** count: better-auth slides it once a day on whichever request
+    comes first, an open tab's background poll as often as a person, so it
+    would mark someone asleep as online. Reads never count, as D-081 settled
+    for tokens. `null` when there is no signal. `last_seen_via` says which
+    kind it was: `web` (a sign-in), `board` (an activity row from a web
+    session) or `agent` (a token's heartbeat, call, write or activity row).
+  - `status`: `online` when `last_seen` is inside §9.3's five minutes (the
+    same strict `>` as a live session), `away` inside the last hour, `offline`
+    after it, `never` with no signal at all.
+  - `workload`: their open assigned tasks — `in_progress`, `in_review`,
+    `todo` (assigned and not started: Backlog and To do), `open` (the three
+    together), `overdue` (due before today, UTC, and not finished — the
+    client's `isOverdue`) and `due_soon` (due today or within the next seven
+    days). Counted over the projects the reader may read, as
+    `in_progress_tasks` always was. `spaces[]` gives the same counts per
+    project they have open work in, with its `slug` and `name`.
+  - `load`, **a fixed rule, not a setting**: `none` with nothing open;
+    `heavy` with more than 5 in progress, **or** anything overdue, **or** more
+    than 15 open; `light` with at most 2 in progress and at most 5 open;
+    `normal` otherwise.
+  - `agents[]`: `{ client, running, last_at }`. Every reader gets the agents
+    running now (what `/presence` already says); an owner or admin also gets
+    every agent on that person's usable tokens that has been used, with its
+    token's newest use (D-076, D-078) — token metadata a member is not shown.
+  - **Owners and admins only, on a web session** — absent, not empty, for
+    anyone else and for every token, by `profile.read` and
+    `profile.activity.read` (D-078, D-079): `profile_kind`, and
+    `activity_14d`, the person's board actions on each of the last 14 UTC
+    days from `board_activity_days`, oldest first, ending today.
+
+  **With `presence_enabled` off**, `status`, `last_seen` and `last_seen_via`
+  are `null`, no agent is `running` and every agent's `last_at` is `null`: the org chose not to record who is
+  working, and the activity log must not answer that by another route. The
+  workload is board data and is served either way.
+
 Both are computed from `heartbeats`, `tokens.last_mcp_at`,
 `tokens.last_rest_write_at` and `tasks` at request time. No separate presence store to fall out of sync. With `presence_enabled`
 off, neither shows any session from either source.
@@ -2245,7 +2290,7 @@ call MCP; agents do.
 | **Tokens** | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
 | **Organisation** | 1 basic / 6 LLM | `GET/PATCH /org`, `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
 | **Connect** *(not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` | — | ✅ D-079 |
-| **Capacity** *(sidebar, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects`, `GET /tasks/:id`, `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754 |
+| **Capacity** *(sidebar, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects`, `GET /tasks/:id` (only a matched task and an opened *Show tasks*), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(sidebar, global)* | 5 | `GET /review`, `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
 | **Unlisted work** *(sidebar, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
 | **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity` | — | ✅ D-078, D-079 |
@@ -2330,14 +2375,34 @@ anything missing sends the task back.
   the server holds for them over the last 14 days, and *Delete my
   local-activity history* with a confirmation. With the organisation's switch
   off it says so and offers nothing to turn on.
-- **Capacity** (`/capacity`, one page across every space, LAI-754) — who is
-  active now with repo, branch and resolved task; agent sessions distinct from
-  humans; in-progress work across projects as chips of **key and title** (the
-  whole title on hover), at most three a person and then *+N more*; last seen;
-  a summary strip saying how many spaces it reads across and, for owners and
-  admins, a link to *Unlisted work* with the open count; disabled state when
-  `presence_enabled = 0`. **No unlisted notes on this screen** — they are on
-  their own page.
+- **Capacity** (`/capacity`, one page across every space, LAI-754; redesigned
+  by LAI-767) — **tiles** that count and filter: *Online now*, *Agents
+  running* (sessions), *In progress* (sorts heaviest first), *Waiting for
+  review* (links to `/review`), *Overdue*, and for owners and admins
+  *Unlisted work* (links to `/unlisted`). A **toolbar**: a search by name or
+  email, instant and in the browser; filter chips *All*, *Online now*,
+  *Agents running*, *Heavy load*, *Overdue*, *No work*, *Never seen*; a space
+  selector (all spaces, or one, which narrows every count to it); a sort
+  (*Online first*, the default, *Heaviest load*, *Name*, *Last seen*); an (i)
+  with the definitions. **One card a person** in a grid of three columns on a
+  laptop, two on a tablet and one on a phone: the avatar with a status ring
+  and dot (green online, amber away, grey offline, dashed never seen) and the
+  same in words — *Online now*, *Away · 23 min*, *Last seen 2 h ago* with the
+  date and time and the kind of signal on hover, *Never seen*; name, org role,
+  and for owners and admins the profile kind; the load badge with its rule on
+  hover; their agents with a green dot on each one running, and *Claude Code ·
+  working on LAI-9* where presence knows the matched task; the workload counts
+  and a thin stacked bar (in progress, in review, to do); the spaces they have
+  open work in; for owners and admins a 14-day board-activity sparkline and
+  the name linking to the profile; and *Show tasks*, collapsed, listing their
+  in-progress tasks, each opening in its own space (LAI-755). People never seen
+  fold into one line at the bottom, unless searched for or filtered to.
+  Under the grid, **Team load** — one bar a person with open work, heaviest
+  first — and **Agents running now** (person, agent, when last active). It
+  re-reads every 20 s while the tab is visible and when it comes back; the
+  loading skeleton is the final layout; no matches has its own state. With
+  `presence_enabled = 0` it says so, keeps the workload and draws no status.
+  **No unlisted notes on this screen** — they are on their own page.
 - **Review** (`/review`, everyone signed in, D-082) — the queue of tasks in a
   review status on every project the reader can act on, **oldest waiting
   first**: key, title, project, assignee, the agent that finished it, time

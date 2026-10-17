@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
+import { appendActivity } from '../../src/db/activity.ts';
 import {
   heartbeats,
   orgs,
   projects,
+  sessions,
   tasks,
   tokens,
   unlistedWork,
@@ -15,13 +17,17 @@ import {
 import { ApiError } from '../../src/errors.ts';
 import {
   agentPresenceFor,
+  AWAY_WINDOW_MS,
   capacityNow,
+  loadOf,
   presenceNow,
   PRESENCE_WINDOW_MS,
+  statusOf,
+  type CapacityWorkload,
 } from '../../src/services/presence.ts';
 import { addMember, createProject } from '../../src/services/projects.ts';
 import { createTask } from '../../src/services/tasks.ts';
-import { atCategory, freshDb, queryPlansOf, type TestDb } from '../helpers/db.ts';
+import { atCategory, freshDb, preparedDuring, queryPlansOf, type TestDb } from '../helpers/db.ts';
 
 /**
  * §9.3's derived views (LAI-432).
@@ -763,6 +769,389 @@ describe('a REST write is presence too, with no heartbeat (D-081)', () => {
       enabled: true,
       clients: ['omnigent'],
       last_seen: NOW - 1000,
+    });
+  });
+});
+
+/**
+ * The redesigned page's figures (LAI-767): last seen, its status, the workload
+ * and its load badge, and the fields only an owner or admin is given.
+ */
+describe('capacity per person (LAI-767)', () => {
+  const MIN = 60_000;
+  const DAY = 86_400_000;
+  const TODAY = Date.parse(`${new Date(NOW).toISOString().slice(0, 10)}T00:00:00Z`);
+
+  function orgId(): string {
+    const org = t.db.select({ id: orgs.id }).from(orgs).get();
+    if (org === undefined) throw new Error('no org');
+    return org.id;
+  }
+
+  function signIn(userId: string, createdAt: number, updatedAt: number = createdAt): void {
+    t.db
+      .insert(sessions)
+      .values({
+        id: newId(),
+        userId,
+        token: newId(),
+        expiresAt: new Date(NOW + 7 * DAY),
+        createdAt: new Date(createdAt),
+        updatedAt: new Date(updatedAt),
+      })
+      .run();
+  }
+
+  /** A board action: a web session's, or an agent's on `tokenId` (§4.8). */
+  function act(
+    userId: string,
+    at: number,
+    actorKind: 'user' | 'agent' = 'user',
+    tokenId: string | null = null,
+  ): void {
+    appendActivity(t.db, {
+      orgId: orgId(),
+      actorId: userId,
+      actorKind,
+      actorTokenId: tokenId,
+      type: 'token.created',
+      now: at,
+    });
+  }
+
+  function token(
+    userId: string,
+    over: {
+      lastMcpAt?: number;
+      lastUsedAt?: number;
+      client?: string;
+      revokedAt?: number;
+      expiresAt?: number;
+    } = {},
+  ): string {
+    const id = newId();
+    t.db
+      .insert(tokens)
+      .values({
+        id,
+        userId,
+        name: 'agent',
+        prefix: 'lai_test',
+        tokenHash: `${id}-hash`,
+        scope: 'full',
+        lastMcpAt: over.lastMcpAt ?? null,
+        lastUsedAt: over.lastUsedAt ?? over.lastMcpAt ?? null,
+        lastClient: over.client ?? 'codex',
+        revokedAt: over.revokedAt ?? null,
+        expiresAt: over.expiresAt ?? null,
+        createdAt: NOW - DAY,
+      })
+      .run();
+    return id;
+  }
+
+  function assigned(
+    userId: string,
+    category: 'backlog' | 'todo' | 'in_progress' | 'review' | 'done' | 'cancelled',
+    dueOn: number | null = null,
+    slug = 'laika',
+  ): string {
+    const task = createTask(t.sqlite, t.db, actor(adminId), slug, { title: `${category} work` });
+    t.db
+      .update(tasks)
+      .set({ assigneeId: userId, dueOn, ...atCategory(t.db, task.project_id, category) })
+      .where(eq(tasks.id, task.id))
+      .run();
+    return task.id;
+  }
+
+  function entry(userId: string, reader: string = adminId) {
+    const found = capacityNow(t.db, actor(reader), NOW).people.find((p) => p.user_id === userId);
+    if (found === undefined) throw new Error('no entry');
+    return found;
+  }
+
+  describe('last seen is the newest of every signal', () => {
+    it('is a sign-in, then a board action, then an agent call, whichever is newest', () => {
+      const ada = makeUser('member', 'Ada');
+
+      signIn(ada, NOW - 120 * MIN);
+      expect(entry(ada)).toMatchObject({
+        last_seen: NOW - 120 * MIN,
+        last_seen_via: 'web',
+        status: 'offline',
+      });
+
+      act(ada, NOW - 30 * MIN);
+      expect(entry(ada)).toMatchObject({
+        last_seen: NOW - 30 * MIN,
+        last_seen_via: 'board',
+        status: 'away',
+      });
+
+      token(ada, { lastMcpAt: NOW - MIN });
+      expect(entry(ada)).toMatchObject({
+        last_seen: NOW - MIN,
+        last_seen_via: 'agent',
+        status: 'online',
+      });
+    });
+
+    it('counts an agent’s board write, and a heartbeat older than the window', () => {
+      const bea = makeUser('member', 'Bea');
+      const cal = makeUser('member', 'Cal');
+      act(bea, NOW - 3 * MIN, 'agent', token(bea));
+      beat(cal, NOW - 2 * DAY, 'kvell/laika', token(cal));
+
+      expect(entry(bea)).toMatchObject({ last_seen_via: 'agent', status: 'online' });
+      expect(entry(cal)).toMatchObject({
+        last_seen: NOW - 2 * DAY,
+        last_seen_via: 'agent',
+        status: 'offline',
+      });
+    });
+
+    it('does not count a session’s updated_at, which an open tab’s poll slides', () => {
+      const ada = makeUser('member', 'Ada');
+      signIn(ada, NOW - 3 * DAY, NOW - MIN);
+
+      expect(entry(ada)).toMatchObject({ last_seen: NOW - 3 * DAY, status: 'offline' });
+    });
+
+    it('does not count a read, or a revoked token', () => {
+      const ada = makeUser('member', 'Ada');
+      // `last_used_at` moves on a read (D-081); a revoked token's call is gone.
+      token(ada, { lastUsedAt: NOW - MIN, client: 'cursor' });
+      token(ada, { lastMcpAt: NOW - MIN, revokedAt: NOW - 1000 });
+
+      expect(entry(ada)).toMatchObject({
+        last_seen: null,
+        last_seen_via: null,
+        status: 'never',
+      });
+
+      // Nor a board action written on a token that can no longer make a
+      // request: revoked or expired since, its agent is not here, so the row
+      // neither puts the person online nor moves their last seen — the rule
+      // heartbeats and `/mcp` calls already follow (D-076).
+      const bea = makeUser('member', 'Bea');
+      signIn(bea, NOW - 120 * MIN);
+      act(bea, NOW - 2 * MIN, 'agent', token(bea, { revokedAt: NOW - MIN }));
+      const cal = makeUser('member', 'Cal');
+      signIn(cal, NOW - 120 * MIN);
+      act(cal, NOW - 2 * MIN, 'agent', token(cal, { expiresAt: NOW - MIN }));
+
+      // Both people in one comparison, so a failure shows each of them.
+      const seen = (id: string) => {
+        const e = entry(id);
+        return { last_seen: e.last_seen, via: e.last_seen_via, status: e.status, agents: e.agents };
+      };
+      const signedIn = { last_seen: NOW - 120 * MIN, via: 'web', status: 'offline', agents: [] };
+      expect({ revoked: seen(bea), expired: seen(cal) }).toEqual({
+        revoked: signedIn,
+        expired: signedIn,
+      });
+    });
+
+    it('is never seen with no signal at all', () => {
+      const dee = makeUser('member', 'Dee');
+
+      expect(entry(dee)).toMatchObject({ last_seen: null, last_seen_via: null, status: 'never' });
+    });
+  });
+
+  describe('the status thresholds', () => {
+    it('is online strictly inside five minutes, away inside the hour, offline after', () => {
+      expect(statusOf(NOW - (5 * MIN - 1), NOW)).toBe('online');
+      expect(statusOf(NOW - 5 * MIN, NOW)).toBe('away');
+      expect(statusOf(NOW - (60 * MIN - 1), NOW)).toBe('away');
+      expect(statusOf(NOW - 60 * MIN, NOW)).toBe('offline');
+      expect(statusOf(null, NOW)).toBe('never');
+      // The same window as a live session, so a dot and a session agree.
+      expect(PRESENCE_WINDOW_MS).toBe(5 * MIN);
+      expect(AWAY_WINDOW_MS).toBe(60 * MIN);
+    });
+  });
+
+  describe('workload', () => {
+    it('counts open assigned work by category and due date, nothing finished', () => {
+      const ada = makeUser('member', 'Ada');
+      addMember(t.db, actor(adminId), 'laika', ada, 'member');
+      assigned(ada, 'in_progress', TODAY - DAY); // overdue
+      assigned(ada, 'in_progress');
+      assigned(ada, 'review', TODAY); // due today: soon, not overdue
+      assigned(ada, 'todo', TODAY + 7 * DAY); // the last soon day
+      assigned(ada, 'backlog', TODAY + 8 * DAY); // not soon
+      assigned(ada, 'done', TODAY - DAY); // finished late is finished
+      assigned(ada, 'cancelled');
+
+      const mine = entry(ada);
+
+      expect(mine.workload).toEqual({
+        in_progress: 2,
+        in_review: 1,
+        todo: 2,
+        overdue: 1,
+        due_soon: 2,
+        open: 5,
+      });
+      expect(mine.spaces).toEqual([
+        expect.objectContaining({ slug: 'laika', name: 'Laika', open: 5, in_progress: 2 }),
+      ]);
+      // The ids the plugin reads keep their meaning.
+      expect(mine.in_progress_tasks).toHaveLength(2);
+      expect(mine.tasks_in_review).toHaveLength(1);
+    });
+
+    it('counts per space, and only the spaces the reader may read', () => {
+      const ada = makeUser('member', 'Ada');
+      const outsider = makeUser('member', 'Outsider');
+      createProject(t.sqlite, t.db, actor(adminId), {
+        name: 'Secret',
+        slug: 'secret',
+        prefix: 'SEC',
+      });
+      assigned(ada, 'in_progress', null, 'laika');
+      assigned(ada, 'in_progress', null, 'secret');
+      assigned(ada, 'todo', null, 'secret');
+
+      expect(entry(ada).spaces.map((s) => [s.slug, s.open])).toEqual([
+        ['secret', 2],
+        ['laika', 1],
+      ]);
+      // An outsider reads neither project, so neither is counted for them.
+      expect(entry(ada, outsider)).toMatchObject({ load: 'none', spaces: [] });
+      expect(entry(ada, outsider).workload.open).toBe(0);
+    });
+  });
+
+  describe('the load rule', () => {
+    const work = (over: Partial<CapacityWorkload>): CapacityWorkload => {
+      const w = { in_progress: 0, in_review: 0, todo: 0, overdue: 0, due_soon: 0, ...over };
+      return { ...w, open: over.open ?? w.in_progress + w.in_review + w.todo };
+    };
+
+    it('is none with nothing open', () => {
+      expect(loadOf(work({}))).toBe('none');
+    });
+
+    it('is heavy above 5 in progress, with anything overdue, or above 15 open', () => {
+      expect(loadOf(work({ in_progress: 6 }))).toBe('heavy');
+      expect(loadOf(work({ in_progress: 5 }))).toBe('normal');
+      expect(loadOf(work({ todo: 1, overdue: 1 }))).toBe('heavy');
+      expect(loadOf(work({ todo: 16 }))).toBe('heavy');
+      expect(loadOf(work({ todo: 15 }))).toBe('normal');
+    });
+
+    it('is light at up to 2 in progress and up to 5 open, normal above', () => {
+      expect(loadOf(work({ in_progress: 2, todo: 3 }))).toBe('light');
+      expect(loadOf(work({ in_progress: 3 }))).toBe('normal');
+      expect(loadOf(work({ in_progress: 1, todo: 5 }))).toBe('normal');
+    });
+
+    it('is served beside the counts it came from', () => {
+      const ada = makeUser('member', 'Ada');
+      for (let i = 0; i < 7; i += 1) assigned(ada, 'in_progress');
+
+      expect(entry(ada)).toMatchObject({ load: 'heavy', workload: { in_progress: 7 } });
+    });
+  });
+
+  describe('what only an owner or admin is given', () => {
+    it('gives the profile kind and the 14-day series to an admin, absent for a member', () => {
+      const ada = makeUser('member', 'Ada');
+      const bea = makeUser('member', 'Bea');
+      act(ada, NOW - 1000);
+      act(ada, NOW - 1000);
+      act(ada, NOW - 13 * DAY);
+      act(ada, NOW - 14 * DAY); // one day before the series starts
+
+      const asAdmin = entry(ada);
+      expect(asAdmin.profile_kind).toBe('builder');
+      expect(asAdmin.activity_14d).toHaveLength(14);
+      expect(asAdmin.activity_14d?.[13]).toBe(2);
+      expect(asAdmin.activity_14d?.[0]).toBe(1);
+      expect(asAdmin.activity_14d?.reduce((a, b) => a + b, 0)).toBe(3);
+
+      const asMember = entry(ada, bea);
+      expect('profile_kind' in asMember).toBe(false);
+      expect('activity_14d' in asMember).toBe(false);
+    });
+
+    it('shows every agent they use to an admin, and only the running ones to a member', () => {
+      const ada = makeUser('member', 'Ada');
+      const bea = makeUser('member', 'Bea');
+      token(ada, { lastMcpAt: NOW - MIN, client: 'claude-code' });
+      token(ada, { lastMcpAt: NOW - 2 * DAY, client: 'cursor' });
+
+      expect(entry(ada).agents).toEqual([
+        { client: 'claude-code', running: true, last_at: NOW - MIN },
+        { client: 'cursor', running: false, last_at: NOW - 2 * DAY },
+      ]);
+      expect(entry(ada, bea).agents).toEqual([
+        { client: 'claude-code', running: true, last_at: NOW - MIN },
+      ]);
+    });
+
+    it('carries email and org role for everyone, as the member list does', () => {
+      const ada = makeUser('member', 'Ada');
+      const bea = makeUser('member', 'Bea');
+
+      expect(entry(adminId, bea)).toMatchObject({
+        email: `${adminId}@example.test`,
+        org_role: 'admin',
+      });
+      expect(entry(ada, bea).org_role).toBe('member');
+    });
+  });
+
+  describe('presence off', () => {
+    it('serves no status, last seen or running agent, and still the workload', () => {
+      const ada = makeUser('member', 'Ada');
+      signIn(ada, NOW - MIN);
+      act(ada, NOW - MIN);
+      token(ada, { lastMcpAt: NOW - MIN, client: 'codex' });
+      assigned(ada, 'in_progress');
+      t.db.update(orgs).set({ presenceEnabled: 0 }).run();
+
+      const mine = entry(ada);
+
+      expect(mine).toMatchObject({
+        status: null,
+        last_seen: null,
+        last_seen_via: null,
+        load: 'light',
+      });
+      expect(mine.workload.in_progress).toBe(1);
+      expect(mine.agents.some((a) => a.running)).toBe(false);
+    });
+
+    it('gives an admin the agents a person uses, but never when they were used', () => {
+      const ada = makeUser('member', 'Ada');
+      token(ada, { lastUsedAt: NOW - DAY, client: 'cursor' });
+      t.db.update(orgs).set({ presenceEnabled: 0 }).run();
+
+      // "Last used yesterday" would answer "when was she here" for an org
+      // that chose not to record it.
+      expect(entry(ada).agents).toEqual([{ client: 'cursor', running: false, last_at: null }]);
+    });
+  });
+
+  describe('one pass', () => {
+    it('prepares the same statements for two people as for twelve', () => {
+      const countFor = (): number =>
+        preparedDuring(t.sqlite, () => capacityNow(t.db, actor(adminId), NOW)).length;
+
+      makeUser('member', 'One');
+      const few = countFor();
+      for (let i = 0; i < 10; i += 1) {
+        const id = makeUser('member', `Person ${String(i)}`);
+        signIn(id, NOW - i * MIN);
+        token(id, { lastMcpAt: NOW - i * MIN });
+        assigned(id, 'in_progress');
+      }
+
+      expect(countFor()).toBe(few);
     });
   });
 });

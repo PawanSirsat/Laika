@@ -19,6 +19,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
+import { capacityPerson } from './capacity-org.ts';
 import { closeBrowser, open, refuse, setTheme, until, type ApiStub } from './harness.ts';
 
 const NOW = Date.now();
@@ -1295,15 +1296,14 @@ void describe('the ways in are links for owners and admins only', () => {
     '/api/v1/capacity': {
       enabled: true,
       people: [
-        {
+        capacityPerson({
           user_id: 'u2',
           name: 'Bea Builder',
           active_sessions: 1,
-          in_progress_tasks: [],
-          oldest_in_progress_ms: null,
-          tasks_in_review: [],
           last_seen: NOW - MIN,
-        },
+          last_seen_via: 'agent',
+          status: 'online',
+        }),
       ],
     },
     '/api/v1/unlisted': refuse(403, 'forbidden', 'no'),

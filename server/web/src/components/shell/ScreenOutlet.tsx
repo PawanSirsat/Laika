@@ -149,6 +149,7 @@ function CapacityRoute() {
   const {
     route: { navigate, params, setParams },
     unlistedOpen,
+    reviewWaiting,
   } = useShell();
   const project = params.get('project');
   useEffect(() => {
@@ -161,6 +162,7 @@ function CapacityRoute() {
     <CapacityScreen
       onOpenTask={openTaskInItsSpace(navigate)}
       unlistedOpen={unlistedOpen}
+      reviewWaiting={reviewWaiting}
       onNavigate={navigate}
     />
   );

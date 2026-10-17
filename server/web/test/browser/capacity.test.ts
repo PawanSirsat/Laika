@@ -1,446 +1,295 @@
 /**
- * The Capacity screen renders (LAI-439) — M5's exit criterion. **One global
- * page in the sidebar since LAI-754**, with its unlisted-work list moved to
- * `/unlisted` (owner, 2026-10-15).
+ * The Capacity screen (LAI-439), one global page since LAI-754, redesigned by
+ * LAI-767: a search and filter chips, tiles that count, one card a person with
+ * a status ring and a load badge, never-seen people folded into a line, and a
+ * *Team load* chart.
  *
- * ## The row this test exists for
- *
- * **An entry with no `repo` is a normal state**: presence tells a reader *where*
- * only when the heartbeat attributes to a project they can read (LAI-438), and
- * the hook fires in every repository a person opens because `LAIKA_URL` lives in
- * user settings (D-046). So *somebody is working, elsewhere* has to look like a
- * person — not a dash, not "unknown", not a skeleton that never resolves.
- *
- * It is also the row most likely to render as broken, and **no source assertion
- * can tell you it did not**: the failure is a blank gap where a name should be.
+ * The fixture is shaped like the owner's org (`capacity-org.ts`): five people,
+ * three never seen, an owner with seven tasks in progress and two agents
+ * running. It is served **as the server would answer each reader** — a member's
+ * answer has no profile kind, no 14-day series and only running agents — so
+ * the member/admin tests below hold the client to drawing what is sent, and
+ * the server's tests hold the server to sending it.
  */
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, refuse, type ApiStub, setTheme, until } from './harness.ts';
-
-const now = 1788272050095;
-const P = {
-  id: 'p1',
-  slug: 'laika-core',
-  name: 'Laika Core',
-  prefix: 'LAI',
-  description: null,
-  repo: null,
-  visibility: 'private',
-  context_md: '',
-  archived_at: null,
-  created_at: 1,
-  updated_at: 1,
-  task_counts: { backlog: 0, todo: 0, in_progress: 2, review: 1, done: 0, cancelled: 0 },
-  blocked_count: 0,
-  member_count: 3,
-  members: [],
-  last_activity_at: 2,
-};
-
-const task = (id: string, key: string, title: string, status: string) => ({
-  id,
-  key,
-  project_id: 'p1',
-  number: Number(key.split('-')[1]),
-  title,
-  description_md: null,
-  acceptance_md: null,
-  status,
-  priority: 'p2',
-  assignee_id: 'u1',
-  sprint_id: null,
-  created_by: 'u1',
-  created_via: 'web',
-  created_by_client: null,
-  discovered_from: null,
-  parent_task_id: null,
-  due_on: null,
-  planned_start: null,
-  ready: false,
-  stale_flagged_at: null,
-  blocked: false,
-  blocked_by: [],
-  blocks: [],
-  tags: [],
-  comment_count: 0,
-  branch: null,
-  external_ref: null,
-  started_at: now - 5 * 3600000,
-  completed_at: null,
-  created_at: 1,
-  updated_at: 1,
-});
-
-const STUB: ApiStub = {
-  '/api/v1/me': {
-    id: 'u1',
-    email: 'a@example.com',
-    name: 'Ada Lovelace',
-    org_role: 'owner',
-    is_active: true,
-    memberships: [{ project_id: 'p1', role: 'lead' }],
-  },
-  '/api/v1/projects': { data: [P], next_cursor: null },
-  '/api/v1/projects/laika-core': P,
-  '/api/v1/presence': {
-    enabled: true,
-    present: [
-      {
-        user_id: 'u1',
-        name: 'Ada Lovelace',
-        repo: 'git@github.com:PawanSirsat/Laika.git',
-        branch: 'lai-9-parity',
-        matched_task_id: 't1',
-        project_ids: ['p1'],
-        is_agent: true,
-        client: 'claude-code',
-        clients: ['claude-code', 'cursor'],
-        last_seen: now,
-      },
-      // LAI-438: present, location withheld. repo/branch absent; the other two null/[].
-      {
-        user_id: 'u2',
-        name: 'Tomas Nel',
-        matched_task_id: null,
-        project_ids: [],
-        is_agent: false,
-        client: null,
-        clients: [],
-        last_seen: now - 60000,
-      },
-      // LAI-736: an MCP-only agent session — no heartbeat, so no repo at all.
-      {
-        user_id: 'u3',
-        name: 'Priya Raman',
-        matched_task_id: null,
-        project_ids: [],
-        is_agent: true,
-        client: 'codex',
-        clients: ['codex'],
-        last_seen: now - 30000,
-      },
-    ],
-  },
-  '/api/v1/capacity': {
-    enabled: true,
-    people: [
-      {
-        user_id: 'u1',
-        name: 'Ada Lovelace',
-        active_sessions: 2,
-        in_progress_tasks: ['t1', 't2'],
-        oldest_in_progress_ms: 5 * 3600000,
-        tasks_in_review: ['t3'],
-        last_seen: now,
-        unlisted: ['n1'],
-      },
-      {
-        user_id: 'u2',
-        name: 'Tomas Nel',
-        active_sessions: 1,
-        in_progress_tasks: [],
-        oldest_in_progress_ms: null,
-        tasks_in_review: [],
-        last_seen: now - 60000,
-        unlisted: [],
-      },
-      {
-        user_id: 'u3',
-        name: 'Priya Raman',
-        active_sessions: 0,
-        in_progress_tasks: ['t2'],
-        oldest_in_progress_ms: 40 * 60000,
-        tasks_in_review: [],
-        last_seen: null,
-        unlisted: [],
-      },
-    ],
-  },
-  '/api/v1/tasks/t1': task('t1', 'LAI-9', 'Parity tests for the MCP tools', 'in_progress'),
-  '/api/v1/tasks/t2': task('t2', 'LAI-12', 'Heartbeat retention job', 'in_progress'),
-  '/api/v1/tasks/t3': task('t3', 'LAI-15', 'Rate limit headers', 'review'),
-  '/api/v1/unlisted': {
-    data: [
-      {
-        id: 'n1',
-        user_id: 'u1',
-        token_id: 'tok1',
-        repo: 'PawanSirsat/Laika',
-        note: 'The migration runner logs a warning nobody reads on every boot.',
-        promoted_task_id: null,
-        dismissed_at: null,
-        created_at: now - 3600000,
-      },
-      // Decided: promoted notes are listed by default and must not count as open.
-      {
-        id: 'n2',
-        user_id: 'u1',
-        token_id: 'tok1',
-        repo: 'PawanSirsat/Laika',
-        note: 'Already a task.',
-        promoted_task_id: 't3',
-        dismissed_at: null,
-        created_at: now - 7200000,
-      },
-    ],
-    next_cursor: null,
-  },
-};
-
-/** A reader who may not triage unlisted work: no link, no sidebar entry, no request. */
-const MEMBER_ME = {
-  id: 'u2',
-  email: 'm@example.com',
-  name: 'Tomas Nel',
-  org_role: 'member',
-  is_active: true,
-  memberships: [{ project_id: 'p1', role: 'member' }],
-};
+import type { Page } from 'playwright';
+import { capacityFor, LAIKA, NOW, orgStub, PRESENCE, task } from './capacity-org.ts';
+import { pick, valueOf } from './dropdown.ts';
+import { closeBrowser, open, refuse, setTheme, until, type ApiStub } from './harness.ts';
 
 void after(async () => {
   await closeBrowser();
 });
 
-void describe('the capacity screen', () => {
-  void test('a person with no visible repo renders as a person, in both themes', async () => {
-    const h = await open('/capacity', STUB);
+/** The names on the cards, in the order drawn. */
+async function cardNames(page: Page): Promise<string[]> {
+  return (await page.locator('.cap-grid > .cap-card .cap-name').allInnerTexts()).map((n) =>
+    n.trim(),
+  );
+}
+
+/** The real cards, not the skeleton's, which share the class. */
+async function ready(page: Page): Promise<void> {
+  await page
+    .locator('.cap-grid > .cap-card:not(.cap-card-skeleton)')
+    .first()
+    .waitFor({ timeout: 20_000 });
+}
+
+const card = (page: Page, name: string) =>
+  page.locator('.cap-grid > .cap-card', { has: page.locator('.cap-name', { hasText: name }) });
+
+void describe('who is here', () => {
+  void test('online first, with a green ring and dot, and the status in words', async () => {
+    const h = await open('/capacity', orgStub('owner'));
     try {
-      /*
-       * **The card, not the old presence row** (LAI-275). Capacity is now one
-       * card per person in the design's four panels; the property under test is
-       * unchanged — a person whose location is withheld renders as a person,
-       * with a sentence, and leaks nothing.
-       */
-      await h.page.locator('.cap-card').first().waitFor({ timeout: 20_000 });
+      await ready(h.page);
+      assert.deepEqual(await cardNames(h.page), ['Pawan Sirsat', 'Bea Nkosi']);
 
-      // The probe must see every card, or "the withheld one is fine" is vacuous.
-      assert.ok((await h.page.locator('.cap-card').count()) >= 2);
+      const pawan = card(h.page, 'Pawan Sirsat');
+      assert.equal(await pawan.locator('.cap-dot-online').count(), 1, 'no green dot');
+      assert.equal(await pawan.locator('.cap-ring-online').count(), 1, 'no green ring');
+      assert.equal((await pawan.locator('.cap-status').innerText()).trim(), 'Online now');
+      // The dot is decoration: the words above say the same to a screen reader.
+      assert.equal(await pawan.locator('.cap-avatar-wrap').getAttribute('aria-hidden'), 'true');
 
-      const withheld = h.page.locator('.cap-card', { hasText: 'Tomas Nel' });
+      const bea = card(h.page, 'Bea Nkosi');
+      assert.equal(await bea.locator('.cap-dot-online').count(), 0, 'away reads as online');
+      assert.equal(await bea.locator('.cap-dot-away').count(), 1);
+      assert.match(await bea.locator('.cap-status').innerText(), /^Away · 2[34] min$/);
+      // The absolute time is one hover away.
+      assert.match(
+        (await bea.locator('.cap-status').getAttribute('title')) ?? '',
+        /a board action/,
+      );
+
+      // The green is a real colour of its own, in both themes.
       for (const theme of ['Light', 'Dark']) {
         await setTheme(h.page, theme);
-        await h.page.waitForTimeout(300);
-
-        const text = await withheld.innerText();
-        assert.match(text, /Tomas Nel/, `${theme}: the person is missing`);
-        assert.match(
-          text,
-          /working elsewhere/,
-          `${theme}: no sentence where the location would be`,
+        const colours = await h.page.evaluate(() =>
+          ['.cap-dot-online', '.cap-dot-away'].map((selector) => {
+            const el = document.querySelector(selector);
+            return el === null ? '' : getComputedStyle(el).backgroundColor;
+          }),
         );
-        // The failure modes this row invites, each named.
-        assert.doesNotMatch(text, /unknown/i, `${theme}: renders "unknown"`);
-        assert.doesNotMatch(text, /undefined|null/i, `${theme}: leaked a placeholder`);
-        assert.doesNotMatch(text, /^\s*[-—]\s*$/m, `${theme}: renders a bare dash`);
-
-        const box = await withheld.boundingBox();
-        assert.ok(box !== null && box.height > 0, `${theme}: the row has no box`);
-        assert.equal(await withheld.locator('.cap-repo').count(), 0, `${theme}: leaked a repo`);
+        assert.notEqual(colours[0], '', `${theme}: no online dot`);
+        assert.notEqual(colours[0], colours[1], `${theme}: online and away look alike`);
       }
     } finally {
       await h.close();
     }
   });
 
-  void test('an agent session is marked, and a human is not', async () => {
-    const h = await open('/capacity', STUB);
+  void test('never-seen people fold into one line, and Show brings them back', async () => {
+    const h = await open('/capacity', orgStub('owner'));
     try {
-      const agent = h.page.locator('.cap-card', { hasText: 'Ada Lovelace' });
-      await agent.waitFor({ timeout: 20_000 });
-      // LAI-411's treatment, reused — the word `agent`, not a colour alone.
-      assert.equal(await agent.locator('.marker-agent').count(), 1);
-      assert.match(await agent.locator('.marker-agent').innerText(), /agent/i);
+      await ready(h.page);
+      const line = h.page.locator('.cap-never');
+      assert.match(await line.innerText(), /3 people never seen/);
+      assert.match(await line.innerText(), /Cal Mokoena/);
+      assert.equal(await h.page.locator('.cap-grid > .cap-card').count(), 2);
 
-      const human = h.page.locator('.cap-card', { hasText: 'Tomas Nel' });
+      await line.getByRole('button', { name: 'Show' }).click();
+      await until(async () => (await h.page.locator('.cap-grid > .cap-card').count()) === 5);
+      assert.equal(await h.page.locator('.cap-grid > .cap-card').count(), 5);
+      assert.equal(await h.page.locator('.cap-never').count(), 0);
       assert.equal(
-        await human.locator('.marker-agent').count(),
-        0,
-        'a human is badged as an agent',
+        (await card(h.page, 'Cal Mokoena').locator('.cap-status').innerText()).trim(),
+        'Never seen',
       );
     } finally {
       await h.close();
     }
   });
+});
 
-  void test('an agent session names its agent; an MCP-only one says which, not a repo (LAI-737)', async () => {
-    const h = await open('/capacity', STUB);
+void describe('finding people', () => {
+  void test('the search finds by name or by email, and says when nobody matches', async () => {
+    const h = await open('/capacity', orgStub('owner'));
     try {
-      const ada = h.page.locator('.cap-card', { hasText: 'Ada Lovelace' });
-      await ada.waitFor({ timeout: 20_000 });
-      const clients = await ada.locator('.cap-client').allInnerTexts();
-      assert.deepEqual(
-        clients.map((c) => c.trim()),
-        ['Claude Code', 'Cursor'],
-      );
-      assert.equal(await ada.locator('.agent-mark').count(), 2);
+      await ready(h.page);
+      const search = h.page.getByRole('searchbox', { name: 'Search people' });
 
-      const priya = h.page.locator('.cap-card', { hasText: 'Priya Raman' });
-      const text = await priya.innerText();
-      assert.match(text, /connected via Codex/, 'the MCP-only session does not say which agent');
-      assert.doesNotMatch(text, /undefined|null/i);
+      // A never-seen person is shown when searched for, not folded away.
+      await search.fill('dee');
+      await until(async () => (await cardNames(h.page)).join() === 'Dee Pillay');
+      assert.deepEqual(await cardNames(h.page), ['Dee Pillay']);
 
-      // CONTROL: the person in the browser is still just a person.
-      const tomas = h.page.locator('.cap-card', { hasText: 'Tomas Nel' });
-      assert.equal(await tomas.locator('.cap-client').count(), 0);
-      assert.match(await tomas.innerText(), /working elsewhere/);
+      await search.fill('BEA@KVELLD');
+      await until(async () => (await cardNames(h.page)).join() === 'Bea Nkosi');
+      assert.deepEqual(await cardNames(h.page), ['Bea Nkosi']);
+
+      await search.fill('nobody-here');
+      await h.page.getByText('Nobody matches').waitFor({ timeout: 5_000 });
+      await h.page.getByRole('button', { name: 'Clear search and filters' }).click();
+      await until(async () => (await cardNames(h.page)).length === 2);
+      assert.deepEqual(await cardNames(h.page), ['Pawan Sirsat', 'Bea Nkosi']);
+      assert.equal(await search.inputValue(), '');
     } finally {
       await h.close();
     }
   });
 
-  // The chip is the space bar's, not Capacity's: since LAI-754 Capacity has no
-  // space frame, so this is asserted on a space tab with the same presence.
-  void test('the Agents chip says what its number counts, and which agents (LAI-737)', async () => {
-    const h = await open('/activity?project=laika-core', STUB);
+  void test('each filter chip shows exactly its people', async () => {
+    const h = await open('/capacity', orgStub('owner'));
     try {
-      const chip = h.page.locator('.space-agents-start');
-      await chip.locator('.agent-mark').first().waitFor({ timeout: 20_000 });
-      const text = (await chip.textContent()) ?? '';
-      // Two people have agent sessions (Ada, Priya); three agents are live.
-      assert.match(text, /2 people with agent sessions/, text);
-      assert.match(text, /Claude Code, Cursor, Codex/, text);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('at 390px nothing is clipped or pushes the page sideways (LAI-737)', async () => {
-    const h = await open('/capacity', STUB);
-    try {
-      await h.page.setViewportSize({ width: 390, height: 900 });
-      await h.page.locator('.cap-card').first().waitFor({ timeout: 20_000 });
-      // Measure the page as drawn, not a guess at when it is (LAI-765): the
-      // chips' titles land last, in one batch after the spaces' read, so once
-      // one is drawn every chip and the summary's scope are; and the widths
-      // are the self-hosted font's, not the fallback's.
-      await h.page.locator('.cap-chip-title').first().waitFor({ timeout: 20_000 });
-      await h.page.evaluate(() => document.fonts.ready.then(() => undefined));
-      const wide = await h.page.evaluate(() => ({
-        page: document.documentElement.scrollWidth > window.innerWidth,
-        cut: [...document.querySelectorAll('.cap-card, .cap-card *')]
-          .filter(
-            (el) =>
-              el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflowX !== 'visible',
-          )
-          .map((el) => el.className),
-      }));
-      const strip = await h.page.evaluate(() => {
-        const box = document.querySelector('.cap-summary')?.getBoundingClientRect();
-        if (box === undefined) return ['no .cap-summary'];
-        return [...document.querySelectorAll('.cap-summary > *')]
-          .filter((el) => el.getBoundingClientRect().right > box.right + 1)
-          .map((el) => el.className);
-      });
-      assert.deepEqual(strip, [], `the summary strip spills: ${strip.join(', ')}`);
-      assert.equal(wide.page, false, 'the page scrolls sideways');
-      assert.deepEqual(wide.cut, [], `clipped: ${wide.cut.join(', ')}`);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('task ids are resolved to keys and titles, never shown raw', async () => {
-    const h = await open('/capacity', STUB);
-    try {
-      // `.cap-chip` since LAI-275 — the design's in-progress chips. Same
-      // property: an id must never reach the screen in place of a key.
-      await h.page.locator('.cap-chip').first().waitFor({ timeout: 20_000 });
-      await h.page.locator('.cap-chip-title').first().waitFor({ timeout: 20_000 });
-      const chips = await h.page.locator('.cap-chip').allInnerTexts();
-      assert.ok(chips.length >= 3, `only ${String(chips.length)} task chips`);
-      for (const chip of chips) {
-        assert.match(chip, /LAI-\d+/, `a chip shows no key: ${chip}`);
-        assert.doesNotMatch(chip, /^t\d+$/, `a chip shows a raw id: ${chip}`);
+      await ready(h.page);
+      const expected: readonly (readonly [string, readonly string[], number])[] = [
+        // chip, the cards, how many fold into the never-seen line
+        ['Online now', ['Pawan Sirsat'], 0],
+        ['Agents running', ['Pawan Sirsat'], 0],
+        ['Heavy load', ['Pawan Sirsat'], 0],
+        ['Overdue', ['Pawan Sirsat'], 0],
+        ['No work', [], 2],
+        ['Never seen', ['Dee Pillay', 'Cal Mokoena', 'Eli van Wyk'], 0],
+        ['All', ['Pawan Sirsat', 'Bea Nkosi'], 3],
+      ];
+      for (const [chip, names, folded] of expected) {
+        const button = h.page.locator('.cap-chip', { hasText: chip });
+        await button.click();
+        assert.equal(await button.getAttribute('aria-pressed'), 'true', `${chip} is not pressed`);
+        await until(async () => (await cardNames(h.page)).join() === names.join());
+        assert.deepEqual(await cardNames(h.page), names, chip);
+        const line = h.page.locator('.cap-never');
+        if (folded === 0) {
+          assert.equal(await line.count(), 0, `${chip}: a fold line`);
+        } else {
+          assert.match(await line.innerText(), new RegExp(`^${String(folded)} people never seen`));
+        }
       }
-      // LAI-754: the owner's chips read only a dot and `…`. Key **and** title,
-      // with the whole title in the tooltip.
-      const ada = h.page.locator('.cap-card', { hasText: 'Ada Lovelace' });
-      const heartbeat = ada.locator('.cap-chip', { hasText: 'LAI-12' });
-      assert.match(await heartbeat.innerText(), /LAI-12\s*Heartbeat retention job/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a tile applies its filter, and another click lifts it', async () => {
+    const h = await open('/capacity', orgStub('owner'));
+    try {
+      await ready(h.page);
+      const tile = h.page.locator('.cap-tile', { hasText: 'Online now' });
+      assert.match(await tile.innerText(), /Online now\s*1\s*of 5 people/);
+      await tile.click();
+      await until(async () => (await cardNames(h.page)).length === 1);
+      assert.deepEqual(await cardNames(h.page), ['Pawan Sirsat']);
+      assert.equal(await tile.getAttribute('aria-pressed'), 'true');
+      await tile.click();
+      await until(async () => (await cardNames(h.page)).length === 2);
+      assert.equal(await tile.getAttribute('aria-pressed'), 'false');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('sort: online first by default, then by name, last seen and load', async () => {
+    const h = await open('/capacity', orgStub('owner'));
+    try {
+      await ready(h.page);
+      await h.page.locator('.cap-never').getByRole('button', { name: 'Show' }).click();
+      const sort = h.page.getByRole('combobox', { name: 'Sort' });
+      const orderFor = async (value: string, want: readonly string[]) => {
+        await pick(sort, value);
+        await until(async () => (await cardNames(h.page)).join() === want.join());
+        assert.deepEqual(await cardNames(h.page), want, value);
+      };
+      await orderFor('name', [
+        'Bea Nkosi',
+        'Cal Mokoena',
+        'Dee Pillay',
+        'Eli van Wyk',
+        'Pawan Sirsat',
+      ]);
+      await orderFor('online', [
+        'Pawan Sirsat',
+        'Bea Nkosi',
+        'Dee Pillay',
+        'Cal Mokoena',
+        'Eli van Wyk',
+      ]);
+      await orderFor('seen', [
+        'Pawan Sirsat',
+        'Bea Nkosi',
+        'Cal Mokoena',
+        'Dee Pillay',
+        'Eli van Wyk',
+      ]);
+      await orderFor('load', [
+        'Pawan Sirsat',
+        'Bea Nkosi',
+        'Dee Pillay',
+        'Cal Mokoena',
+        'Eli van Wyk',
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a space narrows the counts to that space', async () => {
+    const h = await open('/capacity', orgStub('owner'));
+    try {
+      await ready(h.page);
+      const pawan = card(h.page, 'Pawan Sirsat');
+      assert.match(await pawan.locator('.cap-counts').innerText(), /7\s*in progress/);
+      await pick(h.page.getByRole('combobox', { name: 'Space' }), 'p2');
+      await until(async () =>
+        /2\s*in progress/.test(await pawan.locator('.cap-counts').innerText()),
+      );
+      assert.match(await pawan.locator('.cap-counts').innerText(), /2\s*in progress/);
       assert.match(
-        (await heartbeat.getAttribute('title')) ?? '',
-        /LAI-12 · Heartbeat retention job/,
+        await h.page.locator('.cap-tile', { hasText: 'In progress' }).innerText(),
+        /In progress\s*2/,
       );
     } finally {
       await h.close();
     }
   });
+});
 
-  void test('no unlisted list on Capacity — a count that links to its page (LAI-754)', async () => {
-    const h = await open('/capacity', STUB);
+void describe('what an owner sees and a member does not', () => {
+  void test('an owner: profile kind, 14-day activity, a profile link, every agent, Unlisted', async () => {
+    const h = await open('/capacity', orgStub('owner'));
     try {
-      await h.page.locator('.cap-card').first().waitFor({ timeout: 20_000 });
-      const link = h.page.locator('.cap-fig-link');
-      await link.waitFor({ timeout: 10_000 });
-      // One pending note; the promoted one is decided and not counted.
-      assert.match(await link.innerText(), /UNLISTED\s*1/);
-      assert.equal(await link.getAttribute('href'), '/unlisted');
-
-      // The owner's two complaints, each named: the amber strip in a person's
-      // card, and the long list of cards under the people.
-      assert.equal(await h.page.locator('.cap-unlisted-strip').count(), 0, 'the amber strip');
-      assert.equal(await h.page.locator('.unl-list, .unl-row').count(), 0, 'the unlisted list');
-      assert.doesNotMatch(
-        await h.page.locator('.cap').innerText(),
-        /migration runner logs a warning/,
-        'a note is still printed on Capacity',
+      await ready(h.page);
+      const pawan = card(h.page, 'Pawan Sirsat');
+      assert.match(await pawan.locator('.cap-role').innerText(), /Owner · Builder/);
+      assert.equal(await pawan.locator('.cap-spark-bar').count(), 14);
+      // The link waits on the shell's `/me` as well as the cards, so wait for
+      // it before counting (LAI-765's rule: wait for what you read).
+      await pawan.locator('a.cap-name-link').waitFor({ timeout: 10_000 });
+      assert.equal(await pawan.locator('a.cap-name-link').count(), 1, 'no profile link');
+      assert.deepEqual(
+        (await pawan.locator('.cap-agent').allInnerTexts()).map((t) =>
+          t.replace(/\s+/g, ' ').trim(),
+        ),
+        ['Claude Code (running now)', 'Codex (running now)', 'Cursor'],
       );
-
-      // The sidebar carries the same count beside Unlisted work.
-      const entry = h.page.locator('#sidebar .sidebar-link', { hasText: 'Unlisted work' });
-      assert.match(await entry.innerText(), /Unlisted work\s*1/);
-
-      await link.click();
-      await h.page.waitForURL((url) => url.pathname === '/unlisted', { timeout: 10_000 });
+      assert.equal(await pawan.locator('.cap-agent-dot').count(), 2, 'a running dot each');
+      const unlisted = h.page.locator('.cap-tile-unlisted');
+      assert.match(await unlisted.innerText(), /Unlisted work\s*1/);
+      assert.equal(await unlisted.getAttribute('href'), '/unlisted');
     } finally {
       await h.close();
     }
   });
 
-  void test('presence ON with nobody working is NOT the disabled state', async () => {
-    // **The mutation that found this gap**: reading `people.length === 0`
-    // instead of `enabled` passed every test, because the disabled fixture had
-    // both true at once. `{ enabled: false }` and an empty list are opposite
-    // claims — *this org does not record who is working* against *nobody is* —
-    // and since LAI-150 a disabled org stores nothing, so an empty list is the
-    // only thing left to infer from. This is the fixture that separates them.
-    const quiet = {
-      ...STUB,
-      '/api/v1/presence': { enabled: true, present: [] },
-      '/api/v1/capacity': { enabled: true, people: [] },
-    };
-    const h = await open('/capacity', quiet);
+  void test('a member: presence and workload only — no kind, no activity, no link, no queue', async () => {
+    const h = await open('/capacity', orgStub('member'));
     try {
-      await h.page.locator('.cap').waitFor({ timeout: 20_000 });
-      const text = await h.page.locator('.cap').innerText();
-      assert.doesNotMatch(text, /presence is off/i, 'an empty org reads as disabled');
-      assert.match(text, /no sessions in the last five minutes/i, 'it says nothing at all');
-    } finally {
-      await h.close();
-    }
-  });
+      await ready(h.page);
+      const pawan = card(h.page, 'Pawan Sirsat');
+      // Still the facts every role has: status, role, workload, running agents.
+      assert.equal((await pawan.locator('.cap-status').innerText()).trim(), 'Online now');
+      assert.equal((await pawan.locator('.cap-role').innerText()).trim(), 'Owner');
+      assert.match(await pawan.locator('.cap-counts').innerText(), /7\s*in progress/);
+      assert.equal(await pawan.locator('.cap-agent-dot').count(), 2);
 
-  void test('a reader who may not triage gets no link, no entry and no request', async () => {
-    // `unlisted` is withheld from capacity for a reader without
-    // `audit_log.export`, and `GET /unlisted` refuses them — so nothing on the
-    // page may mention the queue, and the client must not ask for it.
-    const member = {
-      ...STUB,
-      '/api/v1/me': MEMBER_ME,
-      '/api/v1/unlisted': refuse(403, 'forbidden', 'Admins only.'),
-    };
-    const h = await open('/capacity', member);
-    try {
-      await h.page.locator('.cap-card').first().waitFor({ timeout: 20_000 });
-      await h.page.locator('#sidebar .sidebar-link', { hasText: 'Capacity' }).waitFor();
-      assert.equal(await h.page.locator('.cap-fig-unlisted').count(), 0, 'the link is drawn');
-      assert.equal(
-        await h.page.locator('#sidebar .sidebar-link', { hasText: 'Unlisted work' }).count(),
-        0,
-        'the sidebar offers Unlisted work to a member',
-      );
+      assert.equal(await h.page.locator('.cap-kind').count(), 0, 'a profile kind is drawn');
+      assert.equal(await h.page.locator('.cap-spark').count(), 0, 'activity is drawn');
+      assert.equal(await h.page.locator('a.cap-name-link').count(), 0, 'a profile link is drawn');
+      assert.equal(await pawan.locator('.cap-agent', { hasText: 'Cursor' }).count(), 0);
+      assert.equal(await h.page.locator('.cap-tile-unlisted').count(), 0);
       assert.deepEqual(
         h.calls.filter((c) => c.path === '/api/v1/unlisted'),
         [],
@@ -450,136 +299,205 @@ void describe('the capacity screen', () => {
       await h.close();
     }
   });
+});
 
-  void test('presence off is a disabled state, not an empty one', async () => {
-    const off = {
-      ...STUB,
+void describe('states', () => {
+  void test('presence off: says so, keeps the workload, draws no status', async () => {
+    const view = capacityFor('owner');
+    const off: ApiStub = {
+      ...orgStub('owner'),
       '/api/v1/presence': { enabled: false, present: [] },
-      '/api/v1/capacity': { enabled: false, people: [] },
+      '/api/v1/capacity': {
+        enabled: false,
+        people: view.people.map((p) => ({
+          ...p,
+          status: null,
+          last_seen: null,
+          last_seen_via: null,
+          active_sessions: 0,
+          agents: [],
+        })),
+      },
     };
     const h = await open('/capacity', off);
     try {
-      await h.page.locator('.cap').waitFor({ timeout: 20_000 });
+      await ready(h.page);
       const text = await h.page.locator('.cap').innerText();
-      assert.match(text, /presence is off/i, 'a disabled org reads as empty');
-      // AC4: no control here — turning it on is Admin+ on the Organisation
-      // screen, and offering a switch most readers cannot use is worse than
-      // saying where it lives.
+      assert.match(text, /presence is off for this organisation/i);
+      assert.doesNotMatch(text, /nobody is working/i);
+      // Five cards — no status means nothing to fold on — with their workload.
+      assert.equal(await h.page.locator('.cap-grid > .cap-card').count(), 5);
+      assert.match(
+        await card(h.page, 'Pawan Sirsat').locator('.cap-counts').innerText(),
+        /7\s*in progress/,
+      );
+      assert.equal(await h.page.locator('.cap-dot').count(), 0, 'a status dot is drawn');
+      assert.equal(
+        (await card(h.page, 'Bea Nkosi').locator('.cap-status').innerText()).trim(),
+        'Presence is off',
+      );
+      for (const chip of ['Online now', 'Agents running', 'Never seen']) {
+        assert.equal(await h.page.locator('.cap-chip', { hasText: chip }).count(), 0, chip);
+      }
       assert.equal(await h.page.locator('.cap input[type="checkbox"]').count(), 0);
-      assert.doesNotMatch(text, /nobody is working/i, 'disabled must not claim nobody is working');
-      assert.equal(await h.page.locator('.cap-card').count(), 0);
+      // "Online first" reads presence, so the sort falls back to load.
+      assert.equal(await valueOf(h.page.getByRole('combobox', { name: 'Sort' })), 'load');
     } finally {
       await h.close();
     }
   });
 
-  void test('three chips and +N more; only drawn tasks are asked for (LAI-754)', async () => {
-    const many = {
-      ...STUB,
-      '/api/v1/capacity': {
-        enabled: true,
-        people: [
-          {
-            user_id: 'u1',
-            name: 'Ada Lovelace',
-            active_sessions: 1,
-            in_progress_tasks: ['t1', 't2', 't4', 't5', 't6'],
-            oldest_in_progress_ms: 3600000,
-            tasks_in_review: ['t3'],
-            last_seen: now,
-            unlisted: [],
-          },
-        ],
+  void test('the skeleton is the final layout, so the cards land where it stood', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((done) => {
+      release = done;
+    });
+    const h = await open('/capacity', orgStub('owner'), {
+      before: async (page) => {
+        await page.route('**/api/v1/capacity', async (route) => {
+          await gate;
+          await route.continue();
+        });
       },
-      '/api/v1/tasks/t4': task('t4', 'LAI-20', 'Fourth task', 'in_progress'),
-      '/api/v1/tasks/t5': task('t5', 'LAI-21', 'Fifth task', 'in_progress'),
-      '/api/v1/tasks/t6': task('t6', 'LAI-22', 'Sixth task', 'in_progress'),
-    };
-    const h = await open('/capacity', many);
+    });
     try {
-      const card = h.page.locator('.cap-card', { hasText: 'Ada Lovelace' });
-      await card.locator('.cap-chip-title').first().waitFor({ timeout: 20_000 });
-      assert.equal(await card.locator('.cap-chip').count(), 3);
-      assert.equal((await card.locator('.cap-chip-more').innerText()).trim(), '+2 more');
-      assert.match(await card.locator('.cap-wip-count').innerText(), /5/);
+      await h.page.locator('.cap-card-skeleton').first().waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.cap-card-skeleton').count(), 3);
+      assert.equal(await h.page.locator('.cap-tile-skeleton').count(), 6);
+      assert.equal(await h.page.locator('.cap[aria-busy="true"]').count(), 1);
+      const before = await h.page.locator('.cap-grid').boundingBox();
 
-      await h.page.waitForTimeout(500);
-      const asked = h.calls
-        .map((c) => c.path)
-        .filter((p) => p.startsWith('/api/v1/tasks/'))
-        .sort();
-      // t1 is also the session's matched task; t3 is in review and t5, t6 are
-      // behind "+2 more" — none of those three is drawn, so none is read.
-      assert.deepEqual(asked, ['/api/v1/tasks/t1', '/api/v1/tasks/t2', '/api/v1/tasks/t4']);
+      release();
+      await ready(h.page);
+      const after = await h.page.locator('.cap-grid').boundingBox();
+      assert.ok(before !== null && after !== null);
+      assert.ok(
+        Math.abs(before.y - after.y) <= 2,
+        `the grid moved ${String(after.y - before.y)}px when the data landed`,
+      );
     } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
       await h.close();
     }
   });
 
-  void test('a chip that failed to resolve is asked for again on the next poll (LAI-754)', async () => {
-    let tries = 0;
-    const flaky = {
-      ...STUB,
-      '/api/v1/tasks/t2': () => {
-        tries += 1;
-        return tries === 1
-          ? refuse(503, 'unavailable', 'Try again.')
-          : task('t2', 'LAI-12', 'Heartbeat retention job', 'in_progress');
-      },
-    };
-    const h = await open('/capacity', flaky, {
+  void test('at 390px nothing is clipped or pushes the page sideways', async () => {
+    const h = await open('/capacity', orgStub('owner'));
+    try {
+      await h.page.setViewportSize({ width: 390, height: 900 });
+      await ready(h.page);
+      await h.page.locator('.cap-never').getByRole('button', { name: 'Show' }).click();
+      // Measure the page as drawn, not a guess at when it is (LAI-765): every
+      // card, the matched task (its own read), the review and unlisted counts
+      // (the shell's reads), and the self-hosted font's widths, not the
+      // fallback's.
+      await until(async () => (await h.page.locator('.cap-grid > .cap-card').count()) === 5);
+      await h.page.locator('.cap-working').waitFor({ timeout: 10_000 });
+      const review = h.page.locator('.cap-tile', { hasText: 'Waiting for review' });
+      await until(async () => /Waiting for review\s*3/.test(await review.innerText()), 10_000);
+      await h.page.locator('.cap-tile-unlisted').waitFor({ timeout: 10_000 });
+      await h.page.evaluate(() => document.fonts.ready.then(() => undefined));
+      const wide = await h.page.evaluate(() => ({
+        page: document.documentElement.scrollWidth > window.innerWidth,
+        cut: [...document.querySelectorAll('.cap-card, .cap-card *, .cap-tiles *, .cap-toolbar *')]
+          .filter(
+            (el) =>
+              el.scrollWidth > el.clientWidth + 1 &&
+              getComputedStyle(el).overflowX !== 'visible' &&
+              // Screen-reader text is clipped to a pixel on purpose.
+              !el.classList.contains('visually-hidden') &&
+              // An ellipsis is the intended answer to a long name.
+              getComputedStyle(el).textOverflow !== 'ellipsis',
+          )
+          .map((el) => el.className),
+        spill: [...document.querySelectorAll('.cap > *')]
+          .filter((el) => el.getBoundingClientRect().right > window.innerWidth + 1)
+          .map((el) => el.className),
+      }));
+      assert.equal(wide.page, false, 'the page scrolls sideways');
+      assert.deepEqual(wide.cut, [], `clipped: ${wide.cut.join(', ')}`);
+      assert.deepEqual(wide.spill, [], `spills: ${wide.spill.join(', ')}`);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('live', () => {
+  void test('re-reads when the tab comes back, and every 20 s', async () => {
+    const h = await open('/capacity', orgStub('owner'), {
       before: async (page) => {
         await page.clock.install();
       },
     });
     try {
-      const card = h.page.locator('.cap-card', { hasText: 'Ada Lovelace' });
-      await card.locator('.cap-chip', { hasText: 'LAI-9' }).waitFor({ timeout: 20_000 });
-      await h.page.waitForTimeout(300);
-      // Positive control: the first read failed, so the chip is still waiting.
-      assert.equal(tries, 1);
-      assert.equal(await card.locator('.cap-chip', { hasText: 'LAI-12' }).count(), 0);
+      await ready(h.page);
+      const reads = () => h.calls.filter((c) => c.path === '/api/v1/capacity').length;
+      const first = reads();
 
-      await h.page.clock.fastForward(21_000);
-      await card.locator('.cap-chip', { hasText: 'LAI-12' }).waitFor({ timeout: 10_000 });
-      assert.equal(tries, 2);
+      await h.page.clock.fastForward(5_000);
+      await h.page.evaluate(() => {
+        window.dispatchEvent(new Event('focus'));
+      });
+      await until(() => reads() === first + 1);
+      assert.equal(reads(), first + 1, 'coming back to the tab did not re-read');
+
+      await h.page.clock.fastForward(20_000);
+      await until(() => reads() === first + 2);
+      assert.equal(reads(), first + 2, 'the 20 s poll did not re-read');
     } finally {
       await h.close();
     }
   });
+});
 
-  void test('an old space-tab link opens the one global page (LAI-754)', async () => {
-    const h = await open('/capacity?project=laika-core', STUB);
+void describe('tasks are drawn only when asked for', () => {
+  void test('only the matched task is read until Show tasks; then theirs', async () => {
+    const h = await open('/capacity', orgStub('owner'));
     try {
-      await h.page.locator('.cap-card').first().waitFor({ timeout: 20_000 });
-      await h.page.waitForURL((url) => url.pathname === '/capacity' && url.search === '', {
-        timeout: 10_000,
-      });
-      assert.equal(await h.page.locator('.view-tab').count(), 0, 'the space tabs are drawn');
-      assert.match(await h.page.locator('.screen-bar-title').innerText(), /Capacity/);
-      // The scope, in words: every space this reader can see. The spaces are
-      // their own read, apart from the cards' (LAI-765): until it lands the
-      // note says how often it refreshes, so wait for the scope, then assert it.
-      const note = h.page.locator('.cap-summary-note');
-      await until(async () => (await note.innerText()).includes('across 1 space'), 10_000);
-      assert.match(await note.innerText(), /across 1 space/);
+      await ready(h.page);
+      const pawan = card(h.page, 'Pawan Sirsat');
+      // The session's task, resolved to a key: "Claude Code · working on LAI-9".
+      await pawan.locator('.cap-working').waitFor({ timeout: 10_000 });
+      assert.match(
+        await pawan.locator('.cap-working').innerText(),
+        /Claude Code · working on\s*LAI-9/,
+      );
+      // A deliberate *nothing happens* window, which no condition can end
+      // early (`until`'s doc; LAI-765 kept these): a folded task must not be
+      // read, and a read that was coming would have gone with the matched one.
+      await h.page.waitForTimeout(300);
+      const tasksRead = () =>
+        h.calls
+          .map((c) => c.path)
+          .filter((p) => p.startsWith('/api/v1/tasks/'))
+          .sort();
+      assert.deepEqual(tasksRead(), ['/api/v1/tasks/t1'], 'folded tasks were read');
+
+      const toggle = pawan.getByRole('button', { name: /Show tasks/ });
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+      await toggle.click();
+      assert.equal(
+        await pawan.getByRole('button', { name: /Hide tasks/ }).getAttribute('aria-expanded'),
+        'true',
+      );
+      await pawan.locator('button.cap-task', { hasText: 'ONR-360' }).waitFor({ timeout: 10_000 });
+      await until(async () => (await pawan.locator('button.cap-task').count()) === 7, 10_000);
+      assert.equal(await pawan.locator('button.cap-task').count(), 7);
+      // Bea's are not drawn, so not read.
+      assert.equal(tasksRead().includes('/api/v1/tasks/t10'), false);
     } finally {
       await h.close();
     }
   });
 
   /*
-   * LAI-755. Capacity spans every space, so a chip's task is usually in a
-   * space other than the one last opened. The chip used to go to
-   * `/board?q=<KEY>` with no `?project=`, so the board fell back to the last
-   * space and searched it for a key it does not hold: an empty board.
+   * LAI-755: Capacity spans every space, so a task is usually in a space other
+   * than the one last opened. It opens in its own.
    */
-  void test('a chip opens its task in the task’s own space, not the last one opened (LAI-755)', async () => {
-    const WEB = { ...P, id: 'p2', slug: 'laika-web', name: 'Laika Web', prefix: 'LW' };
-    const lw1 = {
-      ...task('t9', 'LW-1', 'Toolbar reads its own width', 'in_progress'),
-      project_id: 'p2',
-    };
+  void test('a task opens in its own space, not the last one opened (LAI-755)', async () => {
+    const web = { ...LAIKA, id: 'p9', slug: 'laika-web', name: 'Laika Web', prefix: 'LW' };
+    const lw1 = task('t9', 'LW-1', 'Toolbar reads its own width', 'in_progress', web);
     const board = (slug: string, tasks: unknown[]): ApiStub => ({
       [`/api/v1/projects/${slug}/tasks`]: { data: tasks, next_cursor: null },
       [`/api/v1/projects/${slug}/members`]: { members: [] },
@@ -588,58 +506,45 @@ void describe('the capacity screen', () => {
       [`/api/v1/projects/${slug}/tags`]: { tags: [] },
       [`/api/v1/projects/${slug}/mentionable`]: { users: [] },
     });
-    const twoSpaces: ApiStub = {
-      ...STUB,
-      ...board('laika-core', []),
+    const view = capacityFor('owner');
+    const stub: ApiStub = {
+      ...orgStub('owner'),
+      ...board('laika', []),
       ...board('laika-web', [lw1]),
-      '/api/v1/me': {
-        ...(STUB['/api/v1/me'] as object),
-        memberships: [
-          { project_id: 'p1', role: 'lead' },
-          { project_id: 'p2', role: 'lead' },
-        ],
-      },
-      '/api/v1/projects': { data: [P, WEB], next_cursor: null },
-      '/api/v1/projects/laika-web': WEB,
+      '/api/v1/projects': { data: [LAIKA, web], next_cursor: null },
+      '/api/v1/projects/laika-web': web,
       '/api/v1/org': {
         id: 'o',
-        name: 'Borealis Labs',
+        name: 'Kvell',
         presence_enabled: true,
         created_at: 1,
         updated_at: 1,
       },
       '/api/v1/capacity': {
-        enabled: true,
-        people: [
-          {
-            user_id: 'u1',
-            name: 'Ada Lovelace',
-            active_sessions: 1,
-            in_progress_tasks: ['t9'],
-            oldest_in_progress_ms: 3600000,
-            tasks_in_review: [],
-            last_seen: now,
-            unlisted: [],
-          },
-        ],
+        ...view,
+        people: view.people.map((p) =>
+          p.user_id === 'u2' ? { ...p, in_progress_tasks: ['t9'] } : p,
+        ),
       },
       '/api/v1/tasks/t9': lw1,
       '/api/v1/tasks/t9/comments': { data: [], next_cursor: null },
       '/api/v1/tasks/t9/watchers': { watchers: [] },
     };
 
-    // Laika Core is the space last opened.
-    const h = await open('/board?project=laika-core', twoSpaces);
+    // Laika is the space last opened.
+    const h = await open('/board?project=laika', stub);
     try {
       await h.page.locator('.board-bar').waitFor({ timeout: 20_000 });
       await h.page.evaluate(() => {
         history.pushState({}, '', '/capacity');
         dispatchEvent(new PopStateEvent('popstate'));
       });
-
-      const chip = h.page.locator('.cap-chip', { hasText: 'LW-1' });
-      await chip.locator('.cap-chip-title').waitFor({ timeout: 20_000 });
-      await chip.click();
+      await ready(h.page);
+      const bea = card(h.page, 'Bea Nkosi');
+      await bea.getByRole('button', { name: /Show tasks/ }).click();
+      const row = bea.locator('button.cap-task', { hasText: 'LW-1' });
+      await row.waitFor({ timeout: 10_000 });
+      await row.click();
 
       await h.page.waitForURL((url) => url.pathname === '/board', { timeout: 10_000 });
       const url = new URL(h.page.url());
@@ -657,6 +562,116 @@ void describe('the capacity screen', () => {
       }, 10_000);
       assert.match(await drawer.innerText(), /LW-1/);
       assert.match(await drawer.innerText(), /Toolbar reads its own width/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a task that failed to resolve is asked for again on the next poll', async () => {
+    let tries = 0;
+    const flaky: ApiStub = {
+      ...orgStub('owner'),
+      '/api/v1/tasks/t2': () => {
+        tries += 1;
+        return tries === 1
+          ? refuse(503, 'unavailable', 'Try again.')
+          : task('t2', 'LAI-12', 'Heartbeat retention job', 'in_progress');
+      },
+    };
+    const h = await open('/capacity', flaky, {
+      before: async (page) => {
+        await page.clock.install();
+      },
+    });
+    try {
+      await ready(h.page);
+      const pawan = card(h.page, 'Pawan Sirsat');
+      await pawan.getByRole('button', { name: /Show tasks/ }).click();
+      await pawan.locator('button.cap-task', { hasText: 'LAI-9' }).waitFor({ timeout: 10_000 });
+      await until(() => tries === 1);
+      assert.equal(tries, 1);
+      assert.equal(await pawan.locator('button.cap-task', { hasText: 'LAI-12' }).count(), 0);
+
+      await h.page.clock.fastForward(21_000);
+      await pawan.locator('button.cap-task', { hasText: 'LAI-12' }).waitFor({ timeout: 10_000 });
+      assert.equal(tries, 2);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('links out', () => {
+  void test('Waiting for review and Unlisted work open their pages', async () => {
+    const h = await open('/capacity', orgStub('owner'));
+    try {
+      await ready(h.page);
+      const review = h.page.locator('.cap-tile', { hasText: 'Waiting for review' });
+      await until(async () => /Waiting for review\s*3/.test(await review.innerText()));
+      assert.match(await review.innerText(), /Waiting for review\s*3/);
+      assert.equal(await review.getAttribute('href'), '/review');
+
+      // The sidebar carries the same count beside Unlisted work.
+      // The shell reads its count apart from the page, so the entry can be
+      // drawn before the number is (LAI-765): wait for it, then assert it.
+      const entry = h.page.locator('#sidebar .sidebar-link', { hasText: 'Unlisted work' });
+      await until(async () => /Unlisted work\s*1/.test(await entry.innerText()), 10_000);
+      assert.match(await entry.innerText(), /Unlisted work\s*1/);
+
+      await h.page.locator('.cap-tile-unlisted').click();
+      await h.page.waitForURL((url) => url.pathname === '/unlisted', { timeout: 10_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an old space-tab link opens the one global page (LAI-754)', async () => {
+    const h = await open('/capacity?project=laika', orgStub('owner'));
+    try {
+      await ready(h.page);
+      await h.page.waitForURL((url) => url.pathname === '/capacity' && url.search === '', {
+        timeout: 10_000,
+      });
+      assert.equal(await h.page.locator('.view-tab').count(), 0, 'the space tabs are drawn');
+      assert.match(await h.page.locator('.screen-bar-title').innerText(), /Capacity/);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/*
+ * The chip is the space bar's, not Capacity's: since LAI-754 Capacity has no
+ * space frame, so this is asserted on a space tab with presence like Capacity's.
+ */
+void describe('the space bar’s Agents chip (LAI-737)', () => {
+  void test('says what its number counts, and which agents', async () => {
+    const stub: ApiStub = {
+      ...orgStub('owner'),
+      '/api/v1/presence': {
+        enabled: true,
+        present: [
+          ...PRESENCE.present,
+          {
+            user_id: 'u3',
+            name: 'Cal Mokoena',
+            matched_task_id: null,
+            project_ids: [],
+            is_agent: true,
+            client: 'cursor',
+            clients: ['cursor'],
+            last_seen: NOW - 30_000,
+          },
+        ],
+      },
+    };
+    const h = await open('/activity?project=laika', stub);
+    try {
+      const chip = h.page.locator('.space-agents-start');
+      await chip.locator('.agent-mark').first().waitFor({ timeout: 20_000 });
+      const text = (await chip.textContent()) ?? '';
+      assert.match(text, /2 people with agent sessions/, text);
+      assert.match(text, /Claude Code, Codex, Cursor/, text);
     } finally {
       await h.close();
     }

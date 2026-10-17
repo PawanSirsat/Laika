@@ -27,6 +27,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, refuse, type ApiStub, type StubCall, setTheme } from './harness.ts';
+import { capacityPerson } from './capacity-org.ts';
 import { offered, optionsOf, pick, valueOf } from './dropdown.ts';
 
 const user = (id: string, name: string, org_role: string, is_active = true) => ({
@@ -441,16 +442,7 @@ void describe('the directory includes people who left (LAI-240)', () => {
       '/api/v1/presence': { enabled: true, present: [] },
       '/api/v1/capacity': {
         enabled: true,
-        people: PEOPLE.map((p) => ({
-          user_id: p.id,
-          name: p.name,
-          active_sessions: 0,
-          in_progress_tasks: [],
-          oldest_in_progress_ms: null,
-          tasks_in_review: [],
-          last_seen: null,
-          unlisted: [],
-        })),
+        people: PEOPLE.map((p) => capacityPerson({ user_id: p.id, name: p.name, unlisted: [] })),
       },
       '/api/v1/unlisted': { data: [], next_cursor: null },
     };
