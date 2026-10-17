@@ -4669,3 +4669,91 @@ path set its secret, so every delivery was refused `401`.
 - **Gitea, GitLab** and any other source.
 - **Who rotated the secret.** §4.8 has no verb for it, as for
   `developer_insights`; an audit row is a decision of its own.
+
+## D-084 — Token usage: counts per task, from the agents' own session files, under the switches D-079 set.
+
+**2026-10-17, the owner, directly** (through the orchestrator; LAI-769 and
+LAI-770 build it, LAI-773 adds the fallback and cost). D-078 item 5 allowed
+token, session and model counts with the developer's opt-in; D-079 shipped
+per-day *activity* counts only. The owner wants tokens per task, per person,
+per project and for the organisation. Research: `token-usage/REPORT.md` in the
+owner's strategy folder (measured on a real machine: 767 transcripts, 2.19 GB).
+
+### Decided
+
+1. **The collector reads usage numbers from the agents' own session files** —
+   Claude Code transcripts, Codex rollouts, Gemini CLI sessions — and nothing
+   else from them: never prompt or reply text, tool input, paths, repository or
+   branch names, or session ids leave the machine. Reads are incremental by
+   byte offset; a full first read is allowed once.
+2. **Counted once.** Claude Code writes one reply's usage on several lines: a
+   reply is counted once per message id across every file, taking the largest
+   value of each field. Codex totals are cumulative: a day's figure is the
+   difference, never the sum of events.
+3. **What is sent:** per day × agent × model × task key (or none): input,
+   output, cache-write and cache-read tokens. Totals **replace** the day's
+   previous totals, so a retry never counts twice.
+4. **Same consent as D-079:** the org's *Developer insights* and the
+   developer's own *Share local activity*. No third switch; Connect's wording
+   and preview name token counts. Off on either side → nothing is sent, and
+   *delete my history* deletes token rows too.
+5. **A Laika task key may be sent**, derived on the machine from (a) the
+   agent's own Laika MCP calls in that session that start work on a task
+   (`start_working`, or `update_status` into an in-progress status), with a
+   session that moved between tasks split **by time**; else (b) a key in the
+   branch name that matches a project prefix the board serves. Only the key is
+   sent. Anything else is **unattributed** and stays so — never guessed.
+6. **Every token figure says how much of it is attributed**, so a task's
+   number is never mistaken for the whole story.
+7. **Who sees what.** Owners and admins: everyone. A developer: their own.
+   Members: a task's and a project's totals, never a per-person split. Tokens
+   never feed a rating or a ranking of people (D-078).
+8. **The headline excludes cache reads** (98% of raw tokens on the measured
+   machine) and shows them separately.
+9. **The numbers are a floor**, labelled *at least*: transcripts miss an
+   agent's background calls. A metrics-only OpenTelemetry receiver is the
+   later fallback (LAI-773).
+10. **Cost is an estimate**, from a dated per-model price table in the code
+    that admins can edit, labelled *API-equivalent, not your bill*. Nothing
+    calls out to a price list (§13.4).
+11. **The last 30 days may be counted once** from files already on the
+    machine, unattributed.
+12. **Kept 400 days**, as D-079.
+
+## D-085 — Size and forecasts: Laika computes them; a person may override; never a score of people.
+
+**2026-10-17, the owner, directly** (LAI-771 builds the first slice, LAI-772
+the rest). §1.1 lists story points and time tracking as non-goals. The owner
+wants each task to carry a difficulty that updates itself, with predicted time
+and tokens beside the actuals. Research: `task-estimation/REPORT.md` in the
+owner's strategy folder (a back-test on 341 finished tasks).
+
+### Decided
+
+1. **§1.1 still stands for what it meant:** no points field people are asked
+   to fill in, no timesheet. What is added is a **forecast Laika computes**
+   from data it already holds, with an optional override.
+2. **Size** is XS / S / M / L / XL relative to the project's typical task,
+   with weights 0.25 / 0.5 / 1 / 2 / 4 — each level double the last, because
+   the honest error is about ×1.7.
+3. **Forecasts are ranges**, likely (p50) to pessimistic (p80), for **build
+   time** (first start to first finish) and for tokens. Review wait and rework
+   are reported separately, not folded in.
+4. **Sources.** Signals from the task itself (acceptance text, criteria,
+   subtasks, tags, dependencies) and the most similar finished tasks in the
+   same project, computed inside Laika with no outside service. Optional: the
+   agent's own estimate at claim, and the org's configured AI provider (off by
+   default, monthly cap). Each optional source earns weight only by beating
+   the plain project median against actuals. **A person's override is what is
+   shown.** Every size carries its *why*: each factor's contribution and the
+   similar tasks it used.
+5. **Frozen at claim.** The forecast in force when work starts is kept, and
+   every estimate-versus-actual uses that copy. Estimates are kept as
+   append-only history.
+6. **Cold start:** size only; hours after 10 finished tasks in the project;
+   tokens after 10 tasks with attributed token data.
+7. **Recompute** on create, on an edit of title, description or acceptance,
+   on a subtask or dependency change — cheap, keyed on a hash of the inputs;
+   refitting runs nightly. A parent's figures come from its children.
+8. **Accuracy is reported per project and per agent client** (only when at
+   least 3 people use that client), **never per person** (D-078 item 6).
