@@ -1,0 +1,48 @@
+/*
+ * The size chip (D-085, LAI-771): the card, the List's Size column and the
+ * task panel draw the same one. Existing tokens only (D-020), so both themes
+ * come for free: the small sizes neutral, a typical task blue, the large ones
+ * stronger — never red, because a large task is not a problem.
+ */
+.size-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1875rem;
+  flex: none;
+  padding: 0.0625rem 0.3125rem;
+  border: 1px solid var(--chip-neutral-border);
+  border-radius: var(--radius-chip);
+  background: var(--chip-neutral-bg);
+  color: var(--chip-neutral);
+  font-family: var(--font-mono);
+  font-size: 0.65625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.size-chip-M {
+  border-color: var(--chip-blue-border);
+  background: var(--chip-blue-bg);
+  color: var(--chip-blue);
+}
+
+.size-chip-L {
+  border-color: var(--chip-purple-border);
+  background: var(--chip-purple-bg);
+  color: var(--chip-purple);
+}
+
+.size-chip-XL {
+  border-color: var(--chip-orange-border);
+  background: var(--chip-orange-bg);
+  color: var(--chip-orange);
+}
+
+/* A person set it. The hover says so in words. */
+.size-chip-dot {
+  width: 0.3125rem;
+  height: 0.3125rem;
+  border-radius: 50%;
+  background: currentColor;
+}

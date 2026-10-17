@@ -119,6 +119,11 @@
 .list-col-pri {
   width: 3.625rem;
 }
+/* The size chip, `XL` and the dot a person's size wears (D-085). Taken from
+   SUMMARY, not added to the table's minimum, so a laptop scrolls no further. */
+.list-col-size {
+  width: 3.5rem;
+}
 .list-col-assignee {
   width: 9.375rem;
 }

@@ -26,6 +26,14 @@ import { projects, projectStatuses, taskDependencies, tasks } from '../db/schema
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { addComment, commentCounts } from './comments.ts';
+import {
+  freezeEstimateAtStart,
+  refreshEstimate,
+  setSizeOverride,
+  sizeViews,
+  type SizeLevel,
+  type SizeView,
+} from './estimates.ts';
 import { normaliseTagNames, setTaskTags, tagsForTasks, taskIdsWithTag } from './tags.ts';
 import { requireProjectBySlug } from './projects.ts';
 import {
@@ -60,7 +68,7 @@ import {
  * checks against the original. LAI-119 converges the two route files that
  * still do.
  */
-export { CREATED_VIA, TASK_PRIORITIES, TASK_STATUSES } from '../db/enums.ts';
+export { CREATED_VIA, SIZE_LEVELS, TASK_PRIORITIES, TASK_STATUSES } from '../db/enums.ts';
 
 export interface TaskView {
   id: string;
@@ -186,6 +194,13 @@ export interface TaskView {
    * Null once the task is done or cancelled.
    */
   send_back: Pick<SendBackView, 'reason_md' | 'decided_by' | 'created_at'> | null;
+  /**
+   * Its size and build-time forecast (§4.32, D-085): the level shown — a
+   * person's when one is set — the computed one beside it, and the p50–p80
+   * range once the project has history. Null only before Laika has computed
+   * one. The *why* is `GET /tasks/:id/estimate`'s, not every list's.
+   */
+  size: SizeView | null;
   created_at: number;
   updated_at: number;
 }
@@ -215,6 +230,8 @@ interface ViewContext {
   readonly statusNames: ReadonlyMap<string, string>;
   /** The send-back each task carries, if any (D-082). */
   readonly sendBacks: ReadonlyMap<string, SendBackView>;
+  /** The size in force per task (D-085) — one query whatever the page. */
+  readonly sizes: ReadonlyMap<string, SizeView>;
 }
 
 function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
@@ -260,6 +277,7 @@ function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
             .map((r) => [r.id, r.name] as const),
     ),
     sendBacks: activeSendBacks(db, rows),
+    sizes: sizeViews(db, rows),
   };
 }
 
@@ -306,6 +324,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     blocked_by: deps,
     blocks: context.edges.blocks.get(row.id) ?? [],
     send_back: sendBackOf(context.sendBacks.get(row.id)),
+    size: context.sizes.get(row.id) ?? null,
     comment_count: context.comments.get(row.id) ?? 0,
     tags: context.tags.get(row.id) ?? [],
     started_at: row.startedAt,
@@ -635,6 +654,8 @@ export interface CreateTaskInput {
   /** Unix-ms at a UTC midnight (§4.5). */
   due_on?: number | undefined;
   planned_start?: number | undefined;
+  /** A person's size from the start (D-085); the computed one stays beside it. */
+  size?: SizeLevel | undefined;
   created_via?: 'web' | 'mcp' | 'api' | 'webhook' | 'meeting' | undefined;
   now?: number;
 }
@@ -719,18 +740,25 @@ export function createTask(
       });
     }
 
+    // Its size, in the same write (D-085): the board learns of the task from
+    // this create's activity row, and must not draw it without one. Its
+    // parent's figures follow, since they come from its children.
+    refreshEstimate(db, id, now);
+    if (input.size !== undefined) setSizeOverride(db, actor.userId, id, input.size, now);
+
     appendActivity(db, {
       orgId: project.orgId,
       projectId: project.id,
       taskId: id,
       ...activityActor(actor),
       type: 'task.created',
-      // The parent is named only when there is one, so a top-level task's row
-      // is the row it always was (§4.8, D-066).
+      // The parent and a size are named only when there is one, so a plain
+      // task's row is the row it always was (§4.8, D-066, D-085).
       payload: {
         key: `${project.prefix}-${String(number)}`,
         title: input.title,
         ...(parentId === null ? {} : { parent_task_id: parentId }),
+        ...(input.size === undefined ? {} : { size: input.size }),
       },
       now,
     });
@@ -887,6 +915,11 @@ export interface UpdateTaskInput {
   /** `null` clears; unix-ms at a UTC midnight sets (§4.5). */
   due_on?: number | null | undefined;
   planned_start?: number | null | undefined;
+  /**
+   * A person's size (D-085): a level sets it, `null` goes back to the
+   * computed one. Anyone who may edit the task may size it.
+   */
+  size?: SizeLevel | null | undefined;
   now?: number;
 }
 
@@ -937,56 +970,106 @@ export function updateTask(
     changes.assigneeId = input.assignee_id;
   }
 
-  // Tags are not a column, so they are not in `changes` — they are applied
-  // separately and get their own activity row naming the field (§4.16, D-027).
-  const tagChange =
-    input.tags === undefined
-      ? null
-      : setTaskTags(db, {
-          taskId,
+  // **One write, whole or not at all** (LAI-771 review, B1). The tags, the
+  // fields and a person's size are each the caller's request, so a size that
+  // cannot be stored must not leave the rest saved behind an error. The
+  // estimator inside is best effort and is never the reason this rolls back.
+  // `immediate` for the reason `bestEffort` gives: the write lock before the
+  // first read.
+  return db.transaction(
+    () => {
+      // Tags are not a column, so they are not in `changes` — they are applied
+      // separately and get their own activity row naming the field (§4.16, D-027).
+      const tagChange =
+        input.tags === undefined
+          ? null
+          : setTaskTags(db, {
+              taskId,
+              projectId: project.id,
+              names: normaliseTagNames(input.tags),
+              now,
+            });
+
+      if (tagChange !== null) {
+        appendActivity(db, {
+          orgId: project.orgId,
           projectId: project.id,
-          names: normaliseTagNames(input.tags),
+          taskId,
+          ...activityActor(actor),
+          // `task.updated` with the field named — the shape `sprint_id` uses, and
+          // deliberately not a seventh §4.8 verb (D-027).
+          type: 'task.updated',
+          payload: { field: 'tags', from: tagChange.from, to: tagChange.to },
           now,
         });
+      }
 
-  if (tagChange !== null) {
-    appendActivity(db, {
-      orgId: project.orgId,
-      projectId: project.id,
-      taskId,
-      ...activityActor(actor),
-      // `task.updated` with the field named — the shape `sprint_id` uses, and
-      // deliberately not a seventh §4.8 verb (D-027).
-      type: 'task.updated',
-      payload: { field: 'tags', from: tagChange.from, to: tagChange.to },
-      now,
-    });
-  }
+      if (Object.keys(changes).length > 0) {
+        db.update(tasks)
+          .set({ ...changes, updatedAt: now })
+          .where(eq(tasks.id, taskId))
+          .run();
 
-  if (Object.keys(changes).length === 0) {
-    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
-  }
+        appendActivity(db, {
+          orgId: project.orgId,
+          projectId: project.id,
+          taskId,
+          ...activityActor(actor),
+          // §5: "A task may be reassigned while in_progress — that is `task.assigned`,
+          // not a status change."
+          type: reassigning ? 'task.assigned' : 'task.updated',
+          payload: reassigning
+            ? { from: task.assigneeId, to: input.assignee_id ?? null }
+            : { changed: apiFieldNames(tasks, Object.keys(changes)) },
+          now,
+        });
+      }
 
-  db.update(tasks)
-    .set({ ...changes, updatedAt: now })
-    .where(eq(tasks.id, taskId))
-    .run();
+      // **The size follows what the model reads, and nothing else** (D-085): the
+      // text, the tags and the parent. A priority, an assignee or a date never
+      // reaches the estimate at all; an edit that leaves the inputs as they were
+      // is a hash comparison inside it.
+      const parentMoved = 'parentTaskId' in changes;
+      if (
+        tagChange !== null ||
+        parentMoved ||
+        'title' in changes ||
+        'descriptionMd' in changes ||
+        'acceptanceMd' in changes
+      ) {
+        refreshEstimate(db, taskId, now);
+      }
+      // A subtask moved: both parents' figures came from their children.
+      if (parentMoved) {
+        if (task.parentTaskId !== null) refreshEstimate(db, task.parentTaskId, now);
+        if (input.parent_task_id) refreshEstimate(db, input.parent_task_id, now);
+      }
 
-  appendActivity(db, {
-    orgId: project.orgId,
-    projectId: project.id,
-    taskId,
-    ...activityActor(actor),
-    // §5: "A task may be reassigned while in_progress — that is `task.assigned`,
-    // not a status change."
-    type: reassigning ? 'task.assigned' : 'task.updated',
-    payload: reassigning
-      ? { from: task.assigneeId, to: input.assignee_id ?? null }
-      : { changed: apiFieldNames(tasks, Object.keys(changes)) },
-    now,
-  });
+      const sizeChange =
+        input.size === undefined
+          ? null
+          : setSizeOverride(db, actor.userId, taskId, input.size, now);
+      if (sizeChange !== null) {
+        appendActivity(db, {
+          orgId: project.orgId,
+          projectId: project.id,
+          taskId,
+          ...activityActor(actor),
+          // The field named, as tags and the sprint are — not a new verb (D-027).
+          type: 'task.updated',
+          payload: { field: 'size', from: sizeChange.from, to: sizeChange.to },
+          now,
+        });
+      }
 
-  return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+      return viewOne(
+        db,
+        db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+        project.prefix,
+      );
+    },
+    { behavior: 'immediate' },
+  );
 }
 
 /** Where a claim may take a task from (§5, M7, D-082). */
@@ -1066,8 +1149,6 @@ export function claimTask(
       });
     }
 
-    const after = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
-
     appendActivity(db, {
       orgId: project.orgId,
       projectId: project.id,
@@ -1087,7 +1168,12 @@ export function claimTask(
       now,
     });
 
-    return viewOne(db, after, project.prefix);
+    // The forecast work starts under is kept (D-085 item 5) — at the first
+    // start only, as `started_at` is. After the activity row and best effort,
+    // so it can never cost the claim its record (LAI-771 review, B1).
+    if (before.startedAt === null) freezeEstimateAtStart(db, taskId, now);
+
+    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
   });
 }
 
@@ -1238,6 +1324,16 @@ export function changeStatus(
     now,
   });
 
+  // After the activity row, and best effort (LAI-771 review, B1): this
+  // function has no transaction, and a failure here once fell between the
+  // status write and its row. A first start by any route freezes the
+  // forecast, as a claim does (D-085); a cancelled subtask leaves its
+  // parent's sum, and an uncancelled one rejoins.
+  if (to === 'in_progress' && task.startedAt === null) freezeEstimateAtStart(db, taskId, now);
+  if (task.parentTaskId !== null && (to === 'cancelled' || task.status === 'cancelled')) {
+    refreshEstimate(db, task.parentTaskId, now);
+  }
+
   return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
 }
 
@@ -1369,6 +1465,8 @@ export function addTaskDependency(
     payload: { depends_on: dependsOnTaskId },
     now,
   });
+  // What a task is blocked by is one of the model's inputs (D-085).
+  refreshEstimate(db, taskId, now);
 
   return getTask(db, actor, taskId);
 }
@@ -1404,6 +1502,7 @@ export function removeTaskDependency(
     payload: { depends_on: dependsOnTaskId },
     now,
   });
+  refreshEstimate(db, taskId, now);
 
   return getTask(db, actor, taskId);
 }

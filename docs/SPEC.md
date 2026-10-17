@@ -53,6 +53,16 @@ sprint-based until a task makes it otherwise** (LAI-289). Tasks also carry a
 one-level `parent_task_id` (subtasks). Epics, story points and attachments stay
 out.
 
+**Changed 2026-10-17 (D-085).** *Story points* and *time tracking* stay out in
+the sense they were meant: no points field anybody is asked to fill in, no
+velocity in points, no timesheet. What exists instead is a **forecast Laika
+computes** from what it already holds — a size `XS`–`XL` relative to the
+project's typical task, a build-time range once the project has history, and
+the actual beside it — with an optional override by anyone who may edit the
+task (§4.32, §6.4). It is never a score of people: accuracy is reported per
+project, and per agent client only where at least three people use it (D-078
+item 6).
+
 ---
 
 ## 2. Glossary
@@ -310,6 +320,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.invite.expire` | §11.6 |
 | `system.meeting_review.expire` | §11.6 |
 | `system.local_activity.prune` | §11.6: local-activity retention (D-079) |
+| `system.estimate.refit` | §11.6: the nightly refit of sizes and forecasts (D-085) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
 does for §3.1 and §3.2.
@@ -456,6 +467,10 @@ which is the check working on the document it exists to pin.
 | `stale_flagged_at` | nullable, set by cron (§11.6) |
 | `position` | nullable — **manual board order**, one sequence per project; a lane draws its tasks in this order (D-060, D-070). An opaque key compared byte-wise: set on create at the **end** of the project's order, moved only by `POST /tasks/:id/reorder`, which writes this one row. Nullable only so the column could be added to a populated table — the boot backfill fills every null in the order the board already showed (priority, then number), so a served task always has one |
 | `started_at`, `completed_at` | nullable — **served on `TaskView`** (LAI-126). `started_at` is stamped the **first** time a task enters `in_progress`, by any route in — a claim after the task was released included (LAI-743) — and a later re-entry does not move it: a task sent back for rework did not start twice, and overwriting would silently shorten every cycle time derived from it (§11.6). |
+| `estimate_id` | nullable FK `task_estimates` (§4.32) — the model's estimate in force; null only until Laika has computed one (D-085) |
+| `estimate_at_start_id` | nullable FK `task_estimates` — the model's estimate in force when work **first** started, set when `started_at` is and never moved again (D-085 item 5). Every estimate-versus-actual reads this copy |
+| `size_override_id` | nullable FK `task_estimates` — the `person` row in force; null when nobody has set a size |
+| `estimate_hash` | nullable — a hash of everything the model read for the current estimate (title, description, acceptance, tags, what blocks it, its children and the project's model version), so a recompute that would change nothing costs nothing |
 
 **`started_at`** is set the first time a task enters `in_progress` and is never
 moved again. **`completed_at`** is set on **every** arrival at `done`, and is
@@ -727,7 +742,8 @@ one.
 `project_memberships(project_id, user_id)` unique, `projects(slug)` unique,
 `unlisted_work(user_id, created_at)`, `meeting_reviews(project_id, status)`,
 `sprints(project_id, starts_on)`, `sprints(project_id, status)`, `tasks(sprint_id)`,
-`tasks(parent_task_id)`, `tasks(status_id)`,
+`tasks(parent_task_id)`, `tasks(status_id)`, `tasks(estimate_id)`,
+`tasks(estimate_at_start_id)`, `tasks(size_override_id)`, `task_estimates(task_id, created_at)`,
 `project_statuses(project_id, position)` unique, `member_ratings(user_id, created_at)`,
 `board_activity_days(user_id, day)` unique, `local_activity_days(user_id, day, collector_id)`
 unique, `local_activity_days(day)`, `pushed_commit_keys(user_id, key)` unique,
@@ -1211,6 +1227,87 @@ waiting, and no later delivery rewrites it.
   **No CI result is not a result**: with nothing reported for the head commit,
   the test items and the CI line are left as they were.
 
+### 4.32 `task_estimates`
+
+A task's size and build-time forecast, as history (D-085, LAI-771).
+**Append-only**, as `member_ratings` is: a recompute or a person's override
+adds a row and never edits one, and three triggers refuse `UPDATE`, `DELETE`
+and an `INSERT OR REPLACE` over an existing id — re-established at every boot.
+`tasks` points at the rows in force (§4.5), so what is shown changes by moving
+a pointer and the history is never rewritten.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `task_id` | FK `tasks`, `ON DELETE RESTRICT` — a history row keeps its subject, as `activity`'s do (LAI-135); tasks are cancelled, never deleted |
+| `source` | `model` \| `person` |
+| `level` | `XS` \| `S` \| `M` \| `L` \| `XL` — relative to the project's typical task, weights 0.25 / 0.5 / 1 / 2 / 4. Null only on a `person` row that clears an override (CHECK) |
+| `weight` | nullable real — the computed weight, 1 being the project's typical task; on `model` rows |
+| `build_p50_ms`, `build_p80_ms` | nullable — the build-time forecast, likely and pessimistic. Null in a cold start |
+| `subtasks` | integer, default 0 — children rolled into it |
+| `inputs_hash` | nullable — what the model read, hashed: `tasks.estimate_hash` when the row was written |
+| `model_version` | nullable — the project's fitted model it came from |
+| `factors_json` | the *why* as it was when computed — each factor's contribution in levels, the similar finished tasks it used, the method and the typical task. Default `{}` |
+| `set_by` | nullable FK `users` — the person, on a `person` row, and only there (CHECK) |
+| `created_at` | |
+
+**What the model reads** — the task's own signals and nothing about who holds
+it: the words of its description and acceptance (the strongest signal on
+Laika's own history, rank correlation 0.45), its criteria, what it is blocked
+by, its tags, and the 7 most similar finished tasks in the same project by
+TF-IDF over title, description and acceptance. A ridge regression in log
+space, shrunk towards 0.9 per log word, blended with the similar tasks' median
+— additive, so the *why* lists each factor's exact contribution and they add up
+to the weight. Priority is read and given nothing, and the *why* says so.
+Computed inside Laika; nothing leaves it.
+
+**When it is computed.** Inline, in the write that changed an input — create,
+an edit of the title, description, acceptance or tags, a dependency added or
+removed, a subtask created, moved or cancelled — keyed on `estimate_hash`, so
+an edit the model does not read never reaches it and one that leaves the
+inputs unchanged is a comparison. A `model` row is written only when the
+output moves: another level, the forecast appearing or going, its p50 moving
+more than ×1.1, or the subtask count. A done or cancelled task keeps the
+estimate it has. The **nightly refit** (§11.6) fits each project again from its
+history and recomputes every open task against it. **Best effort, never the
+reason a task write fails:** each inline computation runs in a savepoint, and a
+failure is logged (`estimate.failed`) and leaves the task write and its
+activity row standing; the refit computes what was missed.
+
+**Build time** is first start (`started_at`) to first finish — the task's
+first move into review or done. **Review wait** (every stretch in review) and
+**rework** (from a send-back to the next finish) are reported beside it, never
+folded in (D-085 item 3).
+
+**Cold start.** Below 10 finished tasks with a build time, a project's sizes
+are from the text alone, against its typical task's text, and no hours are
+shown (D-085 item 6). From 10 the forecast is a p50–p80 range, both ends
+calibrated on the model's own past errors — the p50 moved by their median, so
+"likely" means what happens now, not what happened when the history was made.
+
+**It must beat the median.** Each refit replays the project's history in time
+order — each task predicted only from tasks finished before it started — and
+compares the typical error with the plain project median's. A model that does
+not beat the median forecasts the median's range instead, and says so.
+
+**A parent's figures come from its children** (D-085 item 7): its weight is the
+larger of its own and its non-cancelled children's sum, and its range adds the
+children's as distributions (by their mean and variance), not by summing
+medians.
+
+**Frozen at claim.** `estimate_at_start_id` is the newest `model` row written
+at or before `started_at` — the estimate in force when work first started, by a
+claim or any move into `in_progress` — and is never moved once set. A freeze a
+failure skipped is made by the next refit by the same rule, so it can never
+take an estimate written after work began; a task that started before any
+estimate existed for it has none, and is not measured.
+
+**A person's size** is a `person` row and `tasks.size_override_id`; anyone with
+`task.write` may set or clear it, it is what is shown, and the computed size
+stays beside it. Setting it writes `task.updated` with `{ field: 'size', from,
+to }` — not a new verb (D-027's shape). A `model` row writes no `activity`: it
+is derived, as `ready` is.
+
 ## 5. Task lifecycle
 
 ```
@@ -1480,6 +1577,8 @@ POST   /api/v1/tasks/:id/claim               POST /api/v1/tasks/:id/status
 POST   /api/v1/tasks/:id/finish              body { summary, checklist?, commits?, branch?, pull_request?, tests? }
                                              → review, with a round and its proof (finish_task's twin, D-082)
 GET    /api/v1/tasks/:id/rounds              { rounds (newest first), send_back }
+GET    /api/v1/tasks/:id/estimate            size, why, forecast frozen at start, actual, history (D-085)
+GET    /api/v1/projects/:slug/estimates/accuracy  per project, and per agent client with ≥ 3 people; never per person
 POST   /api/v1/tasks/:id/accept              → the first visible done status   (session only; the done rule, §5)
 POST   /api/v1/tasks/:id/send-back           body { reason } → the first visible in-progress status   (session only)
 GET    /api/v1/review                        the review queue — every review task the caller can act on
@@ -1701,6 +1800,7 @@ not find them and should not**:
 | `status_name` | the `project_statuses.name` of `status_id` (§4.20) |
 | `blocked_by`, `blocks` | **both directions of §4.6** — see §4.5. `ready` depends only on `blocked_by` |
 | `send_back` | `{ reason_md, decided_by, created_at }` of the task's current send-back (§4.27), or `null` (D-082) |
+| `size` | the estimate in force (§4.32): `{ level, computed, overridden, weight, build_p50_ms, build_p80_ms, subtasks }` — `level` is a person's size when one is set and `computed` is Laika's beside it — or `null` before one is computed (D-085) |
 
 `created_at` and `updated_at` are on every view and are not listed per endpoint.
 
@@ -1720,6 +1820,30 @@ pull_request, tests, ci, created_at }`, each item with `id`, `state`,
 delivery named it, `null` before (D-083). `ci` is `{ head_sha, total, passed,
 failed, pending, failed_names }` from §4.31, or `null` when no CI result was
 reported for the round's head commit.
+
+**Sizes and forecasts (D-085, LAI-771).** `POST /projects/:slug/tasks` and
+`PATCH /tasks/:id` take an optional `size` — `XS` to `XL`, or `null` on `PATCH`
+to go back to the computed one — under `task.write`, so anyone who may edit the
+task may size it; anything else is `422`. A `size` that cannot be stored
+refuses the whole `PATCH`, and nothing of it is saved — a person's size is their
+write, not a derived figure. `GET /tasks/:id/estimate` answers `{ task_id, size,
+why, override, at_start, actual, history }` under `project.read`: `why` is
+`{ early, method, typical: { words, build_ms }, factors: [{ key, label, levels
+}], similar: [{ task_id, key, title, build_ms, similarity }], model_version,
+computed_at }`; `override` is `{ level, set_by,
+set_at }`; `at_start` is the frozen copy `{ level, build_p50_ms, build_p80_ms,
+estimated_at }`; `actual` is `{ build_ms, review_wait_ms, rework_ms, finishes,
+first_finish_at }`; `history` the latest 20 rows, newest first.
+`GET /projects/:slug/estimates/accuracy` answers `{ project_id, finished,
+forecasts_after, live, backtest, by_client, model_version }`: `live` measures
+frozen-at-claim forecasts against actual build times — `{ n, typical_error,
+bias, p80_hit_rate }`, the error a ratio such as `1.7`; `backtest` is the
+replay against the plain median, `{ n, method_error, median_error,
+p80_hit_rate, beats_median }`, or `null` before there is one; `by_client` is
+the same figures per agent client, **only where at least three distinct people
+are behind the measured tasks it finished first** — not everyone who has used
+it — with `people` as a count. Nothing in either answer names or groups
+by a person.
 
 **The GitHub webhook secret (LAI-753).** `GET /org` carries `github_webhook:
 { configured, payload_url }` for a caller who may *Configure webhooks* (§3.1,
@@ -1821,12 +1945,12 @@ read them.
 | `laika_whoami` | `{}` | the identity this token acts as — `user_id`, `name`, `email`, `org_role`, `token_scope` — and `how_to_work`, the same text as the server's `instructions`, for clients that drop those (D-076). Reads nothing, changes nothing |
 | `list_projects` | `{}` | projects the user can read |
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age |
-| `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`) |
+| `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`), and `estimate` — the size, its *why*, the forecast frozen at start and the actual, as `GET /tasks/:id/estimate` answers (D-085) |
 | `get_project_context` | `{ project }` | `context_md`, its recent edit history, open-task summary, members + roles |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
-| `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only |
-| `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start? }` | task. Every field optional; an omitted one is left alone; `null` on `parent` or a date clears it. **No `status`** |
+| `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only |
+| `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size? }` | task. Every field optional; an omitted one is left alone; `null` on `parent`, a date or `size` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085) |
 | `start_working` | `{ task, branch? }` | task, or `409` with the current assignee |
 | `update_status` | `{ task, status, note? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
 | `set_task_sprint` | `{ task, sprint }` | task. `sprint: null` takes it out of whichever it is in |
@@ -2343,7 +2467,9 @@ the lead names. An empty status is still a column.
   a **subtasks** `n/m` on a parent and `↳ KEY` on a child, and the **due
   date only when it is today or past** on open work — amber *Due today*, or
   red with a ⚠ once overdue; a date still ahead, and any date on finished
-  work, draws nothing (D-069). Each is a card-field toggle.
+  work, draws nothing (D-069). Each is a card-field toggle. So is the **size**
+  (D-085): a small `XS`–`XL` chip, with a dot when a person set it; no hours on
+  the card.
 - Cards **do not** show a stale marker, a comment count or an age (D-069).
   Staleness is still flagged by the server (§11.6) and listed in Activity;
   comments are counted in the drawer's tabs; the List keeps its Updated column.
@@ -2365,9 +2491,10 @@ the lead names. An empty status is still a column.
   "as of" notice, unless the reader has lost access.
 
 **List.** The same tasks as a sortable, densely readable table: key, title,
-status, assignee, priority, dependency count, due, updated — the title's
-sub-line names the parent (`↳ KEY`) and the blockers. Sortable on every column,
-multi-filter on status / assignee / priority / ready / blocked. This is the view
+status, assignee, priority, dependency count, size (D-085, sorted by level,
+then weight), due, updated — the title's sub-line names the parent (`↳ KEY`)
+and the blockers. Sortable on every column, multi-filter on status / assignee /
+priority / ready / blocked. This is the view
 for triage and for boards too large to drag. It opens **newest-updated first**,
 and its sort is URL state like the filters (D-065). Created and updated read
 `just now` / `N min ago` / `N h ago` for a day, then a date and time, with the
@@ -2437,7 +2564,7 @@ call MCP; agents do.
 | **Login & invite** | 1–2 | `POST /auth/*`, `GET /invites/:token`, `POST /invites/accept`, `GET /me` | — | ✅ |
 | **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `POST /projects/:slug/join`, `GET/POST/PATCH/DELETE /projects/:slug/members` | `get_project_context` | ✅ |
 | **Board** | 2 | `GET/POST /projects/:slug/tasks`, `PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `GET /projects/:slug/members`, `GET /events`, `GET /watching` | `create_task`, `start_working`, `update_status`, `finish_task` | ✅ |
-| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
+| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=` | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **Tokens** | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
@@ -2503,6 +2630,13 @@ anything missing sends the task back.
   checks passed*, *CI: lint failed*) — with earlier rounds folded. A comment that is a send-back's reason is
   marked *sent back*, and a card carrying a send-back wears a *sent back*
   marker with the reason as its tooltip.
+  **A Forecast section under Acceptance** (D-085): the size shown — a person's
+  marked as theirs, with Laika's beside it — and a control to set or clear it
+  for anyone who may edit the task; the build-time range, or *early* with how
+  many finished tasks it waits for; the forecast frozen when work started
+  against the actual build time, review wait and rework; the *why* — each
+  factor's contribution in levels and the similar finished tasks as links;
+  and the project's accuracy figure. Never a figure about a person.
   **A watch toggle and who else is watching** (D-047, D-054), and an
   **`@` autocomplete in the comment box fed by `GET /projects/:slug/mentionable`
   — never by the member list**, because who may be mentioned is the server's
@@ -2751,6 +2885,10 @@ One interval-driven scheduler in the same process:
 - **stale-task flagging** — `in_progress` with no heartbeat or commit for 3 days
   sets `stale_flagged_at`
 - invite expiry, meeting-review expiry (7 days)
+- **estimate refit** (D-085) — every live project's size model fitted again
+  from its history and every open task recomputed against it, daily **and once
+  at boot**, so a deploy starts with every task estimated. It writes no
+  `activity` row: the figures are derived, as `ready` is
 - weekly vacuum
 
 Jobs are idempotent and write to `activity` only when they change something.

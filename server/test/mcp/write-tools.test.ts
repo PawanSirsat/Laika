@@ -101,6 +101,48 @@ afterEach(async () => {
   h.close();
 });
 
+describe('a size is optional on create_task and update_task (D-085, LAI-771)', () => {
+  it('sets it on create, changes and clears it on update, and keeps the computed one', async () => {
+    const client = await connect(await mint());
+
+    const created = payload(
+      await client.callTool({
+        name: 'create_task',
+        arguments: { project: 'core', title: 'Sized by the agent', size: 'L' },
+      }),
+    ).task as { key: string; size: { level: string; computed: string; overridden: boolean } };
+    expect(created.size).toMatchObject({ level: 'L', overridden: true });
+
+    const changed = payload(
+      await client.callTool({
+        name: 'update_task',
+        arguments: { task: created.key, size: 'XS' },
+      }),
+    ).task as { size: { level: string; overridden: boolean } };
+    expect(changed.size).toMatchObject({ level: 'XS', overridden: true });
+
+    const cleared = payload(
+      await client.callTool({
+        name: 'update_task',
+        arguments: { task: created.key, size: null },
+      }),
+    ).task as { size: { level: string; computed: string; overridden: boolean } };
+    expect(cleared.size).toMatchObject({ level: created.size.computed, overridden: false });
+
+    await client.close();
+  });
+
+  it('refuses a size that is not XS to XL', async () => {
+    const client = await connect(await mint());
+    const result = await client.callTool({
+      name: 'create_task',
+      arguments: { project: 'core', title: 'Too big', size: 'XXL' },
+    });
+    expect(result.isError).toBe(true);
+    await client.close();
+  });
+});
+
 describe('the tools are registered', () => {
   it('lists the five that have a §3 permission behind them', async () => {
     const client = await connect(await mint());

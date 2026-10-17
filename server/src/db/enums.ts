@@ -239,3 +239,19 @@ export type CheckOutcome = (typeof CHECK_OUTCOMES)[number];
 /** §4.27's `decision` (D-082): what a person did with work waiting in review. */
 export const REVIEW_DECISIONS = ['accepted', 'sent_back'] as const;
 export type ReviewDecision = (typeof REVIEW_DECISIONS)[number];
+
+/**
+ * §4.32's `level` (D-085, LAI-771): a task's size relative to its project's
+ * typical task. Each level is double the last — weights 0.25 / 0.5 / 1 / 2 / 4
+ * — because the honest error of a forecast here is about ×1.7, and a finer
+ * scale would claim a precision the model does not have.
+ */
+export const SIZE_LEVELS = ['XS', 'S', 'M', 'L', 'XL'] as const;
+export type SizeLevel = (typeof SIZE_LEVELS)[number];
+
+/**
+ * §4.32's `source` (D-085): `model` is what Laika computed; `person` is a
+ * size somebody set, or cleared, by hand.
+ */
+export const ESTIMATE_SOURCES = ['model', 'person'] as const;
+export type EstimateSource = (typeof ESTIMATE_SOURCES)[number];

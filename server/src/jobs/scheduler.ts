@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { type Db } from '../db/client.ts';
 import { type Logger } from '../log.ts';
+import { refitEstimates } from '../services/estimates.ts';
 import { snapshot } from './backup.ts';
 import {
   expireInvites,
@@ -87,6 +88,14 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
     { name: 'invite.expiry', everyMs: HOUR, run: (now) => expireInvites(db, now) },
     { name: 'meeting_review.expiry', everyMs: HOUR, run: (now) => expireMeetingReviews(db, now) },
     { name: 'db.vacuum', everyMs: 7 * DAY, run: () => vacuum(db) },
+    // Sizes and forecasts refitted from each project's history (D-085), and
+    // once at boot, so a deploy starts with every task estimated.
+    {
+      name: 'estimate.refit',
+      everyMs: DAY,
+      run: (now) => refitEstimates(db, now),
+      atStart: true,
+    },
   ];
 }
 

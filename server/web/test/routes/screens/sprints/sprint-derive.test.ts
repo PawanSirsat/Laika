@@ -61,6 +61,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     acceptance_md: null,
     blocks: [],
     send_back: null,
+    size: null,
     comment_count: 0,
     started_at: null,
     completed_at: null,

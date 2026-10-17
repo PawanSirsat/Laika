@@ -272,6 +272,7 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.invite.expire', {}],
     ['system.meeting_review.expire', {}],
     ['system.local_activity.prune', {}],
+    ['system.estimate.refit', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
   ];

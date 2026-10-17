@@ -33,6 +33,7 @@ import { SubtasksSection } from '../task/SubtasksSection.tsx';
 import { CommentBody } from '../task/CommentBody.tsx';
 import { CommentComposer } from '../task/CommentComposer.tsx';
 import { EvidenceSection } from '../task/EvidenceSection.tsx';
+import { ForecastSection } from '../task/ForecastSection.tsx';
 import {
   demoAgentBuild,
   demoClaimLock,
@@ -737,6 +738,21 @@ export function TaskDetailPanel({
               )}
             </section>
           )}
+
+          {/*
+            The size and its forecast (D-085, LAI-771), directly under
+            Acceptance — the size is mostly derived from it. Keyed on
+            `updated_at` like the proof, so an edit that resizes it redraws it.
+          */}
+          <ForecastSection
+            slug={slug}
+            task={task}
+            mayEdit={mayEdit === true}
+            refreshKey={task.updated_at}
+            nameOf={(id) => personName(id, members)}
+            onOpen={onOpen}
+            onChanged={onTaskEdited}
+          />
 
           {/*
             The proof (D-082, LAI-758): the send-back first, then the latest

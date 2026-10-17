@@ -94,6 +94,8 @@ describe('migrations', () => {
     'sprints',
     'tags',
     'task_dependencies',
+    // LAI-771, D-085: sizes and forecasts, as append-only history.
+    'task_estimates',
     // LAI-758, D-082: the review gate's rounds, evidence and decisions.
     'task_evidence',
     'task_reviews',
@@ -150,6 +152,11 @@ describe('migrations', () => {
     ['pushed_commit_keys', ['user_id', 'key']],
     ['pushed_commit_keys', ['user_id', 'day']],
     ['pushed_commit_keys', ['day']],
+    // Sizes and forecasts (D-085, LAI-771): the three pointers, and a task's history.
+    ['tasks', ['estimate_id']],
+    ['tasks', ['estimate_at_start_id']],
+    ['tasks', ['size_override_id']],
+    ['task_estimates', ['task_id', 'created_at']],
   ];
 
   it('creates every index SPEC §4.13 requires', () => {
