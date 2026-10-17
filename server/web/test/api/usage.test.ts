@@ -9,12 +9,17 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  agentsNote,
+  attributedNote,
   compactTokens,
   getPersonUsage,
+  getTaskUsage,
   getUsage,
   mayReadOrgUsage,
   mayReadPeopleUsage,
+  roundLabel,
   shareOf,
+  type TaskUsage,
   USAGE_RANGES,
 } from '../../src/api/usage.ts';
 
@@ -94,5 +99,70 @@ void describe('how a figure is said', () => {
     assert.equal(shareOf(1, 1_000), '<1%');
     assert.equal(shareOf(9, 666), '1%');
     assert.equal(shareOf(100, 100), '100%');
+  });
+});
+
+void describe('a task’s tokens (LAI-770)', () => {
+  const view = (extra: Partial<TaskUsage> = {}): TaskUsage => ({
+    task_id: 't1',
+    key: 'LAI-7',
+    tz: 'UTC',
+    first_day: '2026-10-12',
+    last_day: '2026-10-16',
+    totals: { tokens: 666, input: 111, output: 222, cache_write: 333, cache_read: 1_054 },
+    people: 'everyone',
+    by_person: [],
+    by_round: [],
+    attributed: { tokens: 666, of: 706 },
+    ...extra,
+  });
+
+  void test('GET /tasks/:id/usage, in the reader’s zone', async () => {
+    const urls = stub({});
+    await getTaskUsage('t 1', 'Asia/Kolkata');
+    const url = new URL(urls[0] ?? '', 'http://x');
+    assert.equal(url.pathname, '/api/v1/tasks/t%201/usage');
+    assert.equal(url.searchParams.get('tz'), 'Asia/Kolkata');
+  });
+
+  void test('a round is named by its number and the day it was handed in, or as open', () => {
+    assert.equal(
+      roundLabel({ number: 1, finished_on: '2026-10-14' }),
+      'Round 1 · handed in 14 Oct',
+    );
+    assert.equal(roundLabel({ number: 3, finished_on: null }), 'Round 3 · open');
+  });
+
+  void test('the attributed share says whose work it is the share of — or why there is none', () => {
+    assert.equal(
+      attributedNote(view()),
+      '94% of what its people’s agents spent on those days is tied to a task.',
+    );
+    assert.equal(
+      attributedNote(view({ people: 'own', attributed: { tokens: 66, of: 106 } })),
+      '62% of what your agents spent on those days is tied to a task.',
+    );
+    for (const people of ['own', 'none'] as const) {
+      assert.equal(
+        attributedNote(view({ people, attributed: null })),
+        'Counted only where an agent marked this task or worked on a branch named LAI-7-…; the rest of their work is not in it.',
+      );
+    }
+  });
+
+  void test('a person’s agents, most first, compact', () => {
+    assert.equal(
+      agentsNote({
+        user_id: 'u',
+        name: 'Bea',
+        tokens: 1_240_000,
+        cache_read: 0,
+        by_agent: [
+          { agent: 'claude-code', tokens: 1_200_000, cache_read: 0 },
+          { agent: 'codex', tokens: 40_000, cache_read: 0 },
+        ],
+      }),
+      'Claude Code 1.2M · Codex 40K',
+    );
   });
 });

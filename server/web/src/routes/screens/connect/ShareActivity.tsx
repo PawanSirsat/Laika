@@ -176,7 +176,8 @@ export function ShareActivity({ canManageOrg }: { readonly canManageOrg: boolean
             <li>A one-way key for each commit already pushed, so it counts once</li>
             <li>
               Your agents’ token counts per agent and model — input, output and cache — from their
-              own session files (Claude Code, Codex, Gemini CLI)
+              own session files (Claude Code, Codex, Gemini CLI), and the Laika task they were spent
+              on, by its key alone: the task your agent marked, or the one your branch is named for
             </li>
           </ul>
           <p className="conn-note">

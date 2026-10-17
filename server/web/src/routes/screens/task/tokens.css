@@ -1,0 +1,85 @@
+/*
+ * The task panel's Tokens section (D-084, LAI-770). Tokens only, so both
+ * themes come from `theme.css`; the rows are the Usage page's (`usage.css`),
+ * and the figures wrap rather than scroll at phone width.
+ */
+
+.tk-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+}
+
+.tk-figure {
+  min-width: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--bg-column) 40%, var(--bg-card));
+}
+
+.tk-figure dt {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.tk-figure dd {
+  margin: 0.125rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.tk-total,
+.tk-cache,
+.tk-share {
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.tk-figure .tk-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.tk-note,
+.tk-empty {
+  margin: 0 0 var(--space-2);
+}
+
+.tk-empty code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.tk-block {
+  margin-top: var(--space-3);
+}
+
+.tk-h {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.tk-h-note {
+  font-weight: var(--weight-normal);
+  color: var(--text-muted);
+}
+
+/* The panel is narrower than the Usage page: names get less, the bar more. */
+.tk .usage-row {
+  grid-template-columns: minmax(0, 11rem) minmax(2.5rem, 1fr) auto;
+}
+
+@media (max-width: 480px) {
+  .tk .usage-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'name value'
+      'track track';
+  }
+}

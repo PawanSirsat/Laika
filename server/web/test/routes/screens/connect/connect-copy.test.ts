@@ -112,6 +112,14 @@ void describe('the project block', () => {
     assert.match(block, /laika_whoami/);
   });
 
+  void test('it tells an agent to mark its task before starting, and to name its branch for the key (LAI-770)', () => {
+    const block = projectBlock(ORIGIN, PROJECT);
+    assert.match(block, /`start_working` with the\s+`branch`/);
+    assert.match(block, /`update_status` to\s+`in_progress`/);
+    assert.match(block, /`ONR-42-short-name`/);
+    assert.match(block, /tokens/);
+  });
+
   void test('it teaches review, never done', () => {
     const block = projectBlock(ORIGIN, PROJECT);
     assert.match(block, /review, never done/i);
