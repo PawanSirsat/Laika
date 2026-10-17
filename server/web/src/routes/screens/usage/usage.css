@@ -101,6 +101,29 @@
   color: var(--text-secondary);
 }
 
+/* What a space cannot hold (review 1): said beside its figures, not hidden. */
+.usage-space-note {
+  margin: 0;
+  max-width: 76ch;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  color: var(--text-secondary);
+}
+
+.usage-space-note strong {
+  color: var(--text-primary);
+}
+
+.usage-space-note .usage-chip {
+  margin-left: 0.25rem;
+  padding: 0.125rem 0.625rem;
+  font-size: var(--text-xs);
+}
+
 /* ----------------------------------------------------------------- tiles */
 
 .usage-tiles {

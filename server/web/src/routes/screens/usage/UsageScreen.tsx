@@ -177,7 +177,17 @@ export function UsageScreen({ me, onNavigate }: UsageScreenProps) {
         ) : load.kind === 'loading' ? (
           <UsageSkeleton />
         ) : (
-          <UsageBody usage={load.usage} onNavigate={onNavigate} />
+          <UsageBody
+            usage={load.usage}
+            onNavigate={onNavigate}
+            {...(options.some((o) => o.value === '')
+              ? {
+                  onAllSpaces: () => {
+                    setScope('');
+                  },
+                }
+              : {})}
+          />
         )}
 
         {me !== undefined && (
@@ -197,13 +207,23 @@ export function UsageScreen({ me, onNavigate }: UsageScreenProps) {
 function UsageBody({
   usage,
   onNavigate,
+  onAllSpaces,
 }: {
   readonly usage: Usage;
   readonly onNavigate: (to: string) => void;
+  /** Present for a reader who may read the whole organisation. */
+  readonly onAllSpaces?: () => void;
 }) {
   const { totals } = usage;
+  /*
+   * **A space holds only tokens tied to its tasks** (§4.32: a row has a project
+   * only through its task), so in a space "unattributed" is always 0% — true
+   * and misleading (D-084 item 6). A space says instead what it cannot hold,
+   * with the organisation's unattributed share for a reader who may see it.
+   */
+  const space = usage.project;
+  const org = usage.org_totals;
   const nothing = totals.tokens + totals.cache_read === 0;
-  const days = usage.trend.map((d) => d.day);
   const link = (to: string) => (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
@@ -220,7 +240,11 @@ function UsageBody({
         >
           <dt className="usage-stat-label">Tokens</dt>
           <dd className="usage-stat-value">{compactTokens(totals.tokens)}</dd>
-          <dd className="usage-stat-sub">at least · input, output and cache writes</dd>
+          <dd className="usage-stat-sub">
+            {space === null
+              ? 'at least · input, output and cache writes'
+              : 'at least · tied to this space’s tasks'}
+          </dd>
         </div>
         <div
           className="usage-stat"
@@ -231,15 +255,29 @@ function UsageBody({
           <dd className="usage-stat-value">{compactTokens(totals.cache_read)}</dd>
           <dd className="usage-stat-sub">shown apart, not in tokens</dd>
         </div>
-        <div className="usage-stat" data-stat="unattributed">
-          <dt className="usage-stat-label">Unattributed</dt>
-          <dd className="usage-stat-value">
-            {shareOf(totals.tokens - totals.attributed_tokens, totals.tokens)}
-          </dd>
-          <dd className="usage-stat-sub">
-            {shareOf(totals.attributed_tokens, totals.tokens)} tied to a task
-          </dd>
-        </div>
+        {space === null ? (
+          <div className="usage-stat" data-stat="unattributed">
+            <dt className="usage-stat-label">Unattributed</dt>
+            <dd className="usage-stat-value">
+              {shareOf(totals.tokens - totals.attributed_tokens, totals.tokens)}
+            </dd>
+            <dd className="usage-stat-sub">
+              {shareOf(totals.attributed_tokens, totals.tokens)} tied to a task
+            </dd>
+          </div>
+        ) : (
+          <div className="usage-stat" data-stat="outside">
+            <dt className="usage-stat-label">Outside any space</dt>
+            <dd className="usage-stat-value">
+              {org === null ? '—' : shareOf(org.tokens - org.attributed_tokens, org.tokens)}
+            </dd>
+            <dd className="usage-stat-sub">
+              {org === null
+                ? 'the organisation’s, for owners and admins'
+                : 'of all tokens, tied to no task'}
+            </dd>
+          </div>
+        )}
         <div className="usage-stat" data-stat="per-day">
           <dt className="usage-stat-label">Per day</dt>
           <dd className="usage-stat-value">
@@ -249,6 +287,47 @@ function UsageBody({
         </div>
       </dl>
 
+      {space !== null && (
+        <p className="usage-space-note">
+          <strong>Unattributed tokens cannot be placed in a space.</strong> A space shows only the
+          tokens tied to its tasks; tokens no task holds count only across all spaces
+          {org === null
+            ? ', which owners and admins see.'
+            : ` — ${shareOf(org.tokens - org.attributed_tokens, org.tokens)} of them in this range.`}{' '}
+          {onAllSpaces !== undefined && (
+            <button type="button" className="usage-chip" onClick={onAllSpaces}>
+              Show all spaces
+            </button>
+          )}
+        </p>
+      )}
+
+      {nothing && space !== null ? (
+        <div data-state="space-empty">
+          <EmptyState
+            headline={`No tokens are tied to ${space.name}’s tasks yet`}
+            body={`A space counts the tokens agents spend on its tasks. Until agents mark the task they work on, tokens are tied to no task and count only across all spaces${org === null ? ', which owners and admins see' : ''}.`}
+          />
+        </div>
+      ) : (
+        <UsageDetail usage={usage} link={link} />
+      )}
+    </>
+  );
+}
+
+function UsageDetail({
+  usage,
+  link,
+}: {
+  readonly usage: Usage;
+  readonly link: (to: string) => (event: MouseEvent<HTMLAnchorElement>) => void;
+}) {
+  const { totals } = usage;
+  const nothing = totals.tokens + totals.cache_read === 0;
+  const days = usage.trend.map((d) => d.day);
+  return (
+    <>
       {nothing && (
         <EmptyState
           headline="No token usage in this range"
@@ -398,7 +477,9 @@ function UsageBody({
               Top tasks
             </h3>
             <span className="prof-card-caption">
-              {shareOf(totals.attributed_tokens, totals.tokens)} of tokens tied to a task
+              {usage.project === null
+                ? `${shareOf(totals.attributed_tokens, totals.tokens)} of tokens tied to a task`
+                : 'this space’s tasks'}
             </span>
           </header>
           {usage.top_tasks.length === 0 ? (

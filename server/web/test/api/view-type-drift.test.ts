@@ -314,6 +314,10 @@ const PAIRS: readonly Pair[] = [
     serverFile: 'services/local-activity.ts',
     client: 'ActivitySharing',
     clientFile: 'local-activity.ts',
+    clientOmits: {
+      usage_days_elsewhere:
+        'Sent only to a collector that names its collector_id (LAI-769 review 1); the web app never asks with one.',
+    },
   },
   {
     server: 'OwnLocalActivityView',

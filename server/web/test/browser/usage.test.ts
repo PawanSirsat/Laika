@@ -107,16 +107,34 @@ function orgUsage(days = 30) {
       },
     ],
     no_token_data: ['cursor', 'windsurf'],
+    org_totals: null,
   };
 }
 
-/** One space, as a member is answered: the same shape, nobody in it. */
-function spaceUsage(slug: string) {
+/**
+ * One space: only tokens tied to its tasks, so all of them attributed. An
+ * owner is also sent the organisation's totals, to say what no space holds; a
+ * member is sent `null`.
+ */
+function spaceUsage(slug: string, reader: 'owner' | 'member' = 'member') {
   return {
     ...orgUsage(30),
     project: { slug, name: slug === 'laika' ? 'Laika' : 'Onroute' },
     totals: figures(12_000_000, 800_000_000, 12_000_000),
     by_developer: null,
+    org_totals: reader === 'owner' ? figures(254_973_258, 16_346_307_361, 12_000_000) : null,
+  };
+}
+
+/** A space nothing is tied to yet — every member's, until agents mark their tasks. */
+function emptySpace(slug: string) {
+  return {
+    ...spaceUsage(slug),
+    totals: figures(0, 0, 0),
+    trend: trend(30, () => 0),
+    by_agent: [],
+    by_model: [],
+    top_tasks: [],
   };
 }
 
@@ -165,7 +183,7 @@ function ownerStub(): ApiStub {
     '/api/v1/me': OWNER,
     '/api/v1/usage?days=30': orgUsage(30),
     '/api/v1/usage?days=7': orgUsage(7),
-    '/api/v1/usage?days=30&project=laika': spaceUsage('laika'),
+    '/api/v1/usage?days=30&project=laika': spaceUsage('laika', 'owner'),
     '/api/v1/users/u1/usage': personUsage('u1'),
   };
 }
@@ -175,7 +193,7 @@ function memberStub(): ApiStub {
     ...BASE,
     '/api/v1/me': MEMBER,
     '/api/v1/usage?days=30&project=laika': spaceUsage('laika'),
-    '/api/v1/usage?days=30&project=onroute': spaceUsage('onroute'),
+    '/api/v1/usage?days=30&project=onroute': emptySpace('onroute'),
     '/api/v1/users/u2/usage': personUsage('u2'),
   };
 }
@@ -266,7 +284,17 @@ void describe('an owner', () => {
       await pick(space, 'laika');
       await until(async () => (await stat(h.page, 'tokens')) === '12M');
       assert.equal(await stat(h.page, 'tokens'), '12M');
-      assert.equal(await stat(h.page, 'unattributed'), '0%');
+      // A space holds only task-tied tokens: never "0% unattributed · 100% tied"
+      // (D-084 item 6). Beside it, what no space can hold — the organisation's
+      // unattributed share — and the way to it.
+      assert.equal(await h.page.locator('.usage-tiles [data-stat="unattributed"]').count(), 0);
+      assert.equal(await stat(h.page, 'outside'), '95%');
+      const note = await h.page.locator('.usage-space-note').innerText();
+      assert.match(note, /cannot be placed in a space/i);
+      assert.doesNotMatch(await h.page.locator('.usage-page').innerText(), /100% tied to a task/);
+      await h.page.getByRole('button', { name: 'Show all spaces' }).click();
+      await until(async () => (await stat(h.page, 'tokens')) === '255M');
+      assert.equal(await stat(h.page, 'unattributed'), '95%');
 
       await pick(space, '');
       await h.page.getByRole('button', { name: '7 days' }).click();
@@ -364,6 +392,27 @@ void describe('a member', () => {
         await h.page.locator('.usage-card[data-section="mine"] .usage-week').count(),
         12,
       );
+      // No organisation-wide share for a member: the page says why instead.
+      assert.match(await stat(h.page, 'outside'), /^—$/);
+      assert.match(
+        await h.page.locator('.usage-space-note').innerText(),
+        /cannot be placed in a space/i,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a space nothing is tied to yet says so honestly, rather than showing zeros', async () => {
+    const h = await open('/usage', memberStub());
+    try {
+      await ready(h.page);
+      await pick(h.page.getByRole('combobox', { name: 'Space' }), 'onroute');
+      const empty = h.page.locator('[data-state="space-empty"]');
+      await empty.waitFor({ timeout: 20_000 });
+      assert.match(await empty.innerText(), /No tokens are tied to Onroute’s tasks yet/);
+      assert.match(await empty.innerText(), /mark the task they work on/);
+      assert.equal(await h.page.locator('.usage-trend').count(), 0, 'an empty chart is drawn');
     } finally {
       await h.close();
     }

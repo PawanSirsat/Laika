@@ -75,6 +75,11 @@ export interface Usage {
   readonly top_tasks: readonly UsageTaskSlice[];
   /** Agents people here connect that keep no token count Laika can read. */
   readonly no_token_data: readonly AgentClient[];
+  /**
+   * Beside a space, the organisation's totals over the same range — what no
+   * space can hold — for a reader who may read them; `null` otherwise.
+   */
+  readonly org_totals: UsageFigures | null;
 }
 
 export interface UsageWeek extends UsageSlice {
