@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-771
-status: review
+status: done
 finished: 2026-10-17T18:00:00Z
 started: 2026-10-17T17:46:25Z
 ---
@@ -97,3 +97,7 @@ above it.
 
 `cli/test/activity-lookback.test.ts:594` times a run only to print it; it
 asserts nothing on the figure ("counted, not timed").
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent) on the owner's direct instruction. Test-only: the recompute and the collector's usage step are guarded in the default gate by counting their work (statements, rows, scans; stats, bytes read, files opened), each guard proven by three mutations; the strict millisecond budgets run with `LAIKA_PERF=1`. The `cli/` edit is authorised by this acceptance. Census of 357 test files recorded above; `timeline-derive.test.ts:287` (600 ms, ~17× margin) is the one left to watch.
