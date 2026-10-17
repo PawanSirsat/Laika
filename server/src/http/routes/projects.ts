@@ -22,6 +22,7 @@ import {
   type ProjectSummary,
 } from '../../services/projects.ts';
 import { deleteTag, listProjectTags, renameTag } from '../../services/tags.ts';
+import { getEstimateAccuracy, type EstimateAccuracyView } from '../../services/estimates.ts';
 import { mentionableUsers } from '../../services/mentions.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
@@ -243,6 +244,16 @@ export function projectRoutes(options: ProjectRouteOptions): Hono<AppEnv> {
    * The set is produced by the **same predicate** `resolveMentions` filters with,
    * so the two cannot disagree.
    */
+  /**
+   * How good this project's size and time forecasts have been (§6.4, D-085):
+   * frozen-at-claim forecasts against what happened, the back-test against the
+   * plain median, and agent clients only where three people use them. Never
+   * per person.
+   */
+  app.get('/:slug/estimates/accuracy', (c) =>
+    c.json<EstimateAccuracyView>(getEstimateAccuracy(db, requireActor(c), c.req.param('slug'))),
+  );
+
   app.get('/:slug/mentionable', (c) =>
     c.json({ users: mentionableUsers(db, requireActor(c), c.req.param('slug')) }),
   );

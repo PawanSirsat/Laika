@@ -106,15 +106,46 @@ BEGIN
   SELECT RAISE(ABORT, 'member_ratings is append-only: INSERT OR REPLACE is not permitted (SPEC 4.21)');
 END`,
   },
+  // §4.32's estimates are history the same way (D-085, LAI-771): the
+  // estimate in force when work started is what every accuracy figure is
+  // measured against, so it must not be edited, removed or replaced.
+  {
+    name: 'task_estimates_is_append_only_no_update',
+    table: 'task_estimates',
+    create: `CREATE TRIGGER IF NOT EXISTS \`task_estimates_is_append_only_no_update\`
+BEFORE UPDATE ON \`task_estimates\`
+BEGIN
+  SELECT RAISE(ABORT, 'task_estimates is append-only: UPDATE is not permitted (SPEC 4.32)');
+END`,
+  },
+  {
+    name: 'task_estimates_is_append_only_no_delete',
+    table: 'task_estimates',
+    create: `CREATE TRIGGER IF NOT EXISTS \`task_estimates_is_append_only_no_delete\`
+BEFORE DELETE ON \`task_estimates\`
+BEGIN
+  SELECT RAISE(ABORT, 'task_estimates is append-only: DELETE is not permitted (SPEC 4.32)');
+END`,
+  },
+  {
+    name: 'task_estimates_is_append_only_no_replace',
+    table: 'task_estimates',
+    create: `CREATE TRIGGER IF NOT EXISTS \`task_estimates_is_append_only_no_replace\`
+BEFORE INSERT ON \`task_estimates\`
+WHEN EXISTS (SELECT 1 FROM \`task_estimates\` WHERE \`id\` = NEW.\`id\`)
+BEGIN
+  SELECT RAISE(ABORT, 'task_estimates is append-only: INSERT OR REPLACE is not permitted (SPEC 4.32)');
+END`,
+  },
 ] as const;
 
 /**
  * Put §4.8's append-only triggers back if a migration rebuilt them away, and
  * refuse to continue if what is there does not actually enforce anything.
  *
- * **§4.21's `member_ratings` too, since LAI-743** — the name stayed, because
- * the mechanism is the same one and a rename would touch every caller for no
- * change in behaviour.
+ * **§4.21's `member_ratings` too, since LAI-743, and §4.32's `task_estimates`
+ * since LAI-771** — the name stayed, because the mechanism is the same one and
+ * a rename would touch every caller for no change in behaviour.
  *
  * Idempotent: on an already-correct database both statements are no-ops and
  * nothing is rewritten — no drop, no recreate, so a boot does not churn
@@ -168,7 +199,7 @@ export function ensureActivityTriggers(db: Db): void {
   const bodies = new Map(
     db
       .all<{ name: string; sql: string | null }>(
-        sql`SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name IN ('activity', 'member_ratings')`,
+        sql`SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name IN ('activity', 'member_ratings', 'task_estimates')`,
       )
       .map((row) => [row.name, row.sql ?? '']),
   );
@@ -186,7 +217,7 @@ export function ensureActivityTriggers(db: Db): void {
 
   if (broken.length > 0) {
     throw new Error(
-      `activity (SPEC §4.8) and member_ratings (§4.21) are append-only and their triggers are not enforcing it: ${broken.join(', ')}. Refusing to start without the guarantee.`,
+      `activity (SPEC §4.8), member_ratings (§4.21) and task_estimates (§4.32) are append-only and their triggers are not enforcing it: ${broken.join(', ')}. Refusing to start without the guarantee.`,
     );
   }
 }

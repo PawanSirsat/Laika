@@ -12,6 +12,8 @@ import {
   projectView,
 } from '../services/projects.ts';
 import { listTaskRounds, type RoundView } from '../services/rounds.ts';
+import { getTaskEstimate, type TaskEstimateView } from '../services/estimates.ts';
+import { FORECAST_AFTER, formatBuild } from '../services/estimate-model.ts';
 import { ciLine } from '../services/github-proof.ts';
 import { listSprints, sprintTaskCounts } from '../services/sprints.ts';
 import {
@@ -280,6 +282,17 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
 
         const chain = discoveredFromChain(db, actor, view);
 
+        // Its size and forecast before it is built (D-085): the agent sees
+        // what the board expects of it, and why. **Never the reason the call
+        // fails** (LAI-771 review): a size that cannot be read is said to be
+        // unavailable, and everything else is still answered.
+        let estimate: TaskEstimateView | null = null;
+        try {
+          estimate = getTaskEstimate(db, actor, view.id, now);
+        } catch {
+          estimate = null;
+        }
+
         // The review gate (D-082): the send-back first, because it is what the
         // next agent must fix, and the latest round's proof.
         const review = listTaskRounds(db, actor, view.id);
@@ -340,6 +353,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           '### Done means',
           view.acceptance_md ?? '_Not stated._',
           '',
+          ...sizeText(estimate),
           `### Proof (${evidence === null ? 'none' : `round ${String(evidence.number)}`})`,
           evidenceText(evidence),
           '',
@@ -395,6 +409,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         return answer(markdown, {
           send_back: sendBack,
           task: view,
+          estimate,
           evidence,
           rounds: review.rounds.length,
           blocked_by: view.blocked_by.map((id) => summarise(related.get(id), id)),
@@ -655,4 +670,42 @@ function discoveredFromChain(db: Db, actor: ResolvedActor, from: TaskView): Task
   }
 
   return chain;
+}
+
+/**
+ * The size section of `get_task_context` (D-085): the level, the forecast or
+ * why there is none yet, and what moved it — the factors worth a tenth of a
+ * level or more, and the similar finished tasks by key.
+ */
+function sizeText(estimate: TaskEstimateView | null): string[] {
+  if (estimate === null)
+    return ['### Size', '_Unavailable: the size could not be read just now._', ''];
+  const size = estimate.size;
+  if (size === null) return ['### Size', '_Not computed yet._', ''];
+  const lines = [`### Size ${size.level}`];
+  if (size.overridden) lines.push(`Set by a person; Laika computed ${size.computed}.`);
+  if (size.build_p50_ms !== null && size.build_p80_ms !== null) {
+    lines.push(
+      `Build time: likely ${formatBuild(size.build_p50_ms)}, pessimistic ${formatBuild(size.build_p80_ms)}.`,
+    );
+  } else {
+    lines.push(
+      `Early: this project has fewer than ${String(FORECAST_AFTER)} finished tasks, so no hours until it has ${String(FORECAST_AFTER)}.`,
+    );
+  }
+  const why = estimate.why;
+  if (why !== null) {
+    for (const f of why.factors) {
+      if (Math.abs(f.levels) < 0.1 && f.key !== 'priority') continue;
+      const sign = f.levels > 0 ? '+' : f.levels < 0 ? '−' : '±';
+      lines.push(`- ${sign}${Math.abs(f.levels).toFixed(1)} level: ${f.label}`);
+    }
+    if (why.similar.length > 0) {
+      lines.push(
+        `- Similar finished tasks: ${why.similar.map((t) => `\`${t.key}\` (${formatBuild(t.build_ms)})`).join(', ')}`,
+      );
+    }
+  }
+  lines.push('');
+  return lines;
 }

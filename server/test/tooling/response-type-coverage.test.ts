@@ -238,6 +238,11 @@ const NOT_SERVED = new Map<string, string>([
   ['OpenDbResult', 'the `{ db, sqlite }` pair `openDb` hands back inside the process'],
   ['SetupResult', 'first-boot wiring returned to the route, which serves its own shape'],
   [
+    'BacktestResult',
+    'the size model replaying a project’s history (D-085). Kept on the fitted model; the ' +
+      'accuracy endpoint serves its figures inside EstimateAccuracyView, which is paired',
+  ],
+  [
     'ErrorBody',
     'the §6.3 envelope. Served on every error and deliberately not a view: the ' +
       'error handler builds it, no route returns it, and pairing it would assert ' +

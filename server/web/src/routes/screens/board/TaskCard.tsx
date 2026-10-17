@@ -8,6 +8,7 @@ import { dateLabel, dateLabelShort, dueState } from '../../../api/date-only.ts';
 import { childrenOf, parentOf, subtaskProgress } from '../../../api/subtask-derive.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
+import { SizeChip } from '../../../components/SizeChip.tsx';
 
 export interface TaskCardProps {
   readonly task: Task;
@@ -87,6 +88,8 @@ export function TaskCard({
   const due = fields.due ? dueState(task, Date.now()) : undefined;
   const held = blockers(task, byId);
   const sprint = task.sprint_id === null ? undefined : sprintLabels?.get(task.sprint_id);
+  // `?? null`: a view served before LAI-771 has no `size`, and absent is unsized.
+  const size = fields.size ? (task.size ?? null) : null;
 
   return (
     <article
@@ -196,6 +199,10 @@ export function TaskCard({
           {task.key}
           <span className="visually-hidden"> — open details</span>
         </button>
+
+        {/* The size (D-085), beside the key it belongs to: the level only,
+            a dot when a person set it, the rest in the hover. */}
+        {size !== null && <SizeChip size={size} className="card-size card-above" />}
 
         {fields.sprint && sprint !== undefined && (
           <span

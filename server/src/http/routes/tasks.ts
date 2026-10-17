@@ -13,6 +13,7 @@ import {
   listTasks,
   removeTaskDependency,
   reorderTask,
+  SIZE_LEVELS,
   TASK_PRIORITIES,
   TASK_STATUSES,
   updateTask,
@@ -20,6 +21,7 @@ import {
 } from '../../services/tasks.ts';
 import { EVIDENCE_LIMITS, listTaskRounds } from '../../services/rounds.ts';
 import { acceptTask, sendBackTask } from '../../services/review.ts';
+import { getTaskEstimate, type TaskEstimateView } from '../../services/estimates.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseUpdatedSince } from '../updated-since.ts';
@@ -64,6 +66,8 @@ const CreateBody = strictObject({
   parent_task_id: z.string().min(1).optional(),
   due_on: DateOnly.optional(),
   planned_start: DateOnly.optional(),
+  // A person's size from the start (D-085); the computed one stays beside it.
+  size: z.enum(SIZE_LEVELS).optional(),
   created_via: z.enum(CREATED_VIA).optional(),
 });
 
@@ -85,6 +89,8 @@ const UpdateBody = strictObject({
   // `null` clears each date; absent leaves it alone.
   due_on: DateOnly.nullable().optional(),
   planned_start: DateOnly.nullable().optional(),
+  // A person's size (D-085): a level sets it, `null` goes back to the computed one.
+  size: z.enum(SIZE_LEVELS).nullable().optional(),
 });
 
 // `status` is a category — the project's first visible status of it — and
@@ -245,6 +251,15 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
 
     return c.json(finishTask(sqlite, db, actor, c.req.param('id'), body));
   });
+
+  /**
+   * Its size, the *why*, the forecast frozen when work started, what actually
+   * happened, and the estimate history (§6.4, D-085) — the task panel's
+   * Forecast section. A read, under `project.read`.
+   */
+  app.get('/:id/estimate', (c) =>
+    c.json<TaskEstimateView>(getTaskEstimate(db, requireActor(c), c.req.param('id'))),
+  );
 
   /** Every round of a task, newest first, and its current send-back (§6.4). */
   app.get('/:id/rounds', (c) => c.json(listTaskRounds(db, requireActor(c), c.req.param('id'))));

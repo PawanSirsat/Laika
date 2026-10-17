@@ -81,8 +81,9 @@ void describe('the List row', () => {
      */
     assert.deepEqual(
       LIST_COLUMNS.map((c) => c.label),
-      // `Due` joined them with D-066: the plan beside the two actuals.
-      ['Key', 'Summary', 'Status', 'Pri', 'Assignee', 'Spr', 'Due', 'Created', 'Updated'],
+      // `Due` joined them with D-066: the plan beside the two actuals. `Size`
+      // with D-085, beside the priority it is not.
+      ['Key', 'Summary', 'Status', 'Pri', 'Size', 'Assignee', 'Spr', 'Due', 'Created', 'Updated'],
     );
   });
 
@@ -489,6 +490,37 @@ void describe('subtasks and the due date on a row (D-066)', () => {
     assert.deepEqual(asc, ['LC-2', 'LC-1', 'LC-3']);
     const desc = sortRows(rows, byId, 'due', false).map((r) => r.key);
     assert.deepEqual(desc, ['LC-1', 'LC-2', 'LC-3'], 'undated rows sort last both ways');
+  });
+
+  void test('sorts by size — level, then weight — with unsized work last either way (D-085)', () => {
+    const size = (level: 'XS' | 'M' | 'L' | 'XL', weight: number, overridden = false) => ({
+      level,
+      computed: overridden ? ('M' as const) : level,
+      overridden,
+      weight,
+      build_p50_ms: null,
+      build_p80_ms: null,
+      subtasks: 0,
+    });
+    const big = task({ id: 'a', key: 'LC-1', size: size('L', 2.5) });
+    const small = task({ id: 'b', key: 'LC-2', size: size('XS', 0.2) });
+    const none = task({ id: 'c', key: 'LC-3' });
+    const typical = task({ id: 'd', key: 'LC-4', size: size('M', 1.1) });
+    // A person said XL about a task Laika computed as M: it sorts as XL.
+    const said = task({ id: 'e', key: 'LC-5', size: size('XL', 1.1, true) });
+    const { rows, byId } = rowsFor([big, small, none, typical, said]);
+
+    assert.deepEqual(
+      sortRows(rows, byId, 'size', true).map((r) => r.key),
+      ['LC-2', 'LC-4', 'LC-1', 'LC-5', 'LC-3'],
+    );
+    assert.deepEqual(
+      sortRows(rows, byId, 'size', false).map((r) => r.key),
+      ['LC-5', 'LC-1', 'LC-4', 'LC-2', 'LC-3'],
+      'unsized rows sort last both ways',
+    );
+    assert.equal(rows.find((r) => r.key === 'LC-5')?.size?.level, 'XL');
+    assert.equal(rows.find((r) => r.key === 'LC-3')?.size, null);
   });
 
   void test('Due is a column, between Spr and Created', () => {

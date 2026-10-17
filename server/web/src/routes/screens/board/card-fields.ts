@@ -59,6 +59,11 @@ export interface CardFields {
    * nothing.
    */
   readonly due: boolean;
+  /**
+   * The size chip, `XS`–`XL` (D-085): computed by Laika, a dot when a person
+   * set it. No hours on the card — those are the task panel's.
+   */
+  readonly size: boolean;
 }
 
 /** Everything on, so a board with no stored preference looks exactly as before. */
@@ -71,6 +76,7 @@ export const ALL_FIELDS: CardFields = Object.freeze({
   assignee: true,
   subtasks: true,
   due: true,
+  size: true,
 });
 
 /** The panel's rows, in the order it lists them. */
@@ -83,6 +89,7 @@ export const FIELD_LABELS: Readonly<Record<keyof CardFields, string>> = {
   assignee: 'Assignee',
   subtasks: 'Subtasks',
   due: 'Due date',
+  size: 'Size',
 };
 
 export const FIELD_KEYS = Object.keys(FIELD_LABELS) as (keyof CardFields)[];
@@ -103,6 +110,7 @@ export const FIELD_ICONS: Readonly<Record<keyof CardFields, string>> = {
   assignee: '\u25cb',
   subtasks: '\u21b3',
   due: '\u25a6',
+  size: '\u25a3',
 };
 
 /**

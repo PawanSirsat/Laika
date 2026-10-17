@@ -5,6 +5,7 @@ import { timeLabel, type TimeLabel } from '../../../api/time-label.ts';
 import { dateLabel, isOverdue } from '../../../api/date-only.ts';
 import { parentOf } from '../../../api/subtask-derive.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
+import { sizeRank } from '../../../api/estimates.ts';
 
 /**
  * One row of the List view, decided (prototype lines 166–203, `listRows` at
@@ -51,6 +52,8 @@ export interface ListRow {
   readonly blockedBy: string;
   /** `↳ LC-1` for a subtask, by the parent's key; empty for a top-level task (D-066). */
   readonly parentKey: string;
+  /** The size in force (D-085), or null before one is computed. */
+  readonly size: Task['size'];
   /** `12 Jul 2026`, or empty when no due date is set. */
   readonly due: string;
   /** `bad` once it is past and the task is still open. */
@@ -171,6 +174,8 @@ export function listRows({
       // The parent's key, never its id, for the reason the blocker is a key.
       // A parent off the loaded page is `↳ …`: the row is a subtask either way.
       parentKey: task.parent_task_id === null ? '' : `↳ ${parentOf(task, byId)?.key ?? '…'}`,
+      // `?? null`: a view served before LAI-771 carries no `size`.
+      size: task.size ?? null,
       due: task.due_on === null ? '' : dateLabel(task.due_on),
       dueTone: isOverdue(task, now) ? 'bad' : 'flat',
       created: timeLabel(task.created_at, now),
@@ -184,7 +189,16 @@ export function listRows({
 }
 
 export type SortKey =
-  'key' | 'title' | 'status' | 'priority' | 'assignee' | 'sprint' | 'due' | 'created' | 'updated';
+  | 'key'
+  | 'title'
+  | 'status'
+  | 'priority'
+  | 'size'
+  | 'assignee'
+  | 'sprint'
+  | 'due'
+  | 'created'
+  | 'updated';
 
 /** The design's column order, and the order the header renders in. */
 export const LIST_COLUMNS: readonly { readonly key: SortKey; readonly label: string }[] = [
@@ -192,6 +206,8 @@ export const LIST_COLUMNS: readonly { readonly key: SortKey; readonly label: str
   { key: 'title', label: 'Summary' },
   { key: 'status', label: 'Status' },
   { key: 'priority', label: 'Pri' },
+  /* Laika's computed size, or a person's (D-085): by level, then weight. */
+  { key: 'size', label: 'Size' },
   { key: 'assignee', label: 'Assignee' },
   { key: 'sprint', label: 'Spr' },
   /*
@@ -242,6 +258,9 @@ function compareBy(key: SortKey, a: Task, b: Task, ra: ListRow, rb: ListRow): nu
       return ra.statusRank - rb.statusRank;
     case 'priority':
       return a.priority.localeCompare(b.priority);
+    case 'size':
+      // Unsized rows are kept last by `sortRows`, outside the direction flip.
+      return sizeRank(a.size) - sizeRank(b.size);
     case 'assignee':
       if (ra.assigned !== rb.assigned) return ra.assigned ? -1 : 1;
       return ra.who.toLowerCase().localeCompare(rb.who.toLowerCase());
@@ -288,6 +307,14 @@ export function sortRows(
       const xNone = x.task.due_on === null;
       const yNone = y.task.due_on === null;
       if (xNone !== yNone) return xNone ? 1 : -1;
+    }
+    // The same for a task with no size yet (D-085): no size is not the
+    // smallest, nor the largest.
+    if (key === 'size') {
+      const xNone = (x.task.size ?? null) === null;
+      const yNone = (y.task.size ?? null) === null;
+      if (xNone !== yNone) return xNone ? 1 : -1;
+      if (xNone) return x.task.number - y.task.number;
     }
     const primary = compareBy(key, x.task, y.task, x.row, y.row);
     if (primary !== 0) return ascending ? primary : -primary;

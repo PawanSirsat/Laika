@@ -216,7 +216,7 @@ function UsageBody({
 }) {
   const { totals } = usage;
   /*
-   * **A space holds only tokens tied to its tasks** (§4.32: a row has a project
+   * **A space holds only tokens tied to its tasks** (§4.33: a row has a project
    * only through its task), so in a space "unattributed" is always 0% — true
    * and misleading (D-084 item 6). A space says instead what it cannot hold,
    * with the organisation's unattributed share for a reader who may see it.

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4aa7c127-ec57-4100-b4e6-be933be127d2",
+  "id": "c57c60d8-350b-441b-81c1-18d2ce902655",
   "prevId": "85b0a02a-10e2-43b0-a39a-734299f8ce2c",
   "tables": {
     "accounts": {
@@ -2258,6 +2258,160 @@
         }
       }
     },
+    "task_estimates": {
+      "name": "task_estimates",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "level": {
+          "name": "level",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "weight": {
+          "name": "weight",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "build_p50_ms": {
+          "name": "build_p50_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "build_p80_ms": {
+          "name": "build_p80_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "subtasks": {
+          "name": "subtasks",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "inputs_hash": {
+          "name": "inputs_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "model_version": {
+          "name": "model_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "factors_json": {
+          "name": "factors_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        },
+        "set_by": {
+          "name": "set_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "task_estimates_task_created_at_idx": {
+          "name": "task_estimates_task_created_at_idx",
+          "columns": ["task_id", "created_at"],
+          "isUnique": false
+        },
+        "task_estimates_set_by_idx": {
+          "name": "task_estimates_set_by_idx",
+          "columns": ["set_by"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "task_estimates_task_id_tasks_id_fk": {
+          "name": "task_estimates_task_id_tasks_id_fk",
+          "tableFrom": "task_estimates",
+          "tableTo": "tasks",
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "task_estimates_set_by_users_id_fk": {
+          "name": "task_estimates_set_by_users_id_fk",
+          "tableFrom": "task_estimates",
+          "tableTo": "users",
+          "columnsFrom": ["set_by"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "task_estimates_source_check": {
+          "name": "task_estimates_source_check",
+          "value": "source IN ('model', 'person')"
+        },
+        "task_estimates_level_check": {
+          "name": "task_estimates_level_check",
+          "value": "level IS NULL OR level IN ('XS', 'S', 'M', 'L', 'XL')"
+        },
+        "task_estimates_level_present_check": {
+          "name": "task_estimates_level_present_check",
+          "value": "level IS NOT NULL OR source = 'person'"
+        },
+        "task_estimates_set_by_check": {
+          "name": "task_estimates_set_by_check",
+          "value": "(source = 'person') = (set_by IS NOT NULL)"
+        },
+        "task_estimates_subtasks_check": {
+          "name": "task_estimates_subtasks_check",
+          "value": "subtasks >= 0"
+        }
+      }
+    },
     "task_evidence": {
       "name": "task_evidence",
       "columns": {
@@ -3026,6 +3180,34 @@
           "notNull": false,
           "autoincrement": false
         },
+        "estimate_id": {
+          "name": "estimate_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "estimate_at_start_id": {
+          "name": "estimate_at_start_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "size_override_id": {
+          "name": "size_override_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "estimate_hash": {
+          "name": "estimate_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -3091,6 +3273,21 @@
           "name": "tasks_status_id_idx",
           "columns": ["status_id"],
           "isUnique": false
+        },
+        "tasks_estimate_id_idx": {
+          "name": "tasks_estimate_id_idx",
+          "columns": ["estimate_id"],
+          "isUnique": false
+        },
+        "tasks_estimate_at_start_id_idx": {
+          "name": "tasks_estimate_at_start_id_idx",
+          "columns": ["estimate_at_start_id"],
+          "isUnique": false
+        },
+        "tasks_size_override_id_idx": {
+          "name": "tasks_size_override_id_idx",
+          "columns": ["size_override_id"],
+          "isUnique": false
         }
       },
       "foreignKeys": {
@@ -3139,6 +3336,33 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
+        "tasks_estimate_id_task_estimates_id_fk": {
+          "name": "tasks_estimate_id_task_estimates_id_fk",
+          "tableFrom": "tasks",
+          "tableTo": "task_estimates",
+          "columnsFrom": ["estimate_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "tasks_estimate_at_start_id_task_estimates_id_fk": {
+          "name": "tasks_estimate_at_start_id_task_estimates_id_fk",
+          "tableFrom": "tasks",
+          "tableTo": "task_estimates",
+          "columnsFrom": ["estimate_at_start_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "tasks_size_override_id_task_estimates_id_fk": {
+          "name": "tasks_size_override_id_task_estimates_id_fk",
+          "tableFrom": "tasks",
+          "tableTo": "task_estimates",
+          "columnsFrom": ["size_override_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
         "tasks_status_fk": {
           "name": "tasks_status_fk",
           "tableFrom": "tasks",
@@ -3175,181 +3399,6 @@
         "tasks_parent_task_id_check": {
           "name": "tasks_parent_task_id_check",
           "value": "parent_task_id IS NULL OR parent_task_id <> id"
-        }
-      }
-    },
-    "token_usage_days": {
-      "name": "token_usage_days",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "collector_id": {
-          "name": "collector_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "day": {
-          "name": "day",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "agent": {
-          "name": "agent",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "model": {
-          "name": "model",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "task_id": {
-          "name": "task_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "input": {
-          "name": "input",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "output": {
-          "name": "output",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "cache_write": {
-          "name": "cache_write",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "cache_read": {
-          "name": "cache_read",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "token_usage_days_user_day_idx": {
-          "name": "token_usage_days_user_day_idx",
-          "columns": ["user_id", "day", "collector_id"],
-          "isUnique": false
-        },
-        "token_usage_days_day_idx": {
-          "name": "token_usage_days_day_idx",
-          "columns": [
-            "day",
-            "agent",
-            "model",
-            "user_id",
-            "task_id",
-            "input",
-            "output",
-            "cache_write",
-            "cache_read"
-          ],
-          "isUnique": false
-        },
-        "token_usage_days_project_day_idx": {
-          "name": "token_usage_days_project_day_idx",
-          "columns": [
-            "project_id",
-            "day",
-            "agent",
-            "model",
-            "user_id",
-            "task_id",
-            "input",
-            "output",
-            "cache_write",
-            "cache_read"
-          ],
-          "isUnique": false,
-          "where": "project_id IS NOT NULL"
-        },
-        "token_usage_days_task_idx": {
-          "name": "token_usage_days_task_idx",
-          "columns": ["task_id", "day"],
-          "isUnique": false,
-          "where": "task_id IS NOT NULL"
-        }
-      },
-      "foreignKeys": {
-        "token_usage_days_user_id_users_id_fk": {
-          "name": "token_usage_days_user_id_users_id_fk",
-          "tableFrom": "token_usage_days",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "token_usage_days_task_id_tasks_id_fk": {
-          "name": "token_usage_days_task_id_tasks_id_fk",
-          "tableFrom": "token_usage_days",
-          "tableTo": "tasks",
-          "columnsFrom": ["task_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "token_usage_days_project_id_projects_id_fk": {
-          "name": "token_usage_days_project_id_projects_id_fk",
-          "tableFrom": "token_usage_days",
-          "tableTo": "projects",
-          "columnsFrom": ["project_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "token_usage_days_counts_check": {
-          "name": "token_usage_days_counts_check",
-          "value": "input >= 0 AND output >= 0 AND cache_write >= 0 AND cache_read >= 0"
         }
       }
     },

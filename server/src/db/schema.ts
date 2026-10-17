@@ -22,6 +22,7 @@ import {
   index,
   integer,
   primaryKey,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -32,6 +33,7 @@ import {
   AI_PROVIDERS,
   CREATED_VIA,
   CHECK_OUTCOMES,
+  ESTIMATE_SOURCES,
   EVIDENCE_KINDS,
   EVIDENCE_STATES,
   GITHUB_CHECK_KINDS,
@@ -42,6 +44,7 @@ import {
   PROJECT_ROLES,
   PROJECT_VISIBILITIES,
   REVIEW_DECISIONS,
+  SIZE_LEVELS,
   SPRINT_STATUSES,
   TASK_PRIORITIES,
   TASK_STATUSES,
@@ -494,6 +497,32 @@ export const tasks = sqliteTable(
     position: text('position'),
     startedAt: integer('started_at'),
     completedAt: integer('completed_at'),
+    /**
+     * The size and forecast in force (§4.32, D-085, LAI-771): the model's
+     * latest row in `task_estimates`. Null until Laika has computed one.
+     *
+     * **Pointers, not copies.** The rows are append-only history; these say
+     * which of them is current, so a read is a primary-key lookup and the
+     * history is never rewritten to change what is shown.
+     */
+    estimateId: text('estimate_id').references((): AnySQLiteColumn => taskEstimates.id),
+    /**
+     * The model's row in force when work **first** started — frozen at the
+     * first claim like `started_at`, and never moved again (D-085 item 5).
+     * Every estimate-versus-actual reads this copy, so nothing is
+     * re-estimated with hindsight.
+     */
+    estimateAtStartId: text('estimate_at_start_id').references(
+      (): AnySQLiteColumn => taskEstimates.id,
+    ),
+    /** A person's size, the `person` row in force; null when none is set. */
+    sizeOverrideId: text('size_override_id').references((): AnySQLiteColumn => taskEstimates.id),
+    /**
+     * A hash of everything the model read for the current estimate — text,
+     * tags, dependencies, children and the project's model version — so a
+     * recompute that would change nothing costs nothing.
+     */
+    estimateHash: text('estimate_hash'),
     createdAt,
     updatedAt,
   },
@@ -511,6 +540,10 @@ export const tasks = sqliteTable(
     // reorder's neighbour lookups read.
     uniqueIndex('tasks_project_position_unique').on(t.projectId, t.position),
     index('tasks_status_id_idx').on(t.statusId),
+    // Every foreign key is indexed (§4 preamble), the three pointers too.
+    index('tasks_estimate_id_idx').on(t.estimateId),
+    index('tasks_estimate_at_start_id_idx').on(t.estimateAtStartId),
+    index('tasks_size_override_id_idx').on(t.sizeOverrideId),
     // **Composite, and that is the point** (LAI-738). A plain `status_id`
     // reference would let a task hold another project's status, or a status
     // whose category disagrees with `status` — two ways for the board and the
@@ -1500,10 +1533,70 @@ export const taskRoundGithub = sqliteTable('task_round_github', {
   updatedAt,
 });
 
-// -------------------------------------------------- §4.32 token_usage_days
+// ------------------------------------------------------ §4.32 task_estimates
 
 /**
- * Agents' token usage per day, as one machine last reported it (§4.32,
+ * A task's size and build-time forecast, as history (§4.32, D-085, LAI-771).
+ *
+ * **Append-only**, like `member_ratings`: a recompute or a person's override
+ * adds a row and never edits one, so the estimate in force when work started
+ * is still there to measure against, and the *why* shown for it is the one
+ * that was current. Triggers refuse `UPDATE`, `DELETE` and an `INSERT OR
+ * REPLACE` over an existing id, re-established at every boot
+ * (`ensureActivityTriggers`). `tasks` points at the rows in force.
+ *
+ * A `model` row is written only when the output moves — another level, a
+ * forecast appearing or going, or the p50 moving more than a tenth — so an
+ * edit that changes nothing writes nothing. A `person` row is an override
+ * set, or cleared (`level` null).
+ *
+ * `task_id` is `restrict` for `activity`'s reason (LAI-135): a history row
+ * must not lose its subject, and tasks are cancelled, never deleted.
+ */
+export const taskEstimates = sqliteTable(
+  'task_estimates',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'restrict' }),
+    source: text('source', { enum: ESTIMATE_SOURCES }).notNull(),
+    /** XS–XL; null only on a `person` row that clears an override. */
+    level: text('level', { enum: SIZE_LEVELS }),
+    /** The computed weight relative to the project's typical task; `model` rows. */
+    weight: real('weight'),
+    /** Build time, likely and pessimistic, in ms. Null in a cold start. */
+    buildP50Ms: integer('build_p50_ms'),
+    buildP80Ms: integer('build_p80_ms'),
+    /** How many children were rolled into it (D-085 item 7). */
+    subtasks: integer('subtasks').notNull().default(0),
+    /** What the model read, hashed — `tasks.estimate_hash` when it was written. */
+    inputsHash: text('inputs_hash'),
+    /** The project's fitted model it came from. */
+    modelVersion: text('model_version'),
+    /** The *why* as it was: factors, similar tasks, method, typical task. */
+    factorsJson: text('factors_json').notNull().default('{}'),
+    /** Who set it, on a `person` row; null on a `model` row. */
+    setBy: text('set_by').references(() => users.id),
+    createdAt,
+  },
+  (t) => [
+    index('task_estimates_task_created_at_idx').on(t.taskId, t.createdAt),
+    index('task_estimates_set_by_idx').on(t.setBy),
+    check('task_estimates_source_check', oneOf('source', ESTIMATE_SOURCES)),
+    check('task_estimates_level_check', oneOfOrNull('level', SIZE_LEVELS)),
+    // Only a person clears; the model always says something.
+    check('task_estimates_level_present_check', sql.raw("level IS NOT NULL OR source = 'person'")),
+    // A person row names its person; a model row names nobody.
+    check('task_estimates_set_by_check', sql.raw("(source = 'person') = (set_by IS NOT NULL)")),
+    check('task_estimates_subtasks_check', sql.raw('subtasks >= 0')),
+  ],
+);
+
+// -------------------------------------------------- §4.33 token_usage_days
+
+/**
+ * Agents' token usage per day, as one machine last reported it (§4.33,
  * D-084, LAI-769): per (person, collector, day, agent, model, task) the four
  * counts the agent's own session files carry. **Counts only** — there is
  * deliberately no column that could hold a prompt, a reply, a path, a
@@ -1625,4 +1718,5 @@ export type GithubCommit = typeof githubCommits.$inferSelect;
 export type GithubPullRequest = typeof githubPullRequests.$inferSelect;
 export type GithubCheck = typeof githubChecks.$inferSelect;
 export type TaskRoundGithub = typeof taskRoundGithub.$inferSelect;
+export type TaskEstimate = typeof taskEstimates.$inferSelect;
 export type TokenUsageDay = typeof tokenUsageDays.$inferSelect;

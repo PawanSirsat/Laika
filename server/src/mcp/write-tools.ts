@@ -28,6 +28,7 @@ import {
   finishTask,
   getTask,
   resolveTaskRef,
+  SIZE_LEVELS,
   TASK_PRIORITIES,
   TASK_STATUSES,
   updateTask,
@@ -122,6 +123,14 @@ const TASK_FIELDS = {
   acceptance: z.string().max(10_000),
   priority: z.enum(TASK_PRIORITIES),
   tags: z.array(z.string().trim().min(1).max(64)).max(20),
+  // D-085: a size a person or an agent sets by hand. Laika computes one for
+  // every task anyway; this overrides what is shown, and the computed one
+  // stays beside it.
+  size: z
+    .enum(SIZE_LEVELS)
+    .describe(
+      "Size relative to this project's typical task, each level double the last. Laika computes one; set this only to override it.",
+    ),
 } as const;
 
 /**
@@ -177,6 +186,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         ),
         due_on: DATE_ONLY.optional(),
         planned_start: DATE_ONLY.optional(),
+        size: TASK_FIELDS.size.optional(),
       }),
     },
     ({
@@ -193,6 +203,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
       parent,
       due_on,
       planned_start,
+      size,
     }) => {
       try {
         const now = clock();
@@ -212,6 +223,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           ...(parent === undefined ? {} : { parent_task_id: resolveTaskRef(db, parent) }),
           ...(due_on === undefined ? {} : { due_on }),
           ...(planned_start === undefined ? {} : { planned_start }),
+          ...(size === undefined ? {} : { size }),
           // §7.1: an agent's task says so. Not a default the service guesses.
           created_via: 'mcp',
           now,
@@ -469,7 +481,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Edit a task',
       description:
-        'Change a task after it exists: its title, prose, priority, tags, who holds it, which sprint it sits in, its parent, and its due and planned-start dates. Every field is optional and an omitted one is left alone; `null` on `parent`, `due_on` or `planned_start` clears it. **Status is not here** — moving a task is `update_status`, because §5 validates transitions and a field edit would route around the table.',
+        'Change a task after it exists: its title, prose, priority, tags, who holds it, which sprint it sits in, its parent, its due and planned-start dates, and its size. Every field is optional and an omitted one is left alone; `null` on `parent`, `due_on`, `planned_start` or `size` clears it. **Status is not here** — moving a task is `update_status`, because §5 validates transitions and a field edit would route around the table.',
       inputSchema: z.strictObject({
         task: TASK_REF,
         title: TASK_FIELDS.title.optional(),
@@ -486,6 +498,10 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           .describe('Make it a subtask of that task; `null` detaches it. One level only.'),
         due_on: DATE_ONLY.nullable().optional(),
         planned_start: DATE_ONLY.nullable().optional(),
+        size: TASK_FIELDS.size
+          .nullable()
+          .optional()
+          .describe('Override the computed size; `null` goes back to the computed one.'),
       }),
     },
     ({
@@ -500,6 +516,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
       parent,
       due_on,
       planned_start,
+      size,
     }) => {
       try {
         const id = resolveTaskRef(db, task);
@@ -527,6 +544,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
             : { parent_task_id: parent === null ? null : resolveTaskRef(db, parent) }),
           ...(due_on === undefined ? {} : { due_on }),
           ...(planned_start === undefined ? {} : { planned_start }),
+          ...(size === undefined ? {} : { size }),
           now,
         });
 

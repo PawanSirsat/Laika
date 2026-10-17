@@ -61,6 +61,7 @@ import { StaticFileCache } from './http/static-cache.ts';
 import { apiCompression } from './http/middleware/compression.ts';
 import { allowedMethodsFor } from './http/allowed-methods.ts';
 import { translateAuthResponse } from './http/auth-errors.ts';
+import { setEstimateLogger } from './services/estimates.ts';
 
 /**
  * Hash the fallback document's inline `<style>` block at startup so the policy
@@ -194,6 +195,8 @@ function readEmail(body: string): string | null {
 
 export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   const log = options.logger ?? createLogger();
+  // The estimator's failures are logged, never thrown into a task write (B1).
+  setEstimateLogger(log);
   const db = options.db;
 
   const staticOptions = {

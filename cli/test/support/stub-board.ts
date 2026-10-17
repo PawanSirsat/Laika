@@ -58,7 +58,7 @@ export interface StubBoard {
   readonly snapshots: Map<string, { readonly commits_local: number }>;
   readonly keys: Map<string, string>;
   /**
-   * Usage reports (§6.4, D-084, LAI-769), as the server keeps them (§4.32):
+   * Usage reports (§6.4, D-084, LAI-769), as the server keeps them (§4.33):
    * a (collector, day)'s rows replaced whole by each report that carries it.
    */
   readonly usage: Map<string, readonly unknown[]>;
@@ -238,7 +238,7 @@ export async function stubBoard(token: string): Promise<StubBoard> {
         if (sent.usage === true) {
           for (const d of sent.days as { day: string; backfill?: true; rows?: UsageRowLike[] }[]) {
             const rows = d.rows ?? [];
-            // §4.32: a backfilled day takes every other collector's rows for
+            // §4.33: a backfilled day takes every other collector's rows for
             // the day and each agent it names.
             if (d.backfill === true) {
               const agents = new Set(rows.map((r) => r.agent));

@@ -224,6 +224,26 @@ const PAIRS: readonly Pair[] = [
     client: 'Task',
     clientFile: 'tasks.ts',
   },
+  // D-085, LAI-771: sizes and forecasts — the size on every task, the task
+  // panel's estimate, and the project's accuracy.
+  {
+    server: 'SizeView',
+    serverFile: 'services/estimates.ts',
+    client: 'TaskSize',
+    clientFile: 'estimates.ts',
+  },
+  {
+    server: 'TaskEstimateView',
+    serverFile: 'services/estimates.ts',
+    client: 'TaskEstimate',
+    clientFile: 'estimates.ts',
+  },
+  {
+    server: 'EstimateAccuracyView',
+    serverFile: 'services/estimates.ts',
+    client: 'EstimateAccuracy',
+    clientFile: 'estimates.ts',
+  },
   {
     // `ProjectSummary extends ProjectView` — the list endpoint serves the
     // derived shape, which is what the client mirrors.

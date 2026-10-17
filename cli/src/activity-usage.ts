@@ -77,7 +77,7 @@ export const USAGE_WINDOW_DAYS = 31;
 export const USAGE_REPORTS_PER_RUN = 4;
 /** No count above this is believed (the server's cap). */
 const COUNT_MAX = 1_000_000_000_000;
-/** The server's pattern for a model id (§4.32). */
+/** The server's pattern for a model id (§4.33). */
 const MODEL = /^[a-z0-9][a-z0-9._:-]{0,63}$/;
 /** Read this much of a transcript at a time. */
 const CHUNK_BYTES = 8 * 1024 * 1024;

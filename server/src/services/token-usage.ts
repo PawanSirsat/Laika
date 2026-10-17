@@ -35,7 +35,7 @@ import {
 import { requireProjectBySlug } from './projects.ts';
 
 /**
- * Agents' token usage (D-084, SPEC §4.32, §6.4, LAI-769): a collector's
+ * Agents' token usage (D-084, SPEC §4.33, §6.4, LAI-769): a collector's
  * per-day totals in, the Usage page and the profile card out.
  *
  * ## In: a third kind of collector report

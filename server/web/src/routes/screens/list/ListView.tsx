@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
+import { SizeChip } from '../../../components/SizeChip.tsx';
 import { startTicker } from '../../../api/time-label.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
@@ -304,6 +305,7 @@ export function ListView({
               <col className="list-col-summary" />
               <col className="list-col-status" />
               <col className="list-col-pri" />
+              <col className="list-col-size" />
               <col className="list-col-assignee" />
               <col className="list-col-spr" />
               <col className="list-col-due" />
@@ -487,6 +489,11 @@ export function ListView({
                         <PriorityIcon priority={row.priorityLevel} size={12} />
                         {row.priority}
                       </span>
+                    </td>
+
+                    {/* The size (D-085): the chip the card draws, nothing for no size. */}
+                    <td className="list-size">
+                      {row.size !== null && <SizeChip size={row.size} />}
                     </td>
 
                     <td>

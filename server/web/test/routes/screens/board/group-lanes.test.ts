@@ -42,6 +42,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     blocked_by: [],
     blocks: [],
     send_back: null,
+    size: null,
     tags: [],
     comment_count: 0,
     branch: null,

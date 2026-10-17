@@ -1,0 +1,164 @@
+/*
+ * The task panel's Forecast section (D-085, LAI-771). Tokens only, so both
+ * themes come from `theme.css`; it wraps rather than scrolls at phone width.
+ */
+
+.fc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.fc-size .size-chip {
+  font-size: var(--text-sm);
+  padding: 0.125rem 0.4375rem;
+}
+
+.fc-size-note {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.fc-override {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* The app's Dropdown draws the control (LAI-726); this only keeps it compact. */
+.fc-override-select {
+  min-width: 7.5rem;
+}
+
+.fc-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+}
+
+.fc-figure {
+  min-width: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--bg-column) 40%, var(--bg-card));
+}
+
+.fc-figure dt {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.fc-figure dd {
+  margin: 0.125rem 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.fc-early {
+  margin: 0 0 var(--space-2);
+}
+
+.fc-why {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.fc-why-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.fc-why-typical {
+  font-weight: normal;
+  color: var(--text-muted);
+}
+
+.fc-factors {
+  display: grid;
+  gap: 0.1875rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fc-factor {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.fc-levels {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-bold);
+  text-align: right;
+  color: var(--text-muted);
+}
+
+/* Bigger and smaller, told apart by sign first; the tone only repeats it. */
+.fc-up {
+  color: var(--chip-orange);
+}
+.fc-down {
+  color: var(--chip-blue);
+}
+
+.fc-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fc-similar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.fc-similar-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+
+.fc-similar-link {
+  font: inherit;
+  font-family: var(--font-mono);
+  font-weight: var(--weight-bold);
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.fc-similar-time {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.fc-accuracy {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
