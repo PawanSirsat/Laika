@@ -1,3 +1,4 @@
+import type Database from 'better-sqlite3';
 import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
@@ -297,30 +298,148 @@ describe('recompute — on what the model reads, keyed on a hash of it', () => {
     updateTask(t.db, admin(), task.id, { tags: ['docs'] });
     expect(row(task.id).estimateHash).not.toBe(hash);
   });
+});
 
-  it('takes under 5 ms per recompute, measured on a project with 120 finished tasks', () => {
+/**
+ * **What a recompute costs, held in a way no runner's load can move** (LAI-779).
+ *
+ * The 5 ms budget LAI-771 set is real, and it is a wall-clock figure: GitHub's
+ * shared two-core runner measured a p95 of 7.4 ms on the run after one that
+ * passed, with the median here about 0.2 ms. A timing that strict in the gate
+ * measures the machine as much as the code, and on `master` a flake is a deploy
+ * that does not happen. So the gate counts the **work** — statements prepared
+ * and rows read per recompute, which a per-task query or a scan of the project
+ * grows and nothing else does — and keeps a wall-clock ceiling ten times the
+ * budget, for an order-of-magnitude regression in the in-memory forecast. The
+ * budget itself is `LAIKA_PERF=1`, as `token-usage.perf.test.ts` does it.
+ */
+describe('the cost of a recompute', () => {
+  const PERF = process.env.LAIKA_PERF === '1';
+
+  /** The task under measurement: a fresh hash every call, so each one computes. */
+  function stale(taskId: string, i: number): void {
+    t.db
+      .update(tasks)
+      .set({ estimateHash: `stale-${String(i)}` })
+      .where(eq(tasks.id, taskId))
+      .run();
+  }
+
+  /**
+   * The database work `fn` does: statements prepared, rows they returned, and
+   * every step of their query plans that walks a whole table or index rather
+   * than searching one. A per-task query adds statements, a read of the
+   * project's tasks adds rows, and a `count(*)` over an unindexed column — one
+   * row, one statement — shows as a `SCAN`.
+   */
+  function work(fn: () => void): { statements: number; rows: number; scans: string[] } {
+    const sqlite = t.sqlite;
+    const prepare = sqlite.prepare.bind(sqlite);
+    const ran: { source: string; params: unknown[] }[] = [];
+    let statements = 0;
+    let rows = 0;
+    sqlite.prepare = ((source: string) => {
+      statements += 1;
+      const stmt = prepare(source) as Database.Statement<unknown[], unknown>;
+      const [get, all, run] = [stmt.get.bind(stmt), stmt.all.bind(stmt), stmt.run.bind(stmt)];
+      stmt.get = (...params: unknown[]) => {
+        ran.push({ source, params });
+        const row: unknown = get(...params);
+        if (row !== undefined) rows += 1;
+        return row;
+      };
+      stmt.all = (...params: unknown[]) => {
+        ran.push({ source, params });
+        const found: unknown[] = all(...params);
+        rows += found.length;
+        return found;
+      };
+      stmt.run = (...params: unknown[]) => {
+        ran.push({ source, params });
+        return run(...params);
+      };
+      return stmt;
+    }) as typeof sqlite.prepare;
+    try {
+      fn();
+    } finally {
+      // The method lives on the prototype: dropping the shadow restores it.
+      Reflect.deleteProperty(sqlite, 'prepare');
+    }
+    const scans = ran.flatMap(({ source, params }) =>
+      (sqlite.prepare(`EXPLAIN QUERY PLAN ${source}`).all(...params) as { detail: string }[])
+        .map((step) => step.detail)
+        .filter((detail) => detail.startsWith('SCAN ') && detail !== 'SCAN CONSTANT ROW'),
+    );
+    return { statements, rows, scans };
+  }
+
+  /** Per-recompute timings of `runs` calls, sorted, in ms. */
+  function timings(taskId: string, now: number, runs = 60): number[] {
+    const times: number[] = [];
+    for (let i = 0; i < runs; i += 1) {
+      stale(taskId, i);
+      const start = performance.now();
+      refreshEstimate(t.db, taskId, now);
+      times.push(performance.now() - start);
+    }
+    return times.sort((a, b) => a - b);
+  }
+
+  const at = (sorted: readonly number[], q: number) => sorted[Math.floor(sorted.length * q)]!;
+
+  it('reads the same statements and rows on 1200 finished tasks as on 120', () => {
     finishedTasks(120);
     refitEstimates(t.db, T0 + 2000 * HOUR);
     const task = newTask({ acceptance_md: words(150) }, T0 + 2001 * HOUR);
 
-    const times: number[] = [];
-    for (let i = 0; i < 60; i += 1) {
-      // A different hash every time, so every call really computes.
-      t.db
-        .update(tasks)
-        .set({ estimateHash: `stale-${String(i)}` })
-        .where(eq(tasks.id, task.id))
-        .run();
-      const start = performance.now();
-      refreshEstimate(t.db, task.id, T0 + 2002 * HOUR);
-      times.push(performance.now() - start);
-    }
-    times.sort((a, b) => a - b);
-    const p50 = times[Math.floor(times.length / 2)]!;
-    const p95 = times[Math.floor(times.length * 0.95)]!;
-    expect(p50, `median ${p50.toFixed(3)} ms`).toBeLessThan(5);
-    expect(p95, `p95 ${p95.toFixed(3)} ms`).toBeLessThan(5);
+    // A warm fit and figures that do not move — the steady state of an edit
+    // the model reads — so both sides run the same path and write no row.
+    const measure = (i: number, now: number) => {
+      let wrote = true;
+      stale(task.id, i);
+      const counted = work(() => {
+        wrote = refreshEstimate(t.db, task.id, now);
+      });
+      return { ...counted, wrote };
+    };
+    measure(0, T0 + 2002 * HOUR);
+    const small = measure(1, T0 + 2002 * HOUR);
+
+    finishedTasks(1080, admin, T0 + 3000 * HOUR);
+    refitEstimates(t.db, T0 + 100_000 * HOUR);
+    measure(2, T0 + 100_001 * HOUR);
+    const large = measure(3, T0 + 100_001 * HOUR);
+
+    // Positive control: the counter sees the recompute's reads at all.
+    expect(small.statements).toBeGreaterThan(3);
+    expect(small.rows).toBeGreaterThan(0);
+    expect(small.wrote).toBe(false);
+    expect(small.scans).toEqual([]);
+    expect(large).toEqual(small);
+    // Seeding 1200 tasks through the services took 13.6 s with every core of a
+    // laptop busy: setup, never what is asserted, so it gets room of its own.
+  }, 300_000);
+
+  it('stays under 50 ms at p95 on 120 finished tasks: a ceiling for a blow-up, not the budget', () => {
+    finishedTasks(120);
+    refitEstimates(t.db, T0 + 2000 * HOUR);
+    const task = newTask({ acceptance_md: words(150) }, T0 + 2001 * HOUR);
+    const times = timings(task.id, T0 + 2002 * HOUR);
+    expect(at(times, 0.95), `p95 ${at(times, 0.95).toFixed(3)} ms`).toBeLessThan(50);
   });
+
+  it.skipIf(!PERF)(
+    'takes under 5 ms per recompute, measured on a project with 120 finished tasks (LAIKA_PERF=1)',
+    () => {
+      finishedTasks(120);
+      refitEstimates(t.db, T0 + 2000 * HOUR);
+      const task = newTask({ acceptance_md: words(150) }, T0 + 2001 * HOUR);
+      const times = timings(task.id, T0 + 2002 * HOUR);
+      expect(at(times, 0.5), `median ${at(times, 0.5).toFixed(3)} ms`).toBeLessThan(5);
+      expect(at(times, 0.95), `p95 ${at(times, 0.95).toFixed(3)} ms`).toBeLessThan(5);
+    },
+  );
 });
 
 describe('a parent’s size and forecast come from its children', () => {
