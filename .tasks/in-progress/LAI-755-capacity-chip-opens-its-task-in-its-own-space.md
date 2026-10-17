@@ -2,11 +2,12 @@
 id: LAI-755
 title: 'A Capacity chip opens its task in the task’s own space, not the last space opened'
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p2
 depends-on: [LAI-754]
 discovered-from: LAI-754
-status: backlog
+status: in-progress
+started: 2026-10-17T06:49:03Z
 ---
 
 ## Goal
@@ -33,6 +34,9 @@ Core's board, no cards — although LW-1 is in Laika Web.
 
 ## Notes / context
 
+- **Claimed with LAI-755, LAI-756, LAI-730, LAI-744 and LAI-759 together:
+  cleanup release, owner's direct instruction** (docs/HANDOVER.md §4), one
+  builder on branch `build-cleanup`.
 - Pre-existing: the Capacity tab used the same `openTaskByKey` before LAI-754;
   LAI-754 kept it unchanged to keep scope tight.
 - The screen already reads `GET /projects` (for the "across N spaces" count),
