@@ -6,7 +6,8 @@ assignee: owner-direct
 priority: p2
 depends-on: []
 discovered-from: LAI-743
-status: in-progress
+status: review
+finished: 2026-10-17T07:17:36Z
 started: 2026-10-17T06:49:03Z
 ---
 
@@ -22,21 +23,21 @@ the fix.
 
 ## Acceptance criteria
 
-- [ ] (a) *Waiting* and decisions agree about unassigned tasks, and the (i)
+- [x] (a) *Waiting* and decisions agree about unassigned tasks, and the (i)
       says so — fixed, or recorded as already fixed with evidence.
-- [ ] (b) A token that never connected is not an agent row under *Agents
+- [x] (b) A token that never connected is not an agent row under *Agents
       used* — fixed, or recorded as already fixed with evidence.
-- [ ] (c) An archived project with a long key keeps a readable name — fixed,
+- [x] (c) An archived project with a long key keeps a readable name — fixed,
       or recorded as already fixed with evidence.
-- [ ] (d) *Oldest waiting* counts a task that went straight into Review —
+- [x] (d) *Oldest waiting* counts a task that went straight into Review —
       fixed, or recorded as already fixed with evidence.
-- [ ] (e) The (i) on *Agents used* says plainly that a token used with two
+- [x] (e) The (i) on *Agents used* says plainly that a token used with two
       agents credits all its changes to the agent it last connected as —
       fixed, or recorded as already fixed with evidence.
-- [ ] (f) Browser Back while a rating saves never loads the previous person's
+- [x] (f) Browser Back while a rating saves never loads the previous person's
       profile onto the page — fixed, or recorded as already fixed with
       evidence.
-- [ ] (g) A test proves going back to a person retries with that person's own
+- [x] (g) A test proves going back to a person retries with that person's own
       idempotency key — added, or recorded as already present.
 
 ## Notes / context
@@ -82,3 +83,9 @@ LAI-756.
   coming back while it is in Review now (an unlogged move): it counts in
   *Waiting* but not in *Oldest waiting*. Whether the API can produce that
   state was not checked.
+
+## Result
+
+All seven were already fixed by LAI-751 (table above); nothing redone, no code
+for this task. Checked by reading the code and the tests named above against
+`401191b`.
