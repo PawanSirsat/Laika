@@ -2,11 +2,12 @@
 id: LAI-769
 title: 'Token usage, phase 1: the collector counts tokens from agents'' session files; a Usage page and profile card show them (cli/ + plugin/ + server/ + server/web/ + docs/)'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-17T13:54:12Z
 ---
 
 ## Goal
