@@ -2,11 +2,12 @@
 id: LAI-774
 title: 'The hook''s "≤ 5 ms per prompt" timing test fails in the root gate under load, and passes alone'
 area: cli
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: []
 discovered-from: LAI-769
-status: backlog
+status: in-progress
+started: 2026-10-17T17:14:01Z
 ---
 
 ## Goal
