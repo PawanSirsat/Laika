@@ -122,3 +122,27 @@ estimate at claim, the org AI provider as a source, per-source scoring and
 inverse-variance weights, sprint planned-vs-completed weight, recency
 weighting in the regression, the accuracy trend.
 
+
+## Review round 1 — CHANGES REQUIRED (B1), fixed
+
+- **B1 — an estimator failure broke task writes.** Every inline estimator
+  call now goes through one helper (`bestEffort` in `services/estimates.ts`):
+  a savepoint (`immediate` when not nested), the failure logged as
+  `estimate.failed`, the task write carried on. `claimTask` and
+  `changeStatus` run the freeze and the parent refresh **after** the activity
+  row. `updateTask` is one transaction, so a person's size that cannot be
+  stored saves nothing of that edit rather than half of it. The freeze is
+  defined as the newest `model` row written at or before `started_at`, and the
+  nightly refit applies it where a failure skipped it — never an estimate
+  written after work began, and never for a task that started before any
+  estimate existed.
+- **Agent-client accuracy** counts the distinct people behind the measured
+  tasks only (first round by the client, with a frozen forecast and an
+  actual), not every finisher (D-078 item 6).
+- **`get_task_context`** answers with *Size: unavailable* when the estimate
+  cannot be read, instead of failing.
+- Tests, shown failing first: the forced failure (temporary triggers refusing
+  every estimate write) for a create, an edit, a claim and a status change,
+  each saved with its activity row; a size that cannot be stored saving
+  nothing; the freeze retried by the refit with the estimate in force at the
+  start; no hindsight freeze; the client rule; the MCP fallback.
