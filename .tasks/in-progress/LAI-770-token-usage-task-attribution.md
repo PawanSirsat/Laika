@@ -2,11 +2,12 @@
 id: LAI-770
 title: 'Token usage, phase 2: tie tokens to tasks (session time windows, branch keys, agents mark their task); a Tokens section in the task panel, per round'
 area: server
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: [LAI-769]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-17T18:30:43Z
 ---
 
 ## Goal
