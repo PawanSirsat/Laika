@@ -198,17 +198,19 @@ export function roundLabel(round: Pick<TaskUsageRound, 'number' | 'finished_on'>
 }
 
 /**
- * D-084 item 6 under a task's figure: how much of the work it is drawn from
- * Laika could tie to a task at all — of everyone's for an owner or admin, of
- * the reader's own otherwise — or, for a reader who sees nobody's part, what
+ * The line under a task's figures (D-084 items 5–6): how tokens reach the
+ * task, and that the rest of its people's work — the reader's own, for anyone
+ * but an owner or admin — counts for no task. The share itself is the
+ * section's *Tied to a task* figure. For a reader who sees nobody's part, what
  * the figure counts.
  */
-export function attributedNote(view: TaskUsage): string {
+export function countedNote(view: TaskUsage): string {
+  const how = `an agent marked this task or worked on a branch named ${view.key}-…`;
   if (view.attributed === null) {
-    return `Counted only where an agent marked this task or worked on a branch named ${view.key}-…; the rest of their work is not in it.`;
+    return `Counted only where ${how}; the rest of their work is not in it.`;
   }
-  const whose = view.people === 'everyone' ? 'its people’s agents' : 'your agents';
-  return `${shareOf(view.attributed.tokens, view.attributed.of)} of what ${whose} spent on those days is tied to a task.`;
+  const whose = view.people === 'everyone' ? 'its people’s' : 'your';
+  return `Tied when ${how}; the rest of ${whose} work those days counts for no task.`;
 }
 
 /** `Claude Code 1.2M · Codex 40K` — a person's agents, most first. */

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   agentsNote,
-  attributedNote,
+  countedNote,
   compactTokens,
   exactTokens,
   getTaskUsage,
@@ -107,7 +107,7 @@ function TokensBody({ view }: { readonly view: TaskUsage }) {
           </div>
         )}
       </dl>
-      <p className="panel-muted tk-note">{attributedNote(view)}</p>
+      <p className="panel-muted tk-note">{countedNote(view)}</p>
 
       {view.by_round.length > 0 && (
         <div className="tk-block">

@@ -70,9 +70,13 @@
   color: var(--text-muted);
 }
 
-/* The panel is narrower than the Usage page: names get less, the bar more. */
+/*
+ * The panel is narrower than the Usage page: names get less. The figure's
+ * column is one width for every row — a person's agents line under it would
+ * otherwise shorten that row's track, and bars on unequal tracks do not compare.
+ */
 .tk .usage-row {
-  grid-template-columns: minmax(0, 11rem) minmax(2.5rem, 1fr) auto;
+  grid-template-columns: minmax(0, 11rem) minmax(2.5rem, 1fr) 14rem;
 }
 
 @media (max-width: 480px) {

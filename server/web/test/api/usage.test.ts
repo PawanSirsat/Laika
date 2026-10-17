@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   agentsNote,
-  attributedNote,
+  countedNote,
   compactTokens,
   getPersonUsage,
   getTaskUsage,
@@ -133,18 +133,18 @@ void describe('a task’s tokens (LAI-770)', () => {
     assert.equal(roundLabel({ number: 3, finished_on: null }), 'Round 3 · open');
   });
 
-  void test('the attributed share says whose work it is the share of — or why there is none', () => {
+  void test('the note says how tokens reach the task, and whose other work is outside it', () => {
     assert.equal(
-      attributedNote(view()),
-      '94% of what its people’s agents spent on those days is tied to a task.',
+      countedNote(view()),
+      'Tied when an agent marked this task or worked on a branch named LAI-7-…; the rest of its people’s work those days counts for no task.',
     );
     assert.equal(
-      attributedNote(view({ people: 'own', attributed: { tokens: 66, of: 106 } })),
-      '62% of what your agents spent on those days is tied to a task.',
+      countedNote(view({ people: 'own', attributed: { tokens: 66, of: 106 } })),
+      'Tied when an agent marked this task or worked on a branch named LAI-7-…; the rest of your work those days counts for no task.',
     );
     for (const people of ['own', 'none'] as const) {
       assert.equal(
-        attributedNote(view({ people, attributed: null })),
+        countedNote(view({ people, attributed: null })),
         'Counted only where an agent marked this task or worked on a branch named LAI-7-…; the rest of their work is not in it.',
       );
     }
