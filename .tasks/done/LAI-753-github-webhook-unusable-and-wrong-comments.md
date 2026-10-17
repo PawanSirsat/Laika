@@ -7,7 +7,7 @@ priority: p2
 depends-on: []
 discovered-from: LAI-751
 started: 2026-10-17T09:28:56Z
-status: review
+status: done
 finished: 2026-10-17T11:02:53Z
 ---
 
@@ -108,3 +108,7 @@ had two. SPEC §10.1 now says GitHub does not retry.
 - `server/web/test/api/activity.test.ts` — `pushSummary`.
 - Each new test was turned red by a mutation of the code it covers and the
   tree restored (diff hash identical before and after): see the log.
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent) on the owner's direct instruction, after one Claude review together with LAI-766. Security checked by the review: HMAC over the raw body in constant time, nothing stored for unsigned or wrong-signature deliveries, the secret encrypted, shown once and settable only from a web session. Production criteria (a non-401 delivery, one task CI-confirmed end to end) wait on the owner adding the webhook in GitHub after this deploys.

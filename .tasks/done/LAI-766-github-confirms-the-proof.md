@@ -7,7 +7,7 @@ priority: p1
 depends-on: [LAI-758, LAI-753]
 discovered-from: LAI-758
 started: 2026-10-17T09:28:56Z
-status: review
+status: done
 finished: 2026-10-17T11:02:53Z
 ---
 
@@ -205,3 +205,7 @@ D-083 items 3, 6 and 8 and SPEC §4.31 and §10.1 say the new rules; D-083's
 Left as follow-ups, as the review asked: same-name check runs or suites
 overwriting each other, a non-JSON signed body answering 500, the 1 MiB body
 limit, and the legacy `status` event.
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent) on the owner's direct instruction, after one Claude review. The review's two blockers were fixed in `1a426618` with tests that failed first, and the fix was read by CHIEF before merge: B1, when the project names a repo only that repo can confirm; B2, a delivery re-checks only a task's newest undecided round. Also fixed: a late `opened`/`reopened` no longer pulls a task out of review or done, and a merge on a done task answers 200. Follow-ups left open: same-name check runs or suites overwriting each other, a non-JSON signed body answering 500, the 1 MiB body limit, the legacy `status` event, and a merge on a cancelled task still answering 422.
