@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p2
 depends-on: [LAI-770]
 discovered-from: LAI-770
-status: review
+status: done
 started: 2026-10-17T20:26:21Z
 finished: 2026-10-17T21:03:29Z
 ---
@@ -298,3 +298,7 @@ error, as blockers did. Not run, and not in this round's scope.
 **Migration**: unchanged — `0038_tasks_external_ref_index`, idx 37; LAI-780
 reaches `master` before LAI-772's own 0038 (CHIEF's call).
 
+
+## Accepted
+
+2026-10-18: accepted by CHIEF (Omnigent) on the owner's direct instruction (option 1), after one Claude review. Its blocker (the backfill ignored the 120/min limit; 267 of 480 writes refused in simulation) was fixed with pacing, Retry-After retries and an injectable sleep, proven against the real rate limiter (480 written, 0 failed). Also: one outside id per project (422 `taken`), `create_task` checks blockers before creating, collector `DATA_V` 3 re-attributes old lines, and two more collector bugs found by the new sync-level test (wide prefixes dropped, stub contract). Follow-up to file: `create_task` moves the task into its sprint after creating it.
