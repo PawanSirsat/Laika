@@ -110,3 +110,45 @@ started; no port used.
 
 **State**
 Both task files moved to `.tasks/review/`. Not pushed, not merged.
+
+## 2026-10-17T12:10:00Z — LAI-766 (review round 1)
+
+**What changed**
+- server/src/services/github-proof.ts — `plausibleRepos` takes the project's
+  `repo` first and only; a pull request outside it is not looked up (B1).
+  `roundsTouched` returns only open rounds: the newest of each task, with no
+  `task_reviews` row (B2)
+- server/src/services/webhooks.ts — `opened`/`reopened` move a task only out
+  of `backlog` or `todo`; a merge on a review or done task answers 200 and
+  stays
+- server/test/http/routes/github-proof.test.ts — six tests, *the review's
+  fixes (D-083)*
+- docs/DECISIONS.md — D-083 items 3, 6, 8; the `opened` case leaves *does not
+  decide*. docs/SPEC.md — §4.31, §10.1
+- .tasks/review/LAI-766-github-confirms-the-proof.md — the review's fixes
+
+**Decisions**
+- B2 is fixed by which rounds are re-checked, not by pinning a head on the
+  summary row: an open round still follows its pull request's head (the head
+  under review), and a closed one is never touched. Pinning would have needed
+  a rule for a pull request first seen after the finish.
+- A pull request outside the project's repository is not looked up at all,
+  rather than looked up and ignored for some items: it confirms nothing and
+  supplies no head, so `ci` stays null.
+- A merge on a cancelled task still answers 422, unchanged: the review named
+  done, and a merged pull request on cancelled work is a case for a person.
+
+**Discovered**
+- nothing new; the review's four follow-ups are recorded in the task file.
+
+**Verification**
+- The six tests were written first and run on the unfixed code: exit 1, all
+  six failed at a behavioural assertion (B1 `expected 'confirmed' to be
+  'claimed'`; B2 both ways round 1's `ci.head_sha` was round 2's; `opened` and
+  `reopened` gave `in_progress`; the merge on done answered 422). After the
+  fixes: exit 0, six passed. Outputs in this session's scratchpad
+  (`fixes-BEFORE.txt`, `fixes-AFTER.txt`).
+- The gate runs after this entry; its exit codes are in the report.
+
+**State**
+Still in `.tasks/review/`. Not pushed, not merged.

@@ -116,9 +116,10 @@ brief was open)
 - **The head commit for CI** is the pull request's head when GitHub named it,
   else the newest claimed commit GitHub reported (commit time; on a tie, the
   first listed), else the first listed.
-- **Plausible repositories**: the pull request URL's repository when the
-  proof has one (and then no other), else the project's `repo`, else any
-  repository this org's webhook reports.
+- **Plausible repositories**: the project's `repo` when it names one, and
+  only that; the pull request URL's repository only when the project names
+  none; else any repository this org's webhook reports. (Changed in review:
+  B1 below.)
 - **The branch item is confirmed too** (D-082 made it an item): by a push to
   it or a pull request from it.
 - **Newest event wins** by GitHub's own timestamp on the pull request and on
@@ -136,12 +137,8 @@ brief was open)
 
 **Did not fit / left alone**
 
-- A `pull_request` **opened** after the agent finished still moves the task
-  back to `in_progress` (§10.1's existing rule). Agents open the pull request
-  before finishing, since its URL is part of the proof, so this is the
-  uncommon order; changing what *opened* means is not this task. Noted in
-  D-083; not filed (the orchestrator hands out ids for this run — see the
-  log).
+- ~~A `pull_request` **opened** after the agent finished still moves the
+  task back to `in_progress`.~~ Fixed in review: see below.
 - LAIKA-477's card also names GitHub's legacy commit `status` event; the
   brief listed `check_suite`, `check_run` and `workflow_run`, so `status` is
   not handled.
@@ -170,3 +167,41 @@ brief was open)
 - Screenshots (light and dark, 1366 and 390):
   `/tmp/laika-github-confirm-shots/` — `organisation-webhook-*`,
   `proof-states-*`, `review-queue-*`, `review-ci-failed-filter-*`.
+
+## Review round 1 — CHANGES REQUIRED, fixed (2026-10-17)
+
+The orchestrator's review found two blockers in
+`server/src/services/github-proof.ts` and asked for two small fixes beside
+them; security, migration 0034 and retention were confirmed sound. All four
+are fixed on this branch with **no new migration**, each with a test in
+`server/test/http/routes/github-proof.test.ts` (*the review's fixes (D-083)*)
+that was written first and run red against the unfixed code, then green.
+
+- **B1 — a pull request in another repository chose who vouched.**
+  `plausibleRepos` preferred the pull request URL's repository over the
+  project's, so an agent citing `someone/else/pull/5` on a `kvell/laika`
+  project had its commit and tests confirmed by `someone/else`'s push and
+  check. Now the project's `repo` wins and is the only one; a pull request
+  elsewhere is not looked up, confirms nothing, and supplies no head. The
+  pull request's repository narrows only when the project names none.
+  Before: `expected 'confirmed' to be 'claimed'`. After: commit, pull request
+  and tests `claimed`, `ci` null.
+- **B2 — a later round rewrote an earlier one.** `roundsTouched` re-checked
+  every round naming the commit or pull request, so round 1 on pull request
+  #42 took round 2's head and CI. Now only an **open** round is re-checked:
+  the newest of its task, with no `task_reviews` row against it. Before
+  (both directions): round 1's `ci.head_sha` was head B and its tests
+  followed B's CI. After: round 1 keeps head A and its own states.
+- **`opened` / `reopened` only start work** — they move a task out of
+  `backlog` or `todo` and nothing else; anything else answers `200` and
+  stays. Before: a late `opened` moved a review task to `in_progress`;
+  `reopened` moved a done task to `in_progress`. After: both stay.
+- **A merge on a done task answers `200`** and leaves it done. Before:
+  `422 Cannot move a task from Done to Review`.
+
+D-083 items 3, 6 and 8 and SPEC §4.31 and §10.1 say the new rules; D-083's
+*does not decide* no longer lists the `opened` case.
+
+Left as follow-ups, as the review asked: same-name check runs or suites
+overwriting each other, a non-JSON signed body answering 500, the 1 MiB body
+limit, and the legacy `status` event.
