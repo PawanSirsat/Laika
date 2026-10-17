@@ -117,9 +117,12 @@ const SCOPE_TTL_S = DAY_S;
 /**
  * The records' format. A collector whose data predates it reads its files
  * once more — in the background sync, as the first read was — so the days in
- * the window get the task keys phase 1 did not read (LAI-770).
+ * the window get the task keys phase 1 did not read (LAI-770). 3: the keys a
+ * branch carries are read in an outside id's wider shape (LAI-780), so lines
+ * read before are read again; the re-read's days replace what went, as 2's
+ * did.
  */
-const DATA_V = 2;
+const DATA_V = 3;
 
 export type UsageAgent = 'claude-code' | 'codex' | 'gemini-cli';
 

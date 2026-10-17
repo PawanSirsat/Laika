@@ -855,6 +855,78 @@ void describe('through `laika activity sync`', () => {
     assert.deepEqual(onBoard(), [['LAI-2', 7]]);
   });
 
+  void test('the board’s outside prefixes survive the sharing answer: DATA_ENG, Q and PLATFORMOPS are kept, and a branch under one is sent (LAI-780 review)', async () => {
+    const w = await syncWorld(['LAI', 'DATA_ENG', 'Q', 'PLATFORMOPS']);
+    transcript(w.root, 's.jsonl', [
+      claude({ at: NOW_S - H, out: 5, branch: 'feature/data_eng-12-pipeline' }),
+    ]);
+    assert.equal((await sync(w.ctx)).kind, 'sent');
+    const index = JSON.parse(readFileSync(join(w.paths.dir, 'usage-index.json'), 'utf8')) as {
+      prefixes?: string[];
+    };
+    assert.deepEqual(index.prefixes, ['DATA_ENG', 'LAI', 'PLATFORMOPS', 'Q']);
+    assert.deepEqual(
+      w
+        .usagePuts()
+        .at(-1)
+        ?.days.flatMap((d) => d.rows.map((r) => [r.task, r.output])),
+      [['DATA_ENG-12', 5]],
+    );
+    // Accepted, not only sent: the stub refuses what the contract refuses.
+    assert.deepEqual(w.board.violations, []);
+    assert.deepEqual(
+      [...w.board.usage.values()].flatMap((rows) =>
+        (rows as UsageRow[]).map((r) => [r.task, r.output]),
+      ),
+      [['DATA_ENG-12', 5]],
+    );
+  });
+
+  void test('an upgrade to the outside-id key shape re-reads lines already read: their keys replace what went, and the next sync is idle (LAI-780 review)', async () => {
+    // The board names no prefixes yet: what goes is unattributed.
+    const w = await syncWorld(undefined);
+    transcript(w.root, 's.jsonl', [
+      claude({ at: NOW_S - H, out: 5, branch: 'feature/data_eng-12-pipeline' }),
+    ]);
+    const onBoard = () =>
+      [...w.board.usage.entries()]
+        .filter(([key]) => key.endsWith(`|${TODAY}`))
+        .flatMap(([, rows]) => rows as UsageRow[])
+        .map((r) => [r.task, r.output]);
+    assert.equal((await sync(w.ctx)).kind, 'sent');
+    assert.deepEqual(onBoard(), [[null, 5]]);
+
+    // As a collector of data format 2 left this machine: its key pattern read
+    // `feature/data_eng-12-…` as `ENG-12` alone — no underscore in a prefix.
+    const indexPath = join(w.paths.dir, 'usage-index.json');
+    const index = JSON.parse(readFileSync(indexPath, 'utf8')) as Record<string, unknown>;
+    writeFileSync(indexPath, JSON.stringify({ ...index, data_v: 2 }));
+    const dataPath = join(w.paths.dir, 'usage-data.json');
+    const data = JSON.parse(readFileSync(dataPath, 'utf8')) as { branches: string[] };
+    const read = data.branches.indexOf('DATA_ENG-12 ENG-12');
+    assert.notEqual(
+      read,
+      -1,
+      `the branch's keys are not where this test looks: ${JSON.stringify(data.branches)}`,
+    );
+    data.branches[read] = 'ENG-12';
+    writeFileSync(dataPath, JSON.stringify({ ...data, v: 2 }));
+    w.board.prefixes = ['DATA_ENG'];
+
+    w.advance(601);
+    const before = w.usagePuts().length;
+    assert.equal((await sync(w.ctx)).kind, 'sent');
+    assert.equal(w.usagePuts().length, before + 1, 'the re-read sent its day once');
+    // Replaced on the board: the same 5 tokens, now the card's — not 10.
+    assert.deepEqual(onBoard(), [['DATA_ENG-12', 5]]);
+
+    w.advance(601);
+    const after = w.usagePuts().length;
+    await sync(w.ctx);
+    assert.equal(w.usagePuts().length, after, 'the sync after the re-read sent usage again');
+    assert.deepEqual(onBoard(), [['DATA_ENG-12', 5]]);
+  });
+
   void test('a collector from before marks were read reads its files once more and sends the keys', async () => {
     const w = await syncWorld(['LAI']);
     transcript(w.root, 's.jsonl', [
