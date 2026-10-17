@@ -141,3 +141,73 @@ skipped (2858). `pnpm lint` 0. `pnpm format` 0.
   the board.
 - The plugin had no skill; `laika-mark-your-task` is narrow on purpose — the
   full protocol skill is LAI-421.
+
+## Review round 1 (CHANGES REQUIRED → fixed)
+
+Commits 4bd619bd (B2), 1e08ff15 (B1, items 1–3), b6b03397 (items 6–7).
+Each test below was run before its fix.
+
+- **B1, a refused Codex call counted as a mark.** A Codex Laika call is
+  now held until its answer is read, for a call id already held, and nothing
+  of the answer is kept. The answer is either `function_call_output` (the MCP
+  result as JSON: `isError`/`error`) or `mcp_tool_call_end` (`Ok.isError`,
+  `Err`). Taken counts; refused, unreadable or missing is no mark; the branch
+  fallback still applies. The module comment now names each agent's refusal.
+  Tests: refused (reviewer's fixture, `function_call_output` conflict plus
+  `mcp_tool_call_end` `isError: true`) went from red to `{ '-': 11 }`, and the
+  answer's text is absent from `usage-data.json`. Unread and unreadable went
+  from red to the branch's `{ 'LAI-4': 11 }`. Accepted, via either record,
+  was green before and after.
+- **B2, a session resuming its task could leave no accepted mark** (the
+  owner's decision, option a). The holder's own `start_working`/claim on a
+  task already in progress returns the task and keeps the branch it was
+  given. Nothing else changes: no status, no activity row, `started_at` and
+  the frozen estimate untouched. Anyone else, and a holder whose task is not
+  in progress, still get 409. SPEC §7.1 (and §5's claim bullet) and the
+  tool's description say so. `get_project_context`, Connect's project block
+  and the plugin skill say to call `start_working` on the task, also when it
+  is already yours and in progress (`update_status` for a task assigned and
+  not started). Tests:
+  - the service no-op test (branch kept, activity rows and estimates
+    unchanged; a bare repeat writes nothing) and the MCP resume test went
+    from red to green;
+  - another person still 409, and the holder of a task not in progress still
+    409, were green before and after (guards);
+  - the three guidance texts went from red to green;
+  - the collector counting an accepted resume is green: it already counted
+    accepted marks.
+
+  Two existing tests claimed twice as the same user (MCP and REST). They now
+  use a second person for the 409, and the REST one also checks the holder's
+  200.
+- **Item 1, split edge.** A mark on a later line of its reply is timed from
+  the reply's first line, so the whole reply is the mark's. Red to green.
+- **Item 2.** No mark counts until the board has named its prefixes. The
+  Gemini bare-name test (another server's `update_status` with `JIRA-12`)
+  went from red to green.
+- **Item 3.** The upgrade test now runs through the sync and the stub board.
+  The re-read replaces what phase 1 sent (7 tokens on the board, not 14) and
+  the next sync sends no usage. It was red before item 2: the first sync sent
+  the key before prefixes were known.
+- **Item 6.** Browser tests (`test/browser/task-tokens.test.ts`) for an
+  owner, the person themselves, a member who did none of the work, and a task
+  never started. They passed on the code as it was: coverage, not a fix.
+- **Item 7.** The section keys what it holds by task. The switch test (LC-3
+  to LC-1 with LC-1's answer held back) went from red (LC-3's `4.01M` still
+  drawn) to green.
+
+**Measured again** (same script, the window now 252.73M headline tokens):
+after, with the board's prefixes, **17.8%** (45,062,418) and 27.0% with
+cache reads; before, `master`'s collector, 0.0%. On one identical window,
+round 1's collector tied 44,933,624 and this one ties 45,062,418 — the split
+fix, +0.05 points. B1 changes nothing here (no Codex Laika calls on this
+machine). With no prefixes known the share is now 0% by design (item 2).
+
+**Gate**, foreground, after the last code change: `pnpm test` **0** on the
+first run — cli 404 tests (403 pass, 1 skipped `LAIKA_PERF=1`), web
+2069/2069, server 2854 passed + 8 skipped (2862). `pnpm lint` 0. `pnpm
+format` 0. No new wall-clock assertion: the browser tests wait with `until`.
+
+**Left as follow-ups** (the reviewer's list, not done): the prune edge, a
+check of the resumed session's id, wording, and a test of the
+`db:generate` race path.

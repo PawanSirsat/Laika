@@ -62,3 +62,29 @@ In review. No shipped migration changed (`git diff --stat master -- server/src/d
 
 **State**
 In review. Screenshots in /tmp/laika-token-attribution-shots/.
+
+## 2026-10-17T20:30:00Z — LAI-770 (review round 1)
+
+**What changed**
+- server/src/services/tasks.ts — the holder's own claim of a task in progress returns it, keeping the branch; nothing else written (B2)
+- server/src/mcp/write-tools.ts, read-tools.ts; server/web/src/routes/screens/connect/connect-copy.ts; plugin/skills/laika-mark-your-task/SKILL.md; docs/SPEC.md §5, §7.1 — call `start_working` also when the task is already yours and in progress
+- cli/src/activity-usage.ts — Codex calls wait for their answer (B1); a mark takes its whole reply (item 1); no mark before the board's prefixes (item 2)
+- server/web/src/routes/screens/task/TokensSection.tsx — state keyed by task (item 7)
+- tests: server tasks, write-tools, read-tools, routes/tasks; cli activity-usage-attribution (Codex refused/unread/event, split, prefixes, upgrade through the sync), plugin-skills; web connect-copy, browser/task-tokens.test.ts (new)
+
+**Decisions**
+- A Codex answer that says nothing either way is no mark — the reviewer's rule; the branch fallback still runs.
+- A refusal from either Codex record holds even if the other one reads as taken.
+- The holder's no-op writes `branch` and `updated_at` only when the branch changes; a bare repeat writes nothing.
+- Two existing tests that claimed twice as one user now use a second person for the 409: the premise changed with the owner's decision, not the guard.
+
+**Discovered**
+- My first stub for the browser tests crashed the page (`live: null` in the accuracy answer) and every assertion timed out — the reason for the positive controls in the never-started test.
+- Follow-ups left as the reviewer listed: prune edge, resumed-session id check, wording, the `db:generate` race path test.
+
+**Measured**: after 17.8% (45,062,418 of 252.73M headline), 27.0% with cache reads; before 0.0%. The split fix alone, on the same window, +128,794 tokens (+0.05 points). Without prefixes 0% by design.
+
+**Gate** (foreground, after the last code change): `pnpm test` 0 — cli 404 (403 + 1 skipped), web 2069/2069, server 2854 + 8 skipped; `pnpm lint` 0; `pnpm format` 0.
+
+**State**
+In review again.
