@@ -41,3 +41,23 @@ orchestrator, temporary worktree `Laika-token-forecasts/`, branch
 
 **State**
 In .tasks/review/. Gate: `pnpm test` 0, `pnpm lint` 0, `pnpm format` 0. Not pushed; migration to be regenerated after LAI-780 lands, on the orchestrator's word.
+
+## 2026-10-17T22:20:00Z — LAI-772 (migration regenerated after LAI-780)
+
+**What changed**
+- merge of `master` (c38064d0) — LAI-780's `0038_tasks_external_ref_index`, its snapshot and journal taken as master has them
+- server/src/db/migrations/0038_token_forecasts.sql + its snapshot and journal entry — deleted (mine only)
+- server/src/db/migrations/0039_token_forecasts.sql, meta/0039_snapshot.json, meta/_journal.json — regenerated with `pnpm db:generate --name token_forecasts`: idx 38, `when` 1792275028091; same statements, header kept
+- server/src/mcp/write-tools.ts, docs/SPEC.md §7.1 — conflicts resolved by keeping both sides (LAI-780's `actor` and `external_ref`, this task's `estimate`)
+- server/test/db/migrate.test.ts — the 0039 test pins the database it upgrades as master's 0038
+- .tasks/review/LAI-772-token-forecasts-and-review-cues.md — appended note
+
+**Decisions**
+- Regenerated, not renamed, per migrations/README: a rename would have kept a `when` older than master's 0038, which a database already at that migration never applies.
+
+**Discovered**
+- `build.test.ts`'s built-server health wait timed out once under the full parallel gate (15/15 alone) — the LAI-768 load family; not filed.
+- Git reports the regenerated SQL as a rename by similarity; the history says regenerated.
+
+**State**
+Still in .tasks/review/. Gate after the merge: `pnpm test` 0 (second run), `pnpm lint` 0, `pnpm format` 0. Not pushed.

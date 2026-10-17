@@ -163,3 +163,31 @@ simulations.
   description does.
 - The board card for LAI-772 was not mirrored (`LAI-772` is not a board key;
   the MCP has no search), as for LAI-770/771.
+
+## Migration regenerated on top of LAI-780 (2026-10-17T22:20Z)
+
+On the orchestrator's word, after LAI-780 reached master: `git merge master`
+(merge c38064d0). My `0038_token_forecasts` SQL, snapshot and journal entry
+were deleted — master's `0038_tasks_external_ref_index`, its snapshot and the
+journal taken as master has them, byte for byte — and the migration
+regenerated with `pnpm db:generate --name token_forecasts`: now
+**`0039_token_forecasts`, journal idx 38, `when` 1792275028091** (after
+master's 1792269639241), its snapshot chained to master's 0038. The same four
+statements as before; a second generate says *No schema changes*. Git's stat
+shows it as a rename by content similarity; it was regenerated, not renamed.
+The notes above that say 0038 are the record of the build and stand.
+
+Two hand conflicts, both additive: `start_working` passes LAI-780's
+`resolveTaskRef(db, task, actor)` and this task's `estimate`; SPEC §7.1 keeps
+LAI-780's `create_task`/`update_task` rows (`external_ref`) and this task's
+`start_working` row. The 0039 migration test now pins the database it upgrades
+as master's `0038_tasks_external_ref_index`: populated there, then 0039
+applied — every table keeps its root page and rows, `task_estimates` rows only
+gain the two null columns, and the new table is append-only.
+
+Gate after the merge (foreground): `pnpm test` first run 1 —
+`test/tooling/build.test.ts` "keeps an idle connection open for 65 s" timed
+out waiting for the built server's health under the parallel load; 15/15
+alone. Second full run **0**: cli 410 node:test cases (409 pass, 1 skipped),
+web 2093/2093 node:test cases, server 2958 passed + 8 skipped of 2966 vitest
+cases in 144 files. `pnpm lint` 0. `pnpm format` 0.
