@@ -22,6 +22,7 @@ import { EVIDENCE_LIMITS } from '../services/rounds.ts';
 import { logUnlistedWork } from '../services/unlisted.ts';
 import {
   addTaskDependency,
+  assertTaskExists,
   changeStatus,
   claimTask,
   createTask,
@@ -219,6 +220,12 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
       try {
         const now = clock();
 
+        // **Before the create** (LAI-780 review): a blocker that is ambiguous
+        // or names no task refuses the whole call, rather than leaving a task
+        // filed without the dependency it was asked for.
+        const blockers = (blocked_by ?? []).map((ref) => resolveTaskRef(db, ref, actor));
+        for (const blocker of blockers) assertTaskExists(db, blocker);
+
         const task = createTask(sqlite, db, actor, project, {
           title,
           ...(description === undefined ? {} : { description_md: description }),
@@ -244,7 +251,6 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         // Dependencies are a separate service call, as they are over REST — the
         // create endpoint does not take them either, and inventing a combined
         // write here would be the second path AC1 forbids.
-        const blockers = (blocked_by ?? []).map((ref) => resolveTaskRef(db, ref, actor));
         for (const blocker of blockers) {
           addTaskDependencySafely(sqlite, db, actor, task.id, blocker);
         }

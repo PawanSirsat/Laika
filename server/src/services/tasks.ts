@@ -35,7 +35,12 @@ import {
   type SizeView,
 } from './estimates.ts';
 import { normaliseTagNames, setTaskTags, tagsForTasks, taskIdsWithTag } from './tags.ts';
-import { ambiguousOutsideId, normaliseOutsideId, readableByOutsideId } from './outside-ids.ts';
+import {
+  ambiguousOutsideId,
+  assertOutsideIdFree,
+  normaliseOutsideId,
+  readableByOutsideId,
+} from './outside-ids.ts';
 import { requireProjectBySlug } from './projects.ts';
 import {
   activeSendBacks,
@@ -537,6 +542,15 @@ export function resolveTaskRef(db: Db, ref: string, actor?: ResolvedActor): stri
   return matches[0]?.taskId ?? ref;
 }
 
+/**
+ * A `404` for a task id that names no task — what `addTaskDependency` asks of
+ * a blocker, asked by `create_task` **before** it creates anything, so a
+ * blocker that names nothing refuses the call whole (LAI-780 review).
+ */
+export function assertTaskExists(db: Db, taskId: string): void {
+  requireTask(db, taskId);
+}
+
 /** The task a board key names, whoever may read it — or `undefined`. */
 function taskIdByKey(db: Db, ref: string): string | undefined {
   const match = TASK_KEY.exec(ref.trim());
@@ -698,6 +712,10 @@ export function createTask(
     input.external_ref === undefined ? null : normaliseOutsideId(input.external_ref);
 
   return immediateTransaction(sqlite, () => {
+    // Inside the write lock, as the number is: two creates must not both find
+    // the id free (LAI-780 review).
+    if (externalRef !== null) assertOutsideIdFree(db, project.id, externalRef, null);
+
     // Inside the write lock, so the parent cannot gain a parent of its own
     // between the check and the insert.
     const parentId = input.parent_task_id ?? null;
@@ -1010,6 +1028,11 @@ export function updateTask(
   // first read.
   return db.transaction(
     () => {
+      // Under the write lock, so two writes cannot both find it free.
+      if (typeof changes.externalRef === 'string') {
+        assertOutsideIdFree(db, project.id, changes.externalRef, taskId);
+      }
+
       // Tags are not a column, so they are not in `changes` — they are applied
       // separately and get their own activity row naming the field (§4.16, D-027).
       const tagChange =

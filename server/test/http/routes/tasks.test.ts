@@ -705,7 +705,7 @@ describe('POST /tasks/:id/reorder (LAI-472, D-070)', () => {
 
 describe('an outside id on the wire (LAI-780)', () => {
   interface Refusal {
-    error: { code: string; details: { field?: string } };
+    error: { code: string; details: Record<string, unknown> & { field?: string } };
   }
 
   it('takes external_ref on create and on PATCH, upper-cased, and null clears it', async () => {
@@ -725,6 +725,22 @@ describe('an outside id on the wire (LAI-780)', () => {
     });
     expect(cleared.status).toBe(200);
     expect(await cleared.json()).toMatchObject({ external_ref: null });
+  });
+
+  it('refuses an id another task in the project holds, 422 naming that task (review)', async () => {
+    const holder = await newTask('Holder', { external_ref: 'LAI-780' });
+    const other = await newTask('Other');
+    const res = await req(`/api/v1/tasks/${other.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ external_ref: 'lai-780' }),
+    });
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as Refusal).error.details).toEqual({
+      field: 'external_ref',
+      reason: 'taken',
+      external_ref: 'LAI-780',
+      task: holder.key,
+    });
   });
 
   it('refuses one of another shape 422 on external_ref — a pull request, a URL, too long', async () => {

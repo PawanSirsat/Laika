@@ -1035,6 +1035,63 @@ describe('an outside id is a task key to every tool (LAI-780)', () => {
     });
   });
 
+  it('create_task resolves blocked_by before it creates: an ambiguous or unknown blocker refuses the call, nothing created (review)', async () => {
+    await must('/api/v1/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'vault', slug: 'vault', prefix: 'VLT', visibility: 'private' }),
+    });
+    const owner = await connect(await mint());
+    await call(owner, 'create_task', { project: 'core', title: 'One', external_ref: 'ONR-12' });
+    await call(owner, 'create_task', { project: 'vault', title: 'Two', external_ref: 'ONR-12' });
+    const before = h.db.select().from(tasks).all().length;
+
+    const ambiguous = await owner.callTool({
+      name: 'create_task',
+      arguments: { project: 'core', title: 'Blocked twice over', blocked_by: ['ONR-12'] },
+    });
+    expect(ambiguous.isError).toBe(true);
+    expect((payload(ambiguous) as unknown as Err).error).toMatchObject({
+      code: 'unprocessable',
+      details: { reason: 'ambiguous', external_ref: 'ONR-12' },
+    });
+    expect(h.db.select().from(tasks).all()).toHaveLength(before);
+
+    const unknown = await owner.callTool({
+      name: 'create_task',
+      arguments: { project: 'core', title: 'Blocked by nothing', blocked_by: ['COR-99'] },
+    });
+    expect(unknown.isError).toBe(true);
+    expect((payload(unknown) as unknown as Err).error.code).toBe('not_found');
+    expect(h.db.select().from(tasks).all()).toHaveLength(before);
+
+    // Positive control: a blocker that resolves still links.
+    const linked = await call(owner, 'create_task', {
+      project: 'core',
+      title: 'Blocked by one',
+      blocked_by: ['COR-1'],
+    });
+    expect(linked.key).toBe('COR-2');
+  });
+
+  it('refuses an outside id another task in the project holds, naming it; nothing created (review)', async () => {
+    const client = await connect(await mint());
+    await call(client, 'create_task', {
+      project: 'core',
+      title: 'Holder',
+      external_ref: 'LAI-780',
+    });
+    const result = await client.callTool({
+      name: 'create_task',
+      arguments: { project: 'core', title: 'Second', external_ref: 'lai-780' },
+    });
+    expect(result.isError).toBe(true);
+    expect((payload(result) as unknown as Err).error).toMatchObject({
+      code: 'unprocessable',
+      details: { field: 'external_ref', reason: 'taken', external_ref: 'LAI-780', task: 'COR-1' },
+    });
+    expect(h.db.select().from(tasks).all()).toHaveLength(1);
+  });
+
   it('refuses an external_ref of another shape on create_task and update_task, naming the field', async () => {
     const client = await connect(await mint());
     await call(client, 'create_task', { project: 'core', title: 'A' });

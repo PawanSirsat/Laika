@@ -1,4 +1,4 @@
-import { eq, isNotNull } from 'drizzle-orm';
+import { and, eq, isNotNull, ne } from 'drizzle-orm';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { projects, tasks } from '../db/schema.ts';
@@ -28,6 +28,13 @@ import { canSeeProject } from './projects.ts';
  *
  * A board key always wins: an outside id is looked up only when the ref names
  * no task by its key (`resolveTaskRef`).
+ *
+ * **Within a project an outside id is one task's** (LAI-780 review): a write
+ * of one another task of the project holds is refused `422` `taken`, naming
+ * it. A service check, not a unique index, because the column also holds pull
+ * requests' refs, which two tasks may share. Across projects the same id is
+ * allowed — the ambiguous rule answers there, and an org-wide check would say
+ * that a card the writer cannot see exists.
  */
 
 /**
@@ -88,6 +95,45 @@ export function readableByOutsideId(db: Db, actor: ResolvedActor, ref: string): 
       key: `${row.prefix}-${String(row.number)}`,
     }))
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+}
+
+/**
+ * Refuses `ref` — normalised — when another task of `projectId` holds it:
+ * `422` with `reason: 'taken'` and that task's key. Every writer of an outside
+ * id stores it upper-case, so comparing the normalised value is comparing
+ * case-insensitively, and it is one search of §4.13's index. `taskId` is the
+ * task being written, which may of course keep its own id.
+ */
+export function assertOutsideIdFree(
+  db: Db,
+  projectId: string,
+  ref: string,
+  taskId: string | null,
+): void {
+  const holder = db
+    .select({ number: tasks.number, prefix: projects.prefix })
+    .from(tasks)
+    .innerJoin(projects, eq(projects.id, tasks.projectId))
+    .where(
+      and(
+        eq(tasks.externalRef, ref),
+        eq(tasks.projectId, projectId),
+        taskId === null ? undefined : ne(tasks.id, taskId),
+      ),
+    )
+    .get();
+  if (holder === undefined) return;
+  const key = `${holder.prefix}-${String(holder.number)}`;
+  throw new ApiError(
+    'unprocessable',
+    `${ref} is already the outside id of ${key} in this project`,
+    {
+      field: 'external_ref',
+      reason: 'taken',
+      external_ref: ref,
+      task: key,
+    },
+  );
 }
 
 /** `422 ambiguous`: the id, and the keys of the readable tasks that carry it. */

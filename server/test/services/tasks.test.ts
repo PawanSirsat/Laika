@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { activity, orgs, taskEstimates, tasks, tokens, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { addMember, createProject } from '../../src/services/projects.ts';
@@ -1366,6 +1366,72 @@ describe('due_on and planned_start (SPEC §4.5, D-066)', () => {
       .filter((row) => row.type === 'task.updated')
       .map((row) => (JSON.parse(row.payloadJson) as { changed: string[] }).changed);
     expect(changed).toEqual([['external_ref'], ['external_ref']]);
+  });
+});
+
+describe('an outside id is one task’s within its project (LAI-780 review)', () => {
+  /** The refusal's code and details, or what happened instead. */
+  function refusal(fn: () => unknown): unknown {
+    try {
+      fn();
+    } catch (err) {
+      if (err instanceof ApiError) return { code: err.code, details: err.details };
+      throw err;
+    }
+    return 'no error';
+  }
+  const taken = (ref: string, key: string) => ({
+    code: 'unprocessable',
+    details: { field: 'external_ref', reason: 'taken', external_ref: ref, task: key },
+  });
+  const count = () => t.db.select().from(tasks).all().length;
+
+  it('refuses a create whose id another task in the project holds, in any case — naming that task, creating nothing', () => {
+    const holder = newTask('Holder', { external_ref: 'LAI-780' });
+    const before = count();
+    expect(refusal(() => newTask('Second', { external_ref: 'lai-780' }))).toEqual(
+      taken('LAI-780', holder.key),
+    );
+    expect(count()).toBe(before);
+  });
+
+  it('refuses an update to an id another task in the project holds; its own id again is no change', () => {
+    const holder = newTask('Holder', { external_ref: 'LAI-780' });
+    const other = newTask('Other');
+    expect(
+      refusal(() => updateTask(t.db, actor(adminId), other.id, { external_ref: 'Lai-780' })),
+    ).toEqual(taken('LAI-780', holder.key));
+    expect(getTask(t.db, actor(adminId), other.id).external_ref).toBeNull();
+    expect(
+      updateTask(t.db, actor(adminId), holder.id, { external_ref: 'lai-780' }).external_ref,
+    ).toBe('LAI-780');
+  });
+
+  it('allows the same id in another project: there, the ambiguous rule answers', () => {
+    createProject(t.sqlite, t.db, actor(adminId), { name: 'Web', slug: 'web', prefix: 'WEB' });
+    newTask('Here', { external_ref: 'ONR-12' });
+    const there = createTask(t.sqlite, t.db, actor(adminId), 'web', {
+      title: 'There',
+      external_ref: 'ONR-12',
+    });
+    expect(there.external_ref).toBe('ONR-12');
+  });
+
+  it('never reaches a pull request’s ref: two tasks the webhook gave the same one stay editable', () => {
+    const a = newTask('A');
+    const b = newTask('B');
+    t.db
+      .update(tasks)
+      .set({ externalRef: 'kvell/laika#5' })
+      .where(inArray(tasks.id, [a.id, b.id]))
+      .run();
+    expect(updateTask(t.db, actor(adminId), b.id, { title: 'B, renamed' }).external_ref).toBe(
+      'kvell/laika#5',
+    );
+    // And an outside id may replace it on one of them.
+    expect(updateTask(t.db, actor(adminId), a.id, { external_ref: 'LAI-5' }).external_ref).toBe(
+      'LAI-5',
+    );
   });
 });
 
