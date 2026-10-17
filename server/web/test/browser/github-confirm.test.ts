@@ -350,6 +350,8 @@ function reviewStub(): ApiStub {
     round,
     finished_by_name: 'Ada Lovelace',
     can_decide: true,
+    // LAI-772: no "check this one" cue on these rows.
+    cue: null,
   });
   return {
     '/api/v1/me': ME,
