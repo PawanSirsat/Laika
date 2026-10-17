@@ -24,3 +24,41 @@ LAI-770.
 
 **State**
 In review. No shipped migration changed (`git diff --stat master -- server/src/db/migrations` = README only).
+
+## 2026-10-17T19:20:00Z — LAI-770
+
+**What changed**
+- cli/src/activity-usage.ts — marks read from the agents' own Laika calls (Claude Code tool_use, Codex function_call, Gemini toolCalls), keys only; `attributor` splits a session by time, subagent lanes, refused calls dropped, branch keys against the board's prefixes, the hook's session lines; backfill stays unattributed; data format 2 (one background re-read)
+- cli/src/activity-sync.ts — `task_prefixes` from the sharing answer into the usage step
+- cli/src/activity-store.ts — `sessions` in the file table; `rotate` deletes it
+- plugin/scripts/laika-activity-hook — a counted Claude Code/Codex/Gemini session start keeps `<epoch> <id> <branch>` locally, from the existing git call
+- server/src/services/token-usage.ts — `getTaskUsage`: totals, per person and agent, per round by day, attributed share, D-084 item 7 visibility
+- server/src/services/local-activity.ts — `task_prefixes` for a collector that may send
+- server/src/services/tasks.ts, server/src/http/routes/tasks.ts, server/src/mcp/write-tools.ts — the claim keeps its branch; `GET /tasks/:id/usage`
+- server/src/mcp/read-tools.ts — `get_project_context`'s `before_you_start`
+- server/web/src/routes/screens/task/TokensSection.tsx, tokens.css, src/api/usage.ts, TaskDetailPanel.tsx — the Tokens section
+- server/web/src/routes/screens/connect/connect-copy.ts, ShareActivity.tsx — mark the task, name the branch; the consent list names the key
+- plugin/skills/laika-mark-your-task/SKILL.md, plugin/skills/README.md, cli/README.md, docs/SPEC.md
+- tests: cli/test/activity-usage-attribution.test.ts (19), activity-hook.test.ts, plugin-skills.test.ts, stub-board.ts; server token-usage, usage route, read/write tools; web usage, view-type-drift, connect-copy
+
+**Decisions**
+- A refused call (`is_error`) is no mark — measured 16 of 27 `start_working` refused here; reading the result's id only, never its text.
+- A finish's own reply is the finished task's; a mark's own reply is the new task's.
+- A key of a prefix the board does not serve, or a task named by id, leaves its stretch unattributed rather than falling back to the branch: the agent was working on something, just not something this board can name.
+- No branch key counts until the board has named its prefixes — `release-2026` is never a task.
+- A member who did none of the work, and a token, get no attributed-share number: over one contributor it would reveal that person's total (D-084 item 7). They get the sentence saying what the figure counts.
+- Rounds split by day — the table is per day; a round's finish day counts toward it.
+- No idle cut-off on a mark (the R&D's 2 h): closing on silence is a guess too.
+- The plugin's skill is narrow (`laika-mark-your-task`); the full protocol skill stays LAI-421.
+
+**Discovered**
+- This repo's own sessions tie nothing: branches carry repo ids (`LAI-…`), the board's prefix is `LAIKA`, and `LAI-NNN` cards are not findable by that id through MCP → LAI-780 filed (discovered-from: LAI-770).
+- The board's keys for this repo's task files are `LAIKA-N`; `get_task_context LAI-770` answers `not_found`, so this run mirrored nothing to the board.
+- `git rev-parse --show-toplevel --abbrev-ref HEAD` prints the toplevel even when HEAD is unborn and fails only on the second argument — the hook's existing repo test (a repo with no commit) relies on that.
+
+**Measured** (aggregate only, `/tmp/lai770/measure.ts`, 31-day window, 790 files, 2.11 GB): before 0.0% of 252.2M headline tokens; after 17.8% with the board's prefixes (27.0% with cache reads), 16.2% from marks alone; ONR 17.8%, LAIKA 0%. Skip list unreadable from here, so automated sessions are in both. Idle usage step 10–11 ms; full recompute ~55 ms; one-time re-read 2.9 s.
+
+**Gate** (foreground, after the last code change): `pnpm test` 1 then 0 — the first run's only failure was `migrate.test.ts` timing out at 5 s under load (LAI-768), 22/22 alone; the second full run: cli 397 (396 + 1 skipped), web 2064/2064, server 2850 + 8 skipped. `pnpm lint` 0, `pnpm format` 0. Throwaway server for screenshots on port 37713, its own data dir, stopped after.
+
+**State**
+In review. Screenshots in /tmp/laika-token-attribution-shots/.
