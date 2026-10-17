@@ -1348,7 +1348,7 @@ LAI-769) — the Usage page and the profile's token card.
 | `day` | `YYYY-MM-DD` in the machine's own time zone |
 | `agent` | an agent slug (§9.3): `claude-code`, `codex`, `gemini-cli`; anything else is `other` |
 | `model` | the model id the agent recorded, lower case, `[1m]`-style suffixes removed — 1–64 of `a–z`, `0–9`, `.`, `_`, `:`, `-` |
-| `task_id` | nullable, FK `tasks`, set null — the task the tokens were spent on, when the collector knew its key and the sender may read it; null is **unattributed** |
+| `task_id` | nullable, FK `tasks`, set null — the task the tokens were spent on, when the collector knew its key and the sender may read it; null is **unattributed**. The collector takes the key from the agent's own mark in the session, or from a key in the branch name (§6.4, D-084 item 5, LAI-770) |
 | `project_id` | nullable, FK `projects`, set null — the task's project, copied when it is resolved |
 | `input` | integer — uncached input tokens |
 | `output` | integer — output tokens, reasoning included |
@@ -1368,7 +1368,8 @@ rows, so a retry never counts twice and a model gone from the day is gone from
 the table. Machines sum. A day reported as a backfill (§6.4) also replaces the
 other collectors' rows for its agents, so the same machine under a new
 collector id is never counted twice. Every read is a range of one index
-(§4.13). Kept 400 days (§11.6).
+(§4.13) — a task's (`GET /tasks/:id/usage`, LAI-770) on `task_id`. Kept 400
+days (§11.6).
 
 ## 5. Task lifecycle
 
@@ -1638,10 +1639,12 @@ GET    /api/v1/projects/:slug/timeline       ?from=&to=  — sprints with date r
 POST   /api/v1/projects/:slug/tasks
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
 POST   /api/v1/tasks/:id/claim               POST /api/v1/tasks/:id/status
+                                             claim: body { branch? }, optional — kept on the task (LAI-770)
 POST   /api/v1/tasks/:id/finish              body { summary, checklist?, commits?, branch?, pull_request?, tests? }
                                              → review, with a round and its proof (finish_task's twin, D-082)
 GET    /api/v1/tasks/:id/rounds              { rounds (newest first), send_back }
 GET    /api/v1/tasks/:id/estimate            size, why, forecast frozen at start, actual, history (D-085)
+GET    /api/v1/tasks/:id/usage               ?tz= — its tokens: per person and agent, per round, attributed share (D-084, LAI-770)
 GET    /api/v1/projects/:slug/estimates/accuracy  per project, and per agent client with ≥ 3 people; never per person
 POST   /api/v1/tasks/:id/accept              → the first visible done status   (session only; the done rule, §5)
 POST   /api/v1/tasks/:id/send-back           body { reason } → the first visible in-progress status   (session only)
@@ -1780,7 +1783,11 @@ reaches SSE, an MCP tool or an export (§4.21).
   to today − 32 in UTC, that **other** collectors of this person hold token
   rows for — dates only, never a count (D-084, LAI-769 review 1). The preview
   below is session only, so this is how a collector learns which days of a
-  30-day backfill not to send again.
+  30-day backfill not to send again. Asked the same way it adds
+  `task_prefixes`: the key prefixes of every project the sender may read,
+  sorted (LAI-770). A key in a branch name counts for a task only when its
+  prefix is one of them, so `release-2026` or `gpt-5` is never taken for a
+  task; the collector keeps the last answer.
 - `PUT /me/activity-sharing` takes `{ enabled?, scope? }` — `scope` is
   `agent-repos` or `laika-repos` — from a **web session only** and answers the
   same shape. Off stops collection at once and deletes nothing. No `activity`
@@ -1833,7 +1840,16 @@ reaches SSE, an MCP tool or an export (§4.21).
   review 1). The collector asks `GET /me/activity-sharing?collector_id=` first
   and leaves the older tokens out of a day another collector already holds.
   A key is kept only when it names a task in a project the sender may read;
-  any other is stored unattributed. No `activity` row. It
+  any other is stored unattributed. **Where the key comes from** (D-084 item
+  5, LAI-770): the agent's own Laika calls in that session, read by the
+  collector from the session file — `start_working`, or `update_status` into
+  an in-progress status, starts work on the task, and another mark,
+  `finish_task` or a move of that task out of progress ends it, so a session
+  that moved between tasks is **split by time**; a subagent's own marks are
+  its own; a call the board refused is no mark. Without a mark, a key in the
+  branch name whose prefix is in `task_prefixes`. Only the key is sent;
+  anything else is `null`. A backfilled day's older tokens are always `null`
+  (D-084 item 11). No `activity` row. It
   answers `200 { "accepted_days": n }`. **Never** prompt or reply text, tool
   input, paths, repository or branch names, or session ids: there is no field
   that could carry one.
@@ -1966,6 +1982,27 @@ delivery named it, `null` before (D-083). `ci` is `{ head_sha, total, passed,
 failed, pending, failed_names }` from §4.31, or `null` when no CI result was
 reported for the round's head commit.
 
+**A task's tokens (D-084, LAI-770).** `GET /tasks/:id/usage?tz=` answers `{
+task_id, key, tz, first_day, last_day, totals: { tokens, input, output,
+cache_write, cache_read }, people, by_person, by_round, attributed }` under
+§3.2's `usage.read_project`. Every person's rows for the task **add up** —
+each person's collector sends its own tokens under the key, and attribution
+follows who marked the task in their own session, never `assignee_id`.
+`tokens` is input + output + cache writes, cache reads beside it (D-084 item
+8). **Who sees whom is D-084 item 7**: `people` is `everyone` for a reader
+holding `usage.read_people` (an owner or admin on a session), `own` for
+anyone else on a session — `by_person` then holds only their own part, or
+nothing — and `none` for a token, with `by_person: null`. `by_person` is `[{
+user_id, name, tokens, cache_read, by_agent: [{ agent, tokens, cache_read }]
+}]` in name order, never ranked. `by_round` is `[{ number, finished_on,
+tokens, cache_read }]`: rows are per day, so a day counts toward the first
+round handed in on or after it, read in `tz` (default `UTC`, `422
+invalid_tz` otherwise) — a round's finish day counts toward that round — and
+what comes after the last finish is the open round, `finished_on: null`.
+`attributed` is `{ tokens, of }` — of everything the people this reader sees
+spent on the days the task has tokens, the part tied to a task, this one or
+another (D-084 item 6) — or `null` when they see nobody's.
+
 **Sizes and forecasts (D-085, LAI-771).** `POST /projects/:slug/tasks` and
 `PATCH /tasks/:id` take an optional `size` — `XS` to `XL`, or `null` on `PATCH`
 to go back to the computed one — under `task.write`, so anyone who may edit the
@@ -2091,12 +2128,12 @@ read them.
 | `list_projects` | `{}` | projects the user can read |
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age |
 | `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`), and `estimate` — the size, its *why*, the forecast frozen at start and the actual, as `GET /tasks/:id/estimate` answers (D-085) |
-| `get_project_context` | `{ project }` | `context_md`, its recent edit history, open-task summary, members + roles |
+| `get_project_context` | `{ project }` | `context_md`, its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770) |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
 | `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only |
 | `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size? }` | task. Every field optional; an omitted one is left alone; `null` on `parent`, a date or `size` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085) |
-| `start_working` | `{ task, branch? }` | task, or `409` with the current assignee |
+| `start_working` | `{ task, branch? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770) |
 | `update_status` | `{ task, status, note? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
 | `set_task_sprint` | `{ task, sprint }` | task. `sprint: null` takes it out of whichever it is in |
 | `add_comment` | `{ task, body }` | comment |
@@ -2709,7 +2746,7 @@ call MCP; agents do.
 | **Login & invite** | 1–2 | `POST /auth/*`, `GET /invites/:token`, `POST /invites/accept`, `GET /me` | — | ✅ |
 | **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `POST /projects/:slug/join`, `GET/POST/PATCH/DELETE /projects/:slug/members` | `get_project_context` | ✅ |
 | **Board** | 2 | `GET/POST /projects/:slug/tasks`, `PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `GET /projects/:slug/members`, `GET /events`, `GET /watching` | `create_task`, `start_working`, `update_status`, `finish_task` | ✅ |
-| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
+| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=` | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **Tokens** | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
@@ -2783,6 +2820,13 @@ anything missing sends the task back.
   against the actual build time, review wait and rework; the *why* — each
   factor's contribution in levels and the similar finished tasks as links;
   and the project's accuracy figure. Never a figure about a person.
+  **A Tokens section under the proof** (D-084, LAI-770): the task's tokens
+  without cache reads and cache reads beside them, labelled *at least*; per
+  review round; per person and agent for an owner or admin, the reader's own
+  part for anyone else, nothing per person on a token; and the attributed
+  share — how much of those people's work on those days Laika could tie to a
+  task — or, for a reader who sees nobody's part, what the figure counts.
+  Not drawn for a task never started that has none.
   **A watch toggle and who else is watching** (D-047, D-054), and an
   **`@` autocomplete in the comment box fed by `GET /projects/:slug/mentionable`
   — never by the member list**, because who may be mentioned is the server's
