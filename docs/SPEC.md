@@ -2208,10 +2208,10 @@ the decision currently governing it rather than the table naming one for all.
 
 | | | decision |
 | --- | --- | --- |
-| the sidebar | **ORG** — *Capacity*, and *Unlisted work* with its open count for owners and admins — then **SPACES** — two recent spaces, *More spaces* — then SETTINGS. A space is a project with a two-letter key, a count and a colour | D-059.1, amended by **D-061**; ORG by **LAI-754** (the owner, 2026-10-15) |
+| the sidebar | **ORG** — *Capacity*, *Review* with its waiting count for everyone signed in (D-081), and *Unlisted work* with its open count for owners and admins — then **SPACES** — two recent spaces, *More spaces* — then SETTINGS. A space is a project with a two-letter key, a count and a colour | D-059.1, amended by **D-061**; ORG by **LAI-754** (the owner, 2026-10-15) |
 | Task detail | a **centred modal over a dimmed board**, dismissed by the scrim or Escape — not a screen, and not a right-hand drawer | D-059.2, amended by **D-063** |
 | Timeline, Calendar, Dashboard, Meeting review | **tabs across the top of a space** | **D-059.3** |
-| Capacity, Unlisted work | **one page each, across every space the reader can see**, reached from the sidebar's ORG group — `/capacity` and `/unlisted`, no space bar and no tabs. A `/capacity?project=` link from when Capacity was a tab is rewritten to `/capacity` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"* |
+| Capacity, Review, Unlisted work | **one page each, across every space the reader can see**, reached from the sidebar's ORG group — `/capacity`, `/review` and `/unlisted`, no space bar and no tabs. A `/capacity?project=` link from when Capacity was a tab is rewritten to `/capacity` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"* |
 
 Checked against `docs/design/Laika Prototype.dc.html` — **which is dated 24 August
 and is behind the owner's live design.** `docs/design/README.md` says which copy
@@ -2232,13 +2232,14 @@ call MCP; agents do.
 | **Login & invite** | 1–2 | `POST /auth/*`, `GET /invites/:token`, `POST /invites/accept`, `GET /me` | — | ✅ |
 | **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `POST /projects/:slug/join`, `GET/POST/PATCH/DELETE /projects/:slug/members` | `get_project_context` | ✅ |
 | **Board** | 2 | `GET/POST /projects/:slug/tasks`, `PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `GET /projects/:slug/members`, `GET /events`, `GET /watching` | `create_task`, `start_working`, `update_status`, `finish_task` | ✅ |
-| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
+| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=` | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **Tokens** | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
 | **Organisation** | 1 basic / 6 LLM | `GET/PATCH /org`, `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
 | **Connect** *(not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` | — | ✅ D-079 |
 | **Capacity** *(sidebar, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects`, `GET /tasks/:id`, `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754 |
+| **Review** *(sidebar, global)* | 5 | `GET /review`, `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-081 |
 | **Unlisted work** *(sidebar, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
 | **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity` | — | ✅ D-078, D-079 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` | all, indirectly via `activity` | ✅ |
@@ -2287,6 +2288,14 @@ anything missing sends the task back.
   `discovered-from` — a **Development** card (branch, external ref, commits)
   when any of them is set, and `Created` / `Updated` at the foot. Comments
   distinguish human from agent.
+  **A Proof section beside Acceptance** once the task has been finished
+  (D-081): the send-back it carries first, then the latest round — round
+  number, the agent that finished it, commits (short sha and first line),
+  branch, pull request as a link only when `http(s)`, test commands with their
+  exit codes in green for `0` and red otherwise, and a `claimed` badge on every
+  item — with earlier rounds folded. A comment that is a send-back's reason is
+  marked *sent back*, and a card carrying a send-back wears a *sent back*
+  marker with the reason as its tooltip.
   **A watch toggle and who else is watching** (D-047, D-054), and an
   **`@` autocomplete in the comment box fed by `GET /projects/:slug/mentionable`
   — never by the member list**, because who may be mentioned is the server's
@@ -2322,6 +2331,18 @@ anything missing sends the task back.
   admins, a link to *Unlisted work* with the open count; disabled state when
   `presence_enabled = 0`. **No unlisted notes on this screen** — they are on
   their own page.
+- **Review** (`/review`, everyone signed in, D-081) — the queue of tasks in a
+  review status on every project the reader can act on, **oldest waiting
+  first**: key, title, project, assignee, the agent that finished it, time
+  waiting, the proof in brief (commits, PR, tests passed and failed, or *no
+  proof*) and the round. A summary card of tiles — waiting, oldest, failing
+  tests, no proof — with an (i). Filters: project, assignee, *Failing tests*,
+  *No proof*. A row opens the full proof (the task panel's Proof section) with
+  **Accept** and **Send back…**, the second asking for a required reason in a
+  dialog; both are disabled, saying why, for a reader who may not decide.
+  *Open on board* opens the task. The waiting count is in the header and beside
+  the sidebar entry. There is no organisation-wide stream, so the page re-reads
+  every 20 seconds, when the tab returns and after each decision.
 - **Unlisted work** (`/unlisted`, owners and admins, LAI-754) — **one line per
   note**: repo, who, when and the note's first line, newest first; a click opens
   the full text with **Promote to task** and **Dismiss** under it; the first

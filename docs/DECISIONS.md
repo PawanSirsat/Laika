@@ -4437,3 +4437,89 @@ wanted a GitHub-like twelve months.
   snapshot day it no longer reports.
 - **Another machine's history.** Each machine looks back over the repos it
   knows; the same commit from two machines is one key.
+
+## D-081 — The review gate: agents never move work into done, a finish carries proof, a person decides.
+
+**2026-10-17, the owner, directly** (through the orchestrator; LAI-758 builds
+it in `server/`, `server/web/` and here; board cards LAIKA-455, LAIKA-476,
+LAIKA-478). Laika's strategy is to be the acceptance gate for coding-agent
+work: any vendor's agent hands work back with proof, and only a named person
+signed in to the web app marks it Done. Three things stood in the way. An
+agent's token could move a task into Done — `review → done` was in the agent
+transition table and the agent rule read it (audit H6), and a create could
+start in Done. `finish_task` carried a summary and nothing a reviewer could
+check. And no page showed a person what was waiting for them.
+
+### Decided
+
+1. **An agent never moves a task into `done`.** Any caller authenticated by a
+   personal access token — REST or MCP — is refused any status whose
+   **category** is `done` (D-077), however it names it: a category, a status
+   id, a status name, from wherever the task is, a move between two done
+   statuses, a create into one, and a status delete that would carry work
+   into one. The answer is `403 forbidden` with `details.reason:
+   "agent_cannot_mark_done"` and a message pointing at `finish_task`: §6.3's
+   vocabulary is closed (D-021), so the reason travels in `details` as D-079's
+   did. The check uses `isAgentPrincipal`, which also covers §3.4's system
+   principal; that changes nothing, because §10.1 stops a merged pull request
+   at review. `review → done` leaves `ALLOWED_TRANSITIONS`, so the table is a
+   second lock rather than the only one; a person's table, derived from it, is
+   unchanged.
+2. **A token never replays a session's answer it could not have had.**
+   Idempotency keys belong to the person, not the credential (LAI-748, still
+   open for the general case). For a review decision, and for any stored task
+   answer in a done category, the route runs for the token instead of the
+   store answering — so a session's `200` for a done move is never handed to
+   its person's agent as success.
+3. **Moving into done asks the review rule** (audit M7): the assignee, a
+   project lead, or an org admin or owner, as moving into review already did.
+   **Claim takes a task from where work starts**: a `backlog` or `todo`
+   status, or an unassigned `in_progress` one — released work, which moves no
+   category and which D-078 item 8 measures from its first claim. A done,
+   cancelled or review task is refused `422`. The claim keeps the first
+   `started_at` and records the status it came from.
+4. **Every finish is a round, and its proof is items with a state.**
+   `finish_task` and its new REST twin `POST /tasks/:id/finish` take optional
+   `commits` (sha, first line), `branch`, `pull_request` (`http(s)` only) and
+   `tests` (command, exit code), bounded per round (§4.26). Each finish writes
+   a `task_rounds` row numbered per task (§4.25) — finished, sent back and
+   finished again is two rounds, and the first is never rewritten — and one
+   `task_evidence` row per item. **Each item has a `state`**: `claimed` today,
+   `confirmed` or `failed` once something other than the agent checks it,
+   with `state_source` and `state_at` beside it. Step 2 (LAIKA-477, GitHub
+   confirming the proof) flips those three columns on a row and needs no
+   migration. Migration `0032` creates three tables and alters nothing.
+5. **A person accepts or sends back, on a web session only.**
+   `POST /tasks/:id/accept` moves a review task to the project's first
+   visible done status; `POST /tasks/:id/send-back` takes a required reason
+   and moves it to the first visible in-progress status. Both ask §5's done
+   rule, both refuse a token `session_required`, and both write a
+   `task_reviews` row (§4.27) naming who decided and which round. **No new
+   activity verb** (CLAUDE.md §4.4): each is the `task.status_changed` row,
+   with `via: "accept"` or `via: "send_back"`, and a send-back's reason is
+   posted as an ordinary comment whose view is marked `sent_back`.
+6. **A send-back is read first until the next finish.** It is the task's
+   current one while it is the latest decision, no newer round exists, and
+   the task is not done or cancelled. `TaskView.send_back` carries it to the
+   card and the panel, and `get_task_context` returns it as its first field
+   and its first markdown section. "Newer" is the round, not the clock: the
+   decision records the round it decided on.
+7. **The Review page** (`/review`, the sidebar's ORG group, everyone signed
+   in): every review task on the projects the reader holds `task.write` on,
+   oldest waiting first, with the proof in brief; a row opens the full proof
+   and the two decisions. There is no organisation-wide stream, so it re-reads
+   on a 20-second timer, when the tab returns and after each decision; the
+   task panel's proof is live through the board's store.
+
+### What this does not decide
+
+- **GitHub confirming the proof** (LAIKA-477, LAI-753): which events flip
+  which items, and how a forged claim is told from a true one.
+- **Idempotency keyed by credential** (LAI-748). Item 2 closes the two
+  answers that would breach this decision; the general fix is that task's.
+- **Whether a person may accept their own agent's work.** Today the assignee
+  may, as they could move it to done before; a stricter "someone else
+  accepts" rule is a decision of its own.
+- **Measuring evidence completeness and time in review** (the cards'
+  success measures). The rounds and decisions make both computable; neither
+  is reported yet.
