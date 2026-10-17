@@ -159,6 +159,20 @@
   border-color: var(--chip-orange-border);
 }
 
+/* GitHub's CI verdict (D-083): the agent's exit codes say what it ran, this
+   says what CI found. Pending is the neutral chip. */
+.rev-chip-ci-confirmed {
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border-color: var(--chip-green-border);
+}
+
+.rev-chip-ci-failed {
+  color: var(--overdue);
+  background: color-mix(in srgb, var(--overdue) 12%, transparent);
+  border-color: var(--overdue-border);
+}
+
 .rev-detail {
   display: grid;
   gap: var(--space-3);

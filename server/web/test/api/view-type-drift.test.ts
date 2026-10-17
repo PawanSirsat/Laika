@@ -126,6 +126,20 @@ const PAIRS: readonly Pair[] = [
     client: 'OrgAi',
     clientFile: 'org.ts',
   },
+  // The GitHub webhook block and the one answer that carries the secret
+  // (LAI-753), paired the moment the client existed.
+  {
+    server: 'OrgGithubWebhookView',
+    serverFile: 'services/orgs.ts',
+    client: 'OrgGithubWebhook',
+    clientFile: 'org.ts',
+  },
+  {
+    server: 'GithubWebhookSecretView',
+    serverFile: 'services/orgs.ts',
+    client: 'GithubWebhookSecret',
+    clientFile: 'org.ts',
+  },
   {
     server: 'AcceptedInviteBody',
     serverFile: 'http/routes/invites.ts',
@@ -344,6 +358,8 @@ const PAIRS: readonly Pair[] = [
       ['BranchEvidence', 'services/rounds.ts'],
       ['PullRequestEvidence', 'services/rounds.ts'],
       ['TestEvidence', 'services/rounds.ts'],
+      // GitHub's CI line on a round (D-083, LAI-766).
+      ['RoundCi', 'services/github-proof.ts'],
     ] as const
   ).map(([name, serverFile]) => ({
     server: name,

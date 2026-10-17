@@ -10,9 +10,12 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  ciLine,
+  ciVerdict,
   evidenceSummary,
   filterQueue,
   NO_FILTER,
+  proofStamp,
   safeHttpUrl,
   SEND_BACK_REASON_MAX,
   sendBackProblem,
@@ -35,6 +38,7 @@ function round(patch: Partial<Round> = {}): Round {
     branch: null,
     pull_request: null,
     tests: [],
+    ci: null,
     created_at: 0,
     ...patch,
   };
@@ -93,7 +97,7 @@ void describe('evidenceSummary', () => {
           { ...item(), sha: 'a', message: null },
           { ...item(), sha: 'b', message: null },
         ],
-        pull_request: { ...item(), url: 'https://github.com/o/r/pull/9' },
+        pull_request: { ...item(), url: 'https://github.com/o/r/pull/9', merged: null },
         tests: [
           { ...item(), command: 'pnpm test', exit_code: 0 },
           { ...item(), command: 'pnpm lint', exit_code: 1 },
@@ -140,6 +144,85 @@ void describe('filterQueue', () => {
     assert.deepEqual(keys({ ...NO_FILTER, failing: true }), ['A']);
     assert.deepEqual(keys({ ...NO_FILTER, noEvidence: true }), ['C']);
     assert.deepEqual(keys({ ...NO_FILTER, failing: true, noEvidence: true }), []);
+  });
+});
+
+/** CI as GitHub reported it (D-083). */
+const ci = (patch: Partial<NonNullable<Round['ci']>> = {}): NonNullable<Round['ci']> => ({
+  head_sha: 'a'.repeat(40),
+  total: 3,
+  passed: 3,
+  failed: 0,
+  pending: 0,
+  failed_names: [],
+  ...patch,
+});
+
+void describe('CI from GitHub (D-083)', () => {
+  // **The agent's exit codes and CI disagree on purpose here**: `A` claims a
+  // pass and CI failed, `B` claims a failure and CI passed. The CI filters
+  // follow CI, and *Failing tests* still follows the claim.
+  const items = [
+    queued('A', {
+      round: round({
+        tests: [{ ...item(), command: 'x', exit_code: 0 }],
+        ci: ci({ passed: 2, failed: 1, failed_names: ['lint'] }),
+      }),
+    }),
+    queued('B', {
+      round: round({ tests: [{ ...item(), command: 'x', exit_code: 1 }], ci: ci() }),
+    }),
+    queued('C', { round: round({ ci: ci({ passed: 2, pending: 1 }) }) }),
+    queued('D', { round: round() }),
+  ];
+  const keys = (filter: Parameters<typeof filterQueue>[1]) =>
+    filterQueue(items, filter).map((i) => i.task.key);
+
+  void test('CI failed and CI confirmed filter by GitHub, not by the claimed exit codes', () => {
+    assert.deepEqual(keys({ ...NO_FILTER, ciFailed: true }), ['A']);
+    assert.deepEqual(keys({ ...NO_FILTER, ciConfirmed: true }), ['B']);
+    assert.deepEqual(keys({ ...NO_FILTER, failing: true }), ['B']);
+  });
+
+  void test('a verdict for each case, and none without CI', () => {
+    assert.deepEqual(
+      items.map((i) => ciVerdict(i.round)),
+      ['failed', 'confirmed', 'pending', 'none'],
+    );
+    assert.equal(ciVerdict(null), 'none');
+  });
+
+  void test('the CI line says the server’s sentence', () => {
+    assert.equal(ciLine(ci()), 'CI: 3 of 3 checks passed');
+    assert.equal(ciLine(ci({ total: 1, passed: 1 })), 'CI: 1 of 1 check passed');
+    assert.equal(ciLine(ci({ passed: 2, failed: 1, failed_names: ['lint'] })), 'CI: lint failed');
+    assert.equal(ciLine(ci({ passed: 2, pending: 1 })), 'CI: 2 of 3 checks passed, 1 pending');
+    assert.equal(
+      ciLine(ci({ total: 6, passed: 2, failed: 4, failed_names: ['a', 'b', 'c', 'd'] })),
+      'CI: 4 of 6 checks failed',
+    );
+  });
+
+  void test('proofStamp moves when GitHub changes an item, so an open proof re-reads', () => {
+    assert.equal(proofStamp(round()), 0);
+    assert.equal(
+      proofStamp(
+        round({
+          commits: [{ ...item(), sha: 'a', message: null }],
+          tests: [
+            {
+              id: 't',
+              state: 'confirmed',
+              state_source: 'github',
+              state_at: 42,
+              command: 'x',
+              exit_code: 0,
+            },
+          ],
+        }),
+      ),
+      42,
+    );
   });
 });
 

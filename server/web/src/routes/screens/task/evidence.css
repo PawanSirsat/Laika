@@ -146,10 +146,11 @@
   border: 1px solid transparent;
 }
 
+/* Grey: what the agent said, and nothing has checked it (D-083). */
 .ev-state-claimed {
-  color: var(--chip-blue);
-  background: var(--chip-blue-bg);
-  border-color: var(--chip-blue-border);
+  color: var(--chip-neutral);
+  background: var(--chip-neutral-bg);
+  border-color: var(--chip-neutral-border);
 }
 
 .ev-state-confirmed {
@@ -229,4 +230,49 @@
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-1);
   }
+}
+
+/* The pull request's merge, once GitHub has said (D-083). */
+.ev-merged {
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.ev-merged-yes {
+  color: var(--chip-green);
+}
+
+/* GitHub's CI for the round's head commit (D-083): one line beside the
+   commands the agent typed, which the test states follow. */
+.ev-ci {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+}
+
+.ev-ci-line {
+  font-weight: var(--weight-bold);
+}
+
+.ev-ci-confirmed .ev-ci-line {
+  color: var(--chip-green);
+}
+
+.ev-ci-failed .ev-ci-line {
+  color: var(--overdue);
+}
+
+.ev-ci-pending .ev-ci-line {
+  color: var(--text-muted);
+}
+
+.ev-ci-sha {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
 }

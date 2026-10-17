@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   acceptReview,
+  ciLine,
+  ciVerdict,
   evidenceSummary,
   filterQueue,
   getReviewQueue,
   NO_FILTER,
+  proofStamp,
   sendBackReview,
   waitingFor,
   type QueueFilter,
@@ -176,7 +179,12 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
   };
 
   const filtered =
-    filter.project !== null || filter.assignee !== null || filter.failing || filter.noEvidence;
+    filter.project !== null ||
+    filter.assignee !== null ||
+    filter.failing ||
+    filter.noEvidence ||
+    filter.ciFailed ||
+    filter.ciConfirmed;
 
   const header = (
     <ScreenHeader
@@ -309,6 +317,29 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
           >
             No proof
           </button>
+          {/* GitHub's verdict on the head commit (D-083), as opposed to the
+              exit codes the agent typed — the two can disagree, which is the
+              point of having both. */}
+          <button
+            type="button"
+            className={filter.ciFailed ? 'bar-control bar-control-on' : 'bar-control'}
+            aria-pressed={filter.ciFailed}
+            onClick={() => {
+              setFilter((f) => ({ ...f, ciFailed: !f.ciFailed, ciConfirmed: false }));
+            }}
+          >
+            CI failed
+          </button>
+          <button
+            type="button"
+            className={filter.ciConfirmed ? 'bar-control bar-control-on' : 'bar-control'}
+            aria-pressed={filter.ciConfirmed}
+            onClick={() => {
+              setFilter((f) => ({ ...f, ciConfirmed: !f.ciConfirmed, ciFailed: false }));
+            }}
+          >
+            CI confirmed
+          </button>
         </div>
       )}
 
@@ -333,6 +364,7 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
           {shown.map((item) => {
             const open = selected === item.task.id;
             const summary = evidenceSummary(item.round);
+            const ci = ciVerdict(item.round);
             const agent = item.round?.client_name ?? null;
             const deciding = busy === item.task.id;
             return (
@@ -383,6 +415,15 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
                             ✗ {summary.testsFailed} failed
                           </span>
                         )}
+                        {ci !== 'none' && item.round?.ci != null && (
+                          <span
+                            className={`rev-chip rev-chip-ci rev-chip-ci-${ci}`}
+                            title={ciLine(item.round.ci)}
+                            data-ci={ci}
+                          >
+                            {ci === 'failed' ? '✗ CI' : ci === 'confirmed' ? '✓ CI' : '… CI'}
+                          </span>
+                        )}
                       </>
                     )}
                   </span>
@@ -392,7 +433,9 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
                   <div className="rev-detail" id={`rev-detail-${item.task.id}`}>
                     <EvidenceSection
                       taskId={item.task.id}
-                      refreshKey={item.task.updated_at}
+                      // GitHub's confirmations move no task, so the queue's own
+                      // re-read is what notices them (D-083).
+                      refreshKey={item.task.updated_at + proofStamp(item.round)}
                       sendBack={item.task.send_back}
                       nameOf={nameOf}
                     />

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
+  ciLine,
+  ciVerdict,
   evidenceSummary,
   getTaskRounds,
   safeHttpUrl,
@@ -39,9 +41,9 @@ export interface EvidenceSectionProps {
 const PULL_REQUEST = 'Pull request';
 
 const STATE_HINT: Record<EvidenceState, string> = {
-  claimed: 'The agent said so. Nothing has checked it yet.',
-  confirmed: 'Checked by something other than the agent.',
-  failed: 'Checked, and it did not hold.',
+  claimed: 'The agent said so. GitHub has not confirmed it yet.',
+  confirmed: 'GitHub confirmed it.',
+  failed: 'GitHub checked it, and it did not hold.',
 };
 
 /** One item's state, as a small badge (D-082): `claimed` until something checks it. */
@@ -80,7 +82,17 @@ export function ProofInfo() {
         </div>
         <div>
           <dt>confirmed · failed</dt>
-          <dd>What a check found. GitHub confirmation is the next step.</dd>
+          <dd>
+            What GitHub reported: the commit was pushed, the pull request exists, CI passed or
+            failed. Laika reads the webhook; it never calls GitHub.
+          </dd>
+        </div>
+        <div>
+          <dt>CI</dt>
+          <dd>
+            GitHub&rsquo;s checks for the round&rsquo;s head commit. A typed command cannot be
+            matched to a CI job, so every test takes CI&rsquo;s answer.
+          </dd>
         </div>
       </dl>
     </InfoTip>
@@ -159,6 +171,11 @@ export function RoundProof({
                     {pr.url.replace(/^https?:\/\//, '')}
                   </a>
                 )}
+                {pr.merged !== null && (
+                  <span className={pr.merged ? 'ev-merged ev-merged-yes' : 'ev-merged'}>
+                    {pr.merged ? 'merged' : 'not merged'}
+                  </span>
+                )}
                 <StateBadge state={pr.state} />
               </dd>
             </div>
@@ -181,12 +198,35 @@ export function RoundProof({
                     </li>
                   ))}
                 </ul>
+                {round.ci !== null && <CiLine round={round} />}
+              </dd>
+            </div>
+          )}
+          {round.tests.length === 0 && round.ci !== null && (
+            <div className="ev-group">
+              <dt className="ev-label">CI</dt>
+              <dd>
+                <CiLine round={round} />
               </dd>
             </div>
           )}
         </dl>
       )}
     </div>
+  );
+}
+
+/** GitHub's CI for the round's head commit, as one line (D-083). */
+export function CiLine({ round }: { readonly round: Round }) {
+  if (round.ci === null) return null;
+  const verdict = ciVerdict(round);
+  return (
+    <p className={`ev-ci ev-ci-${verdict}`} data-ci={verdict}>
+      <span className="ev-ci-line">{ciLine(round.ci)}</span>
+      <code className="ev-ci-sha" title={round.ci.head_sha}>
+        on {shortSha(round.ci.head_sha)}
+      </code>
+    </p>
   );
 }
 
