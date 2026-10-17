@@ -31,8 +31,10 @@ import {
   ACTOR_KINDS,
   AI_PROVIDERS,
   CREATED_VIA,
+  CHECK_OUTCOMES,
   EVIDENCE_KINDS,
   EVIDENCE_STATES,
+  GITHUB_CHECK_KINDS,
   LOCAL_ACTIVITY_SCOPES,
   MEETING_REVIEW_STATUSES,
   ORG_ROLES,
@@ -1379,6 +1381,125 @@ export const taskReviews = sqliteTable(
   ],
 );
 
+// ------------------------------------------------------ §4.28 github_commits
+
+/**
+ * A commit a GitHub delivery said exists (§4.28, D-083, LAI-766): every commit
+ * of a `push`, and the head of a `pull_request`. What a commit item of a
+ * round's proof is matched against — by full sha or an unambiguous prefix —
+ * including a commit pushed before the agent finished. Kept 30 days from the
+ * last delivery that named it.
+ *
+ * `branch` is the **first** branch it was seen on: a fast-forward to `main`
+ * names the same commit again, and the branch it was made on is the one an
+ * agent's proof names.
+ */
+export const githubCommits = sqliteTable(
+  'github_commits',
+  {
+    /** `owner/name`, lowercased. */
+    repo: text('repo').notNull(),
+    /** The full 40-hex sha, lowercase. */
+    sha: text('sha').notNull(),
+    branch: text('branch'),
+    /** The commit's own timestamp from the push, when it had one. */
+    committedAt: integer('committed_at'),
+    seenAt: integer('seen_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.repo, t.sha] }),
+    // A prefix lookup is a range on `sha` (`>= prefix AND < prefix || 'g'`).
+    index('github_commits_sha_idx').on(t.sha),
+    index('github_commits_seen_at_idx').on(t.seenAt),
+  ],
+);
+
+// ------------------------------------------------ §4.29 github_pull_requests
+
+/**
+ * A pull request as its newest `pull_request` delivery described it (§4.29,
+ * D-083). Keyed by host, repository and number, lowercased, so the URL an
+ * agent pasted matches the one GitHub sends whatever its case or suffix.
+ */
+export const githubPullRequests = sqliteTable(
+  'github_pull_requests',
+  {
+    /** `github.com/owner/name#12`, lowercased. */
+    key: text('key').primaryKey(),
+    repo: text('repo').notNull(),
+    number: integer('number').notNull(),
+    /** GitHub's `html_url`, as sent. */
+    url: text('url').notNull(),
+    headSha: text('head_sha'),
+    headRef: text('head_ref'),
+    /** 1 once GitHub reports it merged. */
+    merged: integer('merged').notNull().default(0),
+    /** When GitHub says the pull request last changed. */
+    eventAt: integer('event_at').notNull(),
+    seenAt: integer('seen_at').notNull(),
+  },
+  (t) => [
+    index('github_pull_requests_head_sha_idx').on(t.headSha),
+    index('github_pull_requests_seen_at_idx').on(t.seenAt),
+  ],
+);
+
+// ------------------------------------------------------- §4.30 github_checks
+
+/**
+ * One CI result for one commit, as its newest delivery reported it (§4.30,
+ * D-083): a check run, a workflow run or a check suite. Keyed by name, so a
+ * re-run replaces the run it repeats — newest event wins — rather than leaving
+ * the old failure beside the new pass.
+ */
+export const githubChecks = sqliteTable(
+  'github_checks',
+  {
+    repo: text('repo').notNull(),
+    headSha: text('head_sha').notNull(),
+    kind: text('kind', { enum: GITHUB_CHECK_KINDS }).notNull(),
+    /** The job's name, the workflow's name, or the app's slug for a suite. */
+    name: text('name').notNull(),
+    outcome: text('outcome', { enum: CHECK_OUTCOMES }).notNull(),
+    /** GitHub's own `conclusion`, kept for the reader; null while pending. */
+    conclusion: text('conclusion'),
+    eventAt: integer('event_at').notNull(),
+    seenAt: integer('seen_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.repo, t.headSha, t.kind, t.name] }),
+    index('github_checks_head_sha_idx').on(t.headSha),
+    index('github_checks_seen_at_idx').on(t.seenAt),
+    check('github_checks_kind_check', oneOf('kind', GITHUB_CHECK_KINDS)),
+    check('github_checks_outcome_check', oneOf('outcome', CHECK_OUTCOMES)),
+  ],
+);
+
+// --------------------------------------------------- §4.31 task_round_github
+
+/**
+ * What GitHub said about one round (§4.31, D-083): whether its pull request
+ * was merged, and the CI line for its head commit. Written whenever the round
+ * is checked, and kept with the round, so the proof reads the same after the
+ * 30-day record it was computed from has gone.
+ */
+export const taskRoundGithub = sqliteTable('task_round_github', {
+  roundId: text('round_id')
+    .primaryKey()
+    .references(() => taskRounds.id, { onDelete: 'cascade' }),
+  /** 1 merged, 0 not merged, null when no delivery named the pull request. */
+  prMerged: integer('pr_merged'),
+  /** The commit CI was read for; null when the round names none. */
+  ciHeadSha: text('ci_head_sha'),
+  ciTotal: integer('ci_total').notNull().default(0),
+  ciPassed: integer('ci_passed').notNull().default(0),
+  ciFailed: integer('ci_failed').notNull().default(0),
+  ciPending: integer('ci_pending').notNull().default(0),
+  /** A JSON array of the names that failed, at most ten. */
+  ciFailedNames: text('ci_failed_names').notNull().default('[]'),
+  updatedAt,
+});
+
 export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
 
 export type User = typeof users.$inferSelect;
@@ -1407,3 +1528,7 @@ export type PushedCommitKey = typeof pushedCommitKeys.$inferSelect;
 export type TaskRound = typeof taskRounds.$inferSelect;
 export type TaskEvidence = typeof taskEvidence.$inferSelect;
 export type TaskReview = typeof taskReviews.$inferSelect;
+export type GithubCommit = typeof githubCommits.$inferSelect;
+export type GithubPullRequest = typeof githubPullRequests.$inferSelect;
+export type GithubCheck = typeof githubChecks.$inferSelect;
+export type TaskRoundGithub = typeof taskRoundGithub.$inferSelect;

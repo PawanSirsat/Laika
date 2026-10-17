@@ -12,6 +12,7 @@ import {
   projectView,
 } from '../services/projects.ts';
 import { listTaskRounds, type RoundView } from '../services/rounds.ts';
+import { ciLine } from '../services/github-proof.ts';
 import { listSprints, sprintTaskCounts } from '../services/sprints.ts';
 import {
   getTask,
@@ -601,7 +602,8 @@ function summarise(task: TaskView | undefined, id: string) {
 
 /**
  * A round's proof as bullets, each marked with its state (D-082): an agent
- * reading its own earlier claim should see that it is a claim.
+ * reading its own earlier claim should see that it is a claim — and, once
+ * GitHub has spoken (D-083), whether it held.
  */
 function evidenceText(round: RoundView | null): string {
   if (round === null) return '_No finish yet._';
@@ -613,8 +615,14 @@ function evidenceText(round: RoundView | null): string {
     ...(round.branch === null ? [] : [`branch \`${round.branch.name}\` — ${round.branch.state}`]),
     ...(round.pull_request === null
       ? []
-      : [`pull request ${round.pull_request.url} — ${round.pull_request.state}`]),
+      : [
+          `pull request ${round.pull_request.url} — ${round.pull_request.state}${
+            round.pull_request.merged === true ? ', merged' : ''
+          }`,
+        ]),
     ...round.tests.map((t) => `\`${t.command}\` exited ${String(t.exit_code)} — ${t.state}`),
+    // GitHub's verdict on the head commit (D-083): what the test states follow.
+    ...(round.ci === null ? [] : [ciLine(round.ci)]),
   ];
   return bullets(lines, 'Finished with no proof attached.');
 }

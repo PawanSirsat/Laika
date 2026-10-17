@@ -11,12 +11,14 @@ import {
   submissionsInWindow,
   providerFor,
   transcriptWebhookSecret,
+  handleCheck,
   handlePullRequest,
   handleIssueComment,
   handlePush,
   SIGNATURE_HEADER,
   verifySignature,
 } from '../../services/webhooks.ts';
+import { pruneGithubRecords } from '../../services/github-proof.ts';
 import { type AppEnv } from '../context.ts';
 
 /**
@@ -89,13 +91,19 @@ export function githubWebhookRoutes(options: WebhookRouteOptions): Hono<AppEnv> 
     const now = clock();
 
     if (delivery !== '' && !deliveries.accept(delivery, now)) {
-      // §10.1's 24h window. GitHub retries within minutes of a non-2xx, so this
-      // is mostly about not doing the same thing twice after a slow response.
+      // §10.1's 24h window. **GitHub does not retry on its own** (LAI-753): a
+      // failed delivery stays failed until somebody presses *Redeliver* on the
+      // webhook's page, so what this catches is that redelivery of one that
+      // had in fact arrived.
       return c.json({ ok: true, deduplicated: true });
     }
 
     const event = c.req.header('x-github-event') ?? '';
     const payload: unknown = JSON.parse(raw || 'null');
+
+    // §4.28–§4.30's 30 days, kept by the deliveries themselves: one indexed
+    // delete per table, and nothing for a cron job to remember.
+    pruneGithubRecords(db, now);
 
     const outcome =
       event === 'push'
@@ -109,10 +117,13 @@ export function githubWebhookRoutes(options: WebhookRouteOptions): Hono<AppEnv> 
                 (projectId) => systemPrincipal(projectId),
                 now,
               )
-            : { handled: false, reason: 'event not handled' };
+            : event === 'check_run' || event === 'workflow_run' || event === 'check_suite'
+              ? handleCheck(db, event, asRecord(payload), now)
+              : { handled: false, reason: 'event not handled' };
 
     // **Acknowledged and ignored** (§10.1) — a `200` for an event Laika does not
-    // handle, so GitHub stops retrying something that will never be handled.
+    // handle, so the webhook's *Recent Deliveries* page shows it as delivered
+    // rather than as a failure somebody might redeliver for nothing.
     return c.json({ ok: true, ...outcome });
   });
 

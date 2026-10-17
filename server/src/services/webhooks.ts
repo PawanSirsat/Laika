@@ -11,9 +11,22 @@ import { type ServiceCaller } from '../auth/resolve-actor.ts';
 import { type TaskStatus } from '../db/enums.ts';
 import { tasks } from '../db/schema.ts';
 import { requireOrgId } from '../db/orgs.ts';
-import { resolveBranchTask } from './heartbeats.ts';
+import { resolveBranchTask, resolveRepoProjects } from './heartbeats.ts';
 import { addComment } from './comments.ts';
 import { changeStatus } from './tasks.ts';
+import { type GithubCheckKind } from '../db/enums.ts';
+import {
+  checkOutcome,
+  foldRepo,
+  githubTime,
+  pullRequestKey,
+  pullRequestsWithHead,
+  reconcileProof,
+  recordCheck,
+  recordCommits,
+  recordPullRequest,
+  type SeenCommit,
+} from './github-proof.ts';
 
 /**
  * `POST /webhooks/github` — the parts that decide whether to listen (§10.1).
@@ -111,11 +124,10 @@ export const DELIVERY_TTL_MS = 24 * 60 * 60 * 1000;
 /**
  * A cap, so an attacker cannot grow this by inventing delivery ids.
  *
- * Sized well above a real day: GitHub retries a delivery a handful of times, and
- * a busy org sees thousands of events a day, not a hundred thousand. Reaching it
- * means something is wrong, and dropping the oldest is the failure that costs
- * least — a redelivery of a very old event is processed twice, which is the same
- * thing a restart already does.
+ * Sized well above a real day: a busy org sees thousands of events a day, not a
+ * hundred thousand. Reaching it means something is wrong, and dropping the
+ * oldest is the failure that costs least — a redelivery of a very old event is
+ * processed twice, which is the same thing a restart already does.
  */
 const MAX_TRACKED = 100_000;
 
@@ -125,9 +137,16 @@ const MAX_TRACKED = 100_000;
  * ## In memory, and it does not survive a restart
  *
  * **Stated because the alternative is discovering it.** Laika is one process
- * with one SQLite file (D-002), so a `Map` is enough to make GitHub's retries
- * idempotent within a run — which is what the deduplication is *for*, since
- * GitHub retries within minutes of a non-2xx, not across days.
+ * with one SQLite file (D-002), so a `Map` is enough to make a redelivery
+ * idempotent within a run.
+ *
+ * **GitHub does not retry a failed delivery** (LAI-753). Its documentation is
+ * plain: a delivery that times out or answers non-2xx is marked failed and
+ * stays failed until somebody presses *Redeliver* on the webhook's *Recent
+ * Deliveries* page (or calls the redeliver API). So the duplicates this
+ * catches are those manual redeliveries, and a delivery that arrives while
+ * production restarts — every push to `master` restarts it (D-073) — is
+ * **lost** unless redelivered by hand. The Organisation screen says so.
  *
  * What it costs: a redelivery **after a restart** is processed a second time.
  * For `push` that means a second `webhook.commit` row in an append-only log; for
@@ -207,6 +226,8 @@ export interface DeliveryOutcome {
   /** The task a `push` or `pull_request` resolved to, when it resolved to one. */
   taskId?: string;
   reason?: string;
+  /** How many rounds' proof this delivery changed (D-083). */
+  rounds?: number;
 }
 
 const IGNORED: DeliveryOutcome = { handled: false, reason: 'event not handled' };
@@ -214,48 +235,126 @@ const IGNORED: DeliveryOutcome = { handled: false, reason: 'event not handled' }
 /** GitHub's `push`: `ref` is `refs/heads/<branch>`, `repository.full_name` is `owner/name`. */
 interface PushPayload {
   ref?: unknown;
-  repository?: { full_name?: unknown };
+  after?: unknown;
+  deleted?: unknown;
+  forced?: unknown;
+  commits?: unknown;
+  repository?: { full_name?: unknown; default_branch?: unknown };
 }
 
 interface PullRequestPayload {
   action?: unknown;
-  pull_request?: { head?: { ref?: unknown }; number?: unknown; merged?: unknown };
+  pull_request?: {
+    head?: { ref?: unknown; sha?: unknown };
+    number?: unknown;
+    merged?: unknown;
+    html_url?: unknown;
+    updated_at?: unknown;
+  };
   repository?: { full_name?: unknown };
 }
+
+/** How many shas one `webhook.commit` row lists; `count` says how many there were. */
+export const PUSH_SHAS_LISTED = 50;
+/** A bound on what one delivery may make this server store. */
+const PUSH_COMMITS_RECORDED = 2048;
 
 function str(value: unknown): string | null {
   return typeof value === 'string' && value !== '' ? value : null;
 }
 
 /**
- * `push` → the task its branch names, and one `webhook.commit` row (§10.1, §9.2).
+ * `push` → one `webhook.commit` row, and its commits remembered for the proof
+ * (§10.1, §9.2, LAI-753, D-083).
  *
- * **A branch that resolves to no task is not an error.** §9.2's resolution
- * degrades, and `main` is the commonest branch there is — answering `422` to
- * every push on it would make the endpoint useless and the logs unreadable.
+ * **The row says what a reader needs**: the repository, the branch, whether it
+ * is the repository's default branch, how many commits the delivery carried,
+ * their shas (the first 50) and whether it was forced. It does **not** say who
+ * wrote them: D-050 refused mapping a commit author to a Laika user, and an
+ * author's name or email in the payload would be that mapping arriving as a
+ * convenience.
+ *
+ * **A push to the default branch is stored too.** It names no task, so it is
+ * the project's row rather than a task's — the project whose `repo` (§4.3) is
+ * this repository. A branch that resolves to no task is not an error either:
+ * §9.2's resolution degrades, and `main` is the commonest branch there is.
+ *
+ * The commits are remembered whether or not any project tracks the repository
+ * (§4.28): a project that never named its repository still has an agent's
+ * proof to confirm.
  */
 export function handlePush(db: Db, payload: PushPayload, now: number): DeliveryOutcome {
-  const repo = str(payload.repository?.full_name);
+  const repoName = str(payload.repository?.full_name);
   const ref = str(payload.ref);
-  if (repo === null || ref === null)
+  if (repoName === null || ref === null)
     return { handled: false, reason: 'push is missing repo or ref' };
+  if (payload.deleted === true) return { handled: false, reason: 'branch deleted' };
+  if (!ref.startsWith('refs/heads/')) return { handled: false, reason: 'not a branch' };
+  const repo = foldRepo(repoName);
+  if (repo === null) return { handled: false, reason: 'push is missing repo or ref' };
 
-  const branch = ref.replace(/^refs\/heads\//, '');
-  const resolved = resolveBranchTask(db, repo, branch);
-  if (resolved === null) return { handled: false, reason: 'branch resolved to no task' };
-
-  appendActivity(db, {
-    orgId: requireOrgId(db),
-    projectId: resolved.projectId,
-    taskId: resolved.taskId,
-    actorId: null,
-    actorKind: 'system',
-    type: 'webhook.commit',
-    payload: { repo, branch },
+  const branch = ref.slice('refs/heads/'.length);
+  const listed = pushCommits(payload.commits);
+  const after = str(payload.after);
+  const shas = recordCommits(
+    db,
+    repo,
+    branch,
+    after === null ? listed : [...listed, { sha: after, committedAt: null }],
     now,
-  });
+  );
 
-  return { handled: true, taskId: resolved.taskId };
+  const resolved = resolveBranchTask(db, repoName, branch);
+  const projectId = resolved?.projectId ?? soleProject(db, repoName, branch);
+  if (projectId !== null) {
+    const defaultBranch = str(payload.repository?.default_branch);
+    appendActivity(db, {
+      orgId: requireOrgId(db),
+      projectId,
+      taskId: resolved?.taskId ?? null,
+      actorId: null,
+      actorKind: 'system',
+      type: 'webhook.commit',
+      payload: {
+        repo: repoName,
+        branch,
+        default_branch: defaultBranch !== null && branch === defaultBranch,
+        count: listed.length,
+        shas: listed.slice(0, PUSH_SHAS_LISTED).map((c) => c.sha.toLowerCase()),
+        forced: payload.forced === true,
+      },
+      now,
+    });
+  }
+
+  const rounds = reconcileProof(db, { shas, branches: [branch] }, now);
+
+  return {
+    handled: true,
+    ...(resolved === null ? {} : { taskId: resolved.taskId }),
+    ...(projectId === null ? { reason: 'repository is tracked by no project' } : {}),
+    rounds,
+  };
+}
+
+/** The commits a push lists, bounded, each with its own timestamp. */
+function pushCommits(value: unknown): SeenCommit[] {
+  if (!Array.isArray(value)) return [];
+  const commits: SeenCommit[] = [];
+  for (const entry of value.slice(0, PUSH_COMMITS_RECORDED) as unknown[]) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const { id, timestamp } = entry as { id?: unknown; timestamp?: unknown };
+    const sha = str(id);
+    if (sha === null || !/^[0-9a-fA-F]{40}$/.test(sha)) continue;
+    commits.push({ sha, committedAt: githubTime(timestamp) });
+  }
+  return commits;
+}
+
+/** The one project tracking this repository, or null for none or several. */
+function soleProject(db: Db, repo: string, branch: string): string | null {
+  const { projectIds } = resolveRepoProjects(db, repo, branch);
+  return projectIds.length === 1 ? projectIds[0]! : null;
 }
 
 /**
@@ -289,8 +388,13 @@ export function handlePullRequest(
     return { handled: false, reason: 'pull_request is missing action, repo or branch' };
   }
 
+  // Remembered for the proof (D-083) **before** anything moves, and whatever
+  // the action: `synchronize` moves no task but is a new head commit, and a
+  // move §5 refuses must not lose what GitHub said about the pull request.
+  const rounds = recordPullRequestProof(db, repo, branch, payload, now);
+
   const to = statusForPullRequest(action, payload.pull_request?.merged === true);
-  if (to === null) return IGNORED;
+  if (to === null) return { ...IGNORED, rounds };
 
   const resolved = resolveBranchTask(db, repo, branch);
   if (resolved === null) return { handled: false, reason: 'branch resolved to no task' };
@@ -305,9 +409,138 @@ export function handlePullRequest(
       .run();
   }
 
+  // **Already there is not a failure** (LAI-766). Under the review gate the
+  // agent finishes first and a person merges after, so the task is in review
+  // when `merged` arrives; answering that `409` would mark the delivery failed
+  // on GitHub's page for doing exactly what it should.
+  const current = db
+    .select({ status: tasks.status })
+    .from(tasks)
+    .where(eq(tasks.id, resolved.taskId))
+    .get();
+  if (current?.status === to) {
+    return { handled: true, taskId: resolved.taskId, reason: `already ${to}`, rounds };
+  }
+
   changeStatus(db, principal(resolved.projectId), resolved.taskId, to, now);
 
-  return { handled: true, taskId: resolved.taskId };
+  return { handled: true, taskId: resolved.taskId, rounds };
+}
+
+/**
+ * The pull request and its head commit, remembered (§4.28, §4.29), and the
+ * rounds that name either re-checked. Returns how many changed.
+ */
+function recordPullRequestProof(
+  db: Db,
+  repoName: string,
+  branch: string,
+  payload: PullRequestPayload,
+  now: number,
+): number {
+  const repo = foldRepo(repoName);
+  const number = payload.pull_request?.number;
+  if (repo === null || typeof number !== 'number' || !Number.isSafeInteger(number)) return 0;
+
+  // GitHub always sends `html_url`; the fallback is for a payload that does not,
+  // and it is the same URL GitHub would have sent for github.com.
+  const url =
+    str(payload.pull_request?.html_url) ?? `https://github.com/${repoName}/pull/${String(number)}`;
+  const key = pullRequestKey(url);
+  if (key === null) return 0;
+
+  const head = str(payload.pull_request?.head?.sha)?.toLowerCase() ?? null;
+  recordPullRequest(
+    db,
+    {
+      key,
+      repo,
+      number,
+      url,
+      headSha: head,
+      headRef: branch,
+      merged: payload.pull_request?.merged === true,
+      eventAt: githubTime(payload.pull_request?.updated_at) ?? now,
+    },
+    now,
+  );
+  const shas =
+    head === null ? [] : recordCommits(db, repo, branch, [{ sha: head, committedAt: null }], now);
+
+  return reconcileProof(db, { shas, branches: [branch], pullRequests: [key] }, now);
+}
+
+/** The three CI events (§10.1, D-083), each naming its object after itself. */
+interface CheckPayload {
+  action?: unknown;
+  repository?: { full_name?: unknown };
+  check_run?: CheckObject;
+  workflow_run?: CheckObject;
+  check_suite?: CheckObject;
+}
+
+interface CheckObject {
+  head_sha?: unknown;
+  name?: unknown;
+  status?: unknown;
+  conclusion?: unknown;
+  completed_at?: unknown;
+  updated_at?: unknown;
+  started_at?: unknown;
+  created_at?: unknown;
+  app?: { slug?: unknown; name?: unknown };
+}
+
+/**
+ * `check_run`, `workflow_run` or `check_suite` → that CI result remembered
+ * for its commit (§4.30), and every round whose head it is re-checked
+ * (D-083). Every action is recorded, not only `completed`: a run that is
+ * queued or in progress is what keeps a round's tests `claimed` rather than
+ * confirmed by the jobs that happened to finish first.
+ */
+export function handleCheck(
+  db: Db,
+  kind: GithubCheckKind,
+  payload: CheckPayload,
+  now: number,
+): DeliveryOutcome {
+  const repo = foldRepo(str(payload.repository?.full_name) ?? '');
+  const body = payload[kind];
+  const head = str(body?.head_sha)?.toLowerCase() ?? null;
+  const name =
+    kind === 'check_suite'
+      ? (str(body?.app?.slug) ?? str(body?.app?.name) ?? 'check suite')
+      : str(body?.name);
+  if (repo === null || head === null || !/^[0-9a-f]{40}$/.test(head) || name === null) {
+    return { handled: false, reason: `${kind} is missing repo, head_sha or name` };
+  }
+
+  const conclusion = str(body?.conclusion);
+  recordCheck(
+    db,
+    {
+      repo,
+      headSha: head,
+      kind,
+      name: name.slice(0, 200),
+      outcome: checkOutcome(str(body?.status), conclusion),
+      conclusion,
+      eventAt:
+        githubTime(body?.completed_at) ??
+        githubTime(body?.updated_at) ??
+        githubTime(body?.started_at) ??
+        githubTime(body?.created_at) ??
+        now,
+    },
+    now,
+  );
+
+  const rounds = reconcileProof(
+    db,
+    { shas: [head], pullRequests: pullRequestsWithHead(db, repo, head) },
+    now,
+  );
+  return { handled: true, rounds };
 }
 
 /**

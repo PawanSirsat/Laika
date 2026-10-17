@@ -175,7 +175,17 @@ describe('a verified delivery', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(((await res.json()) as { handled: boolean }).handled).toBe(false);
+    // **And it is stored** (LAI-753): before, a push that named no task wrote
+    // nothing, so every push to the default branch vanished. It is the
+    // project's row now, with no task.
+    expect(((await res.json()) as { handled: boolean }).handled).toBe(true);
+    const row = h.db
+      .select()
+      .from(activity)
+      .all()
+      .find((r) => r.type === 'webhook.commit');
+    expect(row?.taskId).toBeNull();
+    expect(row?.projectId).toBe(projectId);
   });
 
   it('acknowledges an event it does not handle, and changes nothing', async () => {
