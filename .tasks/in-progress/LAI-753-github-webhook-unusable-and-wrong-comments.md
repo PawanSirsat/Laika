@@ -2,11 +2,12 @@
 id: LAI-753
 title: 'GitHub webhook: no path sets its secret, a push stores almost nothing, and three comments say GitHub retries'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-751
-status: backlog
+started: 2026-10-17T09:28:56Z
+status: in-progress
 ---
 
 ## Goal
