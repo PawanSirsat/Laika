@@ -11,15 +11,22 @@
  *
  *     LAIKA_URL=https://board.example LAIKA_TOKEN=lai_… \
  *       pnpm --filter @laika/server exec tsx scripts/backfill-external-ref.ts \
- *       --project laika [--prefix LAI] [--apply]
+ *       --project laika [--prefix LAI] [--per-second 2] [--apply]
  *
  * **A dry run unless `--apply`**: it prints what it would set and writes
  * nothing. Idempotent: a card that already carries its id is counted as done,
  * so a second run has nothing to do. It never writes over an `external_ref` a
  * card holds — a pull request's `owner/repo#N` included — and never writes one
- * id onto two cards, which would make every lookup by it `422 ambiguous`: a
- * title two cards share, or an id another card already holds, is skipped and
- * said. The token is read from the environment and never printed.
+ * id onto two cards: a title two cards share, or an id another card in the
+ * project already holds, is skipped and said, and so is a card the board
+ * refuses for that reason (`422` `taken`) because another took the id after
+ * the listing. The token is read from the environment and never printed.
+ *
+ * **Paced, because the board rate-limits a token** (§6.3: 120 a minute, two a
+ * second sustained): writes go two a second by default (`--per-second`), and
+ * a `429` — a read's too — waits the `Retry-After` it names (a second when it
+ * names none) and asks again, at most five times a card before it counts as
+ * failed (review B1: 480 cards back to back lost 267 to `429`).
  */
 import { fileURLToPath } from 'node:url';
 
@@ -96,22 +103,75 @@ export interface BackfillOptions {
   /** Write. Without it, nothing is written. */
   apply: boolean;
   prefix?: string;
+  /** Writes a second; 2 by default, the board's sustained rate for a token. */
+  writesPerSecond?: number;
+  /** Retries of one request after a `429`, before it counts as failed; 5 by default. */
+  retries?: number;
   fetch?: typeof fetch;
   print?: (line: string) => void;
+  /** How to wait, in milliseconds — injected by the tests, which never wait. */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+export interface BackfillResult {
+  /** Cards the plan would set. */
+  planned: number;
+  written: number;
+  /** Cards left alone: the plan's skips, and any the board refused as taken. */
+  skipped: number;
+  /** Cards a write did not reach: refused, or still `429` after every retry. */
+  failed: number;
+}
+
+const DEFAULT_PER_SECOND = 2;
+const DEFAULT_RETRIES = 5;
+
+/** `Retry-After` in milliseconds: its seconds, or one second when it names none. */
+function retryAfterMs(res: Response): number {
+  const seconds = Number(res.headers.get('retry-after'));
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1_000 : 1_000;
+}
+
+interface Asker {
+  call: typeof fetch;
+  sleep: (ms: number) => Promise<void>;
+  retries: number;
+  print: (line: string) => void;
+}
+
+/**
+ * One request, asked again after each `429` — once `Retry-After` has passed —
+ * until the retries run out; the last answer is returned whatever it is.
+ * `what` names the request in the line said for each wait.
+ */
+async function ask(asker: Asker, url: URL, init: RequestInit, what: string): Promise<Response> {
+  for (let attempt = 1; ; attempt += 1) {
+    const res = await asker.call(url, init);
+    if (res.status !== 429 || attempt > asker.retries) return res;
+    const wait = retryAfterMs(res);
+    asker.print(`429 on ${what}: waiting ${String(wait / 1_000)} s, retry ${String(attempt)}`);
+    await asker.sleep(wait);
+  }
+}
+
+function under(options: BackfillOptions, path: string): URL {
+  return new URL(path, options.url.endsWith('/') ? options.url : `${options.url}/`);
 }
 
 /** Every card of the project, page by page (`GET /projects/:slug/tasks`). */
-async function allCards(options: BackfillOptions, call: typeof fetch): Promise<Card[]> {
+async function allCards(options: BackfillOptions, asker: Asker): Promise<Card[]> {
   const cards: Card[] = [];
   let cursor: string | null = null;
   for (;;) {
-    const page = new URL(
-      `api/v1/projects/${encodeURIComponent(options.project)}/tasks`,
-      options.url.endsWith('/') ? options.url : `${options.url}/`,
-    );
+    const page = under(options, `api/v1/projects/${encodeURIComponent(options.project)}/tasks`);
     page.searchParams.set('limit', '200');
     if (cursor !== null) page.searchParams.set('cursor', cursor);
-    const res = await call(page, { headers: { authorization: `Bearer ${options.token}` } });
+    const res = await ask(
+      asker,
+      page,
+      { headers: { authorization: `Bearer ${options.token}` } },
+      'reading the project',
+    );
     if (!res.ok) throw new Error(`GET ${page.pathname}: ${String(res.status)}`);
     const body = (await res.json()) as { data: Card[]; next_cursor: string | null };
     cards.push(...body.data);
@@ -120,45 +180,79 @@ async function allCards(options: BackfillOptions, call: typeof fetch): Promise<C
   }
 }
 
-/** Read the project, print the plan, and with `apply` make its writes. */
-export async function backfill(
-  options: BackfillOptions,
-): Promise<{ planned: number; written: number; failed: number }> {
-  const call = options.fetch ?? fetch;
+/** The key of the card that holds the id, when the board refused a write as taken. */
+async function takenBy(res: Response): Promise<string | undefined> {
+  if (res.status !== 422) return undefined;
+  try {
+    const body = (await res.json()) as {
+      error?: { details?: { reason?: unknown; task?: unknown } };
+    };
+    const details = body.error?.details;
+    return details?.reason === 'taken' && typeof details.task === 'string'
+      ? details.task
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Read the project, print the plan, and with `apply` make its writes, paced. */
+export async function backfill(options: BackfillOptions): Promise<BackfillResult> {
   const print = options.print ?? ((line: string) => console.log(line));
-  const plan = planBackfill(await allCards(options, call), options.prefix);
+  const sleep =
+    options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
+  const asker: Asker = {
+    call: options.fetch ?? fetch,
+    sleep,
+    retries: options.retries ?? DEFAULT_RETRIES,
+    print,
+  };
+  const pace = 1_000 / (options.writesPerSecond ?? DEFAULT_PER_SECOND);
+  const plan = planBackfill(await allCards(options, asker), options.prefix);
 
   for (const s of plan.skipped) print(`skip ${s.key} (${s.ref}): ${s.reason}`);
   let written = 0;
+  let skipped = plan.skipped.length;
   let failed = 0;
+  let first = true;
   for (const s of plan.set) {
     if (!options.apply) {
       print(`would set ${s.key} → ${s.ref}`);
       continue;
     }
-    const target = new URL(
-      `api/v1/tasks/${encodeURIComponent(s.id)}`,
-      options.url.endsWith('/') ? options.url : `${options.url}/`,
+    // The pace between writes, none before the first.
+    if (!first) await sleep(pace);
+    first = false;
+    const res = await ask(
+      asker,
+      under(options, `api/v1/tasks/${encodeURIComponent(s.id)}`),
+      {
+        method: 'PATCH',
+        headers: { authorization: `Bearer ${options.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ external_ref: s.ref }),
+      },
+      `${s.key} → ${s.ref}`,
     );
-    const res = await call(target, {
-      method: 'PATCH',
-      headers: { authorization: `Bearer ${options.token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ external_ref: s.ref }),
-    });
     if (res.ok) {
       written += 1;
       print(`set ${s.key} → ${s.ref}`);
-    } else {
-      failed += 1;
-      print(`failed ${s.key} → ${s.ref}: ${String(res.status)} ${await res.text()}`);
+      continue;
     }
+    const holder = await takenBy(res.clone());
+    if (holder !== undefined) {
+      skipped += 1;
+      print(`skip ${s.key} (${s.ref}): ${holder} holds ${s.ref} already`);
+      continue;
+    }
+    failed += 1;
+    print(`failed ${s.key} → ${s.ref}: ${String(res.status)} ${await res.text()}`);
   }
   print(
     `${options.apply ? '' : 'dry run — '}${String(plan.set.length)} to set, ${String(written)} set, ` +
-      `${String(failed)} failed, ${String(plan.done)} already carry theirs, ${String(plan.skipped.length)} skipped` +
+      `${String(skipped)} skipped, ${String(failed)} failed, ${String(plan.done)} already carry theirs` +
       (options.apply ? '' : ' (add --apply to write)'),
   );
-  return { planned: plan.set.length, written, failed };
+  return { planned: plan.set.length, written, skipped, failed };
 }
 
 function argument(args: readonly string[], name: string): string | undefined {
@@ -180,18 +274,25 @@ async function main(): Promise<void> {
     project === ''
   ) {
     console.error(
-      'usage: LAIKA_URL=… LAIKA_TOKEN=… tsx scripts/backfill-external-ref.ts --project <slug> [--prefix LAI] [--apply]',
+      'usage: LAIKA_URL=… LAIKA_TOKEN=… tsx scripts/backfill-external-ref.ts --project <slug> [--prefix LAI] [--per-second 2] [--apply]',
     );
     process.exitCode = 2;
     return;
   }
   const prefix = argument(args, '--prefix');
+  const perSecond = argument(args, '--per-second');
+  if (perSecond !== undefined && !(Number(perSecond) > 0)) {
+    console.error('--per-second takes a number above 0');
+    process.exitCode = 2;
+    return;
+  }
   const result = await backfill({
     url,
     token,
     project,
     apply: args.includes('--apply'),
     ...(prefix === undefined ? {} : { prefix }),
+    ...(perSecond === undefined ? {} : { writesPerSecond: Number(perSecond) }),
   });
   if (result.failed > 0) process.exitCode = 1;
 }
