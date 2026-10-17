@@ -25,6 +25,27 @@ export interface OrgAi {
   readonly key_last4: string | null;
 }
 
+/**
+ * The GitHub webhook block (§10.1, LAI-753), for an owner or admin on a web
+ * session. **Never the secret**: that is answered once, by the call that made
+ * it (`rotateGithubWebhookSecret`), and nothing serves it again.
+ */
+export interface OrgGithubWebhook {
+  readonly configured: boolean;
+  /** `LAIKA_PUBLIC_URL` + `/webhooks/github`, or null when the server has none. */
+  readonly payload_url: string | null;
+}
+
+/** What setting or rotating answers — the one time the secret is shown. */
+export interface GithubWebhookSecret {
+  readonly configured: boolean;
+  readonly payload_url: string | null;
+  readonly secret: string;
+}
+
+/** §10 mounts the webhook outside `/api/v1`. */
+export const GITHUB_WEBHOOK_PATH = '/webhooks/github';
+
 export interface Org {
   readonly id: string;
   readonly name: string;
@@ -52,6 +73,8 @@ export interface Org {
    * already had — so `'ai' in org` is the question, never `org.ai === null`.
    */
   readonly ai?: OrgAi;
+  /** **Absent, not null**, for a caller who may not configure webhooks. */
+  readonly github_webhook?: OrgGithubWebhook;
 }
 
 export interface OrgPatch {
@@ -76,4 +99,14 @@ export function getOrg(signal?: AbortSignal): Promise<Org> {
 
 export function updateOrg(patch: OrgPatch): Promise<Org> {
   return request<Org>('/org', { method: 'PATCH', body: patch });
+}
+
+/** Set or rotate the GitHub webhook secret; the answer is the only time it is shown. */
+export function rotateGithubWebhookSecret(): Promise<GithubWebhookSecret> {
+  return request<GithubWebhookSecret>('/org/github-webhook', { method: 'POST' });
+}
+
+/** Clear it: every delivery from GitHub is refused until a new one is set. */
+export function clearGithubWebhookSecret(): Promise<void> {
+  return request<void>('/org/github-webhook', { method: 'DELETE' });
 }

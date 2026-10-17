@@ -4568,3 +4568,104 @@ check. And no page showed a person what was waiting for them.
 - **Measuring evidence completeness and time in review** (the cards'
   success measures). The rounds and decisions make both computable; neither
   is reported yet.
+
+## D-083 — GitHub confirms the proof: deliveries decide each item's state, and nothing calls GitHub.
+
+**2026-10-17, the owner, directly** (through the orchestrator; LAI-753 and
+LAI-766 build it in `server/`, `server/web/` and here; board cards LAIKA-559
+and LAIKA-477). D-082 stored every finish as a round of evidence items, each
+`claimed`, and left open which GitHub events flip which items and how a
+forged claim is told from a true one. The GitHub webhook could not help: no
+path set its secret, so every delivery was refused `401`.
+
+### Decided
+
+1. **The webhook secret is set from the web app, and Laika makes it.** Owners
+   and admins, on a web session only: `POST /org/github-webhook` makes 32
+   random bytes, stores them as §12's ciphertext under the
+   `github_webhook_secret` purpose, and answers the secret **once**;
+   calling it again rotates and the old one is refused at once;
+   `DELETE /org/github-webhook` clears it. `GET /org` serves `configured` and
+   the payload URL, never the secret. *Configure webhooks* becomes
+   **session only** (§3.1): whoever holds the secret can sign deliveries that
+   confirm proof, so an agent's token must not be able to mint one and vouch
+   for itself. The payload URL is `LAIKA_PUBLIC_URL` + `/webhooks/github` —
+   outside `/api/v1`, as §10 always said.
+2. **A push stores what a reader needs**, and a push to the default branch is
+   stored too: `webhook.commit` carries repo, branch, `default_branch`,
+   `count`, the first 50 shas and `forced`, against the task the branch names
+   or else the project tracking the repository. **No author** — D-050 still
+   refuses mapping a commit author to a Laika user, and keeping the name or
+   email would be that mapping arriving as a convenience.
+3. **What GitHub said is recorded, then compared with what the agent
+   claimed** — in that order, whichever arrives first. Commits from pushes and
+   pull request heads (§4.28), each pull request's newest state (§4.29) and
+   each CI result's newest outcome (§4.30) are kept **30 days** from the last
+   delivery that named them. Every finish re-checks its new round, and every
+   delivery re-checks the rounds it could touch that are **still open** — the
+   newest round of its task, finished in the last 30 days, with no review
+   decision against it (§4.31). So CI that finished before the agent called
+   `finish_task` still counts, and **a round keeps what GitHub said while it
+   was the one waiting**: once a newer round exists, or a person has accepted
+   or sent it back, no later push or check rewrites it. (Re-checking every
+   round let round 2's head move round 1's CI line, and turned a round sent
+   back for red CI green — the review's B2.)
+4. **Which events flip which items.** A **commit** is `confirmed` when exactly
+   one seen commit has the claimed sha as its full sha or a prefix of at least
+   7 — two sharing the prefix confirm neither. A **branch** is `confirmed` by a
+   push to it or a pull request from it. A **pull request** is `confirmed` by
+   any delivery for it, matched by host, repository and number so case and a
+   `/files` suffix do not matter; whether it merged is shown beside it.
+   **Test items follow CI** for the round's head commit — the pull request's
+   head, else the newest claimed commit GitHub reported — because a command an
+   agent typed cannot be matched one-to-one with a CI job: any failure,
+   timeout or cancellation fails them all, all passed confirms them, anything
+   pending leaves them `claimed`, and the CI result is its own line beside them
+   (*CI: 3 of 3 checks passed*, *CI: lint failed*). CI counts **one kind** —
+   check runs, else workflow runs, else check suites — never the three summed,
+   because one GitHub Actions run reports itself as all three.
+5. **Newest event wins.** A pull request or a CI result is one row, replaced
+   only by a delivery whose own timestamp is not older: a re-run that passes
+   replaces the failure it repeats, and a late redelivery of the old one does
+   not undo it. Commit, branch and pull request items only ever go from
+   `claimed` to `confirmed`; test items follow CI both ways.
+6. **Only plausible repositories, and the agent does not choose them.** The
+   project's `repo` when it names one, and only that: a pull request in
+   another repository confirms nothing, and nothing is matched through it —
+   otherwise an agent could cite a pull request in a repository it controls
+   and have that repository vouch for it (the review's B1). Only when the
+   project names no repository does the pull request's own narrow it, and then
+   nothing is matched anywhere else; with neither, any repository this org's
+   webhook reports. A commit or a CI result from another repository never
+   confirms anything.
+7. **No call to GitHub** (§13.4 unchanged): everything is what a delivery
+   carried. That is also the answer to "how is a forged claim told from a true
+   one": a claim is confirmed only by a delivery signed with the org's secret,
+   which an agent cannot hold.
+8. **A merged pull request still moves its task to review and never to done**
+   (D-082), and a task **already** in review or done is left there with a
+   `200` — under the review gate the agent finishes first and a person merges
+   after, and answering `409` or `422` marked the delivery failed on GitHub for
+   doing what it should. **`opened` and `reopened` only start work**: they
+   move a task out of `backlog` or `todo` and nothing else, answering `200`
+   and moving nothing otherwise — a late or redelivered `opened`, or a person
+   opening the pull request during review, no longer pulls a task out of the
+   Review queue, and `reopened` no longer takes accepted work out of done.
+9. **GitHub does not retry a failed delivery.** Three comments said it did; it
+   does not. A delivery that arrives while production restarts — every push to
+   `master` (D-073) — is lost unless somebody presses *Redeliver* on the
+   webhook's *Recent Deliveries* page. The Organisation screen says so in one
+   line, and the 24-hour delivery-id deduplication now exists for those manual
+   redeliveries.
+
+### What this does not decide
+
+- **Delivery-id replay protection beyond 24 hours, HTTPS, and other hardening**
+  — parked by the owner. A signed delivery can be replayed within the
+  in-memory window's limits after a restart, as before.
+- **Live updates of a confirmation.** A state GitHub flips moves no task, so
+  the board's stream does not carry it: the task panel shows it when opened,
+  and the Review page on its 20-second re-read.
+- **Gitea, GitLab** and any other source.
+- **Who rotated the secret.** §4.8 has no verb for it, as for
+  `developer_insights`; an audit row is a decision of its own.

@@ -307,7 +307,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // The profile's heatmap (D-079, LAI-751), by day.
     app.route(`${API_BASE}/people`, peopleRoutes({ db }));
     app.route(`${API_BASE}/users`, userRoutes({ db }));
-    app.route(`${API_BASE}/org`, orgRoutes({ db, serverSecret: options.serverSecret ?? '' }));
+    app.route(
+      `${API_BASE}/org`,
+      orgRoutes({ db, serverSecret: options.serverSecret ?? '', publicUrl: options.publicUrl }),
+    );
 
     // **Outside `/api/v1`, and that is §10's first sentence** — *"Mounted at
     // `/webhooks/*`, outside `/api/v1`, no user session."* It still passes

@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
@@ -67,6 +68,24 @@ export interface OrgAiView {
   key_last4: string | null;
 }
 
+/**
+ * The GitHub webhook block (§10.1, LAI-753) — for a caller who may configure
+ * webhooks, on a web session (§3.1). **Never the secret**: it is shown once,
+ * by the call that made it, and nothing decrypts it to build a view.
+ */
+export interface OrgGithubWebhookView {
+  configured: boolean;
+  /**
+   * What to paste into GitHub's *Payload URL*: `LAIKA_PUBLIC_URL` and
+   * `/webhooks/github`. Null when the server has no public URL configured, and
+   * the screen then builds it from the address it was opened at.
+   */
+  payload_url: string | null;
+}
+
+/** The path §10 mounts the GitHub webhook at — outside `/api/v1`. */
+export const GITHUB_WEBHOOK_PATH = '/webhooks/github';
+
 export interface OrgView {
   id: string;
   name: string;
@@ -98,6 +117,8 @@ export interface OrgView {
   updated_at: number;
   /** Present only for a caller who passes `org.settings.edit`. Absent, not null. */
   ai?: OrgAiView;
+  /** Present only for a caller who passes `webhook.configure`. Absent, not null. */
+  github_webhook?: OrgGithubWebhookView;
 }
 
 /**
@@ -112,7 +133,7 @@ export interface OrgView {
  * response would inherit a grant nobody reviewed. In a permission matrix that is
  * the worst place for a contingent fact (D-037).
  */
-export function getOrg(db: Db, actor: ResolvedActor): OrgView {
+export function getOrg(db: Db, actor: ResolvedActor, publicUrl = ''): OrgView {
   assertCan(actor, 'org.read');
 
   const row = db
@@ -133,16 +154,101 @@ export function getOrg(db: Db, actor: ResolvedActor): OrgView {
 
   // Field-level, and the only gate on it. A Viewer gets the org and no `ai` key
   // at all — see the module comment for why absent rather than null.
-  if (!can(actor, 'org.settings.edit')) return view;
+  const withAi: OrgView = can(actor, 'org.settings.edit')
+    ? {
+        ...view,
+        ai: {
+          configured: row.aiProvider !== null,
+          provider: row.aiProvider,
+          key_last4: keyLast4(row.aiKeyLast4),
+        },
+      }
+    : view;
 
+  // Its own grade: §3.1's *Configure webhooks*, session only (LAI-753).
+  if (!can(actor, 'webhook.configure')) return withAi;
   return {
-    ...view,
-    ai: {
-      configured: row.aiProvider !== null,
-      provider: row.aiProvider,
-      key_last4: keyLast4(row.aiKeyLast4),
-    },
+    ...withAi,
+    github_webhook: githubWebhookView(row.githubWebhookSecretEnc, publicUrl),
   };
+}
+
+function githubWebhookView(enc: string | null, publicUrl: string): OrgGithubWebhookView {
+  const base = publicUrl.replace(/\/+$/, '');
+  return {
+    configured: enc !== null && enc !== '',
+    payload_url: base === '' ? null : `${base}${GITHUB_WEBHOOK_PATH}`,
+  };
+}
+
+/** 32 random bytes as hex: GitHub accepts any string, and this one is unguessable. */
+const WEBHOOK_SECRET_BYTES = 32;
+
+/**
+ * What setting or rotating the secret answers — the one time it is shown.
+ * Spelled out rather than extending `OrgGithubWebhookView`, so the drift
+ * check compares every field it serves (it reads a type's own fields).
+ */
+export interface GithubWebhookSecretView {
+  configured: boolean;
+  payload_url: string | null;
+  /** The new secret, in plaintext. **Never served again** (§12). */
+  secret: string;
+}
+
+/**
+ * Set or rotate the GitHub webhook secret (§10.1, §3.1, LAI-753).
+ *
+ * **Laika makes the secret** rather than accepting one: a person pasting a
+ * secret they invented is a person choosing a weak one, and a generated one
+ * costs them nothing — they copy it into GitHub either way. It is answered
+ * here once, in plaintext, and stored only as §12's ciphertext under its own
+ * purpose; nothing decrypts it to build a response afterwards.
+ *
+ * **Rotating replaces it at once.** Every delivery signed with the old secret
+ * is refused `401` from this moment, so the screen says to paste the new one
+ * into GitHub straight away.
+ *
+ * **Session only** (§3.1): whoever holds this secret can sign deliveries that
+ * confirm an agent's proof (D-083), so an agent's token must never be able to
+ * mint one for itself.
+ *
+ * No `activity` row: §4.8 has no verb for it, as for `developer_insights`.
+ */
+export function rotateGithubWebhookSecret(
+  db: Db,
+  actor: ResolvedActor,
+  serverSecret: string,
+  now: number = Date.now(),
+  publicUrl = '',
+): GithubWebhookSecretView {
+  assertCan(actor, 'webhook.configure');
+  if (serverSecret === '') throw new ApiError('internal', 'This server cannot store secrets');
+
+  const secret = randomBytes(WEBHOOK_SECRET_BYTES).toString('hex');
+  const enc = encryptSecret(secret, serverSecret, 'github_webhook_secret');
+  db.update(orgs)
+    .set({ githubWebhookSecretEnc: enc, updatedAt: now })
+    .where(eq(orgs.id, requireOrgId(db)))
+    .run();
+
+  return { ...githubWebhookView(enc, publicUrl), secret };
+}
+
+/**
+ * Clear the GitHub webhook secret: every delivery is refused `401` until one
+ * is set again (§10.1's *absent means refuse*).
+ */
+export function clearGithubWebhookSecret(
+  db: Db,
+  actor: ResolvedActor,
+  now: number = Date.now(),
+): void {
+  assertCan(actor, 'webhook.configure');
+  db.update(orgs)
+    .set({ githubWebhookSecretEnc: null, updatedAt: now })
+    .where(eq(orgs.id, requireOrgId(db)))
+    .run();
 }
 
 /**
@@ -167,11 +273,11 @@ function keyLast4(last4: string | null): string | null {
  * silently followed either way.
  *
  * `presence_enabled`, D-079's `developer_insights` (LAI-751) and the AI provider
- * (LAI-447). SMTP and the webhook secret are
- * the same §3.1 row and the same action, but each carries encryption (§12) and
- * belongs with the task that builds its screen — a setter that could write
- * `ai_api_key_enc` without the key-derivation path is a hole waiting for a
- * caller.
+ * (LAI-447). SMTP is the same §3.1 row and the same action, but carries
+ * encryption (§12) and belongs with the task that builds its screen — a
+ * setter that could write `ai_api_key_enc` without the key-derivation path is
+ * a hole waiting for a caller. The GitHub webhook secret is *Configure
+ * webhooks*, its own row, and has its own two calls above (LAI-753).
  */
 /**
  * `null` clears, absent leaves alone (§6.4, LAI-447).
@@ -280,6 +386,7 @@ export function updateOrg(
   input: UpdateOrgInput,
   serverSecret: string,
   now: number = Date.now(),
+  publicUrl = '',
 ): OrgView {
   assertCan(actor, 'org.settings.edit');
   // Asked before anything is written, so a token's request that also carries
@@ -342,5 +449,5 @@ export function updateOrg(
       .run();
   }
 
-  return getOrg(db, actor);
+  return getOrg(db, actor, publicUrl);
 }

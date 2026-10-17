@@ -167,6 +167,32 @@ export function describeEvent(event: ActivityEvent): string {
   return LABELS[event.type] ?? event.type;
 }
 
+/**
+ * A push as the task panel's *Changes* tab prints it (LAI-753): *3 commits to
+ * lai-12-work · 1a2b3c4, 5d6e7f8 …*, from the `webhook.commit` payload §10.1
+ * now stores. Undefined for anything else, and for an older row that carries
+ * only repo and branch — that one reads as *pushed a commit*, as it did.
+ */
+export function pushSummary(event: Pick<ActivityEvent, 'type' | 'payload'>): string | undefined {
+  if (event.type !== 'webhook.commit') return undefined;
+  const payload = event.payload as {
+    branch?: unknown;
+    count?: unknown;
+    shas?: unknown;
+    default_branch?: unknown;
+  } | null;
+  if (typeof payload?.count !== 'number' || typeof payload.branch !== 'string') return undefined;
+  const shas = Array.isArray(payload.shas)
+    ? payload.shas.filter((sha): sha is string => typeof sha === 'string')
+    : [];
+  const what = `${String(payload.count)} ${payload.count === 1 ? 'commit' : 'commits'} to ${
+    payload.branch
+  }${payload.default_branch === true ? ' (default branch)' : ''}`;
+  if (shas.length === 0) return what;
+  const listed = shas.slice(0, 3).map((sha) => sha.slice(0, 7));
+  return `${what} · ${listed.join(', ')}${shas.length > 3 ? ' …' : ''}`;
+}
+
 /** `{from, to}` on a status change, when the payload carries it. */
 export function statusTransition(event: ActivityEvent): { from: string; to: string } | undefined {
   if (event.type !== 'task.status_changed') return undefined;

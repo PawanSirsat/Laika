@@ -335,7 +335,7 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'audit_log.export':
       return isAdminUp;
 
-    // | Configure webhooks | ✓ | ✓ | — | — |
+    // | Configure webhooks | ✓ (session only) | ✓ (session only) | — | — |
     case 'webhook.configure':
       return isAdminUp;
 

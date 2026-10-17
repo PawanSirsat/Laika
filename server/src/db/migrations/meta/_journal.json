@@ -239,6 +239,13 @@
       "when": 1792224283586,
       "tag": "0033_review_gate",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1792229590534,
+      "tag": "0034_github_confirm",
+      "breakpoints": true
     }
   ]
 }

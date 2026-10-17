@@ -567,7 +567,10 @@ describe('the parser itself', () => {
     // `task_dependencies` is a pair, not an entity, and has no `id`. Nor do
     // the heatmap's three tables (LAI-751): each row is a count *of* its key —
     // a person's day, a machine's day, a person's commit — not a thing of its
-    // own, and an id would be a second key the upserts must not see.
+    // own, and an id would be a second key the upserts must not see. The
+    // GitHub record (LAI-766, D-083) is keyed by what GitHub names — a
+    // repository and sha, a pull request, a commit's check — for the same
+    // reason, and `task_round_github` is one row per round, keyed by it.
     const withoutId = [...specTables.entries()]
       .filter(([, fields]) => !fields.includes('id'))
       .map(([table]) => table)
@@ -575,9 +578,13 @@ describe('the parser itself', () => {
 
     expect(withoutId).toEqual([
       'board_activity_days',
+      'github_checks',
+      'github_commits',
+      'github_pull_requests',
       'local_activity_days',
       'pushed_commit_keys',
       'task_dependencies',
+      'task_round_github',
       'task_tags',
     ]);
   });

@@ -6,6 +6,7 @@ import { newId } from '../db/ids.ts';
 import { projects, taskEvidence, taskReviews, taskRounds, tasks, tokens } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import { type RoundCi, confirmRound, roundSummaries } from './github-proof.ts';
 
 /**
  * The proof an agent hands back with `finish_task`, kept as rounds (SPEC
@@ -13,9 +14,9 @@ import { assertCan } from '../policy/can.ts';
  *
  * A **round** is one finish; its **evidence** is one row per item — each
  * commit, the branch, the pull request, each test run — and each item carries
- * a `state`. Today every item is `claimed`: the agent said so, and nothing has
- * checked. Step 2 (LAIKA-477) confirms items from GitHub by flipping `state` on
- * the row, which is why the state is per item and not per round.
+ * a `state`: `claimed` is what the agent said, and step 2 (D-083, LAI-766)
+ * flips it to `confirmed` or `failed` from GitHub's own deliveries
+ * (`github-proof.ts`), which is why the state is per item and not per round.
  *
  * This module writes rounds and reads them back. It imports nothing from
  * `services/tasks.ts`, which calls it from `finishTask`, so the two never form
@@ -68,6 +69,11 @@ export interface BranchEvidence extends EvidenceItem {
 
 export interface PullRequestEvidence extends EvidenceItem {
   url: string;
+  /**
+   * Whether GitHub reported it merged (D-083): null until a delivery named
+   * this pull request.
+   */
+  merged: boolean | null;
 }
 
 export interface TestEvidence extends EvidenceItem {
@@ -88,6 +94,11 @@ export interface RoundView {
   branch: BranchEvidence | null;
   pull_request: PullRequestEvidence | null;
   tests: TestEvidence[];
+  /**
+   * CI for the round's head commit, as GitHub reported it (D-083), or null
+   * when no CI result was reported for it. The test items' states follow it.
+   */
+  ci: RoundCi | null;
   created_at: number;
 }
 
@@ -225,7 +236,7 @@ export function recordRound(
   summaryMd: string,
   items: readonly NewItem[],
   now: number,
-): void {
+): string {
   const last = db
     .select({ number: taskRounds.number })
     .from(taskRounds)
@@ -275,10 +286,19 @@ export function recordRound(
       })
       .run();
   });
+
+  // What GitHub already reported counts now (D-083): a push or a CI run that
+  // arrived before the finish confirms the proof the moment it is stored.
+  confirmRound(db, roundId, now);
+  return roundId;
 }
 
 function toRoundViews(db: Db, rows: (typeof taskRounds.$inferSelect)[]): RoundView[] {
   if (rows.length === 0) return [];
+  const github = roundSummaries(
+    db,
+    rows.map((r) => r.id),
+  );
   const items = db
     .select()
     .from(taskEvidence)
@@ -301,6 +321,7 @@ function toRoundViews(db: Db, rows: (typeof taskRounds.$inferSelect)[]): RoundVi
     });
     const branch = mine.find((i) => i.kind === 'branch');
     const pr = mine.find((i) => i.kind === 'pull_request');
+    const said = github.get(row.id);
     return {
       id: row.id,
       task_id: row.taskId,
@@ -312,10 +333,12 @@ function toRoundViews(db: Db, rows: (typeof taskRounds.$inferSelect)[]): RoundVi
         .filter((i) => i.kind === 'commit')
         .map((i) => ({ ...state(i), sha: i.value, message: i.detail })),
       branch: branch === undefined ? null : { ...state(branch), name: branch.value },
-      pull_request: pr === undefined ? null : { ...state(pr), url: pr.value },
+      pull_request:
+        pr === undefined ? null : { ...state(pr), url: pr.value, merged: said?.merged ?? null },
       tests: mine
         .filter((i) => i.kind === 'test_run')
         .map((i) => ({ ...state(i), command: i.value, exit_code: i.exitCode ?? 0 })),
+      ci: said?.ci ?? null,
       created_at: row.createdAt,
     };
   });

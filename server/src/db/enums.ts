@@ -221,6 +221,21 @@ export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 export const EVIDENCE_STATES = ['claimed', 'confirmed', 'failed'] as const;
 export type EvidenceState = (typeof EVIDENCE_STATES)[number];
 
+/**
+ * §4.30's `kind` (D-083, LAI-766): the three GitHub events that report CI.
+ * A GitHub Actions run sends all three for one commit, so the CI line counts
+ * one kind per commit — the finest one seen — never the three added together.
+ */
+export const GITHUB_CHECK_KINDS = ['check_run', 'workflow_run', 'check_suite'] as const;
+export type GithubCheckKind = (typeof GITHUB_CHECK_KINDS)[number];
+
+/**
+ * §4.30's `outcome` (D-083): GitHub's `status` and `conclusion` folded to the
+ * three answers the proof needs. `pending` is everything not yet completed.
+ */
+export const CHECK_OUTCOMES = ['pending', 'passed', 'failed'] as const;
+export type CheckOutcome = (typeof CHECK_OUTCOMES)[number];
+
 /** §4.27's `decision` (D-082): what a person did with work waiting in review. */
 export const REVIEW_DECISIONS = ['accepted', 'sent_back'] as const;
 export type ReviewDecision = (typeof REVIEW_DECISIONS)[number];

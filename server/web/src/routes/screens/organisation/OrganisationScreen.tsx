@@ -17,6 +17,7 @@ import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { useOrganisation } from './use-organisation.ts';
+import { GithubWebhookSection } from './GithubWebhookSection.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import type { OrgRole } from '../../../api/invites.ts';
 import './organisation.css';
@@ -58,10 +59,12 @@ function expiryLabel(expiresAt: number, now: number): string {
  *
  * ## What is deliberately not here
  *
- * The design also shows a **monthly cap** and a **danger zone** (rotate webhook
- * secret, revoke all agent tokens, delete the org). None of those has an
- * endpoint, and the monthly cap has no column either, so they are absent rather
- * than present-and-inert.
+ * The design also shows a **monthly cap** and a **danger zone** (revoke all
+ * agent tokens, delete the org). None of those has an endpoint, and the
+ * monthly cap has no column either, so they are absent rather than
+ * present-and-inert. **Rotating the webhook secret has one now** (LAI-753),
+ * and lives in its own *GitHub webhook* card rather than a danger zone: it is
+ * how the webhook is set up in the first place.
  *
  * **AI provider was in that list until LAI-459 and is not any more** — `GET /org`
  * exists (LAI-447) and carries it, gated field-level on `org.settings.edit`.
@@ -311,6 +314,21 @@ export function OrganisationScreen({ me }: OrganisationScreenProps) {
             )}
           </dl>
         </section>
+      )}
+
+      {/* Owners and admins on a web session (§3.1 *Configure webhooks*):
+          absent, not null, for anyone else, so the card is simply not here. */}
+      {org?.github_webhook !== undefined && (
+        <GithubWebhookSection
+          webhook={org.github_webhook}
+          onChanged={(configured) => {
+            setOrg((current) =>
+              current?.github_webhook === undefined
+                ? current
+                : { ...current, github_webhook: { ...current.github_webhook, configured } },
+            );
+          }}
+        />
       )}
 
       <section className="org-card" aria-labelledby="org-people">

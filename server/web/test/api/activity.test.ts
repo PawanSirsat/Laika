@@ -12,6 +12,7 @@ import {
   describeEvent,
   isReorder,
   listProjectActivityPage,
+  pushSummary,
   shownInFeed,
   statusMoveNames,
   statusTransition,
@@ -164,5 +165,36 @@ void describe('listProjectActivityPage', () => {
       '/api/v1/projects/laika%20core/activity?limit=200',
       '/api/v1/projects/laika-core/activity?limit=200&since=5&cursor=C1',
     ]);
+  });
+});
+
+void describe('pushSummary (LAI-753)', () => {
+  void test('says how many commits, to which branch, and the first shas', () => {
+    const shas = ['1111111aaaa', '2222222bbbb', '3333333cccc', '4444444dddd'];
+    assert.equal(
+      pushSummary(
+        event({
+          type: 'webhook.commit',
+          payload: { repo: 'kvell/laika', branch: 'main', default_branch: true, count: 4, shas },
+        }),
+      ),
+      '4 commits to main (default branch) · 1111111, 2222222, 3333333 …',
+    );
+    assert.equal(
+      pushSummary(
+        event({
+          type: 'webhook.commit',
+          payload: { branch: 'lai-1-x', count: 1, shas: ['abcdef0123'] },
+        }),
+      ),
+      '1 commit to lai-1-x · abcdef0',
+    );
+  });
+
+  void test('an older row with only repo and branch falls back to the label', () => {
+    const old = event({ type: 'webhook.commit', payload: { repo: 'kvell/laika', branch: 'x' } });
+    assert.equal(pushSummary(old), undefined);
+    assert.equal(describeEvent(old), 'pushed a commit');
+    assert.equal(pushSummary(event({ type: 'task.created' })), undefined);
   });
 });

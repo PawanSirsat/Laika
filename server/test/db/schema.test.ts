@@ -75,6 +75,10 @@ describe('migrations', () => {
     'board_activity_days',
     'comment_mentions',
     'comments',
+    // LAI-766, D-083: what GitHub's deliveries said, kept 30 days.
+    'github_checks',
+    'github_commits',
+    'github_pull_requests',
     'heartbeats',
     'idempotency_keys',
     'invites',
@@ -93,6 +97,8 @@ describe('migrations', () => {
     // LAI-758, D-082: the review gate's rounds, evidence and decisions.
     'task_evidence',
     'task_reviews',
+    // LAI-766, D-083: what GitHub said about each round.
+    'task_round_github',
     'task_rounds',
     'task_tags',
     'task_watchers',

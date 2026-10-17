@@ -84,11 +84,17 @@ const ROUND_2 = {
     { id: 'e1', ...claimed, sha: 'abcdef0123456789abcdef0123456789abcdef01', message: 'fix: lint' },
   ],
   branch: { id: 'e2', ...claimed, name: 'build-review-gate' },
-  pull_request: { id: 'e3', ...claimed, url: 'https://github.com/PawanSirsat/Laika/pull/42' },
+  pull_request: {
+    id: 'e3',
+    ...claimed,
+    url: 'https://github.com/PawanSirsat/Laika/pull/42',
+    merged: null,
+  },
   tests: [
     { id: 'e4', ...claimed, command: 'pnpm test', exit_code: 0 },
     { id: 'e5', ...claimed, command: 'pnpm lint', exit_code: 1 },
   ],
+  ci: null,
   created_at: NOW - 3 * HOUR,
 };
 const ROUND_1 = {

@@ -5,7 +5,12 @@ import { copyText } from '../../../components/CopyButton.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
-import { describeEvent, statusMoveNames, type ActivityEvent } from '../../../api/activity.ts';
+import {
+  describeEvent,
+  pushSummary,
+  statusMoveNames,
+  type ActivityEvent,
+} from '../../../api/activity.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { isAgentComment, type Comment } from '../../../api/comments.ts';
 import { useTaskDetail } from '../../../api/use-task-detail.ts';
@@ -902,7 +907,9 @@ export function TaskDetailPanel({
                             <span className="panel-change-who">
                               {describeActor(event, members).name}
                             </span>
-                            <span className="panel-change-what">{describeEvent(event)}</span>
+                            <span className="panel-change-what">
+                              {pushSummary(event) ?? describeEvent(event)}
+                            </span>
                             <time
                               className="panel-time"
                               dateTime={new Date(event.created_at).toISOString()}
