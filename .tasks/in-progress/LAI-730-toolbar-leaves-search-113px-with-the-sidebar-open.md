@@ -2,11 +2,12 @@
 id: LAI-730
 title: 'The Board toolbar''s own controls leave search 113px at 920px with the sidebar open'
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p3
 depends-on: [LAI-726]
 discovered-from: LAI-727
-status: backlog
+status: in-progress
+started: 2026-10-17T06:49:03Z
 ---
 
 ## Goal
@@ -41,6 +42,9 @@ When this is finished, search keeps at least 120px in that state.
 
 ## Notes / context
 
+- **Claimed with LAI-755, LAI-756, LAI-730, LAI-744 and LAI-759 together:
+  cleanup release, owner's direct instruction** (docs/HANDOVER.md §4), one
+  builder on branch `build-cleanup`.
 - Likely shape: key the toolbar's narrow form to the row's width (a container
   query on `.board-bar`, which LAI-727 already names a container in
   `board/sprint-stats.css`) instead of the viewport.
