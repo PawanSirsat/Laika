@@ -4601,9 +4601,15 @@ path set its secret, so every delivery was refused `401`.
    claimed** — in that order, whichever arrives first. Commits from pushes and
    pull request heads (§4.28), each pull request's newest state (§4.29) and
    each CI result's newest outcome (§4.30) are kept **30 days** from the last
-   delivery that named them. Every finish, and every delivery that could touch
-   a round finished in the last 30 days, re-checks it (§4.31): so CI that
-   finished before the agent called `finish_task` still counts.
+   delivery that named them. Every finish re-checks its new round, and every
+   delivery re-checks the rounds it could touch that are **still open** — the
+   newest round of its task, finished in the last 30 days, with no review
+   decision against it (§4.31). So CI that finished before the agent called
+   `finish_task` still counts, and **a round keeps what GitHub said while it
+   was the one waiting**: once a newer round exists, or a person has accepted
+   or sent it back, no later push or check rewrites it. (Re-checking every
+   round let round 2's head move round 1's CI line, and turned a round sent
+   back for red CI green — the review's B2.)
 4. **Which events flip which items.** A **commit** is `confirmed` when exactly
    one seen commit has the claimed sha as its full sha or a prefix of at least
    7 — two sharing the prefix confirm neither. A **branch** is `confirmed` by a
@@ -4623,19 +4629,28 @@ path set its secret, so every delivery was refused `401`.
    replaces the failure it repeats, and a late redelivery of the old one does
    not undo it. Commit, branch and pull request items only ever go from
    `claimed` to `confirmed`; test items follow CI both ways.
-6. **Only plausible repositories.** The repository a pull request URL names,
-   when the proof has one, and then nowhere else; otherwise the project's
-   `repo`; otherwise any repository this org's webhook reports. A commit or a
-   CI result from another repository never confirms anything.
+6. **Only plausible repositories, and the agent does not choose them.** The
+   project's `repo` when it names one, and only that: a pull request in
+   another repository confirms nothing, and nothing is matched through it —
+   otherwise an agent could cite a pull request in a repository it controls
+   and have that repository vouch for it (the review's B1). Only when the
+   project names no repository does the pull request's own narrow it, and then
+   nothing is matched anywhere else; with neither, any repository this org's
+   webhook reports. A commit or a CI result from another repository never
+   confirms anything.
 7. **No call to GitHub** (§13.4 unchanged): everything is what a delivery
    carried. That is also the answer to "how is a forged claim told from a true
    one": a claim is confirmed only by a delivery signed with the org's secret,
    which an agent cannot hold.
 8. **A merged pull request still moves its task to review and never to done**
-   (D-082), and a task **already** in review is left there with a `200` — under
-   the review gate the agent finishes first and a person merges after, and
-   answering that `409` marked the delivery failed on GitHub for doing what it
-   should.
+   (D-082), and a task **already** in review or done is left there with a
+   `200` — under the review gate the agent finishes first and a person merges
+   after, and answering `409` or `422` marked the delivery failed on GitHub for
+   doing what it should. **`opened` and `reopened` only start work**: they
+   move a task out of `backlog` or `todo` and nothing else, answering `200`
+   and moving nothing otherwise — a late or redelivered `opened`, or a person
+   opening the pull request during review, no longer pulls a task out of the
+   Review queue, and `reopened` no longer takes accepted work out of done.
 9. **GitHub does not retry a failed delivery.** Three comments said it did; it
    does not. A delivery that arrives while production restarts — every push to
    `master` (D-073) — is lost unless somebody presses *Redeliver* on the
@@ -4654,7 +4669,3 @@ path set its secret, so every delivery was refused `401`.
 - **Gitea, GitLab** and any other source.
 - **Who rotated the secret.** §4.8 has no verb for it, as for
   `developer_insights`; an audit row is a decision of its own.
-- **A pull request opened after the finish** still moves its task back to
-  `in_progress` (§10.1's *opened*), as it always did. Agents open the pull
-  request before they finish — its URL is part of the proof — so this is the
-  uncommon order, and changing what *opened* means is not this decision.

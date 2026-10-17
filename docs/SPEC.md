@@ -1182,12 +1182,18 @@ it came from are gone.
 | `ci_failed_names` | a JSON array of the names that failed, at most ten, default `[]` |
 | `updated_at` | |
 
-**How a round is checked** — on every finish and for every round finished in
-the last 30 days that a delivery could change:
+**How a round is checked** — on every finish, and for every **open** round a
+delivery could change: the newest round of its task, finished in the last 30
+days, with no `task_reviews` row against it (§4.27). An earlier round, or one a
+person has accepted or sent back, keeps what GitHub said while it was the one
+waiting, and no later delivery rewrites it.
 
-- **Plausible repositories.** The repository the pull request URL names, when
-  the proof has one — and then nowhere else. Otherwise the project's `repo`
-  (§4.3). Otherwise any repository this org's webhook reports.
+- **Plausible repositories.** The project's `repo` (§4.3) when it names one,
+  and only that: a pull request in another repository confirms nothing and
+  nothing is matched through it, so the agent never chooses who vouches for
+  it. Only when the project names no repository does the pull request's own
+  narrow it — and then nowhere else. With neither, any repository this org's
+  webhook reports.
 - **commit** → `confirmed` when exactly one seen commit in a plausible
   repository has the claimed sha as its full sha or prefix (at least 7). Two
   commits sharing the prefix is ambiguous and confirms neither.
@@ -2150,8 +2156,10 @@ constant-time compared, **before the body is parsed**. Unverified requests get
 `401` and are logged as `webhook.received` with `verified: false`.
 
 Handled: `push` (branch → task, `webhook.commit` activity), `pull_request`
-(opened → link PR and move `in_progress`; merged → move to `review`, **never
-to done**, D-082), `issue_comment` (mirror to task comments), and `check_run`,
+(opened or reopened → link PR and move `in_progress`, **only from `backlog` or
+`todo`**; merged → move to `review`, **never to done**, D-082; a task already
+in review or done, or one `opened` cannot move, is left where it is with a
+`200`, D-083), `issue_comment` (mirror to task comments), and `check_run`,
 `workflow_run` and `check_suite` (CI results for the proof, D-083). Everything
 else is acknowledged and ignored. Delivery ids are deduplicated for 24h.
 
