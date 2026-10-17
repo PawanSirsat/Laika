@@ -164,7 +164,8 @@ void describe('the SPACES section', () => {
       const org = h.page.locator('.sidebar-group', { has: h.page.locator('#nav-ORG') });
       assert.deepEqual(
         (await org.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim()),
-        ['Capacity', 'Review', 'Unlisted work'],
+        // **Usage after Review** (D-084, LAI-769): tokens across every space.
+        ['Capacity', 'Review', 'Usage', 'Unlisted work'],
       );
       const orgTop = (await org.boundingBox())?.y ?? Infinity;
       const spacesTop = (await h.page.locator('.space-row').first().boundingBox())?.y ?? -Infinity;

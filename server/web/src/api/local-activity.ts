@@ -32,6 +32,9 @@ export interface OwnLocalDay {
   readonly sessions: number;
   readonly commits_local: number;
   readonly pushed_commits: number;
+  /** Their agents' tokens that day, cache reads apart (D-084, LAI-769). */
+  readonly tokens: number;
+  readonly cache_read: number;
 }
 
 export interface OwnLocalActivity {

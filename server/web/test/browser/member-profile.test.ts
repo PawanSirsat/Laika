@@ -316,7 +316,28 @@ const activityStub = (call: { path: string }) => {
   return quietYear('52w');
 };
 
+/** Each person's Tokens card (LAI-769): sharing on, nothing arrived yet. */
+const quietUsage = (userId: string) => ({
+  user_id: userId,
+  from: '2026-07-27',
+  to: '2026-10-18',
+  weeks: Array.from({ length: 12 }, (_, i) => ({
+    start: new Date(Date.UTC(2026, 6, 27 + 7 * i)).toISOString().slice(0, 10),
+    tokens: 0,
+    cache_read: 0,
+  })),
+  totals: { tokens: 0, input: 0, output: 0, cache_write: 0, cache_read: 0, attributed_tokens: 0 },
+  by_agent: [],
+  by_model: [],
+  no_token_data: [],
+  sharing: { org_enabled: true, enabled: true },
+});
+
 const BASE: ApiStub = {
+  '/api/v1/users/u1/usage': quietUsage('u1'),
+  '/api/v1/users/u2/usage': quietUsage('u2'),
+  '/api/v1/users/u3/usage': quietUsage('u3'),
+  '/api/v1/users/u6/usage': quietUsage('u6'),
   '/api/v1/people/u1/activity': activityStub,
   '/api/v1/people/u2/activity': activityStub,
   '/api/v1/people/u3/activity': activityStub,
@@ -1730,11 +1751,17 @@ async function cardBoxes(page: Page): Promise<{ gap: number; cards: CardBox[] }>
   });
 }
 
-/** The cards below the Activity card, grouped by the column they sit in, top first. */
+/**
+ * The full-width cards that head the page, in order: Activity (LAI-751), then
+ * Tokens (LAI-769). The columns start under the last of them.
+ */
+const FULL_WIDTH = ['activity', 'tokens'];
+
+/** The cards below the full-width ones, grouped by the column they sit in, top first. */
 function columnsOf(cards: readonly CardBox[]): CardBox[][] {
   const columns = new Map<number, CardBox[]>();
   for (const card of cards) {
-    if (card.name === 'activity') continue;
+    if (FULL_WIDTH.includes(card.name)) continue;
     columns.set(card.left, [...(columns.get(card.left) ?? []), card]);
   }
   return [...columns]
@@ -1759,6 +1786,12 @@ async function assertColumns(page: Page, want: number): Promise<CardBox[]> {
   );
   const activity = cards.find((card) => card.name === 'activity');
   assert.ok(activity !== undefined, 'the Activity card is on the page');
+  const tokens = cards.find((card) => card.name === 'tokens');
+  assert.ok(tokens !== undefined, 'the Tokens card is on the page');
+  assert.ok(
+    Math.abs(Math.round(tokens.top - activity.bottom) - gap) <= 1,
+    'Tokens sits one gap under Activity',
+  );
   const columns = columnsOf(cards);
   assert.equal(
     columns.length,
@@ -1766,7 +1799,7 @@ async function assertColumns(page: Page, want: number): Promise<CardBox[]> {
     `at 1366 the cards sit in ${String(columns.length)} columns, not ${String(want)}`,
   );
   for (const column of columns) {
-    let above = activity.bottom;
+    let above = tokens.bottom;
     for (const card of column) {
       const space = Math.round(card.top - above);
       assert.ok(
@@ -1854,6 +1887,7 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
 
       await assertOneColumn(h.page, [
         'activity',
+        'tokens',
         'delivery',
         'current',
         'agents',
@@ -1914,6 +1948,7 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
 
       await assertOneColumn(h.page, [
         'activity',
+        'tokens',
         'delivery',
         'current',
         'agents',
@@ -1942,8 +1977,16 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
         'projects',
         'rating',
         'review',
+        'tokens',
       ]);
-      await assertOneColumn(h.page, ['activity', 'review', 'decisions', 'projects', 'rating']);
+      await assertOneColumn(h.page, [
+        'activity',
+        'tokens',
+        'review',
+        'decisions',
+        'projects',
+        'rating',
+      ]);
     } finally {
       await h.close();
     }

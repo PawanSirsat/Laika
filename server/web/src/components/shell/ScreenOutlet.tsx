@@ -24,6 +24,7 @@ import { TimelineScreen } from '../../routes/screens/timeline/TimelineScreen.tsx
 import { ConnectScreen } from '../../routes/screens/connect/ConnectScreen.tsx';
 import { TokensScreen } from '../../routes/screens/tokens/TokensScreen.tsx';
 import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx';
+import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
 import { StateGallery } from '../StateGallery.tsx';
 import { TokenReference } from '../../theme/TokenReference.tsx';
 
@@ -177,6 +178,15 @@ function UnlistedRoute() {
   return <UnlistedScreen onOpenTask={openTaskByKey(navigate)} onChanged={refreshUnlisted} />;
 }
 
+/** One page for the organisation (LAI-769), with its own space selector. */
+function UsageRoute() {
+  const {
+    route: { navigate },
+    me,
+  } = useShell();
+  return <UsageScreen me={me} onNavigate={navigate} />;
+}
+
 function ReviewRoute() {
   const {
     route: { navigate },
@@ -248,6 +258,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/capacity': { Component: CapacityRoute, layout: 'plain' },
   '/review': { Component: ReviewRoute, layout: 'plain' },
   '/unlisted': { Component: UnlistedRoute, layout: 'plain' },
+  '/usage': { Component: UsageRoute, layout: 'plain' },
   '/connect': { Component: ConnectRoute, layout: 'plain' },
   '/tokens': { Component: TokensRoute, layout: 'plain' },
   '/organisation': { Component: OrganisationRoute, layout: 'plain' },

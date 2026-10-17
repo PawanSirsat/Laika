@@ -219,6 +219,22 @@ export const ROUTES: readonly Route[] = [
     mini: 'RV',
   },
   /*
+   * **Token usage** (D-084, LAI-769): how many tokens the team's agents spent,
+   * across the organisation with a space selector. **Not gated** — a member
+   * reads the spaces they are in, an owner or admin the whole organisation;
+   * the server decides what each is sent, and never a per-person split to a
+   * member.
+   */
+  {
+    orgLevel: true,
+    path: '/usage',
+    label: 'Usage',
+    group: 'ORG',
+    status: 'ready',
+    phase: 'Phase 7',
+    mini: 'US',
+  },
+  /*
    * A queue a human works through, and audit-shaped: admin-up only (§4.14).
    *
    * **Back in the sidebar, under Capacity** (LAI-754). LAI-484 hid it because

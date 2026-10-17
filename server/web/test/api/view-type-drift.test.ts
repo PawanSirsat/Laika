@@ -367,11 +367,35 @@ const PAIRS: readonly Pair[] = [
     client: name,
     clientFile: 'review.ts',
   })),
+  /*
+   * Token usage (D-084, LAI-769), paired the moment the client existed: the
+   * Usage page and the profile card.
+   */
+  {
+    server: 'UsageView',
+    serverFile: 'services/token-usage.ts',
+    client: 'Usage',
+    clientFile: 'usage.ts',
+  },
+  {
+    server: 'PersonUsageView',
+    serverFile: 'services/token-usage.ts',
+    client: 'PersonUsage',
+    clientFile: 'usage.ts',
+  },
   // Nested, through a table for the reason given below the profile's.
   ...(
     [
       ['ActivitySeries', 'services/people-activity.ts', 'people-activity.ts'],
       ['OwnLocalDay', 'services/local-activity.ts', 'local-activity.ts'],
+      ['UsageFigures', 'services/token-usage.ts', 'usage.ts'],
+      ['UsageSlice', 'services/token-usage.ts', 'usage.ts'],
+      ['UsageDayPoint', 'services/token-usage.ts', 'usage.ts'],
+      ['UsageDeveloper', 'services/token-usage.ts', 'usage.ts'],
+      ['UsageAgentSlice', 'services/token-usage.ts', 'usage.ts'],
+      ['UsageModelSlice', 'services/token-usage.ts', 'usage.ts'],
+      ['UsageTaskSlice', 'services/token-usage.ts', 'usage.ts'],
+      ['UsageWeek', 'services/token-usage.ts', 'usage.ts'],
     ] as const
   ).map(([name, serverFile, clientFile]) => ({
     server: name,

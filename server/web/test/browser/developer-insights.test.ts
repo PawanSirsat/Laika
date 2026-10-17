@@ -110,8 +110,18 @@ const HELD = {
       sessions: 3,
       commits_local: 2,
       pushed_commits: 4,
+      tokens: 1_234_567,
+      cache_read: 80_000_000,
     },
-    { day: YESTERDAY, prompts_by_agent: {}, sessions: 0, commits_local: 1, pushed_commits: 0 },
+    {
+      day: YESTERDAY,
+      prompts_by_agent: {},
+      sessions: 0,
+      commits_local: 1,
+      pushed_commits: 0,
+      tokens: 0,
+      cache_read: 0,
+    },
   ],
   collectors: 1,
   oldest_day: YESTERDAY,
@@ -250,6 +260,8 @@ void describe('Connect: Share local activity', () => {
       const rows = await table.locator('tbody tr').allInnerTexts();
       assert.equal(rows.length, 2);
       assert.match(rows[0] ?? '', /Claude Code 18, Gemini CLI 2, Other agent 1\s+3\s+2\s+4/);
+      // Token counts are named in what is held (D-084 item 4), cache reads apart.
+      assert.match(rows[0] ?? '', /\b4\s+1\.23M$/);
 
       // Declining the confirmation deletes nothing.
       h.page.once('dialog', (dialog) => {

@@ -65,6 +65,7 @@ import {
   weekLabel,
 } from './profile-derive.ts';
 import { RatingDialog } from './RatingDialog.tsx';
+import { UsageCard } from './UsageCard.tsx';
 import './profile.css';
 
 export interface ProfileScreenProps {
@@ -387,6 +388,9 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
         canManageOrg={mayOpenProfiles(me.org_role)}
         sharing={profile.activity_sharing}
       />
+
+      {/* Their agents' tokens (D-084, LAI-769): full width, like Activity. */}
+      <UsageCard key={user.id} userId={user.id} name={user.name} self={me.id === user.id} />
 
       {/*
        * The rest flows in columns (LAI-751, owner, 2026-10-16): each column

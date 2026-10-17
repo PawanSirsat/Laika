@@ -78,7 +78,8 @@ void describe('sidebar groups (AC1)', () => {
       // Unlisted work hidden from LAI-484; the gate Unlisted carries is
       // asserted in `nav-truth.test.ts`. **Review between them** (D-082,
       // LAI-758): the queue of agent work waiting for a person.
-      ['Capacity', 'Review', 'Unlisted work'],
+      // **Usage after Review** (D-084, LAI-769): ungated, every reader has spaces.
+      ['Capacity', 'Review', 'Usage', 'Unlisted work'],
     );
     assert.deepEqual(
       routesInGroup('SETTINGS').map((r) => r.label),
