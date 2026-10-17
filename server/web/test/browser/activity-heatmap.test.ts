@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page, Request } from 'playwright';
 import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
+import { shortDate } from '../../src/routes/screens/profile/activity-derive.ts';
 
 const NOW = Date.now();
 const DAY = 86_400_000;
@@ -336,6 +337,108 @@ void describe('the Activity card', () => {
       await h.close();
     }
   });
+});
+
+/*
+ * LAI-761: a clicked day kept its tooltip and outline while the mouse went
+ * elsewhere — the owner's screenshots show *Thu 25 Jun* still open with the
+ * cursor off the grid. A click focuses the cell, focus drove the tooltip, and
+ * only leaving the whole card body hid it.
+ */
+void describe('the tooltip after a click (LAI-761)', () => {
+  const YESTERDAY = new Date(NOW - DAY).toISOString().slice(0, 10);
+
+  for (const design of ['stacked', 'split'] as const) {
+    for (const range of ['12w', '52w'] as const) {
+      void test(`in ${design} over ${range}, the tooltip follows the mouse, not the click`, async () => {
+        const h = await open('/people?user=u2', stub());
+        try {
+          const activityCard = await card(h.page);
+          await activityCard.locator(`input[value="${design}"]`).check();
+          await activityCard.locator(`input[value="${range}"]`).check();
+          await h.page
+            .locator(
+              `.prof-card[data-section="activity"][data-range="${range}"][aria-busy="false"]`,
+            )
+            .waitFor({ timeout: 10_000 });
+
+          const grid = h.page.locator('.hm-grid').first();
+          const clicked = grid.locator(`.hm-cell[data-day="${TODAY}"]`);
+          const other = grid.locator(`.hm-cell[data-day="${YESTERDAY}"]`);
+          const tips = h.page.locator('.hm-tip');
+          const dates = () => tips.locator('.hm-tip-date').allInnerTexts();
+
+          await clicked.click();
+          await until(async () => (await dates()).join() === shortDate(TODAY));
+          assert.deepEqual(await dates(), [shortDate(TODAY)]);
+          assert.equal(
+            await clicked.evaluate((el) => getComputedStyle(el).boxShadow),
+            'none',
+            'a mouse click drew a focus outline',
+          );
+
+          // Another day: exactly one tooltip, and it is that day's.
+          await other.hover();
+          await until(async () => (await dates()).join() === shortDate(YESTERDAY));
+          assert.deepEqual(await dates(), [shortDate(YESTERDAY)]);
+
+          // Off the grids, still inside the card: nothing stays open or outlined.
+          const stats = await h.page.locator('.hm-stats').boundingBox();
+          assert.ok(stats !== null, 'no stats row to move to');
+          await h.page.mouse.move(stats.x + stats.width / 2, stats.y + stats.height / 2);
+          await until(async () => (await tips.count()) === 0);
+          assert.equal(await tips.count(), 0, 'the tooltip stayed open off the grid');
+          assert.equal(await h.page.locator('.hm-ring').count(), 0, 'the outline stayed');
+
+          // Off the card entirely.
+          await other.hover();
+          await tips.waitFor({ timeout: 5_000 });
+          await h.page.mouse.move(1, 1);
+          await until(async () => (await tips.count()) === 0);
+          assert.equal(await tips.count(), 0, 'the tooltip stayed open off the card');
+        } finally {
+          await h.close();
+        }
+      });
+    }
+
+    void test(`in ${design}, the keyboard shows it, Escape and Tab out close it`, async () => {
+      const h = await open('/people?user=u2', stub());
+      try {
+        const activityCard = await card(h.page);
+        await activityCard.locator(`input[value="${design}"]`).check();
+        const tips = h.page.locator('.hm-tip');
+        const dates = () => tips.locator('.hm-tip-date').allInnerTexts();
+        // The last grid, so Tab leaves the grids rather than entering the next.
+        const cell = h.page.locator('.hm-grid').last().locator('.hm-cell[tabindex="0"]');
+        await h.page.mouse.move(1, 1);
+
+        await cell.focus();
+        await h.page.keyboard.press('ArrowUp');
+        await until(async () => (await dates()).join() === shortDate(YESTERDAY));
+        assert.deepEqual(await dates(), [shortDate(YESTERDAY)], 'the arrow key showed nothing');
+
+        await h.page.keyboard.press('Escape');
+        await until(async () => (await tips.count()) === 0);
+        assert.equal(await tips.count(), 0, 'Escape did not close it');
+
+        await h.page.keyboard.press('ArrowDown');
+        await until(async () => (await dates()).join() === shortDate(TODAY));
+        assert.deepEqual(await dates(), [shortDate(TODAY)]);
+
+        await h.page.keyboard.press('Tab');
+        assert.equal(
+          await h.page.evaluate(() => document.activeElement?.classList.contains('hm-cell')),
+          false,
+          'Tab did not leave the grid',
+        );
+        await until(async () => (await tips.count()) === 0);
+        assert.equal(await tips.count(), 0, 'Tab out did not close it');
+      } finally {
+        await h.close();
+      }
+    });
+  }
 });
 
 void describe('the states', () => {

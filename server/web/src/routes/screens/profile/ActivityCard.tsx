@@ -352,8 +352,26 @@ function Heatmap({ days, loading, design, off, noData, name, canManageOrg }: Hea
     document.getElementById(cellId(want.source, want.index))?.focus();
   });
 
+  /*
+   * The tooltip follows the mouse for the mouse and the focus for the
+   * keyboard (LAI-761). A click focuses the cell too, and when focus also
+   * showed the tooltip, the clicked day stayed open and outlined while the
+   * mouse went elsewhere. So focus shows it only when the focus is visible —
+   * the keyboard's — and leaving a grid hides it, not leaving the whole card.
+   */
   const onPoint = useCallback((source: HeatSource, index: number, cell: HTMLElement | null) => {
-    setHot(cell === null ? null : { index, source, cell });
+    setHot((now) =>
+      cell !== null
+        ? { index, source, cell }
+        : // A blur closes only its own day: the mouse may be on another.
+          now !== null && now.index === index && now.source === source
+          ? null
+          : now,
+    );
+  }, []);
+
+  const onLeave = useCallback(() => {
+    setHot(null);
   }, []);
 
   const onKey = useCallback(
@@ -386,7 +404,7 @@ function Heatmap({ days, loading, design, off, noData, name, canManageOrg }: Hea
   const hotDay = hot === null ? undefined : days[hot.index];
 
   return (
-    <div className="hm-body" onMouseLeave={() => setHot(null)}>
+    <div className="hm-body">
       <Stats stats={stats} loading={loading} shown={shown} />
 
       {off !== null && <OffPanel off={off} name={name} canManageOrg={canManageOrg} />}
@@ -411,7 +429,7 @@ function Heatmap({ days, loading, design, off, noData, name, canManageOrg }: Hea
                     {loading ? (
                       <Ghost columns={layout.columns} />
                     ) : (
-                      <div className="hm-grid" data-kind={kind}>
+                      <div className="hm-grid" data-kind={kind} onMouseLeave={onLeave}>
                         <Cells
                           placed={layout.placed}
                           kind={kind}
@@ -508,7 +526,10 @@ const Cells = memo(function Cells({
               onPoint(source, day.index, event.currentTarget);
             }}
             onFocus={(event) => {
-              onPoint(source, day.index, event.currentTarget);
+              // The keyboard's focus, not a click's (LAI-761).
+              if (event.currentTarget.matches(':focus-visible')) {
+                onPoint(source, day.index, event.currentTarget);
+              }
             }}
             onBlur={() => {
               onPoint(source, day.index, null);
