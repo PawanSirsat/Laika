@@ -75,6 +75,8 @@ const nextId = (prefix: string) => `${prefix}_${String((ids += 1))}`;
 
 interface Line {
   readonly at: number;
+  /** The reply's message id: lines that share one are one reply (its usage repeated). */
+  readonly id?: string;
   /** Output tokens: each reply's only count, so a task's figure is a sum of these. */
   readonly out?: number;
   /** A Laika call on the same line, as Claude Code writes a tool use beside its reply's usage. */
@@ -94,7 +96,7 @@ function claude(line: Line): string {
     sessionId: line.session ?? SECRET.session,
     gitBranch: line.branch ?? 'main',
     message: {
-      id: nextId('msg'),
+      id: line.id ?? nextId('msg'),
       type: 'message',
       role: 'assistant',
       model: 'claude-opus-5-5',
@@ -327,6 +329,78 @@ void describe('a session’s tokens follow the task its agent marked, split by t
     assert.deepEqual(byTask((await read(root, ['LAI'])).days), { 'LAI-1': 1, '-': 110 });
   });
 
+  void test('a mark on a later line of its reply still takes the whole reply', async () => {
+    const root = home();
+    transcript(root, 's.jsonl', [
+      claude({ at: T0, out: 1 }),
+      // One reply on two lines, its usage on both: the text, then — two
+      // seconds later — the start_working it ends with.
+      claude({ at: T0 + 60, id: 'msg_split', out: 10 }),
+      claude({
+        at: T0 + 62,
+        id: 'msg_split',
+        out: 10,
+        call: mark('start_working', { task: 'LAI-1' }),
+      }),
+      claude({ at: T0 + 120, out: 100 }),
+    ]);
+    assert.deepEqual(byTask((await read(root, ['LAI'])).days), { '-': 1, 'LAI-1': 110 });
+  });
+
+  void test('a session resuming its own task marks it with start_working, which the board accepts (review, B2)', async () => {
+    const root = home();
+    transcript(root, 's.jsonl', [
+      claude({ at: T0, out: 1, call: mark('finish_task', { task: 'LAI-3' }, 'toolu_fin') }),
+      claude({ at: T0 + H, out: 10 }),
+      // Back on it after a send-back: already the holder's and in progress.
+      claude({
+        at: T0 + 2 * H,
+        out: 100,
+        call: mark('start_working', { task: 'LAI-3' }, 'toolu_resume'),
+      }),
+      result('toolu_resume', T0 + 2 * H + 1, false),
+      claude({ at: T0 + 3 * H, out: 1_000 }),
+    ]);
+    assert.deepEqual(byTask((await read(root, ['LAI'])).days), { '-': 11, 'LAI-3': 1_100 });
+  });
+
+  void test('no mark counts until the board has named its prefixes: another server’s key-shaped argument never goes', async () => {
+    const root = home();
+    const message = (at: number, out: number, calls: unknown[]) => ({
+      id: nextId('gm'),
+      timestamp: new Date(at * 1000).toISOString(),
+      type: 'gemini',
+      content: SECRET.reply,
+      model: 'gemini-3-pro',
+      tokens: { input: 0, output: out, cached: 0, thoughts: 0, tool: 0, total: out },
+      toolCalls: calls,
+    });
+    // Gemini CLI names a tool by its bare name: this `update_status` is a
+    // tracker's, with an argument shaped like a key.
+    writeLines(root, join('.gemini', 'tmp', 'h', 'chats', 'session-2.json'), [
+      JSON.stringify({
+        sessionId: 'gem-other-server',
+        projectHash: 'h',
+        messages: [
+          message(T0, 10, [
+            {
+              id: 'gc-jira',
+              name: 'update_status',
+              args: { task: 'JIRA-12', status: 'in_progress' },
+              status: 'success',
+              timestamp: new Date(T0 * 1000).toISOString(),
+            },
+          ]),
+        ],
+      }),
+    ]);
+    transcript(root, 's.jsonl', [
+      claude({ at: T0, out: 1, call: mark('start_working', { task: 'LAI-1' }) }),
+    ]);
+    assert.deepEqual(byTask((await read(root)).days), { '-': 11 });
+    assert.deepEqual(byTask((await read(root, ['LAI'])).days), { '-': 10, 'LAI-1': 1 });
+  });
+
   void test('a key whose project this board does not serve stays unattributed', async () => {
     const root = home();
     transcript(root, 's.jsonl', [
@@ -406,6 +480,24 @@ function codexLine(atS: number, type: string, payload: Record<string, unknown>):
   return JSON.stringify({ timestamp: new Date(atS * 1000).toISOString(), type, payload });
 }
 
+function codexCall(atS: number, id: string, args: Record<string, unknown>): string {
+  return codexLine(atS, 'response_item', {
+    type: 'function_call',
+    name: 'mcp__laika__start_working',
+    arguments: JSON.stringify(args),
+    call_id: id,
+  });
+}
+
+/** Codex's record of a call's answer: a string, the MCP result as JSON for a tool. */
+function codexOutput(atS: number, id: string, output: unknown): string {
+  return codexLine(atS, 'response_item', {
+    type: 'function_call_output',
+    call_id: id,
+    output: typeof output === 'string' ? output : JSON.stringify(output),
+  });
+}
+
 function codexTotal(atS: number, output: number): string {
   return codexLine(atS, 'event_msg', {
     type: 'token_count',
@@ -431,15 +523,74 @@ void describe('Codex and Gemini CLI', () => {
       }),
       codexLine(T0 + 1, 'turn_context', { model: 'gpt-5.2-codex', cwd: SECRET.cwd }),
       codexTotal(T0 + 60, 1), // the branch's
-      codexLine(T0 + 120, 'response_item', {
-        type: 'function_call',
-        name: 'mcp__laika__start_working',
-        arguments: JSON.stringify({ task: 'LAI-5', branch: SECRET.markBranch }),
-        call_id: 'call_1',
+      codexCall(T0 + 120, 'call_1', { task: 'LAI-5', branch: SECRET.markBranch }),
+      // What Codex records of an MCP call's answer: the result as JSON.
+      codexOutput(T0 + 121, 'call_1', {
+        content: [{ type: 'text', text: SECRET.reply }],
+        isError: false,
       }),
       codexTotal(T0 + 180, 11),
     ]);
     assert.deepEqual(byTask((await read(root, ['LAI'])).days), { 'LAI-4': 1, 'LAI-5': 10 });
+  });
+
+  // LAI-770 review, B1: a Codex start_working the board refused counted as a
+  // mark, because nothing read Codex's results.
+  void test('Codex: a call the board refused is no mark — its tokens stay where they were', async () => {
+    const root = home();
+    const refusal = JSON.stringify({ error: { code: 'conflict', message: SECRET.note } });
+    writeLines(root, join('.codex', 'sessions', '2026', '10', '17', 'rollout-r.jsonl'), [
+      codexLine(T0, 'session_meta', { id: 'codex-refused', cwd: SECRET.cwd }),
+      codexLine(T0 + 1, 'turn_context', { model: 'gpt-5.2-codex', cwd: SECRET.cwd }),
+      codexCall(T0 + 60, 'call_r', { task: 'LAI-5' }),
+      codexOutput(T0 + 61, 'call_r', refusal),
+      codexLine(T0 + 61, 'event_msg', {
+        type: 'mcp_tool_call_end',
+        call_id: 'call_r',
+        invocation: { server: 'laika', tool: 'start_working', arguments: { task: 'LAI-5' } },
+        result: { Ok: { content: [{ type: 'text', text: refusal }], isError: true } },
+      }),
+      codexTotal(T0 + 180, 11),
+    ]);
+    const paths = activityPaths(root);
+    assert.deepEqual(byTask((await read(root, ['LAI'])).days), { '-': 11 });
+    // The answer was read for whether it failed, and none of it kept.
+    assert.ok(!readFileSync(join(paths.dir, 'usage-data.json'), 'utf8').includes(SECRET.note));
+  });
+
+  void test('Codex: a call whose answer was not read, or cannot be, is no mark; the branch still counts', async () => {
+    const root = home();
+    writeLines(root, join('.codex', 'sessions', '2026', '10', '17', 'rollout-u.jsonl'), [
+      codexLine(T0, 'session_meta', {
+        id: 'codex-unread',
+        cwd: SECRET.cwd,
+        git: { branch: 'LAI-4-codex-work', commit_hash: 'abc' },
+      }),
+      codexLine(T0 + 1, 'turn_context', { model: 'gpt-5.2-codex', cwd: SECRET.cwd }),
+      codexCall(T0 + 60, 'call_u', { task: 'LAI-5' }),
+      codexTotal(T0 + 120, 1),
+      // An answer in a shape that says nothing about success.
+      codexCall(T0 + 180, 'call_v', { task: 'LAI-6' }),
+      codexOutput(T0 + 181, 'call_v', 'done'),
+      codexTotal(T0 + 240, 11),
+    ]);
+    assert.deepEqual(byTask((await read(root, ['LAI'])).days), { 'LAI-4': 11 });
+  });
+
+  void test('Codex: an accepted call marks from its answer in the event stream as well', async () => {
+    const root = home();
+    writeLines(root, join('.codex', 'sessions', '2026', '10', '17', 'rollout-e.jsonl'), [
+      codexLine(T0, 'session_meta', { id: 'codex-event', cwd: SECRET.cwd }),
+      codexLine(T0 + 1, 'turn_context', { model: 'gpt-5.2-codex', cwd: SECRET.cwd }),
+      codexCall(T0 + 60, 'call_e', { task: 'LAI-7' }),
+      codexLine(T0 + 61, 'event_msg', {
+        type: 'mcp_tool_call_end',
+        call_id: 'call_e',
+        result: { Ok: { content: [{ type: 'text', text: SECRET.reply }], isError: false } },
+      }),
+      codexTotal(T0 + 120, 5),
+    ]);
+    assert.deepEqual(byTask((await read(root, ['LAI'])).days), { 'LAI-7': 5 });
   });
 
   void test('Gemini CLI: a successful call marks; an errored one does not; the hook’s branch otherwise', async () => {
@@ -490,12 +641,13 @@ void describe('Codex and Gemini CLI', () => {
 async function syncWorld(prefixes: readonly string[] | undefined) {
   const root = home();
   const board = await stubBoard(TOKEN);
-  board.now = () => new Date(NOW_MS);
+  let clock = NOW_MS;
+  board.now = () => new Date(clock);
   if (prefixes !== undefined) board.prefixes = [...prefixes];
   const ctx: SyncContext = {
     home: root,
     env: { PATH: process.env.PATH ?? '', HOME: root, LAIKA_URL: board.url, LAIKA_TOKEN: TOKEN },
-    nowMs: () => NOW_MS,
+    nowMs: () => clock,
     tz: TZ,
     git: () => Promise.resolve(undefined),
   };
@@ -510,7 +662,16 @@ async function syncWorld(prefixes: readonly string[] | undefined) {
     board.requests
       .filter((r) => r.method === 'PUT' && r.body.includes('"usage":true'))
       .map((r) => JSON.parse(r.body) as { days: { day: string; rows: UsageRow[] }[] });
-  return { root, board, ctx, paths, usagePuts };
+  return {
+    root,
+    board,
+    ctx,
+    paths,
+    usagePuts,
+    advance: (seconds: number) => {
+      clock += seconds * 1000;
+    },
+  };
 }
 
 void describe('through `laika activity sync`', () => {
@@ -594,6 +755,45 @@ void describe('through `laika activity sync`', () => {
     // An older board's answer, without them: the kept ones still hold.
     assert.equal(await record(), 'idle');
     assert.equal(await record(['LAI']), 'idle');
+  });
+
+  void test('an upgrade’s re-read replaces what phase 1 sent — never adds — and the sync after it sends nothing', async () => {
+    // The board names no prefixes yet: what goes is unattributed, as phase 1 sent it.
+    const w = await syncWorld(undefined);
+    transcript(w.root, 's.jsonl', [
+      claude({ at: NOW_S - H, out: 3, call: mark('start_working', { task: 'LAI-2' }) }),
+      claude({ at: NOW_S - H + 60, out: 4 }),
+    ]);
+    const onBoard = () =>
+      [...w.board.usage.entries()]
+        .filter(([key]) => key.endsWith(`|${TODAY}`))
+        .flatMap(([, rows]) => rows as UsageRow[])
+        .map((r) => [r.task, r.output]);
+    assert.equal((await sync(w.ctx)).kind, 'sent');
+    assert.deepEqual(onBoard(), [[null, 7]]);
+
+    // As phase 1 left this machine: data format 1, an index with no data version.
+    const indexPath = join(w.paths.dir, 'usage-index.json');
+    const index = JSON.parse(readFileSync(indexPath, 'utf8')) as Record<string, unknown>;
+    delete index.data_v;
+    writeFileSync(indexPath, JSON.stringify(index));
+    const dataPath = join(w.paths.dir, 'usage-data.json');
+    const data = JSON.parse(readFileSync(dataPath, 'utf8')) as Record<string, unknown>;
+    writeFileSync(dataPath, JSON.stringify({ ...data, v: 1, marks: {} }));
+    w.board.prefixes = ['LAI'];
+
+    w.advance(601);
+    const before = w.usagePuts().length;
+    assert.equal((await sync(w.ctx)).kind, 'sent');
+    assert.equal(w.usagePuts().length, before + 1, 'the re-read sent its day once');
+    // Replaced on the board: the same 7 tokens, now the task's — not 14.
+    assert.deepEqual(onBoard(), [['LAI-2', 7]]);
+
+    w.advance(601);
+    const after = w.usagePuts().length;
+    await sync(w.ctx);
+    assert.equal(w.usagePuts().length, after, 'the sync after the re-read sent usage again');
+    assert.deepEqual(onBoard(), [['LAI-2', 7]]);
   });
 
   void test('a collector from before marks were read reads its files once more and sends the keys', async () => {

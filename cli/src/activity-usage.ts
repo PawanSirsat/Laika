@@ -42,8 +42,11 @@ import {
  * `finish_task`, or moving that task out of progress ends it. A session that
  * moved between tasks is split **by time** — a mark's own reply is the new
  * task's, a finish's the finished task's. A subagent's own marks are its own;
- * without one it works under its session's. A call the board refused
- * (`is_error`) is no mark. From each call only the tool's name, the task's
+ * without one it works under its session's. A call the board refused is no
+ * mark: Claude Code's `is_error` result, Gemini CLI's `error` status; a Codex
+ * call counts only once its answer is read and says it was taken — an answer
+ * that is missing or says nothing either way is no mark. No mark counts until
+ * the board has named its prefixes. From each call only the tool's name, the task's
  * **key** and whether the status is in progress are kept — never its note,
  * summary, branch or any other argument — and a task named by its id, which
  * cannot be sent, leaves its stretch unattributed.
@@ -180,11 +183,16 @@ type Rec = [
 
 /**
  * A Laika mark (LAI-770): `[session index, lane index, epoch s, key index,
- * kind, refused]`. Kind 1 starts work on the key, 0 ends work on it; key −1
- * is a task named by its id, which cannot be sent. Refused is 1 once the
- * call's result came back an error.
+ * kind, state]`. Kind 1 starts work on the key, 0 ends work on it; key −1 is
+ * a task named by its id, which cannot be sent. State is absent or 0 for a
+ * mark that counts, 1 once the call's answer came back an error, and 2 while
+ * a Codex call's answer has not been read (review B1) — only 0 counts.
  */
-type Mark = [number, number, number, number, 0 | 1, (0 | 1)?];
+type Mark = [number, number, number, number, 0 | 1, (0 | 1 | 2)?];
+
+/** A mark's state: refused, or a Codex call whose answer is not yet read. */
+const REFUSED = 1;
+const UNANSWERED = 2;
 
 /** No branch recorded for the record: the hook's session line may say. */
 const NO_BRANCH = -2;
@@ -756,7 +764,7 @@ interface Reader {
     atS: number,
     tool: string,
     input: unknown,
-    refused: boolean,
+    state: 0 | typeof REFUSED | typeof UNANSWERED,
     again?: boolean,
   ) => void;
 }
@@ -774,8 +782,11 @@ function claudeLine(reader: Reader, line: string): void {
   if (!isRecord(message)) return;
   const at = epochOf(record.timestamp);
   // A Laika call sits on its reply's line. Kept even from before the window:
-  // a mark there still says what the window's first replies were for.
+  // a mark there still says what the window's first replies were for. A
+  // reply written on several lines is timed from its first, and so is a mark
+  // on a later one of them: the whole reply is the mark's (review, item 1).
   if (Array.isArray(message.content) && at !== undefined) {
+    const first = typeof message.id === 'string' ? reader.data.claude[message.id]?.[6] : undefined;
     for (const block of message.content as unknown[]) {
       if (!isRecord(block) || block.type !== 'tool_use' || typeof block.name !== 'string') continue;
       if (!LAIKA_TOOL.test(block.name)) continue;
@@ -783,10 +794,10 @@ function claudeLine(reader: Reader, line: string): void {
         block.id,
         reader.session(record.sessionId),
         reader.lane(record.agentId),
-        at,
+        first === undefined ? at : Math.min(first, at),
         block.name,
         block.input,
-        false,
+        0,
       );
     }
   }
@@ -851,8 +862,63 @@ function claudeRefusal(reader: Reader, line: string): void {
     if (!isRecord(block) || block.type !== 'tool_result' || block.is_error !== true) continue;
     const mark =
       typeof block.tool_use_id === 'string' ? reader.data.marks[block.tool_use_id] : undefined;
-    if (mark !== undefined) mark[5] = 1;
+    if (mark !== undefined) mark[5] = REFUSED;
   }
+}
+
+const CODEX_CALL_ID = /"call_id":"([A-Za-z0-9_-]{1,128})"/g;
+
+/**
+ * What an MCP answer says about success: `true` taken, `false` refused,
+ * `undefined` when it does not say — Codex keeps a tool's result as JSON
+ * (`{ content, isError }`), and a refusal from the board is `{ error }`.
+ */
+function answered(result: unknown): boolean | undefined {
+  if (!isRecord(result)) return undefined;
+  if (result.isError === true || isRecord(result.error)) return false;
+  if (result.isError === false || Array.isArray(result.content)) return true;
+  return undefined;
+}
+
+/**
+ * A Codex call's answer, for a Laika call already held (review, B1): its
+ * `function_call_output`, or the `mcp_tool_call_end` event beside it. Only
+ * whether it was taken is kept — never what it said — and a refusal from
+ * either holds: a call that came back refused is never a mark.
+ */
+function codexAnswer(reader: Reader, line: string): void {
+  let held = false;
+  for (const match of line.matchAll(CODEX_CALL_ID)) {
+    if (reader.data.marks[`codex:${match[1] ?? ''}`] !== undefined) held = true;
+  }
+  if (!held) return;
+  let record: unknown;
+  try {
+    record = JSON.parse(line);
+  } catch {
+    return;
+  }
+  if (!isRecord(record) || !isRecord(record.payload)) return;
+  const payload = record.payload;
+  if (typeof payload.call_id !== 'string') return;
+  const mark = reader.data.marks[`codex:${payload.call_id}`];
+  if (mark === undefined || mark[5] === REFUSED) return;
+  let taken: boolean | undefined;
+  if (record.type === 'response_item' && payload.type === 'function_call_output') {
+    try {
+      taken = answered(
+        typeof payload.output === 'string' ? JSON.parse(payload.output) : payload.output,
+      );
+    } catch {
+      taken = undefined;
+    }
+  } else if (record.type === 'event_msg' && payload.type === 'mcp_tool_call_end') {
+    const result = payload.result;
+    if (isRecord(result) && 'Err' in result) taken = false;
+    else if (isRecord(result)) taken = answered(result.Ok);
+  }
+  if (taken === false) mark[5] = REFUSED;
+  else if (taken === true) mark.length = 5;
 }
 
 /** Codex's per-response usage, mapped as its cumulative total is (REPORT.md §2). */
@@ -882,6 +948,9 @@ function codexLine(reader: Reader, file: CodexFile, line: string): void {
     !line.includes('"token_usage_record"') &&
     !(line.includes('"function_call"') && line.includes('laika__'))
   ) {
+    if (line.includes('"function_call_output"') || line.includes('"mcp_tool_call_end"')) {
+      codexAnswer(reader, line);
+    }
     return;
   }
   let record: unknown;
@@ -917,7 +986,8 @@ function codexLine(reader: Reader, file: CodexFile, line: string): void {
       return;
     }
     const id = typeof payload.call_id === 'string' ? `codex:${payload.call_id}` : undefined;
-    reader.mark(id, file.sid ?? -1, -1, at, payload.name, args, false);
+    // Not a mark until its answer is read and says it was taken (review, B1).
+    reader.mark(id, file.sid ?? -1, -1, at, payload.name, args, UNANSWERED);
     return;
   }
   if (record.type === 'token_usage_record') {
@@ -1012,7 +1082,7 @@ function geminiFile(reader: Reader, text: string): GeminiFile | undefined {
         epochOf(call.timestamp) ?? at,
         call.name,
         call.args,
-        call.status === 'error' || call.status === 'cancelled',
+        call.status === 'error' || call.status === 'cancelled' ? REFUSED : 0,
         true,
       );
     }
@@ -1195,7 +1265,7 @@ async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan>
       const keys = branchKeys(value);
       return keys === '' ? -1 : branchOf(keys);
     },
-    mark: (id, session, lane, atS, tool, input, refused, again) => {
+    mark: (id, session, lane, atS, tool, input, state, again) => {
       if (typeof id !== 'string' || id === '' || id.length > 160) return;
       if (data.marks[id] !== undefined && again !== true) return;
       const said = markOf(tool, input);
@@ -1207,7 +1277,7 @@ async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan>
         said.key === null ? BY_ID : keyIndex(said.key),
         said.kind,
       ];
-      if (refused) mark[5] = 1;
+      if (state !== 0) mark[5] = state;
       data.marks[id] = mark;
     },
   };
@@ -1423,6 +1493,8 @@ function inForce(line: Timeline | undefined, atS: number): number | undefined {
 /**
  * Each reply's task key, or `null`:
  *
+ * Nothing at all until the board has named its prefixes.
+ *
  * 1. **The mark in force** on the reply's thread at its time — its subagent's
  *    own, else its session's. A mark starts at its own line; a mark that ends
  *    work takes effect after its line, whose reply wrote the finish. A key
@@ -1438,13 +1510,16 @@ function attributor(
   prefixes: readonly string[] | undefined,
   starts: ReadonlyMap<string, readonly [number, string][]>,
 ): (rec: Rec) => string | null {
-  const served = prefixes === undefined ? undefined : new Set(prefixes);
-  const serves = (key: string): boolean =>
-    served === undefined || served.has(key.slice(0, key.lastIndexOf('-')));
+  // Until the board has named its prefixes nothing is tied — a mark no more
+  // than a branch — so a key-shaped argument to another server's tool of the
+  // same name (Gemini CLI's bare names) never goes (review, item 2).
+  if (prefixes === undefined) return () => null;
+  const served = new Set(prefixes);
+  const serves = (key: string): boolean => served.has(key.slice(0, key.lastIndexOf('-')));
 
   const byThread = new Map<string, [number, number, 0 | 1][]>();
   for (const m of Object.values(data.marks)) {
-    if (m[5] === 1 || m[0] < 0) continue;
+    if ((m[5] ?? 0) !== 0 || m[0] < 0) continue;
     const thread = `${String(m[0])}:${String(m[1])}`;
     const list = byThread.get(thread) ?? [];
     // Work starts at the mark's line and ends just after it.
@@ -1467,7 +1542,7 @@ function attributor(
   const sessionsWithMarks = new Set([...byThread.keys()].map((t) => t.split(':')[0]));
 
   const fromBranch = (keys: string | undefined): string | null => {
-    if (served === undefined || keys === undefined || keys === '') return null;
+    if (keys === undefined || keys === '') return null;
     for (const key of keys.split(' ')) if (serves(key)) return key;
     return null;
   };
