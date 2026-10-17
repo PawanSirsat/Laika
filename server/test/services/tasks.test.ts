@@ -226,11 +226,20 @@ describe('status transitions (AC4)', () => {
     };
 
     try {
-      changeStatus(t.db, agent, task.id, 'done');
+      changeStatus(t.db, agent, task.id, 'review');
       throw new Error('should have thrown');
     } catch (err) {
       expect((err as ApiError).code).toBe('unprocessable');
-      expect((err as ApiError).details).toMatchObject({ from: 'backlog', to: 'done' });
+      expect((err as ApiError).details).toMatchObject({ from: 'backlog', to: 'review' });
+    }
+
+    // Into done it is the D-081 rule that answers, before the table is asked.
+    try {
+      changeStatus(t.db, agent, task.id, 'done');
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect((err as ApiError).code).toBe('forbidden');
+      expect((err as ApiError).details).toMatchObject({ reason: 'agent_cannot_mark_done' });
     }
 
     // And it did not move.
@@ -972,6 +981,8 @@ describe('started_at and completed_at', () => {
         'priority',
         'project_id',
         'ready',
+        // LAI-758, D-081: the send-back a task carries, in §6.4's shape.
+        'send_back',
         'sprint_id',
         'stale_flagged_at',
         'started_at',

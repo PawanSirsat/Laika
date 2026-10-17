@@ -553,22 +553,23 @@ describe('a task moving between statuses (services/tasks.ts)', () => {
       status_name: 'Shipped',
     });
 
-    // …an agent may not, whether it names the category, the status or its id.
+    // …an agent may not, whether it names the category, the status or its id —
+    // and since D-081 it is told the rule for done, not the table's refusal.
     const other = newTask('backlog');
     for (const target of ['done', { status_id: shipped.id }, { status_name: 'shipped' }] as const) {
       const err = expectApiError(
         () => changeStatus(t.db, agent(adminId), other.id, target),
-        'unprocessable',
+        'forbidden',
       );
-      expect(err.details).toMatchObject({ from: 'backlog', to: 'done' });
+      expect(err.details).toMatchObject({ reason: 'agent_cannot_mark_done', status: 'done' });
     }
     expect(getTask(t.db, actor(adminId), other.id).status).toBe('backlog');
 
     const err = expectApiError(
       () => changeStatus(t.db, agent(adminId), other.id, { status_id: shipped.id }),
-      'unprocessable',
+      'forbidden',
     );
-    expect(err.message).toBe('Cannot move a task from Backlog to Shipped');
+    expect(err.message).toMatch(/^An agent cannot move a task into Shipped\. Call finish_task/);
   });
 
   it('lets an agent move work only where the §5 agent table already let it', () => {

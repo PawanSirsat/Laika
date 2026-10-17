@@ -65,7 +65,8 @@ export const MCP_SERVER_NAME = 'laika';
 export const MCP_INSTRUCTIONS = `Laika is this team's project board, shared by people and coding agents. Rules:
 claim a task with \`start_working\` before you write code; if no task fits the
 work, \`create_task\` first. One task at a time. \`finish_task\` moves it to
-review: an agent never marks work done, a person does. Comment with
+review with your proof (commits, branch, pull request, test commands and exit
+codes): an agent never marks work done, a person does. Comment with
 \`add_comment\` as you go. Refer to tasks by key, such as LAI-42.
 
 How to work:
@@ -74,7 +75,9 @@ How to work:
    the brief, the open work, and who is on it.
 3. Pick from \`list_ready_tasks\` and claim it with \`start_working\`. A refusal
    means someone else holds it: take another rather than forcing it.
-4. Stray findings outside any task, such as a broken script, go to
+4. A task a person sent back opens with their reason in \`get_task_context\`:
+   fix that first, then \`finish_task\` again with fresh proof.
+5. Stray findings outside any task, such as a broken script, go to
    \`log_unlisted_work\` so they are triaged rather than lost.`;
 
 export interface McpRequestContext {

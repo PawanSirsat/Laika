@@ -285,9 +285,15 @@ export function isSystemPrincipal(principal: Principal): principal is SystemPrin
  * Board columns made the §5 transition table too strict to drag against: with
  * user-made columns, `todo → done` is an ordinary gesture and
  * `ALLOWED_TRANSITIONS` refuses it. The owner's decision was to widen the table
- * for people and leave it exactly as it is for agents, so that §5's *"`done` is
- * never set by `finish_task`. Agents do not self-certify"* keeps meaning what it
- * says.
+ * for people and leave it exactly as it is for agents.
+ *
+ * **The agent table alone did not keep agents out of `done`.** This comment
+ * said it kept §5's *"Agents do not self-certify"* true, and it did not: the
+ * table held `review → done`, so a token could accept its own work in review
+ * (audit H6). Since LAI-758 (D-081) the table has no edge into `done`, and
+ * `changeStatus` refuses any principal this function calls an agent a move into
+ * a done-**category** status before the table is asked — the rule lives there,
+ * and this function only says who it applies to.
  *
  * **`isSystemPrincipal` is not that question, and reaching for it is the
  * mistake this function exists to prevent.** It means `kind === 'system'` — the

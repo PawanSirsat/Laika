@@ -31,12 +31,15 @@ import {
   ACTOR_KINDS,
   AI_PROVIDERS,
   CREATED_VIA,
+  EVIDENCE_KINDS,
+  EVIDENCE_STATES,
   LOCAL_ACTIVITY_SCOPES,
   MEETING_REVIEW_STATUSES,
   ORG_ROLES,
   PROFILE_KINDS,
   PROJECT_ROLES,
   PROJECT_VISIBILITIES,
+  REVIEW_DECISIONS,
   SPRINT_STATUSES,
   TASK_PRIORITIES,
   TASK_STATUSES,
@@ -1235,6 +1238,140 @@ export const pushedCommitKeys = sqliteTable(
   ],
 );
 
+// --------------------------------------------------------- §4.25 task_rounds
+
+/**
+ * One `finish_task` — an agent handing a task back for review, with what it
+ * says it did (§4.25, D-081, LAI-758).
+ *
+ * **A task has as many rounds as it was finished**, numbered from 1: finished,
+ * sent back, finished again is two rows, and the first is never rewritten.
+ * The proof itself is `task_evidence`, one row per item.
+ *
+ * `client_name` is a **copy**, deliberately, where `created_by_client` is
+ * derived: it is D-076's `last_client_name` at the moment of the finish, and
+ * the token's current value says which agent connected last, not which one
+ * finished this round.
+ */
+export const taskRounds = sqliteTable(
+  'task_rounds',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    /** 1 for the first finish of this task, 2 for the next. */
+    number: integer('number').notNull(),
+    /** The person whose credential finished it. */
+    finishedBy: text('finished_by')
+      .notNull()
+      .references(() => users.id),
+    /** The token it arrived on; null on a web session or once the token is deleted. */
+    tokenId: text('token_id').references(() => tokens.id, { onDelete: 'set null' }),
+    /** What the agent called itself on that token when it finished (D-076). */
+    clientName: text('client_name'),
+    /** The summary and checklist, as posted in the round's comment. */
+    summaryMd: text('summary_md').notNull(),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('task_rounds_task_number_idx').on(t.taskId, t.number),
+    index('task_rounds_finished_by_idx').on(t.finishedBy),
+    index('task_rounds_token_id_idx').on(t.tokenId),
+    check('task_rounds_number_check', sql.raw('number >= 1')),
+  ],
+);
+
+// ------------------------------------------------------ §4.26 task_evidence
+
+/**
+ * One piece of a round's proof — a commit, the branch, the pull request or a
+ * test run (§4.26, D-081, LAI-758).
+ *
+ * **Each item carries its own `state`**, `claimed` until something other than
+ * the agent checks it. Step 2 (LAIKA-477) flips `state`, `state_source` and
+ * `state_at` on a row; nothing else about the item changes, so it needs no
+ * migration. `(kind, value)` is indexed for exactly that lookup: a webhook
+ * knows a sha or a pull request URL, not a round.
+ */
+export const taskEvidence = sqliteTable(
+  'task_evidence',
+  {
+    id: text('id').primaryKey(),
+    roundId: text('round_id')
+      .notNull()
+      .references(() => taskRounds.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: EVIDENCE_KINDS }).notNull(),
+    /** Order within the round, from 0: the order the agent sent them in. */
+    position: integer('position').notNull(),
+    /** The sha, the branch name, the pull request URL, or the test command. */
+    value: text('value').notNull(),
+    /** A commit's first line; null for every other kind. */
+    detail: text('detail'),
+    /** A test run's exit code; null for every other kind. */
+    exitCode: integer('exit_code'),
+    state: text('state', { enum: EVIDENCE_STATES }).notNull().default('claimed'),
+    /** What changed `state` — `github` in step 2. Null while `claimed`. */
+    stateSource: text('state_source'),
+    /** When `state` last changed. Null while `claimed`. */
+    stateAt: integer('state_at'),
+    createdAt,
+  },
+  (t) => [
+    index('task_evidence_round_position_idx').on(t.roundId, t.position),
+    index('task_evidence_kind_value_idx').on(t.kind, t.value),
+    check('task_evidence_kind_check', oneOf('kind', EVIDENCE_KINDS)),
+    check('task_evidence_state_check', oneOf('state', EVIDENCE_STATES)),
+    check(
+      'task_evidence_exit_code_check',
+      sql.raw("(kind = 'test_run') = (exit_code IS NOT NULL)"),
+    ),
+  ],
+);
+
+// ------------------------------------------------------- §4.27 task_reviews
+
+/**
+ * What a person did with a task waiting in review: accepted it, or sent it
+ * back with a reason (§4.27, D-081, LAI-758).
+ *
+ * A send-back's reason is also posted as a comment, `comment_id`, so the
+ * thread reads as it always did; this row is what marks that comment as a
+ * send-back and what `get_task_context` reads first. A send-back stays the
+ * task's current one until the next round or the next decision.
+ */
+export const taskReviews = sqliteTable(
+  'task_reviews',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    /** The round decided on — the latest when it was decided; null when there was none. */
+    roundId: text('round_id').references(() => taskRounds.id, { onDelete: 'set null' }),
+    decision: text('decision', { enum: REVIEW_DECISIONS }).notNull(),
+    /** Required for a send-back, null for an accept. */
+    reasonMd: text('reason_md'),
+    /** The comment the reason was posted as. */
+    commentId: text('comment_id').references(() => comments.id, { onDelete: 'set null' }),
+    decidedBy: text('decided_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt,
+  },
+  (t) => [
+    index('task_reviews_task_created_at_idx').on(t.taskId, t.createdAt),
+    index('task_reviews_round_id_idx').on(t.roundId),
+    index('task_reviews_comment_id_idx').on(t.commentId),
+    index('task_reviews_decided_by_idx').on(t.decidedBy),
+    check('task_reviews_decision_check', oneOf('decision', REVIEW_DECISIONS)),
+    check(
+      'task_reviews_reason_check',
+      sql.raw("(decision = 'sent_back') = (reason_md IS NOT NULL AND length(trim(reason_md)) > 0)"),
+    ),
+  ],
+);
+
 export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
 
 export type User = typeof users.$inferSelect;
@@ -1260,3 +1397,6 @@ export type MemberRating = typeof memberRatings.$inferSelect;
 export type BoardActivityDay = typeof boardActivityDays.$inferSelect;
 export type LocalActivityDay = typeof localActivityDays.$inferSelect;
 export type PushedCommitKey = typeof pushedCommitKeys.$inferSelect;
+export type TaskRound = typeof taskRounds.$inferSelect;
+export type TaskEvidence = typeof taskEvidence.$inferSelect;
+export type TaskReview = typeof taskReviews.$inferSelect;

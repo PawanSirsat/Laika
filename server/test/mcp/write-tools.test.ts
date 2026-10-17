@@ -215,20 +215,20 @@ describe('update_status', () => {
     const client = await connect(await mint());
     await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Work' } });
 
+    // `backlog -> review` is not in §5's table; the lifecycle module refuses
+    // it, and the tool does not get its own opinion about legality.
+    const illegal = await client.callTool({
+      name: 'update_status',
+      arguments: { task: 'COR-1', status: 'review' },
+    });
+    expect(illegal.isError).toBe(true);
+    expect(JSON.stringify(illegal)).toContain('unprocessable');
+
     const ok = await client.callTool({
       name: 'update_status',
       arguments: { task: 'COR-1', status: 'in_progress' },
     });
     expect((payload(ok).task as { status: string }).status).toBe('in_progress');
-
-    // `in_progress -> done` is not in §5's table; the lifecycle module refuses
-    // it, and the tool does not get its own opinion about legality.
-    const illegal = await client.callTool({
-      name: 'update_status',
-      arguments: { task: 'COR-1', status: 'done' },
-    });
-    expect(illegal.isError).toBe(true);
-    expect(JSON.stringify(illegal)).toContain('unprocessable');
 
     await client.close();
   });
@@ -312,7 +312,40 @@ describe('update_status', () => {
       arguments: { task: 'COR-1', status: 'shipped' },
     });
     expect(jump.isError).toBe(true);
-    expect(JSON.stringify(jump)).toContain('Cannot move a task from Backlog to Shipped');
+    // D-081: the done rule answers, by category, before the table is asked.
+    expect(JSON.stringify(jump)).toContain('agent_cannot_mark_done');
+    expect(JSON.stringify(jump)).toContain('An agent cannot move a task into Shipped');
+
+    await client.close();
+  });
+
+  /**
+   * LAIKA-455, audit H6: `review → done` was in the agent table, so an agent
+   * that had finished could accept its own work. Refused by category and by a
+   * renamed status's name, and the task stays in review.
+   */
+  it('cannot accept its own work from review, by category or by a done status’s name', async () => {
+    await must('/api/v1/projects/core/statuses', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Shipped', category: 'done' }),
+    });
+    const client = await connect(await mint());
+    await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Work' } });
+    await client.callTool({ name: 'start_working', arguments: { task: 'COR-1' } });
+    await client.callTool({ name: 'finish_task', arguments: { task: 'COR-1', summary: 'Done' } });
+
+    for (const status of ['done', 'Done', 'Shipped']) {
+      const result = await client.callTool({
+        name: 'update_status',
+        arguments: { task: 'COR-1', status },
+      });
+      expect(result.isError, status).toBe(true);
+      expect(JSON.stringify(result), status).toContain('forbidden');
+      expect(JSON.stringify(result), status).toContain('agent_cannot_mark_done');
+      expect(JSON.stringify(result), status).toContain('finish_task');
+    }
+    const row = h.db.select().from(tasks).all()[0];
+    expect(row?.status).toBe('review');
 
     await client.close();
   });
@@ -339,6 +372,102 @@ describe('finish_task', () => {
       .map((r) => r.bodyMd);
     expect(bodies.some((b) => b.includes('Did the thing'))).toBe(true);
     expect(bodies.some((b) => b.includes('- [x] tests green'))).toBe(true);
+
+    await client.close();
+  });
+
+  it('takes the proof and stores it as a claimed round (LAIKA-476)', async () => {
+    const client = await connect(await mint());
+    await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Work' } });
+    await client.callTool({ name: 'start_working', arguments: { task: 'COR-1' } });
+
+    const result = await client.callTool({
+      name: 'finish_task',
+      arguments: {
+        task: 'COR-1',
+        summary: 'Did the thing',
+        commits: [{ sha: 'abcdef1234567', message: 'feat: the thing' }],
+        branch: 'build-review-gate',
+        pull_request: 'https://github.com/PawanSirsat/Laika/pull/7',
+        tests: [
+          { command: 'pnpm test', exit_code: 0 },
+          { command: 'pnpm lint', exit_code: 1 },
+        ],
+      },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(JSON.stringify(result.content)).toContain('each marked claimed');
+
+    const id = (payload(result).task as { id: string }).id;
+    const rounds = (await (await api(`/api/v1/tasks/${id}/rounds`)).json()) as {
+      rounds: {
+        client_name: string;
+        commits: { sha: string; state: string }[];
+        tests: { exit_code: number; state: string }[];
+      }[];
+    };
+    expect(rounds.rounds).toHaveLength(1);
+    expect(rounds.rounds[0]).toMatchObject({
+      client_name: 'test-agent',
+      commits: [{ sha: 'abcdef1234567', state: 'claimed' }],
+      tests: [
+        { exit_code: 0, state: 'claimed' },
+        { exit_code: 1, state: 'claimed' },
+      ],
+    });
+
+    await client.close();
+  });
+
+  it('refuses proof that breaks a limit before moving anything', async () => {
+    const client = await connect(await mint());
+    await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Work' } });
+    await client.callTool({ name: 'start_working', arguments: { task: 'COR-1' } });
+
+    const result = await client.callTool({
+      name: 'finish_task',
+      arguments: { task: 'COR-1', summary: 'x', pull_request: 'javascript:alert(1)' },
+    });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result)).toContain('pull_request');
+    expect(h.db.select().from(tasks).all()[0]?.status).toBe('in_progress');
+
+    await client.close();
+  });
+
+  it('reads a person’s send-back to the next agent first (LAIKA-478)', async () => {
+    const client = await connect(await mint());
+    await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Work' } });
+    await client.callTool({ name: 'start_working', arguments: { task: 'COR-1' } });
+    const done = await client.callTool({
+      name: 'finish_task',
+      arguments: {
+        task: 'COR-1',
+        summary: 'Did it',
+        tests: [{ command: 'pnpm lint', exit_code: 1 }],
+      },
+    });
+    const id = (payload(done).task as { id: string }).id;
+    await must(
+      `/api/v1/tasks/${id}/send-back`,
+      { method: 'POST', body: JSON.stringify({ reason: 'Lint is red: fix it first' }) },
+      200,
+    );
+
+    const context = await client.callTool({
+      name: 'get_task_context',
+      arguments: { task: 'COR-1' },
+    });
+    const text = (context.content as { type: string; text: string }[])[0]!.text;
+    expect(text.startsWith('### Sent back — read this first')).toBe(true);
+    expect(text).toContain('Lint is red: fix it first');
+    expect(text).toContain('`pnpm lint` exited 1 — claimed');
+    expect(Object.keys(payload(context))[0]).toBe('send_back');
+    expect(payload(context).send_back).toMatchObject({
+      reason_md: 'Lint is red: fix it first',
+      round_number: 1,
+    });
+    expect(payload(context).evidence).toMatchObject({ number: 1 });
 
     await client.close();
   });

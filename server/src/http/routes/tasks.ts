@@ -8,6 +8,7 @@ import {
   CREATED_VIA,
   claimTask,
   createTask,
+  finishTask,
   getTask,
   listTasks,
   removeTaskDependency,
@@ -17,6 +18,8 @@ import {
   updateTask,
   type TaskView,
 } from '../../services/tasks.ts';
+import { EVIDENCE_LIMITS, listTaskRounds } from '../../services/rounds.ts';
+import { acceptTask, sendBackTask } from '../../services/review.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseUpdatedSince } from '../updated-since.ts';
@@ -102,6 +105,42 @@ const ReorderBody = strictObject({
   after_task_id: z.string().min(1).optional(),
   before_task_id: z.string().min(1).optional(),
 });
+
+/**
+ * `POST /tasks/:id/finish` — `finish_task`'s REST twin (§6.4, D-081): the move
+ * to review, the summary comment and the round with its proof, in one write.
+ * Every proof field is optional, as on the tool, and bounded by the same
+ * `EVIDENCE_LIMITS`; the service holds the rules (a sha is hex, a pull request
+ * is an http(s) URL) and this only shapes.
+ */
+const FinishBody = strictObject({
+  summary: z.string().trim().min(1).max(50_000),
+  checklist: z.array(z.string().min(1).max(500)).max(50).optional(),
+  commits: z
+    .array(
+      strictObject({
+        sha: z.string().trim().min(EVIDENCE_LIMITS.shaMin).max(EVIDENCE_LIMITS.shaMax),
+        message: z.string().max(10_000).optional(),
+      }),
+    )
+    .max(EVIDENCE_LIMITS.commits)
+    .optional(),
+  branch: z.string().trim().min(1).max(EVIDENCE_LIMITS.branch).optional(),
+  pull_request: z.string().trim().min(1).max(EVIDENCE_LIMITS.url).optional(),
+  tests: z
+    .array(
+      strictObject({
+        command: z.string().trim().min(1).max(EVIDENCE_LIMITS.command),
+        exit_code: z.number().int(),
+      }),
+    )
+    .max(EVIDENCE_LIMITS.tests)
+    .optional(),
+});
+
+// The bounds are the service's (`SEND_BACK_REASON_MAX`): a reason is checked
+// in one place, so its message is the one a person reads.
+const SendBackBody = strictObject({ reason: z.string() });
 
 function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) {
   const actor = c.get('actor');
@@ -199,6 +238,28 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
   });
 
   app.post('/:id/claim', (c) => c.json(claimTask(sqlite, db, requireActor(c), c.req.param('id'))));
+
+  app.post('/:id/finish', async (c) => {
+    const actor = requireActor(c);
+    const body = parseBody(FinishBody, await c.req.json().catch(() => null));
+
+    return c.json(finishTask(sqlite, db, actor, c.req.param('id'), body));
+  });
+
+  /** Every round of a task, newest first, and its current send-back (§6.4). */
+  app.get('/:id/rounds', (c) => c.json(listTaskRounds(db, requireActor(c), c.req.param('id'))));
+
+  /** The review queue's two decisions (§6.4, D-081) — a web session's. */
+  app.post('/:id/accept', (c) =>
+    c.json(acceptTask(sqlite, db, requireActor(c), c.req.param('id'))),
+  );
+
+  app.post('/:id/send-back', async (c) => {
+    const actor = requireActor(c);
+    const body = parseBody(SendBackBody, await c.req.json().catch(() => null));
+
+    return c.json(sendBackTask(sqlite, db, actor, c.req.param('id'), body.reason));
+  });
 
   app.post('/:id/status', async (c) => {
     const actor = requireActor(c);
