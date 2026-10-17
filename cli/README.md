@@ -178,7 +178,10 @@ no token counts on the machine, so they have none to send.
   task's key and whether the status is in progress are kept; a call the
   board refused is no mark. Without a mark, a key in the branch name counts
   when its prefix is one the board serves (`LAI-42-fix-login`; never
-  `release-2026`): Claude Code records the branch on every line and Codex in
+  `release-2026`). The prefixes the board serves include those of the
+  outside ids its cards carry (LAI-780), so a mark or a branch named for a
+  repo's `LAI-780` or a Jira key such as `DATA_ENG-12` counts as the card's
+  own key does. Claude Code records the branch on every line and Codex in
   its session's metadata, and for the rest the session-start hook keeps the
   session's id and branch in `~/.laika/activity/sessions` (0600, never
   sent; `off` deletes it). Anything else is unattributed and says so. The 30

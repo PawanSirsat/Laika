@@ -50,7 +50,13 @@ import {
   runBoardTransition,
   useRemoteTouches,
 } from './board/board-motion.ts';
-import { blockedState, groupByColumn, hideOldDone, statusLabel } from '../../api/board-derive.ts';
+import {
+  blockedState,
+  groupByColumn,
+  hideOldDone,
+  matchesSearch,
+  statusLabel,
+} from '../../api/board-derive.ts';
 import { useProjectStatuses, useStatusEditor } from '../../api/use-statuses.ts';
 import type { ProjectStatus } from '../../api/statuses.ts';
 import { setHideDoneAfter } from '../../api/projects.ts';
@@ -661,8 +667,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
        */
       if (topOnly && task.parent_task_id !== null) return false;
       if (overdueOnly && !isOverdue(task, Date.now())) return false;
-      if (needle === '') return true;
-      return task.title.toLowerCase().includes(needle) || task.key.toLowerCase().includes(needle);
+      return matchesSearch(task, needle);
     };
   }, [needle, agentOnly, blockedOnly, topOnly, overdueOnly, board.byId]);
 

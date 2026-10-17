@@ -128,11 +128,13 @@ function usageViolation(b: Record<string, unknown>, now: Date): string | undefin
       if (typeof r.model !== 'string' || !/^[a-z0-9][a-z0-9._:-]{0,63}$/.test(r.model)) {
         return 'model invalid';
       }
+      // §6.4: `null`, a Laika key `PREFIX-n`, or an outside id (LAI-780) — a
+      // prefix of 1–16 of A–Z, 0–9 and `_` from a letter, and 1–9 digits.
       if (
         r.task !== null &&
-        (typeof r.task !== 'string' || !/^[A-Z][A-Z0-9]{1,7}-[1-9][0-9]{0,8}$/.test(r.task))
+        (typeof r.task !== 'string' || !/^[A-Z][A-Z0-9_]{0,15}-[0-9]{1,9}$/.test(r.task))
       ) {
-        return 'task is not a key or null';
+        return 'task is not a key, an outside id, or null';
       }
       for (const key of ['input', 'output', 'cache_write', 'cache_read']) {
         const n = r[key];

@@ -246,6 +246,8 @@ void describe('the task panel', () => {
         'start date',
         'reporter',
         'created via',
+        // The card's id elsewhere (LAI-780): one of the fields Jira does not draw.
+        'outside id',
         'watchers',
         'discovered from',
       ]);

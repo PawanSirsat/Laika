@@ -470,6 +470,23 @@ describe('pull requests move the task (§10.1, D-051)', () => {
     expect(task?.externalRef).toBe('kvell/laika#221');
   });
 
+  it('never writes over an outside id the task carries; over an earlier pull request’s, it does (LAI-780)', async () => {
+    const id = h.db.select().from(tasks).get()?.id ?? '';
+    h.db.update(tasks).set({ externalRef: 'LAI-780' }).where(eq(tasks.id, id)).run();
+
+    const res = await pull('opened');
+
+    expect(res.status, await res.clone().text()).toBe(200);
+    const task = h.db.select().from(tasks).get();
+    // Positive control: the delivery did reach the task.
+    expect(task?.status).toBe('in_progress');
+    expect(task?.externalRef).toBe('LAI-780');
+
+    h.db.update(tasks).set({ externalRef: 'kvell/laika#7' }).where(eq(tasks.id, id)).run();
+    await pull('closed', true);
+    expect(h.db.select().from(tasks).get()?.externalRef).toBe('kvell/laika#221');
+  });
+
   it('merged moves the task to review, which no human webhook-caller could', async () => {
     // **D-051.** §5 restricts `review` to the assignee, a lead or an admin, and
     // a webhook is none of them — but that rule exists because *"agents do not

@@ -336,3 +336,18 @@ export function groupByColumn(
 
   return lanes;
 }
+
+/**
+ * The board's search box (LAI-251, LAI-780): a card's title, its key, or the
+ * outside id it carries — so `lai-780` finds the card a repo calls `LAI-780`.
+ * `needle` is the box's text trimmed and lower-cased, as the board keeps it;
+ * an empty one matches everything.
+ */
+export function matchesSearch(task: Task, needle: string): boolean {
+  if (needle === '') return true;
+  return (
+    task.title.toLowerCase().includes(needle) ||
+    task.key.toLowerCase().includes(needle) ||
+    (task.external_ref?.toLowerCase().includes(needle) ?? false)
+  );
+}

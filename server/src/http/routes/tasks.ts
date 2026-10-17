@@ -69,6 +69,9 @@ const CreateBody = strictObject({
   planned_start: DateOnly.optional(),
   // A person's size from the start (D-085); the computed one stays beside it.
   size: z.enum(SIZE_LEVELS).optional(),
+  // An outside id (LAI-780). A sanity bound only: the shape and its length are
+  // the service's (`normaliseOutsideId`), so its message is the one read.
+  external_ref: z.string().max(120).optional(),
   created_via: z.enum(CREATED_VIA).optional(),
 });
 
@@ -92,6 +95,8 @@ const UpdateBody = strictObject({
   planned_start: DateOnly.nullable().optional(),
   // A person's size (D-085): a level sets it, `null` goes back to the computed one.
   size: z.enum(SIZE_LEVELS).nullable().optional(),
+  // An outside id (LAI-780); `null` clears it. Shaped by the service, as above.
+  external_ref: z.string().max(120).nullable().optional(),
 });
 
 // `status` is a category — the project's first visible status of it — and

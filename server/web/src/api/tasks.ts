@@ -171,7 +171,12 @@ export interface Task {
   readonly planned_start: number | null;
   /** Last branch seen working on it — the plugin writes it (LAI-286). */
   readonly branch: string | null;
-  /** e.g. a GitHub PR URL (LAI-286). */
+  /**
+   * The id this card has somewhere else — an **outside id**, `LAI-780` or a
+   * Jira key, which every tool that takes a task key takes too (LAI-780;
+   * {@link isOutsideId}) — or the pull request the webhook last recorded,
+   * `owner/repo#N` (LAI-286).
+   */
   readonly external_ref: string | null;
   readonly created_at: number;
   readonly updated_at: number;
@@ -513,6 +518,20 @@ export interface TaskEdit {
   /** `null` clears; unix-ms at a UTC midnight sets (`api/date-only.ts`). */
   readonly due_on?: number | null;
   readonly planned_start?: number | null;
+  /** An outside id (LAI-780); the server upper-cases it. `null` clears it. */
+  readonly external_ref?: string | null;
+}
+
+/**
+ * An outside id's shape (LAI-780): a prefix of 1–16 letters, digits and `_`
+ * that starts with a letter, a dash, and 1–9 digits. The server's
+ * `OUTSIDE_ID_PATTERN`, character for character — `tasks.test.ts` reads it
+ * and fails if they drift. A pull request's `owner/repo#N` never fits.
+ */
+export const OUTSIDE_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,15}-[0-9]{1,9}$/;
+
+export function isOutsideId(value: string): boolean {
+  return OUTSIDE_ID_PATTERN.test(value.trim());
 }
 
 export function updateTask(taskId: string, edit: TaskEdit): Promise<Task> {

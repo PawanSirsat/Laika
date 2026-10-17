@@ -7,7 +7,7 @@ import { statusOptions } from '../board/status-options.ts';
 import { dateInputToMs, dateLabel, isOverdue, msToDateInput } from '../../../api/date-only.ts';
 import type { Sprint } from '../../../api/sprints.ts';
 import { timeLabel } from '../../../api/time-label.ts';
-import { updateTask, PRIORITIES, type Member, type Task } from '../../../api/tasks.ts';
+import { isOutsideId, updateTask, PRIORITIES, type Member, type Task } from '../../../api/tasks.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
@@ -187,8 +187,16 @@ export function TaskMeta({
   const reviewColumn = [...statuses]
     .sort((a, b) => a.position - b.position)
     .find((s) => s.category === 'review' && !s.hidden);
-  const hasDevelopment = task.branch !== null || task.external_ref !== null || changesCount > 0;
-  const externalIsUrl = task.external_ref !== null && /^https?:\/\//.test(task.external_ref);
+  /*
+   * `external_ref` holds one of two things (LAI-780): an outside id — the
+   * card's id elsewhere, a Details field — or the pull request the webhook
+   * recorded, which belongs to Development.
+   */
+  const outsideId =
+    task.external_ref !== null && isOutsideId(task.external_ref) ? task.external_ref : null;
+  const pullRef = outsideId === null ? task.external_ref : null;
+  const hasDevelopment = task.branch !== null || pullRef !== null || changesCount > 0;
+  const externalIsUrl = pullRef !== null && /^https?:\/\//.test(pullRef);
 
   return (
     <aside className="panel-meta" aria-label="Task details">
@@ -466,6 +474,12 @@ export function TaskMeta({
               )}
             </div>
 
+            <OutsideIdRow
+              value={outsideId}
+              mayEdit={mayEdit}
+              onChange={(ref) => edit({ external_ref: ref })}
+            />
+
             <div className="meta-row">
               <p className="meta-label">Watchers</p>
               {watchers === undefined ? (
@@ -552,17 +566,17 @@ export function TaskMeta({
                   <p className="meta-value meta-plain meta-mono">{task.branch}</p>
                 </div>
               )}
-              {task.external_ref !== null && (
+              {pullRef !== null && (
                 <div className="meta-row">
                   {/* "PR", not the longer word: `endpoint-coverage` reads that word followed by `<` as a client call site. */}
                   <p className="meta-label">PR</p>
                   <p className="meta-value meta-plain">
                     {externalIsUrl ? (
-                      <a href={task.external_ref} target="_blank" rel="noreferrer">
-                        {task.external_ref}
+                      <a href={pullRef} target="_blank" rel="noreferrer">
+                        {pullRef}
                       </a>
                     ) : (
-                      task.external_ref
+                      pullRef
                     )}
                   </p>
                 </div>
@@ -835,6 +849,128 @@ function DateRow({ id, label, value, overdue, mayEdit, onChange }: DateRowProps)
             </button>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+interface OutsideIdRowProps {
+  /** The outside id the card carries, or `null` — never a pull request's ref. */
+  readonly value: string | null;
+  readonly mayEdit: boolean;
+  readonly onChange: (ref: string | null) => Promise<void>;
+}
+
+/**
+ * The id this card has somewhere else (LAI-780): a repo task file's `LAI-780`,
+ * a Jira key. Every tool that takes a task key takes it too, so an agent
+ * working from that id can mark this card. Shown as a chip — or *Add outside
+ * id* — and edited in place, as the dates are; Save waits for a well-shaped
+ * id, and the server upper-cases it.
+ */
+function OutsideIdRow({ value, mayEdit, onChange }: OutsideIdRowProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? '');
+  const [busy, setBusy] = useState(false);
+
+  const run = async (ref: string | null): Promise<void> => {
+    setBusy(true);
+    try {
+      await onChange(ref);
+      setEditing(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="meta-row meta-row-outside-id">
+      <p className="meta-label">Outside id</p>
+      {editing ? (
+        <div className="meta-value dep-add meta-add">
+          <label className="visually-hidden" htmlFor="outside-id-input">
+            Outside id
+          </label>
+          <input
+            id="outside-id-input"
+            type="text"
+            className="meta-date-input meta-mono"
+            placeholder="LAI-123"
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={26}
+            value={draft}
+            disabled={busy}
+            onChange={(event) => {
+              setDraft(event.target.value);
+            }}
+          />
+          <button
+            type="button"
+            className="dep-confirm"
+            disabled={busy || !isOutsideId(draft)}
+            onClick={() => {
+              void run(draft.trim());
+            }}
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            className="dep-cancel"
+            disabled={busy}
+            onClick={() => {
+              setEditing(false);
+              setDraft(value ?? '');
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : value === null ? (
+        <p className="meta-value meta-plain">
+          {mayEdit ? (
+            <button
+              type="button"
+              className="meta-add-link"
+              onClick={() => {
+                setDraft('');
+                setEditing(true);
+              }}
+            >
+              Add outside id
+            </button>
+          ) : (
+            <span className="meta-quiet">None</span>
+          )}
+        </p>
+      ) : mayEdit ? (
+        <div className="meta-value meta-date">
+          <button
+            type="button"
+            className="meta-date-chip meta-mono"
+            aria-label={`Change outside id, ${value}`}
+            onClick={() => {
+              setDraft(value);
+              setEditing(true);
+            }}
+          >
+            {value}
+          </button>
+          <button
+            type="button"
+            className="dep-remove"
+            disabled={busy}
+            aria-label="Clear outside id"
+            onClick={() => {
+              void run(null);
+            }}
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
+      ) : (
+        <p className="meta-value meta-plain meta-mono">{value}</p>
       )}
     </div>
   );

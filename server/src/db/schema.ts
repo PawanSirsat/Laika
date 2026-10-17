@@ -481,6 +481,12 @@ export const tasks = sqliteTable(
     dueOn: integer('due_on'),
     plannedStart: integer('planned_start'),
     branch: text('branch'),
+    /**
+     * The id this card has somewhere else — an outside id, `LAI-123` or a Jira
+     * key, stored upper-case and taken wherever a task key is (LAI-780,
+     * `services/outside-ids.ts`) — or the pull request the GitHub webhook last
+     * recorded, `owner/repo#N` (§9.2), which never writes over an outside id.
+     */
     externalRef: text('external_ref'),
     staleFlaggedAt: integer('stale_flagged_at'),
     /**
@@ -544,6 +550,11 @@ export const tasks = sqliteTable(
     index('tasks_estimate_id_idx').on(t.estimateId),
     index('tasks_estimate_at_start_id_idx').on(t.estimateAtStartId),
     index('tasks_size_override_id_idx').on(t.sizeOverrideId),
+    // A card found by its outside id, and the prefixes of the ids served
+    // (LAI-780). Partial: most tasks carry none, and neither read wants them.
+    index('tasks_external_ref_idx')
+      .on(t.externalRef, t.projectId)
+      .where(sql`${t.externalRef} IS NOT NULL`),
     // **Composite, and that is the point** (LAI-738). A plain `status_id`
     // reference would let a task hold another project's status, or a status
     // whose category disagrees with `status` — two ways for the board and the

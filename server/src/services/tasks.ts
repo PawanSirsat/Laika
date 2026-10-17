@@ -35,6 +35,12 @@ import {
   type SizeView,
 } from './estimates.ts';
 import { normaliseTagNames, setTaskTags, tagsForTasks, taskIdsWithTag } from './tags.ts';
+import {
+  ambiguousOutsideId,
+  assertOutsideIdFree,
+  normaliseOutsideId,
+  readableByOutsideId,
+} from './outside-ids.ts';
 import { requireProjectBySlug } from './projects.ts';
 import {
   activeSendBacks,
@@ -503,12 +509,20 @@ export function subtaskProgress(subtasks: readonly { status: TaskStatus }[]): {
 }
 
 /**
- * A task named the way a person names one — `LAI-42` — or by its id.
+ * A task named the way a person names one — `LAI-42` — or by its id, or, with
+ * the caller, by its **outside id** (LAI-780).
  *
  * §7 asks MCP responses to use **display keys, not raw ULIDs**, wherever a human
  * will read them. That has to run both ways: a tool that prints `LAI-42` and
  * then refuses to accept `LAI-42` back has taught the agent a name it cannot
  * use. Ids stay valid because that is what the REST API hands out.
+ *
+ * An outside id — the `LAI-780` of a repo's task file, a Jira key — is tried
+ * only when the ref names no task by its key, so **a board key always wins**,
+ * and only among the projects `actor` may read: an id on a card they cannot
+ * see comes back as given, like a key that names nothing. One the caller can
+ * read on two tasks is refused `422 ambiguous`, never guessed. Without a
+ * caller nothing is looked up by outside id.
  *
  * Lives here rather than in `mcp/` because the write tools take the same
  * reference (LAI-408: `start_working({ task })`), and a second parser is a
@@ -516,12 +530,34 @@ export function subtaskProgress(subtasks: readonly { status: TaskStatus }[]): {
  */
 const TASK_KEY = /^([A-Za-z][A-Za-z0-9]*)-(\d+)$/;
 
-export function resolveTaskRef(db: Db, ref: string): string {
+export function resolveTaskRef(db: Db, ref: string, actor?: ResolvedActor): string {
+  const byKey = taskIdByKey(db, ref);
+  if (byKey !== undefined || actor === undefined) return byKey ?? ref;
+
+  const matches = readableByOutsideId(db, actor, ref);
+  if (matches.length > 1) throw ambiguousOutsideId(ref, matches);
+
+  // Falls through to the original string when nothing matches, so the caller
+  // raises its own "no such task" rather than this inventing one.
+  return matches[0]?.taskId ?? ref;
+}
+
+/**
+ * A `404` for a task id that names no task — what `addTaskDependency` asks of
+ * a blocker, asked by `create_task` **before** it creates anything, so a
+ * blocker that names nothing refuses the call whole (LAI-780 review).
+ */
+export function assertTaskExists(db: Db, taskId: string): void {
+  requireTask(db, taskId);
+}
+
+/** The task a board key names, whoever may read it — or `undefined`. */
+function taskIdByKey(db: Db, ref: string): string | undefined {
   const match = TASK_KEY.exec(ref.trim());
-  if (match === null) return ref;
+  if (match === null) return undefined;
 
   const [, prefix, number] = match;
-  if (prefix === undefined || number === undefined) return ref;
+  if (prefix === undefined || number === undefined) return undefined;
 
   const project = db
     .select({ id: projects.id })
@@ -531,17 +567,13 @@ export function resolveTaskRef(db: Db, ref: string): string {
     .where(eq(projects.prefix, prefix.toUpperCase()))
     .get();
 
-  if (project === undefined) return ref;
+  if (project === undefined) return undefined;
 
-  const row = db
+  return db
     .select({ id: tasks.id })
     .from(tasks)
     .where(and(eq(tasks.projectId, project.id), eq(tasks.number, Number(number))))
-    .get();
-
-  // Falls through to the original string when nothing matches, so the caller
-  // raises its own "no such task" rather than this inventing one.
-  return row?.id ?? ref;
+    .get()?.id;
 }
 
 /**
@@ -656,6 +688,11 @@ export interface CreateTaskInput {
   planned_start?: number | undefined;
   /** A person's size from the start (D-085); the computed one stays beside it. */
   size?: SizeLevel | undefined;
+  /**
+   * The id this card has somewhere else — `LAI-123`, a Jira key (LAI-780).
+   * Shaped by `normaliseOutsideId`, stored upper-case.
+   */
+  external_ref?: string | undefined;
   created_via?: 'web' | 'mcp' | 'api' | 'webhook' | 'meeting' | undefined;
   now?: number;
 }
@@ -671,8 +708,14 @@ export function createTask(
   assertCan(withProject(actor, project.id), 'task.write', { projectId: project.id });
 
   const now = input.now ?? Date.now();
+  const externalRef =
+    input.external_ref === undefined ? null : normaliseOutsideId(input.external_ref);
 
   return immediateTransaction(sqlite, () => {
+    // Inside the write lock, as the number is: two creates must not both find
+    // the id free (LAI-780 review).
+    if (externalRef !== null) assertOutsideIdFree(db, project.id, externalRef, null);
+
     // Inside the write lock, so the parent cannot gain a parent of its own
     // between the check and the insert.
     const parentId = input.parent_task_id ?? null;
@@ -723,6 +766,7 @@ export function createTask(
         parentTaskId: parentId,
         dueOn: input.due_on ?? null,
         plannedStart: input.planned_start ?? null,
+        externalRef,
         createdAt: now,
         updatedAt: now,
       })
@@ -920,6 +964,8 @@ export interface UpdateTaskInput {
    * computed one. Anyone who may edit the task may size it.
    */
   size?: SizeLevel | null | undefined;
+  /** An outside id (LAI-780), upper-cased; `null` clears it. */
+  external_ref?: string | null | undefined;
   now?: number;
 }
 
@@ -948,6 +994,10 @@ export function updateTask(
   if (input.due_on !== undefined && input.due_on !== task.dueOn) changes.dueOn = input.due_on;
   if (input.planned_start !== undefined && input.planned_start !== task.plannedStart) {
     changes.plannedStart = input.planned_start;
+  }
+  if (input.external_ref !== undefined) {
+    const ref = input.external_ref === null ? null : normaliseOutsideId(input.external_ref);
+    if (ref !== task.externalRef) changes.externalRef = ref;
   }
 
   if (input.parent_task_id !== undefined && input.parent_task_id !== task.parentTaskId) {
@@ -978,6 +1028,11 @@ export function updateTask(
   // first read.
   return db.transaction(
     () => {
+      // Under the write lock, so two writes cannot both find it free.
+      if (typeof changes.externalRef === 'string') {
+        assertOutsideIdFree(db, project.id, changes.externalRef, taskId);
+      }
+
       // Tags are not a column, so they are not in `changes` — they are applied
       // separately and get their own activity row naming the field (§4.16, D-027).
       const tagChange =
