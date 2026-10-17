@@ -3,7 +3,7 @@ import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
 import { eq } from 'drizzle-orm';
-import { activity, orgs, tasks, tokens, users } from '../../src/db/schema.ts';
+import { activity, orgs, taskEstimates, tasks, tokens, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { addMember, createProject } from '../../src/services/projects.ts';
 import {
@@ -169,6 +169,62 @@ describe('claim is a compare-and-swap (AC3)', () => {
         status: 'in_progress',
       });
     }
+  });
+
+  // LAI-770 review, B2 (the owner's decision, option a): a session resuming a
+  // task it already holds must be able to mark it — `start_working` on it
+  // again keeps the branch it is given and changes nothing else.
+  describe('the holder claiming its own task in progress again', () => {
+    const rowsOf = (taskId: string) =>
+      t.db.select().from(activity).where(eq(activity.taskId, taskId)).all().length;
+    const frozenOf = (taskId: string) =>
+      t.db.select().from(taskEstimates).where(eq(taskEstimates.taskId, taskId)).all().length;
+
+    it('answers the task as it is, with the branch it was given, and writes nothing else', () => {
+      const task = newTask();
+      const T = Date.now();
+      const first = claimTask(t.sqlite, t.db, actor(adminId), task.id, T, 'LAI-1-first');
+      const rows = rowsOf(task.id);
+      const frozen = frozenOf(task.id);
+
+      const again = claimTask(t.sqlite, t.db, actor(adminId), task.id, T + 60_000, 'LAI-1-again');
+      expect(again).toMatchObject({
+        id: task.id,
+        assignee_id: adminId,
+        status: 'in_progress',
+        status_name: first.status_name,
+        started_at: first.started_at,
+        branch: 'LAI-1-again',
+      });
+      expect(rowsOf(task.id), 'an activity row was written').toBe(rows);
+      expect(frozenOf(task.id), 'the estimate was frozen again').toBe(frozen);
+
+      // Without a branch: nothing at all changes.
+      const bare = claimTask(t.sqlite, t.db, actor(adminId), task.id, T + 120_000);
+      expect(bare.branch).toBe('LAI-1-again');
+      expect(bare.updated_at).toBe(again.updated_at);
+      expect(rowsOf(task.id)).toBe(rows);
+    });
+
+    it('is still a conflict for anyone else, and leaves the holder’s branch alone', () => {
+      const task = newTask();
+      claimTask(t.sqlite, t.db, actor(adminId), task.id, Date.now(), 'LAI-1-mine');
+      const otherId = makeUser('admin');
+      expect(() =>
+        claimTask(t.sqlite, t.db, actor(otherId), task.id, Date.now(), 'LAI-1-theirs'),
+      ).toThrow(expect.objectContaining({ code: 'conflict' }));
+      expect(getTask(t.db, actor(adminId), task.id).branch).toBe('LAI-1-mine');
+    });
+
+    it('is still a conflict for the holder of a task not under way — that is a move, not a mark', () => {
+      const task = newTask();
+      claimTask(t.sqlite, t.db, actor(adminId), task.id);
+      changeStatus(t.db, actor(adminId), task.id, 'todo');
+      expect(getTask(t.db, actor(adminId), task.id).assignee_id).toBe(adminId);
+      expect(() => claimTask(t.sqlite, t.db, actor(adminId), task.id)).toThrow(
+        expect.objectContaining({ code: 'conflict' }),
+      );
+    });
   });
 
   it('lets exactly one of many simultaneous claimants win', () => {

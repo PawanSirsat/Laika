@@ -1105,6 +1105,26 @@ export function claimTask(
     const before = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
     const from = statusRow(db, project.id, before.statusId)!;
 
+    // The holder's own claim of a task already under way is a **mark, not a
+    // move** (LAI-770 review, B2, the owner's decision): a session resuming the
+    // task says so with `start_working` again, and a refusal there would leave
+    // its tokens tied to nothing. It keeps the branch it is given and changes
+    // nothing else — no status, no activity row, `started_at` and the frozen
+    // estimate untouched. Anyone else, and a holder whose task is not in
+    // progress, still hear who has it below.
+    if (before.assigneeId === actor.userId && before.status === 'in_progress') {
+      if (onBranch !== undefined && onBranch !== before.branch) {
+        db.update(tasks)
+          .set({ branch: onBranch, updatedAt: now })
+          .where(eq(tasks.id, taskId))
+          .run();
+      }
+      return viewOne(
+        db,
+        db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+        project.prefix,
+      );
+    }
     // Held first, so a second claimant still hears **who** has it (AC3).
     if (before.assigneeId !== null) {
       throw new ApiError('conflict', 'That task is already claimed', {

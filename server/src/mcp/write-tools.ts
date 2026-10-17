@@ -264,7 +264,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Start working on a task',
       description:
-        'Claim a task and move it to in_progress. Claim before you write any code for it, and pass the `branch` you work on — name it after the key, `LAI-42-short-name` — so the task keeps it and the tokens your session spends are tied to this task. Fails with `conflict` if somebody already holds it — check the error before assuming you have it.',
+        'Claim a task and move it to in_progress. Claim before you write any code for it, and pass the `branch` you work on — name it after the key, `LAI-42-short-name` — so the task keeps it and the tokens your session spends are tied to this task. Call it also when the task is already yours and in progress, as when you resume it: that changes nothing but the branch and marks the task as the one you are on. Fails with `conflict` if somebody else holds it — check the error before assuming you have it.',
       inputSchema: z.strictObject({ task: TASK_REF, branch: z.string().max(200).optional() }),
     },
     ({ task, branch }) => {

@@ -468,9 +468,10 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         // item 5). Asking here, where every agent starts, is what makes them.
         const prefix = requireProjectBySlug(db, project).prefix;
         const beforeYouStart =
-          `Mark the task before you start: \`start_working\` with the \`branch\` you work on, ` +
-          `or \`update_status\` to \`in_progress\` when it is already yours, and again whenever ` +
-          `you move to another task. Name the branch after the key — \`${prefix}-42-short-name\`. ` +
+          `Mark the task before you start: call \`start_working\` on it with the \`branch\` you ` +
+          `work on — also when it is already yours and in progress — and again whenever you move ` +
+          `to another task. A task assigned to you that is not started yet: \`update_status\` ` +
+          `to \`in_progress\`. Name the branch after the key — \`${prefix}-42-short-name\`. ` +
           `Laika ties the tokens your session spends to the task you marked; work before it, or ` +
           `on a branch without a key, stays unattributed.`;
 

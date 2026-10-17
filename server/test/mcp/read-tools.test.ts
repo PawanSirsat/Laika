@@ -442,6 +442,11 @@ describe('get_project_context', () => {
       expect(text(result), said).toContain(said);
     }
     expect(rule).toContain('tokens');
+    // LAI-770 review, B2: the holder's own start_working on a task in progress
+    // is accepted, so that is the call to make; update_status to the status it
+    // already has would be refused.
+    expect(rule).toMatch(/also when it is already yours and in progress/);
+    expect(rule).not.toMatch(/`update_status` to `in_progress` when it is already yours/);
 
     await client.close();
   });

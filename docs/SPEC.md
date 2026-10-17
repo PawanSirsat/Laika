@@ -1385,7 +1385,9 @@ backlog ──▶ todo ───────────────────
 - **Claiming is a compare-and-swap.** `start_working` sets `assignee_id` and
   `status = 'in_progress'` **only if the task is still unassigned**. A second
   claimant gets `409 conflict` with the current assignee in the body. This is the
-  API-level twin of the file-move lock the build sessions use by hand.
+  API-level twin of the file-move lock the build sessions use by hand. The
+  holder's own claim of a task already in progress is not a second claim: it
+  changes nothing but the branch it is given (§7.1, LAI-770).
 - Moving to `review` requires the assignee, a project `lead`, or org Admin/Owner.
 
   **This restricts people. It does not restrict the system principal** (§3.4,
@@ -2133,7 +2135,7 @@ read them.
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
 | `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only |
 | `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size? }` | task. Every field optional; an omitted one is left alone; `null` on `parent`, a date or `size` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085) |
-| `start_working` | `{ task, branch? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770) |
+| `start_working` | `{ task, branch? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770). **The holder's own call on a task already in progress succeeds** as a no-op that keeps the branch it is given and returns the task — no status change, no `activity` row, `started_at` and the frozen estimate untouched — so a session resuming its task can mark it (LAI-770 review, B2); anyone else, and a holder whose task is not in progress, still get `409` |
 | `update_status` | `{ task, status, note? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
 | `set_task_sprint` | `{ task, sprint }` | task. `sprint: null` takes it out of whichever it is in |
 | `add_comment` | `{ task, body }` | comment |

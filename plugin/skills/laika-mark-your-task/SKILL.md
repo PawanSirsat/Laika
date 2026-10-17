@@ -10,9 +10,10 @@ cannot ask you; it reads the marks you leave. So:
 
 1. **Mark the task before anything else** — before reading code for it,
    before creating a branch. Call `start_working` with the task's key and the
-   `branch` you work on. If the task is already yours (`start_working` answers
-   `conflict` naming you), call `update_status` with `status: in_progress`
-   instead.
+   `branch` you work on — also when it is already yours and in progress, as
+   when you resume it: that is accepted and keeps the branch. A task assigned
+   to you that is not started yet answers `conflict`; move it with
+   `update_status` to `in_progress` instead.
 2. **Mark again whenever you move to another task**, the same way. Work is
    tied to the last task you marked, from the moment you marked it.
 3. **Name the branch after the key**: `<KEY>-short-name`, for example

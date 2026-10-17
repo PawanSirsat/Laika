@@ -46,6 +46,10 @@ void describe('the skill that has an agent mark its task (LAI-770)', () => {
     assert.match(body, /`LAI-42-/);
     // And why: an agent that knows the reason does not look for a way round it.
     assert.match(body, /tokens/);
+    // LAI-770 review, B2: start_working is the mark for a task already yours
+    // and in progress — update_status to the status it has would be refused.
+    assert.match(body, /also\s+when\s+it\s+is\s+already\s+yours\s+and\s+in\s+progress/);
+    assert.doesNotMatch(body, /answers\s+`conflict` naming you/);
   });
 
   void test('names only tools the server serves — read from both sides', () => {

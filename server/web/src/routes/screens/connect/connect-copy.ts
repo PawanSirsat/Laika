@@ -64,10 +64,11 @@ Every session working in this repo:
 1. **Read first.** \`laika_whoami\` confirms who you are acting as;
    \`get_project_context\` for \`${project.slug}\` carries the brief, the open work,
    and who is on it.
-2. **Claim before code.** \`list_ready_tasks\`, then \`start_working\` with the
-   \`branch\` you work on — or \`update_status\` to \`in_progress\` when the task
-   is already yours — before anything else, and again whenever you move to
-   another task. One task at a time. A refusal means somebody already holds it
+2. **Claim before code.** \`list_ready_tasks\`, then \`start_working\` on the
+   task with the \`branch\` you work on — also when it is already yours and in
+   progress — before anything else, and again whenever you move to another
+   task. A task assigned to you that is not started yet: \`update_status\` to
+   \`in_progress\`. One task at a time. A refusal means somebody else holds it
    — take another rather than forcing it.
    Name the branch after the key: \`${project.prefix}-42-short-name\`. Laika ties
    the tokens your session spends to the task you marked; work before it, or on
