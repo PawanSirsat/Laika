@@ -707,7 +707,9 @@ describe('an estimator failure never breaks a task write (B1)', () => {
     expect(activityOf(claimed.id, 'task.status_changed')).toHaveLength(1);
 
     // Logged, not thrown — and the nightly refit catches up once it can.
-    expect(log.find('estimate.failed')).toMatchObject({ error: expect.stringContaining(BROKEN) });
+    const failed = log.find('estimate.failed');
+    expect(String(failed?.error)).toContain(BROKEN);
+    expect(failed?.level).toBe('error');
     healEstimates();
     refitEstimates(t.db, T0 + HOUR);
     expect(getTask(t.db, admin(), task.id).size).not.toBeNull();
