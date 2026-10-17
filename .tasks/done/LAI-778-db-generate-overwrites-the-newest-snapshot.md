@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p2
 depends-on: []
 discovered-from: LAI-769
-status: review
+status: done
 started: 2026-10-17T18:26:01Z
 finished: 2026-10-17T18:30:26Z
 ---
@@ -93,3 +93,7 @@ follows the last tag and leaves every existing file alone, or refuses.
   prettier on the touched files 0; `pnpm run db:generate` in the tree: *No
   schema changes*, nothing written. The root gate runs once at the end of
   this branch, after LAI-770 (`logs/token-attribution-2026-10-18.md`).
+
+## Accepted
+
+2026-10-18: accepted by CHIEF (Omnigent) with LAI-770, after the same review: `pnpm db:generate` runs drizzle-kit on a scratch copy and copies back only the new files, numbered past the highest existing number, refusing an existing target and failing when drizzle-kit prints an error. No shipped migration changed.

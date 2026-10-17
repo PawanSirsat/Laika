@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: [LAI-769]
 discovered-from:
-status: review
+status: done
 started: 2026-10-17T18:30:43Z
 finished: 2026-10-17T19:19:24Z
 ---
@@ -211,3 +211,7 @@ format` 0. No new wall-clock assertion: the browser tests wait with `until`.
 **Left as follow-ups** (the reviewer's list, not done): the prune edge, a
 check of the resumed session's id, wording, and a test of the
 `db:generate` race path.
+
+## Accepted
+
+2026-10-18: accepted by CHIEF (Omnigent) on the owner's direct instruction, after one Claude review. Its two blockers were fixed with tests that failed first and read by CHIEF before merge: B1, a Codex call the board refused is no mark (the answer is read for a held call id, nothing kept); B2 (owner decision through CHIEF, option a), the holder's own `start_working` on a task already in progress is an idempotent success that records the branch — no status change, no activity row, `started_at` and the frozen estimate untouched; anyone else still 409. Also fixed: a mark's own reply belongs to its stretch, no marks before the board's prefixes are known, the upgrade re-read replaces and the next sync is idle, Tokens-section tests and reset on task change. Measured on the owner's machine: 0% → 17.8% of headline tokens tied to a task. Follow-ups noted in the log; LAI-780 (outside ids such as `LAI-123` via `external_ref`) decided option 1 by the owner and starts next.
