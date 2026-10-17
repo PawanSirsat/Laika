@@ -56,7 +56,13 @@ describe('checkOutcome', () => {
     for (const passed of ['success', 'neutral', 'skipped']) {
       expect(checkOutcome('completed', passed), passed).toBe('passed');
     }
-    for (const failed of ['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure']) {
+    for (const failed of [
+      'failure',
+      'timed_out',
+      'cancelled',
+      'action_required',
+      'startup_failure',
+    ]) {
       expect(checkOutcome('completed', failed), failed).toBe('failed');
     }
     // GitHub giving up on a run that never reported is no answer either way.
@@ -145,8 +151,20 @@ describe('the 30-day record', () => {
 
     pruneGithubRecords(t.db, now);
 
-    expect(t.db.select().from(githubCommits).all().map((r) => r.sha)).toEqual(['b'.repeat(40)]);
+    expect(
+      t.db
+        .select()
+        .from(githubCommits)
+        .all()
+        .map((r) => r.sha),
+    ).toEqual(['b'.repeat(40)]);
     expect(t.db.select().from(githubPullRequests).all()).toEqual([]);
-    expect(t.db.select().from(githubChecks).all().map((r) => r.name)).toEqual(['gate']);
+    expect(
+      t.db
+        .select()
+        .from(githubChecks)
+        .all()
+        .map((r) => r.name),
+    ).toEqual(['gate']);
   });
 });
