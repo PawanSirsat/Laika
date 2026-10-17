@@ -5,6 +5,8 @@ import {
   type AgentClient,
 } from './agent-clients.ts';
 import { request } from './client.ts';
+import type { OrgRole } from './invites.ts';
+import type { ProfileKind } from './profiles.ts';
 
 /**
  * Who is working right now, and who has capacity (SPEC §9.3, §11.4.2).
@@ -85,9 +87,54 @@ export interface PresenceView {
   readonly present: readonly PresenceEntry[];
 }
 
+/**
+ * Where a person stands (LAI-767): `online` inside §9.3's five minutes, `away`
+ * inside the hour, `offline` after it, `never` with no signal at all.
+ */
+export type PersonStatus = 'online' | 'away' | 'offline' | 'never';
+
+/** Which kind of signal `last_seen` is: a sign-in, a board action, an agent. */
+export type SeenVia = 'web' | 'board' | 'agent';
+
+/** The server's fixed load rule (LAI-767, SPEC §9.3). */
+export type LoadLevel = 'none' | 'light' | 'normal' | 'heavy';
+
+/**
+ * Open assigned work, counted over the projects this reader may read.
+ * `in_progress`, `in_review` and `todo` partition `open`; `overdue` and
+ * `due_soon` cut across them.
+ */
+export interface CapacityWorkload {
+  readonly in_progress: number;
+  readonly in_review: number;
+  readonly todo: number;
+  readonly overdue: number;
+  readonly due_soon: number;
+  readonly open: number;
+}
+
+/** One space a person has open work in, with the same counts. */
+export interface CapacitySpace extends CapacityWorkload {
+  readonly project_id: string;
+  readonly slug: string;
+  readonly name: string;
+}
+
+/**
+ * One coding agent beside a person. **Read `client` through `asAgentClient`**:
+ * a server ahead of this client's slug list sends one it does not know.
+ */
+export interface CapacityAgent {
+  readonly client: AgentClient;
+  readonly running: boolean;
+  readonly last_at: number | null;
+}
+
 export interface CapacityEntry {
   readonly user_id: string;
   readonly name: string;
+  readonly email: string;
+  readonly org_role: OrgRole;
   /** Distinct tokens beating: two tokens is two sessions (§11.4.2). */
   readonly active_sessions: number;
   /**
@@ -99,7 +146,20 @@ export interface CapacityEntry {
   readonly in_progress_tasks: readonly string[];
   readonly oldest_in_progress_ms: number | null;
   readonly tasks_in_review: readonly string[];
+  /**
+   * The newest of every signal — a sign-in, an activity-log row, an agent's
+   * heartbeat, `/mcp` call or REST write (LAI-767). `null` with none, and
+   * always `null` while presence is off.
+   */
   readonly last_seen: number | null;
+  readonly last_seen_via: SeenVia | null;
+  /** `null` while presence is off: draw *Presence is off*, not *never seen*. */
+  readonly status: PersonStatus | null;
+  readonly workload: CapacityWorkload;
+  readonly load: LoadLevel;
+  readonly spaces: readonly CapacitySpace[];
+  /** Running now for everyone; every agent they use for an owner or admin. */
+  readonly agents: readonly CapacityAgent[];
   /**
    * **Absent, not empty**, for a reader without `audit_log.export`.
    *
@@ -108,6 +168,10 @@ export interface CapacityEntry {
    * present — never `?? []`.
    */
   readonly unlisted?: readonly string[];
+  /** Owners and admins only (D-078); absent for everyone else. */
+  readonly profile_kind?: ProfileKind;
+  /** Board actions on each of the last 14 UTC days, oldest first. Owners and admins only. */
+  readonly activity_14d?: readonly number[];
 }
 
 export interface CapacityView {

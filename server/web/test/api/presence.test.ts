@@ -120,7 +120,7 @@ void describe('the capacity entry mirrors the server, optionality and all', () =
     assert.deepEqual([...here.keys()].sort(), [...there.keys()].sort());
   });
 
-  void test('`unlisted` is the only optional one, on both sides', () => {
+  void test('exactly the gated fields are optional, on both sides', () => {
     const optional = (m: ReadonlyMap<string, boolean>): string[] =>
       [...m]
         .filter(([, isOptional]) => isOptional)
@@ -128,9 +128,21 @@ void describe('the capacity entry mirrors the server, optionality and all', () =
         .sort();
 
     // Absent for a reader without `audit_log.export`, and `[]` is a different
-    // claim — "this person has logged nothing". Never `?? []`.
-    assert.deepEqual(optional(there), ['unlisted']);
-    assert.deepEqual(optional(here), ['unlisted']);
+    // claim — "this person has logged nothing". Never `?? []`. The profile
+    // kind and the 14-day series follow `profile.read` and
+    // `profile.activity.read` the same way (LAI-767).
+    const gated = ['activity_14d', 'profile_kind', 'unlisted'];
+    assert.deepEqual(optional(there), gated);
+    assert.deepEqual(optional(here), gated);
+  });
+
+  void test('status and last seen are required, and arrive null when presence is off', () => {
+    // `null` says "this org does not record it"; an absent key would make a
+    // careless client read "never seen" (LAI-767).
+    for (const field of ['status', 'last_seen', 'last_seen_via']) {
+      assert.equal(there.get(field), false, `server ${field}`);
+      assert.equal(here.get(field), false, `client ${field}`);
+    }
   });
 });
 

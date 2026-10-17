@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { closeBrowser, fakeStream, open, type ApiStub, type Harness } from './harness.ts';
+import { capacityPerson } from './capacity-org.ts';
 
 const NOW = Date.now();
 const HOUR = 3_600_000;
@@ -426,16 +427,19 @@ void describe('Capacity resolves tasks from the store (LAI-724)', () => {
       '/api/v1/capacity': {
         enabled: true,
         people: [
-          {
+          capacityPerson({
             user_id: 'u1',
             name: 'Ada Lovelace',
-            active_sessions: 0,
             in_progress_tasks: ['t3', 't1', 'x9'],
             oldest_in_progress_ms: HOUR,
             tasks_in_review: ['x8'],
             last_seen: NOW,
+            last_seen_via: 'board',
+            status: 'online',
+            workload: { in_progress: 3, in_review: 1, todo: 0, overdue: 0, due_soon: 0, open: 4 },
+            load: 'normal',
             unlisted: [],
-          },
+          }),
         ],
       },
       '/api/v1/unlisted': { data: [], next_cursor: null },
@@ -450,15 +454,18 @@ void describe('Capacity resolves tasks from the store (LAI-724)', () => {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
       const seen = record(h);
       await h.page.locator('#sidebar .sidebar-link', { hasText: 'Capacity' }).click();
-      await h.page.locator('.cap-chip-key', { hasText: 'LC-3' }).waitFor({ timeout: 20_000 });
-      await h.page.locator('.cap-chip-key', { hasText: 'OT-9' }).waitFor({ timeout: 10_000 });
+      // Since LAI-767 a person's tasks are drawn when their *Show tasks* is
+      // opened, and only then resolved.
+      await h.page.getByRole('button', { name: /Show tasks/ }).click({ timeout: 20_000 });
+      await h.page.locator('.cap-task .cap-key', { hasText: 'LC-3' }).waitFor({ timeout: 20_000 });
+      await h.page.locator('.cap-task .cap-key', { hasText: 'OT-9' }).waitFor({ timeout: 10_000 });
       await settle(seen, h.page);
 
       const perTask = seen.filter((p) => p.startsWith('/api/v1/tasks/'));
       // x8 is in review: not drawn, so not read.
       assert.deepEqual(perTask, ['/api/v1/tasks/x9'], `per-task reads: ${perTask.join(', ')}`);
       assert.ok(
-        (await h.page.locator('.cap-chip-key', { hasText: 'LC-1' }).count()) === 1,
+        (await h.page.locator('.cap-task .cap-key', { hasText: 'LC-1' }).count()) === 1,
         'a task in the held space did not resolve',
       );
       assert.ok(seen.length <= 8, `Capacity asked ${String(seen.length)}: ${seen.join(', ')}`);
