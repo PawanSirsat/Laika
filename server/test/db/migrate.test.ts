@@ -873,85 +873,128 @@ describe('0036 adds sizes and forecasts to a populated database without rebuildi
 
 /**
  * Found by its tag's name, not its number: LAI-769's migration is numbered
- * where it lands on `master`, after any that reached it first, and its journal
- * timestamp must be the newest — Drizzle's migrator skips one older than what
- * it has applied, so a renumber by hand would never run.
+ * where it landed on `master`, after LAI-771's `0036`, and its journal
+ * timestamp must be newer than every one before it — Drizzle's migrator skips
+ * a migration older than what it has applied, so one renumbered by hand, with
+ * its old timestamp, would never run in production.
+ *
+ * The upgrade production makes: a database at every migration before it, with
+ * rows in the tables those migrations made — LAI-771's estimates and the
+ * columns it added to `tasks` included — and then this one. Additive is the
+ * property, so it is asserted on every table's root page and its whole
+ * contents, not a count.
  */
 describe('the token-usage migration adds to a populated database (LAI-769)', () => {
-  it('creates one table and its indexes, and rebuilds nothing that was there', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
-    cpSync(MIGRATIONS_FOLDER, dir, { recursive: true });
-    const journalPath = join(dir, 'meta', '_journal.json');
-    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
-      entries: { tag: string; when: number }[];
-    };
-    const at = journal.entries.findIndex((e) => /^\d{4}_token_usage$/.test(e.tag));
-    expect(at, 'the token-usage migration is in the journal').toBeGreaterThan(0);
-    // The last migration, and the newest by timestamp, or it never runs.
-    expect(at).toBe(journal.entries.length - 1);
-    const previous = journal.entries[at - 1];
-    expect(journal.entries[at]?.when).toBeGreaterThan(previous?.when ?? Infinity);
-    const dropped = journal.entries.splice(at);
-    // The guard on this guard: what was cut is it, and the one before is kept.
-    expect(dropped[0]?.tag).toMatch(/_token_usage$/);
-    expect(journal.entries.at(-1)?.tag).toBe(previous?.tag);
-    writeFileSync(journalPath, JSON.stringify(journal));
+  // Builds a database from scratch twice over: setup, not the property, is
+  // what a slow runner pays for (LAI-768), so the bound is explicit, as 0036's is.
+  it(
+    'creates one table and its indexes, and changes nothing that was there',
+    { timeout: 60_000 },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+      cpSync(MIGRATIONS_FOLDER, dir, { recursive: true });
+      const journalPath = join(dir, 'meta', '_journal.json');
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+        entries: { idx: number; tag: string; when: number }[];
+      };
+      // Every migration newer than the one before it, at the next index, or
+      // the migrator passes it over.
+      journal.entries.forEach((e, i) => {
+        expect(e.idx, e.tag).toBe(i);
+        if (i > 0) expect(e.when, e.tag).toBeGreaterThan(journal.entries[i - 1]?.when ?? Infinity);
+      });
+      const at = journal.entries.findIndex((e) => /^\d{4}_token_usage$/.test(e.tag));
+      expect(at, 'the token-usage migration is in the journal').toBeGreaterThan(0);
+      const previous = journal.entries[at - 1];
+      const dropped = journal.entries.splice(at);
+      // The guard on this guard: what was cut starts with it, and the one
+      // before it is kept.
+      expect(dropped[0]?.tag).toMatch(/_token_usage$/);
+      expect(journal.entries.at(-1)?.tag).toBe(previous?.tag);
+      writeFileSync(journalPath, JSON.stringify(journal));
 
-    const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
-    const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
-    try {
-      runMigrations(db, { migrationsFolder: dir });
-      const s = seed(db);
-      db.run(sql`
-        INSERT INTO local_activity_days (user_id, day, collector_id, prompts, tz, updated_at)
-        VALUES (${s.userId}, '2026-10-16', '6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a', 3, 'UTC', 1)
-      `);
-
-      // Every table's root page and row count before: a rebuild moves the
-      // first, and a copy that lost rows changes the second. Drizzle's own
-      // journal gains its row for this one, as it does for every migration.
-      const census = () =>
-        Object.fromEntries(
-          db
-            .all<{ name: string; rootpage: number }>(
-              sql`SELECT name, rootpage FROM sqlite_master
-                   WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-                     AND name NOT LIKE '__drizzle%' ORDER BY name`,
-            )
-            .map((t) => [
-              t.name,
-              {
-                rootpage: t.rootpage,
-                rows: db.all<{ n: number }>(sql.raw(`SELECT count(*) AS n FROM "${t.name}"`))[0]?.n,
-              },
-            ]),
+      const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: dir });
+        const s = seed(db);
+        const now = Date.now();
+        const task = newId();
+        const estimate = newId();
+        db.run(sql`
+          INSERT INTO tasks (id, project_id, number, title, status, status_id, priority, created_by, created_via, created_at, updated_at)
+          VALUES (${task}, ${s.projectId}, 1, 'A task', 'todo', ${statusForCategory(db, s.projectId, 'todo').id}, 'p2', ${s.userId}, 'api', ${now}, ${now})
+        `);
+        db.run(sql`
+          INSERT INTO task_estimates (id, task_id, source, level, weight, subtasks, factors_json, created_at)
+          VALUES (${estimate}, ${task}, 'model', 'M', 1, 0, '{}', ${now})
+        `);
+        db.run(
+          sql`UPDATE tasks SET estimate_id = ${estimate}, estimate_hash = 'h' WHERE id = ${task}`,
         );
-      const before = census();
-      expect(before.token_usage_days).toBeUndefined();
+        db.run(sql`
+          INSERT INTO local_activity_days (user_id, day, collector_id, prompts, tz, updated_at)
+          VALUES (${s.userId}, '2026-10-16', '6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a', 3, 'UTC', 1)
+        `);
+        // Booted once at that migration, as production's is: the boot's own
+        // backfills (a task's position, its timestamps) have filled their nulls,
+        // so what changes next is this migration's doing and nothing else's.
+        runMigrations(db, { migrationsFolder: dir });
 
-      runMigrations(db);
+        // Every table's root page and every row before: a rebuild moves the
+        // first, and a copy that lost or changed a row changes the second.
+        // Drizzle's own journal gains its row for this one, as for every one.
+        const census = () =>
+          Object.fromEntries(
+            db
+              .all<{ name: string; rootpage: number }>(
+                sql`SELECT name, rootpage FROM sqlite_master
+                     WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                       AND name NOT LIKE '__drizzle%' ORDER BY name`,
+              )
+              .map((t) => [
+                t.name,
+                {
+                  rootpage: t.rootpage,
+                  rows: db.all(sql.raw(`SELECT * FROM "${t.name}" ORDER BY rowid`)),
+                },
+              ]),
+          );
+        const before = census();
+        expect(before.token_usage_days).toBeUndefined();
+        // The guard on the census: the rows it is to keep are in it.
+        expect(before.task_estimates?.rows).toHaveLength(1);
+        expect(before.tasks?.rows).toEqual([
+          expect.objectContaining({ id: task, estimate_id: estimate, estimate_hash: 'h' }),
+        ]);
+        expect(before.local_activity_days?.rows).toHaveLength(1);
 
-      const after = census();
-      const { token_usage_days: added, ...kept } = after;
-      expect(kept).toEqual(before);
-      expect(added?.rows).toBe(0);
-      expect(
-        db
-          .all<{ name: string }>(
-            sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'token_usage_days' ORDER BY name`,
-          )
-          .map((r) => r.name),
-      ).toEqual([
-        'token_usage_days_day_idx',
-        'token_usage_days_project_day_idx',
-        'token_usage_days_task_idx',
-        'token_usage_days_user_day_idx',
-      ]);
-      expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
-    } finally {
-      sqlite.close();
-      rmSync(dbDir, { recursive: true, force: true });
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+        runMigrations(db);
+
+        const after = census();
+        const { token_usage_days: added, ...kept } = after;
+        expect(kept).toEqual(before);
+        expect(added?.rows).toEqual([]);
+        expect(
+          db
+            .all<{ name: string }>(
+              sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'token_usage_days' ORDER BY name`,
+            )
+            .map((r) => r.name),
+        ).toEqual([
+          'token_usage_days_day_idx',
+          'token_usage_days_project_day_idx',
+          'token_usage_days_task_idx',
+          'token_usage_days_user_day_idx',
+        ]);
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+        // LAI-771's history is still append-only after this one runs.
+        expectSqliteError(() => db.run(sql`DELETE FROM task_estimates`), /append-only/);
+      } finally {
+        sqlite.close();
+        rmSync(dbDir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 });
