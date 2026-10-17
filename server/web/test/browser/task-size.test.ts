@@ -431,7 +431,8 @@ void describe('the task panel’s Forecast section', () => {
       const section = h.page.locator('.fc');
       await until(async () => (await section.locator('.fc-tokens').innerText()) !== '—');
       assert.equal(await section.locator('.fc-tokens').innerText(), '1.2M–2.5M');
-      assert.match(await section.locator('.fc-at-start').innerText(), /· 900K–2.1M tokens$/);
+      assert.match(await section.locator('.fc-at-start').innerText(), /^M · 20–45 min/);
+      assert.equal(await section.locator('.fc-at-start-tokens').innerText(), '900K–2.1M tokens');
       assert.equal(await section.locator('.fc-actual-tokens').innerText(), '1.4M');
       const notes = await section.locator('.fc-note').allInnerTexts();
       assert.deepEqual(notes, [

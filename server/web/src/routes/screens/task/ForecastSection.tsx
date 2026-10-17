@@ -208,7 +208,10 @@ export function ForecastSection({
           <dd className="fc-at-start">
             {atStart === null
               ? 'Not started'
-              : `${atStart.level} · ${forecastRange({ ...size, build_p50_ms: atStart.build_p50_ms, build_p80_ms: atStart.build_p80_ms }) ?? 'early'}${atStartTokens === null ? '' : ` · ${atStartTokens} tokens`}`}
+              : `${atStart.level} · ${forecastRange({ ...size, build_p50_ms: atStart.build_p50_ms, build_p80_ms: atStart.build_p80_ms }) ?? 'early'}`}
+            {atStartTokens !== null && (
+              <span className="fc-at-start-tokens">{atStartTokens} tokens</span>
+            )}
           </dd>
         </div>
         <div className="fc-figure">
