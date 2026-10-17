@@ -4757,3 +4757,19 @@ owner's strategy folder (a back-test on 341 finished tasks).
    refitting runs nightly. A parent's figures come from its children.
 8. **Accuracy is reported per project and per agent client** (only when at
    least 3 people use that client), **never per person** (D-078 item 6).
+
+## D-086 — Tokens from automated sessions are not the developer's.
+
+**2026-10-17, the owner, through the orchestrator** (LAI-775, built in
+LAI-769). Session files cannot tell a person's session from one an
+orchestrator or CI started under the same account, so an orchestrator's
+builders would inflate that person's tokens many times over.
+
+### Decided
+
+1. A session whose hook runs with `OMNIGENT=1`, `LAIKA_ACTIVITY_SKIP`, or in
+   CI is recorded in a **local-only** skip list by its session id (never
+   sent), and the usage reader skips every record of that session, subagent
+   files included — the same rule D-080 set for activity counts.
+2. Sessions from before the skip list existed cannot be told apart; the
+   30-day question and `cli/README.md` say so plainly.

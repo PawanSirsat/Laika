@@ -2,11 +2,11 @@
 id: LAI-775
 title: 'Decide whether tokens from automated sessions (Omnigent, CI) count as the developer''s'
 area: docs
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-769
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -66,3 +66,7 @@ be told apart, and that is said rather than guessed at.
 What is left is the first criterion's entry in `docs/DECISIONS.md` (or an
 amendment to D-084), which is CHIEF's to write; the collector work the second
 criterion asks for is the list above. CHIEF moves this task.
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent). Decided by the owner through CHIEF and built inside LAI-769's review round; recorded as D-086.

@@ -6,7 +6,7 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-10-17T13:54:12Z
 finished: 2026-10-17T16:37:03Z
 ---
@@ -65,3 +65,7 @@ contract. Research with measurements: ~/Documents/laika-strategy/token-usage/REP
   server 2823 passed + 7 skipped, 1 failed: `test/tooling/build.test.ts` "built
   server never became healthy" under load, 15/15 alone; `pnpm lint` 0;
   `pnpm format` 0.
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent) on the owner's direct instruction, after one Claude review. The review's one blocker (off → on → yes counted up to 30 days twice under a new collector id) was fixed with tests that failed first (totals 105 → 210 before, unchanged after); a backfilled day now replaces that person's rows from every machine. Also fixed: honest space-view wording, `on` shows the 30-day totals before asking, Codex deduped by `response_id`, and automated sessions skipped (LAI-775). The migration was regenerated on top of LAI-771's as `0037_token_usage` (journal idx 36, newer `when`); CHIEF checked the journal is strictly ascending. Follow-ups filed: LAI-774, LAI-776, LAI-777, LAI-778.
