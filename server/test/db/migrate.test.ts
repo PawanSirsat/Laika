@@ -745,20 +745,30 @@ describe('0031 adds the heatmap to a populated 0030 database (LAI-751)', () => {
   });
 });
 
-describe('0035 adds token usage to a populated 0034 database (LAI-769)', () => {
+/**
+ * Found by its tag's name, not its number: LAI-769's migration is numbered
+ * where it lands on `master`, after any that reached it first, and its journal
+ * timestamp must be the newest — Drizzle's migrator skips one older than what
+ * it has applied, so a renumber by hand would never run.
+ */
+describe('the token-usage migration adds to a populated database (LAI-769)', () => {
   it('creates one table and its indexes, and rebuilds nothing that was there', () => {
     const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
     cpSync(MIGRATIONS_FOLDER, dir, { recursive: true });
     const journalPath = join(dir, 'meta', '_journal.json');
     const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
-      entries: { tag: string }[];
+      entries: { tag: string; when: number }[];
     };
-    const dropped = journal.entries.splice(
-      journal.entries.findIndex((e) => e.tag.startsWith('0035_')),
-    );
-    // The guard on this guard: what was cut is 0035, and 0034 is the last kept.
-    expect(dropped[0]?.tag).toMatch(/^0035_/);
-    expect(journal.entries.at(-1)?.tag).toMatch(/^0034_/);
+    const at = journal.entries.findIndex((e) => /^\d{4}_token_usage$/.test(e.tag));
+    expect(at, 'the token-usage migration is in the journal').toBeGreaterThan(0);
+    // The last migration, and the newest by timestamp, or it never runs.
+    expect(at).toBe(journal.entries.length - 1);
+    const previous = journal.entries[at - 1];
+    expect(journal.entries[at]?.when).toBeGreaterThan(previous?.when ?? Infinity);
+    const dropped = journal.entries.splice(at);
+    // The guard on this guard: what was cut is it, and the one before is kept.
+    expect(dropped[0]?.tag).toMatch(/_token_usage$/);
+    expect(journal.entries.at(-1)?.tag).toBe(previous?.tag);
     writeFileSync(journalPath, JSON.stringify(journal));
 
     const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
@@ -773,7 +783,7 @@ describe('0035 adds token usage to a populated 0034 database (LAI-769)', () => {
 
       // Every table's root page and row count before: a rebuild moves the
       // first, and a copy that lost rows changes the second. Drizzle's own
-      // journal gains its row for 0035, as it does for every migration.
+      // journal gains its row for this one, as it does for every migration.
       const census = () =>
         Object.fromEntries(
           db
