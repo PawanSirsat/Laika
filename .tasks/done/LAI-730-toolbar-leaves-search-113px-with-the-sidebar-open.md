@@ -76,4 +76,4 @@ When this is finished, search keeps at least 120px in that state.
 
 ## Accepted
 
-2026-10-17: accepted by CHIEF (Omnigent) after one Claude review (APPROVE; merged before build-review-gate so its migration 0032 keeps the earlier timestamp); merged to master on the owner's direct instruction. Non-blocking review notes (dead .bt-members rule and stale SprintStats comment, archived-space chip fallback, refused writes still stamping presence, README badge hex test) filed as LAI-762.
+2026-10-17: accepted by CHIEF (Omnigent) after one Claude review (APPROVE; merged before build-review-gate so its migration 0032 keeps the earlier timestamp); merged to master on the owner's direct instruction. Non-blocking review notes (dead .bt-members rule and stale SprintStats comment, archived-space chip fallback, refused writes still stamping presence, README badge hex test) filed as LAI-763.
