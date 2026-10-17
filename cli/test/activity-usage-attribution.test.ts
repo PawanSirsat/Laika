@@ -473,6 +473,65 @@ void describe('a key in the branch name, when the board serves its prefix', () =
 });
 
 /* -------------------------------------------------------------------------- */
+/* Outside ids (LAI-780)                                                      */
+/* -------------------------------------------------------------------------- */
+
+void describe('a card’s outside id, when the board serves its prefix (LAI-780)', () => {
+  void test('a repo id beside the board’s own prefix: an LAI-780 branch and mark count when LAI is served', async () => {
+    const root = home();
+    transcript(root, 's.jsonl', [
+      claude({ at: T0, out: 1, branch: 'LAI-780-external-ref' }),
+      claude({ at: T0 + 60, out: 10, call: mark('start_working', { task: 'lai-781' }) }),
+      claude({ at: T0 + 120, out: 100 }),
+    ]);
+    assert.deepEqual(byTask((await read(root, ['LAI', 'LAIKA'])).days), {
+      'LAI-780': 1,
+      'LAI-781': 110,
+    });
+  });
+
+  void test('the outside id’s wider shape: an underscore, a prefix past eight characters, a single letter', async () => {
+    const root = home();
+    transcript(root, 's.jsonl', [
+      claude({ at: T0, out: 1, branch: 'feature/data_eng-12-pipeline' }),
+      claude({ at: T0 + 60, out: 10, branch: 'PLATFORMOPS-4-rotate-keys' }),
+      claude({ at: T0 + 120, out: 100, branch: 'main' }),
+      claude({ at: T0 + 180, out: 1_000, call: mark('start_working', { task: 'q-7' }) }),
+    ]);
+    assert.deepEqual(byTask((await read(root, ['DATA_ENG', 'PLATFORMOPS', 'Q'])).days), {
+      '-': 100,
+      'DATA_ENG-12': 1,
+      'PLATFORMOPS-4': 10,
+      'Q-7': 1_000,
+    });
+  });
+
+  void test('an underscore still separates a key from what is before it: feature_lai-42 is LAI-42', async () => {
+    const root = home();
+    transcript(root, 's.jsonl', [
+      claude({ at: T0, out: 1, branch: 'feature_lai-42' }),
+      claude({ at: T0 + 60, out: 10, branch: 'my_data_eng-3' }),
+    ]);
+    assert.deepEqual(byTask((await read(root, ['LAI', 'DATA_ENG'])).days), {
+      'LAI-42': 1,
+      'DATA_ENG-3': 10,
+    });
+  });
+
+  void test('an automated session’s tokens stay out, outside id or not (D-086)', async () => {
+    const root = home();
+    transcript(root, 's.jsonl', [
+      claude({ at: T0, out: 1, branch: 'LAI-780-external-ref' }),
+      claude({ at: T0 + 60, out: 10, call: mark('start_working', { task: 'LAI-780' }) }),
+    ]);
+    const paths = activityPaths(root);
+    mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
+    writeFileSync(join(paths.dir, 'skip-sessions'), `${String(NOW_S - H)} ${SECRET.session}\n`);
+    assert.deepEqual(byTask((await read(root, ['LAI'])).days), {});
+  });
+});
+
+/* -------------------------------------------------------------------------- */
 /* Codex and Gemini CLI                                                       */
 /* -------------------------------------------------------------------------- */
 

@@ -54,7 +54,9 @@ import {
  * Without a mark, a key in the session's **branch name** counts — `LAI-42-x`,
  * `feature/lai-42` — when its prefix is one the board serves (the sharing
  * answer's `task_prefixes`, kept in the index), so `release-2026` is never a
- * task. Claude Code records the branch on every line and Codex in its
+ * task. Those prefixes include the outside ids the board's cards carry
+ * (LAI-780): a branch or a mark named for a repo's `LAI-780`, or a Jira key
+ * such as `DATA_ENG-12`, counts as the card's own key does. Claude Code records the branch on every line and Codex in its
  * session's metadata; for an agent whose files hold none, the activity hook
  * keeps each session's id and branch at its start, on this machine
  * (`sessions`). Only the key is kept from a branch, and only the key is sent.
@@ -555,12 +557,20 @@ const LAIKA_TOOL =
   /^(?:mcp__)?(?:[A-Za-z0-9_-]*_)?laika__(start_working|update_status|finish_task)$/;
 /** Gemini CLI names a server's tool by its own name while no other server has it. */
 const BARE_TOOL = /^(start_working|update_status|finish_task)$/;
-/** A Laika task key (SPEC §4.3): the server's pattern. */
-const TASK_KEY = /^[A-Z][A-Z0-9]{1,7}-[1-9][0-9]{0,8}$/;
+/**
+ * A task key as the server takes it: a Laika key (SPEC §4.3) or a card's
+ * outside id (LAI-780) — a prefix of 1–16 letters, digits and `_`, a dash and
+ * 1–9 digits, which every board key fits.
+ */
+const TASK_KEY = /^[A-Z][A-Z0-9_]{0,15}-[0-9]{1,9}$/;
 /** `in_progress`, or a project's own status that says so: `In progress`, `in-progress`. */
 const IN_PROGRESS = /^in[ _-]?progress$/i;
-/** Key-shaped parts of a branch name, in order: `LAI-42-x`, `feature/lai-42`. */
-const BRANCH_KEY = /(?:^|[^A-Za-z0-9])([A-Za-z][A-Za-z0-9]{1,7}-[1-9][0-9]{0,8})(?![0-9])/g;
+/**
+ * Key-shaped runs of a branch name, in order: `LAI-42-x`, `feature/lai-42`,
+ * `data_eng-12`. A run may hold underscores, so it is read for every key it
+ * ends in — `feature_lai-42` is `FEATURE_LAI-42`, then `LAI-42`.
+ */
+const BRANCH_KEY = /(?:^|[^A-Za-z0-9])([A-Za-z][A-Za-z0-9_]*-[0-9]{1,9})(?![0-9])/g;
 
 /** A task reference as a key — upper-cased, as the board takes it — or nothing. */
 function keyOf(raw: unknown): string | undefined {
@@ -569,13 +579,23 @@ function keyOf(raw: unknown): string | undefined {
   return TASK_KEY.test(key) ? key : undefined;
 }
 
-/** The keys a branch name carries, space-separated: the branch itself is never kept. */
+/**
+ * The keys a branch name carries, space-separated, longest first within a
+ * run: the branch itself is never kept. Which one counts is the board's
+ * prefixes' to say (`attributor`).
+ */
 function branchKeys(branch: unknown): string {
   if (typeof branch !== 'string' || branch.length > 255) return '';
   const keys: string[] = [];
   for (const match of branch.matchAll(BRANCH_KEY)) {
-    const key = keyOf(match[1]);
-    if (key !== undefined && !keys.includes(key)) keys.push(key);
+    const run = match[1] ?? '';
+    // The run itself, then what follows each underscore in it.
+    const starts = [0];
+    for (let i = run.indexOf('_'); i !== -1; i = run.indexOf('_', i + 1)) starts.push(i + 1);
+    for (const at of starts) {
+      const key = keyOf(run.slice(at));
+      if (key !== undefined && !keys.includes(key)) keys.push(key);
+    }
   }
   return keys.join(' ');
 }
