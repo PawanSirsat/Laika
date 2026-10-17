@@ -1312,16 +1312,24 @@ void describe('the ways in are links for owners and admins only', () => {
   void test('Capacity: a card’s name opens the profile for an owner, and is plain for a member', async () => {
     const owner = await open('/capacity', { ...CAP_STUB, '/api/v1/me': me('u1', 'owner') });
     try {
-      await owner.page.locator('.cap-card').first().waitFor({ timeout: 20_000 });
-      assert.equal(await owner.page.locator('.cap-card a[href="/people?user=u2"]').count(), 1);
+      // The loading skeleton's cards are `.cap-card` too, and hold no link, so
+      // wait for the link itself rather than for the first card.
+      const link = owner.page.locator('.cap-card a[href="/people?user=u2"]');
+      await link.waitFor({ timeout: 20_000 });
+      assert.equal(await link.count(), 1);
     } finally {
       await owner.close();
     }
 
     const member = await open('/capacity', { ...CAP_STUB, '/api/v1/me': me('u3', 'member') });
     try {
-      await member.page.locator('.cap-card').first().waitFor({ timeout: 20_000 });
-      assert.match(await member.page.locator('.cap-card').first().innerText(), /Bea Builder/);
+      // The real card, found by its name: a skeleton has no name, and the
+      // session gate draws no card before `/me`, so this is the member's view.
+      const bea = member.page.locator('.cap-grid > .cap-card', {
+        has: member.page.locator('.cap-name', { hasText: 'Bea Builder' }),
+      });
+      await bea.waitFor({ timeout: 20_000 });
+      assert.equal((await bea.locator('.cap-status').innerText()).trim(), 'Online now');
       assert.equal(await member.page.locator('a[href^="/people"]').count(), 0);
     } finally {
       await member.close();
