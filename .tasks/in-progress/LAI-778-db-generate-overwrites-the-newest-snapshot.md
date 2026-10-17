@@ -2,11 +2,12 @@
 id: LAI-778
 title: 'pnpm db:generate overwrites the newest migration snapshot: tag numbers run one ahead of the journal index since 0036'
 area: server
-assignee: unclaimed
+assignee: owner-direct
 priority: p2
 depends-on: []
 discovered-from: LAI-769
-status: backlog
+status: in-progress
+started: 2026-10-17T18:26:01Z
 ---
 
 ## Goal
