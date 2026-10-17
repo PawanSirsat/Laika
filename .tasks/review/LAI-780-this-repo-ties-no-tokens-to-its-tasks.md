@@ -80,10 +80,27 @@ Rewritten before work started, to the owner's decision below (option 1).
       (LAI-779).
 - [x] Screenshots of the task panel with an outside id, light and dark, at
       1366 and 390, in `/tmp/laika-external-ref-shots/`.
-- [ ] The repo-root gate: `pnpm test`, `pnpm lint`, `pnpm format`, each
-      exiting `0`. **Not ticked**: `lint` and `format` exit `0`; `pnpm test`
-      exited `1` on each of three runs, each time on one load timeout in a
-      file this does not touch, each green alone — see Builder notes.
+- [x] The repo-root gate: `pnpm test`, `pnpm lint`, `pnpm format`, each
+      exiting `0`. (Round 1 at review: unticked, three runs each lost to one
+      load timeout. Review round 1: all three `0` at `000305f7`.)
+
+Added at review round 1, by CHIEF:
+
+- [x] **The backfill paces its writes** (two a second by default,
+      configurable) and, on a `429`, waits `Retry-After` and writes the same
+      card again, a bounded number of times; it reports written, skipped and
+      failed accurately; its sleep is injectable.
+- [x] **The collector's data format is bumped** (`DATA_V` 3), so lines
+      already read are re-attributed with the wider key shape — one
+      background re-read, replacing what went, and the next sync idle.
+- [x] **A usage key that is a board key the sender cannot read is not
+      retried as an outside id** (a test).
+- [x] **`create_task` resolves `blocked_by` before it creates**: an
+      ambiguous or unknown blocker refuses the call with nothing created.
+- [x] **An outside id is one task's within its project**: a write of one
+      another task there holds is refused `422` naming it (case-insensitive;
+      pull requests' refs exempt; across projects allowed); the backfill
+      skips such cards and says so.
 
 ## Notes / context
 
@@ -193,4 +210,91 @@ section (CHIEF); running the backfill after the deploy (CHIEF); re-measuring
 this repo's attributed share after both (CHIEF). The panel's Tokens section
 still says "a branch named LC-3-…" without the outside id — wording only,
 not filed.
+
+## Review round 1 (CHANGES REQUIRED → fixed)
+
+One blocker and four more items. Access control, the migration, the webhook
+guard and the collector held (11 mutations caught). Commits `65f84e70` (B1),
+`bdc556d4` (uniqueness, blockers), `3411f5ae` (usage guard test), `6494cb71`
+(collector), `000305f7` (SPEC). Each test below was run before its fix; the
+two guards were shown to bite by a mutant instead.
+
+- **B1, the backfill lost cards to the rate limit.** Writes are paced, two
+  a second by default (`--per-second`; the token's bucket is 120 a minute,
+  two a second sustained), none before the first. A `429` — a read's too —
+  waits `Retry-After` (a second when it names none) and asks again, at most
+  5 times a request, before the card counts as failed. The sleep is
+  injected; tests count and size the waits and never wait. The result is
+  `{ planned, written, skipped, failed }`.
+  - **The reviewer's measurement, as a test**: 480 cards against the real
+    `RateLimiter` under the token policy, on a clock moved only by the
+    script's sleeps and 100 ms a request. On the old script (swapped in for
+    the run, restored by checksum): `written 213, failed 267` — the
+    reviewer's 267 exactly. Now `written 480, failed 0`. A control run
+    unpaced and unretried on the same board still fails > 200, so the
+    simulation can fail.
+  - 429 once with `Retry-After: 1`: before, `{ written 3, failed 1 }`; now
+    `written === planned`, `failed 0`, and the sleeps are `[500, 1000, 500,
+    500]` (pace, the retry's second, pace, pace). Pacing: 4 writes sleep
+    `[500, 500, 500]`; at 4 a second `[250, 250, 250]`; a dry run none. Gives
+    up after 6 asks; a 429 without `Retry-After` waits 1 s; a read's 429 is
+    waited out. All red before, green after. The three existing run tests
+    were red before only for the new `skipped` field.
+- **Per-project uniqueness.** `assertOutsideIdFree` refuses `422` `{ field:
+  'external_ref', reason: 'taken', external_ref, task }` inside the create's
+  write lock and the update's transaction. Every writer stores outside ids
+  upper-case, so comparing the normalised value is case-insensitive and one
+  search of the index. Pull requests' refs never reach it (the service
+  writes only outside ids). Across projects allowed. The backfill already
+  skipped an id another listed card holds; it now also counts a `422 taken`
+  write as skipped, naming the holder. Tests: service create and update
+  (lower-case input against `LAI-780`), REST `PATCH`, MCP `create_task`
+  (nothing created) — red before, green after; same id in another project and
+  two tasks sharing a PR ref still editable — green before and after
+  (guards).
+- **`create_task` blockers.** Every `blocked_by` is resolved and checked to
+  exist before `createTask` (`assertTaskExists`, the check
+  `addTaskDependency` makes). An ambiguous blocker refuses `422 ambiguous`,
+  an unknown one `404`, and no task is filed. Red before (the task was
+  created, then the error), green after; a resolvable blocker still links.
+- **Usage key guard.** `HID-1` names a board task in a project Bea cannot
+  read, and a card she can read carries `HID-1` as its outside id: her row
+  stays unattributed. Green before and after; a mutant that let the
+  unreadable board key fall through to the outside-id lookup turned it red.
+- **`DATA_V` 3.** Lines read under 2 kept their branch keys in the old shape
+  (`feature/data_eng-12-…` was `ENG-12`); format 3 re-reads them through
+  the phase-2 upgrade path. Test (faking a format-2 machine): the re-read's
+  day replaces `[null, 5]` with `['DATA_ENG-12', 5]` — 5, not 10 — and the
+  next sync sends nothing. Red before the bump; a mutant with `DATA_V` back
+  at 2 is red too.
+
+**Found by that test, and fixed** — two places round 1's collector tests
+never reached, because they passed prefixes straight to `readUsage`:
+
+- `activity-sync.ts` kept only board-shaped prefixes from the sharing answer
+  (`^[A-Z][A-Z0-9]{1,7}$`), so `DATA_ENG`, `Q` and `PLATFORMOPS` were dropped
+  before the collector saw them. `LAI` passed, so this repo's own case
+  worked; a Jira key never would have. Now the server's shape. Test through
+  `sync`: red (`['LAI']` kept), then green.
+- The stub board's contract (`cli/test/support/local-activity-contract.ts`)
+  still took only a board key as a row's task, so it refused the outside id
+  `422`. That test first asserted only what was sent, so it passed while the
+  board refused; it now asserts no violation and the row stored, and was red
+  until the contract took §6.4's outside id. A census of key-shaped patterns
+  across `cli/`, `plugin/`, `server/src` and `server/web/src` finds only the
+  two project-prefix validators left, which are right.
+
+**Gate** (foreground, root, at `000305f7`, after the last code change):
+run 1 → `TEST 1`, only `build.test.ts` "keeps an idle connection open for
+65 s" (built server not healthy within its wait), alone 15/15 — the same
+load timeout as round 1's run 3; `LINT 0`; `FMT 0`. Run 2 → `TEST 0`: cli
+410 (409 pass, 1 skipped), web 2079/2079, server 2908 collected — 2900
+passed, 8 skipped. Only this file and the log changed after; that is
+re-checked by `task-file-state.test.ts`.
+
+**Not fixed, for CHIEF to file**: `create_task` still applies `sprint` after
+it creates, so an unknown sprint id would leave a task filed behind the
+error, as blockers did. Not run, and not in this round's scope.
+**Migration**: unchanged — `0038_tasks_external_ref_index`, idx 37; LAI-780
+reaches `master` before LAI-772's own 0038 (CHIEF's call).
 

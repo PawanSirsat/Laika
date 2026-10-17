@@ -40,3 +40,31 @@ Owner-direct build in a temporary worktree (`Laika-external-ref`, branch
 
 **State**
 In .tasks/review/. lint 0, format 0; `pnpm test` 1 on each of three runs, each only a load timeout green alone. CLAUDE.md `## Laika`, the backfill run and the re-measure are CHIEF's.
+
+## 2026-10-17T21:44:25Z — LAI-780 (review round 1)
+
+**What changed**
+- server/scripts/backfill-external-ref.ts — writes paced (2/s default, `--per-second`), a `429` (reads too) waits `Retry-After` and retries up to 5 times, injectable sleep, `{ planned, written, skipped, failed }`; a `422 taken` write is a skip naming the holder
+- server/src/services/outside-ids.ts — `assertOutsideIdFree`: an outside id is one task's within its project, `422 taken` naming it
+- server/src/services/tasks.ts — that check inside the create's write lock and the update's transaction; `assertTaskExists` for blockers
+- server/src/mcp/write-tools.ts — `create_task` resolves and checks every blocker before it creates
+- cli/src/activity-usage.ts — `DATA_V` 3: lines read under 2 are read again with the wider key shape
+- cli/src/activity-sync.ts — the sharing answer's `task_prefixes` kept in the server's shape, not the board-key shape
+- cli/test/support/local-activity-contract.ts — the stub board takes an outside id as a usage row's task, as §6.4 does
+- docs/SPEC.md — §4.5 and §6.4 per-project uniqueness, §7.1 `create_task`'s blockers
+- tests: backfill (+10), tasks service (+4), tasks route (+1), MCP write-tools (+2), token-usage (+1), cli attribution (+2); the backfill's three run tests now read `skipped`
+- .tasks/review/LAI-780-…md — criteria added at review, review round section
+
+**Decisions**
+- Uniqueness compares the normalised (upper-case) value, not `upper(external_ref)` — every writer of an outside id stores it upper-case, so it is case-insensitive in effect and stays one index search; a lower-cased value could only come from a hand edit of the database.
+- The check runs inside each write's transaction rather than before it, so two writes cannot both find the id free.
+- A blocker is checked to exist, not to be readable — the same check `addTaskDependency` makes, moved earlier; tightening who may link what would be a different change.
+- The backfill's control test (unpaced, unretried) is kept beside the 480-card test, so the simulated limiter is shown able to fail rather than assumed to.
+
+**Discovered**
+- `activity-sync.ts` dropped every outside prefix that is not board-shaped (`DATA_ENG`, `Q`, `PLATFORMOPS`) before the collector saw it, and the stub board's contract refused an outside-id row. Round 1's collector tests handed prefixes straight to `readUsage` and asserted what was sent, not what was accepted — "a fixture cleaner than reality" again. Found by the `DATA_V` test because it goes through `sync`; fixed here.
+- `create_task` applies `sprint` after it creates, so an unknown sprint id would leave a filed task behind the error, as blockers did. Not run, not fixed; for CHIEF to file (no id range here).
+- `build.test.ts`'s built-server health wait timed out under the full gate's load once more (alone 15/15).
+
+**State**
+In .tasks/review/ (round 1 fixed). At `000305f7`: test 0 (run 2; run 1 lost to the load timeout above), lint 0, format 0.
