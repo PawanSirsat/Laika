@@ -2,11 +2,12 @@
 id: LAI-772
 title: 'Size and forecasts, phase 2: token forecasts beside actuals, agent estimate at claim, sprint forecast, suspiciously-fast cue, rework cost, similar past tasks for agents'
 area: server
-assignee: unclaimed
+assignee: owner-direct
 priority: p2
 depends-on: [LAI-770, LAI-771]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-17T20:23:26Z
 ---
 
 ## Goal
