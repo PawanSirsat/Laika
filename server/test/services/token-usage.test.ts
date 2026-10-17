@@ -331,6 +331,40 @@ describe('a usage report (PUT /me/local-activity, "usage": true)', () => {
     ]);
   });
 
+  it('never retries a board key the sender cannot read as an outside id: it stays unattributed (LAI-780 review)', () => {
+    createProject(t.sqlite, t.db, actor(owner), {
+      name: 'Hidden',
+      slug: 'hidden',
+      prefix: 'HID',
+      visibility: 'private',
+      now: NOW,
+    });
+    // HID-1 is a real board task Bea cannot read…
+    const hidden = createTask(t.sqlite, t.db, actor(owner), 'hidden', {
+      title: 'Hidden',
+      now: NOW,
+    });
+    expect(hidden.key).toBe('HID-1');
+    // …and a card she can read carries `HID-1` as its outside id.
+    const visible = createTask(t.sqlite, t.db, actor(owner), 'laika', {
+      title: 'Mirror',
+      now: NOW,
+    });
+    t.db.update(tasks).set({ externalRef: 'HID-1' }).where(eq(tasks.id, visible.id)).run();
+    share(bea);
+    member(bea, projectId);
+
+    recordTokenUsage(
+      t.db,
+      actor(bea),
+      report([{ day: YESTERDAY, rows: [row({ task: 'HID-1', output: 7 })] }]),
+      NOW,
+    );
+    // The board key names a task, so it is never tried as an outside id —
+    // not even when its task is one the sender cannot see.
+    expect(stored(bea)).toEqual([expect.objectContaining({ taskId: null, output: 7 })]);
+  });
+
   it('ties a key that is a card’s outside id to that card — only where the sender may read it, never one two cards carry (LAI-780)', () => {
     const carried = (slug: string, title: string, ref: string) => {
       const task = createTask(t.sqlite, t.db, actor(owner), slug, { title, now: NOW });
