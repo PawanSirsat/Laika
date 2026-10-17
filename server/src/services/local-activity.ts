@@ -121,6 +121,9 @@ export interface OwnLocalDay {
   sessions: number;
   commits_local: number;
   pushed_commits: number;
+  /** Their agents' tokens that day, cache reads apart (D-084 items 4 and 8). */
+  tokens: number;
+  cache_read: number;
 }
 
 /** What the server holds for the caller — the consent preview (§6.4). */
@@ -490,7 +493,15 @@ export function getOwnLocalActivity(
   const at = (day: string): OwnLocalDay => {
     let entry = byDay.get(day);
     if (entry === undefined) {
-      entry = { day, prompts_by_agent: {}, sessions: 0, commits_local: 0, pushed_commits: 0 };
+      entry = {
+        day,
+        prompts_by_agent: {},
+        sessions: 0,
+        commits_local: 0,
+        pushed_commits: 0,
+        tokens: 0,
+        cache_read: 0,
+      };
       byDay.set(day, entry);
     }
     return entry;
@@ -506,6 +517,27 @@ export function getOwnLocalActivity(
     }
   }
   for (const [day, n] of pushed) at(day).pushed_commits = n;
+  // Their token totals (D-084 item 4): the consent screen names what is held.
+  for (const row of db
+    .select({
+      day: tokenUsageDays.day,
+      tokens: sql<number>`sum(${tokenUsageDays.input} + ${tokenUsageDays.output} + ${tokenUsageDays.cacheWrite})`,
+      cacheRead: sql<number>`sum(${tokenUsageDays.cacheRead})`,
+    })
+    .from(tokenUsageDays)
+    .where(
+      and(
+        eq(tokenUsageDays.userId, actor.userId),
+        gte(tokenUsageDays.day, start),
+        lte(tokenUsageDays.day, end),
+      ),
+    )
+    .groupBy(tokenUsageDays.day)
+    .all()) {
+    const entry = at(row.day);
+    entry.tokens = Number(row.tokens);
+    entry.cache_read = Number(row.cacheRead);
+  }
 
   const oldest = db
     .select({ day: min(localActivityDays.day) })
@@ -517,7 +549,14 @@ export function getOwnLocalActivity(
     .from(pushedCommitKeys)
     .where(eq(pushedCommitKeys.userId, actor.userId))
     .get();
-  const oldestDay = [oldest?.day, oldestKey?.day]
+  // Token rows are held too (D-084): someone with only those can still see
+  // that something is kept, and delete it.
+  const oldestTokens = db
+    .select({ day: min(tokenUsageDays.day) })
+    .from(tokenUsageDays)
+    .where(eq(tokenUsageDays.userId, actor.userId))
+    .get();
+  const oldestDay = [oldest?.day, oldestKey?.day, oldestTokens?.day]
     .filter((d): d is string => d !== null && d !== undefined)
     .sort()[0];
 
