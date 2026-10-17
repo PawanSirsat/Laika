@@ -81,7 +81,7 @@ function enteredReview(db: Db, taskIds: readonly string[]): Map<string, number> 
     .groupBy(activity.taskId)
     .all();
   return new Map(
-    rows.filter((r) => r.taskId !== null).map((r) => [r.taskId as string, Number(r.at)]),
+    rows.flatMap((r) => (r.taskId === null ? [] : [[r.taskId, Number(r.at)] as const])),
   );
 }
 
