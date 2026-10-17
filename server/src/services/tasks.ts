@@ -28,9 +28,11 @@ import { assertCan } from '../policy/can.ts';
 import { addComment, commentCounts } from './comments.ts';
 import {
   freezeEstimateAtStart,
+  recordClaimEstimate,
   refreshEstimate,
   setSizeOverride,
   sizeViews,
+  type ClaimEstimateInput,
   type SizeLevel,
   type SizeView,
 } from './estimates.ts';
@@ -68,7 +70,13 @@ import {
  * checks against the original. LAI-119 converges the two route files that
  * still do.
  */
-export { CREATED_VIA, SIZE_LEVELS, TASK_PRIORITIES, TASK_STATUSES } from '../db/enums.ts';
+export {
+  CLAIM_CONFIDENCES,
+  CREATED_VIA,
+  SIZE_LEVELS,
+  TASK_PRIORITIES,
+  TASK_STATUSES,
+} from '../db/enums.ts';
 
 export interface TaskView {
   id: string;
@@ -1096,6 +1104,15 @@ export function claimTask(
    * is and a branch named for the key ties the session's tokens to it.
    */
   branch?: string,
+  /**
+   * The claimant's own size and confidence (`start_working`'s `estimate`,
+   * D-085 item 4, LAI-772): kept best effort after the claim's activity row,
+   * scored against what happens, and blended into the forecast only once the
+   * claimants' sizes here have beaten the project median. A resume — the
+   * holder's own call on a task already under way — is not a claim and keeps
+   * none.
+   */
+  estimate?: ClaimEstimateInput,
 ): TaskView {
   const { project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'task.claim', { projectId: project.id });
@@ -1196,10 +1213,13 @@ export function claimTask(
       now,
     });
 
-    // The forecast work starts under is kept (D-085 item 5) — at the first
-    // start only, as `started_at` is. After the activity row and best effort,
-    // so it can never cost the claim its record (LAI-771 review, B1).
+    // What the claimant said, then the forecast work starts under (D-085
+    // items 4–5) — the freeze at the first start only, as `started_at` is.
+    // After the activity row and best effort, so neither can cost the claim
+    // its record (LAI-771 review, B1).
+    if (estimate !== undefined) recordClaimEstimate(db, actor, taskId, estimate, now);
     if (before.startedAt === null) freezeEstimateAtStart(db, taskId, now);
+    else if (estimate !== undefined) refreshEstimate(db, taskId, now);
 
     return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
   });

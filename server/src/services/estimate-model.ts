@@ -389,6 +389,7 @@ function neighbours(
   index: SimilarIndex,
   terms: ReadonlyMap<string, number>,
   excludeId: string | undefined,
+  k: number = SIMILAR_K,
 ): { doc: IndexedDoc; similarity: number }[] {
   const n = index.docs.length;
   const unseen = Math.log(n);
@@ -413,13 +414,42 @@ function neighbours(
   for (let i = 0; i < n; i += 1) {
     const s = scores[i]!;
     if (s <= 0 || index.docs[i]!.id === excludeId) continue;
-    if (best.length === SIMILAR_K && s <= best[best.length - 1]!.s) continue;
+    if (best.length === k && s <= best[best.length - 1]!.s) continue;
     let at = best.length;
     while (at > 0 && best[at - 1]!.s < s) at -= 1;
     best.splice(at, 0, { i, s });
-    if (best.length > SIMILAR_K) best.pop();
+    if (best.length > k) best.pop();
   }
   return best.map(({ i, s }) => ({ doc: index.docs[i]!, similarity: s / norm }));
+}
+
+/** A finished-task index for looking similar tasks up, whatever the project's size. */
+export type SimilarLookup = SimilarIndex;
+
+/**
+ * The TF-IDF index `forecast` draws on, built over any finished history —
+ * for `get_task_context`'s similar past tasks (LAI-772), which an agent can
+ * use long before the forecast has the {@link SIMILAR_AFTER} it waits for.
+ */
+export function buildSimilarIndex(docs: readonly History[]): SimilarLookup {
+  return buildIndex(docs.slice(-INDEX_LIMIT));
+}
+
+/** The `k` finished tasks most like these terms, closest first, never `excludeId`. */
+export function findSimilar(
+  index: SimilarLookup,
+  terms: ReadonlyMap<string, number>,
+  excludeId: string | undefined,
+  k: number,
+): SimilarTask[] {
+  if (index.docs.length === 0) return [];
+  return neighbours(index, terms, excludeId, k).map((f) => ({
+    id: f.doc.id,
+    key: f.doc.key,
+    title: f.doc.title,
+    buildMs: f.doc.buildMs,
+    similarity: Math.round(f.similarity * 1000) / 1000,
+  }));
 }
 
 interface Regression {
@@ -585,7 +615,15 @@ export function fitModel(
 // ----------------------------------------------------------------- forecast
 
 export type FactorKey =
-  'words' | 'criteria' | 'deps' | 'tag' | 'other_tags' | 'similar' | 'subtasks' | 'priority';
+  | 'words'
+  | 'criteria'
+  | 'deps'
+  | 'tag'
+  | 'other_tags'
+  | 'similar'
+  | 'subtasks'
+  | 'agent'
+  | 'priority';
 
 /** One line of the *why*: what moved the size, and by how many levels. */
 export interface Factor {
@@ -990,4 +1028,90 @@ export function backtest(history: readonly History[]): BacktestResult {
     beatsMedian: methodError < medianError,
     residuals: residuals.slice(-100),
   };
+}
+
+// -------------------------------------------- the agent's estimate (LAI-772)
+
+/** An agent's estimate is scored once this many finished tasks carry one. */
+export const AGENT_MIN_SCORED = 10;
+/** The most an agent's estimate may weigh: Laika's own model always keeps a share. */
+export const AGENT_MAX_WEIGHT = 0.9;
+
+/**
+ * One finished task the agent sized at claim: what it took, what the agent
+ * said, and what the model and the plain median said when work started.
+ */
+export interface AgentSample {
+  readonly buildMs: number;
+  readonly level: SizeLevel;
+  /** The model's own p50 and weight at the start, before any blend. */
+  readonly modelP50Ms: number;
+  readonly modelWeight: number;
+  /** The project's plain median build time when the task started. */
+  readonly medianMs: number;
+}
+
+/** How the agents' sizes have done here, and the weight they have earned. */
+export interface AgentScore {
+  readonly n: number;
+  /** Typical error of each, as a ratio (`×1.7`); null with nothing scored. */
+  readonly agent_error: number | null;
+  readonly median_error: number | null;
+  readonly model_error: number | null;
+  /** 0 until the agents beat the median; then inverse variance against the model. */
+  readonly weight: number;
+}
+
+/**
+ * Score the agents' sizes against what happened (D-085 item 4): **zero weight
+ * until they beat the plain project median** over at least {@link
+ * AGENT_MIN_SCORED} tasks — padding shows up as error and earns nothing.
+ * Once they do, the weight is inverse variance against the model's own error
+ * on the same tasks, capped at {@link AGENT_MAX_WEIGHT}.
+ *
+ * An agent's level becomes a build time through the model's calibration at
+ * the start: the model's p50 for a task of its own weight, scaled to the
+ * agent's level — `p50 × weight(level) ÷ model weight` — so the two are
+ * compared on the same footing, and only the size differs. It is the agents'
+ * estimates as one source, per project: nothing here is per person, and no
+ * client is singled out (D-085 item 8).
+ */
+export function scoreAgentEstimates(samples: readonly AgentSample[]): AgentScore {
+  const usable = samples.filter(
+    (s) => s.buildMs > 0 && s.modelP50Ms > 0 && s.modelWeight > 0 && s.medianMs > 0,
+  );
+  const n = usable.length;
+  if (n === 0) {
+    return { n: 0, agent_error: null, median_error: null, model_error: null, weight: 0 };
+  }
+  const errors = (f: (s: AgentSample) => number) =>
+    quantile(
+      usable.map((s) => Math.abs(Math.log(Math.max(s.buildMs, MIN_BUILD_MS) / f(s)))),
+      0.5,
+    );
+  const agent = errors((s) => (s.modelP50Ms * LEVEL_WEIGHTS[s.level]) / s.modelWeight);
+  const median = errors((s) => s.medianMs);
+  const model = errors((s) => s.modelP50Ms);
+  const round = (v: number) => Math.round(Math.exp(v) * 100) / 100;
+
+  let weight = 0;
+  if (n >= AGENT_MIN_SCORED && agent < median) {
+    const a2 = agent * agent;
+    const m2 = model * model;
+    weight = a2 + m2 === 0 ? 0.5 : m2 / (a2 + m2);
+    weight = Math.round(Math.min(AGENT_MAX_WEIGHT, weight) * 1000) / 1000;
+  }
+  return {
+    n,
+    agent_error: round(agent),
+    median_error: round(median),
+    model_error: round(model),
+    weight,
+  };
+}
+
+/** The model's log weight moved towards the agent's level by `weight`, in log space. */
+export function blendAgent(logWeight: number, level: SizeLevel, weight: number): number {
+  if (weight <= 0) return logWeight;
+  return (1 - weight) * logWeight + weight * Math.log(LEVEL_WEIGHTS[level]);
 }

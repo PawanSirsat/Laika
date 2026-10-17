@@ -7,6 +7,7 @@ import { activity, projects, tasks, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { can } from '../policy/can.ts';
 import { addComment } from './comments.ts';
+import { fastFinishCues, type FastFinishCue } from './estimates.ts';
 import { latestRounds, recordDecision, type RoundView } from './rounds.ts';
 import { assertMayCloseReview, changeStatus, getTask, viewTasks, type TaskView } from './tasks.ts';
 
@@ -42,6 +43,12 @@ export interface ReviewQueueItem {
   finished_by_name: string | null;
   /** Whether this viewer may accept or send it back (§5, M7). */
   can_decide: boolean;
+  /**
+   * "Check this one" (LAI-772, the R&D's idea 7): its first round finished in
+   * under a quarter of the build-time p50 frozen at the start, and CI has not
+   * confirmed it. About the task, never the person; null otherwise.
+   */
+  cue: FastFinishCue | null;
 }
 
 export interface ReviewQueueView {
@@ -127,6 +134,21 @@ export function listReviewQueue(db: Db, actor: ResolvedActor): ReviewQueueView {
     db,
     page.map((r) => r.id),
   );
+  // A round CI confirmed is checked already: the cue is for work nothing has.
+  const confirmed = (round: RoundView | undefined) =>
+    round?.ci != null && round.ci.total > 0 && round.ci.failed === 0 && round.ci.pending === 0;
+  const cues = fastFinishCues(
+    db,
+    page.map((r) => {
+      const round = rounds.get(r.id);
+      return {
+        id: r.id,
+        startedAt: r.startedAt,
+        estimateAtStartId: r.estimateAtStartId,
+        firstRoundAt: round?.number === 1 && !confirmed(round) ? round.created_at : null,
+      };
+    }),
+  );
 
   const people = [
     ...new Set(
@@ -163,6 +185,7 @@ export function listReviewQueue(db: Db, actor: ResolvedActor): ReviewQueueView {
       round,
       finished_by_name: round === null ? null : (names.get(round.finished_by) ?? null),
       can_decide: decide && (actor.token === null || actor.token === undefined),
+      cue: cues.get(row.id) ?? null,
     };
   });
 

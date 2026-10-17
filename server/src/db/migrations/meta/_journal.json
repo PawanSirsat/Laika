@@ -260,6 +260,13 @@
       "when": 1792254480673,
       "tag": "0037_token_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1792269341409,
+      "tag": "0038_token_forecasts",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AGENT_MAX_WEIGHT,
+  AGENT_MIN_SCORED,
   backtest,
+  blendAgent,
+  buildSimilarIndex,
+  findSimilar,
   FORECAST_AFTER,
   fitModel,
   forecast,
@@ -9,8 +14,10 @@ import {
   readSignals,
   rollUp,
   SIMILAR_AFTER,
+  scoreAgentEstimates,
   SIZE_LEVELS,
   type History,
+  type SizeLevel,
   type Signals,
 } from '../../src/services/estimate-model.ts';
 
@@ -308,5 +315,75 @@ describe('rollUp — a parent’s figures come from its children', () => {
 
   it('keeps its own figures when it has no children', () => {
     expect(rollUp(own, [])).toEqual(own);
+  });
+});
+
+// ------------------------------------------------------- LAI-772: the agent
+
+describe('the agent’s own estimate at claim: zero weight until it beats the median (D-085 item 4)', () => {
+  /** A scored task: built in `buildMs`, the model said `modelP50Ms` for weight 1. */
+  function sample(buildMs: number, level: SizeLevel, modelP50Ms = HOUR, medianMs = HOUR) {
+    return { buildMs, level, modelP50Ms, modelWeight: 1, medianMs };
+  }
+
+  it('earns nothing below AGENT_MIN_SCORED scored tasks, however good', () => {
+    const exact = Array.from({ length: AGENT_MIN_SCORED - 1 }, () => sample(2 * HOUR, 'L'));
+    const score = scoreAgentEstimates(exact);
+    expect(score.n).toBe(AGENT_MIN_SCORED - 1);
+    expect(score.weight).toBe(0);
+  });
+
+  it('earns nothing when it does not beat the plain project median', () => {
+    // The agent always says XL; every task takes the median's hour.
+    const score = scoreAgentEstimates(
+      Array.from({ length: 20 }, () => sample(HOUR, 'XL', 2 * HOUR)),
+    );
+    expect(score.agent_error!).toBeGreaterThan(score.median_error!);
+    expect(score.weight).toBe(0);
+  });
+
+  it('earns weight by inverse variance against the model once it beats the median', () => {
+    // Tasks alternate 15 min and 4 h; the agent sizes each right, the model and median do not.
+    const tasks = Array.from({ length: 20 }, (_, i) =>
+      i % 2 === 0 ? sample(15 * MIN, 'XS') : sample(4 * HOUR, 'XL'),
+    );
+    const score = scoreAgentEstimates(tasks);
+    expect(score.agent_error!).toBeLessThan(score.median_error!);
+    expect(score.weight).toBeGreaterThan(0.5);
+    expect(score.weight).toBeLessThanOrEqual(AGENT_MAX_WEIGHT);
+  });
+
+  it('blends in log space: no weight changes nothing, half weight is the geometric mean', () => {
+    expect(blendAgent(Math.log(2), 'XS', 0)).toBe(Math.log(2));
+    expect(Math.exp(blendAgent(Math.log(4), 'XS', 0.5))).toBeCloseTo(1, 9);
+  });
+});
+
+describe('similar finished tasks, for get_task_context (LAI-772)', () => {
+  it('names the k most similar finished tasks, closest first, never the task itself', () => {
+    const docs: History[] = [
+      'migration schema sqlite',
+      'board card lane',
+      'migration sqlite rebuild',
+    ].map((title, i) => ({
+      id: `h${String(i)}`,
+      key: `LAI-${String(i + 1)}`,
+      title,
+      signals: readSignals({ title, description: title, acceptance: null, tags: [], blockedBy: 0 }),
+      startedAt: i * HOUR,
+      finishedAt: i * HOUR + 30 * MIN,
+      buildMs: 30 * MIN,
+    }));
+    const index = buildSimilarIndex(docs);
+    const query = readSignals({
+      title: 'sqlite migration',
+      description: 'migration of the schema',
+      acceptance: null,
+      tags: [],
+      blockedBy: 0,
+    });
+    const found = findSimilar(index, query.terms, 'h0', 5);
+    expect(found.map((f) => f.key)).toEqual(['LAI-3']);
+    expect(findSimilar(index, query.terms, undefined, 1).map((f) => f.key)).toEqual(['LAI-1']);
   });
 });

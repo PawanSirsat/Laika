@@ -137,15 +137,46 @@ BEGIN
   SELECT RAISE(ABORT, 'task_estimates is append-only: INSERT OR REPLACE is not permitted (SPEC 4.32)');
 END`,
   },
+  // §4.34's claim estimates are what was said, kept to score against what
+  // happened (D-085 item 4, LAI-772): the same three triggers.
+  {
+    name: 'task_claim_estimates_is_append_only_no_update',
+    table: 'task_claim_estimates',
+    create: `CREATE TRIGGER IF NOT EXISTS \`task_claim_estimates_is_append_only_no_update\`
+BEFORE UPDATE ON \`task_claim_estimates\`
+BEGIN
+  SELECT RAISE(ABORT, 'task_claim_estimates is append-only: UPDATE is not permitted (SPEC 4.34)');
+END`,
+  },
+  {
+    name: 'task_claim_estimates_is_append_only_no_delete',
+    table: 'task_claim_estimates',
+    create: `CREATE TRIGGER IF NOT EXISTS \`task_claim_estimates_is_append_only_no_delete\`
+BEFORE DELETE ON \`task_claim_estimates\`
+BEGIN
+  SELECT RAISE(ABORT, 'task_claim_estimates is append-only: DELETE is not permitted (SPEC 4.34)');
+END`,
+  },
+  {
+    name: 'task_claim_estimates_is_append_only_no_replace',
+    table: 'task_claim_estimates',
+    create: `CREATE TRIGGER IF NOT EXISTS \`task_claim_estimates_is_append_only_no_replace\`
+BEFORE INSERT ON \`task_claim_estimates\`
+WHEN EXISTS (SELECT 1 FROM \`task_claim_estimates\` WHERE \`id\` = NEW.\`id\`)
+BEGIN
+  SELECT RAISE(ABORT, 'task_claim_estimates is append-only: INSERT OR REPLACE is not permitted (SPEC 4.34)');
+END`,
+  },
 ] as const;
 
 /**
  * Put §4.8's append-only triggers back if a migration rebuilt them away, and
  * refuse to continue if what is there does not actually enforce anything.
  *
- * **§4.21's `member_ratings` too, since LAI-743, and §4.32's `task_estimates`
- * since LAI-771** — the name stayed, because the mechanism is the same one and
- * a rename would touch every caller for no change in behaviour.
+ * **§4.21's `member_ratings` too, since LAI-743, §4.32's `task_estimates`
+ * since LAI-771 and §4.34's `task_claim_estimates` since LAI-772** — the name
+ * stayed, because the mechanism is the same one and a rename would touch every
+ * caller for no change in behaviour.
  *
  * Idempotent: on an already-correct database both statements are no-ops and
  * nothing is rewritten — no drop, no recreate, so a boot does not churn
@@ -199,7 +230,7 @@ export function ensureActivityTriggers(db: Db): void {
   const bodies = new Map(
     db
       .all<{ name: string; sql: string | null }>(
-        sql`SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name IN ('activity', 'member_ratings', 'task_estimates')`,
+        sql`SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name IN ('activity', 'member_ratings', 'task_estimates', 'task_claim_estimates')`,
       )
       .map((row) => [row.name, row.sql ?? '']),
   );
@@ -217,7 +248,7 @@ export function ensureActivityTriggers(db: Db): void {
 
   if (broken.length > 0) {
     throw new Error(
-      `activity (SPEC §4.8), member_ratings (§4.21) and task_estimates (§4.32) are append-only and their triggers are not enforcing it: ${broken.join(', ')}. Refusing to start without the guarantee.`,
+      `activity (SPEC §4.8), member_ratings (§4.21), task_estimates (§4.32) and task_claim_estimates (§4.34) are append-only and their triggers are not enforcing it: ${broken.join(', ')}. Refusing to start without the guarantee.`,
     );
   }
 }
