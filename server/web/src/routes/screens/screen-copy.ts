@@ -65,6 +65,14 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'Nothing waiting for review',
     body: 'When an agent finishes a task it lands here with its proof — commits, pull request, tests. Accept it into done, or send it back with a reason the agent reads first.',
   },
+  /*
+   * Usage (D-084, LAI-769): empty until developers share local activity, so
+   * the copy says where tokens come from.
+   */
+  '/usage': {
+    headline: 'No token usage yet',
+    body: 'Tokens arrive from developers who share local activity: their agents’ own session files are counted on their machines and sent as totals per day.',
+  },
   '/unlisted': {
     headline: 'Nothing unlisted',
     body: 'Agents log work here when they notice something outside any project — a stale dependency, a broken script. Promote what matters into a task; dismiss the rest.',

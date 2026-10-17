@@ -49,9 +49,10 @@ import {
  *
  * The board takes 30 reports at once and one more every 120 s (SPEC §6.3).
  * A run sends at most {@link LOOKBACK_REPORTS_PER_RUN} look-back reports, and
- * after sending `n` waits `(n + 1) × 120 s` before the next look-back report:
- * the time the board needs to give back those and the snapshot a sync sends
- * once per interval. So look-back and snapshots together never ask for more
+ * after sending `n` waits `(n + 1 + u) × 120 s` before the next look-back
+ * report: the time the board needs to give back those, the snapshot a sync
+ * sends once per interval, and the `u` token usage reports the same run sent
+ * (LAI-769). So look-back and snapshots together never ask for more
  * than the bucket refills.
  */
 
@@ -348,6 +349,11 @@ export interface LookbackContext {
   readonly signal?: AbortSignal;
   /** `Date.now()` past which no new report starts; the run's hard deadline stays the backstop. */
   readonly stopAt?: number;
+  /**
+   * Other reports this run already sent beyond the snapshot — token usage
+   * (D-084, LAI-769) — which the pause after a look-back report gives back too.
+   */
+  readonly extraReports?: number;
 }
 
 /** What `backfill` counts, before it asks: the repos and their census. */
@@ -499,7 +505,7 @@ export async function lookbackStep(ctx: LookbackContext, plan?: Plan): Promise<L
 
   let sent = 0;
   let keys = 0;
-  const pause = (): number => nowS + (sent + 1) * REPORT_REFILL_S;
+  const pause = (): number => nowS + (sent + 1 + (ctx.extraReports ?? 0)) * REPORT_REFILL_S;
   for (const report of reports) {
     if (sent >= LOOKBACK_REPORTS_PER_RUN || stopped()) break;
     const answer = await ctx.send(report.body);

@@ -18,6 +18,7 @@ import {
   type ReportDay,
   setActivitySharing,
 } from '../../src/services/local-activity.ts';
+import { recordTokenUsage } from '../../src/services/token-usage.ts';
 import { freshDb, seed, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -642,6 +643,8 @@ describe('what the server holds, for the person it is about', () => {
           sessions: 3,
           commits_local: 0,
           pushed_commits: 1,
+          tokens: 0,
+          cache_read: 0,
         },
         {
           day: '2026-10-02',
@@ -649,11 +652,86 @@ describe('what the server holds, for the person it is about', () => {
           sessions: 0,
           commits_local: 2,
           pushed_commits: 0,
+          tokens: 0,
+          cache_read: 0,
         },
       ],
       collectors: 2,
       oldest_day: '2026-10-02',
     });
+  });
+
+  it('names their token totals too (D-084 item 4), a day of tokens alone included', () => {
+    recordTokenUsage(
+      t.db,
+      actor(bea),
+      {
+        v: 1,
+        collector_id: COLLECTOR_A,
+        tz: 'UTC',
+        usage: true,
+        days: [
+          {
+            day: '2026-10-05',
+            rows: [
+              {
+                agent: 'claude-code',
+                model: 'claude-opus-5-5',
+                task: null,
+                input: 1,
+                output: 20,
+                cache_write: 300,
+                cache_read: 4_000,
+              },
+            ],
+          },
+        ],
+      },
+      NOW,
+    );
+    const view = getOwnLocalActivity(t.db, actor(bea), 14, NOW);
+    expect(view.days.find((d) => d.day === '2026-10-05')).toEqual({
+      day: '2026-10-05',
+      prompts_by_agent: {},
+      sessions: 0,
+      commits_local: 0,
+      pushed_commits: 0,
+      tokens: 321,
+      cache_read: 4_000,
+    });
+    expect(view.days.map((d) => d.day)).toEqual([TODAY, '2026-10-05', '2026-10-02']);
+  });
+
+  it('counts token rows as held, so someone with only tokens can still delete them', () => {
+    switches(true, cal, true);
+    recordTokenUsage(
+      t.db,
+      actor(cal),
+      {
+        v: 1,
+        collector_id: COLLECTOR_A,
+        tz: 'UTC',
+        usage: true,
+        days: [
+          {
+            day: '2026-09-20',
+            rows: [
+              {
+                agent: 'codex',
+                model: 'gpt-5.2-codex',
+                task: null,
+                input: 1,
+                output: 1,
+                cache_write: 0,
+                cache_read: 0,
+              },
+            ],
+          },
+        ],
+      },
+      NOW,
+    );
+    expect(getOwnLocalActivity(t.db, actor(cal), 14, NOW).oldest_day).toBe('2026-09-20');
   });
 
   it('still shows what is held after sharing is turned off — it is theirs to see and delete', () => {

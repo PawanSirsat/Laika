@@ -1,12 +1,12 @@
-import { and, desc, eq, gte, lte, min, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, lte, min, ne, sql } from 'drizzle-orm';
 import { AGENT_CLIENTS, type AgentClient } from '../auth/agent-clients.ts';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type LocalActivityScope } from '../db/enums.ts';
 import { requireOrgId } from '../db/orgs.ts';
-import { localActivityDays, orgs, pushedCommitKeys, users } from '../db/schema.ts';
+import { localActivityDays, orgs, pushedCommitKeys, tokenUsageDays, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan } from '../policy/can.ts';
+import { assertCan, can } from '../policy/can.ts';
 import { addDays, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
 
 /**
@@ -84,6 +84,15 @@ export interface ActivitySharingView {
   enabled: boolean;
   scope: LocalActivityScope;
   min_sync_interval_s: number;
+  /**
+   * Asked with `?collector_id=`, by a caller who may send (D-084, LAI-769
+   * review 1): the days in the usage window that **other** collectors of this
+   * person already hold tokens for — dates only, never a count. The collector
+   * leaves those days' older tokens out of a 30-day backfill, so a machine
+   * counted under an earlier collector, or another machine, is not counted
+   * again. Absent otherwise.
+   */
+  usage_days_elsewhere?: string[];
 }
 
 export interface ReportDay {
@@ -121,6 +130,9 @@ export interface OwnLocalDay {
   sessions: number;
   commits_local: number;
   pushed_commits: number;
+  /** Their agents' tokens that day, cache reads apart (D-084 items 4 and 8). */
+  tokens: number;
+  cache_read: number;
 }
 
 /** What the server holds for the caller — the consent preview (§6.4). */
@@ -180,10 +192,46 @@ function sharingView(s: Switches): ActivitySharingView {
   };
 }
 
-/** `GET /me/activity-sharing`: a session or any token of theirs may ask. */
-export function getActivitySharing(db: Db, actor: ResolvedActor): ActivitySharingView {
+/** How far back `usage_days_elsewhere` looks: the usage report's window, a day spare. */
+const USAGE_HELD_DAYS_BACK = 32;
+
+/**
+ * `GET /me/activity-sharing`: a session or any token of theirs may ask. With
+ * a collector id, from a caller who may send and with both switches on, it
+ * also names the days other collectors hold tokens for (see the view).
+ */
+export function getActivitySharing(
+  db: Db,
+  actor: ResolvedActor,
+  collectorId?: string,
+  now: number = Date.now(),
+): ActivitySharingView {
   assertCan(actor, 'activity_sharing.read_own');
-  return sharingView(switchesFor(db, actor.userId));
+  const switches = switchesFor(db, actor.userId);
+  const view = sharingView(switches);
+  if (
+    collectorId === undefined ||
+    !switches.org ||
+    !switches.user ||
+    !can(actor, 'local_activity.send_own')
+  ) {
+    return view;
+  }
+  const from = addDays(dayIn('UTC', now), -USAGE_HELD_DAYS_BACK);
+  const days = db
+    .selectDistinct({ day: tokenUsageDays.day })
+    .from(tokenUsageDays)
+    .where(
+      and(
+        eq(tokenUsageDays.userId, actor.userId),
+        gte(tokenUsageDays.day, from),
+        ne(tokenUsageDays.collectorId, collectorId.toLowerCase()),
+      ),
+    )
+    .orderBy(tokenUsageDays.day)
+    .all()
+    .map((r) => r.day);
+  return { ...view, usage_days_elsewhere: days };
 }
 
 export interface SetActivitySharingInput {
@@ -255,7 +303,7 @@ function refuse(reason: string, message: string, extra: Record<string, unknown> 
  * reaches back `LOOKBACK_DAYS_MAX` and its count is bounded by the window and
  * the body limit.
  */
-function assertReportDays(
+export function assertReportDays(
   report: { tz: string; days: readonly { day: string }[] },
   now: number,
   window: { daysBack: number; maxDays: number },
@@ -490,7 +538,15 @@ export function getOwnLocalActivity(
   const at = (day: string): OwnLocalDay => {
     let entry = byDay.get(day);
     if (entry === undefined) {
-      entry = { day, prompts_by_agent: {}, sessions: 0, commits_local: 0, pushed_commits: 0 };
+      entry = {
+        day,
+        prompts_by_agent: {},
+        sessions: 0,
+        commits_local: 0,
+        pushed_commits: 0,
+        tokens: 0,
+        cache_read: 0,
+      };
       byDay.set(day, entry);
     }
     return entry;
@@ -506,6 +562,27 @@ export function getOwnLocalActivity(
     }
   }
   for (const [day, n] of pushed) at(day).pushed_commits = n;
+  // Their token totals (D-084 item 4): the consent screen names what is held.
+  for (const row of db
+    .select({
+      day: tokenUsageDays.day,
+      tokens: sql<number>`sum(${tokenUsageDays.input} + ${tokenUsageDays.output} + ${tokenUsageDays.cacheWrite})`,
+      cacheRead: sql<number>`sum(${tokenUsageDays.cacheRead})`,
+    })
+    .from(tokenUsageDays)
+    .where(
+      and(
+        eq(tokenUsageDays.userId, actor.userId),
+        gte(tokenUsageDays.day, start),
+        lte(tokenUsageDays.day, end),
+      ),
+    )
+    .groupBy(tokenUsageDays.day)
+    .all()) {
+    const entry = at(row.day);
+    entry.tokens = Number(row.tokens);
+    entry.cache_read = Number(row.cacheRead);
+  }
 
   const oldest = db
     .select({ day: min(localActivityDays.day) })
@@ -517,7 +594,14 @@ export function getOwnLocalActivity(
     .from(pushedCommitKeys)
     .where(eq(pushedCommitKeys.userId, actor.userId))
     .get();
-  const oldestDay = [oldest?.day, oldestKey?.day]
+  // Token rows are held too (D-084): someone with only those can still see
+  // that something is kept, and delete it.
+  const oldestTokens = db
+    .select({ day: min(tokenUsageDays.day) })
+    .from(tokenUsageDays)
+    .where(eq(tokenUsageDays.userId, actor.userId))
+    .get();
+  const oldestDay = [oldest?.day, oldestKey?.day, oldestTokens?.day]
     .filter((d): d is string => d !== null && d !== undefined)
     .sort()[0];
 
@@ -531,12 +615,17 @@ export function getOwnLocalActivity(
   };
 }
 
-/** `DELETE /me/local-activity`: every local row and key of theirs, now. */
+/**
+ * `DELETE /me/local-activity`: every local row and key of theirs, now — and
+ * their token usage too (D-084 item 4): it came from the same collector, under
+ * the same consent, so *delete my history* reaches it.
+ */
 export function deleteOwnLocalActivity(db: Db, actor: ResolvedActor): void {
   assertCan(actor, 'local_activity.delete_own');
   db.transaction((tx) => {
     tx.delete(localActivityDays).where(eq(localActivityDays.userId, actor.userId)).run();
     tx.delete(pushedCommitKeys).where(eq(pushedCommitKeys.userId, actor.userId)).run();
+    tx.delete(tokenUsageDays).where(eq(tokenUsageDays.userId, actor.userId)).run();
   });
 }
 

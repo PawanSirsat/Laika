@@ -72,7 +72,7 @@ laika activity on --agent copilot # also install for an agent not detected
 laika activity status             # the exact JSON the next sync sends, and the last result
 laika activity sync               # send now, if the board's interval allows it
 laika activity emails a@b c@d     # extra author emails that count as yours (--clear)
-laika activity backfill           # a year of your pushed commits, once: shows them, asks, sends
+laika activity backfill           # 30 days of token totals and a year of your pushed commits, once: shows, asks, sends
 laika activity backfill --days 90 --yes ~/src/other-repo   # a shorter window, no question, one more repo
 laika activity off                # remove the hooks and delete ~/.laika/activity
 ```
@@ -158,10 +158,63 @@ nothing changes on the board: keys are a set there. Each repo's look-back is
 recorded in `~/.laika/activity/lookback.json` (0600, never sent), so the
 automatic one never repeats; `off` deletes it with the rest.
 
-**Sessions nobody is typing in count nothing.** The hook does nothing at all —
-no event, no repo, no sync — when `OMNIGENT=1` (Omnigent sets it in every
-process it launches), `CI` is set, or `LAIKA_ACTIVITY_SKIP` is set. `on` and
-`status` say so.
+**Token usage** (LAI-769, D-084). The same sync reads the token counts your
+agents' own session files already record — Claude Code transcripts
+(`~/.claude/projects`, or `$CLAUDE_CONFIG_DIR`), Codex rollouts
+(`~/.codex/sessions`, or `$CODEX_HOME`) and Gemini CLI sessions
+(`~/.gemini/tmp`) — and sends, per local day, agent and model, the input,
+output, cache-write and cache-read tokens, in a report marked `usage` on the
+same endpoint, after the snapshot (SPEC §6.4). From each record only its usage
+numbers, model id and time are kept; **never** what was said, tool input,
+paths, branches or session ids. Copilot CLI, Cursor and Windsurf keep no token
+counts on the machine, so they have none to send.
+
+- **Counted once.** Claude Code writes one reply's usage on several lines and
+  copies history into a forked session's file: each reply counts once, by its
+  message id across every file, at the largest value of each field (summing
+  every line over-counts about 2.1×). Codex keeps a running total: a day is the
+  difference across it. Gemini CLI rewrites its file each turn: it is read
+  again when it changes, each message once.
+- **Cheap.** Files are read from where the last sync stopped, to the last
+  complete line; a directory is listed again only when its mtime moved. With
+  nothing new, the step costs a few `stat`s — measured 17–19 ms in a fresh
+  process over 785 transcripts. The first read of a busy machine takes
+  seconds (2.1 GB in 3.2 s), in the background sync, never in a hook.
+- **Totals replace.** Only days whose totals changed since the board last took
+  them are sent, each whole; the board replaces that machine's day, so a retry
+  never counts twice.
+- **Since when.** From when you turned sharing on, unless you say yes to the
+  last 30 days: `on` asks once (`--yes`/`--no` answer it), and `backfill`
+  shows the 30 days it found — tokens per agent, days — and asks before sending
+  (`--yes` does not ask). A no is kept until a later `backfill` is answered yes.
+- **Scope.** With `laika-repos`, only sessions whose working directory is in a
+  repo carrying the Laika block count.
+- **Automated sessions' tokens are not yours** (LAI-775, the owner's
+  decision). A session file does not say who started it, so the hook keeps the
+  session id of every session started with `OMNIGENT=1`, `CI` or
+  `LAIKA_ACTIVITY_SKIP` in `~/.laika/activity/skip-sessions` (0600, never
+  sent), and the sync leaves that session's files out — its subagents too,
+  which share its id. **Sessions from before activity was on here cannot be
+  told apart** and are counted; `on` and `backfill` say so before they ask.
+- **Counted once across collectors.** `laika activity off` deletes everything
+  here, the collector id included, and the board keeps what it was sent. So the
+  30 days go with the board's answer of which days it already holds tokens for
+  from another collector (`usage_days_elsewhere`, dates only): those days send
+  only what came after sharing went on. A day that does carry older tokens goes
+  marked `backfill` the first time, and the board replaces every collector's
+  rows for it — a client that got this wrong still cannot count a day twice.
+- **Codex per-response records** (`token_usage_record`), when a rollout has
+  them, are what counts — each response once across every rollout, so a fork
+  that copies its parent's history is not counted twice.
+- What was read is kept in `~/.laika/activity/usage-index.json` and
+  `usage-data.json` (0600, never sent); *Delete my local-activity history* in
+  the web app deletes the board's token rows too.
+
+**Sessions nobody is typing in count nothing.** The hook counts nothing — no
+event, no repo, no sync — when `OMNIGENT=1` (Omnigent sets it in every process
+it launches), `CI` is set, or `LAIKA_ACTIVITY_SKIP` is set; it only keeps that
+session's id, from its start and end payloads (never a prompt's), so its
+tokens are left out too (LAI-775). `on` and `status` say so.
 
 **Which board.** The one `laika activity on` was run against, recorded in
 `state.json`, with that board's token (from `~/.laika/env` first). A session

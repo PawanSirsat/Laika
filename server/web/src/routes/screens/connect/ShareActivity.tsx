@@ -14,6 +14,7 @@ import {
   type OwnLocalActivity,
 } from '../../../api/local-activity.ts';
 import type { AgentClient } from '../../../api/agent-clients.ts';
+import { compactTokens, exactTokens } from '../../../api/usage.ts';
 import { agentLabel } from '../profile/activity-derive.ts';
 
 /** The collector's command (LAI-752): it checks sharing first, then installs. */
@@ -160,8 +161,9 @@ export function ShareActivity({ canManageOrg }: { readonly canManageOrg: boolean
     <div className="conn-extra share-activity" data-extra="activity">
       <p className="conn-body">
         Your own machine can send daily counts to your profile’s <strong>Activity</strong> — so the
-        board shows the work that happens before a task moves. Owners and admins see it on your
-        profile; it never feeds a rating or a score.
+        board shows the work that happens before a task moves — and your agents’ token counts to{' '}
+        <strong>Usage</strong>. Owners and admins see them on your profile; they never feed a rating
+        or a score.
       </p>
 
       <div className="share-lists">
@@ -172,6 +174,10 @@ export function ShareActivity({ canManageOrg }: { readonly canManageOrg: boolean
             <li>How many agent sessions you started</li>
             <li>How many of your commits are not on any remote yet</li>
             <li>A one-way key for each commit already pushed, so it counts once</li>
+            <li>
+              Your agents’ token counts per agent and model — input, output and cache — from their
+              own session files (Claude Code, Codex, Gemini CLI)
+            </li>
           </ul>
           <p className="conn-note">
             Commits count from the day you turn sharing on, and merge commits never count.
@@ -182,7 +188,7 @@ export function ShareActivity({ canManageOrg }: { readonly canManageOrg: boolean
           <ul className="share-list" data-list="never">
             <li>Prompt text, or anything an agent wrote</li>
             <li>File names, repository names or paths</li>
-            <li>Remote URLs or branch names</li>
+            <li>Remote URLs, branch names or session ids</li>
             <li>Commit messages, author emails or commit ids</li>
           </ul>
         </div>
@@ -279,6 +285,7 @@ export function ShareActivity({ canManageOrg }: { readonly canManageOrg: boolean
                 <th scope="col">Sessions</th>
                 <th scope="col">Not pushed</th>
                 <th scope="col">Pushed</th>
+                <th scope="col">Tokens</th>
               </tr>
             </thead>
             <tbody>
@@ -294,6 +301,11 @@ export function ShareActivity({ canManageOrg }: { readonly canManageOrg: boolean
                     <td>{day.sessions}</td>
                     <td>{day.commits_local}</td>
                     <td>{day.pushed_commits}</td>
+                    <td
+                      title={`${exactTokens(day.tokens)} tokens, ${exactTokens(day.cache_read)} cache reads`}
+                    >
+                      {compactTokens(day.tokens)}
+                    </td>
                   </tr>
                 );
               })}

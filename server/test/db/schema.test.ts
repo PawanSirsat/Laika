@@ -105,6 +105,8 @@ describe('migrations', () => {
     'task_tags',
     'task_watchers',
     'tasks',
+    // LAI-769, D-084: agents' token usage per day.
+    'token_usage_days',
     'tokens',
     'unlisted_work',
     'users',

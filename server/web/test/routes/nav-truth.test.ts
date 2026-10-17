@@ -130,7 +130,9 @@ void describe('the sidebar offers nothing that does not exist', () => {
       // **Capacity is back, as one global page** (owner, 2026-10-15, LAI-754);
       // it was a space tab from LAI-251. **Review is ungated** (D-082,
       // LAI-758): everyone signed in has a queue of the projects they act on.
-      ['Capacity', 'Review', 'Connect', 'Tokens', 'Organisation'],
+      // **Usage is ungated** (D-084, LAI-769): a member reads their spaces'
+      // totals, an owner or admin the organisation's.
+      ['Capacity', 'Review', 'Usage', 'Connect', 'Tokens', 'Organisation'],
     );
   });
 
@@ -164,11 +166,11 @@ void describe('the sidebar offers nothing that does not exist', () => {
     assert.deepEqual(empty, [], 'a group is empty');
     assert.deepEqual(
       routesInGroup('ORG', () => true).map((r) => r.path),
-      ['/capacity', '/review', '/unlisted'],
+      ['/capacity', '/review', '/usage', '/unlisted'],
     );
     assert.deepEqual(
       routesInGroup('ORG').map((r) => r.path),
-      ['/capacity', '/review'],
+      ['/capacity', '/review', '/usage'],
       'Unlisted work is offered to a reader who cannot open it',
     );
   });

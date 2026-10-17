@@ -397,6 +397,22 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'local_activity.delete_own':
       return true;
 
+    // | View the organisation's token usage | ✓ | ✓ | — | — |
+    // | View anyone's token usage, per person | ✓ (session only) | ✓ (session only) | — | — |
+    // | View own token usage | ✓ (session only) | … | ✓ (session only) |
+    //
+    // D-084 item 7 (LAI-769): owners and admins see everyone, a developer
+    // their own. The organisation's figure is its own row rather than
+    // `audit_log.export` borrowed — the two answer alike today and mean
+    // different things. A member reads a project's totals through §3.2's
+    // `usage.read_project`, and never a per-person split.
+    case 'usage.read_org':
+    case 'usage.read_people':
+      return isAdminUp;
+
+    case 'usage.read_own':
+      return true;
+
     default:
       return assertNever(action);
   }
@@ -488,6 +504,13 @@ function canProjectAction(
     // | Apply a meeting-diff proposal | ✓ | ✓ | — |
     case 'meeting_proposal.apply':
       return isMemberUp;
+
+    // | Read a project's token totals | ✓ | ✓ | ✓ |
+    //
+    // Totals only (D-084 item 7, LAI-769): whoever reads the project reads
+    // what its tasks cost. A per-person split is §3.1's `usage.read_people`.
+    case 'usage.read_project':
+      return true;
 
     default:
       return assertNever(action);

@@ -31,6 +31,7 @@ import {
   type Scope,
 } from './activity-store.ts';
 import { lookbackStep, type LookbackOutcome } from './activity-lookback.ts';
+import { usageRoots, usageStep, type UsageOutcome } from './activity-usage.ts';
 import { readSettings } from './config.ts';
 import { readEnvFile } from './whoami.ts';
 
@@ -164,6 +165,12 @@ export interface Sharing {
   readonly enabled: boolean;
   readonly scope: Scope;
   readonly min_sync_interval_s: number;
+  /**
+   * Asked with this collector's id (SPEC §6.4, LAI-769 review 1): the days
+   * other collectors of this person hold tokens for — dates only. Absent from
+   * an older board, and then the usage step sends no older tokens.
+   */
+  readonly usage_days_elsewhere?: readonly string[];
 }
 
 export type Call<T> =
@@ -264,8 +271,13 @@ export async function getSharing(
   creds: Credentials,
   nowMs: number,
   abort?: AbortSignal,
+  collector?: string,
 ): Promise<Call<Sharing>> {
-  const response = await request(creds, 'GET', '/api/v1/me/activity-sharing', undefined, abort);
+  const path =
+    collector === undefined
+      ? '/api/v1/me/activity-sharing'
+      : `/api/v1/me/activity-sharing?collector_id=${encodeURIComponent(collector)}`;
+  const response = await request(creds, 'GET', path, undefined, abort);
   if ('error' in response) return { ok: false, message: response.error };
   if (!response.ok) return failed(response, nowMs);
   try {
@@ -280,6 +292,13 @@ export async function getSharing(
         enabled: body.enabled,
         scope: body.scope === 'laika-repos' ? 'laika-repos' : 'agent-repos',
         min_sync_interval_s: clampInterval(body.min_sync_interval_s),
+        ...(Array.isArray(body.usage_days_elsewhere)
+          ? {
+              usage_days_elsewhere: (body.usage_days_elsewhere as unknown[]).filter(
+                (d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d),
+              ),
+            }
+          : {}),
       },
     };
   } catch {
@@ -368,6 +387,8 @@ export type SyncOutcome =
       readonly deferredKeys: number;
       /** What the look-back did after the snapshot, when there was one to do. */
       readonly lookback?: LookbackOutcome;
+      /** What the token usage step did (D-084), when it sent or was refused. */
+      readonly usage?: UsageOutcome;
     }
   | { readonly kind: 'rate-limited'; readonly nextAt: number }
   | { readonly kind: 'refused'; readonly message: string }
@@ -515,7 +536,7 @@ async function syncLocked(
     // --- the switch and the scope, every time -----------------------------------
     // Cheap, and the only way a narrowed scope or a switch turned off takes
     // effect on the very next sync rather than a day later.
-    const sharing = await getSharing(creds, ctx.nowMs(), signal);
+    const sharing = await getSharing(creds, ctx.nowMs(), signal, collectorId(paths));
     if (!sharing.ok) {
       return fail(`checking whether sharing is on: ${sharing.message}`, sharing.status);
     }
@@ -563,6 +584,27 @@ async function syncLocked(
         last_result: { at: nowS, outcome: 'sent', accepted_days: answer.value.accepted_days },
       });
 
+      // Token usage (D-084, LAI-769), after the snapshot and inside the same
+      // lock and deadline: the days whose totals changed since the board last
+      // accepted them. A board that refuses it still took the snapshot.
+      const usage = await usageStep({
+        paths,
+        roots: usageRoots(ctx.home, ctx.env),
+        state,
+        collectorId: collectorId(paths),
+        tz: ianaTimeZone(ctx.tz),
+        nowS,
+        send: (body) => putActivity(creds, body, ctx.nowMs(), signal),
+        heldElsewhere: sharing.value.usage_days_elsewhere,
+        signal,
+        stopAt: softStop,
+      });
+      if (signal.aborted) throw new Abandoned();
+      if (usage.kind === 'off') {
+        save(stopCollecting(paths, state, nowS));
+        return { kind: 'off', recheckAt: nowS + DAY_S };
+      }
+
       // The look-back (D-080), after the snapshot and inside the same lock and
       // deadline: a repo seen for the first time, or a look-back under way.
       const lookback = await lookbackStep({
@@ -576,6 +618,8 @@ async function syncLocked(
         send: (body) => putActivity(creds, body, ctx.nowMs(), signal),
         signal,
         stopAt: softStop,
+        // The usage reports just sent drew on the same bucket.
+        extraReports: usage.kind === 'sent' ? usage.reports : 0,
       });
       if (signal.aborted) throw new Abandoned();
       if (lookback.kind === 'off') {
@@ -587,6 +631,7 @@ async function syncLocked(
         acceptedDays: answer.value.accepted_days,
         deferredKeys: snapshot.deferredKeys,
         ...(lookback.kind === 'idle' ? {} : { lookback }),
+        ...(usage.kind === 'idle' || usage.kind === 'waiting' ? {} : { usage }),
       };
     }
 

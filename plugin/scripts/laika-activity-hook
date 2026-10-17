@@ -30,13 +30,21 @@
 # that `laika activity sync` rewrites from GET /api/v1/me/activity-sharing —
 # says `"collect":true`. Read with the `read` builtin: no fork.
 #
-# ## Sessions nobody is typing in (LAI-757, D-080)
+# ## Sessions nobody is typing in (LAI-757, D-080; LAI-775)
 #
 # A session started with `OMNIGENT=1` (Omnigent sets it in every process it
 # launches), a non-empty `CI`, or a non-empty `LAIKA_ACTIVITY_SKIP` is not the
-# developer's, and every mode is a no-op for it: stdin is drained and the hook
-# exits before state.json is read — no event, no repo, no sync. Under zsh the
-# check, like the drain before it, is builtins only.
+# developer's, and counts nothing: stdin is drained and the hook exits before
+# state.json is read — no event, no repo, no sync. Under zsh the check, like
+# the drain before it, is builtins only.
+#
+# **One thing is kept for it** (LAI-775, the owner's decision): its session id,
+# so `laika activity sync` leaves that session's tokens out — its session files
+# sit beside the developer's own. Only the session-start and session-end
+# payloads are read for it, never a prompt's, and from them only a
+# `"session_id"` that is a plain id (letters, digits, `.`, `_`, `-`, at most
+# 128). It is appended to ~/.laika/activity/skip-sessions, 0600, and never
+# sent. Nothing at all when activity is not on here (no ~/.laika/activity).
 #
 # Owned by SHELL (plugin/). LAI-752, LAI-757.
 
@@ -48,6 +56,17 @@ MODE="${1:-}"
 AGENT="${2:-}"
 case "$AGENT" in '' | *[!a-z0-9-]*) AGENT=other ;; esac
 
+# An automated session's start or end payload is the only one ever read, and
+# only for its id: neither carries a prompt (LAI-775). The prompt path pays one
+# test for it, which is all its budget allows.
+KEEP=no
+PAYLOAD=''
+if [ "$MODE" != prompt ]; then
+  if [ "${OMNIGENT:-}" = 1 ] || [ -n "${CI:-}" ] || [ -n "${LAIKA_ACTIVITY_SKIP:-}" ]; then
+    case "$MODE" in session-start | session-end) KEEP=yes ;; esac
+  fi
+fi
+
 # --- drain stdin, and the time ------------------------------------------------
 # First, whatever happens next: an agent writing the prompt to a hook that
 # exited unread would get EPIPE. A terminal on stdin means somebody ran this
@@ -55,15 +74,44 @@ case "$AGENT" in '' | *[!a-z0-9-]*) AGENT=other ;; esac
 NOW=''
 if [ -n "${ZSH_VERSION:-}" ] && zmodload zsh/datetime zsh/system; then
   # -o 1 writes what was read to fd 1, which is /dev/null: nothing is stored.
-  [ -t 0 ] || while sysread -o 1 -s 65536; do :; done
+  if [ "$KEEP" = yes ]; then
+    [ -t 0 ] || { sysread -s 65536 PAYLOAD; while sysread -o 1 -s 65536; do :; done; }
+  else
+    [ -t 0 ] || while sysread -o 1 -s 65536; do :; done
+  fi
   NOW="$EPOCHSECONDS"
 else
-  [ -t 0 ] || cat >/dev/null
+  if [ "$KEEP" = yes ]; then
+    [ -t 0 ] || { PAYLOAD="$(head -c 65536)"; cat >/dev/null; }
+  else
+    [ -t 0 ] || cat >/dev/null
+  fi
   NOW="${EPOCHSECONDS:-}"
 fi
 
-# --- an automated session: nothing at all --------------------------------------
+# --- an automated session: nothing counted, its id kept -------------------------
 if [ "${OMNIGENT:-}" = 1 ] || [ -n "${CI:-}" ] || [ -n "${LAIKA_ACTIVITY_SKIP:-}" ]; then
+  if [ "$KEEP" = yes ] && [ -d "$HOME/.laika/activity" ]; then
+    LC_ALL=C
+    SID=''
+    REST="${PAYLOAD#*\"session_id\"}"
+    if [ "$REST" != "$PAYLOAD" ]; then
+      GAP="${REST%%\"*}"
+      VALUE="${REST#*\"}"
+      SID="${VALUE%%\"*}"
+      # A string value straight after the key — only `:` and spaces between —
+      # and closed by its quote; a plain id, nothing that could be anything else.
+      case "$GAP" in *[!:\ ]*) SID='' ;; esac
+      [ "$SID" = "$VALUE" ] && SID=''
+      case "$SID" in '' | *[!A-Za-z0-9._-]*) SID='' ;; esac
+      [ "${#SID}" -gt 128 ] && SID=''
+    fi
+    if [ -n "$SID" ]; then
+      case "$NOW" in '' | *[!0-9]*) NOW="$(date +%s)" ;; esac
+      # One printf, one O_APPEND write; umask 077 makes the file 0600.
+      printf '%s %s\n' "$NOW" "$SID" >>"$HOME/.laika/activity/skip-sessions"
+    fi
+  fi
   exit 0
 fi
 

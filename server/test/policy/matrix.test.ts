@@ -97,6 +97,13 @@ const ORG_MATRIX: OrgRow[] = [
   // | Read and delete own local activity | ✓ (session only) | … | ✓ (session only) |
   ['local_activity.read_own', true, true, true, true],
   ['local_activity.delete_own', true, true, true, true],
+  // | View the organisation's token usage | ✓ | ✓ | — | — |
+  // D-084 item 7 (LAI-769): totals with no person in them; a token may read it.
+  ['usage.read_org', true, true, false, false],
+  // | View anyone's token usage, per person | ✓ (session only) | ✓ (session only) | — | — |
+  ['usage.read_people', true, true, false, false],
+  // | View own token usage | ✓ (session only) | … | ✓ (session only) |
+  ['usage.read_own', true, true, true, true],
 ];
 
 describe('SPEC §3.1 — org-level matrix', () => {
@@ -194,6 +201,9 @@ const PROJECT_MATRIX: ProjectRow[] = [
   ['project.read', true, true, true],
   // | Apply a meeting-diff proposal | ✓ | ✓ | — |
   ['meeting_proposal.apply', true, true, false],
+  // | Read a project's token totals | ✓ | ✓ | ✓ |
+  // Totals only (D-084 item 7, LAI-769); the per-person split is §3.1's.
+  ['usage.read_project', true, true, true],
 ];
 
 /** An org `member` so the org role never grants implicit lead. */

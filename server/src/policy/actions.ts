@@ -43,6 +43,9 @@ export const ORG_ACTIONS = [
   'local_activity.send_own',
   'local_activity.read_own',
   'local_activity.delete_own',
+  'usage.read_org',
+  'usage.read_people',
+  'usage.read_own',
 ] as const;
 
 /** SPEC §3.2 — gated by project role, with org owner/admin holding implicit lead. */
@@ -62,6 +65,7 @@ export const PROJECT_ACTIONS = [
   'task.watch',
   'project.read',
   'meeting_proposal.apply',
+  'usage.read_project',
 ] as const;
 
 /**
@@ -119,6 +123,10 @@ export const READ_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // A collector reads whether it may send before it does — with whatever
   // token it has, a `read_only` one included (LAI-751).
   'activity_sharing.read_own',
+  // Token totals with no person in them (D-084 item 7, LAI-769): what an
+  // agent may read about the work, like the rest of a project.
+  'usage.read_org',
+  'usage.read_project',
 ]);
 
 export function isReadAction(action: Action): boolean {
@@ -160,4 +168,9 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // an agent's proof** (D-083, LAI-753). Setting it answers it in plaintext,
   // so an agent's token must not be able to mint one and vouch for itself.
   'webhook.configure',
+  // **Anybody's tokens, split by person** (D-084 item 7, LAI-769): the
+  // profile's rule, because a per-person figure is about a person. A token is
+  // how an agent acts, so not even the person's own token reads their own.
+  'usage.read_people',
+  'usage.read_own',
 ]);

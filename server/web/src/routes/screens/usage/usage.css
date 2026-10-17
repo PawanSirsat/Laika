@@ -1,0 +1,498 @@
+/*
+ * Usage (§11.4.2, D-084, LAI-769) and the profile's Tokens card, in the member
+ * profile's visual language: rounded cards, metric tiles with big monospace
+ * figures, (i) popovers. Tokens only — `theme-single-source.test.ts` forbids a
+ * colour literal — so both themes follow.
+ *
+ * One series everywhere (tokens without cache reads), so one hue: the accent,
+ * which holds 3:1 against the card in both themes. Bars rise from a shared
+ * baseline with 4px rounded data ends and a 2px gap; the axis is recessive.
+ *
+ * Layout is a container query on `.usage`, not the viewport: two cards across
+ * a laptop's content area, one on a phone, whatever the sidebar takes.
+ */
+
+.usage-page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.usage {
+  container: usage / inline-size;
+  padding: 0.875rem 1.125rem 1.5rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+/* --------------------------------------------------------------- toolbar */
+
+.usage-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.875rem;
+}
+
+.usage-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.usage-select-label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-muted);
+}
+
+.usage-dropdown {
+  min-width: 11rem;
+}
+
+.usage-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.usage-chip {
+  margin: 0;
+  padding: 0.3125rem 0.75rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-pill);
+  background: var(--bg-card);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.usage-chip:hover {
+  border-color: var(--accent-border);
+  color: var(--text-primary);
+}
+
+.usage-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.usage-chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--text-primary);
+}
+
+.usage-floor {
+  margin: 0;
+  max-width: 76ch;
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  color: var(--text-muted);
+}
+
+.usage-floor strong {
+  color: var(--text-secondary);
+}
+
+/* What a space cannot hold (review 1): said beside its figures, not hidden. */
+.usage-space-note {
+  margin: 0;
+  max-width: 76ch;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  color: var(--text-secondary);
+}
+
+.usage-space-note strong {
+  color: var(--text-primary);
+}
+
+.usage-space-note .usage-chip {
+  margin-left: 0.25rem;
+  padding: 0.125rem 0.625rem;
+  font-size: var(--text-xs);
+}
+
+/* ----------------------------------------------------------------- tiles */
+
+.usage-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+  gap: 0.625rem;
+  margin: 0;
+}
+
+.usage-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.6875rem 0.8125rem 0.75rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.usage-stat dd {
+  margin: 0;
+}
+
+.usage-stat-label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-muted);
+}
+
+.usage-stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.usage-stat-sub {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ----------------------------------------------------------------- cards */
+
+.usage-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.875rem;
+}
+
+@container usage (min-width: 52rem) {
+  .usage-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.usage-card,
+.usage-person {
+  gap: 0.75rem;
+}
+
+.usage-info {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+
+/* -------------------------------------------------------- bars over time */
+
+.usage-columns {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+  border-radius: var(--radius-card);
+}
+
+.usage-columns:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.usage-scale {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  border-bottom: 1px dashed var(--border-subtle);
+  padding-bottom: 0.125rem;
+}
+
+.usage-plot {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 9rem;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.usage-weeks .usage-plot {
+  height: 4.5rem;
+}
+
+.usage-col {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.usage-bar,
+.usage-week {
+  display: block;
+  width: 100%;
+  max-width: 1.5rem;
+  background: var(--accent);
+  border-radius: 4px 4px 0 0;
+  transition: background-color 120ms ease;
+}
+
+.usage-col[data-active='true'] .usage-bar,
+.usage-col[data-active='true'] .usage-week {
+  background: color-mix(in srgb, var(--accent) 72%, var(--text-primary));
+}
+
+.usage-col[data-active='true'] {
+  background: color-mix(in srgb, var(--accent-bg) 70%, transparent);
+  border-radius: 4px 4px 0 0;
+}
+
+.usage-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.usage-tip {
+  min-height: 1.25rem;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-tip strong {
+  color: var(--text-primary);
+}
+
+/* ------------------------------------------------------- bars per thing */
+
+.usage-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.usage-row {
+  display: grid;
+  grid-template-columns: minmax(0, 12rem) minmax(3rem, 1fr) auto;
+  grid-template-areas: 'name track value';
+  align-items: center;
+  gap: 0.375rem 0.75rem;
+  min-width: 0;
+}
+
+.usage-row-name {
+  grid-area: name;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+}
+
+.usage-row-name > a,
+.usage-row-name > code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.usage-row-track {
+  grid-area: track;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--bg-column);
+  overflow: hidden;
+}
+
+.usage-row-bar {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 0 4px 4px 0;
+}
+
+.usage-row-value {
+  grid-area: value;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.usage-row-note {
+  display: block;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-normal);
+  color: var(--text-muted);
+}
+
+.usage-no-data {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.usage-no-data .usage-row {
+  grid-template-columns: minmax(0, 12rem) 1fr;
+  grid-template-areas: 'name quiet';
+}
+
+.usage-row-quiet {
+  grid-area: quiet;
+  font-size: var(--text-sm);
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.usage-model {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+/* A name that opens the profile — the Organisation screen's quiet underline. */
+.usage-person-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-default);
+  text-underline-offset: 3px;
+}
+
+.usage-person-link:hover {
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}
+
+.usage-task {
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.usage-task:hover {
+  text-decoration: underline;
+}
+
+.usage-person-link:focus-visible,
+.usage-task:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.usage-task-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* On a phone, the bar goes under the name, across the card. */
+@container usage (max-width: 30rem) {
+  .usage-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'name value'
+      'track track';
+  }
+}
+
+/* ------------------------------------------------------- the person card */
+
+.usage-person-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
+  gap: 0.5rem 0.75rem;
+  margin: 0;
+}
+
+.usage-person-stats dt {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-muted);
+}
+
+.usage-person-stats dd {
+  margin: 0;
+}
+
+.usage-person-value {
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.usage-floor-mark {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0;
+  color: var(--text-muted);
+}
+
+.usage-person-lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 0.75rem 1.25rem;
+}
+
+.usage-person-h {
+  margin: 0 0 0.375rem;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-muted);
+}
+
+.usage-person .usage-row {
+  grid-template-columns: minmax(0, 9rem) minmax(2rem, 1fr) auto;
+}
+
+.usage-no-data-line {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* -------------------------------------------------------------- skeleton */
+
+.usage-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.usage-stat-skeleton {
+  height: 4.75rem;
+  background: var(--bg-column);
+}
+
+.usage-card-skeleton {
+  height: 13rem;
+  background: var(--bg-column);
+}

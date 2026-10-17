@@ -571,6 +571,8 @@ describe('the parser itself', () => {
     // GitHub record (LAI-766, D-083) is keyed by what GitHub names — a
     // repository and sha, a pull request, a commit's check — for the same
     // reason, and `task_round_github` is one row per round, keyed by it.
+    // `token_usage_days` (LAI-769, D-084) is a rollup replaced per (person,
+    // machine, day), the rowid its only key.
     const withoutId = [...specTables.entries()]
       .filter(([, fields]) => !fields.includes('id'))
       .map(([table]) => table)
@@ -586,6 +588,7 @@ describe('the parser itself', () => {
       'task_dependencies',
       'task_round_github',
       'task_tags',
+      'token_usage_days',
     ]);
   });
 
