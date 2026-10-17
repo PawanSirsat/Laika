@@ -7,7 +7,7 @@ priority: p1
 depends-on: []
 discovered-from:
 started: 2026-10-17T09:11:26Z
-status: review
+status: done
 finished: 2026-10-17T09:27:02Z
 ---
 
@@ -160,3 +160,7 @@ Each checked against the component that renders it, not the test alone.
   `server/` is another area). A load-sensitive 5s timeout is the same class of
   failure as this task's and could block a deploy the same way; it wants its
   own task.
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent) after one Claude review (APPROVE: test-only, assertions unchanged, waits bounded); merged on the owner's direct instruction. The migrate/build/parity timeouts under load are filed as LAI-768.
