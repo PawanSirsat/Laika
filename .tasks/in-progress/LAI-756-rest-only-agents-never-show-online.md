@@ -2,11 +2,12 @@
 id: LAI-756
 title: 'An agent that uses the REST API or the CLI never shows as online'
 area: server
-assignee: unclaimed
+assignee: owner-direct
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-17T06:49:03Z
 ---
 
 ## Goal
@@ -44,6 +45,9 @@ put it on `/api/v1/presence` as `client: omnigent` at once.
 
 ## Notes / context
 
+- **Claimed with LAI-755, LAI-756, LAI-730, LAI-744 and LAI-759 together:
+  cleanup release, owner's direct instruction** (docs/HANDOVER.md §4), one
+  builder on branch `build-cleanup`.
 - Workaround in use: polly now makes its board calls through `/mcp`.
 - `server/src/services/presence.ts` (`clientOf`, the presence queries) and
   `server/src/auth/tokens.ts` (`touchTokenUsage`, `recordMcpUse`).
