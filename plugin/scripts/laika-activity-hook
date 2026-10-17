@@ -56,15 +56,15 @@ MODE="${1:-}"
 AGENT="${2:-}"
 case "$AGENT" in '' | *[!a-z0-9-]*) AGENT=other ;; esac
 
-AUTOMATED=no
-if [ "${OMNIGENT:-}" = 1 ] || [ -n "${CI:-}" ] || [ -n "${LAIKA_ACTIVITY_SKIP:-}" ]; then
-  AUTOMATED=yes
-fi
 # An automated session's start or end payload is the only one ever read, and
-# only for its id: neither carries a prompt (LAI-775).
+# only for its id: neither carries a prompt (LAI-775). The prompt path pays one
+# test for it, which is all its budget allows.
 KEEP=no
-if [ "$AUTOMATED" = yes ]; then
-  case "$MODE" in session-start | session-end) KEEP=yes ;; esac
+PAYLOAD=''
+if [ "$MODE" != prompt ]; then
+  if [ "${OMNIGENT:-}" = 1 ] || [ -n "${CI:-}" ] || [ -n "${LAIKA_ACTIVITY_SKIP:-}" ]; then
+    case "$MODE" in session-start | session-end) KEEP=yes ;; esac
+  fi
 fi
 
 # --- drain stdin, and the time ------------------------------------------------
@@ -72,24 +72,25 @@ fi
 # exited unread would get EPIPE. A terminal on stdin means somebody ran this
 # by hand: there is nothing to drain, and reading would wait for them.
 NOW=''
-PAYLOAD=''
 if [ -n "${ZSH_VERSION:-}" ] && zmodload zsh/datetime zsh/system; then
-  if ! [ -t 0 ]; then
-    [ "$KEEP" = yes ] && sysread -s 65536 PAYLOAD
-    # -o 1 writes what was read to fd 1, which is /dev/null: nothing is stored.
-    while sysread -o 1 -s 65536; do :; done
+  # -o 1 writes what was read to fd 1, which is /dev/null: nothing is stored.
+  if [ "$KEEP" = yes ]; then
+    [ -t 0 ] || { sysread -s 65536 PAYLOAD; while sysread -o 1 -s 65536; do :; done; }
+  else
+    [ -t 0 ] || while sysread -o 1 -s 65536; do :; done
   fi
   NOW="$EPOCHSECONDS"
 else
-  if ! [ -t 0 ]; then
-    [ "$KEEP" = yes ] && PAYLOAD="$(head -c 65536)"
-    cat >/dev/null
+  if [ "$KEEP" = yes ]; then
+    [ -t 0 ] || { PAYLOAD="$(head -c 65536)"; cat >/dev/null; }
+  else
+    [ -t 0 ] || cat >/dev/null
   fi
   NOW="${EPOCHSECONDS:-}"
 fi
 
 # --- an automated session: nothing counted, its id kept -------------------------
-if [ "$AUTOMATED" = yes ]; then
+if [ "${OMNIGENT:-}" = 1 ] || [ -n "${CI:-}" ] || [ -n "${LAIKA_ACTIVITY_SKIP:-}" ]; then
   if [ "$KEEP" = yes ] && [ -d "$HOME/.laika/activity" ]; then
     LC_ALL=C
     SID=''
