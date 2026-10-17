@@ -7,7 +7,7 @@ priority: p1
 depends-on: []
 discovered-from:
 started: 2026-10-17T09:35:20Z
-status: review
+status: done
 finished: 2026-10-17T10:08:58Z
 ---
 
@@ -115,3 +115,7 @@ merged. Commits: `15c5ef66` server, `912b7df0` web, `321a69b6` SPEC.
 and also changed on `fix-capacity-flake`; take this branch's version and
 re-apply that branch's flake fix if it still applies.
 
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent) on the owner's direct instruction, after one Claude review. The review's one blocker (an agent's activity row on a revoked or expired token still put its person online) was fixed in `ce0c061d` with two tests that failed first; the fix was read by CHIEF before merge. The review's two other asks also landed: no agent `last_at` while presence is off, and a route test that an owner's own token gets no admin-only capacity fields. Follow-ups left open: an index on activity `(actor_id, actor_kind, created_at)` (Capacity scans the whole log, ~136 ms at 300 people × 1,000 rows), and the Heavy filter following the space selector.
