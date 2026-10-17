@@ -128,8 +128,9 @@ void describe('the sidebar offers nothing that does not exist', () => {
       // `Unlisted work` is gated on `audit_log.export` and `navRoutes()` here
       // takes no predicate, so it is absent by the same rule it always was.
       // **Capacity is back, as one global page** (owner, 2026-10-15, LAI-754);
-      // it was a space tab from LAI-251.
-      ['Capacity', 'Connect', 'Tokens', 'Organisation'],
+      // it was a space tab from LAI-251. **Review is ungated** (D-082,
+      // LAI-758): everyone signed in has a queue of the projects they act on.
+      ['Capacity', 'Review', 'Connect', 'Tokens', 'Organisation'],
     );
   });
 
@@ -163,11 +164,11 @@ void describe('the sidebar offers nothing that does not exist', () => {
     assert.deepEqual(empty, [], 'a group is empty');
     assert.deepEqual(
       routesInGroup('ORG', () => true).map((r) => r.path),
-      ['/capacity', '/unlisted'],
+      ['/capacity', '/review', '/unlisted'],
     );
     assert.deepEqual(
       routesInGroup('ORG').map((r) => r.path),
-      ['/capacity'],
+      ['/capacity', '/review'],
       'Unlisted work is offered to a reader who cannot open it',
     );
   });

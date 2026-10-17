@@ -20,11 +20,17 @@ const ALL: TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review', 'done', '
  */
 
 describe('the §5 forward path, for an agent', () => {
-  it('allows every edge the diagram draws', () => {
+  it('allows every edge the diagram draws, up to review', () => {
     expect(canTransition('backlog', 'todo', 'agent')).toBe(true);
     expect(canTransition('todo', 'in_progress', 'agent')).toBe(true);
     expect(canTransition('in_progress', 'review', 'agent')).toBe(true);
-    expect(canTransition('review', 'done', 'agent')).toBe(true);
+  });
+
+  it('stops at review: the diagram’s last edge is a person’s (D-082, audit H6)', () => {
+    // `review → done` was in this table until LAI-758, and the agent rule read
+    // it, so a token could accept its own work.
+    expect(canTransition('review', 'done', 'agent')).toBe(false);
+    expect(canTransition('review', 'done', 'human')).toBe(true);
   });
 
   it('does not allow skipping straight from backlog to done', () => {

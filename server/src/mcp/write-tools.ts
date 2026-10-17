@@ -18,6 +18,7 @@ import {
   SPRINT_STATUSES,
   updateSprint,
 } from '../services/sprints.ts';
+import { EVIDENCE_LIMITS } from '../services/rounds.ts';
 import { logUnlistedWork } from '../services/unlisted.ts';
 import {
   addTaskDependency,
@@ -331,23 +332,90 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Hand a task back for review',
       description:
-        "Move a task to review and post your summary as a comment. This is as far as an agent takes a task: an agent never marks work done — closing it is a person's decision.",
+        'Move a task to review, post your summary as a comment, and attach your proof so a person can check it: the `commits` you made (sha and first line), the `branch`, the `pull_request` URL, and the `tests` you ran with their exit codes. Proof is optional but it is what the reviewer reads first, so send what you have. This is as far as an agent takes a task: an agent never marks work done — a person accepts it, or sends it back with a reason that `get_task_context` shows you first.',
       inputSchema: z.strictObject({
         task: TASK_REF,
         summary: z.string().trim().min(1).max(50_000),
         checklist: z.array(z.string().min(1).max(500)).max(50).optional(),
+        commits: z
+          .array(
+            z.strictObject({
+              sha: z
+                .string()
+                .trim()
+                .min(EVIDENCE_LIMITS.shaMin)
+                .max(EVIDENCE_LIMITS.shaMax)
+                .describe('The commit id, 7–40 hex characters.'),
+              message: z
+                .string()
+                .max(10_000)
+                .optional()
+                .describe('The commit message; only its first line is kept.'),
+            }),
+          )
+          .max(EVIDENCE_LIMITS.commits)
+          .optional()
+          .describe('The commits this work is in, oldest first.'),
+        branch: z
+          .string()
+          .trim()
+          .min(1)
+          .max(EVIDENCE_LIMITS.branch)
+          .optional()
+          .describe('The branch the work is on.'),
+        pull_request: z
+          .string()
+          .trim()
+          .min(1)
+          .max(EVIDENCE_LIMITS.url)
+          .optional()
+          .describe('The pull request URL, http(s).'),
+        tests: z
+          .array(
+            z.strictObject({
+              command: z
+                .string()
+                .trim()
+                .min(1)
+                .max(EVIDENCE_LIMITS.command)
+                .describe('The command exactly as run, such as `pnpm test`.'),
+              exit_code: z.number().int().describe('Its exit code: 0 passed.'),
+            }),
+          )
+          .max(EVIDENCE_LIMITS.tests)
+          .optional()
+          .describe('Each test, lint or build command you ran, with its exit code.'),
       }),
     },
-    ({ task, summary, checklist }) => {
+    ({ task, summary, checklist, commits, branch, pull_request, tests }) => {
       try {
         const finished = finishTask(sqlite, db, actor, resolveTaskRef(db, task), {
           summary,
           ...(checklist === undefined ? {} : { checklist }),
+          ...(commits === undefined ? {} : { commits }),
+          ...(branch === undefined ? {} : { branch }),
+          ...(pull_request === undefined ? {} : { pull_request }),
+          ...(tests === undefined ? {} : { tests }),
           now: clock(),
         });
 
+        const proof = [
+          commits === undefined || commits.length === 0
+            ? null
+            : `${String(commits.length)} commit${commits.length === 1 ? '' : 's'}`,
+          branch === undefined ? null : 'the branch',
+          pull_request === undefined ? null : 'the pull request',
+          tests === undefined || tests.length === 0
+            ? null
+            : `${String(tests.length)} test run${tests.length === 1 ? '' : 's'}`,
+        ].filter((part): part is string => part !== null);
+
         return answer(
-          `\`${finished.key}\` is in **review** with your summary attached. A person takes it from here.`,
+          `\`${finished.key}\` is in **review** with your summary${
+            proof.length === 0
+              ? ' and no proof attached — next time send commits, branch, pull_request and tests'
+              : ` and ${proof.join(', ')} as proof, each marked claimed`
+          }. A person accepts it or sends it back.`,
           { task: finished },
         );
       } catch (error) {

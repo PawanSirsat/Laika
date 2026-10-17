@@ -1569,6 +1569,18 @@
   color: var(--text-muted);
 }
 
+/* The reason a person sent the task back from review (D-082). */
+.cmt-sent-back {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  padding: 0.0625rem 0.4375rem;
+  border-radius: var(--radius-pill);
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
+}
+
 .cmt-body .panel-comment-body {
   margin-left: 0;
   font-size: 0.875rem;

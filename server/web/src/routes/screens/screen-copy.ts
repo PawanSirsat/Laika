@@ -57,6 +57,14 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
    * The normal state until agents are running, which is why the copy says what
    * the queue is *for* rather than only that it is empty (LAI-413).
    */
+  /*
+   * The good state: every finish has been decided. Says what arrives here,
+   * because a person new to the board has not seen it fill yet (D-082).
+   */
+  '/review': {
+    headline: 'Nothing waiting for review',
+    body: 'When an agent finishes a task it lands here with its proof — commits, pull request, tests. Accept it into done, or send it back with a reason the agent reads first.',
+  },
   '/unlisted': {
     headline: 'Nothing unlisted',
     body: 'Agents log work here when they notice something outside any project — a stale dependency, a broken script. Promote what matters into a task; dismiss the rest.',

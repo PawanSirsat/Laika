@@ -23,6 +23,7 @@ function comment(over: Partial<Comment> = {}): Comment {
     body_md: 'A comment.',
     created_via: 'web',
     edited_at: null,
+    sent_back: false,
     created_at: 0,
     updated_at: 0,
     ...over,

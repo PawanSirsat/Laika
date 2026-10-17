@@ -277,7 +277,7 @@ const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
   [
     'finish_task',
     {
-      note: 'A **composite** twin. There is no `POST /tasks/:id/finish`, because a human finishing work does two things: moves the task to review, and says what they did. `finish_task` is those two in one transaction (LAI-408), so its twin is the two REST calls in sequence — and this pair is what proves it did not become a third write path.',
+      note: 'Its twin is `POST /tasks/:id/finish` (LAI-758, D-082), added when a finish began to carry proof: the move to review, the summary comment and the round in one transaction on both surfaces. Before it, the twin was a status call and a comment call in sequence, and this pair is what proves the route did not become a third write path.',
       rest: async (s) => {
         const task = await seedTask(s);
         await must(
@@ -288,19 +288,25 @@ const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
         );
         await must(
           s,
-          `/api/v1/tasks/${task}/status`,
-          { method: 'POST', body: JSON.stringify({ status: 'review' }) },
+          `/api/v1/tasks/${task}/finish`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              summary: 'Did the thing',
+              tests: [{ command: 'pnpm test', exit_code: 0 }],
+            }),
+          },
           200,
         );
-        await must(s, `/api/v1/tasks/${task}/comments`, {
-          method: 'POST',
-          body: JSON.stringify({ body_md: 'Did the thing' }),
-        });
       },
       mcp: async (s, c) => {
         await seedTask(s);
         await callTool(c, 'update_status', { task: 'COR-1', status: 'in_progress' });
-        await callTool(c, 'finish_task', { task: 'COR-1', summary: 'Did the thing' });
+        await callTool(c, 'finish_task', {
+          task: 'COR-1',
+          summary: 'Did the thing',
+          tests: [{ command: 'pnpm test', exit_code: 0 }],
+        });
       },
     },
   ],

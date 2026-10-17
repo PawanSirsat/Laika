@@ -3,7 +3,7 @@ import { type McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { listProjectActivity } from '../services/activity.ts';
-import { commentView, listComments } from '../services/comments.ts';
+import { commentViews, listComments } from '../services/comments.ts';
 import {
   getProjectContext,
   listMembers,
@@ -11,6 +11,7 @@ import {
   projectSlugById,
   projectView,
 } from '../services/projects.ts';
+import { listTaskRounds, type RoundView } from '../services/rounds.ts';
 import { listSprints, sprintTaskCounts } from '../services/sprints.ts';
 import {
   getTask,
@@ -237,7 +238,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
     {
       title: 'Get task context',
       description:
-        'Everything needed to start on one task in a single call: the task, what it depends on and whether those are done, what it blocks, its parent and its subtasks with how many are done, its comments, its recent activity, and the chain of tasks it was discovered from.',
+        'Everything needed to start on one task in a single call. If a person sent it back from review, `send_back` comes first with their reason: read it before anything else, it is what to fix. Then the task, the proof attached to its latest finish (`evidence`), what it depends on and whether those are done, what it blocks, its parent and its subtasks with how many are done, its comments, its recent activity, and the chain of tasks it was discovered from.',
       inputSchema: z.strictObject({ task: TASK_REF }),
     },
     ({ task }) => {
@@ -262,12 +263,13 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         // Soft-deleted comments are dropped, not tombstoned. A tombstone exists so
         // a client syncing with `updated_since` learns a row went away; an agent
         // reading a task for the first time should simply not see it.
-        const comments = everyRow(
-          (page) => listComments(db, actor, view.id, { ...page, updatedSince: null }),
-          (row) => ({ sortKey: row.createdAt, id: row.id }),
-        )
-          .rows.filter((row) => row.deletedAt === null)
-          .map(commentView);
+        const comments = commentViews(
+          db,
+          everyRow(
+            (page) => listComments(db, actor, view.id, { ...page, updatedSince: null }),
+            (row) => ({ sortKey: row.createdAt, id: row.id }),
+          ).rows.filter((row) => row.deletedAt === null),
+        );
 
         const activity = listProjectActivity(db, actor, slug, {
           taskId: view.id,
@@ -276,6 +278,18 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         });
 
         const chain = discoveredFromChain(db, actor, view);
+
+        // The review gate (D-082): the send-back first, because it is what the
+        // next agent must fix, and the latest round's proof.
+        const review = listTaskRounds(db, actor, view.id);
+        const evidence = review.rounds[0] ?? null;
+        const sendBack =
+          review.send_back === null
+            ? null
+            : {
+                ...review.send_back,
+                decided_by_name: nameOf(review.send_back.decided_by),
+              };
 
         // Containment, read from both ends (D-066). The parent is read through
         // `getTask` so a parent this token cannot see is reported as such
@@ -302,6 +316,19 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         const { done: subtasksDone, total: subtasksTotal } = subtaskProgress(subtasks);
 
         const markdown = [
+          ...(sendBack === null
+            ? []
+            : [
+                `### Sent back — read this first`,
+                `${sendBack.decided_by_name}, ${ago(sendBack.created_at, now)}${
+                  sendBack.round_number === null
+                    ? ''
+                    : `, on round ${String(sendBack.round_number)}`
+                }:`,
+                '',
+                sendBack.reason_md,
+                '',
+              ]),
           `## \`${view.key}\` ${view.title}`,
           '',
           `${view.priority} · ${statusText(view)} · assigned to ${nameOf(view.assignee_id)} · ${view.ready ? 'ready' : 'not ready'}`,
@@ -311,6 +338,9 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           '',
           '### Done means',
           view.acceptance_md ?? '_Not stated._',
+          '',
+          `### Proof (${evidence === null ? 'none' : `round ${String(evidence.number)}`})`,
+          evidenceText(evidence),
           '',
           '### Blocked by',
           bullets(
@@ -347,7 +377,10 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           '',
           `### Comments (${String(comments.length)})`,
           bullets(
-            comments.map((c) => `${nameOf(c.author_id)}, ${ago(c.created_at, now)}: ${c.body_md}`),
+            comments.map(
+              (c) =>
+                `${nameOf(c.author_id)}, ${ago(c.created_at, now)}${c.sent_back ? ' (sent back)' : ''}: ${c.body_md}`,
+            ),
             'No comments.',
           ),
           '',
@@ -359,7 +392,10 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         ].join('\n');
 
         return answer(markdown, {
+          send_back: sendBack,
           task: view,
+          evidence,
+          rounds: review.rounds.length,
           blocked_by: view.blocked_by.map((id) => summarise(related.get(id), id)),
           blocks: view.blocks.map((id) => summarise(related.get(id), id)),
           discovered_from_chain: chain.map((t) => ({ key: t.key, title: t.title, id: t.id })),
@@ -561,6 +597,26 @@ function summarise(task: TaskView | undefined, id: string) {
         status_name: task.status_name,
         visible: true as const,
       };
+}
+
+/**
+ * A round's proof as bullets, each marked with its state (D-082): an agent
+ * reading its own earlier claim should see that it is a claim.
+ */
+function evidenceText(round: RoundView | null): string {
+  if (round === null) return '_No finish yet._';
+  const lines = [
+    ...round.commits.map(
+      (c) =>
+        `commit \`${c.sha.slice(0, 12)}\`${c.message === null ? '' : ` ${c.message}`} — ${c.state}`,
+    ),
+    ...(round.branch === null ? [] : [`branch \`${round.branch.name}\` — ${round.branch.state}`]),
+    ...(round.pull_request === null
+      ? []
+      : [`pull request ${round.pull_request.url} — ${round.pull_request.state}`]),
+    ...round.tests.map((t) => `\`${t.command}\` exited ${String(t.exit_code)} — ${t.state}`),
+  ];
+  return bullets(lines, 'Finished with no proof attached.');
 }
 
 /**

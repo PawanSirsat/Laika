@@ -420,6 +420,14 @@
   border: 1px solid var(--chip-orange-border);
 }
 
+/* Sent back from review (D-082): the review gate's own orange, as the
+   profile's "sent back" verdict wears it. */
+.marker-sent-back {
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
+}
+
 .card-avatar {
   width: 1.5rem;
   height: 1.5rem;

@@ -28,6 +28,36 @@ export function keyedByTheRoute(path: string): boolean {
 }
 
 /**
+ * The review decisions (D-082, LAI-758): a person's, on a web session. A token
+ * holding a session's key and body for one of them is never handed the stored
+ * answer — the route runs and refuses it `session_required`.
+ */
+const DECISION_ROUTES: readonly RegExp[] = [/^\/api\/v1\/tasks\/[^/]+\/(?:accept|send-back)$/];
+
+/**
+ * Whether a stored answer may be replayed to a **token** (D-082). The store is
+ * keyed by the person, not the credential (LAI-748), so a session's answer is
+ * found by the same person's token. Two such answers would hand an agent a
+ * success the gate refuses it: a review decision, and any task moved into a
+ * done category — a stored task view saying `status: "done"` was a session's
+ * move, because a token's is refused before anything is stored. For those, the
+ * route runs instead and gives the token its own answer.
+ */
+export function tokenMayReplay(path: string, storedBody: string): boolean {
+  if (DECISION_ROUTES.some((pattern) => pattern.test(path))) return false;
+  try {
+    const parsed: unknown = JSON.parse(storedBody);
+    return !(
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      (parsed as { status?: unknown }).status === 'done'
+    );
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Replay-safe POSTs (SPEC §6.3).
  *
  * Only POST, and only when the caller supplies the header — the feature is
@@ -61,6 +91,19 @@ export function idempotencyMiddleware(db: Db, now: () => number = Date.now) {
     const found = lookup(db, actor.userId, key, fingerprint, now());
 
     if (found.kind === 'conflict') throw conflictError(key);
+
+    const isToken = actor.token !== null && actor.token !== undefined;
+    if (
+      found.kind === 'replay' &&
+      found.response !== undefined &&
+      isToken &&
+      !tokenMayReplay(c.req.path, found.response.body)
+    ) {
+      // The route answers this token itself, and nothing is stored over the
+      // session's row: the key stays the session's.
+      await next();
+      return undefined;
+    }
 
     if (found.kind === 'replay' && found.response !== undefined) {
       c.header('Idempotent-Replay', 'true');

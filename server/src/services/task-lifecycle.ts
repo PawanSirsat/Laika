@@ -22,6 +22,13 @@ import { ApiError } from '../errors.ts';
  * - **`cancelled` is reachable from anywhere except `done`**, and can be undone
  *   back to `backlog`. Cancelling something already finished is meaningless;
  *   reopening it is the operation that was wanted.
+ * - **Nothing reaches `done` in this table** (D-082, LAIKA-455). It is the
+ *   table an agent is held to, and an agent never marks work done: `review →
+ *   done` was here until LAI-758, and the agent rule read it, so a token could
+ *   accept its own work. A person's table below is derived from this one and
+ *   still reaches `done` from anywhere but `cancelled`. `changeStatus` also
+ *   refuses an agent any done status by category before this table is asked,
+ *   so this is the second of two locks, not the only one.
  *
  * Everything not listed is refused, and a no-op transition to the same status is
  * refused too — it would write an `activity` row claiming a change happened.
@@ -30,7 +37,7 @@ export const ALLOWED_TRANSITIONS: Readonly<Record<TaskStatus, readonly TaskStatu
   backlog: ['todo', 'in_progress', 'cancelled'],
   todo: ['backlog', 'in_progress', 'cancelled'],
   in_progress: ['backlog', 'todo', 'review', 'cancelled'],
-  review: ['in_progress', 'done', 'cancelled'],
+  review: ['in_progress', 'cancelled'],
   done: ['in_progress'],
   cancelled: ['backlog'],
 };

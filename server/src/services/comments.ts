@@ -14,6 +14,7 @@ import { comments, projects, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { syncMentions } from './mentions.ts';
+import { sendBackCommentIds } from './rounds.ts';
 
 /**
  * Comments on tasks (SPEC §4.7, §6.4, §3.2).
@@ -45,13 +46,19 @@ export interface CommentView {
   created_via: CreatedVia;
   /** Non-null once edited, so a UI can say "edited" without comparing timestamps. */
   edited_at: number | null;
+  /**
+   * This comment is the reason a person gave when sending the task back from
+   * review (§4.27, D-082) — derived from `task_reviews.comment_id`, never
+   * stored on the comment.
+   */
+  sent_back: boolean;
   created_at: number;
   updated_at: number;
 }
 
 type CommentRow = typeof comments.$inferSelect;
 
-function toView(row: CommentRow): CommentView {
+function toView(row: CommentRow, sentBack = false): CommentView {
   return {
     id: row.id,
     task_id: row.taskId,
@@ -59,6 +66,7 @@ function toView(row: CommentRow): CommentView {
     body_md: row.bodyMd,
     created_via: row.createdVia,
     edited_at: row.editedAt,
+    sent_back: sentBack,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };
@@ -290,7 +298,10 @@ export function editComment(
     now,
   });
 
-  return toView(db.select().from(comments).where(eq(comments.id, commentId)).get()!);
+  return toView(
+    db.select().from(comments).where(eq(comments.id, commentId)).get()!,
+    sendBackCommentIds(db, [commentId]).has(commentId),
+  );
 }
 
 /**
@@ -337,3 +348,15 @@ export function deleteComment(
 }
 
 export { toView as commentView };
+
+/**
+ * Views for a page of comment rows, each marked if it is a send-back's reason
+ * — one query for the page (D-082).
+ */
+export function commentViews(db: Db, rows: readonly CommentRow[]): CommentView[] {
+  const sentBack = sendBackCommentIds(
+    db,
+    rows.map((r) => r.id),
+  );
+  return rows.map((row) => toView(row, sentBack.has(row.id)));
+}

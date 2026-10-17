@@ -3,7 +3,7 @@ import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import {
   addComment,
-  commentView,
+  commentViews,
   deleteComment,
   editComment,
   listComments,
@@ -42,9 +42,15 @@ export function taskCommentRoutes(options: { db: Db }): Hono<AppEnv> {
     // carries neither.
     const paged = buildPage(rows, limit, (row) => ({ sortKey: row.createdAt, id: row.id }));
 
+    const views = new Map(
+      commentViews(
+        db,
+        paged.data.filter((row) => row.deletedAt === null),
+      ).map((view) => [view.id, view]),
+    );
     const page: Page<WithTombstones<CommentView>> = {
       data: paged.data.map((row) =>
-        row.deletedAt === null ? commentView(row) : tombstone(row.id),
+        row.deletedAt === null ? views.get(row.id)! : tombstone(row.id),
       ),
       next_cursor: paged.next_cursor,
     };

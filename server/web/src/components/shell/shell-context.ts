@@ -58,6 +58,13 @@ export interface ShellValue {
   /** Re-read that count — the Unlisted screen calls it after a promote or a dismiss. */
   readonly refreshUnlisted: () => void;
   /**
+   * Tasks waiting in review for this person (D-082, LAI-758), for the rail's
+   * badge; `undefined` until read. Everyone signed in has a queue.
+   */
+  readonly reviewWaiting: number | undefined;
+  /** Re-read that count — the Review screen calls it after a decision. */
+  readonly refreshReview: () => void;
+  /**
    * The instance the browser is pointed at, read from the location — the
    * prototype's `laika.kvelld.internal` is a fixture and this is correct for
    * every deployment without configuration.

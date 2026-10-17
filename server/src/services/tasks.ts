@@ -28,7 +28,19 @@ import { assertCan } from '../policy/can.ts';
 import { addComment, commentCounts } from './comments.ts';
 import { normaliseTagNames, setTaskTags, tagsForTasks, taskIdsWithTag } from './tags.ts';
 import { requireProjectBySlug } from './projects.ts';
-import { assertTransition, isReady, type TransitionRule } from './task-lifecycle.ts';
+import {
+  activeSendBacks,
+  evidenceItems,
+  recordRound,
+  type EvidenceInput,
+  type SendBackView,
+} from './rounds.ts';
+import {
+  assertTransition,
+  isReady,
+  READY_STATUSES,
+  type TransitionRule,
+} from './task-lifecycle.ts';
 
 /**
  * Tasks (SPEC §4.5, §5, §6.4) — creation, listing, transitions, claiming and
@@ -167,6 +179,13 @@ export interface TaskView {
    * nothing at all.
    */
   blocks: string[];
+  /**
+   * The send-back this task carries, or null (§4.27, D-082): a person sent it
+   * back from review with this reason, and nobody has finished it since. Drawn
+   * on the card and the panel; `get_task_context` reads it to the agent first.
+   * Null once the task is done or cancelled.
+   */
+  send_back: Pick<SendBackView, 'reason_md' | 'decided_by' | 'created_at'> | null;
   created_at: number;
   updated_at: number;
 }
@@ -194,6 +213,8 @@ interface ViewContext {
   readonly clients: ReadonlyMap<string, string>;
   /** Status name per status id, for every status on the page (LAI-738). */
   readonly statusNames: ReadonlyMap<string, string>;
+  /** The send-back each task carries, if any (D-082). */
+  readonly sendBacks: ReadonlyMap<string, SendBackView>;
 }
 
 function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
@@ -238,6 +259,7 @@ function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
             .all()
             .map((r) => [r.id, r.name] as const),
     ),
+    sendBacks: activeSendBacks(db, rows),
   };
 }
 
@@ -283,6 +305,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     }),
     blocked_by: deps,
     blocks: context.edges.blocks.get(row.id) ?? [],
+    send_back: sendBackOf(context.sendBacks.get(row.id)),
     comment_count: context.comments.get(row.id) ?? 0,
     tags: context.tags.get(row.id) ?? [],
     started_at: row.startedAt,
@@ -292,6 +315,84 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };
+}
+
+function sendBackOf(found: SendBackView | undefined): TaskView['send_back'] {
+  if (found === undefined) return null;
+  return {
+    reason_md: found.reason_md,
+    decided_by: found.decided_by,
+    created_at: found.created_at,
+  };
+}
+
+/**
+ * Views for rows from several projects at once, in the same fixed number of
+ * queries as one project's page — the review queue's read (§6.4, D-082).
+ */
+export function viewTasks(
+  db: Db,
+  rows: readonly TaskRow[],
+  prefixes: ReadonlyMap<string, string>,
+): TaskView[] {
+  const context = loadViewContext(db, rows);
+  return rows.map((row) => toView(row, prefixes.get(row.projectId) ?? '', context));
+}
+
+/**
+ * **An agent never moves a task into done** (§5, D-082, LAIKA-455).
+ *
+ * By **category**, so a project that calls its done column `Shipped`, or has
+ * three of them, gives an agent no way round it (D-077). Asked before anything
+ * else about the move, including a move between two done statuses, so every
+ * door — a category, a status id, a status name, a create, a status delete
+ * that would carry work into one — gets this answer and not a different one.
+ *
+ * `isAgentPrincipal` rather than a token check: it is the question "is a
+ * program asking", and §3.4's principal is a program too. It never moves
+ * anything into done (§10.1 stops a merged pull request at review), so the
+ * wider question costs nothing and leaves no program with the power.
+ *
+ * `forbidden` with `details.reason` rather than a new code: §6.3's vocabulary
+ * is closed (D-021), and D-079 set the shape for a reason under a code.
+ */
+export const AGENT_CANNOT_MARK_DONE = 'agent_cannot_mark_done';
+
+function assertNotAgentIntoDone(actor: ServiceCaller, dest: StatusRef): void {
+  if (dest.category !== 'done' || !isAgentPrincipal(actor)) return;
+  throw new ApiError(
+    'forbidden',
+    `An agent cannot move a task into ${dest.name}. Call finish_task to hand it back for review with your proof; a person accepts it in the web app.`,
+    { reason: AGENT_CANNOT_MARK_DONE, status: 'done', status_id: dest.id },
+  );
+}
+
+/**
+ * Who may send a task to review, **and who may move it into done** (§5, M7):
+ * the assignee, a project lead, or an org admin or owner. The review queue's
+ * accept and send-back ask the same question (D-082).
+ *
+ * The system principal is not held to it (D-051): see `changeStatus`.
+ */
+export function assertMayCloseReview(
+  actor: ServiceCaller,
+  task: { assigneeId: string | null; projectId: string },
+  to: 'review' | 'done',
+): void {
+  if (isSystemPrincipal(actor)) return;
+  const scoped = withProject(actor, task.projectId);
+  const isAssignee = task.assigneeId === actor.userId;
+  const isLeadOrAbove =
+    scoped.projectRole === 'lead' || actor.orgRole === 'owner' || actor.orgRole === 'admin';
+
+  if (!isAssignee && !isLeadOrAbove) {
+    throw new ApiError(
+      'forbidden',
+      to === 'review'
+        ? 'Only the assignee, a project lead or an admin may send a task to review'
+        : 'Only the assignee, a project lead or an admin may move a task to done',
+    );
+  }
 }
 
 /** One task's view, loading only what that task needs. */
@@ -567,6 +668,9 @@ export function createTask(
       project.id,
       input.status_id === undefined ? (input.status ?? 'backlog') : { status_id: input.status_id },
     );
+    // Before the category check, so a token sending `status: done` hears why
+    // it cannot, not that two fields disagree (D-082).
+    assertNotAgentIntoDone(actor, initial);
     if (input.status !== undefined && input.status !== initial.category) {
       throw new ApiError(
         'unprocessable',
@@ -885,6 +989,9 @@ export function updateTask(
   return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
 }
 
+/** Where a claim may take a task from (§5, M7, D-082). */
+const CLAIMABLE: readonly TaskStatus[] = [...READY_STATUSES, 'in_progress'];
+
 /**
  * Claim: compare-and-swap (SPEC §5, AC3).
  *
@@ -907,7 +1014,29 @@ export function claimTask(
   return immediateTransaction(sqlite, () => {
     const before = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
     const from = statusRow(db, project.id, before.statusId)!;
-    // A task already in some in-progress status stays in it; anything else
+
+    // Held first, so a second claimant still hears **who** has it (AC3).
+    if (before.assigneeId !== null) {
+      throw new ApiError('conflict', 'That task is already claimed', {
+        assignee_id: before.assigneeId,
+        status: before.status,
+      });
+    }
+    // **A claim starts work, so it takes a task from where work starts** (§5,
+    // M7): a `backlog` or `todo` status — or an unassigned `in_progress` one,
+    // which is work somebody released, and taking it over moves no category
+    // (D-078 item 8 measures its cycle from the first claim). Before LAI-758 it
+    // took anything unassigned: a cancelled task came back to life, a done one
+    // reopened, and one in review skipped the person's decision — none of
+    // which `changeStatus` would have let the same caller do.
+    if (!CLAIMABLE.includes(before.status)) {
+      throw new ApiError(
+        'unprocessable',
+        `Only a task in a backlog, to-do or released in-progress status can be claimed; this one is in ${from.name}`,
+        { from: before.status, to: 'in_progress', allowed_from: CLAIMABLE },
+      );
+    }
+    // A released task stays in the in-progress status it was in; anything else
     // lands in the project's first visible one (LAI-738).
     const to =
       before.status === 'in_progress' ? from : statusForCategory(db, project.id, 'in_progress');
@@ -973,12 +1102,22 @@ export function changeStatus(
    * every caller wants except `finishTask` — see its docblock.
    */
   rule: TransitionRule = isAgentPrincipal(actor) ? 'agent' : 'human',
+  /**
+   * Which review decision this move is, written into the activity row as
+   * `via` the way a claim writes `via: 'claim'` (D-082). Absent for every
+   * other move.
+   */
+  via?: 'accept' | 'send_back',
 ): TaskView {
   const { task, project } = requireTask(db, taskId);
   const scoped = withProject(actor, project.id);
   assertCan(scoped, 'task.write', { projectId: project.id });
 
   const from = statusRow(db, project.id, task.statusId)!;
+  // A bare `done` from an agent is the D-082 refusal even when the task is
+  // already done: the no-op answer below would tell it the move was merely
+  // redundant, and a replayed session request would look like it had worked.
+  if (target === 'done') assertNotAgentIntoDone(actor, statusForCategory(db, project.id, 'done'));
   // A bare category the task is already in is a no-op, as it always was — not
   // a hop to that category's first status. An agent saying `review` about a
   // task in `QA` means "it is in review", and moving it would undo a person's
@@ -991,6 +1130,10 @@ export function changeStatus(
   }
   const dest = resolveStatus(db, project.id, target);
   const to = dest.category;
+
+  // Before the no-op and same-category answers, so an agent asking for done is
+  // told the rule rather than a coincidence about where the task already is.
+  assertNotAgentIntoDone(actor, dest);
 
   if (dest.id === from.id) {
     throw new ApiError('conflict', `That task is already in ${from.name}`, {
@@ -1015,7 +1158,7 @@ export function changeStatus(
       taskId,
       ...activityActor(actor),
       type: 'task.status_changed',
-      payload: { from: task.status, to, ...statusPayload(from, dest) },
+      payload: { from: task.status, to, ...statusPayload(from, dest), ...(via ? { via } : {}) },
       now,
     });
 
@@ -1031,7 +1174,9 @@ export function changeStatus(
 
   // §5: moving to `review` requires the assignee, a project lead, or org
   // Admin/Owner. The task text said "assignee, Admin or Owner" and omitted lead;
-  // the spec wins (D-011).
+  // the spec wins (D-011). **Moving to `done` asks the same question** (M7,
+  // D-082): before LAI-758 any `task.write` holder could close somebody else's
+  // work without the review gate's rule ever being asked.
   //
   // ## The system principal is not held to it (D-051, §10.1, LAI-446)
   //
@@ -1045,21 +1190,8 @@ export function changeStatus(
   // a system principal is a **verified delivery, on a project the branch
   // resolved to, holding `task.write` and nothing else**. It cannot widen into
   // "the system may do anything" without §3.4 changing, and §3.4 is a document
-  // somebody reads.
-  if (to === 'review' && !isSystemPrincipal(actor)) {
-    const isAssignee = task.assigneeId === actor.userId;
-    const isLeadOrAbove =
-      (isSystemPrincipal(scoped) ? null : scoped.projectRole) === 'lead' ||
-      actor.orgRole === 'owner' ||
-      actor.orgRole === 'admin';
-
-    if (!isAssignee && !isLeadOrAbove) {
-      throw new ApiError(
-        'forbidden',
-        'Only the assignee, a project lead or an admin may send a task to review',
-      );
-    }
-  }
+  // somebody reads. `assertMayCloseReview` returns for it.
+  if (to === 'review' || to === 'done') assertMayCloseReview(actor, task, to);
 
   db.update(tasks)
     .set({
@@ -1102,7 +1234,7 @@ export function changeStatus(
     taskId,
     ...activityActor(actor),
     type: 'task.status_changed',
-    payload: { from: task.status, to, ...statusPayload(from, dest) },
+    payload: { from: task.status, to, ...statusPayload(from, dest), ...(via ? { via } : {}) },
     now,
   });
 
@@ -1123,7 +1255,7 @@ function statusPayload(from: StatusRef, to: StatusRef) {
   };
 }
 
-export interface FinishTaskInput {
+export interface FinishTaskInput extends EvidenceInput {
   /** What was done. Posted as a comment by the same actor, in the same write. */
   summary: string;
   /** Optional acceptance walk-through, appended under the summary. */
@@ -1158,6 +1290,9 @@ export function finishTask(
   input: FinishTaskInput,
 ): TaskView {
   const now = input.now ?? Date.now();
+  // Checked before anything moves, so a bad item refuses the whole finish
+  // rather than leaving a task in review without the proof it was sent with.
+  const items = evidenceItems(input);
 
   return immediateTransaction(sqlite, () => {
     // The transition is validated by §5's own table, so finishing a task that
@@ -1170,7 +1305,12 @@ export function finishTask(
     // makes the sentence above false. Pinning keeps it true whoever calls.
     const task = changeStatus(db, actor, taskId, 'review', now, 'agent');
 
-    addComment(db, actor, taskId, finishSummary(input), now);
+    const summary = finishSummary(input);
+    addComment(db, actor, task.id, summary, now);
+
+    // The round, with its proof (§4.25, D-082). After the move, inside the same
+    // transaction: a round exists exactly when a finish happened.
+    recordRound(db, actor, task.id, summary, items, now);
 
     // Read back: the comment moved `updated_at` and added to `comment_count`,
     // and returning the pre-comment view would show a task that does not match

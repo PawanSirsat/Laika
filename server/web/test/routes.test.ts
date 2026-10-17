@@ -76,8 +76,9 @@ void describe('sidebar groups (AC1)', () => {
       // **Capacity and Unlisted work, across every space** (owner,
       // 2026-10-15, LAI-754). Capacity was a space tab from LAI-251 and
       // Unlisted work hidden from LAI-484; the gate Unlisted carries is
-      // asserted in `nav-truth.test.ts`.
-      ['Capacity', 'Unlisted work'],
+      // asserted in `nav-truth.test.ts`. **Review between them** (D-082,
+      // LAI-758): the queue of agent work waiting for a person.
+      ['Capacity', 'Review', 'Unlisted work'],
     );
     assert.deepEqual(
       routesInGroup('SETTINGS').map((r) => r.label),

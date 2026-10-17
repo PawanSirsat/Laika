@@ -1,0 +1,233 @@
+/*
+ * The review queue (D-082, LAI-758). The summary card and its tiles are the
+ * member profile's (`prof-card`, `prof-stat`); these rules are the list.
+ * Tokens only, so both themes come from `theme.css`.
+ */
+
+.rev {
+  display: grid;
+  gap: var(--space-4);
+  padding-bottom: var(--space-6);
+}
+
+.rev > :not(.screen-bar) {
+  margin-inline: 1.125rem;
+}
+
+.rev-summary .prof-stats {
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+}
+
+.rev-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The dropdown's field is full-width by default; beside the toggles it is a
+   control of its own width. */
+.rev-filters .rev-filter {
+  width: 15rem;
+  max-width: 100%;
+}
+
+.rev-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.rev-row + .rev-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.rev-row-open {
+  background: color-mix(in srgb, var(--accent-bg) 35%, var(--bg-card));
+}
+
+.rev-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'key title wait'
+    'meta meta proof';
+  gap: var(--space-1) var(--space-3);
+  align-items: center;
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rev-line:hover {
+  background: var(--bg-card-hover);
+}
+
+.rev-line:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.rev-key {
+  grid-area: key;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+}
+
+.rev-title {
+  grid-area: title;
+  min-width: 0;
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rev-wait {
+  grid-area: wait;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.rev-meta {
+  grid-area: meta;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.rev-agent {
+  color: var(--chip-pink);
+  font-weight: var(--weight-semibold);
+}
+
+.rev-proof {
+  grid-area: proof;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+.rev-chip {
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  padding: 0.0625rem 0.5rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--chip-neutral-border);
+  background: var(--chip-neutral-bg);
+  color: var(--chip-neutral);
+}
+
+.rev-chip-pass {
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border-color: var(--chip-green-border);
+}
+
+.rev-chip-fail {
+  color: var(--overdue);
+  background: color-mix(in srgb, var(--overdue) 12%, transparent);
+  border-color: var(--overdue-border);
+}
+
+.rev-chip-none {
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border-color: var(--chip-orange-border);
+}
+
+.rev-detail {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.rev-detail .panel-section {
+  margin: 0;
+}
+
+.rev-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.rev-open {
+  font-size: var(--text-sm);
+  color: var(--accent);
+  margin-left: var(--space-2);
+}
+
+.rev-why {
+  flex-basis: 100%;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.rev-error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--overdue);
+}
+
+@media (max-width: 640px) {
+  .rev > :not(.screen-bar) {
+    margin-inline: var(--space-4);
+  }
+
+  .rev-line {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      'key wait'
+      'title title'
+      'meta meta'
+      'proof proof';
+    padding: var(--space-3);
+  }
+
+  .rev-wait {
+    justify-self: end;
+  }
+
+  .rev-title {
+    white-space: normal;
+  }
+
+  .rev-proof {
+    justify-content: flex-start;
+  }
+
+  .rev-detail {
+    padding: 0 var(--space-3) var(--space-3);
+  }
+
+  .rev-filters .rev-filter {
+    width: auto;
+    min-width: 0;
+    flex: 1 1 8rem;
+  }
+}

@@ -23,6 +23,8 @@ export interface Comment {
   readonly created_via: string;
   /** Non-null once edited, so a UI can say "edited" without comparing stamps. */
   readonly edited_at: number | null;
+  /** The reason a person gave when sending the task back from review (D-082). */
+  readonly sent_back: boolean;
   readonly created_at: number;
   readonly updated_at: number;
 }

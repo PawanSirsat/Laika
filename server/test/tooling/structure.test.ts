@@ -115,6 +115,12 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
     'a React hook — no renderer in this package (CONVENTIONS §4). Its pure half, openUnlistedCount, is tested in test/api/unlisted.test.ts and the sidebar badge in test/browser/capacity.test.ts.',
   ],
   ['api/use-task-detail.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  [
+    'api/use-review-count.ts',
+    // LAI-758. The count is the queue's length; the queue's pure half is
+    // mirrored in test/api/review.test.ts and the badge is asserted in a browser.
+    'a React hook — no renderer in this package (CONVENTIONS §4). The queue it reads is tested through test/api/review.test.ts and the sidebar badge in test/browser/review.test.ts.',
+  ],
   ['api/use-members.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-invite.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   [

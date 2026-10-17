@@ -27,6 +27,7 @@ import { DependenciesSection } from '../task/DependenciesSection.tsx';
 import { SubtasksSection } from '../task/SubtasksSection.tsx';
 import { CommentBody } from '../task/CommentBody.tsx';
 import { CommentComposer } from '../task/CommentComposer.tsx';
+import { EvidenceSection } from '../task/EvidenceSection.tsx';
 import {
   demoAgentBuild,
   demoClaimLock,
@@ -370,6 +371,12 @@ export function TaskDetailPanel({
             <span className="cmt-who">{agent ? `${who}'s agent` : who}</span>
             {agent && <span className="cmt-agent">AGENT</span>}
             {comment.edited_at !== null && <span className="cmt-edited">edited</span>}
+            {/* The reason a person sent the task back from review (D-082). */}
+            {comment.sent_back && (
+              <span className="cmt-sent-back">
+                <span aria-hidden="true">↩</span> sent back
+              </span>
+            )}
             {/*
               Short and relative, beside the name — the design reads `5d ago`,
               not a timestamp to the second. The exact time stays in the `title`.
@@ -725,6 +732,20 @@ export function TaskDetailPanel({
               )}
             </section>
           )}
+
+          {/*
+            The proof (D-082, LAI-758): the send-back first, then the latest
+            round's evidence, earlier rounds folded. Next to Acceptance — what
+            counts as done, then what was claimed against it. Keyed on
+            `updated_at`, which the store keeps current from the stream.
+          */}
+          <EvidenceSection
+            taskId={task.id}
+            refreshKey={task.updated_at}
+            sendBack={task.send_back ?? null}
+            nameOf={(id) => personName(id, members)}
+            hideWhenEmpty
+          />
 
           {/*
             Subtasks sit above the linked tasks, for a task that is not itself

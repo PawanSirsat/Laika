@@ -95,6 +95,16 @@ export const DEFAULT_STATUSES = (
 const STATUSES_PATH = /^\/api\/v1\/projects\/[^/]+\/statuses$/;
 
 /**
+ * The review gate's two reads (D-082, LAI-758), answered for a stub that does
+ * not name them: a task panel reads a task's rounds, and the shell reads the
+ * review queue for its badge on every page. A task never finished has no
+ * rounds and an empty queue waits for nobody; a test about either names its
+ * own.
+ */
+const ROUNDS_PATH = /^\/api\/v1\/tasks\/[^/]+\/rounds$/;
+const REVIEW_PATH = '/api/v1/review';
+
+/**
  * A fixture task as the server sends it since LAI-738: in its kind's default
  * status, by id and name, unless the fixture names one. For fixtures written
  * before statuses had ids, so a filter or a picker by id has something to
@@ -351,6 +361,22 @@ function serve(
           // DEFAULT_STATUSES. A test about columns names its own.
           res.writeHead(200, { 'content-type': 'application/json' });
           res.end(JSON.stringify({ data: DEFAULT_STATUSES }));
+          return;
+        }
+
+        if (
+          chosen === undefined &&
+          req.method === 'GET' &&
+          (ROUNDS_PATH.test(path) || path === REVIEW_PATH)
+        ) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(
+            JSON.stringify(
+              path === REVIEW_PATH
+                ? { tasks: [], truncated: false }
+                : { rounds: [], send_back: null },
+            ),
+          );
           return;
         }
 
