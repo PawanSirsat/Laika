@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
@@ -35,6 +35,7 @@ import {
   updateTask,
 } from '../../src/services/tasks.ts';
 import { captureLog } from '../helpers/app.ts';
+import { immediateTransaction } from '../../src/db/numbering.ts';
 import { atCategory, expectSqliteError, freshDb, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -46,6 +47,15 @@ import { atCategory, expectSqliteError, freshDb, type TestDb } from '../helpers/
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
+
+/**
+ * **Setup time never fails a test here** (LAI-771, the gate on 9ea021f2). Most
+ * of these seed a project's history before they assert, and the gate's runner
+ * timed the 120-task one out at 6.1 s; with every core of a laptop busy, even a
+ * test that seeds nothing reported 8.2 s. The bound is on the run, not on what
+ * is asserted: the 5 ms recompute budget below is its own assertion.
+ */
+vi.setConfig({ testTimeout: 60_000 });
 const T0 = Date.UTC(2026, 8, 1);
 
 let t: TestDb;
@@ -143,6 +153,15 @@ const TOPICS = [
  * moments given, so build time is exactly what the test says it is.
  */
 function finishedTasks(count: number, by: () => ResolvedActor = admin, from = T0): string[] {
+  // **One transaction for the whole history**, so each service's own
+  // transaction is a savepoint inside it rather than a commit of its own:
+  // seeding 120 tasks was four commits each, and on a slow runner the setup
+  // alone outran vitest's 5 s default (LAI-771, the gate on 9ea021f2). What is
+  // written, and every rule it goes through, is unchanged.
+  return immediateTransaction(t.sqlite, () => seedFinished(count, by, from));
+}
+
+function seedFinished(count: number, by: () => ResolvedActor, from: number): string[] {
   const ids: string[] = [];
   let clock = from;
   for (let i = 0; i < count; i += 1) {
