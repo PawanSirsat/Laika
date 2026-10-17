@@ -9,7 +9,8 @@ import {
   type PersonUsage,
 } from '../../../api/usage.ts';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
-import { BarRows, Columns } from '../usage/UsageBars.tsx';
+import { BarRows } from '../usage/BarRows.tsx';
+import { Columns } from '../usage/Columns.tsx';
 import { dayLabel } from '../usage/usage-derive.ts';
 import { InfoTip } from './InfoTip.tsx';
 import '../usage/usage.css';

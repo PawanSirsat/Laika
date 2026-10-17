@@ -21,7 +21,8 @@ import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { UsageCard } from '../profile/UsageCard.tsx';
-import { BarRows, Columns, dayPoints } from './UsageBars.tsx';
+import { BarRows } from './BarRows.tsx';
+import { Columns, dayPoints } from './Columns.tsx';
 import {
   axisDays,
   dayLabel,
