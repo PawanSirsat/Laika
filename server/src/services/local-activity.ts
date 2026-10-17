@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte, min, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, lte, min, ne, sql } from 'drizzle-orm';
 import { AGENT_CLIENTS, type AgentClient } from '../auth/agent-clients.ts';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
@@ -6,7 +6,7 @@ import { type LocalActivityScope } from '../db/enums.ts';
 import { requireOrgId } from '../db/orgs.ts';
 import { localActivityDays, orgs, pushedCommitKeys, tokenUsageDays, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan } from '../policy/can.ts';
+import { assertCan, can } from '../policy/can.ts';
 import { addDays, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
 
 /**
@@ -84,6 +84,15 @@ export interface ActivitySharingView {
   enabled: boolean;
   scope: LocalActivityScope;
   min_sync_interval_s: number;
+  /**
+   * Asked with `?collector_id=`, by a caller who may send (D-084, LAI-769
+   * review 1): the days in the usage window that **other** collectors of this
+   * person already hold tokens for — dates only, never a count. The collector
+   * leaves those days' older tokens out of a 30-day backfill, so a machine
+   * counted under an earlier collector, or another machine, is not counted
+   * again. Absent otherwise.
+   */
+  usage_days_elsewhere?: string[];
 }
 
 export interface ReportDay {
@@ -183,10 +192,46 @@ function sharingView(s: Switches): ActivitySharingView {
   };
 }
 
-/** `GET /me/activity-sharing`: a session or any token of theirs may ask. */
-export function getActivitySharing(db: Db, actor: ResolvedActor): ActivitySharingView {
+/** How far back `usage_days_elsewhere` looks: the usage report's window, a day spare. */
+const USAGE_HELD_DAYS_BACK = 32;
+
+/**
+ * `GET /me/activity-sharing`: a session or any token of theirs may ask. With
+ * a collector id, from a caller who may send and with both switches on, it
+ * also names the days other collectors hold tokens for (see the view).
+ */
+export function getActivitySharing(
+  db: Db,
+  actor: ResolvedActor,
+  collectorId?: string,
+  now: number = Date.now(),
+): ActivitySharingView {
   assertCan(actor, 'activity_sharing.read_own');
-  return sharingView(switchesFor(db, actor.userId));
+  const switches = switchesFor(db, actor.userId);
+  const view = sharingView(switches);
+  if (
+    collectorId === undefined ||
+    !switches.org ||
+    !switches.user ||
+    !can(actor, 'local_activity.send_own')
+  ) {
+    return view;
+  }
+  const from = addDays(dayIn('UTC', now), -USAGE_HELD_DAYS_BACK);
+  const days = db
+    .selectDistinct({ day: tokenUsageDays.day })
+    .from(tokenUsageDays)
+    .where(
+      and(
+        eq(tokenUsageDays.userId, actor.userId),
+        gte(tokenUsageDays.day, from),
+        ne(tokenUsageDays.collectorId, collectorId.toLowerCase()),
+      ),
+    )
+    .orderBy(tokenUsageDays.day)
+    .all()
+    .map((r) => r.day);
+  return { ...view, usage_days_elsewhere: days };
 }
 
 export interface SetActivitySharingInput {

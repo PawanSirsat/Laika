@@ -7,6 +7,7 @@ import {
   isNotNull,
   isNull,
   lte,
+  or,
   sql,
   type SQL,
   type SQLWrapper,
@@ -116,7 +117,14 @@ export interface TokenUsageReport {
   collector_id: string;
   tz: string;
   usage: true;
-  days: { day: string; rows: TokenUsageRowInput[] }[];
+  /**
+   * `backfill: true` on a day that carries tokens from before this collector
+   * began counting — the last 30 days, sent once (D-084 item 11). Such a day
+   * **replaces every collector's rows** for it and each agent it names, so a
+   * machine whose collector started over (`laika activity off`, then `on`)
+   * cannot count the same day twice (LAI-769 review 1).
+   */
+  days: { day: string; backfill?: true | undefined; rows: TokenUsageRowInput[] }[];
 }
 
 /** The four counts, the headline (without cache reads) and how much of it a task holds. */
@@ -181,6 +189,13 @@ export interface UsageView {
   top_tasks: UsageTaskSlice[];
   /** Agents people here connect that keep no token count Laika can read. */
   no_token_data: AgentClient[];
+  /**
+   * A space holds only tokens tied to its tasks, so beside one the page says
+   * what no space can hold: the organisation's totals over the same range —
+   * for a reader who may read them (`usage.read_org`), `null` otherwise and
+   * for the organisation itself.
+   */
+  org_totals: UsageFigures | null;
 }
 
 export interface UsageWeek extends UsageSlice {
@@ -309,18 +324,42 @@ export function recordTokenUsage(
   }
 
   db.transaction((tx) => {
-    tx.delete(tokenUsageDays)
-      .where(
-        and(
-          eq(tokenUsageDays.userId, actor.userId),
-          eq(tokenUsageDays.collectorId, collectorId),
-          inArray(
-            tokenUsageDays.day,
-            report.days.map((d) => d.day),
+    // A live day replaces this machine's rows for it. A backfilled day also
+    // takes the rows of every other collector of this person for the agents
+    // it names: the same machine under an earlier collector id is the case it
+    // exists for — the collector skips days other machines hold (the sharing
+    // answer's `usage_days_elsewhere`), so a second machine's live day is
+    // only ever taken by a client that ignored it.
+    const live = report.days.filter((d) => d.backfill !== true).map((d) => d.day);
+    if (live.length > 0) {
+      tx.delete(tokenUsageDays)
+        .where(
+          and(
+            eq(tokenUsageDays.userId, actor.userId),
+            eq(tokenUsageDays.collectorId, collectorId),
+            inArray(tokenUsageDays.day, live),
           ),
-        ),
-      )
-      .run();
+        )
+        .run();
+    }
+    for (const day of report.days) {
+      if (day.backfill !== true) continue;
+      const agents = [...new Set(day.rows.map((r) => agentKindOf(r.agent)))];
+      tx.delete(tokenUsageDays)
+        .where(
+          and(
+            eq(tokenUsageDays.userId, actor.userId),
+            eq(tokenUsageDays.day, day.day),
+            agents.length === 0
+              ? eq(tokenUsageDays.collectorId, collectorId)
+              : or(
+                  eq(tokenUsageDays.collectorId, collectorId),
+                  inArray(tokenUsageDays.agent, agents),
+                ),
+          ),
+        )
+        .run();
+    }
     // Inserted in slices: SQLite caps a statement's bound parameters.
     for (let i = 0; i < rows.length; i += 50) {
       tx.insert(tokenUsageDays)
@@ -578,6 +617,11 @@ export function getUsage(
           .all()
           .map((m) => m.userId);
 
+  const orgTotals =
+    project !== undefined && can(actor, 'usage.read_org')
+      ? figuresOf(db.select(sums).from(t).where(inRange).get() ?? NO_FIGURES)
+      : null;
+
   return {
     from,
     to,
@@ -591,6 +635,7 @@ export function getUsage(
     by_model: byModel,
     top_tasks: top,
     no_token_data: agentsWithoutTokens(db, memberIds),
+    org_totals: orgTotals,
   };
 }
 

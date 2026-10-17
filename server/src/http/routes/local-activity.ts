@@ -125,6 +125,8 @@ const UsageBody = strictObject({
   days: z.array(
     strictObject({
       day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      // Tokens from before the collector began counting (the 30-day backfill).
+      backfill: z.literal(true).optional(),
       rows: z
         .array(
           strictObject({
@@ -144,6 +146,11 @@ const UsageBody = strictObject({
   ),
 });
 
+/** A collector names itself to learn which days other collectors hold (D-084). */
+const SharingQuery = strictObject({
+  collector_id: ReportBody.shape.collector_id.optional(),
+});
+
 const PreviewQuery = strictObject({
   days: z.coerce.number().int().min(1).max(OWN_PREVIEW_DAYS_MAX).optional(),
 });
@@ -158,7 +165,11 @@ export function localActivityRoutes(options: { db: Db }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db } = options;
 
-  app.get('/activity-sharing', (c) => c.json(getActivitySharing(db, requireActor(c))));
+  app.get('/activity-sharing', (c) => {
+    const actor = requireActor(c);
+    const query = parseQuery(SharingQuery, c.req.query());
+    return c.json(getActivitySharing(db, actor, query.collector_id));
+  });
 
   app.put('/activity-sharing', async (c) => {
     const actor = requireActor(c);

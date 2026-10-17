@@ -207,6 +207,29 @@ describe('PUT /me/local-activity with "usage": true', () => {
   });
 });
 
+describe('backfilled days, over the wire (review 1, the blocker)', () => {
+  it('a new collector’s backfilled day replaces the old one’s, and the sharing answer names held days', async () => {
+    switchOn(true, true);
+    const token = await mint(bea.cookie);
+    const marked = (collector: string) => {
+      const body = usage({ collector_id: collector });
+      body.days = body.days.map((d) => ({ ...d, backfill: true }));
+      return body;
+    };
+    expect(await ok(put(marked(COLLECTOR), token))).toEqual({ accepted_days: 1 });
+    const other = '0b4e7d2a-91c3-4f6e-8a1d-5c2b9e7f3a10';
+    const sharing = await ok(req(`/api/v1/me/activity-sharing?collector_id=${other}`, {}, token));
+    expect(sharing.usage_days_elsewhere).toEqual([yesterday()]);
+    expect(await ok(put(marked(other), token))).toEqual({ accepted_days: 1 });
+    const rows = h.db.select().from(tokenUsageDays).all();
+    expect(rows.map((r) => [r.collectorId, r.output])).toEqual([[other, 2_094_668]]);
+    // The marker is `true` or absent; anything else is refused.
+    const odd = usage();
+    odd.days = odd.days.map((d) => ({ ...d, backfill: 'yes' }));
+    expect((await put(odd, token)).status).toBe(422);
+  });
+});
+
 describe('GET /usage', () => {
   it('answers an owner on a session with the per-person split', async () => {
     switchOn(true, true);

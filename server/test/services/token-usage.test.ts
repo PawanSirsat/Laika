@@ -14,7 +14,7 @@ import {
 } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { pruneLocalActivity } from '../../src/jobs/jobs.ts';
-import { deleteOwnLocalActivity } from '../../src/services/local-activity.ts';
+import { deleteOwnLocalActivity, getActivitySharing } from '../../src/services/local-activity.ts';
 import { createTask } from '../../src/services/tasks.ts';
 import {
   getPersonUsage,
@@ -120,7 +120,7 @@ function row(extra: Partial<TokenUsageRowInput> = {}): TokenUsageRowInput {
 }
 
 function report(
-  days: { day: string; rows: TokenUsageRowInput[] }[],
+  days: TokenUsageReport['days'],
   extra: Partial<TokenUsageReport> = {},
 ): TokenUsageReport {
   return { v: 1, collector_id: COLLECTOR_A, tz: 'UTC', usage: true, days, ...extra };
@@ -328,6 +328,130 @@ describe('a usage report (PUT /me/local-activity, "usage": true)', () => {
   });
 });
 
+/** All of a person's token rows, summed: what every read adds up. */
+function grand(user: string): { output: number; rows: number } {
+  const rows = stored(user);
+  return { output: rows.reduce((n, r) => n + r.output, 0), rows: rows.length };
+}
+
+describe('a machine counted once across collectors (review 1, the blocker)', () => {
+  /*
+   * `laika activity off` deletes ~/.laika/activity, collector id included;
+   * `on` makes a new one, and a yes to the 30 days sends the window again.
+   * The board keeps the old collector's rows, and every read sums collectors —
+   * so without this rule the same machine's days would count twice.
+   */
+  it('on, yes, off, on, yes: a backfilled day replaces every collector’s rows for it — totals unchanged', () => {
+    share(bea);
+    const days = [
+      { day: '2026-10-01', rows: [row({ output: 700 })] },
+      {
+        day: '2026-10-10',
+        rows: [row({ output: 900 }), row({ agent: 'codex', model: 'gpt-5.2-codex', output: 40 })],
+      },
+    ];
+    // The first collector: on, yes — the window, marked backfilled.
+    recordTokenUsage(t.db, actor(bea), report(days.map((d) => ({ ...d, backfill: true }))), NOW);
+    const before = grand(bea);
+    expect(before.output).toBe(1_640);
+
+    // off, on, yes: a new collector sends the same window, backfilled again.
+    recordTokenUsage(
+      t.db,
+      actor(bea),
+      report(
+        days.map((d) => ({ ...d, backfill: true })),
+        { collector_id: COLLECTOR_B },
+      ),
+      NOW,
+    );
+    expect(grand(bea)).toEqual(before);
+    expect(new Set(stored(bea).map((r) => r.collectorId))).toEqual(new Set([COLLECTOR_B]));
+  });
+
+  it('a backfilled day takes only the agents it names from other collectors', () => {
+    share(bea);
+    recordTokenUsage(
+      t.db,
+      actor(bea),
+      report([
+        {
+          day: '2026-10-10',
+          rows: [row({ output: 900 }), row({ agent: 'codex', model: 'gpt-5.2-codex', output: 40 })],
+        },
+      ]),
+      NOW,
+    );
+    recordTokenUsage(
+      t.db,
+      actor(bea),
+      report([{ day: '2026-10-10', backfill: true, rows: [row({ output: 950 })] }], {
+        collector_id: COLLECTOR_B,
+      }),
+      NOW,
+    );
+    // Claude Code's 900 replaced by 950; the other collector's Codex is its own.
+    expect(grand(bea).output).toBe(990);
+  });
+
+  it('two machines sending live days add up', () => {
+    share(bea);
+    recordTokenUsage(
+      t.db,
+      actor(bea),
+      report([{ day: YESTERDAY, rows: [row({ output: 300 })] }]),
+      NOW,
+    );
+    recordTokenUsage(
+      t.db,
+      actor(bea),
+      report([{ day: YESTERDAY, rows: [row({ output: 200 })] }], { collector_id: COLLECTOR_B }),
+      NOW,
+    );
+    // And a live resend of either replaces only its own.
+    recordTokenUsage(
+      t.db,
+      actor(bea),
+      report([{ day: YESTERDAY, rows: [row({ output: 350 })] }]),
+      NOW,
+    );
+    expect(grand(bea)).toEqual({ output: 550, rows: 2 });
+  });
+
+  it('tells a sender which days other collectors already hold tokens for — dates only', () => {
+    share(bea);
+    recordTokenUsage(
+      t.db,
+      actor(bea),
+      report([
+        { day: '2026-10-01', rows: [row()] },
+        { day: YESTERDAY, rows: [row()] },
+      ]),
+      NOW,
+    );
+    recordTokenUsage(
+      t.db,
+      actor(bea),
+      report([{ day: TODAY, rows: [row()] }], { collector_id: COLLECTOR_B }),
+      NOW,
+    );
+    const asB = getActivitySharing(t.db, withToken(bea), COLLECTOR_B, NOW);
+    expect(asB.usage_days_elsewhere).toEqual(['2026-10-01', YESTERDAY]);
+    // Not to a read-only token, which may not send; not without a collector.
+    expect(
+      getActivitySharing(t.db, withToken(bea, 'read_only'), COLLECTOR_B, NOW),
+    ).not.toHaveProperty('usage_days_elsewhere');
+    expect(getActivitySharing(t.db, withToken(bea), undefined, NOW)).not.toHaveProperty(
+      'usage_days_elsewhere',
+    );
+    // Nor once sharing is off.
+    share(bea, false);
+    expect(getActivitySharing(t.db, withToken(bea), COLLECTOR_B, NOW)).not.toHaveProperty(
+      'usage_days_elsewhere',
+    );
+  });
+});
+
 describe('the developer’s own history', () => {
   it('*delete my history* deletes token rows too', () => {
     share(bea);
@@ -464,6 +588,14 @@ describe('GET /usage — the Usage page', () => {
     expect(view.totals.tokens).toBe(6);
     expect(JSON.stringify(view)).not.toContain(cal);
     expect(JSON.stringify(view)).not.toContain('Cal');
+  });
+
+  it('beside a space, says what no space can hold: the organisation’s unattributed share, to owners and admins', () => {
+    seedUsage();
+    const asOwner = getUsage(t.db, actor(owner), { days: 7, project: 'laika' }, NOW);
+    expect(asOwner.org_totals).toMatchObject({ tokens: 666, attributed_tokens: 6 });
+    expect(getUsage(t.db, actor(bea), { days: 7, project: 'laika' }, NOW).org_totals).toBeNull();
+    expect(getUsage(t.db, actor(owner), { days: 7 }, NOW).org_totals).toBeNull();
   });
 
   it('refuses a member the organisation-wide page', () => {
