@@ -12,6 +12,7 @@ import {
   githubPullRequests,
   projects,
   taskEvidence,
+  taskReviews,
   taskRoundGithub,
   taskRounds,
   tasks,
@@ -28,9 +29,10 @@ import { normaliseRepo } from './heartbeats.ts';
  * request named, each pull request's newest state, and each CI result's newest
  * outcome. **What the agent claimed** is a round's `task_evidence` (§4.26).
  * `confirmRound` compares the two and flips each item's `state`; it runs on
- * every finish and for every round a delivery could touch. So an event that
- * arrived before the finish counts when the finish arrives, and one that
- * arrives after counts when it arrives.
+ * every finish and for every open round a delivery could touch — the newest
+ * of its task, not yet decided (`roundsTouched`). So an event that arrived
+ * before the finish counts when the finish arrives, and one that arrives
+ * after counts when it arrives.
  *
  * Nothing here calls GitHub (§13.4). Everything is what a delivery carried.
  *
@@ -269,16 +271,20 @@ export function pullRequestsWithHead(db: Db, repo: string, headSha: string): str
 /**
  * The repositories a round's proof may be matched in, or null for any.
  *
- * **The evidence's own repository first**: a pull request URL names one, and
- * then nothing is matched anywhere else — a commit with the same sha prefix
- * in another repository is not this one. Without that, the project's `repo`
- * (§4.3). Without either, any repository this org's webhook reports, which is
- * what a project that never named its repository could plausibly use.
+ * **The project's `repo` (§4.3) when it names one, and only that.** The agent
+ * writes the proof, so nothing in it may choose who vouches for it: a pull
+ * request URL in another repository would otherwise let that repository's
+ * pushes and checks confirm this task (the D-083 review's B1). Such a pull
+ * request confirms nothing, and nothing is matched through it.
+ *
+ * Only when the project names no repository does the pull request's own
+ * narrow it — then nothing is matched anywhere else. Without either, any
+ * repository this org's webhook reports.
  */
 function plausibleRepos(projectRepo: string | null, prKey: string | null): string[] | null {
-  if (prKey !== null) return [repoOfKey(prKey)];
   const folded = projectRepo === null ? null : foldRepo(projectRepo);
-  return folded === null ? null : [folded];
+  if (folded !== null) return [folded];
+  return prKey === null ? null : [repoOfKey(prKey)];
 }
 
 /** `sha = value`, or a prefix range on `sha` that the index can serve. */
@@ -445,8 +451,10 @@ export function confirmRound(db: Db, roundId: string, now: number): boolean {
   const prItem = items.find((i) => i.kind === 'pull_request');
   const prKey = prItem === undefined ? null : pullRequestKey(prItem.value);
   const repos = plausibleRepos(round.projectRepo, prKey);
+  // A pull request outside the plausible repositories is not looked up at
+  // all: it confirms nothing, and its head is not this round's head.
   const pr =
-    prKey === null
+    prKey === null || (repos !== null && !repos.includes(repoOfKey(prKey)))
       ? undefined
       : db.select().from(githubPullRequests).where(eq(githubPullRequests.key, prKey)).get();
 
@@ -537,7 +545,14 @@ export interface Seen {
 /**
  * The rounds a delivery could change: those whose proof names one of its
  * commits (by any prefix of at least 7), one of its branches or one of its
- * pull requests, finished within the last 30 days.
+ * pull requests, finished within the last 30 days — and **still open**: the
+ * newest round of its task, with no review decision recorded against it.
+ *
+ * An earlier round is what a person already read, or sent back. Re-checking
+ * it would let a later push rewrite it: round 1 on a pull request whose head
+ * moved for round 2 would take round 2's CI as its own (the D-083 review's
+ * B2), and a round sent back for red CI would turn green. So each round keeps
+ * what GitHub said about it while it was the one waiting.
  */
 export function roundsTouched(db: Db, seen: Seen, now: number): string[] {
   const ids = new Set<string>();
@@ -586,13 +601,44 @@ export function roundsTouched(db: Db, seen: Seen, now: number): string[] {
   }
 
   if (ids.size === 0) return [];
-  return db
-    .select({ id: taskRounds.id })
+  const touched = db
+    .select({ id: taskRounds.id, taskId: taskRounds.taskId, number: taskRounds.number })
     .from(taskRounds)
     .where(
       and(inArray(taskRounds.id, [...ids]), gte(taskRounds.createdAt, now - GITHUB_RECORD_TTL_MS)),
     )
-    .all()
+    .all();
+  if (touched.length === 0) return [];
+
+  const newest = new Map<string, number>();
+  for (const row of db
+    .select({ taskId: taskRounds.taskId, number: taskRounds.number })
+    .from(taskRounds)
+    .where(
+      inArray(
+        taskRounds.taskId,
+        touched.map((r) => r.taskId),
+      ),
+    )
+    .all()) {
+    newest.set(row.taskId, Math.max(newest.get(row.taskId) ?? 0, row.number));
+  }
+  const decided = new Set(
+    db
+      .select({ roundId: taskReviews.roundId })
+      .from(taskReviews)
+      .where(
+        inArray(
+          taskReviews.roundId,
+          touched.map((r) => r.id),
+        ),
+      )
+      .all()
+      .map((r) => r.roundId),
+  );
+
+  return touched
+    .filter((r) => r.number === newest.get(r.taskId) && !decided.has(r.id))
     .map((r) => r.id);
 }
 

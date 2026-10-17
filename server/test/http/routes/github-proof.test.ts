@@ -678,3 +678,148 @@ describe('the CI line', () => {
     ).toBe('CI: lint, test failed');
   });
 });
+
+// --------------------------------------------- the review's fixes (D-083)
+
+/** Every round of a task, newest first. */
+async function rounds(taskId: string): Promise<Round[]> {
+  return (await json<{ rounds: Round[] }>(await must(asSession(`/api/v1/tasks/${taskId}/rounds`))))
+    .rounds;
+}
+
+function statusOf(taskId: string): string | undefined {
+  return h.db.select().from(tasks).where(eq(tasks.id, taskId)).get()?.status;
+}
+
+describe('the review’s fixes (D-083)', () => {
+  it('B1: a pull request in another repository vouches for nothing when the project names its own', async () => {
+    // The reviewer's probe. The project's repository is `kvell/laika`; the
+    // agent cites a pull request in `someone/else` and that repository
+    // reports the commit and a passing check. The agent must not be able to
+    // pick which repository vouches for it.
+    const sha = shaOf('elsewhere');
+    const taskId = await finish({
+      commits: [{ sha }],
+      pull_request: 'https://github.com/someone/else/pull/5',
+      tests: TESTS,
+    });
+
+    await delivered(
+      'pull_request',
+      pullRequest('opened', { number: 5, head: sha, repo: 'someone/else' }),
+    );
+    await delivered('push', push('feature/x', [sha], { repo: 'someone/else' }));
+    await delivered('check_run', checkRun(sha, 'gate', 'success', 10, 'someone/else'));
+
+    const round = await latest(taskId);
+    expect(round.commits[0]?.state).toBe('claimed');
+    expect(round.pull_request).toMatchObject({ state: 'claimed', merged: null });
+    expect(round.tests.map((t) => t.state)).toEqual(['claimed', 'claimed']);
+    expect(round.ci).toBeNull();
+  });
+
+  /**
+   * The reviewer's B2 probe: round 1 on pull request #42 at head A, sent back,
+   * the pull request synced to head B, round 2 finished, then CI on B. Round 1
+   * keeps what CI said about A; only round 2 hears about B.
+   */
+  async function twoRounds(onA: 'success' | 'failure', onB: 'success' | 'failure') {
+    const task = await newTask();
+    const headA = shaOf(`round-1-${onA}`);
+    const headB = shaOf(`round-2-${onB}`);
+    const pr = `https://github.com/${REPO}/pull/42`;
+
+    await finish({ pull_request: pr, tests: TESTS }, task);
+    await delivered('pull_request', pullRequest('opened', { head: headA, updated: 1 }));
+    await delivered('check_run', checkRun(headA, 'gate', onA, 10));
+    const first = (await rounds(task.id))[0]!;
+    expect(first.ci?.head_sha).toBe(headA);
+
+    await must(
+      asSession(`/api/v1/tasks/${task.id}/send-back`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'Not yet.' }),
+      }),
+    );
+    await delivered('pull_request', pullRequest('synchronize', { head: headB, updated: 2 }));
+    await must(
+      asToken(`/api/v1/tasks/${task.id}/finish`, {
+        method: 'POST',
+        body: JSON.stringify({ summary: 'Again', pull_request: pr, tests: TESTS }),
+      }),
+    );
+    await delivered('check_run', checkRun(headB, 'gate', onB, 20));
+
+    const [second, earlier] = await rounds(task.id);
+    return { headA, headB, second: second!, earlier: earlier! };
+  }
+
+  it('B2: a failing check on round 2’s head does not rewrite round 1’s passing proof', async () => {
+    const { headA, headB, second, earlier } = await twoRounds('success', 'failure');
+
+    expect(second.number).toBe(2);
+    expect(second.ci).toMatchObject({ head_sha: headB, passed: 0, failed: 1 });
+    expect(second.tests.map((t) => t.state)).toEqual(['failed', 'failed']);
+
+    expect(earlier.number).toBe(1);
+    expect(earlier.ci).toMatchObject({ head_sha: headA, passed: 1, failed: 0 });
+    expect(earlier.tests.map((t) => t.state)).toEqual(['confirmed', 'confirmed']);
+  });
+
+  it('B2, the reverse: a round sent back for red CI does not turn green', async () => {
+    const { headA, headB, second, earlier } = await twoRounds('failure', 'success');
+
+    expect(second.ci).toMatchObject({ head_sha: headB, passed: 1, failed: 0 });
+    expect(second.tests.map((t) => t.state)).toEqual(['confirmed', 'confirmed']);
+
+    expect(earlier.ci).toMatchObject({ head_sha: headA, passed: 0, failed: 1 });
+    expect(earlier.tests.map((t) => t.state)).toEqual(['failed', 'failed']);
+  });
+
+  it('a late or redelivered `opened` leaves a task in review where it is', async () => {
+    const task = await newTask();
+    await finish({}, task);
+    expect(statusOf(task.id)).toBe('review');
+
+    const res = await deliver(
+      'pull_request',
+      pullRequest('opened', { head: shaOf('late-open'), ref: `lai-${String(task.number)}-work` }),
+    );
+
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(statusOf(task.id)).toBe('review');
+  });
+
+  it('`reopened` on a done task leaves it done', async () => {
+    const task = await newTask();
+    await finish({}, task);
+    await must(asSession(`/api/v1/tasks/${task.id}/accept`, { method: 'POST' }));
+    expect(statusOf(task.id)).toBe('done');
+
+    const res = await deliver(
+      'pull_request',
+      pullRequest('reopened', { head: shaOf('reopen'), ref: `lai-${String(task.number)}-work` }),
+    );
+
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(statusOf(task.id)).toBe('done');
+  });
+
+  it('a merged pull request on a task already done answers 200 and leaves it done', async () => {
+    const task = await newTask();
+    await finish({}, task);
+    await must(asSession(`/api/v1/tasks/${task.id}/accept`, { method: 'POST' }));
+
+    const res = await deliver(
+      'pull_request',
+      pullRequest('closed', {
+        head: shaOf('merged-after-accept'),
+        ref: `lai-${String(task.number)}-work`,
+        merged: true,
+      }),
+    );
+
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(statusOf(task.id)).toBe('done');
+  });
+});

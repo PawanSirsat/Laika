@@ -409,17 +409,28 @@ export function handlePullRequest(
       .run();
   }
 
-  // **Already there is not a failure** (LAI-766). Under the review gate the
-  // agent finishes first and a person merges after, so the task is in review
-  // when `merged` arrives; answering that `409` would mark the delivery failed
-  // on GitHub's page for doing exactly what it should.
   const current = db
     .select({ status: tasks.status })
     .from(tasks)
     .where(eq(tasks.id, resolved.taskId))
-    .get();
-  if (current?.status === to) {
-    return { handled: true, taskId: resolved.taskId, reason: `already ${to}`, rounds };
+    .get()?.status;
+
+  // **`opened` and `reopened` only start work** (D-083). They move a task out
+  // of `backlog` or `todo` and nothing else: a late or redelivered `opened`,
+  // or a person opening the pull request while the task waits in review,
+  // must not pull it out of the Review queue — and `reopened` must not take
+  // accepted work back out of done.
+  if (to === 'in_progress' && current !== 'backlog' && current !== 'todo') {
+    return { handled: true, taskId: resolved.taskId, reason: `left in ${String(current)}`, rounds };
+  }
+
+  // **Already there, or past it, is not a failure** (LAI-766, D-083). Under
+  // the review gate the agent finishes first and a person merges after, so
+  // the task is in review — or already accepted — when `merged` arrives.
+  // Answering `409` or `422` would mark the delivery failed on GitHub's page
+  // for doing exactly what it should, and a merge never moves work out of done.
+  if (to === 'review' && (current === 'review' || current === 'done')) {
+    return { handled: true, taskId: resolved.taskId, reason: `left in ${current}`, rounds };
   }
 
   changeStatus(db, principal(resolved.projectId), resolved.taskId, to, now);
@@ -545,7 +556,7 @@ export function handleCheck(
 
 /**
  * Which §5 status a pull-request action means, or `null` for one §10.1 does not
- * name.
+ * name. Where the task already is narrows it further: see `handlePullRequest`.
  *
  * `closed` without `merged` is **not** a transition: a pull request abandoned
  * without merging says nothing about whether the task is still being worked on,
