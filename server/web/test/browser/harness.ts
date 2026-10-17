@@ -95,7 +95,7 @@ export const DEFAULT_STATUSES = (
 const STATUSES_PATH = /^\/api\/v1\/projects\/[^/]+\/statuses$/;
 
 /**
- * The review gate's two reads (D-081, LAI-758), answered for a stub that does
+ * The review gate's two reads (D-082, LAI-758), answered for a stub that does
  * not name them: a task panel reads a task's rounds, and the shell reads the
  * review queue for its badge on every page. A task never finished has no
  * rounds and an empty queue waits for nobody; a test about either names its

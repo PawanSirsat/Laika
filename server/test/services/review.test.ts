@@ -31,7 +31,7 @@ import {
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 /**
- * The review gate, step 1 (D-081, LAI-758): agents never move a task into
+ * The review gate, step 1 (D-082, LAI-758): agents never move a task into
  * done, a finish carries proof as a round, and a person accepts or sends back.
  *
  * Every refusal below asserts the **reason**, not merely that something threw
@@ -128,7 +128,7 @@ afterEach(() => {
   t.close();
 });
 
-describe('an agent never moves a task into done (D-081, LAIKA-455, audit H6)', () => {
+describe('an agent never moves a task into done (D-082, LAIKA-455, audit H6)', () => {
   it('is refused review → done by category, with the reason and the way forward', () => {
     const task = inReview();
 

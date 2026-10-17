@@ -19,7 +19,7 @@ export interface SendBackDialogProps {
 }
 
 /**
- * Send a task back from review with a reason (D-081, LAI-758).
+ * Send a task back from review with a reason (D-082, LAI-758).
  *
  * **The reason is required**, and the dialog says who reads it: the next agent
  * on the task gets it first from `get_task_context`, and the card and panel

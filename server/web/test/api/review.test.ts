@@ -1,5 +1,5 @@
 /**
- * `src/api/review.ts` — the review gate's client half (D-081, LAI-758).
+ * `src/api/review.ts` — the review gate's client half (D-082, LAI-758).
  *
  * Four rules worth a test: **a pull request is drawn as a link only when it is
  * http(s)**, whatever the server stored; **a round's summary counts what a

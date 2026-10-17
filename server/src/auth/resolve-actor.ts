@@ -290,7 +290,7 @@ export function isSystemPrincipal(principal: Principal): principal is SystemPrin
  * **The agent table alone did not keep agents out of `done`.** This comment
  * said it kept §5's *"Agents do not self-certify"* true, and it did not: the
  * table held `review → done`, so a token could accept its own work in review
- * (audit H6). Since LAI-758 (D-081) the table has no edge into `done`, and
+ * (audit H6). Since LAI-758 (D-082) the table has no edge into `done`, and
  * `changeStatus` refuses any principal this function calls an agent a move into
  * a done-**category** status before the table is asked — the rule lives there,
  * and this function only says who it applies to.

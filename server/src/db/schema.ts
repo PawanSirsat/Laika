@@ -1242,7 +1242,7 @@ export const pushedCommitKeys = sqliteTable(
 
 /**
  * One `finish_task` — an agent handing a task back for review, with what it
- * says it did (§4.25, D-081, LAI-758).
+ * says it did (§4.25, D-082, LAI-758).
  *
  * **A task has as many rounds as it was finished**, numbered from 1: finished,
  * sent back, finished again is two rows, and the first is never rewritten.
@@ -1286,7 +1286,7 @@ export const taskRounds = sqliteTable(
 
 /**
  * One piece of a round's proof — a commit, the branch, the pull request or a
- * test run (§4.26, D-081, LAI-758).
+ * test run (§4.26, D-082, LAI-758).
  *
  * **Each item carries its own `state`**, `claimed` until something other than
  * the agent checks it. Step 2 (LAIKA-477) flips `state`, `state_source` and
@@ -1333,7 +1333,7 @@ export const taskEvidence = sqliteTable(
 
 /**
  * What a person did with a task waiting in review: accepted it, or sent it
- * back with a reason (§4.27, D-081, LAI-758).
+ * back with a reason (§4.27, D-082, LAI-758).
  *
  * A send-back's reason is also posted as a comment, `comment_id`, so the
  * thread reads as it always did; this row is what marks that comment as a

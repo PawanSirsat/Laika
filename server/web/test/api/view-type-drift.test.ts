@@ -308,7 +308,7 @@ const PAIRS: readonly Pair[] = [
     clientFile: 'local-activity.ts',
   },
   /*
-   * The review gate (D-081, LAI-758), paired the moment the client existed.
+   * The review gate (D-082, LAI-758), paired the moment the client existed.
    * `ReviewQueueView.tasks` and `TaskRoundsView.rounds` hold the nested
    * shapes paired through the table below, for the profile's reason.
    */

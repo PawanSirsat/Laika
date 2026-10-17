@@ -58,7 +58,7 @@ export interface ShellValue {
   /** Re-read that count — the Unlisted screen calls it after a promote or a dismiss. */
   readonly refreshUnlisted: () => void;
   /**
-   * Tasks waiting in review for this person (D-081, LAI-758), for the rail's
+   * Tasks waiting in review for this person (D-082, LAI-758), for the rail's
    * badge; `undefined` until read. Everyone signed in has a queue.
    */
   readonly reviewWaiting: number | undefined;

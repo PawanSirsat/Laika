@@ -128,7 +128,7 @@ void describe('the sidebar offers nothing that does not exist', () => {
       // `Unlisted work` is gated on `audit_log.export` and `navRoutes()` here
       // takes no predicate, so it is absent by the same rule it always was.
       // **Capacity is back, as one global page** (owner, 2026-10-15, LAI-754);
-      // it was a space tab from LAI-251. **Review is ungated** (D-081,
+      // it was a space tab from LAI-251. **Review is ungated** (D-082,
       // LAI-758): everyone signed in has a queue of the projects they act on.
       ['Capacity', 'Review', 'Connect', 'Tokens', 'Organisation'],
     );

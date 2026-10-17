@@ -112,7 +112,7 @@ export interface Task {
    */
   readonly blocks: readonly string[];
   /**
-   * The send-back this task carries, or null (§4.27, D-081): a person sent it
+   * The send-back this task carries, or null (§4.27, D-082): a person sent it
    * back from review with this reason, and nobody has finished it since. The
    * card marks it and the panel shows the reason.
    */

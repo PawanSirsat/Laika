@@ -279,7 +279,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
 
         const chain = discoveredFromChain(db, actor, view);
 
-        // The review gate (D-081): the send-back first, because it is what the
+        // The review gate (D-082): the send-back first, because it is what the
         // next agent must fix, and the latest round's proof.
         const review = listTaskRounds(db, actor, view.id);
         const evidence = review.rounds[0] ?? null;
@@ -600,7 +600,7 @@ function summarise(task: TaskView | undefined, id: string) {
 }
 
 /**
- * A round's proof as bullets, each marked with its state (D-081): an agent
+ * A round's proof as bullets, each marked with its state (D-082): an agent
  * reading its own earlier claim should see that it is a claim.
  */
 function evidenceText(round: RoundView | null): string {

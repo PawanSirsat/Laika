@@ -12,7 +12,7 @@ import { assertMayCloseReview, changeStatus, getTask, viewTasks, type TaskView }
 
 /**
  * The review queue and the two decisions a person makes there (SPEC §6.4,
- * §11.4, D-081, LAIKA-478).
+ * §11.4, D-082, LAIKA-478).
  *
  * **Accept** moves a task waiting in review to the project's first visible
  * done status; **send back** moves it to the first visible in-progress status,

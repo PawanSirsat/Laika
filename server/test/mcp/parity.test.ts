@@ -277,7 +277,7 @@ const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
   [
     'finish_task',
     {
-      note: 'Its twin is `POST /tasks/:id/finish` (LAI-758, D-081), added when a finish began to carry proof: the move to review, the summary comment and the round in one transaction on both surfaces. Before it, the twin was a status call and a comment call in sequence, and this pair is what proves the route did not become a third write path.',
+      note: 'Its twin is `POST /tasks/:id/finish` (LAI-758, D-082), added when a finish began to carry proof: the move to review, the summary comment and the round in one transaction on both surfaces. Before it, the twin was a status call and a comment call in sequence, and this pair is what proves the route did not become a third write path.',
       rest: async (s) => {
         const task = await seedTask(s);
         await must(

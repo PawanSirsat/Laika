@@ -59,7 +59,7 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
    */
   /*
    * The good state: every finish has been decided. Says what arrives here,
-   * because a person new to the board has not seen it fill yet (D-081).
+   * because a person new to the board has not seen it fill yet (D-082).
    */
   '/review': {
     headline: 'Nothing waiting for review',

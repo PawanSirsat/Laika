@@ -12,7 +12,7 @@ export interface ReviewCount {
 }
 
 /**
- * The review queue's count, for the sidebar's badge (D-081, LAI-758).
+ * The review queue's count, for the sidebar's badge (D-082, LAI-758).
  *
  * **Called once, by the shell**, as `useUnlistedCount` is. Every signed-in
  * person has a queue — it lists review work on the projects they can act on —

@@ -1,5 +1,5 @@
 /**
- * The review gate in a browser (D-081, LAI-758): the Review page, its badge,
+ * The review gate in a browser (D-082, LAI-758): the Review page, its badge,
  * the proof it opens, accept and send back; and the task panel's Proof
  * section and the card's "sent back" marker.
  */
@@ -275,7 +275,7 @@ void describe('the Review page', () => {
   });
 });
 
-void describe('the task panel and the card (D-081)', () => {
+void describe('the task panel and the card (D-082)', () => {
   const SENT = task({
     id: 't7',
     key: 'LC-7',

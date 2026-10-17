@@ -233,7 +233,7 @@ describe('status transitions (AC4)', () => {
       expect((err as ApiError).details).toMatchObject({ from: 'backlog', to: 'review' });
     }
 
-    // Into done it is the D-081 rule that answers, before the table is asked.
+    // Into done it is the D-082 rule that answers, before the table is asked.
     try {
       changeStatus(t.db, agent, task.id, 'done');
       throw new Error('should have thrown');
@@ -981,7 +981,7 @@ describe('started_at and completed_at', () => {
         'priority',
         'project_id',
         'ready',
-        // LAI-758, D-081: the send-back a task carries, in §6.4's shape.
+        // LAI-758, D-082: the send-back a task carries, in §6.4's shape.
         'send_back',
         'sprint_id',
         'stale_flagged_at',

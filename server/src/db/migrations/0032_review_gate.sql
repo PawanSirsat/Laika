@@ -1,4 +1,4 @@
--- LAI-758, D-081: the review gate's three tables — a round per finish,
+-- LAI-758, D-082: the review gate's three tables — a round per finish,
 -- an evidence item per piece of proof, and a person's review decisions.
 --
 -- **Additive only**: three CREATE TABLEs and their indexes, and no existing

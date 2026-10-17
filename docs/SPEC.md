@@ -525,7 +525,7 @@ unconstrained.
 
 A comment is served with **`sent_back`**, derived and never stored: `true` when
 `task_reviews.comment_id` (§4.27) names it, because it is the reason a person
-gave for sending the task back from review (D-081).
+gave for sending the task back from review (D-082).
 
 ### 4.8 `activity` — append-only
 
@@ -1038,7 +1038,7 @@ machine — no GitHub webhook and no call to GitHub (§13.4 is unchanged). Kept
 ### 4.25 `task_rounds`
 
 One finish of a task — an agent handing it back for review — with what it says
-it did (D-081, LAI-758). **A task has as many rounds as it was finished**:
+it did (D-082, LAI-758). **A task has as many rounds as it was finished**:
 finished, sent back and finished again is two rows, and the first is never
 rewritten. Written only by `finish_task` and `POST /tasks/:id/finish` (§6.4),
 inside the move to review.
@@ -1056,7 +1056,7 @@ inside the move to review.
 
 ### 4.26 `task_evidence`
 
-One item of a round's proof (D-081): a commit, the branch, the pull request or
+One item of a round's proof (D-082): a commit, the branch, the pull request or
 a test run. **Each item carries its own `state`**, so step 2 (LAIKA-477,
 GitHub confirming the proof) changes `state`, `state_source` and `state_at` on
 a row and needs no migration.
@@ -1083,7 +1083,7 @@ branch 200, a URL 500 and a command 500 (§6.4).
 ### 4.27 `task_reviews`
 
 What a person did with a task waiting in review: **accepted** it or **sent it
-back** with a reason (D-081, LAI-758).
+back** with a reason (D-082, LAI-758).
 
 | field | notes |
 | --- | --- |
@@ -1131,7 +1131,7 @@ backlog ──▶ todo ───────────────────
   this line is a verified webhook delivery on a resolved project and nothing
   else.
 - **`done` is never set by `finish_task`.** Agents do not self-certify.
-- **An agent never moves a task into `done`** (D-081, LAI-758). A caller
+- **An agent never moves a task into `done`** (D-082, LAI-758). A caller
   authenticated by a personal access token — over REST or MCP — is refused
   any status whose **category** is `done`, however it names it (a category, a
   status id, a status name), from wherever the task is, including a move
@@ -1368,7 +1368,7 @@ POST   /api/v1/projects/:slug/tasks
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
 POST   /api/v1/tasks/:id/claim               POST /api/v1/tasks/:id/status
 POST   /api/v1/tasks/:id/finish              body { summary, checklist?, commits?, branch?, pull_request?, tests? }
-                                             → review, with a round and its proof (finish_task's twin, D-081)
+                                             → review, with a round and its proof (finish_task's twin, D-082)
 GET    /api/v1/tasks/:id/rounds              { rounds (newest first), send_back }
 POST   /api/v1/tasks/:id/accept              → the first visible done status   (session only; the done rule, §5)
 POST   /api/v1/tasks/:id/send-back           body { reason } → the first visible in-progress status   (session only)
@@ -1590,11 +1590,11 @@ not find them and should not**:
 | `created_by_client` | the token's name, when a token created it (LAI-093) |
 | `status_name` | the `project_statuses.name` of `status_id` (§4.20) |
 | `blocked_by`, `blocks` | **both directions of §4.6** — see §4.5. `ready` depends only on `blocked_by` |
-| `send_back` | `{ reason_md, decided_by, created_at }` of the task's current send-back (§4.27), or `null` (D-081) |
+| `send_back` | `{ reason_md, decided_by, created_at }` of the task's current send-back (§4.27), or `null` (D-082) |
 
 `created_at` and `updated_at` are on every view and are not listed per endpoint.
 
-**The review gate (D-081, LAI-758).** `POST /tasks/:id/finish` is
+**The review gate (D-082, LAI-758).** `POST /tasks/:id/finish` is
 `finish_task`'s REST twin: the move to review, the summary comment and a new
 round (§4.25) with its proof (§4.26), in one transaction. Every proof field is
 optional, so a body with only `summary` and `checklist` behaves as before.
@@ -1694,7 +1694,7 @@ read them.
 | `laika_whoami` | `{}` | the identity this token acts as — `user_id`, `name`, `email`, `org_role`, `token_scope` — and `how_to_work`, the same text as the server's `instructions`, for clients that drop those (D-076). Reads nothing, changes nothing |
 | `list_projects` | `{}` | projects the user can read |
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age |
-| `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-081) — then task, description, `evidence` (the latest round's proof, or `null`) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`) |
+| `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, `evidence` (the latest round's proof, or `null`) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`) |
 | `get_project_context` | `{ project }` | `context_md`, its recent edit history, open-task summary, members + roles |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
@@ -1704,7 +1704,7 @@ read them.
 | `update_status` | `{ task, status, note? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
 | `set_task_sprint` | `{ task, sprint }` | task. `sprint: null` takes it out of whichever it is in |
 | `add_comment` | `{ task, body }` | comment |
-| `finish_task` | `{ task, summary, checklist?, commits?, branch?, pull_request?, tests? }` | task → **`review`**, summary posted as a comment, and a round with the proof, each item `claimed` (§4.25, D-081) |
+| `finish_task` | `{ task, summary, checklist?, commits?, branch?, pull_request?, tests? }` | task → **`review`**, summary posted as a comment, and a round with the proof, each item `claimed` (§4.25, D-082) |
 | `create_sprint` | `{ project, name, goal?, start_date, end_date, status? }` | created sprint, with the id the other sprint tools take |
 | `update_sprint` | `{ sprint, name?, goal?, start_date?, end_date?, status? }` | sprint. Completing one **does not move its tasks** (§4.15, D-013) |
 | `update_project_context` | `{ project, context_md, mode }` | the document's new length. `mode` is `replace` or `append` |
@@ -1812,7 +1812,7 @@ and each disagreed:
   failing tool call. It writes no `activity` row, because it reads nothing.
 - `finish_task` stops at `review` by design — agents do not close their own work.
   No tool reaches `done`: `update_status` refuses any done status to an agent
-  (§5, D-081), and accepting is a person's, in the web app.
+  (§5, D-082), and accepting is a person's, in the web app.
 - Inputs are zod schemas exported as JSON Schema; unknown fields are rejected.
 - Errors are MCP tool errors carrying the §6.3 `code`, so an agent can branch on
   `conflict` versus `forbidden` rather than parse prose.
@@ -2208,7 +2208,7 @@ the decision currently governing it rather than the table naming one for all.
 
 | | | decision |
 | --- | --- | --- |
-| the sidebar | **ORG** — *Capacity*, *Review* with its waiting count for everyone signed in (D-081), and *Unlisted work* with its open count for owners and admins — then **SPACES** — two recent spaces, *More spaces* — then SETTINGS. A space is a project with a two-letter key, a count and a colour | D-059.1, amended by **D-061**; ORG by **LAI-754** (the owner, 2026-10-15) |
+| the sidebar | **ORG** — *Capacity*, *Review* with its waiting count for everyone signed in (D-082), and *Unlisted work* with its open count for owners and admins — then **SPACES** — two recent spaces, *More spaces* — then SETTINGS. A space is a project with a two-letter key, a count and a colour | D-059.1, amended by **D-061**; ORG by **LAI-754** (the owner, 2026-10-15) |
 | Task detail | a **centred modal over a dimmed board**, dismissed by the scrim or Escape — not a screen, and not a right-hand drawer | D-059.2, amended by **D-063** |
 | Timeline, Calendar, Dashboard, Meeting review | **tabs across the top of a space** | **D-059.3** |
 | Capacity, Review, Unlisted work | **one page each, across every space the reader can see**, reached from the sidebar's ORG group — `/capacity`, `/review` and `/unlisted`, no space bar and no tabs. A `/capacity?project=` link from when Capacity was a tab is rewritten to `/capacity` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"* |
@@ -2239,7 +2239,7 @@ call MCP; agents do.
 | **Organisation** | 1 basic / 6 LLM | `GET/PATCH /org`, `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
 | **Connect** *(not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` | — | ✅ D-079 |
 | **Capacity** *(sidebar, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects`, `GET /tasks/:id`, `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754 |
-| **Review** *(sidebar, global)* | 5 | `GET /review`, `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-081 |
+| **Review** *(sidebar, global)* | 5 | `GET /review`, `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
 | **Unlisted work** *(sidebar, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
 | **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity` | — | ✅ D-078, D-079 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` | all, indirectly via `activity` | ✅ |
@@ -2289,7 +2289,7 @@ anything missing sends the task back.
   when any of them is set, and `Created` / `Updated` at the foot. Comments
   distinguish human from agent.
   **A Proof section beside Acceptance** once the task has been finished
-  (D-081): the send-back it carries first, then the latest round — round
+  (D-082): the send-back it carries first, then the latest round — round
   number, the agent that finished it, commits (short sha and first line),
   branch, pull request as a link only when `http(s)`, test commands with their
   exit codes in green for `0` and red otherwise, and a `claimed` badge on every
@@ -2331,7 +2331,7 @@ anything missing sends the task back.
   admins, a link to *Unlisted work* with the open count; disabled state when
   `presence_enabled = 0`. **No unlisted notes on this screen** — they are on
   their own page.
-- **Review** (`/review`, everyone signed in, D-081) — the queue of tasks in a
+- **Review** (`/review`, everyone signed in, D-082) — the queue of tasks in a
   review status on every project the reader can act on, **oldest waiting
   first**: key, title, project, assignee, the agent that finished it, time
   waiting, the proof in brief (commits, PR, tests passed and failed, or *no

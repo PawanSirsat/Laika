@@ -4438,7 +4438,7 @@ wanted a GitHub-like twelve months.
 - **Another machine's history.** Each machine looks back over the repos it
   knows; the same commit from two machines is one key.
 
-## D-081 — The review gate: agents never move work into done, a finish carries proof, a person decides.
+## D-082 — The review gate: agents never move work into done, a finish carries proof, a person decides.
 
 **2026-10-17, the owner, directly** (through the orchestrator; LAI-758 builds
 it in `server/`, `server/web/` and here; board cards LAIKA-455, LAIKA-476,

@@ -180,7 +180,7 @@ export interface TaskView {
    */
   blocks: string[];
   /**
-   * The send-back this task carries, or null (§4.27, D-081): a person sent it
+   * The send-back this task carries, or null (§4.27, D-082): a person sent it
    * back from review with this reason, and nobody has finished it since. Drawn
    * on the card and the panel; `get_task_context` reads it to the agent first.
    * Null once the task is done or cancelled.
@@ -213,7 +213,7 @@ interface ViewContext {
   readonly clients: ReadonlyMap<string, string>;
   /** Status name per status id, for every status on the page (LAI-738). */
   readonly statusNames: ReadonlyMap<string, string>;
-  /** The send-back each task carries, if any (D-081). */
+  /** The send-back each task carries, if any (D-082). */
   readonly sendBacks: ReadonlyMap<string, SendBackView>;
 }
 
@@ -328,7 +328,7 @@ function sendBackOf(found: SendBackView | undefined): TaskView['send_back'] {
 
 /**
  * Views for rows from several projects at once, in the same fixed number of
- * queries as one project's page — the review queue's read (§6.4, D-081).
+ * queries as one project's page — the review queue's read (§6.4, D-082).
  */
 export function viewTasks(
   db: Db,
@@ -340,7 +340,7 @@ export function viewTasks(
 }
 
 /**
- * **An agent never moves a task into done** (§5, D-081, LAIKA-455).
+ * **An agent never moves a task into done** (§5, D-082, LAIKA-455).
  *
  * By **category**, so a project that calls its done column `Shipped`, or has
  * three of them, gives an agent no way round it (D-077). Asked before anything
@@ -370,7 +370,7 @@ function assertNotAgentIntoDone(actor: ServiceCaller, dest: StatusRef): void {
 /**
  * Who may send a task to review, **and who may move it into done** (§5, M7):
  * the assignee, a project lead, or an org admin or owner. The review queue's
- * accept and send-back ask the same question (D-081).
+ * accept and send-back ask the same question (D-082).
  *
  * The system principal is not held to it (D-051): see `changeStatus`.
  */
@@ -669,7 +669,7 @@ export function createTask(
       input.status_id === undefined ? (input.status ?? 'backlog') : { status_id: input.status_id },
     );
     // Before the category check, so a token sending `status: done` hears why
-    // it cannot, not that two fields disagree (D-081).
+    // it cannot, not that two fields disagree (D-082).
     assertNotAgentIntoDone(actor, initial);
     if (input.status !== undefined && input.status !== initial.category) {
       throw new ApiError(
@@ -989,7 +989,7 @@ export function updateTask(
   return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
 }
 
-/** Where a claim may take a task from (§5, M7, D-081). */
+/** Where a claim may take a task from (§5, M7, D-082). */
 const CLAIMABLE: readonly TaskStatus[] = [...READY_STATUSES, 'in_progress'];
 
 /**
@@ -1104,7 +1104,7 @@ export function changeStatus(
   rule: TransitionRule = isAgentPrincipal(actor) ? 'agent' : 'human',
   /**
    * Which review decision this move is, written into the activity row as
-   * `via` the way a claim writes `via: 'claim'` (D-081). Absent for every
+   * `via` the way a claim writes `via: 'claim'` (D-082). Absent for every
    * other move.
    */
   via?: 'accept' | 'send_back',
@@ -1114,7 +1114,7 @@ export function changeStatus(
   assertCan(scoped, 'task.write', { projectId: project.id });
 
   const from = statusRow(db, project.id, task.statusId)!;
-  // A bare `done` from an agent is the D-081 refusal even when the task is
+  // A bare `done` from an agent is the D-082 refusal even when the task is
   // already done: the no-op answer below would tell it the move was merely
   // redundant, and a replayed session request would look like it had worked.
   if (target === 'done') assertNotAgentIntoDone(actor, statusForCategory(db, project.id, 'done'));
@@ -1175,7 +1175,7 @@ export function changeStatus(
   // §5: moving to `review` requires the assignee, a project lead, or org
   // Admin/Owner. The task text said "assignee, Admin or Owner" and omitted lead;
   // the spec wins (D-011). **Moving to `done` asks the same question** (M7,
-  // D-081): before LAI-758 any `task.write` holder could close somebody else's
+  // D-082): before LAI-758 any `task.write` holder could close somebody else's
   // work without the review gate's rule ever being asked.
   //
   // ## The system principal is not held to it (D-051, §10.1, LAI-446)
@@ -1308,7 +1308,7 @@ export function finishTask(
     const summary = finishSummary(input);
     addComment(db, actor, task.id, summary, now);
 
-    // The round, with its proof (§4.25, D-081). After the move, inside the same
+    // The round, with its proof (§4.25, D-082). After the move, inside the same
     // transaction: a round exists exactly when a finish happened.
     recordRound(db, actor, task.id, summary, items, now);
 

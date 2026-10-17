@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
 
 /**
- * The review gate over HTTP (§6.4, D-081, LAI-758): the refusal an agent's
+ * The review gate over HTTP (§6.4, D-082, LAI-758): the refusal an agent's
  * token gets on every REST door into done, `POST /tasks/:id/finish` with its
  * proof, the rounds read, the queue, and the two decisions a session makes.
  *

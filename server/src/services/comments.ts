@@ -48,7 +48,7 @@ export interface CommentView {
   edited_at: number | null;
   /**
    * This comment is the reason a person gave when sending the task back from
-   * review (§4.27, D-081) — derived from `task_reviews.comment_id`, never
+   * review (§4.27, D-082) — derived from `task_reviews.comment_id`, never
    * stored on the comment.
    */
   sent_back: boolean;
@@ -351,7 +351,7 @@ export { toView as commentView };
 
 /**
  * Views for a page of comment rows, each marked if it is a send-back's reason
- * — one query for the page (D-081).
+ * — one query for the page (D-082).
  */
 export function commentViews(db: Db, rows: readonly CommentRow[]): CommentView[] {
   const sentBack = sendBackCommentIds(

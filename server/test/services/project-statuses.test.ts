@@ -554,7 +554,7 @@ describe('a task moving between statuses (services/tasks.ts)', () => {
     });
 
     // …an agent may not, whether it names the category, the status or its id —
-    // and since D-081 it is told the rule for done, not the table's refusal.
+    // and since D-082 it is told the rule for done, not the table's refusal.
     const other = newTask('backlog');
     for (const target of ['done', { status_id: shipped.id }, { status_name: 'shipped' }] as const) {
       const err = expectApiError(

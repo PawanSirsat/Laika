@@ -61,7 +61,7 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   'webhooks/transcript': 'a meeting bot or script posts here (D-052); signed, not session-authed',
   'api/v1/heartbeats': "the plugin's SessionStart/Stop hooks post this (LAI-418), never the SPA",
   'api/v1/tasks/*/finish':
-    "finish_task's REST twin (D-081): an agent hands work back for review; a person accepts or sends back instead",
+    "finish_task's REST twin (D-082): an agent hands work back for review; a person accepts or sends back instead",
 
   // Built, served, and waiting on a screen. Each names the task, not a reason.
   'api/v1/comments/*': 'LAI-234 — a comment cannot be edited or deleted from the UI',

@@ -161,7 +161,7 @@ function ReviewRoute() {
     route: { navigate },
     refreshReview,
   } = useShell();
-  // An accept or a send-back changes the sidebar's count; it re-reads (D-081).
+  // An accept or a send-back changes the sidebar's count; it re-reads (D-082).
   return <ReviewScreen onNavigate={navigate} onChanged={refreshReview} />;
 }
 

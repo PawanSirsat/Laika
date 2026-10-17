@@ -312,7 +312,7 @@ describe('update_status', () => {
       arguments: { task: 'COR-1', status: 'shipped' },
     });
     expect(jump.isError).toBe(true);
-    // D-081: the done rule answers, by category, before the table is asked.
+    // D-082: the done rule answers, by category, before the table is asked.
     expect(JSON.stringify(jump)).toContain('agent_cannot_mark_done');
     expect(JSON.stringify(jump)).toContain('An agent cannot move a task into Shipped');
 

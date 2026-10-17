@@ -215,7 +215,7 @@ export function TaskCard({
           </span>
         )}
         {/*
-          A person sent it back from review (D-081): the reason is the tooltip,
+          A person sent it back from review (D-082): the reason is the tooltip,
           and the panel reads it out in full. Not a toggleable field — it is
           the review gate speaking, like the stale marker.
         */}

@@ -371,7 +371,7 @@ export function TaskDetailPanel({
             <span className="cmt-who">{agent ? `${who}'s agent` : who}</span>
             {agent && <span className="cmt-agent">AGENT</span>}
             {comment.edited_at !== null && <span className="cmt-edited">edited</span>}
-            {/* The reason a person sent the task back from review (D-081). */}
+            {/* The reason a person sent the task back from review (D-082). */}
             {comment.sent_back && (
               <span className="cmt-sent-back">
                 <span aria-hidden="true">↩</span> sent back
@@ -733,7 +733,7 @@ export function TaskDetailPanel({
           )}
 
           {/*
-            The proof (D-081, LAI-758): the send-back first, then the latest
+            The proof (D-082, LAI-758): the send-back first, then the latest
             round's evidence, earlier rounds folded. Next to Acceptance — what
             counts as done, then what was claimed against it. Keyed on
             `updated_at`, which the store keeps current from the stream.

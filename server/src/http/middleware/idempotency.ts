@@ -28,14 +28,14 @@ export function keyedByTheRoute(path: string): boolean {
 }
 
 /**
- * The review decisions (D-081, LAI-758): a person's, on a web session. A token
+ * The review decisions (D-082, LAI-758): a person's, on a web session. A token
  * holding a session's key and body for one of them is never handed the stored
  * answer — the route runs and refuses it `session_required`.
  */
 const DECISION_ROUTES: readonly RegExp[] = [/^\/api\/v1\/tasks\/[^/]+\/(?:accept|send-back)$/];
 
 /**
- * Whether a stored answer may be replayed to a **token** (D-081). The store is
+ * Whether a stored answer may be replayed to a **token** (D-082). The store is
  * keyed by the person, not the credential (LAI-748), so a session's answer is
  * found by the same person's token. Two such answers would hand an agent a
  * success the gate refuses it: a review decision, and any task moved into a

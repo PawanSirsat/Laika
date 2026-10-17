@@ -9,7 +9,7 @@ import { assertCan } from '../policy/can.ts';
 
 /**
  * The proof an agent hands back with `finish_task`, kept as rounds (SPEC
- * §4.25–§4.27, D-081, LAI-758).
+ * §4.25–§4.27, D-082, LAI-758).
  *
  * A **round** is one finish; its **evidence** is one row per item — each
  * commit, the branch, the pull request, each test run — and each item carries
@@ -341,7 +341,7 @@ export function latestRounds(db: Db, taskIds: readonly string[]): Map<string, Ro
 }
 
 /**
- * The send-back each task currently carries (§4.27, D-081): its latest
+ * The send-back each task currently carries (§4.27, D-082): its latest
  * decision is a send-back, no round has been finished since, and the task is
  * not done or cancelled. Two queries whatever the count.
  *

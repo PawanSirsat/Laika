@@ -204,7 +204,7 @@ export const ROUTES: readonly Route[] = [
     mini: 'CA',
   },
   /*
-   * The review queue (D-081, LAI-758): work agents handed back, waiting for a
+   * The review queue (D-082, LAI-758): work agents handed back, waiting for a
    * person to accept or send back. **Not gated** — everyone signed in has a
    * queue, of the projects they can act on — with the waiting count beside its
    * name, as Unlisted work has its open count.

@@ -90,7 +90,7 @@ describe('migrations', () => {
     'sprints',
     'tags',
     'task_dependencies',
-    // LAI-758, D-081: the review gate's rounds, evidence and decisions.
+    // LAI-758, D-082: the review gate's rounds, evidence and decisions.
     'task_evidence',
     'task_reviews',
     'task_rounds',

@@ -157,7 +157,7 @@ void describe('the SPACES section', () => {
       assert.match(sidebar, /SETTINGS/, 'the sidebar did not render at all');
       /*
        * **`ORG` leads the rail since LAI-754**: Capacity, one page across every
-       * space, Review (D-081, LAI-758), and Unlisted work for this reader, an
+       * space, Review (D-082, LAI-758), and Unlisted work for this reader, an
        * **owner**. Above SPACES, because none belongs to the space listed
        * under it.
        */

@@ -107,7 +107,7 @@ const ReorderBody = strictObject({
 });
 
 /**
- * `POST /tasks/:id/finish` — `finish_task`'s REST twin (§6.4, D-081): the move
+ * `POST /tasks/:id/finish` — `finish_task`'s REST twin (§6.4, D-082): the move
  * to review, the summary comment and the round with its proof, in one write.
  * Every proof field is optional, as on the tool, and bounded by the same
  * `EVIDENCE_LIMITS`; the service holds the rules (a sha is hex, a pull request
@@ -249,7 +249,7 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
   /** Every round of a task, newest first, and its current send-back (§6.4). */
   app.get('/:id/rounds', (c) => c.json(listTaskRounds(db, requireActor(c), c.req.param('id'))));
 
-  /** The review queue's two decisions (§6.4, D-081) — a web session's. */
+  /** The review queue's two decisions (§6.4, D-082) — a web session's. */
   app.post('/:id/accept', (c) =>
     c.json(acceptTask(sqlite, db, requireActor(c), c.req.param('id'))),
   );

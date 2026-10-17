@@ -2,7 +2,7 @@ import { request } from './client.ts';
 import { type Task } from './tasks.ts';
 
 /**
- * The review gate (SPEC §4.25–§4.27, §6.4, D-081, LAI-758): the proof an agent
+ * The review gate (SPEC §4.25–§4.27, §6.4, D-082, LAI-758): the proof an agent
  * hands back with `finish_task`, the queue of work waiting for a person, and
  * the two decisions a person makes there.
  *

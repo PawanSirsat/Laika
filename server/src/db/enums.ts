@@ -205,7 +205,7 @@ export const LOCAL_ACTIVITY_SCOPES = ['agent-repos', 'laika-repos'] as const;
 export type LocalActivityScope = (typeof LOCAL_ACTIVITY_SCOPES)[number];
 
 /**
- * §4.26's `kind` (D-081, LAI-758): what one piece of an agent's proof is. The
+ * §4.26's `kind` (D-082, LAI-758): what one piece of an agent's proof is. The
  * branch and the pull request are items like a commit is, so each carries a
  * `state` of its own and step 2 (LAIKA-477) can confirm one without the rest.
  */
@@ -213,7 +213,7 @@ export const EVIDENCE_KINDS = ['commit', 'branch', 'pull_request', 'test_run'] a
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 
 /**
- * §4.26's `state` (D-081): `claimed` is what the agent said; `confirmed` and
+ * §4.26's `state` (D-082): `claimed` is what the agent said; `confirmed` and
  * `failed` are what something other than the agent found. Every item is
  * `claimed` today. The other two exist now so that the first confirmation
  * changes a row rather than the schema.
@@ -221,6 +221,6 @@ export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 export const EVIDENCE_STATES = ['claimed', 'confirmed', 'failed'] as const;
 export type EvidenceState = (typeof EVIDENCE_STATES)[number];
 
-/** §4.27's `decision` (D-081): what a person did with work waiting in review. */
+/** §4.27's `decision` (D-082): what a person did with work waiting in review. */
 export const REVIEW_DECISIONS = ['accepted', 'sent_back'] as const;
 export type ReviewDecision = (typeof REVIEW_DECISIONS)[number];

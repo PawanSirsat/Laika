@@ -22,7 +22,7 @@ import { ApiError } from '../errors.ts';
  * - **`cancelled` is reachable from anywhere except `done`**, and can be undone
  *   back to `backlog`. Cancelling something already finished is meaningless;
  *   reopening it is the operation that was wanted.
- * - **Nothing reaches `done` in this table** (D-081, LAIKA-455). It is the
+ * - **Nothing reaches `done` in this table** (D-082, LAIKA-455). It is the
  *   table an agent is held to, and an agent never marks work done: `review →
  *   done` was here until LAI-758, and the agent rule read it, so a token could
  *   accept its own work. A person's table below is derived from this one and

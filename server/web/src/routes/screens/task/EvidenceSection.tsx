@@ -44,7 +44,7 @@ const STATE_HINT: Record<EvidenceState, string> = {
   failed: 'Checked, and it did not hold.',
 };
 
-/** One item's state, as a small badge (D-081): `claimed` until something checks it. */
+/** One item's state, as a small badge (D-082): `claimed` until something checks it. */
 export function StateBadge({ state }: { readonly state: EvidenceState }) {
   return (
     <span className={`ev-state ev-state-${state}`} title={STATE_HINT[state]}>
@@ -220,7 +220,7 @@ export function SendBackNote({
 }
 
 /**
- * The proof on a task (D-081, LAI-758): the send-back it carries, first, then
+ * The proof on a task (D-082, LAI-758): the send-back it carries, first, then
  * the latest round with every item and its state, and earlier rounds folded.
  * Reads `GET /tasks/:id/rounds`, again whenever `refreshKey` changes.
  */

@@ -48,7 +48,7 @@ function boardHref(item: ReviewQueueItem): string {
 }
 
 /**
- * The review queue (§11.4, D-081, LAI-758): every task waiting in a review
+ * The review queue (§11.4, D-082, LAI-758): every task waiting in a review
  * status on the projects this person can act on, oldest waiting first, with
  * the proof each finish carried. A person accepts it into done or sends it
  * back with a reason; nothing else on the board can mark agent work done.

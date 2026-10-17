@@ -4,7 +4,7 @@ import { EVIDENCE_LIMITS, evidenceItems } from '../../src/services/rounds.ts';
 
 /**
  * `evidenceItems` — the rule both surfaces' proof meets before it is stored
- * (§4.26, D-081, LAI-758). Rounds as a whole, their numbering and the
+ * (§4.26, D-082, LAI-758). Rounds as a whole, their numbering and the
  * send-back that retires on the next one are asserted through `finishTask` in
  * `review.test.ts`, which is where a round is ever written from.
  */

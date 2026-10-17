@@ -5,7 +5,7 @@ import { listReviewQueue } from '../../services/review.ts';
 import { type AppEnv } from '../context.ts';
 
 /**
- * `/api/v1/review` — the review queue (SPEC §6.4, §11.4, D-081).
+ * `/api/v1/review` — the review queue (SPEC §6.4, §11.4, D-082).
  *
  * Transport only: which projects count, the order and who may decide are
  * `services/review.ts`'s. Not paged: the queue is what is waiting for a
