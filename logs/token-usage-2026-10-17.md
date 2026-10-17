@@ -101,3 +101,63 @@ In progress, not in review: waiting for the owner's word to `git merge master` a
 regenerate the migration on top of LAI-771's (next journal index, fresh `when`, a
 new number). Screenshots in /tmp/laika-token-usage-shots/ (16: Usage page and
 Tokens card, owner and member, light and dark, 1366 and 390).
+
+## 2026-10-17T16:30:00Z — LAI-769 (review round 1)
+
+**What changed**
+- server/src/services/token-usage.ts — a usage-report day may carry
+  `backfill: true`; such a day also deletes every other collector's rows of the
+  person for that day and each agent it names. `UsageView.org_totals` beside a
+  space, for readers holding `usage.read_org`.
+- server/src/services/local-activity.ts, routes/local-activity.ts —
+  `GET /me/activity-sharing?collector_id=` adds `usage_days_elsewhere` (dates
+  other collectors hold, back to today − 32 UTC) for a caller who may send,
+  with both switches on.
+- cli/src/activity-usage.ts — session index on every record; `skip-sessions`
+  read, compacted past 64 KB, its signature in the index (a change resends);
+  Codex `token_usage_record` deduped by `response_id` across rollouts; held
+  days frozen at the first backfill send (no older tokens until the board has
+  said); the marker on a day's first send only.
+- cli/src/activity-sync.ts, activity.ts — the sync asks with its collector id
+  and passes the held days; `on` prints the 30 days per agent before asking;
+  both prompts say past automated sessions cannot be told apart.
+- plugin/scripts/laika-activity-hook — LAI-775: an automated session's id, from
+  its start and end payloads only, appended to `skip-sessions`.
+- server/web/src/routes/screens/usage/UsageScreen.tsx, usage.css, api/usage.ts —
+  *Outside any space* tile, the space note with *Show all spaces*, and the
+  empty space's honest state.
+- docs/SPEC.md §4.32, §6.4, §11.4.2.1; cli/README.md; plugin/README.md;
+  .tasks/backlog/LAI-775 (decision and work recorded), LAI-777 filed.
+
+**Decisions**
+- The client learns held days from `GET /me/activity-sharing?collector_id=`,
+  not `GET /me/local-activity` as the review suggested: the preview is session
+  only (D-079 — a token must not read back what was collected) and the collector
+  has a token. The new answer is dates only, only to a caller who may send.
+- Held days are decided once, when the 30 days first go; a machine that turns up
+  later does not take back days already sent. Until the board answers (an older
+  Laika), no older tokens go at all.
+- The marker goes only on a day's first send: after that the day is this
+  collector's, so a second machine starting the same day is not repeatedly
+  replaced.
+- `on` asks only when the 30 days hold tokens, after printing them; with none it
+  says so and asks nothing.
+- The skip file survives a collector starting over (`rotate`), not `off`: it
+  is a privacy guard, not collected data.
+
+**Before / after**
+- Server: 4 new tests red, then green (the two-machines-live test passed before
+  and after, as a guard); HTTP 1 red, then green. Mutation: removing the
+  cross-collector delete turns 2 red.
+- CLI: collector 6 red (the off/on flow showed 105 → 210), then 26/26; hook 3
+  red, then green; command 3 red (2 updated for the new no-files rule), then
+  8/8. Mutation: ignoring held days turns 2 red.
+- Web: 3 red, then 7/7.
+
+**Discovered**
+- Codex forks of rollouts without per-response records cannot be checked here
+  (no forks among 12 rollouts) → LAI-777 filed (discovered-from: LAI-769).
+
+**State**
+In progress; the migration is still to be regenerated after `git merge master`
+on the owner's word (LAI-771 first). Not in review until then.
