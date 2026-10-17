@@ -561,7 +561,7 @@ void describe('the capacity screen', () => {
       // their own read, apart from the cards' (LAI-765): until it lands the
       // note says how often it refreshes, so wait for the scope, then assert it.
       const note = h.page.locator('.cap-summary-note');
-      await until(async () => /across 1 space/.test(await note.innerText()), 10_000);
+      await until(async () => (await note.innerText()).includes('across 1 space'), 10_000);
       assert.match(await note.innerText(), /across 1 space/);
     } finally {
       await h.close();
@@ -653,7 +653,7 @@ void describe('the capacity screen', () => {
       await drawer.waitFor({ timeout: 10_000 });
       await until(async () => {
         const text = await drawer.innerText();
-        return /LW-1/.test(text) && /Toolbar reads its own width/.test(text);
+        return text.includes('LW-1') && text.includes('Toolbar reads its own width');
       }, 10_000);
       assert.match(await drawer.innerText(), /LW-1/);
       assert.match(await drawer.innerText(), /Toolbar reads its own width/);
