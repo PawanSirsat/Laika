@@ -94,6 +94,43 @@
   color: var(--overdue);
 }
 
+/*
+ * **Light mode reads faint** (LAI-730, owner). There `--text-muted` and
+ * `--text-secondary` are the same grey to the eye (#606775, #5a6070), and the
+ * subtle border all but vanishes against the row, so swapping one grey for the
+ * other would change nothing. The keys and the scope take the primary text
+ * colour and the box takes the default border. Dark was not faint and is left
+ * as it was. Blocked keeps the danger token.
+ */
+:root[data-theme='light'] .bstats {
+  border-color: var(--border-default);
+}
+
+:root[data-theme='light'] .bstats-scope {
+  border-right-color: var(--border-default);
+  color: var(--text-primary);
+}
+
+:root[data-theme='light'] .bstats-stat + .bstats-stat {
+  border-left-color: var(--border-default);
+}
+
+:root[data-theme='light'] .bstats-key,
+:root[data-theme='light'] .bstats-glyph {
+  color: var(--text-primary);
+}
+
+:root[data-theme='light'] .bstats-of,
+:root[data-theme='light'] .bstats-partial {
+  color: var(--text-secondary);
+}
+
+/* The rules above outrank `.bstats-blocked …`, so blocked says so again. */
+:root[data-theme='light'] .bstats-blocked .bstats-key,
+:root[data-theme='light'] .bstats-blocked .bstats-glyph {
+  color: var(--overdue);
+}
+
 /* Drawn only in the compact tier. */
 .bstats-glyph {
   display: none;
