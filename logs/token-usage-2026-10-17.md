@@ -154,6 +154,14 @@ Tokens card, owner and member, light and dark, 1366 and 390).
   8/8. Mutation: ignoring held days turns 2 red.
 - Web: 3 red, then 7/7.
 
+**Measured**
+- The hook's prompt path skips the automated-session tests until the exit it
+  always reached (ba250f9d); interleaved, fastest base 2.95 ms against 3.04 ms.
+- Gate (fifth run, after the last edit): `pnpm test` 1 — cli 363/363, web
+  2037/2037, server 2736 passed + 7 skipped, 1 failed: `migrate.test.ts` 5 s
+  timeout (LAI-768), 21/21 alone; `pnpm lint` 0; `pnpm format` 0. Earlier runs
+  lost one to four CLI timing checks to load 13–22 (LAI-774); each passes alone.
+
 **Discovered**
 - Codex forks of rollouts without per-response records cannot be checked here
   (no forks among 12 rollouts) → LAI-777 filed (discovered-from: LAI-769).
