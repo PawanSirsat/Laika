@@ -1090,9 +1090,16 @@ export function claimTask(
   actor: ResolvedActor,
   taskId: string,
   now: number = Date.now(),
+  /**
+   * The branch the work is on, when the agent says (`start_working`'s
+   * `branch`, LAI-770): kept on the task, so the board shows where the work
+   * is and a branch named for the key ties the session's tokens to it.
+   */
+  branch?: string,
 ): TaskView {
   const { project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'task.claim', { projectId: project.id });
+  const onBranch = branch?.trim() === '' ? undefined : branch?.trim();
 
   return immediateTransaction(sqlite, () => {
     const before = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
@@ -1135,6 +1142,7 @@ export function claimTask(
         // and stamping every claim shortened its cycle time (LAI-743).
         // `before` is read inside this transaction, so nothing moved it since.
         startedAt: before.startedAt ?? now,
+        ...(onBranch === undefined ? {} : { branch: onBranch }),
         updatedAt: now,
       })
       .where(and(eq(tasks.id, taskId), isNull(tasks.assigneeId)))

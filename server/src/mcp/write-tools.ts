@@ -264,15 +264,15 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Start working on a task',
       description:
-        'Claim a task and move it to in_progress. Claim before you write any code for it. Fails with `conflict` if somebody already holds it — check the error before assuming you have it.',
+        'Claim a task and move it to in_progress. Claim before you write any code for it, and pass the `branch` you work on — name it after the key, `LAI-42-short-name` — so the task keeps it and the tokens your session spends are tied to this task. Fails with `conflict` if somebody already holds it — check the error before assuming you have it.',
       inputSchema: z.strictObject({ task: TASK_REF, branch: z.string().max(200).optional() }),
     },
-    ({ task }) => {
+    ({ task, branch }) => {
       try {
         // `claimTask` already refuses a claimed task with `conflict` and names the
         // current assignee in `details` — surfaced as-is rather than reworded,
         // because §7.2 wants an agent branching on the code, not parsing prose.
-        const claimed = claimTask(sqlite, db, actor, resolveTaskRef(db, task), clock());
+        const claimed = claimTask(sqlite, db, actor, resolveTaskRef(db, task), clock(), branch);
 
         return answer(`Claimed \`${claimed.key}\` — now ${statusText(claimed)}.`, {
           task: claimed,

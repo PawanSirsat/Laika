@@ -8,6 +8,7 @@ import {
   orgs,
   projectMemberships,
   projects,
+  taskRounds,
   tokens,
   tokenUsageDays,
   users,
@@ -18,6 +19,7 @@ import { deleteOwnLocalActivity, getActivitySharing } from '../../src/services/l
 import { createTask } from '../../src/services/tasks.ts';
 import {
   getPersonUsage,
+  getTaskUsage,
   getUsage,
   recordTokenUsage,
   TOKEN_USAGE_DAYS_BACK,
@@ -723,4 +725,258 @@ describe('every Usage query is one indexed query', () => {
       expect(steps.filter((s) => /^SCAN token_usage_days\b/.test(s))).toEqual([]);
     });
   }
+});
+
+// ------------------------------------------------- phase 2: tasks (LAI-770)
+
+describe('the task key prefixes a collector may tie tokens to (LAI-770)', () => {
+  function hiddenProject(): void {
+    t.db
+      .insert(projects)
+      .values({
+        id: newId(),
+        orgId,
+        name: 'Hidden',
+        slug: 'hidden',
+        prefix: 'HID',
+        visibility: 'private',
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+  }
+
+  it('names the prefixes of the projects the sender may read, and nothing else', () => {
+    hiddenProject();
+    share(bea);
+    member(bea, projectId);
+    share(owner);
+    expect(getActivitySharing(t.db, withToken(bea), COLLECTOR_A, NOW).task_prefixes).toEqual([
+      'LAI',
+    ]);
+    expect(getActivitySharing(t.db, withToken(owner), COLLECTOR_A, NOW).task_prefixes).toEqual([
+      'HID',
+      'LAI',
+    ]);
+  });
+
+  it('is given only to a collector that may send, with both switches on', () => {
+    member(bea, projectId);
+    share(bea);
+    expect(getActivitySharing(t.db, withToken(bea), undefined, NOW)).not.toHaveProperty(
+      'task_prefixes',
+    );
+    expect(
+      getActivitySharing(t.db, withToken(bea, 'read_only'), COLLECTOR_A, NOW),
+    ).not.toHaveProperty('task_prefixes');
+    share(bea, false);
+    expect(getActivitySharing(t.db, withToken(bea), COLLECTOR_A, NOW)).not.toHaveProperty(
+      'task_prefixes',
+    );
+  });
+});
+
+describe('GET /tasks/:id/usage — a task’s tokens (LAI-770)', () => {
+  const DAY_1 = '2026-10-12';
+  const DAY_2 = '2026-10-14';
+  const DAY_3 = '2026-10-16';
+
+  /**
+   * One task two people worked on, from two machines and two agents, beside
+   * tokens of theirs tied to nothing on the same days and on a day the task
+   * had none.
+   */
+  function seedTask(): { id: string; key: string } {
+    const task = createTask(t.sqlite, t.db, actor(owner), 'laika', { title: 'Shared', now: NOW });
+    member(bea, projectId);
+    member(cal, projectId);
+    share(bea);
+    share(cal);
+    const tied = (extra: Partial<TokenUsageRowInput>) => row({ task: task.key, ...extra });
+    recordTokenUsage(
+      t.db,
+      actor(bea),
+      report([
+        {
+          day: DAY_1,
+          rows: [
+            tied({ input: 10, output: 20, cache_write: 30, cache_read: 1_000 }),
+            // Tied to nothing, the same day: in the share's whole, not the task's.
+            row({ input: 40, output: 0, cache_write: 0, cache_read: 7 }),
+          ],
+        },
+        { day: DAY_3, rows: [tied({ input: 1, output: 2, cache_write: 3, cache_read: 4 })] },
+        // A day the task had nothing: in neither.
+        { day: TODAY, rows: [row({ input: 5_000, output: 0, cache_write: 0, cache_read: 0 })] },
+      ]),
+      NOW,
+    );
+    recordTokenUsage(
+      t.db,
+      actor(cal),
+      report(
+        [
+          {
+            day: DAY_2,
+            rows: [
+              tied({
+                agent: 'codex',
+                model: 'gpt-5.2-codex',
+                input: 100,
+                output: 200,
+                cache_write: 300,
+                cache_read: 50,
+              }),
+            ],
+          },
+        ],
+        { collector_id: COLLECTOR_B },
+      ),
+      NOW,
+    );
+    return { id: task.id, key: task.key };
+  }
+
+  /** A finish of the task at `at`, as `finish_task` writes one. */
+  function round(taskId: string, number: number, at: number): void {
+    t.db
+      .insert(taskRounds)
+      .values({
+        id: newId(),
+        taskId,
+        number,
+        finishedBy: bea,
+        summaryMd: 'done',
+        createdAt: at,
+      })
+      .run();
+  }
+
+  it('adds up every person’s tokens on it: headline without cache reads, cache reads beside it', () => {
+    const task = seedTask();
+    const view = getTaskUsage(t.db, actor(owner), task.id, {});
+    expect(view).toMatchObject({
+      task_id: task.id,
+      key: task.key,
+      first_day: DAY_1,
+      last_day: DAY_3,
+    });
+    expect(view.totals).toEqual({
+      tokens: 60 + 6 + 600,
+      input: 111,
+      output: 222,
+      cache_write: 333,
+      cache_read: 1_054,
+    });
+  });
+
+  it('splits it per person and agent for an owner, in name order — never ranked', () => {
+    const task = seedTask();
+    const view = getTaskUsage(t.db, actor(owner), task.id, {});
+    expect(view.people).toBe('everyone');
+    expect(
+      view.by_person?.map((p) => [p.name, p.tokens, p.by_agent.map((a) => [a.agent, a.tokens])]),
+    ).toEqual([
+      ['Bea', 66, [['claude-code', 66]]],
+      ['Cal', 600, [['codex', 600]]],
+    ]);
+  });
+
+  it('gives a member their own part and nobody else’s; a member who did none, the total only', () => {
+    const task = seedTask();
+    const asBea = getTaskUsage(t.db, actor(bea), task.id, {});
+    expect(asBea.people).toBe('own');
+    expect(asBea.by_person?.map((p) => p.name)).toEqual(['Bea']);
+    expect(asBea.totals.tokens).toBe(666);
+    expect(JSON.stringify(asBea)).not.toContain(cal);
+
+    const dan = makeUser('Dan', 'member');
+    member(dan, projectId);
+    const asDan = getTaskUsage(t.db, actor(dan), task.id, {});
+    expect(asDan.by_person).toEqual([]);
+    expect(asDan.attributed).toBeNull();
+    expect(asDan.totals.tokens).toBe(666);
+    expect(JSON.stringify(asDan)).not.toContain(bea);
+    expect(JSON.stringify(asDan)).not.toContain(cal);
+  });
+
+  it('gives a token the total only, even an owner’s full one', () => {
+    const task = seedTask();
+    const view = getTaskUsage(t.db, withToken(owner), task.id, {});
+    expect(view.people).toBe('none');
+    expect(view.by_person).toBeNull();
+    expect(view.attributed).toBeNull();
+    expect(view.totals.tokens).toBe(666);
+  });
+
+  it('says how much of what its people spent on those days is tied to a task', () => {
+    const task = seedTask();
+    // Bea: 60 + 40 on DAY_1 and 6 on DAY_3 — TODAY's 5,000 is not a day of
+    // this task's. Cal: 600 on DAY_2, all of it tied.
+    expect(getTaskUsage(t.db, actor(owner), task.id, {}).attributed).toEqual({
+      tokens: 666,
+      of: 706,
+    });
+    expect(getTaskUsage(t.db, actor(bea), task.id, {}).attributed).toEqual({
+      tokens: 66,
+      of: 106,
+    });
+  });
+
+  it('splits it by review round, by day: a round’s finish day counts toward it', () => {
+    const task = seedTask();
+    // Round 1 handed in on DAY_1, round 2 on DAY_2; DAY_3 is the open round.
+    round(task.id, 1, Date.UTC(2026, 9, 12, 15));
+    round(task.id, 2, Date.UTC(2026, 9, 14, 9));
+    expect(getTaskUsage(t.db, actor(bea), task.id, {}).by_round).toEqual([
+      { number: 1, finished_on: DAY_1, tokens: 60, cache_read: 1_000 },
+      { number: 2, finished_on: DAY_2, tokens: 600, cache_read: 50 },
+      { number: 3, finished_on: null, tokens: 6, cache_read: 4 },
+    ]);
+  });
+
+  it('reads a finish’s day in the reader’s zone', () => {
+    const task = seedTask();
+    // 22:30 UTC on the 13th is the 14th in Kolkata, so DAY_2's tokens are
+    // round 1's there and the open round's in UTC.
+    round(task.id, 1, Date.UTC(2026, 9, 13, 22, 30));
+    const utc = getTaskUsage(t.db, actor(bea), task.id, { tz: 'UTC' }).by_round;
+    const ist = getTaskUsage(t.db, actor(bea), task.id, { tz: 'Asia/Kolkata' }).by_round;
+    expect(utc[0]).toMatchObject({ number: 1, finished_on: '2026-10-13', tokens: 60 });
+    expect(ist[0]).toMatchObject({ number: 1, finished_on: '2026-10-14', tokens: 660 });
+  });
+
+  it('with no tokens, says so: zeros, no rounds, no days', () => {
+    const task = createTask(t.sqlite, t.db, actor(owner), 'laika', { title: 'Quiet', now: NOW });
+    const view = getTaskUsage(t.db, actor(owner), task.id, {});
+    expect(view.totals.tokens).toBe(0);
+    expect(view.by_round).toEqual([]);
+    expect(view.by_person).toEqual([]);
+    expect(view.first_day).toBeNull();
+  });
+
+  it('refuses a reader who may not read the task’s project', () => {
+    const task = seedTask();
+    t.db.update(projects).set({ visibility: 'private' }).where(eq(projects.id, projectId)).run();
+    const outsider = makeUser('Out', 'member');
+    expect(refusal(() => getTaskUsage(t.db, actor(outsider), task.id, {}))).toMatchObject({
+      code: 'forbidden',
+    });
+    // A task that does not exist is not_found, whoever asks.
+    expect(refusal(() => getTaskUsage(t.db, actor(outsider), 'nope', {}))).toMatchObject({
+      code: 'not_found',
+    });
+  });
+
+  it('reads the task’s rows through its index', () => {
+    const steps = (
+      t.sqlite
+        .prepare(
+          'EXPLAIN QUERY PLAN SELECT sum(input + output + cache_write) FROM token_usage_days WHERE task_id = ?',
+        )
+        .all('x') as { detail: string }[]
+    ).map((r) => r.detail);
+    expect(steps.filter((s) => /^SCAN token_usage_days\b/.test(s))).toEqual([]);
+    expect(steps.some((s) => s.includes('token_usage_days_task_idx'))).toBe(true);
+  });
 });

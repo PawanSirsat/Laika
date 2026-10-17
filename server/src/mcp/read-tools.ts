@@ -10,6 +10,7 @@ import {
   listProjects,
   projectSlugById,
   projectView,
+  requireProjectBySlug,
 } from '../services/projects.ts';
 import { listTaskRounds, type RoundView } from '../services/rounds.ts';
 import { getTaskEstimate, type TaskEstimateView } from '../services/estimates.ts';
@@ -462,6 +463,17 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         const byStatus = new Map<string, number>();
         for (const t of open) byStatus.set(t.status, (byStatus.get(t.status) ?? 0) + 1);
 
+        // LAI-770: the agent's own `start_working` / `update_status` calls and
+        // its branch's name are how a session's tokens reach a task (D-084
+        // item 5). Asking here, where every agent starts, is what makes them.
+        const prefix = requireProjectBySlug(db, project).prefix;
+        const beforeYouStart =
+          `Mark the task before you start: \`start_working\` with the \`branch\` you work on, ` +
+          `or \`update_status\` to \`in_progress\` when it is already yours, and again whenever ` +
+          `you move to another task. Name the branch after the key — \`${prefix}-42-short-name\`. ` +
+          `Laika ties the tokens your session spends to the task you marked; work before it, or ` +
+          `on a branch without a key, stays unattributed.`;
+
         const markdown = [
           `## ${project}`,
           '',
@@ -479,6 +491,9 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
             edits.map((e) => `${nameOf(e.actor_id)} on ${isoDate(e.created_at)}`),
             'No recorded edits.',
           ),
+          '',
+          '### Before you start',
+          beforeYouStart,
           '',
           '### Open work',
           bullets(
@@ -502,6 +517,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           task_counts: Object.fromEntries(byStatus),
           open_task_count: open.length,
           members,
+          before_you_start: beforeYouStart,
         });
       } catch (error) {
         return toolError(error);

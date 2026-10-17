@@ -234,6 +234,22 @@ describe('start_working', () => {
     await client.close();
   });
 
+  it('keeps the branch it is given on the task (LAI-770)', async () => {
+    const client = await connect(await mint());
+    await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Work' } });
+
+    const result = await client.callTool({
+      name: 'start_working',
+      arguments: { task: 'COR-1', branch: 'COR-1-fix-login' },
+    });
+
+    expect((payload(result).task as { branch: string | null }).branch).toBe('COR-1-fix-login');
+    const read = await client.callTool({ name: 'get_task_context', arguments: { task: 'COR-1' } });
+    expect(JSON.stringify(read)).toContain('COR-1-fix-login');
+
+    await client.close();
+  });
+
   it('fails with conflict naming the current assignee, not a bare error', async () => {
     const client = await connect(await mint());
     await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Work' } });
