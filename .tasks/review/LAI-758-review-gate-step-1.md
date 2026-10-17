@@ -118,7 +118,7 @@ toolbar, README count, profile fixes).
 **What was built.** Commits `a4a8206` (server), `253589f` (SPEC §4–§7),
 `c5095d0` (web), `cce9256` (filter width), `606d029` (the decision and SPEC
 §11.4), `457141a` (the decision renumbered D-082) and `3dd9dfb` (LAI-762
-filed). Migration `0032_review_gate.sql` creates `task_rounds`,
+filed). Migration `0033_review_gate.sql` creates `task_rounds`,
 `task_evidence` and `task_reviews` and alters nothing.
 
 **Decisions made here** (all in D-082):
@@ -153,15 +153,14 @@ filed). Migration `0032_review_gate.sql` creates `task_rounds`,
 - **The send-back dialog reuses the profile's rating-dialog classes**, so the
   two read as one family; the summary card reuses `prof-card` / `prof-stat`.
 
-**Collides with `build-cleanup` (in review): migration 0032 and the decision
-number.** `build-cleanup` adds `0032_token_rest_activity.sql` and its own
-D-081. This branch's decision was renumbered to **D-082** (the D-075
-precedent). **The migration cannot be renumbered correctly from here**: the
-drizzle snapshot chain needs `build-cleanup`'s schema. Whichever branch merges
-second: merge `master`, delete `server/src/db/migrations/0032_review_gate.sql`
-and `meta/0032_snapshot.json` and this branch's `_journal.json` entry, run
-`pnpm exec drizzle-kit generate --name review_gate` in `server/`, put back the
-three-line header comment, and gate.
+**Merged after `build-cleanup`** (the orchestrator's merge-order notice,
+2026-10-17). `build-cleanup` took migration `0032_token_rest_activity` and
+decision D-081, so this branch's decision is **D-082** and its migration was
+**regenerated, not renamed**: the first `0032_review_gate` and its journal
+entry were dropped, `master` was merged, and `drizzle-kit generate` produced
+`0033_review_gate` on top of it — `when` 1792224283586 (after 0032's
+1792220041643), its snapshot's `prevId` is 0032's id, and the snapshot carries
+`tokens.last_rest_write_at`. The SQL is the same three `CREATE TABLE`s.
 
 **Not done.** GitHub confirmation (LAIKA-477), measuring evidence completeness
 and median time in review (the data exists; nothing reports it), and the

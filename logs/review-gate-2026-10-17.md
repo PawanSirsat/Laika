@@ -24,7 +24,7 @@ Not pushed, not merged.
 - server/src/mcp/{write-tools,read-tools,server}.ts — `finish_task` takes proof;
   `get_task_context` leads with the send-back; the instructions teach proof
 - server/src/services/comments.ts — `sent_back` on comment views
-- server/src/db/{schema,enums}.ts, migrations/0032_review_gate.sql — three new
+- server/src/db/{schema,enums}.ts, migrations/0033_review_gate.sql — three new
   tables, additive
 - server/web/src/api/review.ts, use-review-count.ts; routes/screens/review/*;
   routes/screens/task/EvidenceSection.tsx, evidence.css — the Review page, the
@@ -52,8 +52,11 @@ Not pushed, not merged.
   precedent).
 
 **Discovered**
-- `build-cleanup` also adds migration 0032. It cannot be renumbered from here
-  without its schema; the regeneration steps are in the task file's build notes.
+- `build-cleanup` took migration 0032 and D-081 first. Following the
+  orchestrator's merge-order notice: dropped this branch's 0032, merged
+  `master`, regenerated the migration as `0033_review_gate` (its `when` after
+  0032's, its snapshot chained to 0032's and carrying
+  `tokens.last_rest_write_at`), and kept the decision as D-082.
 - The Connect block and the plugin skill README still teach finishing without
   proof → LAI-762 filed (discovered-from: LAI-758).
 - `endpoint-coverage.test.ts` reads the JSX text "Pull request" followed by a

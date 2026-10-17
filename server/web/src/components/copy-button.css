@@ -43,3 +43,16 @@
   color: var(--chip-orange);
   border-color: var(--chip-orange-border);
 }
+
+/* The temporary textarea a copy goes through when the clipboard API is absent
+   (LAI-760). Off-screen rather than hidden: a hidden element cannot be
+   selected, and a selection is what the copy command copies. */
+.copy-scratch {
+  position: fixed;
+  top: 0;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}

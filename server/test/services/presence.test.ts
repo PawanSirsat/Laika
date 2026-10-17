@@ -13,7 +13,12 @@ import {
   users,
 } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
-import { capacityNow, presenceNow, PRESENCE_WINDOW_MS } from '../../src/services/presence.ts';
+import {
+  agentPresenceFor,
+  capacityNow,
+  presenceNow,
+  PRESENCE_WINDOW_MS,
+} from '../../src/services/presence.ts';
 import { addMember, createProject } from '../../src/services/projects.ts';
 import { createTask } from '../../src/services/tasks.ts';
 import { atCategory, freshDb, queryPlansOf, type TestDb } from '../helpers/db.ts';
@@ -698,5 +703,66 @@ describe('an MCP call is presence, with no heartbeat (D-076)', () => {
     const mine = capacityNow(t.db, actor(adminId), NOW).people.find((p) => p.user_id === ada);
 
     expect(mine).toMatchObject({ active_sessions: 2, last_seen: NOW - 1000 });
+  });
+});
+
+describe('a REST write is presence too, with no heartbeat (D-081)', () => {
+  /**
+   * An agent on the REST API or the `laika` CLI never calls `/mcp`. Its trace
+   * is `last_rest_write_at`, stamped by the auth middleware on a token's write.
+   */
+  function restToken(
+    userId: string,
+    lastRestWriteAt: number | null,
+    lastMcpAt: number | null = null,
+  ): string {
+    const id = newId();
+    t.db
+      .insert(tokens)
+      .values({
+        id,
+        userId,
+        name: 'omnigent on macOS',
+        prefix: 'lai_test',
+        tokenHash: `${id}-hash`,
+        scope: 'full',
+        lastRestWriteAt,
+        lastMcpAt,
+        createdAt: NOW,
+      })
+      .run();
+    return id;
+  }
+
+  it('shows a token that wrote inside the window and not one that wrote before it', () => {
+    const recent = makeUser('member', 'Recent');
+    restToken(recent, NOW - (PRESENCE_WINDOW_MS - 1000));
+    restToken(makeUser('member', 'Stale'), NOW - (PRESENCE_WINDOW_MS + 1000));
+    restToken(makeUser('member', 'Never'), null);
+
+    const present = presenceNow(t.db, actor(adminId), NOW).present;
+
+    expect(present.map((p) => p.name)).toEqual(['Recent']);
+    // Credited to the token's agent by its name, and no location at all.
+    expect(present[0]).toMatchObject({
+      is_agent: true,
+      client: 'omnigent',
+      last_seen: NOW - (PRESENCE_WINDOW_MS - 1000),
+    });
+    expect(present[0]).not.toHaveProperty('repo');
+  });
+
+  it('is one session with the same token’s MCP call, at the newer of the two', () => {
+    const ada = makeUser('member', 'Ada');
+    restToken(ada, NOW - 1000, NOW - 9000);
+
+    expect(
+      capacityNow(t.db, actor(adminId), NOW).people.find((p) => p.user_id === ada),
+    ).toMatchObject({ active_sessions: 1, last_seen: NOW - 1000 });
+    expect(agentPresenceFor(t.db, ada, NOW)).toEqual({
+      enabled: true,
+      clients: ['omnigent'],
+      last_seen: NOW - 1000,
+    });
   });
 });

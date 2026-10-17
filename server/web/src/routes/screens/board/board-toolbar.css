@@ -562,11 +562,23 @@
  * `min-width: 0` on the row is what actually lets flex shrink it — without it
  * a flex item refuses to go below its content width, which is the usual cause
  * of an overflow that no amount of `overflow` fixes.
+ *
+ * **Keyed to the row, not the window** (LAI-730). It was `@media (max-width:
+ * 47.5rem)`, which never applied with the sidebar open — the row is 212px
+ * narrower than the window there — so at 920px the toolbar's own labels left
+ * search 26px. `.board-bar` is the container (below); 50rem of row is where
+ * the labelled form, crowded (six faces, `Group: Assignee`, a sprint's
+ * Filter badge and the stat pill), still leaves search 120px.
  */
-@media (max-width: 47.5rem) {
+@container board-bar (max-width: 50rem) {
+  /* A pixel off each gap and the face pile's own margin: on *All sprints*,
+     whose scope is the widest, that is what takes search past 120px at 920. */
   .bt {
-    flex-wrap: wrap;
-    min-width: 0;
+    gap: 0.1875rem;
+  }
+
+  .bt-members {
+    margin-inline: 0;
   }
 
   .bt-button {
@@ -594,6 +606,20 @@
 
   .bt-pop-filter {
     width: min(30rem, calc(100vw - 1rem));
+  }
+}
+
+/*
+ * **Wrapping is a narrower step than losing the labels** (LAI-730). Under
+ * 40rem of row the controls alone — six faces, Filter, Group, the five icons
+ * and the stat pill, about 510px — leave search less than 120px on one line,
+ * so the row wraps. Above it, a wrap would only hand search a line of its own
+ * and push the icons and the figures under it.
+ */
+@container board-bar (max-width: 40rem) {
+  .bt {
+    flex-wrap: wrap;
+    min-width: 0;
   }
 }
 
@@ -628,6 +654,8 @@
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--border-subtle);
   min-width: 0;
+  /* The narrow form above follows this row's width (LAI-730). */
+  container: board-bar / inline-size;
 }
 
 /*

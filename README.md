@@ -9,7 +9,7 @@ Your board stops going stale. Your team stops re-explaining the project to their
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Claude Code Plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757)](plugin/)
-[![MCP](https://img.shields.io/badge/MCP-20%20tools-blue)](#-mcp-tools)
+[![MCP](https://img.shields.io/badge/MCP-server-blue)](#-mcp-tools)
 [![Self-hosted](https://img.shields.io/badge/self--hosted-one%20Docker%20container-2496ED?logo=docker&logoColor=white)](docker/)
 [![Node 22+](https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white)](.nvmrc)
 [![GitHub stars](https://img.shields.io/github/stars/PawanSirsat/Laika?style=social)](https://github.com/PawanSirsat/Laika/stargazers)

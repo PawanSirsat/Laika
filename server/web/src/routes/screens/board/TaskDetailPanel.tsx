@@ -561,10 +561,11 @@ export function TaskDetailPanel({
             className="panel-head-action"
             aria-label="Copy link to this task"
             title="Copy link"
-            onClick={() => {
+            onClick={(event) => {
               // Through the one clipboard implementation (CopyButton's), not a
-              // second call site of its own.
-              void copyText(window.location.href);
+              // second call site of its own. The button is passed so the copy
+              // stays inside this modal (LAI-760).
+              void copyText(window.location.href, event.currentTarget);
             }}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -592,8 +593,8 @@ export function TaskDetailPanel({
               <li>
                 <button
                   type="button"
-                  onClick={() => {
-                    void copyText(task.key);
+                  onClick={(event) => {
+                    void copyText(task.key, event.currentTarget);
                     setOverflowOpen(false);
                   }}
                 >
@@ -603,8 +604,8 @@ export function TaskDetailPanel({
               <li>
                 <button
                   type="button"
-                  onClick={() => {
-                    void copyText(window.location.href);
+                  onClick={(event) => {
+                    void copyText(window.location.href, event.currentTarget);
                     setOverflowOpen(false);
                   }}
                 >

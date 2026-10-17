@@ -185,6 +185,7 @@ export function createToken(
     projectIdsJson: projectIds === null ? null : JSON.stringify(projectIds),
     lastUsedAt: null,
     lastMcpAt: null,
+    lastRestWriteAt: null,
     lastClient: null,
     lastClientName: null,
     expiresAt,

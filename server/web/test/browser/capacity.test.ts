@@ -558,4 +558,91 @@ void describe('the capacity screen', () => {
       await h.close();
     }
   });
+
+  /*
+   * LAI-755. Capacity spans every space, so a chip's task is usually in a
+   * space other than the one last opened. The chip used to go to
+   * `/board?q=<KEY>` with no `?project=`, so the board fell back to the last
+   * space and searched it for a key it does not hold: an empty board.
+   */
+  void test('a chip opens its task in the task’s own space, not the last one opened (LAI-755)', async () => {
+    const WEB = { ...P, id: 'p2', slug: 'laika-web', name: 'Laika Web', prefix: 'LW' };
+    const lw1 = {
+      ...task('t9', 'LW-1', 'Toolbar reads its own width', 'in_progress'),
+      project_id: 'p2',
+    };
+    const board = (slug: string, tasks: unknown[]): ApiStub => ({
+      [`/api/v1/projects/${slug}/tasks`]: { data: tasks, next_cursor: null },
+      [`/api/v1/projects/${slug}/members`]: { members: [] },
+      [`/api/v1/projects/${slug}/sprints`]: { data: [], next_cursor: null },
+      [`/api/v1/projects/${slug}/activity`]: { data: [], next_cursor: null },
+      [`/api/v1/projects/${slug}/tags`]: { tags: [] },
+      [`/api/v1/projects/${slug}/mentionable`]: { users: [] },
+    });
+    const twoSpaces: ApiStub = {
+      ...STUB,
+      ...board('laika-core', []),
+      ...board('laika-web', [lw1]),
+      '/api/v1/me': {
+        ...(STUB['/api/v1/me'] as object),
+        memberships: [
+          { project_id: 'p1', role: 'lead' },
+          { project_id: 'p2', role: 'lead' },
+        ],
+      },
+      '/api/v1/projects': { data: [P, WEB], next_cursor: null },
+      '/api/v1/projects/laika-web': WEB,
+      '/api/v1/org': {
+        id: 'o',
+        name: 'Borealis Labs',
+        presence_enabled: true,
+        created_at: 1,
+        updated_at: 1,
+      },
+      '/api/v1/capacity': {
+        enabled: true,
+        people: [
+          {
+            user_id: 'u1',
+            name: 'Ada Lovelace',
+            active_sessions: 1,
+            in_progress_tasks: ['t9'],
+            oldest_in_progress_ms: 3600000,
+            tasks_in_review: [],
+            last_seen: now,
+            unlisted: [],
+          },
+        ],
+      },
+      '/api/v1/tasks/t9': lw1,
+      '/api/v1/tasks/t9/comments': { data: [], next_cursor: null },
+      '/api/v1/tasks/t9/watchers': { watchers: [] },
+    };
+
+    // Laika Core is the space last opened.
+    const h = await open('/board?project=laika-core', twoSpaces);
+    try {
+      await h.page.locator('.board-bar').waitFor({ timeout: 20_000 });
+      await h.page.evaluate(() => {
+        history.pushState({}, '', '/capacity');
+        dispatchEvent(new PopStateEvent('popstate'));
+      });
+
+      const chip = h.page.locator('.cap-chip', { hasText: 'LW-1' });
+      await chip.locator('.cap-chip-title').waitFor({ timeout: 20_000 });
+      await chip.click();
+
+      await h.page.waitForURL((url) => url.pathname === '/board', { timeout: 10_000 });
+      const url = new URL(h.page.url());
+      assert.equal(url.searchParams.get('project'), 'laika-web', 'not the task’s own space');
+      assert.equal(url.searchParams.get('task'), 't9', 'the task is not opened by id');
+
+      const drawer = h.page.locator('.drawer');
+      await drawer.waitFor({ timeout: 10_000 });
+      assert.match(await drawer.innerText(), /LW-1/);
+      assert.match(await drawer.innerText(), /Toolbar reads its own width/);
+    } finally {
+      await h.close();
+    }
+  });
 });

@@ -3,7 +3,10 @@ import { useShell } from './shell-context.ts';
 import { SpaceLayout } from '../space/SpaceLayout.tsx';
 import { BoardScreen } from '../../routes/screens/BoardScreen.tsx';
 import { CalendarScreen } from '../../routes/screens/calendar/CalendarScreen.tsx';
-import { CapacityScreen } from '../../routes/screens/capacity/CapacityScreen.tsx';
+import {
+  CapacityScreen,
+  type CapacityTaskLink,
+} from '../../routes/screens/capacity/CapacityScreen.tsx';
 import { ActivityScreen } from '../../routes/screens/activity/ActivityScreen.tsx';
 import { DashboardScreen } from '../../routes/screens/dashboard/DashboardScreen.tsx';
 import { SetupRoute } from '../../routes/screens/SetupRoute.tsx';
@@ -84,6 +87,22 @@ function openTaskByKey(navigate: (to: string) => void) {
   };
 }
 
+/**
+ * Open a task **in its own space**, by id (LAI-755). Without `?project=` the
+ * board falls back to the space last opened, which on a page across every
+ * space is usually another one. A key search remains the fallback when the
+ * space is not known.
+ */
+function openTaskInItsSpace(navigate: (to: string) => void) {
+  return ({ id, key, projectSlug }: CapacityTaskLink) => {
+    if (projectSlug === undefined) {
+      openTaskByKey(navigate)(key);
+      return;
+    }
+    navigate(`/board?project=${encodeURIComponent(projectSlug)}&task=${encodeURIComponent(id)}`);
+  };
+}
+
 function MeetingReviewRoute() {
   const {
     route: { params, navigate },
@@ -140,7 +159,7 @@ function CapacityRoute() {
   }, [project]);
   return (
     <CapacityScreen
-      onOpenTask={openTaskByKey(navigate)}
+      onOpenTask={openTaskInItsSpace(navigate)}
       unlistedOpen={unlistedOpen}
       onNavigate={navigate}
     />

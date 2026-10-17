@@ -23,10 +23,17 @@ import './copy-button.css';
  *
  * ## So the promise decides, and absence is a different answer
  *
- * `copied` is set from the *resolved* promise, never beside the call. When the
- * API is missing or refuses, the button selects the text instead and says so,
- * which is a thing the reader can act on — a selection plus ⌘C is exactly as
- * good, and being told is better than being lied to.
+ * `copied` is set from the *resolved* promise, never beside the call.
+ *
+ * ## And absence still copies (LAI-760)
+ *
+ * Selecting the text and saying *Press ⌘C* was honest, and it still meant
+ * every Copy on the live board copied nothing — the owner clicked Copy and
+ * pasted nothing. A page that is not a secure context still has one clipboard
+ * write: a selection and `document.execCommand('copy')`, inside the click. So
+ * when the API is missing or refuses, the text goes through a temporary
+ * textarea and that command. Only when that fails too does the button select
+ * the text and say which keys to press.
  *
  * It stores a boolean and never the text: this button sits next to one-time
  * secrets, and a component holding its own copy of one would survive the
@@ -35,26 +42,93 @@ import './copy-button.css';
 
 export type CopyOutcome = 'copied' | 'select';
 
+/** Where a modal keeps focus; the temporary textarea must go inside it. */
+const MODAL = '[aria-modal="true"], [role="dialog"], dialog[open]';
+
 /**
- * Put `text` on the clipboard if the browser will allow it.
+ * Copy through a selection: an off-screen read-only textarea, `select()` and
+ * `execCommand('copy')` (LAI-760). The only clipboard write a page that is not
+ * a secure context has, and it needs the click's user gesture, so it runs
+ * synchronously inside the handler.
+ *
+ * The textarea goes inside the nearest open dialog when `from` is in one: a
+ * focus trap would take focus back from anything outside it, and the copy
+ * would fail without a word. The previous focus and selection are put back.
+ */
+function copyThroughSelection(text: string, from: Element | null): boolean {
+  const host = from?.closest<HTMLElement>(MODAL) ?? document.body;
+  const focused = document.activeElement;
+  const selection = document.getSelection();
+  const ranges: Range[] = [];
+  for (let i = 0; i < (selection?.rangeCount ?? 0); i += 1) {
+    const range = selection?.getRangeAt(i);
+    if (range !== undefined) ranges.push(range);
+  }
+
+  const scratch = document.createElement('textarea');
+  scratch.value = text;
+  scratch.readOnly = true;
+  scratch.tabIndex = -1;
+  scratch.className = 'copy-scratch';
+  scratch.setAttribute('aria-hidden', 'true');
+  host.append(scratch);
+  try {
+    scratch.focus({ preventScroll: true });
+    scratch.select();
+    scratch.setSelectionRange(0, text.length);
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    scratch.remove();
+    selection?.removeAllRanges();
+    for (const range of ranges) selection?.addRange(range);
+    if (focused instanceof HTMLElement) focused.focus({ preventScroll: true });
+  }
+}
+
+/**
+ * Put `text` on the clipboard: the API when the browser has it, a selection
+ * and `execCommand('copy')` when it does not or refuses. `from` is the control
+ * that was clicked, so the fallback can stay inside its dialog.
+ *
+ * **Call it inside the click handler, before any `await`.** When the API is
+ * absent — the live board — nothing here awaits before the fallback, so it
+ * runs within the user gesture that `execCommand('copy')` needs.
  *
  * Exported because the task drawer's overflow menu needs the same behaviour
  * without the button: those are menu items that close the menu, and forcing a
  * button with a "Copied" state into them would change how the menu behaves to
  * suit a component. One mechanism, two presentations.
  */
-export async function copyText(text: string): Promise<CopyOutcome> {
+export async function copyText(text: string, from: Element | null = null): Promise<CopyOutcome> {
+  if (navigator.clipboard?.writeText === undefined) {
+    return copyThroughSelection(text, from) ? 'copied' : 'select';
+  }
   try {
-    if (navigator.clipboard?.writeText === undefined) return 'select';
     await navigator.clipboard.writeText(text);
     return 'copied';
   } catch {
     // Refused — a permissions policy, or a document that is not focused.
-    return 'select';
+    return copyThroughSelection(text, from) ? 'copied' : 'select';
   }
 }
 
-/** Select an element's text, so ⌘C works when the API will not. */
+/**
+ * The element near `from` that shows exactly `text`, for a button given no
+ * `selects` — the BOARD chip's address, the token beside its button.
+ */
+function showing(from: Element, text: string): HTMLElement | null {
+  let at = from.parentElement;
+  for (let depth = 0; at !== null && depth < 3; depth += 1, at = at.parentElement) {
+    for (const node of at.querySelectorAll<HTMLElement>('code, pre')) {
+      if (node.textContent === text) return node;
+    }
+  }
+  return null;
+}
+
+/** Select an element's text, so ⌘C works when nothing else will. */
 function selectText(node: HTMLElement | null): void {
   if (node === null) return;
   const range = document.createRange();
@@ -68,9 +142,9 @@ export interface CopyButtonProps {
   /** What lands on the clipboard. */
   readonly text: string;
   /**
-   * The element to select when the clipboard is unavailable. Optional: without
-   * it the button still reports honestly, it just cannot help with the
-   * selection.
+   * The element to select when nothing could copy. Optional: without it the
+   * nearest `code` or `pre` showing exactly `text` is selected, and when there
+   * is none the button still reports honestly.
    */
   readonly selects?: React.RefObject<HTMLElement | null> | undefined;
   readonly label?: string | undefined;
@@ -107,8 +181,11 @@ export function CopyButton({
     }, 4_000);
   };
 
-  const shown = outcome === 'copied' ? 'Copied' : outcome === 'select' ? 'Press ⌘C' : label;
-  // "Press ⌘C" keeps its own longer instruction below rather than a name.
+  const press = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent)
+    ? 'Press ⌘C to copy'
+    : 'Press Ctrl+C to copy';
+  const shown = outcome === 'copied' ? 'Copied' : outcome === 'select' ? press : label;
+  // "Press ⌘C to copy" keeps its own longer instruction below rather than a name.
   const named =
     what === undefined || outcome === 'select'
       ? undefined
@@ -122,9 +199,10 @@ export function CopyButton({
       disabled={disabled}
       {...(named !== undefined ? { 'aria-label': named } : {})}
       {...(disabled && disabledReason !== undefined ? { title: disabledReason } : {})}
-      onClick={() => {
-        void copyText(text).then((result) => {
-          if (result === 'select') selectText(selects?.current ?? null);
+      onClick={(event) => {
+        const from = event.currentTarget;
+        void copyText(text, from).then((result) => {
+          if (result === 'select') selectText(selects?.current ?? showing(from, text));
           announce(result);
         });
       }}
