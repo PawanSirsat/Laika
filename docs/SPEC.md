@@ -1269,7 +1269,10 @@ inputs unchanged is a comparison. A `model` row is written only when the
 output moves: another level, the forecast appearing or going, its p50 moving
 more than ×1.1, or the subtask count. A done or cancelled task keeps the
 estimate it has. The **nightly refit** (§11.6) fits each project again from its
-history and recomputes every open task against it.
+history and recomputes every open task against it. **Best effort, never the
+reason a task write fails:** each inline computation runs in a savepoint, and a
+failure is logged (`estimate.failed`) and leaves the task write and its
+activity row standing; the refit computes what was missed.
 
 **Build time** is first start (`started_at`) to first finish — the task's
 first move into review or done. **Review wait** (every stretch in review) and
@@ -1292,9 +1295,12 @@ larger of its own and its non-cancelled children's sum, and its range adds the
 children's as distributions (by their mean and variance), not by summing
 medians.
 
-**Frozen at claim.** `estimate_at_start_id` is set when work first starts, by
-a claim or any move into `in_progress`, and never again; a task already started
-when estimates arrived has none, and is not measured.
+**Frozen at claim.** `estimate_at_start_id` is the newest `model` row written
+at or before `started_at` — the estimate in force when work first started, by a
+claim or any move into `in_progress` — and is never moved once set. A freeze a
+failure skipped is made by the next refit by the same rule, so it can never
+take an estimate written after work began; a task that started before any
+estimate existed for it has none, and is not measured.
 
 **A person's size** is a `person` row and `tasks.size_override_id`; anyone with
 `task.write` may set or clear it, it is what is shown, and the computed size
@@ -1818,11 +1824,13 @@ reported for the round's head commit.
 **Sizes and forecasts (D-085, LAI-771).** `POST /projects/:slug/tasks` and
 `PATCH /tasks/:id` take an optional `size` — `XS` to `XL`, or `null` on `PATCH`
 to go back to the computed one — under `task.write`, so anyone who may edit the
-task may size it; anything else is `422`. `GET /tasks/:id/estimate` answers
-`{ task_id, size, why, override, at_start, actual, history }` under
-`project.read`: `why` is `{ early, method, typical: { words, build_ms },
-factors: [{ key, label, levels }], similar: [{ task_id, key, title, build_ms,
-similarity }], model_version, computed_at }`; `override` is `{ level, set_by,
+task may size it; anything else is `422`. A `size` that cannot be stored
+refuses the whole `PATCH`, and nothing of it is saved — a person's size is their
+write, not a derived figure. `GET /tasks/:id/estimate` answers `{ task_id, size,
+why, override, at_start, actual, history }` under `project.read`: `why` is
+`{ early, method, typical: { words, build_ms }, factors: [{ key, label, levels
+}], similar: [{ task_id, key, title, build_ms, similarity }], model_version,
+computed_at }`; `override` is `{ level, set_by,
 set_at }`; `at_start` is the frozen copy `{ level, build_p50_ms, build_p80_ms,
 estimated_at }`; `actual` is `{ build_ms, review_wait_ms, rework_ms, finishes,
 first_finish_at }`; `history` the latest 20 rows, newest first.
@@ -1832,8 +1840,9 @@ frozen-at-claim forecasts against actual build times — `{ n, typical_error,
 bias, p80_hit_rate }`, the error a ratio such as `1.7`; `backtest` is the
 replay against the plain median, `{ n, method_error, median_error,
 p80_hit_rate, beats_median }`, or `null` before there is one; `by_client` is
-the same figures per agent client, **only where at least three people use the
-client**, with `people` as a count. Nothing in either answer names or groups
+the same figures per agent client, **only where at least three distinct people
+are behind the measured tasks it finished first** — not everyone who has used
+it — with `people` as a count. Nothing in either answer names or groups
 by a person.
 
 **The GitHub webhook secret (LAI-753).** `GET /org` carries `github_webhook:
