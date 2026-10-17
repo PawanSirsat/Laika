@@ -6,7 +6,7 @@ assignee: shell
 priority: p2
 depends-on: []
 discovered-from: LAI-769
-status: review
+status: done
 started: 2026-10-17T17:14:01Z
 finished: 2026-10-17T17:32:15Z
 ---
@@ -79,3 +79,7 @@ hook restored by checksum): `/usr/bin/true`, `git rev-parse`, `curl
 **LAI-769 did not slow the prompt path.** Hook at 2eabf5a3 against now,
 alternating, 123 runs each under `zsh -f`: 2.71/2.89 ms fastest in one order,
 2.90/2.79 and 2.75/2.79 reversed. That's noise within ±0.15 ms.
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent) on the owner's direct instruction. Test-only: the prompt path now runs with process creation refused and only `zsh/datetime` and `zsh/system` loaded, each check proven able to fail by six mutations; the wall-clock guard pairs each run with a floor script. Measured that LAI-769 did not slow the hook (2.71–2.90 ms before vs 2.79–2.89 ms after, order-dependent noise). The root gate's red was LAI-775's missing `started:`/`finished:`, fixed by CHIEF in its own commit, plus known load timeouts (LAI-768).
