@@ -279,6 +279,35 @@ describe('list_ready_tasks', () => {
 });
 
 describe('get_task_context', () => {
+  it('returns the size, the forecast and the why (D-085, LAI-771)', async () => {
+    await project('core', 'COR');
+    const created = await task('core', {
+      title: 'Sized',
+      acceptance_md: '- [ ] one\n- [ ] two',
+    });
+
+    const client = await connect(await mint());
+    const result = await client.callTool({
+      name: 'get_task_context',
+      arguments: { task: created.key },
+    });
+
+    const estimate = payload(result).estimate as {
+      size: { level: string; computed: string; overridden: boolean };
+      why: { factors: { key: string; label: string; levels: number }[]; early: boolean };
+      actual: { build_ms: number | null };
+    };
+    expect(['XS', 'S', 'M', 'L', 'XL']).toContain(estimate.size.level);
+    expect(estimate.size.overridden).toBe(false);
+    expect(estimate.why.factors.map((f) => f.key)).toContain('words');
+    expect(estimate.actual.build_ms).toBeNull();
+    // The markdown an agent reads says it too, with the cold start spelled out.
+    expect(text(result)).toContain(`### Size ${estimate.size.level}`);
+    expect(text(result)).toContain('no hours until');
+
+    await client.close();
+  });
+
   it('accepts the display key it hands out', async () => {
     await project('core', 'COR');
     await task('core', { title: 'By key' });
