@@ -485,7 +485,7 @@ which is the check working on the document it exists to pin.
 | `due_on` | nullable — integer unix-ms with **date-only semantics**, exactly as a sprint's `starts_on` (§4.15). A plan, not an actual; "overdue" is derived by the reader and never stored (D-066) |
 | `planned_start` | nullable — same shape as `due_on`. Neither date is validated against the other |
 | `branch` | nullable, last branch seen working on it |
-| `external_ref` | nullable — an **outside id**, the id this card has somewhere else: a repo task file's `LAI-123`, a Jira or GitHub key — a prefix of 1–16 letters, digits and `_` starting with a letter, a dash, and 1–9 digits, stored upper-case and **taken wherever a task key is** (§7, LAI-780) — or the pull request the GitHub webhook last recorded, `owner/repo#N`, which never writes over an outside id |
+| `external_ref` | nullable — an **outside id**, the id this card has somewhere else: a repo task file's `LAI-123`, a Jira or GitHub key — a prefix of 1–16 letters, digits and `_` starting with a letter, a dash, and 1–9 digits, stored upper-case and **taken wherever a task key is** (§7, LAI-780); **one task's within its project** — a write of one another task there holds is refused `422` `taken` naming it, checked by the service because pull requests' refs share the column; across projects allowed — or the pull request the GitHub webhook last recorded, `owner/repo#N`, which never writes over an outside id |
 | `stale_flagged_at` | nullable, set by cron (§11.6) |
 | `position` | nullable — **manual board order**, one sequence per project; a lane draws its tasks in this order (D-060, D-070). An opaque key compared byte-wise: set on create at the **end** of the project's order, moved only by `POST /tasks/:id/reorder`, which writes this one row. Nullable only so the column could be added to a populated table — the boot backfill fills every null in the order the board already showed (priority, then number), so a served task always has one |
 | `started_at`, `completed_at` | nullable — **served on `TaskView`** (LAI-126). `started_at` is stamped the **first** time a task enters `in_progress`, by any route in — a claim after the task was released included (LAI-743) — and a later re-entry does not move it: a task sent back for rework did not start twice, and overwriting would silently shorten every cycle time derived from it (§11.6). |
@@ -1690,8 +1690,9 @@ and `acceptance_md`, `assignee_id`, `parent_task_id` and both dates draw the
 distinction. `tags` replaces the whole set. `POST /projects/:slug/tasks` takes
 the same three optional fields (`parent_task_id`, `due_on`, `planned_start`)
 beside `discovered_from`. Both take `external_ref`, an outside id (§4.5) —
-anything of another shape is `422` on that field — and `PATCH` clears it with
-`null` (LAI-780). `?parent=<id>` on the list returns that task's
+anything of another shape is `422` on that field, and one another task of the
+project holds is `422` with `details: { field: 'external_ref', reason:
+'taken', external_ref, task }` — and `PATCH` clears it with `null` (LAI-780). `?parent=<id>` on the list returns that task's
 subtasks only, and pages with `cursor` like any other filter (D-066).
 
 **A project in `GET /projects` is §4.3's columns plus five derived at read
@@ -2149,7 +2150,7 @@ matched.
 | `get_project_context` | `{ project }` | `context_md`, its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770) |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
-| `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5) |
+| `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
 | `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size?, external_ref? }` | task. Every field optional; an omitted one is left alone; `null` on `parent`, a date, `size` or `external_ref` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085) |
 | `start_working` | `{ task, branch? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770). **The holder's own call on a task already in progress succeeds** as a no-op that keeps the branch it is given and returns the task — no status change, no `activity` row, `started_at` and the frozen estimate untouched — so a session resuming its task can mark it (LAI-770 review, B2); anyone else, and a holder whose task is not in progress, still get `409` |
 | `update_status` | `{ task, status, note? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
