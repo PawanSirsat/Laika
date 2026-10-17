@@ -45,6 +45,11 @@ export interface StubBoard {
   readonly requests: Recorded[];
   readonly violations: string[];
   sharing: { org_enabled: boolean; enabled: boolean; scope: string; min_sync_interval_s: number };
+  /**
+   * The project prefixes the board answers a collector with (§6.4, LAI-770),
+   * or `undefined` for an older board that names none.
+   */
+  prefixes: string[] | undefined;
   /** `hang`: the sharing GET is never answered — a board that is up but stuck. */
   get: 'ok' | 'hang';
   put: PutMode;
@@ -102,6 +107,7 @@ export async function stubBoard(token: string): Promise<StubBoard> {
     keys: new Map(),
     usage: new Map(),
     refuseUsage: false,
+    prefixes: undefined,
     offForUsage: false,
     bucket: { on: false, tokens: 30, at: 0, limited: 0 },
     close: () => undefined,
@@ -151,7 +157,11 @@ export async function stubBoard(token: string): Promise<StubBoard> {
           const [collector, day] = key.split('|');
           if (collector !== asking && rows.length > 0 && day !== undefined) elsewhere.add(day);
         }
-        json(200, { ...board.sharing, usage_days_elsewhere: [...elsewhere].sort() });
+        json(200, {
+          ...board.sharing,
+          usage_days_elsewhere: [...elsewhere].sort(),
+          ...(board.prefixes === undefined ? {} : { task_prefixes: board.prefixes }),
+        });
         return;
       }
       if (req.method === 'PUT' && req.url === '/api/v1/me/local-activity') {

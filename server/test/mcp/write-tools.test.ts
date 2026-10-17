@@ -4,7 +4,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { activity, comments, tasks } from '../../src/db/schema.ts';
-import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../helpers/auth.ts';
+import { type AuthHarness, authHarness, cookieFrom, jsonHeaders, signUp } from '../helpers/auth.ts';
 
 /**
  * The write tools (SPEC §7.1, LAI-408), through a real MCP client.
@@ -66,6 +66,42 @@ async function connect(secret: string): Promise<Client> {
   });
   await client.connect(transport as Parameters<Client['connect']>[0]);
   return client;
+}
+
+/**
+ * A second person on `core`, with a token of their own: a claimant who is not
+ * the holder (LAI-770 review, B2 — the holder's own repeat is a no-op).
+ */
+async function otherAgent(email = 'brin@example.test'): Promise<string> {
+  const invited = await must('/api/v1/invites', {
+    method: 'POST',
+    body: JSON.stringify({ email, org_role: 'member' }),
+  });
+  const { token } = (await invited.json()) as { token: string };
+  const signed = await signUp(h.app, {
+    email,
+    password: PASSWORD,
+    name: 'Brin',
+    inviteToken: token,
+  });
+  expect(signed.status, await signed.clone().text()).toBe(200);
+  const cookie = cookieFrom(signed);
+  const people = (await (await api('/api/v1/users')).json()) as {
+    data: { id: string; email: string }[];
+  };
+  const id = people.data.find((u) => u.email === email)?.id;
+  expect(id, `no user with email ${email} after sign-up`).toBeDefined();
+  await must('/api/v1/projects/core/members', {
+    method: 'POST',
+    body: JSON.stringify({ user_id: id, role: 'member' }),
+  });
+  const minted = await api(
+    '/api/v1/tokens',
+    { method: 'POST', body: JSON.stringify({ name: 'agent', scope: 'full' }) },
+    cookie,
+  );
+  expect(minted.status, await minted.clone().text()).toBe(201);
+  return ((await minted.json()) as { secret: string }).secret;
 }
 
 type ToolResult = Awaited<ReturnType<Client['callTool']>>;
@@ -234,12 +270,51 @@ describe('start_working', () => {
     await client.close();
   });
 
+  it('keeps the branch it is given on the task (LAI-770)', async () => {
+    const client = await connect(await mint());
+    await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Work' } });
+
+    const result = await client.callTool({
+      name: 'start_working',
+      arguments: { task: 'COR-1', branch: 'COR-1-fix-login' },
+    });
+
+    expect((payload(result).task as { branch: string | null }).branch).toBe('COR-1-fix-login');
+    const read = await client.callTool({ name: 'get_task_context', arguments: { task: 'COR-1' } });
+    expect(JSON.stringify(read)).toContain('COR-1-fix-login');
+
+    await client.close();
+  });
+
+  it('a session resuming its own task in progress marks it again, keeping the new branch (LAI-770 review, B2)', async () => {
+    const client = await connect(await mint());
+    await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Work' } });
+    await client.callTool({
+      name: 'start_working',
+      arguments: { task: 'COR-1', branch: 'COR-1-a' },
+    });
+
+    const again = await client.callTool({
+      name: 'start_working',
+      arguments: { task: 'COR-1', branch: 'COR-1-b' },
+    });
+
+    expect(again.isError, JSON.stringify(again)).not.toBe(true);
+    expect(payload(again).task).toMatchObject({ status: 'in_progress', branch: 'COR-1-b' });
+
+    await client.close();
+  });
+
   it('fails with conflict naming the current assignee, not a bare error', async () => {
     const client = await connect(await mint());
     await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Work' } });
     await client.callTool({ name: 'start_working', arguments: { task: 'COR-1' } });
 
-    const second = await client.callTool({ name: 'start_working', arguments: { task: 'COR-1' } });
+    // A second claimant is somebody else: the holder's own repeat is a no-op
+    // (LAI-770 review, B2).
+    const other = await connect(await otherAgent());
+    const second = await other.callTool({ name: 'start_working', arguments: { task: 'COR-1' } });
+    await other.close();
 
     expect(second.isError).toBe(true);
     // §7.2: an agent must be able to branch on `conflict` rather than parse

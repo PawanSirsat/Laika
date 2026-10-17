@@ -164,10 +164,26 @@ agents' own session files already record — Claude Code transcripts
 (`~/.codex/sessions`, or `$CODEX_HOME`) and Gemini CLI sessions
 (`~/.gemini/tmp`) — and sends, per local day, agent and model, the input,
 output, cache-write and cache-read tokens, in a report marked `usage` on the
-same endpoint, after the snapshot (SPEC §6.4). From each record only its usage
-numbers, model id and time are kept; **never** what was said, tool input,
-paths, branches or session ids. Copilot CLI, Cursor and Windsurf keep no token
-counts on the machine, so they have none to send.
+same endpoint, after the snapshot (SPEC §6.4) — and the Laika task they were
+spent on, by its key, when the collector knows it. From each record only its
+usage numbers, model id and time are kept; **never** what was said, tool
+input, paths, branches or session ids. Copilot CLI, Cursor and Windsurf keep
+no token counts on the machine, so they have none to send.
+
+- **Which task** (LAI-770, D-084 item 5). A session's tokens go to the task
+  its agent **marked** — its own `start_working`, or `update_status` into an
+  in-progress status — until another mark, a `finish_task`, or a move of that
+  task out of progress: a session that moved between tasks is split by time,
+  and a subagent's own marks are its own. Only the call's tool name, the
+  task's key and whether the status is in progress are kept; a call the
+  board refused is no mark. Without a mark, a key in the branch name counts
+  when its prefix is one the board serves (`LAI-42-fix-login`; never
+  `release-2026`): Claude Code records the branch on every line and Codex in
+  its session's metadata, and for the rest the session-start hook keeps the
+  session's id and branch in `~/.laika/activity/sessions` (0600, never
+  sent; `off` deletes it). Anything else is unattributed and says so. The 30
+  days counted once are sent unattributed (D-084 item 11). A collector from
+  before this reads its files once more, in the background sync.
 
 - **Counted once.** Claude Code writes one reply's usage on several lines and
   copies history into a forked session's file: each reply counts once, by its

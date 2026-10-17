@@ -312,6 +312,101 @@ for (const shell of SHELLS) {
 }
 
 /**
+ * LAI-770: a person's session start keeps its id and its branch, locally, so
+ * the token reader can tie the tokens of an agent whose own files name no
+ * branch (Gemini CLI, Codex without git metadata) to the key in it. Never
+ * sent; only the key in the branch ever leaves, and only as a usage row's
+ * task.
+ */
+const STARTS = (h: string): string => join(h, '.laika', 'activity', 'sessions');
+/** `<session id> <branch or ->` for each start line. */
+const started = (h: string): string[] =>
+  existsSync(STARTS(h))
+    ? readFileSync(STARTS(h), 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          const [, id, branch] = line.split(' ');
+          return `${id ?? ''} ${branch === undefined || branch === '' ? '-' : branch}`;
+        })
+    : [];
+
+function repoOn(branch: string): string {
+  const path = gitRepo();
+  execFileSync('git', ['-C', path, 'commit', '-q', '--allow-empty', '-m', 'x'], {
+    stdio: 'pipe',
+    env: {
+      ...process.env,
+      GIT_AUTHOR_NAME: 't',
+      GIT_AUTHOR_EMAIL: 't@example.test',
+      GIT_COMMITTER_NAME: 't',
+      GIT_COMMITTER_EMAIL: 't@example.test',
+    },
+  });
+  execFileSync('git', ['-C', path, 'checkout', '-q', '-b', branch], { stdio: 'pipe' });
+  return path;
+}
+
+for (const shell of SHELLS) {
+  void describe(`a person’s session start is kept, locally, under ${shell.join(' ')} (LAI-770)`, () => {
+    void test('its id and branch, 0600, beside the event and the repo as before', () => {
+      const h = home();
+      const repo = repoOn('LAI-7-fix-login');
+      const r = run(shell, ['session-start', 'gemini-cli'], {
+        home: h,
+        cwd: repo,
+        input: payload('gem-5f3c2a1e'),
+      });
+      assert.equal(r.code, 0);
+      assert.equal(r.stdout + r.stderr, '');
+      assert.deepEqual(started(h), ['gem-5f3c2a1e LAI-7-fix-login']);
+      assert.match(readFileSync(STARTS(h), 'utf8'), /^\d{10} gem-5f3c2a1e LAI-7-fix-login\n$/);
+      assert.equal((statSync(STARTS(h)).mode & 0o777).toString(8), '600');
+      assert.deepEqual(
+        events(h).map((l) => l.split(' ').slice(0, 2).join(' ')),
+        ['s gemini-cli'],
+      );
+      const repos = readFileSync(join(h, '.laika', 'activity', 'repos'), 'utf8');
+      assert.ok(repos.includes(`\t${repo}`), 'the repo was not recorded');
+    });
+
+    void test('outside a repo, on no branch, or on an odd one: the id alone', () => {
+      const h = home();
+      run(shell, ['session-start', 'codex'], {
+        home: h,
+        cwd: dir('laika-norepo-'),
+        input: payload('s-1'),
+      });
+      // A repo with no commit yet has no branch to name.
+      run(shell, ['session-start', 'codex'], { home: h, cwd: gitRepo(), input: payload('s-2') });
+      run(shell, ['session-start', 'codex'], {
+        home: h,
+        cwd: repoOn('odd$(touch${IFS}pwned)'),
+        input: payload('s-3'),
+      });
+      assert.deepEqual(started(h), ['s-1 -', 's-2 -', 's-3 -']);
+      assert.ok(!existsSync(join(h, 'pwned')) && !existsSync('pwned'));
+    });
+
+    void test('never from a prompt, a session end, an agent whose tokens are not read, or with collection off', () => {
+      const h = home();
+      const repo = repoOn('LAI-8-x');
+      run(shell, ['prompt', 'claude-code'], {
+        home: h,
+        cwd: repo,
+        input: JSON.stringify({ session_id: 'p-1', prompt: 'hello' }),
+      });
+      run(shell, ['session-end', 'claude-code'], { home: h, cwd: repo, input: payload('e-1') });
+      run(shell, ['session-start', 'copilot-cli'], { home: h, cwd: repo, input: payload('c-1') });
+      assert.deepEqual(started(h), []);
+      const off = home(`${JSON.stringify({ collect: false, next_sync_at: 9_999_999_999 })}\n`);
+      run(shell, ['session-start', 'claude-code'], { home: off, cwd: repo, input: payload('o-1') });
+      assert.deepEqual(started(off), []);
+    });
+  });
+}
+
+/**
  * Wait for `check`, polling, for at most `ms`. A detached launch lands when the
  * machine gets round to it — milliseconds when idle, seconds under the full
  * gate — so these tests wait for the thing itself, never for a fixed time.
@@ -387,7 +482,7 @@ for (const shell of SHELLS) {
       }
     });
 
-    void test('a prompt is never read for it, and a person’s session keeps no id', () => {
+    void test('a prompt is never read for it, and a person’s session is not marked automated', () => {
       for (const env of AUTOMATED) {
         const h = home();
         run(shell, ['prompt', 'claude-code'], {
@@ -400,6 +495,7 @@ for (const shell of SHELLS) {
       const person = home();
       run(shell, ['session-start', 'claude-code'], { home: person, input: payload('abc-123') });
       assert.deepEqual(skipped(person), [], 'a person’s session was marked automated');
+      assert.deepEqual(started(person), ['abc-123 -'], 'an automated session’s start was kept');
     });
 
     void test('anything that is not a plain id is kept out', () => {
@@ -419,6 +515,16 @@ for (const shell of SHELLS) {
       });
       assert.deepEqual(skipped(h), []);
       assert.ok(!existsSync(join(h, 'pwned')) && !existsSync('pwned'));
+    });
+
+    void test('an automated session keeps no start line', () => {
+      const h = home();
+      run(shell, ['session-start', 'claude-code'], {
+        home: h,
+        env: { OMNIGENT: '1' },
+        input: payload('abc-123'),
+      });
+      assert.deepEqual(started(h), []);
     });
 
     void test('with activity off on this machine, nothing is written at all', () => {

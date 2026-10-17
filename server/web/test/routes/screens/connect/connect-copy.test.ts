@@ -112,6 +112,21 @@ void describe('the project block', () => {
     assert.match(block, /laika_whoami/);
   });
 
+  void test('it tells an agent to mark its task before starting, and to name its branch for the key (LAI-770)', () => {
+    const block = projectBlock(ORIGIN, PROJECT);
+    assert.match(block, /`start_working`[\s\S]{0,40}`branch`/);
+    assert.match(block, /`update_status` to\s+`in_progress`/);
+    assert.match(block, /`ONR-42-short-name`/);
+    assert.match(block, /tokens/);
+    // LAI-770 review, B2: start_working is the mark for a task already yours
+    // and in progress; update_status to the status it has would be refused.
+    assert.match(block, /also\s+when\s+it\s+is\s+already\s+yours\s+and\s+in\s+progress/);
+    assert.doesNotMatch(
+      block,
+      /`update_status` to\s+`in_progress`\s+when the task\s+is already yours/,
+    );
+  });
+
   void test('it teaches review, never done', () => {
     const block = projectBlock(ORIGIN, PROJECT);
     assert.match(block, /review, never done/i);

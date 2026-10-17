@@ -3,7 +3,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { tasks, users } from '../../../src/db/schema.ts';
 import { flagStaleTasks, STALE_AFTER_MS } from '../../../src/jobs/jobs.ts';
 import { MAX_TAGS_PER_TASK } from '../../../src/services/tags.ts';
-import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
+import {
+  type AuthHarness,
+  authHarness,
+  cookieFrom,
+  jsonHeaders,
+  signUp,
+} from '../../helpers/auth.ts';
 
 let h: AuthHarness;
 let cookie: string;
@@ -142,7 +148,37 @@ describe('claim (AC3)', () => {
     const claimed = (await first.json()) as { status: string; assignee_id: string };
     expect(claimed.status).toBe('in_progress');
 
-    const second = await post(`/api/v1/tasks/${task.id}/claim`, {});
+    // The holder's own repeat is a mark, not a move (LAI-770 review, B2): the
+    // task as it is.
+    const again = await post(`/api/v1/tasks/${task.id}/claim`, {});
+    expect(again.status, await again.clone().text()).toBe(200);
+    expect(await again.json()).toMatchObject({
+      status: 'in_progress',
+      assignee_id: claimed.assignee_id,
+    });
+
+    // Somebody else is told who holds it.
+    const invited = await post('/api/v1/invites', {
+      email: 'brin@example.test',
+      org_role: 'member',
+    });
+    expect(invited.status, await invited.clone().text()).toBe(201);
+    const signed = await signUp(h.app, {
+      email: 'brin@example.test',
+      password: PASSWORD,
+      name: 'Brin',
+      inviteToken: ((await invited.json()) as { token: string }).token,
+    });
+    expect(signed.status, await signed.clone().text()).toBe(200);
+    const brin = h.db.select().from(users).where(eq(users.email, 'brin@example.test')).get()?.id;
+    const joined = await post('/api/v1/projects/laika/members', { user_id: brin, role: 'member' });
+    expect(joined.status, await joined.clone().text()).toBe(201);
+
+    const second = await h.app.request(`/api/v1/tasks/${task.id}/claim`, {
+      method: 'POST',
+      headers: jsonHeaders({ Cookie: cookieFrom(signed) }),
+      body: '{}',
+    });
     expect(second.status).toBe(409);
 
     const body = (await second.json()) as { error: { details: { assignee_id: string } } };

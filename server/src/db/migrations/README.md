@@ -7,6 +7,48 @@ Applied migrations are **history**. Do not edit one that has shipped — drizzle
 records each file's hash, and changing a file changes what a migrated database
 disagrees with.
 
+## Numbers follow the last migration, not the journal index (LAI-778)
+
+Bare `drizzle-kit generate` names a migration by its **journal index**. Since
+`0036_task_estimates` landed at idx 35 the shipped tags run one ahead of the
+index, so the bare command writes a second `0037_*.sql` and **overwrites
+`meta/0037_snapshot.json`** — the snapshot every later diff starts from. The
+shipped names stay as they are: they are history like the SQL.
+
+So `pnpm run db:generate` is `scripts/db-generate.ts`: drizzle-kit runs against
+a scratch copy of this folder and only its new migration comes back, numbered
+one past the highest number any migration name carries, with its journal entry
+appended. No existing file but `meta/_journal.json` is written, and a target
+that exists already is refused. Run `pnpm format:fix` after it, as before.
+Never run `drizzle-kit generate` here directly.
+`test/tooling/db-generate.test.ts` runs the real script on a copy and diffs;
+`test/tooling/migration-files.test.ts` fails on a missing snapshot, a number
+two migrations share, a broken snapshot chain or a `when` out of order.
+
+## Two migrations built in parallel
+
+Two branches that each generate a migration take **the same number**, both
+`prevId` the same snapshot, and each `when` is the moment it was generated —
+not when it lands. Landing both as they are breaks the chain drizzle-kit
+diffs along, and an older `when` after a newer one is **never applied** to a
+database that already ran the newer (the migrator applies what is newer than
+the last `when` it applied). LAI-769 and LAI-771 were the case.
+
+The branch that merges `master` second regenerates on top:
+
+1. `git merge master` brings the other migration in. If both now share a
+   number, `migration-files.test.ts` says which files.
+2. Delete **your own** migration — its `.sql`, its `meta/NNNN_snapshot.json`
+   and its journal entry — never the one that arrived from `master`.
+3. `pnpm run db:generate --name <the same name>` (add `--custom` and paste the
+   SQL back if it was hand-written). It takes the next number, chains after
+   the other snapshot, and gets a newer `when`.
+4. Compare the new SQL with the old: for two unrelated changes it is the same
+   statements. A second `pnpm run db:generate` must say *No schema changes*.
+
+Nothing that reached `origin/master` is ever renumbered: production applied
+it.
+
 ## You no longer need to paste the append-only triggers (LAI-118)
 
 `activity` is append-only (§4.8), enforced by two SQLite triggers. Any change to

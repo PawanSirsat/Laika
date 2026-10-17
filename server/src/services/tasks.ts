@@ -1090,14 +1090,41 @@ export function claimTask(
   actor: ResolvedActor,
   taskId: string,
   now: number = Date.now(),
+  /**
+   * The branch the work is on, when the agent says (`start_working`'s
+   * `branch`, LAI-770): kept on the task, so the board shows where the work
+   * is and a branch named for the key ties the session's tokens to it.
+   */
+  branch?: string,
 ): TaskView {
   const { project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'task.claim', { projectId: project.id });
+  const onBranch = branch?.trim() === '' ? undefined : branch?.trim();
 
   return immediateTransaction(sqlite, () => {
     const before = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
     const from = statusRow(db, project.id, before.statusId)!;
 
+    // The holder's own claim of a task already under way is a **mark, not a
+    // move** (LAI-770 review, B2, the owner's decision): a session resuming the
+    // task says so with `start_working` again, and a refusal there would leave
+    // its tokens tied to nothing. It keeps the branch it is given and changes
+    // nothing else — no status, no activity row, `started_at` and the frozen
+    // estimate untouched. Anyone else, and a holder whose task is not in
+    // progress, still hear who has it below.
+    if (before.assigneeId === actor.userId && before.status === 'in_progress') {
+      if (onBranch !== undefined && onBranch !== before.branch) {
+        db.update(tasks)
+          .set({ branch: onBranch, updatedAt: now })
+          .where(eq(tasks.id, taskId))
+          .run();
+      }
+      return viewOne(
+        db,
+        db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+        project.prefix,
+      );
+    }
     // Held first, so a second claimant still hears **who** has it (AC3).
     if (before.assigneeId !== null) {
       throw new ApiError('conflict', 'That task is already claimed', {
@@ -1135,6 +1162,7 @@ export function claimTask(
         // and stamping every claim shortened its cycle time (LAI-743).
         // `before` is read inside this transaction, so nothing moved it since.
         startedAt: before.startedAt ?? now,
+        ...(onBranch === undefined ? {} : { branch: onBranch }),
         updatedAt: now,
       })
       .where(and(eq(tasks.id, taskId), isNull(tasks.assigneeId)))

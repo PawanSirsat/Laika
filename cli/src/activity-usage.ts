@@ -29,11 +29,40 @@ import {
  * (`~/.codex/sessions/**\/rollout-*.jsonl`) and Gemini CLI sessions
  * (`~/.gemini/tmp/*\/chats/session-*.json`). From each record only the
  * numbers in its usage, its model id and its time are kept; the record's text,
- * tool input, path, branch and session id are read past and never kept or
- * sent (D-084 item 1). What leaves is per day × agent × model × task the four
+ * tool input, path, branch and session id are read past and never sent
+ * (D-084 item 1). What leaves is per day × agent × model × task the four
  * counts — input, output, cache write, cache read — in a usage report on the
- * same `PUT /me/local-activity` as the snapshot (SPEC §6.4). Phase 1 sends no
- * task key: that is LAI-770, from the session's own Laika tool calls.
+ * same `PUT /me/local-activity` as the snapshot (SPEC §6.4).
+ *
+ * ## Which task (D-084 items 5–6, LAI-770)
+ *
+ * A reply's task is the one its agent **marked** in that session, from its own
+ * Laika calls in the session file: `start_working`, or `update_status` into an
+ * in-progress status, opens a stretch of work on the task's key; another mark,
+ * `finish_task`, or moving that task out of progress ends it. A session that
+ * moved between tasks is split **by time** — a mark's own reply is the new
+ * task's, a finish's the finished task's. A subagent's own marks are its own;
+ * without one it works under its session's. A call the board refused is no
+ * mark: Claude Code's `is_error` result, Gemini CLI's `error` status; a Codex
+ * call counts only once its answer is read and says it was taken — an answer
+ * that is missing or says nothing either way is no mark. No mark counts until
+ * the board has named its prefixes. From each call only the tool's name, the task's
+ * **key** and whether the status is in progress are kept — never its note,
+ * summary, branch or any other argument — and a task named by its id, which
+ * cannot be sent, leaves its stretch unattributed.
+ *
+ * Without a mark, a key in the session's **branch name** counts — `LAI-42-x`,
+ * `feature/lai-42` — when its prefix is one the board serves (the sharing
+ * answer's `task_prefixes`, kept in the index), so `release-2026` is never a
+ * task. Claude Code records the branch on every line and Codex in its
+ * session's metadata; for an agent whose files hold none, the activity hook
+ * keeps each session's id and branch at its start, on this machine
+ * (`sessions`). Only the key is kept from a branch, and only the key is sent.
+ * Anything else is **unattributed** and stays so — never guessed.
+ *
+ * The work is done in the background sync, never in a hook: the hook's one
+ * addition is a line at a session's start, from the `git` call it already
+ * made.
  *
  * ## Counted once (D-084 item 2, REPORT.md §1a and §2)
  *
@@ -83,6 +112,12 @@ const MODEL = /^[a-z0-9][a-z0-9._:-]{0,63}$/;
 const CHUNK_BYTES = 8 * 1024 * 1024;
 /** How long a scope answer for a working directory is believed. */
 const SCOPE_TTL_S = DAY_S;
+/**
+ * The records' format. A collector whose data predates it reads its files
+ * once more — in the background sync, as the first read was — so the days in
+ * the window get the task keys phase 1 did not read (LAI-770).
+ */
+const DATA_V = 2;
 
 export type UsageAgent = 'claude-code' | 'codex' | 'gemini-cli';
 
@@ -127,9 +162,40 @@ export interface UsageRow {
 
 /**
  * `[day, model, input, output, cache_write, cache_read, epoch s, cwd index,
- * session index]` — the indexes into `UsageData`'s local-only tables.
+ * session index, lane index, branch index]` — the indexes into `UsageData`'s
+ * local-only tables. The lane is a subagent's (−1: the session's own thread).
+ * The branch index is into `branches`, −1 for a branch with no key in it and
+ * −2 for a record whose file names no branch.
  */
-type Rec = [string, string, number, number, number, number, number, number, number?];
+type Rec = [
+  string,
+  string,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number?,
+  number?,
+  number?,
+];
+
+/**
+ * A Laika mark (LAI-770): `[session index, lane index, epoch s, key index,
+ * kind, state]`. Kind 1 starts work on the key, 0 ends work on it; key −1 is
+ * a task named by its id, which cannot be sent. State is absent or 0 for a
+ * mark that counts, 1 once the call's answer came back an error, and 2 while
+ * a Codex call's answer has not been read (review B1) — only 0 counts.
+ */
+type Mark = [number, number, number, number, 0 | 1, (0 | 1 | 2)?];
+
+/** A mark's state: refused, or a Codex call whose answer is not yet read. */
+const REFUSED = 1;
+const UNANSWERED = 2;
+
+/** No branch recorded for the record: the hook's session line may say. */
+const NO_BRANCH = -2;
 
 interface CodexFile {
   /** Bytes read so far. */
@@ -140,6 +206,8 @@ interface CodexFile {
   cwd: number;
   /** The rollout's session (`session_meta`), by index. */
   sid?: number;
+  /** Its branch's keys (`session_meta.git.branch`), by index — see `Rec`. */
+  br?: number;
   /** One record per event that moved the total, in the window. */
   ev: Rec[];
   /**
@@ -156,13 +224,21 @@ interface GeminiFile {
 }
 
 interface UsageData {
-  v: 1;
+  v: typeof DATA_V;
   /** The zone the days were computed in; all are recomputed when it changes. */
   tz: string;
   /** Working directories, by index — local only, never sent. */
   cwds: string[];
   /** Session ids, by index — local only, never sent; to leave automated ones out (LAI-775). */
   sessions: string[];
+  /** Subagent ids, by index — local only: a subagent's own marks are its own. */
+  lanes: string[];
+  /** The task keys a branch name carried, space-separated, by index — never the branch. */
+  branches: string[];
+  /** Task keys, by index — what a mark keeps, and all of it that is ever sent. */
+  keys: string[];
+  /** Each mark, by its tool call's id: a resumed session's copy counts once. */
+  marks: Record<string, Mark>;
   /** Claude Code replies, by message id. */
   claude: Record<string, Rec>;
   /** Claude Code transcripts: bytes read so far. */
@@ -202,6 +278,10 @@ interface UsageIndex {
   skip: string;
   /** No usage report before this (a refusal or a 429). */
   next_at: number;
+  /** The board's `task_prefixes`, as last answered: which branch keys may count. */
+  prefixes?: string[];
+  /** The format of `usage-data.json` the offsets in `files` belong to. */
+  data_v?: number;
 }
 
 export function usageIndexFile(paths: ActivityPaths): string {
@@ -218,10 +298,14 @@ function emptyIndex(): UsageIndex {
 
 function emptyData(tz: string): UsageData {
   return {
-    v: 1,
+    v: DATA_V,
     tz,
     cwds: [],
     sessions: [],
+    lanes: [],
+    branches: [],
+    keys: [],
+    marks: {},
     claude: {},
     offsets: {},
     codex: {},
@@ -258,18 +342,27 @@ function readIndex(paths: ActivityPaths): UsageIndex {
     marked: Array.isArray(raw.marked) ? (raw.marked as unknown[]).filter(isDay) : [],
     skip: typeof raw.skip === 'string' ? raw.skip : '',
     next_at: typeof raw.next_at === 'number' ? raw.next_at : 0,
+    ...(Array.isArray(raw.prefixes)
+      ? { prefixes: (raw.prefixes as unknown[]).filter((p): p is string => typeof p === 'string') }
+      : {}),
+    ...(typeof raw.data_v === 'number' ? { data_v: raw.data_v } : {}),
   };
 }
 
 function readData(paths: ActivityPaths, tz: string): UsageData | undefined {
   const raw = readJson(usageDataFile(paths));
-  if (!isRecord(raw) || raw.v !== 1) return undefined;
+  if (!isRecord(raw) || raw.v !== DATA_V) return undefined;
   const pick = <T>(value: unknown, fallback: T): T => (isRecord(value) ? (value as T) : fallback);
+  const list = (value: unknown): string[] => (Array.isArray(value) ? (value as string[]) : []);
   return {
-    v: 1,
+    v: DATA_V,
     tz: typeof raw.tz === 'string' ? raw.tz : tz,
-    cwds: Array.isArray(raw.cwds) ? (raw.cwds as string[]) : [],
-    sessions: Array.isArray(raw.sessions) ? (raw.sessions as string[]) : [],
+    cwds: list(raw.cwds),
+    sessions: list(raw.sessions),
+    lanes: list(raw.lanes),
+    branches: list(raw.branches),
+    keys: list(raw.keys),
+    marks: pick(raw.marks, {}),
     claude: pick(raw.claude, {}),
     offsets: pick(raw.offsets, {}),
     codex: pick(raw.codex, {}),
@@ -326,23 +419,63 @@ function skippedSessions(paths: ActivityPaths): Set<string> {
   return ids;
 }
 
-/** The file's size and mtime, so a sync notices a session marked since the last. */
-function skipSignature(paths: ActivityPaths): string {
-  try {
-    const st = statSync(skipSessionsFile(paths));
-    return `${String(st.size)}:${String(Math.floor(st.mtimeMs))}`;
-  } catch {
-    return '';
+/**
+ * Written by the activity hook at a person's session start (LAI-770): `<epoch>
+ * <session id> <branch>`, 0600, never sent — the branch for an agent whose
+ * own files name none. Only the keys in the branch are taken from it.
+ */
+export function sessionsFile(paths: ActivityPaths): string {
+  return join(paths.dir, 'sessions');
+}
+
+/** Per session id, its starts — time and the keys its branch carried — oldest first. */
+function sessionStarts(paths: ActivityPaths): Map<string, [number, string][]> {
+  const starts = new Map<string, [number, string][]>();
+  for (const path of [sessionsFile(paths), `${sessionsFile(paths)}.compacting`]) {
+    let text = '';
+    try {
+      text = readFileSync(path, 'utf8');
+    } catch {
+      continue;
+    }
+    for (const line of text.split('\n')) {
+      const [at, id, branch] = line.split(' ');
+      if (id === undefined || !SESSION_ID.test(id) || !/^\d+$/.test(at ?? '')) continue;
+      const list = starts.get(id) ?? [];
+      list.push([Number(at), branchKeys(branch)]);
+      starts.set(id, list);
+    }
   }
+  for (const list of starts.values()) list.sort((a, b) => a[0] - b[0]);
+  return starts;
+}
+
+/** The files' sizes and mtimes, so a sync notices a session marked or started since the last. */
+function skipSignature(paths: ActivityPaths): string {
+  return [skipSessionsFile(paths), sessionsFile(paths)]
+    .map((file) => {
+      try {
+        const st = statSync(file);
+        return `${String(st.size)}:${String(Math.floor(st.mtimeMs))}`;
+      } catch {
+        return '';
+      }
+    })
+    .join('|')
+    .replace(/^\|$/, '');
 }
 
 /**
- * Keep the file small: moved aside first, so a hook appending meanwhile starts
- * a new one, and the lines still inside 45 days appended back — the event
- * log's compaction (`compactEvents`).
+ * Keep the hook's two files small: each moved aside first, so a hook
+ * appending meanwhile starts a new one, and the lines still inside 45 days
+ * appended back — the event log's compaction (`compactEvents`).
  */
 function compactSkipSessions(paths: ActivityPaths, nowS: number): void {
-  const file = skipSessionsFile(paths);
+  compactHookFile(skipSessionsFile(paths), nowS);
+  compactHookFile(sessionsFile(paths), nowS);
+}
+
+function compactHookFile(file: string, nowS: number): void {
   const aside = `${file}.compacting`;
   try {
     if (statSync(file).size < SKIP_COMPACT_BYTES) return;
@@ -407,6 +540,60 @@ function dayFinder(tz: string): (epochS: number) => string {
     }
     return day;
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Marks and branches: a task's key, and nothing else (LAI-770)               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A Laika tool, as the agents name it: `mcp__laika__start_working` (Claude
+ * Code; `mcp__plugin_laika_laika__…` through the plugin), `laika__…` or
+ * `mcp__laika__…` (Codex). Another server's `update_status` is not Laika's.
+ */
+const LAIKA_TOOL =
+  /^(?:mcp__)?(?:[A-Za-z0-9_-]*_)?laika__(start_working|update_status|finish_task)$/;
+/** Gemini CLI names a server's tool by its own name while no other server has it. */
+const BARE_TOOL = /^(start_working|update_status|finish_task)$/;
+/** A Laika task key (SPEC §4.3): the server's pattern. */
+const TASK_KEY = /^[A-Z][A-Z0-9]{1,7}-[1-9][0-9]{0,8}$/;
+/** `in_progress`, or a project's own status that says so: `In progress`, `in-progress`. */
+const IN_PROGRESS = /^in[ _-]?progress$/i;
+/** Key-shaped parts of a branch name, in order: `LAI-42-x`, `feature/lai-42`. */
+const BRANCH_KEY = /(?:^|[^A-Za-z0-9])([A-Za-z][A-Za-z0-9]{1,7}-[1-9][0-9]{0,8})(?![0-9])/g;
+
+/** A task reference as a key — upper-cased, as the board takes it — or nothing. */
+function keyOf(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const key = raw.trim().toUpperCase();
+  return TASK_KEY.test(key) ? key : undefined;
+}
+
+/** The keys a branch name carries, space-separated: the branch itself is never kept. */
+function branchKeys(branch: unknown): string {
+  if (typeof branch !== 'string' || branch.length > 255) return '';
+  const keys: string[] = [];
+  for (const match of branch.matchAll(BRANCH_KEY)) {
+    const key = keyOf(match[1]);
+    if (key !== undefined && !keys.includes(key)) keys.push(key);
+  }
+  return keys.join(' ');
+}
+
+/**
+ * What a Laika call says about the work, from its tool's name and its `task`
+ * and `status` alone: `start_working` and a move into progress start work on
+ * the task; `finish_task` and any other move end it. `key: null` is a task
+ * named by its id.
+ */
+function markOf(tool: string, input: unknown): { key: string | null; kind: 0 | 1 } | undefined {
+  const name = LAIKA_TOOL.exec(tool)?.[1] ?? BARE_TOOL.exec(tool)?.[1];
+  if (name === undefined || !isRecord(input) || typeof input.task !== 'string') return undefined;
+  const key = keyOf(input.task) ?? null;
+  if (name === 'start_working') return { key, kind: 1 };
+  if (name === 'finish_task') return { key, kind: 0 };
+  if (typeof input.status !== 'string') return undefined;
+  return { key, kind: IN_PROGRESS.test(input.status.trim()) ? 1 : 0 };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -479,15 +666,16 @@ async function discover(
 /* -------------------------------------------------------------------------- */
 
 /**
- * The complete lines of `path` from byte `from`, to the last newline. With a
- * `needle`, only the lines that hold it are handed over — found with a byte
- * search, so a transcript's text is never decoded unless its line carries a
- * usage. Returns where the next read starts.
+ * The complete lines of `path` from byte `from`, to the last newline. With
+ * `needles`, only the lines that hold one are handed over, each once, in
+ * order — found with a byte search, so a transcript's text is never decoded
+ * unless its line carries a usage or a refused call's result. Returns where
+ * the next read starts.
  */
 async function readLines(
   path: string,
   from: number,
-  needle: Buffer | undefined,
+  needles: readonly Buffer[] | undefined,
   onLine: (line: string) => void,
 ): Promise<number> {
   const handle = await open(path, 'r');
@@ -509,7 +697,7 @@ async function readLines(
         continue;
       }
       const view = buffer.subarray(0, last + 1);
-      if (needle === undefined) {
+      if (needles === undefined) {
         let start = 0;
         while (start < view.length) {
           const end = view.indexOf(10, start);
@@ -517,12 +705,25 @@ async function readLines(
           start = end + 1;
         }
       } else {
-        let at = view.indexOf(needle);
-        while (at !== -1) {
+        // Each needle's next hit, searched again only once the reading has
+        // passed it: a rare needle is not scanned for afresh at every line.
+        const next = needles.map((n) => view.indexOf(n));
+        let after = 0;
+        for (;;) {
+          let at = -1;
+          for (let i = 0; i < needles.length; i += 1) {
+            let hit = next[i] ?? -1;
+            if (hit !== -1 && hit < after) {
+              hit = view.indexOf(needles[i] ?? Buffer.alloc(0), after);
+              next[i] = hit;
+            }
+            if (hit !== -1 && (at === -1 || hit < at)) at = hit;
+          }
+          if (at === -1) break;
           const start = view.lastIndexOf(10, at) + 1;
           const end = view.indexOf(10, at);
           onLine(view.toString('utf8', start, end));
-          at = view.indexOf(needle, end + 1);
+          after = end + 1;
         }
       }
       position += last + 1;
@@ -536,6 +737,9 @@ async function readLines(
 
 /** A JSON key followed by an object: never inside a JSON string, where `"` is `\"`. */
 const CLAUDE_NEEDLE = Buffer.from('"usage":{');
+/** A tool result the agent was told failed — read only for a Laika mark's id. */
+const REFUSED_NEEDLE = Buffer.from('"is_error":true');
+const TOOL_RESULT_ID = /"tool_use_id":"([A-Za-z0-9_-]{1,128})"/g;
 
 interface Reader {
   readonly data: UsageData;
@@ -545,6 +749,24 @@ interface Reader {
   cwd: (path: unknown) => number;
   /** A session id's index in the local table, or -1 for none. */
   session: (id: unknown) => number;
+  /** A subagent's lane in the local table, or -1 for the session's own thread. */
+  lane: (agentId: unknown) => number;
+  /** A branch's keys in the local table: −1 for a branch with none, −2 for no branch. */
+  branch: (name: unknown) => number;
+  /**
+   * Keep a Laika call's mark under its id — the first seen, unless `again`
+   * (a file that is read whole each time, whose call's status may have moved).
+   */
+  mark: (
+    id: unknown,
+    session: number,
+    lane: number,
+    atS: number,
+    tool: string,
+    input: unknown,
+    state: 0 | typeof REFUSED | typeof UNANSWERED,
+    again?: boolean,
+  ) => void;
 }
 
 /** One Claude Code line: a reply's usage, folded into its message id's maximum. */
@@ -557,11 +779,32 @@ function claudeLine(reader: Reader, line: string): void {
   }
   if (!isRecord(record) || record.type !== 'assistant') return;
   const message = record.message;
-  if (!isRecord(message) || typeof message.id !== 'string' || message.id === '') return;
+  if (!isRecord(message)) return;
+  const at = epochOf(record.timestamp);
+  // A Laika call sits on its reply's line. Kept even from before the window:
+  // a mark there still says what the window's first replies were for. A
+  // reply written on several lines is timed from its first, and so is a mark
+  // on a later one of them: the whole reply is the mark's (review, item 1).
+  if (Array.isArray(message.content) && at !== undefined) {
+    const first = typeof message.id === 'string' ? reader.data.claude[message.id]?.[6] : undefined;
+    for (const block of message.content as unknown[]) {
+      if (!isRecord(block) || block.type !== 'tool_use' || typeof block.name !== 'string') continue;
+      if (!LAIKA_TOOL.test(block.name)) continue;
+      reader.mark(
+        block.id,
+        reader.session(record.sessionId),
+        reader.lane(record.agentId),
+        first === undefined ? at : Math.min(first, at),
+        block.name,
+        block.input,
+        0,
+      );
+    }
+  }
+  if (typeof message.id !== 'string' || message.id === '') return;
   const usage = message.usage;
   if (!isRecord(usage)) return;
   const model = modelId(message.model);
-  const at = epochOf(record.timestamp);
   if (model === undefined || at === undefined || at < reader.windowStartS) return;
   const day = reader.dayOf(at);
   if (day < reader.firstDay) return;
@@ -583,6 +826,8 @@ function claudeLine(reader: Reader, line: string): void {
       reader.cwd(record.cwd),
       // A subagent's file carries its parent's session id (REPORT.md §1a).
       reader.session(record.sessionId),
+      reader.lane(record.agentId),
+      reader.branch(record.gitBranch),
     ];
     return;
   }
@@ -591,6 +836,89 @@ function claudeLine(reader: Reader, line: string): void {
   held[3] = Math.max(held[3], output);
   held[4] = Math.max(held[4], write);
   held[5] = Math.max(held[5], read);
+}
+
+/**
+ * A Claude Code tool result marked `is_error`: when it answers a Laika mark,
+ * the mark is taken back — the board refused it. Decoded only when it names
+ * a mark's id.
+ */
+function claudeRefusal(reader: Reader, line: string): void {
+  let held = false;
+  for (const match of line.matchAll(TOOL_RESULT_ID)) {
+    if (reader.data.marks[match[1] ?? ''] !== undefined) held = true;
+  }
+  if (!held) return;
+  let record: unknown;
+  try {
+    record = JSON.parse(line);
+  } catch {
+    return;
+  }
+  if (!isRecord(record) || !isRecord(record.message)) return;
+  const content = record.message.content;
+  if (!Array.isArray(content)) return;
+  for (const block of content as unknown[]) {
+    if (!isRecord(block) || block.type !== 'tool_result' || block.is_error !== true) continue;
+    const mark =
+      typeof block.tool_use_id === 'string' ? reader.data.marks[block.tool_use_id] : undefined;
+    if (mark !== undefined) mark[5] = REFUSED;
+  }
+}
+
+const CODEX_CALL_ID = /"call_id":"([A-Za-z0-9_-]{1,128})"/g;
+
+/**
+ * What an MCP answer says about success: `true` taken, `false` refused,
+ * `undefined` when it does not say — Codex keeps a tool's result as JSON
+ * (`{ content, isError }`), and a refusal from the board is `{ error }`.
+ */
+function answered(result: unknown): boolean | undefined {
+  if (!isRecord(result)) return undefined;
+  if (result.isError === true || isRecord(result.error)) return false;
+  if (result.isError === false || Array.isArray(result.content)) return true;
+  return undefined;
+}
+
+/**
+ * A Codex call's answer, for a Laika call already held (review, B1): its
+ * `function_call_output`, or the `mcp_tool_call_end` event beside it. Only
+ * whether it was taken is kept — never what it said — and a refusal from
+ * either holds: a call that came back refused is never a mark.
+ */
+function codexAnswer(reader: Reader, line: string): void {
+  let held = false;
+  for (const match of line.matchAll(CODEX_CALL_ID)) {
+    if (reader.data.marks[`codex:${match[1] ?? ''}`] !== undefined) held = true;
+  }
+  if (!held) return;
+  let record: unknown;
+  try {
+    record = JSON.parse(line);
+  } catch {
+    return;
+  }
+  if (!isRecord(record) || !isRecord(record.payload)) return;
+  const payload = record.payload;
+  if (typeof payload.call_id !== 'string') return;
+  const mark = reader.data.marks[`codex:${payload.call_id}`];
+  if (mark === undefined || mark[5] === REFUSED) return;
+  let taken: boolean | undefined;
+  if (record.type === 'response_item' && payload.type === 'function_call_output') {
+    try {
+      taken = answered(
+        typeof payload.output === 'string' ? JSON.parse(payload.output) : payload.output,
+      );
+    } catch {
+      taken = undefined;
+    }
+  } else if (record.type === 'event_msg' && payload.type === 'mcp_tool_call_end') {
+    const result = payload.result;
+    if (isRecord(result) && 'Err' in result) taken = false;
+    else if (isRecord(result)) taken = answered(result.Ok);
+  }
+  if (taken === false) mark[5] = REFUSED;
+  else if (taken === true) mark.length = 5;
 }
 
 /** Codex's per-response usage, mapped as its cumulative total is (REPORT.md §2). */
@@ -617,8 +945,12 @@ function codexLine(reader: Reader, file: CodexFile, line: string): void {
     !line.includes('"token_count"') &&
     !line.includes('"turn_context"') &&
     !line.includes('"session_meta"') &&
-    !line.includes('"token_usage_record"')
+    !line.includes('"token_usage_record"') &&
+    !(line.includes('"function_call"') && line.includes('laika__'))
   ) {
+    if (line.includes('"function_call_output"') || line.includes('"mcp_tool_call_end"')) {
+      codexAnswer(reader, line);
+    }
     return;
   }
   let record: unknown;
@@ -636,7 +968,26 @@ function codexLine(reader: Reader, file: CodexFile, line: string): void {
     if (record.type === 'session_meta') {
       const sid = reader.session(payload.id ?? payload.session_id);
       if (sid >= 0) file.sid = sid;
+      if (isRecord(payload.git) && typeof payload.git.branch === 'string') {
+        file.br = reader.branch(payload.git.branch);
+      }
     }
+    return;
+  }
+  if (record.type === 'response_item' && payload.type === 'function_call') {
+    const at = epochOf(record.timestamp);
+    if (typeof payload.name !== 'string' || !LAIKA_TOOL.test(payload.name) || at === undefined) {
+      return;
+    }
+    let args: unknown;
+    try {
+      args = typeof payload.arguments === 'string' ? JSON.parse(payload.arguments) : undefined;
+    } catch {
+      return;
+    }
+    const id = typeof payload.call_id === 'string' ? `codex:${payload.call_id}` : undefined;
+    // Not a mark until its answer is read and says it was taken (review, B1).
+    reader.mark(id, file.sid ?? -1, -1, at, payload.name, args, UNANSWERED);
     return;
   }
   if (record.type === 'token_usage_record') {
@@ -657,6 +1008,8 @@ function codexLine(reader: Reader, file: CodexFile, line: string): void {
       at,
       file.cwd,
       sid >= 0 ? sid : (file.sid ?? -1),
+      -1,
+      file.br ?? NO_BRANCH,
     ];
     return;
   }
@@ -693,6 +1046,8 @@ function codexLine(reader: Reader, file: CodexFile, line: string): void {
     at,
     file.cwd,
     file.sid ?? -1,
+    -1,
+    file.br ?? NO_BRANCH,
   ]);
 }
 
@@ -717,6 +1072,20 @@ function geminiFile(reader: Reader, text: string): GeminiFile | undefined {
     if (model === undefined || at === undefined || at < reader.windowStartS) continue;
     const day = reader.dayOf(at);
     if (day < reader.firstDay) continue;
+    // Its Laika calls: a call that failed or was cancelled is no mark.
+    for (const call of Array.isArray(message.toolCalls) ? (message.toolCalls as unknown[]) : []) {
+      if (!isRecord(call) || typeof call.name !== 'string') continue;
+      reader.mark(
+        typeof call.id === 'string' ? `gemini:${call.id}` : undefined,
+        sid,
+        -1,
+        epochOf(call.timestamp) ?? at,
+        call.name,
+        call.args,
+        call.status === 'error' || call.status === 'cancelled' ? REFUSED : 0,
+        true,
+      );
+    }
     const t = message.tokens;
     const cached = count(t.cached);
     // Gemini's input includes the cached part; thoughts are output, tool input is input.
@@ -730,6 +1099,8 @@ function geminiFile(reader: Reader, text: string): GeminiFile | undefined {
       at,
       cwd,
       sid,
+      -1,
+      NO_BRANCH,
     ];
   }
   return { m };
@@ -761,6 +1132,11 @@ export interface UsageReadOptions {
   readonly signal?: AbortSignal;
   /** Count the whole window whatever was answered — what `backfill` shows before it asks. */
   readonly all?: boolean;
+  /**
+   * The board's `task_prefixes` from this sync's sharing answer (LAI-770):
+   * kept in the index, so the last answer holds when one names none.
+   */
+  readonly prefixes?: readonly string[] | undefined;
 }
 
 interface Scan {
@@ -785,6 +1161,10 @@ async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan>
   // Offsets live with the records: without the data file, every file is new.
   if (!existsSync(usageDataFile(paths)) && Object.keys(index.files).length > 0) {
     index = { ...index, files: {}, sent: index.sent };
+  }
+  // Records from before this format carry no marks: every file is read once more.
+  if (index.data_v !== DATA_V) {
+    index = { ...index, files: {}, data_v: DATA_V, dirty: true };
   }
   const seenDirs = new Set<string>();
   const found: [Kind, string][] = [];
@@ -839,6 +1219,21 @@ async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan>
   }
   const cwdIndex = new Map(data.cwds.map((c, i) => [c, i]));
   const sessionIndex = new Map(data.sessions.map((id, i) => [id, i]));
+  const tableOf = (table: string[]) => {
+    const at = new Map(table.map((v, i) => [v, i]));
+    return (value: string): number => {
+      let i = at.get(value);
+      if (i === undefined) {
+        i = table.length;
+        table.push(value);
+        at.set(value, i);
+      }
+      return i;
+    };
+  };
+  const laneOf = tableOf(data.lanes);
+  const branchOf = tableOf(data.branches);
+  const keyIndex = tableOf(data.keys);
   const reader: Reader = {
     data,
     dayOf,
@@ -863,6 +1258,27 @@ async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan>
         sessionIndex.set(value, i);
       }
       return i;
+    },
+    lane: (value) => (typeof value === 'string' && SESSION_ID.test(value) ? laneOf(value) : -1),
+    branch: (value) => {
+      if (typeof value !== 'string') return NO_BRANCH;
+      const keys = branchKeys(value);
+      return keys === '' ? -1 : branchOf(keys);
+    },
+    mark: (id, session, lane, atS, tool, input, state, again) => {
+      if (typeof id !== 'string' || id === '' || id.length > 160) return;
+      if (data.marks[id] !== undefined && again !== true) return;
+      const said = markOf(tool, input);
+      if (said === undefined) return;
+      const mark: Mark = [
+        session,
+        lane,
+        atS,
+        said.key === null ? BY_ID : keyIndex(said.key),
+        said.kind,
+      ];
+      if (state !== 0) mark[5] = state;
+      data.marks[id] = mark;
     },
   };
 
@@ -892,8 +1308,9 @@ async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan>
           // Untouched since before the window: nothing in it can count.
           data.offsets[file.path] = file.size;
         } else {
-          const to = await readLines(file.path, from, CLAUDE_NEEDLE, (line) => {
-            claudeLine(reader, line);
+          const to = await readLines(file.path, from, [CLAUDE_NEEDLE, REFUSED_NEEDLE], (line) => {
+            if (line.includes('"usage":{')) claudeLine(reader, line);
+            else claudeRefusal(reader, line);
           });
           result.bytes += to - from;
           data.offsets[file.path] = to;
@@ -927,7 +1344,7 @@ async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan>
     result.changed += 1;
   }
 
-  prune(data, firstDay, present);
+  prune(data, firstDay, startS, present);
   index.dirty = true;
   if (options.dryRun !== true) {
     // The records first: an index ahead of its data would skip bytes never kept.
@@ -950,9 +1367,28 @@ function* allRecords(data: UsageData): Generator<Rec> {
  * Drop what has left the window — nothing older is ever sent — and the state
  * of a file that is gone once none of its records is left.
  */
-function prune(data: UsageData, firstDay: string, present: ReadonlySet<string>): void {
+function prune(
+  data: UsageData,
+  firstDay: string,
+  startS: number,
+  present: ReadonlySet<string>,
+): void {
   for (const [id, rec] of Object.entries(data.claude)) {
     if (rec[0] < firstDay) delete data.claude[id];
+  }
+  // Marks from before the window: the last of each thread is kept — it may
+  // still say what the window's first replies were for — and the rest go.
+  const lastBefore = new Map<string, [string, number]>();
+  for (const [id, m] of Object.entries(data.marks)) {
+    if (m[2] >= startS) continue;
+    const thread = `${String(m[0])}:${String(m[1])}`;
+    const held = lastBefore.get(thread);
+    if (held === undefined || m[2] > held[1]) {
+      if (held !== undefined) delete data.marks[held[0]];
+      lastBefore.set(thread, [id, m[2]]);
+    } else {
+      delete data.marks[id];
+    }
   }
   for (const [path, file] of Object.entries(data.codex)) {
     file.ev = file.ev.filter((e) => e[0] >= firstDay);
@@ -1026,6 +1462,117 @@ async function scopeFilter(
 }
 
 /* -------------------------------------------------------------------------- */
+/* Which task a reply was for (LAI-770)                                       */
+/* -------------------------------------------------------------------------- */
+
+/** No task marked in force: the branch may still say. */
+const NONE = -3;
+/** A task named by its id: unattributed, and not for the branch to guess. */
+const BY_ID = -1;
+
+/** One thread's marks as what is in force from each moment: times rising, keys beside them. */
+interface Timeline {
+  readonly at: number[];
+  readonly key: number[];
+}
+
+/** What was in force at `atS` on a thread, or `undefined` before its first mark. */
+function inForce(line: Timeline | undefined, atS: number): number | undefined {
+  if (line === undefined || line.at.length === 0 || (line.at[0] ?? Infinity) > atS)
+    return undefined;
+  let lo = 0;
+  let hi = line.at.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if ((line.at[mid] ?? Infinity) <= atS) lo = mid;
+    else hi = mid - 1;
+  }
+  return line.key[lo];
+}
+
+/**
+ * Each reply's task key, or `null`:
+ *
+ * Nothing at all until the board has named its prefixes.
+ *
+ * 1. **The mark in force** on the reply's thread at its time — its subagent's
+ *    own, else its session's. A mark starts at its own line; a mark that ends
+ *    work takes effect after its line, whose reply wrote the finish. A key
+ *    whose prefix the board does not serve is another board's task, and a
+ *    task named by id cannot be sent: both unattributed.
+ * 2. **Else a key in the branch**, the record's own or, for a file that names
+ *   none, the branch the hook saw at the session's start — when the board
+ *   serves its prefix. Until the board has named its prefixes, none counts.
+ * 3. **Else `null`**.
+ */
+function attributor(
+  data: UsageData,
+  prefixes: readonly string[] | undefined,
+  starts: ReadonlyMap<string, readonly [number, string][]>,
+): (rec: Rec) => string | null {
+  // Until the board has named its prefixes nothing is tied — a mark no more
+  // than a branch — so a key-shaped argument to another server's tool of the
+  // same name (Gemini CLI's bare names) never goes (review, item 2).
+  if (prefixes === undefined) return () => null;
+  const served = new Set(prefixes);
+  const serves = (key: string): boolean => served.has(key.slice(0, key.lastIndexOf('-')));
+
+  const byThread = new Map<string, [number, number, 0 | 1][]>();
+  for (const m of Object.values(data.marks)) {
+    if ((m[5] ?? 0) !== 0 || m[0] < 0) continue;
+    const thread = `${String(m[0])}:${String(m[1])}`;
+    const list = byThread.get(thread) ?? [];
+    // Work starts at the mark's line and ends just after it.
+    list.push([m[4] === 1 ? m[2] : m[2] + 1, m[3], m[4]]);
+    byThread.set(thread, list);
+  }
+  const timelines = new Map<string, Timeline>();
+  for (const [thread, list] of byThread) {
+    list.sort((a, b) => a[0] - b[0]);
+    const line: Timeline = { at: [], key: [] };
+    let current = NONE;
+    for (const [at, key, kind] of list) {
+      if (kind === 1) current = key;
+      else if (current === key) current = NONE;
+      line.at.push(at);
+      line.key.push(current);
+    }
+    timelines.set(thread, line);
+  }
+  const sessionsWithMarks = new Set([...byThread.keys()].map((t) => t.split(':')[0]));
+
+  const fromBranch = (keys: string | undefined): string | null => {
+    if (keys === undefined || keys === '') return null;
+    for (const key of keys.split(' ')) if (serves(key)) return key;
+    return null;
+  };
+
+  return (rec) => {
+    const session = rec[8] ?? -1;
+    const at = rec[6];
+    if (session >= 0 && sessionsWithMarks.has(String(session))) {
+      const lane = rec[9] ?? -1;
+      const own =
+        lane >= 0 ? inForce(timelines.get(`${String(session)}:${String(lane)}`), at) : undefined;
+      const state = own ?? inForce(timelines.get(`${String(session)}:-1`), at) ?? NONE;
+      if (state === BY_ID) return null;
+      if (state >= 0) {
+        const key = data.keys[state];
+        return key !== undefined && serves(key) ? key : null;
+      }
+    }
+    const branch = rec[10] ?? NO_BRANCH;
+    if (branch >= 0) return fromBranch(data.branches[branch]);
+    if (branch === -1 || session < 0) return null;
+    const list = starts.get(data.sessions[session] ?? '');
+    if (list === undefined || list.length === 0) return null;
+    let chosen = list[0];
+    for (const start of list) if (start[0] <= at) chosen = start;
+    return fromBranch(chosen?.[1]);
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Days                                                                       */
 /* -------------------------------------------------------------------------- */
 
@@ -1056,6 +1603,7 @@ async function daysOf(
   options: UsageReadOptions,
   backfill: 'yes' | 'no' | undefined,
   held: readonly string[] | 'unknown',
+  prefixes: readonly string[] | undefined,
 ): Promise<Days> {
   const { firstDay } = windowOf(options.nowS, options.tz);
   if (data.tz !== options.tz) {
@@ -1074,6 +1622,7 @@ async function daysOf(
     options.state.scope === 'laika-repos'
       ? await scopeFilter(data, options.paths, options.nowS)
       : () => true;
+  const taskOf = attributor(data, prefixes, sessionStarts(options.paths));
 
   const days = new Map<string, Map<string, UsageRow>>();
   const olderDays = new Set<string>();
@@ -1090,13 +1639,16 @@ async function daysOf(
       rows = new Map();
       days.set(rec[0], rows);
     }
-    const key = `${agent} ${rec[1]}`;
+    // The 30 days counted once from files already here go unattributed
+    // (D-084 item 11): a task is tied from when counting began.
+    const task = rec[6] < sinceS ? null : taskOf(rec);
+    const key = `${agent} ${rec[1]} ${task ?? ''}`;
     let row = rows.get(key);
     if (row === undefined) {
       row = {
         agent,
         model: rec[1],
-        task: null,
+        task,
         input: 0,
         output: 0,
         cache_write: 0,
@@ -1143,7 +1695,12 @@ async function daysOf(
         cache_read: Math.min(r.cache_read, COUNT_MAX),
       }))
       .filter((r) => r.input + r.output + r.cache_write + r.cache_read > 0)
-      .sort((a, b) => a.agent.localeCompare(b.agent) || a.model.localeCompare(b.model));
+      .sort(
+        (a, b) =>
+          a.agent.localeCompare(b.agent) ||
+          a.model.localeCompare(b.model) ||
+          (a.task ?? '').localeCompare(b.task ?? ''),
+      );
     if (rows.length > 0) out.set(day, rows);
   }
   return { rows: out, older: olderDays };
@@ -1170,6 +1727,7 @@ export async function readUsage(
     options,
     scanned.index.backfill,
     options.held ?? scanned.index.held ?? [],
+    options.prefixes ?? scanned.index.prefixes,
   );
   return { days: rows, stats: scanned.stats };
 }
@@ -1313,6 +1871,18 @@ function dueDays(
   return due.sort((a, b) => a.day.localeCompare(b.day));
 }
 
+/**
+ * The board's prefixes, when this sync's answer named them: a change re-reads
+ * which branch keys count, so every day is compared again.
+ */
+function takePrefixes(index: UsageIndex, prefixes: readonly string[] | undefined): void {
+  if (prefixes === undefined) return;
+  const next = [...new Set(prefixes)].sort();
+  if (JSON.stringify(next) === JSON.stringify(index.prefixes)) return;
+  index.prefixes = next;
+  index.dirty = true;
+}
+
 /** What `daysOf` is told about held days, for this index: frozen once known. */
 function heldFor(index: UsageIndex): readonly string[] | 'unknown' {
   return index.backfill === 'yes' ? (index.held ?? 'unknown') : [];
@@ -1326,6 +1896,7 @@ export async function previewUsage(
   options: UsageReadOptions & { readonly collectorId: string },
 ): Promise<UsageReport[]> {
   const scanned = await scan({ ...options, dryRun: true }, true);
+  takePrefixes(scanned.index, options.prefixes);
   if (!scanned.index.dirty) return [];
   const { firstDay } = windowOf(options.nowS, options.tz);
   for (const day of Object.keys(scanned.index.sent)) {
@@ -1336,6 +1907,7 @@ export async function previewUsage(
     options,
     scanned.index.backfill,
     heldFor(scanned.index),
+    scanned.index.prefixes,
   );
   return usageReports({
     collectorId: options.collectorId,
@@ -1352,6 +1924,7 @@ export async function previewUsage(
 export async function usageStep(ctx: UsageContext): Promise<UsageOutcome> {
   const scanned = await scan(ctx, false);
   const { index, stats } = scanned;
+  takePrefixes(index, ctx.prefixes);
   if (!index.dirty) return { kind: 'idle', stats };
   if (ctx.nowS < index.next_at) return { kind: 'waiting', nextAt: index.next_at };
 
@@ -1363,7 +1936,7 @@ export async function usageStep(ctx: UsageContext): Promise<UsageOutcome> {
   if (ctx.dryRun !== true) compactSkipSessions(ctx.paths, ctx.nowS);
 
   const data = scanned.data ?? readData(ctx.paths, ctx.tz) ?? emptyData(ctx.tz);
-  const days = await daysOf(data, ctx, index.backfill, heldFor(index));
+  const days = await daysOf(data, ctx, index.backfill, heldFor(index), index.prefixes);
   const { firstDay } = windowOf(ctx.nowS, ctx.tz);
   for (const day of Object.keys(index.sent)) if (day < firstDay) delete index.sent[day];
   index.marked = index.marked.filter((day) => day >= firstDay);
@@ -1440,19 +2013,23 @@ export interface UsageSummary {
   readonly tokens: number;
   readonly cacheRead: number;
   readonly byAgent: ReadonlyMap<string, number>;
+  /** Of `tokens`, the part tied to a task (D-084 item 6). */
+  readonly attributed: number;
 }
 
 export function summarise(days: ReadonlyMap<string, readonly UsageRow[]>): UsageSummary {
   let tokens = 0;
   let cacheRead = 0;
+  let attributed = 0;
   const byAgent = new Map<string, number>();
   for (const rows of days.values()) {
     for (const r of rows) {
       const headline = r.input + r.output + r.cache_write;
       tokens += headline;
+      if (r.task !== null) attributed += headline;
       cacheRead += r.cache_read;
       byAgent.set(r.agent, (byAgent.get(r.agent) ?? 0) + headline);
     }
   }
-  return { days: days.size, tokens, cacheRead, byAgent };
+  return { days: days.size, tokens, cacheRead, byAgent, attributed };
 }

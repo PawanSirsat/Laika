@@ -4,10 +4,18 @@ import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type LocalActivityScope } from '../db/enums.ts';
 import { requireOrgId } from '../db/orgs.ts';
-import { localActivityDays, orgs, pushedCommitKeys, tokenUsageDays, users } from '../db/schema.ts';
+import {
+  localActivityDays,
+  orgs,
+  projects,
+  pushedCommitKeys,
+  tokenUsageDays,
+  users,
+} from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { addDays, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
+import { canSeeProject } from './projects.ts';
 
 /**
  * Local activity counts from a developer's own machine (SPEC §6.4, §4.23,
@@ -93,6 +101,14 @@ export interface ActivitySharingView {
    * again. Absent otherwise.
    */
   usage_days_elsewhere?: string[];
+  /**
+   * Asked the same way (D-084 item 5, LAI-770): the key prefixes of the
+   * projects this person may read, sorted. The collector ties a session to a
+   * task by a key in its branch name only when the key's prefix is one of
+   * these, so `release-2026` or `gpt-5` is never taken for a task. The
+   * collector keeps the last answer. Absent otherwise.
+   */
+  task_prefixes?: string[];
 }
 
 export interface ReportDay {
@@ -231,7 +247,15 @@ export function getActivitySharing(
     .orderBy(tokenUsageDays.day)
     .all()
     .map((r) => r.day);
-  return { ...view, usage_days_elsewhere: days };
+  // Filtered in code, as `listProjects` does: `can()` is the only authority.
+  const prefixes = db
+    .select({ id: projects.id, prefix: projects.prefix })
+    .from(projects)
+    .all()
+    .filter((p) => canSeeProject(actor, p.id))
+    .map((p) => p.prefix)
+    .sort();
+  return { ...view, usage_days_elsewhere: days, task_prefixes: [...new Set(prefixes)] };
 }
 
 export interface SetActivitySharingInput {

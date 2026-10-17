@@ -428,6 +428,29 @@ describe('get_project_context', () => {
     await client.close();
   });
 
+  it('tells an agent to mark its task before it starts, and to name its branch after the key (LAI-770)', async () => {
+    await project('core', 'COR');
+    const client = await connect(await mint());
+    const result = await client.callTool({
+      name: 'get_project_context',
+      arguments: { project: 'core' },
+    });
+
+    const rule = payload(result).before_you_start as string;
+    for (const said of ['start_working', 'update_status', 'in_progress', '`COR-42-']) {
+      expect(rule, said).toContain(said);
+      expect(text(result), said).toContain(said);
+    }
+    expect(rule).toContain('tokens');
+    // LAI-770 review, B2: the holder's own start_working on a task in progress
+    // is accepted, so that is the call to make; update_status to the status it
+    // already has would be refused.
+    expect(rule).toMatch(/also when it is already yours and in progress/);
+    expect(rule).not.toMatch(/`update_status` to `in_progress` when it is already yours/);
+
+    await client.close();
+  });
+
   it('summarises open work and names the team', async () => {
     await project('core', 'COR');
     await task('core', { title: 'One' });

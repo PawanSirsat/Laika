@@ -1,4 +1,4 @@
-import type { AgentClient } from './agent-clients.ts';
+import { agentClientName, type AgentClient } from './agent-clients.ts';
 import { request } from './client.ts';
 
 /**
@@ -101,6 +101,48 @@ export interface PersonUsage {
   readonly sharing: { readonly org_enabled: boolean; readonly enabled: boolean };
 }
 
+/** A task's counts: every one of them tied to it (LAI-770). */
+export interface UsageCounts {
+  readonly tokens: number;
+  readonly input: number;
+  readonly output: number;
+  readonly cache_write: number;
+  readonly cache_read: number;
+}
+
+export interface TaskUsagePerson extends UsageSlice {
+  readonly user_id: string;
+  readonly name: string;
+  readonly by_agent: readonly UsageAgentSlice[];
+}
+
+export interface TaskUsageRound extends UsageSlice {
+  /** 1 for the work up to the first finish. */
+  readonly number: number;
+  /** The day it was handed in; `null` for the round still open. */
+  readonly finished_on: string | null;
+}
+
+/** `GET /tasks/:id/usage` — the task panel's Tokens section (LAI-770). */
+export interface TaskUsage {
+  readonly task_id: string;
+  readonly key: string;
+  readonly tz: string;
+  readonly first_day: string | null;
+  readonly last_day: string | null;
+  readonly totals: UsageCounts;
+  /** Whose part this reader sees: the server decides (D-084 item 7). */
+  readonly people: 'everyone' | 'own' | 'none';
+  /** In name order; `null` for a reader who sees nobody's part. */
+  readonly by_person: readonly TaskUsagePerson[] | null;
+  readonly by_round: readonly TaskUsageRound[];
+  /**
+   * Of what the people this reader sees spent on the task's days, the part
+   * tied to a task — or `null` when they see nobody's.
+   */
+  readonly attributed: { readonly tokens: number; readonly of: number } | null;
+}
+
 /** The ranges the page offers — inside the server's 1–92 days. */
 export const USAGE_RANGES = [
   { days: 7, label: '7 days' },
@@ -133,6 +175,50 @@ export function getPersonUsage(userId: string, signal?: AbortSignal): Promise<Pe
     `/users/${encodeURIComponent(userId)}/usage`,
     signal === undefined ? {} : { signal },
   );
+}
+
+export function getTaskUsage(taskId: string, tz: string, signal?: AbortSignal): Promise<TaskUsage> {
+  return request<TaskUsage>(
+    `/tasks/${encodeURIComponent(taskId)}/usage?${new URLSearchParams({ tz }).toString()}`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
+/** `Round 1 · handed in 14 Oct`, or `Round 3 · open` for the one still going. */
+export function roundLabel(round: Pick<TaskUsageRound, 'number' | 'finished_on'>): string {
+  const day =
+    round.finished_on === null
+      ? undefined
+      : new Date(`${round.finished_on}T12:00:00Z`).toLocaleDateString('en-GB', {
+          day: 'numeric',
+          month: 'short',
+          timeZone: 'UTC',
+        });
+  return `Round ${String(round.number)} · ${day === undefined ? 'open' : `handed in ${day}`}`;
+}
+
+/**
+ * The line under a task's figures (D-084 items 5–6): how tokens reach the
+ * task, and that the rest of its people's work — the reader's own, for anyone
+ * but an owner or admin — counts for no task. The share itself is the
+ * section's *Tied to a task* figure. For a reader who sees nobody's part, what
+ * the figure counts.
+ */
+export function countedNote(view: TaskUsage): string {
+  const how = `an agent marked this task or worked on a branch named ${view.key}-…`;
+  if (view.attributed === null) {
+    return `Counted only where ${how}; the rest of their work is not in it.`;
+  }
+  const whose = view.people === 'everyone' ? 'its people’s' : 'your';
+  return `Tied when ${how}; the rest of ${whose} work those days counts for no task.`;
+}
+
+/** `Claude Code 1.2M · Codex 40K` — a person's agents, most first. */
+export function agentsNote(person: TaskUsagePerson): string {
+  return [...person.by_agent]
+    .sort((a, b) => b.tokens - a.tokens)
+    .map((a) => `${agentClientName(a.agent)} ${compactTokens(a.tokens)}`)
+    .join(' · ');
 }
 
 /** §3.1 `usage.read_org`: the organisation's figures — owners and admins. */

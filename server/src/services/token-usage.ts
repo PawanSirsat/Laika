@@ -18,6 +18,7 @@ import { type Db } from '../db/client.ts';
 import {
   projectMemberships,
   projects,
+  taskRounds,
   tasks,
   tokens,
   tokenUsageDays,
@@ -216,6 +217,56 @@ export interface PersonUsageView {
   no_token_data: AgentClient[];
   /** D-079's two switches for them: whether tokens can arrive at all. */
   sharing: { org_enabled: boolean; enabled: boolean };
+}
+
+/** A task's counts: every one of them tied to it, so no attributed part of its own. */
+export interface UsageCounts {
+  /** input + output + cache_write — the headline (D-084 item 8). */
+  tokens: number;
+  input: number;
+  output: number;
+  cache_write: number;
+  cache_read: number;
+}
+
+export interface TaskUsagePerson extends UsageSlice {
+  user_id: string;
+  name: string;
+  by_agent: UsageAgentSlice[];
+}
+
+export interface TaskUsageRound extends UsageSlice {
+  /** 1 for the work up to the first finish, 2 for the work up to the next. */
+  number: number;
+  /** The day it was handed in, in `tz`; `null` for the round still open. */
+  finished_on: string | null;
+}
+
+/** `GET /tasks/:id/usage` — the task panel's Tokens section (§6.4, LAI-770). */
+export interface TaskUsageView {
+  task_id: string;
+  key: string;
+  tz: string;
+  /** The first and last day it has tokens on; `null` for none. */
+  first_day: string | null;
+  last_day: string | null;
+  totals: UsageCounts;
+  /**
+   * Whose part this reader sees (D-084 item 7): `everyone` for an owner or
+   * admin, `own` for anyone else on a web session, `none` for a token.
+   */
+  people: 'everyone' | 'own' | 'none';
+  /** In name order, never ranked; `null` when `people` is `none`. */
+  by_person: TaskUsagePerson[] | null;
+  /** Every finished round in order, then the open one when it has tokens. */
+  by_round: TaskUsageRound[];
+  /**
+   * D-084 item 6: of what the people this reader may see spent on the days
+   * this task has tokens, the part tied to a task — this one or another. How
+   * much of their work Laika could place, so the task's figure is never taken
+   * for the whole story. `null` when the reader sees nobody's part.
+   */
+  attributed: { tokens: number; of: number } | null;
 }
 
 export interface UsageQuery {
@@ -482,14 +533,19 @@ function agentsWithoutTokens(db: Db, userIds: readonly string[] | null): AgentCl
   ].sort();
 }
 
-function rangeFor(query: UsageQuery, now: number): { from: string; to: string; tz: string } {
-  const tz = query.tz ?? 'UTC';
-  if (!isTimeZone(tz)) {
+function zoneOf(tz: string | undefined): string {
+  const zone = tz ?? 'UTC';
+  if (!isTimeZone(zone)) {
     throw new ApiError('unprocessable', 'tz is not a time zone this server knows', {
       reason: 'invalid_tz',
       field: 'tz',
     });
   }
+  return zone;
+}
+
+function rangeFor(query: UsageQuery, now: number): { from: string; to: string; tz: string } {
+  const tz = zoneOf(query.tz);
   const span = Math.min(
     Math.max(Math.trunc(query.days ?? USAGE_RANGE_DAYS_DEFAULT), 1),
     USAGE_RANGE_DAYS_MAX,
@@ -695,5 +751,204 @@ export function getPersonUsage(
     by_model: byModel,
     no_token_data: agentsWithoutTokens(db, [userId]),
     sharing: { org_enabled: switches.org, enabled: switches.user },
+  };
+}
+
+// ------------------------------------------------------- a task (LAI-770)
+
+const NO_COUNTS = (): UsageCounts => ({
+  tokens: 0,
+  input: 0,
+  output: 0,
+  cache_write: 0,
+  cache_read: 0,
+});
+
+/**
+ * `GET /tasks/:id/usage?tz=` — the task panel's Tokens section: what every
+ * person's agents spent on it, per person and agent for the readers allowed a
+ * split, per review round, and how much of those people's work on those days
+ * Laika could tie to a task at all (D-084 items 6–8).
+ *
+ * **Several people add up**: each person's collector reports its own tokens
+ * under the key, and the rows sum here. Attribution follows who marked the
+ * task in their own session, never `assignee_id`, so a reassignment changes
+ * nothing already counted.
+ *
+ * **Rounds by day.** A round is one `finish_task` (§4.25). Tokens are kept per
+ * day, so a day counts toward the first round handed in on or after it, read
+ * in `tz` — the day a round was handed in counts toward that round, and what
+ * comes after the last one is the open round. A round sent back and fixed the
+ * same day it was handed in is the one case that reads early.
+ *
+ * Who sees whom is D-084 item 7, asked of `can()`: `usage.read_project` for
+ * the totals, `usage.read_people` for everyone's part, `usage.read_own` — a web
+ * session's — for the reader's own.
+ */
+export function getTaskUsage(
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  query: { tz?: string | undefined } = {},
+): TaskUsageView {
+  const task = db
+    .select({
+      id: tasks.id,
+      number: tasks.number,
+      projectId: tasks.projectId,
+      prefix: projects.prefix,
+    })
+    .from(tasks)
+    .innerJoin(projects, eq(projects.id, tasks.projectId))
+    .where(eq(tasks.id, taskId))
+    .get();
+  if (task === undefined) throw ApiError.notFound(`No task with id "${taskId}"`);
+  assertCan(withProject(actor, task.projectId), 'usage.read_project', {
+    projectId: task.projectId,
+  });
+  const tz = zoneOf(query.tz);
+  const people: TaskUsageView['people'] = can(actor, 'usage.read_people')
+    ? 'everyone'
+    : can(actor, 'usage.read_own')
+      ? 'own'
+      : 'none';
+
+  // A task's rows are a handful of people × days × agents × models: read
+  // through its index and folded here.
+  const rows = db
+    .select({
+      userId: t.userId,
+      day: t.day,
+      agent: t.agent,
+      input: t.input,
+      output: t.output,
+      cacheWrite: t.cacheWrite,
+      cacheRead: t.cacheRead,
+    })
+    .from(t)
+    .where(eq(t.taskId, task.id))
+    .all();
+
+  const totals = NO_COUNTS();
+  const days = new Set<string>();
+  for (const r of rows) {
+    totals.input += r.input;
+    totals.output += r.output;
+    totals.cache_write += r.cacheWrite;
+    totals.cache_read += r.cacheRead;
+    days.add(r.day);
+  }
+  totals.tokens = totals.input + totals.output + totals.cache_write;
+  const sortedDays = [...days].sort();
+
+  // ----- per person and agent, for the readers allowed it
+  const visible = (userId: string): boolean =>
+    people === 'everyone' || (people === 'own' && userId === actor.userId);
+  let byPerson: TaskUsagePerson[] | null = null;
+  if (people !== 'none') {
+    const mine = new Map<string, { slice: UsageSlice; agents: Map<string, UsageSlice> }>();
+    for (const r of rows) {
+      if (!visible(r.userId)) continue;
+      const tokens = r.input + r.output + r.cacheWrite;
+      const entry = mine.get(r.userId) ?? {
+        slice: { tokens: 0, cache_read: 0 },
+        agents: new Map<string, UsageSlice>(),
+      };
+      entry.slice.tokens += tokens;
+      entry.slice.cache_read += r.cacheRead;
+      const agent = entry.agents.get(r.agent) ?? { tokens: 0, cache_read: 0 };
+      agent.tokens += tokens;
+      agent.cache_read += r.cacheRead;
+      entry.agents.set(r.agent, agent);
+      mine.set(r.userId, entry);
+    }
+    const names = new Map(
+      mine.size === 0
+        ? []
+        : db
+            .select({ id: users.id, name: users.name })
+            .from(users)
+            .where(inArray(users.id, [...mine.keys()]))
+            .all()
+            .map((u) => [u.id, u.name]),
+    );
+    byPerson = [...mine]
+      .map(([userId, { slice, agents }]) => ({
+        user_id: userId,
+        name: names.get(userId) ?? '',
+        ...slice,
+        by_agent: [...agents]
+          .sort(([a, x], [b, y]) => y.tokens - x.tokens || a.localeCompare(b))
+          .map(([agent, v]) => ({ agent: agentKindOf(agent), ...v })),
+      }))
+      // By name: a list of people, never a ranking of them (D-084 item 7).
+      .sort((a, b) => a.name.localeCompare(b.name) || a.user_id.localeCompare(b.user_id));
+  }
+
+  // ----- the attributed share, over the people this reader may see
+  let attributed: TaskUsageView['attributed'] = null;
+  if (people !== 'none') {
+    const daysOf = new Map<string, Set<string>>();
+    for (const r of rows) {
+      if (!visible(r.userId)) continue;
+      const set = daysOf.get(r.userId) ?? new Set<string>();
+      set.add(r.day);
+      daysOf.set(r.userId, set);
+    }
+    if (daysOf.size > 0) {
+      attributed = { tokens: 0, of: 0 };
+      // One range of the person's index each: a task has a few people.
+      for (const [userId, set] of daysOf) {
+        const r = db
+          .select({ tokens: sums.tokens, attributed: sums.attributed })
+          .from(t)
+          .where(and(eq(t.userId, userId), inArray(t.day, [...set])))
+          .get();
+        attributed.tokens += r?.attributed ?? 0;
+        attributed.of += r?.tokens ?? 0;
+      }
+    }
+  }
+
+  // ----- by review round, by day
+  const finishes = db
+    .select({ number: taskRounds.number, createdAt: taskRounds.createdAt })
+    .from(taskRounds)
+    .where(eq(taskRounds.taskId, task.id))
+    .orderBy(taskRounds.number)
+    .all()
+    .map((r) => ({ number: r.number, day: dayIn(tz, r.createdAt) }));
+  const byRound: TaskUsageRound[] =
+    rows.length === 0
+      ? []
+      : finishes.map((f) => ({ number: f.number, finished_on: f.day, tokens: 0, cache_read: 0 }));
+  if (rows.length > 0) {
+    const open: TaskUsageRound = {
+      number: (finishes.at(-1)?.number ?? 0) + 1,
+      finished_on: null,
+      tokens: 0,
+      cache_read: 0,
+    };
+    for (const r of rows) {
+      const at = finishes.findIndex((f) => f.day >= r.day);
+      const bucket = at === -1 ? open : byRound[at];
+      if (bucket === undefined) continue;
+      bucket.tokens += r.input + r.output + r.cacheWrite;
+      bucket.cache_read += r.cacheRead;
+    }
+    if (open.tokens + open.cache_read > 0) byRound.push(open);
+  }
+
+  return {
+    task_id: task.id,
+    key: `${task.prefix}-${String(task.number)}`,
+    tz,
+    first_day: sortedDays[0] ?? null,
+    last_day: sortedDays.at(-1) ?? null,
+    totals,
+    people,
+    by_person: byPerson,
+    by_round: byRound,
+    attributed,
   };
 }

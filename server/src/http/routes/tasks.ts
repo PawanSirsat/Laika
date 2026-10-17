@@ -22,11 +22,12 @@ import {
 import { EVIDENCE_LIMITS, listTaskRounds } from '../../services/rounds.ts';
 import { acceptTask, sendBackTask } from '../../services/review.ts';
 import { getTaskEstimate, type TaskEstimateView } from '../../services/estimates.ts';
+import { getTaskUsage, type TaskUsageView } from '../../services/token-usage.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseUpdatedSince } from '../updated-since.ts';
 import { unwatchTask, watchersOfTask, watchTask } from '../../services/watchers.ts';
-import { parseBody, strictObject, z } from '../validation.ts';
+import { parseBody, parseQuery, strictObject, z } from '../validation.ts';
 
 /**
  * Tasks (SPEC §6.4). Transport only — §5's transition rules and §4.5's readiness
@@ -119,6 +120,17 @@ const ReorderBody = strictObject({
  * `EVIDENCE_LIMITS`; the service holds the rules (a sha is hex, a pull request
  * is an http(s) URL) and this only shapes.
  */
+/**
+ * `POST /tasks/:id/claim`'s optional body: the branch the work is on, which
+ * `start_working` takes too (§7.1) and the task keeps (LAI-770). No body at
+ * all is a claim, as it always was.
+ */
+const ClaimBody = strictObject({
+  branch: z.string().trim().min(1).max(EVIDENCE_LIMITS.branch).optional(),
+});
+
+const UsageQuery = strictObject({ tz: z.string().min(1).max(64).optional() });
+
 const FinishBody = strictObject({
   summary: z.string().trim().min(1).max(50_000),
   checklist: z.array(z.string().min(1).max(500)).max(50).optional(),
@@ -243,7 +255,22 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
     return c.json(updateTask(db, actor, c.req.param('id'), body));
   });
 
-  app.post('/:id/claim', (c) => c.json(claimTask(sqlite, db, requireActor(c), c.req.param('id'))));
+  app.post('/:id/claim', async (c) => {
+    const actor = requireActor(c);
+    const text = await c.req.text();
+    let json: unknown = {};
+    if (text.trim() !== '') {
+      try {
+        json = JSON.parse(text);
+      } catch {
+        // Not JSON: refused below with the 422 every other body gets.
+        json = null;
+      }
+    }
+    const body = parseBody(ClaimBody, json);
+
+    return c.json(claimTask(sqlite, db, actor, c.req.param('id'), Date.now(), body.branch));
+  });
 
   app.post('/:id/finish', async (c) => {
     const actor = requireActor(c);
@@ -259,6 +286,17 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
    */
   app.get('/:id/estimate', (c) =>
     c.json<TaskEstimateView>(getTaskEstimate(db, requireActor(c), c.req.param('id'))),
+  );
+
+  /**
+   * What every person's agents spent on it, per round and — for the readers
+   * allowed it — per person and agent (§6.4, D-084, LAI-770): the task
+   * panel's Tokens section.
+   */
+  app.get('/:id/usage', (c) =>
+    c.json<TaskUsageView>(
+      getTaskUsage(db, requireActor(c), c.req.param('id'), parseQuery(UsageQuery, c.req.query())),
+    ),
   );
 
   /** Every round of a task, newest first, and its current send-back (§6.4). */

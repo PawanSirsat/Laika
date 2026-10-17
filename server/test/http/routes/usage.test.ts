@@ -291,3 +291,110 @@ describe('GET /users/:id/usage', () => {
     expect((await errorOf(res)).details.reason).toBe('session_required');
   });
 });
+
+describe('task attribution over the wire (LAI-770)', () => {
+  async function joinLaika(): Promise<void> {
+    await ok(
+      req(
+        '/api/v1/projects/laika/members',
+        { method: 'POST', body: JSON.stringify({ user_id: bea.id, role: 'member' }) },
+        ownerCookie,
+      ),
+      201,
+    );
+  }
+
+  it('the sharing answer names the prefixes a branch key may carry', async () => {
+    switchOn(true, true);
+    await joinLaika();
+    const token = await mint(bea.cookie);
+    const sharing = await ok(
+      req(`/api/v1/me/activity-sharing?collector_id=${COLLECTOR}`, {}, token),
+    );
+    expect(sharing.task_prefixes).toEqual(['LAI']);
+  });
+
+  it('GET /tasks/:id/usage answers the task’s tokens: per person for its owner, the total for a token', async () => {
+    switchOn(true, true);
+    await joinLaika();
+    const task = await ok(
+      req(
+        '/api/v1/projects/laika/tasks',
+        { method: 'POST', body: JSON.stringify({ title: 'Tied' }) },
+        ownerCookie,
+      ),
+      201,
+    );
+    await ok(put(usage({}, { task: task.key }), await mint(bea.cookie)));
+
+    const asOwner = await ok(req(`/api/v1/tasks/${String(task.id)}/usage?tz=UTC`, {}, ownerCookie));
+    expect(asOwner.key).toBe(task.key);
+    expect((asOwner.totals as Record<string, number>).tokens).toBe(3_718 + 2_094_668 + 5_615_538);
+    expect((asOwner.by_person as { name: string }[]).map((p) => p.name)).toEqual(['Bea']);
+    expect(asOwner.by_round).toEqual([expect.objectContaining({ number: 1, finished_on: null })]);
+
+    const asToken = await ok(
+      req(`/api/v1/tasks/${String(task.id)}/usage`, {}, await mint(ownerCookie, 'read_only')),
+    );
+    expect(asToken.by_person).toBeNull();
+    expect(JSON.stringify(asToken)).not.toContain(bea.id);
+
+    expect(
+      (await req('/api/v1/tasks/01NOTATASK000000000000000/usage', {}, ownerCookie)).status,
+    ).toBe(404);
+    expect(
+      (await req(`/api/v1/tasks/${String(task.id)}/usage?tz=Not/AZone`, {}, ownerCookie)).status,
+    ).toBe(422);
+  });
+
+  it('a claim over REST keeps the branch it is given', async () => {
+    const task = await ok(
+      req(
+        '/api/v1/projects/laika/tasks',
+        { method: 'POST', body: JSON.stringify({ title: 'Claim' }) },
+        ownerCookie,
+      ),
+      201,
+    );
+    const claimed = await ok(
+      req(
+        `/api/v1/tasks/${String(task.id)}/claim`,
+        { method: 'POST', body: JSON.stringify({ branch: `${String(task.key)}-fix-login` }) },
+        ownerCookie,
+      ),
+    );
+    expect(claimed.branch).toBe(`${String(task.key)}-fix-login`);
+    // No body at all is still a claim, as it always was.
+    const other = await ok(
+      req(
+        '/api/v1/projects/laika/tasks',
+        { method: 'POST', body: JSON.stringify({ title: 'Bare' }) },
+        ownerCookie,
+      ),
+      201,
+    );
+    const bare = await h.app.request(`/api/v1/tasks/${String(other.id)}/claim`, {
+      method: 'POST',
+      headers: { Cookie: ownerCookie, Origin: 'http://localhost' },
+    });
+    expect(bare.status, await bare.clone().text()).toBe(200);
+    expect(((await bare.json()) as { branch: unknown }).branch).toBeNull();
+    const garbled = await ok(
+      req(
+        '/api/v1/projects/laika/tasks',
+        { method: 'POST', body: JSON.stringify({ title: 'Odd' }) },
+        ownerCookie,
+      ),
+      201,
+    );
+    expect(
+      (
+        await req(
+          `/api/v1/tasks/${String(garbled.id)}/claim`,
+          { method: 'POST', body: '{nope' },
+          ownerCookie,
+        )
+      ).status,
+    ).toBe(422);
+  });
+});

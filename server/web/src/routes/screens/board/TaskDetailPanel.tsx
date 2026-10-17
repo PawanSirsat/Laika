@@ -34,6 +34,7 @@ import { CommentBody } from '../task/CommentBody.tsx';
 import { CommentComposer } from '../task/CommentComposer.tsx';
 import { EvidenceSection } from '../task/EvidenceSection.tsx';
 import { ForecastSection } from '../task/ForecastSection.tsx';
+import { TokensSection } from '../task/TokensSection.tsx';
 import {
   demoAgentBuild,
   demoClaimLock,
@@ -766,6 +767,18 @@ export function TaskDetailPanel({
             sendBack={task.send_back ?? null}
             nameOf={(id) => personName(id, members)}
             hideWhenEmpty
+          />
+
+          {/*
+            What the agents spent on it (D-084, LAI-770), under the proof it
+            was spent on: per round, and per person for whoever may see people.
+            Keyed on `updated_at` like the proof, so a new round redraws it.
+          */}
+          <TokensSection
+            taskId={task.id}
+            taskKey={task.key}
+            started={task.started_at !== null}
+            refreshKey={task.updated_at}
           />
 
           {/*

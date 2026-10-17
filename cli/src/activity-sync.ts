@@ -171,6 +171,12 @@ export interface Sharing {
    * an older board, and then the usage step sends no older tokens.
    */
   readonly usage_days_elsewhere?: readonly string[];
+  /**
+   * Asked the same way (SPEC §6.4, LAI-770): the key prefixes of the projects
+   * this person may read — which keys in a branch name may count. Absent from
+   * an older board, and then the last answer kept is used.
+   */
+  readonly task_prefixes?: readonly string[];
 }
 
 export type Call<T> =
@@ -296,6 +302,13 @@ export async function getSharing(
           ? {
               usage_days_elsewhere: (body.usage_days_elsewhere as unknown[]).filter(
                 (d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d),
+              ),
+            }
+          : {}),
+        ...(Array.isArray(body.task_prefixes)
+          ? {
+              task_prefixes: (body.task_prefixes as unknown[]).filter(
+                (p): p is string => typeof p === 'string' && /^[A-Z][A-Z0-9]{1,7}$/.test(p),
               ),
             }
           : {}),
@@ -596,6 +609,7 @@ async function syncLocked(
         nowS,
         send: (body) => putActivity(creds, body, ctx.nowMs(), signal),
         heldElsewhere: sharing.value.usage_days_elsewhere,
+        prefixes: sharing.value.task_prefixes,
         signal,
         stopAt: softStop,
       });

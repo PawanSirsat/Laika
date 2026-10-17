@@ -31,7 +31,9 @@ import { writePrivately } from './connect.ts';
  * | `sent-keys` | `<key> <identity> <author epoch>` — keys the board accepted | sync |
  * | `last-error` | the last thing that went wrong, one line | sync |
  * | `usage-index.json` | token usage: what was read where, and what the board holds (LAI-769) | sync |
- * | `usage-data.json` | token usage: per reply, its counts, model, time and directory (LAI-769) | sync |
+ * | `usage-data.json` | token usage: per reply, its counts, model, time and directory; each Laika mark's task key (LAI-769, LAI-770) | sync |
+ * | `sessions` | `<epoch> <session id> <branch>` — a counted session's start (LAI-770) | session-start hook |
+ * | `skip-sessions` | `<epoch> <session id>` — sessions nobody was typing in (LAI-775) | the hooks |
  *
  * `sent-keys` holds hashes only: the contract's key, and a hash of (author
  * email, author time) used to recognise an amended or rebased commit. Never an
@@ -222,6 +224,11 @@ export function rotate(paths: ActivityPaths): void {
     // the last 30 days — a new collector counts from its own start.
     join(paths.dir, 'usage-index.json'),
     join(paths.dir, 'usage-data.json'),
+    // A counted session's id and branch (LAI-770): kept under the consent
+    // that is ending. `skip-sessions` stays — it names sessions that were
+    // never the developer's, whichever collector reads them.
+    join(paths.dir, 'sessions'),
+    join(paths.dir, 'sessions.compacting'),
   ]) {
     rmSync(path, { force: true });
   }

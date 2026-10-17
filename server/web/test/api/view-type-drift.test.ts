@@ -337,6 +337,8 @@ const PAIRS: readonly Pair[] = [
     clientOmits: {
       usage_days_elsewhere:
         'Sent only to a collector that names its collector_id (LAI-769 review 1); the web app never asks with one.',
+      task_prefixes:
+        'Sent only to a collector that names its collector_id (LAI-770), for the keys in a branch; the web app never asks with one.',
     },
   },
   {
@@ -407,6 +409,13 @@ const PAIRS: readonly Pair[] = [
     client: 'PersonUsage',
     clientFile: 'usage.ts',
   },
+  // The task panel's Tokens section (LAI-770).
+  {
+    server: 'TaskUsageView',
+    serverFile: 'services/token-usage.ts',
+    client: 'TaskUsage',
+    clientFile: 'usage.ts',
+  },
   // Nested, through a table for the reason given below the profile's.
   ...(
     [
@@ -420,6 +429,9 @@ const PAIRS: readonly Pair[] = [
       ['UsageModelSlice', 'services/token-usage.ts', 'usage.ts'],
       ['UsageTaskSlice', 'services/token-usage.ts', 'usage.ts'],
       ['UsageWeek', 'services/token-usage.ts', 'usage.ts'],
+      ['UsageCounts', 'services/token-usage.ts', 'usage.ts'],
+      ['TaskUsagePerson', 'services/token-usage.ts', 'usage.ts'],
+      ['TaskUsageRound', 'services/token-usage.ts', 'usage.ts'],
     ] as const
   ).map(([name, serverFile, clientFile]) => ({
     server: name,

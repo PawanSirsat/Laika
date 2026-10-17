@@ -1042,7 +1042,7 @@ void describe('through `laika activity sync`', () => {
             'output',
             'task',
           ]);
-          assert.equal(row.task, null, 'phase 1 sends no task key');
+          assert.equal(row.task, null, 'no mark and no prefix the board serves: no task key');
         }
       }
     }
