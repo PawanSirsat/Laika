@@ -311,16 +311,19 @@ void describe('minting fills the page in', () => {
 });
 
 void describe('copy, on a board with no clipboard API', () => {
-  void test('CONTROL: it offers a selection instead of claiming success', async () => {
+  void test('CONTROL: when nothing can copy, it offers a selection instead of claiming success', async () => {
     /*
-     * This is the state of the real deployment: plain HTTP on an IP is not a
-     * secure context, so `navigator.clipboard` is `undefined`. The button must
-     * not say "Copied".
+     * The real deployment is plain HTTP on an IP, not a secure context, so
+     * `navigator.clipboard` is `undefined` — and since LAI-760 a copy there
+     * goes through `execCommand('copy')` and succeeds (copy-insecure.test.ts).
+     * This is the case left over: that refuses too. The button must not say
+     * "Copied".
      */
     const h = await open('/connect', stub(MINTS));
     try {
       await h.page.addInitScript(() => {
         Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+        document.execCommand = () => false;
       });
       await h.page.reload();
       await mint(h);
@@ -335,7 +338,11 @@ void describe('copy, on a board with no clipboard API', () => {
 
       const label = await copy.innerText();
       assert.doesNotMatch(label, /Copied/, 'it claimed a copy that cannot have happened');
-      assert.match(label, /⌘C/, 'it did not tell the reader what to do instead');
+      assert.match(
+        label,
+        /^Press (⌘C|Ctrl\+C) to copy/,
+        'it did not tell the reader what to do instead',
+      );
     } finally {
       await h.close();
     }
@@ -1222,6 +1229,11 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
         assert.equal((await card.getAttribute('data-extra')) !== null, true);
         assert.equal(await h.page.locator('.conn-eyebrow').innerText(), 'OPTIONAL');
         assert.equal(await h.page.locator('#conn-step-title').innerText(), name);
+        // Share local activity loads before it draws (LAI-751); reading during
+        // its spinner read an empty card, on master too (found on LAI-760).
+        await h.page
+          .locator('.conn-card-body [aria-busy="true"]')
+          .waitFor({ state: 'detached', timeout: 10_000 });
         assert.match(await h.page.locator('.conn-card-body').innerText(), body);
         assert.equal(
           await h.page.locator('.conn-rail-extra[aria-current]').innerText(),
@@ -1346,7 +1358,10 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
     const h = await open('/connect', stub(MINTS), {
       before: async (page) => {
         await page.addInitScript(() => {
+          // Refused both ways — the API absent and, since LAI-760, the
+          // `execCommand('copy')` fallback too.
           Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+          document.execCommand = () => false;
         });
       },
     });
