@@ -4,7 +4,14 @@ Each skill is its own directory with a `SKILL.md` inside
 (`skills/<name>/SKILL.md`). A loose `.md` at this level — like this README — is
 not loaded as a skill.
 
-Empty today. **Filled in M4.**
+Shipped today:
+
+- `laika-mark-your-task/` — mark the task before you start (`start_working`
+  with the `branch`, or `update_status` to `in_progress`) and name the branch
+  `<KEY>-…`, so Laika ties the session's tokens to it (LAI-770, D-084 item 5).
+  `cli/test/plugin-skills.test.ts` checks it names only tools the server serves.
+
+The full protocol skill below is LAI-421, still to come.
 
 ## What goes here
 
