@@ -7,6 +7,8 @@ import {
   looksLikePlaceholder,
   newTokenSecret,
   recordMcpUse,
+  recordRestWrite,
+  restWriteCountsAsPresence,
   TOKEN_PREFIX,
   TOKEN_SECRET_LENGTH,
   tokenDisplayPrefix,
@@ -236,6 +238,7 @@ describe('last_used_at is throttled (§7.2)', () => {
       projectIdsJson: null,
       lastUsedAt,
       lastMcpAt: null,
+      lastRestWriteAt: null,
       lastClient: null,
       lastClientName: null,
       expiresAt: null,
@@ -273,6 +276,7 @@ describe('the project whitelist errs closed', () => {
       projectIdsJson: json,
       lastUsedAt: null,
       lastMcpAt: null,
+      lastRestWriteAt: null,
       lastClient: null,
       lastClientName: null,
       expiresAt: null,
@@ -444,6 +448,89 @@ describe('MCP activity is recorded on the token (D-076)', () => {
 
   it('touches nothing for a token that does not exist', () => {
     expect(recordMcpUse(t.db, 'nope', 1_000, 'Cursor')).toEqual({ mcp: false, client: false });
+  });
+});
+
+describe('a REST write is recorded on the token (D-081)', () => {
+  let t: TestDb;
+  let tokenId: string;
+
+  beforeEach(() => {
+    t = freshDb();
+    const userId = newId();
+    tokenId = newId();
+    t.db
+      .insert(users)
+      .values({
+        id: userId,
+        email: 'agent@example.test',
+        name: 'Agent',
+        orgRole: 'member',
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      })
+      .run();
+    t.db
+      .insert(tokens)
+      .values({
+        id: tokenId,
+        userId,
+        name: 'omnigent on macOS',
+        prefix: 'lai_aaaa',
+        tokenHash: 'x'.repeat(64),
+        scope: 'full',
+        createdAt: 0,
+      })
+      .run();
+  });
+  afterEach(() => {
+    t.close();
+  });
+
+  const stamp = () =>
+    t.db.select().from(tokens).where(eq(tokens.id, tokenId)).get()?.lastRestWriteAt;
+
+  it('counts a write under /api/ and never a read, nor /mcp', () => {
+    for (const method of ['POST', 'PATCH', 'PUT', 'DELETE']) {
+      expect(restWriteCountsAsPresence(method, '/api/v1/tasks/t1'), method).toBe(true);
+    }
+    for (const method of ['GET', 'HEAD', 'OPTIONS']) {
+      expect(restWriteCountsAsPresence(method, '/api/v1/tasks/t1'), method).toBe(false);
+    }
+    // `/mcp` records itself, with the client's name (D-076).
+    expect(restWriteCountsAsPresence('POST', '/mcp')).toBe(false);
+  });
+
+  it('stamps the first write and is throttled like last_used_at', () => {
+    expect(recordRestWrite(t.db, tokenId, 1_000)).toBe(true);
+    expect(stamp()).toBe(1_000);
+
+    expect(recordRestWrite(t.db, tokenId, 1_000 + LAST_USED_THROTTLE_MS - 1)).toBe(false);
+    expect(stamp()).toBe(1_000);
+
+    expect(recordRestWrite(t.db, tokenId, 1_000 + LAST_USED_THROTTLE_MS)).toBe(true);
+    expect(stamp()).toBe(1_000 + LAST_USED_THROTTLE_MS);
+  });
+
+  it('stamps nothing while presence is off', () => {
+    t.db
+      .insert(orgs)
+      .values({
+        id: newId(),
+        name: 'Laika',
+        ownerUserId: t.db.select().from(users).get()?.id ?? '',
+        presenceEnabled: 0,
+        createdAt: 0,
+        updatedAt: 0,
+      })
+      .run();
+
+    expect(recordRestWrite(t.db, tokenId, 1_000)).toBe(false);
+    expect(stamp()).toBeNull();
+  });
+
+  it('touches nothing for a token that does not exist', () => {
+    expect(recordRestWrite(t.db, 'nope', 1_000)).toBe(false);
   });
 });
 

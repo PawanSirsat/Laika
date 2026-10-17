@@ -669,11 +669,22 @@ void describe('the sidebar open, the row crowded (LAI-727 review)', () => {
             );
 
             assert.equal(m.inRow, true, 'the group left the toolbar row');
+            // LAI-730: no "out of the row, no slack" alternative any more. The
+            // toolbar's narrow form follows the row's width, not the window's.
             assert.ok(
-              m.search >= 120 || (m.tier === 'pill' && m.spacer < 1),
-              `the search field is ${String(m.search)}px wide with the group ${m.tier} and ${String(
-                Math.round(m.spacer),
-              )}px of slack`,
+              m.search >= 120,
+              `the search field is ${String(m.search)}px wide with the group ${m.tier}`,
+            );
+            // Labels may go from sight in the narrow form; never from the name.
+            assert.equal(
+              await h.page.getByRole('button', { name: /^Filter/ }).count(),
+              1,
+              'Filter lost its accessible name',
+            );
+            assert.equal(
+              await h.page.getByRole('button', { name: 'Group: Assignee' }).count(),
+              1,
+              'Group lost its accessible name',
             );
             await assertFitsOpenAndClosed(h, `${String(width)}px ${scope} ${theme}`);
           } finally {
@@ -1047,6 +1058,79 @@ void describe('a board too long to read says its figures are partial (LAI-727)',
     try {
       await h.page.locator('.bstats-partial').waitFor({ timeout: 20_000 });
       assert.match((await h.page.locator('.bstats-partial').getAttribute('title')) ?? '', /first/i);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * **The pill reads clearly in light mode** (LAI-730, owner: "it is faint").
+ *
+ * Measured, not eyeballed: the WCAG contrast of each key against the pill's
+ * own background, and the border against the default token. Before the fix
+ * the keys were `--text-muted` (#606775 on white, 5.8:1) inside a
+ * `--border-subtle` box. Blocked keeps the danger colour, which the light
+ * rules would otherwise outrank.
+ */
+void describe('the stat pill in light mode (LAI-730)', () => {
+  void test('its keys and scope read at 7:1 or better, inside a default border', async () => {
+    const h = await open('/board?project=laika-core&sprint=s2', STUB);
+    try {
+      await h.page.locator('.bstats').waitFor({ timeout: 20_000 });
+      await setTheme(h.page, 'Light');
+      await h.page.setViewportSize({ width: 1366, height: 768 });
+      await settled(h);
+
+      const m = await h.page.evaluate(() => {
+        const rgb = (c: string) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+        const lum = (c: string) => {
+          const [r, g, b] = rgb(c).map((v) => {
+            const s = v / 255;
+            return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0);
+        };
+        const ratio = (a: string, b: string) => {
+          const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+          return ((hi ?? 0) + 0.05) / ((lo ?? 0) + 0.05);
+        };
+        const pill = document.querySelector('.bstats');
+        const bg = pill === null ? '' : getComputedStyle(pill).backgroundColor;
+        const colour = (sel: string) => {
+          const el = document.querySelector(sel);
+          return el === null ? '' : getComputedStyle(el).color;
+        };
+        // A token resolved the way the pill would resolve it.
+        const probe = document.createElement('span');
+        document.body.append(probe);
+        probe.style.color = 'var(--border-default)';
+        const borderDefault = getComputedStyle(probe).color;
+        probe.style.color = 'var(--overdue)';
+        const overdue = getComputedStyle(probe).color;
+        probe.remove();
+        return {
+          theme: document.documentElement.dataset.theme,
+          done: ratio(colour('.bstats-done .bstats-key'), bg),
+          left: ratio(colour('.bstats-left .bstats-key'), bg),
+          scope: ratio(
+            colour('.bstats-scope'),
+            getComputedStyle(document.querySelector('.bstats-scope') ?? document.body)
+              .backgroundColor,
+          ),
+          border: pill === null ? '' : getComputedStyle(pill).borderTopColor,
+          borderDefault,
+          blocked: colour('.bstats-blocked .bstats-key'),
+          overdue,
+        };
+      });
+
+      assert.equal(m.theme, 'light', 'positive control: the light theme is on');
+      assert.ok(m.done >= 7, `DONE reads at ${m.done.toFixed(2)}:1`);
+      assert.ok(m.left >= 7, `LEFT reads at ${m.left.toFixed(2)}:1`);
+      assert.ok(m.scope >= 7, `the scope reads at ${m.scope.toFixed(2)}:1`);
+      assert.equal(m.border, m.borderDefault, 'the pill keeps the faint subtle border');
+      assert.equal(m.blocked, m.overdue, 'BLK lost its danger colour');
     } finally {
       await h.close();
     }

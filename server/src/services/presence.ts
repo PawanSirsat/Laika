@@ -50,6 +50,14 @@ import { resolveRepoProjects } from './heartbeats.ts';
  * `repo` and `branch` stay absent, which is how a client already reads "working,
  * somewhere it cannot be told". A heartbeat still supplies the location when
  * there is one. Nothing more is collected than the time and the client's name.
+ *
+ * ## So is a REST write (D-081)
+ *
+ * An agent on the REST API or the `laika` CLI never touches `/mcp`, so it was
+ * never present, however busy. A token-authenticated REST **write** now stamps
+ * `last_rest_write_at` under the same rules, and counts here exactly like an
+ * `/mcp` call: no location, the token's agent by `clientOf`. A read does not
+ * count — a script polling with somebody's token is not that person working.
  */
 
 /** §9.3: "a heartbeat in the last 5 minutes". */
@@ -83,7 +91,7 @@ export interface PresenceEntry {
   project_ids: string[];
   /**
    * An agent session, per §4.8's `actor_kind`: a heartbeat on a token, or a
-   * token's `/mcp` call (D-076).
+   * token's `/mcp` call (D-076) or REST write (D-081).
    */
   is_agent: boolean;
   /**
@@ -105,7 +113,7 @@ export interface PresenceView {
 export interface CapacityEntry {
   user_id: string;
   name: string;
-  /** Distinct tokens seen in the window, by heartbeat or `/mcp` call (D-076). */
+  /** Distinct tokens seen in the window, by heartbeat, `/mcp` call (D-076) or REST write (D-081). */
   active_sessions: number;
   in_progress_tasks: string[];
   /** Milliseconds since the oldest in-progress task started, or null. */
@@ -138,7 +146,7 @@ function maySeeLocation(actor: ResolvedActor, projectIds: readonly string[]): bo
   return projectIds.some((id) => can(withProject(actor, id), 'project.read', { projectId: id }));
 }
 
-/** One live session: a heartbeat, or a token's latest `/mcp` call. */
+/** One live session: a heartbeat, or a token's latest `/mcp` call or REST write. */
 interface Session {
   tokenId: string | null;
   at: number;
@@ -173,27 +181,37 @@ function liveHeartbeat(now: number) {
   return or(isNull(heartbeats.tokenId), tokenStillUsable(now));
 }
 
-/** Tokens that called `/mcp` inside the window (D-076). */
-function mcpSessionsSince(db: Db, since: number, now: number) {
+/**
+ * Tokens that called `/mcp` (D-076) or wrote through the REST API (D-081)
+ * inside the window. One session per token, at the newer of the two.
+ */
+function tokenSessionsSince(db: Db, since: number, now: number) {
   return db
     .select({
       tokenId: tokens.id,
       userId: tokens.userId,
       lastMcpAt: tokens.lastMcpAt,
+      lastRestWriteAt: tokens.lastRestWriteAt,
       lastClient: tokens.lastClient,
       tokenName: tokens.name,
       name: users.name,
     })
     .from(tokens)
     .innerJoin(users, eq(users.id, tokens.userId))
-    .where(and(gt(tokens.lastMcpAt, since), tokenStillUsable(now)))
+    .where(
+      and(
+        or(gt(tokens.lastMcpAt, since), gt(tokens.lastRestWriteAt, since)),
+        tokenStillUsable(now),
+      ),
+    )
     .all()
     .map((row) => ({
       tokenId: row.tokenId,
       userId: row.userId,
       name: row.name,
-      // Never null here: the `gt` above excludes it. The column type cannot say so.
-      at: row.lastMcpAt ?? 0,
+      // At least one is inside the window: the `or` above says so. The column
+      // types cannot.
+      at: Math.max(row.lastMcpAt ?? 0, row.lastRestWriteAt ?? 0),
       client: clientOf(row.lastClient, row.tokenName),
     }));
 }
@@ -224,7 +242,7 @@ export function presenceNow(db: Db, actor: ResolvedActor, now: number = Date.now
     .orderBy(desc(heartbeats.createdAt))
     .all();
 
-  const calls = mcpSessionsSince(db, since, now);
+  const calls = tokenSessionsSince(db, since, now);
 
   // Per person: their newest heartbeat (it alone says *where*), and every live
   // session from either source.
@@ -288,7 +306,7 @@ export function presenceNow(db: Db, actor: ResolvedActor, now: number = Date.now
       user_id: userId,
       name: person.name,
       ...location,
-      // A heartbeat on a token, as before, or any live `/mcp` call (D-076).
+      // A heartbeat on a token, as before, or any live `/mcp` call (D-076) or REST write (D-081).
       is_agent:
         (beat !== undefined && beat.tokenId !== null) || calls.some((c) => c.userId === userId),
       client: agents[0]?.client ?? null,
@@ -339,7 +357,7 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
         .all()
     : [];
 
-  const calls = enabled ? mcpSessionsSince(db, now - PRESENCE_WINDOW_MS, now) : [];
+  const calls = enabled ? tokenSessionsSince(db, now - PRESENCE_WINDOW_MS, now) : [];
 
   const notes = mayReadUnlisted
     ? db
@@ -408,7 +426,7 @@ export interface AgentPresence {
  * (LAI-743).
  *
  * The same sessions `presenceNow` counts: a heartbeat on a usable token or
- * none, or a usable token's `/mcp` call, inside the window. **No location**:
+ * none, or a usable token's `/mcp` call or REST write, inside the window. **No location**:
  * the profile says which agents, never where — `repo` and `branch` are not
  * read here at all.
  *
@@ -437,7 +455,7 @@ export function agentPresenceFor(db: Db, userId: string, now: number = Date.now(
       client: row.tokenId === null ? null : clientOf(row.lastClient, row.tokenName),
     }));
 
-  const calls = mcpSessionsSince(db, since, now).filter((call) => call.userId === userId);
+  const calls = tokenSessionsSince(db, since, now).filter((call) => call.userId === userId);
 
   const sessions = [...beats, ...calls].sort((a, b) => b.at - a.at);
   const clients = [

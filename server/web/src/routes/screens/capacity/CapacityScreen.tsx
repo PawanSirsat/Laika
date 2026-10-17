@@ -26,8 +26,22 @@ import { byAvailability, chipsFor, oldestAge, taskIdsToResolve } from './capacit
 import '../../../components/markers.css';
 import './capacity.css';
 
+/**
+ * A chip's task, with its own space (LAI-755). `projectSlug` is `undefined`
+ * only when the space list could not be read.
+ */
+export interface CapacityTaskLink {
+  readonly id: string;
+  readonly key: string;
+  readonly projectSlug: string | undefined;
+}
+
 export interface CapacityScreenProps {
-  readonly onOpenTask: (taskKey: string) => void;
+  /**
+   * Open a chip's task **in the task's own space** (LAI-755). Capacity spans
+   * every space, so the space last opened is usually the wrong one.
+   */
+  readonly onOpenTask: (task: CapacityTaskLink) => void;
   /**
    * Unlisted notes still waiting, from the shell (LAI-754). **`undefined` draws
    * no link** — a reader without `audit_log.export` is not told the queue
@@ -93,13 +107,14 @@ export function CapacityScreen({ onOpenTask, unlistedOpen, onNavigate }: Capacit
    */
   const [resolved, setResolved] = useState<ReadonlyMap<string, Task>>(new Map());
   /**
-   * The spaces this screen reads across, by slug.
+   * The spaces this screen reads across: slug by project id, which is also
+   * how a chip finds its task's own space (LAI-755).
    *
    * A real list from `GET /projects`: `undefined` until it lands and `null` if
    * it failed — the strip then says how often it refreshes rather than "across
    * 0 spaces", which would be a claim rather than a gap.
    */
-  const [spaces, setSpaces] = useState<readonly string[] | null | undefined>(undefined);
+  const [spaces, setSpaces] = useState<ReadonlyMap<string, string> | null | undefined>(undefined);
   const [error, setError] = useState<unknown>(null);
 
   // Once, not on the poll: the number of spaces does not change every 20s.
@@ -114,7 +129,7 @@ export function CapacityScreen({ onOpenTask, unlistedOpen, onNavigate }: Capacit
       .then(({ items }) => {
         // Every page, not the first (LAI-703).
         if (!controller.signal.aborted) {
-          setSpaces(items.filter(isProject).map((project) => project.slug));
+          setSpaces(new Map(items.filter(isProject).map((project) => [project.id, project.slug])));
         }
       })
       .catch(() => {
@@ -172,7 +187,7 @@ export function CapacityScreen({ onOpenTask, unlistedOpen, onNavigate }: Capacit
 
     // A set some other screen already walked answers without a request.
     const held = new Map<string, Task>();
-    for (const slug of spaces ?? []) {
+    for (const slug of spaces?.values() ?? []) {
       const set = taskStore.peek(slug);
       if (set?.status !== 'ready') continue;
       for (const id of missing) {
@@ -215,7 +230,7 @@ export function CapacityScreen({ onOpenTask, unlistedOpen, onNavigate }: Capacit
   const scope =
     spaces === undefined || spaces === null
       ? `updated every ${String(POLL_MS / 1000)}s · live`
-      : `across ${String(spaces.length)} ${spaces.length === 1 ? 'space' : 'spaces'} · live`;
+      : `across ${String(spaces.size)} ${spaces.size === 1 ? 'space' : 'spaces'} · live`;
 
   return (
     <div className="cap-page">
@@ -455,7 +470,13 @@ export function CapacityScreen({ onOpenTask, unlistedOpen, onNavigate }: Capacit
                                         : `${task.key} ${task.title}`
                                     }
                                     onClick={() => {
-                                      if (task !== undefined) onOpenTask(task.key);
+                                      if (task !== undefined) {
+                                        onOpenTask({
+                                          id: task.id,
+                                          key: task.key,
+                                          projectSlug: spaces?.get(task.project_id),
+                                        });
+                                      }
                                     }}
                                   >
                                     <span

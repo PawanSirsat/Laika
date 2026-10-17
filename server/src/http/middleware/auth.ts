@@ -3,7 +3,7 @@ import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { type Auth } from '../../auth/auth.ts';
 import { resolveActor, type ResolvedActor } from '../../auth/resolve-actor.ts';
-import { TokenAuthError } from '../../auth/tokens.ts';
+import { recordRestWrite, restWriteCountsAsPresence, TokenAuthError } from '../../auth/tokens.ts';
 import { type AppEnv } from '../context.ts';
 
 /**
@@ -111,6 +111,22 @@ export function authMiddleware(options: { auth: Auth; db: Db }) {
     }
 
     c.set('actor', actor);
+
+    // A token's REST write is presence, like its `/mcp` call (D-081). A web
+    // session never counts: it has no token. **Never fails the request.** It is
+    // bookkeeping on the credential just presented, and a write refused because
+    // a presence stamp could not be made would cost the work to save a dot.
+    const tokenId = actor?.token?.id;
+    if (tokenId !== undefined && restWriteCountsAsPresence(c.req.method, c.req.path)) {
+      try {
+        recordRestWrite(options.db, tokenId, Date.now());
+      } catch (err) {
+        c.get('log').warn('token.rest_write_unrecorded', {
+          request_id: c.get('requestId'),
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
 
     await next();
   });

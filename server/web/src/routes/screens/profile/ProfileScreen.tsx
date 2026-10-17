@@ -1256,7 +1256,7 @@ function AgentsCard({
             [
               'Online',
               online.enabled
-                ? 'An agent is online when it sent a heartbeat or an MCP call in the last five minutes. Which agents — never where they are working.'
+                ? 'An agent is online when it sent a heartbeat, an MCP call or a change through the API or the CLI in the last five minutes. Which agents — never where they are working.'
                 : 'Presence is off for this organisation, so who is online is not recorded.',
             ],
             [

@@ -1,0 +1,1 @@
+ALTER TABLE `tokens` ADD `last_rest_write_at` integer;
