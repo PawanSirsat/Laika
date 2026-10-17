@@ -2,11 +2,12 @@
 id: LAI-779
 title: 'Wall-clock assertions in the gate fail on GitHub''s runner'
 area: server
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-771
-status: backlog
+status: in-progress
+started: 2026-10-17T17:46:25Z
 ---
 
 ## Goal
