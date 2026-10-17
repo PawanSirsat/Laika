@@ -255,6 +255,9 @@ void describe('what an owner sees and a member does not', () => {
       const pawan = card(h.page, 'Pawan Sirsat');
       assert.match(await pawan.locator('.cap-role').innerText(), /Owner · Builder/);
       assert.equal(await pawan.locator('.cap-spark-bar').count(), 14);
+      // The link waits on the shell's `/me` as well as the cards, so wait for
+      // it before counting (LAI-765's rule: wait for what you read).
+      await pawan.locator('a.cap-name-link').waitFor({ timeout: 10_000 });
       assert.equal(await pawan.locator('a.cap-name-link').count(), 1, 'no profile link');
       assert.deepEqual(
         (await pawan.locator('.cap-agent').allInnerTexts()).map((t) =>
@@ -384,7 +387,16 @@ void describe('states', () => {
       await h.page.setViewportSize({ width: 390, height: 900 });
       await ready(h.page);
       await h.page.locator('.cap-never').getByRole('button', { name: 'Show' }).click();
-      await h.page.waitForTimeout(300);
+      // Measure the page as drawn, not a guess at when it is (LAI-765): every
+      // card, the matched task (its own read), the review and unlisted counts
+      // (the shell's reads), and the self-hosted font's widths, not the
+      // fallback's.
+      await until(async () => (await h.page.locator('.cap-grid > .cap-card').count()) === 5);
+      await h.page.locator('.cap-working').waitFor({ timeout: 10_000 });
+      const review = h.page.locator('.cap-tile', { hasText: 'Waiting for review' });
+      await until(async () => /Waiting for review\s*3/.test(await review.innerText()), 10_000);
+      await h.page.locator('.cap-tile-unlisted').waitFor({ timeout: 10_000 });
+      await h.page.evaluate(() => document.fonts.ready.then(() => undefined));
       const wide = await h.page.evaluate(() => ({
         page: document.documentElement.scrollWidth > window.innerWidth,
         cut: [...document.querySelectorAll('.cap-card, .cap-card *, .cap-tiles *, .cap-toolbar *')]
@@ -451,6 +463,9 @@ void describe('tasks are drawn only when asked for', () => {
         await pawan.locator('.cap-working').innerText(),
         /Claude Code · working on\s*LAI-9/,
       );
+      // A deliberate *nothing happens* window, which no condition can end
+      // early (`until`'s doc; LAI-765 kept these): a folded task must not be
+      // read, and a read that was coming would have gone with the matched one.
       await h.page.waitForTimeout(300);
       const tasksRead = () =>
         h.calls
@@ -467,6 +482,7 @@ void describe('tasks are drawn only when asked for', () => {
         'true',
       );
       await pawan.locator('button.cap-task', { hasText: 'ONR-360' }).waitFor({ timeout: 10_000 });
+      await until(async () => (await pawan.locator('button.cap-task').count()) === 7, 10_000);
       assert.equal(await pawan.locator('button.cap-task').count(), 7);
       // Bea's are not drawn, so not read.
       assert.equal(tasksRead().includes('/api/v1/tasks/t10'), false);
@@ -534,6 +550,18 @@ void describe('tasks are drawn only when asked for', () => {
       const url = new URL(h.page.url());
       assert.equal(url.searchParams.get('project'), 'laika-web', 'not the task’s own space');
       assert.equal(url.searchParams.get('task'), 't9', 'the task is not opened by id');
+
+      // `.drawer` is a frame whose slot the task panel fills afterwards, so it
+      // exists empty first (LAI-765: GitHub's runner read '' here). Wait for
+      // the content, then assert it.
+      const drawer = h.page.locator('.drawer');
+      await drawer.waitFor({ timeout: 10_000 });
+      await until(async () => {
+        const text = await drawer.innerText();
+        return text.includes('LW-1') && text.includes('Toolbar reads its own width');
+      }, 10_000);
+      assert.match(await drawer.innerText(), /LW-1/);
+      assert.match(await drawer.innerText(), /Toolbar reads its own width/);
     } finally {
       await h.close();
     }
@@ -584,7 +612,10 @@ void describe('links out', () => {
       assert.equal(await review.getAttribute('href'), '/review');
 
       // The sidebar carries the same count beside Unlisted work.
+      // The shell reads its count apart from the page, so the entry can be
+      // drawn before the number is (LAI-765): wait for it, then assert it.
       const entry = h.page.locator('#sidebar .sidebar-link', { hasText: 'Unlisted work' });
+      await until(async () => /Unlisted work\s*1/.test(await entry.innerText()), 10_000);
       assert.match(await entry.innerText(), /Unlisted work\s*1/);
 
       await h.page.locator('.cap-tile-unlisted').click();
