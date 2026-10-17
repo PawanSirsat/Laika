@@ -1,7 +1,13 @@
 import { Hono } from 'hono';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
-import { AI_PROVIDERS, getOrg, updateOrg } from '../../services/orgs.ts';
+import {
+  AI_PROVIDERS,
+  clearGithubWebhookSecret,
+  getOrg,
+  rotateGithubWebhookSecret,
+  updateOrg,
+} from '../../services/orgs.ts';
 import { type AppEnv } from '../context.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
@@ -49,17 +55,45 @@ export interface OrgRouteOptions {
    * the secret should arrive the same way the database does.
    */
   serverSecret: string;
+  /**
+   * `LAIKA_PUBLIC_URL` (§11.7), for the GitHub webhook's payload URL
+   * (LAI-753). Empty in tests; the view then says null and the screen builds
+   * the URL from the address it was opened at.
+   */
+  publicUrl?: string | undefined;
 }
 
 export function orgRoutes(options: OrgRouteOptions): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db, serverSecret } = options;
+  const publicUrl = options.publicUrl ?? '';
 
   app.get('/', (c) => {
     const actor = c.get('actor');
     if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
 
-    return c.json(getOrg(db, actor));
+    return c.json(getOrg(db, actor, publicUrl));
+  });
+
+  /**
+   * `POST /api/v1/org/github-webhook` (§6.4, §10.1, LAI-753): set or rotate
+   * the GitHub webhook secret, and answer it **once**. `201`, because a new
+   * secret exists that did not before; no body, because Laika makes it.
+   */
+  app.post('/github-webhook', (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+
+    return c.json(rotateGithubWebhookSecret(db, actor, serverSecret, Date.now(), publicUrl), 201);
+  });
+
+  /** `DELETE /api/v1/org/github-webhook`: clear it, so every delivery is refused. */
+  app.delete('/github-webhook', (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+
+    clearGithubWebhookSecret(db, actor);
+    return c.body(null, 204);
   });
 
   /**
@@ -87,7 +121,7 @@ export function orgRoutes(options: OrgRouteOptions): Hono<AppEnv> {
       throw new ApiError('internal', 'This server cannot store secrets');
     }
 
-    return c.json(updateOrg(db, actor, body, serverSecret));
+    return c.json(updateOrg(db, actor, body, serverSecret, Date.now(), publicUrl));
   });
 
   return app;

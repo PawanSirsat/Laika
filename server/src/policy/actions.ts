@@ -154,4 +154,8 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'activity_sharing.set_own',
   'local_activity.read_own',
   'local_activity.delete_own',
+  // **Whoever holds the GitHub webhook secret can sign deliveries that confirm
+  // an agent's proof** (D-083, LAI-753). Setting it answers it in plaintext,
+  // so an agent's token must not be able to mint one and vouch for itself.
+  'webhook.configure',
 ]);
