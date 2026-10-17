@@ -7,6 +7,8 @@ priority: p1
 depends-on: []
 discovered-from: LAI-769
 status: done
+started: 2026-10-17T15:40:00Z
+finished: 2026-10-17T16:37:03Z
 ---
 
 ## Goal
