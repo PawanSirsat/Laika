@@ -740,14 +740,26 @@ void describe('through `laika activity sync`', () => {
 void describe('cheap', () => {
   void test('with ~800 transcripts, a sync’s usage step with nothing new costs under 50 ms', async () => {
     const root = home();
-    const line = claudeLine('msg_x', NOW_S - 600, { input: 1, output: 2, cw: 3, cr: 4 });
+    const line = `${claudeLine('msg_x', NOW_S - 600, { input: 1, output: 2, cw: 3, cr: 4 })}\n`;
+    // As on a real machine (REPORT.md §1a: 771 transcripts, most of them
+    // untouched for weeks): one in ten written recently, the rest dated before
+    // the window — found and stat'ed on every step, never read. Directories
+    // are made once, so the fixture costs little beside the suites it shares
+    // the gate with.
+    const old = NOW_S - 60 * DAY;
+    let n = 0;
     for (let p = 0; p < 40; p += 1) {
       for (let s = 0; s < 8; s += 1) {
-        writeClaude(root, `-proj-${String(p)}/s${String(s)}.jsonl`, [line]);
-        for (let a = 0; a < 2; a += 1) {
-          writeClaude(root, `-proj-${String(p)}/s${String(s)}/subagents/agent-${String(a)}.jsonl`, [
-            line,
-          ]);
+        const session = join(root, '.claude', 'projects', `-proj-${String(p)}`, `s${String(s)}`);
+        mkdirSync(join(session, 'subagents'), { recursive: true });
+        for (const file of [
+          `${session}.jsonl`,
+          join(session, 'subagents', 'agent-0.jsonl'),
+          join(session, 'subagents', 'agent-1.jsonl'),
+        ]) {
+          writeFileSync(file, line);
+          if (n % 10 !== 0) utimesSync(file, old, old);
+          n += 1;
         }
       }
     }
