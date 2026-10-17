@@ -58,6 +58,15 @@ export interface StubBoard {
   readonly snapshots: Map<string, { readonly commits_local: number }>;
   readonly keys: Map<string, string>;
   /**
+   * Usage reports (§6.4, D-084, LAI-769), as the server keeps them (§4.32):
+   * a (collector, day)'s rows replaced whole by each report that carries it.
+   */
+  readonly usage: Map<string, readonly unknown[]>;
+  /** An older board: a usage report is an unknown field, 422. */
+  refuseUsage: boolean;
+  /** Sharing turned off between the snapshot and the usage report. */
+  offForUsage: boolean;
+  /**
    * The report bucket (§6.3): 30, one back every 120 s, on `now()`. Off unless
    * a test turns it on; `limited` counts the 429s it gave.
    */
@@ -85,6 +94,9 @@ export async function stubBoard(token: string): Promise<StubBoard> {
     now: () => new Date(),
     snapshots: new Map(),
     keys: new Map(),
+    usage: new Map(),
+    refuseUsage: false,
+    offForUsage: false,
     bucket: { on: false, tokens: 30, at: 0, limited: 0 },
     close: () => undefined,
   };
@@ -136,6 +148,19 @@ export async function stubBoard(token: string): Promise<StubBoard> {
           refuse(422, 'unprocessable', { reason });
           return;
         }
+        const isUsage = body.includes('"usage":true');
+        if (isUsage && board.refuseUsage) {
+          refuse(422, 'unprocessable', { reason: 'validation_failed' });
+          return;
+        }
+        if (isUsage && board.offForUsage) {
+          refuse(403, 'forbidden', {
+            reason: 'local_activity_off',
+            org_enabled: board.sharing.org_enabled,
+            enabled: false,
+          });
+          return;
+        }
         const mode = board.put;
         if (mode.kind === 'hang') return;
         if (mode.kind === 'off') {
@@ -183,8 +208,19 @@ export async function stubBoard(token: string): Promise<StubBoard> {
         const sent = JSON.parse(body) as {
           collector_id: string;
           lookback?: true;
-          days: { day: string; commits_local?: number; pushed_keys?: string[] }[];
+          usage?: true;
+          days: {
+            day: string;
+            commits_local?: number;
+            pushed_keys?: string[];
+            rows?: unknown[];
+          }[];
         };
+        if (sent.usage === true) {
+          for (const d of sent.days) board.usage.set(`${sent.collector_id}|${d.day}`, d.rows ?? []);
+          json(200, { accepted_days: sent.days.length });
+          return;
+        }
         for (const d of sent.days) {
           if (sent.lookback !== true) {
             board.snapshots.set(`${sent.collector_id}|${d.day}`, {

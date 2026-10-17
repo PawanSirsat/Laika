@@ -31,6 +31,7 @@ import {
   type Scope,
 } from './activity-store.ts';
 import { lookbackStep, type LookbackOutcome } from './activity-lookback.ts';
+import { usageRoots, usageStep, type UsageOutcome } from './activity-usage.ts';
 import { readSettings } from './config.ts';
 import { readEnvFile } from './whoami.ts';
 
@@ -368,6 +369,8 @@ export type SyncOutcome =
       readonly deferredKeys: number;
       /** What the look-back did after the snapshot, when there was one to do. */
       readonly lookback?: LookbackOutcome;
+      /** What the token usage step did (D-084), when it sent or was refused. */
+      readonly usage?: UsageOutcome;
     }
   | { readonly kind: 'rate-limited'; readonly nextAt: number }
   | { readonly kind: 'refused'; readonly message: string }
@@ -563,6 +566,26 @@ async function syncLocked(
         last_result: { at: nowS, outcome: 'sent', accepted_days: answer.value.accepted_days },
       });
 
+      // Token usage (D-084, LAI-769), after the snapshot and inside the same
+      // lock and deadline: the days whose totals changed since the board last
+      // accepted them. A board that refuses it still took the snapshot.
+      const usage = await usageStep({
+        paths,
+        roots: usageRoots(ctx.home, ctx.env),
+        state,
+        collectorId: collectorId(paths),
+        tz: ianaTimeZone(ctx.tz),
+        nowS,
+        send: (body) => putActivity(creds, body, ctx.nowMs(), signal),
+        signal,
+        stopAt: softStop,
+      });
+      if (signal.aborted) throw new Abandoned();
+      if (usage.kind === 'off') {
+        save(stopCollecting(paths, state, nowS));
+        return { kind: 'off', recheckAt: nowS + DAY_S };
+      }
+
       // The look-back (D-080), after the snapshot and inside the same lock and
       // deadline: a repo seen for the first time, or a look-back under way.
       const lookback = await lookbackStep({
@@ -576,6 +599,8 @@ async function syncLocked(
         send: (body) => putActivity(creds, body, ctx.nowMs(), signal),
         signal,
         stopAt: softStop,
+        // The usage reports just sent drew on the same bucket.
+        extraReports: usage.kind === 'sent' ? usage.reports : 0,
       });
       if (signal.aborted) throw new Abandoned();
       if (lookback.kind === 'off') {
@@ -587,6 +612,7 @@ async function syncLocked(
         acceptedDays: answer.value.accepted_days,
         deferredKeys: snapshot.deferredKeys,
         ...(lookback.kind === 'idle' ? {} : { lookback }),
+        ...(usage.kind === 'idle' || usage.kind === 'waiting' ? {} : { usage }),
       };
     }
 

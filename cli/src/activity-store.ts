@@ -30,6 +30,8 @@ import { writePrivately } from './connect.ts';
  * | `collector-id` | a random UUID v4, nothing derived from the machine | sync, `on` |
  * | `sent-keys` | `<key> <identity> <author epoch>` — keys the board accepted | sync |
  * | `last-error` | the last thing that went wrong, one line | sync |
+ * | `usage-index.json` | token usage: what was read where, and what the board holds (LAI-769) | sync |
+ * | `usage-data.json` | token usage: per reply, its counts, model, time and directory (LAI-769) | sync |
  *
  * `sent-keys` holds hashes only: the contract's key, and a hash of (author
  * email, author time) used to recognise an amended or rebased commit. Never an
@@ -211,7 +213,16 @@ export function collectorId(paths: ActivityPaths): string {
  * cannot overwrite what the old collector already reported for that day.
  */
 export function rotate(paths: ActivityPaths): void {
-  for (const path of [paths.events, paths.eventsCompacting, paths.sentKeys, paths.collectorId]) {
+  for (const path of [
+    paths.events,
+    paths.eventsCompacting,
+    paths.sentKeys,
+    paths.collectorId,
+    // Token usage (D-084, LAI-769): what was read, and the answer to counting
+    // the last 30 days — a new collector counts from its own start.
+    join(paths.dir, 'usage-index.json'),
+    join(paths.dir, 'usage-data.json'),
+  ]) {
     rmSync(path, { force: true });
   }
 }

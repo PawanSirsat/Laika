@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   gitRunner,
+  ianaTimeZone,
   LOOKBACK_DAYS_MAX,
   machineTimeZone,
   type GitRunner,
@@ -50,6 +51,16 @@ import {
   type SyncContext,
   type SyncOutcome,
 } from './activity-sync.ts';
+import {
+  previewUsage,
+  readUsage,
+  setUsageBackfill,
+  summarise,
+  usageBackfill,
+  usageRoots,
+  usageStep,
+  type UsageOutcome,
+} from './activity-usage.ts';
 import { ask as askConsole, closePrompt } from './prompt.ts';
 
 /**
@@ -140,7 +151,9 @@ export const SKIP_RULE =
 
 const USAGE = [
   'Usage:',
-  '  laika activity on [--agent id] check sharing is on, then install the counting hooks',
+  '  laika activity on [--agent id] [--yes|--no]',
+  '                                 check sharing is on, then install the counting hooks;',
+  '                                 --yes/--no answer whether to count 30 days of tokens',
   '  laika activity off             remove the hooks and delete ~/.laika/activity',
   '  laika activity status          what the next sync would send, and the last result',
   '  laika activity sync            send the counts now (if the board allows it yet)',
@@ -204,8 +217,13 @@ function printHooks(reports: readonly HookReport[], io: ActivityIo): void {
 
 async function on(args: readonly string[], io: ActivityIo): Promise<number> {
   const forced: HookAgent[] = [];
+  let tokensAnswer: 'yes' | 'no' | undefined;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i] ?? '';
+    if (arg === '--yes' || arg === '-y' || arg === '--no') {
+      tokensAnswer = arg === '--no' ? 'no' : 'yes';
+      continue;
+    }
     const value =
       arg === '--agent' ? args[(i += 1)] : arg.startsWith('--agent=') ? arg.slice(8) : undefined;
     const agent = HOOK_AGENTS.find((a) => a === value);
@@ -289,6 +307,28 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
   io.out('last year are counted too, as the same one-way keys (`laika activity backfill`');
   io.out('does it now, and asks first).');
   io.out('');
+  io.out("Token counts too (D-084): per day, agent and model, the tokens your agents' own");
+  io.out('session files record — Claude Code, Codex, Gemini CLI — as input, output, cache');
+  io.out('write and cache read. Never what was said, tool input, paths, branches or');
+  io.out('session ids. Copilot CLI, Cursor and Windsurf keep no token counts to read.');
+  if (usageBackfill(paths) === undefined) {
+    let answer = tokensAnswer;
+    if (answer === undefined && io.ask !== undefined) {
+      const typed = await io.ask(
+        'Count the token usage of the last 30 days already on this machine too? Totals per day only. [y/N]',
+      );
+      answer = /^y(es)?$/i.test(typed.trim()) ? 'yes' : 'no';
+    }
+    if (answer !== undefined) {
+      setUsageBackfill(paths, answer);
+      io.out(
+        answer === 'yes'
+          ? '  ✓ the last 30 days of token usage go with the next sync'
+          : '  · token usage is counted from now; `laika activity backfill` can still send 30 days',
+      );
+    }
+  }
+  io.out('');
   io.out('See exactly what would be sent:  laika activity status');
   io.out('Stop:                            laika activity off');
   return reports.some((r) => r.status === 'installed' || r.status === 'unchanged') ? 0 : 1;
@@ -365,6 +405,15 @@ async function status(io: ActivityIo): Promise<number> {
     }`,
   );
 
+  const tokens = usageBackfill(paths);
+  io.out(
+    `Token usage     ${
+      tokens === 'yes'
+        ? 'the last 30 days, and every day since'
+        : `counted since ${when(state.since)}${tokens === 'no' ? '' : ' (`backfill` can send 30 days)'}`
+    } — Claude Code, Codex, Gemini CLI`,
+  );
+
   io.out('');
   const snapshot = await previewSnapshot(context(io), scope);
   if (snapshot === undefined) {
@@ -380,7 +429,40 @@ async function status(io: ActivityIo): Promise<number> {
       `(${String(snapshot.deferredKeys)} more pushed-commit keys wait for a later sync: 16 KB limit.)`,
     );
   }
+
+  // Token totals (D-084): the days whose totals changed since the board last
+  // took them, as the usage reports the same sync sends after the snapshot.
+  const existing = readText(paths.collectorId)?.trim();
+  const usage = await previewUsage({
+    paths,
+    roots: usageRoots(io.home, io.env),
+    state: { ...state, scope },
+    tz: ianaTimeZone(io.tz),
+    nowS: Math.floor(io.nowMs() / 1000),
+    collectorId: existing !== undefined && existing !== '' ? existing : '(created on first sync)',
+  });
+  for (const report of usage) {
+    io.out('');
+    io.out('…then these token totals, a usage report to the same endpoint:');
+    io.out('');
+    for (const line of JSON.stringify(JSON.parse(report.body), null, 2).split('\n')) io.out(line);
+  }
   return 0;
+}
+
+/** What the token usage step did, as the end of the sync's line. */
+function usageLine(outcome: UsageOutcome | undefined): string {
+  switch (outcome?.kind) {
+    case 'sent':
+      return ` Token usage: ${String(outcome.days)} ${outcome.days === 1 ? 'day' : 'days'} sent${outcome.pending > 0 ? ', more with the next syncs' : ''}.`;
+    case 'refused':
+    case 'error':
+      return ` Token usage not sent: ${outcome.message}.`;
+    case 'rate-limited':
+      return ' Token usage waits: the board asked to.';
+    default:
+      return '';
+  }
 }
 
 function describe(outcome: SyncOutcome): { line: string; code: number } {
@@ -406,7 +488,7 @@ function describe(outcome: SyncOutcome): { line: string; code: number } {
           ? ` Look-back: ${String(look.keys)} commits sent${look.finished ? '' : ', more with the next syncs'}.`
           : '';
       return {
-        line: `Sent. The board accepted ${String(outcome.acceptedDays)} days.${outcome.deferredKeys > 0 ? ` ${String(outcome.deferredKeys)} keys wait for the next sync.` : ''}${lookLine}`,
+        line: `Sent. The board accepted ${String(outcome.acceptedDays)} days.${outcome.deferredKeys > 0 ? ` ${String(outcome.deferredKeys)} keys wait for the next sync.` : ''}${lookLine}${usageLine(outcome.usage)}`,
         code: 0,
       };
     }
@@ -492,6 +574,127 @@ async function backfill(args: readonly string[], io: ActivityIo): Promise<number
     io.err(`No token for ${state.board} in ~/.laika/env — run laika connect.`);
     return 1;
   }
+  const tokens = await backfillTokens(io, { paths, state, creds, yes });
+  const commits = await backfillCommits(io, { days, yes, given, paths, state, creds });
+  return Math.max(tokens, commits);
+}
+
+const thousands = (n: number): string => n.toLocaleString('en-US');
+
+const AGENT_NAMES: Readonly<Record<string, string>> = {
+  'claude-code': 'Claude Code',
+  codex: 'Codex',
+  'gemini-cli': 'Gemini CLI',
+};
+
+/**
+ * The token half of `backfill` (D-084 item 11): the last 30 days already in
+ * the agents' session files, counted, shown, and sent once on a yes — the
+ * commit look-back's shape (LAI-757). A no is kept: nothing from before
+ * sharing went on is sent until a later `backfill` is answered yes.
+ */
+async function backfillTokens(
+  io: ActivityIo,
+  ctx: {
+    readonly paths: ReturnType<typeof activityPaths>;
+    readonly state: NonNullable<ReturnType<typeof readState>>;
+    readonly creds: { readonly url: string; readonly token: string };
+    readonly yes: boolean;
+  },
+): Promise<number> {
+  const { paths, state, creds } = ctx;
+  if (usageBackfill(paths) === 'yes') {
+    io.out('Token usage: the last 30 days are already counted.');
+    io.out('');
+    return 0;
+  }
+  const options = {
+    paths,
+    roots: usageRoots(io.home, io.env),
+    state,
+    tz: ianaTimeZone(io.tz),
+    nowS: Math.floor(io.nowMs() / 1000),
+  };
+  // Counted before asking, like the commits: no lock is held while a person reads.
+  const found = summarise((await readUsage({ ...options, all: true })).days);
+  if (found.tokens + found.cacheRead === 0) {
+    io.out('Token usage: none in the last 30 days of Claude Code, Codex or Gemini CLI files.');
+    io.out('');
+    return 0;
+  }
+  io.out(
+    `Token usage in your agents' session files, the last 30 days: at least ` +
+      `${thousands(found.tokens)} tokens on ${String(found.days)} ${found.days === 1 ? 'day' : 'days'}` +
+      `, and ${thousands(found.cacheRead)} cache reads beside them.`,
+  );
+  for (const [agent, n] of [...found.byAgent].sort((a, b) => b[1] - a[1])) {
+    io.out(`  ${(AGENT_NAMES[agent] ?? agent).padEnd(12)} ${thousands(n)}`);
+  }
+  io.out('Sent as totals per day, agent and model: never what was said, tool input, paths,');
+  io.out('branches or session ids.');
+  if (!ctx.yes) {
+    const answer = (
+      (await io.ask?.(`Send these token totals to ${creds.url}? [y/N]`)) ?? ''
+    ).trim();
+    if (!/^y(es)?$/i.test(answer)) {
+      setUsageBackfill(paths, 'no');
+      io.out('No token usage from before sharing went on is sent.');
+      io.out('');
+      return 0;
+    }
+  }
+  setUsageBackfill(paths, 'yes');
+
+  const release = acquireLock(paths);
+  if (release === undefined) {
+    io.out('They go with the next sync: another one is running now.');
+    io.out('');
+    return 0;
+  }
+  let outcome: UsageOutcome | 'deadline';
+  try {
+    outcome = await withDeadline(io.deadlineMs ?? SYNC_DEADLINE_MS, (signal) =>
+      usageStep({
+        ...options,
+        collectorId: collectorId(paths),
+        send: (body) => putActivity(creds, body, io.nowMs(), signal),
+        signal,
+      }),
+    );
+  } finally {
+    release();
+  }
+  io.out(
+    outcome === 'deadline'
+      ? 'Token usage: not all of it went in time; the rest goes with the next syncs.'
+      : outcome.kind === 'sent'
+        ? `Token usage sent: ${String(outcome.days)} ${outcome.days === 1 ? 'day' : 'days'}${outcome.pending > 0 ? ', the rest with the next syncs' : ''}.`
+        : outcome.kind === 'off'
+          ? 'Token usage not sent: the board says sharing is off.'
+          : outcome.kind === 'refused' || outcome.kind === 'error'
+            ? `Token usage not sent: ${outcome.message}. It is tried again with a later sync.`
+            : 'Token usage goes with the next sync.',
+  );
+  io.out('');
+  return outcome !== 'deadline' &&
+    (outcome.kind === 'refused' || outcome.kind === 'error' || outcome.kind === 'off')
+    ? 1
+    : 0;
+}
+
+/** The commit half of `backfill` (LAI-757, D-080), as it was. */
+async function backfillCommits(
+  io: ActivityIo,
+  ctx: {
+    readonly days: number;
+    readonly yes: boolean;
+    readonly given: readonly string[];
+    readonly paths: ReturnType<typeof activityPaths>;
+    readonly state: NonNullable<ReturnType<typeof readState>>;
+    readonly creds: { readonly url: string; readonly token: string };
+  },
+): Promise<number> {
+  const { days, yes, given, paths, state, creds } = ctx;
   const deadlineMs = io.deadlineMs ?? SYNC_DEADLINE_MS;
   const tooLong = (): number => {
     io.err(
