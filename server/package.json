@@ -12,7 +12,7 @@
     "test": "pnpm run typecheck && vitest run",
     "test:watch": "vitest",
     "dev": "tsx watch src/index.ts",
-    "db:generate": "drizzle-kit generate",
+    "db:generate": "tsx scripts/db-generate.ts",
     "build": "pnpm run clean && tsc -p tsconfig.build.json && pnpm run build:assets",
     "build:assets": "cp -R src/static dist/static && cp -R src/db/migrations dist/db/migrations",
     "start": "node dist/index.js",
