@@ -134,7 +134,10 @@ const UsageBody = strictObject({
               .string()
               .regex(/^[a-z0-9-]{1,32}$/, 'an agent kind id is 1–32 of a–z, 0–9 and -'),
             model: z.string().regex(MODEL_PATTERN, 'a model id is 1–64 of a–z, 0–9, ., _, : and -'),
-            task: z.string().regex(TASK_KEY_PATTERN, 'a task is a Laika key, PREFIX-n').nullable(),
+            task: z
+              .string()
+              .regex(TASK_KEY_PATTERN, 'a task is a Laika key or an outside id, PREFIX-n')
+              .nullable(),
             input: tokenCount,
             output: tokenCount,
             cache_write: tokenCount,

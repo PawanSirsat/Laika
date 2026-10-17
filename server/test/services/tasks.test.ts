@@ -1344,6 +1344,29 @@ describe('due_on and planned_start (SPEC §4.5, D-066)', () => {
     });
     expect(newTask('Plain')).toMatchObject({ branch: null, external_ref: null });
   });
+
+  it('takes an outside id on create and update, upper-cased, named in the activity row (LAI-780)', () => {
+    const task = newTask('From the repo', { external_ref: 'lai-780' });
+    expect(task.external_ref).toBe('LAI-780');
+
+    expect(updateTask(t.db, actor(adminId), task.id, { external_ref: 'gh-12' }).external_ref).toBe(
+      'GH-12',
+    );
+    // The same id again changes nothing, so it writes no row.
+    updateTask(t.db, actor(adminId), task.id, { external_ref: 'GH-12' });
+    expect(updateTask(t.db, actor(adminId), task.id, { external_ref: null }).external_ref).toBe(
+      null,
+    );
+
+    const changed = t.db
+      .select()
+      .from(activity)
+      .where(eq(activity.taskId, task.id))
+      .all()
+      .filter((row) => row.type === 'task.updated')
+      .map((row) => (JSON.parse(row.payloadJson) as { changed: string[] }).changed);
+    expect(changed).toEqual([['external_ref'], ['external_ref']]);
+  });
 });
 
 describe('manual order: position and reorderTask (LAI-472, D-060, D-070)', () => {

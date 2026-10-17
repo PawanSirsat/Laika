@@ -922,3 +922,136 @@ describe('subtasks and dates through the tools (D-066)', () => {
     await client.close();
   });
 });
+
+describe('an outside id is a task key to every tool (LAI-780)', () => {
+  interface Err {
+    error: { code: string; details: Record<string, unknown> };
+  }
+
+  async function call(
+    client: Client,
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<{ key: string; external_ref: string | null }> {
+    const result = await client.callTool({ name, arguments: args });
+    expect(result.isError, `${name}: ${JSON.stringify(result.structuredContent)}`).not.toBe(true);
+    return payload(result).task as { key: string; external_ref: string | null };
+  }
+
+  it('create_task sets it; get_task_context, update_status, start_working, add_comment, update_task, set_task_sprint and finish_task take it', async () => {
+    const client = await connect(await mint());
+
+    const created = await call(client, 'create_task', {
+      project: 'core',
+      title: 'Outside ids',
+      external_ref: 'lai-780',
+    });
+    expect(created).toMatchObject({ key: 'COR-1', external_ref: 'LAI-780' });
+
+    expect(await call(client, 'get_task_context', { task: 'LAI-780' })).toMatchObject({
+      key: 'COR-1',
+    });
+    expect(await call(client, 'update_status', { task: 'lai-780', status: 'todo' })).toMatchObject({
+      key: 'COR-1',
+    });
+    expect(
+      await call(client, 'start_working', { task: 'LAI-780', branch: 'LAI-780-outside-ids' }),
+    ).toMatchObject({ key: 'COR-1' });
+
+    const commented = await client.callTool({
+      name: 'add_comment',
+      arguments: { task: 'LAI-780', body: 'Marked by its repo id.' },
+    });
+    expect(commented.isError).not.toBe(true);
+    const id = h.db.select().from(tasks).where(eq(tasks.number, 1)).get()?.id ?? '';
+    expect(h.db.select().from(comments).where(eq(comments.taskId, id)).all()).toHaveLength(1);
+
+    // Renamed by its old id, then found by its new one.
+    expect(
+      await call(client, 'update_task', { task: 'LAI-780', external_ref: 'LAI-781' }),
+    ).toMatchObject({ key: 'COR-1', external_ref: 'LAI-781' });
+    expect(await call(client, 'set_task_sprint', { task: 'LAI-781', sprint: null })).toMatchObject({
+      key: 'COR-1',
+    });
+    expect(
+      await call(client, 'finish_task', { task: 'LAI-781', summary: 'Done by its repo id.' }),
+    ).toMatchObject({ key: 'COR-1' });
+
+    // `null` clears it, and the old id finds nothing.
+    expect(await call(client, 'update_task', { task: 'COR-1', external_ref: null })).toMatchObject({
+      external_ref: null,
+    });
+    const gone = await client.callTool({
+      name: 'get_task_context',
+      arguments: { task: 'LAI-781' },
+    });
+    expect(gone.isError).toBe(true);
+    expect((payload(gone) as unknown as Err).error.code).toBe('not_found');
+  });
+
+  it('refuses one two readable tasks carry, 422 ambiguous with both keys; a reader of one finds it', async () => {
+    await must('/api/v1/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'vault', slug: 'vault', prefix: 'VLT', visibility: 'private' }),
+    });
+    const owner = await connect(await mint());
+    await call(owner, 'create_task', { project: 'core', title: 'One', external_ref: 'ONR-12' });
+    await call(owner, 'create_task', { project: 'vault', title: 'Two', external_ref: 'ONR-12' });
+
+    const both = await owner.callTool({ name: 'start_working', arguments: { task: 'ONR-12' } });
+    expect(both.isError).toBe(true);
+    expect((payload(both) as unknown as Err).error).toMatchObject({
+      code: 'unprocessable',
+      details: { reason: 'ambiguous', external_ref: 'ONR-12', tasks: ['COR-1', 'VLT-1'] },
+    });
+
+    // Brin reads `core` only: for them it names one task, and nothing of `vault`.
+    const brin = await connect(await otherAgent());
+    expect(await call(brin, 'get_task_context', { task: 'onr-12' })).toMatchObject({
+      key: 'COR-1',
+    });
+  });
+
+  it('finds nothing in a project the caller cannot read — not_found, as for a key that names nothing', async () => {
+    await must('/api/v1/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'vault', slug: 'vault', prefix: 'VLT', visibility: 'private' }),
+    });
+    const owner = await connect(await mint());
+    await call(owner, 'create_task', { project: 'vault', title: 'Secret', external_ref: 'JIRA-9' });
+
+    const brin = await connect(await otherAgent());
+    for (const name of ['get_task_context', 'start_working', 'add_comment']) {
+      const result = await brin.callTool({
+        name,
+        arguments: name === 'add_comment' ? { task: 'JIRA-9', body: 'x' } : { task: 'JIRA-9' },
+      });
+      expect(result.isError, name).toBe(true);
+      expect((payload(result) as unknown as Err).error.code, name).toBe('not_found');
+    }
+    // Positive control: the owner reads it.
+    expect(await call(owner, 'get_task_context', { task: 'JIRA-9' })).toMatchObject({
+      key: 'VLT-1',
+    });
+  });
+
+  it('refuses an external_ref of another shape on create_task and update_task, naming the field', async () => {
+    const client = await connect(await mint());
+    await call(client, 'create_task', { project: 'core', title: 'A' });
+    for (const [name, args] of [
+      ['create_task', { project: 'core', title: 'Bad', external_ref: 'kvell/laika#221' }],
+      ['update_task', { task: 'COR-1', external_ref: 'ABCDEFGHIJKLMNOPQ-1' }],
+    ] as const) {
+      const result = await client.callTool({ name, arguments: args });
+      expect(result.isError, name).toBe(true);
+      // The service's refusal, not the schema's: a schema that did not know the
+      // field refuses it too, and says nothing about which field or why.
+      expect((payload(result) as unknown as Err).error, name).toMatchObject({
+        code: 'unprocessable',
+        details: { field: 'external_ref' },
+      });
+    }
+    // Nothing was created by the refused call.
+    expect(h.db.select().from(tasks).all()).toHaveLength(1);
+  });
+});

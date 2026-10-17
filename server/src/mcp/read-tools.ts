@@ -69,7 +69,9 @@ const TASK_REF = z
   .string()
   .min(1)
   .max(120)
-  .describe('Task key such as `LAI-42`, or its id. The key is what other tools return.');
+  .describe(
+    'Task key such as `LAI-42`, the outside id it carries (`external_ref`, such as a Jira key), or its id. The key is what other tools return.',
+  );
 
 export interface ReadToolContext {
   db: Db;
@@ -247,7 +249,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
     },
     ({ task }) => {
       try {
-        const view = getTask(db, actor, resolveTaskRef(db, task));
+        const view = getTask(db, actor, resolveTaskRef(db, task, actor));
         const now = clock();
 
         // A task carries a project id and every service here takes a slug, so

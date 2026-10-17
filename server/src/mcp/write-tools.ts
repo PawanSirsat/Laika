@@ -73,7 +73,9 @@ const TASK_REF = z
   .string()
   .min(1)
   .max(120)
-  .describe('One task — key such as `LAI-42`, or its id. Exactly one; arrays are refused.');
+  .describe(
+    'One task — key such as `LAI-42`, the outside id it carries (`external_ref`, such as a Jira key), or its id. Exactly one; arrays are refused.',
+  );
 
 const PROJECT_REF = z
   .string()
@@ -131,6 +133,13 @@ const TASK_FIELDS = {
     .describe(
       "Size relative to this project's typical task, each level double the last. Laika computes one; set this only to override it.",
     ),
+  // LAI-780: shaped by the service, so its refusal names the field.
+  external_ref: z
+    .string()
+    .max(120)
+    .describe(
+      'The id this task has somewhere else — a repo task file’s `LAI-123`, a Jira key such as `DATA_ENG-12`. Every tool that takes a task takes it too.',
+    ),
 } as const;
 
 /**
@@ -187,6 +196,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         due_on: DATE_ONLY.optional(),
         planned_start: DATE_ONLY.optional(),
         size: TASK_FIELDS.size.optional(),
+        external_ref: TASK_FIELDS.external_ref.optional(),
       }),
     },
     ({
@@ -204,6 +214,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
       due_on,
       planned_start,
       size,
+      external_ref,
     }) => {
       try {
         const now = clock();
@@ -219,11 +230,12 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
             : { assignee_id: resolveAssignee(db, actor, project, assignee) }),
           ...(discovered_from === undefined
             ? {}
-            : { discovered_from: resolveTaskRef(db, discovered_from) }),
-          ...(parent === undefined ? {} : { parent_task_id: resolveTaskRef(db, parent) }),
+            : { discovered_from: resolveTaskRef(db, discovered_from, actor) }),
+          ...(parent === undefined ? {} : { parent_task_id: resolveTaskRef(db, parent, actor) }),
           ...(due_on === undefined ? {} : { due_on }),
           ...(planned_start === undefined ? {} : { planned_start }),
           ...(size === undefined ? {} : { size }),
+          ...(external_ref === undefined ? {} : { external_ref }),
           // §7.1: an agent's task says so. Not a default the service guesses.
           created_via: 'mcp',
           now,
@@ -232,7 +244,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         // Dependencies are a separate service call, as they are over REST — the
         // create endpoint does not take them either, and inventing a combined
         // write here would be the second path AC1 forbids.
-        const blockers = (blocked_by ?? []).map((ref) => resolveTaskRef(db, ref));
+        const blockers = (blocked_by ?? []).map((ref) => resolveTaskRef(db, ref, actor));
         for (const blocker of blockers) {
           addTaskDependencySafely(sqlite, db, actor, task.id, blocker);
         }
@@ -272,7 +284,14 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         // `claimTask` already refuses a claimed task with `conflict` and names the
         // current assignee in `details` — surfaced as-is rather than reworded,
         // because §7.2 wants an agent branching on the code, not parsing prose.
-        const claimed = claimTask(sqlite, db, actor, resolveTaskRef(db, task), clock(), branch);
+        const claimed = claimTask(
+          sqlite,
+          db,
+          actor,
+          resolveTaskRef(db, task, actor),
+          clock(),
+          branch,
+        );
 
         return answer(`Claimed \`${claimed.key}\` — now ${statusText(claimed)}.`, {
           task: claimed,
@@ -301,7 +320,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     },
     ({ task, status, note }) => {
       try {
-        const id = resolveTaskRef(db, task);
+        const id = resolveTaskRef(db, task, actor);
         const now = clock();
 
         const category = TASK_STATUSES.find((s) => s === status);
@@ -328,7 +347,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     },
     ({ task, body }) => {
       try {
-        const comment = addComment(db, actor, resolveTaskRef(db, task), body, clock());
+        const comment = addComment(db, actor, resolveTaskRef(db, task, actor), body, clock());
 
         return answer(`Commented on the task, ${ago(comment.created_at, clock())}.`, { comment });
       } catch (error) {
@@ -401,7 +420,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     },
     ({ task, summary, checklist, commits, branch, pull_request, tests }) => {
       try {
-        const finished = finishTask(sqlite, db, actor, resolveTaskRef(db, task), {
+        const finished = finishTask(sqlite, db, actor, resolveTaskRef(db, task, actor), {
           summary,
           ...(checklist === undefined ? {} : { checklist }),
           ...(commits === undefined ? {} : { commits }),
@@ -481,7 +500,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Edit a task',
       description:
-        'Change a task after it exists: its title, prose, priority, tags, who holds it, which sprint it sits in, its parent, its due and planned-start dates, and its size. Every field is optional and an omitted one is left alone; `null` on `parent`, `due_on`, `planned_start` or `size` clears it. **Status is not here** — moving a task is `update_status`, because §5 validates transitions and a field edit would route around the table.',
+        'Change a task after it exists: its title, prose, priority, tags, who holds it, which sprint it sits in, its parent, its due and planned-start dates, its size, and the outside id it carries. Every field is optional and an omitted one is left alone; `null` on `parent`, `due_on`, `planned_start`, `size` or `external_ref` clears it. **Status is not here** — moving a task is `update_status`, because §5 validates transitions and a field edit would route around the table.',
       inputSchema: z.strictObject({
         task: TASK_REF,
         title: TASK_FIELDS.title.optional(),
@@ -502,6 +521,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           .nullable()
           .optional()
           .describe('Override the computed size; `null` goes back to the computed one.'),
+        external_ref: TASK_FIELDS.external_ref.nullable().optional(),
       }),
     },
     ({
@@ -517,9 +537,10 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
       due_on,
       planned_start,
       size,
+      external_ref,
     }) => {
       try {
-        const id = resolveTaskRef(db, task);
+        const id = resolveTaskRef(db, task, actor);
         const now = clock();
 
         const assigneeId =
@@ -541,10 +562,11 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           ...(assigneeId === undefined ? {} : { assignee_id: assigneeId }),
           ...(parent === undefined
             ? {}
-            : { parent_task_id: parent === null ? null : resolveTaskRef(db, parent) }),
+            : { parent_task_id: parent === null ? null : resolveTaskRef(db, parent, actor) }),
           ...(due_on === undefined ? {} : { due_on }),
           ...(planned_start === undefined ? {} : { planned_start }),
           ...(size === undefined ? {} : { size }),
+          ...(external_ref === undefined ? {} : { external_ref }),
           now,
         });
 
@@ -584,7 +606,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           sqlite,
           db,
           actor,
-          resolveTaskRef(db, task),
+          resolveTaskRef(db, task, actor),
           sprint,
           clock(),
         );

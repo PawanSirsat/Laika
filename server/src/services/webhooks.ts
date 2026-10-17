@@ -13,6 +13,7 @@ import { tasks } from '../db/schema.ts';
 import { requireOrgId } from '../db/orgs.ts';
 import { resolveBranchTask, resolveRepoProjects } from './heartbeats.ts';
 import { addComment } from './comments.ts';
+import { isOutsideId } from './outside-ids.ts';
 import { changeStatus } from './tasks.ts';
 import { type GithubCheckKind } from '../db/enums.ts';
 import {
@@ -400,9 +401,15 @@ export function handlePullRequest(
   if (resolved === null) return { handled: false, reason: 'branch resolved to no task' };
 
   const number = payload.pull_request?.number;
-  if (typeof number === 'number') {
-    // §9.2's `external_ref`. Written before the transition so a refused move
-    // still records which pull request was talking about this task.
+  const held =
+    db.select({ ref: tasks.externalRef }).from(tasks).where(eq(tasks.id, resolved.taskId)).get()
+      ?.ref ?? null;
+  // §9.2's `external_ref`. Written before the transition so a refused move
+  // still records which pull request was talking about this task — **unless
+  // it holds an outside id** (LAI-780): that is how the card is found by its
+  // id elsewhere, and the pull request is kept as proof anyway (D-083). Over
+  // nothing, or over an earlier pull request's ref, it writes.
+  if (typeof number === 'number' && (held === null || !isOutsideId(held))) {
     db.update(tasks)
       .set({ externalRef: `${repo}#${String(number)}`, updatedAt: now })
       .where(eq(tasks.id, resolved.taskId))
