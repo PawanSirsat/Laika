@@ -545,9 +545,11 @@ void describe('starting the sync', () => {
 });
 
 /**
- * The budget: ≤ 5 ms for the prompt path. Run the way an agent does (a fresh
- * process per prompt), median of many, interleaved with the bare interpreter so
- * a loaded machine is told apart from a slow script.
+ * The budget: ≤ 5 ms for the prompt path, so under zsh it forks nothing and
+ * opens no socket. That is proven structurally, with fork() refused and the loaded
+ * modules listed, which no amount of load can disturb (LAI-774). Wall time,
+ * run the way an agent does (a fresh process per prompt), is the coarse check
+ * last.
  */
 void describe('cost of the prompt path', () => {
   const shell = ZSH === undefined ? ['/bin/sh'] : [ZSH, '-f'];
@@ -648,21 +650,122 @@ void describe('cost of the prompt path', () => {
   );
 
   /**
-   * Wall time on a shared machine measures the machine as much as the script:
-   * inside the repo gate (every workspace at once, load ~20) the same hook
-   * measured a 20 ms median against 4 ms on a quiet machine. So the claim is
-   * made on the **fastest** of many interleaved runs — the script's own cost
-   * with the least scheduling noise — over up to three rounds: ≤ 5 ms, or on a
-   * machine so loaded that the bare interpreter alone is slow, no more than
-   * twice the bare interpreter (measured at load ~18: 5.6 ms against 3.5 ms).
-   * A regression that matters (a `node` call is ~40 ms, a `git` one ~10 ms)
-   * fails either way. That the path forks nothing is proven above, without
-   * timing at all.
+   * `shell` running `args` with fork() refused: `ulimit -u 1` lets this user
+   * own no further process, and `exec` is not a fork. zsh abandons a script
+   * whose fork fails and exits 1. As root the limit is ignored, which is why
+   * each test below first shows it refusing a fork.
    */
-  void test('≤ 5 ms per prompt (fastest of 41; or ≤ 2× the bare interpreter)', () => {
+  const forkless = (args: readonly string[], h: string): Run => {
+    const result = spawnSync(
+      '/bin/sh',
+      ['-c', 'ulimit -u 1 && exec "$@"', 'sh', ...shell, ...args],
+      {
+        input: '{"prompt":"hello"}',
+        env: { PATH: process.env.PATH ?? '', HOME: h },
+        encoding: 'utf8',
+      },
+    );
+    return {
+      code: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      error: (result.error as NodeJS.ErrnoException | undefined)?.code,
+    };
+  };
+  const script = (body: string): string => {
+    const path = join(dir('laika-forkless-'), 'probe.sh');
+    writeFileSync(path, body);
+    return path;
+  };
+
+  /**
+   * What the stubs above cannot see: a command run by absolute path, a `$(…)`,
+   * a subshell, a pipe. Each is a fork, so the prompt path runs as installed
+   * with fork() refused, and must still exit 0 having written its line. git,
+   * node, curl — anything that is not a builtin — needs a fork first, so this
+   * fails for all of them, before the write (no line) or after it (exit 1),
+   * on any machine, however loaded.
+   */
+  void test(
+    'under zsh the prompt path forks nothing: with fork() refused it still records and exits 0',
+    { skip: ZSH === undefined },
+    () => {
+      const control = forkless([script('/usr/bin/true\nexit 0\n')], home());
+      assert.notEqual(control.code, 0, 'fork() was not refused here — this test proves nothing');
+      const h = home();
+      const r = forkless([HOOK, 'prompt', 'claude-code'], h);
+      assert.equal(r.code, 0, 'the prompt path forked');
+      assert.equal(events(h).length, 1, 'the prompt path forked before it wrote');
+    },
+  );
+
+  /**
+   * What a refused fork cannot see: zsh opens a socket itself with zsh/net/tcp
+   * (`ztcp`) or zsh/net/socket, no process needed, and only a loaded module
+   * brings either. So the hook is sourced into a zsh that lists its modules on
+   * the way out, fork() still refused, and the prompt path may add datetime
+   * and system — nothing else — to what an empty script has.
+   */
+  void test(
+    'under zsh the prompt path opens no socket: it loads no zsh module beyond datetime and system',
+    { skip: ZSH === undefined },
+    () => {
+      const loaded = (path: string, args: readonly string[]): string[] => {
+        const h = home();
+        const r = forkless(
+          ['-c', 'exec 3>&1; trap "zmodload >&3" EXIT; . "$0" "$@"', path, ...args],
+          h,
+        );
+        assert.equal(r.code, 0, `${path} failed: ${r.stderr}`);
+        return r.stdout.split('\n').filter(Boolean);
+      };
+      const bare = loaded(script('exit 0\n'), []);
+      assert.ok(bare.includes('zsh/main'), `no module list came back: ${JSON.stringify(bare)}`);
+      assert.ok(
+        loaded(script('zmodload zsh/net/tcp\nexit 0\n'), []).includes('zsh/net/tcp'),
+        'a loaded zsh/net/tcp was not seen — this test proves nothing',
+      );
+      const extra = loaded(HOOK, ['prompt', 'claude-code']).filter((m) => !bare.includes(m));
+      assert.deepEqual(extra.sort(), ['zsh/datetime', 'zsh/system']);
+    },
+  );
+
+  /**
+   * The coarse check; the precise one is above. A fork — git, node, curl — or
+   * a socket fails there without timing anything, on any machine. Wall time
+   * cannot be that exact on a shared one: inside the repo gate the fastest of
+   * 41 runs of this hook came out at 7–12 ms, against 2.8 ms quiet, while a
+   * bare `exit 0` only went from 2.1 to 3.5–4.5 ms (LAI-774). Load slows the
+   * hook far more than it slows an empty script, so the bare interpreter is the
+   * wrong yardstick; the floor below, which does the hook's file and module
+   * work, kept within 0.85–0.93× of it at load ~20.
+   *
+   * So each run is paired with the **floor**: a script doing only what the
+   * prompt path cannot avoid — drain stdin, take the time, read state.json,
+   * append one line — run beside it, in alternating order, so both meet the
+   * same moment's load. The claim: ≤ 5 ms fastest of 41, or, on a machine too
+   * loaded for that, a median pair within 2× the floor. Up to three rounds.
+   */
+  void test('≤ 5 ms per prompt (fastest of 41), or ≤ 2× its own floor run beside it', () => {
     const h = home();
-    const empty = join(dir('laika-empty-'), 'empty.sh');
-    writeFileSync(empty, 'exit 0\n');
+    const floor = join(dir('laika-floor-'), 'floor.sh');
+    writeFileSync(
+      floor,
+      [
+        'exec >/dev/null 2>&1',
+        'if [ -n "${ZSH_VERSION:-}" ] && zmodload zsh/datetime zsh/system; then',
+        '  [ -t 0 ] || while sysread -o 1 -s 65536; do :; done',
+        '  NOW="$EPOCHSECONDS"',
+        'else',
+        '  [ -t 0 ] || cat >/dev/null',
+        '  NOW="$(date +%s)"',
+        'fi',
+        'IFS= read -r STATE <"$HOME/.laika/activity/state.json"',
+        'printf \'f %s\\n\' "$NOW" >>"$HOME/.laika/activity/floor.log"',
+        'exit 0',
+        '',
+      ].join('\n'),
+    );
     const [cmd, ...flags] = shell;
     const time = (script: string, args: readonly string[]): number => {
       const t0 = process.hrtime.bigint();
@@ -677,23 +780,38 @@ void describe('cost of the prompt path', () => {
     let ok = false;
     for (let round = 0; round < 3 && !ok; round += 1) {
       const hook: number[] = [];
-      const bare: number[] = [];
+      const base: number[] = [];
+      const ratio: number[] = [];
       for (let i = 0; i < 41; i += 1) {
-        hook.push(time(HOOK, ['prompt', 'claude-code']));
-        bare.push(time(empty, []));
+        const first = i % 2 === 0;
+        const b0 = first ? time(floor, []) : 0;
+        const t = time(HOOK, ['prompt', 'claude-code']);
+        const b = first ? b0 : time(floor, []);
+        hook.push(t);
+        base.push(b);
+        ratio.push(t / b);
       }
       const [fast = 0] = sorted(hook);
-      const [fastBare = 0] = sorted(bare);
+      const [fastFloor = 0] = sorted(base);
       const median = sorted(hook)[20] ?? 0;
-      const medianBare = sorted(bare)[20] ?? 0;
+      const medianFloor = sorted(base)[20] ?? 0;
+      const pair = sorted(ratio)[20] ?? 0;
       rounds.push(
-        `fastest ${fast.toFixed(2)} ms (bare ${fastBare.toFixed(2)}), ` +
-          `median ${median.toFixed(2)} ms (bare ${medianBare.toFixed(2)})`,
+        `fastest ${fast.toFixed(2)} ms (floor ${fastFloor.toFixed(2)}), ` +
+          `median ${median.toFixed(2)} ms (floor ${medianFloor.toFixed(2)}), ` +
+          `median pair ${pair.toFixed(2)}×`,
       );
-      ok = fast <= 5 || fast <= 2 * fastBare;
+      ok = fast <= 5 || pair <= 2;
     }
     console.log(`prompt hook (${shell.join(' ')}): ${rounds.join(' | ')}`);
-    assert.equal(events(h).length % 41, 0);
+    assert.equal(events(h).length, 41 * rounds.length, 'the hook did not run every time');
+    assert.equal(
+      textOf(join(h, '.laika', 'activity', 'floor.log'))
+        .split('\n')
+        .filter(Boolean).length,
+      41 * rounds.length,
+      'the floor did not run every time — the ratio compares nothing',
+    );
     assert.ok(ok, rounds.join(' | '));
   });
 });
