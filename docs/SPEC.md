@@ -1463,8 +1463,8 @@ those projects. A Viewer's token can never write, whatever its scope says.
   /me/local-activity`, D-079) a bucket of **30, refilled one every 120
   seconds**: a burst of 30, then one every two minutes — up to 60 in a first
   hour, 30 an hour after — per token and per user for a session, on their own
-  budget, snapshots and look-back reports alike (D-080). `429` with
-  `Retry-After`, never below one second.
+  budget, snapshots, look-back reports and usage reports alike (D-080, D-084).
+  `429` with `Retry-After`, never below one second.
 
   **Writes share the general budget; there is no separate write limit** (D-021).
   Per-token 120/min already bounds the case a write budget was meant to catch —
@@ -1499,7 +1499,7 @@ GET    /api/v1/setup/status                  POST /api/v1/setup      (disabled o
        └ { setup_required, system: { database, migrations_applied, smtp_configured } }
 GET    /api/v1/me
 GET    /api/v1/me/activity-sharing           PUT .../activity-sharing  body { enabled?, scope? }   (PUT session only)
-PUT    /api/v1/me/local-activity             a collector's report or look-back → { accepted_days }   (both switches on; 30/hour)
+PUT    /api/v1/me/local-activity             a collector's report, look-back or usage report → { accepted_days }   (both switches on; 30/hour)
 GET    /api/v1/me/local-activity             ?days=1–14 — what is held for the caller   DELETE → 204   (session only)
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only)
 POST   /api/v1/org/github-webhook            set or rotate the GitHub webhook secret; answers it once (session only)
@@ -1510,6 +1510,8 @@ PATCH  /api/v1/users/:id                     (role, deactivate — admin+)
 GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind }   (owner, admin; session only)
 POST   /api/v1/users/:id/ratings             body { score, note } → 201   (owner, admin; session only; not yourself)
 GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, admin; session only)
+GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner/admin; session only)
+GET    /api/v1/usage                         ?days=1–92&project=&tz= — the Usage page   (owner/admin; a member with ?project=)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
 GET    /api/v1/invites/:token                unauthenticated preview — org name, inviter, role, expiry
 DELETE /api/v1/invites/:id                   revoke a pending invite (admin+)
@@ -1702,12 +1704,31 @@ reaches SSE, an MCP tool or an export (§4.21).
   bucket. It **writes no snapshot row** and replaces nothing: its keys join
   the set like a snapshot's, so sending it twice changes nothing. It answers
   `200 { "accepted_days": n }`.
+- **A usage report** (D-084, LAI-769) is the same `PUT` marked `"usage":
+  true`: `{ "v": 1, "collector_id", "tz", "usage": true, "days": [{ "day":
+  "YYYY-MM-DD", "rows": [{ "agent", "model", "task", "input", "output",
+  "cache_write", "cache_read" }] }] }` — per day × agent × model × task the
+  four token counts the agents' own session files record. `agent` is an agent
+  kind id as above; `model` is 1–64 of lowercase `a–z`, `0–9`, `.`, `_`, `:`
+  and `-` (the collector removes Claude Code's `[1m]` suffix and drops
+  `<synthetic>`); `task` is `null` or a Laika key `PREFIX-n`; each count an
+  integer 0 to 10¹²; at most 200 rows a day; anything else in a day or a row
+  is an unknown field. Each day once, within *today − 31* to *today + 1* in
+  `tz` (the last 30 days may be sent once, D-084 item 11), the same **16 KB**
+  and the same bucket. **Each (person, collector, day) it carries is
+  replaced** by its rows — a day sent with no rows empties — so a retry never
+  counts twice (§4.32). A key is kept only when it names a task in a project
+  the sender may read; any other is stored unattributed. No `activity` row. It
+  answers `200 { "accepted_days": n }`. **Never** prompt or reply text, tool
+  input, paths, repository or branch names, or session ids: there is no field
+  that could carry one.
 - Refusals, in §6.3's envelope with the contract's reason in `details.reason`:
   `403 local_activity_off` when either switch is off (asked before the body is
   judged); `422 day_out_of_range` when `days` is empty, longer than 14, repeats
   a day, or holds a day that is not a date within *today − 14* to *today + 1*
-  in `tz` — for a look-back, *today − 400* to *today + 1*, with that window's
-  `earliest` and `latest` in `details`; `422 invalid_tz` for a zone the server
+  in `tz` — for a look-back, *today − 400* to *today + 1*, for a usage report
+  *today − 31* to *today + 1* — with that window's `earliest` and `latest` in
+  `details`; `422 invalid_tz` for a zone the server
   does not know; `422` for any
   unknown field, wrong type or cap; `413` over 16 KB; `429` with `Retry-After`
   once the report bucket is spent — 30, refilled one every 120 seconds, per
@@ -1740,12 +1761,53 @@ reaches SSE, an MCP tool or an export (§4.21).
   `OMNIGENT=1`, `CI` or `LAIKA_ACTIVITY_SKIP` is set (D-080).
 - `GET /me/local-activity?days=` (1–14, default 14) answers what is held for
   the caller over their last days — `{ start, end, tz, days: [{ day,
-  prompts_by_agent, sessions, commits_local, pushed_commits }], collectors,
-  oldest_day }`, newest first, only days with something held — **whatever the
-  switches say**: what was kept before sharing was turned off is still theirs
-  to see. `DELETE /me/local-activity` removes every local row and pushed key of
-  theirs, `204`. Both **web session only**: an agent must not read back or
-  erase what its person consented to.
+  prompts_by_agent, sessions, commits_local, pushed_commits, tokens,
+  cache_read }], collectors, oldest_day }`, newest first, only days with
+  something held — `tokens` and `cache_read` their agents' token totals that
+  day (D-084 item 4), and `oldest_day` counting token rows too — **whatever
+  the switches say**: what was kept before sharing was turned off is still
+  theirs to see. `DELETE /me/local-activity` removes every local row, pushed
+  key and token row of theirs, `204`. Both **web session only**: an agent must
+  not read back or erase what its person consented to.
+
+**Token usage, read back** (D-084, LAI-769) — §4.32's rows, for the Usage page
+and the profile's Tokens card:
+
+- `GET /usage?days=&project=&tz=` — `days` 1–92 (default 30), the range ending
+  today in `tz` (default `UTC`; `422 invalid_tz` for a zone the server does not
+  know). Without `project` it is the organisation, `usage.read_org` (owners and
+  admins; a token may read it); with `project=<slug>` that space,
+  `usage.read_project` (§3.2, anyone in it). It answers `{ from, to, tz, days,
+  project: { slug, name } | null, totals: { tokens, input, output,
+  cache_write, cache_read, attributed_tokens }, trend: [{ day, tokens,
+  cache_read }], by_developer: [{ user_id, name, tokens, cache_read,
+  attributed_tokens }] | null, by_agent: [{ agent, tokens, cache_read }],
+  by_model: [{ model, tokens, cache_read }], top_tasks: [{ task_id, key,
+  title, project_slug, tokens, cache_read }], no_token_data: [agent] }`.
+  **`tokens` is input + output + cache writes**; cache reads are always beside
+  it, never in it (D-084 item 8). `trend` has every day of the range, zeros
+  included. **`by_developer` is `null` unless the reader holds
+  `usage.read_people`** — an owner or admin on a web session — so a member and
+  every token get totals only (D-084 item 7); when present it is in name
+  order, never ranked by volume. `top_tasks` are the ten that cost most, only
+  tasks the reader may read. `no_token_data` names the agents people here
+  connect (§9.3's `last_client` on a live token) that keep no token count the
+  collector reads — Copilot CLI, Cursor and Windsurf among them; Omnigent and
+  Hermes run one of the others and are not listed.
+- `GET /users/:id/usage` — one person's tokens over this week and the eleven
+  before it (Monday-start, UTC weeks; tomorrow's day from a machine ahead of
+  UTC counts in this week): `{ user_id, from, to, weeks: [{ start, tokens,
+  cache_read }], totals, by_agent, by_model, no_token_data, sharing: {
+  org_enabled, enabled } }`. Their own (`usage.read_own`), or anyone's for an
+  owner or admin (`usage.read_people`); **web session only**, so every token
+  is refused `session_required`, the person's own included. Permission is
+  asked before the person is looked up.
+- **Every read is one range of one index** (§4.13): the organisation's on
+  `day`, a space's on `project_id`, a person's on `user_id`. Measured with 300
+  people × 400 days (720,000 rows): each query under 30 ms at 90 days, a
+  report's upsert 2–3 ms.
+- Every figure is a floor — the session files miss an agent's background
+  calls (D-084 item 9) — and the client says *at least*.
 
 **A task's read shape is §4.5's columns** — `branch` and `external_ref`
 included, which `TaskView` omitted until LAI-493 (LAI-286) — and `TaskView`
@@ -2502,11 +2564,12 @@ call MCP; agents do.
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **Tokens** | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
 | **Organisation** | 1 basic / 6 LLM | `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
-| **Connect** *(not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` | — | ✅ D-079 |
+| **Connect** *(not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` | — | ✅ D-079, D-084 |
 | **Capacity** *(sidebar, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects`, `GET /tasks/:id` (only a matched task and an opened *Show tasks*), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(sidebar, global)* | 5 | `GET /review`, `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
 | **Unlisted work** *(sidebar, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
-| **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity` | — | ✅ D-078, D-079 |
+| **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage` | — | ✅ D-078, D-079, D-084 |
+| **Usage** *(sidebar, global; not in the prototype)* | 7 | `GET /usage`, `GET /projects`, `GET /users/:id/usage` (the reader's own) | — | ✅ D-084 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
 | **Laika Assistant** | 6 | *undefined — three questions first (§14, q9)* | — | ⏸ scheduled, unspecified |
@@ -2588,10 +2651,12 @@ anything missing sends the task back.
   Copy, the content type, the events to tick, and one line saying GitHub does
   not retry a failed delivery.
 - **Connect** — the four-step wizard, and under *Optional* a **Share local
-  activity** item for the signed-in developer (D-079): what is sent and what is
-  never sent, on/off, the scope (every repo where they use an agent, or only
+  activity** item for the signed-in developer (D-079): what is sent — token
+  counts per agent and model among it (D-084 item 4) — and what is never sent,
+  on/off, the scope (every repo where they use an agent, or only
   repos set up for Laika), the `laika activity on` command, a preview of what
-  the server holds for them over the last 14 days, and *Delete my
+  the server holds for them over the last 14 days, their tokens per day
+  among it, and *Delete my
   local-activity history* with a confirmation. With the organisation's switch
   off it says so and offers nothing to turn on.
 - **Capacity** (`/capacity`, one page across every space, LAI-754; redesigned
@@ -2653,6 +2718,20 @@ anything missing sends the task back.
   **There is no transcript pane, because there is no transcript** (D-056): §4.12
   keeps a `transcript_hash` and never the words. The quotes are what makes a
   proposal reviewable, and they are all that is kept.
+- **Usage** (`/usage`, in the sidebar's ORG group, everyone signed in, D-084,
+  LAI-769) — a **space selector** (an owner or admin: *All spaces* and every
+  space; a member: only the spaces they are in, never the organisation) and a
+  range of 7, 30 or 90 days. **Tiles**: *Tokens* — input, output and cache
+  writes, labelled **at least** — *Cache reads* apart, *Unattributed* with the
+  share tied to a task, and *Per day*. One line says why every figure is a
+  floor. **Tokens per day** as bars from a zero baseline, one tab stop, arrow
+  keys and hover showing each day's exact figures. **By developer** for owners
+  and admins only, **in name order** — each name a link to the profile — and
+  for a member one sentence saying per-person figures are for owners and
+  admins; **by agent**, with each connected agent that keeps no token count
+  named *no token data*; **by model**; **top tasks** (where a key exists),
+  each opening the task; and **Your tokens**, the reader's own card. Light and
+  dark; one column on a phone with nothing scrolling sideways.
 - **Member profile** (`/people?user=<id>`, D-078) — owners and admins only:
   anyone else sees a permission notice and the profile is never requested.
   Laid out as cards on a grid that folds to one column on a phone (LAI-750).
@@ -2688,7 +2767,11 @@ anything missing sends the task back.
   weekday, pushed vs local — computed on the client. It says plainly when the
   organisation's switch is off (with a link to Organisation), when the person
   has not turned on sharing, and when nothing has arrived yet. Context only:
-  nothing on it feeds the rating. Reached from a person's name on Organisation, a Capacity card or a
+  nothing on it feeds the rating. A **Tokens** card follows it, full width
+  (D-084, LAI-769): tokens over 12 weeks, **at least**, with cache reads and
+  the share tied to a task beside it; a bar per week; their top agents and
+  models; agents with *no token data* named; and plainly when either switch is
+  off or nothing has arrived. Reached from a person's name on Organisation, a Capacity card or a
   *Work by person* row — links for owners and admins, plain text for everyone
   else.
 
@@ -2803,8 +2886,9 @@ One interval-driven scheduler in the same process:
 
 - nightly SQLite snapshot to `$DATA_DIR/backups/`, keep 14
 - heartbeat retention — delete older than 30 days
-- **local-activity retention** — delete `local_activity_days` rows and
-  `pushed_commit_keys` dated before the day 400 days ago (D-079), daily **and
+- **local-activity retention** — delete `local_activity_days` rows,
+  `pushed_commit_keys` and `token_usage_days` rows (D-084) dated before the day
+  400 days ago (D-079), daily **and
   once at boot**, because every deploy restarts the server (D-073) and a daily
   interval may not come round. It writes no `activity` row: §4.8 has no verb
   for it, as it has none for the snapshot or the vacuum
