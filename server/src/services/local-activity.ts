@@ -4,7 +4,7 @@ import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type LocalActivityScope } from '../db/enums.ts';
 import { requireOrgId } from '../db/orgs.ts';
-import { localActivityDays, orgs, pushedCommitKeys, users } from '../db/schema.ts';
+import { localActivityDays, orgs, pushedCommitKeys, tokenUsageDays, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { addDays, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
@@ -255,7 +255,7 @@ function refuse(reason: string, message: string, extra: Record<string, unknown> 
  * reaches back `LOOKBACK_DAYS_MAX` and its count is bounded by the window and
  * the body limit.
  */
-function assertReportDays(
+export function assertReportDays(
   report: { tz: string; days: readonly { day: string }[] },
   now: number,
   window: { daysBack: number; maxDays: number },
@@ -531,12 +531,17 @@ export function getOwnLocalActivity(
   };
 }
 
-/** `DELETE /me/local-activity`: every local row and key of theirs, now. */
+/**
+ * `DELETE /me/local-activity`: every local row and key of theirs, now — and
+ * their token usage too (D-084 item 4): it came from the same collector, under
+ * the same consent, so *delete my history* reaches it.
+ */
 export function deleteOwnLocalActivity(db: Db, actor: ResolvedActor): void {
   assertCan(actor, 'local_activity.delete_own');
   db.transaction((tx) => {
     tx.delete(localActivityDays).where(eq(localActivityDays.userId, actor.userId)).run();
     tx.delete(pushedCommitKeys).where(eq(pushedCommitKeys.userId, actor.userId)).run();
+    tx.delete(tokenUsageDays).where(eq(tokenUsageDays.userId, actor.userId)).run();
   });
 }
 

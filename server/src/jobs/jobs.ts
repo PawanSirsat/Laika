@@ -9,6 +9,7 @@ import {
   meetingReviews,
   orgs,
   pushedCommitKeys,
+  tokenUsageDays,
   tasks,
 } from '../db/schema.ts';
 
@@ -105,15 +106,19 @@ export function pruneHeartbeats(db: Db, now: number): JobResult {
   return { changed };
 }
 
-/** D-079: a developer's local counts and commit keys are kept 400 days (§11.6). */
+/**
+ * D-079 and D-084: a developer's local counts, commit keys and token usage are
+ * kept 400 days (§11.6).
+ */
 export const LOCAL_ACTIVITY_RETENTION_DAYS = 400;
 
 /**
- * Delete local-activity rows and pushed-commit keys older than 400 days
- * (§11.6, D-079, LAI-751). Daily, and once at boot (`scheduler.ts`), so a
- * server that was down on the day still keeps the promise when it comes up.
+ * Delete local-activity rows, pushed-commit keys and token usage older than
+ * 400 days (§11.6, D-079, LAI-751, D-084). Daily, and once at boot
+ * (`scheduler.ts`), so a server that was down on the day still keeps the
+ * promise when it comes up.
  *
- * **By day, not by instant.** Both tables hold calendar dates — a machine's
+ * **By day, not by instant.** All three tables hold calendar dates — a machine's
  * own local ones — so the cutoff is a date: everything before the UTC date 400
  * days ago. A day's difference between zones is the whole tolerance.
  *
@@ -132,7 +137,9 @@ export function pruneLocalActivity(db: Db, now: number): JobResult {
   const changed = db.transaction((tx) => {
     const days = tx.delete(localActivityDays).where(lt(localActivityDays.day, cutoff)).run();
     const keys = tx.delete(pushedCommitKeys).where(lt(pushedCommitKeys.day, cutoff)).run();
-    return days.changes + keys.changes;
+    // Token usage (D-084 item 12) is kept as long, by the same rule.
+    const tokens = tx.delete(tokenUsageDays).where(lt(tokenUsageDays.day, cutoff)).run();
+    return days.changes + keys.changes + tokens.changes;
   });
 
   return { changed };

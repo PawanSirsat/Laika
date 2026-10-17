@@ -1500,6 +1500,99 @@ export const taskRoundGithub = sqliteTable('task_round_github', {
   updatedAt,
 });
 
+// -------------------------------------------------- §4.32 token_usage_days
+
+/**
+ * Agents' token usage per day, as one machine last reported it (§4.32,
+ * D-084, LAI-769): per (person, collector, day, agent, model, task) the four
+ * counts the agent's own session files carry. **Counts only** — there is
+ * deliberately no column that could hold a prompt, a reply, a path, a
+ * repository, a branch or a session id; the task is Laika's own, resolved on
+ * the way in, and anything else is unattributed (`task_id` null).
+ *
+ * A **snapshot per (person, collector, day)**: a report deletes that day's
+ * rows for the machine and writes the new set, so a retry never counts twice
+ * and a model gone from the day is gone from the table. Rows are unique per
+ * (person, collector, day, agent, model, task) because the service folds a
+ * report before writing; there is no key over a nullable `task_id` that
+ * SQLite could enforce, so there is no primary key but the rowid.
+ *
+ * **Every read is one range of one index** (the Usage page's org total, a
+ * project's, a person's, by agent and by model): the day and project indexes
+ * carry every column those reads sum, so none of them touches the table.
+ * Kept 400 days (§11.6).
+ */
+export const tokenUsageDays = sqliteTable(
+  'token_usage_days',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** A random UUID the collector made once on that machine (§4.23's). */
+    collectorId: text('collector_id').notNull(),
+    /** `YYYY-MM-DD` in the machine's own time zone. */
+    day: text('day').notNull(),
+    /** An `AGENT_CLIENTS` slug: `claude-code`, `codex`, `gemini-cli`, … */
+    agent: text('agent').notNull(),
+    /** The model id the agent recorded, `[1m]`-style suffixes removed. */
+    model: text('model').notNull(),
+    /** The Laika task the tokens were spent on, when the collector knew it. */
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    /** The task's project, copied when the task is resolved. */
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    /** Uncached input tokens. */
+    input: integer('input').notNull().default(0),
+    /** Output tokens, reasoning included. */
+    output: integer('output').notNull().default(0),
+    cacheWrite: integer('cache_write').notNull().default(0),
+    cacheRead: integer('cache_read').notNull().default(0),
+    updatedAt,
+  },
+  (t) => [
+    // A report replaces (person, collector, day); a person's card is a range
+    // of their days. Leads with the person, as the cascade on users needs.
+    index('token_usage_days_user_day_idx').on(t.userId, t.day, t.collectorId),
+    // The organisation's reads, and §11.6's retention: a range of days with
+    // every summed column in the index, so no read touches the table. Agent
+    // and model next, so the page's day × agent × model groups stream in
+    // index order rather than sorting every row of the range.
+    index('token_usage_days_day_idx').on(
+      t.day,
+      t.agent,
+      t.model,
+      t.userId,
+      t.taskId,
+      t.input,
+      t.output,
+      t.cacheWrite,
+      t.cacheRead,
+    ),
+    // A project's reads, the same way; only rows tied to a task have one.
+    index('token_usage_days_project_day_idx')
+      .on(
+        t.projectId,
+        t.day,
+        t.agent,
+        t.model,
+        t.userId,
+        t.taskId,
+        t.input,
+        t.output,
+        t.cacheWrite,
+        t.cacheRead,
+      )
+      .where(sql`project_id IS NOT NULL`),
+    // The cascade from a deleted task, and the task panel's read (LAI-770).
+    index('token_usage_days_task_idx')
+      .on(t.taskId, t.day)
+      .where(sql`task_id IS NOT NULL`),
+    check(
+      'token_usage_days_counts_check',
+      sql.raw('input >= 0 AND output >= 0 AND cache_write >= 0 AND cache_read >= 0'),
+    ),
+  ],
+);
+
 export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
 
 export type User = typeof users.$inferSelect;
@@ -1532,3 +1625,4 @@ export type GithubCommit = typeof githubCommits.$inferSelect;
 export type GithubPullRequest = typeof githubPullRequests.$inferSelect;
 export type GithubCheck = typeof githubChecks.$inferSelect;
 export type TaskRoundGithub = typeof taskRoundGithub.$inferSelect;
+export type TokenUsageDay = typeof tokenUsageDays.$inferSelect;

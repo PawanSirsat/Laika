@@ -17,6 +17,13 @@ import {
   SESSIONS_MAX,
   setActivitySharing,
 } from '../../services/local-activity.ts';
+import {
+  MODEL_PATTERN,
+  recordTokenUsage,
+  TASK_KEY_PATTERN,
+  TOKEN_COUNT_MAX,
+  TOKEN_USAGE_ROWS_PER_DAY_MAX,
+} from '../../services/token-usage.ts';
 import { type AppEnv } from '../context.ts';
 import { parseBody, parseQuery, strictObject, z } from '../validation.ts';
 
@@ -101,6 +108,42 @@ const LookbackBody = strictObject({
   ),
 });
 
+/**
+ * A usage report (D-084, LAI-769): per day, the agents' token totals —
+ * agent, model, a Laika task key or null, and four counts. **Nothing here can
+ * hold text**: every string is a pattern (an agent kind, a model id, a key),
+ * and anything else in a row or a day is an unknown field, refused (§6.3).
+ * The window and the uniqueness of days are the service's
+ * `day_out_of_range`.
+ */
+const tokenCount = z.number().int().min(0).max(TOKEN_COUNT_MAX);
+const UsageBody = strictObject({
+  v: z.literal(1),
+  collector_id: ReportBody.shape.collector_id,
+  tz: z.string().min(1).max(64),
+  usage: z.literal(true),
+  days: z.array(
+    strictObject({
+      day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      rows: z
+        .array(
+          strictObject({
+            agent: z
+              .string()
+              .regex(/^[a-z0-9-]{1,32}$/, 'an agent kind id is 1–32 of a–z, 0–9 and -'),
+            model: z.string().regex(MODEL_PATTERN, 'a model id is 1–64 of a–z, 0–9, ., _, : and -'),
+            task: z.string().regex(TASK_KEY_PATTERN, 'a task is a Laika key, PREFIX-n').nullable(),
+            input: tokenCount,
+            output: tokenCount,
+            cache_write: tokenCount,
+            cache_read: tokenCount,
+          }),
+        )
+        .max(TOKEN_USAGE_ROWS_PER_DAY_MAX),
+    }),
+  ),
+});
+
 const PreviewQuery = strictObject({
   days: z.coerce.number().int().min(1).max(OWN_PREVIEW_DAYS_MAX).optional(),
 });
@@ -132,6 +175,9 @@ export function localActivityRoutes(options: { db: Db }): Hono<AppEnv> {
     // Marked, not guessed: a look-back is only ever what the sender says it is.
     if (typeof json === 'object' && json !== null && 'lookback' in json) {
       return c.json(recordLookback(db, actor, parseBody(LookbackBody, json)), 200);
+    }
+    if (typeof json === 'object' && json !== null && 'usage' in json) {
+      return c.json(recordTokenUsage(db, actor, parseBody(UsageBody, json)), 200);
     }
     return c.json(recordLocalActivity(db, actor, parseBody(ReportBody, json)), 200);
   });

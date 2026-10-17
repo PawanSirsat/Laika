@@ -289,9 +289,18 @@ describe('the cases LAI-004 calls out by name', () => {
         action === 'local_activity.send_own' ||
         action === 'local_activity.read_own' ||
         action === 'local_activity.delete_own';
+      // D-084's own tokens (LAI-769): a read of their own record, session
+      // only — so not in `READ_ACTIONS`, which is about what a token may do.
+      const ownUsage = action === 'usage.read_own';
 
       expect(allowed, `${action} allowed for viewer`).toBe(
-        selfToken || joining || ownUnlisted || ownHeartbeat || ownWatch || ownLocalActivity,
+        selfToken ||
+          joining ||
+          ownUnlisted ||
+          ownHeartbeat ||
+          ownWatch ||
+          ownLocalActivity ||
+          ownUsage,
       );
     }
   });

@@ -744,3 +744,78 @@ describe('0031 adds the heatmap to a populated 0030 database (LAI-751)', () => {
     }
   });
 });
+
+describe('0035 adds token usage to a populated 0034 database (LAI-769)', () => {
+  it('creates one table and its indexes, and rebuilds nothing that was there', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    cpSync(MIGRATIONS_FOLDER, dir, { recursive: true });
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const dropped = journal.entries.splice(
+      journal.entries.findIndex((e) => e.tag.startsWith('0035_')),
+    );
+    // The guard on this guard: what was cut is 0035, and 0034 is the last kept.
+    expect(dropped[0]?.tag).toMatch(/^0035_/);
+    expect(journal.entries.at(-1)?.tag).toMatch(/^0034_/);
+    writeFileSync(journalPath, JSON.stringify(journal));
+
+    const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+    const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+    try {
+      runMigrations(db, { migrationsFolder: dir });
+      const s = seed(db);
+      db.run(sql`
+        INSERT INTO local_activity_days (user_id, day, collector_id, prompts, tz, updated_at)
+        VALUES (${s.userId}, '2026-10-16', '6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a', 3, 'UTC', 1)
+      `);
+
+      // Every table's root page and row count before: a rebuild moves the
+      // first, and a copy that lost rows changes the second. Drizzle's own
+      // journal gains its row for 0035, as it does for every migration.
+      const census = () =>
+        Object.fromEntries(
+          db
+            .all<{ name: string; rootpage: number }>(
+              sql`SELECT name, rootpage FROM sqlite_master
+                   WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                     AND name NOT LIKE '__drizzle%' ORDER BY name`,
+            )
+            .map((t) => [
+              t.name,
+              {
+                rootpage: t.rootpage,
+                rows: db.all<{ n: number }>(sql.raw(`SELECT count(*) AS n FROM "${t.name}"`))[0]?.n,
+              },
+            ]),
+        );
+      const before = census();
+      expect(before.token_usage_days).toBeUndefined();
+
+      runMigrations(db);
+
+      const after = census();
+      const { token_usage_days: added, ...kept } = after;
+      expect(kept).toEqual(before);
+      expect(added?.rows).toBe(0);
+      expect(
+        db
+          .all<{ name: string }>(
+            sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'token_usage_days' ORDER BY name`,
+          )
+          .map((r) => r.name),
+      ).toEqual([
+        'token_usage_days_day_idx',
+        'token_usage_days_project_day_idx',
+        'token_usage_days_task_idx',
+        'token_usage_days_user_day_idx',
+      ]);
+      expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+    } finally {
+      sqlite.close();
+      rmSync(dbDir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

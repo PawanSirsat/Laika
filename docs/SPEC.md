@@ -169,6 +169,9 @@ be obvious because someone will be asking for it.
 | Set own activity sharing | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Send own local activity | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
 | Read and delete own local activity | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| View the organisation's token usage | ✓ | ✓ | — | — |
+| View anyone's token usage, per person | ✓ (session only) | ✓ (session only) | — | — |
+| View own token usage | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 
 **"View the organisation" is `org.read` and is a read action** (D-048) — a
 `read_only` token may do it. It does **not** cover the AI provider block:
@@ -235,6 +238,24 @@ reads it, and no row of §3.1 or §3.2 depends on it.
   `forbidden` with `details.reason: "session_required"` (§6.3), so a collector
   can tell *sign in to the web app* from *never*.
 
+**The token-usage rows are D-084's** (LAI-769): `usage.read_org`,
+`usage.read_people` and `usage.read_own`, with §3.2's `usage.read_project`,
+behind §6.4's `GET /usage` and `GET /users/:id/usage`. They follow D-084 item
+7 — owners and admins see everyone, a developer their own, a member a
+project's totals and **never a per-person split**.
+
+- **The organisation's figure** — totals, days, agents, models, top tasks —
+  is its own row, not *Export audit log* borrowed: the two answer alike today
+  and mean different things. It names no person, so it is a read a token may
+  make, `read_only` included.
+- **Anything per person is the profile's rule**: `usage.read_people` and
+  `usage.read_own` are session only, so **no token reads a per-person figure,
+  not even its own person's**. `GET /usage` answers a reader without
+  `usage.read_people` with `by_developer: null` rather than refusing the page.
+- **Sending tokens is not a new row.** A usage report is the collector's, on
+  `PUT /me/local-activity` under *Send own local activity* and the same two
+  switches (D-084 item 4).
+
 ### 3.2 Project-level permission matrix
 
 Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
@@ -257,6 +278,7 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Read tasks, comments, activity, capacity | ✓ | ✓ | ✓ |
 | Watch / unwatch a task | ✓ | ✓ | ✓ |
 | Apply a meeting-diff proposal | ✓ | ✓ | — |
+| Read a project's token totals | ✓ | ✓ | ✓ |
 
 ### 3.3 The `can()` module is the only authority
 
@@ -734,6 +756,12 @@ unique, `local_activity_days(day)`, `pushed_commit_keys(user_id, key)` unique,
 `pushed_commit_keys(user_id, day)`, `pushed_commit_keys(day)`. The heatmap's reads
 are each a range of one person's days on an index that leads with the person;
 retention deletes by `day` alone (§11.6).
+`token_usage_days(user_id, day, collector_id)`, `token_usage_days(day, agent,
+model, user_id, task_id, input, output, cache_write, cache_read)`,
+`token_usage_days(project_id, day, …)` the same columns `WHERE project_id IS NOT
+NULL`, and `token_usage_days(task_id, day) WHERE task_id IS NOT NULL` — the
+Usage page's reads are each one range of one index that carries every column
+they sum (§4.32).
 `tags(project_id, name)` unique and `task_tags(tag_id)` — the `?tag=` filter
 reads from the tag side, so the join needs an index from that end too.
 
@@ -1210,6 +1238,38 @@ waiting, and no later delivery rewrites it.
   job, so every test item takes CI's answer and the CI line says what it was.
   **No CI result is not a result**: with nothing reported for the head commit,
   the test items and the CI line are left as they were.
+
+### 4.32 `token_usage_days`
+
+Agents' token usage per day, as one machine last reported it (§6.4, D-084,
+LAI-769) — the Usage page and the profile's token card.
+
+| field | notes |
+| --- | --- |
+| `user_id` | FK `users`, cascade |
+| `collector_id` | the collector's UUID v4, as §4.23's |
+| `day` | `YYYY-MM-DD` in the machine's own time zone |
+| `agent` | an agent slug (§9.3): `claude-code`, `codex`, `gemini-cli`; anything else is `other` |
+| `model` | the model id the agent recorded, lower case, `[1m]`-style suffixes removed — 1–64 of `a–z`, `0–9`, `.`, `_`, `:`, `-` |
+| `task_id` | nullable, FK `tasks`, set null — the task the tokens were spent on, when the collector knew its key and the sender may read it; null is **unattributed** |
+| `project_id` | nullable, FK `projects`, set null — the task's project, copied when it is resolved |
+| `input` | integer — uncached input tokens |
+| `output` | integer — output tokens, reasoning included |
+| `cache_write` | integer — tokens written to the prompt cache |
+| `cache_read` | integer — tokens read from it; never in a headline (D-084 item 8) |
+| `updated_at` | integer — when this snapshot arrived |
+
+No primary key but the rowid: a key over the nullable `task_id` would not hold
+in SQLite, so the service folds a report to one row per (`user_id`,
+`collector_id`, `day`, `agent`, `model`, `task_id`) before writing.
+
+**Counts only** — there is deliberately no column that could hold a prompt, a
+reply, a tool's input, a path, a repository, a branch or a session id; a task
+is Laika's own, resolved on the way in. **A snapshot per (person, collector,
+day)**: a usage report deletes that day's rows for the machine and writes its
+rows, so a retry never counts twice and a model gone from the day is gone from
+the table. Machines sum. Every read is a range of one index (§4.13). Kept 400
+days (§11.6).
 
 ## 5. Task lifecycle
 

@@ -21,6 +21,7 @@ import { buildContentSecurityPolicy, extractStyleHashes } from './http/security-
 import { healthRoutes } from './http/routes/health.ts';
 import { meRoutes, meWatchRoutes } from './http/routes/me.ts';
 import { localActivityRoutes } from './http/routes/local-activity.ts';
+import { usageRoutes, userUsageRoutes } from './http/routes/usage.ts';
 import { peopleRoutes } from './http/routes/people.ts';
 import { setupRoutes } from './http/routes/setup.ts';
 import { projectRoutes } from './http/routes/projects.ts';
@@ -304,6 +305,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/users`, userTokenRoutes({ db, sqlite: options.sqlite }));
     // `/:id/profile` and `/:id/ratings` (LAI-743) — distinct paths, like `/:id/tokens`.
     app.route(`${API_BASE}/users`, profileRoutes({ db }));
+    // `/:id/usage` (LAI-769), the profile card's tokens — a distinct path too.
+    app.route(`${API_BASE}/users`, userUsageRoutes({ db }));
+    // The Usage page (D-084, LAI-769).
+    app.route(`${API_BASE}/usage`, usageRoutes({ db }));
     // The profile's heatmap (D-079, LAI-751), by day.
     app.route(`${API_BASE}/people`, peopleRoutes({ db }));
     app.route(`${API_BASE}/users`, userRoutes({ db }));

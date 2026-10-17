@@ -76,6 +76,10 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Set own activity sharing', ['activity_sharing.set_own']],
   ['Send own local activity', ['local_activity.send_own']],
   ['Read and delete own local activity', ['local_activity.read_own', 'local_activity.delete_own']],
+  // D-084's rows (LAI-769): token usage, by who may see it.
+  ["View the organisation's token usage", ['usage.read_org']],
+  ["View anyone's token usage, per person", ['usage.read_people']],
+  ['View own token usage', ['usage.read_own']],
 ]);
 
 const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
@@ -95,6 +99,7 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ['Read tasks, comments, activity, capacity', ['project.read']],
   ['Watch / unwatch a task', ['task.watch']],
   ['Apply a meeting-diff proposal', ['meeting_proposal.apply']],
+  ["Read a project's token totals", ['usage.read_project']],
 ]);
 
 /**
