@@ -48,6 +48,13 @@ export const LIMITS = {
    * broken loop meets it.
    */
   localActivity: { perMinute: 0.5, burst: 30 },
+  /**
+   * OpenTelemetry metrics (LAI-773): Claude Code exports once a minute per
+   * running session, so a developer with five open is five a minute. Twelve a
+   * minute and a burst of sixty — a retried backlog after an outage — on its
+   * own bucket, so telemetry never spends the agent's API budget.
+   */
+  otlp: { perMinute: 12, burst: 60 },
 } as const satisfies Record<string, LimitPolicy>;
 
 export type LimitName = keyof typeof LIMITS;

@@ -104,6 +104,14 @@ const ORG_MATRIX: OrgRow[] = [
   ['usage.read_people', true, true, false, false],
   // | View own token usage | ✓ (session only) | … | ✓ (session only) |
   ['usage.read_own', true, true, true, true],
+  // | Set API-equivalent prices | ✓ (session only) | ✓ (session only) | — | — |
+  // LAI-773: an organisation's own price over the dated table.
+  ['org.model_prices.set', true, true, false, false],
+  // | Read and dismiss own token alerts | ✓ (session only) | … | ✓ (session only) |
+  ['token_alerts.own', true, true, true, true],
+  // | Read and set own plan limit | ✓ (session only) | … | ✓ (session only) |
+  // D-087: the person only — no admin row exists for it at all.
+  ['plan_limit.own', true, true, true, true],
 ];
 
 describe('SPEC §3.1 — org-level matrix', () => {
@@ -204,6 +212,9 @@ const PROJECT_MATRIX: ProjectRow[] = [
   // | Read a project's token totals | ✓ | ✓ | ✓ |
   // Totals only (D-084 item 7, LAI-769); the per-person split is §3.1's.
   ['usage.read_project', true, true, true],
+  // | Set token budgets | ✓ (session only) | — | — |
+  // LAI-773: a lead, on a web session; soft, so it refuses nothing to anyone.
+  ['budget.set', true, false, false],
 ];
 
 /** An org `member` so the org role never grants implicit lead. */

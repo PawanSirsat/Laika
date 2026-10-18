@@ -7,6 +7,7 @@ import {
   isNotNull,
   isNull,
   lte,
+  ne,
   or,
   sql,
   type SQL,
@@ -22,10 +23,12 @@ import {
   taskRounds,
   tasks,
   tokens,
+  tokenSessionDays,
   tokenUsageDays,
   users,
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
+import { createLogger, type Logger } from '../log.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { addDays, daysBetween, dayIn, isTimeZone } from './calendar-days.ts';
 import {
@@ -35,7 +38,35 @@ import {
   sharingOn,
 } from './local-activity.ts';
 import { readableByOutsideId } from './outside-ids.ts';
+import { recordArrival } from './plan-limit.ts';
 import { requireProjectBySlug } from './projects.ts';
+import {
+  addCost,
+  cacheSaving,
+  costOf,
+  emptyCost,
+  type PriceBook,
+  type TokenCounts,
+  type UsageCost,
+} from './model-prices.ts';
+import { loadPriceBook } from './org-model-prices.ts';
+import {
+  budgetsForUsage,
+  type BudgetView,
+  checkRunaway,
+  evaluateBudgets,
+  runawayCounts,
+  runawayFor,
+  type RunawayView,
+  taskBudgets,
+} from './token-budgets.ts';
+import {
+  recomputeGap,
+  type SessionFilesInput,
+  storeExcluded,
+  storeSessionFiles,
+  TELEMETRY_COLLECTOR,
+} from './token-telemetry.ts';
 
 /**
  * Agents' token usage (D-084, SPEC §4.33, §6.4, LAI-769): a collector's
@@ -66,6 +97,13 @@ import { requireProjectBySlug } from './projects.ts';
  * tokens on the measured machine — are always beside it, never in it
  * (item 8). Every figure is a floor (item 9): the client labels it *at least*.
  */
+
+let tokenUsageLog: Logger = createLogger();
+
+/** Report best-effort failures to this logger — `app.ts` passes the process's. */
+export function setTokenUsageLogger(logger: Logger): void {
+  tokenUsageLog = logger;
+}
 
 /** A report's days: back to today − 31 in the sender's zone (D-084 item 11's 30, and today). */
 export const TOKEN_USAGE_DAYS_BACK = 31;
@@ -126,13 +164,29 @@ export interface TokenUsageReport {
   tz: string;
   usage: true;
   /**
+   * One-way keys of the Claude Code sessions the collector left out of the
+   * rows — automated (D-086) or outside the developer's scope (D-079 item 4)
+   * — so their telemetry is left out too (LAI-773).
+   */
+  excluded?: string[] | undefined;
+  /**
    * `backfill: true` on a day that carries tokens from before this collector
    * began counting — the last 30 days, sent once (D-084 item 11). Such a day
    * **replaces every collector's rows** for it and each agent it names, so a
    * machine whose collector started over (`laika activity off`, then `on`)
    * cannot count the same day twice (LAI-769 review 1).
    */
-  days: { day: string; backfill?: true | undefined; rows: TokenUsageRowInput[] }[];
+  days: {
+    day: string;
+    backfill?: true | undefined;
+    rows: TokenUsageRowInput[];
+    /**
+     * The day's Claude Code rows split by one-way session key (LAI-773), so
+     * telemetry for the same session fills only what the files miss. A day
+     * without it leaves its file tokens unplaced, which keeps the match safe.
+     */
+    sessions?: SessionFilesInput[] | undefined;
+  }[];
 }
 
 /** The four counts, the headline (without cache reads) and how much of it a task holds. */
@@ -145,6 +199,8 @@ export interface UsageFigures {
   cache_read: number;
   /** The part of `tokens` tied to a task (D-084 item 6). */
   attributed_tokens: number;
+  /** API-equivalent, not your bill (D-084 item 10, LAI-773). */
+  cost: UsageCost;
 }
 
 export interface UsageSlice {
@@ -160,6 +216,8 @@ export interface UsageDeveloper extends UsageSlice {
   user_id: string;
   name: string;
   attributed_tokens: number;
+  /** Theirs, API-equivalent (LAI-773) — only ever beside their name for an admin. */
+  cost: UsageCost;
 }
 
 export interface UsageAgentSlice extends UsageSlice {
@@ -168,6 +226,8 @@ export interface UsageAgentSlice extends UsageSlice {
 
 export interface UsageModelSlice extends UsageSlice {
   model: string;
+  /** USD at list price; `null` when the model has no price — never 0 (LAI-773). */
+  cost: number | null;
 }
 
 export interface UsageTaskSlice extends UsageSlice {
@@ -234,6 +294,69 @@ export interface UsageView {
   org_totals: UsageFigures | null;
   /** Rework cost per project the reader may read, by name; empty with no send-back in the range. */
   rework: ReworkCost[];
+  /**
+   * What Claude Code's own telemetry added over the files (LAI-773): the side
+   * calls a transcript never shows. `cost_usd_reported` is Claude Code's own
+   * cost figure for the telemetered sessions, for a reader of the
+   * organisation's figures. `null` for a space: telemetry ties to no task.
+   */
+  telemetry: { tokens: number; cost_usd_reported: number | null } | null;
+  /**
+   * Cache efficiency (LAI-773): of every input-side token (input, cache
+   * writes, cache reads) the share served from the cache, and what those
+   * reads saved against fresh input at list price.
+   */
+  cache: { share: number | null; saving_usd: number | null };
+  /** The same per project the reader may read, by name. */
+  cache_by_project: UsageCacheProject[];
+  /** What tasks accepted in the range cost, per project and per agent (LAI-773). */
+  accepted: UsageAccepted;
+  /** Each space's and sprint's budget, then open tasks at 80% of theirs or more (LAI-773). */
+  budgets: BudgetView[];
+  /**
+   * Runaway-agent alerts per project, a day after the assignee heard: a
+   * count, never which task or whose — for a reader holding `usage.read_org`,
+   * `null` otherwise (LAI-773).
+   */
+  runaway: { project: { slug: string; name: string }; alerts: number }[] | null;
+}
+
+/** One project's cache efficiency (LAI-773). */
+export interface UsageCacheProject {
+  project: { slug: string; name: string };
+  cache_read: number;
+  /** input + cache writes + cache reads. */
+  input_side: number;
+  share: number | null;
+  /** `null` when none of its models has a price. */
+  saving_usd: number | null;
+}
+
+/** Tasks accepted in the range and what they cost — the cost of agent work (LAI-773). */
+export interface UsageAccepted {
+  by_project: {
+    project: { slug: string; name: string };
+    tasks: number;
+    tokens: number;
+    cost: UsageCost;
+    /** `cost.usd / tasks` — the API-equivalent cost of one accepted task here. */
+    cost_per_task: number;
+  }[];
+  /**
+   * Per agent, over the accepted tasks it spent tokens on — **only an agent
+   * at least three people used on them** (D-085 item 8's rule: with fewer, an
+   * agent's figure is a person's).
+   */
+  by_agent: {
+    agent: AgentClient;
+    tasks: number;
+    people: number;
+    tokens: number;
+    cost: UsageCost;
+    cost_per_task: number;
+  }[];
+  /** Agents left out of `by_agent` for having fewer than three people. */
+  agents_withheld: number;
 }
 
 export interface UsageWeek extends UsageSlice {
@@ -264,12 +387,15 @@ export interface UsageCounts {
   output: number;
   cache_write: number;
   cache_read: number;
+  /** API-equivalent, not your bill (LAI-773). */
+  cost: UsageCost;
 }
 
 export interface TaskUsagePerson extends UsageSlice {
   user_id: string;
   name: string;
   by_agent: UsageAgentSlice[];
+  cost: UsageCost;
 }
 
 export interface TaskUsageRound extends UsageSlice {
@@ -304,6 +430,10 @@ export interface TaskUsageView {
    * for the whole story. `null` when the reader sees nobody's part.
    */
   attributed: { tokens: number; of: number } | null;
+  /** The task's budget in force — its own, or its frozen p80 — or `null` (LAI-773). */
+  budget: BudgetView | null;
+  /** The open runaway alert on it, shown only to the person it is for (LAI-773). */
+  runaway: RunawayView | null;
 }
 
 export interface UsageQuery {
@@ -382,6 +512,20 @@ export function recordTokenUsage(
   }
   const resolved = resolveKeys(db, actor, keys);
 
+  // Today and yesterday in the sender's zone, as they stood: what the report
+  // adds to them is what just arrived (the plan-limit rate). A backfilled day
+  // is old tokens, not new ones.
+  const today = dayIn(report.tz, now);
+  const near = report.days
+    .filter((d) => d.backfill !== true && d.day >= addDays(today, -1))
+    .map((d) => d.day);
+  let before = 0;
+  try {
+    before = headlineOver(db, actor.userId, near);
+  } catch {
+    before = Number.POSITIVE_INFINITY;
+  }
+
   // Folded per (day, agent, model, task): an alias and its slug, or two keys
   // that both turned out unattributed, are one row.
   const rows: (typeof tokenUsageDays.$inferInsert)[] = [];
@@ -449,6 +593,8 @@ export function recordTokenUsage(
           and(
             eq(tokenUsageDays.userId, actor.userId),
             eq(tokenUsageDays.day, day.day),
+            // What telemetry adds is recomputed below, never taken here.
+            ne(tokenUsageDays.collectorId, TELEMETRY_COLLECTOR),
             agents.length === 0
               ? eq(tokenUsageDays.collectorId, collectorId)
               : or(
@@ -465,9 +611,115 @@ export function recordTokenUsage(
         .values(rows.slice(i, i + 50))
         .run();
     }
+
+    // The telemetry match (LAI-773): this machine's sessions for the days it
+    // sent, the sessions it left out, and the gap on every day either moved.
+    storeSessionFiles(tx, actor.userId, collectorId, report.days, now);
+    const moved = storeExcluded(tx, actor.userId, report.excluded ?? [], now);
+    fillGap(tx, actor.userId, [...report.days.map((d) => d.day), ...moved], now);
   });
 
+  // Best effort from here: what arrived, and the alerts it may raise. None of
+  // it can cost the report (LAI-773).
+  afterUsage(db, actor.userId, near, before, [...resolvedTaskIds(resolved)], now);
   return { accepted_days: report.days.length };
+}
+
+const resolvedTaskIds = (resolved: ReadonlyMap<string, ResolvedTask>): Set<string> =>
+  new Set([...resolved.values()].map((r) => r.taskId));
+
+type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+/**
+ * Recompute the telemetry gap on the days that have any telemetry, in a
+ * savepoint: a failure drops those days' gap rows — an under-count, never a
+ * double one — and costs the report nothing.
+ */
+function fillGap(tx: Tx, userId: string, days: readonly string[], now: number): void {
+  if (days.length === 0) return;
+  const unique = [...new Set(days)];
+  const withTelemetry = [
+    ...new Set([
+      ...tx
+        .selectDistinct({ day: tokenSessionDays.day })
+        .from(tokenSessionDays)
+        .where(
+          and(
+            eq(tokenSessionDays.userId, userId),
+            inArray(tokenSessionDays.day, unique),
+            eq(tokenSessionDays.source, 'telemetry'),
+          ),
+        )
+        .all()
+        .map((r) => r.day),
+      ...tx
+        .selectDistinct({ day: t.day })
+        .from(t)
+        .where(
+          and(eq(t.userId, userId), inArray(t.day, unique), eq(t.collectorId, TELEMETRY_COLLECTOR)),
+        )
+        .all()
+        .map((r) => r.day),
+    ]),
+  ];
+  if (withTelemetry.length === 0) return;
+  try {
+    tx.transaction((inner) => {
+      recomputeGap(inner, userId, withTelemetry, now);
+    });
+  } catch (error) {
+    tokenUsageLog.error('token_usage.gap_failed', {
+      user_id: userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    tx.delete(t)
+      .where(
+        and(
+          eq(t.userId, userId),
+          inArray(t.day, withTelemetry),
+          eq(t.collectorId, TELEMETRY_COLLECTOR),
+        ),
+      )
+      .run();
+  }
+}
+
+/** A person's headline tokens over some days, every collector and telemetry. */
+function headlineOver(db: Db, userId: string, days: readonly string[]): number {
+  if (days.length === 0) return 0;
+  return (
+    db
+      .select({ tokens: sums.tokens })
+      .from(t)
+      .where(and(eq(t.userId, userId), inArray(t.day, [...days])))
+      .get()?.tokens ?? 0
+  );
+}
+
+/**
+ * After a report: what it added to today's and yesterday's tokens (the
+ * plan-limit rate, §4.42), and the budget and runaway alerts for the tasks it
+ * named. Each step best effort, logged and never thrown.
+ */
+function afterUsage(
+  db: Db,
+  userId: string,
+  near: readonly string[],
+  before: number,
+  taskIds: readonly string[],
+  now: number,
+): void {
+  try {
+    const arrived = headlineOver(db, userId, near) - before;
+    if (arrived > 0) recordArrival(db, userId, arrived, now);
+  } catch (error) {
+    tokenUsageLog.error('token_usage.arrival_failed', {
+      user_id: userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  evaluateBudgets(db, taskIds, now);
+  checkRunaway(db, taskIds, now);
 }
 
 // ------------------------------------------------------------------- reads
@@ -484,14 +736,17 @@ const sums = {
   attributed: total(sql`CASE WHEN ${t.taskId} IS NOT NULL THEN ${headline} ELSE 0 END`),
 };
 
-function figuresOf(row: {
-  tokens: number;
-  input: number;
-  output: number;
-  cacheWrite: number;
-  cacheRead: number;
-  attributed: number;
-}): UsageFigures {
+function figuresOf(
+  row: {
+    tokens: number;
+    input: number;
+    output: number;
+    cacheWrite: number;
+    cacheRead: number;
+    attributed: number;
+  },
+  cost: UsageCost,
+): UsageFigures {
   return {
     tokens: row.tokens,
     input: row.input,
@@ -499,29 +754,73 @@ function figuresOf(row: {
     cache_write: row.cacheWrite,
     cache_read: row.cacheRead,
     attributed_tokens: row.attributed,
+    cost,
   };
 }
 
 const NO_FIGURES = { tokens: 0, input: 0, output: 0, cacheWrite: 0, cacheRead: 0, attributed: 0 };
+
+/** The four counts of one model, to price. */
+interface ModelCounts extends TokenCounts {
+  input: number;
+  output: number;
+  cache_write: number;
+  cache_read: number;
+}
+
+const noCounts = (): ModelCounts => ({ input: 0, output: 0, cache_write: 0, cache_read: 0 });
+
+/** What a set of per-model counts costs, and what their cache reads saved. */
+function priced(
+  book: PriceBook,
+  models: ReadonlyMap<string, ModelCounts>,
+): { cost: UsageCost; saving: number | null } {
+  const cost = emptyCost();
+  let saving: number | null = null;
+  for (const [model, counts] of models) {
+    addCost(cost, costOf(book, model, counts));
+    const saved = cacheSaving(book, model, counts.cache_read);
+    if (saved !== null) saving = (saving ?? 0) + saved;
+  }
+  return { cost, saving };
+}
+
+function addCounts(
+  map: Map<string, ModelCounts>,
+  key: string,
+  r: { input: number; output: number; cacheWrite: number; cacheRead: number },
+): void {
+  const held = map.get(key) ?? noCounts();
+  held.input += r.input;
+  held.output += r.output;
+  held.cache_write += r.cacheWrite;
+  held.cache_read += r.cacheRead;
+  map.set(key, held);
+}
 
 interface Breakdown {
   totals: typeof NO_FIGURES;
   perDay: Map<string, UsageSlice>;
   byAgent: UsageAgentSlice[];
   byModel: UsageModelSlice[];
+  cost: UsageCost;
+  /** What the cache reads saved at list price; `null` with no priced model. */
+  saving: number | null;
 }
 
 /**
  * Totals, days, agents and models from **one** range of the index: grouped by
  * (day, agent, model) — at most a few hundred groups for a quarter — and
  * folded here. Four `GROUP BY`s over the same range read it four times, and
- * at 300 people that was the page's whole cost.
+ * at 300 people that was the page's whole cost. The groups carry each count,
+ * so pricing them by model (LAI-773) costs no query.
  */
-function breakdown(db: Db, where: SQL | undefined): Breakdown {
+function breakdown(db: Db, where: SQL | undefined, book: PriceBook): Breakdown {
   const totals = { ...NO_FIGURES };
   const perDay = new Map<string, UsageSlice>();
   const agents = new Map<string, UsageSlice>();
   const models = new Map<string, UsageSlice>();
+  const counts = new Map<string, ModelCounts>();
   const add = (map: Map<string, UsageSlice>, key: string, tokens: number, cacheRead: number) => {
     const entry = map.get(key) ?? { tokens: 0, cache_read: 0 };
     entry.tokens += tokens;
@@ -543,16 +842,33 @@ function breakdown(db: Db, where: SQL | undefined): Breakdown {
     add(perDay, r.day, r.tokens, r.cacheRead);
     add(agents, agentKindOf(r.agent), r.tokens, r.cacheRead);
     add(models, r.model, r.tokens, r.cacheRead);
+    addCounts(counts, r.model, r);
   }
   // Most first, then by name, so equal figures keep one order.
   const ranked = (map: Map<string, UsageSlice>) =>
     [...map].sort(([a, x], [b, y]) => y.tokens - x.tokens || a.localeCompare(b));
+  const { cost, saving } = priced(book, counts);
   return {
     totals,
     perDay,
     byAgent: ranked(agents).map(([agent, v]) => ({ agent: agentKindOf(agent), ...v })),
-    byModel: ranked(models).map(([model, v]) => ({ model, ...v })),
+    byModel: ranked(models).map(([model, v]) => ({
+      model,
+      ...v,
+      cost:
+        book.price(model) === undefined
+          ? null
+          : costOf(book, model, counts.get(model) ?? noCounts()).usd,
+    })),
+    cost,
+    saving,
   };
+}
+
+/** Of every input-side token, the share read from the cache; `null` with none. */
+function cacheShare(input: number, cacheWrite: number, cacheRead: number): number | null {
+  const side = input + cacheWrite + cacheRead;
+  return side === 0 ? null : cacheRead / side;
 }
 
 /**
@@ -620,7 +936,8 @@ export function getUsage(
   const inRange = and(gte(t.day, from), lte(t.day, to));
   const where = project === undefined ? inRange : and(eq(t.projectId, project.id), inRange);
 
-  const { totals, perDay, byAgent, byModel } = breakdown(db, where);
+  const book = loadPriceBook(db);
+  const { totals, perDay, byAgent, byModel, cost, saving } = breakdown(db, where, book);
   const trend: UsageDayPoint[] = [];
   for (let i = 0; i <= daysBetween(from, to); i += 1) {
     const day = addDays(from, i);
@@ -630,26 +947,51 @@ export function getUsage(
 
   let byDeveloper: UsageDeveloper[] | null = null;
   if (can(actor, 'usage.read_people')) {
-    const people = db
+    // By person and model, so each person's figure can be priced (LAI-773);
+    // folded to one row a person here.
+    const people = new Map<
+      string,
+      {
+        name: string;
+        tokens: number;
+        cacheRead: number;
+        attributed: number;
+        models: Map<string, ModelCounts>;
+      }
+    >();
+    for (const p of db
       .select({
         userId: t.userId,
+        model: t.model,
         name: users.name,
-        tokens: sums.tokens,
-        cacheRead: sums.cacheRead,
-        attributed: sums.attributed,
+        ...sums,
       })
       .from(t)
       .innerJoin(users, eq(users.id, t.userId))
       .where(where)
-      .groupBy(t.userId)
-      .all();
-    byDeveloper = people
-      .map((p) => ({
-        user_id: p.userId,
+      .groupBy(t.userId, t.model)
+      .all()) {
+      const held = people.get(p.userId) ?? {
+        name: p.name,
+        tokens: 0,
+        cacheRead: 0,
+        attributed: 0,
+        models: new Map<string, ModelCounts>(),
+      };
+      held.tokens += p.tokens;
+      held.cacheRead += p.cacheRead;
+      held.attributed += p.attributed;
+      addCounts(held.models, p.model, p);
+      people.set(p.userId, held);
+    }
+    byDeveloper = [...people]
+      .map(([userId, p]) => ({
+        user_id: userId,
         name: p.name,
         tokens: p.tokens,
         cache_read: p.cacheRead,
         attributed_tokens: p.attributed,
+        cost: priced(book, p.models).cost,
       }))
       // By name: a list of people, never a ranking of them (D-084 item 7).
       .sort((a, b) => a.name.localeCompare(b.name) || a.user_id.localeCompare(b.user_id));
@@ -721,10 +1063,26 @@ export function getUsage(
           .all()
           .map((m) => m.userId);
 
-  const orgTotals =
-    project !== undefined && can(actor, 'usage.read_org')
-      ? figuresOf(db.select(sums).from(t).where(inRange).get() ?? NO_FIGURES)
-      : null;
+  let orgTotals: UsageFigures | null = null;
+  if (project !== undefined && can(actor, 'usage.read_org')) {
+    const whole = { ...NO_FIGURES };
+    const models = new Map<string, ModelCounts>();
+    for (const r of db
+      .select({ model: t.model, ...sums })
+      .from(t)
+      .where(inRange)
+      .groupBy(t.model)
+      .all()) {
+      whole.tokens += r.tokens;
+      whole.input += r.input;
+      whole.output += r.output;
+      whole.cacheWrite += r.cacheWrite;
+      whole.cacheRead += r.cacheRead;
+      whole.attributed += r.attributed;
+      addCounts(models, r.model, r);
+    }
+    orgTotals = figuresOf(whole, priced(book, models).cost);
+  }
 
   const scope =
     project === undefined
@@ -741,7 +1099,7 @@ export function getUsage(
     tz,
     days: daysBetween(from, to) + 1,
     project: project === undefined ? null : { slug: project.slug, name: project.name },
-    totals: figuresOf(totals),
+    totals: figuresOf(totals, cost),
     trend,
     by_developer: byDeveloper,
     by_agent: byAgent,
@@ -750,6 +1108,235 @@ export function getUsage(
     no_token_data: agentsWithoutTokens(db, memberIds),
     org_totals: orgTotals,
     rework: reworkCost(db, scope, { from, to, tz }, now),
+    telemetry: project === undefined ? telemetryShare(db, actor, { from, to }) : null,
+    cache: {
+      share: cacheShare(totals.input, totals.cacheWrite, totals.cacheRead),
+      saving_usd: saving,
+    },
+    cache_by_project: cacheByProject(db, book, scope, { from, to }),
+    accepted: acceptedCost(db, book, scope, { from, to, tz }, now),
+    budgets: budgetsForUsage(
+      db,
+      scope.map((p) => p.id),
+      now,
+    ),
+    runaway: can(actor, 'usage.read_org') ? runawayCounts(db, scope, { from, tz }, now) : null,
+  };
+}
+
+/**
+ * What telemetry added over the range (LAI-773): one range of its own partial
+ * index — a few rows a person a day — and Claude Code's own cost figure for
+ * the telemetered sessions, from the per-session table's day index.
+ */
+function telemetryShare(
+  db: Db,
+  actor: ResolvedActor,
+  range: { from: string; to: string },
+): UsageView['telemetry'] {
+  const added =
+    db
+      .select({ tokens: sums.tokens })
+      .from(t)
+      .where(
+        and(eq(t.collectorId, TELEMETRY_COLLECTOR), gte(t.day, range.from), lte(t.day, range.to)),
+      )
+      .get()?.tokens ?? 0;
+  const reported = can(actor, 'usage.read_org')
+    ? (db
+        .select({
+          usd: sql<number | null>`sum(${tokenSessionDays.costUsd})`,
+        })
+        .from(tokenSessionDays)
+        .where(
+          and(
+            eq(tokenSessionDays.source, 'telemetry'),
+            gte(tokenSessionDays.day, range.from),
+            lte(tokenSessionDays.day, range.to),
+          ),
+        )
+        .get()?.usd ?? null)
+    : null;
+  return { tokens: added, cost_usd_reported: reported };
+}
+
+/**
+ * Cache efficiency per project the reader may read (LAI-773): one range of
+ * the project index, grouped by project and model so the saving is priced.
+ */
+function cacheByProject(
+  db: Db,
+  book: PriceBook,
+  scope: readonly { id: string; slug: string; name: string }[],
+  range: { from: string; to: string },
+): UsageCacheProject[] {
+  if (scope.length === 0) return [];
+  const per = new Map<string, Map<string, ModelCounts>>();
+  for (const r of db
+    .select({ projectId: t.projectId, model: t.model, ...sums })
+    .from(t)
+    .where(
+      and(
+        inArray(
+          t.projectId,
+          scope.map((p) => p.id),
+        ),
+        gte(t.day, range.from),
+        lte(t.day, range.to),
+      ),
+    )
+    .groupBy(t.projectId, t.model)
+    .all()) {
+    if (r.projectId === null) continue;
+    const models = per.get(r.projectId) ?? new Map<string, ModelCounts>();
+    addCounts(models, r.model, r);
+    per.set(r.projectId, models);
+  }
+  return scope
+    .filter((p) => per.has(p.id))
+    .map((p) => {
+      const models = per.get(p.id)!;
+      let input = 0;
+      let cacheWrite = 0;
+      let cacheRead = 0;
+      for (const c of models.values()) {
+        input += c.input;
+        cacheWrite += c.cache_write;
+        cacheRead += c.cache_read;
+      }
+      return {
+        project: { slug: p.slug, name: p.name },
+        cache_read: cacheRead,
+        input_side: input + cacheWrite + cacheRead,
+        share: cacheShare(input, cacheWrite, cacheRead),
+        saving_usd: priced(book, models).saving,
+      };
+    })
+    .sort((a, b) => a.project.name.localeCompare(b.project.name));
+}
+
+/** An agent's cost per accepted task is shown once this many people stand behind it (D-085 item 8). */
+const MIN_AGENT_PEOPLE = 3;
+
+/**
+ * What the tasks accepted in the range cost (LAI-773, the estimation R&D's
+ * idea 2): each task's tokens, all of them — build and rework — priced, per
+ * project and per agent. Bounded by the decisions in the range: a handful of
+ * queries whatever the board's size. **Never per person**, and an agent is
+ * listed only when at least three people spent its tokens on those tasks.
+ */
+function acceptedCost(
+  db: Db,
+  book: PriceBook,
+  scope: readonly { id: string; slug: string; name: string }[],
+  range: { from: string; to: string; tz: string },
+  now: number,
+): UsageAccepted {
+  const none: UsageAccepted = { by_project: [], by_agent: [], agents_withheld: 0 };
+  if (scope.length === 0) return none;
+  const earliest = now - (daysBetween(range.from, range.to) + 2) * DAY_MS;
+  const accepted = new Map<string, string>();
+  for (const d of db
+    .select({
+      taskId: taskReviews.taskId,
+      createdAt: taskReviews.createdAt,
+      projectId: tasks.projectId,
+    })
+    .from(taskReviews)
+    .innerJoin(tasks, eq(tasks.id, taskReviews.taskId))
+    .where(
+      and(
+        eq(taskReviews.decision, 'accepted'),
+        inArray(
+          tasks.projectId,
+          scope.map((p) => p.id),
+        ),
+        gte(taskReviews.createdAt, earliest),
+      ),
+    )
+    .all()) {
+    const on = dayIn(range.tz, d.createdAt);
+    if (on >= range.from && on <= range.to) accepted.set(d.taskId, d.projectId);
+  }
+  if (accepted.size === 0) return none;
+
+  const perTask = new Map<string, { tokens: number; models: Map<string, ModelCounts> }>();
+  const perAgent = new Map<
+    string,
+    { tasks: Set<string>; people: Set<string>; tokens: number; models: Map<string, ModelCounts> }
+  >();
+  const ids = [...accepted.keys()];
+  for (let i = 0; i < ids.length; i += 500) {
+    for (const r of db
+      .select({ taskId: t.taskId, agent: t.agent, model: t.model, userId: t.userId, ...sums })
+      .from(t)
+      .where(inArray(t.taskId, ids.slice(i, i + 500)))
+      .groupBy(t.taskId, t.agent, t.model, t.userId)
+      .all()) {
+      if (r.taskId === null) continue;
+      const task = perTask.get(r.taskId) ?? { tokens: 0, models: new Map<string, ModelCounts>() };
+      task.tokens += r.tokens;
+      addCounts(task.models, r.model, r);
+      perTask.set(r.taskId, task);
+      const agent = agentKindOf(r.agent);
+      const a = perAgent.get(agent) ?? {
+        tasks: new Set<string>(),
+        people: new Set<string>(),
+        tokens: 0,
+        models: new Map<string, ModelCounts>(),
+      };
+      a.tasks.add(r.taskId);
+      a.people.add(r.userId);
+      a.tokens += r.tokens;
+      addCounts(a.models, r.model, r);
+      perAgent.set(agent, a);
+    }
+  }
+
+  const perProject = new Map<string, { tasks: number; tokens: number; cost: UsageCost }>();
+  for (const [taskId, projectId] of accepted) {
+    const task = perTask.get(taskId);
+    const entry = perProject.get(projectId) ?? { tasks: 0, tokens: 0, cost: emptyCost() };
+    entry.tasks += 1;
+    if (task !== undefined) {
+      entry.tokens += task.tokens;
+      addCost(entry.cost, priced(book, task.models).cost);
+    }
+    perProject.set(projectId, entry);
+  }
+  let withheld = 0;
+  const byAgent: UsageAccepted['by_agent'] = [];
+  for (const [agent, a] of [...perAgent].sort(([x], [y]) => x.localeCompare(y))) {
+    if (a.people.size < MIN_AGENT_PEOPLE) {
+      withheld += 1;
+      continue;
+    }
+    const cost = priced(book, a.models).cost;
+    byAgent.push({
+      agent: agentKindOf(agent),
+      tasks: a.tasks.size,
+      people: a.people.size,
+      tokens: a.tokens,
+      cost,
+      cost_per_task: cost.usd / a.tasks.size,
+    });
+  }
+  return {
+    by_project: scope
+      .filter((p) => perProject.has(p.id))
+      .map((p) => {
+        const e = perProject.get(p.id)!;
+        return {
+          project: { slug: p.slug, name: p.name },
+          tasks: e.tasks,
+          tokens: e.tokens,
+          cost: e.cost,
+          cost_per_task: e.cost.usd / e.tasks,
+        };
+      })
+      .sort((a, b) => a.project.name.localeCompare(b.project.name)),
+    by_agent: byAgent,
+    agents_withheld: withheld,
   };
 }
 
@@ -933,7 +1520,7 @@ export function getPersonUsage(
     tokens: 0,
     cache_read: 0,
   }));
-  const { totals, perDay, byAgent, byModel } = breakdown(db, where);
+  const { totals, perDay, byAgent, byModel, cost } = breakdown(db, where, loadPriceBook(db));
   for (const [day, r] of perDay) {
     // Tomorrow's day from a machine ahead of UTC belongs to this week.
     const index = Math.min(Math.floor(daysBetween(from, mondayOf(day)) / 7), PERSON_WEEKS - 1);
@@ -950,7 +1537,7 @@ export function getPersonUsage(
     from,
     to,
     weeks,
-    totals: figuresOf(totals),
+    totals: figuresOf(totals, cost),
     by_agent: byAgent,
     by_model: byModel,
     no_token_data: agentsWithoutTokens(db, [userId]),
@@ -966,6 +1553,7 @@ const NO_COUNTS = (): UsageCounts => ({
   output: 0,
   cache_write: 0,
   cache_read: 0,
+  cost: emptyCost(),
 });
 
 /**
@@ -994,6 +1582,7 @@ export function getTaskUsage(
   actor: ResolvedActor,
   taskId: string,
   query: { tz?: string | undefined } = {},
+  now: number = Date.now(),
 ): TaskUsageView {
   const task = db
     .select({
@@ -1024,6 +1613,7 @@ export function getTaskUsage(
       userId: t.userId,
       day: t.day,
       agent: t.agent,
+      model: t.model,
       input: t.input,
       output: t.output,
       cacheWrite: t.cacheWrite,
@@ -1033,16 +1623,20 @@ export function getTaskUsage(
     .where(eq(t.taskId, task.id))
     .all();
 
+  const book = loadPriceBook(db);
   const totals = NO_COUNTS();
   const days = new Set<string>();
+  const models = new Map<string, ModelCounts>();
   for (const r of rows) {
     totals.input += r.input;
     totals.output += r.output;
     totals.cache_write += r.cacheWrite;
     totals.cache_read += r.cacheRead;
     days.add(r.day);
+    addCounts(models, r.model, r);
   }
   totals.tokens = totals.input + totals.output + totals.cache_write;
+  totals.cost = priced(book, models).cost;
   const sortedDays = [...days].sort();
 
   // ----- per person and agent, for the readers allowed it
@@ -1050,16 +1644,21 @@ export function getTaskUsage(
     people === 'everyone' || (people === 'own' && userId === actor.userId);
   let byPerson: TaskUsagePerson[] | null = null;
   if (people !== 'none') {
-    const mine = new Map<string, { slice: UsageSlice; agents: Map<string, UsageSlice> }>();
+    const mine = new Map<
+      string,
+      { slice: UsageSlice; agents: Map<string, UsageSlice>; models: Map<string, ModelCounts> }
+    >();
     for (const r of rows) {
       if (!visible(r.userId)) continue;
       const tokens = r.input + r.output + r.cacheWrite;
       const entry = mine.get(r.userId) ?? {
         slice: { tokens: 0, cache_read: 0 },
         agents: new Map<string, UsageSlice>(),
+        models: new Map<string, ModelCounts>(),
       };
       entry.slice.tokens += tokens;
       entry.slice.cache_read += r.cacheRead;
+      addCounts(entry.models, r.model, r);
       const agent = entry.agents.get(r.agent) ?? { tokens: 0, cache_read: 0 };
       agent.tokens += tokens;
       agent.cache_read += r.cacheRead;
@@ -1077,13 +1676,14 @@ export function getTaskUsage(
             .map((u) => [u.id, u.name]),
     );
     byPerson = [...mine]
-      .map(([userId, { slice, agents }]) => ({
+      .map(([userId, { slice, agents, models: theirs }]) => ({
         user_id: userId,
         name: names.get(userId) ?? '',
         ...slice,
         by_agent: [...agents]
           .sort(([a, x], [b, y]) => y.tokens - x.tokens || a.localeCompare(b))
           .map(([agent, v]) => ({ agent: agentKindOf(agent), ...v })),
+        cost: priced(book, theirs).cost,
       }))
       // By name: a list of people, never a ranking of them (D-084 item 7).
       .sort((a, b) => a.name.localeCompare(b.name) || a.user_id.localeCompare(b.user_id));
@@ -1154,5 +1754,7 @@ export function getTaskUsage(
     by_person: byPerson,
     by_round: byRound,
     attributed,
+    budget: taskBudgets(db, [task.id])[0] ?? null,
+    runaway: runawayFor(db, actor, task.id, now),
   };
 }

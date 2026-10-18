@@ -200,6 +200,49 @@ describe('profile actions refuse every token (LAI-743)', () => {
   });
 });
 
+/**
+ * LAI-773's four rows refuse every token: prices and budgets are the figures
+ * that exist to watch agents, so an agent's token must not move them; alerts
+ * and the plan limit are the person's own, read and set signed in (D-087).
+ */
+describe('token-usage settings refuse every token (LAI-773)', () => {
+  const tokens: TokenContext[] = [
+    { id: 'tok_full', scope: 'full', projectIds: null },
+    { id: 'tok_ro', scope: 'read_only', projectIds: null },
+    { id: 'tok_pin', scope: 'full', projectIds: ['p1'] },
+  ];
+  const cases = [
+    ['org.model_prices.set', 'owner', null],
+    ['token_alerts.own', 'member', null],
+    ['plan_limit.own', 'viewer', null],
+    ['budget.set', 'member', 'lead'],
+  ] as const;
+
+  it('allows each on a cookie session, so the refusals below are the token’s', () => {
+    for (const [action, role, projectRole] of cases) {
+      expect(can(actor(role, projectRole), action, { projectId: 'p1' }), action).toBe(true);
+    }
+  });
+
+  it('refuses each to any token', () => {
+    for (const [action, role, projectRole] of cases) {
+      for (const token of tokens) {
+        expect(
+          can(actor(role, projectRole, token), action, { projectId: 'p1' }),
+          `${action} / ${token.id}`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('gives a project member no budget, and a lead one', () => {
+    expect(can(actor('member', 'member'), 'budget.set', { projectId: 'p1' })).toBe(false);
+    expect(can(actor('member', 'lead'), 'budget.set', { projectId: 'p1' })).toBe(true);
+    // An admin is an implicit lead.
+    expect(can(actor('admin', null), 'budget.set', { projectId: 'p1' })).toBe(true);
+  });
+});
+
 describe('deny by default (SPEC §3.3 rule 3)', () => {
   it('denies a deactivated user everything, including reads', () => {
     const deactivated: Actor = { ...actor('owner', 'lead'), isActive: false };
@@ -292,6 +335,8 @@ describe('the cases LAI-004 calls out by name', () => {
       // D-084's own tokens (LAI-769): a read of their own record, session
       // only — so not in `READ_ACTIONS`, which is about what a token may do.
       const ownUsage = action === 'usage.read_own';
+      // LAI-773: their own alerts and their own plan limit, session only.
+      const ownTokenData = action === 'token_alerts.own' || action === 'plan_limit.own';
 
       expect(allowed, `${action} allowed for viewer`).toBe(
         selfToken ||
@@ -300,7 +345,8 @@ describe('the cases LAI-004 calls out by name', () => {
           ownHeartbeat ||
           ownWatch ||
           ownLocalActivity ||
-          ownUsage,
+          ownUsage ||
+          ownTokenData,
       );
     }
   });

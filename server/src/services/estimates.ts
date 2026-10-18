@@ -10,6 +10,7 @@ import {
   isNotNull,
   isNull,
   lte,
+  ne,
   sql,
   type SQL,
 } from 'drizzle-orm';
@@ -63,6 +64,7 @@ import {
   type SimilarLookup,
   type Signals,
 } from './estimate-model.ts';
+import { TELEMETRY_COLLECTOR } from './local-activity.ts';
 import { requireProjectBySlug } from './projects.ts';
 import { tagsForTasks } from './tags.ts';
 import {
@@ -572,6 +574,10 @@ function tokenActuals(
           inArray(tokenUsageDays.userId, ids.slice(i, i + 500)),
           gte(tokenUsageDays.day, first),
           lte(tokenUsageDays.day, last),
+          // Coverage is how much of the work *could* be tied to a task: the
+          // side calls telemetry adds (LAI-773) never can be, and counting
+          // them would push tasks under the 70% the threshold was set by.
+          ne(tokenUsageDays.collectorId, TELEMETRY_COLLECTOR),
         ),
       )
       .groupBy(tokenUsageDays.userId, tokenUsageDays.day)

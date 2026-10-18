@@ -8,6 +8,11 @@ import {
   rotateGithubWebhookSecret,
   updateOrg,
 } from '../../services/orgs.ts';
+import {
+  deleteModelPrice,
+  getModelPrices,
+  setModelPrice,
+} from '../../services/org-model-prices.ts';
 import { type AppEnv } from '../context.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
@@ -23,6 +28,15 @@ import { parseBody, strictObject, z } from '../validation.ts';
  * response (§12). `AI_PROVIDERS` comes from the service rather than being
  * retyped — LAI-119's rule, and this is a route.
  */
+/** An organisation's own price for a model, USD per million tokens (LAI-773). */
+const price = z.number().min(0).max(10_000);
+const ModelPriceBody = strictObject({
+  input: price,
+  output: price,
+  cache_write: price,
+  cache_read: price,
+});
+
 const OrgPatchBody = strictObject({
   presence_enabled: z.boolean().optional(),
   developer_insights: z.boolean().optional(),
@@ -73,6 +87,30 @@ export function orgRoutes(options: OrgRouteOptions): Hono<AppEnv> {
     if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
 
     return c.json(getOrg(db, actor, publicUrl));
+  });
+
+  /**
+   * API-equivalent prices (LAI-773): the dated table and the organisation's
+   * own over it. Read by anyone who may view the organisation; set by an owner
+   * or admin on a web session (`org.model_prices.set`).
+   */
+  app.get('/model-prices', (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+    return c.json(getModelPrices(db, actor));
+  });
+
+  app.put('/model-prices/:model', async (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+    const body = parseBody(ModelPriceBody, await c.req.json().catch(() => null));
+    return c.json(setModelPrice(db, actor, c.req.param('model'), body));
+  });
+
+  app.delete('/model-prices/:model', (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+    return c.json(deleteModelPrice(db, actor, c.req.param('model')));
   });
 
   /**

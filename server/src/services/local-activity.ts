@@ -9,6 +9,10 @@ import {
   orgs,
   projects,
   pushedCommitKeys,
+  tokenArrivals,
+  tokenSessionDays,
+  tokenSessionSkips,
+  tokenTelemetrySeries,
   tokenUsageDays,
   users,
 } from '../db/schema.ts';
@@ -54,6 +58,12 @@ import { canSeeProject } from './projects.ts';
  */
 
 /** How often a collector may sync, said to it in every sharing answer (§6.4). */
+/**
+ * The `collector_id` of the rows OpenTelemetry adds to `token_usage_days`
+ * (LAI-773, `token-telemetry.ts`): not a UUID, so never a machine's.
+ */
+export const TELEMETRY_COLLECTOR = 'telemetry';
+
 export const MIN_SYNC_INTERVAL_S = 600;
 
 /** A report's days: at most this many, each within this far behind today. */
@@ -244,6 +254,9 @@ export function getActivitySharing(
         eq(tokenUsageDays.userId, actor.userId),
         gte(tokenUsageDays.day, from),
         ne(tokenUsageDays.collectorId, collectorId.toLowerCase()),
+        // What telemetry adds (LAI-773) is no machine's: a day it fills is
+        // not a day another collector holds.
+        ne(tokenUsageDays.collectorId, TELEMETRY_COLLECTOR),
       ),
     )
     .orderBy(tokenUsageDays.day)
@@ -655,6 +668,13 @@ export function deleteOwnLocalActivity(db: Db, actor: ResolvedActor): void {
     tx.delete(localActivityDays).where(eq(localActivityDays.userId, actor.userId)).run();
     tx.delete(pushedCommitKeys).where(eq(pushedCommitKeys.userId, actor.userId)).run();
     tx.delete(tokenUsageDays).where(eq(tokenUsageDays.userId, actor.userId)).run();
+    // And what came with them (LAI-773): the sessions matched against
+    // telemetry, the series state, the excluded keys, and the arrival rate.
+    // The plan limit is a setting, not history, and stays.
+    tx.delete(tokenSessionDays).where(eq(tokenSessionDays.userId, actor.userId)).run();
+    tx.delete(tokenTelemetrySeries).where(eq(tokenTelemetrySeries.userId, actor.userId)).run();
+    tx.delete(tokenSessionSkips).where(eq(tokenSessionSkips.userId, actor.userId)).run();
+    tx.delete(tokenArrivals).where(eq(tokenArrivals.userId, actor.userId)).run();
   });
 }
 

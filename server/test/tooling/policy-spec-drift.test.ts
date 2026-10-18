@@ -80,6 +80,10 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ["View the organisation's token usage", ['usage.read_org']],
   ["View anyone's token usage, per person", ['usage.read_people']],
   ['View own token usage', ['usage.read_own']],
+  // LAI-773's rows: prices, a person's alerts, a developer's plan limit.
+  ['Set API-equivalent prices', ['org.model_prices.set']],
+  ['Read and dismiss own token alerts', ['token_alerts.own']],
+  ['Read and set own plan limit', ['plan_limit.own']],
 ]);
 
 const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
@@ -100,6 +104,7 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ['Watch / unwatch a task', ['task.watch']],
   ['Apply a meeting-diff proposal', ['meeting_proposal.apply']],
   ["Read a project's token totals", ['usage.read_project']],
+  ['Set token budgets', ['budget.set']],
 ]);
 
 /**
@@ -353,8 +358,11 @@ const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
  * rule — the first as a plain tick, the second as the role being refused.
  */
 function verifySessionOnly(action: Action, role: string): void {
-  const actor = orgActor(role.toLowerCase() as OrgRole);
-  const about = { targetUserId: 'someone-else' };
+  // §3.2 has one such cell (LAI-773's budgets): its roles are project roles.
+  const lower = role.toLowerCase();
+  const actor =
+    lower === 'lead' || lower === 'member' ? projectActor(lower) : orgActor(lower as OrgRole);
+  const about = { targetUserId: 'someone-else', projectId: 'p' };
 
   expect(can(actor, action, about), `${action} / ${role} on a session`).toBe(true);
 

@@ -22,6 +22,13 @@ import { healthRoutes } from './http/routes/health.ts';
 import { meRoutes, meWatchRoutes } from './http/routes/me.ts';
 import { localActivityRoutes } from './http/routes/local-activity.ts';
 import { usageRoutes, userUsageRoutes } from './http/routes/usage.ts';
+import { meUsageRoutes } from './http/routes/me-usage.ts';
+import { otlpRoutes } from './http/routes/otlp.ts';
+import {
+  projectBudgetRoutes,
+  sprintBudgetRoutes,
+  taskBudgetRoutes,
+} from './http/routes/token-budgets.ts';
 import { peopleRoutes } from './http/routes/people.ts';
 import { setupRoutes } from './http/routes/setup.ts';
 import { projectRoutes } from './http/routes/projects.ts';
@@ -62,6 +69,8 @@ import { apiCompression } from './http/middleware/compression.ts';
 import { allowedMethodsFor } from './http/allowed-methods.ts';
 import { translateAuthResponse } from './http/auth-errors.ts';
 import { setEstimateLogger } from './services/estimates.ts';
+import { setTokenAlertLogger } from './services/token-budgets.ts';
+import { setTokenUsageLogger } from './services/token-usage.ts';
 
 /**
  * Hash the fallback document's inline `<style>` block at startup so the policy
@@ -197,6 +206,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   const log = options.logger ?? createLogger();
   // The estimator's failures are logged, never thrown into a task write (B1).
   setEstimateLogger(log);
+  setTokenAlertLogger(log);
+  setTokenUsageLogger(log);
   const db = options.db;
 
   const staticOptions = {
@@ -287,6 +298,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/me`, meWatchRoutes({ db }));
     // D-079's developer side (LAI-751): sharing, reports, and what is held.
     app.route(`${API_BASE}/me`, localActivityRoutes({ db }));
+    // A person's own token alerts and plan limit (LAI-773, D-087).
+    app.route(`${API_BASE}/me`, meUsageRoutes({ db }));
+    // OpenTelemetry metrics from the developer's own agents (LAI-773).
+    app.route(`${API_BASE}/otlp`, otlpRoutes({ db }));
     app.route(
       `${API_BASE}/events`,
       eventRoutes({ db, feed: options.activityFeed ?? new ActivityFeed({ db }) }),
@@ -312,6 +327,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/users`, userUsageRoutes({ db }));
     // The Usage page (D-084, LAI-769).
     app.route(`${API_BASE}/usage`, usageRoutes({ db }));
+    // Token budgets (LAI-773): distinct paths on the three prefixes.
+    app.route(`${API_BASE}/projects`, projectBudgetRoutes({ db }));
+    app.route(`${API_BASE}/sprints`, sprintBudgetRoutes({ db }));
+    app.route(`${API_BASE}/tasks`, taskBudgetRoutes({ db }));
     // The profile's heatmap (D-079, LAI-751), by day.
     app.route(`${API_BASE}/people`, peopleRoutes({ db }));
     app.route(`${API_BASE}/users`, userRoutes({ db }));

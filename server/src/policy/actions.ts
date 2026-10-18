@@ -46,6 +46,11 @@ export const ORG_ACTIONS = [
   'usage.read_org',
   'usage.read_people',
   'usage.read_own',
+  // LAI-773: an organisation's own API-equivalent prices, a person's own
+  // alerts, and a developer's own plan limit (D-087).
+  'org.model_prices.set',
+  'token_alerts.own',
+  'plan_limit.own',
 ] as const;
 
 /** SPEC §3.2 — gated by project role, with org owner/admin holding implicit lead. */
@@ -66,6 +71,8 @@ export const PROJECT_ACTIONS = [
   'project.read',
   'meeting_proposal.apply',
   'usage.read_project',
+  // LAI-773: soft token budgets on a task, a sprint or the project.
+  'budget.set',
 ] as const;
 
 /**
@@ -173,4 +180,13 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // how an agent acts, so not even the person's own token reads their own.
   'usage.read_people',
   'usage.read_own',
+  // **Prices and budgets are the figures that exist to watch agents** (LAI-773):
+  // an agent's token that could lower a price or raise its own task's budget
+  // would silence the alert meant for its person.
+  'org.model_prices.set',
+  'budget.set',
+  // A person's own alerts and plan limit (D-087): theirs, signed in — the
+  // plan limit is never served to anybody else, an agent included.
+  'token_alerts.own',
+  'plan_limit.own',
 ]);
