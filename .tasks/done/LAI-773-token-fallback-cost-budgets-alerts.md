@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p2
 depends-on: [LAI-772]
 discovered-from:
-status: review
+status: done
 started: 2026-10-18T03:46:13Z
 finished: 2026-10-18T05:16:18Z
 ---
