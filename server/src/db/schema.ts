@@ -31,6 +31,7 @@ import {
   ACTIVITY_TYPES,
   ACTOR_KINDS,
   AI_PROVIDERS,
+  BUDGET_SCOPES,
   CLAIM_CONFIDENCES,
   CREATED_VIA,
   CHECK_OUTCOMES,
@@ -41,6 +42,8 @@ import {
   LOCAL_ACTIVITY_SCOPES,
   MEETING_REVIEW_STATUSES,
   ORG_ROLES,
+  PLAN_KINDS,
+  PLAN_WINDOWS,
   PROFILE_KINDS,
   PROJECT_ROLES,
   PROJECT_VISIBILITIES,
@@ -49,7 +52,9 @@ import {
   SPRINT_STATUSES,
   TASK_PRIORITIES,
   TASK_STATUSES,
+  TOKEN_ALERT_KINDS,
   TOKEN_SCOPES,
+  TOKEN_SESSION_SOURCES,
 } from './enums.ts';
 
 /** `CHECK (col IN ('a','b'))` — the database half of a closed vocabulary. */
@@ -1738,9 +1743,355 @@ export const tokenUsageDays = sqliteTable(
     index('token_usage_days_task_idx')
       .on(t.taskId, t.day)
       .where(sql`task_id IS NOT NULL`),
+    // How much of a range telemetry filled (LAI-773): only its own rows, a
+    // few a person a day, with the counts the Usage page sums.
+    index('token_usage_days_telemetry_idx')
+      .on(t.day, t.model, t.input, t.output, t.cacheWrite, t.cacheRead)
+      .where(sql`collector_id = 'telemetry'`),
     check(
       'token_usage_days_counts_check',
       sql.raw('input >= 0 AND output >= 0 AND cache_write >= 0 AND cache_read >= 0'),
+    ),
+  ],
+);
+
+// ------------------------------------------------- §4.35 org_model_prices
+
+/**
+ * An organisation's own price for a model (§4.35, D-084 item 10, LAI-773):
+ * what an owner or admin entered over the dated table in
+ * `services/model-prices.ts`. Dollars per million tokens, for the four counts
+ * Laika keeps. **Only an estimate** — the page says *API-equivalent, not your
+ * bill* — and nothing ever fetches a price (§13.4).
+ */
+export const orgModelPrices = sqliteTable(
+  'org_model_prices',
+  {
+    orgId: text('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    /** A model id as `token_usage_days.model` holds it. */
+    model: text('model').notNull(),
+    input: real('input').notNull(),
+    output: real('output').notNull(),
+    cacheWrite: real('cache_write').notNull(),
+    cacheRead: real('cache_read').notNull(),
+    setBy: text('set_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.model] }),
+    index('org_model_prices_set_by_idx').on(t.setBy),
+    check(
+      'org_model_prices_range_check',
+      sql.raw(
+        'input >= 0 AND input <= 10000 AND output >= 0 AND output <= 10000 AND cache_write >= 0 AND cache_write <= 10000 AND cache_read >= 0 AND cache_read <= 10000',
+      ),
+    ),
+  ],
+);
+
+// ---------------------------------------------------- §4.36 token_budgets
+
+/**
+ * A token budget a lead set (§4.36, LAI-773): for one task, a sprint, or a
+ * project per calendar month. **Soft**: crossing 80% or 100% writes an alert
+ * (§4.37) and nothing is ever refused. A task without a row has the p80 of the
+ * token forecast frozen at its claim as its budget, computed, never stored.
+ *
+ * One row per subject, so a change is an update of it: a budget is a setting,
+ * like the size override's pointer, and the alerts keep what it was when they
+ * were raised.
+ */
+export const tokenBudgets = sqliteTable(
+  'token_budgets',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    scope: text('scope', { enum: BUDGET_SCOPES }).notNull(),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'cascade' }),
+    sprintId: text('sprint_id').references(() => sprints.id, { onDelete: 'cascade' }),
+    /** Input + output + cache writes — the headline the forecast is in (D-084 item 8). */
+    tokens: integer('tokens').notNull(),
+    setBy: text('set_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt,
+    updatedAt,
+  },
+  (t) => [
+    uniqueIndex('token_budgets_task_unique')
+      .on(t.taskId)
+      .where(sql`task_id IS NOT NULL`),
+    uniqueIndex('token_budgets_sprint_unique')
+      .on(t.sprintId)
+      .where(sql`sprint_id IS NOT NULL`),
+    uniqueIndex('token_budgets_project_unique')
+      .on(t.projectId)
+      .where(sql`scope = 'project'`),
+    index('token_budgets_project_idx').on(t.projectId),
+    index('token_budgets_set_by_idx').on(t.setBy),
+    check('token_budgets_scope_check', oneOf('scope', BUDGET_SCOPES)),
+    check('token_budgets_tokens_check', sql.raw('tokens > 0 AND tokens <= 1000000000000')),
+    // The subject is exactly the one the scope names.
+    check(
+      'token_budgets_subject_check',
+      sql.raw(
+        "(scope = 'task') = (task_id IS NOT NULL) AND (scope = 'sprint') = (sprint_id IS NOT NULL)",
+      ),
+    ),
+  ],
+);
+
+// ----------------------------------------------------- §4.37 token_alerts
+
+/**
+ * A soft alert, raised once (§4.37, LAI-773): a budget crossed at 80% or
+ * 100%, or a runaway agent — a claimed task past the p95 of its frozen token
+ * forecast with nothing landing for an hour.
+ *
+ * **A runaway alert names its recipient** (`user_id`, the assignee when it was
+ * raised) and is shown to them alone; owners and admins see only how many a
+ * project had, a day later. A budget alert names nobody: it is about the work,
+ * and whoever reads the project's tokens sees its state.
+ *
+ * Budget alerts are unique per subject, period, threshold and the budget in
+ * force, so a raised budget re-arms them; a runaway alert is one per stall —
+ * none is raised while one newer than the task's last progress exists.
+ */
+export const tokenAlerts = sqliteTable(
+  'token_alerts',
+  {
+    id: text('id').primaryKey(),
+    kind: text('kind', { enum: TOKEN_ALERT_KINDS }).notNull(),
+    scope: text('scope', { enum: BUDGET_SCOPES }).notNull(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'cascade' }),
+    sprintId: text('sprint_id').references(() => sprints.id, { onDelete: 'cascade' }),
+    /** The task, sprint or project id — what the alert is about, never null. */
+    subjectId: text('subject_id').notNull(),
+    /** `YYYY-MM` for a project's monthly budget; empty otherwise. */
+    period: text('period').notNull().default(''),
+    /** 80 or 100 (% of a budget), or 95 (the forecast's p95, a runaway). */
+    threshold: integer('threshold').notNull(),
+    /** The budget, or the p95, in force when it was raised. */
+    limitTokens: integer('limit_tokens').notNull(),
+    /** What had been spent when it was raised. */
+    tokens: integer('tokens').notNull(),
+    /** A runaway alert's one recipient; null on a budget alert. */
+    userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('token_alerts_budget_unique')
+      .on(t.subjectId, t.period, t.threshold, t.limitTokens)
+      .where(sql`kind = 'budget'`),
+    index('token_alerts_subject_idx').on(t.subjectId, t.createdAt),
+    index('token_alerts_project_idx').on(t.projectId, t.createdAt),
+    index('token_alerts_user_idx')
+      .on(t.userId, t.createdAt)
+      .where(sql`user_id IS NOT NULL`),
+    index('token_alerts_task_idx').on(t.taskId),
+    index('token_alerts_sprint_idx').on(t.sprintId),
+    check('token_alerts_kind_check', oneOf('kind', TOKEN_ALERT_KINDS)),
+    check('token_alerts_scope_check', oneOf('scope', BUDGET_SCOPES)),
+    check(
+      'token_alerts_threshold_check',
+      sql.raw(
+        "(kind = 'budget' AND threshold IN (80, 100)) OR (kind = 'runaway' AND threshold = 95)",
+      ),
+    ),
+    // A runaway alert is the assignee's, about a task; a budget alert is nobody's.
+    check(
+      'token_alerts_recipient_check',
+      sql.raw("(kind = 'runaway') = (user_id IS NOT NULL) AND (kind = 'budget' OR scope = 'task')"),
+    ),
+  ],
+);
+
+// -------------------------------------------- §4.43 token_alert_dismissals
+
+/** A person putting an alert away for themselves (§4.43, LAI-773). Nobody else's view changes. */
+export const tokenAlertDismissals = sqliteTable(
+  'token_alert_dismissals',
+  {
+    alertId: text('alert_id')
+      .notNull()
+      .references(() => tokenAlerts.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.alertId, t.userId] }),
+    index('token_alert_dismissals_user_idx').on(t.userId),
+  ],
+);
+
+// ----------------------------------------------- §4.38 token_session_days
+
+/**
+ * Per-session token totals by day (§4.38, D-087, LAI-773): what a
+ * collector read from Claude Code's session files, and what Claude Code's own
+ * OpenTelemetry metrics said, for the same session — matched by a **one-way
+ * key** (`sha256("laika-session:" + id)`, 16 hex), never the id. The two are
+ * compared so telemetry fills what the files miss (side calls) without
+ * counting anything twice; the difference lands in `token_usage_days` under
+ * collector `telemetry`.
+ *
+ * Files rows are replaced per (person, collector, day) like the usage rows;
+ * telemetry rows grow as metrics arrive. Kept 40 days: the gap is settled once
+ * the collector's 31-day window has passed it.
+ */
+export const tokenSessionDays = sqliteTable(
+  'token_session_days',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    source: text('source', { enum: TOKEN_SESSION_SOURCES }).notNull(),
+    /** The collector, for files rows; empty for telemetry. */
+    collectorId: text('collector_id').notNull().default(''),
+    day: text('day').notNull(),
+    sessionKey: text('session_key').notNull(),
+    model: text('model').notNull(),
+    input: integer('input').notNull().default(0),
+    output: integer('output').notNull().default(0),
+    cacheWrite: integer('cache_write').notNull().default(0),
+    cacheRead: integer('cache_read').notNull().default(0),
+    /** Claude Code's own cost figure for it, USD — telemetry rows only. */
+    costUsd: real('cost_usd'),
+    updatedAt,
+  },
+  (t) => [
+    primaryKey({
+      columns: [t.userId, t.day, t.source, t.collectorId, t.sessionKey, t.model],
+    }),
+    // §11.6's retention deletes by day alone.
+    index('token_session_days_day_idx').on(t.day),
+    check('token_session_days_source_check', oneOf('source', TOKEN_SESSION_SOURCES)),
+    check(
+      'token_session_days_counts_check',
+      sql.raw('input >= 0 AND output >= 0 AND cache_write >= 0 AND cache_read >= 0'),
+    ),
+  ],
+);
+
+// ------------------------------------------- §4.39 token_telemetry_series
+
+/**
+ * Where each OpenTelemetry series stood (§4.39, LAI-773): so a retried or
+ * repeated export never adds twice. A cumulative series keeps its largest
+ * value and only the growth is added; a delta series keeps the end of the
+ * last interval taken, and a point that starts before it is a repeat.
+ * Kept three days past its last point.
+ */
+export const tokenTelemetrySeries = sqliteTable(
+  'token_telemetry_series',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Session key, model, the count it is, and a cumulative series' start. */
+    seriesKey: text('series_key').notNull(),
+    lastValue: real('last_value').notNull().default(0),
+    lastEndMs: integer('last_end_ms').notNull().default(0),
+    updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.seriesKey] }),
+    index('token_telemetry_series_updated_at_idx').on(t.updatedAt),
+  ],
+);
+
+// ---------------------------------------------- §4.40 token_session_skips
+
+/**
+ * Sessions nobody was typing in, by one-way key (§4.40, D-086, LAI-773): the
+ * collector's local skip list, keyed, so telemetry from an orchestrator's or
+ * CI's Claude Code is left out exactly as its session files are. Kept 45
+ * days, as the collector keeps its list.
+ */
+export const tokenSessionSkips = sqliteTable(
+  'token_session_skips',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    sessionKey: text('session_key').notNull(),
+    createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.sessionKey] }),
+    index('token_session_skips_created_at_idx').on(t.createdAt),
+  ],
+);
+
+// ----------------------------------------------------- §4.42 token_arrivals
+
+/**
+ * When a person's tokens reached the board, in five-minute buckets (§4.42,
+ * D-087, LAI-773) — the rate the plan-limit forecast reads. **The person's
+ * own and nobody else's**: no endpoint serves it to anyone but them. Kept
+ * eight days, a week's window and a day.
+ */
+export const tokenArrivals = sqliteTable(
+  'token_arrivals',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** The bucket's start, unix ms, a multiple of five minutes. */
+    bucketMs: integer('bucket_ms').notNull(),
+    /** Headline tokens (input + output + cache writes) that arrived in it. */
+    tokens: integer('tokens').notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.bucketMs] }),
+    index('token_arrivals_bucket_idx').on(t.bucketMs),
+    check('token_arrivals_tokens_check', sql.raw('tokens >= 0')),
+  ],
+);
+
+// -------------------------------------------------------- §4.41 plan_limits
+
+/**
+ * A developer's own plan limit (§4.41, D-087, LAI-773): their plan as a
+ * label, the window and the number they entered. **Read and written only by
+ * the person, on a web session** — no admin, no other endpoint, no token.
+ */
+export const planLimits = sqliteTable(
+  'plan_limits',
+  {
+    userId: text('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    // Not `plan` and `window`: both are SQLite keywords.
+    planKind: text('plan_kind', { enum: PLAN_KINDS }).notNull(),
+    limitWindow: text('limit_window', { enum: PLAN_WINDOWS }).notNull(),
+    limitTokens: integer('limit_tokens').notNull(),
+    /** A weekly window's reset: 0 (Sunday) to 6, and minutes after midnight, in `tz`. */
+    weekResetDay: integer('week_reset_day'),
+    weekResetMinute: integer('week_reset_minute'),
+    tz: text('tz').notNull(),
+    updatedAt,
+  },
+  () => [
+    check('plan_limits_plan_kind_check', oneOf('plan_kind', PLAN_KINDS)),
+    check('plan_limits_limit_window_check', oneOf('limit_window', PLAN_WINDOWS)),
+    check('plan_limits_limit_check', sql.raw('limit_tokens > 0 AND limit_tokens <= 1000000000000')),
+    check(
+      'plan_limits_reset_check',
+      sql.raw(
+        "(week_reset_day IS NULL OR week_reset_day BETWEEN 0 AND 6) AND (week_reset_minute IS NULL OR week_reset_minute BETWEEN 0 AND 1439) AND ((limit_window = 'week') = (week_reset_day IS NOT NULL AND week_reset_minute IS NOT NULL))",
+      ),
     ),
   ],
 );
@@ -1779,3 +2130,7 @@ export type GithubCheck = typeof githubChecks.$inferSelect;
 export type TaskRoundGithub = typeof taskRoundGithub.$inferSelect;
 export type TaskEstimate = typeof taskEstimates.$inferSelect;
 export type TokenUsageDay = typeof tokenUsageDays.$inferSelect;
+export type OrgModelPrice = typeof orgModelPrices.$inferSelect;
+export type TokenBudget = typeof tokenBudgets.$inferSelect;
+export type TokenAlert = typeof tokenAlerts.$inferSelect;
+export type PlanLimit = typeof planLimits.$inferSelect;

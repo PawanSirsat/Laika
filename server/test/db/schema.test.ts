@@ -85,7 +85,11 @@ describe('migrations', () => {
     'local_activity_days',
     'meeting_reviews',
     'member_ratings',
+    // LAI-773: an organisation's own API-equivalent prices.
+    'org_model_prices',
     'orgs',
+    // LAI-773, D-087: a developer's own plan limit.
+    'plan_limits',
     'project_memberships',
     'project_statuses',
     'projects',
@@ -107,6 +111,14 @@ describe('migrations', () => {
     'task_tags',
     'task_watchers',
     'tasks',
+    // LAI-773: budgets and their alerts, the telemetry match, the arrival rate.
+    'token_alert_dismissals',
+    'token_alerts',
+    'token_arrivals',
+    'token_budgets',
+    'token_session_days',
+    'token_session_skips',
+    'token_telemetry_series',
     // LAI-769, D-084: agents' token usage per day.
     'token_usage_days',
     'tokens',
