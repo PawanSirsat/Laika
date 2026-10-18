@@ -775,6 +775,39 @@ describe('the match in review B1’s other shapes', () => {
     expect(allOutput()).toBe(300);
   });
 
+  it('files with no session list, late for the day before, still take back what telemetry added', () => {
+    // As above, but the 16th comes without `sessions` (too many, or an older
+    // collector): its tokens are unplaced, held by no listed session, so the
+    // only way back to the 17th's telemetry is the day beside it.
+    const midnight = Date.UTC(2026, 9, 17);
+    recordTelemetry(
+      t.db,
+      actor(owner),
+      body(
+        [
+          {
+            kind: 'output',
+            value: 300,
+            session: SESSION,
+            start: midnight - 50_000,
+            end: midnight + 10_000,
+          },
+        ],
+        1,
+      ),
+      NOW,
+    );
+    expect(allOutput()).toBe(300);
+    const { sessions: _listed, ...unlisted } = outputDay('2026-10-16', 300);
+    recordTokenUsage(
+      t.db,
+      actor(owner),
+      { v: 1, collector_id: COLLECTOR, tz: 'UTC', usage: true, days: [unlisted] },
+      NOW,
+    );
+    expect(allOutput()).toBe(300);
+  });
+
   it('a failing match never costs the report: its rows are stored and the gap only drops', () => {
     recordTelemetry(
       t.db,
