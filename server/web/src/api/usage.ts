@@ -1,4 +1,5 @@
 import { agentClientName, type AgentClient } from './agent-clients.ts';
+import type { Budget, Runaway } from './budgets.ts';
 import { request } from './client.ts';
 
 /**
@@ -17,6 +18,21 @@ import { request } from './client.ts';
  * `view-type-drift.test.ts` holds the two in step.
  */
 
+/**
+ * A cost (LAI-773, D-084 item 10): what the tokens would cost at list price
+ * on the vendor's API — **API-equivalent, not your bill** — with what could
+ * not be priced beside it, so a cheap-looking figure is never a missing one.
+ */
+export interface UsageCost {
+  /** USD over the tokens of priced models. */
+  readonly usd: number;
+  /** Headline tokens of models with no price. */
+  readonly unpriced_tokens: number;
+  readonly unpriced_models: readonly string[];
+  /** Priced models whose price was inferred rather than read off a source. */
+  readonly unconfirmed_models: readonly string[];
+}
+
 /** The four counts, the headline (without cache reads) and the part tied to a task. */
 export interface UsageFigures {
   readonly tokens: number;
@@ -25,6 +41,7 @@ export interface UsageFigures {
   readonly cache_write: number;
   readonly cache_read: number;
   readonly attributed_tokens: number;
+  readonly cost: UsageCost;
 }
 
 export interface UsageSlice {
@@ -40,6 +57,8 @@ export interface UsageDeveloper extends UsageSlice {
   readonly user_id: string;
   readonly name: string;
   readonly attributed_tokens: number;
+  /** Theirs, API-equivalent — only ever beside their name for an admin. */
+  readonly cost: UsageCost;
 }
 
 export interface UsageAgentSlice extends UsageSlice {
@@ -48,6 +67,8 @@ export interface UsageAgentSlice extends UsageSlice {
 
 export interface UsageModelSlice extends UsageSlice {
   readonly model: string;
+  /** USD at list price; `null` when the model has no price — never 0. */
+  readonly cost: number | null;
 }
 
 export interface UsageTaskSlice extends UsageSlice {
@@ -106,6 +127,72 @@ export interface Usage {
   readonly org_totals: UsageFigures | null;
   /** Rework cost per project the reader may read, by name. */
   readonly rework: readonly ReworkCost[];
+  /** What Claude Code's telemetry added over the files; `null` for a space. */
+  readonly telemetry: UsageTelemetry | null;
+  /** Of every input-side token, the share read from the cache, and what that saved. */
+  readonly cache: UsageCache;
+  readonly cache_by_project: readonly UsageCacheProject[];
+  /** What tasks accepted in the range cost, per project and per agent. */
+  readonly accepted: UsageAccepted;
+  /** Each space's and sprint's budget, then open tasks at 80% of theirs or more. */
+  readonly budgets: readonly Budget[];
+  /** Runaway alerts per project, a count a day later — owners and admins; `null` otherwise. */
+  readonly runaway: readonly UsageRunawayCount[] | null;
+}
+
+/**
+ * What OpenTelemetry added over the session files (LAI-773): the side calls a
+ * transcript never shows. `cost_usd_reported` is Claude Code's own figure for
+ * the telemetered sessions, for a reader of the organisation's figures.
+ */
+export interface UsageTelemetry {
+  readonly tokens: number;
+  readonly cost_usd_reported: number | null;
+}
+
+/** Cache efficiency: the share of input-side tokens read from the cache, and the saving. */
+export interface UsageCache {
+  readonly share: number | null;
+  readonly saving_usd: number | null;
+}
+
+/** One project's runaway alerts: a count, never which task or whose. */
+export interface UsageRunawayCount {
+  readonly project: { readonly slug: string; readonly name: string };
+  readonly alerts: number;
+}
+
+/** One project's cache efficiency (LAI-773). */
+export interface UsageCacheProject {
+  readonly project: { readonly slug: string; readonly name: string };
+  readonly cache_read: number;
+  /** input + cache writes + cache reads. */
+  readonly input_side: number;
+  readonly share: number | null;
+  /** `null` when none of its models has a price. */
+  readonly saving_usd: number | null;
+}
+
+/** Tasks accepted in the range and what they cost (LAI-773) — never per person. */
+export interface UsageAccepted {
+  readonly by_project: readonly {
+    readonly project: { readonly slug: string; readonly name: string };
+    readonly tasks: number;
+    readonly tokens: number;
+    readonly cost: UsageCost;
+    readonly cost_per_task: number;
+  }[];
+  /** Only agents at least three people used on those tasks. */
+  readonly by_agent: readonly {
+    readonly agent: AgentClient;
+    readonly tasks: number;
+    readonly people: number;
+    readonly tokens: number;
+    readonly cost: UsageCost;
+    readonly cost_per_task: number;
+  }[];
+  /** Agents left out for having fewer than three people. */
+  readonly agents_withheld: number;
 }
 
 export interface UsageWeek extends UsageSlice {
@@ -134,12 +221,15 @@ export interface UsageCounts {
   readonly output: number;
   readonly cache_write: number;
   readonly cache_read: number;
+  /** API-equivalent, not your bill (LAI-773). */
+  readonly cost: UsageCost;
 }
 
 export interface TaskUsagePerson extends UsageSlice {
   readonly user_id: string;
   readonly name: string;
   readonly by_agent: readonly UsageAgentSlice[];
+  readonly cost: UsageCost;
 }
 
 export interface TaskUsageRound extends UsageSlice {
@@ -167,6 +257,10 @@ export interface TaskUsage {
    * tied to a task — or `null` when they see nobody's.
    */
   readonly attributed: { readonly tokens: number; readonly of: number } | null;
+  /** Its budget in force — a lead's, or the frozen forecast's p80 — or `null` (LAI-773). */
+  readonly budget: Budget | null;
+  /** The open runaway alert on it; sent only to the person it is for (LAI-773). */
+  readonly runaway: Runaway | null;
 }
 
 /** The ranges the page offers — inside the server's 1–92 days. */
@@ -325,4 +419,58 @@ export function reworkLine(r: ReworkCost): string {
         }`;
   const time = `${spentLabel(r.time_ms)} of rework${r.open > 0 ? `, ${String(r.open)} still open` : ''}`;
   return `${backs} · ${tokens} · ${time}`;
+}
+
+// ------------------------------------------------------------------ cost
+
+/**
+ * What every dollar figure says beside it (D-084 item 10): everyone here is on
+ * a flat plan, and this is what the same tokens would cost on the API.
+ */
+export const COST_LABEL = 'API-equivalent, not your bill';
+
+/** `$0.42`, `$12.30`, `$1,234` — and `<$0.01` rather than a `$0.00` that says none. */
+export function usd(amount: number): string {
+  if (amount <= 0) return '$0';
+  if (amount < 0.01) return '<$0.01';
+  if (amount < 1000) return `$${amount.toFixed(2)}`;
+  return `$${Math.round(amount).toLocaleString('en-US')}`;
+}
+
+/**
+ * A cost as one figure: dollars, or **no price** when nothing in it could be
+ * priced — never `$0` for tokens nobody priced.
+ */
+export function costText(cost: UsageCost): string {
+  if (cost.usd === 0 && cost.unpriced_tokens > 0) return 'no price';
+  return usd(cost.usd);
+}
+
+/**
+ * What a cost leaves out or guesses, in words: the tokens of models with no
+ * price, and the models whose price was inferred. Empty when neither.
+ */
+export function costCaveats(cost: UsageCost): string[] {
+  const out: string[] = [];
+  if (cost.unpriced_tokens > 0 && cost.usd > 0) {
+    out.push(
+      `not counting ${compactTokens(cost.unpriced_tokens)} tokens of ${cost.unpriced_models.join(', ')} (no price)`,
+    );
+  }
+  if (cost.unconfirmed_models.length > 0) {
+    out.push(`inferred price for ${cost.unconfirmed_models.join(', ')}`);
+  }
+  return out;
+}
+
+/** A model's own cost: dollars, or `no price` for one nobody priced. */
+export function modelCostText(cost: number | null): string {
+  return cost === null ? 'no price' : usd(cost);
+}
+
+/** A share of tokens as a whole percentage, or `—` with nothing to share. */
+export function percent(share: number | null): string {
+  if (share === null) return '—';
+  if (share > 0 && share < 0.01) return '<1%';
+  return `${String(Math.round(share * 100))}%`;
 }

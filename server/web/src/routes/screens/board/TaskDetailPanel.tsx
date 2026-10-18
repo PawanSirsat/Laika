@@ -777,6 +777,7 @@ export function TaskDetailPanel({
           <TokensSection
             taskId={task.id}
             taskKey={task.key}
+            projectSlug={slug}
             started={task.started_at !== null}
             refreshKey={task.updated_at}
           />

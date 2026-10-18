@@ -3,6 +3,9 @@ import { agentClientName } from '../../../api/agent-clients.ts';
 import { ApiError } from '../../../api/errors.ts';
 import {
   compactTokens,
+  COST_LABEL,
+  costCaveats,
+  costText,
   exactTokens,
   getPersonUsage,
   shareOf,
@@ -128,6 +131,12 @@ export function UsageCard({
                   <dd className="usage-person-value">
                     {shareOf(totals.attributed_tokens, totals.tokens)}
                   </dd>
+                </div>
+                {/* LAI-773: theirs, for them and for an admin — never the bill. */}
+                <div data-stat="cost" title={costCaveats(totals.cost).join(' · ')}>
+                  <dt>Cost</dt>
+                  <dd className="usage-person-value">{costText(totals.cost)}</dd>
+                  <dd className="usage-cost-caveat">{COST_LABEL}</dd>
                 </div>
               </dl>
               <Columns

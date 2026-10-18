@@ -435,6 +435,41 @@ const PAIRS: readonly Pair[] = [
     client: 'TaskUsage',
     clientFile: 'usage.ts',
   },
+  /*
+   * Token usage, phase 3 (LAI-773), paired the moment each client existed:
+   * budgets and the runaway banner, a person's alerts, their plan limit, and
+   * the API-equivalent price table.
+   */
+  {
+    server: 'BudgetView',
+    serverFile: 'services/token-budgets.ts',
+    client: 'Budget',
+    clientFile: 'budgets.ts',
+  },
+  {
+    server: 'RunawayView',
+    serverFile: 'services/token-budgets.ts',
+    client: 'Runaway',
+    clientFile: 'budgets.ts',
+  },
+  {
+    server: 'TokenAlertView',
+    serverFile: 'services/token-budgets.ts',
+    client: 'TokenAlert',
+    clientFile: 'token-alerts.ts',
+  },
+  {
+    server: 'PlanLimitView',
+    serverFile: 'services/plan-limit.ts',
+    client: 'PlanLimit',
+    clientFile: 'plan-limit.ts',
+  },
+  {
+    server: 'ModelPricesView',
+    serverFile: 'services/org-model-prices.ts',
+    client: 'ModelPrices',
+    clientFile: 'model-prices.ts',
+  },
   // Nested, through a table for the reason given below the profile's.
   ...(
     [
@@ -451,6 +486,12 @@ const PAIRS: readonly Pair[] = [
       ['UsageCounts', 'services/token-usage.ts', 'usage.ts'],
       ['TaskUsagePerson', 'services/token-usage.ts', 'usage.ts'],
       ['TaskUsageRound', 'services/token-usage.ts', 'usage.ts'],
+      // LAI-773: the cost on every figure, cache efficiency, accepted-task cost.
+      ['UsageCost', 'services/model-prices.ts', 'usage.ts'],
+      ['UsageCacheProject', 'services/token-usage.ts', 'usage.ts'],
+      ['UsageAccepted', 'services/token-usage.ts', 'usage.ts'],
+      ['ProjectBudgets', 'services/token-budgets.ts', 'budgets.ts'],
+      ['ModelPrice', 'services/model-prices.ts', 'model-prices.ts'],
     ] as const
   ).map(([name, serverFile, clientFile]) => ({
     server: name,

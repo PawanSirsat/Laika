@@ -13,7 +13,15 @@ import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { LAIKA, ONROUTE } from './capacity-org.ts';
 import { offered, pick } from './dropdown.ts';
-import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
+import {
+  closeBrowser,
+  open,
+  reply,
+  setTheme,
+  until,
+  type ApiStub,
+  type StubCall,
+} from './harness.ts';
 
 void after(async () => {
   await closeBrowser();
@@ -44,6 +52,14 @@ const MEMBER = {
   ],
 };
 
+/** A cost as the server prices one (LAI-773): dollars, and what went unpriced or inferred. */
+const cost = (usd: number, unpriced = 0, models: string[] = [], inferred: string[] = []) => ({
+  usd,
+  unpriced_tokens: unpriced,
+  unpriced_models: models,
+  unconfirmed_models: inferred,
+});
+
 const figures = (tokens: number, cacheRead: number, attributed: number) => ({
   tokens,
   input: Math.round(tokens * 0.01),
@@ -51,6 +67,27 @@ const figures = (tokens: number, cacheRead: number, attributed: number) => ({
   cache_write: tokens - Math.round(tokens * 0.01) - Math.round(tokens * 0.2),
   cache_read: cacheRead,
   attributed_tokens: attributed,
+  cost: cost(Math.round(tokens * 1.2e-5 * 100) / 100),
+});
+
+/** A budget as `services/token-budgets.ts` answers one. */
+const budget = (over: Record<string, unknown>) => ({
+  scope: 'task',
+  id: 't1',
+  project: { slug: 'laika', name: 'Laika' },
+  label: 'LAI-769',
+  title: 'Token usage, phase 1',
+  source: 'forecast',
+  tokens: 10_000_000,
+  period: null,
+  used: 12_000_000,
+  share: 1.2,
+  state: 'over',
+  crossed: [
+    { threshold: 80, at: 1 },
+    { threshold: 100, at: 2 },
+  ],
+  ...over,
 });
 
 function trend(days: number, perDay: (i: number) => number) {
@@ -78,6 +115,7 @@ function orgUsage(days = 30) {
         tokens: 200_000_000,
         cache_read: 13e9,
         attributed_tokens: 0,
+        cost: cost(2_400),
       },
       {
         user_id: 'u2',
@@ -85,6 +123,7 @@ function orgUsage(days = 30) {
         tokens: 54_973_258,
         cache_read: 3_346_307_361,
         attributed_tokens: 12_000_000,
+        cost: cost(659.68),
       },
     ],
     by_agent: [
@@ -92,9 +131,9 @@ function orgUsage(days = 30) {
       { agent: 'codex', tokens: 36_057, cache_read: 6_307_361 },
     ],
     by_model: [
-      { model: 'claude-opus-5-5', tokens: 230_000_000, cache_read: 15e9 },
-      { model: 'claude-fable-5-1', tokens: 24_937_201, cache_read: 1.34e9 },
-      { model: 'gpt-6.1-sol', tokens: 36_057, cache_read: 6_307_361 },
+      { model: 'claude-opus-5-5', tokens: 230_000_000, cache_read: 15e9, cost: 2_210.5 },
+      { model: 'claude-fable-5-1', tokens: 24_937_201, cache_read: 1.34e9, cost: 849.18 },
+      { model: 'gpt-6.1-sol', tokens: 36_057, cache_read: 6_307_361, cost: 0.42 },
     ],
     top_tasks: [
       {
@@ -121,6 +160,57 @@ function orgUsage(days = 30) {
         share: 0.12,
       },
     ],
+    // LAI-773: telemetry, cache, accepted-task cost, budgets, runaway counts.
+    telemetry: { tokens: 18_400_000, cost_usd_reported: 3_120.55 },
+    cache: { share: 0.984, saving_usd: 41_520.3 },
+    cache_by_project: [
+      {
+        project: { slug: 'laika', name: 'Laika' },
+        cache_read: 800_000_000,
+        input_side: 812_000_000,
+        share: 0.985,
+        saving_usd: 3_200.5,
+      },
+    ],
+    accepted: {
+      by_project: [
+        {
+          project: { slug: 'laika', name: 'Laika' },
+          tasks: 6,
+          tokens: 9_000_000,
+          cost: cost(62.4),
+          cost_per_task: 10.4,
+        },
+      ],
+      by_agent: [
+        {
+          agent: 'claude-code',
+          tasks: 6,
+          people: 3,
+          tokens: 8_700_000,
+          cost: cost(60.1),
+          cost_per_task: 10.02,
+        },
+      ],
+      agents_withheld: 1,
+    },
+    budgets: [
+      budget({
+        scope: 'project',
+        id: 'p1',
+        label: 'Laika',
+        title: null,
+        source: 'set',
+        tokens: 15_000_000,
+        period: { from: '2026-10-01', to: '2026-10-31' },
+        used: 12_000_000,
+        share: 0.8,
+        state: 'warn',
+        crossed: [{ threshold: 80, at: 1 }],
+      }),
+      budget({}),
+    ],
+    runaway: [{ project: { slug: 'laika', name: 'Laika' }, alerts: 2 }],
   };
 }
 
@@ -136,6 +226,9 @@ function spaceUsage(slug: string, reader: 'owner' | 'member' = 'member') {
     totals: figures(12_000_000, 800_000_000, 12_000_000),
     by_developer: null,
     org_totals: reader === 'owner' ? figures(254_973_258, 16_346_307_361, 12_000_000) : null,
+    // Telemetry ties to no task, so a space has none; counts are for owners and admins.
+    telemetry: null,
+    runaway: reader === 'owner' ? [{ project: { slug, name: 'Laika' }, alerts: 2 }] : null,
   };
 }
 
@@ -172,14 +265,43 @@ function personUsage(userId: string) {
       { agent: 'claude-code', tokens: 100_000_000, cache_read: 7e9 },
       { agent: 'codex', tokens: 8_000_000, cache_read: 2e8 },
     ],
-    by_model: [{ model: 'claude-opus-5-5', tokens: 108_000_000, cache_read: 7.2e9 }],
+    by_model: [
+      { model: 'claude-opus-5-5', tokens: 108_000_000, cache_read: 7.2e9, cost: 1_872.44 },
+    ],
     no_token_data: ['cursor'],
     sharing: { org_enabled: true, enabled: true },
   };
 }
 
+/** The person's own plan limit, as `services/plan-limit.ts` answers one. */
+const planLimit = (over: Record<string, unknown> = {}) => ({
+  plan: null,
+  window: null,
+  limit_tokens: null,
+  week_reset: null,
+  tz: 'UTC',
+  used: 0,
+  rate_per_hour: 0,
+  window_start: null,
+  window_end: null,
+  reaches_limit_at: null,
+  reached: false,
+  estimate: true,
+  ...over,
+});
+
+const projectBudgets = (canSet: boolean) => ({
+  project_budget: null,
+  sprints: [],
+  tasks: [],
+  can_set: canSet,
+});
+
 const BASE: ApiStub = {
   '/api/v1/projects': { data: [LAIKA, ONROUTE], next_cursor: null },
+  '/api/v1/me/plan-limit': planLimit(),
+  '/api/v1/projects/laika/budgets': projectBudgets(false),
+  '/api/v1/projects/onroute/budgets': projectBudgets(false),
   '/api/v1/org': {
     id: 'o1',
     name: 'Borealis Labs',
@@ -433,6 +555,264 @@ void describe('a member', () => {
       assert.match(await empty.innerText(), /No tokens are tied to Onroute’s tasks yet/);
       assert.match(await empty.innerText(), /mark the task they work on/);
       assert.equal(await h.page.locator('.usage-trend').count(), 0, 'an empty chart is drawn');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+const NOW_MS = Date.now();
+
+/** A person's own alerts, as `GET /me/token-alerts` answers them (LAI-773). */
+const ALERTS = [
+  {
+    id: 'a-run',
+    kind: 'runaway',
+    scope: 'task',
+    threshold: 95,
+    tokens: 7_000_000,
+    limit_tokens: 5_994_000,
+    created_at: NOW_MS - 600_000,
+    project: { slug: 'laika', name: 'Laika' },
+    task: { id: 't1', key: 'LAI-769', title: 'Token usage, phase 1' },
+    sprint: null,
+  },
+  {
+    id: 'a-80',
+    kind: 'budget',
+    scope: 'task',
+    threshold: 80,
+    tokens: 2_100_000,
+    limit_tokens: 2_500_000,
+    created_at: NOW_MS - 900_000,
+    project: { slug: 'laika', name: 'Laika' },
+    task: { id: 't2', key: 'LAI-770', title: 'Attribution' },
+    sprint: null,
+  },
+];
+
+const text = async (page: Page, selector: string): Promise<string> =>
+  (await page.locator(selector).innerText()).trim();
+
+void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => {
+  void test('an owner: cost labelled API-equivalent, cache, telemetry, accepted-task cost, budgets and runaway counts', async () => {
+    const h = await open('/usage', ownerStub());
+    try {
+      await ready(h.page);
+      assert.equal(await stat(h.page, 'cost'), '$3,060');
+      assert.match(
+        await text(h.page, '.usage-tiles [data-stat="cost"]'),
+        /API-equivalent, not your bill/,
+      );
+      assert.equal(await stat(h.page, 'cache'), '98%');
+      assert.match(await text(h.page, '.usage-tiles [data-stat="cache"]'), /saved \$41,520/);
+      assert.match(
+        await text(h.page, '[data-telemetry]'),
+        /18\.4M of these tokens came from Claude Code’s own telemetry/,
+      );
+      assert.match(await text(h.page, '[data-telemetry]'), /nothing is counted twice/);
+      // Each model priced; each person's, for an owner only.
+      assert.match(await text(h.page, '.usage-card[data-section="models"]'), /\$0\.42/);
+      assert.match(await text(h.page, '.usage-card[data-section="models"]'), /API-equivalent/);
+      assert.match(await text(h.page, '.usage-card[data-section="developers"]'), /\$2,400/);
+
+      const accepted = await text(h.page, '.usage-card[data-section="accepted"]');
+      assert.match(accepted, /Laika\s+6\s+\$10\.40\s+\$62\.40/);
+      assert.match(accepted, /Claude Code/);
+      assert.match(accepted, /1 agent is not shown: fewer than three people/);
+
+      assert.match(
+        await text(h.page, '.usage-card[data-section="cache"]'),
+        /Laika\s+99%\s+\$3,201/,
+      );
+
+      const budgets = h.page.locator('.usage-card[data-section="budgets"]');
+      assert.equal(
+        await budgets.locator('[data-scope="project"] .budget-badge').innerText(),
+        '80%',
+      );
+      assert.equal(await budgets.locator('[data-scope="task"] .budget-badge').innerText(), '100%');
+      assert.match(await budgets.innerText(), /12M of 10M · 120%/);
+      assert.match(await budgets.innerText(), /Choose a space to set/);
+      // All spaces: read-only.
+      assert.equal(await budgets.locator('.budget-editor').count(), 0);
+
+      const runaway = await text(h.page, '.usage-card[data-section="runaway"]');
+      assert.match(runaway, /Laika\s+2 alerts/);
+      assert.doesNotMatch(runaway, /LAI-769|Ada|Bea/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a member in a space: no runaway counts, no per-person cost, no budget to set', async () => {
+    const h = await open('/usage', memberStub());
+    try {
+      await ready(h.page);
+      assert.equal(await h.page.locator('.usage-card[data-section="runaway"]').count(), 0);
+      assert.equal(await h.page.locator('[data-telemetry]').count(), 0);
+      await h.page.locator('.usage-card[data-section="budgets"]').waitFor();
+      await until(() => h.calls.some((c) => c.path === '/api/v1/projects/laika/budgets'));
+      assert.equal(
+        await h.page.locator('.usage-card[data-section="budgets"] .budget-editor').count(),
+        0,
+      );
+      assert.doesNotMatch(await text(h.page, '.usage-card[data-section="developers"]'), /\$/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a lead in a space sets the month’s budget and a sprint’s, and the page reads again', async () => {
+    const writes: StubCall[] = [];
+    const h = await open('/usage', {
+      ...ownerStub(),
+      '/api/v1/projects/laika/budgets': projectBudgets(true),
+      '/api/v1/projects/laika/sprints': {
+        data: [
+          {
+            id: 's1',
+            project_id: 'p1',
+            name: 'Sprint 12',
+            goal: null,
+            starts_on: 1,
+            ends_on: 2,
+            status: 'active',
+            created_at: 1,
+            updated_at: 1,
+          },
+        ],
+        next_cursor: null,
+      },
+      '/api/v1/projects/laika/budget': (call: StubCall) => {
+        writes.push(call);
+        return { budget: null };
+      },
+      '/api/v1/sprints/s1/budget': (call: StubCall) => {
+        writes.push(call);
+        return { budget: null };
+      },
+    });
+    try {
+      await ready(h.page);
+      await pick(h.page.getByRole('combobox', { name: 'Space' }), 'laika');
+      const card = h.page.locator('.usage-card[data-section="budgets"]');
+      const month = card.locator('[data-group="month"]');
+      await month.locator('.budget-editor input').waitFor({ timeout: 10_000 });
+      await month.locator('.budget-editor input').fill('15M');
+      const reads = h.calls.filter((c) => c.path === '/api/v1/usage').length;
+      await month.getByRole('button', { name: 'Set' }).click();
+      await until(() => writes.length === 1);
+      assert.deepEqual(writes[0]?.body, { tokens: 15_000_000 });
+      assert.equal(writes[0]?.method, 'PUT');
+      await until(() => h.calls.filter((c) => c.path === '/api/v1/usage').length > reads);
+      assert.ok(h.calls.filter((c) => c.path === '/api/v1/usage').length > reads, 'not read again');
+
+      await pick(card.getByRole('combobox', { name: 'Sprint to budget' }), 's1');
+      const add = card.locator('.usage-budget-add .budget-editor');
+      await add.locator('input').fill('4,000,000');
+      await add.getByRole('button', { name: 'Set' }).click();
+      await until(() => writes.length === 2);
+      assert.equal(writes[1]?.path, '/api/v1/sprints/s1/budget');
+      assert.deepEqual(writes[1]?.body, { tokens: 4_000_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('alerts for the person: a banner with a way to each, put away one at a time, and the rail’s count', async () => {
+    let open_ = [...ALERTS];
+    const dismissed: string[] = [];
+    const h = await open('/usage', {
+      ...ownerStub(),
+      '/api/v1/me/token-alerts': () => ({ alerts: open_ }),
+      '/api/v1/me/token-alerts/a-80/dismiss': (call: StubCall) => {
+        dismissed.push(call.method);
+        open_ = open_.filter((a) => a.id !== 'a-80');
+        return reply(204, null);
+      },
+    });
+    try {
+      await ready(h.page);
+      const banner = h.page.locator('[data-section="alerts"]');
+      await banner.waitFor({ timeout: 10_000 });
+      assert.match(await banner.innerText(), /For you · 2 alerts/);
+      assert.match(
+        await banner.innerText(),
+        /LAI-769: your agent passed the task’s p95 of 5\.99M at 7M with nothing landed for an hour\./,
+      );
+      assert.match(
+        await banner.innerText(),
+        /LAI-770 reached 80% of its budget — 2\.1M of 2\.5M\./,
+      );
+      assert.match(await banner.innerText(), /never reported on you/);
+      const badge = h.page.locator('a[href="/usage"] .sidebar-count');
+      // The figure, then the visually hidden name the rail adds for a reader.
+      const count = async (): Promise<string> => (await badge.innerText()).split('\n')[0] ?? '';
+      await until(async () => (await badge.count()) > 0);
+      assert.equal(await count(), '2');
+
+      await banner
+        .locator('.usage-alert', { hasText: 'LAI-770' })
+        .getByRole('button', { name: 'Dismiss' })
+        .click();
+      await until(() => dismissed.length === 1);
+      assert.deepEqual(dismissed, ['POST']);
+      await until(async () => (await count()) === '1');
+      assert.equal(await count(), '1');
+      assert.equal(await banner.locator('.usage-alert').count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the plan limit: the person’s own, set here, and said as an estimate with a time', async () => {
+    const puts: StubCall[] = [];
+    const set = planLimit({
+      plan: 'claude-max-5x',
+      window: '5h',
+      limit_tokens: 3_000_000,
+      used: 1_200_000,
+      rate_per_hour: 600_000,
+      window_start: NOW_MS - 5 * 3_600_000,
+      reaches_limit_at: NOW_MS + 3 * 3_600_000,
+    });
+    const h = await open('/usage', {
+      ...ownerStub(),
+      '/api/v1/me/plan-limit': (call: StubCall) => {
+        if (call.method === 'PUT') {
+          puts.push(call);
+          return set;
+        }
+        return planLimit();
+      },
+    });
+    try {
+      const card = h.page.locator('[data-section="plan-limit"]');
+      await card.locator('form').waitFor({ timeout: 20_000 });
+      assert.match(await card.innerText(), /yours only · an estimate/);
+      await pick(card.getByRole('combobox', { name: 'Plan' }), 'claude-max-5x');
+      assert.match(await card.innerText(), /Five times Pro’s per-session usage/);
+      await card.getByLabel('Your limit, in tokens').fill('3M');
+      await card.getByRole('button', { name: 'Save' }).click();
+      await until(() => puts.length === 1);
+      assert.deepEqual(
+        { ...(puts[0]?.body as Record<string, unknown>), tz: 'any' },
+        { plan: 'claude-max-5x', window: '5h', limit_tokens: 3_000_000, tz: 'any' },
+      );
+      const forecast = card.locator('[data-forecast]');
+      await forecast.waitFor();
+      assert.match(
+        await forecast.innerText(),
+        /^At this rate you reach your limit around \d\d:\d\d\.$/,
+      );
+      assert.match(await card.innerText(), /Estimate\s+1\.2M of 3M used · 600K an hour/);
+      // Never asked about anybody else: one path, the reader's own.
+      assert.ok(
+        h.calls
+          .filter((c) => c.path.includes('plan-limit'))
+          .every((c) => c.path === '/api/v1/me/plan-limit'),
+      );
     } finally {
       await h.close();
     }

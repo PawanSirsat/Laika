@@ -68,3 +68,26 @@ export function getOwnLocalActivity(signal?: AbortSignal): Promise<OwnLocalActiv
 export function deleteOwnLocalActivity(): Promise<void> {
   return request<void>('/me/local-activity', { method: 'DELETE' });
 }
+
+/** The receiver's path for OTLP metrics (LAI-773, SPEC §6.4). */
+export const OTLP_METRICS_PATH = '/api/v1/otlp/v1/metrics';
+
+/**
+ * The OpenTelemetry block (LAI-773, design §3), with this board's address in
+ * it and the token left as `$LAIKA_TOKEN` — the variable `laika init` and the
+ * Connect steps already set — so the page never prints a secret. Metrics only:
+ * JSON over HTTP (Laika has no protobuf decoder), cumulative so a retried
+ * export cannot count twice, and logs off, because a log exporter can carry
+ * prompt text and Laika refuses it.
+ */
+export function otelEnvBlock(origin: string): string {
+  return [
+    'export CLAUDE_CODE_ENABLE_TELEMETRY=1',
+    'export OTEL_METRICS_EXPORTER=otlp',
+    'export OTEL_EXPORTER_OTLP_PROTOCOL=http/json',
+    `export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="${origin}${OTLP_METRICS_PATH}"`,
+    'export OTEL_EXPORTER_OTLP_METRICS_HEADERS="Authorization=Bearer $LAIKA_TOKEN"',
+    'export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative',
+    'export OTEL_LOGS_EXPORTER=none',
+  ].join('\n');
+}

@@ -183,8 +183,17 @@ function UsageRoute() {
   const {
     route: { navigate },
     me,
+    tokenAlerts,
+    refreshTokenAlerts,
   } = useShell();
-  return <UsageScreen me={me} onNavigate={navigate} />;
+  return (
+    <UsageScreen
+      me={me}
+      onNavigate={navigate}
+      alerts={tokenAlerts}
+      onAlertsChanged={refreshTokenAlerts}
+    />
+  );
 }
 
 function ReviewRoute() {

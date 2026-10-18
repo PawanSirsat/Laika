@@ -12,16 +12,22 @@ import {
   agentsNote,
   countedNote,
   compactTokens,
+  COST_LABEL,
+  costCaveats,
+  costText,
   getPersonUsage,
   getTaskUsage,
   getUsage,
   mayReadOrgUsage,
   mayReadPeopleUsage,
+  modelCostText,
+  percent,
   roundLabel,
   shareOf,
   type TaskUsage,
   USAGE_RANGES,
   reworkLine,
+  usd,
 } from '../../src/api/usage.ts';
 
 function stub(answer: unknown): string[] {
@@ -110,11 +116,20 @@ void describe('a task’s tokens (LAI-770)', () => {
     tz: 'UTC',
     first_day: '2026-10-12',
     last_day: '2026-10-16',
-    totals: { tokens: 666, input: 111, output: 222, cache_write: 333, cache_read: 1_054 },
+    totals: {
+      tokens: 666,
+      input: 111,
+      output: 222,
+      cache_write: 333,
+      cache_read: 1_054,
+      cost: { usd: 0, unpriced_tokens: 0, unpriced_models: [], unconfirmed_models: [] },
+    },
     people: 'everyone',
     by_person: [],
     by_round: [],
     attributed: { tokens: 666, of: 706 },
+    budget: null,
+    runaway: null,
     ...extra,
   });
 
@@ -158,6 +173,7 @@ void describe('a task’s tokens (LAI-770)', () => {
         name: 'Bea',
         tokens: 1_240_000,
         cache_read: 0,
+        cost: { usd: 0, unpriced_tokens: 0, unpriced_models: [], unconfirmed_models: [] },
         by_agent: [
           { agent: 'claude-code', tokens: 1_200_000, cache_read: 0 },
           { agent: 'codex', tokens: 40_000, cache_read: 0 },
@@ -197,5 +213,51 @@ void describe('rework cost, per project (LAI-772)', () => {
       }),
       '1 send-back on 1 task · no tokens tied to it after · 30 min of rework',
     );
+  });
+});
+
+void describe('cost, API-equivalent (LAI-773)', () => {
+  const cost = (
+    usdAmount: number,
+    unpriced = 0,
+    models: string[] = [],
+    inferred: string[] = [],
+  ) => ({
+    usd: usdAmount,
+    unpriced_tokens: unpriced,
+    unpriced_models: models,
+    unconfirmed_models: inferred,
+  });
+
+  void test('is labelled for what it is, every time', () => {
+    assert.equal(COST_LABEL, 'API-equivalent, not your bill');
+  });
+
+  void test('dollars to the cent, and never a $0.00 that says none', () => {
+    assert.equal(usd(12.345), '$12.35');
+    assert.equal(usd(0.004), '<$0.01');
+    assert.equal(usd(0), '$0');
+    assert.equal(usd(12_345.6), '$12,346');
+  });
+
+  void test('a model nobody priced is no price, never $0', () => {
+    assert.equal(costText(cost(0, 1_000, ['mystery'])), 'no price');
+    assert.equal(modelCostText(null), 'no price');
+    assert.equal(modelCostText(0.5), '$0.50');
+    assert.equal(costText(cost(3.2, 1_000, ['mystery'])), '$3.20');
+  });
+
+  void test('says what it leaves out and what it guessed', () => {
+    assert.deepEqual(costCaveats(cost(3.2, 1_200_000, ['mystery'], ['gpt-5.2-codex'])), [
+      'not counting 1.2M tokens of mystery (no price)',
+      'inferred price for gpt-5.2-codex',
+    ]);
+    assert.deepEqual(costCaveats(cost(3.2)), []);
+  });
+
+  void test('a share in whole percent, a dash for none', () => {
+    assert.equal(percent(0.981), '98%');
+    assert.equal(percent(0.004), '<1%');
+    assert.equal(percent(null), '—');
   });
 });
