@@ -55,3 +55,38 @@ at the start.
 
 **State**
 Both in .tasks/review/. Not pushed. Board cards commented; never moved to Done.
+
+## 2026-10-18T06:25:00Z — LAI-773, LAI-776 (review round 1)
+
+**What changed**
+- server/src/services/token-telemetry.ts — `recomputeGap` matches each session over every day it has rows on, then floors and spreads (B1); `zoneFor` reads the stated zone first; `storeZone`; points held to today − 31 … today + 1 in that zone, `msOf` capped at `Date`'s range (`day_out_of_range`)
+- server/src/db/schema.ts, migrations/0040_token_phase5.sql + meta — `token_usage_zones`, `token_session_days(user_id, session_key)`; 0040 regenerated (unshipped), still additive
+- server/src/services/token-usage.ts — `telemetryMatch`: zone, sessions, excluded and the gap in one best-effort savepoint; B2's `peopleIn`, `foldAgents`, `foldModels`, the accepted-cost fold, `MIN_AGENT_PEOPLE` exported
+- server/src/http/routes/otlp.ts — actor and consent in a middleware ahead of `bodyLimit`
+- server/src/services/local-activity.ts — delete-history removes the stored zone
+- server/src/services/model-prices.ts — Sonnet 5.5 and Haiku 5.5 rows quoted from the pricing page
+- server/test/** — telemetry (B1 repros, B1 shapes, the window), usage (B2 ×5, delete-history zone), budgets (59/61 min, 79/80%), prices, OTLP door, schema/migrate/drift lists
+- server/web/src/api/usage.ts, UsageScreen.tsx, AcceptedCostCard.tsx; web tests — `few_people`, *Other (fewer than 3 people)*, no price off `unpriced_models`
+- cli/src/activity-sync.ts, activity-usage.ts, activity.ts, README; cli tests — `telemetryToBoard`; `excluded` only with telemetry to this board
+- docs/SPEC.md §4.13, §4.38, §4.44, §6.4; docs/DECISIONS.md D-087 items 2 and 7
+- .tasks/backlog/LAI-783-token-phase5-review-follow-ups.md (filed); both task files' round-1 notes
+
+**Decisions**
+- The gap is matched per session over its whole span, then floored — rather than over adjacent days only, since a session can run for days and the span costs the same handful of indexed reads.
+- The telemetry zone is stored per person from each usage report (`token_usage_zones`), rather than read off `local_activity_days`, which a person sharing usage but no snapshot has none of.
+- The fold uses `usage.read_people`, so an owner's **token** is folded too, as `by_developer` is withheld from it; the owner's wording was "admins and owners see everything, as now", and as now a token sees no person.
+- The folded row is keyed and labelled by `few_people`, not by `agent: "other"`, which the `other` agent kind already uses.
+- The CLI decides "telemetry configured" from settings.json `env` or the environment with the endpoint under this board's `/api/v1/otlp/`, rather than from the variables alone: telemetry pointed at another collector brings Laika nothing to drop.
+
+**Discovered**
+- The first mutation run left one survivor: removing the span's neighbour days passed the late-files test, because that test listed its session and the key reached the next day alone. Added the unlisted case (818d70d8); now `600 to be 300`.
+- A telemetry flip alone does not make the CLI resend: the keys go with the next report, which a session started with telemetry on produces. The test states that; left as is.
+- Folding hides which agent, not how much: a fold holding one person's one agent is still that person's figure. Recorded under D-087's "What this does not decide", not changed.
+- Three things the review did not hold the task for → LAI-783 filed (discovered-from: LAI-773).
+
+**Gate** (after the last code edit, 818d70d8; each to its own file, nothing piped)
+- `pnpm test` **0** — server 3088 passed + 8 skipped of 3096 cases (151 files + 1 skipped), cli 429 passed + 2 skipped of 431 cases, web 2136/2136 cases; `pnpm lint` **0**; `pnpm format` **0**. No LAI-768 timeout.
+- Mutations: 27, all red after 818d70d8 (26 on the first run, one survivor, then its test); the B1 repros against 9c17e9c9's code: 6 of 6 red.
+
+**State**
+Both still in .tasks/review/. Not pushed. Never moved to Done.

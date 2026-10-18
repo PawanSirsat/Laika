@@ -85,3 +85,14 @@ useless if tokens arrive only at session end. Not pushed. No new dependency.
 045236d6 (SPEC + D-087).
 
 **Gate and screenshots**: see LAI-773's notes and the log entry.
+
+## Builder notes — review round 1 (2026-10-18)
+
+The round-1 review of LAI-773 (one branch for both) touched this task's side
+once: **ALSO FIX 5**, in d2ba8c86. The collector now sends `excluded` keys
+only when Claude Code on that machine sends its metrics to this board
+(`telemetryToBoard`, `cli/src/activity-sync.ts`), from the sync, `backfill`
+and `status`. Three mutations, three red tests, recorded in LAI-773's notes.
+Nothing on the per-turn sync or the day-partitioned records changed, so
+criteria 1 and 2 stand as measured. Gate: LAI-773's round-1 section, one
+gate for the branch.

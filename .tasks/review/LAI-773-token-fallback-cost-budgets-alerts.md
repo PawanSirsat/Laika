@@ -134,3 +134,113 @@ and 15/15. cli 425 + 2 skipped of 427, web 2133/2133.
   owner may prefer a system comment for budget alerts; that is a decision.
 - Existing collectors get the `Stop` hook only after `laika activity on` is
   run again.
+
+## Builder notes — review round 1 (2026-10-18)
+
+The review came back CHANGES REQUIRED with two blockers and eight small
+fixes. `master` 7a95633c (LAI-762) merged clean as 9c17e9c9. Not pushed.
+Commits: fd822390 (B1, the point window, the savepoint, the OTLP door),
+368481fd (B2, D-087), f3a536c7 (the hour and 80% pinned, prices cited),
+d0cf96ff (web), d2ba8c86 (cli), 818d70d8 (a neighbour-day test the mutation
+run asked for), 60977bbe (LAI-783 filed).
+
+**Evidence.** Every fix has a test that fails without it: a mutation run of
+27 (`scratchpad/mut/mutate2.py`, each file restored by checksum, the tree
+clean after), plus the B1 repros run against round 0's own code.
+
+**B1, telemetry counted twice across midnight and zones.** `recomputeGap`
+now totals each session's telemetry and files over **every day it has rows
+on** (the days asked about, the days beside them, and every day a
+telemetered session there reaches). It takes `max(0, telemetry − files)`
+per session, subtracts the unplaced file tokens on those days and the days
+beside them, and only then floors and spreads the gap back onto the days
+where telemetry ran ahead. Telemetry is binned in the zone the usage reports
+state, kept in a new `token_usage_zones` (SPEC §4.44; migration 0040
+regenerated, never shipped), then a snapshot's, then UTC.
+- Before, on 9c17e9c9's `token-telemetry.ts` + `token-usage.ts`: the midnight
+  repro `expected 700 to be 400`; the Johannesburg repro `expected 600 to be
+  300`; three more B1 shapes and the forced failure fail too (6 of 6).
+- After: all pass. Mutations: a floor per day → `700 to be 400`; the zone
+  falling back to UTC, or never stored → the gap lands on the wrong day;
+  the span without its neighbour days → `600 to be 300`. That last one
+  **survived the first run**: the late-files test listed its session, so
+  the key alone reached the next day. 818d70d8 adds the unlisted case.
+- The resend tests are kept and pass ("counts a cumulative series once
+  however often it is sent", "counts a delta point once, and a retried one
+  not at all").
+
+**B2, the three-person rule read around** — the owner's rule, as decided.
+For a reader without `usage.read_people` (a member, and every token,
+including an owner's), every agent and every model fewer than three
+distinct people used in the response's scope is folded into one last `other`
+row with `few_people`. That covers tokens, cache reads and cost, in
+`by_agent`, in `by_model`, and in the accepted-cost card's `by_agent`
+(`agents_withheld` = how many were folded). Owners and admins on a session
+see every row; a person's own `GET /users/:id/usage` is not folded. SPEC
+§6.4 and D-087 item 7 say so exactly. The web shows the row as *Other (fewer
+than 3 people)*, keyed apart from the `other` agent kind's own row, which
+shares `agent: "other"` with it.
+- Mutations: `MIN_AGENT_PEOPLE` 3 → 1 turns three tests red (the member's
+  fold, the **subtraction** case, the **accepted-cost card**); folding
+  replaced by dropping → the subtraction test; the card not folded → its
+  test; admins folded too → theirs. Web: the fold named as the `other` kind
+  on Usage or on the card → the browser test; `few_people` gone from the
+  client type → `view-type-drift`.
+
+**The small fixes**
+1. OTLP: the actor and both switches are asked in a middleware ahead of
+   `bodyLimit`. A 300 KB body answers 401 signed out and 403 with sharing
+   off. Mutation (the check moved back into the handler): `413 to be 401`.
+2. A point counts only if its interval ends within today − 31 to today + 1
+   in that zone (`TELEMETRY_DAYS_BACK` is held equal to
+   `TOKEN_USAGE_DAYS_BACK` by a test) and starts no later than it ends. A
+   timestamp past `Date`'s range is no time at all: a 25-digit
+   `timeUnixNano` is a refused point, not a 500, and a far-future point is
+   stored nowhere and blocks no later delta. All are refused as
+   `day_out_of_range` in `partialSuccess`. Three mutations, three reds.
+3. `storeZone`, `storeSessionFiles` and `storeExcluded` run inside the
+   best-effort savepoint. A failure removes the person's gap rows and takes
+   the report anyway. Mutation (the two stores moved back before the try):
+   `SqliteError: no such table` thrown.
+4. D-087 item 2 now says session ids and emails are **never stored**:
+   Claude Code sends them, and Laika drops or hashes them in memory.
+5. The CLI sends `excluded` only when Claude Code on that machine sends its
+   metrics to this board: telemetry on, an OTLP exporter, and an endpoint
+   under `/api/v1/otlp/`, read from `~/.claude/settings.json`'s `env` or else
+   the environment. This applies to the sync, `backfill` and `status`.
+   Mutations: the gate removed; the sync passing `true`; any endpoint
+   accepted. Each turns its test red. A telemetry flip alone sends nothing
+   new: the keys go with the next report.
+6. Pinned by literal: 59 minutes since the claim stays quiet, 61 alerts;
+   79% of a budget raises nothing, 80% raises one. Mutations: a 58- or
+   62-minute window, `<` → `<=`, and 80 → 79 each go red.
+7. Web: "no price" is read off `unpriced_models`, not `unpriced_tokens`
+   (which leaves cache reads out), for the total, the per-task figure and
+   the caveat. Mutation: `expected 'no price', actual '$0'`.
+8. Prices, re-read on 2026-10-18 from
+   platform.claude.com/docs/en/about-claude/pricing, rows quoted in the
+   code. Sonnet 5.5: "$2 / MTok | $2.50 / MTok | $4 / MTok | $0.10 / MTok² |
+   $10 / MTok", with ² "Cache hits and refreshes on Claude Opus 5.5 and
+   Claude Sonnet 5.5 are priced at 0.05x the base input price". Haiku 5.5
+   (prompts up to 100,000 tokens): "$0.10 | $0.125 | $0.20 | $0.01 |
+   $0.50". The ids come from the models overview's "Claude API ID":
+   `claude-sonnet-5-5`, `claude-haiku-5-5`. Both stay confirmed; a test pins
+   each figure, and changing one goes red.
+
+**Filed**: LAI-783 (discovered-from LAI-773). It covers the runaway rule
+taking the assignee's push on any task as progress, two ways telemetry can
+under-count, and the price table's source column at 390 px.
+
+**Noted, not changed**
+- **A fold of one**: when everything folded is one agent that one person
+  used, the `other` row is still that person's figure, no longer named.
+  It is recorded under D-087's "What this does not decide". A floor on the
+  folded row would be a new decision.
+- An owner's or admin's **token** gets the fold, because
+  `usage.read_people` is session only, as for `by_developer`.
+
+**Root gate, round 1** — after the last code edit (818d70d8), each to its
+own file, nothing piped: `pnpm test` **0** — server 3088 passed + 8 skipped
+of 3096 cases (151 files + 1 skipped), cli 429 passed + 2 skipped of 431
+cases, web 2136/2136 cases; `pnpm lint` **0**; `pnpm format` **0**. No
+LAI-768 timeout this run, so nothing was re-run alone.
