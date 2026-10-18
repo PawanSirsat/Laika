@@ -77,8 +77,11 @@ Every session working in this repo:
    invisible work.
 4. **Say what happened.** \`add_comment\` on the task as you go — decisions and
    blockers, while they are fresh.
-5. **Finish into review, never done.** \`finish_task\` hands it to a human. Agents
-   do not close their own work.
+5. **Finish into review, never done.** \`finish_task\` moves it to review with
+   your proof (commits, branch, pull request, test commands and exit codes): an
+   agent never marks work done, a person does. A task a person sent back opens
+   with their reason in \`get_task_context\`: fix that first, then
+   \`finish_task\` again with fresh proof.
 6. **Stray findings** — a broken script, a stale dependency — go to
    \`log_unlisted_work\` so they are triaged rather than lost.
 
