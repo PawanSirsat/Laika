@@ -2,11 +2,12 @@
 id: LAI-762
 title: 'The Connect block and the plugin skill teach attaching proof to finish_task and reading a send-back first'
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p2
 depends-on: [LAI-758]
 discovered-from: LAI-758
-status: backlog
+status: in-progress
+started: 2026-10-18T04:24:18Z
 ---
 
 ## Goal
