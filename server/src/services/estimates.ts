@@ -251,13 +251,17 @@ export interface ActualTokens {
   rework: number;
 }
 
-/** What the one who claimed it said at claim (§4.34): never who said it. */
+/**
+ * What the one who claimed it said at claim (§4.34): never who said it.
+ *
+ * **What was said and nothing else** (LAI-772 review, N1). The row keeps when
+ * it was said and the agent's own name, and neither is read back here: the
+ * time matches the claim's own `task.status_changed` row, which names the
+ * person, and the client is as good as a name wherever one person uses it.
+ */
 export interface ClaimEstimateView {
   level: SizeLevel | null;
   confidence: ClaimConfidence | null;
-  /** The agent's own name for itself (D-076), or null. */
-  client_name: string | null;
-  created_at: number;
 }
 
 /** "Scope grew after start": the computed size rose a level or more after work began. */
@@ -380,7 +384,11 @@ export interface FastFinishCue {
   kind: 'fast';
   /** Round 1's build: first start to the finish. */
   build_ms: number;
-  /** The p50 frozen when work started. */
+  /**
+   * Laika's own build-time p50 frozen when work started — before a claimant's
+   * size was blended in, so a claimant's own small size cannot hide a fast
+   * finish (LAI-772 review, N2).
+   */
   forecast_p50_ms: number;
 }
 
@@ -1645,14 +1653,7 @@ export function getTaskEstimate(
       ? spentOn(db, task.id, actual.first_finish_at)
       : null,
     claim_estimate:
-      claim === undefined
-        ? null
-        : {
-            level: claim.level,
-            confidence: claim.confidence,
-            client_name: claim.clientName,
-            created_at: claim.createdAt,
-          },
+      claim === undefined ? null : { level: claim.level, confidence: claim.confidence },
     scope_grew: scopeGrew,
     split: size?.level === 'XL' ? splitFor(db, task.projectId, task.id) : null,
     history: history.map((h) => ({
@@ -2007,6 +2008,13 @@ export const FAST_FINISH_RATIO = 0.25;
  * checked. A later round is rework, which nothing forecasts, so it has none;
  * nor has a task whose project had no hours when it started. One query for
  * the page's frozen rows.
+ *
+ * **Against Laika's own p50, not the blend** (LAI-772 review, N2). Once the
+ * claimants' sizes have earned weight, the frozen row's p50 carries the
+ * claimant's own size; a claimant who said XS and finished in minutes would
+ * otherwise have set the bar they then cleared. The model's p50 before the
+ * blend is kept in the row's *why* (`agent.model_p50_ms`) and is what the cue
+ * measures; a row without a blend has only its own p50, which is the model's.
  */
 export function fastFinishCues(
   db: Db,
@@ -2025,11 +2033,17 @@ export function fastFinishCues(
   const p50s = new Map<string, number>();
   for (let i = 0; i < ids.length; i += 500) {
     for (const e of db
-      .select({ id: taskEstimates.id, p50: taskEstimates.buildP50Ms })
+      .select({
+        id: taskEstimates.id,
+        p50: taskEstimates.buildP50Ms,
+        why: taskEstimates.factorsJson,
+      })
       .from(taskEstimates)
       .where(inArray(taskEstimates.id, ids.slice(i, i + 500)))
       .all()) {
-      if (e.p50 !== null) p50s.set(e.id, e.p50);
+      const own = (JSON.parse(e.why) as { agent?: Partial<StoredAgent> }).agent?.model_p50_ms;
+      const p50 = typeof own === 'number' && own > 0 ? own : e.p50;
+      if (p50 !== null) p50s.set(e.id, p50);
     }
   }
   for (const r of rows) {

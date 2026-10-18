@@ -260,15 +260,10 @@ void describe('notes beside the forecast (LAI-772)', () => {
     assert.equal(splitNote(null), null);
   });
 
-  void test('what was said at claim, and by which agent — never by whom', () => {
-    assert.equal(
-      claimNote({ level: 'S', confidence: 'green', client_name: 'Claude Code', created_at: 1 }),
-      'Said at claim: S, green · Claude Code',
-    );
-    assert.equal(
-      claimNote({ level: null, confidence: 'red', client_name: null, created_at: 1 }),
-      'Said at claim: red',
-    );
+  void test('what was said at claim, and nothing that ties it to who said it (N1)', () => {
+    assert.equal(claimNote({ level: 'S', confidence: 'green' }), 'Said at claim: S, green');
+    assert.equal(claimNote({ level: null, confidence: 'red' }), 'Said at claim: red');
+    assert.equal(claimNote({ level: 'XL', confidence: null }), 'Said at claim: XL');
     assert.equal(claimNote(null), null);
   });
 });

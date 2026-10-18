@@ -116,12 +116,14 @@ export interface ActualTokens {
 export const CLAIM_CONFIDENCES = ['green', 'yellow', 'red'] as const;
 export type ClaimConfidence = (typeof CLAIM_CONFIDENCES)[number];
 
-/** What the claimant said at claim — the server's `ClaimEstimateView`. Never who. */
+/**
+ * What the claimant said at claim — the server's `ClaimEstimateView`. What was
+ * said and nothing else: no time and no client, either of which would tie it
+ * to whoever said it (LAI-772 review, N1).
+ */
 export interface ClaimEstimate {
   readonly level: SizeLevel | null;
   readonly confidence: ClaimConfidence | null;
-  readonly client_name: string | null;
-  readonly created_at: number;
 }
 
 export interface ScopeGrowth {
@@ -369,9 +371,8 @@ export function splitNote(split: SplitSuggestion | null): string | null {
   )} finished)`;
 }
 
-/** What the claimant said at claim, and the agent's own name — never who claimed. */
+/** What the claimant said at claim — never who, when, or with which agent. */
 export function claimNote(claim: ClaimEstimate | null): string | null {
   if (claim === null) return null;
-  const said = [claim.level, claim.confidence].filter((x) => x !== null).join(', ');
-  return `Said at claim: ${said}${claim.client_name === null ? '' : ` · ${claim.client_name}`}`;
+  return `Said at claim: ${[claim.level, claim.confidence].filter((x) => x !== null).join(', ')}`;
 }

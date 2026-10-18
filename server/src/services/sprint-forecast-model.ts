@@ -10,9 +10,12 @@
  * included — drawn at random, summed into the sprint's capacity. The tasks
  * left are finished **in the order given** (the caller's: closest to done
  * first) while that capacity lasts. Many draws make a distribution of how
- * many tasks are done at the end, and the answer is the narrowest central
- * range holding at least {@link FORECAST_PROBABILITY} of it, with the share it
- * actually holds — a count, so the honest figure is often a little above.
+ * many tasks are done at the end, and the answer is the central range left
+ * once the same number of draws — at most half of the other
+ * 1 − {@link FORECAST_PROBABILITY} — is trimmed from each tail, with the share
+ * it actually holds: at least {@link FORECAST_PROBABILITY}, and often a little
+ * above, since whole counts are trimmed. Trimmed evenly, not searched: a
+ * skewed distribution can have a narrower range that holds as much.
  *
  * It is a forecast of the **work**, from the work's own history: it reads
  * sizes and finish dates, and nothing about who does the work (D-078 item 6).
@@ -102,7 +105,9 @@ export function simulateSprint(input: SprintSimulationInput): SprintSimulation {
     counts[lo]! += 1;
   }
 
-  // The narrowest central range holding the probability: trim the tails evenly.
+  // Trim the same number of draws from each tail — at most half of the
+  // 1 − FORECAST_PROBABILITY share — and keep what is left. Even trimming, not
+  // a search for the narrowest range: on a skewed distribution that can differ.
   const tail = Math.floor((iterations * (1 - FORECAST_PROBABILITY)) / 2);
   let low = 0;
   let below = 0;

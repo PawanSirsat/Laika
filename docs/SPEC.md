@@ -2097,9 +2097,10 @@ review_wait_ms, rework_ms, finishes, first_finish_at }`; `history` the latest
 `learned_from` reaches `forecasts_after`); `actual_tokens` is `{ build,
 total, rework }` — build up to the first finish's UTC day, rework after — for
 a reader holding `usage.read_project`, else `null`, and `null` with none tied
-to the task; `claim_estimate` is `{ level, confidence, client_name,
-created_at }` or `null`; `scope_grew` is `{ from, to }` or `null`; `split` is
-`{ xl_finished, rounds_avg }` for an XL task, else `null`.
+to the task; `claim_estimate` is `{ level, confidence }` or `null` — when it
+was said and by which agent are kept (§4.34) and not served, since either ties
+it to a person (LAI-772 review, N1); `scope_grew` is `{ from, to }` or `null`;
+`split` is `{ xl_finished, rounds_avg }` for an XL task, else `null`.
 `GET /projects/:slug/estimates/accuracy` answers `{ project_id, finished,
 forecasts_after, live, backtest, by_client, tokens, agent, model_version }`:
 `tokens` is `{ learned_from, forecasts_after, live, backtest }` for the token
@@ -2116,16 +2117,18 @@ by a person.
 
 **The sprint forecast (LAI-772).** `GET /sprints/:id/forecast` answers, under
 `project.read`, `{ sprint_id, total, done, forecast, reason, basis }`:
-`forecast` is `{ probability, low, high, median, days_left }` — the narrowest
-central range of tasks done by the end of `ends_on` holding at least 85% of
-2000 seeded draws, each day of the days left drawn from what the project
-finished per calendar day over the last 42 days (size weight, quiet days
-included), the tasks left finished in order (review, in progress, to do,
-backlog; board order within each) while capacity lasts. `null` with `reason`
-`completed`, `no_tasks`, or `not_enough_history` (fewer than 10 tasks done in
-the window); `basis` is `{ days, tasks_done, weight_done }`. Cached per sprint
-against every input, so a re-read with nothing changed draws nothing. Not
-story points: nothing in it is typed by anybody.
+`forecast` is `{ probability, low, high, median, days_left }` — the central
+range of tasks done by the end of `ends_on` left once the same number of the
+2000 seeded draws is trimmed from each tail (at most 7.5% each), so it holds
+at least 85% (trimmed evenly, not the narrowest such range); each day of the
+days left is drawn from what the project finished per calendar day over the
+last 42 days (size weight, quiet days included), the tasks left finished in
+order (review, in progress, to do, backlog; board order within each) while
+capacity lasts. `null` with `reason` `completed`, `no_tasks`, or
+`not_enough_history` (fewer than 10 tasks done in the window); `basis` is
+`{ days, tasks_done, weight_done }`. Cached per sprint against every input, so
+a re-read with nothing changed draws nothing. Not story points: nothing in it
+is typed by anybody.
 
 **The GitHub webhook secret (LAI-753).** `GET /org` carries `github_webhook:
 { configured, payload_url }` for a caller who may *Configure webhooks* (§3.1,
@@ -2149,9 +2152,12 @@ finished_by_name, can_decide, cue }`, `round` the latest (or `null`) and
 `can_decide` whether this caller may accept or send it back. `cue` is
 `{ kind: 'fast', build_ms, forecast_p50_ms }` — *"check this one"* (LAI-772)
 — when round 1 finished in under 0.25× the build-time p50 frozen at the start
-and CI has not confirmed the round, else `null`; a later round, and a task
-started before its project had hours, never carry one. About the task, never
-the person. Not paginated: it is the work waiting for a person.
+and CI has not confirmed the round (failed or still running is not
+confirmed), else `null`. The p50 is Laika's own, before any claimant's size
+was blended in, so a claimant's small size cannot hide a fast finish. A later
+round, and a task started before its project had hours, never carry one.
+About the task, never the person. Not paginated: it is the work waiting for a
+person.
 
 `POST /tasks/:id/accept` moves a review task to the project's first visible
 done status; `POST /tasks/:id/send-back` takes a required `reason` (1–5000

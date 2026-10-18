@@ -8,6 +8,7 @@ import {
   activity,
   orgs,
   taskClaimEstimates,
+  taskEstimates,
   taskRoundGithub,
   taskRounds,
   tasks,
@@ -286,6 +287,9 @@ describe('the agent’s own estimate at claim (D-085 item 4)', () => {
     });
     const view = getTaskEstimate(t.db, admin(), task.id);
     expect(view.claim_estimate).toMatchObject({ level: 'S', confidence: 'green' });
+    // What was said, and nothing that would tie it to whoever said it: no
+    // time (the claim's own activity row has one) and no client (LAI-772 review, N1).
+    expect(Object.keys(view.claim_estimate!).sort()).toEqual(['confidence', 'level']);
     const where = eq(taskClaimEstimates.taskId, task.id);
     expectSqliteError(
       () => t.db.update(taskClaimEstimates).set({ level: 'XL' }).where(where).run(),
@@ -534,35 +538,128 @@ describe('Review page cue: finished far faster than forecast, with nothing confi
     expect(cueOf(inReview(p50))).toBeNull();
   });
 
+  /** What GitHub said about the task's latest round: `passed`, `failed` and `pending` of `total`. */
+  function ci(taskId: string, counts: { passed: number; failed: number; pending: number }) {
+    const rounds = t.db.select().from(taskRounds).where(eq(taskRounds.taskId, taskId)).all();
+    const latest = rounds.sort((a, b) => b.number - a.number)[0]!;
+    t.db
+      .insert(taskRoundGithub)
+      .values({
+        roundId: latest.id,
+        prMerged: null,
+        ciHeadSha: 'abcdef1',
+        ciTotal: counts.passed + counts.failed + counts.pending,
+        ciPassed: counts.passed,
+        ciFailed: counts.failed,
+        ciPending: counts.pending,
+        ciFailedNames: counts.failed > 0 ? '["test"]' : '[]',
+        updatedAt: T0,
+      })
+      .run();
+  }
+
+  /** Claimed now, finished at `ratio` of the p50 frozen at the claim. */
+  function finishedAt(ratio: number, now = T0 + 401 * DAY) {
+    const task = newTask({ acceptance_md: words(150) }, now - DAY);
+    claimTask(t.sqlite, t.db, admin(), task.id, now);
+    const p50 = getTaskEstimate(t.db, admin(), task.id).at_start!.build_p50_ms!;
+    const build = Math.round(ratio * p50);
+    finishTask(t.sqlite, t.db, admin(), task.id, { summary: 'Done', now: now + build });
+    return { id: task.id, p50, build };
+  }
+
   it('says nothing once CI confirmed the round', () => {
     finished(14);
     refitEstimates(t.db, T0 + 300 * DAY);
     const fast = inReview(MIN);
-    const round = t.db.select().from(taskRounds).where(eq(taskRounds.taskId, fast)).get()!;
-    t.db
-      .insert(taskRoundGithub)
-      .values({
-        roundId: round.id,
-        prMerged: null,
-        ciHeadSha: 'abcdef1',
-        ciTotal: 2,
-        ciPassed: 2,
-        ciFailed: 0,
-        ciPending: 0,
-        ciFailedNames: '[]',
-        updatedAt: T0,
-      })
-      .run();
+    ci(fast, { passed: 2, failed: 0, pending: 0 });
     expect(cueOf(fast)).toBeNull();
   });
 
-  it('says nothing on a later round: the forecast is for the first build', () => {
+  it('still says it when CI failed or is still running: only a confirmed run is a check (B1)', () => {
+    finished(14);
+    refitEstimates(t.db, T0 + 300 * DAY);
+    const failed = inReview(MIN);
+    ci(failed, { passed: 1, failed: 1, pending: 0 });
+    const pending = inReview(MIN, T0 + 402 * DAY);
+    ci(pending, { passed: 1, failed: 0, pending: 1 });
+    // The guard on the guard: GitHub's line is really on both rounds.
+    const queue = listReviewQueue(t.db, admin()).tasks;
+    expect(queue.find((i) => i.task.id === failed)!.round!.ci).toMatchObject({ failed: 1 });
+    expect(queue.find((i) => i.task.id === pending)!.round!.ci).toMatchObject({ pending: 1 });
+
+    expect(cueOf(failed)).toMatchObject({ kind: 'fast', build_ms: MIN });
+    expect(cueOf(pending)).toMatchObject({ kind: 'fast', build_ms: MIN });
+  });
+
+  it('draws the line at 0.25× the frozen p50: 0.3× says nothing, 0.2× says check (B1)', () => {
+    finished(14);
+    refitEstimates(t.db, T0 + 300 * DAY);
+    const slower = finishedAt(0.3);
+    const faster = finishedAt(0.2, T0 + 402 * DAY);
+    // The ratios are what the test says they are, against the cue's own figure.
+    expect(slower.build / slower.p50).toBeCloseTo(0.3, 3);
+    expect(faster.build / faster.p50).toBeCloseTo(0.2, 3);
+
+    expect(cueOf(slower.id)).toBeNull();
+    expect(cueOf(faster.id)).toEqual({
+      kind: 'fast',
+      build_ms: faster.build,
+      forecast_p50_ms: faster.p50,
+    });
+  });
+
+  it('says nothing on a later round, however fast: the forecast is for the first build (B1)', () => {
     finished(14);
     refitEstimates(t.db, T0 + 300 * DAY);
     const at = T0 + 401 * DAY;
-    const fast = inReview(30 * MIN, at);
-    sendBackTask(t.sqlite, t.db, admin(), fast, 'Missing a test', at + HOUR);
-    finishTask(t.sqlite, t.db, admin(), fast, { summary: 'Done', now: at + HOUR + MIN });
-    expect(cueOf(fast)).toBeNull();
+    const task = newTask({ acceptance_md: words(150) }, at - DAY);
+    claimTask(t.sqlite, t.db, admin(), task.id, at);
+    finishTask(t.sqlite, t.db, admin(), task.id, { summary: 'Done', now: at + MIN });
+    sendBackTask(t.sqlite, t.db, admin(), task.id, 'Missing a test', at + 2 * MIN);
+    finishTask(t.sqlite, t.db, admin(), task.id, { summary: 'Done', now: at + 3 * MIN });
+    // Round 2 is fast too: 3 min from the start is well under a quarter of the
+    // p50, so only the round-1 rule keeps it from raising the cue.
+    const p50 = getTaskEstimate(t.db, admin(), task.id).at_start!.build_p50_ms!;
+    expect(3 * MIN).toBeLessThan(0.25 * p50);
+    const item = listReviewQueue(t.db, admin()).tasks.find((i) => i.task.id === task.id)!;
+    expect(item.round!.number).toBe(2);
+    expect(item.cue).toBeNull();
+  });
+
+  it('measures against Laika’s own p50, not one a claimant’s size moved (N2)', () => {
+    // The claimants' sizes have earned weight here (as in the agent test above).
+    const kinds = [
+      { build: 15 * MIN, size: 'XS' },
+      { build: HOUR, size: 'M' },
+      { build: 4 * HOUR, size: 'XL' },
+    ] as const;
+    finished(30, {
+      text: () => `board card lane ${words(120)}`,
+      build: (i) => kinds[i % 3]!.build,
+      estimate: (i) => ({ size: kinds[i % 3]!.size }),
+    });
+    refitEstimates(t.db, T0 + 300 * DAY);
+    expect(getEstimateAccuracy(t.db, admin(), 'laika').agent.size.weight).toBeGreaterThan(0);
+
+    const at = T0 + 401 * DAY;
+    const task = newTask(
+      { title: 'board card lane', acceptance_md: `board card lane ${words(120)}` },
+      at - DAY,
+    );
+    claimTask(t.sqlite, t.db, admin(), task.id, at, undefined, { size: 'XS' });
+    const frozenId = t.db.select().from(tasks).where(eq(tasks.id, task.id)).get()!
+      .estimateAtStartId!;
+    const frozen = t.db.select().from(taskEstimates).where(eq(taskEstimates.id, frozenId)).get()!;
+    const own = (JSON.parse(frozen.factorsJson) as { agent?: { model_p50_ms: number } }).agent!
+      .model_p50_ms;
+    // The claimant's XS pulled the frozen p50 well below Laika's own.
+    expect(frozen.buildP50Ms!).toBeLessThan(0.8 * own);
+
+    const build = Math.round(0.2 * own);
+    finishTask(t.sqlite, t.db, admin(), task.id, { summary: 'Done', now: at + build });
+    // Against the blended p50 this would be no cue at all: the XS hid it.
+    expect(build).toBeGreaterThanOrEqual(0.25 * frozen.buildP50Ms!);
+    expect(cueOf(task.id)).toEqual({ kind: 'fast', build_ms: build, forecast_p50_ms: own });
   });
 });

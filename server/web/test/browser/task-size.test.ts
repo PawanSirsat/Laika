@@ -203,12 +203,7 @@ const PHASE2 = {
   at_start: { ...ESTIMATE.at_start, tokens_p50: 900_000, tokens_p80: 2_100_000 },
   tokens: { p50: 1_200_000, p80: 2_500_000, learned_from: 14, forecasts_after: 10 },
   actual_tokens: { build: 1_400_000, total: 1_700_000, rework: 300_000 },
-  claim_estimate: {
-    level: 'S',
-    confidence: 'yellow',
-    client_name: 'Claude Code',
-    created_at: NOW - 3 * HOUR,
-  },
+  claim_estimate: { level: 'S', confidence: 'yellow' },
   scope_grew: { from: 'M', to: 'L' },
   split: null,
 };
@@ -437,7 +432,7 @@ void describe('the task panel’s Forecast section', () => {
       const notes = await section.locator('.fc-note').allInnerTexts();
       assert.deepEqual(notes, [
         'Scope grew after start: M when work began, L now',
-        'Said at claim: S, yellow · Claude Code',
+        'Said at claim: S, yellow',
       ]);
       assert.equal(
         await section.locator('.fc-accuracy-tokens').innerText(),
