@@ -61,3 +61,27 @@ In .tasks/review/. Gate: `pnpm test` 0, `pnpm lint` 0, `pnpm format` 0. Not push
 
 **State**
 Still in .tasks/review/. Gate after the merge: `pnpm test` 0 (second run), `pnpm lint` 0, `pnpm format` 0. Not pushed.
+
+## 2026-10-18T03:37:40Z — LAI-772 (review round 1: B1, N1, N2, N7; LAI-782 filed)
+
+**What changed**
+- server/test/services/estimates.forecasts.test.ts — the cue: a fast round 2, failed and pending CI, 0.3×/0.2× of the frozen p50, the cue against the unblended p50; the claim estimate's key set
+- server/src/services/estimates.ts — `ClaimEstimateView` is `{ level, confidence }`; `fastFinishCues` reads `factors_json.agent.model_p50_ms` first
+- server/src/services/sprint-forecast-model.ts — the range comment says it trims both tails evenly
+- server/web/src/api/estimates.ts, test/api/estimates.test.ts, test/browser/task-size.test.ts — the same two fields gone; `claimNote` names no client
+- docs/SPEC.md §6.4 — `claim_estimate`, the cue's p50 and CI wording, the sprint range
+- .tasks/backlog/LAI-782-forecast-follow-ups.md (new) — N3, N4, N5, N6, N8
+- .tasks/review/LAI-772-token-forecasts-and-review-cues.md — the round's notes
+
+**Decisions**
+- The cue measures against the model's p50 before the blend, and reports that figure — rather than the frozen blended p50: a claimant's own XS would otherwise set the bar it then cleared.
+- The claim view drops both fields rather than gating them by reader: no reader needs when or which client, and the stored row keeps them for a later per-client view under the three-people rule.
+- The B1 tests pin the existing code (green before) and prove themselves by mutation; the N1 and N2 tests were red before their change.
+- The SPEC sentence claiming "the narrowest central range" was corrected with the comment, not only the comment.
+
+**Discovered**
+- Prettier rewrapped two of the mutated files after the first mutation run; all six mutations were run again on the formatted files with the same results.
+- N8 applies to the Usage page's rework tokens (boundary at the sent-back round's finish day); its rework time already starts at the send-back.
+
+**State**
+Still in .tasks/review/. Gate: `pnpm test` 0, `pnpm lint` 0, `pnpm format` 0. Not pushed.

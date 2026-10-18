@@ -191,3 +191,46 @@ out waiting for the built server's health under the parallel load; 15/15
 alone. Second full run **0**: cli 410 node:test cases (409 pass, 1 skipped),
 web 2093/2093 node:test cases, server 2958 passed + 8 skipped of 2966 vitest
 cases in 144 files. `pnpm lint` 0. `pnpm format` 0.
+
+## Review round 1 — CHANGES REQUIRED (B1), fixed (2026-10-18T03:37:40Z)
+
+Commits bd42cbb3 (fix and tests), 7fb54c8e (LAI-782 filed). On top of
+dcb370ee (migration 0039).
+
+- **B1 — the Review cue's rules were not pinned.** New and reworked cases in
+  `server/test/services/estimates.forecasts.test.ts`, "Review page cue":
+  round 2 fast from the start (round 1 at +1 min, send-back at +2 min, round 2
+  at +3 min, with a guard that 3 min is under 0.25× the p50); CI failed and CI
+  pending, each still cued (with a guard that GitHub's line is on the round);
+  0.3× and 0.2× of the round's own frozen p50 either side of the line. These
+  pass on the code as it was — they pin it — and each mutation turns one red,
+  run on the final formatted files, each restored by checksum from a trap:
+
+  | mutation | where | red |
+  | --- | --- | --- |
+  | M1 `round?.number === 1 &&` → `round !== undefined &&` | `review.ts` | *says nothing on a later round, however fast* |
+  | M2 failed or pending CI counted as confirmed | `review.ts` | *still says it when CI failed or is still running* |
+  | M2a failed only / M2b pending only | `review.ts` | the same test, each |
+  | M3 `FAST_FINISH_RATIO` 0.25 → 0.9 | `estimates.ts` | *draws the line at 0.25×* |
+  | M4 the N2 change undone (blended p50) | `estimates.ts` | *measures against Laika's own p50* |
+
+  Each run: 1 failed, 21 passed of 22; restored file green, 22/22.
+- **N1.** `ClaimEstimateView` / web `ClaimEstimate` are `{ level, confidence }`;
+  the row's time and client are kept (§4.34) and not served. `claimNote` no
+  longer names the client. A key-set assertion was red before the change
+  (`client_name`, `created_at` present). SPEC §6.4.
+- **N2.** `fastFinishCues` measures against the frozen row's
+  `factors_json.agent.model_p50_ms` when the row carries a blend, else its own
+  p50, and reports that as `forecast_p50_ms`. Test: claimants' sizes with
+  earned weight, a claim at XS, a finish at 0.2× Laika's own p50 that is
+  ≥ 0.25× the blended one — red before (cue `null`), green after. SPEC §6.4.
+- **N7.** The sprint range is trimmed evenly from both tails, not searched for
+  the narrowest: `sprint-forecast-model.ts` comments and SPEC §6.4 now say so.
+  The builder notes above that say "narrowest central range" are the record.
+- **N3, N4, N5, N6, N8** filed as `.tasks/backlog/LAI-782-forecast-follow-ups.md`
+  (`discovered-from: LAI-772`), the reviewer's items quoted. N4's lines are now
+  `token-usage.ts:806`/`:853`.
+
+**Gate** after the last edit (foreground): `pnpm test` **0** first run — cli 410
+node:test cases (409 pass, 1 skipped), web 2093/2093, server 2961 passed + 8
+skipped of 2969 vitest cases in 144 files; `pnpm lint` **0**; `pnpm format` **0**.
