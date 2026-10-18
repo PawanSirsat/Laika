@@ -7,6 +7,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { describe, test } from 'node:test';
 import {
   projectBlock,
@@ -132,7 +133,51 @@ void describe('the project block', () => {
     assert.match(block, /review, never done/i);
     assert.match(block, /claim/i, 'it never says to claim before coding');
   });
+
+  void test('it teaches finishing with proof, and reading a send-back first (LAI-762)', () => {
+    const block = projectBlock(ORIGIN, PROJECT);
+    assert.match(block, /`finish_task`[\s\S]{0,40}proof/, 'it never says to attach proof');
+    for (const part of ['commits', 'branch', 'pull request', 'test commands', 'exit codes']) {
+      assert.ok(block.includes(part), `the proof list does not name ${part}`);
+    }
+    assert.match(block, /sent back[\s\S]{0,60}reason in `get_task_context`/);
+    assert.match(block, /fix that first/);
+  });
+
+  void test('its finishing rule says what the server tells every agent (LAI-762)', async () => {
+    /*
+     * The block and the server's `instructions` are two rulebooks for the same
+     * board, so the wording is read from the server rather than written twice
+     * here: the proof list and the send-back sentence are taken out of
+     * `MCP_INSTRUCTIONS` and must appear in the block as they are.
+     */
+    const source = await readFile(
+      new URL('../../../../../src/mcp/server.ts', import.meta.url),
+      'utf8',
+    );
+    const instructions = flat(
+      (/export const MCP_INSTRUCTIONS = `([\s\S]*?)`;/.exec(source)?.[1] ?? '').replaceAll(
+        '\\`',
+        '`',
+      ),
+    );
+    const proof = /with your proof (\([^)]*\))/.exec(instructions)?.[1] ?? '';
+    const sentBack = /A task a person sent back[^.]*\./.exec(instructions)?.[0] ?? '';
+    // Vacuity guard: a pattern that stopped matching would compare `''`, which
+    // every string includes.
+    assert.ok(proof.includes('exit codes'), 'no proof list found in MCP_INSTRUCTIONS');
+    assert.ok(sentBack.includes('get_task_context'), 'no send-back sentence found');
+
+    const block = flat(projectBlock(ORIGIN, PROJECT));
+    assert.ok(block.includes(proof), `the block's proof list differs from the server's ${proof}`);
+    assert.ok(block.includes(sentBack), `the block does not say, as the server does: ${sentBack}`);
+  });
 });
+
+/** Line breaks and indentation folded to single spaces, so wrapping is not wording. */
+function flat(text: string): string {
+  return text.replace(/\s+/g, ' ');
+}
 
 void describe('the manual commands', () => {
   void test('they are the two the installer actually needs', () => {
