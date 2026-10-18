@@ -4781,7 +4781,9 @@ LAI-776; board cards LAIKA-578 and LAIKA-580). D-084 item 9 named a
 metrics-only OpenTelemetry receiver as the fallback for what session files
 miss, and item 10 a dated price table. LAI-773 also adds budgets with soft
 alerts, a runaway-agent alert and a plan-limit forecast. Four of its choices
-reach past D-084's wording and are recorded here.
+reach past D-084's wording and are recorded here. Items 2 and 7 were settled
+in its first review (review B2 and the wording of item 2), before the branch
+merged.
 
 ### Decided
 
@@ -4792,13 +4794,17 @@ reach past D-084's wording and are recorded here.
    the organisation and account ids, the terminal) is dropped unread. Logs and
    traces — the exporters that can carry prompt text — have no route at all.
    JSON only, so no protobuf dependency. Nothing calls out (§13.4).
-2. **Session ids still never leave the machine; a one-way key does.** To fill
-   the gap without counting twice, the collector sends each Claude Code
-   session's file totals per day under the first 16 hex of
-   `sha256("laika-session:" + id)`, and the receiver hashes the `session.id`
-   attribute the same way on arrival and keeps only the key. This extends
-   D-084 item 1 the way D-079 item 3 allowed a one-way key for commits: the
-   key identifies a session only to someone who already holds its id. The
+2. **Session ids and emails are never stored; a one-way key is.** Claude
+   Code's own exporter **does send** `session.id`, `user.email` and the
+   account ids as attributes, so they reach the server; Laika drops the
+   email and every other attribute unread, hashes `session.id` in memory on
+   arrival, and writes neither to the database or a log. The collector never
+   sends a session id: to fill the gap without counting twice, it sends each
+   Claude Code session's file totals per day under the first 16 hex of
+   `sha256("laika-session:" + id)`, the same key the receiver computes. This
+   extends D-084 item 1 the way D-079 item 3 allowed a one-way key for
+   commits: the key identifies a session only to someone who already holds its
+   id. The
    collector also sends the keys of the sessions it left out — automated
    (D-086) or outside the developer's scope (D-079 item 4) — so their
    telemetry is dropped too. **This amends D-086 item 1's "never sent" for the
@@ -4829,6 +4835,23 @@ reach past D-084's wording and are recorded here.
    are the figures that exist to watch agents; an agent's token that could
    lower a price or raise its own task's budget would silence the alert meant
    for its person.
+7. **An agent or model fewer than three people used is folded for a reader
+   who may not see people** (review B2). D-085 item 8's rule — a figure for
+   an agent fewer than three people use is a person's figure — now reaches
+   every per-agent and per-model figure, and folds rather than withholds,
+   because a withheld row can be read back as the total less the listed
+   rows. **For a reader without `usage.read_people`** — a member, and every
+   token, an owner's included — every agent and every model used by fewer
+   than three distinct people within the response's scope is folded, its
+   tokens, cache reads and cost alike, into one last row, `other`, carrying
+   `few_people` (how many agents or models it holds), and shown as *Other
+   (fewer than 3 people)*. It applies to `GET /usage`'s `by_agent` and
+   `by_model`, where the scope is the organisation or the space over the
+   range, and to the accepted-cost card's `by_agent`, where it is the people
+   who spent that agent's tokens on the tasks accepted in the range.
+   **Owners and admins on a web session see every row**, as they see
+   `by_developer`. A person's own figures (`GET /users/:id/usage`) are theirs
+   and are not folded.
 
 ### What this does not decide
 
@@ -4839,3 +4862,9 @@ reach past D-084's wording and are recorded here.
 - **What "heartbeat progress" should mean if heartbeats ever carry more.**
   Today a heartbeat is presence; only a session arriving on a task counts as
   progress.
+- **A fold of one.** When everything folded is one agent that one person
+  used, the `other` row is still that person's figure, though no longer
+  named. Folding hides which agent it was, not how much was spent, so a
+  reader who knows one person alone uses some agent can still read that
+  person's spend off the row. Item 7 is the owner's rule as decided; a floor
+  on the folded row itself would be a new decision.

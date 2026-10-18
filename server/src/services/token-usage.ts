@@ -223,12 +223,20 @@ export interface UsageDeveloper extends UsageSlice {
 
 export interface UsageAgentSlice extends UsageSlice {
   agent: AgentClient;
+  /**
+   * On the one row that folds together every agent fewer than three people
+   * used, for a reader who may not see people (review B2): how many it holds.
+   * Absent on an agent's own row. The row's `agent` is then `other`.
+   */
+  few_people?: number;
 }
 
 export interface UsageModelSlice extends UsageSlice {
   model: string;
   /** USD at list price; `null` when the model has no price — never 0 (LAI-773). */
   cost: number | null;
+  /** As `UsageAgentSlice.few_people`, for models; the row's `model` is then `other`. */
+  few_people?: number;
 }
 
 export interface UsageTaskSlice extends UsageSlice {
@@ -344,9 +352,10 @@ export interface UsageAccepted {
     cost_per_task: number;
   }[];
   /**
-   * Per agent, over the accepted tasks it spent tokens on — **only an agent
-   * at least three people used on them** (D-085 item 8's rule: with fewer, an
-   * agent's figure is a person's).
+   * Per agent, over the accepted tasks it spent tokens on. For a reader who
+   * may not see people, an agent fewer than three people used on them is
+   * folded into one `other` row (review B2): with fewer, an agent's figure is
+   * a person's. Owners and admins on a session see every agent.
    */
   by_agent: {
     agent: AgentClient;
@@ -355,8 +364,10 @@ export interface UsageAccepted {
     tokens: number;
     cost: UsageCost;
     cost_per_task: number;
+    /** On the one folded row (review B2): how many agents it holds; its `agent` is `other`. */
+    few_people?: number;
   }[];
-  /** Agents left out of `by_agent` for having fewer than three people. */
+  /** Agents folded into that row for having fewer than three people; 0 for a reader who sees people. */
   agents_withheld: number;
 }
 
@@ -787,6 +798,8 @@ interface Breakdown {
   cost: UsageCost;
   /** What the cache reads saved at list price; `null` with no priced model. */
   saving: number | null;
+  /** Each model's four counts, to price a folded row. */
+  counts: Map<string, ModelCounts>;
 }
 
 /**
@@ -843,7 +856,87 @@ function breakdown(db: Db, where: SQL | undefined, book: PriceBook): Breakdown {
     })),
     cost,
     saving,
+    counts,
   };
+}
+
+/** An agent or model is shown on its own once this many people used it (review B2). */
+export const MIN_AGENT_PEOPLE = 3;
+
+/**
+ * Who used each agent and each model within the response's scope — one range
+ * of the same index, grouped by agent, model and person (review B2).
+ */
+function peopleIn(
+  db: Db,
+  where: SQL | undefined,
+): { agents: Map<string, number>; models: Map<string, number> } {
+  const agents = new Map<string, Set<string>>();
+  const models = new Map<string, Set<string>>();
+  for (const r of db
+    .select({ agent: t.agent, model: t.model, userId: t.userId })
+    .from(t)
+    .where(where)
+    .groupBy(t.agent, t.model, t.userId)
+    .all()) {
+    const a = agentKindOf(r.agent);
+    agents.set(a, (agents.get(a) ?? new Set<string>()).add(r.userId));
+    models.set(r.model, (models.get(r.model) ?? new Set<string>()).add(r.userId));
+  }
+  const sizes = (m: Map<string, Set<string>>) =>
+    new Map([...m].map(([k, v]) => [k, v.size] as const));
+  return { agents: sizes(agents), models: sizes(models) };
+}
+
+/**
+ * For a reader who may not see people (review B2): every agent fewer than
+ * {@link MIN_AGENT_PEOPLE} people used in the scope is folded into one row,
+ * `other` with `few_people`, last — so no row, and no total less the listed
+ * rows, is one person's agent.
+ */
+function foldAgents(
+  rows: UsageAgentSlice[],
+  people: ReadonlyMap<string, number>,
+): UsageAgentSlice[] {
+  const kept = rows.filter((r) => (people.get(r.agent) ?? 0) >= MIN_AGENT_PEOPLE);
+  const few = rows.filter((r) => (people.get(r.agent) ?? 0) < MIN_AGENT_PEOPLE);
+  if (few.length === 0) return kept;
+  return [
+    ...kept,
+    {
+      agent: 'other',
+      tokens: few.reduce((n, r) => n + r.tokens, 0),
+      cache_read: few.reduce((n, r) => n + r.cache_read, 0),
+      few_people: few.length,
+    },
+  ];
+}
+
+/** As {@link foldAgents}, for models: the folded row priced as the models in it. */
+function foldModels(
+  rows: UsageModelSlice[],
+  people: ReadonlyMap<string, number>,
+  counts: ReadonlyMap<string, ModelCounts>,
+  book: PriceBook,
+): UsageModelSlice[] {
+  const kept = rows.filter((r) => (people.get(r.model) ?? 0) >= MIN_AGENT_PEOPLE);
+  const few = rows.filter((r) => (people.get(r.model) ?? 0) < MIN_AGENT_PEOPLE);
+  if (few.length === 0) return kept;
+  const cost = priced(
+    book,
+    new Map(few.map((r) => [r.model, counts.get(r.model) ?? noCounts()] as const)),
+  ).cost;
+  return [
+    ...kept,
+    {
+      model: 'other',
+      tokens: few.reduce((n, r) => n + r.tokens, 0),
+      cache_read: few.reduce((n, r) => n + r.cache_read, 0),
+      // Any of them priced: the priced part; none: no price, never 0.
+      cost: few.some((r) => r.cost !== null) ? cost.usd : null,
+      few_people: few.length,
+    },
+  ];
 }
 
 /** Of every input-side token, the share read from the cache; `null` with none. */
@@ -918,7 +1011,10 @@ export function getUsage(
   const where = project === undefined ? inRange : and(eq(t.projectId, project.id), inRange);
 
   const book = loadPriceBook(db);
-  const { totals, perDay, byAgent, byModel, cost, saving } = breakdown(db, where, book);
+  const { totals, perDay, byAgent, byModel, cost, saving, counts } = breakdown(db, where, book);
+  const seesPeople = can(actor, 'usage.read_people');
+  // Who used each agent and model here — only for a reader whose rows fold.
+  const people = seesPeople ? null : peopleIn(db, where);
   const trend: UsageDayPoint[] = [];
   for (let i = 0; i <= daysBetween(from, to); i += 1) {
     const day = addDays(from, i);
@@ -927,7 +1023,7 @@ export function getUsage(
   }
 
   let byDeveloper: UsageDeveloper[] | null = null;
-  if (can(actor, 'usage.read_people')) {
+  if (seesPeople) {
     // By person and model, so each person's figure can be priced (LAI-773);
     // folded to one row a person here.
     const people = new Map<
@@ -1083,8 +1179,8 @@ export function getUsage(
     totals: figuresOf(totals, cost),
     trend,
     by_developer: byDeveloper,
-    by_agent: byAgent,
-    by_model: byModel,
+    by_agent: people === null ? byAgent : foldAgents(byAgent, people.agents),
+    by_model: people === null ? byModel : foldModels(byModel, people.models, counts, book),
     top_tasks: top,
     no_token_data: agentsWithoutTokens(db, memberIds),
     org_totals: orgTotals,
@@ -1095,7 +1191,7 @@ export function getUsage(
       saving_usd: saving,
     },
     cache_by_project: cacheByProject(db, book, scope, { from, to }),
-    accepted: acceptedCost(db, book, scope, { from, to, tz }, now),
+    accepted: acceptedCost(db, book, scope, { from, to, tz }, now, seesPeople),
     budgets: budgetsForUsage(
       db,
       scope.map((p) => p.id),
@@ -1196,9 +1292,6 @@ function cacheByProject(
     .sort((a, b) => a.project.name.localeCompare(b.project.name));
 }
 
-/** An agent's cost per accepted task is shown once this many people stand behind it (D-085 item 8). */
-const MIN_AGENT_PEOPLE = 3;
-
 /**
  * What the tasks accepted in the range cost (LAI-773, the estimation R&D's
  * idea 2): each task's tokens, all of them — build and rework — priced, per
@@ -1212,6 +1305,7 @@ function acceptedCost(
   scope: readonly { id: string; slug: string; name: string }[],
   range: { from: string; to: string; tz: string },
   now: number,
+  seesPeople: boolean,
 ): UsageAccepted {
   const none: UsageAccepted = { by_project: [], by_agent: [], agents_withheld: 0 };
   if (scope.length === 0) return none;
@@ -1287,12 +1381,24 @@ function acceptedCost(
   }
   let withheld = 0;
   const byAgent: UsageAccepted['by_agent'] = [];
+  const folded = {
+    tasks: new Set<string>(),
+    people: new Set<string>(),
+    tokens: 0,
+    cost: emptyCost(),
+  };
   for (const [agent, a] of [...perAgent].sort(([x], [y]) => x.localeCompare(y))) {
-    if (a.people.size < MIN_AGENT_PEOPLE) {
+    const cost = priced(book, a.models).cost;
+    if (!seesPeople && a.people.size < MIN_AGENT_PEOPLE) {
+      // Folded, never dropped (review B2): dropping it let the card's total,
+      // less the listed agents, be read as one person's spend.
       withheld += 1;
+      for (const id of a.tasks) folded.tasks.add(id);
+      for (const id of a.people) folded.people.add(id);
+      folded.tokens += a.tokens;
+      addCost(folded.cost, cost);
       continue;
     }
-    const cost = priced(book, a.models).cost;
     byAgent.push({
       agent: agentKindOf(agent),
       tasks: a.tasks.size,
@@ -1300,6 +1406,17 @@ function acceptedCost(
       tokens: a.tokens,
       cost,
       cost_per_task: cost.usd / a.tasks.size,
+    });
+  }
+  if (withheld > 0) {
+    byAgent.push({
+      agent: 'other',
+      tasks: folded.tasks.size,
+      people: folded.people.size,
+      tokens: folded.tokens,
+      cost: folded.cost,
+      cost_per_task: folded.cost.usd / folded.tasks.size,
+      few_people: withheld,
     });
   }
   return {

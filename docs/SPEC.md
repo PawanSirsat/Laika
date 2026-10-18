@@ -2264,8 +2264,9 @@ and the profile's Tokens card:
   project: { slug, name } | null, totals: { tokens, input, output,
   cache_write, cache_read, attributed_tokens }, trend: [{ day, tokens,
   cache_read }], by_developer: [{ user_id, name, tokens, cache_read,
-  attributed_tokens }] | null, by_agent: [{ agent, tokens, cache_read }],
-  by_model: [{ model, tokens, cache_read }], top_tasks: [{ task_id, key,
+  attributed_tokens }] | null, by_agent: [{ agent, tokens, cache_read,
+  few_people? }], by_model: [{ model, tokens, cache_read, few_people? }],
+  top_tasks: [{ task_id, key,
   title, project_slug, tokens, cache_read }], no_token_data: [agent],
   org_totals, rework }`. `rework` (LAI-772) is, per project the reader may
   read and in name order, `{ project: { slug, name }, send_backs, tasks,
@@ -2281,8 +2282,18 @@ and the profile's Tokens card:
   included. **`by_developer` is `null` unless the reader holds
   `usage.read_people`** — an owner or admin on a web session — so a member and
   every token get totals only (D-084 item 7); when present it is in name
-  order, never ranked by volume. `top_tasks` are the ten that cost most, only
-  tasks the reader may read. `no_token_data` names the agents people here
+  order, never ranked by volume. **An agent or model fewer than three people
+  used is folded for a reader without `usage.read_people`** (D-087 item 7):
+  in `by_agent` and `by_model`, every agent and every model used by fewer than
+  three distinct people within the response's scope — the organisation, or the
+  space, over the range — is summed, tokens, cache reads and cost alike, into
+  one last row, `agent` (or `model`) `other`, with `few_people`, the number it
+  holds; the client labels it *Other (fewer than 3 people)*. So no row, and no
+  total less the listed rows, is one person's agent or model. A member and
+  every token, an owner's included, get the fold; owners and admins on a web
+  session get every row. `few_people` is absent on every other row.
+  `top_tasks` are the ten that cost most, only tasks the reader may read.
+  `no_token_data` names the agents people here
   connect (§9.3's `last_client` on a live token) that keep no token count the
   collector reads — Copilot CLI, Cursor and Windsurf among them; Omnigent and
   Hermes run one of the others and are not listed.
@@ -2368,12 +2379,18 @@ admins on a session), and:
   project the reader may read, in name order, `{ project, cache_read,
   input_side, share, saving_usd }`.
 - `accepted` — `{ by_project: [{ project, tasks, tokens, cost, cost_per_task
-  }], by_agent: [{ agent, tasks, people, tokens, cost, cost_per_task }],
-  agents_withheld }`: the tasks accepted in the range (§4.27) and everything
-  tied to them, build and rework, priced — the cost of one accepted task per
-  project and per agent. **An agent is listed only when at least three people
-  spent its tokens on those tasks** (D-085 item 8's rule: with fewer, an
-  agent's figure is a person's); the rest are counted in `agents_withheld`.
+  }], by_agent: [{ agent, tasks, people, tokens, cost, cost_per_task,
+  few_people? }], agents_withheld }`: the tasks accepted in the range (§4.27)
+  and everything tied to them, build and rework, priced — the cost of one
+  accepted task per project and per agent. **For a reader without
+  `usage.read_people`, an agent fewer than three people spent tokens on those
+  tasks with is folded** (D-087 item 7, D-085 item 8's rule: with fewer, an
+  agent's figure is a person's) into one last `by_agent` row, `agent:
+  "other"`, with `few_people` — the agents it holds — its tasks and people
+  counted once each, and its tokens and cost summed; `agents_withheld` is how
+  many were folded. Folded, not dropped,
+  so the card's total less the listed agents is no one person's spend. Owners
+  and admins on a web session see every agent, and `agents_withheld` is 0.
   Never per person.
 - `budgets` — each space's and sprint's budget in scope (§4.36), then the open
   tasks at 80% of theirs or more, fullest first, at most 20, as below.

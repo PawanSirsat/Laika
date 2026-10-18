@@ -8,6 +8,7 @@ import {
   orgs,
   projectMemberships,
   projects,
+  taskReviews,
   taskRounds,
   tasks,
   tokens,
@@ -845,6 +846,16 @@ describe('every Usage query is one indexed query', () => {
       ['a', 'b'],
     ],
     [
+      'who used each agent and model (review B2)',
+      `SELECT agent, model, user_id FROM token_usage_days WHERE ${RANGE} GROUP BY agent, model, user_id`,
+      ['a', 'b'],
+    ],
+    [
+      'who used each agent and model in a space (review B2)',
+      `SELECT agent, model, user_id FROM token_usage_days WHERE project_id = ? AND ${RANGE} GROUP BY agent, model, user_id`,
+      ['p', 'a', 'b'],
+    ],
+    [
       'cache by project and model',
       `SELECT project_id, model, sum(input), sum(cache_write), sum(cache_read) FROM token_usage_days WHERE project_id IN (?, ?) AND ${RANGE} GROUP BY project_id, model`,
       ['p', 'q', 'a', 'b'],
@@ -862,6 +873,136 @@ describe('every Usage query is one indexed query', () => {
       expect(steps.filter((s) => /^SCAN token_usage_days\b/.test(s))).toEqual([]);
     });
   }
+});
+
+describe('an agent or model fewer than three people used is folded for a reader who may not see people (review B2)', () => {
+  /** The project's Codex spend, Bea's alone in seedUsage: 1 + 2 + 3 tokens. */
+  const BEA_CODEX = 6;
+
+  function listedNames(view: ReturnType<typeof getUsage>) {
+    return {
+      agents: view.by_agent.filter((a) => a.few_people === undefined).map((a) => a.agent),
+      models: view.by_model.filter((m) => m.few_people === undefined).map((m) => m.model),
+    };
+  }
+
+  it('shows a member no row one person’s spend makes, and folds it into “fewer than three people”', () => {
+    seedUsage();
+    const view = getUsage(t.db, actor(cal), { days: 7, project: 'laika' }, NOW);
+    expect(listedNames(view)).toEqual({ agents: [], models: [] });
+    expect(view.by_agent).toEqual([
+      { agent: 'other', tokens: BEA_CODEX, cache_read: 4, few_people: 1 },
+    ]);
+    const folded = view.by_model.find((m) => m.few_people !== undefined);
+    expect(folded).toMatchObject({ model: 'other', tokens: BEA_CODEX, few_people: 1 });
+    // Its cost is the folded row's, never a model's of its own.
+    expect(folded?.cost).toBeGreaterThan(0);
+    expect(view.by_model.some((m) => m.model === 'gpt-5.2-codex')).toBe(false);
+  });
+
+  it('cannot be read around by subtraction: the listed rows hold only agents and models of three people or more', () => {
+    seedUsage();
+    // Bea's Claude Code row and a third person's put Claude Code at three people
+    // in the organisation's figures; Codex stays Bea's alone.
+    const dee = makeUser('Dee', 'member');
+    member(dee, projectId);
+    share(dee);
+    recordTokenUsage(
+      t.db,
+      actor(dee),
+      report([{ day: TODAY, rows: [row({ input: 1, output: 1, cache_write: 1, cache_read: 1 })] }]),
+      NOW,
+    );
+    const token = withToken(owner, 'read_only');
+    const view = getUsage(t.db, token, { days: 7 }, NOW);
+    expect(view.by_developer).toBeNull();
+    expect(listedNames(view)).toEqual({ agents: ['claude-code'], models: ['claude-opus-5-5'] });
+    const listed = view.by_agent.filter((a) => a.few_people === undefined);
+    // What the total leaves once the listed rows are taken away is the folded
+    // row — "fewer than three people" — and no single agent's own figure.
+    const rest = view.totals.tokens - listed.reduce((n, a) => n + a.tokens, 0);
+    expect(rest).toBe(BEA_CODEX);
+    expect(view.by_agent.find((a) => a.few_people !== undefined)).toEqual({
+      agent: 'other',
+      tokens: rest,
+      cache_read: 4,
+      few_people: 1,
+    });
+  });
+
+  it('lists an agent once three people have used it in the scope', () => {
+    const { taskKey } = seedUsage();
+    for (const name of ['Dee', 'Eve']) {
+      const id = makeUser(name, 'member');
+      member(id, projectId);
+      share(id);
+      recordTokenUsage(
+        t.db,
+        actor(id),
+        report([
+          { day: TODAY, rows: [row({ agent: 'codex', model: 'gpt-5.2-codex', task: taskKey })] },
+        ]),
+        NOW,
+      );
+    }
+    const view = getUsage(t.db, actor(cal), { days: 7, project: 'laika' }, NOW);
+    expect(listedNames(view)).toEqual({ agents: ['codex'], models: ['gpt-5.2-codex'] });
+    expect(view.by_agent.some((a) => a.few_people !== undefined)).toBe(false);
+  });
+
+  it('shows owners and admins on a session everything, as before', () => {
+    seedUsage();
+    const view = getUsage(t.db, actor(owner), { days: 7, project: 'laika' }, NOW);
+    expect(listedNames(view)).toEqual({ agents: ['codex'], models: ['gpt-5.2-codex'] });
+    expect(view.by_agent.every((a) => a.few_people === undefined)).toBe(true);
+  });
+
+  it('folds the accepted-cost card the same way, tokens and cost', () => {
+    const { taskKey } = seedUsage();
+    const task = t.db
+      .select()
+      .from(tasks)
+      .all()
+      .find((x) => `LAI-${String(x.number)}` === taskKey)!;
+    const round = newId();
+    t.db
+      .insert(taskRounds)
+      .values({
+        id: round,
+        taskId: task.id,
+        number: 1,
+        finishedBy: bea,
+        summaryMd: 'done',
+        createdAt: NOW - 3_600_000,
+      })
+      .run();
+    t.db
+      .insert(taskReviews)
+      .values({
+        id: newId(),
+        taskId: task.id,
+        roundId: round,
+        decision: 'accepted',
+        decidedBy: owner,
+        createdAt: NOW - 1_800_000,
+      })
+      .run();
+
+    const member = getUsage(t.db, actor(cal), { days: 7, project: 'laika' }, NOW).accepted;
+    expect(member.by_agent).toHaveLength(1);
+    expect(member.by_agent[0]).toMatchObject({
+      agent: 'other',
+      tasks: 1,
+      tokens: BEA_CODEX,
+      few_people: 1,
+    });
+    expect(member.by_agent[0]?.cost.usd).toBeGreaterThan(0);
+    expect(member.agents_withheld).toBe(1);
+
+    const admin = getUsage(t.db, actor(owner), { days: 7, project: 'laika' }, NOW).accepted;
+    expect(admin.by_agent.map((a) => [a.agent, a.few_people])).toEqual([['codex', undefined]]);
+    expect(admin.agents_withheld).toBe(0);
+  });
 });
 
 describe('the Usage page’s work does not grow with the people in it (LAI-773, LAI-779)', () => {
