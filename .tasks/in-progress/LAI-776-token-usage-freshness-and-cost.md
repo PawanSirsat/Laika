@@ -2,11 +2,12 @@
 id: LAI-776
 title: 'Token usage: data arrives only at session start or end, and a sync with new bytes rewrites 4.6 MB'
 area: cli
-assignee: unclaimed
+assignee: owner-direct
 priority: p3
 depends-on: []
 discovered-from: LAI-769
-status: backlog
+status: in-progress
+started: 2026-10-18T03:46:13Z
 ---
 
 ## Goal

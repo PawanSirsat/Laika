@@ -2,11 +2,12 @@
 id: LAI-773
 title: 'Token usage, phase 3: OpenTelemetry fallback, API-equivalent cost, budgets with soft alerts, runaway-agent alert, plan-limit forecast for the developer'
 area: server
-assignee: unclaimed
+assignee: owner-direct
 priority: p2
 depends-on: [LAI-772]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-18T03:46:13Z
 ---
 
 ## Goal
