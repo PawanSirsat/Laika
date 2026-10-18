@@ -63,12 +63,20 @@ export interface UsageDeveloper extends UsageSlice {
 
 export interface UsageAgentSlice extends UsageSlice {
   readonly agent: AgentClient;
+  /**
+   * Only on the one row folding every agent fewer than three people used, for
+   * a reader who may not see people (D-087 item 7): how many it holds. Its
+   * `agent` is then `other` — not the `other` kind — so read this, not that.
+   */
+  readonly few_people?: number;
 }
 
 export interface UsageModelSlice extends UsageSlice {
   readonly model: string;
   /** USD at list price; `null` when the model has no price — never 0. */
   readonly cost: number | null;
+  /** As {@link UsageAgentSlice.few_people}, for models. */
+  readonly few_people?: number;
 }
 
 export interface UsageTaskSlice extends UsageSlice {
@@ -182,7 +190,10 @@ export interface UsageAccepted {
     readonly cost: UsageCost;
     readonly cost_per_task: number;
   }[];
-  /** Only agents at least three people used on those tasks. */
+  /**
+   * Per agent; for a reader who may not see people, the agents fewer than
+   * three people used on those tasks are one last row with `few_people`.
+   */
   readonly by_agent: readonly {
     readonly agent: AgentClient;
     readonly tasks: number;
@@ -190,8 +201,10 @@ export interface UsageAccepted {
     readonly tokens: number;
     readonly cost: UsageCost;
     readonly cost_per_task: number;
+    /** As {@link UsageAgentSlice.few_people}. */
+    readonly few_people?: number;
   }[];
-  /** Agents left out for having fewer than three people. */
+  /** Agents folded into that row; 0 for a reader who sees people. */
   readonly agents_withheld: number;
 }
 
@@ -429,6 +442,17 @@ export function reworkLine(r: ReworkCost): string {
  */
 export const COST_LABEL = 'API-equivalent, not your bill';
 
+/**
+ * The name of the row that folds every agent or model fewer than three people
+ * used (D-087 item 7) — a figure for fewer would be a person's.
+ */
+export const FEW_PEOPLE_LABEL = 'Other (fewer than 3 people)';
+
+/** Whether a row is that fold, rather than an agent or model of its own. */
+export function isFewPeople(row: { readonly few_people?: number }): boolean {
+  return row.few_people !== undefined;
+}
+
 /** `$0.42`, `$12.30`, `$1,234` — and `<$0.01` rather than a `$0.00` that says none. */
 export function usd(amount: number): string {
   if (amount <= 0) return '$0';
@@ -439,11 +463,18 @@ export function usd(amount: number): string {
 
 /**
  * A cost as one figure: dollars, or **no price** when nothing in it could be
- * priced — never `$0` for tokens nobody priced.
+ * priced — never `$0` for tokens nobody priced. Read off the models, not the
+ * tokens: `unpriced_tokens` leaves cache reads out, so a model with no price
+ * and only cache reads has none and would otherwise read `$0` (review).
  */
 export function costText(cost: UsageCost): string {
-  if (cost.usd === 0 && cost.unpriced_tokens > 0) return 'no price';
+  if (cost.usd === 0 && cost.unpriced_models.length > 0) return 'no price';
   return usd(cost.usd);
+}
+
+/** A cost per task, as {@link costText}: no price for a cost that has none. */
+export function perTaskText(cost: UsageCost, perTask: number): string {
+  return cost.usd === 0 && cost.unpriced_models.length > 0 ? 'no price' : usd(perTask);
 }
 
 /**
@@ -452,10 +483,10 @@ export function costText(cost: UsageCost): string {
  */
 export function costCaveats(cost: UsageCost): string[] {
   const out: string[] = [];
-  if (cost.unpriced_tokens > 0 && cost.usd > 0) {
-    out.push(
-      `not counting ${compactTokens(cost.unpriced_tokens)} tokens of ${cost.unpriced_models.join(', ')} (no price)`,
-    );
+  if (cost.unpriced_models.length > 0 && cost.usd > 0) {
+    const tokens =
+      cost.unpriced_tokens > 0 ? `${compactTokens(cost.unpriced_tokens)} tokens of ` : '';
+    out.push(`not counting ${tokens}${cost.unpriced_models.join(', ')} (no price)`);
   }
   if (cost.unconfirmed_models.length > 0) {
     out.push(`inferred price for ${cost.unconfirmed_models.join(', ')}`);

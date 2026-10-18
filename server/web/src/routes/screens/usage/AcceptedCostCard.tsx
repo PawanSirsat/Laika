@@ -1,5 +1,13 @@
 import { agentClientName } from '../../../api/agent-clients.ts';
-import { compactTokens, COST_LABEL, costText, usd, type Usage } from '../../../api/usage.ts';
+import {
+  compactTokens,
+  COST_LABEL,
+  costText,
+  FEW_PEOPLE_LABEL,
+  isFewPeople,
+  perTaskText,
+  type Usage,
+} from '../../../api/usage.ts';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { CostCaveats } from './CostCaveats.tsx';
@@ -7,8 +15,10 @@ import { CostCaveats } from './CostCaveats.tsx';
 /**
  * *Cost per accepted task* (LAI-773; the estimation research's idea 2): what
  * the work a person accepted in the range cost, API-equivalent, per space and
- * per agent — **never per person**, and an agent only where at least three
- * people stand behind its figure, since with fewer it would be a person's.
+ * per agent — **never per person**. For a reader who may not see people, the
+ * agents fewer than three people stand behind are one row, *Other (fewer
+ * than 3 people)* (D-087 item 7): with fewer, a figure would be a person's,
+ * and a row left out could be read back as the total less the rest.
  */
 export function AcceptedCostCard({ usage }: { readonly usage: Usage }) {
   const { accepted } = usage;
@@ -27,8 +37,8 @@ export function AcceptedCostCard({ usage }: { readonly usage: Usage }) {
           <p className="usage-info">
             Every task a person accepted in this range, with all the tokens tied to it — the build
             and any rework — priced at list price on the vendor’s API. Per space and per agent,
-            never per person; an agent is shown only where at least three people used it on these
-            tasks.
+            never per person; agents fewer than three people used on these tasks are shown together,
+            as one row.
           </p>
         </InfoTip>
       </header>
@@ -49,7 +59,7 @@ export function AcceptedCostCard({ usage }: { readonly usage: Usage }) {
               <tr key={p.project.slug}>
                 <th scope="row">{p.project.name}</th>
                 <td>{p.tasks}</td>
-                <td className="usage-money">{usd(p.cost_per_task)}</td>
+                <td className="usage-money">{perTaskText(p.cost, p.cost_per_task)}</td>
                 <td className="usage-money" title={`${compactTokens(p.tokens)} tokens`}>
                   {costText(p.cost)}
                   <CostCaveats cost={p.cost} />
@@ -71,14 +81,18 @@ export function AcceptedCostCard({ usage }: { readonly usage: Usage }) {
           </thead>
           <tbody>
             {accepted.by_agent.map((a) => (
-              <tr key={a.agent}>
+              <tr
+                key={isFewPeople(a) ? 'few-people' : a.agent}
+                data-few-people={isFewPeople(a) ? 'true' : undefined}
+              >
                 <th scope="row">
                   <span className="usage-row-name">
-                    <AgentMark client={a.agent} size="sm" /> {agentClientName(a.agent)}
+                    <AgentMark client={a.agent} size="sm" />{' '}
+                    {isFewPeople(a) ? FEW_PEOPLE_LABEL : agentClientName(a.agent)}
                   </span>
                 </th>
                 <td>{a.tasks}</td>
-                <td className="usage-money">{usd(a.cost_per_task)}</td>
+                <td className="usage-money">{perTaskText(a.cost, a.cost_per_task)}</td>
                 <td className="usage-money">
                   {costText(a.cost)}
                   <CostCaveats cost={a.cost} />
@@ -91,8 +105,8 @@ export function AcceptedCostCard({ usage }: { readonly usage: Usage }) {
       {accepted.agents_withheld > 0 && (
         <p className="usage-cost-caveat" data-withheld>
           {accepted.agents_withheld === 1
-            ? '1 agent is not shown: fewer than three people used it on these tasks.'
-            : `${String(accepted.agents_withheld)} agents are not shown: fewer than three people used each on these tasks.`}
+            ? '1 agent is in “Other”: fewer than three people used it on these tasks.'
+            : `${String(accepted.agents_withheld)} agents are in “Other”: fewer than three people used each on these tasks.`}
         </p>
       )}
     </section>

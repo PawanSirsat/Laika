@@ -192,7 +192,8 @@ function orgUsage(days = 30) {
           cost_per_task: 10.02,
         },
       ],
-      agents_withheld: 1,
+      // An owner on a session sees every agent (D-087 item 7): nothing folded.
+      agents_withheld: 0,
     },
     budgets: [
       budget({
@@ -229,6 +230,59 @@ function spaceUsage(slug: string, reader: 'owner' | 'member' = 'member') {
     // Telemetry ties to no task, so a space has none; counts are for owners and admins.
     telemetry: null,
     runaway: reader === 'owner' ? [{ project: { slug, name: 'Laika' }, alerts: 2 }] : null,
+    ...(reader === 'member' ? folded() : {}),
+  };
+}
+
+/**
+ * What a member is sent (D-087 item 7): every agent and model fewer than three
+ * people used is one last row with `few_people`, its `agent` `other` — beside
+ * the `other` kind's own row, which three people stand behind. The folded
+ * model and the folded accepted agent are unpriced with only cache reads, so
+ * `unpriced_tokens` is 0 and only the model list says there is no price.
+ */
+function folded() {
+  return {
+    by_agent: [
+      { agent: 'claude-code', tokens: 11_000_000, cache_read: 790_000_000 },
+      { agent: 'other', tokens: 900_000, cache_read: 9_000_000 },
+      { agent: 'other', tokens: 100_000, cache_read: 1_000_000, few_people: 2 },
+    ],
+    by_model: [
+      { model: 'claude-opus-5-5', tokens: 11_900_000, cache_read: 799_000_000, cost: 98.2 },
+      { model: 'other', tokens: 0, cache_read: 1_000_000, cost: null, few_people: 1 },
+    ],
+    accepted: {
+      by_project: [
+        {
+          project: { slug: 'laika', name: 'Laika' },
+          tasks: 6,
+          tokens: 9_000_000,
+          cost: cost(62.4),
+          cost_per_task: 10.4,
+        },
+      ],
+      by_agent: [
+        {
+          agent: 'claude-code',
+          tasks: 6,
+          people: 3,
+          tokens: 8_700_000,
+          cost: cost(62.4),
+          cost_per_task: 10.4,
+        },
+        {
+          agent: 'other',
+          tasks: 2,
+          people: 2,
+          tokens: 0,
+          cost: cost(0, 0, ['mystery-1']),
+          cost_per_task: 0,
+          few_people: 1,
+        },
+      ],
+      agents_withheld: 1,
+    },
   };
 }
 
@@ -619,7 +673,10 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       const accepted = await text(h.page, '.usage-card[data-section="accepted"]');
       assert.match(accepted, /Laika\s+6\s+\$10\.40\s+\$62\.40/);
       assert.match(accepted, /Claude Code/);
-      assert.match(accepted, /1 agent is not shown: fewer than three people/);
+      // An owner on a session: every agent its own row, nothing folded.
+      assert.doesNotMatch(accepted, /fewer than 3 people/);
+      assert.equal(await h.page.locator('[data-withheld]').count(), 0);
+      assert.doesNotMatch(await text(h.page, '.usage-card[data-section="agents"]'), /fewer than/);
 
       assert.match(
         await text(h.page, '.usage-card[data-section="cache"]'),
@@ -658,6 +715,45 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
         0,
       );
       assert.doesNotMatch(await text(h.page, '.usage-card[data-section="developers"]'), /\$/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a member: what fewer than three people used is one row, Other (fewer than 3 people), and no price is never $0', async () => {
+    const h = await open('/usage', memberStub());
+    try {
+      await ready(h.page);
+      // Beside the `other` kind's own row, under its own name (review B2);
+      // then the agents with no token data, as for everyone.
+      assert.deepEqual(await rows(h.page, 'agents'), [
+        'Claude Code',
+        'another agent',
+        'Other (fewer than 3 people)',
+        'Cursor',
+        'Windsurf',
+      ]);
+      assert.deepEqual(await rows(h.page, 'models'), [
+        'claude-opus-5-5',
+        'Other (fewer than 3 people)',
+      ]);
+      // A model with no price and only cache reads (review, ALSO FIX 7).
+      const models = await text(h.page, '.usage-card[data-section="models"]');
+      assert.match(models, /Other \(fewer than 3 people\)\s+0\s+no price/);
+      const folded = h.page.locator('.usage-card[data-section="accepted"] tr[data-few-people]');
+      assert.equal(await folded.count(), 1);
+      assert.match(
+        (await folded.innerText()).replace(/\s+/g, ' '),
+        /^Other \(fewer than 3 people\) 2 no price no price$/,
+      );
+      assert.match(
+        await text(h.page, '[data-withheld]'),
+        /1 agent is in “Other”: fewer than three people used it on these tasks\./,
+      );
+      assert.doesNotMatch(
+        await text(h.page, '.usage-card[data-section="accepted"]'),
+        /\$0(?![.\d])/,
+      );
     } finally {
       await h.close();
     }

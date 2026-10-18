@@ -10,7 +10,9 @@ import {
   costCaveats,
   costText,
   exactTokens,
+  FEW_PEOPLE_LABEL,
   getUsage,
+  isFewPeople,
   modelCostText,
   percent,
   readerZone,
@@ -486,10 +488,12 @@ function UsageDetail({
               <BarRows
                 label="Tokens by agent"
                 rows={usage.by_agent.map((a) => ({
-                  key: a.agent,
+                  // The fold's `agent` is `other`, as the `other` kind's is (D-087 item 7).
+                  key: isFewPeople(a) ? 'few-people' : a.agent,
                   name: (
                     <>
-                      <AgentMark client={a.agent} size="sm" /> {agentClientName(a.agent)}
+                      <AgentMark client={a.agent} size="sm" />{' '}
+                      {isFewPeople(a) ? FEW_PEOPLE_LABEL : agentClientName(a.agent)}
                     </>
                   ),
                   tokens: a.tokens,
@@ -529,8 +533,12 @@ function UsageDetail({
             <BarRows
               label="Tokens by model"
               rows={usage.by_model.map((m) => ({
-                key: m.model,
-                name: <code className="usage-model">{m.model}</code>,
+                key: isFewPeople(m) ? 'few-people' : m.model,
+                name: isFewPeople(m) ? (
+                  FEW_PEOPLE_LABEL
+                ) : (
+                  <code className="usage-model">{m.model}</code>
+                ),
                 tokens: m.tokens,
                 cacheRead: m.cache_read,
                 note: modelCostText(m.cost),

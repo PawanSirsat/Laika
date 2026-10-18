@@ -15,6 +15,7 @@ import {
   COST_LABEL,
   costCaveats,
   costText,
+  perTaskText,
   getPersonUsage,
   getTaskUsage,
   getUsage,
@@ -245,6 +246,12 @@ void describe('cost, API-equivalent (LAI-773)', () => {
     assert.equal(modelCostText(null), 'no price');
     assert.equal(modelCostText(0.5), '$0.50');
     assert.equal(costText(cost(3.2, 1_000, ['mystery'])), '$3.20');
+    // Only cache reads: no headline tokens unpriced, and still no price (review).
+    assert.equal(costText(cost(0, 0, ['mystery'])), 'no price');
+    assert.equal(perTaskText(cost(0, 0, ['mystery']), 0), 'no price');
+    assert.equal(perTaskText(cost(6.3), 2.1), '$2.10');
+    // Nothing at all is $0: there is no model to have no price.
+    assert.equal(costText(cost(0)), '$0');
   });
 
   void test('says what it leaves out and what it guessed', () => {
@@ -253,6 +260,8 @@ void describe('cost, API-equivalent (LAI-773)', () => {
       'inferred price for gpt-5.2-codex',
     ]);
     assert.deepEqual(costCaveats(cost(3.2)), []);
+    // An unpriced model with only cache reads is still named as left out.
+    assert.deepEqual(costCaveats(cost(3.2, 0, ['mystery'])), ['not counting mystery (no price)']);
   });
 
   void test('a share in whole percent, a dash for none', () => {
