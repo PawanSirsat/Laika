@@ -1413,6 +1413,13 @@ export interface UsageReadOptions {
    * kept in the index, so the last answer holds when one names none.
    */
   readonly prefixes?: readonly string[] | undefined;
+  /**
+   * Claude Code on this machine sends its metrics to this board
+   * ({@link telemetryToBoard} in `activity-sync.ts`). Only then are the left-out
+   * sessions' keys sent (`excluded`): with no telemetry from here there is
+   * nothing of theirs for the board to drop (review).
+   */
+  readonly telemetry?: boolean;
 }
 
 /** What a scan changed that a day's figure depends on. */
@@ -2298,16 +2305,20 @@ async function daysOf(
     if (sessions.length > 0 && rows.length > 0) outSessions.set(day, sessions);
     for (const key of claude?.x ?? []) scopeOut.push(`${day} ${key}`);
   }
-  // Automated first, newest first; then the out-of-scope, newest day first.
-  const excluded = [
-    ...new Set([
-      ...[...skipIds].reverse().map(sessionKey),
-      ...scopeOut
-        .sort()
-        .reverse()
-        .map((entry) => entry.slice(11)),
-    ]),
-  ].slice(0, EXCLUDED_MAX);
+  // Automated first, newest first; then the out-of-scope, newest day first —
+  // and none at all unless this machine's Claude Code sends telemetry here.
+  const excluded =
+    options.telemetry !== true
+      ? []
+      : [
+          ...new Set([
+            ...[...skipIds].reverse().map(sessionKey),
+            ...scopeOut
+              .sort()
+              .reverse()
+              .map((entry) => entry.slice(11)),
+          ]),
+        ].slice(0, EXCLUDED_MAX);
   return { rows: outRows, sessions: outSessions, older: olderDays, excluded };
 }
 
@@ -2380,7 +2391,8 @@ export interface UsageReport {
  * SESSIONS_PER_DAY_MAX} — then it goes without them, rows whole: the board
  * then treats the day's Claude Code tokens as placed in no session, which can
  * only ever count less, never twice. Every report names the sessions left out
- * (`excluded`).
+ * (`excluded`) it is given — none unless this machine's Claude Code sends
+ * telemetry to the board ({@link UsageReadOptions.telemetry}).
  */
 export function usageReports(options: {
   readonly collectorId: string;

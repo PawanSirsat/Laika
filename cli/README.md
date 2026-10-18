@@ -241,10 +241,12 @@ no token counts on the machine, so they have none to send.
 - **Sessions, by a one-way key** (LAI-773). Each day also carries its Claude
   Code tokens split per session and model, the session named only by the
   first 16 hex characters of `sha256("laika-session:" + session id)` — never
-  the id — and every report names, the same way, the sessions whose tokens
-  are left out (`excluded`): automated ones, and under `laika-repos` the ones
-  outside your scope. The board uses them only to put Claude Code's own
-  OpenTelemetry counts beside its session files (`laika activity otel`): it
+  the id — and, once Claude Code here sends its metrics to the board
+  (`laika activity otel`), every report names the same way the sessions whose
+  tokens are left out (`excluded`): automated ones, and under `laika-repos`
+  the ones outside your scope. Without that, they are not named at all, since
+  the board has nothing of theirs to drop. The board uses them only to put
+  Claude Code's own OpenTelemetry counts beside its session files: it
   adds what the files missed — background calls — never what they already
   hold, and drops the telemetry of every session left out here.
 - What was read is kept in `~/.laika/activity/usage-index.json`,

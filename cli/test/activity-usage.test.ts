@@ -1683,11 +1683,12 @@ void describe('Claude Code sessions in a usage report (LAI-773, design.md §2)',
     const paths = activityPaths(root);
     mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
     const bodies: string[] = [];
-    const step = (scope: 'agent-repos' | 'laika-repos' = 'agent-repos') =>
+    const step = (scope: 'agent-repos' | 'laika-repos' = 'agent-repos', telemetry = true) =>
       usageStep({
         paths,
         roots: usageRoots(root, {}),
         state: { ...state(NOW_S - 40 * DAY), scope },
+        telemetry,
         collectorId: COLLECTOR,
         tz: TZ,
         nowS: NOW_S,
@@ -1801,6 +1802,31 @@ void describe('Claude Code sessions in a usage report (LAI-773, design.md §2)',
     );
     const sent = w.bodies.join('\n');
     for (const id of [A, B, ROBOT]) assert.ok(!sent.includes(id), `a session id was sent: ${id}`);
+  });
+
+  void test('without telemetry from this machine, the sessions left out are not named at all (review)', async () => {
+    const w = world();
+    writeClaude(w.root, 'p/a.jsonl', [
+      claudeLine('msg_a1', NOW_S - 900, { input: 1, output: 10, cw: 0, cr: 0 }, { session: A }),
+    ]);
+    writeFileSync(join(w.paths.dir, 'skip-sessions'), `${String(NOW_S - 950)} ${ROBOT}\n`, {
+      mode: 0o600,
+    });
+    assert.equal((await w.step('agent-repos', false)).kind, 'sent');
+    assert.equal(w.last().excluded, undefined);
+    // The rows and the sessions go as ever.
+    assert.deepEqual(
+      w.last().days[0]?.sessions?.map((x) => x.key),
+      [sessionKey(A)],
+    );
+    // Telemetry set up later: the next report names them — sessions started
+    // with telemetry on write new bytes, and that is what sends one.
+    writeClaude(w.root, 'p/a.jsonl', [
+      claudeLine('msg_a1', NOW_S - 900, { input: 1, output: 10, cw: 0, cr: 0 }, { session: A }),
+      claudeLine('msg_a2', NOW_S - 300, { input: 1, output: 10, cw: 0, cr: 0 }, { session: A }),
+    ]);
+    assert.equal((await w.step('agent-repos', true)).kind, 'sent');
+    assert.deepEqual(w.last().excluded, [sessionKey(ROBOT)]);
   });
 
   void test('under laika-repos, a session outside the developer’s scope is left out and named by key', async () => {

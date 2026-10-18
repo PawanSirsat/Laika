@@ -2191,8 +2191,12 @@ reaches SSE, an MCP tool or an export (§4.21).
   under their parent, at most 100 — and the report may carry `"excluded":
   ["<key>", …]`, at most 200: the sessions the collector left out of its rows,
   automated (D-086) or outside the developer's `laika-repos` scope (D-079 item
-  4). A key is the first 16 hex of `sha256("laika-session:" + session id)`,
-  lower case — never the id. Each (person, collector, day) carried replaces
+  4) — **sent only when Claude Code on that machine exports its metrics to
+  this board** (telemetry on, an OTLP metrics exporter, an endpoint under
+  `/api/v1/otlp/`, in `~/.claude/settings.json`'s `env` or the environment;
+  review): with none from there, there is nothing of theirs to drop. A key is
+  the first 16 hex of `sha256("laika-session:" + session id)`, lower case —
+  never the id. Each (person, collector, day) carried replaces
   that machine's session rows (§4.38); a day sent without `sessions` leaves its
   Claude Code file tokens *unplaced*, which keeps the match safe (§4.38). A key
   in `excluded` drops that session's telemetry, before and after.

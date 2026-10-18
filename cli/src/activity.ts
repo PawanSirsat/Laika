@@ -48,6 +48,7 @@ import {
   stopCollecting,
   sync,
   SYNC_DEADLINE_MS,
+  telemetryToBoard,
   type SyncContext,
   type SyncOutcome,
 } from './activity-sync.ts';
@@ -495,6 +496,7 @@ async function status(io: ActivityIo): Promise<number> {
     tz: ianaTimeZone(io.tz),
     nowS: Math.floor(io.nowMs() / 1000),
     collectorId: existing !== undefined && existing !== '' ? existing : '(created on first sync)',
+    telemetry: state.board !== undefined && telemetryToBoard(io.home, io.env, state.board),
   });
   for (const report of usage) {
     io.out('');
@@ -711,6 +713,7 @@ async function backfillTokens(
     state,
     tz: ianaTimeZone(io.tz),
     nowS: Math.floor(io.nowMs() / 1000),
+    telemetry: telemetryToBoard(io.home, io.env, creds.url),
   };
   // Counted before asking, like the commits: no lock is held while a person reads.
   if (!(await tokensFound(io, paths, state))) {
