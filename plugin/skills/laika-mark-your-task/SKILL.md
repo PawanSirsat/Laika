@@ -21,7 +21,8 @@ cannot ask you; it reads the marks you leave. So:
    to the task its branch names.
 4. **Finish with `finish_task`**, or move the task out of progress with
    `update_status`. Work after that counts for no task until you mark the next
-   one.
+   one. Pass `finish_task` your proof (commits, branch, pull request, test
+   commands and exit codes) so a person can check it.
 
 ## Why
 
