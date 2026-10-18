@@ -195,3 +195,57 @@ export function canAssignToSprints(
     (m) => m.project_id === projectId && (m.role === 'lead' || m.role === 'member'),
   );
 }
+
+// ------------------------------------------------- the forecast (LAI-772)
+
+export interface SprintForecastFigures {
+  /** The share of draws inside `[low, high]`. */
+  readonly probability: number;
+  readonly low: number;
+  readonly high: number;
+  readonly median: number;
+  readonly days_left: number;
+}
+
+/** What a forecast drew on: the window, and what the project finished in it. */
+export interface SprintForecastBasis {
+  readonly days: number;
+  readonly tasks_done: number;
+  readonly weight_done: number;
+}
+
+/** `GET /sprints/:id/forecast` — the server's `SprintForecastView`. */
+export interface SprintForecast {
+  readonly sprint_id: string;
+  readonly total: number;
+  readonly done: number;
+  readonly forecast: SprintForecastFigures | null;
+  readonly reason: 'completed' | 'no_tasks' | 'not_enough_history' | null;
+  readonly basis: SprintForecastBasis;
+}
+
+/**
+ * "85% likely to finish 18–23 of 26": computed by the server from the
+ * project's own recent throughput and the sizes left (LAI-772). Not story
+ * points — nothing here is typed by anybody.
+ */
+export function getSprintForecast(sprintId: string, signal?: AbortSignal): Promise<SprintForecast> {
+  return request<SprintForecast>(`/sprints/${encodeURIComponent(sprintId)}/forecast`, {
+    ...(signal === undefined ? {} : { signal }),
+  });
+}
+
+/** The forecast in one line, why there is none, or null where none is wanted. */
+export function forecastLine(view: SprintForecast): string | null {
+  const f = view.forecast;
+  if (f !== null) {
+    if (f.low === view.total && f.high === view.total)
+      return `Likely to finish all ${String(view.total)}`;
+    const range = f.low === f.high ? String(f.low) : `${String(f.low)}–${String(f.high)}`;
+    return `${String(Math.round(f.probability * 100))}% likely to finish ${range} of ${String(view.total)}`;
+  }
+  if (view.reason === 'not_enough_history') {
+    return 'Forecast once 10 tasks are done in six weeks';
+  }
+  return null;
+}

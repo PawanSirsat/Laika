@@ -20,6 +20,7 @@ import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { buildLabel } from '../../../api/estimates.ts';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { EvidenceSection } from '../task/EvidenceSection.tsx';
 import { SCREEN_COPY } from '../screen-copy.ts';
@@ -138,6 +139,7 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
       oldest: items[0] === undefined ? '—' : waitingFor(items[0].waiting_since, now),
       failing: summaries.filter((s) => s.testsFailed > 0).length,
       bare: summaries.filter((s) => s.empty).length,
+      fast: items.filter((i) => i.cue !== null).length,
     };
   }, [items, now]);
 
@@ -184,7 +186,8 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
     filter.failing ||
     filter.noEvidence ||
     filter.ciFailed ||
-    filter.ciConfirmed;
+    filter.ciConfirmed ||
+    filter.fast;
 
   const header = (
     <ScreenHeader
@@ -241,6 +244,14 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
                 </dd>
               </div>
               <div>
+                <dt>Check this one</dt>
+                <dd>
+                  Its first round finished in under a quarter of the time Laika forecast when work
+                  started, and CI has not confirmed it. About the task, not the person: worth a
+                  second look before accepting.
+                </dd>
+              </div>
+              <div>
                 <dt>Accept · Send back</dt>
                 <dd>
                   Only a person signed in here decides. Accept moves it to done; send back returns
@@ -266,6 +277,10 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
           <div className="prof-stat" data-stat="bare">
             <dt className="prof-stat-label">No proof</dt>
             <dd className="prof-stat-value">{figures.bare}</dd>
+          </div>
+          <div className="prof-stat" data-stat="check">
+            <dt className="prof-stat-label">Check these</dt>
+            <dd className="prof-stat-value">{figures.fast}</dd>
           </div>
         </dl>
       </section>
@@ -340,6 +355,17 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
           >
             CI confirmed
           </button>
+          {/* LAI-772: finished far faster than forecast, nothing confirmed. */}
+          <button
+            type="button"
+            className={filter.fast ? 'bar-control bar-control-on' : 'bar-control'}
+            aria-pressed={filter.fast}
+            onClick={() => {
+              setFilter((f) => ({ ...f, fast: !f.fast }));
+            }}
+          >
+            Check this one
+          </button>
         </div>
       )}
 
@@ -395,6 +421,17 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
                     {item.round !== null && <span>round {item.round.number}</span>}
                   </span>
                   <span className="rev-proof">
+                    {item.cue !== null && (
+                      <span
+                        className="rev-chip rev-chip-check"
+                        data-cue={item.cue.kind}
+                        title={`Finished in ${buildLabel(item.cue.build_ms)} against a forecast of ${buildLabel(
+                          item.cue.forecast_p50_ms,
+                        )}, and CI has not confirmed it`}
+                      >
+                        check this one
+                      </span>
+                    )}
                     {summary.empty ? (
                       <span className="rev-chip rev-chip-none">no proof</span>
                     ) : (

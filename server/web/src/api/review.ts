@@ -108,6 +108,19 @@ export interface ReviewQueueItem {
   readonly finished_by_name: string | null;
   /** Whether this viewer may accept or send it back (§5). */
   readonly can_decide: boolean;
+  /**
+   * "Check this one" (LAI-772): its first round finished in under a quarter
+   * of the build-time p50 frozen at the start, and CI has not confirmed it.
+   * The server decides; about the task, never the person.
+   */
+  readonly cue: FastFinishCue | null;
+}
+
+/** The server's `FastFinishCue`. */
+export interface FastFinishCue {
+  readonly kind: 'fast';
+  readonly build_ms: number;
+  readonly forecast_p50_ms: number;
 }
 
 /** `GET /review`: oldest waiting first, at most 200. */
@@ -233,6 +246,8 @@ export interface QueueFilter {
   readonly ciFailed: boolean;
   /** GitHub's CI passed, every check of it (D-083). */
   readonly ciConfirmed: boolean;
+  /** Only the tasks cued "check this one" (LAI-772). */
+  readonly fast: boolean;
 }
 
 export const NO_FILTER: QueueFilter = {
@@ -242,6 +257,7 @@ export const NO_FILTER: QueueFilter = {
   noEvidence: false,
   ciFailed: false,
   ciConfirmed: false,
+  fast: false,
 };
 
 export function filterQueue(
@@ -264,6 +280,7 @@ export function filterQueue(
     const ci = ciVerdict(item.round);
     if (filter.ciFailed && ci !== 'failed') return false;
     if (filter.ciConfirmed && ci !== 'confirmed') return false;
+    if (filter.fast && item.cue === null) return false;
     return true;
   });
 }

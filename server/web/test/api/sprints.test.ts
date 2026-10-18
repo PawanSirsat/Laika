@@ -17,6 +17,8 @@ import {
   countSprints,
   createSprint,
   deleteSprint,
+  forecastLine,
+  getSprintForecast,
   listSprints,
   removeTaskFromSprint,
   SPRINT_STATUSES,
@@ -319,5 +321,61 @@ void describe('the contract the sidebar depends on (LAI-211, D-030)', () => {
       !source.includes('listSprints('),
       'the shell is paging sprints itself — that is what countSprints is for',
     );
+  });
+});
+
+void describe('the sprint forecast (LAI-772)', () => {
+  void test('reads GET /sprints/:id/forecast', async () => {
+    const asked: string[] = [];
+    globalThis.fetch = ((input: string | URL) => {
+      asked.push(String(input));
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            sprint_id: 's1',
+            total: 26,
+            done: 4,
+            forecast: { probability: 0.87, low: 18, high: 23, median: 20, days_left: 6 },
+            reason: null,
+            basis: { days: 42, tasks_done: 30, weight_done: 28.5 },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    }) as typeof fetch;
+    const view = await getSprintForecast('s1');
+    assert.ok(asked[0]?.endsWith('/api/v1/sprints/s1/forecast'), asked[0]);
+    assert.equal(view.forecast?.high, 23);
+  });
+
+  void test('says it in one line, or why it cannot', () => {
+    const base = {
+      sprint_id: 's',
+      total: 26,
+      done: 4,
+      basis: { days: 42, tasks_done: 30, weight_done: 28 },
+    };
+    assert.equal(
+      forecastLine({
+        ...base,
+        forecast: { probability: 0.87, low: 18, high: 23, median: 20, days_left: 6 },
+        reason: null,
+      }),
+      '87% likely to finish 18–23 of 26',
+    );
+    assert.equal(
+      forecastLine({
+        ...base,
+        forecast: { probability: 1, low: 26, high: 26, median: 26, days_left: 2 },
+        reason: null,
+      }),
+      'Likely to finish all 26',
+    );
+    assert.equal(
+      forecastLine({ ...base, forecast: null, reason: 'not_enough_history' }),
+      'Forecast once 10 tasks are done in six weeks',
+    );
+    assert.equal(forecastLine({ ...base, forecast: null, reason: 'completed' }), null);
+    assert.equal(forecastLine({ ...base, total: 0, forecast: null, reason: 'no_tasks' }), null);
   });
 });

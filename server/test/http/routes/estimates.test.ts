@@ -220,6 +220,8 @@ describe('GET /api/v1/projects/:slug/estimates/accuracy', () => {
       by_client: [],
     });
     expect(Object.keys(view).sort()).toEqual([
+      // LAI-772: the token forecast's record and the claimants', per project.
+      'agent',
       'backtest',
       'by_client',
       'finished',
@@ -227,11 +229,61 @@ describe('GET /api/v1/projects/:slug/estimates/accuracy', () => {
       'live',
       'model_version',
       'project_id',
+      'tokens',
     ]);
   });
 
   it('is a 404 for a project that does not exist', async () => {
     const res = await asSession('/api/v1/projects/nope/estimates/accuracy');
     expect(res.status).toBe(404);
+  });
+});
+
+// ------------------------------------------------------------- LAI-772
+
+describe('phase 2 over HTTP (LAI-772)', () => {
+  it('POST /tasks/:id/claim takes the claimant’s estimate, and the estimate view says it back', async () => {
+    const task = await newTask();
+    await must(
+      asSession(`/api/v1/tasks/${task.id}/claim`, {
+        method: 'POST',
+        body: JSON.stringify({ estimate: { size: 'L', confidence: 'red' } }),
+      }),
+    );
+    const view = await json<{
+      claim_estimate: { level: string; confidence: string } | null;
+      tokens: { p50: number | null; learned_from: number; forecasts_after: number };
+      actual_tokens: unknown;
+      scope_grew: unknown;
+      split: unknown;
+    }>(await must(asSession(`/api/v1/tasks/${task.id}/estimate`)));
+    expect(view.claim_estimate).toMatchObject({ level: 'L', confidence: 'red' });
+    expect(view.tokens).toEqual({ p50: null, p80: null, learned_from: 0, forecasts_after: 10 });
+    expect(view.actual_tokens).toBeNull();
+    expect(view.scope_grew).toBeNull();
+    expect(view.split).toBeNull();
+  });
+
+  it('refuses an estimate it does not know with 422, and claims nothing', async () => {
+    const task = await newTask();
+    for (const estimate of [{ size: 'XXL' }, { confidence: 'blue' }, { size: 'S', hours: 2 }]) {
+      const res = await asSession(`/api/v1/tasks/${task.id}/claim`, {
+        method: 'POST',
+        body: JSON.stringify({ estimate }),
+      });
+      expect(res.status, JSON.stringify(estimate)).toBe(422);
+    }
+    const read = await json<{ status: string }>(await must(asSession(`/api/v1/tasks/${task.id}`)));
+    expect(read.status).not.toBe('in_progress');
+  });
+
+  it('the accuracy view carries the token and the claimant records, never a person', async () => {
+    const accuracy = await json<{
+      tokens: { learned_from: number; forecasts_after: number; backtest: unknown };
+      agent: { size: { weight: number }; confidence: { confidence: string }[] };
+    }>(await must(asSession('/api/v1/projects/core/estimates/accuracy')));
+    expect(accuracy.tokens).toMatchObject({ learned_from: 0, forecasts_after: 10, backtest: null });
+    expect(accuracy.agent.size.weight).toBe(0);
+    expect(accuracy.agent.confidence.map((c) => c.confidence)).toEqual(['green', 'yellow', 'red']);
   });
 });

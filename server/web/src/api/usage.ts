@@ -57,6 +57,30 @@ export interface UsageTaskSlice extends UsageSlice {
   readonly project_slug: string;
 }
 
+/** The project a rework figure is for. */
+export interface ReworkProject {
+  readonly slug: string;
+  readonly name: string;
+}
+
+/**
+ * What send-backs cost one project over the range (LAI-772) — the server's
+ * `ReworkCost`. Per project, never per person: nobody is named or counted.
+ */
+export interface ReworkCost {
+  readonly project: ReworkProject;
+  readonly send_backs: number;
+  readonly tasks: number;
+  /** Tokens after the round sent back, headline (no cache reads). */
+  readonly tokens: number;
+  readonly cache_read: number;
+  /** From each send-back to the next finish, or to now. */
+  readonly time_ms: number;
+  readonly open: number;
+  /** Of the project's tokens over the range, the share that was rework. */
+  readonly share: number | null;
+}
+
 /** `GET /usage` — the page. */
 export interface Usage {
   readonly from: string;
@@ -80,6 +104,8 @@ export interface Usage {
    * space can hold — for a reader who may read them; `null` otherwise.
    */
   readonly org_totals: UsageFigures | null;
+  /** Rework cost per project the reader may read, by name. */
+  readonly rework: readonly ReworkCost[];
 }
 
 export interface UsageWeek extends UsageSlice {
@@ -274,4 +300,29 @@ export function shareOf(part: number, whole: number): string {
   const pct = (part / whole) * 100;
   if (pct < 1) return '<1%';
   return `${String(Math.min(100, Math.round(pct)))}%`;
+}
+
+/** `30 min`, `6.0 h`, `3 d` — as the forecast reads a build time. */
+function spentLabel(ms: number): string {
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return `${String(Math.max(1, minutes))} min`;
+  const hours = ms / 3_600_000;
+  if (hours < 10) return `${hours.toFixed(1)} h`;
+  if (hours < 48) return `${String(Math.round(hours))} h`;
+  return `${String(Math.round(hours / 24))} d`;
+}
+
+/** One project's rework cost in words (LAI-772): the cost of a false done. */
+export function reworkLine(r: ReworkCost): string {
+  const backs = `${String(r.send_backs)} ${r.send_backs === 1 ? 'send-back' : 'send-backs'} on ${String(
+    r.tasks,
+  )} ${r.tasks === 1 ? 'task' : 'tasks'}`;
+  const tokens =
+    r.tokens === 0
+      ? 'no tokens tied to it after'
+      : `${compactTokens(r.tokens)} tokens${
+          r.share === null ? '' : ` (${shareOf(r.tokens, r.tokens / r.share)} of the space’s)`
+        }`;
+  const time = `${spentLabel(r.time_ms)} of rework${r.open > 0 ? `, ${String(r.open)} still open` : ''}`;
+  return `${backs} · ${tokens} · ${time}`;
 }

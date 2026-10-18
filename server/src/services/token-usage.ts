@@ -18,6 +18,7 @@ import { type Db } from '../db/client.ts';
 import {
   projectMemberships,
   projects,
+  taskReviews,
   taskRounds,
   tasks,
   tokens,
@@ -176,6 +177,34 @@ export interface UsageTaskSlice extends UsageSlice {
   project_slug: string;
 }
 
+/** The project a rework figure is for. */
+export interface ReworkProject {
+  slug: string;
+  name: string;
+}
+
+/**
+ * What send-backs cost one project over the range (LAI-772, the R&D's idea
+ * 1) — the cost of a false done, in tokens and time. **Per project, never per
+ * person** (D-078): no field names or counts anybody.
+ */
+export interface ReworkCost {
+  project: ReworkProject;
+  /** Send-backs decided in the range. */
+  send_backs: number;
+  /** The tasks they sent back. */
+  tasks: number;
+  /** Tokens tied to those tasks on days after the round sent back, within the range — headline, without cache reads. */
+  tokens: number;
+  cache_read: number;
+  /** From each send-back to the next finish, or to now for one not finished again yet. */
+  time_ms: number;
+  /** Send-backs not finished again yet. */
+  open: number;
+  /** Of the project's tokens over the range, the share that was rework; null with none. */
+  share: number | null;
+}
+
 /** `GET /usage` — the Usage page (§6.4, §11.4.2). */
 export interface UsageView {
   /** The range, inclusive, as calendar days in `tz`. */
@@ -203,6 +232,8 @@ export interface UsageView {
    * for the organisation itself.
    */
   org_totals: UsageFigures | null;
+  /** Rework cost per project the reader may read, by name; empty with no send-back in the range. */
+  rework: ReworkCost[];
 }
 
 export interface UsageWeek extends UsageSlice {
@@ -695,6 +726,15 @@ export function getUsage(
       ? figuresOf(db.select(sums).from(t).where(inRange).get() ?? NO_FIGURES)
       : null;
 
+  const scope =
+    project === undefined
+      ? db
+          .select({ id: projects.id, slug: projects.slug, name: projects.name })
+          .from(projects)
+          .all()
+          .filter((p) => can(withProject(actor, p.id), 'usage.read_project', { projectId: p.id }))
+      : [{ id: project.id, slug: project.slug, name: project.name }];
+
   return {
     from,
     to,
@@ -709,7 +749,154 @@ export function getUsage(
     top_tasks: top,
     no_token_data: agentsWithoutTokens(db, memberIds),
     org_totals: orgTotals,
+    rework: reworkCost(db, scope, { from, to, tz }, now),
   };
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * What send-backs decided in the range cost each project (LAI-772): the
+ * tokens tied to the task **after** the round that was sent back — on days
+ * after that round's finish day, read in `tz` as the Tokens section reads
+ * rounds, and within the range — and the time from each send-back to the
+ * task's next finish, or to `now` while it is still being reworked.
+ *
+ * Bounded by the range: a handful of queries whatever the board's size — the
+ * send-backs, their tasks' rounds, those tasks' days, and each project's
+ * total for the share. Nothing is grouped by, or returned about, a person.
+ */
+function reworkCost(
+  db: Db,
+  scope: readonly { id: string; slug: string; name: string }[],
+  range: { from: string; to: string; tz: string },
+  now: number,
+): ReworkCost[] {
+  if (scope.length === 0) return [];
+  const ids = scope.map((p) => p.id);
+  // A day's worth either side, then read in the zone.
+  const earliest = now - (daysBetween(range.from, range.to) + 2) * DAY_MS;
+  const decided = db
+    .select({
+      taskId: taskReviews.taskId,
+      roundId: taskReviews.roundId,
+      createdAt: taskReviews.createdAt,
+      projectId: tasks.projectId,
+    })
+    .from(taskReviews)
+    .innerJoin(tasks, eq(tasks.id, taskReviews.taskId))
+    .where(
+      and(
+        eq(taskReviews.decision, 'sent_back'),
+        inArray(tasks.projectId, ids),
+        gte(taskReviews.createdAt, earliest),
+      ),
+    )
+    .all()
+    .filter((d) => {
+      const on = dayIn(range.tz, d.createdAt);
+      return on >= range.from && on <= range.to;
+    });
+  if (decided.length === 0) return [];
+
+  const taskIds = [...new Set(decided.map((d) => d.taskId))];
+  const rounds = db
+    .select({ id: taskRounds.id, taskId: taskRounds.taskId, createdAt: taskRounds.createdAt })
+    .from(taskRounds)
+    .where(inArray(taskRounds.taskId, taskIds))
+    .all();
+
+  const perProject = new Map<
+    string,
+    { sendBacks: number; tasks: Set<string>; time: number; open: number }
+  >();
+  /** Per task, the day after which its tokens are rework: the earliest sent-back round's. */
+  const boundary = new Map<string, string>();
+  for (const d of decided) {
+    const entry = perProject.get(d.projectId) ?? {
+      sendBacks: 0,
+      tasks: new Set<string>(),
+      time: 0,
+      open: 0,
+    };
+    entry.sendBacks += 1;
+    entry.tasks.add(d.taskId);
+    let next: number | null = null;
+    for (const r of rounds) {
+      if (
+        r.taskId === d.taskId &&
+        r.createdAt > d.createdAt &&
+        (next === null || r.createdAt < next)
+      )
+        next = r.createdAt;
+    }
+    entry.time += (next ?? Math.max(now, d.createdAt)) - d.createdAt;
+    if (next === null) entry.open += 1;
+    perProject.set(d.projectId, entry);
+
+    const sentRound = rounds.find((r) => r.id === d.roundId);
+    const after = dayIn(range.tz, sentRound?.createdAt ?? d.createdAt);
+    const known = boundary.get(d.taskId);
+    if (known === undefined || after < known) boundary.set(d.taskId, after);
+  }
+
+  const spent = new Map<string, { tokens: number; cacheRead: number }>();
+  const projectOf = new Map(decided.map((d) => [d.taskId, d.projectId] as const));
+  for (const r of db
+    .select({
+      taskId: t.taskId,
+      day: t.day,
+      tokens: sums.tokens,
+      cacheRead: sums.cacheRead,
+    })
+    .from(t)
+    .where(and(inArray(t.taskId, taskIds), gte(t.day, range.from), lte(t.day, range.to)))
+    .groupBy(t.taskId, t.day)
+    .all()) {
+    if (r.taskId === null) continue;
+    const after = boundary.get(r.taskId);
+    if (after === undefined || r.day <= after) continue;
+    const projectId = projectOf.get(r.taskId)!;
+    const entry = spent.get(projectId) ?? { tokens: 0, cacheRead: 0 };
+    entry.tokens += r.tokens;
+    entry.cacheRead += r.cacheRead;
+    spent.set(projectId, entry);
+  }
+
+  const totals = new Map(
+    db
+      .select({ projectId: t.projectId, tokens: sums.tokens })
+      .from(t)
+      .where(
+        and(
+          inArray(t.projectId, [...perProject.keys()]),
+          gte(t.day, range.from),
+          lte(t.day, range.to),
+        ),
+      )
+      .groupBy(t.projectId)
+      .all()
+      .map((r) => [r.projectId, r.tokens] as const),
+  );
+
+  return scope
+    .filter((p) => perProject.has(p.id))
+    .map((p) => {
+      const entry = perProject.get(p.id)!;
+      const cost = spent.get(p.id) ?? { tokens: 0, cacheRead: 0 };
+      const whole = totals.get(p.id) ?? 0;
+      return {
+        project: { slug: p.slug, name: p.name },
+        send_backs: entry.sendBacks,
+        tasks: entry.tasks.size,
+        tokens: cost.tokens,
+        cache_read: cost.cacheRead,
+        time_ms: entry.time,
+        open: entry.open,
+        share: whole === 0 ? null : cost.tokens / whole,
+      };
+    })
+    .sort((a, b) => a.project.name.localeCompare(b.project.name));
 }
 
 /** The Monday on or before `day`. */

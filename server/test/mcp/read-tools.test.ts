@@ -337,6 +337,78 @@ describe('get_task_context', () => {
     await client.close();
   });
 
+  it('names up to five similar finished tasks and why they were sent back, and nobody (LAI-772)', async () => {
+    await project('core', 'COR');
+    const done = async (title: string, sentBack: string | null) => {
+      const created = await task('core', { title, acceptance_md: title });
+      await must(`/api/v1/tasks/${created.id}/claim`, { method: 'POST' }, 200);
+      await must(
+        `/api/v1/tasks/${created.id}/finish`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ summary: 'Done' }),
+        },
+        200,
+      );
+      if (sentBack !== null) {
+        await must(
+          `/api/v1/tasks/${created.id}/send-back`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ reason: sentBack }),
+          },
+          200,
+        );
+        await must(
+          `/api/v1/tasks/${created.id}/finish`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ summary: 'Fixed' }),
+          },
+          200,
+        );
+      }
+      await must(`/api/v1/tasks/${created.id}/accept`, { method: 'POST' }, 200);
+      return created;
+    };
+    const migration = await done(
+      'sqlite migration rebuild keeps triggers',
+      'The rebuild dropped the triggers',
+    );
+    await done('sqlite migration adds a column', null);
+    await done('board card lane colours', null);
+    const next = await task('core', {
+      title: 'sqlite migration for the new table',
+      acceptance_md: 'sqlite migration',
+    });
+
+    const client = await connect(await mint());
+    const result = await client.callTool({
+      name: 'get_task_context',
+      arguments: { task: next.key },
+    });
+    const similar = payload(result).similar as {
+      key: string;
+      rounds: number;
+      send_backs: { round: number | null; reason: string }[];
+    }[];
+    expect(similar.length).toBeGreaterThan(0);
+    expect(similar.length).toBeLessThanOrEqual(5);
+    expect(similar.find((s) => s.key === migration.key)).toMatchObject({
+      rounds: 2,
+      send_backs: [{ round: 1, reason: 'The rebuild dropped the triggers' }],
+    });
+    const section = text(result).split('### Similar finished tasks')[1]?.split('\n### ')[0] ?? '';
+    expect(section).toContain(migration.key);
+    expect(section).toContain('The rebuild dropped the triggers');
+    // Reasons only: not who built it, who finished it, or who sent it back.
+    expect(section).not.toContain('Ada');
+    // And the token forecast says what it waits for, as the hours do.
+    expect(text(result)).toContain('Tokens: no forecast until');
+
+    await client.close();
+  });
+
   it('accepts the display key it hands out', async () => {
     await project('core', 'COR');
     await task('core', { title: 'By key' });

@@ -178,6 +178,8 @@ const ESTIMATE = {
     level: 'M',
     build_p50_ms: 20 * MIN,
     build_p80_ms: 45 * MIN,
+    tokens_p50: null,
+    tokens_p80: null,
     estimated_at: NOW - 3 * HOUR,
   },
   actual: {
@@ -187,7 +189,23 @@ const ESTIMATE = {
     finishes: 2,
     first_finish_at: NOW - 90 * MIN,
   },
+  tokens: { p50: null, p80: null, learned_from: 0, forecasts_after: 10 },
+  actual_tokens: null,
+  claim_estimate: null,
+  scope_grew: null,
+  split: null,
   history: [],
+};
+
+/** LAI-772: the same task with tokens forecast, spent, and the notes beside them. */
+const PHASE2 = {
+  ...ESTIMATE,
+  at_start: { ...ESTIMATE.at_start, tokens_p50: 900_000, tokens_p80: 2_100_000 },
+  tokens: { p50: 1_200_000, p80: 2_500_000, learned_from: 14, forecasts_after: 10 },
+  actual_tokens: { build: 1_400_000, total: 1_700_000, rework: 300_000 },
+  claim_estimate: { level: 'S', confidence: 'yellow' },
+  scope_grew: { from: 'M', to: 'L' },
+  split: null,
 };
 
 const ACCURACY = {
@@ -203,6 +221,22 @@ const ACCURACY = {
     beats_median: true,
   },
   by_client: [],
+  tokens: {
+    learned_from: 14,
+    forecasts_after: 10,
+    live: { n: 0, typical_error: null, bias: null, p80_hit_rate: null },
+    backtest: {
+      n: 4,
+      method_error: 1.9,
+      median_error: 2.3,
+      p80_hit_rate: 0.75,
+      beats_median: true,
+    },
+  },
+  agent: {
+    size: { n: 0, agent_error: null, median_error: null, model_error: null, weight: 0 },
+    confidence: [],
+  },
   model_version: 'abc123',
 };
 
@@ -377,6 +411,60 @@ void describe('the task panel’s Forecast section', () => {
       );
       // Nothing in the section names a person.
       assert.doesNotMatch(await section.innerText(), /Ada/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('puts tokens beside the hours: forecast, frozen copy, spent, and the notes (LAI-772)', async () => {
+    const h = await open('/board?project=laika-core&task=t3', {
+      ...stub(),
+      '/api/v1/tasks/t3/estimate': PHASE2,
+    });
+    try {
+      await forecast(h);
+      const section = h.page.locator('.fc');
+      await until(async () => (await section.locator('.fc-tokens').innerText()) !== '—');
+      assert.equal(await section.locator('.fc-tokens').innerText(), '1.2M–2.5M');
+      assert.match(await section.locator('.fc-at-start').innerText(), /^M · 20–45 min/);
+      assert.equal(await section.locator('.fc-at-start-tokens').innerText(), '900K–2.1M tokens');
+      assert.equal(await section.locator('.fc-actual-tokens').innerText(), '1.4M');
+      const notes = await section.locator('.fc-note').allInnerTexts();
+      assert.deepEqual(notes, [
+        'Scope grew after start: M when work began, L now',
+        'Said at claim: S, yellow',
+      ]);
+      assert.equal(
+        await section.locator('.fc-accuracy-tokens').innerText(),
+        'Tokens back-test: ×1.9 against ×2.3 for the project median, over 4 tasks',
+      );
+      assert.doesNotMatch(await section.innerText(), /Ada/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('suggests splitting an XL task, and says what tokens wait for', async () => {
+    const h = await open('/board?project=laika-core&task=t3', {
+      ...stub(),
+      '/api/v1/tasks/t3/estimate': {
+        ...ESTIMATE,
+        tokens: { p50: null, p80: null, learned_from: 3, forecasts_after: 10 },
+        split: { xl_finished: 4, rounds_avg: 2.3 },
+      },
+    });
+    try {
+      await forecast(h);
+      const section = h.page.locator('.fc');
+      await until(async () => (await section.locator('.fc-note').count()) > 0);
+      assert.equal(await section.locator('.fc-tokens').innerText(), 'Early');
+      assert.equal(
+        await section.locator('.fc-tokens-early').innerText(),
+        'Tokens after 10 finished tasks with attributed token data (3 so far).',
+      );
+      assert.deepEqual(await section.locator('.fc-note').allInnerTexts(), [
+        'Consider splitting it: XL tasks here took 2.3 rounds on average (4 finished)',
+      ]);
     } finally {
       await h.close();
     }

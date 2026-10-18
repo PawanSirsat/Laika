@@ -327,6 +327,44 @@ describe('start_working', () => {
   });
 });
 
+describe('start_working takes the agent’s own estimate (D-085 item 4, LAI-772)', () => {
+  it('keeps a size and a confidence, and says so in the answer', async () => {
+    const client = await connect(await mint());
+    await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Work' } });
+
+    const result = await client.callTool({
+      name: 'start_working',
+      arguments: { task: 'COR-1', estimate: { size: 'S', confidence: 'yellow' } },
+    });
+    expect(result.isError, JSON.stringify(result)).not.toBe(true);
+    expect((payload(result).task as { status: string }).status).toBe('in_progress');
+
+    const read = await client.callTool({ name: 'get_task_context', arguments: { task: 'COR-1' } });
+    const estimate = payload(read).estimate as { claim_estimate: Record<string, unknown> | null };
+    expect(estimate.claim_estimate).toMatchObject({ level: 'S', confidence: 'yellow' });
+    expect(JSON.stringify(read.content)).toContain('Said at claim: S, yellow');
+
+    await client.close();
+  });
+
+  it('refuses a size or a confidence it does not know', async () => {
+    const client = await connect(await mint());
+    await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Work' } });
+    for (const estimate of [{ size: 'XXL' }, { confidence: 'blue' }, { size: 'S', minutes: 5 }]) {
+      const result = await client.callTool({
+        name: 'start_working',
+        arguments: { task: 'COR-1', estimate },
+      });
+      expect(result.isError, JSON.stringify(estimate)).toBe(true);
+    }
+    // Nothing was claimed by a refused call.
+    const read = await client.callTool({ name: 'get_task_context', arguments: { task: 'COR-1' } });
+    expect((payload(read).task as { status: string }).status).not.toBe('in_progress');
+
+    await client.close();
+  });
+});
+
 describe('update_status', () => {
   it('moves a task and validates the transition against §5', async () => {
     const client = await connect(await mint());

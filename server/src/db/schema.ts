@@ -31,6 +31,7 @@ import {
   ACTIVITY_TYPES,
   ACTOR_KINDS,
   AI_PROVIDERS,
+  CLAIM_CONFIDENCES,
   CREATED_VIA,
   CHECK_OUTCOMES,
   ESTIMATE_SOURCES,
@@ -1579,6 +1580,13 @@ export const taskEstimates = sqliteTable(
     /** Build time, likely and pessimistic, in ms. Null in a cold start. */
     buildP50Ms: integer('build_p50_ms'),
     buildP80Ms: integer('build_p80_ms'),
+    /**
+     * Build tokens, likely and pessimistic (LAI-772): input, output and cache
+     * writes up to the first finish. Null until the project has ten finished
+     * tasks with attributed token data (D-085 item 6).
+     */
+    tokensP50: integer('tokens_p50'),
+    tokensP80: integer('tokens_p80'),
     /** How many children were rolled into it (D-085 item 7). */
     subtasks: integer('subtasks').notNull().default(0),
     /** What the model read, hashed — `tasks.estimate_hash` when it was written. */
@@ -1601,6 +1609,46 @@ export const taskEstimates = sqliteTable(
     // A person row names its person; a model row names nobody.
     check('task_estimates_set_by_check', sql.raw("(source = 'person') = (set_by IS NOT NULL)")),
     check('task_estimates_subtasks_check', sql.raw('subtasks >= 0')),
+  ],
+);
+
+// ------------------------------------------------ §4.34 task_claim_estimates
+
+/**
+ * What the one claiming a task said about it when they claimed it (§4.34,
+ * D-085 item 4, LAI-772): a size, a confidence, or both — `start_working`'s
+ * optional `estimate`. **Append-only**, as `task_estimates` is: it is what was
+ * said, kept to be scored against what happened.
+ *
+ * **No column names a person.** The claim's own `task.status_changed` row says
+ * who claimed; this keeps the estimate, and the agent's own name for itself
+ * (D-076) for a later per-client view under D-085 item 8's three-people rule.
+ * It is scored per project, never per person.
+ */
+export const taskClaimEstimates = sqliteTable(
+  'task_claim_estimates',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'restrict' }),
+    /** XS–XL, relative to the project's typical task; null when only a confidence was given. */
+    level: text('level', { enum: SIZE_LEVELS }),
+    /** green, yellow or red; null when only a size was given. */
+    confidence: text('confidence', { enum: CLAIM_CONFIDENCES }),
+    /** The agent's own name for itself when it claimed (D-076), or null. */
+    clientName: text('client_name'),
+    createdAt,
+  },
+  (t) => [
+    index('task_claim_estimates_task_created_at_idx').on(t.taskId, t.createdAt),
+    check('task_claim_estimates_level_check', oneOfOrNull('level', SIZE_LEVELS)),
+    check('task_claim_estimates_confidence_check', oneOfOrNull('confidence', CLAIM_CONFIDENCES)),
+    // An estimate says something.
+    check(
+      'task_claim_estimates_present_check',
+      sql.raw('level IS NOT NULL OR confidence IS NOT NULL'),
+    ),
   ],
 );
 

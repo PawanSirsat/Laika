@@ -969,7 +969,11 @@ describe('the token-usage migration adds to a populated database (LAI-769)', () 
         ]);
         expect(before.local_activity_days?.rows).toHaveLength(1);
 
-        runMigrations(db);
+        // Up to and including this one: what a later migration changes is its
+        // own test's (LAI-772's 0039 adds to `task_estimates`).
+        journal.entries.push(dropped[0]!);
+        writeFileSync(journalPath, JSON.stringify(journal));
+        runMigrations(db, { migrationsFolder: dir });
 
         const after = census();
         const { token_usage_days: added, ...kept } = after;
@@ -989,6 +993,117 @@ describe('the token-usage migration adds to a populated database (LAI-769)', () 
         ]);
         expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
         // LAI-771's history is still append-only after this one runs.
+        expectSqliteError(() => db.run(sql`DELETE FROM task_estimates`), /append-only/);
+      } finally {
+        sqlite.close();
+        rmSync(dbDir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+/**
+ * `0039` on a populated database (LAI-772, D-085): one append-only table for
+ * what a claimant said, and two nullable columns on `task_estimates` for the
+ * token forecast. **Additive is the property**, so it is asserted directly:
+ * every table keeps its root page and every row; `task_estimates`' rows gain
+ * the two columns as nulls and lose nothing; the new table is append-only on
+ * the upgraded database too.
+ */
+describe('0039 adds token forecasts and claim estimates to a populated database (LAI-772)', () => {
+  it(
+    'creates one table, adds two nullable columns, and changes nothing that was there',
+    { timeout: 60_000 },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+      cpSync(MIGRATIONS_FOLDER, dir, { recursive: true });
+      const journalPath = join(dir, 'meta', '_journal.json');
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+        entries: { idx: number; tag: string; when: number }[];
+      };
+      const at = journal.entries.findIndex((e) => /^\d{4}_token_forecasts$/.test(e.tag));
+      expect(at, 'the token-forecasts migration is in the journal').toBeGreaterThan(0);
+      const dropped = journal.entries.splice(at);
+      expect(dropped[0]?.tag).toMatch(/_token_forecasts$/);
+      // The database production has before this one: master's 0038 (LAI-780),
+      // which landed first — this migration was regenerated on top of it.
+      expect(journal.entries.at(-1)?.tag).toMatch(/^0038_tasks_external_ref_index$/);
+      writeFileSync(journalPath, JSON.stringify(journal));
+
+      const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: dir });
+        const s = seed(db);
+        const now = Date.now();
+        const task = newId();
+        const estimate = newId();
+        db.run(sql`
+          INSERT INTO tasks (id, project_id, number, title, status, status_id, priority, created_by, created_via, created_at, updated_at)
+          VALUES (${task}, ${s.projectId}, 1, 'A task', 'todo', ${statusForCategory(db, s.projectId, 'todo').id}, 'p2', ${s.userId}, 'api', ${now}, ${now})
+        `);
+        db.run(sql`
+          INSERT INTO task_estimates (id, task_id, source, level, weight, build_p50_ms, build_p80_ms, subtasks, factors_json, created_at)
+          VALUES (${estimate}, ${task}, 'model', 'M', 1, 3600000, 7200000, 0, '{}', ${now})
+        `);
+        db.run(
+          sql`UPDATE tasks SET estimate_id = ${estimate}, estimate_hash = 'h' WHERE id = ${task}`,
+        );
+        runMigrations(db, { migrationsFolder: dir });
+
+        const census = () =>
+          Object.fromEntries(
+            db
+              .all<{ name: string; rootpage: number }>(
+                sql`SELECT name, rootpage FROM sqlite_master
+                     WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                       AND name NOT LIKE '__drizzle%' ORDER BY name`,
+              )
+              .map((t) => [
+                t.name,
+                {
+                  rootpage: t.rootpage,
+                  rows: db.all(sql.raw(`SELECT * FROM "${t.name}" ORDER BY rowid`)),
+                },
+              ]),
+          );
+        const before = census();
+        expect(before.task_claim_estimates).toBeUndefined();
+        expect(before.task_estimates?.rows).toHaveLength(1);
+
+        runMigrations(db);
+
+        const after = census();
+        const { task_claim_estimates: added, task_estimates: estimates, ...kept } = after;
+        const { task_estimates: estimatesBefore, ...keptBefore } = before;
+        expect(kept).toEqual(keptBefore);
+        expect(added?.rows).toEqual([]);
+        expect(estimates?.rootpage).toBe(estimatesBefore?.rootpage);
+        expect(estimates?.rows).toEqual(
+          (estimatesBefore?.rows as Record<string, unknown>[]).map((r) => ({
+            ...r,
+            tokens_p50: null,
+            tokens_p80: null,
+          })),
+        );
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+        db.run(sql`
+          INSERT INTO task_claim_estimates (id, task_id, level, confidence, created_at)
+          VALUES ('c1', ${task}, 'S', 'green', ${now})
+        `);
+        expectSqliteError(
+          () => db.run(sql`UPDATE task_claim_estimates SET level = 'XL'`),
+          /append-only/,
+        );
+        expectSqliteError(() => db.run(sql`DELETE FROM task_claim_estimates`), /append-only/);
+        expectSqliteError(
+          () =>
+            db.run(
+              sql`INSERT INTO task_claim_estimates (id, task_id, level, created_at) VALUES ('c2', ${task}, NULL, ${now})`,
+            ),
+          /CHECK constraint failed/,
+        );
         expectSqliteError(() => db.run(sql`DELETE FROM task_estimates`), /append-only/);
       } finally {
         sqlite.close();

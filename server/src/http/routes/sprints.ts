@@ -15,6 +15,7 @@ import {
   type SprintView,
   withTaskCounts,
 } from '../../services/sprints.ts';
+import { getSprintForecast } from '../../services/sprint-forecast.ts';
 import { type TaskView } from '../../services/tasks.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
@@ -132,6 +133,11 @@ export function sprintRoutes(options: SprintRouteOptions): Hono<AppEnv> {
   const { db, sqlite } = options;
 
   app.get('/:id', (c) => c.json(getSprint(db, requireActor(c), c.req.param('id'))));
+
+  // "85% likely to finish 18–23 of 26" (LAI-772): computed, bounded, cached.
+  app.get('/:id/forecast', (c) =>
+    c.json(getSprintForecast(db, requireActor(c), c.req.param('id'))),
+  );
 
   app.patch('/:id', async (c) => {
     const actor = requireActor(c);

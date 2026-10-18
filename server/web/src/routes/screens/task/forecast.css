@@ -38,7 +38,8 @@
 
 .fc-figures {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  /* Seven figures since LAI-772: wide enough that a range never orphans its unit. */
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
   gap: var(--space-2);
   margin: 0 0 var(--space-2);
 }
@@ -161,4 +162,44 @@
   margin: var(--space-2) 0 0;
   font-size: var(--text-xs);
   color: var(--text-muted);
+}
+
+/* LAI-772: what the forecast waits for, and the notes beside it. */
+.fc-tokens-early {
+  margin: 0 0 var(--space-2);
+}
+
+.fc-notes {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.fc-note {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  padding: var(--space-1) var(--space-2);
+  border-left: 2px solid var(--chip-neutral-border);
+  overflow-wrap: anywhere;
+}
+
+/* Scope and splitting are about the task, never its author: purple, not red. */
+.fc-note-scope,
+.fc-note-split {
+  border-left-color: var(--chip-purple-border);
+}
+
+.fc-accuracy-tokens {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* The frozen token range on its own line: the cell stays narrow. */
+.fc-at-start-tokens {
+  display: block;
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
 }

@@ -31,7 +31,8 @@
 
 .tk-total,
 .tk-cache,
-.tk-share {
+.tk-share,
+.tk-forecast {
   font-family: var(--font-mono);
   font-size: var(--text-md);
   font-weight: var(--weight-bold);

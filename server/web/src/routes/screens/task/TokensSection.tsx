@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { getTaskEstimate, tokenRange, type TaskEstimate } from '../../../api/estimates.ts';
 import {
   agentsNote,
   countedNote,
@@ -59,8 +60,26 @@ export function TokensSection({ taskId, taskKey, started, refreshKey }: TokensSe
     };
   }, [taskId, refreshKey]);
 
+  // The forecast beside the actual (LAI-772): the estimate's token range, read
+  // apart, so a failure here costs the section nothing but the figure.
+  const [estimate, setEstimate] = useState<{ taskId: string; view: TaskEstimate } | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    const controller = new AbortController();
+    getTaskEstimate(taskId, controller.signal)
+      .then((answer) => {
+        if (!controller.signal.aborted) setEstimate({ taskId, view: answer });
+      })
+      .catch(() => undefined);
+    return () => {
+      controller.abort();
+    };
+  }, [taskId, refreshKey]);
+
   const view = loaded?.taskId === taskId ? loaded.view : undefined;
   const failed = failedFor === taskId;
+  const forecast = estimate?.taskId === taskId ? estimate.view : undefined;
 
   const empty = view !== undefined && view.totals.tokens + view.totals.cache_read === 0;
   if (view === undefined && !failed) return null;
@@ -80,15 +99,23 @@ export function TokensSection({ taskId, taskKey, started, refreshKey }: TokensSe
           on a branch named <code>{taskKey}-…</code>.
         </p>
       ) : (
-        <TokensBody view={view} />
+        <TokensBody view={view} forecast={forecast} />
       )}
     </section>
   );
 }
 
-function TokensBody({ view }: { readonly view: TaskUsage }) {
+function TokensBody({
+  view,
+  forecast,
+}: {
+  readonly view: TaskUsage;
+  readonly forecast: TaskEstimate | undefined;
+}) {
   const { totals } = view;
   const people = view.by_person ?? [];
+  const range = forecast === undefined ? null : tokenRange(forecast.tokens);
+  const build = forecast?.actual_tokens?.build;
   return (
     <>
       <dl className="tk-figures">
@@ -102,6 +129,19 @@ function TokensBody({ view }: { readonly view: TaskUsage }) {
           <dd className="tk-cache">{compactTokens(totals.cache_read)}</dd>
           <dd className="tk-sub">shown apart, not in tokens</dd>
         </div>
+        {forecast !== undefined && (
+          <div className="tk-figure" data-figure="forecast">
+            <dt>Forecast</dt>
+            <dd className="tk-forecast">{range ?? 'Early'}</dd>
+            <dd className="tk-sub">
+              {range === null
+                ? `the build, after ${String(forecast.tokens.forecasts_after)} tasks with attributed tokens`
+                : `the build, likely to pessimistic${
+                    build === undefined ? '' : ` · spent on it ${compactTokens(build)}`
+                  }`}
+            </dd>
+          </div>
+        )}
         {view.attributed !== null && (
           <div className="tk-figure" data-figure="attributed">
             <dt>Tied to a task</dt>

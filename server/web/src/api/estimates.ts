@@ -1,5 +1,6 @@
 import { request } from './client.ts';
 import { type Task } from './tasks.ts';
+import { compactTokens } from './usage.ts';
 
 /**
  * Sizes and build-time forecasts, the client half (§4.32, §6.4, D-085, LAI-771).
@@ -89,7 +90,50 @@ export interface FrozenEstimate {
   readonly level: SizeLevel;
   readonly build_p50_ms: number | null;
   readonly build_p80_ms: number | null;
+  /** Build tokens, likely and pessimistic, as forecast then (LAI-772). */
+  readonly tokens_p50: number | null;
+  readonly tokens_p80: number | null;
   readonly estimated_at: number;
+}
+
+/** The token forecast in force — the server's `TokenForecastView` (LAI-772). */
+export interface TokenForecast {
+  /** Build tokens: input, output and cache writes up to the first finish. Null until there is history. */
+  readonly p50: number | null;
+  readonly p80: number | null;
+  /** Finished tasks with attributed token data the forecast learns from. */
+  readonly learned_from: number;
+  readonly forecasts_after: number;
+}
+
+/** What was spent, as the forecast counts it: up to the first finish, and after. */
+export interface ActualTokens {
+  readonly build: number;
+  readonly total: number;
+  readonly rework: number;
+}
+
+export const CLAIM_CONFIDENCES = ['green', 'yellow', 'red'] as const;
+export type ClaimConfidence = (typeof CLAIM_CONFIDENCES)[number];
+
+/**
+ * What the claimant said at claim — the server's `ClaimEstimateView`. What was
+ * said and nothing else: no time and no client, either of which would tie it
+ * to whoever said it (LAI-772 review, N1).
+ */
+export interface ClaimEstimate {
+  readonly level: SizeLevel | null;
+  readonly confidence: ClaimConfidence | null;
+}
+
+export interface ScopeGrowth {
+  readonly from: SizeLevel;
+  readonly to: SizeLevel;
+}
+
+export interface SplitSuggestion {
+  readonly xl_finished: number;
+  readonly rounds_avg: number | null;
 }
 
 /** `GET /tasks/:id/estimate` — the server's `TaskEstimateView`. */
@@ -100,6 +144,12 @@ export interface TaskEstimate {
   readonly override: SizeOverride | null;
   readonly at_start: FrozenEstimate | null;
   readonly actual: ActualTimes;
+  readonly tokens: TokenForecast;
+  /** Null for a reader who may not read usage, or with no tokens tied to it yet. */
+  readonly actual_tokens: ActualTokens | null;
+  readonly claim_estimate: ClaimEstimate | null;
+  readonly scope_grew: ScopeGrowth | null;
+  readonly split: SplitSuggestion | null;
   readonly history: readonly EstimateHistoryEntry[];
 }
 
@@ -126,6 +176,34 @@ export interface ClientAccuracy extends AccuracyFigures {
   readonly people: number;
 }
 
+/** The token forecast's record, per project. */
+export interface TokenAccuracy {
+  readonly learned_from: number;
+  readonly forecasts_after: number;
+  readonly live: AccuracyFigures;
+  readonly backtest: BacktestFigures | null;
+}
+
+/** The claimants' sizes, scored as one source — the weight is what they earned. */
+export interface AgentScore {
+  readonly n: number;
+  readonly agent_error: number | null;
+  readonly median_error: number | null;
+  readonly model_error: number | null;
+  readonly weight: number;
+}
+
+export interface ConfidenceRecord {
+  readonly confidence: ClaimConfidence;
+  readonly n: number;
+  readonly sent_back: number;
+}
+
+export interface AgentAccuracy {
+  readonly size: AgentScore;
+  readonly confidence: readonly ConfidenceRecord[];
+}
+
 /** `GET /projects/:slug/estimates/accuracy` — the server's `EstimateAccuracyView`. */
 export interface EstimateAccuracy {
   readonly project_id: string;
@@ -134,6 +212,8 @@ export interface EstimateAccuracy {
   readonly live: AccuracyFigures;
   readonly backtest: BacktestFigures | null;
   readonly by_client: readonly ClientAccuracy[];
+  readonly tokens: TokenAccuracy;
+  readonly agent: AgentAccuracy;
   readonly model_version: string;
 }
 
@@ -238,4 +318,61 @@ export function accuracyLine(view: EstimateAccuracy): string {
     )} so far)`;
   }
   return 'No forecast has been measured against a finish yet';
+}
+
+// ------------------------------------------------------ tokens (LAI-772)
+
+/** `1.2M–2.5M` — build tokens, p50 to p80; null without a forecast. */
+export function tokenRange(f: Pick<TokenForecast, 'p50' | 'p80'>): string | null {
+  if (f.p50 === null || f.p80 === null) return null;
+  return `${compactTokens(f.p50)}–${compactTokens(f.p80)}`;
+}
+
+/** What the token forecast waits for (D-085 item 6), or null once it forecasts. */
+export function tokensWaitNote(f: TokenForecast): string | null {
+  if (f.p50 !== null) return null;
+  return `Tokens after ${String(f.forecasts_after)} finished tasks with attributed token data (${String(
+    f.learned_from,
+  )} so far).`;
+}
+
+/** The token forecast's record in one line, as `accuracyLine` reads the hours'. */
+export function tokenAccuracyLine(view: EstimateAccuracy): string {
+  const { live, backtest } = view.tokens;
+  if (live.n > 0 && live.typical_error !== null && live.p80_hit_rate !== null) {
+    return `Tokens: typically off by ×${ratio(live.typical_error)} · p80 held ${String(
+      Math.round(live.p80_hit_rate * 100),
+    )}% · ${String(live.n)} ${live.n === 1 ? 'task' : 'tasks'} measured`;
+  }
+  if (backtest !== null) {
+    return `Tokens back-test: ×${ratio(backtest.method_error)} against ×${ratio(
+      backtest.median_error,
+    )} for the project median, over ${String(backtest.n)} tasks${
+      backtest.beats_median ? '' : ' — forecasts use the median range'
+    }`;
+  }
+  return `Tokens: no forecast until ${String(view.tokens.forecasts_after)} finished tasks have attributed token data (${String(
+    view.tokens.learned_from,
+  )} so far)`;
+}
+
+/** "Scope grew after start" (the R&D's idea 12): about the task, never its author. */
+export function scopeGrewNote(grew: ScopeGrowth | null): string | null {
+  if (grew === null) return null;
+  return `Scope grew after start: ${grew.from} when work began, ${grew.to} now`;
+}
+
+/** The split suggestion for an XL task (idea 9), with the rounds XL tasks here took. */
+export function splitNote(split: SplitSuggestion | null): string | null {
+  if (split === null) return null;
+  if (split.rounds_avg === null) return 'Consider splitting it into smaller tasks';
+  return `Consider splitting it: XL tasks here took ${String(split.rounds_avg)} rounds on average (${String(
+    split.xl_finished,
+  )} finished)`;
+}
+
+/** What the claimant said at claim — never who, when, or with which agent. */
+export function claimNote(claim: ClaimEstimate | null): string | null {
+  if (claim === null) return null;
+  return `Said at claim: ${[claim.level, claim.confidence].filter((x) => x !== null).join(', ')}`;
 }

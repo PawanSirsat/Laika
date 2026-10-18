@@ -24,6 +24,7 @@ import {
   addTaskDependency,
   assertTaskExists,
   changeStatus,
+  CLAIM_CONFIDENCES,
   claimTask,
   createTask,
   finishTask,
@@ -282,10 +283,22 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Start working on a task',
       description:
-        'Claim a task and move it to in_progress. Claim before you write any code for it, and pass the `branch` you work on — name it after the key, `LAI-42-short-name` — so the task keeps it and the tokens your session spends are tied to this task. Call it also when the task is already yours and in progress, as when you resume it: that changes nothing but the branch and marks the task as the one you are on. Fails with `conflict` if somebody else holds it — check the error before assuming you have it.',
-      inputSchema: z.strictObject({ task: TASK_REF, branch: z.string().max(200).optional() }),
+        "Claim a task and move it to in_progress. Claim before you write any code for it, and pass the `branch` you work on — name it after the key, `LAI-42-short-name` — so the task keeps it and the tokens your session spends are tied to this task. Optionally pass your own `estimate`: a `size` (XS–XL, relative to this project's typical task) and a `confidence` (green, yellow, red) that it will land as asked. It is kept, scored against what happens, and moves the forecast only once estimates here have beaten the project median. Call it also when the task is already yours and in progress, as when you resume it: that changes nothing but the branch and marks the task as the one you are on, and keeps no estimate. Fails with `conflict` if somebody else holds it — check the error before assuming you have it.",
+      inputSchema: z.strictObject({
+        task: TASK_REF,
+        branch: z.string().max(200).optional(),
+        estimate: z
+          .strictObject({
+            size: z.enum(SIZE_LEVELS).optional(),
+            confidence: z.enum(CLAIM_CONFIDENCES).optional(),
+          })
+          .optional()
+          .describe(
+            'Your own estimate at claim (D-085): `size` relative to the typical task here, `confidence` green, yellow or red.',
+          ),
+      }),
     },
-    ({ task, branch }) => {
+    ({ task, branch, estimate }) => {
       try {
         // `claimTask` already refuses a claimed task with `conflict` and names the
         // current assignee in `details` — surfaced as-is rather than reworded,
@@ -297,6 +310,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           resolveTaskRef(db, task, actor),
           clock(),
           branch,
+          estimate,
         );
 
         return answer(`Claimed \`${claimed.key}\` — now ${statusText(claimed)}.`, {

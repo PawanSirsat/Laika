@@ -108,6 +108,19 @@ function orgUsage(days = 30) {
     ],
     no_token_data: ['cursor', 'windsurf'],
     org_totals: null,
+    // LAI-772: what send-backs cost, per space.
+    rework: [
+      {
+        project: { slug: 'laika', name: 'Laika' },
+        send_backs: 3,
+        tasks: 2,
+        tokens: 1_230_000,
+        cache_read: 9_000_000,
+        time_ms: 6 * 3_600_000,
+        open: 1,
+        share: 0.12,
+      },
+    ],
   };
 }
 
@@ -230,6 +243,13 @@ void describe('an owner', () => {
       assert.match(
         (await h.page.locator('.usage-trend .usage-bar').last().getAttribute('aria-label')) ?? '',
         /tokens/,
+      );
+      // Rework cost, per space and nobody's (LAI-772).
+      const rework = h.page.locator('[data-section="rework"]');
+      assert.equal(await rework.locator('.usage-rework-name').innerText(), 'Laika');
+      assert.equal(
+        await rework.locator('.usage-rework-line').innerText(),
+        '3 send-backs on 2 tasks · 1.23M tokens (12% of the space’s) · 6.0 h of rework, 1 still open',
       );
       // Asked for the organisation: no project, the reader's zone.
       const asked = h.calls.find((c) => c.path === '/api/v1/usage');

@@ -2,16 +2,23 @@ import { useEffect, useState } from 'react';
 import {
   accuracyLine,
   buildLabel,
+  claimNote,
   forecastRange,
   getEstimateAccuracy,
   getTaskEstimate,
   levelsLabel,
+  scopeGrewNote,
   setTaskSize,
   SIZE_LEVELS,
+  splitNote,
+  tokenAccuracyLine,
+  tokenRange,
+  tokensWaitNote,
   type EstimateAccuracy,
   type SizeLevel,
   type TaskEstimate,
 } from '../../../api/estimates.ts';
+import { compactTokens, exactTokens } from '../../../api/usage.ts';
 import { ApiError } from '../../../api/errors.ts';
 import { type Task } from '../../../api/tasks.ts';
 import { Dropdown } from '../../../components/Dropdown.tsx';
@@ -53,6 +60,10 @@ function spent(ms: number): string {
  * The headline — size and range — is the task's own (`TaskView.size`), so it
  * draws at once; the *why*, the actuals and the accuracy are one read each,
  * again whenever `refreshKey` changes. Drawn only once the task has a size.
+ *
+ * **Phase 2 (LAI-772)**: build tokens forecast beside the hours and frozen at
+ * claim with them, the tokens spent beside that, what the claimant said at
+ * claim, "scope grew after start", and the split suggestion for an XL task.
  *
  * **Never a figure about a person.** The person who set a size is named as
  * the reporter is; nothing here measures anyone.
@@ -130,6 +141,18 @@ export function ForecastSection({
 
   const atStart = estimate?.at_start ?? null;
   const actual = estimate?.actual;
+  const tokens = estimate?.tokens;
+  const tokensSpent = estimate?.actual_tokens ?? null;
+  const atStartTokens =
+    atStart === null ? null : tokenRange({ p50: atStart.tokens_p50, p80: atStart.tokens_p80 });
+  const notes =
+    estimate === undefined
+      ? []
+      : [
+          { key: 'scope', text: scopeGrewNote(estimate.scope_grew) },
+          { key: 'split', text: splitNote(estimate.split) },
+          { key: 'claim', text: claimNote(estimate.claim_estimate) },
+        ].filter((n): n is { key: string; text: string } => n.text !== null);
   const why = estimate?.why ?? null;
   const factors = (why?.factors ?? []).filter(
     (f) => Math.abs(f.levels) >= SHOWN || f.key === 'words' || f.key === 'priority',
@@ -186,12 +209,39 @@ export function ForecastSection({
             {atStart === null
               ? 'Not started'
               : `${atStart.level} · ${forecastRange({ ...size, build_p50_ms: atStart.build_p50_ms, build_p80_ms: atStart.build_p80_ms }) ?? 'early'}`}
+            {atStartTokens !== null && (
+              <span className="fc-at-start-tokens">{atStartTokens} tokens</span>
+            )}
+          </dd>
+        </div>
+        <div className="fc-figure">
+          <dt>Tokens</dt>
+          <dd
+            className="fc-tokens"
+            title="Build tokens: input, output and cache writes up to the first finish"
+          >
+            {tokens === undefined ? '—' : (tokenRange(tokens) ?? 'Early')}
           </dd>
         </div>
         <div className="fc-figure">
           <dt>Actual build</dt>
           <dd className="fc-actual">
             {actual?.build_ms == null ? '—' : buildLabel(actual.build_ms)}
+          </dd>
+        </div>
+        <div className="fc-figure">
+          <dt>Actual tokens</dt>
+          <dd
+            className="fc-actual-tokens"
+            title={
+              tokensSpent === null
+                ? 'None tied to this task yet'
+                : `At least ${exactTokens(tokensSpent.build)} on the build, ${exactTokens(tokensSpent.rework)} after it`
+            }
+          >
+            {tokensSpent === null
+              ? '—'
+              : `${compactTokens(tokensSpent.build)}${actual?.first_finish_at == null ? ' so far' : ''}`}
           </dd>
         </div>
         <div className="fc-figure">
@@ -211,6 +261,18 @@ export function ForecastSection({
           Early: hours after {waitFor} finished tasks in this project. The size is from the text
           alone until then.
         </p>
+      )}
+      {tokens !== undefined && range !== null && tokensWaitNote(tokens) !== null && (
+        <p className="panel-muted fc-tokens-early">{tokensWaitNote(tokens)}</p>
+      )}
+      {notes.length > 0 && (
+        <ul className="fc-notes">
+          {notes.map((n) => (
+            <li key={n.key} className={`fc-note fc-note-${n.key}`}>
+              {n.text}
+            </li>
+          ))}
+        </ul>
       )}
 
       {failed ? (
@@ -271,7 +333,10 @@ export function ForecastSection({
       )}
 
       {accuracy !== undefined && (
-        <p className="fc-accuracy">This project: {accuracyLine(accuracy)}</p>
+        <>
+          <p className="fc-accuracy">This project: {accuracyLine(accuracy)}</p>
+          <p className="fc-accuracy-tokens">{tokenAccuracyLine(accuracy)}</p>
+        </>
       )}
     </section>
   );

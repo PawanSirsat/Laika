@@ -12,11 +12,17 @@ import { describe, test } from 'node:test';
 import {
   accuracyLine,
   buildLabel,
+  claimNote,
   forecastRange,
   levelsLabel,
+  scopeGrewNote,
   SIZE_LEVELS,
   sizeRank,
   sizeTitle,
+  splitNote,
+  tokenAccuracyLine,
+  tokenRange,
+  tokensWaitNote,
   type EstimateAccuracy,
   type TaskSize,
 } from '../../src/api/estimates.ts';
@@ -51,10 +57,17 @@ function accuracy(patch: Partial<EstimateAccuracy> = {}): EstimateAccuracy {
       beats_median: true,
     },
     by_client: [],
+    tokens: { learned_from: 0, forecasts_after: 10, live: NONE, backtest: null },
+    agent: {
+      size: { n: 0, agent_error: null, median_error: null, model_error: null, weight: 0 },
+      confidence: [],
+    },
     model_version: 'v',
     ...patch,
   };
 }
+
+const NONE = { n: 0, typical_error: null, bias: null, p80_hit_rate: null };
 
 void describe('the levels', () => {
   void test('are XS to XL, in order', () => {
@@ -166,5 +179,91 @@ void describe('accuracyLine — the project’s figure', () => {
       ),
       'Sizes only: hours after 10 finished tasks (3 so far)',
     );
+  });
+});
+
+// ------------------------------------------------------------- LAI-772
+
+void describe('tokens beside the hours (LAI-772)', () => {
+  void test('a token range reads p50 to p80, compactly, and is absent without a forecast', () => {
+    assert.equal(tokenRange({ p50: 1_200_000, p80: 2_500_000 }), '1.2M–2.5M');
+    assert.equal(tokenRange({ p50: 180_000, p80: 870_000 }), '180K–870K');
+    assert.equal(tokenRange({ p50: null, p80: null }), null);
+  });
+
+  void test('says what the forecast waits for, counting what it has', () => {
+    assert.equal(
+      tokensWaitNote({ p50: null, p80: null, learned_from: 3, forecasts_after: 10 }),
+      'Tokens after 10 finished tasks with attributed token data (3 so far).',
+    );
+    assert.equal(tokensWaitNote({ p50: 1, p80: 2, learned_from: 12, forecasts_after: 10 }), null);
+  });
+
+  void test('the token accuracy line: live first, then the back-test, then the wait', () => {
+    assert.equal(
+      tokenAccuracyLine(
+        accuracy({
+          tokens: {
+            learned_from: 30,
+            forecasts_after: 10,
+            live: { n: 4, typical_error: 1.9, bias: 1, p80_hit_rate: 0.75 },
+            backtest: null,
+          },
+        }),
+      ),
+      'Tokens: typically off by ×1.9 · p80 held 75% · 4 tasks measured',
+    );
+    assert.equal(
+      tokenAccuracyLine(
+        accuracy({
+          tokens: {
+            learned_from: 30,
+            forecasts_after: 10,
+            live: NONE,
+            backtest: {
+              n: 20,
+              method_error: 2.77,
+              median_error: 2.7,
+              p80_hit_rate: 0.8,
+              beats_median: false,
+            },
+          },
+        }),
+      ),
+      'Tokens back-test: ×2.77 against ×2.7 for the project median, over 20 tasks — forecasts use the median range',
+    );
+    assert.equal(
+      tokenAccuracyLine(accuracy()),
+      'Tokens: no forecast until 10 finished tasks have attributed token data (0 so far)',
+    );
+  });
+});
+
+void describe('notes beside the forecast (LAI-772)', () => {
+  void test('scope grew after start, in words', () => {
+    assert.equal(
+      scopeGrewNote({ from: 'M', to: 'XL' }),
+      'Scope grew after start: M when work began, XL now',
+    );
+    assert.equal(scopeGrewNote(null), null);
+  });
+
+  void test('the split suggestion, with the rounds XL tasks took when there are enough', () => {
+    assert.equal(
+      splitNote({ xl_finished: 4, rounds_avg: 2.3 }),
+      'Consider splitting it: XL tasks here took 2.3 rounds on average (4 finished)',
+    );
+    assert.equal(
+      splitNote({ xl_finished: 1, rounds_avg: null }),
+      'Consider splitting it into smaller tasks',
+    );
+    assert.equal(splitNote(null), null);
+  });
+
+  void test('what was said at claim, and nothing that ties it to who said it (N1)', () => {
+    assert.equal(claimNote({ level: 'S', confidence: 'green' }), 'Said at claim: S, green');
+    assert.equal(claimNote({ level: null, confidence: 'red' }), 'Said at claim: red');
+    assert.equal(claimNote({ level: 'XL', confidence: null }), 'Said at claim: XL');
+    assert.equal(claimNote(null), null);
   });
 });

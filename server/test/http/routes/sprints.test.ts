@@ -81,6 +81,32 @@ afterEach(() => {
   h.close();
 });
 
+describe('GET /sprints/:id/forecast (LAI-772)', () => {
+  it('answers the sprint’s counts and why there is no forecast yet', async () => {
+    const sprint = await newSprint();
+    const task = await newTask();
+    const added = await post(`/api/v1/sprints/${sprint.id}/tasks`, { task_ids: [task.id] });
+    expect(added.status, await added.clone().text()).toBe(200);
+
+    const res = await req(`/api/v1/sprints/${sprint.id}/forecast`);
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await res.json()).toMatchObject({
+      sprint_id: sprint.id,
+      total: 1,
+      done: 0,
+      forecast: null,
+      reason: 'not_enough_history',
+      basis: { tasks_done: 0 },
+    });
+  });
+
+  it('404s a sprint it does not know', async () => {
+    const res = await req('/api/v1/sprints/01HZZZZZZZZZZZZZZZZZZZZZZZ/forecast');
+    expect(res.status).toBe(404);
+    expect(await errorCode(res)).toBe('not_found');
+  });
+});
+
 describe('project-scoped sprint endpoints (AC1)', () => {
   it('creates and reads back', async () => {
     const created = await newSprint('Sprint 1', jan(1), jan(14));

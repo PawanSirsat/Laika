@@ -238,6 +238,8 @@ describe('GET /usage', () => {
     expect(view.project).toBeNull();
     expect((view.totals as Record<string, number>).tokens).toBe(3_718 + 2_094_668 + 5_615_538);
     expect((view.by_developer as { name: string }[]).map((p) => p.name)).toEqual(['Bea']);
+    // Nothing was sent back: no rework to cost (LAI-772).
+    expect(view.rework).toEqual([]);
   });
 
   it('answers an owner’s token with totals and no per-person split', async () => {

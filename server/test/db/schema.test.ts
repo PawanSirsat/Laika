@@ -93,6 +93,8 @@ describe('migrations', () => {
     'sessions',
     'sprints',
     'tags',
+    // LAI-772, D-085: what a claimant said at claim, as append-only history.
+    'task_claim_estimates',
     'task_dependencies',
     // LAI-771, D-085: sizes and forecasts, as append-only history.
     'task_estimates',

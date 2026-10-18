@@ -245,3 +245,11 @@
     flex: 1 1 8rem;
   }
 }
+
+/* LAI-772: "check this one" — finished far faster than forecast, nothing
+   confirmed. About the task, so purple rather than the failure red. */
+.rev-chip-check {
+  color: var(--chip-purple);
+  background: var(--chip-purple-bg);
+  border-color: var(--chip-purple-border);
+}

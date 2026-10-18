@@ -255,3 +255,11 @@ export type SizeLevel = (typeof SIZE_LEVELS)[number];
  */
 export const ESTIMATE_SOURCES = ['model', 'person'] as const;
 export type EstimateSource = (typeof ESTIMATE_SOURCES)[number];
+
+/**
+ * §4.34's `confidence` (D-085 item 4, LAI-772): how sure the agent claiming a
+ * task is that it will land as asked — the R&D's idea 15, Devin's green,
+ * yellow and red. Scored against send-backs, per project, never per person.
+ */
+export const CLAIM_CONFIDENCES = ['green', 'yellow', 'red'] as const;
+export type ClaimConfidence = (typeof CLAIM_CONFIDENCES)[number];
