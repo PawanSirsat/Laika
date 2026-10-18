@@ -53,6 +53,29 @@ describe('the dated table', () => {
     expect(at('claude-sonnet-5')).toMatchObject({ input: 2, output: 10, cache_read: 0.2 });
     expect(at('claude-haiku-4-5-20251001')).toMatchObject({ input: 1, output: 5, cache_read: 0.1 });
   });
+
+  it('carries Sonnet 5.5 and Haiku 5.5 as re-read in review, each confirmed off the page', () => {
+    const at = (model: string) => MODEL_PRICES.find((e) => e.model === model);
+    // "Claude Sonnet 5.5 | $2 | $2.50 | $4 | $0.10² | $10" (base, 5m, 1h, hits, output).
+    expect(at('claude-sonnet-5-5')).toMatchObject({
+      input: 2,
+      output: 10,
+      cache_write: 2.5,
+      cache_read: 0.1,
+      confirmed: true,
+      source: 'https://platform.claude.com/docs/en/about-claude/pricing',
+    });
+    // "Claude Haiku 5.5 (for prompts up to 100,000 tokens) | $0.10 | $0.125 | $0.20 | $0.01 | $0.50".
+    expect(at('claude-haiku-5-5')).toMatchObject({
+      input: 0.1,
+      output: 0.5,
+      cache_write: 0.125,
+      cache_read: 0.01,
+      confirmed: true,
+      source: 'https://platform.claude.com/docs/en/about-claude/pricing',
+    });
+    expect(at('claude-haiku-5-5')?.note).toMatch(/100,000 tokens/);
+  });
 });
 
 describe('a price book', () => {

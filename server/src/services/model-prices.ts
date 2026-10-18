@@ -95,7 +95,9 @@ const openai = (
 /**
  * The table. Anthropic's rows are the pricing page's *Model pricing* table
  * read on {@link PRICES_AS_OF} — base input, 5m cache writes, cache hits and
- * output. OpenAI's are its *Standard* tier. Gemini CLI's models carry no row:
+ * output — under the model ids its models overview gives as each one's
+ * "Claude API ID" (platform.claude.com/docs/en/about-claude/models/overview,
+ * MODELS below). OpenAI's are its *Standard* tier. Gemini CLI's models carry no row:
  * none was read, so they show no price until an admin enters one.
  */
 export const MODEL_PRICES: readonly ModelPrice[] = [
@@ -107,10 +109,18 @@ export const MODEL_PRICES: readonly ModelPrice[] = [
   anthropic('claude-opus-4-7', 5, 25, 6.25, 0.5),
   anthropic('claude-opus-4-6', 5, 25, 6.25, 0.5),
   anthropic('claude-opus-4-5', 5, 25, 6.25, 0.5),
+  // Re-read in review, 2026-10-18. ANTHROPIC's table: "Claude Sonnet 5.5 |
+  // $2 / MTok | $2.50 / MTok | $4 / MTok | $0.10 / MTok² | $10 / MTok" — ² "cache
+  // hits … on Claude Opus 5.5 and Claude Sonnet 5.5 are priced at 0.05x the
+  // base input price". MODELS: Claude API ID `claude-sonnet-5-5`.
   anthropic('claude-sonnet-5-5', 2, 10, 2.5, 0.1),
   anthropic('claude-sonnet-5', 2, 10, 2.5, 0.2),
   anthropic('claude-sonnet-4-6', 3, 15, 3.75, 0.3),
   anthropic('claude-sonnet-4-5', 3, 15, 3.75, 0.3),
+  // Re-read in review, 2026-10-18. ANTHROPIC's table: "Claude Haiku 5.5 (for
+  // prompts up to 100,000 tokens) | $0.10 / MTok | $0.125 / MTok | $0.20 / MTok
+  // | $0.01 / MTok | $0.50 / MTok", and over 100,000 "$0.50 | $0.625 | $1 |
+  // $0.05 | $2.50". MODELS: Claude API ID `claude-haiku-5-5`.
   anthropic(
     'claude-haiku-5-5',
     0.1,

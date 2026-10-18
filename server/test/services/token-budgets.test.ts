@@ -212,6 +212,15 @@ describe('a task’s budget', () => {
     });
   });
 
+  it('alerts at exactly 80%, not at 79%', () => {
+    const task = claimedTask({ p50: 1000, p80: 2500 });
+    // The headline is input + output + cache writes, so here the output: 79% of 2500 is 1975.
+    spend(task.key, 1975);
+    expect(alerts().filter((a) => a.kind === 'budget')).toHaveLength(0);
+    spend(task.key, 2000);
+    expect(alerts().map((a) => [a.kind, a.threshold])).toEqual([['budget', 80]]);
+  });
+
   it('is set by a lead on a session, re-arms its alerts, and goes back to the forecast on null', () => {
     const task = claimedTask({ p50: 1000, p80: 2500 });
     spend(task.key, 2100);
@@ -374,6 +383,17 @@ describe('the runaway-agent alert', () => {
     const task = claimedTask(forecast, 2 * HOUR);
     spend(task.key, 5900);
     expect(alerts().filter((a) => a.kind === 'runaway')).toHaveLength(0);
+  });
+
+  it('waits a full hour, read off the clock and not the constant: 59 minutes quiet, 61 minutes alert', () => {
+    const quiet = claimedTask(forecast, 59 * 60_000);
+    spend(quiet.key, 9000);
+    expect(alerts().filter((a) => a.kind === 'runaway' && a.subjectId === quiet.id)).toHaveLength(
+      0,
+    );
+    const loud = claimedTask(forecast, 61 * 60_000);
+    spend(loud.key, 9000);
+    expect(alerts().filter((a) => a.kind === 'runaway' && a.subjectId === loud.id)).toHaveLength(1);
   });
 
   it('stays quiet within an hour of the claim', () => {
