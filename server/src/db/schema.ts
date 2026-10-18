@@ -1974,6 +1974,9 @@ export const tokenSessionDays = sqliteTable(
     primaryKey({
       columns: [t.userId, t.day, t.source, t.collectorId, t.sessionKey, t.model],
     }),
+    // A session read across every day it has (review B1): the gap is matched
+    // per session over its whole span, before anything is floored.
+    index('token_session_days_user_session_idx').on(t.userId, t.sessionKey),
     // §11.6's retention deletes by day alone.
     index('token_session_days_day_idx').on(t.day),
     check('token_session_days_source_check', oneOf('source', TOKEN_SESSION_SOURCES)),
@@ -2033,6 +2036,22 @@ export const tokenSessionSkips = sqliteTable(
     index('token_session_skips_created_at_idx').on(t.createdAt),
   ],
 );
+
+// ------------------------------------------------- §4.44 token_usage_zones
+
+/**
+ * The zone a person's usage reports last stated (§4.44, LAI-773 review B1):
+ * telemetry is put on a day in it, so a reply the files counted at 01:00 in
+ * Johannesburg and telemetry Claude Code exported at 23:00 UTC land on the same
+ * day. Without one, a snapshot's zone, else UTC.
+ */
+export const tokenUsageZones = sqliteTable('token_usage_zones', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  tz: text('tz').notNull(),
+  updatedAt,
+});
 
 // ----------------------------------------------------- §4.42 token_arrivals
 

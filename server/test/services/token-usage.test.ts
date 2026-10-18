@@ -12,6 +12,7 @@ import {
   tasks,
   tokens,
   tokenUsageDays,
+  tokenUsageZones,
   users,
 } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
@@ -552,9 +553,20 @@ describe('the developer’s own history', () => {
     share(cal);
     recordTokenUsage(t.db, actor(cal), report([{ day: YESTERDAY, rows: [row()] }]), NOW);
 
+    const zones = () =>
+      t.db
+        .select({ userId: tokenUsageZones.userId })
+        .from(tokenUsageZones)
+        .all()
+        .map((z) => z.userId)
+        .sort();
+    expect(zones()).toEqual([bea, cal].sort());
+
     deleteOwnLocalActivity(t.db, actor(bea));
     expect(stored(bea)).toHaveLength(0);
     expect(stored(cal)).toHaveLength(1);
+    // And the zone its reports stated (review B1), which came with them.
+    expect(zones()).toEqual([cal]);
   });
 
   it('is kept 400 days, by the local-activity retention job', () => {

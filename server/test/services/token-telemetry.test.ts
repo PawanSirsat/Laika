@@ -16,8 +16,13 @@ import {
   recordTelemetry,
   sessionKey,
   TELEMETRY_COLLECTOR,
+  TELEMETRY_DAYS_BACK,
 } from '../../src/services/token-telemetry.ts';
-import { recordTokenUsage, type TokenUsageReport } from '../../src/services/token-usage.ts';
+import {
+  recordTokenUsage,
+  TOKEN_USAGE_DAYS_BACK,
+  type TokenUsageReport,
+} from '../../src/services/token-usage.ts';
 import { freshDb, seed, type TestDb } from '../helpers/db.ts';
 import { work } from '../helpers/work.ts';
 
@@ -403,6 +408,61 @@ describe('receiving telemetry', () => {
   });
 });
 
+describe('a point outside the usage reports’ window (review)', () => {
+  it('refuses a 25-digit timestamp as a point, never a server error', () => {
+    const raw = body([{ kind: 'output', value: 9, session: SESSION }], 1) as {
+      resourceMetrics: {
+        scopeMetrics: { metrics: { sum: { dataPoints: Record<string, unknown>[] } }[] }[];
+      }[];
+    };
+    const point = raw.resourceMetrics[0]!.scopeMetrics[0]!.metrics[0]!.sum.dataPoints[0]!;
+    point.timeUnixNano = '9'.repeat(25);
+    point.startTimeUnixNano = '9'.repeat(25);
+    const result = recordTelemetry(t.db, actor(owner), raw, NOW);
+    expect(result.response.partialSuccess?.rejectedDataPoints).toBe(1);
+    expect(t.db.select().from(tokenSessionDays).all()).toHaveLength(0);
+  });
+
+  it('refuses a far-future point, stores nothing, and leaves the delta series open for the next real one', () => {
+    const future = NOW + 10 * 86_400_000;
+    const refused = recordTelemetry(
+      t.db,
+      actor(owner),
+      body(
+        [{ kind: 'output', value: 5000, session: SESSION, start: future - 60_000, end: future }],
+        1,
+      ),
+      NOW,
+    );
+    expect(refused.response.partialSuccess?.errorMessage).toMatch(/day_out_of_range/);
+    expect(t.db.select().from(tokenSessionDays).all()).toHaveLength(0);
+    expect(t.db.select().from(tokenTelemetrySeries).all()).toHaveLength(0);
+    recordTelemetry(
+      t.db,
+      actor(owner),
+      body([{ kind: 'output', value: 70, session: SESSION, start: NOW - 60_000, end: NOW }], 1),
+      NOW,
+    );
+    expect(totals().output).toBe(70);
+  });
+
+  it('takes the same days a usage report may carry', () => {
+    expect(TELEMETRY_DAYS_BACK).toBe(TOKEN_USAGE_DAYS_BACK);
+  });
+
+  it('refuses a point from before the window, as a usage report refuses the day', () => {
+    const old = NOW - 40 * 86_400_000;
+    const refused = recordTelemetry(
+      t.db,
+      actor(owner),
+      body([{ kind: 'output', value: 5, session: SESSION, start: old - 60_000, end: old }], 1),
+      NOW,
+    );
+    expect(refused.response.partialSuccess?.rejectedDataPoints).toBe(1);
+    expect(t.db.select().from(tokenSessionDays).all()).toHaveLength(0);
+  });
+});
+
 describe('telemetry never counts a token the files already counted', () => {
   it('adds only what the session files are missing, session by session', () => {
     recordTokenUsage(
@@ -539,6 +599,201 @@ describe('telemetry never counts a token the files already counted', () => {
     // The id never reaches the database in any table.
     const dump = JSON.stringify(t.sqlite.prepare('SELECT * FROM token_session_days').all());
     expect(dump).not.toContain(SESSION);
+  });
+});
+
+/** One day of a collector's report: SESSION's output only, listed by session. */
+function outputDay(day: string, output: number) {
+  return {
+    day,
+    rows: [
+      {
+        agent: 'claude-code',
+        model: 'claude-opus-5-5',
+        task: null,
+        input: 0,
+        output,
+        cache_write: 0,
+        cache_read: 0,
+      },
+    ],
+    sessions: [
+      {
+        key: sessionKey(SESSION),
+        model: 'claude-opus-5-5',
+        input: 0,
+        output,
+        cache_write: 0,
+        cache_read: 0,
+      },
+    ],
+  };
+}
+
+/** Every output token the person's rollup holds, every day and source. */
+function allOutput(): number {
+  return t.db
+    .select()
+    .from(tokenUsageDays)
+    .where(eq(tokenUsageDays.userId, owner))
+    .all()
+    .reduce((n, r) => n + r.output, 0);
+}
+
+describe('telemetry and files binned on different days still count once (review B1)', () => {
+  it('a session across midnight: the export that ends after midnight is matched to the reply before it', () => {
+    // The reply was written at 23:59:30 on the 16th, so the files put 300 on
+    // the 16th and 100 on the 17th. Telemetry's two delta intervals both end
+    // after midnight, so both land on the 17th.
+    recordTokenUsage(
+      t.db,
+      actor(owner),
+      {
+        v: 1,
+        collector_id: COLLECTOR,
+        tz: 'UTC',
+        usage: true,
+        days: [outputDay('2026-10-16', 300), outputDay(TODAY, 100)],
+      },
+      NOW,
+    );
+    const midnight = Date.UTC(2026, 9, 17);
+    recordTelemetry(
+      t.db,
+      actor(owner),
+      body(
+        [
+          {
+            kind: 'output',
+            value: 300,
+            session: SESSION,
+            start: midnight - 50_000,
+            end: midnight + 10_000,
+          },
+          {
+            kind: 'output',
+            value: 100,
+            session: SESSION,
+            start: midnight + 10_000,
+            end: midnight + 70_000,
+          },
+        ],
+        1,
+      ),
+      NOW,
+    );
+    expect(allOutput()).toBe(400);
+  });
+
+  it('bins telemetry in the zone the usage report states, with no snapshot to read one from', () => {
+    // Johannesburg is UTC+2: 23:00Z on the 16th is 01:00 on the 17th there.
+    recordTokenUsage(
+      t.db,
+      actor(owner),
+      {
+        v: 1,
+        collector_id: COLLECTOR,
+        tz: 'Africa/Johannesburg',
+        usage: true,
+        days: [outputDay(TODAY, 300)],
+      },
+      NOW,
+    );
+    const late = Date.UTC(2026, 9, 16, 23);
+    recordTelemetry(
+      t.db,
+      actor(owner),
+      body([{ kind: 'output', value: 300, session: SESSION, start: late - 60_000, end: late }], 1),
+      NOW,
+    );
+    expect(allOutput()).toBe(300);
+    expect(totals(TODAY).output).toBe(300);
+    expect(totals('2026-10-16').output).toBe(0);
+  });
+});
+
+describe('the match in review B1’s other shapes', () => {
+  it('puts a real gap on the day the report’s own zone says, not UTC’s', () => {
+    recordTokenUsage(
+      t.db,
+      actor(owner),
+      {
+        v: 1,
+        collector_id: COLLECTOR,
+        tz: 'Africa/Johannesburg',
+        usage: true,
+        days: [outputDay(TODAY, 300)],
+      },
+      NOW,
+    );
+    // 400 by telemetry at 23:00Z on the 16th — the 17th in Johannesburg —
+    // of which 100 are side calls the files never saw.
+    const late = Date.UTC(2026, 9, 16, 23);
+    recordTelemetry(
+      t.db,
+      actor(owner),
+      body([{ kind: 'output', value: 400, session: SESSION, start: late - 60_000, end: late }], 1),
+      NOW,
+    );
+    expect(totals(TODAY)).toMatchObject({ output: 400, gapOutput: 100 });
+    expect(totals('2026-10-16').output).toBe(0);
+  });
+
+  it('files that arrive late for the day before still take back what telemetry added', () => {
+    const midnight = Date.UTC(2026, 9, 17);
+    recordTelemetry(
+      t.db,
+      actor(owner),
+      body(
+        [
+          {
+            kind: 'output',
+            value: 300,
+            session: SESSION,
+            start: midnight - 50_000,
+            end: midnight + 10_000,
+          },
+        ],
+        1,
+      ),
+      NOW,
+    );
+    expect(allOutput()).toBe(300);
+    // The collector's sync for the 16th comes in afterwards, the 16th alone.
+    recordTokenUsage(
+      t.db,
+      actor(owner),
+      {
+        v: 1,
+        collector_id: COLLECTOR,
+        tz: 'UTC',
+        usage: true,
+        days: [outputDay('2026-10-16', 300)],
+      },
+      NOW,
+    );
+    expect(allOutput()).toBe(300);
+  });
+
+  it('a failing match never costs the report: its rows are stored and the gap only drops', () => {
+    recordTelemetry(
+      t.db,
+      actor(owner),
+      body(session(SESSION, { input: 10, output: 420, cacheWrite: 40, cacheRead: 9000 })),
+      NOW,
+    );
+    // Take the match's own table away: storing the sessions can only fail.
+    t.sqlite.exec('DROP TABLE token_session_days');
+    expect(() =>
+      recordTokenUsage(
+        t.db,
+        actor(owner),
+        filesReport([{ id: SESSION, input: 10, output: 300, cacheWrite: 40, cacheRead: 8000 }]),
+        NOW,
+      ),
+    ).not.toThrow();
+    // The report's rows stand; what telemetry had added is dropped, not doubled.
+    expect(totals()).toMatchObject({ output: 300, gapRows: 0 });
   });
 });
 

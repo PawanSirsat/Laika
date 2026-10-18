@@ -598,6 +598,7 @@ describe('the parser itself', () => {
       'token_session_skips',
       'token_telemetry_series',
       'token_usage_days',
+      'token_usage_zones',
     ]);
   });
 

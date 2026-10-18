@@ -15,9 +15,11 @@ import { type AppEnv } from '../context.ts';
  * files and why nothing counts twice is `services/token-telemetry.ts`.
  *
  * - **The developer's own Laika token**, as a bearer header the exporter sends
- *   (`OTEL_EXPORTER_OTLP_METRICS_HEADERS`); a web session works too. Both of
- *   D-084's switches are asked **before the body is read**, so a developer who
- *   stopped sharing is refused whatever their exporter sends.
+ *   (`OTEL_EXPORTER_OTLP_METRICS_HEADERS`); a web session works too. Who is
+ *   sending, and both of D-084's switches, are asked in a middleware that runs
+ *   **before the body limit and before any byte of the body is read** (review):
+ *   signed out is `401` and sharing off `403` whatever the exporter sends, a
+ *   body over the limit included.
  * - **JSON only** (`OTEL_EXPORTER_OTLP_PROTOCOL=http/json`): Laika carries no
  *   protobuf decoder, and a protobuf body is refused `422` naming the setting
  *   rather than guessed at.
@@ -41,9 +43,14 @@ export function otlpRoutes(options: { db: Db }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db } = options;
 
+  // The door first: the actor and the consent, then the size, then the body.
+  app.use('/v1/metrics', async (c, next) => {
+    assertMaySendLocalActivity(db, requireActor(c));
+    await next();
+  });
+
   app.post('/v1/metrics', bodyLimit({ maxSize: OTLP_BODY_MAX }), async (c) => {
     const actor = requireActor(c);
-    assertMaySendLocalActivity(db, actor);
     const type = (c.req.header('content-type') ?? '').toLowerCase();
     if (!type.startsWith('application/json')) {
       throw new ApiError(

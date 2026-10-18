@@ -810,9 +810,12 @@ LAI-773's: `token_budgets(task_id)`, `token_budgets(sprint_id)` and
 created_at)`, `token_alerts(project_id, created_at)` and
 `token_alerts(user_id, created_at) WHERE user_id IS NOT NULL`;
 `token_session_days(user_id, day, source, collector_id, session_key, model)`
-primary and `token_session_days(day)`; `token_telemetry_series(user_id,
-series_key)` primary; `token_session_skips(user_id, session_key)` primary;
-`token_arrivals(user_id, bucket_ms)` primary and `token_arrivals(bucket_ms)`.
+primary, `token_session_days(day)` and `token_session_days(user_id,
+session_key)` — the match reads a session's every day (§4.38);
+`token_telemetry_series(user_id, series_key)` primary;
+`token_session_skips(user_id, session_key)` primary; `token_arrivals(user_id,
+bucket_ms)` primary and `token_arrivals(bucket_ms)`;
+`token_usage_zones(user_id)` primary.
 `tags(project_id, name)` unique and `task_tags(tag_id)` — the `?tag=` filter
 reads from the tag side, so the join needs an index from that end too.
 
@@ -1553,7 +1556,7 @@ never the session id.
 | `user_id` | FK `users`, cascade |
 | `source` | `files` \| `telemetry` |
 | `collector_id` | the collector, for `files`; empty for `telemetry` |
-| `day` | `YYYY-MM-DD` — the machine's day for `files`; for `telemetry`, the day in the zone the person's collector last reported (§4.23), UTC without one |
+| `day` | `YYYY-MM-DD` — for `files`, the machine's day the reply was written; for `telemetry`, the day its export interval ended, in the zone the person's usage reports state (§4.44) — else their latest §4.23 snapshot's, else UTC |
 | `session_key` | the first 16 hex of `sha256("laika-session:" + session id)` — computed by the collector and by the receiver; the id itself is never stored |
 | `model` | as §4.33 |
 | `input`, `output`, `cache_write`, `cache_read` | integers |
@@ -1562,14 +1565,25 @@ never the session id.
 
 Primary key (`user_id`, `day`, `source`, `collector_id`, `session_key`,
 `model`). `files` rows are replaced per (person, collector, day) by each usage
-report, as §4.33's are; `telemetry` rows grow as metrics arrive. **The gap**
-— per person, day and model, for each count,
-`max(0, Σ_session max(0, telemetry − files) − unplaced)`, where `unplaced` is
-the day's Claude Code file tokens no listed session holds — is written to
-§4.33 under collector `telemetry` and recomputed whenever either side moves.
-So every read of the rollup sees, per session, the larger of the two, and a
-token is never counted twice: subtracting the unplaced tokens can only
-under-fill the gap. Kept 40 days (§11.6).
+report, as §4.33's are; `telemetry` rows grow as metrics arrive.
+
+**The gap is matched per session over its whole span, then floored** (review
+B1). The files put a reply on the day it was written and telemetry on the day
+its export ended — up to a minute later — so across midnight, or in another
+zone, the same tokens sit on two days, and a floor taken per day counts them
+twice. So, per person and model, for each count, the gap is
+`max(0, Σ_session max(0, telemetry − files) − unplaced)`, where each
+session's `telemetry` and `files` are totalled over **every day it has rows
+on**, and `unplaced` is the Claude Code file tokens no listed session holds on
+those days and the days beside them. Only then is it spread back onto the days
+where a session's telemetry ran ahead of its files, in proportion, in whole
+tokens. It is written to §4.33 under collector `telemetry` and recomputed
+whenever either side moves, for the days moved, the days beside them, and
+every day a telemetered session on them reaches. So every read of the rollup
+sees, per session, the larger of the two, and a token is never counted twice:
+subtracting the unplaced tokens can only under-fill the gap. If the match
+fails, the report it rides on is still taken and the person's gap rows are
+removed — an under-count, never a double one (§6.4). Kept 40 days (§11.6).
 
 ### 4.39 `token_telemetry_series`
 
@@ -1649,6 +1663,21 @@ A person putting an alert away for themselves (LAI-773).
 | `alert_id` | FK `token_alerts`, cascade |
 | `user_id` | FK `users`, cascade |
 | `created_at` | |
+
+### 4.44 `token_usage_zones`
+
+The zone a person's usage reports state (LAI-773, review B1), so telemetry is
+put on the same days the files are.
+
+| field | notes |
+| --- | --- |
+| `user_id` | primary key, FK `users`, cascade |
+| `tz` | the IANA zone the person's latest usage report stated (§6.4's `tz`) |
+| `updated_at` | |
+
+Written by every usage report, before its sessions are matched; read when
+telemetry arrives, to bin each point's day. Deleted with the person's history
+(`DELETE /me/local-activity`) and with the person.
 
 ## 5. Task lifecycle
 
@@ -2276,16 +2305,25 @@ and the profile's Tokens card:
 /otlp/v1/metrics` takes Claude Code's own metrics as **OTLP/HTTP JSON**
 (`OTEL_EXPORTER_OTLP_PROTOCOL=http/json`) — a protobuf body is refused `422
 protobuf_not_supported`, because Laika carries no protobuf decoder — with the
-developer's own Laika token as the bearer header. Both of D-084's switches are
-asked **before the body is read** (`403 local_activity_off`), and a `read_only`
+developer's own Laika token as the bearer header. Who is sending and both of
+D-084's switches are asked in a middleware **before the body limit and before
+any byte of the body is read**: signed out is `401`, a switch off `403
+local_activity_off`, whatever the size of the body (review). A `read_only`
 token is refused as for any report. Of the body only two metrics are read:
 `claude_code.token.usage` (attribute `type`: `input`, `output`, `cacheRead`,
 `cacheCreation`; `model`; `session.id`) and `claude_code.cost.usage` (USD);
 every other metric and attribute — `user.email`, `organization.id`, the
 account ids, the terminal — is read past and never stored, and `session.id`
 is kept only as its one-way key (§4.38). A point without `session.id` cannot be
-matched, so it is refused rather than risk counting twice. Both temporalities
-are taken without double counting (§4.39). It answers OTLP's own response,
+matched, so it is refused rather than risk counting twice. **A point is taken
+only for the days a usage report may carry**: its interval must start no later
+than it ends, and end within *today − 31* to *today + 1* in the zone the
+person's usage reports state (§4.44). Any other — a timestamp past the last
+instant a date can hold included — is refused in `partialSuccess` as
+`day_out_of_range`, before it is stored or can move a series, so a far-future
+point cannot block the delta points after it. Each point's day is the day its
+interval ended in that zone. Both temporalities are taken without double
+counting (§4.39). It answers OTLP's own response,
 `200 {}`, or `{ "partialSuccess": { "rejectedDataPoints": n, "errorMessage" }
 }`; body limit 256 KiB; its own rate bucket (§6.3). **It is not presence**
 (D-081 excludes this path): an open session exports all day, idle or not.

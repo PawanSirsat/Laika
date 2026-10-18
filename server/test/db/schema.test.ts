@@ -121,6 +121,8 @@ describe('migrations', () => {
     'token_telemetry_series',
     // LAI-769, D-084: agents' token usage per day.
     'token_usage_days',
+    // LAI-773 review B1: the zone a person's usage reports state.
+    'token_usage_zones',
     'tokens',
     'unlisted_work',
     'users',

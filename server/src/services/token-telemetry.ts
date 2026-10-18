@@ -8,6 +8,7 @@ import {
   tokenSessionSkips,
   tokenTelemetrySeries,
   tokenUsageDays,
+  tokenUsageZones,
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { dayIn, isTimeZone } from './calendar-days.ts';
@@ -94,6 +95,17 @@ const POINTS_MAX = 5000;
  */
 export const FIRST_SIGHT_MS = 5 * 60_000;
 
+/** The last instant a JavaScript `Date` can hold. */
+const MAX_DATE_MS = 8.64e15;
+
+/**
+ * Points are taken for the days a usage report may carry (§6.4): today − 31 to
+ * today + 1 in the person's zone — `TOKEN_USAGE_DAYS_BACK`, which a test holds
+ * equal. Anything else is refused as `day_out_of_range`, before it can be
+ * stored or move a series (review).
+ */
+export const TELEMETRY_DAYS_BACK = 31;
+
 /** The model id as the collector sends it (cli `modelId`). */
 const MODEL = /^[a-z0-9][a-z0-9._:-]{0,63}$/;
 /** A plain session id: Claude Code's are UUIDs. */
@@ -148,14 +160,16 @@ function stringAttributes(value: unknown): Map<string, string> {
 
 /** Nanoseconds as a decimal string or number → milliseconds; `undefined` if not one. */
 function msOf(value: unknown): number | undefined {
+  let ms: number | undefined;
   if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
-    return Math.floor(value / 1e6);
-  }
-  if (typeof value === 'string' && /^\d{1,25}$/.test(value)) {
+    ms = Math.floor(value / 1e6);
+  } else if (typeof value === 'string' && /^\d{1,25}$/.test(value)) {
     // int64 nanoseconds arrive as strings in JSON: cut to ms before Number().
-    return value.length <= 6 ? 0 : Number(value.slice(0, -6));
+    ms = value.length <= 6 ? 0 : Number(value.slice(0, -6));
   }
-  return undefined;
+  // Past the last instant a Date can hold, it is no time at all (review): a
+  // 25-digit value must be a refused point, never a server error.
+  return ms !== undefined && ms <= MAX_DATE_MS ? ms : undefined;
 }
 
 /** A data point's value: `asInt` (a string in JSON for int64) or `asDouble`. */
@@ -276,8 +290,19 @@ const zero = (): Counts => ({ input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }
 const FIELDS = ['input', 'output', 'cacheWrite', 'cacheRead'] as const;
 const headlineOf = (c: Counts): number => c.input + c.output + c.cacheWrite;
 
-/** The zone this person's collector last reported its days in, or UTC. */
+/**
+ * The zone telemetry's days are read in (review B1): the one the person's
+ * usage reports last stated — the files' own days — else a snapshot's, else
+ * UTC. A day read in the wrong zone is still matched, by session over its
+ * span; this keeps the gap on the day the files put the work.
+ */
 export function zoneFor(db: Writer, userId: string): string {
+  const stated = db
+    .select({ tz: tokenUsageZones.tz })
+    .from(tokenUsageZones)
+    .where(eq(tokenUsageZones.userId, userId))
+    .get();
+  if (stated !== undefined && isTimeZone(stated.tz)) return stated.tz;
   const row = db
     .select({ tz: localActivityDays.tz })
     .from(localActivityDays)
@@ -286,6 +311,14 @@ export function zoneFor(db: Writer, userId: string): string {
     .limit(1)
     .get();
   return row !== undefined && isTimeZone(row.tz) ? row.tz : 'UTC';
+}
+
+/** Remember the zone a usage report stated, for telemetry's days (review B1). */
+export function storeZone(tx: Tx, userId: string, tz: string, now: number): void {
+  tx.insert(tokenUsageZones)
+    .values({ userId, tz, updatedAt: now })
+    .onConflictDoUpdate({ target: tokenUsageZones.userId, set: { tz, updatedAt: now } })
+    .run();
 }
 
 /** One day of a collector's per-session file totals (§6.4's `sessions`). */
@@ -402,31 +435,111 @@ export function storeExcluded(
   return days;
 }
 
+/** Spread `total` over `weights` by largest remainder: whole tokens, the sum exact. */
+function apportion(total: number, weights: ReadonlyMap<string, number>): Map<string, number> {
+  const out = new Map<string, number>();
+  const sum = [...weights.values()].reduce((a, b) => a + b, 0);
+  if (total <= 0 || sum <= 0) return out;
+  const shares = [...weights].map(([key, w]) => {
+    const exact = (total * w) / sum;
+    return { key, whole: Math.floor(exact), rest: exact - Math.floor(exact) };
+  });
+  let left = total - shares.reduce((n, x) => n + x.whole, 0);
+  shares.sort((a, b) => b.rest - a.rest || a.key.localeCompare(b.key));
+  for (const x of shares) {
+    out.set(x.key, x.whole + (left > 0 ? 1 : 0));
+    if (left > 0) left -= 1;
+  }
+  return out;
+}
+
+const DAY_MS = 86_400_000;
+const neighbour = (day: string, by: number): string =>
+  new Date(Date.parse(`${day}T00:00:00Z`) + by * DAY_MS).toISOString().slice(0, 10);
+
+type SessionRow = Counts & { source: string; sessionKey: string; model: string; day: string };
+
 /**
- * Write the gap telemetry adds for each of `days` (see the module comment),
- * replacing what was there. Returns the change in the person's headline tokens
- * across those days — what just arrived, for the plan-limit rate.
+ * Write the gap telemetry adds (see the module comment) for `days` and every
+ * day the sessions on them reach, replacing what was there. Returns the change
+ * in the person's headline tokens over those days — what just arrived, for the
+ * plan-limit rate.
  *
- * Five indexed reads a day: a person's sessions on one day are a few dozen
- * rows.
+ * **Matched per session over its whole span, then floored** (review B1). The
+ * files put a reply on the day it was written; telemetry puts a token on the
+ * day its export ended — up to a minute later, so across midnight, or in
+ * another zone, the same tokens sit on two days. Flooring each day on its own
+ * counted them twice: 300 files on the 16th, 300 telemetry on the 17th, a
+ * gap of 300. So a session's telemetry and files are totalled over every day
+ * it has, the gap is `max(0, telemetry − files)` per session, less the file
+ * tokens no session list placed on those days and the days beside them, and
+ * only then spread back onto the days by where the telemetry ran ahead.
+ *
+ * A handful of indexed reads whatever the span: the days' telemetered
+ * sessions, their rows (by person and key), and the days' totals.
  */
 export function recomputeGap(tx: Tx, userId: string, days: readonly string[], now: number): number {
-  let change = 0;
-  for (const day of new Set(days)) {
-    const sessions = tx
-      .select({
-        source: tokenSessionDays.source,
-        sessionKey: tokenSessionDays.sessionKey,
-        model: tokenSessionDays.model,
-        input: tokenSessionDays.input,
-        output: tokenSessionDays.output,
-        cacheWrite: tokenSessionDays.cacheWrite,
-        cacheRead: tokenSessionDays.cacheRead,
-      })
+  if (days.length === 0) return 0;
+  // The days asked about and the days beside them: a reply written before
+  // midnight and its export after it are a day apart, so a change on one day
+  // can move the gap on the next.
+  const span = new Set(days.flatMap((d) => [neighbour(d, -1), d, neighbour(d, 1)]));
+
+  // Grown by every day a telemetered session on the span has rows on, until
+  // no new session turns up. Sessions with no telemetry add no gap and are
+  // left where they are.
+  const keys = new Set<string>();
+  const seen = new Set<string>();
+  const rows: SessionRow[] = [];
+  let frontier = [...span];
+  while (frontier.length > 0) {
+    const found = tx
+      .selectDistinct({ key: tokenSessionDays.sessionKey })
       .from(tokenSessionDays)
-      .where(and(eq(tokenSessionDays.userId, userId), eq(tokenSessionDays.day, day)))
-      .all();
-    const previous = tx
+      .where(and(eq(tokenSessionDays.userId, userId), inArray(tokenSessionDays.day, frontier)))
+      .all()
+      .map((r) => r.key)
+      .filter((k) => !seen.has(k));
+    frontier = [];
+    for (const k of found) seen.add(k);
+    for (let i = 0; i < found.length; i += 500) {
+      const loaded = tx
+        .select({
+          source: tokenSessionDays.source,
+          sessionKey: tokenSessionDays.sessionKey,
+          model: tokenSessionDays.model,
+          day: tokenSessionDays.day,
+          input: tokenSessionDays.input,
+          output: tokenSessionDays.output,
+          cacheWrite: tokenSessionDays.cacheWrite,
+          cacheRead: tokenSessionDays.cacheRead,
+        })
+        .from(tokenSessionDays)
+        .where(
+          and(
+            eq(tokenSessionDays.userId, userId),
+            inArray(tokenSessionDays.sessionKey, found.slice(i, i + 500)),
+          ),
+        )
+        .all();
+      const telemetered = new Set(
+        loaded.filter((r) => r.source === 'telemetry').map((r) => r.sessionKey),
+      );
+      for (const r of loaded) {
+        if (!telemetered.has(r.sessionKey)) continue;
+        keys.add(r.sessionKey);
+        rows.push(r);
+        if (!span.has(r.day)) {
+          span.add(r.day);
+          frontier.push(r.day);
+        }
+      }
+    }
+  }
+  const spanDays = [...span];
+
+  const previous =
+    tx
       .select({
         tokens:
           sql<number>`coalesce(sum(${tokenUsageDays.input} + ${tokenUsageDays.output} + ${tokenUsageDays.cacheWrite}), 0)`.mapWith(
@@ -437,100 +550,154 @@ export function recomputeGap(tx: Tx, userId: string, days: readonly string[], no
       .where(
         and(
           eq(tokenUsageDays.userId, userId),
-          eq(tokenUsageDays.day, day),
+          inArray(tokenUsageDays.day, spanDays),
           eq(tokenUsageDays.collectorId, TELEMETRY_COLLECTOR),
         ),
       )
-      .get();
-    tx.delete(tokenUsageDays)
-      .where(
-        and(
-          eq(tokenUsageDays.userId, userId),
-          eq(tokenUsageDays.day, day),
-          eq(tokenUsageDays.collectorId, TELEMETRY_COLLECTOR),
-        ),
-      )
-      .run();
-    const telemetered = sessions.filter((s) => s.source === 'telemetry');
-    if (telemetered.length === 0) {
-      change -= previous?.tokens ?? 0;
-      continue;
-    }
+      .get()?.tokens ?? 0;
+  tx.delete(tokenUsageDays)
+    .where(
+      and(
+        eq(tokenUsageDays.userId, userId),
+        inArray(tokenUsageDays.day, spanDays),
+        eq(tokenUsageDays.collectorId, TELEMETRY_COLLECTOR),
+      ),
+    )
+    .run();
+  if (keys.size === 0) return -previous;
 
-    // Per model: what each telemetered session has beyond its files, and the
-    // day's file tokens no listed session holds.
-    const files = new Map<string, Counts>();
-    const listed = new Map<string, Counts>();
-    for (const s of sessions) {
-      if (s.source !== 'files') continue;
-      const key = `${s.sessionKey}\u0000${s.model}`;
-      const held = files.get(key) ?? zero();
-      const perModel = listed.get(s.model) ?? zero();
-      for (const f of FIELDS) {
-        held[f] += s[f];
-        perModel[f] += s[f];
+  // Per session and model, over the whole span; per day, where telemetry ran ahead.
+  const totals = new Map<string, { model: string; tel: Counts; files: Counts }>();
+  const ahead = new Map<string, Map<string, Counts>>();
+  const byDay = new Map<string, { tel: Counts; files: Counts }>();
+  for (const r of rows) {
+    const id = `${r.sessionKey}\u0000${r.model}`;
+    const t = totals.get(id) ?? { model: r.model, tel: zero(), files: zero() };
+    const d = byDay.get(`${id}\u0000${r.day}`) ?? { tel: zero(), files: zero() };
+    for (const f of FIELDS) {
+      if (r.source === 'telemetry') {
+        t.tel[f] += r[f];
+        d.tel[f] += r[f];
+      } else {
+        t.files[f] += r[f];
+        d.files[f] += r[f];
       }
-      files.set(key, held);
-      listed.set(s.model, perModel);
     }
-    const dayFiles = new Map<string, Counts>();
-    for (const r of tx
-      .select({
-        model: tokenUsageDays.model,
-        input: sql<number>`coalesce(sum(${tokenUsageDays.input}), 0)`.mapWith(Number),
-        output: sql<number>`coalesce(sum(${tokenUsageDays.output}), 0)`.mapWith(Number),
-        cacheWrite: sql<number>`coalesce(sum(${tokenUsageDays.cacheWrite}), 0)`.mapWith(Number),
-        cacheRead: sql<number>`coalesce(sum(${tokenUsageDays.cacheRead}), 0)`.mapWith(Number),
-      })
-      .from(tokenUsageDays)
-      .where(
-        and(
-          eq(tokenUsageDays.userId, userId),
-          eq(tokenUsageDays.day, day),
-          eq(tokenUsageDays.agent, 'claude-code'),
-          ne(tokenUsageDays.collectorId, TELEMETRY_COLLECTOR),
-        ),
-      )
-      .groupBy(tokenUsageDays.model)
-      .all()) {
-      dayFiles.set(r.model, r);
-    }
-
-    const beyond = new Map<string, Counts>();
-    for (const s of telemetered) {
-      const held = files.get(`${s.sessionKey}\u0000${s.model}`) ?? zero();
-      const perModel = beyond.get(s.model) ?? zero();
-      for (const f of FIELDS) perModel[f] += Math.max(0, s[f] - held[f]);
-      beyond.set(s.model, perModel);
-    }
-    const rows: (typeof tokenUsageDays.$inferInsert)[] = [];
-    let added = 0;
-    for (const [model, extra] of beyond) {
-      const all = dayFiles.get(model) ?? zero();
-      const placed = listed.get(model) ?? zero();
-      const gap = zero();
-      for (const f of FIELDS) {
-        const unplaced = Math.max(0, all[f] - placed[f]);
-        gap[f] = Math.max(0, extra[f] - unplaced);
-      }
-      if (FIELDS.every((f) => gap[f] === 0)) continue;
-      added += headlineOf(gap);
-      rows.push({
-        userId,
-        collectorId: TELEMETRY_COLLECTOR,
-        day,
-        agent: 'claude-code',
-        model,
-        taskId: null,
-        projectId: null,
-        ...gap,
-        updatedAt: now,
-      });
-    }
-    if (rows.length > 0) tx.insert(tokenUsageDays).values(rows).run();
-    change += added - (previous?.tokens ?? 0);
+    totals.set(id, t);
+    byDay.set(`${id}\u0000${r.day}`, d);
   }
-  return change;
+  for (const [id, d] of byDay) {
+    const [, model, day] = id.split('\u0000') as [string, string, string];
+    const perModel = ahead.get(model) ?? new Map<string, Counts>();
+    const c = perModel.get(day) ?? zero();
+    for (const f of FIELDS) c[f] += Math.max(0, d.tel[f] - d.files[f]);
+    perModel.set(day, c);
+    ahead.set(model, perModel);
+  }
+
+  // The file tokens no session list placed, on the span and the days beside
+  // it: they may be any session's, so they are taken to be these.
+  const near = [...new Set(spanDays.flatMap((d) => [neighbour(d, -1), d, neighbour(d, 1)]))];
+  const dayFiles = new Map<string, Counts>();
+  for (const r of tx
+    .select({
+      day: tokenUsageDays.day,
+      model: tokenUsageDays.model,
+      input: sql<number>`coalesce(sum(${tokenUsageDays.input}), 0)`.mapWith(Number),
+      output: sql<number>`coalesce(sum(${tokenUsageDays.output}), 0)`.mapWith(Number),
+      cacheWrite: sql<number>`coalesce(sum(${tokenUsageDays.cacheWrite}), 0)`.mapWith(Number),
+      cacheRead: sql<number>`coalesce(sum(${tokenUsageDays.cacheRead}), 0)`.mapWith(Number),
+    })
+    .from(tokenUsageDays)
+    .where(
+      and(
+        eq(tokenUsageDays.userId, userId),
+        inArray(tokenUsageDays.day, near),
+        eq(tokenUsageDays.agent, 'claude-code'),
+        ne(tokenUsageDays.collectorId, TELEMETRY_COLLECTOR),
+      ),
+    )
+    .groupBy(tokenUsageDays.day, tokenUsageDays.model)
+    .all()) {
+    dayFiles.set(`${r.day}\u0000${r.model}`, r);
+  }
+  const listed = new Map<string, Counts>();
+  for (const r of tx
+    .select({
+      day: tokenSessionDays.day,
+      model: tokenSessionDays.model,
+      input: sql<number>`coalesce(sum(${tokenSessionDays.input}), 0)`.mapWith(Number),
+      output: sql<number>`coalesce(sum(${tokenSessionDays.output}), 0)`.mapWith(Number),
+      cacheWrite: sql<number>`coalesce(sum(${tokenSessionDays.cacheWrite}), 0)`.mapWith(Number),
+      cacheRead: sql<number>`coalesce(sum(${tokenSessionDays.cacheRead}), 0)`.mapWith(Number),
+    })
+    .from(tokenSessionDays)
+    .where(
+      and(
+        eq(tokenSessionDays.userId, userId),
+        inArray(tokenSessionDays.day, near),
+        eq(tokenSessionDays.source, 'files'),
+      ),
+    )
+    .groupBy(tokenSessionDays.day, tokenSessionDays.model)
+    .all()) {
+    listed.set(`${r.day}\u0000${r.model}`, r);
+  }
+  const unplaced = new Map<string, Counts>();
+  for (const [id, all] of dayFiles) {
+    const model = id.split('\u0000')[1] ?? '';
+    const placed = listed.get(id) ?? zero();
+    const u = unplaced.get(model) ?? zero();
+    for (const f of FIELDS) u[f] += Math.max(0, all[f] - placed[f]);
+    unplaced.set(model, u);
+  }
+
+  // The gap per model: each session's excess over the span, less the unplaced.
+  const excess = new Map<string, Counts>();
+  for (const t of totals.values()) {
+    const e = excess.get(t.model) ?? zero();
+    for (const f of FIELDS) e[f] += Math.max(0, t.tel[f] - t.files[f]);
+    excess.set(t.model, e);
+  }
+  const out = new Map<string, Counts>();
+  for (const [model, e] of excess) {
+    const u = unplaced.get(model) ?? zero();
+    const perDay = ahead.get(model) ?? new Map<string, Counts>();
+    for (const f of FIELDS) {
+      const gap = Math.max(0, e[f] - u[f]);
+      const weights = new Map([...perDay].map(([day, c]) => [day, c[f]] as const));
+      for (const [day, n] of apportion(gap, weights)) {
+        const id = `${day}\u0000${model}`;
+        const c = out.get(id) ?? zero();
+        c[f] += n;
+        out.set(id, c);
+      }
+    }
+  }
+  const inserts: (typeof tokenUsageDays.$inferInsert)[] = [];
+  let added = 0;
+  for (const [id, gap] of out) {
+    if (FIELDS.every((f) => gap[f] === 0)) continue;
+    const [day, model] = id.split('\u0000') as [string, string];
+    added += headlineOf(gap);
+    inserts.push({
+      userId,
+      collectorId: TELEMETRY_COLLECTOR,
+      day,
+      agent: 'claude-code',
+      model,
+      taskId: null,
+      projectId: null,
+      ...gap,
+      updatedAt: now,
+    });
+  }
+  for (let i = 0; i < inserts.length; i += 50) {
+    tx.insert(tokenUsageDays)
+      .values(inserts.slice(i, i + 50))
+      .run();
+  }
+  return added - previous;
 }
 
 export interface TelemetryIngest {
@@ -557,9 +724,18 @@ export function recordTelemetry(
   const read = readOtlpMetrics(body);
   const userId = actor.userId;
   const tz = zoneFor(db, userId);
+  const today = dayIn(tz, now);
+  const earliest = neighbour(today, -TELEMETRY_DAYS_BACK);
+  const latest = neighbour(today, 1);
+  const inWindow = read.points.filter((p) => {
+    if (p.startMs > p.endMs) return false;
+    const day = dayIn(tz, p.endMs);
+    return day >= earliest && day <= latest;
+  });
+  const outOfRange = read.points.length - inWindow.length;
 
   const result = db.transaction((tx) => {
-    const keys = [...new Set(read.points.map((p) => p.sessionKey))];
+    const keys = [...new Set(inWindow.map((p) => p.sessionKey))];
     const skipped = new Set(
       keys.length === 0
         ? []
@@ -575,7 +751,7 @@ export function recordTelemetry(
             .all()
             .map((r) => r.key),
     );
-    const points = read.points.filter((p) => !skipped.has(p.sessionKey));
+    const points = inWindow.filter((p) => !skipped.has(p.sessionKey));
     const seriesKeyOf = (p: TelemetryPoint) =>
       `${p.sessionKey}|${p.model}|${p.kind}|${p.cumulative ? String(p.startMs) : 'delta'}`;
     const seriesKeys = [...new Set(points.map(seriesKeyOf))];
@@ -694,12 +870,19 @@ export function recordTelemetry(
 
   return {
     response:
-      read.rejected === 0
+      read.rejected + outOfRange === 0
         ? {}
         : {
             partialSuccess: {
-              rejectedDataPoints: read.rejected,
-              errorMessage: read.message ?? 'some points were refused',
+              rejectedDataPoints: read.rejected + outOfRange,
+              errorMessage: [
+                ...(read.message === undefined ? [] : [read.message]),
+                ...(outOfRange === 0
+                  ? []
+                  : [
+                      `day_out_of_range: points are taken for ${earliest} to ${latest} in ${tz}, as usage reports are`,
+                    ]),
+              ].join('; '),
             },
           },
     days: result.days,

@@ -151,6 +151,21 @@ describe('POST /api/v1/otlp/v1/metrics', () => {
     expect(h.db.select().from(tokenSessionDays).all()).toHaveLength(0);
   });
 
+  it('asks who is sending, and whether they share, before any body is read — even one over the limit', async () => {
+    const big = `{"pad":"${'x'.repeat(300 * 1024)}"}`;
+    const anonymous = await h.app.request('/api/v1/otlp/v1/metrics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: big,
+    });
+    expect(anonymous.status).toBe(401);
+    const token = await mint();
+    share(false);
+    const off = await post('/api/v1/otlp/v1/metrics', big, token);
+    expect(off.status).toBe(403);
+    expect(await reason(off)).toBe('forbidden:local_activity_off');
+  });
+
   it('refuses protobuf, naming the setting that fixes it', async () => {
     const res = await post(
       '/api/v1/otlp/v1/metrics',

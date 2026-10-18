@@ -2,14 +2,16 @@
 -- over the dated table (`org_model_prices`), soft budgets and the alerts they
 -- raise (`token_budgets`, `token_alerts`, `token_alert_dismissals`), the
 -- OpenTelemetry fallback matched to session files by one-way session key
--- (`token_session_days`, `token_telemetry_series`, `token_session_skips`, and
--- a partial index for the rows it adds to `token_usage_days`), and the
+-- (`token_session_days` with an index to read a session across its days,
+-- `token_telemetry_series`, `token_session_skips`, `token_usage_zones`, and a
+-- partial index for the rows it adds to `token_usage_days`), and the
 -- developer's own plan limit and the arrival rate it reads (`plan_limits`,
 -- `token_arrivals`).
 --
--- **Additive only**: nine CREATE TABLEs, their indexes and one new index on
+-- **Additive only**: ten CREATE TABLEs, their indexes and one new index on
 -- `token_usage_days`. Nothing is rebuilt, copied, altered or dropped.
 -- drizzle-kit's output (via the LAI-778 wrapper), unedited but for this header.
+-- Regenerated in review round 1 (B1), never shipped before it.
 CREATE TABLE `org_model_prices` (
 	`org_id` text NOT NULL,
 	`model` text NOT NULL,
@@ -135,6 +137,7 @@ CREATE TABLE `token_session_days` (
 	CONSTRAINT "token_session_days_counts_check" CHECK(input >= 0 AND output >= 0 AND cache_write >= 0 AND cache_read >= 0)
 );
 --> statement-breakpoint
+CREATE INDEX `token_session_days_user_session_idx` ON `token_session_days` (`user_id`,`session_key`);--> statement-breakpoint
 CREATE INDEX `token_session_days_day_idx` ON `token_session_days` (`day`);--> statement-breakpoint
 CREATE TABLE `token_session_skips` (
 	`user_id` text NOT NULL,
@@ -156,4 +159,11 @@ CREATE TABLE `token_telemetry_series` (
 );
 --> statement-breakpoint
 CREATE INDEX `token_telemetry_series_updated_at_idx` ON `token_telemetry_series` (`updated_at`);--> statement-breakpoint
+CREATE TABLE `token_usage_zones` (
+	`user_id` text PRIMARY KEY NOT NULL,
+	`tz` text NOT NULL,
+	`updated_at` integer NOT NULL,
+	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
 CREATE INDEX `token_usage_days_telemetry_idx` ON `token_usage_days` (`day`,`model`,`input`,`output`,`cache_write`,`cache_read`) WHERE collector_id = 'telemetry';

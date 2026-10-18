@@ -1187,6 +1187,7 @@ describe('0040 adds budgets, alerts, telemetry and plan limits to a populated da
           'token_session_days',
           'token_session_skips',
           'token_telemetry_series',
+          'token_usage_zones',
         ];
         for (const table of created) expect(before[table], table).toBeUndefined();
         // The guard on the census: the rows it is to keep are in it.

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4548ac45-c78d-4ea0-90fd-6ac248d7f09a",
+  "id": "76173603-e352-4d58-861d-7106fbdd1ffe",
   "prevId": "36990b01-4057-40ef-ac6c-0bac4420f1fd",
   "tables": {
     "accounts": {
@@ -4251,6 +4251,11 @@
         }
       },
       "indexes": {
+        "token_session_days_user_session_idx": {
+          "name": "token_session_days_user_session_idx",
+          "columns": ["user_id", "session_key"],
+          "isUnique": false
+        },
         "token_session_days_day_idx": {
           "name": "token_session_days_day_idx",
           "columns": ["day"],
@@ -4586,6 +4591,47 @@
           "value": "input >= 0 AND output >= 0 AND cache_write >= 0 AND cache_read >= 0"
         }
       }
+    },
+    "token_usage_zones": {
+      "name": "token_usage_zones",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tz": {
+          "name": "tz",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "token_usage_zones_user_id_users_id_fk": {
+          "name": "token_usage_zones_user_id_users_id_fk",
+          "tableFrom": "token_usage_zones",
+          "tableTo": "users",
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
     },
     "tokens": {
       "name": "tokens",

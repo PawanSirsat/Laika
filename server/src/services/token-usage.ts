@@ -65,6 +65,7 @@ import {
   type SessionFilesInput,
   storeExcluded,
   storeSessionFiles,
+  storeZone,
   TELEMETRY_COLLECTOR,
 } from './token-telemetry.ts';
 
@@ -612,11 +613,9 @@ export function recordTokenUsage(
         .run();
     }
 
-    // The telemetry match (LAI-773): this machine's sessions for the days it
-    // sent, the sessions it left out, and the gap on every day either moved.
-    storeSessionFiles(tx, actor.userId, collectorId, report.days, now);
-    const moved = storeExcluded(tx, actor.userId, report.excluded ?? [], now);
-    fillGap(tx, actor.userId, [...report.days.map((d) => d.day), ...moved], now);
+    // The telemetry match (LAI-773), best effort: the zone, this machine's
+    // sessions for the days it sent, the sessions it left out, and the gap.
+    telemetryMatch(tx, actor.userId, collectorId, report, now);
   });
 
   // Best effort from here: what arrived, and the alerts it may raise. None of
@@ -631,56 +630,38 @@ const resolvedTaskIds = (resolved: ReadonlyMap<string, ResolvedTask>): Set<strin
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 /**
- * Recompute the telemetry gap on the days that have any telemetry, in a
- * savepoint: a failure drops those days' gap rows — an under-count, never a
- * double one — and costs the report nothing.
+ * The report's part in the telemetry match, **in a savepoint** (review): the
+ * zone it states, its per-session file totals, the sessions it excluded, and
+ * the gap on every day they reach. A failure anywhere here takes back only
+ * these writes, drops the person's telemetry gap — an under-count until the
+ * next report, never a double one — is logged, and costs the report nothing.
  */
-function fillGap(tx: Tx, userId: string, days: readonly string[], now: number): void {
-  if (days.length === 0) return;
-  const unique = [...new Set(days)];
-  const withTelemetry = [
-    ...new Set([
-      ...tx
-        .selectDistinct({ day: tokenSessionDays.day })
-        .from(tokenSessionDays)
-        .where(
-          and(
-            eq(tokenSessionDays.userId, userId),
-            inArray(tokenSessionDays.day, unique),
-            eq(tokenSessionDays.source, 'telemetry'),
-          ),
-        )
-        .all()
-        .map((r) => r.day),
-      ...tx
-        .selectDistinct({ day: t.day })
-        .from(t)
-        .where(
-          and(eq(t.userId, userId), inArray(t.day, unique), eq(t.collectorId, TELEMETRY_COLLECTOR)),
-        )
-        .all()
-        .map((r) => r.day),
-    ]),
-  ];
-  if (withTelemetry.length === 0) return;
+function telemetryMatch(
+  tx: Tx,
+  userId: string,
+  collectorId: string,
+  report: TokenUsageReport,
+  now: number,
+): void {
   try {
     tx.transaction((inner) => {
-      recomputeGap(inner, userId, withTelemetry, now);
+      storeZone(inner, userId, report.tz, now);
+      storeSessionFiles(inner, userId, collectorId, report.days, now);
+      const moved = storeExcluded(inner, userId, report.excluded ?? [], now);
+      recomputeGap(inner, userId, [...new Set([...report.days.map((d) => d.day), ...moved])], now);
     });
   } catch (error) {
-    tokenUsageLog.error('token_usage.gap_failed', {
+    tokenUsageLog.error('token_usage.telemetry_match_failed', {
       user_id: userId,
       error: error instanceof Error ? error.message : String(error),
     });
-    tx.delete(t)
-      .where(
-        and(
-          eq(t.userId, userId),
-          inArray(t.day, withTelemetry),
-          eq(t.collectorId, TELEMETRY_COLLECTOR),
-        ),
-      )
-      .run();
+    try {
+      tx.delete(t)
+        .where(and(eq(t.userId, userId), eq(t.collectorId, TELEMETRY_COLLECTOR)))
+        .run();
+    } catch {
+      // Nothing more to take back: the report's own rows stand.
+    }
   }
 }
 
