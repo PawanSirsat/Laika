@@ -23,12 +23,21 @@ import { writePrivately } from './connect.ts';
  *
  * | agent | file | events | source |
  * | --- | --- | --- | --- |
- * | Claude Code | `~/.claude/settings.json` (merged) | `UserPromptSubmit`, `SessionStart` (`startup\|clear`), `SessionEnd` | code.claude.com/docs/en/hooks |
+ * | Claude Code | `~/.claude/settings.json` (merged) | `UserPromptSubmit`, `SessionStart` (`startup\|clear`), `SessionEnd`, `Stop` | code.claude.com/docs/en/hooks |
  * | Codex CLI | `~/.codex/hooks.json` (merged) | `UserPromptSubmit`, `SessionStart` (`startup`), `SessionEnd` | learn.chatgpt.com/docs/hooks |
  * | Gemini CLI | `~/.gemini/settings.json` (merged) | `BeforeAgent`, `SessionStart`, `SessionEnd` | geminicli.com/docs/hooks |
  * | Copilot CLI | `~/.copilot/hooks/laika-activity.json` (ours) | `userPromptSubmitted`, `sessionStart`, `sessionEnd` | docs.github.com/en/copilot/reference/hooks-reference |
  * | Goose | `~/.agents/plugins/laika-activity/` (ours) | `UserPromptSubmit`, `SessionStart`, `SessionEnd` | goose-docs.ai/docs/guides/context-engineering/hooks |
  * | Kiro CLI v3 | `~/.kiro/hooks/laika-activity.json` (ours) | `UserPromptSubmit`, `SessionStart`, `SessionEnd` | kiro.dev/docs/hooks |
+ *
+ * **`Stop` is Claude Code's alone (LAI-776).** It fires at the end of every
+ * turn, takes no matcher, and its payload carries the turn's last reply —
+ * which the hook never reads (checked 2026-10-18). It is a throttled trigger:
+ * the hook launches the background sync only once `next_sync_at` has passed,
+ * so a long session's tokens reach the board within one sync interval rather
+ * than at its end. No other agent here documents a per-turn event this could
+ * use without guessing, so the others still sync on their sessions' start
+ * and end.
  *
  * **Cline is skipped.** Its source puts global hooks in `~/Documents/Cline/Hooks`
  * and its release post in `~/Documents/Cline/Rules/Hooks`; it has no session-end
@@ -80,7 +89,7 @@ export interface HookReport {
   readonly detail?: readonly string[];
 }
 
-type Mode = 'prompt' | 'session-start' | 'session-end';
+type Mode = 'prompt' | 'session-start' | 'session-end' | 'turn-end';
 
 export interface InstallOptions {
   readonly home: string;
@@ -447,6 +456,8 @@ function claudeSpec(o: InstallOptions): MergedSpec {
         hooks: [{ type: 'command', command: cmd('session-start'), timeout: 10 }],
       },
       SessionEnd: { hooks: [{ type: 'command', command: cmd('session-end') }] },
+      // Every turn's end: a sync once one is due (LAI-776). No matcher — Stop takes none.
+      Stop: { hooks: [{ type: 'command', command: cmd('turn-end'), timeout: 5 }] },
     },
   };
 }

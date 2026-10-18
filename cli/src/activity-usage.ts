@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { open, readdir, readFile, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -77,22 +85,42 @@ import {
  * - **Gemini CLI** rewrites a whole file each turn: it is read again when it
  *   changes, and each message counted once by id.
  *
- * ## Cheap (the task's measured target: under 50 ms with nothing new)
+ * ## Cheap (measured targets: under 50 ms with nothing new, LAI-769; under
+ * 50 ms with new bytes in one transcript, LAI-776)
  *
- * Two files in `~/.laika/activity`, both 0600:
+ * In `~/.laika/activity`, every file 0600:
  *
  * - `usage-index.json` — small, read on every sync: each directory's listing
  *   kept by its mtime (a directory's mtime moves only when an entry is added
  *   or removed, so a sync re-lists only the directories that changed and
  *   `stat`s every file once), each file's size and mtime, the signature of
  *   every day last accepted, and whether anything is waiting to be sent.
- * - `usage-data.json` — the records themselves, read only when a file has new
- *   bytes. Reads start at the byte offset the last one stopped at and end at
- *   the last newline, so a line being written is read whole next time.
+ * - `usage-data.json` — read only when something is new: where each file was
+ *   read to, the local-only tables, the marks, Codex's and Gemini CLI's
+ *   records, and **each day's Claude Code part as last computed**.
+ * - `usage-days/<day>.json` — Claude Code's replies, by message id, **one file
+ *   per local day**. Claude Code is nearly all of the bytes (4.9 of 5.2 MB on
+ *   the measured machine, 47,071 replies), and a sync with new bytes in one
+ *   transcript used to parse, prune and rewrite all of them and recount every
+ *   day — 100–110 ms there. Now it opens the day those bytes are on, counts
+ *   that day again, and leaves the other thirty alone. A change that reaches
+ *   further — a mark, a session marked automated, the board's prefixes, the
+ *   zone — counts again the days it can reach, and only those.
  *
- * A first read of a busy machine takes seconds: it runs in the detached
- * background sync, never in a hook, and a file untouched for longer than the
- * window is not read at all.
+ * **The dedupe is still by message id across every file.** A reply's copies —
+ * a resumed or forked session's history — keep their timestamps, so they are
+ * on the reply's own day: measured on that machine, of 74,716 message ids 376
+ * are in more than one file and none of those is on two local days. The only
+ * ids on two days were 3 replies streaming across midnight, inside one file,
+ * minutes apart. So a line is looked up on its own day, and on the day either
+ * side when it is within an hour of the edge; the first line seen keeps the
+ * reply's day, as before.
+ *
+ * Reads start at the byte offset the last one stopped at and end at the last
+ * newline, so a line being written is read whole next time. A first read of a
+ * busy machine takes seconds: it runs in the detached background sync, never
+ * in a hook, and a file untouched for longer than the window is not read at
+ * all.
  *
  * ## Since when (D-079 item 2, D-084 item 11)
  *
@@ -120,9 +148,17 @@ const SCOPE_TTL_S = DAY_S;
  * the window get the task keys phase 1 did not read (LAI-770). 3: the keys a
  * branch carries are read in an outside id's wider shape (LAI-780), so lines
  * read before are read again; the re-read's days replace what went, as 2's
- * did.
+ * did. 4: Claude Code's replies are kept one file per day (LAI-776) — a
+ * format 3 file holds exactly the same records, so it is split, not read
+ * again.
  */
-const DATA_V = 3;
+const DATA_V = 4;
+/** The format whose records a format 4 collector splits rather than reads again. */
+const SPLIT_FROM_V = 3;
+/** How near a day's edge a line is for the day beside it to be asked too: a reply streams for minutes. */
+const EDGE_S = 3600;
+/** Changes the meaning of a cached day: every day is counted again. */
+const CACHE_V = 1;
 
 export type UsageAgent = 'claude-code' | 'codex' | 'gemini-cli';
 
@@ -228,6 +264,41 @@ interface GeminiFile {
   m: Record<string, Rec>;
 }
 
+/** One session's Claude Code tokens of a day, by model (design.md §2, LAI-773). */
+export interface SessionRow {
+  /** {@link sessionKey} of the session id — never the id. */
+  key: string;
+  model: string;
+  input: number;
+  output: number;
+  cache_write: number;
+  cache_read: number;
+}
+
+/**
+ * A day's Claude Code part, as last computed: rows `[model, task, input,
+ * output, cache_write, cache_read]`, sessions `[key, model, …the four]`, the
+ * keys of sessions whose replies that day were left out of scope, and whether
+ * it holds tokens from before counting began.
+ */
+interface ClaudeDay {
+  r: [string, string | null, number, number, number, number][];
+  s: [string, string, number, number, number, number][];
+  x: string[];
+  o?: 1;
+}
+
+/** What each day's Claude Code part was computed under, and the parts. */
+interface DayCache {
+  /** Everything a day's figure depends on beyond its own replies and the marks. */
+  epoch: string;
+  /** The automated sessions' ids applied. */
+  skip: string[];
+  /** Each person-started session's start lines as applied (`sessions`), signed. */
+  starts: Record<string, string>;
+  days: Record<string, ClaudeDay>;
+}
+
 interface UsageData {
   v: typeof DATA_V;
   /** The zone the days were computed in; all are recomputed when it changes. */
@@ -244,8 +315,11 @@ interface UsageData {
   keys: string[];
   /** Each mark, by its tool call's id: a resumed session's copy counts once. */
   marks: Record<string, Mark>;
-  /** Claude Code replies, by message id. */
-  claude: Record<string, Rec>;
+  /** The days with a file of Claude Code replies in `usage-days/`. */
+  days: string[];
+  /** Per session (by index), the days its Claude Code replies are on — how far its change reaches. */
+  sdays: Record<string, string[]>;
+  cache: DayCache;
   /** Claude Code transcripts: bytes read so far. */
   offsets: Record<string, number>;
   codex: Record<string, CodexFile>;
@@ -287,6 +361,8 @@ interface UsageIndex {
   prefixes?: string[];
   /** The format of `usage-data.json` the offsets in `files` belong to. */
   data_v?: number;
+  /** The sessions left out, as last accepted: a change is sent even if no day's totals moved. */
+  excluded?: string;
 }
 
 export function usageIndexFile(paths: ActivityPaths): string {
@@ -296,6 +372,13 @@ export function usageIndexFile(paths: ActivityPaths): string {
 export function usageDataFile(paths: ActivityPaths): string {
   return join(paths.dir, 'usage-data.json');
 }
+
+/** Claude Code's replies, one file per local day (LAI-776). */
+export function usageDaysDir(paths: ActivityPaths): string {
+  return join(paths.dir, 'usage-days');
+}
+
+const emptyCache = (): DayCache => ({ epoch: '', skip: [], starts: {}, days: {} });
 
 function emptyIndex(): UsageIndex {
   return { v: 1, dirs: {}, files: {}, sent: {}, dirty: false, marked: [], skip: '', next_at: 0 };
@@ -311,7 +394,9 @@ function emptyData(tz: string): UsageData {
     branches: [],
     keys: [],
     marks: {},
-    claude: {},
+    days: [],
+    sdays: {},
+    cache: emptyCache(),
     offsets: {},
     codex: {},
     gemini: {},
@@ -354,25 +439,58 @@ function readIndex(paths: ActivityPaths): UsageIndex {
   };
 }
 
-function readData(paths: ActivityPaths, tz: string): UsageData | undefined {
-  const raw = readJson(usageDataFile(paths));
-  if (!isRecord(raw) || raw.v !== DATA_V) return undefined;
-  const pick = <T>(value: unknown, fallback: T): T => (isRecord(value) ? (value as T) : fallback);
-  const list = (value: unknown): string[] => (Array.isArray(value) ? (value as string[]) : []);
+const pick = <T>(value: unknown, fallback: T): T => (isRecord(value) ? (value as T) : fallback);
+const list = (value: unknown): string[] => (Array.isArray(value) ? (value as string[]) : []);
+
+/** The tables every format since 2 keeps the same way. */
+function tablesOf(raw: Record<string, unknown>, tz: string) {
   return {
-    v: DATA_V,
     tz: typeof raw.tz === 'string' ? raw.tz : tz,
     cwds: list(raw.cwds),
     sessions: list(raw.sessions),
     lanes: list(raw.lanes),
     branches: list(raw.branches),
     keys: list(raw.keys),
-    marks: pick(raw.marks, {}),
+    marks: pick<Record<string, Mark>>(raw.marks, {}),
+    offsets: pick<Record<string, number>>(raw.offsets, {}),
+    codex: pick<Record<string, CodexFile>>(raw.codex, {}),
+    gemini: pick<Record<string, GeminiFile>>(raw.gemini, {}),
+    scope: pick<Record<string, [boolean, number]>>(raw.scope, {}),
+  };
+}
+
+function readData(paths: ActivityPaths, tz: string): UsageData | undefined {
+  const raw = readJson(usageDataFile(paths));
+  if (!isRecord(raw) || raw.v !== DATA_V) return undefined;
+  const cache = pick<Partial<DayCache>>(raw.cache, {});
+  return {
+    v: DATA_V,
+    ...tablesOf(raw, tz),
+    days: list(raw.days).filter(isDay),
+    sdays: pick(raw.sdays, {}),
+    cache: {
+      epoch: typeof cache.epoch === 'string' ? cache.epoch : '',
+      skip: list(cache.skip),
+      starts: pick(cache.starts, {}),
+      days: pick(cache.days, {}),
+    },
+  };
+}
+
+/**
+ * A format 3 file — every Claude Code reply in it — as format 4's tables and
+ * the replies to put in their days. Nothing is read again: the records and the
+ * offsets they were read to are the same in both formats.
+ */
+function readSplittable(
+  paths: ActivityPaths,
+  tz: string,
+): { data: UsageData; claude: Record<string, Rec> } | undefined {
+  const raw = readJson(usageDataFile(paths));
+  if (!isRecord(raw) || raw.v !== SPLIT_FROM_V) return undefined;
+  return {
+    data: { v: DATA_V, ...tablesOf(raw, tz), days: [], sdays: {}, cache: emptyCache() },
     claude: pick(raw.claude, {}),
-    offsets: pick(raw.offsets, {}),
-    codex: pick(raw.codex, {}),
-    gemini: pick(raw.gemini, {}),
-    scope: pick(raw.scope, {}),
   };
 }
 
@@ -382,6 +500,116 @@ function writeIndex(paths: ActivityPaths, index: UsageIndex): void {
 
 function writeData(paths: ActivityPaths, data: UsageData): void {
   writeFile600(usageDataFile(paths), `${JSON.stringify(data)}\n`);
+}
+
+/**
+ * Claude Code's replies, one file per local day, opened only when asked for
+ * (LAI-776). Every change marks its day, and only marked days are written; a
+ * day that leaves the window is deleted whole.
+ */
+class DayStore {
+  private readonly loaded = new Map<string, Record<string, Rec>>();
+  private readonly held: Set<string>;
+  private readonly dirty = new Set<string>();
+  private readonly dropped = new Set<string>();
+
+  private readonly dir: string;
+  private readonly data: UsageData;
+
+  constructor(dir: string, data: UsageData) {
+    this.dir = dir;
+    this.data = data;
+    this.held = new Set(data.days);
+  }
+
+  /** A day's replies, by message id: read from its file the first time. */
+  get(day: string): Record<string, Rec> {
+    let recs = this.loaded.get(day);
+    if (recs === undefined) {
+      recs = this.held.has(day)
+        ? pick<Record<string, Rec>>(readJson(join(this.dir, `${day}.json`)), {})
+        : {};
+      this.loaded.set(day, recs);
+    }
+    return recs;
+  }
+
+  /**
+   * The reply `id`, on its line's day — and, within {@link EDGE_S} of that
+   * day's edge, on the day beside it, where a reply that streamed across
+   * midnight keeps its first line.
+   */
+  find(id: string, atS: number, dayOf: (epochS: number) => string): Rec | undefined {
+    const day = dayOf(atS);
+    const here = this.get(day)[id];
+    if (here !== undefined) return here;
+    for (const near of [dayOf(atS - EDGE_S), dayOf(atS + EDGE_S)]) {
+      if (near === day || !(this.held.has(near) || this.loaded.has(near))) continue;
+      const there = this.get(near)[id];
+      if (there !== undefined) return there;
+    }
+    return undefined;
+  }
+
+  /** A reply first seen: kept on its day, and its session's days told. */
+  put(id: string, rec: Rec): void {
+    const day = rec[0];
+    this.get(day)[id] = rec;
+    this.touch(day);
+    const session = rec[8] ?? -1;
+    if (session >= 0) {
+      const days = (this.data.sdays[String(session)] ??= []);
+      if (!days.includes(day)) days.push(day);
+    }
+  }
+
+  touch(day: string): void {
+    this.dirty.add(day);
+    this.dropped.delete(day);
+    if (!this.held.has(day)) {
+      this.held.add(day);
+      this.data.days.push(day);
+    }
+  }
+
+  /** Every day held, oldest first. */
+  heldDays(): string[] {
+    return [...this.held].sort();
+  }
+
+  drop(day: string): void {
+    this.loaded.delete(day);
+    this.dirty.delete(day);
+    this.held.delete(day);
+    this.dropped.add(day);
+    this.data.days = this.data.days.filter((d) => d !== day);
+  }
+
+  /** The changed days written, the dropped ones deleted — before the data file. */
+  write(): void {
+    if (this.dirty.size === 0 && this.dropped.size === 0) return;
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    for (const day of this.dirty) {
+      const recs = this.loaded.get(day) ?? {};
+      if (Object.keys(recs).length === 0) {
+        rmSync(join(this.dir, `${day}.json`), { force: true });
+        continue;
+      }
+      writeFile600(join(this.dir, `${day}.json`), `${JSON.stringify(recs)}\n`);
+    }
+    for (const day of this.dropped) rmSync(join(this.dir, `${day}.json`), { force: true });
+    this.dirty.clear();
+    this.dropped.clear();
+  }
+}
+
+/**
+ * A session's one-way key (design.md §1, LAI-773): what a usage report names
+ * a Claude Code session by, so the board can put its OpenTelemetry beside its
+ * session files without ever holding the session id.
+ */
+export function sessionKey(id: string): string {
+  return createHash('sha256').update(`laika-session:${id}`).digest('hex').slice(0, 16);
 }
 
 /** The developer's answer to counting the last 30 days, kept until collection starts over. */
@@ -406,10 +634,13 @@ const SKIP_KEEP_S = 45 * DAY_S;
 /** Compacted once it is this large. */
 const SKIP_COMPACT_BYTES = 64 * 1024;
 
-/** The ids of sessions nobody was typing in, from the file and its half-compacted copy. */
-function skippedSessions(paths: ActivityPaths): Set<string> {
-  const ids = new Set<string>();
-  for (const path of [skipSessionsFile(paths), `${skipSessionsFile(paths)}.compacting`]) {
+/**
+ * The ids of sessions nobody was typing in, from the file and its
+ * half-compacted copy, newest last.
+ */
+function skippedSessions(paths: ActivityPaths): string[] {
+  const ids = new Map<string, number>();
+  for (const path of [`${skipSessionsFile(paths)}.compacting`, skipSessionsFile(paths)]) {
     let text = '';
     try {
       text = readFileSync(path, 'utf8');
@@ -417,11 +648,14 @@ function skippedSessions(paths: ActivityPaths): Set<string> {
       continue;
     }
     for (const line of text.split('\n')) {
-      const id = line.split(' ')[1];
-      if (id !== undefined && SESSION_ID.test(id)) ids.add(id);
+      const [at, id] = line.split(' ');
+      if (id !== undefined && SESSION_ID.test(id)) {
+        ids.delete(id);
+        ids.set(id, Number(at) || 0);
+      }
     }
   }
-  return ids;
+  return [...ids.keys()];
 }
 
 /**
@@ -766,6 +1000,14 @@ const TOOL_RESULT_ID = /"tool_use_id":"([A-Za-z0-9_-]{1,128})"/g;
 
 interface Reader {
   readonly data: UsageData;
+  /** A Claude Code reply already kept, by id, near the line's time (see {@link DayStore.find}). */
+  find: (id: string, atS: number) => Rec | undefined;
+  /** A Claude Code reply first seen. */
+  put: (id: string, rec: Rec) => void;
+  /** A kept reply's counts moved: its day is counted again. */
+  touch: (day: string) => void;
+  /** A mark was added, or its state moved: the days from `atS` on are counted again. */
+  marked: (atS: number) => void;
   readonly dayOf: (epochS: number) => string;
   readonly firstDay: string;
   readonly windowStartS: number;
@@ -809,7 +1051,7 @@ function claudeLine(reader: Reader, line: string): void {
   // reply written on several lines is timed from its first, and so is a mark
   // on a later one of them: the whole reply is the mark's (review, item 1).
   if (Array.isArray(message.content) && at !== undefined) {
-    const first = typeof message.id === 'string' ? reader.data.claude[message.id]?.[6] : undefined;
+    const first = typeof message.id === 'string' ? reader.find(message.id, at)?.[6] : undefined;
     for (const block of message.content as unknown[]) {
       if (!isRecord(block) || block.type !== 'tool_use' || typeof block.name !== 'string') continue;
       if (!LAIKA_TOOL.test(block.name)) continue;
@@ -836,9 +1078,9 @@ function claudeLine(reader: Reader, line: string): void {
   const output = count(usage.output_tokens);
   const write = count(usage.cache_creation_input_tokens);
   const read = count(usage.cache_read_input_tokens);
-  const held = reader.data.claude[message.id];
+  const held = reader.find(message.id, at);
   if (held === undefined) {
-    reader.data.claude[message.id] = [
+    reader.put(message.id, [
       day,
       model,
       input,
@@ -851,14 +1093,17 @@ function claudeLine(reader: Reader, line: string): void {
       reader.session(record.sessionId),
       reader.lane(record.agentId),
       reader.branch(record.gitBranch),
-    ];
+    ]);
     return;
   }
   // The first line seen keeps the day and the model; each count is the largest.
-  held[2] = Math.max(held[2], input);
-  held[3] = Math.max(held[3], output);
-  held[4] = Math.max(held[4], write);
-  held[5] = Math.max(held[5], read);
+  if (input > held[2] || output > held[3] || write > held[4] || read > held[5]) {
+    held[2] = Math.max(held[2], input);
+    held[3] = Math.max(held[3], output);
+    held[4] = Math.max(held[4], write);
+    held[5] = Math.max(held[5], read);
+    reader.touch(held[0]);
+  }
 }
 
 /**
@@ -885,7 +1130,10 @@ function claudeRefusal(reader: Reader, line: string): void {
     if (!isRecord(block) || block.type !== 'tool_result' || block.is_error !== true) continue;
     const mark =
       typeof block.tool_use_id === 'string' ? reader.data.marks[block.tool_use_id] : undefined;
-    if (mark !== undefined) mark[5] = REFUSED;
+    if (mark !== undefined && mark[5] !== REFUSED) {
+      mark[5] = REFUSED;
+      reader.marked(mark[2]);
+    }
   }
 }
 
@@ -940,8 +1188,13 @@ function codexAnswer(reader: Reader, line: string): void {
     if (isRecord(result) && 'Err' in result) taken = false;
     else if (isRecord(result)) taken = answered(result.Ok);
   }
-  if (taken === false) mark[5] = REFUSED;
-  else if (taken === true) mark.length = 5;
+  if (taken === false) {
+    mark[5] = REFUSED;
+    reader.marked(mark[2]);
+  } else if (taken === true && mark.length > 5) {
+    mark.length = 5;
+    reader.marked(mark[2]);
+  }
 }
 
 /** Codex's per-response usage, mapped as its cumulative total is (REPORT.md §2). */
@@ -1162,13 +1415,31 @@ export interface UsageReadOptions {
   readonly prefixes?: readonly string[] | undefined;
 }
 
+/** What a scan changed that a day's figure depends on. */
+interface Changes {
+  /** Days whose Claude Code replies were added to or moved. */
+  readonly days: Set<string>;
+  /** The earliest mark added or changed, epoch seconds; `Infinity` for none. */
+  marksFromS: number;
+  /** Every day is counted again: the records were split or the zone moved. */
+  all: boolean;
+}
+
+const NO_CHANGES = (): Changes => ({ days: new Set(), marksFromS: Infinity, all: false });
+
+const hasChanges = (c: Changes): boolean => c.all || c.days.size > 0 || c.marksFromS !== Infinity;
+
 interface Scan {
   readonly index: UsageIndex;
   /** Loaded when anything had to be read, or when asked for. */
   data: UsageData | undefined;
+  store: DayStore | undefined;
   readonly stats: UsageStats;
   /** Every file was read to its end. */
   readonly complete: boolean;
+  readonly changes: Changes;
+  /** The kept records are not this format's: `usage-days/` goes before anything is written, once. */
+  fresh: boolean;
 }
 
 /** The window's first day, and the instant it starts at the earliest. */
@@ -1178,16 +1449,58 @@ function windowOf(nowS: number, tz: string): { firstDay: string; startS: number 
   return { firstDay, startS: Math.floor(Date.parse(`${firstDay}T00:00:00Z`) / 1000) - 14 * 3600 };
 }
 
-async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan> {
+/** The data file and its day store, as kept — or empty ones. */
+function loadData(paths: ActivityPaths, tz: string): { data: UsageData; store: DayStore } {
+  const data = readData(paths, tz) ?? emptyData(tz);
+  return { data, store: new DayStore(usageDaysDir(paths), data) };
+}
+
+/**
+ * Write what a scan or a count changed, in the order that keeps them
+ * consistent: the days, then the data file, then the index — an index ahead of
+ * its data would skip bytes never kept, and a data file ahead of its days
+ * would read a reply's bytes again, which its id makes harmless.
+ */
+function save(
+  paths: ActivityPaths,
+  scanned: { fresh: boolean; data: UsageData | undefined; store: DayStore | undefined },
+  index: UsageIndex,
+): void {
+  if (scanned.fresh) {
+    rmSync(usageDaysDir(paths), { recursive: true, force: true });
+    scanned.fresh = false;
+  }
+  scanned.store?.write();
+  if (scanned.data !== undefined) writeData(paths, scanned.data);
+  writeIndex(paths, index);
+}
+
+/**
+ * Find what is new and read it. With `defer`, nothing is written: the caller
+ * counts the days and saves once (`usageStep`); without it, a scan that read
+ * anything saves what it read.
+ */
+async function scan(options: UsageReadOptions, wantData: boolean, defer = false): Promise<Scan> {
   const { paths, roots, tz, nowS } = options;
   let index = readIndex(paths);
-  // Offsets live with the records: without the data file, every file is new.
+  let fresh = false;
+  // Offsets live with the records: without the data file, every file is new,
+  // and no day file left behind is anybody's.
   if (!existsSync(usageDataFile(paths)) && Object.keys(index.files).length > 0) {
     index = { ...index, files: {}, sent: index.sent };
+    fresh = true;
   }
-  // Records from before this format carry no marks: every file is read once more.
+  // Records from before format 3 carry no marks or outside keys: every file is
+  // read once more. Format 3's are split into days as they are (LAI-776).
+  let split: ReturnType<typeof readSplittable>;
   if (index.data_v !== DATA_V) {
-    index = { ...index, files: {}, data_v: DATA_V, dirty: true };
+    split = index.data_v === SPLIT_FROM_V ? readSplittable(paths, tz) : undefined;
+    if (split === undefined) {
+      index = { ...index, files: {}, data_v: DATA_V, dirty: true };
+      fresh = true;
+    } else {
+      index = { ...index, data_v: DATA_V, dirty: true };
+    }
   }
   const seenDirs = new Set<string>();
   const found: [Kind, string][] = [];
@@ -1217,28 +1530,45 @@ async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan>
   if (skip !== index.skip) {
     index.skip = skip;
     index.dirty = true;
-    if (options.dryRun !== true && changed.length === 0 && gone.length === 0) {
+    if (
+      options.dryRun !== true &&
+      changed.length === 0 &&
+      gone.length === 0 &&
+      split === undefined &&
+      !fresh
+    ) {
       writeIndex(paths, index);
     }
   }
 
   const result = { files: present.size, changed: 0, bytes: 0 };
-  if (changed.length === 0 && gone.length === 0) {
+  if (changed.length === 0 && gone.length === 0 && split === undefined && !fresh) {
+    const loaded = wantData ? loadData(paths, tz) : undefined;
     return {
       index,
-      data: wantData ? (readData(paths, tz) ?? emptyData(tz)) : undefined,
+      data: loaded?.data,
+      store: loaded?.store,
       stats: result,
       complete: true,
+      changes: NO_CHANGES(),
+      fresh: false,
     };
   }
 
-  const data = readData(paths, tz) ?? emptyData(tz);
+  const changes = NO_CHANGES();
+  const data = split?.data ?? (fresh ? emptyData(tz) : (readData(paths, tz) ?? emptyData(tz)));
+  // A fresh start's data is empty, so its store holds no day: the last one's go at save.
+  const store = new DayStore(usageDaysDir(paths), data);
+  if (split !== undefined) {
+    for (const [id, rec] of Object.entries(split.claude)) store.put(id, rec);
+    changes.all = true;
+  }
   const { firstDay, startS } = windowOf(nowS, tz);
   const dayOf = dayFinder(tz);
   if (data.tz !== tz) {
     // The machine moved zone: every kept day is computed again in the new one.
-    for (const rec of allRecords(data)) rec[0] = dayOf(rec[6]);
-    data.tz = tz;
+    reday(data, store, tz);
+    changes.all = true;
   }
   const cwdIndex = new Map(data.cwds.map((c, i) => [c, i]));
   const sessionIndex = new Map(data.sessions.map((id, i) => [id, i]));
@@ -1259,6 +1589,18 @@ async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan>
   const keyIndex = tableOf(data.keys);
   const reader: Reader = {
     data,
+    find: (id, atS) => store.find(id, atS, dayOf),
+    put: (id, rec) => {
+      store.put(id, rec);
+      changes.days.add(rec[0]);
+    },
+    touch: (day) => {
+      store.touch(day);
+      changes.days.add(day);
+    },
+    marked: (atS) => {
+      changes.marksFromS = Math.min(changes.marksFromS, atS);
+    },
     dayOf,
     firstDay,
     windowStartS: startS,
@@ -1290,7 +1632,8 @@ async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan>
     },
     mark: (id, session, lane, atS, tool, input, state, again) => {
       if (typeof id !== 'string' || id === '' || id.length > 160) return;
-      if (data.marks[id] !== undefined && again !== true) return;
+      const held = data.marks[id];
+      if (held !== undefined && again !== true) return;
       const said = markOf(tool, input);
       if (said === undefined) return;
       const mark: Mark = [
@@ -1301,6 +1644,9 @@ async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan>
         said.kind,
       ];
       if (state !== 0) mark[5] = state;
+      if (held === undefined || JSON.stringify(held) !== JSON.stringify(mark)) {
+        changes.marksFromS = Math.min(changes.marksFromS, atS, held?.[2] ?? atS);
+      }
       data.marks[id] = mark;
     },
   };
@@ -1367,23 +1713,39 @@ async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan>
     result.changed += 1;
   }
 
-  prune(data, firstDay, startS, present);
+  prune(data, store, firstDay, startS, present);
   index.dirty = true;
-  if (options.dryRun !== true) {
-    // The records first: an index ahead of its data would skip bytes never kept.
-    writeData(paths, data);
-    writeIndex(paths, index);
-  }
-  return { index, data, stats: result, complete };
+  const scanned = { index, data, store, stats: result, complete, changes, fresh };
+  if (options.dryRun !== true && !defer) save(paths, scanned, index);
+  return scanned;
 }
 
-function* allRecords(data: UsageData): Generator<Rec> {
-  yield* Object.values(data.claude);
-  for (const file of Object.values(data.codex)) {
-    yield* file.ev;
-    yield* Object.values(file.r ?? {});
+/**
+ * The machine moved zone: every reply's day, again in `tz`, and each moved to
+ * its new day's file; Codex's and Gemini CLI's records likewise. Every day is
+ * counted again after this.
+ */
+function reday(data: UsageData, store: DayStore, tz: string): void {
+  const dayOf = dayFinder(tz);
+  data.sdays = {};
+  const moved: [string, Rec][] = [];
+  for (const day of store.heldDays()) {
+    for (const [id, rec] of Object.entries(store.get(day))) moved.push([id, rec]);
+    store.drop(day);
   }
-  for (const file of Object.values(data.gemini)) yield* Object.values(file.m);
+  for (const [id, rec] of moved) {
+    rec[0] = dayOf(rec[6]);
+    store.put(id, rec);
+  }
+  for (const file of Object.values(data.codex)) {
+    for (const rec of file.ev) rec[0] = dayOf(rec[6]);
+    for (const rec of Object.values(file.r ?? {})) rec[0] = dayOf(rec[6]);
+  }
+  for (const file of Object.values(data.gemini)) {
+    for (const rec of Object.values(file.m)) rec[0] = dayOf(rec[6]);
+  }
+  data.cache = emptyCache();
+  data.tz = tz;
 }
 
 /**
@@ -1392,12 +1754,18 @@ function* allRecords(data: UsageData): Generator<Rec> {
  */
 function prune(
   data: UsageData,
+  store: DayStore,
   firstDay: string,
   startS: number,
   present: ReadonlySet<string>,
 ): void {
-  for (const [id, rec] of Object.entries(data.claude)) {
-    if (rec[0] < firstDay) delete data.claude[id];
+  // Claude Code's replies go a day at a time, with the day's file.
+  for (const day of store.heldDays()) if (day < firstDay) store.drop(day);
+  for (const day of Object.keys(data.cache.days)) if (day < firstDay) delete data.cache.days[day];
+  for (const [session, days] of Object.entries(data.sdays)) {
+    const kept = days.filter((d) => d >= firstDay);
+    if (kept.length === 0) delete data.sdays[session];
+    else data.sdays[session] = kept;
   }
   // Marks from before the window: the last of each thread is kept — it may
   // still say what the window's first replies were for — and the rest go.
@@ -1454,7 +1822,7 @@ async function scopeFilter(
   data: UsageData,
   paths: ActivityPaths,
   nowS: number,
-): Promise<(cwd: number) => boolean> {
+): Promise<{ inScope: (cwd: number) => boolean; signature: string }> {
   const decided = new Map<number, boolean>();
   const laikaHashes = new Set<string>();
   const check = async (dir: string): Promise<boolean> => {
@@ -1481,7 +1849,12 @@ async function scopeFilter(
   for (const [i, dir] of data.cwds.entries()) {
     if (dir.startsWith('gemini:')) decided.set(i, laikaHashes.has(dir.slice(7)));
   }
-  return (cwd) => decided.get(cwd) === true;
+  // Which directories are in: a day counted under other answers is counted again.
+  const inside = [...decided].filter(([, yes]) => yes).map(([i]) => i);
+  return {
+    inScope: (cwd) => decided.get(cwd) === true,
+    signature: inside.sort((a, b) => a - b).join(','),
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1599,12 +1972,98 @@ function attributor(
 /* Days                                                                       */
 /* -------------------------------------------------------------------------- */
 
-/** Per day in the window, the rows a report would carry, oldest day first. */
+/** Per day in the window, what a report would carry. */
 interface Days {
   /** Per day in the window, the rows a report would carry, oldest day first. */
   readonly rows: Map<string, UsageRow[]>;
+  /** Per day, Claude Code's tokens per session and model (design.md §2, LAI-773). */
+  readonly sessions: Map<string, SessionRow[]>;
   /** Days whose rows include tokens from before counting began — the backfill. */
   readonly older: ReadonlySet<string>;
+  /**
+   * The keys of the Claude Code sessions whose tokens are left out of the
+   * rows — automated (D-086) or out of the developer's scope (D-079 item 4)
+   * — newest first, at most {@link EXCLUDED_MAX}: the board drops their
+   * OpenTelemetry, which has no directory to judge.
+   */
+  readonly excluded: string[];
+}
+
+/** At most this many excluded sessions in a report (design.md §2). */
+const EXCLUDED_MAX = 200;
+/** At most this many session rows in a day (design.md §2); more, and the day goes without them. */
+const SESSIONS_PER_DAY_MAX = 100;
+
+/** What a day's Claude Code part is counted under. */
+interface DayRules {
+  readonly firstDay: string;
+  readonly sinceS: number;
+  readonly older: boolean;
+  readonly all: boolean;
+  readonly held: ReadonlySet<string> | 'unknown';
+  readonly inScope: (cwd: number) => boolean;
+  readonly skipped: ReadonlySet<number>;
+  readonly taskOf: (rec: Rec) => string | null;
+  readonly keyOf: (session: number) => string | undefined;
+}
+
+/**
+ * One day's Claude Code replies, as a report carries them: rows per model and
+ * task, the same tokens per session and model, and the sessions left out of
+ * scope. `undefined` for a day that holds nothing to send.
+ */
+function claudeDay(recs: Readonly<Record<string, Rec>>, rules: DayRules): ClaudeDay | undefined {
+  const rows = new Map<string, ClaudeDay['r'][number]>();
+  const sessions = new Map<string, ClaudeDay['s'][number]>();
+  const excluded = new Set<string>();
+  let older = false;
+  for (const rec of Object.values(recs)) {
+    if (rec[0] < rules.firstDay) continue;
+    const session = rec[8] ?? -1;
+    if (!rules.inScope(rec[7])) {
+      const key = session >= 0 ? rules.keyOf(session) : undefined;
+      if (key !== undefined) excluded.add(key);
+      continue;
+    }
+    if (session >= 0 && rules.skipped.has(session)) continue;
+    if (rec[6] < rules.sinceS) {
+      if (!rules.older) continue;
+      if (!rules.all && (rules.held === 'unknown' || rules.held.has(rec[0]))) continue;
+      older = true;
+    }
+    // The 30 days counted once from files already here go unattributed
+    // (D-084 item 11): a task is tied from when counting began.
+    const task = rec[6] < rules.sinceS ? null : rules.taskOf(rec);
+    const rowKey = `${rec[1]} ${task ?? ''}`;
+    let row = rows.get(rowKey);
+    if (row === undefined) {
+      row = [rec[1], task, 0, 0, 0, 0];
+      rows.set(rowKey, row);
+    }
+    row[2] += rec[2];
+    row[3] += rec[3];
+    row[4] += rec[4];
+    row[5] += rec[5];
+    const key = session >= 0 ? rules.keyOf(session) : undefined;
+    if (key === undefined) continue;
+    const splitKey = `${key} ${rec[1]}`;
+    let split = sessions.get(splitKey);
+    if (split === undefined) {
+      split = [key, rec[1], 0, 0, 0, 0];
+      sessions.set(splitKey, split);
+    }
+    split[2] += rec[2];
+    split[3] += rec[3];
+    split[4] += rec[4];
+    split[5] += rec[5];
+  }
+  if (rows.size === 0 && excluded.size === 0) return undefined;
+  return {
+    r: [...rows.values()],
+    s: [...sessions.values()],
+    x: [...excluded].sort(),
+    ...(older ? { o: 1 as const } : {}),
+  };
 }
 
 /**
@@ -1620,63 +2079,147 @@ interface Days {
  *   hook marked in `skip-sessions` is left out, subagents included.
  * - **A Codex rollout with per-response records counts those**, each response
  *   once across every rollout; one without counts its total's differences.
+ *
+ * **Claude Code's part is counted a day at a time and kept** (LAI-776): only
+ * the days a change can reach are counted again — the days that gained or
+ * moved a reply, the days from the earliest mark that moved, and the days of a
+ * session newly marked automated or newly started — and every day once the
+ * rules themselves change (the window's start, the zone, the answer to the 30
+ * days, the board's prefixes or the scope). Codex's and Gemini CLI's records,
+ * a few hundred, are counted whole every time. With `keep`, the counts are
+ * kept in `data` for the next sync; without, they are this call's alone.
  */
 async function daysOf(
   data: UsageData,
+  store: DayStore,
   options: UsageReadOptions,
   backfill: 'yes' | 'no' | undefined,
   held: readonly string[] | 'unknown',
   prefixes: readonly string[] | undefined,
+  changes: Changes,
+  keep: boolean,
 ): Promise<Days> {
   const { firstDay } = windowOf(options.nowS, options.tz);
+  let all = changes.all;
   if (data.tz !== options.tz) {
     // The machine moved zone since these were read: their days, in the new one.
-    const dayOf = dayFinder(options.tz);
-    for (const rec of allRecords(data)) rec[0] = dayOf(rec[6]);
-    data.tz = options.tz;
+    reday(data, store, options.tz);
+    all = true;
   }
+  const dayOf = dayFinder(options.tz);
   const sinceS = options.state.since;
-  const all = options.all === true;
-  const older = backfill === 'yes' || all;
-  const heldDays = new Set(held === 'unknown' ? [] : held);
-  const skip = skippedSessions(options.paths);
-  const skippedIndex = new Set(data.sessions.flatMap((id, i) => (skip.has(id) ? [i] : [])));
-  const inScope =
+  const everything = options.all === true;
+  const older = backfill === 'yes' || everything;
+  const heldDays = held === 'unknown' ? 'unknown' : new Set(held);
+  const skipIds = skippedSessions(options.paths);
+  const skipSet = new Set(skipIds);
+  const starts = sessionStarts(options.paths);
+  const startsNow: Record<string, string> = {};
+  for (const [id, list] of starts)
+    startsNow[id] = list.map(([at, k]) => `${String(at)}:${k}`).join(',');
+  const scope =
     options.state.scope === 'laika-repos'
       ? await scopeFilter(data, options.paths, options.nowS)
-      : () => true;
-  const taskOf = attributor(data, prefixes, sessionStarts(options.paths));
+      : undefined;
+  const epoch = JSON.stringify([
+    CACHE_V,
+    options.tz,
+    sinceS,
+    older,
+    everything,
+    heldDays === 'unknown' ? 'unknown' : [...heldDays].sort(),
+    prefixes ?? null,
+    options.state.scope,
+    scope?.signature ?? '',
+  ]);
+  const cache: DayCache = keep ? data.cache : { ...data.cache, days: { ...data.cache.days } };
 
-  const days = new Map<string, Map<string, UsageRow>>();
+  // Which days to count again.
+  const present = store.heldDays().filter((d) => d >= firstDay);
+  const redo = new Set<string>();
+  if (all || cache.epoch !== epoch) {
+    for (const day of present) redo.add(day);
+  } else {
+    for (const day of changes.days) if (day >= firstDay) redo.add(day);
+    if (changes.marksFromS !== Infinity) {
+      const from = dayOf(changes.marksFromS);
+      for (const day of present) if (day >= from) redo.add(day);
+    }
+    const touched = new Set<string>();
+    const before = new Set(cache.skip);
+    for (const id of skipIds) if (!before.has(id)) touched.add(id);
+    for (const id of cache.skip) if (!skipSet.has(id)) touched.add(id);
+    for (const [id, sig] of Object.entries(startsNow))
+      if (cache.starts[id] !== sig) touched.add(id);
+    for (const id of Object.keys(cache.starts)) if (startsNow[id] === undefined) touched.add(id);
+    if (touched.size > 0) {
+      const sessionIndex = new Map(data.sessions.map((id, i) => [id, i]));
+      for (const id of touched) {
+        const i = sessionIndex.get(id);
+        if (i === undefined) continue;
+        for (const day of data.sdays[String(i)] ?? []) if (day >= firstDay) redo.add(day);
+      }
+    }
+  }
+  const kept = new Set(present);
+  for (const day of Object.keys(cache.days)) if (!kept.has(day)) delete cache.days[day];
+
+  const skipped = new Set(data.sessions.flatMap((id, i) => (skipSet.has(id) ? [i] : [])));
+  const inScope = scope?.inScope ?? (() => true);
+  const taskOf = attributor(data, prefixes, starts);
+  if (redo.size > 0) {
+    const keys = new Map<number, string>();
+    const rules: DayRules = {
+      firstDay,
+      sinceS,
+      older,
+      all: everything,
+      held: heldDays,
+      inScope,
+      skipped,
+      taskOf,
+      keyOf: (session) => {
+        let key = keys.get(session);
+        if (key === undefined) {
+          const id = data.sessions[session];
+          if (id === undefined) return undefined;
+          key = sessionKey(id);
+          keys.set(session, key);
+        }
+        return key;
+      },
+    };
+    for (const day of redo) {
+      const counted = claudeDay(store.get(day), rules);
+      if (counted === undefined) delete cache.days[day];
+      else cache.days[day] = counted;
+    }
+  }
+  cache.epoch = epoch;
+  cache.skip = skipIds;
+  cache.starts = startsNow;
+
+  // Codex and Gemini CLI, whole: a few hundred records.
+  const others = new Map<string, Map<string, UsageRow>>();
   const olderDays = new Set<string>();
   const add = (agent: UsageAgent, rec: Rec): void => {
     if (rec[0] < firstDay || !inScope(rec[7])) return;
-    if (rec[8] !== undefined && skippedIndex.has(rec[8])) return;
+    if (rec[8] !== undefined && skipped.has(rec[8])) return;
     if (rec[6] < sinceS) {
       if (!older) return;
-      if (!all && (held === 'unknown' || heldDays.has(rec[0]))) return;
+      if (!everything && (heldDays === 'unknown' || heldDays.has(rec[0]))) return;
       olderDays.add(rec[0]);
     }
-    let rows = days.get(rec[0]);
+    let rows = others.get(rec[0]);
     if (rows === undefined) {
       rows = new Map();
-      days.set(rec[0], rows);
+      others.set(rec[0], rows);
     }
-    // The 30 days counted once from files already here go unattributed
-    // (D-084 item 11): a task is tied from when counting began.
     const task = rec[6] < sinceS ? null : taskOf(rec);
     const key = `${agent} ${rec[1]} ${task ?? ''}`;
     let row = rows.get(key);
     if (row === undefined) {
-      row = {
-        agent,
-        model: rec[1],
-        task,
-        input: 0,
-        output: 0,
-        cache_write: 0,
-        cache_read: 0,
-      };
+      row = { agent, model: rec[1], task, input: 0, output: 0, cache_write: 0, cache_read: 0 };
       rows.set(key, row);
     }
     row.input += rec[2];
@@ -1684,7 +2227,6 @@ async function daysOf(
     row.cache_write += rec[4];
     row.cache_read += rec[5];
   };
-  for (const rec of Object.values(data.claude)) add('claude-code', rec);
   const responses = new Set<string>();
   for (const file of Object.values(data.codex)) {
     const records = Object.entries(file.r ?? {});
@@ -1707,30 +2249,74 @@ async function daysOf(
     }
   }
 
-  const out = new Map<string, UsageRow[]>();
-  for (const day of [...days.keys()].sort()) {
-    const rows = [...(days.get(day)?.values() ?? [])]
-      .map((r) => ({
-        ...r,
-        input: Math.min(r.input, COUNT_MAX),
-        output: Math.min(r.output, COUNT_MAX),
-        cache_write: Math.min(r.cache_write, COUNT_MAX),
-        cache_read: Math.min(r.cache_read, COUNT_MAX),
-      }))
-      .filter((r) => r.input + r.output + r.cache_write + r.cache_read > 0)
+  const capped = <
+    T extends { input: number; output: number; cache_write: number; cache_read: number },
+  >(
+    r: T,
+  ): T => ({
+    ...r,
+    input: Math.min(r.input, COUNT_MAX),
+    output: Math.min(r.output, COUNT_MAX),
+    cache_write: Math.min(r.cache_write, COUNT_MAX),
+    cache_read: Math.min(r.cache_read, COUNT_MAX),
+  });
+  const counts = (r: { input: number; output: number; cache_write: number; cache_read: number }) =>
+    r.input + r.output + r.cache_write + r.cache_read > 0;
+  const outRows = new Map<string, UsageRow[]>();
+  const outSessions = new Map<string, SessionRow[]>();
+  const scopeOut: string[] = [];
+  for (const day of [...new Set([...Object.keys(cache.days), ...others.keys()])].sort()) {
+    const claude = cache.days[day];
+    if (claude?.o === 1) olderDays.add(day);
+    const rows: UsageRow[] = [
+      ...(claude?.r ?? []).map(([model, task, input, output, cache_write, cache_read]) => ({
+        agent: 'claude-code',
+        model,
+        task,
+        input,
+        output,
+        cache_write,
+        cache_read,
+      })),
+      ...(others.get(day)?.values() ?? []),
+    ]
+      .map(capped)
+      .filter(counts)
       .sort(
         (a, b) =>
           a.agent.localeCompare(b.agent) ||
           a.model.localeCompare(b.model) ||
           (a.task ?? '').localeCompare(b.task ?? ''),
       );
-    if (rows.length > 0) out.set(day, rows);
+    if (rows.length > 0) outRows.set(day, rows);
+    const sessions = (claude?.s ?? [])
+      .map(([key, model, input, output, cache_write, cache_read]) =>
+        capped({ key, model, input, output, cache_write, cache_read }),
+      )
+      .filter(counts)
+      .sort((a, b) => a.key.localeCompare(b.key) || a.model.localeCompare(b.model));
+    if (sessions.length > 0 && rows.length > 0) outSessions.set(day, sessions);
+    for (const key of claude?.x ?? []) scopeOut.push(`${day} ${key}`);
   }
-  return { rows: out, older: olderDays };
+  // Automated first, newest first; then the out-of-scope, newest day first.
+  const excluded = [
+    ...new Set([
+      ...[...skipIds].reverse().map(sessionKey),
+      ...scopeOut
+        .sort()
+        .reverse()
+        .map((entry) => entry.slice(11)),
+    ]),
+  ].slice(0, EXCLUDED_MAX);
+  return { rows: outRows, sessions: outSessions, older: olderDays, excluded };
 }
 
 export interface UsageRead {
   readonly days: Map<string, UsageRow[]>;
+  /** Per day, Claude Code's tokens per session and model. */
+  readonly sessions: Map<string, SessionRow[]>;
+  /** The sessions left out of the rows, by key. */
+  readonly excluded: readonly string[];
   readonly stats: UsageStats;
 }
 
@@ -1743,16 +2329,35 @@ export interface UsageRead {
 export async function readUsage(
   options: UsageReadOptions & { readonly held?: readonly string[] },
 ): Promise<UsageRead> {
-  const scanned = await scan(options, true);
-  const data = scanned.data ?? emptyData(options.tz);
-  const { rows } = await daysOf(
-    data,
+  const scanned = await scan(options, true, true);
+  const loaded =
+    scanned.data !== undefined && scanned.store !== undefined
+      ? { data: scanned.data, store: scanned.store }
+      : loadData(options.paths, options.tz);
+  const zone = loaded.data.tz;
+  const days = await daysOf(
+    loaded.data,
+    loaded.store,
     options,
     scanned.index.backfill,
     options.held ?? scanned.index.held ?? [],
     options.prefixes ?? scanned.index.prefixes,
+    scanned.changes,
+    false,
   );
-  return { days: rows, stats: scanned.stats };
+  const moved = hasChanges(scanned.changes) || scanned.fresh || zone !== loaded.data.tz;
+  if (options.dryRun !== true && moved) {
+    // What this read is kept, but not its counts — they were under its own
+    // rules — so the next sync counts every day again rather than miss one.
+    loaded.data.cache.epoch = '';
+    save(options.paths, { ...scanned, ...loaded }, scanned.index);
+  }
+  return {
+    days: days.rows,
+    sessions: days.sessions,
+    excluded: days.excluded,
+    stats: scanned.stats,
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1769,6 +2374,13 @@ export interface UsageReport {
  * The days as usage reports of at most 16 KB each, oldest day first. **A day
  * is never split**: the server replaces a (collector, day) with what one
  * report carries, so half a day would be a day's total halved.
+ *
+ * Each day carries its Claude Code tokens per session as well (`sessions`,
+ * design.md §2) unless it would not fit, or holds more than {@link
+ * SESSIONS_PER_DAY_MAX} — then it goes without them, rows whole: the board
+ * then treats the day's Claude Code tokens as placed in no session, which can
+ * only ever count less, never twice. Every report names the sessions left out
+ * (`excluded`).
  */
 export function usageReports(options: {
   readonly collectorId: string;
@@ -1778,9 +2390,19 @@ export function usageReports(options: {
     /** Tokens from before counting began, sent once marked (SPEC §6.4). */
     readonly backfill?: true | undefined;
     readonly rows: readonly UsageRow[];
+    readonly sessions?: readonly SessionRow[] | undefined;
   }[];
+  readonly excluded?: readonly string[] | undefined;
 }): UsageReport[] {
-  const base = { v: 1, collector_id: options.collectorId, tz: options.tz, usage: true, days: [] };
+  const excluded = options.excluded ?? [];
+  const base = {
+    v: 1,
+    collector_id: options.collectorId,
+    tz: options.tz,
+    usage: true,
+    ...(excluded.length > 0 ? { excluded } : {}),
+    days: [],
+  };
   const baseBytes = Buffer.byteLength(JSON.stringify(base));
   const reports: UsageReport[] = [];
   let entries: string[] = [];
@@ -1795,12 +2417,19 @@ export function usageReports(options: {
     bytes = baseBytes;
   };
   const sorted = [...options.days].sort((a, b) => a.day.localeCompare(b.day));
-  for (const { day, backfill, rows } of sorted) {
-    const entry = JSON.stringify({
+  const room = MAX_BODY_BYTES - baseBytes;
+  for (const { day, backfill, rows, sessions } of sorted) {
+    const whole = {
       day,
       ...(backfill === true ? { backfill } : {}),
-      rows: fitted(rows, MAX_BODY_BYTES - baseBytes),
-    });
+      rows: fitted(rows, room),
+    };
+    const split =
+      sessions !== undefined && sessions.length > 0 && sessions.length <= SESSIONS_PER_DAY_MAX
+        ? JSON.stringify({ ...whole, sessions })
+        : undefined;
+    const entry =
+      split !== undefined && Buffer.byteLength(split) + 1 <= room ? split : JSON.stringify(whole);
     const cost = Buffer.byteLength(entry) + (entries.length > 0 ? 1 : 0);
     if (bytes + cost > MAX_BODY_BYTES) flush();
     entries.push(entry);
@@ -1870,28 +2499,62 @@ export type UsageOutcome =
   | { readonly kind: 'refused'; readonly message: string; readonly nextAt: number }
   | { readonly kind: 'error'; readonly message: string; readonly nextAt: number };
 
-const signature = (rows: readonly UsageRow[]): string => JSON.stringify(rows);
+/**
+ * What the board holds for a day, compared: its rows and its sessions — a
+ * change in either is a change in the day (design.md §2). A signature from
+ * before sessions were sent (rows alone) never matches, so each day goes once
+ * more, with them.
+ */
+const signature = (rows: readonly UsageRow[], sessions: readonly SessionRow[] = []): string =>
+  JSON.stringify([rows, sessions]);
+
+interface DueDay {
+  day: string;
+  backfill?: true;
+  rows: UsageRow[];
+  sessions: SessionRow[];
+}
 
 /**
- * Every day whose rows are not what the board last accepted — a day that
- * emptied is sent empty, so the board's copy empties too.
+ * Every day whose rows or sessions are not what the board last accepted — a
+ * day that emptied is sent empty, so the board's copy empties too. When only
+ * the sessions left out have changed, the latest day goes again, as it is, to
+ * carry them: a report holds at least one day.
  */
-function dueDays(
-  index: UsageIndex,
-  days: Days,
-): { day: string; backfill?: true; rows: UsageRow[] }[] {
-  const due: { day: string; backfill?: true; rows: UsageRow[] }[] = [];
+function dueDays(index: UsageIndex, days: Days): DueDay[] {
+  const due: DueDay[] = [];
   const marked = new Set(index.marked);
-  for (const day of new Set([...days.rows.keys(), ...Object.keys(index.sent)])) {
-    const rows = days.rows.get(day) ?? [];
-    if ((index.sent[day] ?? signature([])) === signature(rows)) continue;
+  const entry = (day: string): DueDay => {
     // Marked the first time a day with older tokens goes: the board then
     // replaces every collector's rows for it (SPEC §6.4). After that the day
     // is this collector's, and a resend replaces only its own.
     const mark = days.older.has(day) && !marked.has(day);
-    due.push({ day, ...(mark ? { backfill: true as const } : {}), rows });
+    return {
+      day,
+      ...(mark ? { backfill: true as const } : {}),
+      rows: days.rows.get(day) ?? [],
+      sessions: days.sessions.get(day) ?? [],
+    };
+  };
+  for (const day of new Set([...days.rows.keys(), ...Object.keys(index.sent)])) {
+    const now = signature(days.rows.get(day) ?? [], days.sessions.get(day) ?? []);
+    if ((index.sent[day] ?? signature([])) === now) continue;
+    due.push(entry(day));
+  }
+  const latest = [...days.rows.keys()].sort().at(-1);
+  if (due.length === 0 && latest !== undefined && excludedChanged(index, days)) {
+    due.push(entry(latest));
   }
   return due.sort((a, b) => a.day.localeCompare(b.day));
+}
+
+const excludedSignature = (days: Days): string => JSON.stringify([...days.excluded].sort());
+
+/** The sessions left out are not what the board last took. */
+function excludedChanged(index: UsageIndex, days: Days): boolean {
+  return (
+    (index.excluded ?? excludedSignature({ ...days, excluded: [] })) !== excludedSignature(days)
+  );
 }
 
 /**
@@ -1925,31 +2588,53 @@ export async function previewUsage(
   for (const day of Object.keys(scanned.index.sent)) {
     if (day < firstDay) delete scanned.index.sent[day];
   }
+  const loaded =
+    scanned.data !== undefined && scanned.store !== undefined
+      ? { data: scanned.data, store: scanned.store }
+      : loadData(options.paths, options.tz);
   const days = await daysOf(
-    scanned.data ?? emptyData(options.tz),
+    loaded.data,
+    loaded.store,
     options,
     scanned.index.backfill,
     heldFor(scanned.index),
     scanned.index.prefixes,
+    scanned.changes,
+    false,
   );
   return usageReports({
     collectorId: options.collectorId,
     tz: options.tz,
     days: dueDays(scanned.index, days),
+    excluded: days.excluded,
   });
 }
 
 /**
  * Read what is new and send the days whose totals changed — after the
  * snapshot, inside the same lock and deadline. With nothing new and nothing
- * waiting, it reads only the index and `stat`s the files.
+ * waiting, it reads only the index and `stat`s the files; with new bytes in
+ * one transcript, that transcript's new bytes, the data file and the days
+ * those bytes are on (LAI-776).
  */
 export async function usageStep(ctx: UsageContext): Promise<UsageOutcome> {
-  const scanned = await scan(ctx, false);
+  const scanned = await scan(ctx, false, true);
   const { index, stats } = scanned;
+  // What was read is kept whatever happens next: the days, the data, then the index.
+  const keep = (): void => {
+    if (ctx.dryRun !== true && (scanned.data !== undefined || scanned.fresh)) {
+      save(ctx.paths, scanned, index);
+    }
+  };
   takePrefixes(index, ctx.prefixes);
-  if (!index.dirty) return { kind: 'idle', stats };
-  if (ctx.nowS < index.next_at) return { kind: 'waiting', nextAt: index.next_at };
+  if (!index.dirty) {
+    keep();
+    return { kind: 'idle', stats };
+  }
+  if (ctx.nowS < index.next_at) {
+    keep();
+    return { kind: 'waiting', nextAt: index.next_at };
+  }
 
   // The days other collectors hold, decided once, the first time the 30 days
   // could go: later machines do not change which older days this one sent.
@@ -1958,24 +2643,44 @@ export async function usageStep(ctx: UsageContext): Promise<UsageOutcome> {
   }
   if (ctx.dryRun !== true) compactSkipSessions(ctx.paths, ctx.nowS);
 
-  const data = scanned.data ?? readData(ctx.paths, ctx.tz) ?? emptyData(ctx.tz);
-  const days = await daysOf(data, ctx, index.backfill, heldFor(index), index.prefixes);
+  if (scanned.data === undefined || scanned.store === undefined) {
+    const loaded = loadData(ctx.paths, ctx.tz);
+    scanned.data = loaded.data;
+    scanned.store = loaded.store;
+  }
+  const days = await daysOf(
+    scanned.data,
+    scanned.store,
+    ctx,
+    index.backfill,
+    heldFor(index),
+    index.prefixes,
+    scanned.changes,
+    true,
+  );
   const { firstDay } = windowOf(ctx.nowS, ctx.tz);
   for (const day of Object.keys(index.sent)) if (day < firstDay) delete index.sent[day];
   index.marked = index.marked.filter((day) => day >= firstDay);
 
   const due = dueDays(index, days);
-  const save = (): void => {
-    writeIndex(ctx.paths, index);
-  };
   if (due.length === 0) {
     index.dirty = !scanned.complete;
-    save();
+    if (days.rows.size === 0) index.excluded = excludedSignature(days);
+    keep();
     return { kind: 'idle', stats };
   }
+  keep();
+  const write = (): void => {
+    writeIndex(ctx.paths, index);
+  };
 
-  const reports = usageReports({ collectorId: ctx.collectorId, tz: ctx.tz, days: due });
-  const rowsOf = new Map(due.map((d) => [d.day, d.rows]));
+  const reports = usageReports({
+    collectorId: ctx.collectorId,
+    tz: ctx.tz,
+    days: due,
+    excluded: days.excluded,
+  });
+  const dueOf = new Map(due.map((d) => [d.day, d]));
   const markedNow = new Set(due.filter((d) => d.backfill === true).map((d) => d.day));
   let sent = 0;
   let sentDays = 0;
@@ -1988,7 +2693,7 @@ export async function usageStep(ctx: UsageContext): Promise<UsageOutcome> {
       const interval = ctx.state.min_sync_interval_s;
       if (answer.status === 429) {
         index.next_at = ctx.nowS + Math.max(answer.retryAfterS ?? 0, interval);
-        save();
+        write();
         return { kind: 'rate-limited', nextAt: index.next_at };
       }
       if (
@@ -2001,7 +2706,7 @@ export async function usageStep(ctx: UsageContext): Promise<UsageOutcome> {
       // either, until it is upgraded: ask again in a day, not every sync.
       const refused = answer.status === 422;
       index.next_at = ctx.nowS + (refused ? DAY_S : interval);
-      save();
+      write();
       const message = refused
         ? `the board does not take token usage reports — it needs a newer Laika (${answer.message})`
         : `token usage: ${answer.message}`;
@@ -2011,17 +2716,20 @@ export async function usageStep(ctx: UsageContext): Promise<UsageOutcome> {
         : { kind: 'error', message, nextAt: index.next_at };
     }
     sent += 1;
+    // Every report names the sessions left out: once one is taken, the board has them.
+    index.excluded = excludedSignature(days);
     for (const day of report.days) {
-      index.sent[day] = signature(rowsOf.get(day) ?? []);
+      const d = dueOf.get(day);
+      index.sent[day] = signature(d?.rows ?? [], d?.sessions ?? []);
       if (markedNow.has(day)) index.marked.push(day);
       sentDays += 1;
     }
-    save();
+    write();
   }
   const pending = due.length - sentDays;
   index.dirty = pending > 0 || !scanned.complete;
   index.next_at = 0;
-  save();
+  write();
   return { kind: 'sent', reports: sent, days: sentDays, pending, stats };
 }
 

@@ -201,6 +201,12 @@ void describe('on, then off: every agent’s file', () => {
     assert.equal(ours(claude, 'SessionStart').length, 1);
     assert.equal(ours(claude, 'SessionEnd').length, 1);
     assert.equal(claude.hooks.SessionStart?.[0]?.matcher, 'startup|clear');
+    // LAI-776: every turn's end, the throttled trigger — `Stop` takes no matcher.
+    assert.deepEqual(
+      ours(claude, 'Stop').map((c) => c.split(' ').slice(-2).join(' ')),
+      ['turn-end claude-code'],
+    );
+    assert.equal(claude.hooks.Stop?.[0]?.matcher, undefined);
     assert.deepEqual(claude.hooks.PreToolUse, f.claudeBefore.hooks.PreToolUse);
     assert.ok(
       claude.hooks.UserPromptSubmit?.some(
@@ -406,6 +412,47 @@ void describe('status, sync, emails', () => {
     h.out.length = 0;
     assert.equal(await h.run('status'), 0);
     assert.equal(h.out.filter((line) => rule.test(line)).length, 1, h.out.join('\n'));
+  });
+
+  /**
+   * LAI-773 (design.md §3): the OpenTelemetry fallback is the developer's to
+   * set, so `otel` prints the variables — this machine's board filled in, the
+   * token left as a reference — on stdout alone, for `eval "$(laika activity
+   * otel)"`. Nothing it prints holds the token.
+   */
+  void test('otel prints the exact variables for this board, the token a reference, and status points at it', async () => {
+    const h = await harness();
+    assert.equal(await h.run('on'), 0);
+    h.out.length = 0;
+    h.err.length = 0;
+    assert.equal(await h.run('otel'), 0);
+    assert.deepEqual(h.out, [
+      'export CLAUDE_CODE_ENABLE_TELEMETRY=1',
+      'export OTEL_METRICS_EXPORTER=otlp',
+      'export OTEL_EXPORTER_OTLP_PROTOCOL=http/json',
+      `export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="${h.board.url}/api/v1/otlp/v1/metrics"`,
+      'export OTEL_EXPORTER_OTLP_METRICS_HEADERS="Authorization=Bearer $LAIKA_TOKEN"',
+      'export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative',
+      'export OTEL_LOGS_EXPORTER=none',
+    ]);
+    assert.match(h.err.join('\n'), /LAIKA_TOKEN/);
+    assert.ok(![...h.out, ...h.err].join('\n').includes(TOKEN), 'the token was printed');
+
+    h.out.length = 0;
+    assert.equal(await h.run('status'), 0);
+    assert.equal(
+      h.out.filter((line) => line.includes('laika activity otel')).length,
+      1,
+      h.out.join('\n'),
+    );
+  });
+
+  void test('otel with no board to name says so, and prints no variable', async () => {
+    const h = await harness();
+    const none = { ...h.io, env: { PATH: process.env.PATH ?? '', HOME: h.home } };
+    assert.equal(await activity(['otel'], none), 1);
+    assert.deepEqual(h.out, []);
+    assert.match(h.err.join('\n'), /not connected to a board/);
   });
 
   void test('status when off says so', async () => {

@@ -160,6 +160,8 @@ const USAGE = [
   '  laika activity backfill [--days N] [--yes] [repo …]',
   '                                 send a year of your pushed commits, once (asks first)',
   '  laika activity emails [a@b …]  extra author emails that count as yours (--clear)',
+  '  laika activity otel            the variables that send Claude Code’s token counts by',
+  '                                 OpenTelemetry too, for this board (`eval "$(…)"`)',
 ];
 
 const context = (io: ActivityIo): SyncContext => ({
@@ -192,6 +194,8 @@ export async function activity(argv: readonly string[], io: ActivityIo = CONSOLE
       return emails(rest, io);
     case 'backfill':
       return backfill(rest, io);
+    case 'otel':
+      return otel(io);
     default:
       if (command !== undefined) io.err(`laika activity: unknown command "${command}"`);
       for (const line of USAGE) io.err(line);
@@ -339,6 +343,51 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
   return reports.some((r) => r.status === 'installed' || r.status === 'unchanged') ? 0 : 1;
 }
 
+/**
+ * The variables that make Claude Code send its own token counts to this board
+ * by OpenTelemetry (LAI-773, design.md §3) — the fallback for what its session
+ * files miss: background calls. Metrics only, OTLP/HTTP JSON. Checked against
+ * code.claude.com/docs/en/monitoring-usage on 2026-10-18: the names, `http/json`,
+ * `claude_code.token.usage` with `session.id` on by default, and `cumulative`
+ * as an allowed temporality (the default is `delta`; cumulative is what a
+ * retry cannot count twice).
+ *
+ * **The token is never printed**: `$LAIKA_TOKEN` stays a reference, expanded
+ * where the line is run. The exports alone go to stdout, so `eval "$(laika
+ * activity otel)"` works; what they mean goes to stderr.
+ */
+export function otelVariables(board: string): string[] {
+  return [
+    'export CLAUDE_CODE_ENABLE_TELEMETRY=1',
+    'export OTEL_METRICS_EXPORTER=otlp',
+    'export OTEL_EXPORTER_OTLP_PROTOCOL=http/json',
+    `export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="${board}/api/v1/otlp/v1/metrics"`,
+    'export OTEL_EXPORTER_OTLP_METRICS_HEADERS="Authorization=Bearer $LAIKA_TOKEN"',
+    'export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative',
+    'export OTEL_LOGS_EXPORTER=none',
+  ];
+}
+
+function otel(io: ActivityIo): number {
+  // The board activity was turned on for, else the one this machine is connected to.
+  const board = readState(activityPaths(io.home))?.board ?? findCredentials(io.home, io.env)?.url;
+  if (board === undefined) {
+    io.err('This machine is not connected to a board (no LAIKA_URL / LAIKA_TOKEN).');
+    io.err('Run `laika connect <agent>` or `laika init` first.');
+    return 1;
+  }
+  for (const line of otelVariables(board)) io.out(line);
+  io.err('');
+  io.err(`Claude Code then sends its own token counts to ${board} every minute, as`);
+  io.err('OpenTelemetry metrics — counts only: the board refuses logs, which can hold prompts.');
+  io.err('Put the lines where Claude Code starts from (your shell profile); $LAIKA_TOKEN must');
+  io.err('hold your Laika token there — `laika connect` keeps it in ~/.laika/env.');
+  io.err('The board takes them only while Developer insights and "Share my local activity"');
+  io.err('are both on, adds only what the session files missed, and drops the sessions');
+  io.err('this collector leaves out (automated, or out of your scope) once a sync names them.');
+  return 0;
+}
+
 function off(io: ActivityIo): number {
   const reports = removeActivityHooks(io.home, io.env);
   const paths = activityPaths(io.home);
@@ -418,6 +467,7 @@ async function status(io: ActivityIo): Promise<number> {
         : `counted since ${when(state.since)}${tokens === 'no' ? '' : ' (`backfill` can send 30 days)'}`
     } — Claude Code, Codex, Gemini CLI`,
   );
+  io.out('OpenTelemetry   optional, for Claude Code’s background calls: `laika activity otel`');
 
   io.out('');
   const snapshot = await previewSnapshot(context(io), scope);

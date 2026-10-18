@@ -78,16 +78,26 @@ function lookbackViolation(b: Record<string, unknown>, now: Date): string | unde
 }
 
 const USAGE_ROW_KEYS = ['agent', 'model', 'task', 'input', 'output', 'cache_write', 'cache_read'];
+const SESSION_ROW_KEYS = ['key', 'model', 'input', 'output', 'cache_write', 'cache_read'];
+const KEY16 = /^[0-9a-f]{16}$/;
 
 /**
  * A usage report, as SPEC §6.4 states it (D-084, LAI-769): `usage: true`,
  * days of `{ day, rows }`, each row an agent kind, a model id, a Laika key or
  * null and four counts, at most 200 rows a day, each day once and within
- * today − 31 to today + 1 in `tz`, the same 16 KB.
+ * today − 31 to today + 1 in `tz`, the same 16 KB. LAI-773 (design.md §2):
+ * a day may carry `sessions`, at most 100, each a 16-hex key, a model id and
+ * the four counts; the report may carry `excluded`, at most 200 16-hex keys.
  */
 function usageViolation(b: Record<string, unknown>, now: Date): string | undefined {
   for (const key of Object.keys(b)) {
-    if (![...TOP_KEYS, 'usage'].includes(key)) return `unknown field ${key}`;
+    if (![...TOP_KEYS, 'usage', 'excluded'].includes(key)) return `unknown field ${key}`;
+  }
+  if ('excluded' in b) {
+    if (!Array.isArray(b.excluded) || b.excluded.length > 200) return 'excluded invalid';
+    for (const k of b.excluded as unknown[]) {
+      if (typeof k !== 'string' || !KEY16.test(k)) return 'an excluded key is not 16 hex';
+    }
   }
   if (b.usage !== true) return 'usage is not true';
   if (b.v !== 1) return 'v is not 1';
@@ -109,7 +119,25 @@ function usageViolation(b: Record<string, unknown>, now: Date): string | undefin
     if (typeof entry !== 'object' || entry === null) return 'a day is not an object';
     const d = entry as Record<string, unknown>;
     for (const key of Object.keys(d)) {
-      if (key !== 'day' && key !== 'rows' && key !== 'backfill') return `usage day field ${key}`;
+      if (!['day', 'rows', 'backfill', 'sessions'].includes(key)) return `usage day field ${key}`;
+    }
+    if ('sessions' in d) {
+      if (!Array.isArray(d.sessions) || d.sessions.length > 100) return 'sessions invalid';
+      for (const entry of d.sessions as unknown[]) {
+        if (typeof entry !== 'object' || entry === null) return 'a session is not an object';
+        const r = entry as Record<string, unknown>;
+        for (const key of Object.keys(r)) {
+          if (!SESSION_ROW_KEYS.includes(key)) return `unknown session field ${key}`;
+        }
+        if (typeof r.key !== 'string' || !KEY16.test(r.key)) return 'session key not 16 hex';
+        if (typeof r.model !== 'string' || !/^[a-z0-9][a-z0-9._:-]{0,63}$/.test(r.model)) {
+          return 'session model invalid';
+        }
+        for (const key of ['input', 'output', 'cache_write', 'cache_read']) {
+          const n = r[key];
+          if (!isInt(n) || n > 1e12) return `session ${key} invalid`;
+        }
+      }
     }
     if ('backfill' in d && d.backfill !== true) return 'backfill is true or absent';
     if (typeof d.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d.day))
