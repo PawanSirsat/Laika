@@ -62,6 +62,12 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   'api/v1/heartbeats': "the plugin's SessionStart/Stop hooks post this (LAI-418), never the SPA",
   'api/v1/tasks/*/finish':
     "finish_task's REST twin (D-082): an agent hands work back for review; a person accepts or sends back instead",
+  // LAI-773: Claude Code's own OTLP exporter posts metrics here with the
+  // developer's token; the SPA only prints the settings that point it here.
+  'api/v1/otlp/v1/metrics':
+    "Claude Code's OpenTelemetry exporter posts here (LAI-773); Connect only prints its settings",
+  'api/v1/otlp/v1/*':
+    'logs and traces are refused there (LAI-773): no client is meant to call them, and none does',
 
   // Built, served, and waiting on a screen. Each names the task, not a reason.
   'api/v1/comments/*': 'LAI-234 — a comment cannot be edited or deleted from the UI',

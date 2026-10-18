@@ -301,6 +301,42 @@ for (const shell of SHELLS) {
       assert.ok(Number(mine.split('\t')[0]) >= now);
     });
 
+    /**
+     * LAI-776: Claude Code's `Stop` fires at the end of every turn, and its
+     * payload carries the turn's last reply (`last_assistant_message`,
+     * code.claude.com/docs/en/hooks). The hook is only a trigger there: it
+     * counts nothing, keeps nothing of the payload and prints nothing — and
+     * exit 2 on `Stop` would keep Claude from stopping.
+     */
+    void test('a turn’s end counts nothing, keeps nothing of its payload, prints nothing, exits 0', () => {
+      const h = home();
+      const marker = `REPLY-${String(process.pid)}-k3Wq`;
+      const repoDir = gitRepo();
+      for (const env of [{}, ...AUTOMATED]) {
+        const r = run(shell, ['turn-end', 'claude-code'], {
+          home: h,
+          cwd: repoDir,
+          env,
+          // Larger than any pipe buffer: a hook that exits unread leaves EPIPE.
+          input: JSON.stringify({
+            session_id: 'turn-5f3c',
+            hook_event_name: 'Stop',
+            last_assistant_message: `${marker} ${'x'.repeat(512 * 1024)}`,
+          }),
+        });
+        assert.equal(r.code, 0);
+        assert.equal(r.stdout + r.stderr, '', 'Stop output is parsed by Claude Code');
+        assert.equal(r.error, undefined, 'stdin was not drained');
+      }
+      assert.deepEqual(events(h), [], 'a turn’s end is not a prompt or a session');
+      assert.deepEqual(skipped(h), [], 'a turn’s end payload was read');
+      assert.deepEqual(started(h), []);
+      for (const file of filesUnder(h)) {
+        assert.ok(!readFileSync(file, 'utf8').includes(marker), `${file} holds the reply`);
+      }
+      assert.ok(!existsSync(join(h, '.laika', 'activity', 'repos')), 'a turn recorded a repo');
+    });
+
     void test('session start outside a repo records the session and no repo', () => {
       const h = home();
       run(shell, ['session-start', 'goose'], { home: h, cwd: dir('laika-norepo-') });
@@ -634,6 +670,45 @@ void describe('starting the sync', () => {
     assert.deepEqual(homes, [`HOME=${due}`], 'an automated session started a sync');
   });
 
+  /**
+   * LAI-776: tokens from a running session reach the board within one sync
+   * interval. `Stop` fires every turn; the hook launches the sync only once
+   * `next_sync_at` has passed, and only while collection is on — the
+   * once-a-day recheck while off stays with the session events.
+   */
+  void test('a turn’s end launches the sync once due — not before, not while off, never for an automated session', async () => {
+    const { script, calls } = layout();
+    const notDue = home(ON(9_999_999_999));
+    const off = home(`${JSON.stringify({ collect: false, next_sync_at: 0 })}\n`);
+    const none = home(null);
+    const automated = AUTOMATED.map(() => home(ON(0)));
+    run(shell, ['turn-end', 'claude-code'], { home: notDue, script });
+    run(shell, ['turn-end', 'claude-code'], { home: off, script });
+    run(shell, ['turn-end', 'claude-code'], { home: none, script });
+    AUTOMATED.forEach((env, i) => {
+      run(shell, ['turn-end', 'claude-code'], { home: automated[i] ?? '', script, env });
+    });
+    const due = home(ON(0));
+    const started = Date.now();
+    const r = run(shell, ['turn-end', 'claude-code'], { home: due, script });
+    assert.equal(r.code, 0);
+    assert.ok(Date.now() - started < 1000, 'the turn waited for the sync');
+    await until(() => {
+      const dump = textOf(`${calls}.env`);
+      return dump.includes(`HOME=${due}`) && dump.includes('__END__');
+    });
+    await new Promise((res) => setTimeout(res, 500));
+    const homes = readFileSync(`${calls}.env`, 'utf8')
+      .split('\n')
+      .filter((line) => line.startsWith('HOME='));
+    assert.deepEqual(
+      homes,
+      [`HOME=${due}`],
+      'a turn started a sync early, while off, or automated',
+    );
+    assert.equal(readFileSync(calls, 'utf8').trim(), 'activity sync --background');
+  });
+
   void test('the hook’s stdout pipe is not held open by the sync', async () => {
     const { script } = layout();
     const h = home(ON(0));
@@ -802,6 +877,29 @@ void describe('cost of the prompt path', () => {
       const r = forkless([HOOK, 'prompt', 'claude-code'], h);
       assert.equal(r.code, 0, 'the prompt path forked');
       assert.equal(events(h).length, 1, 'the prompt path forked before it wrote');
+    },
+  );
+
+  /**
+   * LAI-776: `Stop` fires at the end of every turn, so a turn's end that is
+   * not due must cost what a prompt costs — no fork. The positive control is
+   * the same hook once due: it must fork to launch the sync, and with fork()
+   * refused that run fails, so this harness sees this path's forks.
+   */
+  void test(
+    'under zsh a turn’s end that is not due forks nothing: with fork() refused it still exits 0',
+    { skip: ZSH === undefined },
+    () => {
+      const control = forkless([HOOK, 'turn-end', 'claude-code'], home(ON(0)));
+      assert.notEqual(control.code, 0, 'a due turn’s end did not fork — this test proves nothing');
+      for (const state of [
+        ON(9_999_999_999),
+        `${JSON.stringify({ collect: false, next_sync_at: 0 })}\n`,
+      ]) {
+        const r = forkless([HOOK, 'turn-end', 'claude-code'], home(state));
+        assert.equal(r.code, 0, `a turn’s end that is not due forked (${state.trim()})`);
+        assert.equal(r.stdout + r.stderr, '');
+      }
     },
   );
 

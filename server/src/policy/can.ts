@@ -413,6 +413,24 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'usage.read_own':
       return true;
 
+    // | Set API-equivalent prices | ✓ (session only) | ✓ (session only) | — | — |
+    //
+    // LAI-773: who may set the org's AI provider may set what its models cost.
+    // Its own row, not `org.settings.edit` borrowed, because a token may hold
+    // that one and must not hold this (`SESSION_ONLY_ACTIONS`).
+    case 'org.model_prices.set':
+      return isAdminUp;
+
+    // | Read and dismiss own token alerts | ✓ (session only) | … | ✓ (session only) |
+    // | Read and set own plan limit | ✓ (session only) | … | ✓ (session only) |
+    //
+    // The person's own (LAI-773, D-087): every role, and nobody else's — the
+    // services ask for the caller's own rows and no row lets anyone read
+    // another's.
+    case 'token_alerts.own':
+    case 'plan_limit.own':
+      return true;
+
     default:
       return assertNever(action);
   }
@@ -511,6 +529,13 @@ function canProjectAction(
     // what its tasks cost. A per-person split is §3.1's `usage.read_people`.
     case 'usage.read_project':
       return true;
+
+    // | Set token budgets | ✓ (session only) | — | — |
+    //
+    // LAI-773: a lead decides what work here may cost before it is flagged —
+    // as sprints are a lead's. Soft: a budget refuses nothing to anybody.
+    case 'budget.set':
+      return isLead;
 
     default:
       return assertNever(action);

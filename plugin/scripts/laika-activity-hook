@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# laika-activity-hook <prompt|session-start|session-end> <agent-kind>
+# laika-activity-hook <prompt|session-start|session-end|turn-end> <agent-kind>
 #
 # Counts local activity for the Laika heatmap (LAI-752, D-079): one line per
 # prompt and per session start, appended to ~/.laika/activity/events.log. The
@@ -56,6 +56,18 @@
 # agent's own session files name no branch. The branch comes from the `git`
 # call this path already made — one call, no new fork. Only a key in it ever
 # leaves the machine, as a usage row's task. No prompt payload is read for it.
+#
+# ## A turn's end (LAI-776)
+#
+# Claude Code's `Stop` fires at the end of every turn (code.claude.com/docs/
+# en/hooks), so a session that runs for hours would otherwise report its
+# tokens only when it ends. On `turn-end` the hook is a trigger and nothing
+# else: it drains stdin as the prompt path does — the payload carries the
+# turn's last reply, `last_assistant_message`, and is never read — counts
+# nothing, and launches the detached sync only while collection is on and
+# `next_sync_at` has passed. Not due, it costs what a prompt costs: under zsh
+# no fork. It never prints (Claude Code parses `Stop` output) and always
+# exits 0 (exit 2 there keeps Claude from stopping).
 #
 # Owned by SHELL (plugin/). LAI-752, LAI-757.
 
@@ -199,7 +211,15 @@ if [ "$MODE" = session-start ] && [ "$COLLECT" = yes ]; then
   esac
 fi
 
-if [ "$MODE" = session-start ] || [ "$MODE" = session-end ]; then
+# A turn's end launches only while collection is on: the once-a-day recheck
+# while off is the session events', and a turn is far more frequent.
+DUE=no
+case "$MODE" in
+  session-start | session-end) DUE=yes ;;
+  turn-end) [ "$COLLECT" = yes ] && DUE=yes ;;
+esac
+
+if [ "$DUE" = yes ]; then
   # Due when state.json's next_sync_at has passed: the sync writes it as the
   # later of its last run plus min_sync_interval_s and any Retry-After. While
   # collection is off it is the once-a-day recheck, and nothing else runs.

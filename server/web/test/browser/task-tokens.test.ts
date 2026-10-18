@@ -11,7 +11,15 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Route } from 'playwright';
-import { asServed, closeBrowser, open, until, type ApiStub, type Harness } from './harness.ts';
+import {
+  asServed,
+  closeBrowser,
+  open,
+  until,
+  type ApiStub,
+  type Harness,
+  type StubCall,
+} from './harness.ts';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -133,12 +141,21 @@ const ESTIMATE = {
   history: [],
 };
 
+/** A cost as the server prices one (LAI-773). */
+const cost = (usd: number, unpriced = 0, models: string[] = []) => ({
+  usd,
+  unpriced_tokens: unpriced,
+  unpriced_models: models,
+  unconfirmed_models: [],
+});
+
 const totals = (tokens: number, cacheRead: number) => ({
   tokens,
   input: Math.round(tokens * 0.1),
   output: Math.round(tokens * 0.2),
   cache_write: tokens - Math.round(tokens * 0.1) - Math.round(tokens * 0.2),
   cache_read: cacheRead,
+  cost: cost(Math.round(tokens * 1.1e-5 * 100) / 100),
 });
 
 const ROUNDS = [
@@ -151,6 +168,7 @@ const BEA = {
   name: 'Bea Lindqvist',
   tokens: 3_523_700,
   cache_read: 70_000_000,
+  cost: cost(38.76),
   by_agent: [
     { agent: 'claude-code', tokens: 3_421_700, cache_read: 68_000_000 },
     { agent: 'codex', tokens: 102_000, cache_read: 2_000_000 },
@@ -161,6 +179,7 @@ const CAL = {
   name: 'Cal Moreno',
   tokens: 483_000,
   cache_read: 11_000_000,
+  cost: cost(5.31),
   by_agent: [
     { agent: 'codex', tokens: 302_000, cache_read: 6_000_000 },
     { agent: 'gemini-cli', tokens: 181_000, cache_read: 5_000_000 },
@@ -178,6 +197,8 @@ const usage = (over: Record<string, unknown>) => ({
   by_person: [BEA, CAL],
   by_round: ROUNDS,
   attributed: { tokens: 4_171_800, of: 5_149_800 },
+  budget: null,
+  runaway: null,
   ...over,
 });
 
@@ -233,6 +254,13 @@ function stub(role: 'owner' | 'member', t3Usage: unknown): ApiStub {
     '/api/v1/projects/laika-core/sprints': { data: [], next_cursor: null },
     '/api/v1/projects/laika-core/activity': { data: [], next_cursor: null },
     '/api/v1/projects/laika-core/tags': { tags: [] },
+    // LAI-773: whether this reader may set a budget — a lead, on a session.
+    '/api/v1/projects/laika-core/budgets': {
+      project_budget: null,
+      sprints: [],
+      tasks: [],
+      can_set: role === 'owner',
+    },
     '/api/v1/projects/laika-core/estimates/accuracy': {
       project_id: 'laika-core',
       finished: 42,
@@ -424,6 +452,156 @@ void describe('moving to another task', () => {
       assert.equal(await h.page.locator('.tk-total').innerText(), '12.3K');
     } finally {
       release();
+      await h.close();
+    }
+  });
+});
+
+/** The task's budget in force, as `services/token-budgets.ts` answers it (LAI-773). */
+const BUDGET = {
+  scope: 'task',
+  id: 't3',
+  project: { slug: 'laika-core', name: 'Laika Core' },
+  label: 'LC-3',
+  title: 'Tie agent tokens to tasks',
+  source: 'forecast',
+  tokens: 2_500_000,
+  period: null,
+  used: 4_006_700,
+  share: 1.6,
+  state: 'over',
+  crossed: [
+    { threshold: 80, at: NOW - 2 * HOUR },
+    { threshold: 100, at: NOW - HOUR },
+  ],
+};
+
+void describe('LAI-773: cost, the budget and the runaway banner', () => {
+  void test('a lead: the cost labelled API-equivalent, the budget over with its badge, and a way to set it', async () => {
+    const writes: StubCall[] = [];
+    const h = await open('/board?project=laika-core&task=t3', {
+      ...stub('owner', usage({ budget: BUDGET })),
+      '/api/v1/tasks/t3/budget': (call: StubCall) => {
+        writes.push(call);
+        return {
+          budget: {
+            ...BUDGET,
+            source: 'set',
+            tokens: 6_000_000,
+            share: 0.67,
+            state: 'under',
+            crossed: [],
+          },
+        };
+      },
+    });
+    try {
+      await tokens(h);
+      const section = h.page.locator('[data-section="tokens"]');
+      assert.equal(await section.locator('.tk-cost').innerText(), '$44.07');
+      assert.match(
+        await section.locator('[data-figure="cost"]').innerText(),
+        /API-equivalent, not your bill/,
+      );
+      const meter = section.locator('[data-block="budget"] .budget');
+      await meter.waitFor();
+      assert.equal(await meter.locator('.budget-badge').innerText(), '100%');
+      assert.match(
+        await meter.innerText(),
+        /4\.01M of 2\.5M · 160% · the forecast’s p80, frozen at claim/,
+      );
+      const editor = section.locator('[data-block="budget"] .budget-editor');
+      await editor.waitFor({ timeout: 10_000 });
+      await editor.locator('input').fill('6M');
+      await editor.getByRole('button', { name: 'Set' }).click();
+      await until(() => writes.length === 1);
+      assert.equal(writes[0]?.method, 'PUT');
+      assert.deepEqual(writes[0]?.body, { tokens: 6_000_000 });
+      assert.equal(await section.locator('.tk-runaway').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a member: the budget as a figure, and nothing to set — the server said can_set false', async () => {
+    const h = await open(
+      '/board?project=laika-core&task=t3',
+      stub('member', usage({ people: 'own', by_person: [BEA], budget: BUDGET })),
+    );
+    try {
+      await tokens(h);
+      const section = h.page.locator('[data-section="tokens"]');
+      await section.locator('[data-block="budget"] .budget').waitFor();
+      await until(() => h.calls.some((c) => c.path === '/api/v1/projects/laika-core/budgets'));
+      assert.equal(await section.locator('.budget-editor').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the person it is for: the runaway banner, about their quota', async () => {
+    const h = await open(
+      '/board?project=laika-core&task=t3',
+      stub(
+        'member',
+        usage({
+          people: 'own',
+          by_person: [BEA],
+          runaway: {
+            alert_id: 'a1',
+            tokens: 7_000_000,
+            p95: 5_994_000,
+            since: NOW - 10 * 60_000,
+            last_progress_at: NOW - 75 * 60_000,
+          },
+        }),
+      ),
+    );
+    try {
+      await tokens(h);
+      const banner = h.page.locator('[data-section="tokens"] .tk-runaway');
+      await banner.waitFor();
+      assert.match(
+        await banner.innerText(),
+        /^Your agent has spent 7M on this task, past its p95 of 5\.99M, and nothing has landed for 7\d min — no commit pushed and no new session on it\.$/,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('light and dark at 1366 and 390: the section fits, the bar is drawn', async () => {
+    const h = await open(
+      '/board?project=laika-core&task=t3',
+      stub('owner', usage({ budget: BUDGET })),
+    );
+    try {
+      await tokens(h);
+      await h.page.locator('[data-block="budget"] .budget').waitFor();
+      for (const theme of ['Light', 'Dark']) {
+        // The open drawer covers the rail's theme switch, so the attribute the
+        // switch sets is set directly: light is `data-theme="light"`, dark is
+        // the bare root (LAI-606).
+        await h.page.evaluate((dark: boolean) => {
+          if (dark) document.documentElement.removeAttribute('data-theme');
+          else document.documentElement.setAttribute('data-theme', 'light');
+        }, theme === 'Dark');
+        for (const [width, height] of [
+          [1366, 900],
+          [390, 844],
+        ] as const) {
+          await h.page.setViewportSize({ width, height });
+          const overflow = await h.page.evaluate(
+            () => document.documentElement.scrollWidth - window.innerWidth,
+          );
+          assert.ok(overflow <= 0, `${theme} at ${String(width)}: ${String(overflow)} px sideways`);
+          const colour = await h.page
+            .locator('[data-block="budget"] .budget-bar')
+            .evaluate((el) => getComputedStyle(el).backgroundColor);
+          assert.notEqual(colour, 'rgba(0, 0, 0, 0)', `${theme}: the bar has no colour`);
+        }
+      }
+    } finally {
       await h.close();
     }
   });

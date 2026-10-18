@@ -1072,7 +1072,11 @@ describe('0039 adds token forecasts and claim estimates to a populated database 
         expect(before.task_claim_estimates).toBeUndefined();
         expect(before.task_estimates?.rows).toHaveLength(1);
 
-        runMigrations(db);
+        // Up to and including this one: what a later migration adds is its
+        // own test's (LAI-773's 0040 creates tables of its own).
+        journal.entries.push(dropped[0]!);
+        writeFileSync(journalPath, JSON.stringify(journal));
+        runMigrations(db, { migrationsFolder: dir });
 
         const after = census();
         const { task_claim_estimates: added, task_estimates: estimates, ...kept } = after;
@@ -1105,6 +1109,114 @@ describe('0039 adds token forecasts and claim estimates to a populated database 
           /CHECK constraint failed/,
         );
         expectSqliteError(() => db.run(sql`DELETE FROM task_estimates`), /append-only/);
+      } finally {
+        sqlite.close();
+        rmSync(dbDir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+/**
+ * `0040` on a populated database (LAI-773, D-087): nine new tables and one new
+ * partial index on `token_usage_days`. **Additive is the property**, asserted
+ * directly: every table that was there keeps its root page and every row —
+ * `token_usage_days` included, which gains an index and nothing else — and
+ * the new tables arrive empty.
+ */
+describe('0040 adds budgets, alerts, telemetry and plan limits to a populated database (LAI-773)', () => {
+  it(
+    'creates its tables and one index, and changes nothing that was there',
+    { timeout: 60_000 },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+      cpSync(MIGRATIONS_FOLDER, dir, { recursive: true });
+      const journalPath = join(dir, 'meta', '_journal.json');
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+        entries: { idx: number; tag: string; when: number }[];
+      };
+      const at = journal.entries.findIndex((e) => /^\d{4}_token_phase5$/.test(e.tag));
+      expect(at, 'the token-phase5 migration is in the journal').toBeGreaterThan(0);
+      const dropped = journal.entries.splice(at);
+      expect(dropped[0]?.tag).toMatch(/_token_phase5$/);
+      expect(journal.entries.at(-1)?.tag).toMatch(/^0039_token_forecasts$/);
+      writeFileSync(journalPath, JSON.stringify(journal));
+
+      const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: dir });
+        const s = seed(db);
+        const now = Date.now();
+        const task = newId();
+        db.run(sql`
+          INSERT INTO tasks (id, project_id, number, title, status, status_id, priority, created_by, created_via, created_at, updated_at)
+          VALUES (${task}, ${s.projectId}, 1, 'A task', 'todo', ${statusForCategory(db, s.projectId, 'todo').id}, 'p2', ${s.userId}, 'api', ${now}, ${now})
+        `);
+        db.run(sql`
+          INSERT INTO token_usage_days (user_id, collector_id, day, agent, model, task_id, project_id, input, output, cache_write, cache_read, updated_at)
+          VALUES (${s.userId}, '6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a', '2026-10-16', 'claude-code', 'claude-opus-5-5', ${task}, ${s.projectId}, 1, 2, 3, 4, ${now})
+        `);
+        runMigrations(db, { migrationsFolder: dir });
+
+        const census = () =>
+          Object.fromEntries(
+            db
+              .all<{ name: string; rootpage: number }>(
+                sql`SELECT name, rootpage FROM sqlite_master
+                     WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                       AND name NOT LIKE '__drizzle%' ORDER BY name`,
+              )
+              .map((t) => [
+                t.name,
+                {
+                  rootpage: t.rootpage,
+                  rows: db.all(sql.raw(`SELECT * FROM "${t.name}" ORDER BY rowid`)),
+                },
+              ]),
+          );
+        const before = census();
+        const created = [
+          'org_model_prices',
+          'plan_limits',
+          'token_alert_dismissals',
+          'token_alerts',
+          'token_arrivals',
+          'token_budgets',
+          'token_session_days',
+          'token_session_skips',
+          'token_telemetry_series',
+          'token_usage_zones',
+        ];
+        for (const table of created) expect(before[table], table).toBeUndefined();
+        // The guard on the census: the rows it is to keep are in it.
+        expect(before.token_usage_days?.rows).toHaveLength(1);
+
+        journal.entries.push(dropped[0]!);
+        writeFileSync(journalPath, JSON.stringify(journal));
+        runMigrations(db, { migrationsFolder: dir });
+
+        const after = census();
+        const kept = Object.fromEntries(
+          Object.entries(after).filter(([name]) => !created.includes(name)),
+        );
+        expect(kept).toEqual(before);
+        for (const table of created) expect(after[table]?.rows, table).toEqual([]);
+        expect(
+          db
+            .all<{ name: string }>(
+              sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'token_usage_days' ORDER BY name`,
+            )
+            .map((r) => r.name),
+        ).toEqual([
+          'token_usage_days_day_idx',
+          'token_usage_days_project_day_idx',
+          'token_usage_days_task_idx',
+          'token_usage_days_telemetry_idx',
+          'token_usage_days_user_day_idx',
+        ]);
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
       } finally {
         sqlite.close();
         rmSync(dbDir, { recursive: true, force: true });

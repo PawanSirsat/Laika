@@ -4773,3 +4773,98 @@ builders would inflate that person's tokens many times over.
    files included — the same rule D-080 set for activity counts.
 2. Sessions from before the skip list existed cannot be told apart; the
    30-day question and `cli/README.md` say so plainly.
+
+## D-087 — Telemetry fills the gap by one-way session key; the plan limit is the developer's alone; alerts stay in the app.
+
+**2026-10-18, the owner, through the orchestrator** (LAI-773 builds it, with
+LAI-776; board cards LAIKA-578 and LAIKA-580). D-084 item 9 named a
+metrics-only OpenTelemetry receiver as the fallback for what session files
+miss, and item 10 a dated price table. LAI-773 also adds budgets with soft
+alerts, a runaway-agent alert and a plan-limit forecast. Four of its choices
+reach past D-084's wording and are recorded here. Items 2 and 7 were settled
+in its first review (review B2 and the wording of item 2), before the branch
+merged.
+
+### Decided
+
+1. **A metrics-only OTLP/HTTP JSON receiver**, `POST /otlp/v1/metrics`, with
+   the developer's own Laika token and **both of D-084's switches** — the same
+   consent, not a third one. Two metrics are read, `claude_code.token.usage`
+   and `claude_code.cost.usage`; every other metric and attribute (the email,
+   the organisation and account ids, the terminal) is dropped unread. Logs and
+   traces — the exporters that can carry prompt text — have no route at all.
+   JSON only, so no protobuf dependency. Nothing calls out (§13.4).
+2. **Session ids and emails are never stored; a one-way key is.** Claude
+   Code's own exporter **does send** `session.id`, `user.email` and the
+   account ids as attributes, so they reach the server; Laika drops the
+   email and every other attribute unread, hashes `session.id` in memory on
+   arrival, and writes neither to the database or a log. The collector never
+   sends a session id: to fill the gap without counting twice, it sends each
+   Claude Code session's file totals per day under the first 16 hex of
+   `sha256("laika-session:" + id)`, the same key the receiver computes. This
+   extends D-084 item 1 the way D-079 item 3 allowed a one-way key for
+   commits: the key identifies a session only to someone who already holds its
+   id. The
+   collector also sends the keys of the sessions it left out — automated
+   (D-086) or outside the developer's scope (D-079 item 4) — so their
+   telemetry is dropped too. **This amends D-086 item 1's "never sent" for the
+   key alone**: the skip list's ids stay on the machine; their keys are sent so
+   an automated session's telemetry is not counted as the developer's either.
+   Telemetry adds, per session, only what exceeds
+   the files, less any file tokens no session list placed: it can under-fill
+   the gap, never double a token.
+3. **The plan-limit forecast is the developer's and nobody else's.** It is
+   read and set only by the person, on a web session; there is no admin row,
+   no endpoint that names another person, and no token — not even the
+   person's own — reads it. The plan is a label: **no plan carries a token
+   figure**, because the vendors state their limits as sessions and weeks, not
+   tokens, and Laika does not claim a limit it cannot source. The rate comes
+   from when tokens reached the board, kept in five-minute buckets for eight
+   days and read only by that endpoint.
+4. **Alerts stay in the app, and a runaway alert reaches its assignee first.**
+   A budget crossed at 80% or 100% and a runaway agent each write an alert row
+   (§4.37) shown as a badge and a banner — never an email or any outbound
+   call. **No comment and no `activity` row**: Laika has no honest author for a
+   comment it writes itself, a comment or a feed row would show a runaway alert
+   to the whole project before its assignee, and a new §4.8 verb is an
+   `activity` rebuild. A runaway alert names its one recipient; owners and
+   admins see only how many each project had, once an alert is a day old.
+5. **Soft means soft.** No budget refuses a report, a claim, a move or a save,
+   and every alert step runs after the write it rides on, best effort.
+6. **Prices, budgets and both alerts' settings are web-session only.** They
+   are the figures that exist to watch agents; an agent's token that could
+   lower a price or raise its own task's budget would silence the alert meant
+   for its person.
+7. **An agent or model fewer than three people used is folded for a reader
+   who may not see people** (review B2). D-085 item 8's rule — a figure for
+   an agent fewer than three people use is a person's figure — now reaches
+   every per-agent and per-model figure, and folds rather than withholds,
+   because a withheld row can be read back as the total less the listed
+   rows. **For a reader without `usage.read_people`** — a member, and every
+   token, an owner's included — every agent and every model used by fewer
+   than three distinct people within the response's scope is folded, its
+   tokens, cache reads and cost alike, into one last row, `other`, carrying
+   `few_people` (how many agents or models it holds), and shown as *Other
+   (fewer than 3 people)*. It applies to `GET /usage`'s `by_agent` and
+   `by_model`, where the scope is the organisation or the space over the
+   range, and to the accepted-cost card's `by_agent`, where it is the people
+   who spent that agent's tokens on the tasks accepted in the range.
+   **Owners and admins on a web session see every row**, as they see
+   `by_developer`. A person's own figures (`GET /users/:id/usage`) are theirs
+   and are not folded.
+
+### What this does not decide
+
+- **Copilot CLI, Codex and Gemini CLI telemetry.** Only Claude Code's metric
+  names were verified; the receiver reads nothing else until they are.
+- **Whether a runaway alert should also reach the agent** (the research's idea
+  14, a budget hint in the Stop hook). The alert is the person's today.
+- **What "heartbeat progress" should mean if heartbeats ever carry more.**
+  Today a heartbeat is presence; only a session arriving on a task counts as
+  progress.
+- **A fold of one.** When everything folded is one agent that one person
+  used, the `other` row is still that person's figure, though no longer
+  named. Folding hides which agent it was, not how much was spent, so a
+  reader who knows one person alone uses some agent can still read that
+  person's spend off the row. Item 7 is the owner's rule as decided; a floor
+  on the folded row itself would be a new decision.

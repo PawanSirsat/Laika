@@ -13,7 +13,7 @@ import { after, describe, test } from 'node:test';
 
 import { activity, HOOK_SCRIPT, type ActivityIo } from '../src/activity.ts';
 import { activityPaths } from '../src/activity-store.ts';
-import { usageBackfill } from '../src/activity-usage.ts';
+import { sessionKey, usageBackfill } from '../src/activity-usage.ts';
 import { closeAll, stubBoard, type StubBoard } from './support/stub-board.ts';
 
 const TZ = 'UTC';
@@ -37,7 +37,7 @@ interface Harness {
   readonly run: (...argv: string[]) => Promise<number>;
 }
 
-async function harness(): Promise<Harness> {
+async function harness(extraEnv: Readonly<Record<string, string>> = {}): Promise<Harness> {
   const home = mkdtempSync(join(tmpdir(), 'laika-usagecmd-'));
   scratch.push(home);
   const board = await stubBoard(TOKEN);
@@ -64,6 +64,7 @@ async function harness(): Promise<Harness> {
       GIT_CONFIG_GLOBAL: join(home, 'no-global-gitconfig'),
       LAIKA_URL: board.url,
       LAIKA_TOKEN: TOKEN,
+      ...extraEnv,
     },
     nowMs: () => Date.now(),
     tz: TZ,
@@ -209,6 +210,74 @@ void describe('`laika activity backfill` and tokens', () => {
     assert.equal(await h.run('backfill', '--yes'), 0);
     assert.equal(h.asked.length, askedBefore);
     assert.equal(usageReports(h.board).length, 1);
+  });
+});
+
+/**
+ * The sessions a collector left out are named to the board (`excluded`) only
+ * when Claude Code here sends its metrics to that board (review): through each
+ * place a usage report is built — the sync, `backfill`, and `status`.
+ */
+void describe('the sessions left out, only with telemetry from this machine', () => {
+  const ROBOT = 'cccccccc-1111-4222-8333-444444444444';
+  const otel = (url: string) => ({
+    CLAUDE_CODE_ENABLE_TELEMETRY: '1',
+    OTEL_METRICS_EXPORTER: 'otlp',
+    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: `${url}/api/v1/otlp/v1/metrics`,
+  });
+  const excludedOf = (board: StubBoard) =>
+    board.requests
+      .filter((r) => r.method === 'PUT' && r.body.includes('"usage":true'))
+      .map((r) => (JSON.parse(r.body) as { excluded?: string[] }).excluded);
+  async function setUp(withOtel: boolean): Promise<Harness> {
+    const h = await harness();
+    if (withOtel) {
+      mkdirSync(join(h.home, '.claude'), { recursive: true });
+      writeFileSync(
+        join(h.home, '.claude', 'settings.json'),
+        JSON.stringify({ env: otel(h.board.url) }),
+      );
+    }
+    h.answers = ['n'];
+    assert.equal(await h.run('on'), 0, h.out.join('\n'));
+    transcript(h.home, [{ id: 'msg_new', daysAgo: 0, output: 90 }]);
+    writeFileSync(
+      join(activityPaths(h.home).dir, 'skip-sessions'),
+      `${String(Math.floor(Date.now() / 1000) - 60)} ${ROBOT}\n`,
+      { mode: 0o600 },
+    );
+    return h;
+  }
+
+  void test('a sync: named with telemetry to this board, never without', async () => {
+    const off = await setUp(false);
+    assert.equal(await off.run('sync'), 0, off.out.join('\n'));
+    assert.ok(excludedOf(off.board).length > 0, 'no usage report was sent');
+    assert.deepEqual(
+      excludedOf(off.board),
+      excludedOf(off.board).map(() => undefined),
+    );
+
+    const on = await setUp(true);
+    assert.equal(await on.run('sync'), 0, on.out.join('\n'));
+    assert.deepEqual(excludedOf(on.board), [[sessionKey(ROBOT)]]);
+    assert.deepEqual(on.board.violations, []);
+  });
+
+  void test('`backfill --yes` and `status` read the same settings', async () => {
+    const off = await setUp(false);
+    off.out.length = 0;
+    assert.equal(await off.run('status'), 0);
+    assert.doesNotMatch(off.out.join('\n'), /"excluded"/);
+    assert.equal(await off.run('backfill', '--yes'), 0, off.out.join('\n'));
+    assert.deepEqual(excludedOf(off.board), [undefined]);
+
+    const on = await setUp(true);
+    on.out.length = 0;
+    assert.equal(await on.run('status'), 0);
+    assert.match(on.out.join('\n'), new RegExp(`"excluded": \\[\\s*"${sessionKey(ROBOT)}"`));
+    assert.equal(await on.run('backfill', '--yes'), 0, on.out.join('\n'));
+    assert.deepEqual(excludedOf(on.board), [[sessionKey(ROBOT)]]);
   });
 });
 

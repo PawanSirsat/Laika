@@ -32,7 +32,8 @@
 .tk-total,
 .tk-cache,
 .tk-share,
-.tk-forecast {
+.tk-forecast,
+.tk-cost {
   font-family: var(--font-mono);
   font-size: var(--text-md);
   font-weight: var(--weight-bold);
@@ -87,4 +88,15 @@
       'name value'
       'track track';
   }
+}
+
+/* LAI-773: the runaway alert, for the one person it is addressed to. */
+.tk-runaway {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-card);
+  background: var(--blocked-bg);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
 }

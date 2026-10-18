@@ -3,6 +3,7 @@ import type { MeProfile } from '../../api/me.ts';
 import type { SessionState } from '../../api/use-session.ts';
 import type { SetupSystemStatus } from '../../api/setup.ts';
 import type { Credentials } from '../../api/auth.ts';
+import type { TokenAlert } from '../../api/token-alerts.ts';
 import type { UseRoute } from '../../routes/use-route.ts';
 
 /**
@@ -64,6 +65,14 @@ export interface ShellValue {
   readonly reviewWaiting: number | undefined;
   /** Re-read that count — the Review screen calls it after a decision. */
   readonly refreshReview: () => void;
+  /**
+   * The signed-in person's open token alerts (LAI-773) — budgets crossed on
+   * their work, and a runaway agent — for the rail's badge on Usage and the
+   * Usage page's banner: one list from one request. `undefined` until read.
+   */
+  readonly tokenAlerts: readonly TokenAlert[] | undefined;
+  /** Re-read them — the Usage page calls it after a dismiss. */
+  readonly refreshTokenAlerts: () => void;
   /**
    * The instance the browser is pointed at, read from the location — the
    * prototype's `laika.kvelld.internal` is a fixture and this is correct for

@@ -9,9 +9,22 @@ import {
   meetingReviews,
   orgs,
   pushedCommitKeys,
+  tokenArrivals,
+  tokenSessionDays,
+  tokenSessionSkips,
+  tokenTelemetrySeries,
   tokenUsageDays,
   tasks,
 } from '../db/schema.ts';
+import { ARRIVALS_KEPT_MS } from '../services/plan-limit.ts';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** Per-session totals, matched against telemetry (§4.38), are settled after the 31-day window. */
+const SESSION_DAYS_KEPT = 40;
+/** A telemetry series' state (§4.39) outlives its session by three days. */
+const SERIES_KEPT_MS = 3 * DAY_MS;
+/** Excluded session keys (§4.40), as long as the collector keeps its list. */
+const SKIPS_KEPT_MS = 45 * DAY_MS;
 
 /**
  * The jobs §11.6 specifies, as plain functions (LAI-431).
@@ -139,7 +152,36 @@ export function pruneLocalActivity(db: Db, now: number): JobResult {
     const keys = tx.delete(pushedCommitKeys).where(lt(pushedCommitKeys.day, cutoff)).run();
     // Token usage (D-084 item 12) is kept as long, by the same rule.
     const tokens = tx.delete(tokenUsageDays).where(lt(tokenUsageDays.day, cutoff)).run();
-    return days.changes + keys.changes + tokens.changes;
+    // What only matches telemetry to the files (LAI-773) is settled once the
+    // collector's 31-day window has passed it: kept 40 days. The series
+    // state matters while a session runs, the excluded keys as long as the
+    // collector keeps its list, and the arrival rate for a week's window.
+    const sessionCutoff = new Date(now - SESSION_DAYS_KEPT * DAY_MS).toISOString().slice(0, 10);
+    const sessions = tx
+      .delete(tokenSessionDays)
+      .where(lt(tokenSessionDays.day, sessionCutoff))
+      .run();
+    const series = tx
+      .delete(tokenTelemetrySeries)
+      .where(lt(tokenTelemetrySeries.updatedAt, now - SERIES_KEPT_MS))
+      .run();
+    const skips = tx
+      .delete(tokenSessionSkips)
+      .where(lt(tokenSessionSkips.createdAt, now - SKIPS_KEPT_MS))
+      .run();
+    const arrivals = tx
+      .delete(tokenArrivals)
+      .where(lt(tokenArrivals.bucketMs, now - ARRIVALS_KEPT_MS))
+      .run();
+    return (
+      days.changes +
+      keys.changes +
+      tokens.changes +
+      sessions.changes +
+      series.changes +
+      skips.changes +
+      arrivals.changes
+    );
   });
 
   return { changed };

@@ -956,7 +956,9 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
                   </div>
                 )}
 
-                {openedExtra?.id === 'activity' && <ShareActivity canManageOrg={canInvite} />}
+                {openedExtra?.id === 'activity' && (
+                  <ShareActivity canManageOrg={canInvite} origin={origin} />
+                )}
 
                 {openedExtra?.id === 'invite' && (
                   <div className="conn-extra" data-extra="invite">

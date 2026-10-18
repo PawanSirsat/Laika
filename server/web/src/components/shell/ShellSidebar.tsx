@@ -31,6 +31,7 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
     orgName,
     unlistedOpen,
     reviewWaiting,
+    tokenAlerts,
   } = useShell();
 
   const projectSlug = params.get('project') ?? undefined;
@@ -64,7 +65,13 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
       spaceName={spaceName}
       // The open unlisted count is the shell's (LAI-754): one number for the
       // badge and Capacity's link, `undefined` for a reader it is not for.
-      counts={{ '/sprints': sprintCount, '/review': reviewWaiting, '/unlisted': unlistedOpen }}
+      // A person's open token alerts on Usage (LAI-773): theirs alone.
+      counts={{
+        '/sprints': sprintCount,
+        '/review': reviewWaiting,
+        '/unlisted': unlistedOpen,
+        '/usage': tokenAlerts?.length,
+      }}
       user={me}
       onSignOut={signOut}
       signingOut={signingOut}

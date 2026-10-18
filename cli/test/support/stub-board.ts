@@ -67,6 +67,10 @@ export interface StubBoard {
    * a (collector, day)'s rows replaced whole by each report that carries it.
    */
   readonly usage: Map<string, readonly unknown[]>;
+  /** Each (collector, day)'s sessions, replaced with its rows (design.md §2, LAI-773). */
+  readonly sessions: Map<string, readonly unknown[]>;
+  /** The sessions left out, as the latest usage report named them. */
+  excluded: readonly string[];
   /** An older board: a usage report is an unknown field, 422. */
   refuseUsage: boolean;
   /** Sharing turned off between the snapshot and the usage report. */
@@ -106,6 +110,8 @@ export async function stubBoard(token: string): Promise<StubBoard> {
     snapshots: new Map(),
     keys: new Map(),
     usage: new Map(),
+    sessions: new Map(),
+    excluded: [],
     refuseUsage: false,
     prefixes: undefined,
     offForUsage: false,
@@ -238,6 +244,7 @@ export async function stubBoard(token: string): Promise<StubBoard> {
           collector_id: string;
           lookback?: true;
           usage?: true;
+          excluded?: string[];
           days: {
             day: string;
             commits_local?: number;
@@ -246,8 +253,15 @@ export async function stubBoard(token: string): Promise<StubBoard> {
           }[];
         };
         if (sent.usage === true) {
-          for (const d of sent.days as { day: string; backfill?: true; rows?: UsageRowLike[] }[]) {
+          board.excluded = sent.excluded ?? [];
+          for (const d of sent.days as {
+            day: string;
+            backfill?: true;
+            rows?: UsageRowLike[];
+            sessions?: unknown[];
+          }[]) {
             const rows = d.rows ?? [];
+            board.sessions.set(`${sent.collector_id}|${d.day}`, d.sessions ?? []);
             // §4.33: a backfilled day takes every other collector's rows for
             // the day and each agent it names.
             if (d.backfill === true) {

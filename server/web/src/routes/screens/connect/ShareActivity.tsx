@@ -8,6 +8,7 @@ import {
   getActivitySharing,
   getOwnLocalActivity,
   LOCAL_ACTIVITY_SCOPES,
+  otelEnvBlock,
   setActivitySharing,
   type ActivitySharing,
   type LocalActivityScope,
@@ -67,12 +68,20 @@ function dayLabel(day: string): string {
  * for its person. With the organisation's switch off there is nothing to turn
  * on, and this says so instead of offering a control that would do nothing.
  */
-export function ShareActivity({ canManageOrg }: { readonly canManageOrg: boolean }) {
+export function ShareActivity({
+  canManageOrg,
+  origin = window.location.origin,
+}: {
+  readonly canManageOrg: boolean;
+  /** This board's address, for the OpenTelemetry block (LAI-773). */
+  readonly origin?: string;
+}) {
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const [deleted, setDeleted] = useState(false);
   const commandRef = useRef<HTMLPreElement | null>(null);
+  const otelRef = useRef<HTMLPreElement | null>(null);
 
   const load = useCallback((signal?: AbortSignal) => {
     Promise.all([getActivitySharing(signal), getOwnLocalActivity(signal)])
@@ -265,6 +274,42 @@ export function ShareActivity({ canManageOrg }: { readonly canManageOrg: boolean
               {ACTIVITY_COMMAND}
             </pre>
           </div>
+
+          {/* LAI-773: the OpenTelemetry fallback, optional. Metrics only, with
+              this board's address and the token by reference — never printed. */}
+          <section className="share-otel" aria-labelledby="share-otel-title" data-block="otel">
+            <h3 className="share-h" id="share-otel-title">
+              OpenTelemetry (optional)
+            </h3>
+            <p className="conn-note">
+              Claude Code can also send its own token metrics here. They fill in what its session
+              files miss — titles, classifiers, compaction — matched session by session, so nothing
+              counts twice. <strong>Metrics only</strong>: Laika refuses logs and traces, which can
+              carry prompt text. It needs sharing on, as above, and your Laika token in{' '}
+              <code>$LAIKA_TOKEN</code>; <code>laika activity otel</code> prints the same lines.
+            </p>
+            <div className="conn-block">
+              <div className="conn-block-bar">
+                <span className="conn-block-label" id="share-otel-label">
+                  In the shell you start Claude Code from
+                </span>
+                <CopyButton
+                  text={otelEnvBlock(origin)}
+                  selects={otelRef}
+                  what="the OpenTelemetry settings"
+                />
+              </div>
+              <pre
+                className="conn-pre"
+                ref={otelRef}
+                tabIndex={0}
+                aria-labelledby="share-otel-label"
+                data-otel
+              >
+                {otelEnvBlock(origin)}
+              </pre>
+            </div>
+          </section>
         </>
       )}
 

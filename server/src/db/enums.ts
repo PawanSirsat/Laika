@@ -263,3 +263,39 @@ export type EstimateSource = (typeof ESTIMATE_SOURCES)[number];
  */
 export const CLAIM_CONFIDENCES = ['green', 'yellow', 'red'] as const;
 export type ClaimConfidence = (typeof CLAIM_CONFIDENCES)[number];
+
+/**
+ * §4.36's `scope` (LAI-773): what a token budget is for — one task, a
+ * sprint's tasks over the sprint's days, or a project's tasks over a calendar
+ * month. Set by a lead; soft, so nothing is ever refused for it.
+ */
+export const BUDGET_SCOPES = ['task', 'sprint', 'project'] as const;
+export type BudgetScope = (typeof BUDGET_SCOPES)[number];
+
+/**
+ * §4.37's `kind` (LAI-773): a budget crossed at 80% or 100%, or an agent that
+ * kept spending past its task's p95 with nothing landing (`runaway`).
+ */
+export const TOKEN_ALERT_KINDS = ['budget', 'runaway'] as const;
+export type TokenAlertKind = (typeof TOKEN_ALERT_KINDS)[number];
+
+/**
+ * §4.38's `source` (LAI-773): per-session token totals from the session
+ * files a collector read, or from the OpenTelemetry metrics Claude Code sent
+ * — the two are matched by session to fill the gap without counting twice.
+ */
+export const TOKEN_SESSION_SOURCES = ['files', 'telemetry'] as const;
+export type TokenSessionSource = (typeof TOKEN_SESSION_SOURCES)[number];
+
+/**
+ * §4.41's `plan` (LAI-773, D-087): the subscription a developer says they are
+ * on — a label for their own page. **No plan carries a token figure**: the
+ * vendors state these limits as sessions and weeks, not tokens, so the limit
+ * is always the developer's own number.
+ */
+export const PLAN_KINDS = ['claude-pro', 'claude-max-5x', 'claude-max-20x', 'other'] as const;
+export type PlanKind = (typeof PLAN_KINDS)[number];
+
+/** §4.41's `window` (LAI-773): the stretch the developer's limit applies to. */
+export const PLAN_WINDOWS = ['5h', 'day', 'week'] as const;
+export type PlanWindow = (typeof PLAN_WINDOWS)[number];

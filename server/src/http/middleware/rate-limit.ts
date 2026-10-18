@@ -105,6 +105,9 @@ export interface RequestCredential {
 /** A collector's report, D-079's ingest (§6.3, LAI-751). */
 export const LOCAL_ACTIVITY_PATH = '/api/v1/me/local-activity';
 
+/** The OpenTelemetry receiver (LAI-773). */
+export const OTLP_PREFIX = '/api/v1/otlp/';
+
 export function classify(
   path: string,
   credential: RequestCredential | null,
@@ -121,6 +124,14 @@ export function classify(
     return {
       key: `local-activity:${credential?.tokenId != null ? 'token' : 'user'}:${who}`,
       policy: LIMITS.localActivity,
+    };
+  }
+
+  // OpenTelemetry has its own budget (LAI-773), per token as reports are.
+  if (path.startsWith(OTLP_PREFIX)) {
+    return {
+      key: `otlp:${credential?.tokenId != null ? 'token' : 'user'}:${who}`,
+      policy: LIMITS.otlp,
     };
   }
 

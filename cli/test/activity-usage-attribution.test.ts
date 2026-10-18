@@ -26,6 +26,7 @@ import { activityPaths, rotate, type ActivityState } from '../src/activity-store
 import { startCollecting, sync, type SyncContext } from '../src/activity-sync.ts';
 import {
   readUsage,
+  sessionKey,
   sessionsFile,
   usageRoots,
   usageStep,
@@ -768,6 +769,17 @@ void describe('through `laika activity sync`', () => {
             agent: 'claude-code',
             model: 'claude-opus-5-5',
             task: 'LAI-3',
+            input: 0,
+            output: 32,
+            cache_write: 0,
+            cache_read: 0,
+          },
+        ],
+        // The session by its one-way key (LAI-773): the subagent's 11 rolls into its parent's.
+        sessions: [
+          {
+            key: sessionKey(SECRET.session),
+            model: 'claude-opus-5-5',
             input: 0,
             output: 32,
             cache_write: 0,

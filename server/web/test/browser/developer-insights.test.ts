@@ -207,7 +207,40 @@ void describe('Connect: Share local activity', () => {
       await until(() => narrow.isChecked());
       assert.equal(await narrow.isChecked(), true);
 
-      assert.equal((await panel.locator('pre.conn-pre').innerText()).trim(), 'laika activity on');
+      // The collector's command; the OpenTelemetry block below is its own (LAI-773).
+      assert.equal(
+        (
+          await panel.locator('pre.conn-pre[aria-labelledby="share-command-label"]').innerText()
+        ).trim(),
+        'laika activity on',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('offers OpenTelemetry, metrics only: this board’s address, the token by reference, a copy (LAI-773)', async () => {
+    const state = { org: true, enabled: true, scope: 'agent-repos' };
+    const h = await open('/connect', connect(state, { value: HELD }));
+    try {
+      await h.page.locator('.conn-rail-extra', { hasText: 'Share local activity' }).click();
+      const block = h.page.locator('.share-activity [data-block="otel"]');
+      await block.waitFor({ timeout: 20_000 });
+      // The heading is drawn in capitals; the words are the same.
+      assert.match(await block.innerText(), /OpenTelemetry \(optional\)/i);
+      assert.match(await block.innerText(), /Metrics only/);
+      assert.match(await block.innerText(), /laika activity otel/);
+      const lines = (await block.locator('pre[data-otel]').innerText()).trim().split('\n');
+      assert.deepEqual(lines, [
+        'export CLAUDE_CODE_ENABLE_TELEMETRY=1',
+        'export OTEL_METRICS_EXPORTER=otlp',
+        'export OTEL_EXPORTER_OTLP_PROTOCOL=http/json',
+        `export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="${h.origin}/api/v1/otlp/v1/metrics"`,
+        'export OTEL_EXPORTER_OTLP_METRICS_HEADERS="Authorization=Bearer $LAIKA_TOKEN"',
+        'export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative',
+        'export OTEL_LOGS_EXPORTER=none',
+      ]);
+      assert.equal(await block.getByRole('button', { name: /Copy/ }).count(), 1);
     } finally {
       await h.close();
     }

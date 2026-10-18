@@ -185,6 +185,9 @@ be obvious because someone will be asking for it.
 | View the organisation's token usage | ✓ | ✓ | — | — |
 | View anyone's token usage, per person | ✓ (session only) | ✓ (session only) | — | — |
 | View own token usage | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| Set API-equivalent prices | ✓ (session only) | ✓ (session only) | — | — |
+| Read and dismiss own token alerts | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| Read and set own plan limit | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 
 **"View the organisation" is `org.read` and is a read action** (D-048) — a
 `read_only` token may do it. It does **not** cover the AI provider block:
@@ -267,7 +270,21 @@ project's totals and **never a per-person split**.
   `usage.read_people` with `by_developer: null` rather than refusing the page.
 - **Sending tokens is not a new row.** A usage report is the collector's, on
   `PUT /me/local-activity` under *Send own local activity* and the same two
-  switches (D-084 item 4).
+  switches (D-084 item 4). So is OpenTelemetry (LAI-773): Claude Code's
+  metrics on `POST /otlp/v1/metrics` are the developer's own usage sent
+  another way, under the same row and the same two switches.
+
+**LAI-773's rows** — `org.model_prices.set`, `token_alerts.own` and
+`plan_limit.own`, with §3.2's `budget.set` — are all **session only**:
+
+- **Prices and budgets are the figures that exist to watch agents.** An
+  agent's token that could lower a model's price, or raise its own task's
+  budget, would silence the very alert meant for its person. Who may set the
+  organisation's AI provider may set what its models cost — its own row, not
+  *Org settings* borrowed, because a token may hold that one.
+- **A person's alerts and plan limit are their own** (D-087). Every role holds
+  the rows; the services read the caller's own rows only, and no row lets
+  anybody read another's. The plan limit has no admin row at all.
 
 ### 3.2 Project-level permission matrix
 
@@ -292,6 +309,7 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Watch / unwatch a task | ✓ | ✓ | ✓ |
 | Apply a meeting-diff proposal | ✓ | ✓ | — |
 | Read a project's token totals | ✓ | ✓ | ✓ |
+| Set token budgets | ✓ (session only) | — | — |
 
 ### 3.3 The `can()` module is the only authority
 
@@ -782,7 +800,22 @@ model, user_id, task_id, input, output, cache_write, cache_read)`,
 `token_usage_days(project_id, day, …)` the same columns `WHERE project_id IS NOT
 NULL`, and `token_usage_days(task_id, day) WHERE task_id IS NOT NULL` — the
 Usage page's reads are each one range of one index that carries every column
-they sum (§4.33).
+they sum (§4.33) — and `token_usage_days(day, model, input, output,
+cache_write, cache_read) WHERE collector_id = 'telemetry'`, what telemetry
+added over a range (LAI-773).
+LAI-773's: `token_budgets(task_id)`, `token_budgets(sprint_id)` and
+`token_budgets(project_id) WHERE scope = 'project'`, each unique;
+`token_alerts(subject_id, period, threshold, limit_tokens) WHERE kind =
+'budget'` unique — a budget alert is raised once — `token_alerts(subject_id,
+created_at)`, `token_alerts(project_id, created_at)` and
+`token_alerts(user_id, created_at) WHERE user_id IS NOT NULL`;
+`token_session_days(user_id, day, source, collector_id, session_key, model)`
+primary, `token_session_days(day)` and `token_session_days(user_id,
+session_key)` — the match reads a session's every day (§4.38);
+`token_telemetry_series(user_id, series_key)` primary;
+`token_session_skips(user_id, session_key)` primary; `token_arrivals(user_id,
+bucket_ms)` primary and `token_arrivals(bucket_ms)`;
+`token_usage_zones(user_id)` primary.
 `tags(project_id, name)` unique and `task_tags(tag_id)` — the `?tag=` filter
 reads from the tag side, so the join needs an index from that end too.
 
@@ -1374,7 +1407,7 @@ LAI-769) — the Usage page and the profile's token card.
 | field | notes |
 | --- | --- |
 | `user_id` | FK `users`, cascade |
-| `collector_id` | the collector's UUID v4, as §4.23's |
+| `collector_id` | the collector's UUID v4, as §4.23's — or `telemetry` for the part OpenTelemetry adds over the session files (LAI-773, §4.38): not a UUID, so never a machine's |
 | `day` | `YYYY-MM-DD` in the machine's own time zone |
 | `agent` | an agent slug (§9.3): `claude-code`, `codex`, `gemini-cli`; anything else is `other` |
 | `model` | the model id the agent recorded, lower case, `[1m]`-style suffixes removed — 1–64 of `a–z`, `0–9`, `.`, `_`, `:`, `-` |
@@ -1429,6 +1462,222 @@ plain median and the model, through the model's calibration at the start
 Confidence: of the tasks claimed with each and decided at least once, how many
 were sent back (`agent.confidence`). The estimate in force is the newest at or
 before `started_at`, as the freeze reads its rows.
+
+### 4.35 `org_model_prices`
+
+An organisation's own API-equivalent price for a model (D-084 item 10,
+LAI-773), over the dated table in the code (`services/model-prices.ts`): what
+an owner or admin entered on the Organisation page, on a web session. It wins
+for its model; deleting it goes back to the table's price, or to none.
+
+| field | notes |
+| --- | --- |
+| `org_id` | FK `orgs`, cascade |
+| `model` | a model id as §4.33 holds it; with `org_id`, the primary key |
+| `input` | real — USD per million uncached input tokens, 0–10,000 (CHECK, as for the other three) |
+| `output` | real — USD per million output tokens |
+| `cache_write` | real — USD per million cache writes, at the five-minute rate |
+| `cache_read` | real — USD per million cache reads |
+| `set_by` | FK `users` |
+| `updated_at` | |
+
+**The code's table** names each row's source page and the day it was read
+(2026-10-18: Anthropic's pricing page; OpenAI's for its listed models), and
+says when a row was **inferred** — a model the source does not list, priced as
+its nearest listed sibling — rather than read; every cost figure built on one
+says so (`unconfirmed_models`). **Cache writes are priced at the five-minute
+rate**: neither the session files nor the telemetry split a write by how long
+it is kept, and the lower rate keeps the figure a floor. **A model with no
+price shows no price, never zero.** Nothing fetches a price (§13.4).
+
+### 4.36 `token_budgets`
+
+A soft token budget a lead set (LAI-773): for one task, for a sprint, or for a
+project per calendar month. One row per subject; a change updates it.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `project_id` | FK `projects`, cascade |
+| `scope` | `task` \| `sprint` \| `project` |
+| `task_id` | nullable, FK `tasks`, cascade — set exactly when `scope` is `task` (CHECK); unique |
+| `sprint_id` | nullable, FK `sprints`, cascade — set exactly when `scope` is `sprint` (CHECK); unique |
+| `tokens` | integer, 1 to 10¹² — headline tokens: input + output + cache writes (D-084 item 8), the forecast's own unit |
+| `set_by` | FK `users` |
+| `created_at`, `updated_at` | |
+
+**What each counts.** A task: every token tied to it (§4.33), all days. A
+sprint: the tokens tied to its tasks on the sprint's days — `starts_on` to
+`ends_on` as UTC dates. A project: the tokens tied to its tasks in the
+calendar month, UTC. **A task without a row has the p80 of the token forecast
+frozen at its claim as its budget** (§4.32), computed, never stored, and none
+without one. **Soft**: crossing 80% and 100% raises an alert once (§4.37),
+and nothing is refused to anybody — no report, claim, move or save.
+
+### 4.37 `token_alerts`
+
+A soft alert, raised once (LAI-773): a budget crossed at 80% or 100%, or a
+**runaway agent** — a claimed task past the p95 of its frozen token forecast
+with nothing landing for an hour (§6.4).
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `kind` | `budget` \| `runaway` |
+| `scope` | `task` \| `sprint` \| `project` — a runaway alert is always a task's (CHECK) |
+| `project_id` | FK `projects`, cascade |
+| `task_id` | nullable, FK `tasks`, cascade |
+| `sprint_id` | nullable, FK `sprints`, cascade |
+| `subject_id` | the task, sprint or project id — what the alert is about |
+| `period` | `YYYY-MM` for a project's monthly budget; empty otherwise |
+| `threshold` | `80` or `100` for a budget, `95` for a runaway (CHECK) |
+| `limit_tokens` | the budget, or the p95, in force when it was raised |
+| `tokens` | what had been spent when it was raised |
+| `user_id` | nullable, FK `users`, cascade — a runaway alert's **one recipient**, the assignee when it was raised; null on a budget alert (CHECK) |
+| `created_at` | |
+
+**Raised once**: a budget alert is unique per subject, period, threshold and
+the budget in force, so a lead raising a budget re-arms it; a runaway alert is
+one per stall — none is raised while one newer than the task's last progress
+exists. **No `activity` row and no comment**: there is no honest author for a
+comment Laika writes itself (`comments.created_via` has no value for it), a
+comment or a row in the feed would show a runaway alert to the whole project
+before its assignee, and a new §4.8 verb is an `activity` rebuild (D-087).
+
+### 4.38 `token_session_days`
+
+Per-session token totals by day, from the two sources that can describe the
+same Claude Code session (D-087, LAI-773): the session files a collector read,
+and the OpenTelemetry metrics Claude Code sent. Matched by a **one-way key**,
+never the session id.
+
+| field | notes |
+| --- | --- |
+| `user_id` | FK `users`, cascade |
+| `source` | `files` \| `telemetry` |
+| `collector_id` | the collector, for `files`; empty for `telemetry` |
+| `day` | `YYYY-MM-DD` — for `files`, the machine's day the reply was written; for `telemetry`, the day its export interval ended, in the zone the person's usage reports state (§4.44) — else their latest §4.23 snapshot's, else UTC |
+| `session_key` | the first 16 hex of `sha256("laika-session:" + session id)` — computed by the collector and by the receiver; the id itself is never stored |
+| `model` | as §4.33 |
+| `input`, `output`, `cache_write`, `cache_read` | integers |
+| `cost_usd` | nullable real — Claude Code's own `claude_code.cost.usage` for the session, telemetry rows only |
+| `updated_at` | |
+
+Primary key (`user_id`, `day`, `source`, `collector_id`, `session_key`,
+`model`). `files` rows are replaced per (person, collector, day) by each usage
+report, as §4.33's are; `telemetry` rows grow as metrics arrive.
+
+**The gap is matched per session over its whole span, then floored** (review
+B1). The files put a reply on the day it was written and telemetry on the day
+its export ended — up to a minute later — so across midnight, or in another
+zone, the same tokens sit on two days, and a floor taken per day counts them
+twice. So, per person and model, for each count, the gap is
+`max(0, Σ_session max(0, telemetry − files) − unplaced)`, where each
+session's `telemetry` and `files` are totalled over **every day it has rows
+on**, and `unplaced` is the Claude Code file tokens no listed session holds on
+those days and the days beside them. Only then is it spread back onto the days
+where a session's telemetry ran ahead of its files, in proportion, in whole
+tokens. It is written to §4.33 under collector `telemetry` and recomputed
+whenever either side moves, for the days moved, the days beside them, and
+every day a telemetered session on them reaches. So every read of the rollup
+sees, per session, the larger of the two, and a token is never counted twice:
+subtracting the unplaced tokens can only under-fill the gap. If the match
+fails, the report it rides on is still taken and the person's gap rows are
+removed — an under-count, never a double one (§6.4). Kept 40 days (§11.6).
+
+### 4.39 `token_telemetry_series`
+
+Where each OpenTelemetry series stood (LAI-773), so a retried or repeated
+export never adds twice.
+
+| field | notes |
+| --- | --- |
+| `user_id` | FK `users`, cascade |
+| `series_key` | session key, model, the count, and a cumulative series' start time |
+| `last_value` | real — a cumulative series' largest value |
+| `last_end_ms` | integer — where the last interval taken ended |
+| `updated_at` | |
+
+A **cumulative** point adds only its growth over `last_value`; a **delta**
+point is taken only when it starts at or after `last_end_ms`. A point out of
+order can only be dropped, never counted twice. **A cumulative series first
+seen more than five minutes after it began is a baseline**: its first value
+holds everything since its process started — possibly before sharing was on —
+so only its growth from there is counted. (A delta point from before consent
+was refused when it was sent, and is never resent.) Kept three days past its last
+point.
+
+### 4.40 `token_session_skips`
+
+The sessions a collector left out of its rows — automated (D-086) or outside
+the developer's `laika-repos` scope (D-079 item 4) — by one-way key, so their
+telemetry is left out too (LAI-773).
+
+| field | notes |
+| --- | --- |
+| `user_id` | FK `users`, cascade |
+| `session_key` | as §4.38 |
+| `created_at` | |
+
+Telemetry for a listed key is dropped on arrival, and what it had added
+before the key arrived is removed with it. Kept 45 days, as the collector
+keeps its list.
+
+### 4.41 `plan_limits`
+
+A developer's own plan limit (D-087, LAI-773). **Read and written only by the
+person, on a web session**: no admin read, no other endpoint, no token.
+
+| field | notes |
+| --- | --- |
+| `user_id` | primary key, FK `users`, cascade |
+| `plan_kind` | `claude-pro` \| `claude-max-5x` \| `claude-max-20x` \| `other` — a label; **no plan carries a token figure** |
+| `limit_window` | `5h` (rolling) \| `day` \| `week` |
+| `limit_tokens` | integer, 1 to 10¹² — the developer's own number, headline tokens |
+| `week_reset_day` | nullable — 0 (Sunday) to 6; set exactly when `limit_window` is `week` (CHECK) |
+| `week_reset_minute` | nullable — minutes after midnight, 0–1439, in `tz` |
+| `tz` | the IANA zone the window is read in |
+| `updated_at` | |
+
+### 4.42 `token_arrivals`
+
+When a person's tokens reached the board, in five-minute buckets (D-087,
+LAI-773): the rate the plan-limit forecast reads. Each usage report and each
+telemetry export adds what it changed in the person's headline tokens for
+today and yesterday; a backfilled day adds nothing.
+
+| field | notes |
+| --- | --- |
+| `user_id` | FK `users`, cascade |
+| `bucket_ms` | unix ms, a multiple of five minutes; with `user_id`, the primary key |
+| `tokens` | integer, ≥ 0 |
+
+Read only by the person's own `GET /me/plan-limit`. Kept eight days.
+
+### 4.43 `token_alert_dismissals`
+
+A person putting an alert away for themselves (LAI-773).
+
+| field | notes |
+| --- | --- |
+| `alert_id` | FK `token_alerts`, cascade |
+| `user_id` | FK `users`, cascade |
+| `created_at` | |
+
+### 4.44 `token_usage_zones`
+
+The zone a person's usage reports state (LAI-773, review B1), so telemetry is
+put on the same days the files are.
+
+| field | notes |
+| --- | --- |
+| `user_id` | primary key, FK `users`, cascade |
+| `tz` | the IANA zone the person's latest usage report stated (§6.4's `tz`) |
+| `updated_at` | |
+
+Written by every usage report, before its sessions are matched; read when
+telemetry arrives, to bin each point's day. Deleted with the person's history
+(`DELETE /me/local-activity`) and with the person.
 
 ## 5. Task lifecycle
 
@@ -1609,7 +1858,9 @@ those projects. A Viewer's token can never write, whatever its scope says.
   **A finer reason travels in `details.reason`, never as a new code** (D-079):
   `session_required` when a token is refused only because §3.1 says *session
   only*; `local_activity_off`, `day_out_of_range` and `invalid_tz` on a local
-  activity report (§6.4); `token_required` on a heartbeat (§9.1). The status
+  activity report (§6.4); `token_required` on a heartbeat (§9.1);
+  `protobuf_not_supported` and `otlp_invalid` on OpenTelemetry metrics
+  (LAI-773). The status
   and `code` stay the vocabulary above, so a client that branches on `code`
   keeps working, and one that needs the reason has it.
 - **Idempotency**: `POST` accepts `Idempotency-Key`; replays within 24h return
@@ -1625,6 +1876,9 @@ those projects. A Viewer's token can never write, whatever its scope says.
   seconds**: a burst of 30, then one every two minutes — up to 60 in a first
   hour, 30 an hour after — per token and per user for a session, on their own
   budget, snapshots, look-back reports and usage reports alike (D-080, D-084).
+  OpenTelemetry metrics (`POST /otlp/v1/metrics`, LAI-773) have their own
+  bucket, **12 a minute with a burst of 60**, per token and per user for a
+  session — an exporter posts once a minute per running session.
   `429` with `Retry-After`, never below one second.
 
   **Writes share the general budget; there is no separate write limit** (D-021).
@@ -1662,9 +1916,13 @@ GET    /api/v1/me
 GET    /api/v1/me/activity-sharing           PUT .../activity-sharing  body { enabled?, scope? }   (PUT session only)
 PUT    /api/v1/me/local-activity             a collector's report, look-back or usage report → { accepted_days }   (both switches on; 30/hour)
 GET    /api/v1/me/local-activity             ?days=1–14 — what is held for the caller   DELETE → 204   (session only)
+GET    /api/v1/me/token-alerts               the caller's own budget and runaway alerts   POST .../:id/dismiss → 204   (session only; LAI-773)
+GET    /api/v1/me/plan-limit                 PUT .../plan-limit   DELETE → 204 — the developer's own forecast, an estimate   (session only; D-087)
+POST   /api/v1/otlp/v1/metrics               OpenTelemetry metrics, OTLP/HTTP JSON, from the developer's own agents (both switches on; LAI-773)
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only)
 POST   /api/v1/org/github-webhook            set or rotate the GitHub webhook secret; answers it once (session only)
 DELETE /api/v1/org/github-webhook            clear it (204; session only)
+GET    /api/v1/org/model-prices              PUT/DELETE .../model-prices/:model — API-equivalent prices (set: owner, admin; session only; LAI-773)
 GET    /api/v1/users                         ?limit=&cursor=&updated_since=&include_inactive=
                                              cursor is (name, id) — a directory reads alphabetically
 PATCH  /api/v1/users/:id                     (role, deactivate — admin+)
@@ -1682,6 +1940,7 @@ GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
 POST   /api/v1/projects/:slug/join           (public projects)
 GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
 GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
+GET    /api/v1/projects/:slug/budgets        PUT /api/v1/projects/:slug/budget  body { tokens | null }   (set: lead, session only; LAI-773)
 GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=
                                              status is a category (§4.5), status_id one project status (§4.20)
 GET    /api/v1/projects/:slug/statuses       POST .../statuses  body { name, category, position? } → 201  (lead+)
@@ -1694,6 +1953,7 @@ GET    /api/v1/sprints/:id                   PATCH /api/v1/sprints/:id   DELETE 
 POST   /api/v1/sprints/:id/tasks             body { task_ids[] }  — assign into the sprint
 DELETE /api/v1/sprints/:id/tasks/:taskId     remove from the sprint (task itself is untouched)
 GET    /api/v1/sprints/:id/forecast          "N% likely to finish X–Y of Z" (LAI-772; computed, cached)
+PUT    /api/v1/sprints/:id/budget            body { tokens | null } — the sprint's token budget   (lead, session only; LAI-773)
 GET    /api/v1/projects/:slug/tags           list with usage counts, for the picker and the filter
 PATCH  /api/v1/projects/:slug/tags/:name     rename project-wide (lead+)
 DELETE /api/v1/projects/:slug/tags/:name     remove from every task (lead+); tasks are untouched
@@ -1707,7 +1967,8 @@ POST   /api/v1/tasks/:id/finish              body { summary, checklist?, commits
                                              → review, with a round and its proof (finish_task's twin, D-082)
 GET    /api/v1/tasks/:id/rounds              { rounds (newest first), send_back }
 GET    /api/v1/tasks/:id/estimate            size, why, forecast frozen at start, actual, history (D-085)
-GET    /api/v1/tasks/:id/usage               ?tz= — its tokens: per person and agent, per round, attributed share (D-084, LAI-770)
+GET    /api/v1/tasks/:id/usage               ?tz= — its tokens: per person and agent, per round, attributed share (D-084, LAI-770); cost, budget, runaway (LAI-773)
+PUT    /api/v1/tasks/:id/budget              body { tokens | null } — null goes back to the frozen forecast's p80   (lead, session only; LAI-773)
 GET    /api/v1/projects/:slug/estimates/accuracy  per project, and per agent client with ≥ 3 people; never per person
 POST   /api/v1/tasks/:id/accept              → the first visible done status   (session only; the done rule, §5)
 POST   /api/v1/tasks/:id/send-back           body { reason } → the first visible in-progress status   (session only)
@@ -1923,6 +2184,22 @@ reaches SSE, an MCP tool or an export (§4.21).
   answers `200 { "accepted_days": n }`. **Never** prompt or reply text, tool
   input, paths, repository or branch names, or session ids: there is no field
   that could carry one.
+- **Sessions, by one-way key** (LAI-773, D-087) — so OpenTelemetry can be
+  matched to the files without either counting twice. A usage report's day
+  may carry `"sessions": [{ "key", "model", "input", "output", "cache_write",
+  "cache_read" }]` — the day's Claude Code rows split by session, subagents
+  under their parent, at most 100 — and the report may carry `"excluded":
+  ["<key>", …]`, at most 200: the sessions the collector left out of its rows,
+  automated (D-086) or outside the developer's `laika-repos` scope (D-079 item
+  4) — **sent only when Claude Code on that machine exports its metrics to
+  this board** (telemetry on, an OTLP metrics exporter, an endpoint under
+  `/api/v1/otlp/`, in `~/.claude/settings.json`'s `env` or the environment;
+  review): with none from there, there is nothing of theirs to drop. A key is
+  the first 16 hex of `sha256("laika-session:" + session id)`, lower case —
+  never the id. Each (person, collector, day) carried replaces
+  that machine's session rows (§4.38); a day sent without `sessions` leaves its
+  Claude Code file tokens *unplaced*, which keeps the match safe (§4.38). A key
+  in `excluded` drops that session's telemetry, before and after.
 - Refusals, in §6.3's envelope with the contract's reason in `details.reason`:
   `403 local_activity_off` when either switch is off (asked before the body is
   judged); `422 day_out_of_range` when `days` is empty, longer than 14, repeats
@@ -1963,6 +2240,12 @@ reaches SSE, an MCP tool or an export (§4.21).
   that session's id, from its start and end payloads, in a local file never
   sent, so the collector leaves its tokens out too (LAI-775, the owner's
   decision). Sessions from before activity was on cannot be told apart.
+  **Tokens arrive while a session runs** (LAI-776): Claude Code's `Stop` hook,
+  which fires at the end of every turn, launches the detached sync only when
+  `next_sync_at` has passed — fork-free otherwise under zsh, as the prompt path
+  is — so a running session's tokens reach the board within one sync interval
+  rather than at its end. `laika activity otel` prints the OpenTelemetry
+  settings above for this machine.
 - `GET /me/local-activity?days=` (1–14, default 14) answers what is held for
   the caller over their last days — `{ start, end, tz, days: [{ day,
   prompts_by_agent, sessions, commits_local, pushed_commits, tokens,
@@ -1985,8 +2268,9 @@ and the profile's Tokens card:
   project: { slug, name } | null, totals: { tokens, input, output,
   cache_write, cache_read, attributed_tokens }, trend: [{ day, tokens,
   cache_read }], by_developer: [{ user_id, name, tokens, cache_read,
-  attributed_tokens }] | null, by_agent: [{ agent, tokens, cache_read }],
-  by_model: [{ model, tokens, cache_read }], top_tasks: [{ task_id, key,
+  attributed_tokens }] | null, by_agent: [{ agent, tokens, cache_read,
+  few_people? }], by_model: [{ model, tokens, cache_read, few_people? }],
+  top_tasks: [{ task_id, key,
   title, project_slug, tokens, cache_read }], no_token_data: [agent],
   org_totals, rework }`. `rework` (LAI-772) is, per project the reader may
   read and in name order, `{ project: { slug, name }, send_backs, tasks,
@@ -2002,8 +2286,18 @@ and the profile's Tokens card:
   included. **`by_developer` is `null` unless the reader holds
   `usage.read_people`** — an owner or admin on a web session — so a member and
   every token get totals only (D-084 item 7); when present it is in name
-  order, never ranked by volume. `top_tasks` are the ten that cost most, only
-  tasks the reader may read. `no_token_data` names the agents people here
+  order, never ranked by volume. **An agent or model fewer than three people
+  used is folded for a reader without `usage.read_people`** (D-087 item 7):
+  in `by_agent` and `by_model`, every agent and every model used by fewer than
+  three distinct people within the response's scope — the organisation, or the
+  space, over the range — is summed, tokens, cache reads and cost alike, into
+  one last row, `agent` (or `model`) `other`, with `few_people`, the number it
+  holds; the client labels it *Other (fewer than 3 people)*. So no row, and no
+  total less the listed rows, is one person's agent or model. A member and
+  every token, an owner's included, get the fold; owners and admins on a web
+  session get every row. `few_people` is absent on every other row.
+  `top_tasks` are the ten that cost most, only tasks the reader may read.
+  `no_token_data` names the agents people here
   connect (§9.3's `last_client` on a live token) that keep no token count the
   collector reads — Copilot CLI, Cursor and Windsurf among them; Omnigent and
   Hermes run one of the others and are not listed.
@@ -2021,6 +2315,163 @@ and the profile's Tokens card:
   report's upsert 2–3 ms.
 - Every figure is a floor — the session files miss an agent's background
   calls (D-084 item 9) — and the client says *at least*.
+
+**The OpenTelemetry fallback (LAI-773, D-084 item 9, D-087).** `POST
+/otlp/v1/metrics` takes Claude Code's own metrics as **OTLP/HTTP JSON**
+(`OTEL_EXPORTER_OTLP_PROTOCOL=http/json`) — a protobuf body is refused `422
+protobuf_not_supported`, because Laika carries no protobuf decoder — with the
+developer's own Laika token as the bearer header. Who is sending and both of
+D-084's switches are asked in a middleware **before the body limit and before
+any byte of the body is read**: signed out is `401`, a switch off `403
+local_activity_off`, whatever the size of the body (review). A `read_only`
+token is refused as for any report. Of the body only two metrics are read:
+`claude_code.token.usage` (attribute `type`: `input`, `output`, `cacheRead`,
+`cacheCreation`; `model`; `session.id`) and `claude_code.cost.usage` (USD);
+every other metric and attribute — `user.email`, `organization.id`, the
+account ids, the terminal — is read past and never stored, and `session.id`
+is kept only as its one-way key (§4.38). A point without `session.id` cannot be
+matched, so it is refused rather than risk counting twice. **A point is taken
+only for the days a usage report may carry**: its interval must start no later
+than it ends, and end within *today − 31* to *today + 1* in the zone the
+person's usage reports state (§4.44). Any other — a timestamp past the last
+instant a date can hold included — is refused in `partialSuccess` as
+`day_out_of_range`, before it is stored or can move a series, so a far-future
+point cannot block the delta points after it. Each point's day is the day its
+interval ended in that zone. Both temporalities are taken without double
+counting (§4.39). It answers OTLP's own response,
+`200 {}`, or `{ "partialSuccess": { "rejectedDataPoints": n, "errorMessage" }
+}`; body limit 256 KiB; its own rate bucket (§6.3). **It is not presence**
+(D-081 excludes this path): an open session exports all day, idle or not.
+**`/otlp/v1/logs` and `/otlp/v1/traces` answer `404` without reading the
+body** — they are the exporters that can carry prompt text — and Laika makes
+no call out (§13.4). Telemetry fills only the gap the files leave (§4.38), as
+Claude Code's, unattributed: it has no task signal. Verified against
+code.claude.com/docs/en/monitoring-usage on 2026-10-18 — the variable names,
+`http/json`, the two metrics and their attributes, `session.id` on by default
+(`OTEL_METRICS_INCLUDE_SESSION_ID`), and the temporality default `delta` with
+`cumulative` allowed. **Not confirmed there**: whether `session.id` arrives
+on the data point or the resource, so both are read. The settings Connect and
+`laika activity otel` print:
+
+```sh
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export OTEL_METRICS_EXPORTER=otlp
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/json
+export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="$LAIKA_URL/api/v1/otlp/v1/metrics"
+export OTEL_EXPORTER_OTLP_METRICS_HEADERS="Authorization=Bearer $LAIKA_TOKEN"
+export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
+export OTEL_LOGS_EXPORTER=none
+```
+
+**API-equivalent cost (D-084 item 10, LAI-773)** — what the tokens would cost
+at list price on the vendor's API, priced per model by §4.35, **labelled
+*API-equivalent, not your bill* wherever it is shown**. Every cost is `{ usd,
+unpriced_tokens, unpriced_models, unconfirmed_models }`: dollars over the priced
+models, the headline tokens of models with no price beside them (never priced
+at zero), and the priced models whose price was inferred. `GET /usage` adds
+`totals.cost`, `org_totals.cost`, `by_model[].cost` (a number, or `null` with no
+price), `by_developer[].cost` (only where `by_developer` is served — owners and
+admins on a session), and:
+
+- `telemetry` — `{ tokens, cost_usd_reported }`: what OpenTelemetry added over
+  the files in the range, and Claude Code's own cost figure for the
+  telemetered sessions for a reader of the organisation's figures; `null` for
+  a space, which telemetry cannot reach (it ties to no task).
+- `cache` — `{ share, saving_usd }`: of every input-side token (input, cache
+  writes, cache reads) the share read from the cache, and what those reads
+  saved against fresh input at list price; `cache_by_project` the same per
+  project the reader may read, in name order, `{ project, cache_read,
+  input_side, share, saving_usd }`.
+- `accepted` — `{ by_project: [{ project, tasks, tokens, cost, cost_per_task
+  }], by_agent: [{ agent, tasks, people, tokens, cost, cost_per_task,
+  few_people? }], agents_withheld }`: the tasks accepted in the range (§4.27)
+  and everything tied to them, build and rework, priced — the cost of one
+  accepted task per project and per agent. **For a reader without
+  `usage.read_people`, an agent fewer than three people spent tokens on those
+  tasks with is folded** (D-087 item 7, D-085 item 8's rule: with fewer, an
+  agent's figure is a person's) into one last `by_agent` row, `agent:
+  "other"`, with `few_people` — the agents it holds — its tasks and people
+  counted once each, and its tokens and cost summed; `agents_withheld` is how
+  many were folded. Folded, not dropped,
+  so the card's total less the listed agents is no one person's spend. Owners
+  and admins on a web session see every agent, and `agents_withheld` is 0.
+  Never per person.
+- `budgets` — each space's and sprint's budget in scope (§4.36), then the open
+  tasks at 80% of theirs or more, fullest first, at most 20, as below.
+- `runaway` — `[{ project, alerts }]` for a reader holding `usage.read_org`, and
+  `null` for anyone else: runaway alerts per project, **counted once a day
+  old**, so the assignee hears first — a count, never which task or whose, in
+  project name order, never ranked.
+
+`GET /users/:id/usage` adds `totals.cost` and `by_model[].cost`. `GET
+/tasks/:id/usage` adds `totals.cost`, `by_person[].cost`, `budget` (below, or
+`null`) and `runaway` — the open runaway alert on the task, `{ alert_id,
+tokens, p95, since, last_progress_at }`, **only for the person it is
+addressed to, on a web session**, else `null`.
+
+**Budgets (LAI-773, §4.36).** A budget is `{ scope, id, project, label, title,
+source, tokens, period, used, share, state, crossed }`: `source` is `set` by a
+lead or, for a task, `forecast` — the p80 frozen at its claim; `period` the
+days counted (`null` for a task, all its tokens); `state` `under`, `warn` (80%
+or more) or `over` (100% or more); `crossed` the alerts raised under the budget
+in force, `[{ threshold, at }]`. `GET /projects/:slug/budgets` answers `{
+project_budget, sprints, tasks, can_set }` under `usage.read_project` — the
+open tasks with a budget and any task a lead set one on — and the three `PUT`s
+take `{ tokens }`, a whole number 1–10¹², or `null`, under §3.2's
+`budget.set` (a lead, **session only**: an agent's token never moves its own
+budget), answering `{ budget }`. **Soft**: nothing anywhere is refused for a
+budget. After every usage report, and after a budget is set, each task the
+report named — and its sprint and project — is checked, and an alert raised
+once at 80% and once at 100% (§4.37).
+
+**The runaway-agent alert (LAI-773).** After every usage report, each task it
+named is checked: **in progress, with an assignee, on its first build** (no
+finished round — the forecast is for the build), whose tokens pass the **p95**
+of the forecast frozen at its claim, `p50 · (p80/p50)^(z95/z80)` — the frozen
+range read as the log-normal it is calibrated as — **while nothing has landed
+for an hour**: no claim, no push GitHub reported for the task (`webhook.commit`,
+D-083), no commit key from the assignee's machine (§4.24), and no session
+**arriving** on it — the first heartbeat after five minutes' silence. **A
+heartbeat is presence, not progress**: it carries a repo and a branch (D-005),
+and an agent looping through tool calls heartbeats as steadily as one doing
+good work. The hour is measured, not chosen: on this repository's history, 581
+gaps between consecutive commits of one task within a sitting are p90 31 and
+p95 47 minutes, and sixty is six sync intervals, so one late sync never
+raises it. One alert per stall, **addressed to the assignee alone**.
+
+**A person's alerts.** `GET /me/token-alerts` answers `{ alerts: [{ id, kind,
+scope, threshold, tokens, limit_tokens, created_at, project, task, sprint }] }`
+— the caller's own, newest first, at most 50: runaway alerts addressed to them
+on work they still hold that nothing has moved on since; budget alerts on open
+tasks they hold; and, where they may set budgets, their projects' sprint and
+this month's project budget alerts — each only under the budget still in
+force. `POST /me/token-alerts/:id/dismiss` puts one away for the caller only
+(`204`; `404` for one they are not shown). Both **session only**
+(`token_alerts.own`).
+
+**The plan-limit forecast (D-087).** `GET /me/plan-limit` answers `{ plan,
+window, limit_tokens, week_reset, tz, used, rate_per_hour, window_start,
+window_end, reaches_limit_at, reached, estimate: true }` — **the developer's
+own and nobody else's**: `plan_limit.own` is session only, no endpoint reads
+another person's, and no token reads it, the person's own included. `PUT` takes
+`{ plan, window, limit_tokens, tz, week_reset? }` — `plan` a label (§4.41),
+`window` `5h` (rolling), `day` or `week`, `week_reset` `{ weekday, minute }`
+exactly for a week — and `DELETE` clears it. `used` is the headline tokens
+that reached the board in the window (§4.42), `rate_per_hour` the last hour's,
+and `reaches_limit_at` when `used` reaches the limit at that rate — `null` with
+no rate, once reached, or past the window's reset. **No plan carries a token
+figure**: Anthropic states its plans' limits as a session that resets every
+five hours and a weekly limit at a fixed time (support.claude.com, *What is
+the Max plan?*), not in tokens, so the number is always the developer's.
+
+**API-equivalent prices.** `GET /org/model-prices` answers `{ as_of, can_set,
+entries }` under `org.read` — every price in force, the organisation's first:
+each entry §4.35's prices with `source` (a page, or `org`), `as_of`,
+`confirmed`, `note`, `overridden`, and `table` (the code's row beneath an
+override, or `null`). `PUT /org/model-prices/:model` takes `{ input, output,
+cache_write, cache_read }`, USD per million, 0–10,000 each, and `DELETE` goes
+back to the table; both `org.model_prices.set` (owners and admins, session
+only), answering the same shape.
 
 **A task's read shape is §4.5's columns** — `branch` and `external_ref`
 included, which `TaskView` omitted until LAI-493 (LAI-286) — and `TaskView`
@@ -2864,17 +3315,17 @@ call MCP; agents do.
 | **Login & invite** | 1–2 | `POST /auth/*`, `GET /invites/:token`, `POST /invites/accept`, `GET /me` | — | ✅ |
 | **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `POST /projects/:slug/join`, `GET/POST/PATCH/DELETE /projects/:slug/members` | `get_project_context` | ✅ |
 | **Board** | 2 | `GET/POST /projects/:slug/tasks`, `PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `GET /projects/:slug/members`, `GET /events`, `GET /watching` | `create_task`, `start_working`, `update_status`, `finish_task` | ✅ |
-| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
+| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage` (with cost, budget and runaway, LAI-773), `GET /projects/:slug/budgets`, `PUT /tasks/:id/budget`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=`, `GET /sprints/:id/forecast` (each sprint not completed, LAI-772) | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **Tokens** | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
-| **Organisation** | 1 basic / 6 LLM | `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
-| **Connect** *(not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` | — | ✅ D-079, D-084 |
+| **Organisation** | 1 basic / 6 LLM | `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
+| **Connect** *(not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` | — | ✅ D-079, D-084, D-087 |
 | **Capacity** *(sidebar, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects`, `GET /tasks/:id` (only a matched task and an opened *Show tasks*), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(sidebar, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
 | **Unlisted work** *(sidebar, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
 | **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage` | — | ✅ D-078, D-079, D-084 |
-| **Usage** *(sidebar, global; not in the prototype)* | 7 | `GET /usage` (with `rework` per project, LAI-772), `GET /projects`, `GET /users/:id/usage` (the reader's own) | — | ✅ D-084 |
+| **Usage** *(sidebar, global; not in the prototype)* | 7 | `GET /usage` (with `rework` per project, LAI-772; cost, cache, accepted, budgets, runaway, LAI-773), `GET /projects`, `GET /users/:id/usage` (the reader's own), `GET /projects/:slug/budgets`, `PUT /projects/:slug/budget`, `PUT /sprints/:id/budget`, `GET /me/token-alerts`, `POST /me/token-alerts/:id/dismiss`, `GET/PUT/DELETE /me/plan-limit` | — | ✅ D-084, D-087 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
 | **Laika Assistant** | 6 | *undefined — three questions first (§14, q9)* | — | ⏸ scheduled, unspecified |
@@ -2944,7 +3395,14 @@ anything missing sends the task back.
   part for anyone else, nothing per person on a token; and the attributed
   share — how much of those people's work on those days Laika could tie to a
   task — or, for a reader who sees nobody's part, what the figure counts.
-  Not drawn for a task never started that has none.
+  Not drawn for a task never started that has none. LAI-773 adds its **cost**,
+  *API-equivalent, not your bill*, with what was unpriced or inferred; its
+  **budget** as a bar with an 80% or 100% badge, saying whether a lead set it
+  or it is the forecast's p80 frozen at claim, and — for a reader who may set
+  budgets (`can_set` from `GET /projects/:slug/budgets`) — a field to set it
+  and *Back to the forecast*; and, **only for the person it is addressed to**,
+  the runaway banner: *your agent has spent N on this task, past its p95 of M,
+  and nothing has landed for T*.
   **A watch toggle and who else is watching** (D-047, D-054), and an
   **`@` autocomplete in the comment box fed by `GET /projects/:slug/mentionable`
   — never by the member list**, because who may be mentioned is the server's
@@ -2968,7 +3426,14 @@ anything missing sends the task back.
   (LAI-753): whether a secret is set, *Set secret* / *Rotate secret* / *Clear*,
   the new secret shown once with a Copy button, the payload URL with its own
   Copy, the content type, the events to tick, and one line saying GitHub does
-  not retry a failed delivery.
+  not retry a failed delivery. A **Model prices** section (LAI-773) for
+  everyone who opens the page: each model's input, output, cache-write and
+  cache-read price per million tokens, where it came from — *from the price
+  page* with its link and date, *inferred* with why, or *the organisation's
+  own* with the day it was set — under one line saying every cost is
+  API-equivalent, not a bill, and that Laika never fetches a price. Owners and
+  admins (`can_set`) edit a row, remove an override, or price a model the
+  table does not have.
 - **Connect** — the four-step wizard, and under *Optional* a **Share local
   activity** item for the signed-in developer (D-079): what is sent — token
   counts per agent and model among it (D-084 item 4) — and what is never sent,
@@ -2977,7 +3442,10 @@ anything missing sends the task back.
   the server holds for them over the last 14 days, their tokens per day
   among it, and *Delete my
   local-activity history* with a confirmation. With the organisation's switch
-  off it says so and offers nothing to turn on.
+  off it says so and offers nothing to turn on. Beside it, **OpenTelemetry
+  (optional)** (LAI-773): the exact variables of §6.4 with this board's URL
+  filled in and `$LAIKA_TOKEN` left as a reference, a Copy button, and one
+  line saying it is metrics only and fills in what the session files miss.
 - **Capacity** (`/capacity`, one page across every space, LAI-754; redesigned
   by LAI-767) — **tiles** that count and filter: *Online now*, *Agents
   running* (sessions), *In progress* (sorts heaviest first), *Waiting for
@@ -3054,7 +3522,24 @@ anything missing sends the task back.
   read 0%) but *Outside any space* — the organisation's unattributed share for
   an owner or admin, with *Show all spaces*, and for a member a sentence saying
   whose figure that is — and a space nothing is tied to yet says so in words
-  rather than drawing zeros. Light and
+  rather than drawing zeros. LAI-773 adds: a **For you** banner of the
+  reader's own alerts (`GET /me/token-alerts`) — a runaway first, then budgets
+  at 100% and 80% — each with *Dismiss*, and one line saying they are soft and
+  a runaway alert is the reader's alone; **tiles** *Cost* (API-equivalent, not
+  your bill, with what went unpriced or was inferred) and *From cache* (the
+  cache-read share and the estimated saving); a line for what Claude Code's
+  telemetry added; cost on each model (*no price* rather than $0) and, where
+  *By developer* is drawn, beside each name; **Cost per accepted task** by space
+  and by agent, saying how many agents were left out for having fewer than
+  three people; **Cache efficiency** per space; **Budgets** — each space's month
+  and each sprint's, then tasks at 80% or more, with badges, and for a lead or
+  admin a field to set a space's or sprint's budget; **Runaway-agent alerts**
+  for owners and admins, a count per space and nothing else; and **Your plan
+  limit**, the reader's own: plan, window (five hours rolling, a day, or a
+  week with its reset), their own limit in tokens, and *at this rate you reach
+  your limit around HH:MM*, marked an estimate, with the line that no plan
+  publishes a token figure. **The sidebar's Usage item carries a count** of the
+  reader's open alerts, none at zero. Light and
   dark; one column on a phone with nothing scrolling sideways.
 - **Member profile** (`/people?user=<id>`, D-078) — owners and admins only:
   anyone else sees a permission notice and the profile is never requested.
@@ -3215,7 +3700,11 @@ One interval-driven scheduler in the same process:
   400 days ago (D-079), daily **and
   once at boot**, because every deploy restarts the server (D-073) and a daily
   interval may not come round. It writes no `activity` row: §4.8 has no verb
-  for it, as it has none for the snapshot or the vacuum
+  for it, as it has none for the snapshot or the vacuum. With it, by the same
+  job (LAI-773): `token_session_days` dated before 40 days ago — the
+  telemetry match is settled once the collector's 31-day window has passed it
+  — telemetry series not touched for three days, excluded session keys older
+  than 45 days, and arrival buckets older than eight days
 - **stale-task flagging** — `in_progress` with no heartbeat or commit for 3 days
   sets `stale_flagged_at`
 - invite expiry, meeting-review expiry (7 days)
@@ -3323,6 +3812,14 @@ the organisation's *Developer insights* and their own *Share local activity*
 are both on — and nothing leaves the deployment. Never prompt text, file
 names, repository names or paths, remote URLs, branch names, commit messages,
 author emails or raw commit ids. No call to GitHub is added.
+
+**OpenTelemetry is inbound too, and metrics only** (LAI-773, D-087). A
+developer may point their own Claude Code's metrics at their own board, with
+their own token, under the same two switches; Laika keeps two metrics' counts
+and a one-way key of the session, drops every other attribute, and has no
+route for logs or traces. **Prices are a dated table in the code**, edited by
+an admin; nothing fetches one. The plan-limit forecast is computed from what
+the board already holds and shown to the developer alone.
 
 ---
 

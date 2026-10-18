@@ -18,6 +18,7 @@ import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { useOrganisation } from './use-organisation.ts';
 import { GithubWebhookSection } from './GithubWebhookSection.tsx';
+import { ModelPricesSection } from './ModelPricesSection.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import type { OrgRole } from '../../../api/invites.ts';
 import './organisation.css';
@@ -330,6 +331,10 @@ export function OrganisationScreen({ me }: OrganisationScreenProps) {
           }}
         />
       )}
+
+      {/* LAI-773: the prices every cost on Usage is computed with — read by
+          anyone who may view the organisation, set by an owner or admin. */}
+      <ModelPricesSection />
 
       <section className="org-card" aria-labelledby="org-people">
         <header className="org-card-head">

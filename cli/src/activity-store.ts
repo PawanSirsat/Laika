@@ -31,7 +31,8 @@ import { writePrivately } from './connect.ts';
  * | `sent-keys` | `<key> <identity> <author epoch>` — keys the board accepted | sync |
  * | `last-error` | the last thing that went wrong, one line | sync |
  * | `usage-index.json` | token usage: what was read where, and what the board holds (LAI-769) | sync |
- * | `usage-data.json` | token usage: per reply, its counts, model, time and directory; each Laika mark's task key (LAI-769, LAI-770) | sync |
+ * | `usage-data.json` | token usage: where each file was read to, each Laika mark's task key, Codex's and Gemini CLI's records, each day's counts as last made (LAI-769, LAI-770, LAI-776) | sync |
+ * | `usage-days/<day>.json` | token usage: Claude Code's replies of that local day — counts, model, time, directory and session, by message id (LAI-776) | sync |
  * | `sessions` | `<epoch> <session id> <branch>` — a counted session's start (LAI-770) | session-start hook |
  * | `skip-sessions` | `<epoch> <session id>` — sessions nobody was typing in (LAI-775) | the hooks |
  *
@@ -224,13 +225,14 @@ export function rotate(paths: ActivityPaths): void {
     // the last 30 days — a new collector counts from its own start.
     join(paths.dir, 'usage-index.json'),
     join(paths.dir, 'usage-data.json'),
+    join(paths.dir, 'usage-days'),
     // A counted session's id and branch (LAI-770): kept under the consent
     // that is ending. `skip-sessions` stays — it names sessions that were
     // never the developer's, whichever collector reads them.
     join(paths.dir, 'sessions'),
     join(paths.dir, 'sessions.compacting'),
   ]) {
-    rmSync(path, { force: true });
+    rmSync(path, { recursive: true, force: true });
   }
 }
 

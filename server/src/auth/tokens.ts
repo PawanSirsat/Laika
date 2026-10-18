@@ -367,6 +367,10 @@ export function recordMcpUse(
  */
 export function restWriteCountsAsPresence(method: string, path: string): boolean {
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return false;
+  // **Telemetry is not somebody working** (LAI-773): an exporter posts every
+  // minute for as long as a session is open, idle or not, so counting it
+  // would keep a person "online" all day with nobody at the keyboard.
+  if (path.startsWith('/api/v1/otlp/')) return false;
   return path.startsWith('/api/');
 }
 

@@ -103,6 +103,12 @@ const STATUSES_PATH = /^\/api\/v1\/projects\/[^/]+\/statuses$/;
  */
 const ROUNDS_PATH = /^\/api\/v1\/tasks\/[^/]+\/rounds$/;
 const REVIEW_PATH = '/api/v1/review';
+/**
+ * A person's token alerts (LAI-773): the shell reads them for the Usage
+ * badge on every page. Somebody with none has an empty list; a test about
+ * alerts names its own.
+ */
+const TOKEN_ALERTS_PATH = '/api/v1/me/token-alerts';
 
 /**
  * A fixture task as the server sends it since LAI-738: in its kind's default
@@ -367,14 +373,16 @@ function serve(
         if (
           chosen === undefined &&
           req.method === 'GET' &&
-          (ROUNDS_PATH.test(path) || path === REVIEW_PATH)
+          (ROUNDS_PATH.test(path) || path === REVIEW_PATH || path === TOKEN_ALERTS_PATH)
         ) {
           res.writeHead(200, { 'content-type': 'application/json' });
           res.end(
             JSON.stringify(
               path === REVIEW_PATH
                 ? { tasks: [], truncated: false }
-                : { rounds: [], send_back: null },
+                : path === TOKEN_ALERTS_PATH
+                  ? { alerts: [] }
+                  : { rounds: [], send_back: null },
             ),
           );
           return;

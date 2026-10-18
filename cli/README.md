@@ -75,6 +75,7 @@ laika activity emails a@b c@d     # extra author emails that count as yours (--c
 laika activity backfill           # 30 days of token totals and a year of your pushed commits, once: shows, asks, sends
 laika activity backfill --days 90 --yes ~/src/other-repo   # a shorter window, no question, one more repo
 laika activity off                # remove the hooks and delete ~/.laika/activity
+laika activity otel               # the variables that send Claude Code's own token counts too (LAI-773)
 ```
 
 **What is sent** (`PUT /api/v1/me/local-activity`), per local day for the last
@@ -92,7 +93,7 @@ or source:
 
 | Agent | Where | Events |
 | --- | --- | --- |
-| Claude Code | `~/.claude/settings.json` (merged) | `UserPromptSubmit`, `SessionStart` (`startup\|clear`), `SessionEnd` |
+| Claude Code | `~/.claude/settings.json` (merged) | `UserPromptSubmit`, `SessionStart` (`startup\|clear`), `SessionEnd`, `Stop` |
 | Codex CLI | `~/.codex/hooks.json` (merged) | `UserPromptSubmit`, `SessionStart` (`startup`), `SessionEnd` |
 | Gemini CLI | `~/.gemini/settings.json` (merged) | `BeforeAgent`, `SessionStart`, `SessionEnd` |
 | Copilot CLI | `~/.copilot/hooks/laika-activity.json` (or `$COPILOT_HOME`) | `userPromptSubmitted`, `sessionStart`, `sessionEnd` |
@@ -197,8 +198,20 @@ no token counts on the machine, so they have none to send.
 - **Cheap.** Files are read from where the last sync stopped, to the last
   complete line; a directory is listed again only when its mtime moved. With
   nothing new, the step costs a few `stat`s — measured 17–19 ms in a fresh
-  process over 785 transcripts. The first read of a busy machine takes
-  seconds (2.1 GB in 3.2 s), in the background sync, never in a hook.
+  process over 785 transcripts. Claude Code's replies are kept one file per
+  local day (`~/.laika/activity/usage-days/`, LAI-776), so new bytes in one
+  transcript cost that transcript's new bytes, the data file and the one day
+  they are on — measured 29–38 ms over 779 transcripts and 47,071 replies,
+  where reading and rewriting every day took 100–111 ms. The first read of a
+  busy machine takes seconds (2.1 GB in 4.2 s), in the background sync, never
+  in a hook.
+- **Within one sync interval** (LAI-776). Claude Code's `Stop` hook — the end of
+  every turn — starts the background sync once one is due, so a session that
+  runs for hours sends its tokens as it goes, not when it ends. A turn that is
+  not due costs what a prompt costs: under zsh, no process at all. The other
+  agents sync on their sessions' start and end. A machine where activity was
+  turned on before this hook existed gets it by running `laika activity on`
+  again, which adds what is missing and leaves the rest as it is.
 - **Totals replace.** Only days whose totals changed since the board last took
   them are sent, each whole; the board replaces that machine's day, so a retry
   never counts twice.
@@ -225,9 +238,30 @@ no token counts on the machine, so they have none to send.
 - **Codex per-response records** (`token_usage_record`), when a rollout has
   them, are what counts — each response once across every rollout, so a fork
   that copies its parent's history is not counted twice.
-- What was read is kept in `~/.laika/activity/usage-index.json` and
-  `usage-data.json` (0600, never sent); *Delete my local-activity history* in
-  the web app deletes the board's token rows too.
+- **Sessions, by a one-way key** (LAI-773). Each day also carries its Claude
+  Code tokens split per session and model, the session named only by the
+  first 16 hex characters of `sha256("laika-session:" + session id)` — never
+  the id — and, once Claude Code here sends its metrics to the board
+  (`laika activity otel`), every report names the same way the sessions whose
+  tokens are left out (`excluded`): automated ones, and under `laika-repos`
+  the ones outside your scope. Without that, they are not named at all, since
+  the board has nothing of theirs to drop. The board uses them only to put
+  Claude Code's own OpenTelemetry counts beside its session files: it
+  adds what the files missed — background calls — never what they already
+  hold, and drops the telemetry of every session left out here.
+- What was read is kept in `~/.laika/activity/usage-index.json`,
+  `usage-data.json` and `usage-days/` (0600, never sent); *Delete my
+  local-activity history* in the web app deletes the board's token rows too.
+
+**OpenTelemetry, optional** (LAI-773). Session files miss the calls an agent
+makes outside the conversation — titles, classifiers, compaction: about 20–30%
+for Claude Code on the measured machine. `laika activity otel` prints the
+variables that make Claude Code send its own counts to this board as OTLP/HTTP
+JSON metrics (`claude_code.token.usage`, `claude_code.cost.usage`), the board's
+address filled in and `$LAIKA_TOKEN` left as a reference — the token is never
+printed. Only the exports go to stdout, so `eval "$(laika activity otel)"`
+works. Logs are switched off, and the board refuses them: they can carry
+prompts. The board takes the metrics only under the same two switches.
 
 **Sessions nobody is typing in count nothing.** The hook counts nothing — no
 event, no repo, no sync — when `OMNIGENT=1` (Omnigent sets it in every process
@@ -243,8 +277,8 @@ board nor to the recorded one — and wipes nothing; `status` says why. Running
 sent to another.
 
 **How often.** Never more often than the board's `min_sync_interval_s`. The
-session-start and session-end hooks start the sync in the background when it is
-due, and the sync claims the next slot the moment it starts, so a sync that
+session-start and session-end hooks — and Claude Code's end of each turn, while
+collection is on — start the sync in the background when it is due, and the sync claims the next slot the moment it starts, so a sync that
 hangs still holds the next one off. Every sync first asks the board whether
 sharing is on and which scope applies, so turning it off or narrowing it to
 `laika-repos` in the web app takes effect on the very next sync, and `status`

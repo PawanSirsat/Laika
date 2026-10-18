@@ -11,6 +11,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs, {
   appendFileSync,
   mkdirSync,
@@ -30,6 +31,7 @@ import { activityPaths, type ActivityState } from '../src/activity-store.ts';
 import { startCollecting, sync, type SyncContext } from '../src/activity-sync.ts';
 import {
   readUsage,
+  sessionKey,
   setUsageBackfill,
   usageReports,
   usageRoots,
@@ -204,10 +206,13 @@ async function diskWork(fn: () => Promise<void>): Promise<{
   stats: Map<string, number>;
   listed: string[];
   opened: Map<string, number>;
+  /** Files written whole — every write here is a temp file renamed into place (LAI-776). */
+  written: string[];
 }> {
   const stats = new Map<string, number>();
   const listed: string[] = [];
   const opened = new Map<string, number>();
+  const written: string[] = [];
   const statted = (path: unknown) => stats.set(String(path), (stats.get(String(path)) ?? 0) + 1);
   const read = (path: unknown, bytes: number) =>
     opened.set(String(path), (opened.get(String(path)) ?? 0) + bytes);
@@ -234,6 +239,10 @@ async function diskWork(fn: () => Promise<void>): Promise<{
       return real(path, ...rest);
     });
   }
+  patch(fs, 'renameSync', (real) => (from, to, ...rest) => {
+    written.push(String(to));
+    return real(from, to, ...rest);
+  });
   patch(fs, 'readdirSync', (real) => (path, ...rest) => {
     listed.push(String(path));
     return real(path, ...rest);
@@ -283,7 +292,7 @@ async function diskWork(fn: () => Promise<void>): Promise<{
     for (const undo of restore) undo();
     syncBuiltinESMExports();
   }
-  return { stats, listed, opened };
+  return { stats, listed, opened, written };
 }
 
 async function read(root: string, options: { nowS?: number; sinceS?: number } = {}) {
@@ -994,6 +1003,17 @@ void describe('through `laika activity sync`', () => {
             cache_read: 90_000,
           },
         ],
+        // The same tokens by session (design.md §2, LAI-773): a one-way key, never the id.
+        sessions: [
+          {
+            key: sessionKey(SECRET.session),
+            model: 'claude-opus-5-5',
+            input: 3,
+            output: 400,
+            cache_write: 1_500,
+            cache_read: 90_000,
+          },
+        ],
       },
     ]);
   });
@@ -1028,10 +1048,23 @@ void describe('through `laika activity sync`', () => {
     ]) {
       assert.ok(!sent.includes(secret), `sent: ${secret}`);
     }
-    // And structurally: a usage report has these keys and no others.
+    // And structurally: a usage report has these keys and no others — a day
+    // with Claude Code tokens its sessions too, each a key, a model and counts.
     for (const report of w.usagePuts()) {
-      for (const day of report.days) {
-        assert.deepEqual(Object.keys(day).sort(), ['day', 'rows']);
+      assert.deepEqual(Object.keys(report).sort(), ['collector_id', 'days', 'tz', 'usage', 'v']);
+      for (const day of report.days as { day: string; rows: UsageRow[]; sessions?: unknown[] }[]) {
+        assert.deepEqual(Object.keys(day).sort(), ['day', 'rows', 'sessions']);
+        for (const split of day.sessions ?? []) {
+          assert.deepEqual(Object.keys(split as object).sort(), [
+            'cache_read',
+            'cache_write',
+            'input',
+            'key',
+            'model',
+            'output',
+          ]);
+          assert.match((split as { key: string }).key, /^[0-9a-f]{16}$/);
+        }
         for (const row of day.rows) {
           assert.deepEqual(Object.keys(row).sort(), [
             'agent',
@@ -1317,5 +1350,614 @@ void describe('the developer’s scope (D-079 item 4)', () => {
       nowS: NOW_S,
     });
     assert.equal(totals(narrowed.days).output, 5);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* LAI-776: a day at a time                                                   */
+/* -------------------------------------------------------------------------- */
+
+void describe('a sync with new bytes in one transcript (LAI-776)', () => {
+  const COLLECTOR = '6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a';
+
+  /**
+   * As on the measured machine, scaled: each transcript a session's (four
+   * files to a session, as a main thread and its subagents), each on one day
+   * of the window, `perFile` replies an hour or less apart. File `f` is on
+   * day `f % days` back, so every day has files of its own and none can be
+   * counted without its records.
+   */
+  function world(files: number, days: number, perFile = 1) {
+    const root = home();
+    const paths: string[] = [];
+    const sessions = Math.max(1, Math.ceil(files / 4));
+    for (let f = 0; f < files; f += 1) {
+      const lines: string[] = [];
+      const d = f % days;
+      for (let k = 0; k < perFile; k += 1) {
+        lines.push(
+          claudeLine(
+            `msg_w${String(f)}_${String(k)}`,
+            NOW_S - d * DAY - 1800 - k * 30,
+            { input: 1, output: 10 + d, cw: 100, cr: 1_000 },
+            { session: `00000000-0000-4000-8000-${String(f % sessions).padStart(12, '0')}` },
+          ),
+        );
+      }
+      paths.push(writeClaude(root, `-proj-${String(f % 40)}/s${String(f)}.jsonl`, lines));
+    }
+    const activity = activityPaths(root);
+    mkdirSync(activity.dir, { recursive: true, mode: 0o700 });
+    const bodies: string[] = [];
+    const step = () =>
+      usageStep({
+        paths: activity,
+        roots: usageRoots(root, {}),
+        state: state(NOW_S - 40 * DAY),
+        collectorId: COLLECTOR,
+        tz: TZ,
+        nowS: NOW_S,
+        heldElsewhere: [],
+        send: (body) => {
+          bodies.push(body);
+          return Promise.resolve({ ok: true as const });
+        },
+      });
+    /** Every day sent, however many reports that takes: four a run (`USAGE_REPORTS_PER_RUN`). */
+    const settle = async () => {
+      for (;;) {
+        const outcome = await step();
+        if (outcome.kind !== 'sent' || outcome.pending === 0) return outcome;
+      }
+    };
+    return { root, paths, activity, bodies, step, settle };
+  }
+
+  void test('opens that transcript’s new bytes, the index, the data file and its one day — no other day’s replies — and writes only those', async () => {
+    const w = world(60, 20);
+    assert.equal((await w.settle()).kind, 'sent');
+    const daysDir = join(w.activity.dir, 'usage-days');
+    assert.equal(
+      fs.readdirSync(daysDir).length,
+      20,
+      'the replies are not kept a day at a time — this test proves nothing',
+    );
+    const line = `${claudeLine('msg_new', NOW_S - 60, { input: 2, output: 5, cw: 0, cr: 0 })}\n`;
+    // A transcript of today's.
+    const target = w.paths[20] ?? '';
+    appendFileSync(target, line);
+
+    const disk = await diskWork(async () => {
+      assert.equal((await w.step()).kind, 'sent');
+    });
+    const transcripts = new Set(w.paths);
+    const read = [...disk.opened].filter(([path]) => transcripts.has(path));
+    assert.deepEqual(
+      read,
+      [[target, Buffer.byteLength(line)]],
+      'only the new bytes of one transcript',
+    );
+    // A write opens its temp file (`wx`): that is not reading.
+    const own = [...disk.opened.keys()]
+      .filter((path) => !transcripts.has(path) && !path.endsWith('.tmp'))
+      .map((path) => path.slice(w.activity.dir.length + 1))
+      .sort();
+    assert.deepEqual(own, ['usage-data.json', `usage-days/${TODAY}.json`, 'usage-index.json']);
+    const wrote = [...new Set(disk.written.map((path) => path.slice(w.activity.dir.length + 1)))];
+    assert.deepEqual(wrote.sort(), [
+      'usage-data.json',
+      `usage-days/${TODAY}.json`,
+      'usage-index.json',
+    ]);
+    // Counted once, and the day's total moved by exactly the new reply.
+    const last = JSON.parse(w.bodies.at(-1) ?? '{}') as {
+      days: { day: string; rows: UsageRow[] }[];
+    };
+    assert.deepEqual(
+      last.days.map((d) => [d.day, d.rows.reduce((n, r) => n + r.output, 0)]),
+      [[TODAY, 3 * 10 + 5]],
+    );
+  });
+
+  void test(
+    'with ~800 transcripts over 31 days, the step with new bytes in one costs under 50 ms (LAIKA_PERF=1)',
+    { skip: process.env.LAIKA_PERF !== '1' },
+    async () => {
+      // 800 transcripts, 48,000 replies over 31 days — the measured machine's
+      // 779 and 47,071 — about 26 sessions a day.
+      const w = world(800, USAGE_WINDOW_DAYS, 60);
+      await w.settle();
+      const times: number[] = [];
+      for (let i = 0; i < 9; i += 1) {
+        appendFileSync(
+          w.paths[i * USAGE_WINDOW_DAYS] ?? '',
+          `${claudeLine(`msg_p${String(i)}`, NOW_S - 30, { input: 1, output: 1, cw: 0, cr: 0 })}\n`,
+        );
+        const start = performance.now();
+        assert.equal((await w.step()).kind, 'sent');
+        times.push(performance.now() - start);
+      }
+      times.sort((a, b) => a - b);
+      const fastest = times[0] ?? Number.NaN;
+      process.stdout.write(
+        `# usage step, new bytes in one of 800 transcripts: fastest ${fastest.toFixed(1)} ms, median ${(times[4] ?? Number.NaN).toFixed(1)} ms\n`,
+      );
+      assert.ok(fastest < 50, `fastest ${fastest.toFixed(1)} ms`);
+    },
+  );
+
+  void test('a resumed session’s copy of a reply, read a sync later in a file of its own, is counted once', async () => {
+    const w = world(3, 3);
+    await w.settle();
+    // The resume copies yesterday's reply, timestamps and all, then adds one.
+    const copy = fs.readFileSync(w.paths[1] ?? '', 'utf8').split('\n')[0] ?? '';
+    assert.match(copy, /msg_w1_0/, 'not the reply this test copies');
+    writeClaude(w.root, '-proj-0/resumed.jsonl', [
+      copy,
+      claudeLine('msg_resumed', NOW_S - 120, { input: 1, output: 4, cw: 0, cr: 0 }),
+    ]);
+    await w.step();
+    const { days } = await readUsage({
+      paths: w.activity,
+      roots: usageRoots(w.root, {}),
+      state: state(NOW_S - 40 * DAY),
+      tz: TZ,
+      nowS: NOW_S,
+    });
+    const yesterday = addDays(TODAY, -1);
+    assert.equal(
+      (days.get(yesterday) ?? []).reduce((n, r) => n + r.output, 0),
+      11,
+      'the copy was counted again',
+    );
+    assert.equal(
+      (days.get(TODAY) ?? []).reduce((n, r) => n + r.output, 0),
+      10 + 4,
+    );
+  });
+
+  void test('a reply streaming across midnight, its last line read a sync later, is counted once — on its first line’s day, at its largest', async () => {
+    const midnight = Date.parse(`${TODAY}T00:00:00+02:00`) / 1000;
+    const root = home();
+    const path = writeClaude(root, 'p/night.jsonl', [
+      claudeLine(
+        'msg_night',
+        midnight - 30,
+        { input: 3, output: 10, cw: 50, cr: 500 },
+        { stop: null },
+      ),
+    ]);
+    const paths = activityPaths(root);
+    mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
+    const read = () =>
+      readUsage({
+        paths,
+        roots: usageRoots(root, {}),
+        state: state(NOW_S - 40 * DAY),
+        tz: TZ,
+        nowS: NOW_S,
+      });
+    await read();
+    appendFileSync(
+      path,
+      `${claudeLine('msg_night', midnight + 30, { input: 3, output: 70, cw: 50, cr: 500 })}\n`,
+    );
+    const { days } = await read();
+    const yesterday = addDays(TODAY, -1);
+    assert.deepEqual(
+      [...days].map(([day, rows]) => [
+        day,
+        rows.map((r) => [r.input, r.output, r.cache_write, r.cache_read]),
+      ]),
+      [[yesterday, [[3, 70, 50, 500]]]],
+      'the reply was counted on both days, or at its first line',
+    );
+  });
+
+  void test('when the machine moves zone, each reply moves to its day in the new one — once, and kept there', async () => {
+    const root = home();
+    // 06:00 UTC is the 17th in Johannesburg and the 16th in Los Angeles; 10:00
+    // UTC is the 17th in both.
+    writeClaude(root, 'p/z.jsonl', [
+      claudeLine('msg_moves', Date.UTC(2026, 9, 17, 6) / 1000, {
+        input: 1,
+        output: 10,
+        cw: 0,
+        cr: 0,
+      }),
+      claudeLine('msg_stays', Date.UTC(2026, 9, 17, 9, 50) / 1000, {
+        input: 1,
+        output: 20,
+        cw: 0,
+        cr: 0,
+      }),
+    ]);
+    const paths = activityPaths(root);
+    mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
+    const read = async (tz: string) =>
+      [
+        ...(
+          await readUsage({
+            paths,
+            roots: usageRoots(root, {}),
+            state: state(NOW_S - 40 * DAY),
+            tz,
+            nowS: NOW_S,
+          })
+        ).days,
+      ].map(([day, rows]) => [day, rows.reduce((n, r) => n + r.output, 0)]);
+    assert.deepEqual(await read(TZ), [['2026-10-17', 30]]);
+    const moved = [
+      ['2026-10-16', 10],
+      ['2026-10-17', 20],
+    ];
+    assert.deepEqual(await read('America/Los_Angeles'), moved);
+    // Read back from the day files, nothing new: the reply that stayed is still there.
+    assert.deepEqual(await read('America/Los_Angeles'), moved);
+    assert.deepEqual(fs.readdirSync(join(paths.dir, 'usage-days')).sort(), [
+      '2026-10-16.json',
+      '2026-10-17.json',
+    ]);
+  });
+
+  void test('a collector of data format 3 splits its replies into days without reading a transcript again', async () => {
+    const root = home();
+    const line = claudeLine('msg_v3', NOW_S - 600, { input: 1, output: 2, cw: 3, cr: 4 });
+    const path = writeClaude(root, 'p/old.jsonl', [line]);
+    const paths = activityPaths(root);
+    mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
+    const st = fs.statSync(path);
+    // As a format 3 collector left this machine: every reply in one file.
+    writeFileSync(
+      join(paths.dir, 'usage-index.json'),
+      JSON.stringify({
+        v: 1,
+        dirs: {},
+        files: { [path]: { s: st.size, m: Math.floor(st.mtimeMs) } },
+        sent: {},
+        dirty: false,
+        marked: [],
+        skip: '',
+        next_at: 0,
+        data_v: 3,
+      }),
+    );
+    writeFileSync(
+      join(paths.dir, 'usage-data.json'),
+      JSON.stringify({
+        v: 3,
+        tz: TZ,
+        cwds: [SECRET.cwd],
+        sessions: [SECRET.session],
+        lanes: [],
+        branches: [],
+        keys: [],
+        marks: {},
+        claude: { msg_v3: [TODAY, 'claude-opus-5-5', 1, 2, 3, 4, NOW_S - 600, 0, 0, -1, -1] },
+        offsets: { [path]: st.size },
+        codex: {},
+        gemini: {},
+        scope: {},
+      }),
+    );
+    let days = new Map<string, UsageRow[]>();
+    const disk = await diskWork(async () => {
+      ({ days } = await readUsage({
+        paths,
+        roots: usageRoots(root, {}),
+        state: state(NOW_S - 40 * DAY),
+        tz: TZ,
+        nowS: NOW_S,
+      }));
+    });
+    assert.equal(disk.opened.get(path) ?? 0, 0, 'the transcript was read again');
+    assert.deepEqual(
+      [...days].map(([day, rows]) => [
+        day,
+        rows.map((r) => [r.input, r.output, r.cache_write, r.cache_read]),
+      ]),
+      [[TODAY, [[1, 2, 3, 4]]]],
+    );
+    assert.ok(fs.existsSync(join(paths.dir, 'usage-days', `${TODAY}.json`)));
+    const data = JSON.parse(fs.readFileSync(join(paths.dir, 'usage-data.json'), 'utf8')) as {
+      v: number;
+      claude?: unknown;
+    };
+    assert.equal(data.v, 4);
+    assert.equal(data.claude, undefined, 'the replies stayed in the data file');
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* LAI-773: sessions, by a one-way key, for the board's OpenTelemetry          */
+/* -------------------------------------------------------------------------- */
+
+void describe('Claude Code sessions in a usage report (LAI-773, design.md §2)', () => {
+  const COLLECTOR = '6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a';
+  const A = 'aaaaaaaa-1111-4222-8333-444444444444';
+  const B = 'bbbbbbbb-1111-4222-8333-444444444444';
+  const ROBOT = 'cccccccc-1111-4222-8333-444444444444';
+
+  function world() {
+    const root = home();
+    const paths = activityPaths(root);
+    mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
+    const bodies: string[] = [];
+    const step = (scope: 'agent-repos' | 'laika-repos' = 'agent-repos', telemetry = true) =>
+      usageStep({
+        paths,
+        roots: usageRoots(root, {}),
+        state: { ...state(NOW_S - 40 * DAY), scope },
+        telemetry,
+        collectorId: COLLECTOR,
+        tz: TZ,
+        nowS: NOW_S,
+        heldElsewhere: [],
+        send: (body) => {
+          bodies.push(body);
+          return Promise.resolve({ ok: true as const });
+        },
+      });
+    const last = () =>
+      JSON.parse(bodies.at(-1) ?? '{}') as {
+        excluded?: string[];
+        days: { day: string; rows: UsageRow[]; sessions?: Record<string, unknown>[] }[];
+      };
+    return { root, paths, bodies, step, last };
+  }
+
+  void test('each session’s tokens by model, its subagents rolled in; an automated session left out and named by key', async () => {
+    const w = world();
+    writeClaude(w.root, 'p/a.jsonl', [
+      claudeLine(
+        'msg_a1',
+        NOW_S - 900,
+        { input: 1, output: 10, cw: 100, cr: 1_000 },
+        { session: A },
+      ),
+      claudeLine(
+        'msg_a2',
+        NOW_S - 800,
+        { input: 2, output: 20, cw: 200, cr: 2_000 },
+        { session: A },
+      ),
+    ]);
+    writeClaude(w.root, 'p/a/subagents/agent-1.jsonl', [
+      claudeLine(
+        'msg_a3',
+        NOW_S - 700,
+        { input: 4, output: 40, cw: 0, cr: 0 },
+        { session: A, sidechain: true },
+      ),
+    ]);
+    writeClaude(w.root, 'p/b.jsonl', [
+      claudeLine(
+        'msg_b1',
+        NOW_S - 600,
+        { input: 8, output: 80, cw: 0, cr: 0 },
+        { session: B, model: 'claude-sonnet-5' },
+      ),
+    ]);
+    writeClaude(w.root, 'p/robot.jsonl', [
+      claudeLine(
+        'msg_r1',
+        NOW_S - 500,
+        { input: 0, output: 999, cw: 0, cr: 0 },
+        { session: ROBOT },
+      ),
+    ]);
+    writeFileSync(join(w.paths.dir, 'skip-sessions'), `${String(NOW_S - 950)} ${ROBOT}\n`, {
+      mode: 0o600,
+    });
+    assert.equal((await w.step()).kind, 'sent');
+    const body = w.last();
+    const sessions = [
+      {
+        key: sessionKey(A),
+        model: 'claude-opus-5-5',
+        input: 7,
+        output: 70,
+        cache_write: 300,
+        cache_read: 3_000,
+      },
+      {
+        key: sessionKey(B),
+        model: 'claude-sonnet-5',
+        input: 8,
+        output: 80,
+        cache_write: 0,
+        cache_read: 0,
+      },
+    ].sort((x, y) => x.key.localeCompare(y.key));
+    assert.deepEqual(body.days, [
+      {
+        day: TODAY,
+        rows: [
+          {
+            agent: 'claude-code',
+            model: 'claude-opus-5-5',
+            task: null,
+            input: 7,
+            output: 70,
+            cache_write: 300,
+            cache_read: 3_000,
+          },
+          {
+            agent: 'claude-code',
+            model: 'claude-sonnet-5',
+            task: null,
+            input: 8,
+            output: 80,
+            cache_write: 0,
+            cache_read: 0,
+          },
+        ],
+        sessions,
+      },
+    ]);
+    assert.deepEqual(body.excluded, [sessionKey(ROBOT)]);
+    assert.equal(
+      sessionKey(A),
+      createHash('sha256').update(`laika-session:${A}`).digest('hex').slice(0, 16),
+    );
+    const sent = w.bodies.join('\n');
+    for (const id of [A, B, ROBOT]) assert.ok(!sent.includes(id), `a session id was sent: ${id}`);
+  });
+
+  void test('without telemetry from this machine, the sessions left out are not named at all (review)', async () => {
+    const w = world();
+    writeClaude(w.root, 'p/a.jsonl', [
+      claudeLine('msg_a1', NOW_S - 900, { input: 1, output: 10, cw: 0, cr: 0 }, { session: A }),
+    ]);
+    writeFileSync(join(w.paths.dir, 'skip-sessions'), `${String(NOW_S - 950)} ${ROBOT}\n`, {
+      mode: 0o600,
+    });
+    assert.equal((await w.step('agent-repos', false)).kind, 'sent');
+    assert.equal(w.last().excluded, undefined);
+    // The rows and the sessions go as ever.
+    assert.deepEqual(
+      w.last().days[0]?.sessions?.map((x) => x.key),
+      [sessionKey(A)],
+    );
+    // Telemetry set up later: the next report names them — sessions started
+    // with telemetry on write new bytes, and that is what sends one.
+    writeClaude(w.root, 'p/a.jsonl', [
+      claudeLine('msg_a1', NOW_S - 900, { input: 1, output: 10, cw: 0, cr: 0 }, { session: A }),
+      claudeLine('msg_a2', NOW_S - 300, { input: 1, output: 10, cw: 0, cr: 0 }, { session: A }),
+    ]);
+    assert.equal((await w.step('agent-repos', true)).kind, 'sent');
+    assert.deepEqual(w.last().excluded, [sessionKey(ROBOT)]);
+  });
+
+  void test('under laika-repos, a session outside the developer’s scope is left out and named by key', async () => {
+    const w = world();
+    const laikaRepo = join(w.root, 'code', 'with-laika');
+    const otherRepo = join(w.root, 'code', 'without');
+    for (const repo of [laikaRepo, otherRepo]) mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(laikaRepo, 'CLAUDE.md'), 'This project is tracked on a Laika board.\n');
+    const at = (id: string, session: string, cwd: string, output: number) =>
+      claudeLine(id, NOW_S - 600, { input: 0, output, cw: 0, cr: 0 }, { session }).replace(
+        JSON.stringify(SECRET.cwd),
+        JSON.stringify(cwd),
+      );
+    writeClaude(w.root, 'p/in.jsonl', [at('msg_in', A, join(laikaRepo, 'src'), 5)]);
+    writeClaude(w.root, 'p/out.jsonl', [at('msg_out', B, otherRepo, 70)]);
+    assert.equal((await w.step('laika-repos')).kind, 'sent');
+    const body = w.last();
+    assert.deepEqual(
+      body.days.map((d) => d.rows.map((r) => r.output)),
+      [[5]],
+    );
+    assert.deepEqual(
+      body.days[0]?.sessions?.map((x) => x.key),
+      [sessionKey(A)],
+    );
+    assert.deepEqual(body.excluded, [sessionKey(B)]);
+  });
+
+  void test('when only the sessions left out change, the latest day goes again to carry them — once', async () => {
+    const w = world();
+    writeClaude(w.root, 'p/a.jsonl', [
+      claudeLine('msg_a1', NOW_S - 900, { input: 1, output: 10, cw: 0, cr: 0 }, { session: A }),
+    ]);
+    assert.equal((await w.step()).kind, 'sent');
+    assert.equal(w.last().excluded, undefined);
+    // An automated session starts; it has written nothing yet.
+    writeFileSync(join(w.paths.dir, 'skip-sessions'), `${String(NOW_S - 100)} ${ROBOT}\n`, {
+      mode: 0o600,
+    });
+    assert.equal((await w.step()).kind, 'sent');
+    assert.deepEqual(w.last().excluded, [sessionKey(ROBOT)]);
+    assert.deepEqual(
+      w.last().days.map((d) => d.day),
+      [TODAY],
+    );
+    const before = w.bodies.length;
+    assert.equal((await w.step()).kind, 'idle');
+    assert.equal(w.bodies.length, before, 'sent again with nothing new');
+  });
+
+  void test('days sent before sessions were go once more with them, then nothing', async () => {
+    const w = world();
+    writeClaude(w.root, 'p/a.jsonl', [
+      claudeLine('msg_a1', NOW_S - 2 * DAY, { input: 1, output: 10, cw: 0, cr: 0 }, { session: A }),
+      claudeLine('msg_a2', NOW_S - 900, { input: 1, output: 20, cw: 0, cr: 0 }, { session: A }),
+    ]);
+    assert.equal((await w.step()).kind, 'sent');
+    // As a collector before LAI-773 left its index: each day signed by its rows alone.
+    const indexPath = join(w.paths.dir, 'usage-index.json');
+    const index = JSON.parse(fs.readFileSync(indexPath, 'utf8')) as {
+      sent: Record<string, string>;
+      dirty: boolean;
+    };
+    const firstBody = JSON.parse(w.bodies[0] ?? '{}') as {
+      days: { day: string; rows: UsageRow[] }[];
+    };
+    for (const d of firstBody.days) index.sent[d.day] = JSON.stringify(d.rows);
+    index.dirty = true;
+    writeFileSync(indexPath, JSON.stringify(index));
+    assert.equal((await w.step()).kind, 'sent');
+    assert.deepEqual(
+      w.last().days.map((d) => [d.day, d.sessions?.length]),
+      firstBody.days.map((d) => [d.day, 1]),
+    );
+    assert.equal((await w.step()).kind, 'idle');
+  });
+
+  void test('a day with more than 100 sessions, or too big for 16 KB with them, goes without them — its rows whole', () => {
+    const rows: UsageRow[] = [
+      {
+        agent: 'claude-code',
+        model: 'claude-opus-5-5',
+        task: null,
+        input: 1,
+        output: 2,
+        cache_write: 3,
+        cache_read: 4,
+      },
+    ];
+    const split = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        key: i.toString(16).padStart(16, '0'),
+        model: 'claude-opus-5-5',
+        input: 1,
+        output: 1,
+        cache_write: 1,
+        cache_read: 1,
+      }));
+    // Rows that fit 16 KB alone, and not beside 100 sessions.
+    const many = Array.from({ length: 70 }, (_, i) => ({
+      ...rows[0]!,
+      model: `claude-model-${String(i).padStart(40, 'x')}`,
+    }));
+    const reports = usageReports({
+      collectorId: COLLECTOR,
+      tz: TZ,
+      days: [
+        { day: addDays(TODAY, -2), rows, sessions: split(101) },
+        { day: addDays(TODAY, -1), rows: many, sessions: split(100) },
+        { day: TODAY, rows, sessions: split(3) },
+      ],
+      excluded: [sessionKey(ROBOT)],
+    });
+    const days = reports.flatMap(
+      (r) =>
+        (JSON.parse(r.body) as { days: { day: string; rows: unknown[]; sessions?: unknown[] }[] })
+          .days,
+    );
+    assert.deepEqual(
+      days.map((d) => [d.day, d.rows.length, d.sessions?.length]),
+      [
+        [addDays(TODAY, -2), 1, undefined],
+        [addDays(TODAY, -1), 70, undefined],
+        [TODAY, 1, 3],
+      ],
+    );
+    for (const report of reports) {
+      assert.ok(Buffer.byteLength(report.body) <= MAX_BODY_BYTES);
+      assert.deepEqual((JSON.parse(report.body) as { excluded: string[] }).excluded, [
+        sessionKey(ROBOT),
+      ]);
+    }
   });
 });

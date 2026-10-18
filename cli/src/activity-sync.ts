@@ -156,6 +156,42 @@ export function credentialsFor(
   return undefined;
 }
 
+/**
+ * Whether Claude Code on this machine sends its metrics to `board` (review):
+ * telemetry on, an OTLP metrics exporter, and a metrics endpoint under the
+ * board's `/api/v1/otlp/` — the settings `laika activity otel` prints, each
+ * read from `~/.claude/settings.json`'s `env` (which Claude Code applies to
+ * itself) or else the environment, which a hook-launched sync inherits from
+ * Claude Code. Only then does a usage report name the sessions it left out.
+ */
+export function telemetryToBoard(
+  home: string,
+  env: Readonly<Record<string, string | undefined>>,
+  board: string,
+): boolean {
+  let settings: Record<string, string> = {};
+  try {
+    settings = readSettings(join(home, '.claude', 'settings.json')).env ?? {};
+  } catch {
+    settings = {};
+  }
+  const pick = (key: string): string | undefined => {
+    for (const value of [settings[key], env[key]]) {
+      if (typeof value === 'string' && value.trim() !== '') return value.trim();
+    }
+    return undefined;
+  };
+  const on = pick('CLAUDE_CODE_ENABLE_TELEMETRY')?.toLowerCase();
+  if (on !== '1' && on !== 'true') return false;
+  const exporters = (pick('OTEL_METRICS_EXPORTER') ?? '').split(',').map((e) => e.trim());
+  if (!exporters.includes('otlp')) return false;
+  const base = pick('OTEL_EXPORTER_OTLP_ENDPOINT');
+  const endpoint =
+    pick('OTEL_EXPORTER_OTLP_METRICS_ENDPOINT') ??
+    (base === undefined ? undefined : `${normaliseUrl(base)}/v1/metrics`);
+  return endpoint !== undefined && normaliseUrl(endpoint).startsWith(`${board}/api/v1/otlp/`);
+}
+
 /* -------------------------------------------------------------------------- */
 /* The two calls                                                              */
 /* -------------------------------------------------------------------------- */
@@ -612,6 +648,7 @@ async function syncLocked(
         send: (body) => putActivity(creds, body, ctx.nowMs(), signal),
         heldElsewhere: sharing.value.usage_days_elsewhere,
         prefixes: sharing.value.task_prefixes,
+        telemetry: telemetryToBoard(ctx.home, ctx.env, creds.url),
         signal,
         stopAt: softStop,
       });

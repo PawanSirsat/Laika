@@ -13,6 +13,7 @@ import {
   getActivitySharing,
   getOwnLocalActivity,
   LOCAL_ACTIVITY_SCOPES,
+  otelEnvBlock,
   setActivitySharing,
 } from '../../src/api/local-activity.ts';
 
@@ -78,5 +79,26 @@ void describe('the developer’s requests (§6.4)', () => {
 
   void test('offers the two scopes the server stores', () => {
     assert.deepEqual([...LOCAL_ACTIVITY_SCOPES], ['agent-repos', 'laika-repos']);
+  });
+});
+
+void describe('the OpenTelemetry block (LAI-773)', () => {
+  void test('is metrics only, JSON, cumulative, logs off — this board’s address, the token by reference', () => {
+    const block = otelEnvBlock('https://laika.example.com');
+    assert.equal(
+      block,
+      [
+        'export CLAUDE_CODE_ENABLE_TELEMETRY=1',
+        'export OTEL_METRICS_EXPORTER=otlp',
+        'export OTEL_EXPORTER_OTLP_PROTOCOL=http/json',
+        'export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="https://laika.example.com/api/v1/otlp/v1/metrics"',
+        'export OTEL_EXPORTER_OTLP_METRICS_HEADERS="Authorization=Bearer $LAIKA_TOKEN"',
+        'export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative',
+        'export OTEL_LOGS_EXPORTER=none',
+      ].join('\n'),
+    );
+    // Never a secret on the page, never a logs or traces endpoint.
+    assert.doesNotMatch(block, /laika_[A-Za-z0-9]{8,}/);
+    assert.doesNotMatch(block, /v1\/(logs|traces)/);
   });
 });

@@ -572,7 +572,9 @@ describe('the parser itself', () => {
     // repository and sha, a pull request, a commit's check — for the same
     // reason, and `task_round_github` is one row per round, keyed by it.
     // `token_usage_days` (LAI-769, D-084) is a rollup replaced per (person,
-    // machine, day), the rowid its only key.
+    // machine, day), the rowid its only key. LAI-773's are keyed by what they
+    // count or settle — an organisation's model, a person's plan, a person's
+    // five minutes, a session's day, a series, a key, a person's dismissal.
     const withoutId = [...specTables.entries()]
       .filter(([, fields]) => !fields.includes('id'))
       .map(([table]) => table)
@@ -584,11 +586,19 @@ describe('the parser itself', () => {
       'github_commits',
       'github_pull_requests',
       'local_activity_days',
+      'org_model_prices',
+      'plan_limits',
       'pushed_commit_keys',
       'task_dependencies',
       'task_round_github',
       'task_tags',
+      'token_alert_dismissals',
+      'token_arrivals',
+      'token_session_days',
+      'token_session_skips',
+      'token_telemetry_series',
       'token_usage_days',
+      'token_usage_zones',
     ]);
   });
 

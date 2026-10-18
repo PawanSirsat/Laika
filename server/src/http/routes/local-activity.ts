@@ -24,6 +24,11 @@ import {
   TOKEN_COUNT_MAX,
   TOKEN_USAGE_ROWS_PER_DAY_MAX,
 } from '../../services/token-usage.ts';
+import {
+  EXCLUDED_MAX,
+  SESSION_KEY_PATTERN,
+  SESSIONS_PER_DAY_MAX,
+} from '../../services/token-telemetry.ts';
 import { type AppEnv } from '../context.ts';
 import { parseBody, parseQuery, strictObject, z } from '../validation.ts';
 
@@ -117,16 +122,37 @@ const LookbackBody = strictObject({
  * `day_out_of_range`.
  */
 const tokenCount = z.number().int().min(0).max(TOKEN_COUNT_MAX);
+/** A one-way session key (LAI-773): 16 hex, never a session id. */
+const sessionKeyField = z
+  .string()
+  .regex(SESSION_KEY_PATTERN, 'a session key is 16 lower-case hex characters');
 const UsageBody = strictObject({
   v: z.literal(1),
   collector_id: ReportBody.shape.collector_id,
   tz: z.string().min(1).max(64),
   usage: z.literal(true),
+  // Sessions left out of the rows — automated or out of scope — so their
+  // telemetry is left out too (LAI-773).
+  excluded: z.array(sessionKeyField).max(EXCLUDED_MAX).optional(),
   days: z.array(
     strictObject({
       day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       // Tokens from before the collector began counting (the 30-day backfill).
       backfill: z.literal(true).optional(),
+      // The day's Claude Code rows by session, to match telemetry (LAI-773).
+      sessions: z
+        .array(
+          strictObject({
+            key: sessionKeyField,
+            model: z.string().regex(MODEL_PATTERN, 'a model id is 1–64 of a–z, 0–9, ., _, : and -'),
+            input: tokenCount,
+            output: tokenCount,
+            cache_write: tokenCount,
+            cache_read: tokenCount,
+          }),
+        )
+        .max(SESSIONS_PER_DAY_MAX)
+        .optional(),
       rows: z
         .array(
           strictObject({

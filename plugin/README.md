@@ -139,6 +139,7 @@ prompt twice for anyone who uses `laika-claude`. `laika activity on` puts it in
 | `prompt` | prompt submit | appends `p <agent> <epoch>` to `~/.laika/activity/events.log` |
 | `session-start` | session start | appends `s <agent> <epoch>`; remembers the repo's top level in `~/.laika/activity/repos`; starts a detached `laika activity sync` if one is due |
 | `session-end` | session end | starts a detached `laika activity sync` if one is due, and returns at once |
+| `turn-end` | Claude Code's `Stop`, every turn's end (LAI-776) | counts nothing; while collection is on, starts a detached `laika activity sync` if one is due — so a long session's tokens arrive within one sync interval. Not due, under zsh it forks nothing |
 
 What it never does:
 
@@ -146,8 +147,11 @@ What it never does:
   variable, and `$USER_PROMPT` (Kiro) is unset first. A test sends a prompt
   carrying a unique marker and asserts it is in no file under `HOME`.
 - **Print.** Claude Code feeds `UserPromptSubmit` output to the model, and
-  exit 2 blocks the prompt in four agents: stdout and stderr go to `/dev/null`
-  and every path exits 0.
+  exit 2 blocks the prompt in four agents — on `Stop` it keeps Claude from
+  stopping: stdout and stderr go to `/dev/null` and every path exits 0.
+- **Read a reply.** `Stop`'s payload carries the turn's last reply
+  (`last_assistant_message`); `turn-end` drains it like a prompt and keeps
+  nothing of it.
 - **Cost time.** Under `/bin/zsh -f` (what `on` installs wherever zsh exists)
   the prompt path forks nothing — zsh's own `EPOCHSECONDS` and `sysread` — and
   measures about 4 ms against about 3 ms for the bare interpreter. Under

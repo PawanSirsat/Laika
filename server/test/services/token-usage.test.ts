@@ -8,10 +8,12 @@ import {
   orgs,
   projectMemberships,
   projects,
+  taskReviews,
   taskRounds,
   tasks,
   tokens,
   tokenUsageDays,
+  tokenUsageZones,
   users,
 } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
@@ -29,6 +31,7 @@ import {
   type TokenUsageRowInput,
 } from '../../src/services/token-usage.ts';
 import { freshDb, seed, type TestDb } from '../helpers/db.ts';
+import { work } from '../helpers/work.ts';
 
 /**
  * Token usage, phase 1 (D-084, LAI-769): a collector's per-day totals, kept
@@ -551,9 +554,20 @@ describe('the developer’s own history', () => {
     share(cal);
     recordTokenUsage(t.db, actor(cal), report([{ day: YESTERDAY, rows: [row()] }]), NOW);
 
+    const zones = () =>
+      t.db
+        .select({ userId: tokenUsageZones.userId })
+        .from(tokenUsageZones)
+        .all()
+        .map((z) => z.userId)
+        .sort();
+    expect(zones()).toEqual([bea, cal].sort());
+
     deleteOwnLocalActivity(t.db, actor(bea));
     expect(stored(bea)).toHaveLength(0);
     expect(stored(cal)).toHaveLength(1);
+    // And the zone its reports stated (review B1), which came with them.
+    expect(zones()).toEqual([cal]);
   });
 
   it('is kept 400 days, by the local-activity retention job', () => {
@@ -644,6 +658,19 @@ describe('GET /usage — the Usage page', () => {
       cache_write: 333,
       cache_read: 51_004,
       attributed_tokens: 6,
+      // API-equivalent (LAI-773): Opus 5.5's 110 / 220 / 330 / 51,000 at
+      // $4 / $20 / $5 / $0.20 a million, and the Codex row at gpt-5.2's
+      // rates — a price inferred, and said to be.
+      cost: view.totals.cost,
+    });
+    expect(view.totals.cost.usd).toBeCloseTo(
+      (440 + 4_400 + 1_650 + 10_200 + 1.75 + 28 + 5.25 + 0.7) / 1e6,
+      12,
+    );
+    expect(view.totals.cost).toMatchObject({
+      unpriced_tokens: 0,
+      unpriced_models: [],
+      unconfirmed_models: ['gpt-5.2-codex'],
     });
     expect(view.trend).toHaveLength(7);
     expect(view.trend.find((d) => d.day === YESTERDAY)).toEqual({
@@ -802,6 +829,37 @@ describe('every Usage query is one indexed query', () => {
       `SELECT ${SUMS} FROM token_usage_days WHERE user_id = ? AND ${RANGE}`,
       ['u', 'a', 'b'],
     ],
+    // LAI-773: what the new figures read.
+    [
+      'org by developer and model (each priced)',
+      `SELECT user_id, model, ${SUMS}, sum(input), sum(output), sum(cache_write) FROM token_usage_days WHERE ${RANGE} GROUP BY user_id, model`,
+      ['a', 'b'],
+    ],
+    [
+      'org totals by model (beside a space)',
+      `SELECT model, ${SUMS}, sum(input), sum(output) FROM token_usage_days WHERE ${RANGE} GROUP BY model`,
+      ['a', 'b'],
+    ],
+    [
+      'what telemetry added',
+      `SELECT ${SUMS} FROM token_usage_days WHERE collector_id = 'telemetry' AND ${RANGE}`,
+      ['a', 'b'],
+    ],
+    [
+      'who used each agent and model (review B2)',
+      `SELECT agent, model, user_id FROM token_usage_days WHERE ${RANGE} GROUP BY agent, model, user_id`,
+      ['a', 'b'],
+    ],
+    [
+      'who used each agent and model in a space (review B2)',
+      `SELECT agent, model, user_id FROM token_usage_days WHERE project_id = ? AND ${RANGE} GROUP BY agent, model, user_id`,
+      ['p', 'a', 'b'],
+    ],
+    [
+      'cache by project and model',
+      `SELECT project_id, model, sum(input), sum(cache_write), sum(cache_read) FROM token_usage_days WHERE project_id IN (?, ?) AND ${RANGE} GROUP BY project_id, model`,
+      ['p', 'q', 'a', 'b'],
+    ],
   ];
 
   for (const [name, statement, params] of cases) {
@@ -815,6 +873,186 @@ describe('every Usage query is one indexed query', () => {
       expect(steps.filter((s) => /^SCAN token_usage_days\b/.test(s))).toEqual([]);
     });
   }
+});
+
+describe('an agent or model fewer than three people used is folded for a reader who may not see people (review B2)', () => {
+  /** The project's Codex spend, Bea's alone in seedUsage: 1 + 2 + 3 tokens. */
+  const BEA_CODEX = 6;
+
+  function listedNames(view: ReturnType<typeof getUsage>) {
+    return {
+      agents: view.by_agent.filter((a) => a.few_people === undefined).map((a) => a.agent),
+      models: view.by_model.filter((m) => m.few_people === undefined).map((m) => m.model),
+    };
+  }
+
+  it('shows a member no row one person’s spend makes, and folds it into “fewer than three people”', () => {
+    seedUsage();
+    const view = getUsage(t.db, actor(cal), { days: 7, project: 'laika' }, NOW);
+    expect(listedNames(view)).toEqual({ agents: [], models: [] });
+    expect(view.by_agent).toEqual([
+      { agent: 'other', tokens: BEA_CODEX, cache_read: 4, few_people: 1 },
+    ]);
+    const folded = view.by_model.find((m) => m.few_people !== undefined);
+    expect(folded).toMatchObject({ model: 'other', tokens: BEA_CODEX, few_people: 1 });
+    // Its cost is the folded row's, never a model's of its own.
+    expect(folded?.cost).toBeGreaterThan(0);
+    expect(view.by_model.some((m) => m.model === 'gpt-5.2-codex')).toBe(false);
+  });
+
+  it('cannot be read around by subtraction: the listed rows hold only agents and models of three people or more', () => {
+    seedUsage();
+    // Bea's Claude Code row and a third person's put Claude Code at three people
+    // in the organisation's figures; Codex stays Bea's alone.
+    const dee = makeUser('Dee', 'member');
+    member(dee, projectId);
+    share(dee);
+    recordTokenUsage(
+      t.db,
+      actor(dee),
+      report([{ day: TODAY, rows: [row({ input: 1, output: 1, cache_write: 1, cache_read: 1 })] }]),
+      NOW,
+    );
+    const token = withToken(owner, 'read_only');
+    const view = getUsage(t.db, token, { days: 7 }, NOW);
+    expect(view.by_developer).toBeNull();
+    expect(listedNames(view)).toEqual({ agents: ['claude-code'], models: ['claude-opus-5-5'] });
+    const listed = view.by_agent.filter((a) => a.few_people === undefined);
+    // What the total leaves once the listed rows are taken away is the folded
+    // row — "fewer than three people" — and no single agent's own figure.
+    const rest = view.totals.tokens - listed.reduce((n, a) => n + a.tokens, 0);
+    expect(rest).toBe(BEA_CODEX);
+    expect(view.by_agent.find((a) => a.few_people !== undefined)).toEqual({
+      agent: 'other',
+      tokens: rest,
+      cache_read: 4,
+      few_people: 1,
+    });
+  });
+
+  it('lists an agent once three people have used it in the scope', () => {
+    const { taskKey } = seedUsage();
+    for (const name of ['Dee', 'Eve']) {
+      const id = makeUser(name, 'member');
+      member(id, projectId);
+      share(id);
+      recordTokenUsage(
+        t.db,
+        actor(id),
+        report([
+          { day: TODAY, rows: [row({ agent: 'codex', model: 'gpt-5.2-codex', task: taskKey })] },
+        ]),
+        NOW,
+      );
+    }
+    const view = getUsage(t.db, actor(cal), { days: 7, project: 'laika' }, NOW);
+    expect(listedNames(view)).toEqual({ agents: ['codex'], models: ['gpt-5.2-codex'] });
+    expect(view.by_agent.some((a) => a.few_people !== undefined)).toBe(false);
+  });
+
+  it('shows owners and admins on a session everything, as before', () => {
+    seedUsage();
+    const view = getUsage(t.db, actor(owner), { days: 7, project: 'laika' }, NOW);
+    expect(listedNames(view)).toEqual({ agents: ['codex'], models: ['gpt-5.2-codex'] });
+    expect(view.by_agent.every((a) => a.few_people === undefined)).toBe(true);
+  });
+
+  it('folds the accepted-cost card the same way, tokens and cost', () => {
+    const { taskKey } = seedUsage();
+    const task = t.db
+      .select()
+      .from(tasks)
+      .all()
+      .find((x) => `LAI-${String(x.number)}` === taskKey)!;
+    const round = newId();
+    t.db
+      .insert(taskRounds)
+      .values({
+        id: round,
+        taskId: task.id,
+        number: 1,
+        finishedBy: bea,
+        summaryMd: 'done',
+        createdAt: NOW - 3_600_000,
+      })
+      .run();
+    t.db
+      .insert(taskReviews)
+      .values({
+        id: newId(),
+        taskId: task.id,
+        roundId: round,
+        decision: 'accepted',
+        decidedBy: owner,
+        createdAt: NOW - 1_800_000,
+      })
+      .run();
+
+    const member = getUsage(t.db, actor(cal), { days: 7, project: 'laika' }, NOW).accepted;
+    expect(member.by_agent).toHaveLength(1);
+    expect(member.by_agent[0]).toMatchObject({
+      agent: 'other',
+      tasks: 1,
+      tokens: BEA_CODEX,
+      few_people: 1,
+    });
+    expect(member.by_agent[0]?.cost.usd).toBeGreaterThan(0);
+    expect(member.agents_withheld).toBe(1);
+
+    const admin = getUsage(t.db, actor(owner), { days: 7, project: 'laika' }, NOW).accepted;
+    expect(admin.by_agent.map((a) => [a.agent, a.few_people])).toEqual([['codex', undefined]]);
+    expect(admin.agents_withheld).toBe(0);
+  });
+});
+
+describe('the Usage page’s work does not grow with the people in it (LAI-773, LAI-779)', () => {
+  let made = 0;
+  function people(n: number): void {
+    for (let i = made; i < made + n; i += 1) {
+      const id = makeUser(`P${String(i).padStart(3, '0')}`, 'member');
+      for (const model of ['claude-opus-5-5', 'claude-sonnet-5', 'mystery-model']) {
+        t.db
+          .insert(tokenUsageDays)
+          .values({
+            userId: id,
+            collectorId: COLLECTOR_A,
+            day: YESTERDAY,
+            agent: 'claude-code',
+            model,
+            taskId: null,
+            projectId: null,
+            input: 1,
+            output: 2,
+            cacheWrite: 3,
+            cacheRead: 40,
+            updatedAt: NOW,
+          })
+          .run();
+      }
+    }
+    made += n;
+  }
+
+  it('prices, splits and counts in the same statements for 3 people as for 30', () => {
+    people(3);
+    const small = work(t.sqlite, () => {
+      getUsage(t.db, actor(owner), { days: 30 }, NOW);
+    });
+    people(27);
+    const large = work(t.sqlite, () => {
+      getUsage(t.db, actor(owner), { days: 30 }, NOW);
+    });
+    expect(large.statements).toBe(small.statements);
+    expect(large.scans.filter((s) => s.includes('token_usage_days'))).toEqual([]);
+    // An unknown model is no price, never zero.
+    const view = getUsage(t.db, actor(owner), { days: 30 }, NOW);
+    expect(view.by_model.find((m) => m.model === 'mystery-model')?.cost).toBeNull();
+    expect(view.totals.cost.unpriced_models).toEqual(['mystery-model']);
+    expect(view.totals.cost.unpriced_tokens).toBe(30 * 6);
+    expect(view.cache.share).toBeCloseTo(40 / 44, 10);
+    // Cost beside each name, for an owner on a session, in name order.
+    expect(view.by_developer?.[0]?.cost.unpriced_tokens).toBe(6);
+  });
 });
 
 // ------------------------------------------------- phase 2: tasks (LAI-770)
@@ -982,13 +1220,15 @@ describe('GET /tasks/:id/usage — a task’s tokens (LAI-770)', () => {
       first_day: DAY_1,
       last_day: DAY_3,
     });
-    expect(view.totals).toEqual({
+    expect(view.totals).toMatchObject({
       tokens: 60 + 6 + 600,
       input: 111,
       output: 222,
       cache_write: 333,
       cache_read: 1_054,
     });
+    // Priced, never zero for what has no price (LAI-773).
+    expect(view.totals.cost.usd + view.totals.cost.unpriced_tokens).toBeGreaterThan(0);
   });
 
   it('splits it per person and agent for an owner, in name order — never ranked', () => {

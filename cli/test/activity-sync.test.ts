@@ -31,6 +31,7 @@ import {
   compactEvents,
   credentialsFor,
   findCredentials,
+  telemetryToBoard,
   MAX_BACKOFF_S,
   retryAfterSeconds,
   startCollecting,
@@ -502,6 +503,56 @@ void describe('credentials', () => {
       url: 'http://live',
       token: 'lai_live',
     });
+  });
+
+  void test('telemetry to this board: on, an OTLP exporter, and its endpoint under /api/v1/otlp/ (review)', () => {
+    const home = dir('laika-otelhome-');
+    mkdirSync(join(home, '.claude'));
+    const board = 'https://laika.example';
+    const otel = {
+      CLAUDE_CODE_ENABLE_TELEMETRY: '1',
+      OTEL_METRICS_EXPORTER: 'otlp',
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: `${board}/api/v1/otlp/v1/metrics`,
+    };
+    // Nothing set: no telemetry.
+    assert.equal(telemetryToBoard(home, {}, board), false);
+    // The environment alone (what a hook-launched sync inherits).
+    assert.equal(telemetryToBoard(home, otel, board), true);
+    // Each of the three missing, or wrong, is no.
+    assert.equal(
+      telemetryToBoard(home, { ...otel, CLAUDE_CODE_ENABLE_TELEMETRY: '0' }, board),
+      false,
+    );
+    assert.equal(
+      telemetryToBoard(home, { ...otel, OTEL_METRICS_EXPORTER: 'console' }, board),
+      false,
+    );
+    assert.equal(
+      telemetryToBoard(
+        home,
+        { ...otel, OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: 'https://collector.example/v1/metrics' },
+        board,
+      ),
+      false,
+    );
+    assert.equal(telemetryToBoard(home, otel, 'https://another.example'), false);
+    // The general endpoint, with the metrics path OTLP adds to it.
+    const { OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: _, ...general } = otel;
+    assert.equal(
+      telemetryToBoard(
+        home,
+        { ...general, OTEL_EXPORTER_OTLP_ENDPOINT: `${board}/api/v1/otlp/` },
+        board,
+      ),
+      true,
+    );
+    // ~/.claude/settings.json's env, as Claude Code applies it, over the environment.
+    writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({ env: otel }));
+    assert.equal(telemetryToBoard(home, {}, board), true);
+    assert.equal(telemetryToBoard(home, { CLAUDE_CODE_ENABLE_TELEMETRY: '0' }, board), true);
+    // A settings file that does not parse is no settings, not a crash.
+    writeFileSync(join(home, '.claude', 'settings.json'), '{ not json');
+    assert.equal(telemetryToBoard(home, {}, board), false);
   });
 
   void test('none at all: the sync records why and backs off', async () => {

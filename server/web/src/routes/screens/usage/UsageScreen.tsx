@@ -3,12 +3,21 @@ import { agentClientName } from '../../../api/agent-clients.ts';
 import { everyPage } from '../../../api/every-page.ts';
 import type { MeProfile } from '../../../api/me.ts';
 import { isProject, listProjects } from '../../../api/projects.ts';
+import type { TokenAlert } from '../../../api/token-alerts.ts';
 import {
   compactTokens,
+  COST_LABEL,
+  costCaveats,
+  costText,
   exactTokens,
+  FEW_PEOPLE_LABEL,
   getUsage,
+  isFewPeople,
+  modelCostText,
+  percent,
   readerZone,
   shareOf,
+  usd,
   USAGE_RANGES,
   type Usage,
   type UsageRange,
@@ -22,7 +31,13 @@ import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { UsageCard } from '../profile/UsageCard.tsx';
+import { AlertsBanner } from './AlertsBanner.tsx';
 import { BarRows } from './BarRows.tsx';
+import { BudgetsCard } from './BudgetsCard.tsx';
+import { AcceptedCostCard } from './AcceptedCostCard.tsx';
+import { CacheCard } from './CacheCard.tsx';
+import { RunawayCard } from './RunawayCard.tsx';
+import { PlanLimitCard } from './PlanLimitCard.tsx';
 import { Columns, dayPoints } from './Columns.tsx';
 import {
   axisDays,
@@ -38,6 +53,10 @@ export interface UsageScreenProps {
   readonly me: MeProfile | undefined;
   /** Follow a link without reloading the page. */
   readonly onNavigate: (to: string) => void;
+  /** The reader's own open token alerts (LAI-773), from the shell; `undefined` until read. */
+  readonly alerts?: readonly TokenAlert[] | undefined;
+  /** An alert was put away: the shell reads them again, for the badge too. */
+  readonly onAlertsChanged?: () => void;
 }
 
 type Load =
@@ -63,11 +82,18 @@ type Load =
  * (D-084 item 7). Agents people connect that keep no token count say *no
  * token data* rather than zero.
  */
-export function UsageScreen({ me, onNavigate }: UsageScreenProps) {
+export function UsageScreen({
+  me,
+  onNavigate,
+  alerts,
+  onAlertsChanged = () => undefined,
+}: UsageScreenProps) {
   const [projects, setProjects] = useState<readonly ScopeProject[] | null | undefined>(undefined);
   const [scope, setScope] = useState<string | undefined>(undefined);
   const [range, setRange] = useState<UsageRange>(30);
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
+  // A budget a lead set moves the figures: read the page again, in place.
+  const [asked, setAsked] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -104,7 +130,7 @@ export function UsageScreen({ me, onNavigate }: UsageScreenProps) {
   useEffect(() => {
     if (scope === undefined) return;
     const controller = new AbortController();
-    setLoad({ kind: 'loading' });
+    if (asked === 0) setLoad({ kind: 'loading' });
     getUsage(
       { days: range, tz: readerZone(), ...(scope === '' ? {} : { project: scope }) },
       controller.signal,
@@ -118,7 +144,7 @@ export function UsageScreen({ me, onNavigate }: UsageScreenProps) {
     return () => {
       controller.abort();
     };
-  }, [scope, range]);
+  }, [scope, range, asked]);
 
   const scopeName = options.find((o) => o.value === scope)?.label;
   const context = `${scopeName ?? 'Tokens'} · last ${String(range)} days · at least`;
@@ -164,9 +190,13 @@ export function UsageScreen({ me, onNavigate }: UsageScreenProps) {
 
         <p className="usage-floor">
           <strong>At least.</strong> Counted on developers’ machines from the agents’ own session
-          files — Claude Code, Codex, Gemini CLI — which miss an agent’s background calls. Cache
-          reads, most of the raw count, are shown apart and are not in the tokens.
+          files — Claude Code, Codex, Gemini CLI — which miss an agent’s background calls, and from
+          Claude Code’s own telemetry where a developer sends it. Cache reads, most of the raw
+          count, are shown apart and are not in the tokens. Costs are <strong>{COST_LABEL}</strong>:
+          list prices on the vendor’s API, for comparing work.
         </p>
+
+        <AlertsBanner alerts={alerts} onNavigate={onNavigate} onChanged={onAlertsChanged} />
 
         {noSpace ? (
           <EmptyState
@@ -181,6 +211,9 @@ export function UsageScreen({ me, onNavigate }: UsageScreenProps) {
           <UsageBody
             usage={load.usage}
             onNavigate={onNavigate}
+            onChanged={() => {
+              setAsked((n) => n + 1);
+            }}
             {...(options.some((o) => o.value === '')
               ? {
                   onAllSpaces: () => {
@@ -192,13 +225,16 @@ export function UsageScreen({ me, onNavigate }: UsageScreenProps) {
         )}
 
         {me !== undefined && (
-          <UsageCard
-            userId={me.id}
-            name={me.name}
-            self
-            section="mine"
-            className="prof-card usage-card"
-          />
+          <div className="usage-grid usage-mine">
+            <UsageCard
+              userId={me.id}
+              name={me.name}
+              self
+              section="mine"
+              className="prof-card usage-card"
+            />
+            <PlanLimitCard />
+          </div>
         )}
       </div>
     </div>
@@ -208,10 +244,13 @@ export function UsageScreen({ me, onNavigate }: UsageScreenProps) {
 function UsageBody({
   usage,
   onNavigate,
+  onChanged,
   onAllSpaces,
 }: {
   readonly usage: Usage;
   readonly onNavigate: (to: string) => void;
+  /** A budget changed: read the page again. */
+  readonly onChanged: () => void;
   /** Present for a reader who may read the whole organisation. */
   readonly onAllSpaces?: () => void;
 }) {
@@ -286,7 +325,37 @@ function UsageBody({
           </dd>
           <dd className="usage-stat-sub">tokens, on average</dd>
         </div>
+        {/* LAI-773: what the same tokens would cost on the API — never the bill. */}
+        <div className="usage-stat" data-stat="cost" title={costCaveats(totals.cost).join(' · ')}>
+          <dt className="usage-stat-label">Cost</dt>
+          <dd className="usage-stat-value">{costText(totals.cost)}</dd>
+          <dd className="usage-stat-sub">{COST_LABEL}</dd>
+          {costCaveats(totals.cost).map((line) => (
+            <dd key={line} className="usage-stat-sub usage-cost-caveat">
+              {line}
+            </dd>
+          ))}
+        </div>
+        <div className="usage-stat" data-stat="cache">
+          <dt className="usage-stat-label">From cache</dt>
+          <dd className="usage-stat-value">{percent(usage.cache.share)}</dd>
+          <dd className="usage-stat-sub">
+            {usage.cache.saving_usd === null
+              ? 'of input-side tokens'
+              : `of input-side tokens · saved ${usd(usage.cache.saving_usd)}`}
+          </dd>
+        </div>
       </dl>
+
+      {usage.telemetry !== null && usage.telemetry.tokens > 0 && (
+        <p className="usage-telemetry" data-telemetry>
+          <strong>{compactTokens(usage.telemetry.tokens)}</strong> of these tokens came from Claude
+          Code’s own telemetry — side calls its session files never show — matched session by
+          session, so nothing is counted twice.
+          {usage.telemetry.cost_usd_reported !== null &&
+            ` Claude Code’s own figure for those sessions: ${usd(usage.telemetry.cost_usd_reported)}.`}
+        </p>
+      )}
 
       {space !== null && (
         <p className="usage-space-note">
@@ -311,7 +380,7 @@ function UsageBody({
           />
         </div>
       ) : (
-        <UsageDetail usage={usage} link={link} />
+        <UsageDetail usage={usage} link={link} onChanged={onChanged} />
       )}
     </>
   );
@@ -320,9 +389,11 @@ function UsageBody({
 function UsageDetail({
   usage,
   link,
+  onChanged,
 }: {
   readonly usage: Usage;
   readonly link: (to: string) => (event: MouseEvent<HTMLAnchorElement>) => void;
+  readonly onChanged: () => void;
 }) {
   const { totals } = usage;
   const nothing = totals.tokens + totals.cache_read === 0;
@@ -394,7 +465,7 @@ function UsageDetail({
                 ),
                 tokens: p.tokens,
                 cacheRead: p.cache_read,
-                note: `${shareOf(p.attributed_tokens, p.tokens)} on a task`,
+                note: `${shareOf(p.attributed_tokens, p.tokens)} on a task · ${costText(p.cost)}`,
               }))}
             />
           )}
@@ -417,10 +488,12 @@ function UsageDetail({
               <BarRows
                 label="Tokens by agent"
                 rows={usage.by_agent.map((a) => ({
-                  key: a.agent,
+                  // The fold's `agent` is `other`, as the `other` kind's is (D-087 item 7).
+                  key: isFewPeople(a) ? 'few-people' : a.agent,
                   name: (
                     <>
-                      <AgentMark client={a.agent} size="sm" /> {agentClientName(a.agent)}
+                      <AgentMark client={a.agent} size="sm" />{' '}
+                      {isFewPeople(a) ? FEW_PEOPLE_LABEL : agentClientName(a.agent)}
                     </>
                   ),
                   tokens: a.tokens,
@@ -452,6 +525,7 @@ function UsageDetail({
             <h3 className="prof-card-title" id="usage-models-title">
               By model
             </h3>
+            <span className="prof-card-caption">cost is {COST_LABEL}</span>
           </header>
           {usage.by_model.length === 0 ? (
             <p className="prof-empty">No model reported tokens in this range.</p>
@@ -459,10 +533,15 @@ function UsageDetail({
             <BarRows
               label="Tokens by model"
               rows={usage.by_model.map((m) => ({
-                key: m.model,
-                name: <code className="usage-model">{m.model}</code>,
+                key: isFewPeople(m) ? 'few-people' : m.model,
+                name: isFewPeople(m) ? (
+                  FEW_PEOPLE_LABEL
+                ) : (
+                  <code className="usage-model">{m.model}</code>
+                ),
                 tokens: m.tokens,
                 cacheRead: m.cache_read,
+                note: modelCostText(m.cost),
               }))}
             />
           )}
@@ -536,6 +615,11 @@ function UsageDetail({
             </ul>
           )}
         </section>
+
+        <AcceptedCostCard usage={usage} />
+        <CacheCard usage={usage} />
+        <BudgetsCard budgets={usage.budgets} space={usage.project} onChanged={onChanged} />
+        <RunawayCard usage={usage} />
       </div>
     </>
   );
