@@ -6,7 +6,8 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
+finished: 2026-10-19T23:20:07Z
 started: 2026-10-19T22:21:02Z
 ---
 
@@ -39,10 +40,10 @@ Board card: LAIKA-588 (`external_ref` LAI-785).
 - [x] **Nothing an agent or a URL uses changes name**: `size`, the levels, the
       card-field key `size` and the List's `sort=size` keep working, and a
       test proves `sort=size` still sorts by effort.
-- [ ] **One headline**: the effort in words and the time as one plain range,
+- [x] **One headline**: the effort in words and the time as one plain range,
       *Small · about 40 min to 1.5 h*; with too little history for hours,
       *Small* and *Time estimate after 10 finished tasks*, once.
-- [ ] **One comparison line once there is an actual**, from the estimate
+- [x] **One comparison line once there is an actual**, from the estimate
       frozen at start: *Estimated 40 min–1.5 h · took 1.6 h · a little over*,
       with a verdict of *on target*, *a little over*, *well over* or *faster
       than expected*. No *At start* tile.
@@ -59,12 +60,12 @@ Board card: LAIKA-588 (`external_ref` LAI-785).
       have 3)*, *↓ Not blocked by anything*, *= Description length is
       typical*); rows that change nothing are left out; the similar finished
       tasks stay links inside it.
-- [ ] **Accuracy in plain words inside the disclosure** (*Estimates here have
+- [x] **Accuracy in plain words inside the disclosure** (*Estimates here have
       been off by about 2.4× on average so far (6 tasks)*), and *rough
       estimate* beside the headline when the project has fewer than 5
       measured tasks or is typically off by more than 2×. No *p80* anywhere
       and no `×` in the headline.
-- [ ] **Tokens section: one headline** — total tokens without cache reads and
+- [x] **Tokens section: one headline** — total tokens without cache reads and
       the cost labelled *API-equivalent, not your bill* — then the budget bar
       only when a budget is set, and the runaway banner only when it fires.
       Everything else (rounds, per person and agent, the share tied to a
@@ -261,3 +262,67 @@ Add a test for each of the five rows.
    the default budget (the token estimate's high end frozen at claim), show
    nothing until it reaches 80%, then only the alert line. The runaway
    banner rule stays as it is.
+
+## Round 1 fixes (2026-10-20)
+
+Fixed the blocker and the five items, on the same branch. Tests came first:
+each new assertion was run red before the code changed.
+
+**Blocker.** `shownRange` (`server/web/src/api/estimates.ts`) is now the one
+place a range's ends are rounded. It returns the printed label and the time
+that label says, and the headline, the comparison line and the verdict all
+read from it. `buildShown` does the same for the time taken: the verdict
+compares the printed *took* against the printed ends, because *took 1.54 h*
+prints as `1.5 h`. `comparison()` returns the line and its verdict together,
+and the panel's `data-verdict` comes from it. The reviewer's probe
+(`/tmp/review-effort/probe.ts`), before and after:
+
+| p50 → p80, took | before | after |
+| --- | --- | --- |
+| 40 min → 1.26 h, 1.4 h | `Estimated 40 min–1.5 h · took 1.4 h · a little over` | `Estimated at start 40 min–1.5 h · took 1.4 h · on target` |
+| 20 min → 47.6 min, 48 min | `Estimated 20–50 min · took 48 min · a little over` | `Estimated at start 20–50 min · took 48 min · on target` |
+| 1 d → 2.6 d, 2.9 d | `Estimated 24 h–3 d · took 3 d · a little over` | `Estimated at start 1–3 d · took 3 d · on target` |
+| 40 min → 1.24 h, 1.2 h | `Estimated 40 min–1 h · took 1.2 h · on target` | `Estimated at start 40 min–1 h · took 1.2 h · a little over` |
+| 15 min → 22 min, 21.9 min | `Estimated 15–20 min · took 22 min · on target` | `Estimated at start 15–20 min · took 22 min · a little over` |
+
+Each row is a test in `estimates.test.ts`.
+
+1. **Boundaries on the printed values.** Below the shown low end is *faster
+   than expected*. The shown range, ends included, is *on target*. Up to
+   1.5× the shown top is *a little over*, and beyond that *well over*. Each
+   is tested in minutes, hours and days, including printed-equals-boundary
+   cases: 39.6 min prints as `40 min`, 1.54 h as `1.5 h`, and 3.0 h is
+   1.5 × 2 h.
+2. The line reads *Estimated at start …*.
+3. Accuracy: *Estimates here are typically off by about 2.4× (6 tasks so
+   far)*, and the token record reads the same way. With fewer than 3
+   measured tasks the figure is **hidden**, the reviewer's second option,
+   because a median of one or two describes those tasks, not the estimates.
+   The replay on past tasks is told instead when there is one, after *Too
+   few estimates have been checked against a finish to judge yet.*
+4. A range that reaches days says both ends in days: `1–2 d`, `0.5–3 d`,
+   never `24 h–2 d`. Minutes and hours may still share a range
+   (`40 min–1.5 h`, the owner's own example).
+5. The budget bar is drawn only for a budget a lead set (`source: 'set'`).
+   The default budget draws nothing under 80%. From 80% it draws one line,
+   `estimateAlertLine` in `budgets.ts`: *Over 80% of its token estimate:
+   2.1M of 2.5M (84%).* and then *Past its token estimate: 4.01M of 2.5M
+   (160%).* A lead sets a real budget from *Details*. The runaway banner is
+   unchanged.
+
+The criteria above are as they were frozen. Their example strings (*Estimated
+40 min–1.5 h …*, *on average so far (6 tasks)*) are superseded by this round.
+
+**Mutations**, each confirmed landed, run, and restored by checksum. Each
+turned its test red: the verdict judged on the raw p50 and p80 again
+(five-row test), hours and days mixed again, a median of one told, the
+printed *took* ignored, the default budget drawn as a bar, and the default
+budget speaking under 80%. On its first run the printed-*took* mutation
+**survived**: the `verdictOf` tests bypassed `comparison()`. The test *the
+time taken is judged as printed too* was added, and the mutation is now red.
+
+**SPEC** §11.4.2.1, the named crossing, follows these rules.
+
+**Screenshots** were retaken: `after-*` in `/tmp/laika-effort-panel-shots/`,
+36 in all. That includes the new `after-tokens-default-budget-*`, which shows
+the default budget past 100% as the one line.
