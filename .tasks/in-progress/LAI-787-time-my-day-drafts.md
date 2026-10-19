@@ -2,11 +2,12 @@
 id: LAI-787
 title: 'Time, phase 1: My day — drafts from the developer''s machine, confirm in one click, manual entries, human vs agent time'
 area: server
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-19T22:43:15Z
 ---
 
 ## Goal
