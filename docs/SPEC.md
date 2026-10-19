@@ -3398,33 +3398,39 @@ anything missing sends the task back.
   *Small · about 40 min to 1.5 h*, with *rough estimate* beside it when the
   project has fewer than 5 measured estimates or is typically off by more than
   2×; with too little history for hours, the effort and *Time estimate after
-  10 finished tasks*, once. Once it has finished, one line against the estimate
-  frozen when work started, with a verdict — *Estimated 40 min–1.5 h · took
-  1.6 h · a little over* (*on target*, *a little over*, *well over*, *faster
-  than expected*) — and, when there was more than the build, where the time
-  went: *Building 1.6 h · waiting for review 41 h · rework 20 min*. The token
-  estimate is one line when there is one and nothing when there is not. A
-  small *Change* control beside the effort for anyone who may edit the task —
+  10 finished tasks*, once. A range that reaches days says both ends in days
+  (*1–2 d*, never *24 h–2 d*). Once it has finished, one line against the
+  estimate frozen when work started, with a verdict — *Estimated at start
+  40 min–1.5 h · took 1.6 h · a little over* — **judged on the figures
+  printed** (LAI-785 review): below the shown low end is *faster than
+  expected*, the shown range is *on target*, up to 1.5× the shown top is *a
+  little over*, and beyond that *well over*. When there was more than the
+  build, where the time went: *Building 1.6 h · waiting for review 41 h ·
+  rework 20 min*. The token estimate is one line when there is one and
+  nothing when there is not. A small *Change* control beside the effort for
+  anyone who may edit the task —
   *Automatic (Small)*, *Extra small* … *Extra large*. A folded *Why Small?*
   holds the factors as sentences with arrows (*↓ No acceptance criteria (most
   tasks here have 3)*), leaving out what changes nothing, the similar finished
   tasks as links, what was said at claim, and the project's accuracy in words
-  (*Estimates here have been off by about 2.4× on average so far (6 tasks)*).
+  (*Estimates here are typically off by about 2.4× (6 tasks so far)*) — the
+  figure is a median, and it is told only once 3 estimates are measured.
   Nothing empty is drawn — no `—`, no *Early* — and no figure is about a
   person.
   **A Tokens section under the proof** (D-084, LAI-770; one headline since
   LAI-785): the task's tokens without cache reads, labelled *at least*, and
   their **cost**, *API-equivalent, not your bill* (LAI-773); its **budget** as
-  a bar with an 80% or 100% badge, only when one is set, saying whether a lead
-  set it or it is the token estimate's high end frozen at claim, with — for a
+  a bar with an 80% or 100% badge **only when a lead set one**, with — for a
   reader who may set budgets (`can_set` from `GET /projects/:slug/budgets`) —
-  a field to change it and *Back to the estimate*; and, **only for the person
-  it is addressed to**, the runaway banner: *your agent has spent N on this
-  task, past its p95 of M, and nothing has landed for T*. Everything else sits
-  in one folded **Details**: cache reads; the attributed share — how much of
-  those people's work on those days Laika could tie to a task — or, for a
-  reader who sees nobody's part, what the figure counts; the build's token
-  estimate; what the cost leaves out; a first budget for a lead to set; per
+  a field to change it and *Back to the estimate*. The default budget, the
+  token estimate's high end frozen at claim, draws nothing until 80% and then
+  one line: *Past its token estimate: 4.01M of 2.5M (160%)*. And, **only for
+  the person it is addressed to**, the runaway banner: *your agent has spent N
+  on this task, past its p95 of M, and nothing has landed for T*. Everything
+  else sits in one folded **Details**: cache reads; the attributed share — how
+  much of those people's work on those days Laika could tie to a task — or,
+  for a reader who sees nobody's part, what the figure counts; the build's
+  token estimate; what the cost leaves out; a budget for a lead to set; per
   review round; and per person and agent for an owner or admin, the reader's
   own part for anyone else, nothing per person on a token. Not drawn for a
   task never started that has none; one quiet line for a started one that has
