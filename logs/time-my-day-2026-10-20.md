@@ -56,5 +56,13 @@ excludes the 157 Omnigent sub-agent sessions from before the skip list existed
 (the product never reads `chat.db`). A floor: commits never make time, board
 clicks are not used, and polly's typing leaves no trace.
 
+**Gate** (after the last code edit, each to its own file, nothing piped; machine load average 40–50 throughout — Spotlight's `mds_stores` at ~300% CPU)
+- `pnpm test` **1** in each of three full runs, and only by LAI-768's load timeouts, a different set each time: run 1 `build.test.ts` (4 cases, "built server never became healthy"); run 2 `migrate.test.ts` (1, 5 s) and `project-statuses.test.ts` (1, 10 s hook); run 3 `build.test.ts` (2) and `migrate.test.ts` (1). Every other case passed: server 3200–3202 passed + 10 skipped of 3214 cases (159 files, 2 skipped), web 2159/2159 cases, cli 468 passed + 2 skipped of 470 cases.
+- Alone, on the final tree: `build.test.ts` **0** (15/15), `migrate.test.ts` **0** (24/24), `project-statuses.test.ts` **0** (22/22). The built server becomes healthy in 650–760 ms on a fresh database (three timed boots), against the test's ~10 s budget.
+- `pnpm lint` **0**; `pnpm format` **0**.
+- Opt-in measurement: `LAIKA_PERF=1 pnpm exec vitest run test/services/time-drafts.perf.test.ts` **0** — store a day 1.8 ms, My day 0.8 ms (270,030 drafts, 429,000 entries).
+- Mutations (each red, then restored by path): clip removed, `time_drafts.read_own` taken out of session-only (red in `can.test.ts`), Draft-my-time-off delete removed, `dropAgentTime` removed, the three-year trigger's `WHEN` made false, the 1440-minute day cap lifted, agent minutes not split by tokens.
+- Screenshots: /tmp/laika-time-my-day-shots/ (16: empty, drafted, confirmed, no signal × light, dark × 1366, 390), throwaway server on 37787, its data deleted.
+
 **State**
-In .tasks/review/. Not pushed. Gate below.
+In .tasks/review/. Not pushed.
