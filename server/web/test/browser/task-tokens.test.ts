@@ -439,7 +439,9 @@ void describe('moving to another task', () => {
       await tokens(h);
       assert.equal(await h.page.locator('.tk-total').innerText(), '4.01M');
 
-      // In the app, not a reload: the forecast's link to a similar task.
+      // In the app, not a reload: the effort's link to a similar task, inside
+      // its folded *why* (LAI-785).
+      await h.page.locator('details.fc-why summary').click();
       await h.page.locator('.fc-similar-link', { hasText: 'LC-1' }).click();
       await until(() => h.page.url().includes('task=t1'));
       assert.match(h.page.url(), /task=t1/);

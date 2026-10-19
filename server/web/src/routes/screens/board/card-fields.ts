@@ -89,7 +89,8 @@ export const FIELD_LABELS: Readonly<Record<keyof CardFields, string>> = {
   assignee: 'Assignee',
   subtasks: 'Subtasks',
   due: 'Due date',
-  size: 'Size',
+  // Called effort on screen (LAI-785); the stored key stays `size`.
+  size: 'Effort',
 };
 
 export const FIELD_KEYS = Object.keys(FIELD_LABELS) as (keyof CardFields)[];

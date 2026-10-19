@@ -140,7 +140,7 @@ export function SprintCard(props: SprintCardProps) {
               data-forecast={forecast.forecast === null ? 'none' : 'range'}
               title={`From what this project finished in the last ${String(forecast.basis.days)} days (${String(
                 forecast.basis.tasks_done,
-              )} tasks) and the sizes left — not story points`}
+              )} tasks) and the effort left — not story points`}
             >
               {line}
             </span>

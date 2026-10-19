@@ -1,15 +1,16 @@
-import { sizeTitle, type TaskSize } from '../api/estimates.ts';
+import { effortTitle, type TaskSize } from '../api/estimates.ts';
 import './size-chip.css';
 
 /**
- * A task's size, `XS` to `XL` (D-085) — one drawing for the card, the List's
- * Size column and the task panel, so the three cannot drift apart (the
- * `PriorityIcon` rule).
+ * A task's effort, `XS` to `XL` (D-085; called effort since LAI-785) — one
+ * drawing for the card and the List's Effort column, so the two cannot drift
+ * apart (the `PriorityIcon` rule). The level stays the compact text; the
+ * hover says it in words.
  *
- * **The level is the text, and the tone only repeats it**: a larger size is a
- * stronger chip, from existing tokens only (D-020). A size a person set wears
- * a dot, and the hover says who decided it and what Laika computed — never the
- * name of the person, which the card does not need.
+ * **The level is the text, and the tone only repeats it**: a larger effort is
+ * a stronger chip, from existing tokens only (D-020). An effort a person set
+ * wears a dot, and the hover says a person decided it and what Laika
+ * estimated — never the name of the person, which the card does not need.
  */
 export function SizeChip({
   size,
@@ -21,7 +22,7 @@ export function SizeChip({
   return (
     <span
       className={`size-chip size-chip-${size.level}${className === undefined ? '' : ` ${className}`}`}
-      title={sizeTitle(size)}
+      title={effortTitle(size)}
       data-size={size.level}
     >
       {size.level}

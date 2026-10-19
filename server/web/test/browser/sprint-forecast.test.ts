@@ -177,7 +177,7 @@ void describe('the sprint forecast', () => {
       );
       assert.match(
         (await active.locator('.sprint-forecast').getAttribute('title')) ?? '',
-        /last 42 days \(31 tasks\) and the sizes left — not story points/,
+        /last 42 days \(31 tasks\) and the effort left — not story points/,
       );
       // A planned sprint with nothing in it says nothing; completed ones are never asked.
       assert.equal(await h.page.locator('.sprint-card-planned .sprint-forecast').count(), 0);
