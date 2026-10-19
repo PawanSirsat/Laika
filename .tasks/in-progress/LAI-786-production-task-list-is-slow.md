@@ -2,11 +2,12 @@
 id: LAI-786
 title: 'The production task list is slow: a 200-task page took 72 s'
 area: server
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+started: 2026-10-19T22:37:37Z
+status: in-progress
 ---
 
 ## Goal
