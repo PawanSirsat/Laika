@@ -39,6 +39,9 @@ const REACHED_FROM: Readonly<Record<string, string>> = {
   // admins, the only readers it is drawn for.
   '/people':
     'a person — their name on Organisation, a Work by person row or a Capacity card (owners and admins)',
+  // A person's own day (LAI-787, D-088): about whoever is signed in, so it
+  // sits under their name at the foot of the rail rather than in a group.
+  '/my-day': 'the person in the sidebar footer — My day sits under their name',
 };
 
 const holds = () => true;

@@ -73,6 +73,14 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'No token usage yet',
     body: 'Tokens arrive from developers who share local activity: their agents’ own session files are counted on their machines and sent as totals per day.',
   },
+  /*
+   * My day (D-088, LAI-787): the reader's own, drafted on their machine and
+   * confirmed by them — so the copy says where a draft comes from.
+   */
+  '/my-day': {
+    headline: 'Nothing on this day yet',
+    body: 'Your day is drafted on your own machine by the Laika collector when Draft my time is on, and only you see it until you confirm it. Add a meeting or a call by hand at any time.',
+  },
   '/unlisted': {
     headline: 'Nothing unlisted',
     body: 'Agents log work here when they notice something outside any project — a stale dependency, a broken script. Promote what matters into a task; dismiss the rest.',
