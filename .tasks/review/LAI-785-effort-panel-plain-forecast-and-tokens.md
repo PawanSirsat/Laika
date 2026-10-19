@@ -204,3 +204,24 @@ test red.
 `finished-over` (the owner's example; `after` also has `why-open`),
 `tokens-budget` (`after` also has `details-open`), `board`, `list`. 24
 before and 32 after.
+
+**Gate**, at the repo root after the last code edit, each command on its own
+with its output in a file and never piped:
+
+- `pnpm test`: **exit 1**. web: 2167 tests, 2167 passed, 0 failed. cli: 431
+  tests, 429 passed, 2 skipped, 0 failed. server: 3096 tests in 152 files,
+  3086 passed, 8 skipped, **2 failed**, both in `test/tooling/build.test.ts`
+  (*keeps an idle connection open for 65 s* and *serves the committed
+  fallback*), each with `built server never became healthy on port …`. That
+  is the health-check wait timing out while every workspace runs at once.
+  This change touches nothing that file builds or serves.
+- `npx vitest run test/tooling/build.test.ts` in `server/`, alone: **exit 0**,
+  15 tests, 15 passed, in 21.9 s.
+- `pnpm lint`: **exit 0**.
+- `pnpm format`: **exit 0**.
+
+Also run along the way: `node --test test/browser/task-size.test.ts
+test/browser/task-tokens.test.ts test/browser/sprint-forecast.test.ts` in
+`server/web`: exit 0, 25 tests, 25 passed. `npx vitest run
+test/mcp/read-tools.test.ts test/mcp/write-tools.test.ts` in `server/`: exit
+0, 70 tests, 70 passed.
