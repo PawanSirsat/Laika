@@ -258,8 +258,11 @@ export function MyDayScreen({ day, onDay }: MyDayScreenProps) {
               <p className="myday-nosignal-head">No signal</p>
               <p className="myday-quiet">
                 {settings.drafting
-                  ? 'Nothing reached Laika from your machine for this day. That is not zero hours — add what you worked below.'
-                  : 'Nothing is drafted while Draft my time is off. That is not zero hours — add what you worked below.'}
+                  ? 'Nothing reached Laika from your machine for this day.'
+                  : addable
+                    ? 'Nothing is drafted while Draft my time is off.'
+                    : 'Time is off for this organisation, so nothing is drafted or added.'}
+                {addable && ' That is not zero hours — add what you worked below.'}
               </p>
             </div>
           )}
