@@ -108,6 +108,9 @@ export const LOCAL_ACTIVITY_PATH = '/api/v1/me/local-activity';
 /** The OpenTelemetry receiver (LAI-773). */
 export const OTLP_PREFIX = '/api/v1/otlp/';
 
+/** A collector's drafted blocks (LAI-787). */
+export const TIME_DRAFTS_PATH = '/api/v1/me/time-drafts';
+
 export function classify(
   path: string,
   credential: RequestCredential | null,
@@ -123,6 +126,16 @@ export function classify(
   if (path === LOCAL_ACTIVITY_PATH && method === 'PUT') {
     return {
       key: `local-activity:${credential?.tokenId != null ? 'token' : 'user'}:${who}`,
+      policy: LIMITS.localActivity,
+    };
+  }
+
+  // A collector's time drafts (LAI-787): a report like the snapshot, on the
+  // same policy and its own bucket, so drafting never spends the snapshot's
+  // budget. An agent's proposal (`POST`) is an ordinary write.
+  if (path === TIME_DRAFTS_PATH && method === 'PUT') {
+    return {
+      key: `time-drafts:${credential?.tokenId != null ? 'token' : 'user'}:${who}`,
       policy: LIMITS.localActivity,
     };
   }

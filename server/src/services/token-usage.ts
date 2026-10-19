@@ -16,6 +16,7 @@ import {
 import { type AgentClient } from '../auth/agent-clients.ts';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
+import { requireOrgId } from '../db/orgs.ts';
 import {
   projectMemberships,
   projects,
@@ -37,6 +38,7 @@ import {
   assertReportDays,
   sharingOn,
 } from './local-activity.ts';
+import { type SessionTaskInput, storeSessionTasks } from './agent-time.ts';
 import { readableByOutsideId } from './outside-ids.ts';
 import { recordArrival } from './plan-limit.ts';
 import { requireProjectBySlug } from './projects.ts';
@@ -187,6 +189,12 @@ export interface TokenUsageReport {
      * without it leaves its file tokens unplaced, which keeps the match safe.
      */
     sessions?: SessionFilesInput[] | undefined;
+    /**
+     * How each Claude Code session's headline tokens split between tasks that
+     * day (LAI-787): what ties its agent minutes to cards the way its tokens
+     * are tied (D-088 item 8).
+     */
+    session_tasks?: SessionTaskInput[] | undefined;
   }[];
 }
 
@@ -458,7 +466,7 @@ export interface UsageQuery {
 
 const USAGE_WINDOW = { daysBack: TOKEN_USAGE_DAYS_BACK, maxDays: TOKEN_USAGE_DAYS_MAX };
 
-interface ResolvedTask {
+export interface ResolvedTask {
   taskId: string;
   projectId: string;
 }
@@ -473,12 +481,16 @@ interface ResolvedTask {
  * wins, and an id two readable cards carry is left unattributed — nobody is
  * here to be asked which, and a report is never refused for it.
  */
-function resolveKeys(
+export function resolveKeys(
   db: Db,
   actor: ResolvedActor,
   keys: ReadonlySet<string>,
 ): Map<string, ResolvedTask> {
   const resolved = new Map<string, ResolvedTask>();
+  // With the organisation the prefix is `projects_org_prefix_unique` and the
+  // task `tasks_project_number_unique`: two searches. Without it SQLite has no
+  // index that leads with the prefix and walks `tasks` (LAI-787).
+  const orgId = keys.size === 0 ? '' : requireOrgId(db);
   for (const key of keys) {
     const dash = key.lastIndexOf('-');
     const found = db
@@ -486,7 +498,11 @@ function resolveKeys(
       .from(tasks)
       .innerJoin(projects, eq(projects.id, tasks.projectId))
       .where(
-        and(eq(projects.prefix, key.slice(0, dash)), eq(tasks.number, Number(key.slice(dash + 1)))),
+        and(
+          eq(projects.orgId, orgId),
+          eq(projects.prefix, key.slice(0, dash)),
+          eq(tasks.number, Number(key.slice(dash + 1))),
+        ),
       )
       .get();
     if (found === undefined) {
@@ -521,6 +537,7 @@ export function recordTokenUsage(
   const keys = new Set<string>();
   for (const day of report.days) {
     for (const row of day.rows) if (row.task !== null) keys.add(row.task);
+    for (const split of day.session_tasks ?? []) keys.add(split.task);
   }
   const resolved = resolveKeys(db, actor, keys);
 
@@ -623,6 +640,9 @@ export function recordTokenUsage(
         .values(rows.slice(i, i + 50))
         .run();
     }
+
+    // Each session's split between tasks (LAI-787), replaced with the day.
+    storeSessionTasks(tx, actor.userId, collectorId, report.days, resolved, now);
 
     // The telemetry match (LAI-773), best effort: the zone, this machine's
     // sessions for the days it sent, the sessions it left out, and the gap.

@@ -1150,3 +1150,43 @@ describe('an outside id is a task key to every tool (LAI-780)', () => {
     expect(h.db.select().from(tasks).all()).toHaveLength(1);
   });
 });
+
+describe('propose_time_entry — an agent proposes, the person confirms (D-088 item 13)', () => {
+  it('is refused, with the reason, while drafting is off', async () => {
+    const client = await connect(await mint());
+    const result = await client.callTool({
+      name: 'propose_time_entry',
+      arguments: { minutes: 30, note: 'Client call' },
+    });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain('time_drafts_off');
+    await client.close();
+  });
+
+  it('puts a draft in the person’s drafts and nothing anybody else can see', async () => {
+    await must('/api/v1/org/time', { method: 'PUT', body: '{"mode":"drafts"}' }, 200);
+    await must('/api/v1/me/time-settings', { method: 'PUT', body: '{"draft_my_time":true}' }, 200);
+    const client = await connect(await mint());
+    const result = await client.callTool({
+      name: 'propose_time_entry',
+      arguments: { minutes: 30, note: 'Client call' },
+    });
+    expect(result.isError, JSON.stringify(result.content)).toBeFalsy();
+    expect(payload(result).draft).toMatchObject({ source: 'agent', minutes: 30 });
+    await client.close();
+
+    const day = (await (await api('/api/v1/me/time')).json()) as {
+      drafts: { minutes: number; note: string }[];
+      entries: unknown[];
+    };
+    expect(day.drafts.map((d) => [d.minutes, d.note])).toEqual([[30, 'Client call']]);
+    expect(day.entries).toEqual([]);
+    expect(
+      h.db
+        .select()
+        .from(activity)
+        .all()
+        .filter((r) => r.actorKind === 'agent'),
+    ).toEqual([]);
+  });
+});

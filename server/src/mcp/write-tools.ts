@@ -19,6 +19,7 @@ import {
   updateSprint,
 } from '../services/sprints.ts';
 import { EVIDENCE_LIMITS } from '../services/rounds.ts';
+import { proposeTimeDraft } from '../services/time-drafts.ts';
 import { logUnlistedWork } from '../services/unlisted.ts';
 import {
   addTaskDependency,
@@ -506,6 +507,53 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         return answer(
           `Logged against \`${logged.repo}\`. It is in the triage pile — somebody may promote it to a task.`,
           { unlisted: logged },
+        );
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  // ----------------------------------------------------- propose_time_entry
+
+  server.registerTool(
+    'propose_time_entry',
+    {
+      title: 'Propose time for your person',
+      description:
+        'Propose time your person spent — a call, a review, work you did with them — into their private drafts. It is a draft, never an entry: only they confirm it, signed in to the web app, and nobody else sees it. Refused with `forbidden` (`time_drafts_off`) unless their organisation drafts time and they turned on Draft my time. Minutes, never hours; your own agent time is counted elsewhere and is not theirs to propose.',
+      inputSchema: z.strictObject({
+        minutes: z.number().int().min(1).max(1440).describe('Minutes, 1–1440.'),
+        task: TASK_REF.optional().describe('The card it was for, if any — a key such as `LAI-42`.'),
+        day: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD')
+          .optional()
+          .describe("Their local day, `YYYY-MM-DD`. Defaults to today in their drafts' zone."),
+        note: z
+          .string()
+          .trim()
+          .max(200)
+          .optional()
+          .describe('What it was, briefly — `Client call`. No prompt text, no file contents.'),
+      }),
+    },
+    ({ minutes, task, day, note }) => {
+      try {
+        const draft = proposeTimeDraft(
+          db,
+          actor,
+          {
+            minutes,
+            ...(task === undefined ? {} : { task }),
+            ...(day === undefined ? {} : { day }),
+            ...(note === undefined ? {} : { note }),
+          },
+          clock(),
+        );
+        return answer(
+          `Proposed ${String(draft.minutes)} min on ${draft.day}${draft.task === null ? '' : ` for **${draft.task.key}**`} into their drafts. They confirm it on My day; until then it is theirs alone.`,
+          { draft },
         );
       } catch (error) {
         return toolError(error);

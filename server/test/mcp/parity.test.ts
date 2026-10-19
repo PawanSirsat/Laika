@@ -6,7 +6,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { eq } from 'drizzle-orm';
 import { afterEach, describe, expect, it } from 'vitest';
-import { activity, users } from '../../src/db/schema.ts';
+import { activity, timeDrafts, timeEntries, users } from '../../src/db/schema.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../helpers/auth.ts';
 
 /**
@@ -310,6 +310,27 @@ const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
       },
     },
   ],
+  [
+    'propose_time_entry',
+    {
+      note: 'Its twin is `POST /me/time-drafts` (LAI-787, D-088 item 13): an agent proposes time into its person’s private drafts, through the one service a person’s own proposal uses. Neither writes an `activity` row — time never reaches the feed — so each half also asserts the draft it made, or the comparison of two empty feeds would prove nothing.',
+      rest: async (s) => {
+        await seedTask(s);
+        await draftingOn(s);
+        await must(s, '/api/v1/me/time-drafts', {
+          method: 'POST',
+          body: JSON.stringify({ minutes: 25, task: 'COR-1', tz: 'UTC', note: 'Review' }),
+        });
+        expectOneProposal(s);
+      },
+      mcp: async (s, c) => {
+        await seedTask(s);
+        await draftingOn(s);
+        await callTool(c, 'propose_time_entry', { minutes: 25, task: 'COR-1', note: 'Review' });
+        expectOneProposal(s);
+      },
+    },
+  ],
   ['list_projects', { rest: readsNothingRest, mcp: readsNothingMcp('list_projects', {}) }],
   ['list_ready_tasks', { rest: readsNothingRest, mcp: readsNothingMcp('list_ready_tasks', {}) }],
   [
@@ -471,6 +492,26 @@ async function seedTask(side: Side): Promise<string> {
     body: JSON.stringify({ title: 'A task', priority: 'p1' }),
   });
   return ((await res.json()) as { id: string }).id;
+}
+
+/** Both of time's switches on for the side's person (LAI-787). */
+async function draftingOn(side: Side): Promise<void> {
+  await must(side, '/api/v1/org/time', { method: 'PUT', body: '{"mode":"drafts"}' }, 200);
+  await must(
+    side,
+    '/api/v1/me/time-settings',
+    { method: 'PUT', body: '{"draft_my_time":true}' },
+    200,
+  );
+}
+
+/** Exactly one agent proposal of 25 minutes on the side's task, and no entry. */
+function expectOneProposal(side: Side): void {
+  const drafts = side.h.db.select().from(timeDrafts).all();
+  expect(drafts.map((d) => [d.source, d.minutes, d.taskId !== null])).toEqual([
+    ['agent', 25, true],
+  ]);
+  expect(side.h.db.select().from(timeEntries).all()).toEqual([]);
 }
 
 /** A read's twin: the REST read, which must also write nothing. */

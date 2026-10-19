@@ -3,6 +3,7 @@ import { appendActivity } from '../db/activity.ts';
 import { assertCan, systemPrincipal } from '../policy/can.ts';
 import { type Db } from '../db/client.ts';
 import {
+  agentTimeDays,
   heartbeats,
   invites,
   localActivityDays,
@@ -12,9 +13,12 @@ import {
   tokenArrivals,
   tokenSessionDays,
   tokenSessionSkips,
+  tokenSessionTasks,
   tokenTelemetrySeries,
   tokenUsageDays,
   tasks,
+  timeDrafts,
+  timeEntries,
 } from '../db/schema.ts';
 import { ARRIVALS_KEPT_MS } from '../services/plan-limit.ts';
 
@@ -150,8 +154,11 @@ export function pruneLocalActivity(db: Db, now: number): JobResult {
   const changed = db.transaction((tx) => {
     const days = tx.delete(localActivityDays).where(lt(localActivityDays.day, cutoff)).run();
     const keys = tx.delete(pushedCommitKeys).where(lt(pushedCommitKeys.day, cutoff)).run();
-    // Token usage (D-084 item 12) is kept as long, by the same rule.
+    // Token usage (D-084 item 12) is kept as long, by the same rule — and so
+    // are agent minutes and the split that ties them to cards (LAI-787).
     const tokens = tx.delete(tokenUsageDays).where(lt(tokenUsageDays.day, cutoff)).run();
+    const agentTime = tx.delete(agentTimeDays).where(lt(agentTimeDays.day, cutoff)).run();
+    const splits = tx.delete(tokenSessionTasks).where(lt(tokenSessionTasks.day, cutoff)).run();
     // What only matches telemetry to the files (LAI-773) is settled once the
     // collector's 31-day window has passed it: kept 40 days. The series
     // state matters while a session runs, the excluded keys as long as the
@@ -177,6 +184,8 @@ export function pruneLocalActivity(db: Db, now: number): JobResult {
       days.changes +
       keys.changes +
       tokens.changes +
+      agentTime.changes +
+      splits.changes +
       sessions.changes +
       series.changes +
       skips.changes +
@@ -184,6 +193,41 @@ export function pruneLocalActivity(db: Db, now: number): JobResult {
     );
   });
 
+  return { changed };
+}
+
+/** D-088 item 11: drafts are kept 30 days. */
+export const TIME_DRAFTS_RETENTION_DAYS = 30;
+/** D-088 item 11 and BCEA s31: confirmed entries are kept three years. */
+export const TIME_ENTRIES_RETENTION_YEARS = 3;
+
+/**
+ * Time retention (§11.6, D-088 item 11, LAI-787): drafts dated before 30 days
+ * ago — pending, dismissed and confirmed alike — and entries dated before
+ * three years ago, with their revisions. Daily, and once at boot.
+ *
+ * **By day, not by instant**, as local activity's: both hold the person's
+ * local dates. The entries' cutoff is three years before `now`; the trigger
+ * that keeps them compares with SQLite's own `date('now', '-3 years')`
+ * (`db/migrate.ts`). Run on the real clock, as the scheduler runs it, the two
+ * agree; a caller whose `now` is ahead of the database's clock meets the
+ * trigger, and nothing younger than three years is deleted whatever it asks.
+ *
+ * No `activity` row: §4.8 has no verb for it, as for local activity.
+ */
+export function pruneTime(db: Db, now: number): JobResult {
+  assertCan(SYSTEM, 'system.time.prune');
+  const draftCutoff = new Date(now - TIME_DRAFTS_RETENTION_DAYS * DAY_MS)
+    .toISOString()
+    .slice(0, 10);
+  const at = new Date(now);
+  at.setUTCFullYear(at.getUTCFullYear() - TIME_ENTRIES_RETENTION_YEARS);
+  const entryCutoff = at.toISOString().slice(0, 10);
+  const changed = db.transaction((tx) => {
+    const drafts = tx.delete(timeDrafts).where(lt(timeDrafts.day, draftCutoff)).run();
+    const entries = tx.delete(timeEntries).where(lt(timeEntries.day, entryCutoff)).run();
+    return drafts.changes + entries.changes;
+  });
   return { changed };
 }
 

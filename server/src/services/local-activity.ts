@@ -5,6 +5,7 @@ import { type Db } from '../db/client.ts';
 import { type LocalActivityScope } from '../db/enums.ts';
 import { requireOrgId } from '../db/orgs.ts';
 import {
+  agentTimeDays,
   localActivityDays,
   orgs,
   projects,
@@ -12,6 +13,7 @@ import {
   tokenArrivals,
   tokenSessionDays,
   tokenSessionSkips,
+  tokenSessionTasks,
   tokenTelemetrySeries,
   tokenUsageZones,
   tokenUsageDays,
@@ -678,6 +680,11 @@ export function deleteOwnLocalActivity(db: Db, actor: ResolvedActor): void {
     tx.delete(tokenSessionSkips).where(eq(tokenSessionSkips.userId, actor.userId)).run();
     tx.delete(tokenArrivals).where(eq(tokenArrivals.userId, actor.userId)).run();
     tx.delete(tokenUsageZones).where(eq(tokenUsageZones.userId, actor.userId)).run();
+    // And agent minutes with the split that ties them to cards (LAI-787):
+    // the same consent's figures. Time the person confirmed is a record, not
+    // collected history, and stays.
+    tx.delete(agentTimeDays).where(eq(agentTimeDays.userId, actor.userId)).run();
+    tx.delete(tokenSessionTasks).where(eq(tokenSessionTasks.userId, actor.userId)).run();
   });
 }
 
