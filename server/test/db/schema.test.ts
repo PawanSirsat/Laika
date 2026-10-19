@@ -72,6 +72,8 @@ describe('migrations', () => {
   const EXPECTED_TABLES = [
     'accounts',
     'activity',
+    // LAI-787, D-088: Claude Code's active time, agent minutes.
+    'agent_time_days',
     'board_activity_days',
     'comment_mentions',
     'comments',
@@ -87,6 +89,8 @@ describe('migrations', () => {
     'member_ratings',
     // LAI-773: an organisation's own API-equivalent prices.
     'org_model_prices',
+    // LAI-787, D-088: the organisation's Time.
+    'org_time_settings',
     'orgs',
     // LAI-773, D-087: a developer's own plan limit.
     'plan_limits',
@@ -111,6 +115,10 @@ describe('migrations', () => {
     'task_tags',
     'task_watchers',
     'tasks',
+    // LAI-787, D-088: drafts, confirmed entries and their history.
+    'time_drafts',
+    'time_entries',
+    'time_entry_revisions',
     // LAI-773: budgets and their alerts, the telemetry match, the arrival rate.
     'token_alert_dismissals',
     'token_alerts',
@@ -118,6 +126,8 @@ describe('migrations', () => {
     'token_budgets',
     'token_session_days',
     'token_session_skips',
+    // LAI-787: how a session's tokens split between tasks, for agent minutes.
+    'token_session_tasks',
     'token_telemetry_series',
     // LAI-769, D-084: agents' token usage per day.
     'token_usage_days',
@@ -125,6 +135,8 @@ describe('migrations', () => {
     'token_usage_zones',
     'tokens',
     'unlisted_work',
+    // LAI-787, D-088: a person's own Draft my time.
+    'user_time_settings',
     'users',
     'verifications',
   ];

@@ -55,6 +55,12 @@ import {
   TOKEN_ALERT_KINDS,
   TOKEN_SCOPES,
   TOKEN_SESSION_SOURCES,
+  AGENT_TIME_KINDS,
+  TIME_DRAFT_SOURCES,
+  TIME_DRAFT_STATES,
+  TIME_ENTRY_SOURCES,
+  TIME_MODES,
+  TIME_REVISION_CHANGES,
 } from './enums.ts';
 
 /** `CHECK (col IN ('a','b'))` — the database half of a closed vocabulary. */
@@ -2115,6 +2121,286 @@ export const planLimits = sqliteTable(
   ],
 );
 
+// -------------------------------------------------- §4.45 org_time_settings
+
+/**
+ * The organisation's *Time* setting (§4.45, D-088 item 5, LAI-787): `off`,
+ * `manual` or `drafts`. **No row is `off`** — time is something an owner or
+ * admin turns on, from a web session. Its own table rather than a column on
+ * `orgs`, so the change is additive: a column with a CHECK is a rebuild of
+ * `orgs` the migrator would have to be talked out of.
+ */
+export const orgTimeSettings = sqliteTable(
+  'org_time_settings',
+  {
+    orgId: text('org_id')
+      .primaryKey()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    mode: text('mode', { enum: TIME_MODES }).notNull(),
+    updatedAt,
+  },
+  () => [check('org_time_settings_mode_check', oneOf('mode', TIME_MODES))],
+);
+
+// ------------------------------------------------- §4.46 user_time_settings
+
+/**
+ * A person's own *Draft my time* (§4.46, D-088 item 5, LAI-787). **No row is
+ * off.** Set only by the person, from a web session — never by an admin and
+ * never with a token, as `share_local_activity` is.
+ */
+export const userTimeSettings = sqliteTable(
+  'user_time_settings',
+  {
+    userId: text('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    draftMyTime: integer('draft_my_time').notNull().default(0),
+    updatedAt,
+  },
+  () => [check('user_time_settings_draft_my_time_check', sql.raw('draft_my_time IN (0, 1)'))],
+);
+
+// -------------------------------------------------------- §4.47 time_drafts
+
+/**
+ * A person's drafted time (§4.47, D-088 items 3 and 13, LAI-787): a block their
+ * own collector drafted on their machine, or an entry an agent proposed.
+ * **Private to the person, on a web session** — no token reads one, and there
+ * is no admin read. Counts of the signals behind a block and nothing else:
+ * there is no column that could hold a prompt, a path, a repository or a
+ * branch.
+ *
+ * A collector's pending blocks for a (person, collector, day) are replaced by
+ * its next upload. A confirmed or dismissed draft stays as a tombstone until
+ * retention, so a later upload is clipped around it and never brings it back.
+ * Kept 30 days (§11.6).
+ */
+export const timeDrafts = sqliteTable(
+  'time_drafts',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    source: text('source', { enum: TIME_DRAFT_SOURCES }).notNull(),
+    /** The collector's random UUID; empty for an agent's proposal. */
+    collectorId: text('collector_id').notNull().default(''),
+    /** `YYYY-MM-DD`, the person's local day in `tz` (D-088 item 12). */
+    day: text('day').notNull(),
+    tz: text('tz').notNull(),
+    /** A block's start and end, unix ms; both null for a proposal of minutes alone. */
+    startedAt: integer('started_at'),
+    endedAt: integer('ended_at'),
+    minutes: integer('minutes').notNull(),
+    /** The key as it was sent, when it named no task this person can read. */
+    taskKey: text('task_key'),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    /** 1 once the person put it on no card and no project, on purpose. */
+    general: integer('general').notNull().default(0),
+    /** `{ prompts, replies, sessions, commits, marks }` — counts only. */
+    signals: text('signals').notNull().default('{}'),
+    /** An agent's proposal may say what it was for, briefly. */
+    note: text('note'),
+    state: text('state', { enum: TIME_DRAFT_STATES }).notNull().default('pending'),
+    /** The entry a confirmed draft became. */
+    entryId: text('entry_id').references((): AnySQLiteColumn => timeEntries.id, {
+      onDelete: 'set null',
+    }),
+    createdAt,
+    updatedAt,
+  },
+  (t) => [
+    // My day reads one person's day; the week strip a range of their days.
+    index('time_drafts_user_day_idx').on(t.userId, t.day),
+    index('time_drafts_task_id_idx').on(t.taskId),
+    index('time_drafts_project_id_idx').on(t.projectId),
+    index('time_drafts_entry_id_idx').on(t.entryId),
+    // §11.6's retention deletes by day alone.
+    index('time_drafts_day_idx').on(t.day),
+    check('time_drafts_source_check', oneOf('source', TIME_DRAFT_SOURCES)),
+    check('time_drafts_state_check', oneOf('state', TIME_DRAFT_STATES)),
+    check('time_drafts_minutes_check', sql.raw('minutes BETWEEN 1 AND 1440')),
+    check('time_drafts_general_check', sql.raw('general IN (0, 1)')),
+    check(
+      'time_drafts_span_check',
+      sql.raw(
+        '(started_at IS NULL AND ended_at IS NULL) OR (started_at IS NOT NULL AND ended_at IS NOT NULL AND ended_at > started_at)',
+      ),
+    ),
+    check('time_drafts_note_check', sql.raw('note IS NULL OR length(note) <= 200')),
+  ],
+);
+
+// ------------------------------------------------------- §4.48 time_entries
+
+/**
+ * Confirmed time (§4.48, D-088 items 2, 11 and 12, LAI-787): what a person
+ * confirmed from a draft, typed, or imported — **the only time anyone but the
+ * person will ever see.** On a task, on a project, or on neither (*General*).
+ * The day is the person's local day with its zone; the board stays UTC.
+ *
+ * Every create, edit and delete writes a `time_entry_revisions` row, which is
+ * append-only; a deleted entry is kept with `deleted_at`. **Kept three years**
+ * (BCEA s31): a trigger refuses deleting a row whose day is younger, so only
+ * §11.6's retention removes one. Writes no `activity` row.
+ */
+export const timeEntries = sqliteTable(
+  'time_entries',
+  {
+    id: text('id').primaryKey(),
+    /** No `ON DELETE`: people are deactivated, never deleted (§4.1). */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    /** The task's project when there is a task, so a project's total joins nothing. */
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    day: text('day').notNull(),
+    tz: text('tz').notNull(),
+    startedAt: integer('started_at'),
+    endedAt: integer('ended_at'),
+    minutes: integer('minutes').notNull(),
+    source: text('source', { enum: TIME_ENTRY_SOURCES }).notNull(),
+    /** The draft it was confirmed from, or an import's own id (LAI-788). */
+    sourceRef: text('source_ref'),
+    note: text('note'),
+    /** The number of its newest revision. */
+    revision: integer('revision').notNull().default(1),
+    deletedAt: integer('deleted_at'),
+    createdAt,
+    updatedAt,
+  },
+  (t) => [
+    index('time_entries_user_day_idx').on(t.userId, t.day),
+    index('time_entries_task_id_idx').on(t.taskId),
+    index('time_entries_project_day_idx').on(t.projectId, t.day),
+    // §11.6's retention deletes by day alone.
+    index('time_entries_day_idx').on(t.day),
+    // One entry per draft, and per imported entry (LAI-788): a retry is a no-op.
+    uniqueIndex('time_entries_source_ref_unique')
+      .on(t.userId, t.source, t.sourceRef)
+      .where(sql`${t.sourceRef} IS NOT NULL`),
+    check('time_entries_source_check', oneOf('source', TIME_ENTRY_SOURCES)),
+    check('time_entries_minutes_check', sql.raw('minutes BETWEEN 1 AND 1440')),
+    check('time_entries_revision_check', sql.raw('revision >= 1')),
+    check('time_entries_note_check', sql.raw('note IS NULL OR length(note) <= 280')),
+    check(
+      'time_entries_span_check',
+      sql.raw(
+        '(started_at IS NULL AND ended_at IS NULL) OR (started_at IS NOT NULL AND ended_at IS NOT NULL AND ended_at > started_at)',
+      ),
+    ),
+  ],
+);
+
+// ---------------------------------------------- §4.49 time_entry_revisions
+
+/**
+ * Every change to a time entry, as it stood after the change (§4.49, D-088
+ * item 6, LAI-787). **Append-only**: triggers refuse `UPDATE`, an `INSERT OR
+ * REPLACE` over an existing id, and a `DELETE` while its entry still exists —
+ * so history goes only with its entry, at retention — and `runMigrations`
+ * re-checks them on every boot, as `activity`'s are.
+ *
+ * `task_id` and `project_id` are **copies, with no foreign key**: a deleted
+ * task would otherwise set them null, which is an `UPDATE` the triggers
+ * refuse — and history should say what the entry said then.
+ */
+export const timeEntryRevisions = sqliteTable(
+  'time_entry_revisions',
+  {
+    id: text('id').primaryKey(),
+    entryId: text('entry_id')
+      .notNull()
+      .references(() => timeEntries.id, { onDelete: 'cascade' }),
+    revision: integer('revision').notNull(),
+    change: text('change', { enum: TIME_REVISION_CHANGES }).notNull(),
+    changedBy: text('changed_by')
+      .notNull()
+      .references(() => users.id),
+    taskId: text('task_id'),
+    projectId: text('project_id'),
+    day: text('day').notNull(),
+    tz: text('tz').notNull(),
+    startedAt: integer('started_at'),
+    endedAt: integer('ended_at'),
+    minutes: integer('minutes').notNull(),
+    note: text('note'),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('time_entry_revisions_entry_revision_unique').on(t.entryId, t.revision),
+    index('time_entry_revisions_changed_by_idx').on(t.changedBy),
+    check('time_entry_revisions_change_check', oneOf('change', TIME_REVISION_CHANGES)),
+  ],
+);
+
+// ---------------------------------------------------- §4.50 agent_time_days
+
+/**
+ * Claude Code's own `active_time`, per session and day (§4.50, D-088 item 8,
+ * LAI-787): `user` — time at the keyboard in Claude Code — and `cli` — the
+ * agent working. From the OpenTelemetry receiver of D-087, under its two
+ * switches, keyed by the one-way session key. **Agent minutes, never hours.**
+ * Kept 400 days with the token rollup (§11.6).
+ */
+export const agentTimeDays = sqliteTable(
+  'agent_time_days',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** In the zone telemetry is read in (`token_usage_zones`). */
+    day: text('day').notNull(),
+    sessionKey: text('session_key').notNull(),
+    kind: text('kind', { enum: AGENT_TIME_KINDS }).notNull(),
+    seconds: real('seconds').notNull().default(0),
+    updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.day, t.sessionKey, t.kind] }),
+    // A session's rows go when the collector says it was left out (§4.40).
+    index('agent_time_days_user_session_idx').on(t.userId, t.sessionKey),
+    index('agent_time_days_day_idx').on(t.day),
+    check('agent_time_days_kind_check', oneOf('kind', AGENT_TIME_KINDS)),
+    check('agent_time_days_seconds_check', sql.raw('seconds >= 0')),
+  ],
+);
+
+// ------------------------------------------------- §4.51 token_session_tasks
+
+/**
+ * How a Claude Code session's tokens of a day were split between tasks, by
+ * its one-way key (§4.51, D-088 item 8, LAI-787) — what ties its agent
+ * minutes to cards the way its tokens are tied (D-084 item 5). Replaced per
+ * (person, collector, day) with every usage report, as the rows are.
+ */
+export const tokenSessionTasks = sqliteTable(
+  'token_session_tasks',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    collectorId: text('collector_id').notNull(),
+    day: text('day').notNull(),
+    sessionKey: text('session_key').notNull(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    /** Headline tokens (input + output + cache writes) the session spent on it. */
+    tokens: integer('tokens').notNull().default(0),
+    updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.day, t.collectorId, t.sessionKey, t.taskId] }),
+    index('token_session_tasks_task_id_idx').on(t.taskId),
+    index('token_session_tasks_day_idx').on(t.day),
+    check('token_session_tasks_tokens_check', sql.raw('tokens >= 0')),
+  ],
+);
+
 export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
 
 export type User = typeof users.$inferSelect;
@@ -2153,3 +2439,6 @@ export type OrgModelPrice = typeof orgModelPrices.$inferSelect;
 export type TokenBudget = typeof tokenBudgets.$inferSelect;
 export type TokenAlert = typeof tokenAlerts.$inferSelect;
 export type PlanLimit = typeof planLimits.$inferSelect;
+export type TimeDraft = typeof timeDrafts.$inferSelect;
+export type TimeEntry = typeof timeEntries.$inferSelect;
+export type TimeEntryRevision = typeof timeEntryRevisions.$inferSelect;

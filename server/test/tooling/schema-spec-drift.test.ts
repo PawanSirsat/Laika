@@ -575,18 +575,22 @@ describe('the parser itself', () => {
     // machine, day), the rowid its only key. LAI-773's are keyed by what they
     // count or settle — an organisation's model, a person's plan, a person's
     // five minutes, a session's day, a series, a key, a person's dismissal.
+    // LAI-787's are a person's or the organisation's switch, a session's day
+    // of agent time, and a session's split between tasks.
     const withoutId = [...specTables.entries()]
       .filter(([, fields]) => !fields.includes('id'))
       .map(([table]) => table)
       .sort();
 
     expect(withoutId).toEqual([
+      'agent_time_days',
       'board_activity_days',
       'github_checks',
       'github_commits',
       'github_pull_requests',
       'local_activity_days',
       'org_model_prices',
+      'org_time_settings',
       'plan_limits',
       'pushed_commit_keys',
       'task_dependencies',
@@ -596,9 +600,11 @@ describe('the parser itself', () => {
       'token_arrivals',
       'token_session_days',
       'token_session_skips',
+      'token_session_tasks',
       'token_telemetry_series',
       'token_usage_days',
       'token_usage_zones',
+      'user_time_settings',
     ]);
   });
 
