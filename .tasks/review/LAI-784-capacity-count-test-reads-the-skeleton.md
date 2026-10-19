@@ -106,13 +106,14 @@ the screen:
   `.cap-card-skeleton` on purpose. Safe.
 - `member-profile.test.ts:1342`: waits for the profile link, then for a card
   that has the name. Its comment already names the skeleton. Safe.
-- `store-requests.test.ts:451`: waits for *Show tasks*, then for the
-  `.cap-task .cap-key` text it reads. Safe.
+- `store-requests.test.ts:456`: opens Capacity from the sidebar, waits for
+  *Show tasks*, then for the `.cap-task .cap-key` text it reads. Safe.
 - `spaces-sidebar.test.ts:264`: waits for the URL and `.screen-bar-title`,
   then asserts that the space tabs and the space bar are absent. Those come
   from the shell, not from Capacity's loading state. Safe.
-- `activity-tab`, `usage`, `board-presence`: they stub `/capacity` but never
-  read the Capacity DOM.
+- `activity-tab.test.ts:106` and `board-presence.test.ts:105` stub
+  `/api/v1/capacity` but never read Capacity's page. `usage.test.ts` only
+  imports fixtures from `capacity-org.ts`.
 - `organisation-roles.test.ts`: lines 462 and 469 were the only `cap-` reads,
   and this fix covers them.
 
