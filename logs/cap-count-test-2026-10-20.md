@@ -42,5 +42,11 @@ not pushed.
   `store-requests.test.ts:456`). The census is in the task file.
 
 **State**
-In `.tasks/review/`. Card LAIKA-587 is in review. Not pushed: the dispatch
-said to commit locally only.
+In `.tasks/review/`. Card LAIKA-587 is still In progress, and the owner moves
+it. Not pushed: the dispatch said to commit locally only.
+
+The root `pnpm test` exited 1 on one server test only:
+`server/test/db/migrate.test.ts:429`, *"0029 … keeps every row, adds the
+column and the table, and rebuilds nothing"*, timed out at 5000 ms (8061 ms)
+with all workspaces running together. Run alone, `migrate.test.ts` exits 0,
+24/24, and that test takes 87 ms. This change touches no server code.

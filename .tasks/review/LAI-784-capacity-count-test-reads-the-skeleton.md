@@ -132,3 +132,12 @@ recorded here and has no task.
   2136 tests, 2136 pass.
 - `pnpm lint` at the repo root: exit 0.
 - `pnpm format` at the repo root: exit 0.
+- `pnpm test` at the repo root (the full gate): **exit 1**. web had 2136
+  tests and 2136 passed. cli had 431 tests, 429 passed, 0 failed. server had
+  3096 tests, 3087 passed, 8 skipped, and **1 failed**: `test/db/migrate.test.ts:429`
+  *"0029 adds the member profile to a populated 0028 database (LAI-743) ›
+  keeps every row, adds the column and the table, and rebuilds nothing"* hit
+  `Test timed out in 5000ms` (took 8061 ms) under the parallel run. This task
+  does not touch that file.
+- `npx vitest run test/db/migrate.test.ts` in `server/`, alone: exit 0,
+  24/24. That test took 87 ms.
