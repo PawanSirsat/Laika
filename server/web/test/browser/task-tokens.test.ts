@@ -528,7 +528,10 @@ void describe('moving to another task', () => {
   });
 });
 
-/** The task's budget in force, as `services/token-budgets.ts` answers it (LAI-773). */
+/**
+ * The task's budget in force, as `services/token-budgets.ts` answers it
+ * (LAI-773): the default one, the token estimate's high end frozen at claim.
+ */
 const BUDGET = {
   scope: 'task',
   id: 't3',
@@ -547,11 +550,14 @@ const BUDGET = {
   ],
 };
 
+/** A budget a lead set on the task: the only kind drawn as a bar (LAI-785 review). */
+const SET_BUDGET = { ...BUDGET, source: 'set', tokens: 3_000_000, share: 1.34 };
+
 void describe('LAI-773: cost, the budget and the runaway banner', () => {
-  void test('a lead: the cost labelled API-equivalent, the budget over with its badge, and a way to set it', async () => {
+  void test('a lead: the cost labelled API-equivalent, the budget a lead set as a bar with its badge, and a way to change it', async () => {
     const writes: StubCall[] = [];
     const h = await open('/board?project=laika-core&task=t3', {
-      ...stub('owner', usage({ budget: BUDGET })),
+      ...stub('owner', usage({ budget: SET_BUDGET })),
       '/api/v1/tasks/t3/budget': (call: StubCall) => {
         writes.push(call);
         return {
@@ -580,10 +586,8 @@ void describe('LAI-773: cost, the budget and the runaway banner', () => {
       assert.ok(await meter.isVisible(), 'the budget bar is folded into Details');
       assert.equal(await section.locator('details [data-block="budget"]').count(), 0);
       assert.equal(await meter.locator('.budget-badge').innerText(), '100%');
-      assert.match(
-        await meter.innerText(),
-        /4\.01M of 2\.5M · 160% · the token estimate’s high end, frozen at claim/,
-      );
+      assert.match(await meter.innerText(), /4\.01M of 3M · 134% · set by a lead/);
+      assert.equal(await section.locator('.tk-budget-alert').count(), 0);
       const editor = section.locator('[data-block="budget"] .budget-editor');
       await editor.waitFor({ timeout: 10_000 });
       await editor.locator('input').fill('6M');
@@ -592,6 +596,88 @@ void describe('LAI-773: cost, the budget and the runaway banner', () => {
       assert.equal(writes[0]?.method, 'PUT');
       assert.deepEqual(writes[0]?.body, { tokens: 6_000_000 });
       assert.equal(await section.locator('.tk-runaway').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the default budget under 80%: nothing at all', async () => {
+    const h = await open(
+      '/board?project=laika-core&task=t3',
+      stub(
+        'member',
+        usage({
+          people: 'own',
+          by_person: [BEA],
+          budget: { ...BUDGET, used: 1_000_000, share: 0.4, state: 'under', crossed: [] },
+        }),
+      ),
+    );
+    try {
+      await tokens(h);
+      const section = h.page.locator('[data-section="tokens"]');
+      await until(() => h.calls.some((c) => c.path === '/api/v1/projects/laika-core/budgets'));
+      // Positive control: the headline is drawn, from the same answer.
+      assert.equal(await section.locator('.tk-total').innerText(), '4.01M');
+      assert.equal(
+        await section.locator('.budget, .tk-budget-alert, [data-block="budget"]').count(),
+        0,
+      );
+      await details(h);
+      assert.equal(
+        await section.locator('.budget, .tk-budget-alert, [data-block="budget"]').count(),
+        0,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the default budget past 80%: only the alert line, and a lead sets a real one in Details', async () => {
+    const h = await open(
+      '/board?project=laika-core&task=t3',
+      stub('owner', usage({ budget: BUDGET })),
+    );
+    try {
+      await tokens(h);
+      const section = h.page.locator('[data-section="tokens"]');
+      const alert = section.locator('.tk-budget-alert');
+      await alert.waitFor();
+      assert.equal(await alert.innerText(), 'Past its token estimate: 4.01M of 2.5M (160%).');
+      assert.equal(await alert.getAttribute('data-state'), 'over');
+      assert.equal(
+        await section.locator('.budget, .budget-bar').count(),
+        0,
+        'a bar for a budget nobody set',
+      );
+      await until(async () => (await section.locator('details [data-block="budget"]').count()) > 0);
+      assert.equal(
+        await section.locator('details.tk-details [data-block="budget"] .budget-editor').count(),
+        1,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the default budget at 80%: the same one line, saying so', async () => {
+    const h = await open(
+      '/board?project=laika-core&task=t3',
+      stub(
+        'member',
+        usage({
+          people: 'own',
+          by_person: [BEA],
+          budget: { ...BUDGET, used: 2_100_000, share: 0.84, state: 'warn' },
+        }),
+      ),
+    );
+    try {
+      await tokens(h);
+      const alert = h.page.locator('[data-section="tokens"] .tk-budget-alert');
+      await alert.waitFor();
+      assert.equal(await alert.innerText(), 'Over 80% of its token estimate: 2.1M of 2.5M (84%).');
+      assert.equal(await h.page.locator('[data-section="tokens"] .budget').count(), 0);
     } finally {
       await h.close();
     }
@@ -620,7 +706,7 @@ void describe('LAI-773: cost, the budget and the runaway banner', () => {
   void test('a member: the budget as a figure, and nothing to set — the server said can_set false', async () => {
     const h = await open(
       '/board?project=laika-core&task=t3',
-      stub('member', usage({ people: 'own', by_person: [BEA], budget: BUDGET })),
+      stub('member', usage({ people: 'own', by_person: [BEA], budget: SET_BUDGET })),
     );
     try {
       await tokens(h);
@@ -667,7 +753,7 @@ void describe('LAI-773: cost, the budget and the runaway banner', () => {
   void test('light and dark at 1366 and 390: the section fits, the bar is drawn', async () => {
     const h = await open(
       '/board?project=laika-core&task=t3',
-      stub('owner', usage({ budget: BUDGET })),
+      stub('owner', usage({ budget: SET_BUDGET })),
     );
     try {
       await tokens(h);

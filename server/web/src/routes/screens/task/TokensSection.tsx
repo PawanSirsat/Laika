@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react';
-import { getProjectBudgets, runawayLine, setTaskBudget } from '../../../api/budgets.ts';
+import {
+  estimateAlertLine,
+  getProjectBudgets,
+  runawayLine,
+  setTaskBudget,
+} from '../../../api/budgets.ts';
 import { getTaskEstimate, tokenRange, type TaskEstimate } from '../../../api/estimates.ts';
 import {
   agentsNote,
@@ -36,8 +41,10 @@ export interface TokensSectionProps {
  * LAI-785), under the proof. **One line first**: what every person's agents
  * spent on this task without cache reads, *at least*, and what that would
  * cost at API prices — *API-equivalent, not your bill*. Then the budget bar,
- * only when a budget is set, and the runaway banner, only when it fires and
- * only for the person it is for.
+ * **only for a budget a lead set** — the default one, the token estimate's
+ * high end frozen at claim, is not a budget anybody chose, so it says nothing
+ * until 80% and then one alert line (LAI-785 review) — and the runaway
+ * banner, only when it fires and only for the person it is for.
  *
  * **Everything else is one click away, in *Details***: cache reads, how much
  * of those people's work Laika could tie to a task at all (item 6), the
@@ -190,6 +197,9 @@ function TokensBody({
   const build = forecast?.actual_tokens?.build;
   const caveats = costCaveats(totals.cost);
   const budget = view.budget;
+  // Only a budget somebody set is a bar; the default one is a line from 80%.
+  const setBudget = budget !== null && budget.source === 'set' ? budget : null;
+  const alert = budget === null ? null : estimateAlertLine(budget);
   return (
     <>
       {/* LAI-773: the runaway alert, sent only to the person it is for — the
@@ -216,19 +226,24 @@ function TokensBody({
         </span>
       </p>
 
-      {budget !== null && (
+      {setBudget !== null && (
         <div className="tk-block" data-block="budget">
-          <BudgetMeter budget={budget} name="Budget">
+          <BudgetMeter budget={setBudget} name="Budget">
             {mayBudget && (
               <BudgetEditor
-                current={budget.source === 'set' ? budget.tokens : undefined}
+                current={setBudget.tokens}
                 removeLabel="Back to the estimate"
-                label={`Token budget for ${budget.label}`}
+                label={`Token budget for ${setBudget.label}`}
                 onSave={onBudget}
               />
             )}
           </BudgetMeter>
         </div>
+      )}
+      {alert !== null && (
+        <p className="tk-budget-alert" data-state={budget?.state} role="status">
+          {alert}
+        </p>
       )}
 
       <details className="tk-details">
@@ -272,7 +287,7 @@ function TokensBody({
         </dl>
         <p className="panel-muted tk-note">{countedNote(view)}</p>
 
-        {budget === null && mayBudget && (
+        {setBudget === null && mayBudget && (
           <div className="tk-block" data-block="budget">
             <h4 className="tk-h">
               Budget<span className="tk-h-note"> · soft, alerts at 80% and 100%</span>

@@ -138,6 +138,22 @@
   }
 }
 
+/*
+ * The default budget past 80% (LAI-785 review): one line, no bar. Amber at
+ * 80%, the overdue tone past 100% — about the task's tokens, never a person.
+ */
+.tk-budget-alert {
+  margin: 0 0 var(--space-2);
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--chip-orange-border);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.tk-budget-alert[data-state='over'] {
+  border-left-color: var(--overdue-border);
+}
+
 /* LAI-773: the runaway alert, for the one person it is addressed to. */
 .tk-runaway {
   margin: 0 0 var(--space-2);

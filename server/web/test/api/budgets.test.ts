@@ -11,6 +11,7 @@ import {
   budgetBadge,
   budgetLine,
   budgetSource,
+  estimateAlertLine,
   getProjectBudgets,
   parseTokens,
   runawayLine,
@@ -103,6 +104,38 @@ void describe('how a budget is said', () => {
     for (const bad of ['', '0', '-5', 'lots', '1.5x', '2e9']) {
       assert.equal(parseTokens(bad), undefined, bad);
     }
+  });
+});
+
+void describe('a task’s default budget, in the task panel (LAI-785 review)', () => {
+  const frozen = (used: number, tokens: number, state: 'under' | 'warn' | 'over') => ({
+    source: 'forecast' as const,
+    used,
+    tokens,
+    share: used / tokens,
+    state,
+  });
+
+  void test('says nothing under 80%: the estimate is not a budget anybody set', () => {
+    assert.equal(estimateAlertLine(frozen(1_000_000, 2_500_000, 'under')), null);
+  });
+
+  void test('from 80%, one line: how much of the token estimate is used', () => {
+    assert.equal(
+      estimateAlertLine(frozen(2_100_000, 2_500_000, 'warn')),
+      'Over 80% of its token estimate: 2.1M of 2.5M (84%).',
+    );
+    assert.equal(
+      estimateAlertLine(frozen(4_006_700, 2_500_000, 'over')),
+      'Past its token estimate: 4.01M of 2.5M (160%).',
+    );
+  });
+
+  void test('a budget a lead set is the bar, never this line', () => {
+    assert.equal(
+      estimateAlertLine({ ...frozen(4_006_700, 2_500_000, 'over'), source: 'set' }),
+      null,
+    );
   });
 });
 
