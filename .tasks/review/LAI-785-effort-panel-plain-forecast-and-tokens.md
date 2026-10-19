@@ -326,3 +326,21 @@ time taken is judged as printed too* was added, and the mutation is now red.
 **Screenshots** were retaken: `after-*` in `/tmp/laika-effort-panel-shots/`,
 36 in all. That includes the new `after-tokens-default-budget-*`, which shows
 the default budget past 100% as the one line.
+
+**Gate, round 1**, at the repo root after the last code edit, each command on
+its own with its output in a file and never piped. Another session's
+worktree (`Laika-time-my-day`) was running its own full vitest suite at the
+same time, with load average 37–49.
+
+- `pnpm test`: **exit 1**. web: 2182 tests, 2182 passed, 0 failed. cli: 431
+  tests, 429 passed, 2 skipped, 0 failed. server: 3096 tests in 152 files,
+  3087 passed, 8 skipped, **1 failed**: `test/db/migrate.test.ts` *0029 adds
+  the member profile … keeps every row …*, `Test timed out in 5000ms`.
+  `build.test.ts` passed this time.
+- `npx vitest run test/db/migrate.test.ts` in `server/`, alone: **exit 0**,
+  24 tests, 24 passed, in 2.1 s. An earlier "alone" run also exited 1, on a
+  different test with the same 5000 ms timeout, in 55 s. I had started it
+  beside `pnpm lint` and `pnpm format`, so it was not alone, and I do not
+  count it.
+- `pnpm lint`: **exit 0**.
+- `pnpm format`: **exit 0**.

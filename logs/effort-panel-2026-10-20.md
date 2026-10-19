@@ -66,3 +66,46 @@ The root `pnpm test` exited 1 on two server tests only, both in
 `test/tooling/build.test.ts` (*built server never became healthy* under the
 parallel run). That file alone exits 0, 15/15. `pnpm lint` and `pnpm format`
 exit 0. web 2167/2167, cli 429 pass and 2 skipped of 431.
+
+## 2026-10-19T23:30:00Z — LAI-785, review round 1
+
+**What changed**
+- server/web/src/api/estimates.ts — `shownRange` / `buildShown`: one
+  rounding for the printed ends and the printed *took*. `verdictOf` judges
+  only those values, and `comparison()` returns the line with its verdict.
+  The line says *Estimated at start*. A range that reaches days is in days
+  at both ends. Accuracy reads *typically off by about* and is told only
+  from 3 measured tasks; the token record follows the same rules.
+- server/web/src/routes/screens/task/ForecastSection.tsx — takes the verdict
+  from `comparison()`.
+- server/web/src/api/budgets.ts (`estimateAlertLine`), TokensSection.tsx,
+  tokens.css — the bar only for a budget a lead set. The default budget
+  draws nothing under 80%, then one line.
+- docs/SPEC.md §11.4.2.1 — the same rules.
+- Tests: estimates (the five review rows, every boundary on printed values,
+  day units, the accuracy floor), budgets, task-size, task-tokens.
+- .tasks/ — back to in-progress with the review notes, then to review with
+  the round's result.
+
+**Decisions**
+- The verdict judges the printed *took* as well as the printed ends. The
+  review named the ends; `took 1.54 h` prints `1.5 h`, so judging the raw
+  value against a printed `1.5 h` top would contradict the line in the same
+  way.
+- Of the review's two options for few measured tasks, I chose to hide the
+  figure below 3. A median of one says nothing about estimates.
+- Same-unit formatting applies at the day boundary only. `40 min–1.5 h` is
+  the owner's own example and stays as it is.
+
+**Discovered**
+- My first mutation of the printed *took* survived: the `verdictOf` tests
+  called it directly and never went through `comparison()`. I added a
+  `comparisonLine` test where only the printed value gives the right answer;
+  the mutation is now red.
+- I ran an "alone" re-run of `migrate.test.ts` beside lint and format, which
+  is not alone. It timed out on another test. The real lone re-run exited 0
+  in 2.1 s. Another session's full suite was loading the machine at the same
+  time.
+
+**State**
+In `.tasks/review/`. Not pushed. Card LAIKA-588 is still In progress.
