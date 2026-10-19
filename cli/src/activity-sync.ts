@@ -31,6 +31,7 @@ import {
   type Scope,
 } from './activity-store.ts';
 import { lookbackStep, type LookbackOutcome } from './activity-lookback.ts';
+import { DRAFT_DAYS, timeStep, type TimeOutcome, type TimeSettings } from './activity-time.ts';
 import { usageRoots, usageStep, type UsageOutcome } from './activity-usage.ts';
 import { readSettings } from './config.ts';
 import { readEnvFile } from './whoami.ts';
@@ -363,7 +364,58 @@ export async function putActivity(
   nowMs: number,
   abort?: AbortSignal,
 ): Promise<Call<{ readonly accepted_days: number }>> {
-  const response = await request(creds, 'PUT', '/api/v1/me/local-activity', body, abort);
+  return putReport(creds, '/api/v1/me/local-activity', body, nowMs, abort);
+}
+
+/** `PUT /me/time-drafts` (LAI-787, SPEC §6.4): one report of blocks. */
+export async function putTimeDrafts(
+  creds: Credentials,
+  body: string,
+  nowMs: number,
+  abort?: AbortSignal,
+): Promise<Call<{ readonly accepted_days: number }>> {
+  return putReport(creds, '/api/v1/me/time-drafts', body, nowMs, abort);
+}
+
+/**
+ * `GET /me/time-settings` (LAI-787, SPEC §6.4): the organisation's Time
+ * setting and the person's own *Draft my time*, and whether both let drafts
+ * through. A token may read it, as it may read the sharing switch.
+ */
+export async function getTimeSettings(
+  creds: Credentials,
+  nowMs: number,
+  abort?: AbortSignal,
+): Promise<Call<TimeSettings>> {
+  const response = await request(creds, 'GET', '/api/v1/me/time-settings', undefined, abort);
+  if ('error' in response) return { ok: false, message: response.error };
+  if (!response.ok) return failed(response, nowMs);
+  try {
+    const body = (await response.json()) as Record<string, unknown>;
+    if (typeof body.drafting !== 'boolean') {
+      return { ok: false, status: response.status, message: 'the answer was not time settings' };
+    }
+    return {
+      ok: true,
+      value: {
+        org_mode: typeof body.org_mode === 'string' ? body.org_mode : '',
+        draft_my_time: body.draft_my_time === true,
+        drafting: body.drafting,
+      },
+    };
+  } catch {
+    return { ok: false, status: response.status, message: 'the answer was not JSON' };
+  }
+}
+
+async function putReport(
+  creds: Credentials,
+  path: string,
+  body: string,
+  nowMs: number,
+  abort?: AbortSignal,
+): Promise<Call<{ readonly accepted_days: number }>> {
+  const response = await request(creds, 'PUT', path, body, abort);
   if ('error' in response) return { ok: false, message: response.error };
   if (!response.ok) return failed(response, nowMs);
   let accepted = 0;
@@ -440,6 +492,8 @@ export type SyncOutcome =
       readonly lookback?: LookbackOutcome;
       /** What the token usage step did (D-084), when it sent or was refused. */
       readonly usage?: UsageOutcome;
+      /** What the time-draft step did (LAI-787), when it sent or failed. */
+      readonly time?: TimeOutcome;
     }
   | { readonly kind: 'rate-limited'; readonly nextAt: number }
   | { readonly kind: 'refused'; readonly message: string }
@@ -658,6 +712,34 @@ async function syncLocked(
         return { kind: 'off', recheckAt: nowS + DAY_S };
       }
 
+      // Time drafts (LAI-787, D-088), after the token counts they are read
+      // beside and inside the same lock and deadline: blocks only, under the
+      // time switches the board answers — which the hook does not read. Never
+      // stops what follows.
+      const time = await timeStep({
+        paths,
+        roots: usageRoots(ctx.home, ctx.env),
+        state: readState(paths) ?? state,
+        tz: ianaTimeZone(ctx.tz),
+        nowS,
+        days: DRAFT_DAYS,
+        extraEmails: readEmails(paths),
+        git,
+        prefixes: sharing.value.task_prefixes,
+        signal,
+        stopAt: softStop,
+        collectorId: collectorId(paths),
+        settings: () => getTimeSettings(creds, ctx.nowMs(), signal),
+        send: (body) => putTimeDrafts(creds, body, ctx.nowMs(), signal),
+      });
+      if (signal.aborted) throw new Abandoned();
+      const current = readState(paths) ?? state;
+      if (time.kind === 'off' || time.kind === 'unsupported') {
+        save({ ...current, drafting: false, drafting_checked_at: nowS });
+      } else if (time.kind === 'idle' || time.kind === 'sent' || time.kind === 'rate-limited') {
+        save({ ...current, drafting: true, drafting_checked_at: nowS });
+      }
+
       // The look-back (D-080), after the snapshot and inside the same lock and
       // deadline: a repo seen for the first time, or a look-back under way.
       const lookback = await lookbackStep({
@@ -685,6 +767,9 @@ async function syncLocked(
         deferredKeys: snapshot.deferredKeys,
         ...(lookback.kind === 'idle' ? {} : { lookback }),
         ...(usage.kind === 'idle' || usage.kind === 'waiting' ? {} : { usage }),
+        ...(time.kind === 'sent' || time.kind === 'error' || time.kind === 'rate-limited'
+          ? { time }
+          : {}),
       };
     }
 

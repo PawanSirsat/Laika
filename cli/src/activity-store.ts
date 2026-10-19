@@ -35,6 +35,8 @@ import { writePrivately } from './connect.ts';
  * | `usage-days/<day>.json` | token usage: Claude Code's replies of that local day — counts, model, time, directory and session, by message id (LAI-776) | sync |
  * | `sessions` | `<epoch> <session id> <branch>` — a counted session's start (LAI-770) | session-start hook |
  * | `skip-sessions` | `<epoch> <session id>` — sessions nobody was typing in (LAI-775) | the hooks |
+ * | `primary-sessions` | `<epoch> <session id>` — an orchestrator's primary, counted as the person's (D-088 item 9) | session-start hook |
+ * | `time-drafts.json` | time drafts: each day's blocks as the board last took them, as a signature (LAI-787) | sync |
  *
  * `sent-keys` holds hashes only: the contract's key, and a hash of (author
  * email, author time) used to recognise an amended or rebased commit. Never an
@@ -75,6 +77,13 @@ export interface ActivityState {
   readonly checked_at: number;
   /** Consecutive failed syncs, for the backoff. */
   readonly failures: number;
+  /**
+   * Whether the board last said time drafting is on — the organisation's Time
+   * setting at `drafts` and the person's own *Draft my time* (D-088 item 5,
+   * LAI-787) — and when it was asked. Absent until it has been.
+   */
+  readonly drafting?: boolean;
+  readonly drafting_checked_at?: number;
   /**
    * The board `laika activity on` was pointed at. Every sync goes there, with
    * that board's token, and to no other: a session whose environment names
@@ -173,6 +182,10 @@ export function readState(paths: ActivityPaths): ActivityState | undefined {
     since: num(s.since, 0),
     checked_at: num(s.checked_at, 0),
     failures: num(s.failures, 0),
+    ...(typeof s.drafting === 'boolean' ? { drafting: s.drafting } : {}),
+    ...(typeof s.drafting_checked_at === 'number'
+      ? { drafting_checked_at: num(s.drafting_checked_at, 0) }
+      : {}),
     ...(typeof s.board === 'string' && s.board !== '' ? { board: s.board } : {}),
     ...(typeof last === 'object' && last !== null ? { last_result: last } : {}),
   };
@@ -190,6 +203,10 @@ export function writeState(paths: ActivityPaths, state: ActivityState): void {
     since: state.since,
     checked_at: state.checked_at,
     failures: state.failures,
+    ...(state.drafting === undefined ? {} : { drafting: state.drafting }),
+    ...(state.drafting_checked_at === undefined
+      ? {}
+      : { drafting_checked_at: state.drafting_checked_at }),
     ...(state.board === undefined ? {} : { board: state.board }),
     ...(state.last_result === undefined ? {} : { last_result: state.last_result }),
   };
@@ -231,6 +248,10 @@ export function rotate(paths: ActivityPaths): void {
     // never the developer's, whichever collector reads them.
     join(paths.dir, 'sessions'),
     join(paths.dir, 'sessions.compacting'),
+    // Time drafts (LAI-787): what the board last took, and the orchestrator
+    // primary sessions counted as the person's — kept under the same consent.
+    join(paths.dir, 'time-drafts.json'),
+    join(paths.dir, 'primary-sessions'),
   ]) {
     rmSync(path, { recursive: true, force: true });
   }

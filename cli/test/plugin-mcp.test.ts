@@ -65,12 +65,13 @@ void describe('the tool surface, from both sides', () => {
     assert.deepEqual(registeredTools(), specTools());
   });
 
-  void test('and they are these eighteen', () => {
+  void test('and they are exactly these', () => {
     // Spelled out, so a tool appearing or vanishing is a deliberate edit here
     // rather than a number nobody re-counted. Eleven verified against a live
     // `tools/list` on 2026-09-01; LAI-611 added the seven project-management
     // tools on 2026-09-20 (assign_task deliberately absent - it folded into
-    // update_task.assignee).
+    // update_task.assignee); LAI-787 added propose_time_entry on 2026-10-20
+    // (D-088 item 13: an agent proposes time, a person confirms it).
     assert.deepEqual(registeredTools(), [
       'add_comment',
       'create_sprint',
@@ -84,6 +85,7 @@ void describe('the tool surface, from both sides', () => {
       'list_ready_tasks',
       'list_sprints',
       'log_unlisted_work',
+      'propose_time_entry',
       'set_task_sprint',
       'start_working',
       'update_project_context',

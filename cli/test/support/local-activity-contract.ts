@@ -88,6 +88,7 @@ const KEY16 = /^[0-9a-f]{16}$/;
  * today − 31 to today + 1 in `tz`, the same 16 KB. LAI-773 (design.md §2):
  * a day may carry `sessions`, at most 100, each a 16-hex key, a model id and
  * the four counts; the report may carry `excluded`, at most 200 16-hex keys.
+ * LAI-787: a day may carry `session_tasks`, at most 200 `{ key, task, tokens }`.
  */
 function usageViolation(b: Record<string, unknown>, now: Date): string | undefined {
   for (const key of Object.keys(b)) {
@@ -119,7 +120,28 @@ function usageViolation(b: Record<string, unknown>, now: Date): string | undefin
     if (typeof entry !== 'object' || entry === null) return 'a day is not an object';
     const d = entry as Record<string, unknown>;
     for (const key of Object.keys(d)) {
-      if (!['day', 'rows', 'backfill', 'sessions'].includes(key)) return `usage day field ${key}`;
+      if (!['day', 'rows', 'backfill', 'sessions', 'session_tasks'].includes(key)) {
+        return `usage day field ${key}`;
+      }
+    }
+    // LAI-787: `session_tasks`, at most 200, each a 16-hex session key, a
+    // task key and the session's headline tokens on it.
+    if ('session_tasks' in d) {
+      if (!Array.isArray(d.session_tasks) || d.session_tasks.length > 200) {
+        return 'session_tasks invalid';
+      }
+      for (const entry of d.session_tasks as unknown[]) {
+        if (typeof entry !== 'object' || entry === null) return 'a session task is not an object';
+        const r = entry as Record<string, unknown>;
+        for (const key of Object.keys(r)) {
+          if (!['key', 'task', 'tokens'].includes(key)) return `unknown session task field ${key}`;
+        }
+        if (typeof r.key !== 'string' || !KEY16.test(r.key)) return 'session task key not 16 hex';
+        if (typeof r.task !== 'string' || !/^[A-Z][A-Z0-9_]{0,15}-[0-9]{1,9}$/.test(r.task)) {
+          return 'session task is not a key';
+        }
+        if (!isInt(r.tokens) || r.tokens > 1e12) return 'session task tokens invalid';
+      }
     }
     if ('sessions' in d) {
       if (!Array.isArray(d.sessions) || d.sessions.length > 100) return 'sessions invalid';
@@ -225,6 +247,92 @@ export function contractViolation(raw: string, now: Date): string | undefined {
     for (const k of d.pushed_keys) {
       if (typeof k !== 'string' || !/^[0-9a-f]{16}$/.test(k)) return 'pushed key not 16 hex';
     }
+  }
+  return undefined;
+}
+
+/**
+ * `PUT /api/v1/me/time-drafts`, as LAI-787's contract states it (SPEC §6.4):
+ * `{ v: 1, collector_id, tz, days: [{ day, blocks: [{ start, end, minutes,
+ * task, signals: { prompts, replies, sessions, commits, marks } }] }] }` —
+ * 1 to 15 days, each once and within today − 14 to today + 1 in `tz`; at most
+ * 48 blocks a day; a block's start before its end, on the day it names in
+ * `tz`, its minutes 1 to ⌈(end − start) / 60 000⌉, a day's minutes at most
+ * 1440; every count an integer 0 to 100 000; nothing else, and 16 KB at most.
+ * Written from that text, not from the collector.
+ */
+export function timeDraftViolation(raw: string, now: Date): string | undefined {
+  if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return 'body over 16 KB';
+  let body: unknown;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return 'not JSON';
+  }
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return 'not an object';
+  const b = body as Record<string, unknown>;
+  for (const key of Object.keys(b)) if (!TOP_KEYS.includes(key)) return `unknown field ${key}`;
+  if (b.v !== 1) return 'v is not 1';
+  if (typeof b.collector_id !== 'string' || !UUID_V4.test(b.collector_id)) {
+    return 'collector_id is not a UUID v4';
+  }
+  if (typeof b.tz !== 'string') return 'tz missing';
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: b.tz });
+  } catch {
+    return 'tz is not an IANA zone';
+  }
+  if (!Array.isArray(b.days) || b.days.length < 1 || b.days.length > 15) return 'days not 1–15';
+  const today = dayIn(b.tz, now);
+  const low = shift(today, -14);
+  const high = shift(today, 1);
+  const seen = new Set<string>();
+  for (const entry of b.days as unknown[]) {
+    if (typeof entry !== 'object' || entry === null) return 'a day is not an object';
+    const d = entry as Record<string, unknown>;
+    for (const key of Object.keys(d)) {
+      if (key !== 'day' && key !== 'blocks') return `time day field ${key}`;
+    }
+    if (typeof d.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d.day))
+      return 'day not YYYY-MM-DD';
+    if (d.day < low || d.day > high) return 'day_out_of_range';
+    if (seen.has(d.day)) return 'duplicate day';
+    seen.add(d.day);
+    if (!Array.isArray(d.blocks) || d.blocks.length > 48) return 'blocks invalid';
+    let minutes = 0;
+    for (const block of d.blocks as unknown[]) {
+      if (typeof block !== 'object' || block === null) return 'a block is not an object';
+      const k = block as Record<string, unknown>;
+      for (const key of Object.keys(k)) {
+        if (!['start', 'end', 'minutes', 'task', 'signals'].includes(key)) {
+          return `unknown block field ${key}`;
+        }
+      }
+      if (!isInt(k.start) || !isInt(k.end) || k.end <= k.start) return 'start before end';
+      if (dayIn(b.tz, new Date(k.start)) !== d.day) return 'a block starts on another day';
+      if (!isInt(k.minutes) || k.minutes < 1 || k.minutes > Math.ceil((k.end - k.start) / 60_000)) {
+        return 'minutes out of the span';
+      }
+      minutes += k.minutes;
+      if (
+        k.task !== null &&
+        (typeof k.task !== 'string' || !/^[A-Z][A-Z0-9_]{0,15}-[0-9]{1,9}$/.test(k.task))
+      ) {
+        return 'task is not a key or null';
+      }
+      if (typeof k.signals !== 'object' || k.signals === null) return 'signals missing';
+      const sig = k.signals as Record<string, unknown>;
+      for (const key of Object.keys(sig)) {
+        if (!['prompts', 'replies', 'sessions', 'commits', 'marks'].includes(key)) {
+          return `unknown signal ${key}`;
+        }
+      }
+      for (const key of ['prompts', 'replies', 'sessions', 'commits', 'marks']) {
+        const n = sig[key];
+        if (!isInt(n) || n > 100_000) return `signal ${key} invalid`;
+      }
+    }
+    if (minutes > 1440) return 'invalid_blocks: more than a day';
   }
   return undefined;
 }

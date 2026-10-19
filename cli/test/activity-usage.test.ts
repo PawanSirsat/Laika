@@ -1961,3 +1961,149 @@ void describe('Claude Code sessions in a usage report (LAI-773, design.md §2)',
     }
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* LAI-787: each session's tokens per task, to split its agent minutes by      */
+/* -------------------------------------------------------------------------- */
+
+void describe('session tasks in a usage report (LAI-787)', () => {
+  const COLLECTOR = '6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a';
+  const A = 'aaaaaaaa-2222-4222-8333-444444444444';
+  const B = 'bbbbbbbb-2222-4222-8333-444444444444';
+  const ROBOT = 'cccccccc-2222-4222-8333-444444444444';
+
+  function world() {
+    const root = home();
+    const paths = activityPaths(root);
+    mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
+    const bodies: string[] = [];
+    const step = () =>
+      usageStep({
+        paths,
+        roots: usageRoots(root, {}),
+        state: state(NOW_S - 40 * DAY),
+        telemetry: true,
+        collectorId: COLLECTOR,
+        tz: TZ,
+        nowS: NOW_S,
+        heldElsewhere: [],
+        // The fixtures' branch carries ACME-77: the board serves ACME.
+        prefixes: ['ACME'],
+        send: (body) => {
+          bodies.push(body);
+          return Promise.resolve({ ok: true as const });
+        },
+      });
+    const last = () =>
+      JSON.parse(bodies.at(-1) ?? '{}') as {
+        days: { day: string; session_tasks?: { key: string; task: string; tokens: number }[] }[];
+      };
+    return { root, paths, bodies, step, last };
+  }
+
+  void test('a session’s headline tokens per task, tied as its rows are; an automated session’s never', async () => {
+    const w = world();
+    writeClaude(w.root, 'p/a.jsonl', [
+      claudeLine(
+        'msg_ta1',
+        NOW_S - 900,
+        { input: 1, output: 10, cw: 100, cr: 5_000 },
+        { session: A },
+      ),
+      claudeLine('msg_ta2', NOW_S - 800, { input: 2, output: 20, cw: 0, cr: 0 }, { session: A }),
+    ]);
+    writeClaude(w.root, 'p/b.jsonl', [
+      claudeLine('msg_tb1', NOW_S - 700, { input: 4, output: 40, cw: 0, cr: 0 }, { session: B }),
+    ]);
+    writeClaude(w.root, 'p/robot.jsonl', [
+      claudeLine(
+        'msg_tr1',
+        NOW_S - 600,
+        { input: 0, output: 999, cw: 0, cr: 0 },
+        { session: ROBOT },
+      ),
+    ]);
+    writeFileSync(join(w.paths.dir, 'skip-sessions'), `${String(NOW_S - 950)} ${ROBOT}\n`, {
+      mode: 0o600,
+    });
+    assert.equal((await w.step()).kind, 'sent');
+    const day = w.last().days.find((d) => d.day === TODAY);
+    assert.deepEqual(
+      day?.session_tasks,
+      [
+        { key: sessionKey(A), task: 'ACME-77', tokens: 133 },
+        { key: sessionKey(B), task: 'ACME-77', tokens: 44 },
+      ].sort((x, y) => x.key.localeCompare(y.key)),
+      'cache reads are not headline tokens, and the automated session is left out',
+    );
+    // Sent once: nothing new, nothing again.
+    assert.equal((await w.step()).kind, 'idle');
+  });
+
+  void test('a day with no task tied carries none, and reports keep their old shape', async () => {
+    const w = world();
+    writeClaude(w.root, 'p/a.jsonl', [
+      JSON.stringify({
+        ...JSON.parse(
+          claudeLine('msg_tn1', NOW_S - 900, { input: 1, output: 1, cw: 0, cr: 0 }, { session: A }),
+        ),
+        gitBranch: 'main',
+      }),
+    ]);
+    assert.equal((await w.step()).kind, 'sent');
+    for (const day of w.last().days) assert.equal('session_tasks' in day, false);
+  });
+
+  void test('more than 200 a day go without them, rows and sessions whole', () => {
+    const rows: UsageRow[] = [
+      {
+        agent: 'claude-code',
+        model: 'claude-opus-5-5',
+        task: 'ACME-1',
+        input: 1,
+        output: 2,
+        cache_write: 3,
+        cache_read: 4,
+      },
+    ];
+    const sessions = [
+      {
+        key: '0'.repeat(16),
+        model: 'claude-opus-5-5',
+        input: 1,
+        output: 2,
+        cache_write: 3,
+        cache_read: 4,
+      },
+    ];
+    const tasks = (n: number) =>
+      Array.from({ length: n }, (_, i) => ({
+        key: '0'.repeat(16),
+        task: `ACME-${String(i + 1)}`,
+        tokens: 1,
+      }));
+    const reports = usageReports({
+      collectorId: COLLECTOR,
+      tz: TZ,
+      days: [
+        { day: addDays(TODAY, -1), rows, sessions, sessionTasks: tasks(201) },
+        { day: TODAY, rows, sessions, sessionTasks: tasks(2) },
+      ],
+    });
+    const days = reports.flatMap(
+      (r) =>
+        (
+          JSON.parse(r.body) as {
+            days: { day: string; sessions?: unknown[]; session_tasks?: unknown[] }[];
+          }
+        ).days,
+    );
+    assert.deepEqual(
+      days.map((d) => [d.day, d.sessions?.length, d.session_tasks?.length]),
+      [
+        [addDays(TODAY, -1), 1, undefined],
+        [TODAY, 1, 2],
+      ],
+    );
+  });
+});

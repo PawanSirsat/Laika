@@ -33,14 +33,29 @@
 # ## Sessions nobody is typing in (LAI-757, D-080; LAI-775)
 #
 # A session started with `OMNIGENT=1` (Omnigent sets it in every process it
-# launches), a non-empty `CI`, or a non-empty `LAIKA_ACTIVITY_SKIP` is not the
-# developer's, and counts nothing: stdin is drained and the hook exits before
-# state.json is read — no event, no repo, no sync. Under zsh the check, like
-# the drain before it, is builtins only.
+# launches; its primary session is the exception below), a non-empty `CI`, or
+# a non-empty `LAIKA_ACTIVITY_SKIP` is not the developer's, and counts
+# nothing: stdin is drained and the hook exits before state.json is read — no
+# event, no repo, no sync. Under zsh the check, like the drain before it, is
+# builtins only.
 #
-# **One thing is kept for it** (LAI-775, the owner's decision): its session id,
-# so `laika activity sync` leaves that session's tokens out — its session files
-# sit beside the developer's own. Only the session-start and session-end
+# **The orchestrator's primary session is the person's** (D-088 item 9).
+# Omnigent stamps `OMNIGENT=1` on its runner and so on every process under it
+# — the session the person types to as much as the sub-agents it dispatches
+# (Omnigent's runner/_entry.py). Two more of its variables tell them apart:
+# `OMNIGENT_RUNNER_PRIMARY_SESSION_ID`, the session the runner was started
+# for (host/connect.py), and `OMNIGENT_TERMINAL_LAUNCH_SESSION_ID`, the
+# session that owned the terminal this agent was launched in
+# (inner/terminal.py). Equal and non-empty, this is the primary: it counts as
+# the person's in every respect — its prompts, its start, its tokens — and is
+# never written to skip-sessions; at a counted start its id is kept, 0600 and
+# never sent, in ~/.laika/activity/primary-sessions, so `laika activity status`
+# can say how many there were. A sub-agent's two ids differ, and it is
+# skipped as before. `CI` and `LAIKA_ACTIVITY_SKIP` skip whatever Omnigent says.
+#
+# **One thing is kept for an automated session** (LAI-775, the owner's
+# decision): its session id, so `laika activity sync` leaves that session's
+# tokens out — its session files sit beside the developer's own. Only the session-start and session-end
 # payloads are read for it, never a prompt's, and from them only a
 # `"session_id"` that is a plain id (letters, digits, `.`, `_`, `-`, at most
 # 128). It is appended to ~/.laika/activity/skip-sessions, 0600, and never
@@ -69,7 +84,7 @@
 # no fork. It never prints (Claude Code parses `Stop` output) and always
 # exits 0 (exit 2 there keeps Claude from stopping).
 #
-# Owned by SHELL (plugin/). LAI-752, LAI-757.
+# Owned by SHELL (plugin/). LAI-752, LAI-757, LAI-787.
 
 exec >/dev/null 2>&1
 unset USER_PROMPT
@@ -79,6 +94,21 @@ MODE="${1:-}"
 AGENT="${2:-}"
 case "$AGENT" in '' | *[!a-z0-9-]*) AGENT=other ;; esac
 
+# Whose session this is, decided once, by builtins alone (D-088 item 9; see
+# the header): automated, the orchestrator's primary, or simply the person's.
+AUTOMATED=no
+PRIMARY=no
+if [ -n "${CI:-}" ] || [ -n "${LAIKA_ACTIVITY_SKIP:-}" ]; then
+  AUTOMATED=yes
+elif [ "${OMNIGENT:-}" = 1 ]; then
+  if [ -n "${OMNIGENT_RUNNER_PRIMARY_SESSION_ID:-}" ] &&
+    [ "${OMNIGENT_TERMINAL_LAUNCH_SESSION_ID:-}" = "$OMNIGENT_RUNNER_PRIMARY_SESSION_ID" ]; then
+    PRIMARY=yes
+  else
+    AUTOMATED=yes
+  fi
+fi
+
 # A session's start or end payload is the only one ever read, and only for
 # its id: neither carries a prompt. An automated session's (LAI-775); a
 # person's start, for an agent whose tokens are read (LAI-770). The prompt
@@ -86,7 +116,7 @@ case "$AGENT" in '' | *[!a-z0-9-]*) AGENT=other ;; esac
 KEEP=no
 PAYLOAD=''
 if [ "$MODE" != prompt ]; then
-  if [ "${OMNIGENT:-}" = 1 ] || [ -n "${CI:-}" ] || [ -n "${LAIKA_ACTIVITY_SKIP:-}" ]; then
+  if [ "$AUTOMATED" = yes ]; then
     case "$MODE" in session-start | session-end) KEEP=yes ;; esac
   elif [ "$MODE" = session-start ]; then
     case "$AGENT" in claude-code | codex | gemini-cli) KEEP=yes ;; esac
@@ -135,7 +165,7 @@ if [ "$KEEP" = yes ]; then
 fi
 
 # --- an automated session: nothing counted, its id kept -------------------------
-if [ "${OMNIGENT:-}" = 1 ] || [ -n "${CI:-}" ] || [ -n "${LAIKA_ACTIVITY_SKIP:-}" ]; then
+if [ "$AUTOMATED" = yes ]; then
   if [ "$KEEP" = yes ] && [ -d "$HOME/.laika/activity" ]; then
     if [ -n "$SID" ]; then
       case "$NOW" in '' | *[!0-9]*) NOW="$(date +%s)" ;; esac
@@ -192,6 +222,8 @@ if [ "$MODE" = session-start ] && [ "$COLLECT" = yes ]; then
     else
       printf '%s %s\n' "$NOW" "$SID" >>"$DIR/sessions"
     fi
+    # The orchestrator's primary, counted as the person's (D-088 item 9).
+    [ "$PRIMARY" = yes ] && printf '%s %s\n' "$NOW" "$SID" >>"$DIR/primary-sessions"
   fi
   REPOS="$DIR/repos"
   case "$TOP" in

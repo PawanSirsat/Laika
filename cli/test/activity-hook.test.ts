@@ -575,6 +575,122 @@ for (const shell of SHELLS) {
   });
 }
 
+/**
+ * D-088 item 9: Omnigent stamps `OMNIGENT=1` on every process it runs, the
+ * session the person types to included — so the hook used to skip the one
+ * session where the person actually works. The primary is the session whose
+ * terminal Omnigent launched for the runner's own session: its
+ * `OMNIGENT_TERMINAL_LAUNCH_SESSION_ID` equals `OMNIGENT_RUNNER_PRIMARY_SESSION_ID`.
+ * A dispatched sub-agent's two ids differ.
+ */
+const PRIMARY_FILE = (h: string): string => join(h, '.laika', 'activity', 'primary-sessions');
+const primaries = (h: string): string[] =>
+  existsSync(PRIMARY_FILE(h))
+    ? readFileSync(PRIMARY_FILE(h), 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => line.split(' ')[1] ?? '')
+    : [];
+const OMNI_PRIMARY = {
+  OMNIGENT: '1',
+  OMNIGENT_RUNNER_PRIMARY_SESSION_ID: '5bd58648202e4db4a68ea734a63be4db',
+  OMNIGENT_TERMINAL_LAUNCH_SESSION_ID: '5bd58648202e4db4a68ea734a63be4db',
+};
+const OMNI_SUBAGENT = {
+  OMNIGENT: '1',
+  OMNIGENT_RUNNER_PRIMARY_SESSION_ID: '5bd58648202e4db4a68ea734a63be4db',
+  OMNIGENT_TERMINAL_LAUNCH_SESSION_ID: '72e4a381111b429a83f004862fa71714',
+};
+
+for (const shell of SHELLS) {
+  void describe(`the orchestrator’s primary session is the person’s, under ${shell.join(' ')} (D-088 item 9)`, () => {
+    void test('the primary counts: its prompt, its start, its id kept as a primary, never skipped', () => {
+      const h = home();
+      const p = run(shell, ['prompt', 'claude-code'], { home: h, env: OMNI_PRIMARY });
+      assert.equal(p.code, 0);
+      assert.equal(p.stdout + p.stderr, '');
+      const s = run(shell, ['session-start', 'claude-code'], {
+        home: h,
+        env: OMNI_PRIMARY,
+        input: payload('9a1b2c3d-0000-4000-8000-000000000001'),
+      });
+      assert.equal(s.code, 0);
+      assert.equal(s.stdout + s.stderr, '');
+      assert.deepEqual(
+        events(h).map((line) => line.split(' ').slice(0, 2).join(' ')),
+        ['p claude-code', 's claude-code'],
+      );
+      assert.deepEqual(started(h), ['9a1b2c3d-0000-4000-8000-000000000001 -']);
+      assert.deepEqual(primaries(h), ['9a1b2c3d-0000-4000-8000-000000000001']);
+      assert.equal((statSync(PRIMARY_FILE(h)).mode & 0o777).toString(8), '600');
+      assert.deepEqual(skipped(h), []);
+    });
+
+    void test('a dispatched sub-agent (the two ids differ) is skipped as before', () => {
+      const h = home();
+      run(shell, ['prompt', 'claude-code'], { home: h, env: OMNI_SUBAGENT });
+      run(shell, ['session-start', 'claude-code'], {
+        home: h,
+        env: OMNI_SUBAGENT,
+        input: payload('9a1b2c3d-0000-4000-8000-000000000002'),
+      });
+      assert.deepEqual(events(h), []);
+      assert.deepEqual(started(h), []);
+      assert.deepEqual(primaries(h), []);
+      assert.deepEqual(skipped(h), ['9a1b2c3d-0000-4000-8000-000000000002']);
+    });
+
+    void test('OMNIGENT=1 with no primary id, or an empty one on both sides, is skipped', () => {
+      for (const env of [
+        { OMNIGENT: '1', OMNIGENT_TERMINAL_LAUNCH_SESSION_ID: 'abc' },
+        {
+          OMNIGENT: '1',
+          OMNIGENT_RUNNER_PRIMARY_SESSION_ID: '',
+          OMNIGENT_TERMINAL_LAUNCH_SESSION_ID: '',
+        },
+        { OMNIGENT: '1', OMNIGENT_RUNNER_PRIMARY_SESSION_ID: 'abc' },
+      ]) {
+        const h = home();
+        run(shell, ['prompt', 'claude-code'], { home: h, env });
+        run(shell, ['session-start', 'claude-code'], {
+          home: h,
+          env,
+          input: payload('9a1b2c3d-0000-4000-8000-000000000003'),
+        });
+        assert.deepEqual(events(h), [], JSON.stringify(env));
+        assert.deepEqual(skipped(h), ['9a1b2c3d-0000-4000-8000-000000000003'], JSON.stringify(env));
+      }
+    });
+
+    void test('CI or LAIKA_ACTIVITY_SKIP skips a primary all the same', () => {
+      for (const extra of [{ CI: 'true' }, { LAIKA_ACTIVITY_SKIP: '1' }]) {
+        const h = home();
+        const env = { ...OMNI_PRIMARY, ...extra };
+        run(shell, ['prompt', 'claude-code'], { home: h, env });
+        run(shell, ['session-start', 'claude-code'], {
+          home: h,
+          env,
+          input: payload('9a1b2c3d-0000-4000-8000-000000000004'),
+        });
+        assert.deepEqual(events(h), [], JSON.stringify(extra));
+        assert.deepEqual(primaries(h), []);
+        assert.deepEqual(skipped(h), ['9a1b2c3d-0000-4000-8000-000000000004']);
+      }
+    });
+
+    void test('a person’s plain session (no Omnigent) is kept as before and is no primary', () => {
+      const h = home();
+      run(shell, ['session-start', 'claude-code'], {
+        home: h,
+        input: payload('9a1b2c3d-0000-4000-8000-000000000005'),
+      });
+      assert.deepEqual(started(h), ['9a1b2c3d-0000-4000-8000-000000000005 -']);
+      assert.deepEqual(primaries(h), []);
+    });
+  });
+}
+
 void describe('starting the sync', () => {
   function layout(): { script: string; calls: string } {
     const root = dir('laika-actlayout-');

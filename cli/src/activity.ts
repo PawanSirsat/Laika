@@ -62,6 +62,7 @@ import {
   usageStep,
   type UsageOutcome,
 } from './activity-usage.ts';
+import { buildDraft, primarySessions, timeDraftBody, type Block } from './activity-time.ts';
 import { ask as askConsole, closePrompt } from './prompt.ts';
 
 /**
@@ -148,7 +149,7 @@ const CONSOLE: ActivityIo = {
  * The rule itself is in `plugin/scripts/laika-activity-hook`.
  */
 export const SKIP_RULE =
-  'agent sessions run with OMNIGENT=1 (Omnigent’s), a non-empty CI or a non-empty LAIKA_ACTIVITY_SKIP count nothing';
+  'agent sessions run with OMNIGENT=1 (Omnigent’s sub-agents — its primary session, where you type, is yours), a non-empty CI or a non-empty LAIKA_ACTIVITY_SKIP count nothing';
 
 const USAGE = [
   'Usage:',
@@ -469,6 +470,20 @@ async function status(io: ActivityIo): Promise<number> {
     } — Claude Code, Codex, Gemini CLI`,
   );
   io.out('OpenTelemetry   optional, for Claude Code’s background calls: `laika activity otel`');
+  // Time drafts (LAI-787): the board's answer as last given, never asked here.
+  io.out(
+    `Time drafting   ${
+      state.drafting === undefined
+        ? 'not asked yet — the next sync asks the board'
+        : state.drafting
+          ? 'on — each sync sends the last 7 days’ blocks (`laika time draft` shows them)'
+          : 'off — it needs the organisation’s Time setting at “drafts” and your own “Draft my time”'
+    }${state.drafting_checked_at === undefined ? '' : ` (asked ${when(state.drafting_checked_at)})`}`,
+  );
+  const primaries = primarySessions(paths);
+  io.out(
+    `Primary         ${String(primaries)} Omnigent primary ${primaries === 1 ? 'session' : 'sessions'} counted as yours (D-088)`,
+  );
 
   io.out('');
   const snapshot = await previewSnapshot(context(io), scope);
@@ -505,6 +520,22 @@ async function status(io: ActivityIo): Promise<number> {
     for (const line of JSON.stringify(JSON.parse(report.body), null, 2).split('\n')) io.out(line);
   }
   return 0;
+}
+
+/** What the time-draft step did (LAI-787), as the end of the sync's line. */
+function timeLine(outcome: SyncOutcome): string {
+  if (outcome.kind !== 'sent') return '';
+  const time = outcome.time;
+  switch (time?.kind) {
+    case 'sent':
+      return ` Time drafts: ${String(time.days)} ${time.days === 1 ? 'day' : 'days'} sent${time.pending > 0 ? ', more with the next syncs' : ''}.`;
+    case 'error':
+      return ` Time drafts not sent: ${time.message}.`;
+    case 'rate-limited':
+      return ' Time drafts wait: the board asked to.';
+    default:
+      return '';
+  }
 }
 
 /** What the token usage step did, as the end of the sync's line. */
@@ -545,7 +576,7 @@ function describe(outcome: SyncOutcome): { line: string; code: number } {
           ? ` Look-back: ${String(look.keys)} commits sent${look.finished ? '' : ', more with the next syncs'}.`
           : '';
       return {
-        line: `Sent. The board accepted ${String(outcome.acceptedDays)} days.${outcome.deferredKeys > 0 ? ` ${String(outcome.deferredKeys)} keys wait for the next sync.` : ''}${lookLine}${usageLine(outcome.usage)}`,
+        line: `Sent. The board accepted ${String(outcome.acceptedDays)} days.${outcome.deferredKeys > 0 ? ` ${String(outcome.deferredKeys)} keys wait for the next sync.` : ''}${lookLine}${usageLine(outcome.usage)}${timeLine(outcome)}`,
         code: 0,
       };
     }
@@ -956,5 +987,141 @@ function emails(args: readonly string[], io: ActivityIo): number {
   io.out(
     `Saved ${String(list.length)} extra ${list.length === 1 ? 'email' : 'emails'}. They stay on this machine.`,
   );
+  return 0;
+}
+
+/* -------------------------------------------------------------------------- */
+/* laika time draft (LAI-787, D-088)                                          */
+/* -------------------------------------------------------------------------- */
+
+const TIME_USAGE = [
+  'Usage:',
+  '  laika time draft [--days N] [--json]',
+  '                                 the blocks of your last N days (1–14, default 1) as',
+  '                                 this machine drafts them — what a sync would send',
+];
+
+/** `HH:MM` of a unix-ms instant in `tz`. */
+function clock(ms: number, tz: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(ms));
+}
+
+/** `3 h 12 min`, `45 min`. */
+function span(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h === 0
+    ? `${String(m)} min`
+    : m === 0
+      ? `${String(h)} h`
+      : `${String(h)} h ${String(m)} min`;
+}
+
+function evidence(b: Block): string {
+  const s = b.signals;
+  const part = (n: number, one: string, many: string): string | undefined =>
+    n === 0 ? undefined : `${String(n)} ${n === 1 ? one : many}`;
+  return [
+    part(s.prompts, 'prompt', 'prompts'),
+    part(s.replies, 'reply', 'replies'),
+    part(s.sessions, 'session', 'sessions'),
+    part(s.commits, 'commit', 'commits'),
+    part(s.marks, 'mark', 'marks'),
+  ]
+    .filter((p): p is string => p !== undefined)
+    .join(' · ');
+}
+
+/**
+ * `laika time draft`: the blocks this machine drafts from what it already
+ * holds — the same rule and the same exclusions as the sync — printed, and
+ * nothing written or sent. Whether a sync sends them is the board's two
+ * switches' to say (`laika activity status`).
+ */
+export async function time(argv: readonly string[], io: ActivityIo = CONSOLE): Promise<number> {
+  const [command, ...rest] = argv;
+  if (command !== 'draft') {
+    if (command !== undefined) io.err(`laika time: unknown command "${command}"`);
+    for (const line of TIME_USAGE) io.err(line);
+    return 1;
+  }
+  let days = 1;
+  let json = false;
+  for (let i = 0; i < rest.length; i += 1) {
+    const arg = rest[i] ?? '';
+    if (arg === '--json') json = true;
+    else if (arg === '--days' || arg.startsWith('--days=')) {
+      const value = arg === '--days' ? rest[(i += 1)] : arg.slice(7);
+      days = /^\d{1,2}$/.test(value ?? '') ? Number(value) : Number.NaN;
+      if (!(days >= 1 && days <= 14)) {
+        io.err('laika time draft: --days takes 1 to 14');
+        return 1;
+      }
+    } else {
+      io.err(`laika time draft: unknown option "${arg}"`);
+      return 1;
+    }
+  }
+  const paths = activityPaths(io.home);
+  const state = readState(paths);
+  if (state === undefined) {
+    io.err('Local activity is off on this machine, and drafts are built from what it counts.');
+    io.err('Turn it on first: laika activity on');
+    return 1;
+  }
+  const tz = ianaTimeZone(io.tz);
+  const draft = await buildDraft({
+    paths,
+    roots: usageRoots(io.home, io.env),
+    state,
+    tz,
+    nowS: Math.floor(io.nowMs() / 1000),
+    days,
+    extraEmails: readEmails(paths),
+    git: io.git ?? gitRunner(io.env),
+  });
+  const entries = [...draft.days].map(([day, blocks]) => ({ day, blocks }));
+  if (json) {
+    const existing = readText(paths.collectorId)?.trim();
+    io.out(
+      JSON.stringify(
+        JSON.parse(
+          timeDraftBody(
+            existing !== undefined && existing !== '' ? existing : '(created on first sync)',
+            tz,
+            entries,
+          ),
+        ),
+        null,
+        2,
+      ),
+    );
+    return 0;
+  }
+  io.out(
+    `Time drafts for the last ${String(days)} ${days === 1 ? 'day' : 'days'}, built on this machine (${tz}).`,
+  );
+  io.out('Only these blocks would leave it — times, minutes, a task key and counts; never what');
+  io.out('was said, paths, repo or branch names or commit messages. Nothing is sent from here.');
+  for (const { day, blocks } of entries) {
+    const minutes = blocks.reduce((n, b) => n + b.minutes, 0);
+    const tied = blocks.filter((b) => b.task !== null).reduce((n, b) => n + b.minutes, 0);
+    io.out('');
+    io.out(
+      blocks.length === 0
+        ? `${day}  no signal`
+        : `${day}  ${span(minutes)} in ${String(blocks.length)} ${blocks.length === 1 ? 'block' : 'blocks'}, ${span(tied)} tied to a task`,
+    );
+    for (const b of blocks) {
+      io.out(
+        `  ${clock(b.start, tz)}–${clock(b.end, tz)}  ${span(b.minutes).padStart(10)}  ${(b.task ?? 'no task').padEnd(12)}  ${evidence(b)}`,
+      );
+    }
+  }
   return 0;
 }

@@ -269,6 +269,20 @@ it launches), `CI` is set, or `LAIKA_ACTIVITY_SKIP` is set; it only keeps that
 session's id, from its start and end payloads (never a prompt's), so its
 tokens are left out too (LAI-775). `on` and `status` say so.
 
+**The orchestrator's primary session is yours** (D-088 item 9, LAI-787).
+Omnigent sets `OMNIGENT=1` on the session you type to as well as on the
+sub-agents it dispatches, so until LAI-787 the one session where you work was
+skipped too. Omnigent's own variables tell them apart: a session whose
+`OMNIGENT_TERMINAL_LAUNCH_SESSION_ID` equals `OMNIGENT_RUNNER_PRIMARY_SESSION_ID`
+(both set) is the runner's primary — the conversation you type in — and
+counts as yours in every respect: its prompts, its start, its tokens and its
+time. A sub-agent's two ids differ and it is skipped as before; `CI` and
+`LAIKA_ACTIVITY_SKIP` skip a primary all the same. Each primary's id is kept,
+0600 and never sent, in `~/.laika/activity/primary-sessions`, and `status`
+says how many there were. An Omnigent primary that is not a Claude Code
+session (Omnigent's own agent) runs no hooks and writes no transcript: there is
+nothing here to count, so its time is yours to add by hand.
+
 **Which board.** The one `laika activity on` was run against, recorded in
 `state.json`, with that board's token (from `~/.laika/env` first). A session
 whose environment points at a different board sends nothing — neither to that
@@ -303,3 +317,53 @@ process is gone (or whose pid now belongs to another process) is taken over.
 Every sync has a 2-minute deadline: git runs asynchronously and is killed at
 the deadline, repo paths are checked without blocking, and a CLI sync that
 reaches it exits rather than wait on a call stuck on a dead network mount.
+
+## `laika time draft` — your day, drafted on this machine (LAI-787, D-088)
+
+Laika drafts each person's working day **on their own machine** from what this
+collector already holds, and the person confirms it in the web app (*My day*).
+Only blocks leave the machine; nothing anyone else sees is a computed hour.
+
+**Needs local activity on here** (`laika activity on`): the signals are the
+ones it already counts. Then each sync asks the board whether drafting is on —
+the organisation's *Time* setting at `drafts` **and** your own *Draft my time*,
+both set in the web app — every sync while it is, at most once an hour while
+it is not. Either off: nothing is drafted or sent, and what this machine
+remembered sending is forgotten; the board deletes the drafts it held.
+
+**What a block is built from**, all local: the times of Claude Code's replies
+and the session each is in (the token reader's records — automated sessions
+left out, the same task rule: a session's own Laika mark, else a key in its
+branch), the prompts you typed (`events.log`, Claude Code's for now — Codex
+and Gemini CLI are LAI-790), the Laika marks that start work on a task, and
+your own commits in the repos sessions started in (author time, and a task key
+from the subject, which is read and dropped at once).
+
+**The rule** (measured over 14 days on the owner's machine):
+
+- A *lane* is one session — its subagents with it — or the prompts you typed.
+  Events no more than 15 minutes apart chain; after the last one before a
+  longer gap a lane stays active 5 minutes.
+- A minute counts **once**, however many lanes are active in it: parallel
+  sessions split your time, never multiply it. A minute's tasks are the keys
+  of the lanes active in it, and it is split equally between them.
+- A session's untied minute takes the key of a commit in its repository with
+  exactly one key the board serves, authored within 15 minutes after it.
+  Commits never make time.
+- A run of active minutes, cut at local midnight, is one block per task in it;
+  the blocks of a run add up to its wall-clock minutes. At most 48 a day: the
+  shortest is merged into the nearest block of the same task, or dropped.
+
+**What leaves**, on `PUT /api/v1/me/time-drafts`, for the last 7 days whose
+blocks changed: per local day and zone, each block's start, end, minutes, task
+key or `null`, and counts — prompts, replies, sessions, commits, marks. Never
+prompt or reply text, paths, repository or branch names, session ids, commit
+messages or window titles. `laika time draft [--days N]` prints the blocks for
+your last days; `--json` prints the exact body. Neither writes or sends
+anything.
+
+**Agent minutes are not your hours.** With Claude Code's OpenTelemetry on
+(`laika activity otel`), each usage report also carries every session's tokens
+per task (`session_tasks`: a session's one-way key, a task key, a count), so
+the board can split Claude Code's own `active_time` the way tokens are split.
+The board shows it as agent minutes, never as hours.
