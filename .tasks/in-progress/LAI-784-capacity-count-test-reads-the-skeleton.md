@@ -2,11 +2,12 @@
 id: LAI-784
 title: 'Organisation-roles counts Capacity''s people while the loading skeleton is still drawn'
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-767
-status: backlog
+started: 2026-10-19T18:57:09Z
+status: in-progress
 ---
 
 ## Goal
