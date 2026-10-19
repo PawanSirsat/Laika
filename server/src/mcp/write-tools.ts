@@ -133,7 +133,7 @@ const TASK_FIELDS = {
   size: z
     .enum(SIZE_LEVELS)
     .describe(
-      "Size relative to this project's typical task, each level double the last. Laika computes one; set this only to override it.",
+      "Effort — what the board shows as Effort — relative to this project's typical task: XS, S, M, L or XL (extra small to extra large), each level double the last. Laika computes one; set this only to override it.",
     ),
   // LAI-780: shaped by the service, so its refusal names the field.
   external_ref: z
@@ -283,7 +283,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Start working on a task',
       description:
-        "Claim a task and move it to in_progress. Claim before you write any code for it, and pass the `branch` you work on — name it after the key, `LAI-42-short-name` — so the task keeps it and the tokens your session spends are tied to this task. Optionally pass your own `estimate`: a `size` (XS–XL, relative to this project's typical task) and a `confidence` (green, yellow, red) that it will land as asked. It is kept, scored against what happens, and moves the forecast only once estimates here have beaten the project median. Call it also when the task is already yours and in progress, as when you resume it: that changes nothing but the branch and marks the task as the one you are on, and keeps no estimate. Fails with `conflict` if somebody else holds it — check the error before assuming you have it.",
+        "Claim a task and move it to in_progress. Claim before you write any code for it, and pass the `branch` you work on — name it after the key, `LAI-42-short-name` — so the task keeps it and the tokens your session spends are tied to this task. Optionally pass your own `estimate`: a `size` (the effort, XS–XL, relative to this project's typical task) and a `confidence` (green, yellow, red) that it will land as asked. It is kept, scored against what happens, and moves the forecast only once estimates here have beaten the project median. Call it also when the task is already yours and in progress, as when you resume it: that changes nothing but the branch and marks the task as the one you are on, and keeps no estimate. Fails with `conflict` if somebody else holds it — check the error before assuming you have it.",
       inputSchema: z.strictObject({
         task: TASK_REF,
         branch: z.string().max(200).optional(),
@@ -294,7 +294,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           })
           .optional()
           .describe(
-            'Your own estimate at claim (D-085): `size` relative to the typical task here, `confidence` green, yellow or red.',
+            'Your own estimate at claim (D-085): `size` is the effort relative to the typical task here, `confidence` green, yellow or red.',
           ),
       }),
     },
@@ -520,7 +520,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Edit a task',
       description:
-        'Change a task after it exists: its title, prose, priority, tags, who holds it, which sprint it sits in, its parent, its due and planned-start dates, its size, and the outside id it carries. Every field is optional and an omitted one is left alone; `null` on `parent`, `due_on`, `planned_start`, `size` or `external_ref` clears it. **Status is not here** — moving a task is `update_status`, because §5 validates transitions and a field edit would route around the table.',
+        'Change a task after it exists: its title, prose, priority, tags, who holds it, which sprint it sits in, its parent, its due and planned-start dates, its effort (`size`), and the outside id it carries. Every field is optional and an omitted one is left alone; `null` on `parent`, `due_on`, `planned_start`, `size` or `external_ref` clears it. **Status is not here** — moving a task is `update_status`, because §5 validates transitions and a field edit would route around the table.',
       inputSchema: z.strictObject({
         task: TASK_REF,
         title: TASK_FIELDS.title.optional(),
@@ -540,7 +540,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         size: TASK_FIELDS.size
           .nullable()
           .optional()
-          .describe('Override the computed size; `null` goes back to the computed one.'),
+          .describe('Override the effort Laika computed; `null` goes back to the computed one.'),
         external_ref: TASK_FIELDS.external_ref.nullable().optional(),
       }),
     },
