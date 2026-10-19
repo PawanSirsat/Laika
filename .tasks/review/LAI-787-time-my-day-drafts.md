@@ -50,7 +50,13 @@ minutes. This is D-088 items 2–9, 11–13. Owner-approved 2026-10-20.
 - [x] SPEC sections this task may edit, named: §1.1 (already amended), §3.1
       rows for the new actions, §4 new table sections, §6.4 endpoints, §7.1
       the new tool, §13.4 one sentence.
-- [x] Gate: test, lint, format exit 0.
+- [ ] Gate: test, lint, format exit 0.
+      **Not met as written:** `pnpm lint` 0 and `pnpm format` 0, but the root
+      `pnpm test` exited 1 in each of three runs on a machine at load average
+      40–50, every time only by LAI-768's timeouts (`build.test.ts`,
+      `migrate.test.ts`, `project-statuses.test.ts`; a different set each
+      run), each 0 when run alone on the final tree. Left unticked for the
+      reviewer to re-run the gate on a quieter machine.
 
 ## Notes / context
 
