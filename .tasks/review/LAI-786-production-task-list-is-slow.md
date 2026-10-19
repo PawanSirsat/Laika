@@ -43,7 +43,7 @@ access for this task.
 - [x] The other list reads are checked for the same per-row pattern: the
       Review queue, sprint lists, Capacity, Usage, the MCP list and read tools,
       and the task panel.
-- [ ] `pnpm test`, `pnpm lint` and `pnpm format` each exit 0, run separately
+- [x] `pnpm test`, `pnpm lint` and `pnpm format` each exit 0, run separately
       in the foreground.
 
 ## Notes / context
@@ -202,3 +202,17 @@ risks a collision. Both are for the orchestrator or CHIEF to file:
   decision, with a server half and a web half.
 - **Production is plain `http://` on a public IP.** Bearer tokens and session
   cookies cross the internet unencrypted. No task file mentions TLS or HTTPS.
+
+### 6. Gate
+
+Repo root, at `faaf55f4` (this file in review; no application code on the
+branch). Each command ran in the foreground, output to its own file, exit code
+captured on its own line:
+
+| command | exit | notes |
+| --- | --- | --- |
+| `pnpm test` (run 1) | **1** | Only two load timeouts in `server/test/db/migrate.test.ts`, at 6.8 s and 8.6 s against a 5 s limit. The rest passed. `cli`: 431 tests, 429 pass, 0 fail, 2 skipped. `server/web`: 2,136 pass, 0 fail. `server`: 3,086 pass, 2 fail, 8 skipped. |
+| `pnpm exec vitest run test/db/migrate.test.ts` (in `server/`, alone) | 0 | 24 of 24 |
+| `pnpm lint` | 0 | |
+| `pnpm format` | 0 | |
+| `pnpm test` (run 2) | **0** | `cli`: 431 tests, 429 pass, 0 fail, 2 skipped. `server/web`: 2,136 pass, 0 fail. `server`: 151 files passed and 1 skipped; 3,088 tests passed and 8 skipped. All three workspaces ran. |
