@@ -459,9 +459,13 @@ void describe('the directory includes people who left (LAI-240)', () => {
     const cap = await open('/capacity', stub);
     let capCount = 0;
     try {
-      await cap.page.locator('.cap-person, .cap-row, [class*="cap-"]').first().waitFor({
-        timeout: 20_000,
-      });
+      // Wait for the loaded screen, not for the first `cap-*` element. The
+      // loading skeleton (LAI-767) is built from `cap-*` classes and holds no
+      // names, so that wait passed before `/capacity` answered and counted 0
+      // on GitHub's runner (LAI-784). The skeleton's `.cap` is the one that
+      // is `aria-busy`, and the loaded `.cap` holds every person in the same
+      // render, as a card or in the never-seen line.
+      await cap.page.locator('.cap:not([aria-busy="true"])').waitFor({ timeout: 20_000 });
       capCount = await cap.page.evaluate(() => {
         // The people list, however Capacity spells it — counted from the names
         // it renders rather than from a class this test would have to chase.
