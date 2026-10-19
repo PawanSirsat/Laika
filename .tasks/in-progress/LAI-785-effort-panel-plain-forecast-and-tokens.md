@@ -6,8 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from:
-status: review
-finished: 2026-10-19T22:54:55Z
+status: in-progress
 started: 2026-10-19T22:21:02Z
 ---
 
@@ -40,10 +39,10 @@ Board card: LAIKA-588 (`external_ref` LAI-785).
 - [x] **Nothing an agent or a URL uses changes name**: `size`, the levels, the
       card-field key `size` and the List's `sort=size` keep working, and a
       test proves `sort=size` still sorts by effort.
-- [x] **One headline**: the effort in words and the time as one plain range,
+- [ ] **One headline**: the effort in words and the time as one plain range,
       *Small · about 40 min to 1.5 h*; with too little history for hours,
       *Small* and *Time estimate after 10 finished tasks*, once.
-- [x] **One comparison line once there is an actual**, from the estimate
+- [ ] **One comparison line once there is an actual**, from the estimate
       frozen at start: *Estimated 40 min–1.5 h · took 1.6 h · a little over*,
       with a verdict of *on target*, *a little over*, *well over* or *faster
       than expected*. No *At start* tile.
@@ -60,12 +59,12 @@ Board card: LAIKA-588 (`external_ref` LAI-785).
       have 3)*, *↓ Not blocked by anything*, *= Description length is
       typical*); rows that change nothing are left out; the similar finished
       tasks stay links inside it.
-- [x] **Accuracy in plain words inside the disclosure** (*Estimates here have
+- [ ] **Accuracy in plain words inside the disclosure** (*Estimates here have
       been off by about 2.4× on average so far (6 tasks)*), and *rough
       estimate* beside the headline when the project has fewer than 5
       measured tasks or is typically off by more than 2×. No *p80* anywhere
       and no `×` in the headline.
-- [x] **Tokens section: one headline** — total tokens without cache reads and
+- [ ] **Tokens section: one headline** — total tokens without cache reads and
       the cost labelled *API-equivalent, not your bill* — then the budget bar
       only when a budget is set, and the runaway banner only when it fires.
       Everything else (rounds, per person and agent, the share tied to a
@@ -225,3 +224,40 @@ test/browser/task-tokens.test.ts test/browser/sprint-forecast.test.ts` in
 `server/web`: exit 0, 25 tests, 25 passed. `npx vitest run
 test/mcp/read-tools.test.ts test/mcp/write-tools.test.ts` in `server/`: exit
 0, 70 tests, 70 passed.
+
+## Review round 1 — CHANGES REQUIRED (2026-10-20)
+
+Relayed to the builder by the orchestrator. The criteria it fails are
+unticked above.
+
+**Blocker: the verdict can contradict the range printed beside it.**
+`comparisonLine` shows the range rounded by `roughDuration`, but `verdictOf`
+judged against the unrounded p50 and p80. The reviewer's probe
+(`/tmp/review-effort/probe.ts`):
+
+- `Estimated 40 min–1.5 h · took 1.4 h · a little over`
+- `Estimated 20–50 min · took 48 min · a little over`
+- `Estimated 24 h–3 d · took 3 d · a little over`
+- `Estimated 40 min–1 h · took 1.2 h · on target`
+- `Estimated 15–20 min · took 22 min · on target`
+
+Fix: judge the actual against exactly the rounded ends that are displayed,
+with one function producing both the displayed ends and the verdict's input.
+Add a test for each of the five rows.
+
+**Also fix (decided by the reviewer):**
+
+1. Below the shown low end is *faster than expected*. Inside the shown range
+   is *on target*. Above it is *a little over* up to 1.5× the shown top, and
+   *well over* beyond. Test each boundary on the displayed values.
+2. Label the comparison *Estimated at start …*, so it is not confused with
+   the current headline range.
+3. Accuracy wording: the server's `typical_error` is a median. Say
+   *typically off by about 2.4×*, not *on average*. With one measured task,
+   say *(1 task so far)*, or hide it if there are fewer than 3.
+4. `roughDuration` must not mix units across the day boundary (`24 h–2 d`
+   should read `1–2 d`). Format both ends of a range in the same unit.
+5. Show the budget bar only when a lead or admin actually set a budget. For
+   the default budget (the token estimate's high end frozen at claim), show
+   nothing until it reaches 80%, then only the alert line. The runaway
+   banner rule stays as it is.
