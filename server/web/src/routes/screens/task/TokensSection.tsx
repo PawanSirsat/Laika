@@ -32,12 +32,18 @@ export interface TokensSectionProps {
 }
 
 /**
- * The task panel's Tokens section (D-084, LAI-770), under the proof: what
- * every person's agents spent on this task — the headline without cache
- * reads, cache reads beside it — per review round, per person and agent for
- * the readers allowed to see people, and how much of those people's work
- * Laika could tie to a task at all, so the figure is never taken for the
- * whole story (item 6).
+ * The task panel's Tokens section (D-084, LAI-770; one headline since
+ * LAI-785), under the proof. **One line first**: what every person's agents
+ * spent on this task without cache reads, *at least*, and what that would
+ * cost at API prices — *API-equivalent, not your bill*. Then the budget bar,
+ * only when a budget is set, and the runaway banner, only when it fires and
+ * only for the person it is for.
+ *
+ * **Everything else is one click away, in *Details***: cache reads, how much
+ * of those people's work Laika could tie to a task at all (item 6), the
+ * build's token estimate, what the cost leaves out, a first budget for a lead
+ * to set, and the figures per review round and per person and agent. Nothing
+ * empty is drawn: a started task with none says so in one quiet line.
  *
  * **What a reader may not see is not sent.** An owner or admin gets everyone's
  * part, anyone else on a session their own, a token nobody's: the server
@@ -138,9 +144,8 @@ export function TokensSection({
         </p>
       ) : view === undefined ? null : empty ? (
         <p className="panel-muted tk-empty">
-          None tied to this task yet. An agent ties its tokens here by marking the task —{' '}
-          <code>start_working</code>, or <code>update_status</code> to in progress — or by working
-          on a branch named <code>{taskKey}-…</code>.
+          No tokens tied to this task yet (an agent ties them by working on a branch named{' '}
+          <code>{taskKey}-…</code>).
         </p>
       ) : (
         <TokensBody
@@ -172,7 +177,16 @@ function TokensBody({
 }) {
   const { totals } = view;
   const people = view.by_person ?? [];
-  const range = forecast === undefined ? null : tokenRange(forecast.tokens);
+  // The range frozen when work started, as the Effort section's line reads it
+  // and the budget defaults to; the forecast in force before that.
+  const frozen = forecast?.at_start ?? null;
+  const range =
+    forecast === undefined
+      ? null
+      : ((frozen === null
+          ? null
+          : tokenRange({ p50: frozen.tokens_p50, p80: frozen.tokens_p80 })) ??
+        tokenRange(forecast.tokens));
   const build = forecast?.actual_tokens?.build;
   const caveats = costCaveats(totals.cost);
   const budget = view.budget;
@@ -186,117 +200,130 @@ function TokensBody({
           {runawayLine(view.runaway)}
         </p>
       )}
-      <dl className="tk-figures">
-        <div className="tk-figure" title={`${exactTokens(totals.tokens)} tokens`}>
-          <dt>Tokens</dt>
-          <dd className="tk-total">{compactTokens(totals.tokens)}</dd>
-          <dd className="tk-sub">at least · input, output and cache writes</dd>
-        </div>
-        <div className="tk-figure" title={`${exactTokens(totals.cache_read)} cache reads`}>
-          <dt>Cache reads</dt>
-          <dd className="tk-cache">{compactTokens(totals.cache_read)}</dd>
-          <dd className="tk-sub">shown apart, not in tokens</dd>
-        </div>
-        <div className="tk-figure" data-figure="cost">
-          <dt>Cost</dt>
-          <dd className="tk-cost">{costText(totals.cost)}</dd>
-          <dd className="tk-sub">{COST_LABEL}</dd>
-          {caveats.length > 0 && <dd className="tk-sub">{caveats.join(' · ')}</dd>}
-        </div>
-        {forecast !== undefined && (
-          <div className="tk-figure" data-figure="forecast">
-            <dt>Forecast</dt>
-            <dd className="tk-forecast">{range ?? 'Early'}</dd>
-            <dd className="tk-sub">
-              {range === null
-                ? `the build, after ${String(forecast.tokens.forecasts_after)} tasks with attributed tokens`
-                : `the build, likely to pessimistic${
-                    build === undefined ? '' : ` · spent on it ${compactTokens(build)}`
-                  }`}
-            </dd>
-          </div>
-        )}
-        {view.attributed !== null && (
-          <div className="tk-figure" data-figure="attributed">
-            <dt>Tied to a task</dt>
-            <dd className="tk-share">{shareOf(view.attributed.tokens, view.attributed.of)}</dd>
-            <dd className="tk-sub">
-              {view.people === 'everyone'
-                ? 'of its people’s work those days'
-                : 'of yours those days'}
-            </dd>
-          </div>
-        )}
-      </dl>
-      <p className="panel-muted tk-note">{countedNote(view)}</p>
+      <p className="tk-headline">
+        <span
+          className="tk-amount"
+          title={`${exactTokens(totals.tokens)} tokens: input, output and cache writes, not cache reads`}
+        >
+          At least <span className="tk-total">{compactTokens(totals.tokens)}</span> tokens
+        </span>
+        <span className="tk-sep" aria-hidden="true">
+          {' · '}
+        </span>
+        <span className="tk-cost-figure" data-figure="cost">
+          <span className="tk-cost">{costText(totals.cost)}</span>{' '}
+          <span className="tk-cost-label">{COST_LABEL}</span>
+        </span>
+      </p>
 
-      {(budget !== null || mayBudget) && (
+      {budget !== null && (
         <div className="tk-block" data-block="budget">
-          <h4 className="tk-h">
-            Budget<span className="tk-h-note"> · soft, alerts at 80% and 100%</span>
-          </h4>
-          {budget !== null ? (
-            <BudgetMeter budget={budget} name={budget.label}>
-              {mayBudget && (
-                <BudgetEditor
-                  current={budget.source === 'set' ? budget.tokens : undefined}
-                  removeLabel="Back to the forecast"
-                  label={`Token budget for ${budget.label}`}
-                  onSave={onBudget}
-                />
-              )}
-            </BudgetMeter>
-          ) : (
-            <>
-              <p className="panel-muted tk-note">
-                No budget: none set, and no forecast was frozen when it was claimed.
-              </p>
+          <BudgetMeter budget={budget} name="Budget">
+            {mayBudget && (
               <BudgetEditor
-                current={undefined}
-                label="Token budget for this task"
+                current={budget.source === 'set' ? budget.tokens : undefined}
+                removeLabel="Back to the estimate"
+                label={`Token budget for ${budget.label}`}
                 onSave={onBudget}
               />
-            </>
+            )}
+          </BudgetMeter>
+        </div>
+      )}
+
+      <details className="tk-details">
+        <summary>Details</summary>
+        <dl className="tk-facts">
+          <div className="tk-fact" title={`${exactTokens(totals.cache_read)} cache reads`}>
+            <dt>Cache reads</dt>
+            <dd>
+              <span className="tk-cache">{compactTokens(totals.cache_read)}</span> · not counted in
+              the total
+            </dd>
+          </div>
+          {view.attributed !== null && (
+            <div className="tk-fact" data-figure="attributed">
+              <dt>Tied to a task</dt>
+              <dd>
+                <span className="tk-share">
+                  {shareOf(view.attributed.tokens, view.attributed.of)}
+                </span>{' '}
+                {view.people === 'everyone'
+                  ? 'of its people’s work those days'
+                  : 'of yours those days'}
+              </dd>
+            </div>
           )}
-        </div>
-      )}
+          {range !== null && (
+            <div className="tk-fact" data-figure="forecast">
+              <dt>Estimate</dt>
+              <dd>
+                <span className="tk-forecast">{range}</span> for the build
+                {build === undefined ? '' : ` · used ${compactTokens(build)} on it`}
+              </dd>
+            </div>
+          )}
+          {caveats.length > 0 && (
+            <div className="tk-fact" data-figure="cost-caveats">
+              <dt>Cost</dt>
+              <dd>{caveats.join(' · ')}</dd>
+            </div>
+          )}
+        </dl>
+        <p className="panel-muted tk-note">{countedNote(view)}</p>
 
-      {view.by_round.length > 0 && (
-        <div className="tk-block">
-          <h4 className="tk-h">By round</h4>
-          <BarRows
-            label="Tokens by review round"
-            rows={view.by_round.map((r) => ({
-              key: String(r.number),
-              name: roundLabel(r),
-              tokens: r.tokens,
-              cacheRead: r.cache_read,
-            }))}
-          />
-        </div>
-      )}
+        {budget === null && mayBudget && (
+          <div className="tk-block" data-block="budget">
+            <h4 className="tk-h">
+              Budget<span className="tk-h-note"> · soft, alerts at 80% and 100%</span>
+            </h4>
+            <BudgetEditor
+              current={undefined}
+              label="Token budget for this task"
+              onSave={onBudget}
+            />
+          </div>
+        )}
 
-      {view.people !== 'none' && people.length > 0 && (
-        <div className="tk-block">
-          <h4 className="tk-h">
-            {view.people === 'everyone' ? 'By person and agent' : 'Yours, by agent'}
-            <span className="tk-h-note">{view.people === 'everyone' ? ' · by name' : ''}</span>
-          </h4>
-          <BarRows
-            label={view.people === 'everyone' ? 'Tokens by person' : 'Your tokens'}
-            rows={people.map((p) => ({
-              key: p.user_id,
-              name: p.name,
-              tokens: p.tokens,
-              cacheRead: p.cache_read,
-              note: agentsNote(p),
-            }))}
-          />
-        </div>
-      )}
-      {view.people === 'own' && people.length === 0 && (
-        <p className="panel-muted tk-note">None of these are yours; who spent them is not shown.</p>
-      )}
+        {view.by_round.length > 0 && (
+          <div className="tk-block">
+            <h4 className="tk-h">By review round</h4>
+            <BarRows
+              label="Tokens by review round"
+              rows={view.by_round.map((r) => ({
+                key: String(r.number),
+                name: roundLabel(r),
+                tokens: r.tokens,
+                cacheRead: r.cache_read,
+              }))}
+            />
+          </div>
+        )}
+
+        {view.people !== 'none' && people.length > 0 && (
+          <div className="tk-block">
+            <h4 className="tk-h">
+              {view.people === 'everyone' ? 'By person and agent' : 'Yours, by agent'}
+              <span className="tk-h-note">{view.people === 'everyone' ? ' · by name' : ''}</span>
+            </h4>
+            <BarRows
+              label={view.people === 'everyone' ? 'Tokens by person' : 'Your tokens'}
+              rows={people.map((p) => ({
+                key: p.user_id,
+                name: p.name,
+                tokens: p.tokens,
+                cacheRead: p.cache_read,
+                note: agentsNote(p),
+              }))}
+            />
+          </div>
+        )}
+        {view.people === 'own' && people.length === 0 && (
+          <p className="panel-muted tk-note">
+            None of these are yours; who spent them is not shown.
+          </p>
+        )}
+      </details>
     </>
   );
 }

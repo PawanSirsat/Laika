@@ -1,8 +1,11 @@
 /**
- * The task panel's Tokens section on screen (D-084, LAI-770): what each
- * reader is shown — an owner everyone's part, a person their own, a member
- * who did none of the work the total and what it counts — nothing for a task
- * never started, and never one task's figures under another's key.
+ * The task panel's Tokens section on screen (D-084, LAI-770; one headline
+ * since LAI-785): the total and its API-equivalent cost first, the budget bar
+ * when one is set, and everything else folded into *Details* — where each
+ * reader is shown what they may see: an owner everyone's part, a person their
+ * own, a member who did none of the work the total and what it counts.
+ * Nothing for a task never started, one quiet line for a started one with
+ * none, and never one task's figures under another's key.
  *
  * The server decides whose part a reader sees (`people`); these stubs answer
  * as it would for each reader, and the tests read what the section draws.
@@ -327,32 +330,80 @@ async function tokens(h: Harness): Promise<string> {
   return section.innerText();
 }
 
+/** Open *Details* the way a person does; what the section then shows. */
+async function details(h: Harness): Promise<string> {
+  const section = h.page.locator('[data-section="tokens"]');
+  const folded = section.locator('details.tk-details');
+  assert.equal(await folded.getAttribute('open'), null, 'Details is not folded to begin with');
+  assert.equal((await folded.locator('summary').innerText()).trim(), 'Details');
+  await folded.locator('summary').click();
+  await until(async () => (await folded.getAttribute('open')) !== null);
+  return section.innerText();
+}
+
 void describe('the task panel’s Tokens section, per reader', () => {
-  void test('an owner: the total without cache reads, the share, each round, everyone by name and agent', async () => {
+  void test('an owner: one headline, then the share, each round, everyone by name and agent in Details', async () => {
     const h = await open('/board?project=laika-core&task=t3', stub('owner', usage({})));
     try {
-      const text = await tokens(h);
+      const folded = await tokens(h);
       const section = h.page.locator('[data-section="tokens"]');
       assert.equal(await section.locator('.tk-total').innerText(), '4.01M');
+      assert.equal(
+        await section.locator('.tk-headline').innerText(),
+        'At least 4.01M tokens · $44.07 API-equivalent, not your bill',
+      );
+      // Folded until asked for: no cache reads, rounds, share or people yet.
+      assert.doesNotMatch(folded, /81M|Round 1|Tied|Bea Lindqvist|Cal Moreno|Estimate/, folded);
+      // The forecast beside the actual (LAI-772): the build's range, and what it spent.
+      await until(async () => (await section.locator('[data-figure="forecast"]').count()) > 0);
+
+      const text = await details(h);
       assert.equal(await section.locator('.tk-cache').innerText(), '81M');
       assert.equal(
         await section.locator('[data-figure="attributed"] .tk-share').innerText(),
         '81%',
       );
-      // The forecast beside the actual (LAI-772): the build's range, and what it spent.
-      await until(async () => (await section.locator('[data-figure="forecast"]').count()) > 0);
       assert.equal(await section.locator('.tk-forecast').innerText(), '1.2M–2.5M');
       assert.match(
-        await section.locator('[data-figure="forecast"] .tk-sub').innerText(),
-        /likely to pessimistic · spent on it 3\.21M/,
+        await section.locator('[data-figure="forecast"]').innerText(),
+        /1\.2M–2\.5M for the build · used 3\.21M on it/,
       );
-      assert.match(text, /at least/);
       assert.match(text, /of its people’s work those days/);
       assert.match(text, /Round 1 · handed in 13 Oct/);
       assert.match(text, /Round 3 · open/);
       assert.match(text, /By person and agent/);
       assert.match(text, /Bea Lindqvist[\s\S]*Cal Moreno/, 'people are not in name order');
       assert.match(text, /Claude Code 3\.42M · Codex 102K/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the estimate in Details is the one frozen at start, as the Effort line says (LAI-785)', async () => {
+    const h = await open('/board?project=laika-core&task=t3', {
+      ...stub('owner', usage({})),
+      '/api/v1/tasks/t3/estimate': {
+        ...ESTIMATE,
+        at_start: {
+          level: 'M',
+          build_p50_ms: 25 * MIN,
+          build_p80_ms: 50 * MIN,
+          tokens_p50: 900_000,
+          tokens_p80: 2_100_000,
+          estimated_at: NOW - 3 * HOUR,
+        },
+      },
+    });
+    try {
+      await tokens(h);
+      const section = h.page.locator('[data-section="tokens"]');
+      await until(async () => (await section.locator('[data-figure="forecast"]').count()) > 0);
+      await details(h);
+      assert.equal(await section.locator('.tk-forecast').innerText(), '900K–2.1M');
+      assert.match(
+        await h.page.locator('[data-section="effort"] .fc-tokens').innerText(),
+        /estimated 900K–2\.1M/,
+      );
     } finally {
       await h.close();
     }
@@ -371,7 +422,8 @@ void describe('the task panel’s Tokens section, per reader', () => {
       ),
     );
     try {
-      const text = await tokens(h);
+      assert.doesNotMatch(await tokens(h), /Bea Lindqvist/, 'a name before Details opened');
+      const text = await details(h);
       assert.match(text, /Yours, by agent/);
       assert.match(text, /Bea Lindqvist/);
       assert.doesNotMatch(text, /Cal Moreno/);
@@ -388,9 +440,10 @@ void describe('the task panel’s Tokens section, per reader', () => {
       stub('member', usage({ people: 'own', by_person: [], attributed: null })),
     );
     try {
-      const text = await tokens(h);
+      await tokens(h);
       const section = h.page.locator('[data-section="tokens"]');
       assert.equal(await section.locator('.tk-total').innerText(), '4.01M');
+      const text = await details(h);
       assert.equal(await section.locator('[data-figure="attributed"]').count(), 0);
       assert.match(
         text,
@@ -398,6 +451,22 @@ void describe('the task panel’s Tokens section, per reader', () => {
       );
       assert.match(text, /None of these are yours/);
       assert.doesNotMatch(text, /Bea Lindqvist|Cal Moreno/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a started task that has none: one quiet line, and nothing else', async () => {
+    const h = await open('/board?project=laika-core&task=t3', stub('owner', EMPTY('t3', 'LC-3')));
+    try {
+      await tokens(h);
+      const section = h.page.locator('[data-section="tokens"]');
+      assert.equal(
+        await section.locator('.tk-empty').innerText(),
+        'No tokens tied to this task yet (an agent ties them by working on a branch named LC-3-…).',
+      );
+      assert.equal(await section.locator('.tk-total, details, .tk-headline').count(), 0);
+      assert.doesNotMatch(await section.innerText(), /—|Early|\$0/);
     } finally {
       await h.close();
     }
@@ -505,12 +574,15 @@ void describe('LAI-773: cost, the budget and the runaway banner', () => {
         await section.locator('[data-figure="cost"]').innerText(),
         /API-equivalent, not your bill/,
       );
+      // A budget that is set is part of the headline, not folded away.
       const meter = section.locator('[data-block="budget"] .budget');
       await meter.waitFor();
+      assert.ok(await meter.isVisible(), 'the budget bar is folded into Details');
+      assert.equal(await section.locator('details [data-block="budget"]').count(), 0);
       assert.equal(await meter.locator('.budget-badge').innerText(), '100%');
       assert.match(
         await meter.innerText(),
-        /4\.01M of 2\.5M · 160% · the forecast’s p80, frozen at claim/,
+        /4\.01M of 2\.5M · 160% · the token estimate’s high end, frozen at claim/,
       );
       const editor = section.locator('[data-block="budget"] .budget-editor');
       await editor.waitFor({ timeout: 10_000 });
@@ -520,6 +592,26 @@ void describe('LAI-773: cost, the budget and the runaway banner', () => {
       assert.equal(writes[0]?.method, 'PUT');
       assert.deepEqual(writes[0]?.body, { tokens: 6_000_000 });
       assert.equal(await section.locator('.tk-runaway').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a lead with no budget set: no bar, and the way to set one inside Details', async () => {
+    const h = await open('/board?project=laika-core&task=t3', stub('owner', usage({})));
+    try {
+      await tokens(h);
+      const section = h.page.locator('[data-section="tokens"]');
+      await until(() => h.calls.some((c) => c.path === '/api/v1/projects/laika-core/budgets'));
+      await until(async () => (await section.locator('[data-block="budget"]').count()) > 0);
+      assert.equal(await section.locator('.budget-bar').count(), 0);
+      assert.equal(
+        await section.locator('details.tk-details [data-block="budget"] .budget-editor').count(),
+        1,
+      );
+      assert.equal(await section.locator('[data-block="budget"]').isVisible(), false);
+      await details(h);
+      assert.ok(await section.locator('[data-block="budget"] .budget-editor').isVisible());
     } finally {
       await h.close();
     }

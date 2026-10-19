@@ -1,54 +1,37 @@
 /*
- * The task panel's Tokens section (D-084, LAI-770). Tokens only, so both
- * themes come from `theme.css`; the rows are the Usage page's (`usage.css`),
- * and the figures wrap rather than scroll at phone width.
+ * The task panel's Tokens section (D-084, LAI-770; one headline since
+ * LAI-785). Tokens only, so both themes come from `theme.css`; the rows are
+ * the Usage page's (`usage.css`), and every line wraps rather than scrolls at
+ * phone width.
  */
 
-.tk-figures {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-  gap: var(--space-2);
+/* The one line: the total, and its cost at API prices. */
+.tk-headline {
   margin: 0 0 var(--space-2);
-}
-
-.tk-figure {
-  min-width: 0;
-  padding: var(--space-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--bg-column) 40%, var(--bg-card));
-}
-
-.tk-figure dt {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-.tk-figure dd {
-  margin: 0.125rem 0 0;
+  font-size: var(--text-md);
+  color: var(--text-primary);
   overflow-wrap: anywhere;
 }
 
 .tk-total,
-.tk-cache,
-.tk-share,
-.tk-forecast,
 .tk-cost {
   font-family: var(--font-mono);
-  font-size: var(--text-md);
   font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
 }
 
-.tk-figure .tk-sub {
-  font-size: var(--text-xs);
+.tk-sep {
   color: var(--text-muted);
 }
 
-.tk-note,
+.tk-cost-label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
 .tk-empty {
-  margin: 0 0 var(--space-2);
+  margin: 0;
 }
 
 .tk-empty code {
@@ -56,8 +39,73 @@
   font-size: var(--text-sm);
 }
 
+/* Details — folded until asked for, as the proof's earlier rounds are. */
+.tk-details > summary {
+  cursor: pointer;
+  width: fit-content;
+  padding: var(--space-1) 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.tk-details[open] > summary {
+  margin-bottom: var(--space-2);
+}
+
+/* One fact a line: what it is, then the figure and what it means. */
+.tk-facts {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-2);
+}
+
+.tk-fact {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.tk-fact dt {
+  color: var(--text-muted);
+}
+
+.tk-fact dd {
+  margin: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.tk-cache,
+.tk-share,
+.tk-forecast {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+@media (max-width: 480px) {
+  .tk-fact {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+}
+
+.tk-note {
+  margin: 0 0 var(--space-2);
+}
+
 .tk-block {
   margin-top: var(--space-3);
+}
+
+/* The budget bar sits under the headline, not after a heading. */
+.tk-headline + .tk-block {
+  margin-top: 0;
+  margin-bottom: var(--space-2);
 }
 
 .tk-h {
