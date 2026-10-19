@@ -303,7 +303,8 @@ describe('get_task_context', () => {
     expect(estimate.why.factors.map((f) => f.key)).toContain('words');
     expect(estimate.actual.build_ms).toBeNull();
     // The markdown an agent reads says it too, with the cold start spelled out.
-    expect(text(result)).toContain(`### Size ${estimate.size.level}`);
+    // Called effort for agents too (LAI-785); the field stays `size`.
+    expect(text(result)).toContain(`### Effort ${estimate.size.level} (`);
     expect(text(result)).toContain('no hours until');
 
     await client.close();
@@ -330,7 +331,7 @@ describe('get_task_context', () => {
 
     expect(result.isError).not.toBe(true);
     expect(text(result)).toContain('Sized, then unreadable');
-    expect(text(result)).toContain('### Size');
+    expect(text(result)).toContain('### Effort');
     expect(text(result)).toContain('_Unavailable');
     expect(payload(result).estimate).toBeNull();
 

@@ -206,8 +206,12 @@ export const LIST_COLUMNS: readonly { readonly key: SortKey; readonly label: str
   { key: 'title', label: 'Summary' },
   { key: 'status', label: 'Status' },
   { key: 'priority', label: 'Pri' },
-  /* Laika's computed size, or a person's (D-085): by level, then weight. */
-  { key: 'size', label: 'Size' },
+  /*
+   * Laika's computed size, or a person's (D-085): by level, then weight.
+   * Called effort on screen (LAI-785); the key stays `size`, so a
+   * `sort=size` URL from before still sorts by it.
+   */
+  { key: 'size', label: 'Effort' },
   { key: 'assignee', label: 'Assignee' },
   { key: 'sprint', label: 'Spr' },
   /*

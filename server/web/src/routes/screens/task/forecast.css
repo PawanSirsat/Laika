@@ -1,90 +1,139 @@
 /*
- * The task panel's Forecast section (D-085, LAI-771). Tokens only, so both
- * themes come from `theme.css`; it wraps rather than scrolls at phone width.
+ * The task panel's Effort section (D-085, LAI-771; plain lines since
+ * LAI-785). Tokens only, so both themes come from `theme.css`; every line
+ * wraps rather than scrolls at phone width.
  */
 
-.fc-head {
+/* The headline, and the Change control at its end. */
+.fc-headline {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  margin-bottom: var(--space-1);
 }
 
-.fc-size .size-chip {
-  font-size: var(--text-sm);
-  padding: 0.125rem 0.4375rem;
-}
-
-.fc-size-note {
-  flex: 1 1 12rem;
+.fc-head-text {
+  flex: 1 1 14rem;
   min-width: 0;
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-}
-
-.fc-override {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-/* The app's Dropdown draws the control (LAI-726); this only keeps it compact. */
-.fc-override-select {
-  min-width: 7.5rem;
-}
-
-.fc-figures {
-  display: grid;
-  /* Seven figures since LAI-772: wide enough that a range never orphans its unit. */
-  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-  gap: var(--space-2);
-  margin: 0 0 var(--space-2);
-}
-
-.fc-figure {
-  min-width: 0;
-  padding: var(--space-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  background: color-mix(in srgb, var(--bg-column) 40%, var(--bg-card));
-}
-
-.fc-figure dt {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-.fc-figure dd {
-  margin: 0.125rem 0 0;
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-bold);
+  margin: 0;
+  font-size: var(--text-md);
   color: var(--text-primary);
   overflow-wrap: anywhere;
 }
 
-.fc-early {
-  margin: 0 0 var(--space-2);
-}
-
-.fc-why {
-  display: grid;
-  gap: var(--space-1);
-}
-
-.fc-why-title {
-  margin: 0;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
+.fc-effort {
+  font-weight: var(--weight-bold);
   color: var(--text-primary);
 }
 
-.fc-why-typical {
-  font-weight: normal;
+.fc-sep {
   color: var(--text-muted);
+}
+
+.fc-time {
+  color: var(--text-primary);
+}
+
+/* A confidence word, not a warning: muted, never red. */
+.fc-rough {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* The app's Dropdown draws the control (LAI-726); `bare`, so it reads as a link. */
+.fc-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.25rem;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+}
+
+.fc-change:hover:not(:disabled),
+.fc-change[aria-expanded='true'] {
+  background: var(--accent-bg);
+}
+
+.fc-change .dd-chevron {
+  margin-left: 0;
+  stroke: currentColor;
+}
+
+.fc-wait,
+.fc-set {
+  margin: 0 0 var(--space-1);
+}
+
+/* The lines under the headline: plain text, one fact each. */
+.fc-compare,
+.fc-timeline,
+.fc-tokens {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* The verdict is in the words; the tone only repeats it. */
+.fc-compare[data-verdict='on target'],
+.fc-compare[data-verdict='faster than expected'] {
+  color: var(--text-secondary);
+}
+
+.fc-compare[data-verdict='well over'] {
+  color: var(--chip-orange);
+}
+
+/* LAI-772: scope grew, and the split suggestion — about the task, never its author. */
+.fc-notes {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-1) 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fc-note {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  padding: var(--space-1) var(--space-2);
+  border-left: 2px solid var(--chip-purple-border);
+  overflow-wrap: anywhere;
+}
+
+/* Why …? — folded until asked for. */
+.fc-why {
+  margin-top: var(--space-1);
+}
+
+.fc-why > summary {
+  cursor: pointer;
+  width: fit-content;
+  padding: var(--space-1) 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.fc-why[open] > summary {
+  margin-bottom: var(--space-1);
+}
+
+.fc-why > p {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 
 .fc-factors {
@@ -97,21 +146,20 @@
 
 .fc-factor {
   display: grid;
-  grid-template-columns: 2.75rem minmax(0, 1fr);
+  grid-template-columns: 1.25rem minmax(0, 1fr);
   align-items: baseline;
-  gap: var(--space-2);
+  gap: var(--space-1);
   font-size: var(--text-sm);
   color: var(--text-secondary);
 }
 
-.fc-levels {
-  font-family: var(--font-mono);
+.fc-arrow {
   font-weight: var(--weight-bold);
-  text-align: right;
+  text-align: center;
   color: var(--text-muted);
 }
 
-/* Bigger and smaller, told apart by sign first; the tone only repeats it. */
+/* More and less, told apart by the sentence first; the tone only repeats it. */
 .fc-up {
   color: var(--chip-orange);
 }
@@ -124,14 +172,11 @@
   overflow-wrap: anywhere;
 }
 
-.fc-similar {
+.fc-why > .fc-similar {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-1) var(--space-2);
-  margin: var(--space-1) 0 0;
-  font-size: var(--text-sm);
-  color: var(--text-muted);
 }
 
 .fc-similar-item {
@@ -156,50 +201,12 @@
 .fc-similar-time {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-}
-
-.fc-accuracy {
-  margin: var(--space-2) 0 0;
-  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
-/* LAI-772: what the forecast waits for, and the notes beside it. */
-.fc-tokens-early {
-  margin: 0 0 var(--space-2);
-}
-
-.fc-notes {
-  display: grid;
-  gap: var(--space-1);
-  margin: 0 0 var(--space-2);
-  padding: 0;
-  list-style: none;
-}
-
-.fc-note {
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-  padding: var(--space-1) var(--space-2);
-  border-left: 2px solid var(--chip-neutral-border);
-  overflow-wrap: anywhere;
-}
-
-/* Scope and splitting are about the task, never its author: purple, not red. */
-.fc-note-scope,
-.fc-note-split {
-  border-left-color: var(--chip-purple-border);
-}
-
-.fc-accuracy-tokens {
-  margin: var(--space-1) 0 0;
+.fc-why > .fc-accuracy,
+.fc-why > .fc-accuracy-tokens,
+.fc-why > .fc-token-hint {
   font-size: var(--text-xs);
   color: var(--text-muted);
-}
-
-/* The frozen token range on its own line: the cell stays narrow. */
-.fc-at-start-tokens {
-  display: block;
-  font-weight: var(--weight-semibold);
-  color: var(--text-secondary);
 }

@@ -39,6 +39,11 @@ void describe('the default', () => {
   void test('has a label for every field and no label without a field', () => {
     assert.deepEqual([...FIELD_KEYS].sort(), Object.keys(FIELD_LABELS).sort());
   });
+
+  void test('calls the size Effort, and keeps `size` as the stored key (LAI-785)', () => {
+    assert.equal(FIELD_LABELS.size, 'Effort');
+    assert.equal(ALL_FIELDS.size, true);
+  });
 });
 
 void describe('the fields that are not offered', () => {

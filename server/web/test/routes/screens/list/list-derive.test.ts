@@ -81,9 +81,10 @@ void describe('the List row', () => {
      */
     assert.deepEqual(
       LIST_COLUMNS.map((c) => c.label),
-      // `Due` joined them with D-066: the plan beside the two actuals. `Size`
-      // with D-085, beside the priority it is not.
-      ['Key', 'Summary', 'Status', 'Pri', 'Size', 'Assignee', 'Spr', 'Due', 'Created', 'Updated'],
+      // `Due` joined them with D-066: the plan beside the two actuals. The
+      // size with D-085, beside the priority it is not, called `Effort` since
+      // LAI-785.
+      ['Key', 'Summary', 'Status', 'Pri', 'Effort', 'Assignee', 'Spr', 'Due', 'Created', 'Updated'],
     );
   });
 
@@ -375,6 +376,11 @@ void describe('the sort in the URL (LAI-485, D-065)', () => {
     assert.deepEqual(readSort(q('sort=bogus&dir=asc')), DEFAULT_SORT);
     assert.deepEqual(readSort(q('dir=asc')), DEFAULT_SORT, 'a dir with no sort');
     assert.deepEqual(readSort(q('sort=__proto__')), DEFAULT_SORT);
+  });
+
+  void test('`sort=size` still names the Effort column: an old address keeps working (LAI-785)', () => {
+    assert.deepEqual(readSort(q('sort=size&dir=desc')), { key: 'size', ascending: false });
+    assert.equal(LIST_COLUMNS.find((c) => c.key === 'size')?.label, 'Effort');
   });
 
   void test('a known sort with a bad or missing dir starts the column its own way', () => {

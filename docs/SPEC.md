@@ -3228,7 +3228,8 @@ the lead names. An empty status is still a column.
   date only when it is today or past** on open work — amber *Due today*, or
   red with a ⚠ once overdue; a date still ahead, and any date on finished
   work, draws nothing (D-069). Each is a card-field toggle. So is the **size**
-  (D-085): a small `XS`–`XL` chip, with a dot when a person set it; no hours on
+  (D-085), which the screen calls **Effort** (LAI-785): a small `XS`–`XL` chip,
+  with a dot when a person set it and the level in words on hover; no hours on
   the card.
 - Cards **do not** show a stale marker, a comment count or an age (D-069).
   Staleness is still flagged by the server (§11.6) and listed in Activity;
@@ -3251,8 +3252,9 @@ the lead names. An empty status is still a column.
   "as of" notice, unless the reader has lost access.
 
 **List.** The same tasks as a sortable, densely readable table: key, title,
-status, assignee, priority, dependency count, size (D-085, sorted by level,
-then weight), due, updated — the title's sub-line names the parent (`↳ KEY`)
+status, assignee, priority, dependency count, effort (the size, D-085 —
+headed *Effort*, sorted by level, then weight, and still `sort=size` in the
+URL), due, updated — the title's sub-line names the parent (`↳ KEY`)
 and the blockers. Sortable on every column, multi-filter on status / assignee /
 priority / ready / blocked. This is the view
 for triage and for boards too large to drag. It opens **newest-updated first**,
@@ -3391,27 +3393,48 @@ anything missing sends the task back.
   checks passed*, *CI: lint failed*) — with earlier rounds folded. A comment that is a send-back's reason is
   marked *sent back*, and a card carrying a send-back wears a *sent back*
   marker with the reason as its tooltip.
-  **A Forecast section under Acceptance** (D-085): the size shown — a person's
-  marked as theirs, with Laika's beside it — and a control to set or clear it
-  for anyone who may edit the task; the build-time range, or *early* with how
-  many finished tasks it waits for; the forecast frozen when work started
-  against the actual build time, review wait and rework; the *why* — each
-  factor's contribution in levels and the similar finished tasks as links;
-  and the project's accuracy figure. Never a figure about a person.
-  **A Tokens section under the proof** (D-084, LAI-770): the task's tokens
-  without cache reads and cache reads beside them, labelled *at least*; per
-  review round; per person and agent for an owner or admin, the reader's own
-  part for anyone else, nothing per person on a token; and the attributed
-  share — how much of those people's work on those days Laika could tie to a
-  task — or, for a reader who sees nobody's part, what the figure counts.
-  Not drawn for a task never started that has none. LAI-773 adds its **cost**,
-  *API-equivalent, not your bill*, with what was unpriced or inferred; its
-  **budget** as a bar with an 80% or 100% badge, saying whether a lead set it
-  or it is the forecast's p80 frozen at claim, and — for a reader who may set
-  budgets (`can_set` from `GET /projects/:slug/budgets`) — a field to set it
-  and *Back to the forecast*; and, **only for the person it is addressed to**,
-  the runaway banner: *your agent has spent N on this task, past its p95 of M,
-  and nothing has landed for T*.
+  **An Effort section under Acceptance** (D-085, plain words since LAI-785):
+  one headline — the effort in words and the build time as one plain range,
+  *Small · about 40 min to 1.5 h*, with *rough estimate* beside it when the
+  project has fewer than 5 measured estimates or is typically off by more than
+  2×; with too little history for hours, the effort and *Time estimate after
+  10 finished tasks*, once. A range that reaches days says both ends in days
+  (*1–2 d*, never *24 h–2 d*). Once it has finished, one line against the
+  estimate frozen when work started, with a verdict — *Estimated at start
+  40 min–1.5 h · took 1.6 h · a little over* — **judged on the figures
+  printed** (LAI-785 review): below the shown low end is *faster than
+  expected*, the shown range is *on target*, up to 1.5× the shown top is *a
+  little over*, and beyond that *well over*. When there was more than the
+  build, where the time went: *Building 1.6 h · waiting for review 41 h ·
+  rework 20 min*. The token estimate is one line when there is one and
+  nothing when there is not. A small *Change* control beside the effort for
+  anyone who may edit the task —
+  *Automatic (Small)*, *Extra small* … *Extra large*. A folded *Why Small?*
+  holds the factors as sentences with arrows (*↓ No acceptance criteria (most
+  tasks here have 3)*), leaving out what changes nothing, the similar finished
+  tasks as links, what was said at claim, and the project's accuracy in words
+  (*Estimates here are typically off by about 2.4× (6 tasks so far)*) — the
+  figure is a median, and it is told only once 3 estimates are measured.
+  Nothing empty is drawn — no `—`, no *Early* — and no figure is about a
+  person.
+  **A Tokens section under the proof** (D-084, LAI-770; one headline since
+  LAI-785): the task's tokens without cache reads, labelled *at least*, and
+  their **cost**, *API-equivalent, not your bill* (LAI-773); its **budget** as
+  a bar with an 80% or 100% badge **only when a lead set one**, with — for a
+  reader who may set budgets (`can_set` from `GET /projects/:slug/budgets`) —
+  a field to change it and *Back to the estimate*. The default budget, the
+  token estimate's high end frozen at claim, draws nothing until 80% and then
+  one line: *Past its token estimate: 4.01M of 2.5M (160%)*. And, **only for
+  the person it is addressed to**, the runaway banner: *your agent has spent N
+  on this task, past its p95 of M, and nothing has landed for T*. Everything
+  else sits in one folded **Details**: cache reads; the attributed share — how
+  much of those people's work on those days Laika could tie to a task — or,
+  for a reader who sees nobody's part, what the figure counts; the build's
+  token estimate; what the cost leaves out; a budget for a lead to set; per
+  review round; and per person and agent for an owner or admin, the reader's
+  own part for anyone else, nothing per person on a token. Not drawn for a
+  task never started that has none; one quiet line for a started one that has
+  none.
   **A watch toggle and who else is watching** (D-047, D-054), and an
   **`@` autocomplete in the comment box fed by `GET /projects/:slug/mentionable`
   — never by the member list**, because who may be mentioned is the server's

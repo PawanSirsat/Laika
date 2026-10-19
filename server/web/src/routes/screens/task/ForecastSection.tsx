@@ -1,71 +1,84 @@
 import { useEffect, useState } from 'react';
 import {
-  accuracyLine,
+  accuracySentence,
   buildLabel,
-  claimNote,
-  forecastRange,
+  claimSentence,
+  comparison,
+  effortWord,
   getEstimateAccuracy,
   getTaskEstimate,
-  levelsLabel,
+  isRough,
   scopeGrewNote,
   setTaskSize,
   SIZE_LEVELS,
   splitNote,
-  tokenAccuracyLine,
-  tokenRange,
-  tokensWaitNote,
+  timelineLine,
+  timeRange,
+  tokenAccuracySentence,
+  tokenHint,
+  tokenLine,
+  typicalSentence,
+  whyRows,
   type EstimateAccuracy,
   type SizeLevel,
   type TaskEstimate,
 } from '../../../api/estimates.ts';
-import { compactTokens, exactTokens } from '../../../api/usage.ts';
 import { ApiError } from '../../../api/errors.ts';
 import { type Task } from '../../../api/tasks.ts';
 import { Dropdown } from '../../../components/Dropdown.tsx';
-import { SizeChip } from '../../../components/SizeChip.tsx';
 import './forecast.css';
 
 export interface ForecastSectionProps {
   readonly slug: string;
   readonly task: Task;
-  /** May set the size: anyone who may edit the task (D-085 item 4). */
+  /** May change the effort: anyone who may edit the task (D-085 item 4). */
   readonly mayEdit: boolean;
   /** Re-read when this changes — the task's `updated_at`, kept current by the stream. */
   readonly refreshKey: number;
-  /** Who set a size, by name — provenance, as the reporter is. */
+  /** Who set an effort, by name — provenance, as the reporter is. */
   readonly nameOf: (userId: string) => string;
   /** Open another task: the similar ones are links. */
   readonly onOpen: (taskId: string) => void;
-  /** After a size is set or cleared: the board refetches the task. */
+  /** After an effort is set or cleared: the board refetches the task. */
   readonly onChanged: () => void;
 }
 
-/** The override control's value for "no person's size": Laika's own. */
+/** The Change control's value for "no person's effort": Laika's own. */
 const COMPUTED = 'computed';
 
-/** Factors smaller than this are rounding; the *why* lists what moved the size. */
-const SHOWN = 0.05;
-
-/** `2.0 h`, or a dash for nothing — review wait and rework are often nothing. */
-function spent(ms: number): string {
-  return ms <= 0 ? '—' : buildLabel(ms);
+/** `' · '` between the parts of a line, which a screen reader need not say. */
+function Sep() {
+  return (
+    <span className="fc-sep" aria-hidden="true">
+      {' · '}
+    </span>
+  );
 }
 
 /**
- * The task panel's Forecast section (D-085, LAI-771), under Acceptance: what
- * Laika computed the size to be and why, the build-time range, the forecast
- * frozen when work started against what actually happened, a control to set
- * the size by hand, and how good this project's forecasts have been.
+ * The task panel's Effort section (D-085, LAI-771; plain words since
+ * LAI-785), under Acceptance. What a person needs is one or two lines:
  *
- * The headline — size and range — is the task's own (`TaskView.size`), so it
- * draws at once; the *why*, the actuals and the accuracy are one read each,
- * again whenever `refreshKey` changes. Drawn only once the task has a size.
+ * - **the headline** — the effort in words and the time as one plain range,
+ *   *Large · about 1 to 2.5 h*, with *rough estimate* when this project's
+ *   estimates have been few or far off; or, without the history for hours,
+ *   the effort and what the time waits for, once;
+ * - **once it has finished**, one line against the estimate frozen when work
+ *   started, with a verdict — *Estimated at start 20–45 min · took 1.5 h ·
+ *   well over*, judged on the figures printed — and where the time went,
+ *   when more than the build happened;
+ * - **the token estimate**, one line, only when there is one.
  *
- * **Phase 2 (LAI-772)**: build tokens forecast beside the hours and frozen at
- * claim with them, the tokens spent beside that, what the claimant said at
- * claim, "scope grew after start", and the split suggestion for an XL task.
+ * Everything else — *Why Large?* in sentences with arrows, the similar
+ * finished tasks as links, what was said at claim, and how good estimates
+ * here have been — is folded into one disclosure. **Nothing empty is
+ * drawn**: no `—`, no *Early*, no tile waiting for a figure.
  *
- * **Never a figure about a person.** The person who set a size is named as
+ * The headline is the task's own (`TaskView.size`), so it draws at once; the
+ * rest is one read each, again whenever `refreshKey` changes. Drawn only once
+ * the task has an effort. The API keeps calling it `size`.
+ *
+ * **Never a figure about a person.** The person who set an effort is named as
  * the reporter is; nothing here measures anyone.
  */
 export function ForecastSection({
@@ -108,7 +121,7 @@ export function ForecastSection({
       .then((answer) => {
         if (!controller.signal.aborted) setAccuracy(answer);
       })
-      // The figure is the section's footnote: without it the rest still reads.
+      // The figure is the disclosure's footnote: without it the rest still reads.
       .catch(() => undefined);
     return () => {
       controller.abort();
@@ -117,10 +130,16 @@ export function ForecastSection({
 
   if (size === null) return null;
 
-  const range = forecastRange(size);
+  const time = timeRange(size.build_p50_ms, size.build_p80_ms);
   const override = estimate?.override ?? null;
   const chosen = saving ?? (size.overridden ? size.level : COMPUTED);
   const waitFor = accuracy?.forecasts_after ?? 10;
+  // How far the project has got, only while it is still short of the mark.
+  const soFar =
+    accuracy !== undefined && accuracy.finished < accuracy.forecasts_after
+      ? ` (${String(accuracy.finished)} so far)`
+      : '';
+  const rough = time !== null && accuracy !== undefined && isRough(accuracy);
 
   const pick = (value: string) => {
     if (value === chosen) return;
@@ -132,139 +151,108 @@ export function ForecastSection({
         onChanged();
       })
       .catch((err: unknown) => {
-        setSaveError(err instanceof ApiError ? err.message : 'The size was not saved. Try again.');
+        setSaveError(
+          err instanceof ApiError ? err.message : 'The effort was not saved. Try again.',
+        );
       })
       .finally(() => {
         setSaving(undefined);
       });
   };
 
-  const atStart = estimate?.at_start ?? null;
   const actual = estimate?.actual;
-  const tokens = estimate?.tokens;
-  const tokensSpent = estimate?.actual_tokens ?? null;
-  const atStartTokens =
-    atStart === null ? null : tokenRange({ p50: atStart.tokens_p50, p80: atStart.tokens_p80 });
+  // The line and its verdict from one rounding, so they cannot disagree.
+  const compared = actual === undefined ? null : comparison(estimate?.at_start ?? null, actual);
+  const timeline = actual === undefined ? null : timelineLine(actual);
+  const tokens = estimate === undefined ? null : tokenLine(estimate);
   const notes =
     estimate === undefined
       ? []
       : [
           { key: 'scope', text: scopeGrewNote(estimate.scope_grew) },
           { key: 'split', text: splitNote(estimate.split) },
-          { key: 'claim', text: claimNote(estimate.claim_estimate) },
         ].filter((n): n is { key: string; text: string } => n.text !== null);
   const why = estimate?.why ?? null;
-  const factors = (why?.factors ?? []).filter(
-    (f) => Math.abs(f.levels) >= SHOWN || f.key === 'words' || f.key === 'priority',
-  );
+  const rows = why === null ? [] : whyRows(why);
+  const claim = estimate === undefined ? null : claimSentence(estimate.claim_estimate);
+  const told = accuracy === undefined ? null : accuracySentence(accuracy);
+  // Tokens, inside the disclosure: their record when there is an estimate to
+  // judge, else the one hint about what an estimate waits for.
+  const tokenRecord =
+    tokens === null || accuracy === undefined ? null : tokenAccuracySentence(accuracy);
+  const hint = estimate === undefined || tokens !== null ? null : tokenHint(estimate.tokens);
 
   return (
-    <section className="panel-section fc" aria-label="Forecast" data-section="forecast">
-      <h3 className="panel-section-title">Forecast</h3>
+    <section className="panel-section fc" aria-label="Effort" data-section="effort">
+      <h3 className="panel-section-title">Effort</h3>
 
-      <div className="fc-head">
-        <span className="fc-size">
-          <SizeChip size={size} />
-        </span>
-        <span className="fc-size-note">
-          {size.overridden
-            ? `Set by ${override === null ? 'a person' : nameOf(override.set_by)} · Laika computed ${size.computed}`
-            : 'Computed by Laika from this task and the project’s finished work'}
-        </span>
+      <div className="fc-headline">
+        <p className="fc-head-text">
+          <strong className={`fc-effort fc-effort-${size.level}`} data-level={size.level}>
+            {effortWord(size.level)}
+          </strong>
+          {time !== null && (
+            <>
+              <Sep />
+              <span className="fc-time">{time}</span>
+            </>
+          )}
+          {rough && (
+            <>
+              <Sep />
+              <span
+                className="fc-rough"
+                title="Few estimates here have been checked, or they have often been far off. More under Why."
+              >
+                rough estimate
+              </span>
+            </>
+          )}
+        </p>
         {mayEdit && (
-          <span className="fc-override">
-            <span className="fc-override-label" id={`fc-size-${task.id}`}>
-              Size
-            </span>
-            <Dropdown
-              className="fc-override-select"
-              aria-labelledby={`fc-size-${task.id}`}
-              value={chosen}
-              disabled={saving !== undefined}
-              searchable={false}
-              title="Set the size by hand, or go back to Laika’s"
-              options={[
-                { value: COMPUTED, label: `Laika’s (${size.computed})`, pinned: true },
-                ...SIZE_LEVELS.map((level) => ({ value: level, label: level })),
-              ]}
-              onChange={pick}
-            />
-          </span>
+          <Dropdown
+            className="fc-change"
+            variant="bare"
+            display="Change"
+            aria-label="Change effort"
+            title="Set the effort by hand, or go back to Laika’s"
+            value={chosen}
+            disabled={saving !== undefined}
+            searchable={false}
+            options={[
+              { value: COMPUTED, label: `Automatic (${effortWord(size.computed)})`, pinned: true },
+              ...SIZE_LEVELS.map((level) => ({ value: level, label: effortWord(level) })),
+            ]}
+            onChange={pick}
+          />
         )}
       </div>
+
+      {time === null && (
+        <p className="panel-muted fc-wait">
+          Time estimate after {waitFor} finished tasks{soFar}
+        </p>
+      )}
+      {size.overridden && (
+        <p className="panel-muted fc-set">
+          Set by {override === null ? 'a person' : nameOf(override.set_by)}
+          <Sep />
+          Laika’s estimate: {effortWord(size.computed)}
+        </p>
+      )}
       {saveError !== undefined && (
         <p className="panel-alert" role="alert">
           {saveError}
         </p>
       )}
 
-      <dl className="fc-figures">
-        <div className="fc-figure">
-          <dt>Build time</dt>
-          <dd className="fc-range">{range ?? 'Early'}</dd>
-        </div>
-        <div className="fc-figure">
-          <dt>At start</dt>
-          <dd className="fc-at-start">
-            {atStart === null
-              ? 'Not started'
-              : `${atStart.level} · ${forecastRange({ ...size, build_p50_ms: atStart.build_p50_ms, build_p80_ms: atStart.build_p80_ms }) ?? 'early'}`}
-            {atStartTokens !== null && (
-              <span className="fc-at-start-tokens">{atStartTokens} tokens</span>
-            )}
-          </dd>
-        </div>
-        <div className="fc-figure">
-          <dt>Tokens</dt>
-          <dd
-            className="fc-tokens"
-            title="Build tokens: input, output and cache writes up to the first finish"
-          >
-            {tokens === undefined ? '—' : (tokenRange(tokens) ?? 'Early')}
-          </dd>
-        </div>
-        <div className="fc-figure">
-          <dt>Actual build</dt>
-          <dd className="fc-actual">
-            {actual?.build_ms == null ? '—' : buildLabel(actual.build_ms)}
-          </dd>
-        </div>
-        <div className="fc-figure">
-          <dt>Actual tokens</dt>
-          <dd
-            className="fc-actual-tokens"
-            title={
-              tokensSpent === null
-                ? 'None tied to this task yet'
-                : `At least ${exactTokens(tokensSpent.build)} on the build, ${exactTokens(tokensSpent.rework)} after it`
-            }
-          >
-            {tokensSpent === null
-              ? '—'
-              : `${compactTokens(tokensSpent.build)}${actual?.first_finish_at == null ? ' so far' : ''}`}
-          </dd>
-        </div>
-        <div className="fc-figure">
-          <dt>Review wait</dt>
-          <dd className="fc-review-wait">
-            {actual === undefined ? '—' : spent(actual.review_wait_ms)}
-          </dd>
-        </div>
-        <div className="fc-figure">
-          <dt>Rework</dt>
-          <dd className="fc-rework">{actual === undefined ? '—' : spent(actual.rework_ms)}</dd>
-        </div>
-      </dl>
-
-      {range === null && (
-        <p className="panel-muted fc-early">
-          Early: hours after {waitFor} finished tasks in this project. The size is from the text
-          alone until then.
+      {compared !== null && (
+        <p className="fc-compare" data-verdict={compared.verdict ?? undefined}>
+          {compared.text}
         </p>
       )}
-      {tokens !== undefined && range !== null && tokensWaitNote(tokens) !== null && (
-        <p className="panel-muted fc-tokens-early">{tokensWaitNote(tokens)}</p>
-      )}
+      {timeline !== null && <p className="fc-timeline">{timeline}</p>}
+      {tokens !== null && <p className="fc-tokens">{tokens}</p>}
       {notes.length > 0 && (
         <ul className="fc-notes">
           {notes.map((n) => (
@@ -277,41 +265,45 @@ export function ForecastSection({
 
       {failed ? (
         <p className="panel-alert" role="alert">
-          Could not load why this task is this size.
+          Could not load why Laika estimated this.
         </p>
       ) : why === null ? null : (
-        <div className="fc-why">
-          <p className="fc-why-title">
-            Why {size.computed}
-            <span className="fc-why-typical">
-              {' '}
-              · a typical task here has {why.typical.words} words
-              {why.typical.build_ms === null
-                ? ''
-                : ` and takes ${buildLabel(why.typical.build_ms)}`}
-            </span>
-          </p>
-          <ul className="fc-factors">
-            {factors.map((f, i) => (
-              <li key={`${f.key}-${String(i)}`} className="fc-factor" data-factor={f.key}>
-                <span
-                  className={
-                    f.levels > 0
-                      ? 'fc-levels fc-up'
-                      : f.levels < 0
-                        ? 'fc-levels fc-down'
-                        : 'fc-levels'
-                  }
+        <details className="fc-why">
+          <summary>
+            {size.overridden
+              ? `Why Laika estimated ${effortWord(size.computed)}`
+              : `Why ${effortWord(size.computed)}?`}
+          </summary>
+          {rows.length > 0 && (
+            <ul className="fc-factors">
+              {rows.map((r, i) => (
+                <li
+                  key={`${r.key}-${String(i)}`}
+                  className="fc-factor"
+                  data-factor={r.key}
+                  data-arrow={r.arrow}
                 >
-                  {levelsLabel(f.levels)}
-                </span>
-                <span className="fc-label">{f.label}</span>
-              </li>
-            ))}
-          </ul>
+                  {/* The sentence says which way; the arrow only repeats it. */}
+                  <span
+                    className={
+                      r.arrow === '↑'
+                        ? 'fc-arrow fc-up'
+                        : r.arrow === '↓'
+                          ? 'fc-arrow fc-down'
+                          : 'fc-arrow'
+                    }
+                    aria-hidden="true"
+                  >
+                    {r.arrow}
+                  </span>
+                  <span className="fc-label">{r.text}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           {why.similar.length > 0 && (
             <p className="fc-similar">
-              <span className="fc-similar-lead">Like</span>
+              <span className="fc-similar-lead">Similar finished tasks:</span>
               {why.similar.map((s) => (
                 <span key={s.task_id} className="fc-similar-item">
                   <button
@@ -329,14 +321,12 @@ export function ForecastSection({
               ))}
             </p>
           )}
-        </div>
-      )}
-
-      {accuracy !== undefined && (
-        <>
-          <p className="fc-accuracy">This project: {accuracyLine(accuracy)}</p>
-          <p className="fc-accuracy-tokens">{tokenAccuracyLine(accuracy)}</p>
-        </>
+          <p className="fc-typical">{typicalSentence(why)}</p>
+          {claim !== null && <p className="fc-claim">{claim}</p>}
+          {told !== null && <p className="fc-accuracy">{told}</p>}
+          {tokenRecord !== null && <p className="fc-accuracy-tokens">{tokenRecord}</p>}
+          {hint !== null && <p className="fc-token-hint">{hint}</p>}
+        </details>
       )}
     </section>
   );

@@ -707,17 +707,27 @@ function discoveredFromChain(db: Db, actor: ResolvedActor, from: TaskView): Task
   return chain;
 }
 
+/** What the levels are called where a person reads them (LAI-785). */
+const EFFORT_WORDS = {
+  XS: 'extra small',
+  S: 'small',
+  M: 'medium',
+  L: 'large',
+  XL: 'extra large',
+} as const;
+
 /**
- * The size section of `get_task_context` (D-085): the level, the forecast or
- * why there is none yet, and what moved it — the factors worth a tenth of a
- * level or more, and the similar finished tasks by key.
+ * The effort section of `get_task_context` (D-085): the level, the forecast
+ * or why there is none yet, and what moved it — the factors worth a tenth of
+ * a level or more, and the similar finished tasks by key. Called *effort*, as
+ * the board calls it (LAI-785); the field an agent sets is still `size`.
  */
 function sizeText(estimate: TaskEstimateView | null): string[] {
   if (estimate === null)
-    return ['### Size', '_Unavailable: the size could not be read just now._', ''];
+    return ['### Effort', '_Unavailable: the effort could not be read just now._', ''];
   const size = estimate.size;
-  if (size === null) return ['### Size', '_Not computed yet._', ''];
-  const lines = [`### Size ${size.level}`];
+  if (size === null) return ['### Effort', '_Not computed yet._', ''];
+  const lines = [`### Effort ${size.level} (${EFFORT_WORDS[size.level]})`];
   if (size.overridden) lines.push(`Set by a person; Laika computed ${size.computed}.`);
   if (size.build_p50_ms !== null && size.build_p80_ms !== null) {
     lines.push(

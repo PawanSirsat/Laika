@@ -119,10 +119,12 @@
 .list-col-pri {
   width: 3.625rem;
 }
-/* The size chip, `XL` and the dot a person's size wears (D-085). Taken from
-   SUMMARY, not added to the table's minimum, so a laptop scrolls no further. */
+/* The effort chip, `XL` and the dot a person's effort wears (D-085), under a
+   header that reads `EFFORT` and its sort glyph (LAI-785) — the 3.5rem held
+   `SIZE` and cut the longer word to `EFFOR`. Taken from SUMMARY, not added to
+   the table's minimum, so a laptop scrolls no further. */
 .list-col-size {
-  width: 3.5rem;
+  width: 5.5rem;
 }
 .list-col-assignee {
   width: 9.375rem;

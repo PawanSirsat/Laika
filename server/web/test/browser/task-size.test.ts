@@ -1,9 +1,12 @@
 /**
- * Sizes and forecasts on screen (D-085, LAI-771): the size chip on a card, the
- * List's sortable Size column, the task panel's Forecast section — the size,
- * Laika's own beside a person's, the range, the actual, the *why* with links
- * to the similar tasks, and the project's accuracy — and the override control,
- * which a reader who may not edit the task does not get.
+ * Effort on screen (D-085, LAI-771; called effort and said plainly since
+ * LAI-785): the chip on a card, the List's sortable Effort column — still
+ * `sort=size` in the URL — and the task panel's Effort section: one headline,
+ * one comparison line once there is an actual, where the time went, the
+ * token estimate only when there is one, and *Why Large?* folded, in
+ * sentences with arrows, with the similar tasks as links and the project's
+ * accuracy in words. The *Change* control is for readers who may edit the
+ * task. Nothing empty is drawn: no `—`, no *Early*.
  */
 
 import assert from 'node:assert/strict';
@@ -17,7 +20,7 @@ import {
   type ApiStub,
   type Harness,
 } from './harness.ts';
-import { pick, valueOf } from './dropdown.ts';
+import { optionsOf, pick, valueOf } from './dropdown.ts';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -312,13 +315,32 @@ void after(async () => {
   await closeBrowser();
 });
 
-async function forecast(h: Harness): Promise<void> {
-  await h.page.locator('.fc').waitFor({ timeout: 20_000 });
-  await until(async () => (await h.page.locator('.fc-factor').count()) > 0);
+/** The section, once its own read has drawn the folded *why*. */
+async function effort(h: Harness) {
+  const section = h.page.locator('[data-section="effort"]');
+  await section.waitFor({ timeout: 20_000 });
+  await until(async () => (await section.locator('.fc-factor').count()) > 0);
+  return section;
 }
 
-void describe('the size chip on a card', () => {
-  void test('draws each task’s size, marks one a person set, and draws nothing for no size', async () => {
+/** Open *Why …?* the way a person does, and wait until it is drawn. */
+async function openWhy(section: ReturnType<Harness['page']['locator']>) {
+  const why = section.locator('details.fc-why');
+  assert.equal(await why.getAttribute('open'), null, 'the why is not folded to begin with');
+  await why.locator('summary').click();
+  await until(async () => (await why.getAttribute('open')) !== null);
+  return why;
+}
+
+/** What a reader sees: no dash for nothing, no *Early*, none of the old tiles. */
+function assertNothingEmpty(text: string) {
+  assert.doesNotMatch(text, /—|Early|early/, text);
+  assert.doesNotMatch(text, /Build time|At start|Review wait|Actual build|Actual tokens/, text);
+  assert.doesNotMatch(text, /p80|Typically off|\bSize\b/, text);
+}
+
+void describe('the effort chip on a card', () => {
+  void test('draws each task’s effort, marks one a person set, and draws nothing for none', async () => {
     const h = await open('/board?project=laika-core', stub());
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
@@ -331,28 +353,47 @@ void describe('the size chip on a card', () => {
       assert.equal(
         await chip('LC-2').locator('.size-chip-dot').count(),
         1,
-        'no mark for a person’s size',
+        'no mark for a person’s effort',
       );
-      assert.match(
-        (await chip('LC-2').getAttribute('title')) ?? '',
-        /set by a person · Laika computed M/,
+      assert.equal(
+        await chip('LC-2').getAttribute('title'),
+        'Effort: Extra large, set by a person · Laika’s estimate: Medium · about 25 to 50 min',
+      );
+      assert.equal(
+        await chip('LC-1').getAttribute('title'),
+        'Effort: Extra small · about 10 to 20 min',
       );
       assert.equal(await chip('LC-1').locator('.size-chip-dot').count(), 0);
-      // Positive control above; the absence is the unsized card.
-      assert.equal(await chip('LC-4').count(), 0, 'a card with no size drew a chip');
+      // Positive control above; the absence is the card with no effort yet.
+      assert.equal(await chip('LC-4').count(), 0, 'a card with no effort drew a chip');
     } finally {
       await h.close();
     }
   });
 });
 
-void describe('the List’s Size column', () => {
-  void test('shows each size and sorts by it, unsized tasks last either way', async () => {
+void describe('the List’s Effort column', () => {
+  void test('is called Effort, shows each level and sorts by it, unsized tasks last either way', async () => {
     const h = await open('/list?project=laika-core', stub());
     try {
       await h.page.locator('.list-row').first().waitFor({ timeout: 20_000 });
       const keys = async () => h.page.locator('.list-row .list-key').allInnerTexts();
-      const header = h.page.locator('button.list-sort[title="Sort by Size"]');
+      const header = h.page.locator('button.list-sort[title="Sort by Effort"]');
+      // `textContent`: the header is upper-cased by CSS, and the word is what counts.
+      assert.equal((await header.textContent())?.trim(), 'Effort');
+      assert.equal(await h.page.locator('button.list-sort[title="Sort by Size"]').count(), 0);
+      // The longer word fits its column at a laptop's width: it once read `EFFOR`.
+      await h.page.setViewportSize({ width: 1366, height: 900 });
+      const clipped = await header.evaluate((el) => {
+        const cell = el.closest('th');
+        if (cell === null) return 'no header cell';
+        const label = el.getBoundingClientRect();
+        const box = cell.getBoundingClientRect();
+        return label.right <= box.right + 0.5 && el.scrollWidth <= el.clientWidth + 0.5
+          ? null
+          : `label ${String(label.right)} past cell ${String(box.right)}`;
+      });
+      assert.equal(clipped, null, 'the Effort header is cut off');
 
       await header.click();
       await until(async () => (await keys())[0]?.startsWith('LC-1') === true);
@@ -364,6 +405,8 @@ void describe('the List’s Size column', () => {
         await h.page.locator('th', { has: header }).getAttribute('aria-sort'),
         'ascending',
       );
+      // The URL keeps the API's name, so an address from before still works.
+      assert.match(h.page.url(), /sort=size/);
 
       await header.click();
       await until(async () => (await keys())[0]?.startsWith('LC-2') === true);
@@ -378,73 +421,120 @@ void describe('the List’s Size column', () => {
       await h.close();
     }
   });
+
+  void test('an old `sort=size` address still sorts by effort', async () => {
+    const h = await open('/list?project=laika-core&sort=size&dir=desc', stub());
+    try {
+      await h.page.locator('.list-row').first().waitFor({ timeout: 20_000 });
+      const keys = async () => h.page.locator('.list-row .list-key').allInnerTexts();
+      await until(async () => (await keys())[0]?.startsWith('LC-2') === true);
+      assert.deepEqual(
+        (await keys()).map((k) => k.slice(0, 4)),
+        ['LC-2', 'LC-3', 'LC-5', 'LC-1', 'LC-4'],
+      );
+      const header = h.page.locator('button.list-sort[title="Sort by Effort"]');
+      assert.equal(
+        await h.page.locator('th', { has: header }).getAttribute('aria-sort'),
+        'descending',
+      );
+    } finally {
+      await h.close();
+    }
+  });
 });
 
-void describe('the task panel’s Forecast section', () => {
-  void test('shows the size, the range, the frozen copy, the actual, the why and the accuracy', async () => {
+void describe('the task panel’s Effort section', () => {
+  void test('one headline, one comparison line, where the time went, and the why folded', async () => {
     const h = await open('/board?project=laika-core&task=t3', stub());
     try {
-      await forecast(h);
-      const section = h.page.locator('.fc');
+      const section = await effort(h);
+      assert.equal(await section.getAttribute('aria-label'), 'Effort');
+      assert.equal((await section.locator('.panel-section-title').textContent())?.trim(), 'Effort');
 
-      assert.equal(await section.locator('.fc-size .size-chip').innerText(), 'L');
-      assert.equal(await section.locator('.fc-range').innerText(), '1.0–2.5 h');
-      assert.match(await section.locator('.fc-at-start').innerText(), /M · 20–45 min/);
-      assert.equal(await section.locator('.fc-actual').innerText(), '1.5 h');
-      assert.equal(await section.locator('.fc-review-wait').innerText(), '2.0 h');
-      assert.equal(await section.locator('.fc-rework').innerText(), '30 min');
-
-      const factors = await section.locator('.fc-factor').allInnerTexts();
-      assert.ok(
-        factors.some((f) => f.includes('+0.8') && f.includes('640 words')),
-        factors.join(' | '),
-      );
-      assert.ok(factors.some((f) => f.includes('−0.3') && f.includes('Tagged docs')));
-      assert.ok(factors.some((f) => f.includes('Priority is urgency')));
-
-      const links = await section.locator('.fc-similar-link').allInnerTexts();
-      assert.deepEqual(links, ['LC-1', 'LC-2']);
-
+      assert.equal(await section.locator('.fc-effort').innerText(), 'Large');
+      assert.equal(await section.locator('.fc-time').innerText(), 'about 1 to 2.5 h');
+      // Twelve measured, typically within 2×: not rough.
+      assert.equal(await section.locator('.fc-rough').count(), 0);
       assert.equal(
-        await section.locator('.fc-accuracy').innerText(),
-        'This project: Typically off by ×1.7 · p80 held 75% · 12 tasks measured',
+        await section.locator('.fc-compare').innerText(),
+        'Estimated at start 20–45 min · took 1.5 h · well over',
       );
+      assert.equal(await section.locator('.fc-compare').getAttribute('data-verdict'), 'well over');
+      assert.doesNotMatch(await section.innerText(), /on average/);
+      assert.equal(
+        await section.locator('.fc-timeline').innerText(),
+        'Building 1.5 h · waiting for review 2.0 h · rework 30 min',
+      );
+      // No token estimate: no line at all.
+      assert.equal(await section.locator('.fc-tokens').count(), 0);
+      assertNothingEmpty(await section.innerText());
+
+      const why = await openWhy(section);
+      assert.equal((await why.locator('summary').innerText()).trim(), 'Why Large?');
+      const rows = await why
+        .locator('.fc-factor')
+        .evaluateAll((els) =>
+          els.map(
+            (el) =>
+              `${el.getAttribute('data-arrow') ?? ''} ${el.querySelector('.fc-label')?.textContent ?? ''}`,
+          ),
+        );
+      assert.deepEqual(rows, [
+        '↑ Longer description than most tasks here (640 words; most have about 220)',
+        '↓ Tagged “docs”: tasks with that tag are quicker here',
+        '↑ 7 similar finished tasks took about 1.2 h',
+      ]);
+      assert.deepEqual(await why.locator('.fc-similar-link').allInnerTexts(), ['LC-1', 'LC-2']);
+      assert.equal(
+        await why.locator('.fc-typical').innerText(),
+        'A typical task here has about 220 words and takes about 35 min.',
+      );
+      assert.equal(
+        await why.locator('.fc-accuracy').innerText(),
+        'Estimates here are typically off by about 1.7× (12 tasks so far). 9 of them took no longer than the estimate.',
+      );
+      const opened = await section.innerText();
+      assertNothingEmpty(opened);
+      assert.doesNotMatch(opened, /[+−]\d\.\d/, 'a signed weight is still drawn');
       // Nothing in the section names a person.
-      assert.doesNotMatch(await section.innerText(), /Ada/);
+      assert.doesNotMatch(opened, /Ada/);
     } finally {
       await h.close();
     }
   });
 
-  void test('puts tokens beside the hours: forecast, frozen copy, spent, and the notes (LAI-772)', async () => {
+  void test('the token estimate is one line, beside what was used (LAI-772)', async () => {
     const h = await open('/board?project=laika-core&task=t3', {
       ...stub(),
       '/api/v1/tasks/t3/estimate': PHASE2,
     });
     try {
-      await forecast(h);
-      const section = h.page.locator('.fc');
-      await until(async () => (await section.locator('.fc-tokens').innerText()) !== '—');
-      assert.equal(await section.locator('.fc-tokens').innerText(), '1.2M–2.5M');
-      assert.match(await section.locator('.fc-at-start').innerText(), /^M · 20–45 min/);
-      assert.equal(await section.locator('.fc-at-start-tokens').innerText(), '900K–2.1M tokens');
-      assert.equal(await section.locator('.fc-actual-tokens').innerText(), '1.4M');
-      const notes = await section.locator('.fc-note').allInnerTexts();
-      assert.deepEqual(notes, [
-        'Scope grew after start: M when work began, L now',
-        'Said at claim: S, yellow',
-      ]);
+      const section = await effort(h);
+      await until(async () => (await section.locator('.fc-tokens').count()) > 0);
       assert.equal(
-        await section.locator('.fc-accuracy-tokens').innerText(),
-        'Tokens back-test: ×1.9 against ×2.3 for the project median, over 4 tasks',
+        await section.locator('.fc-tokens').innerText(),
+        'Tokens: estimated 900K–2.1M · used 1.4M',
       );
+      assert.deepEqual(await section.locator('.fc-note').allInnerTexts(), [
+        'It grew after work started: Medium then, Large now.',
+      ]);
+      const why = await openWhy(section);
+      assert.equal(
+        await why.locator('.fc-claim').innerText(),
+        'At claim: estimated Small, somewhat unsure it would land as asked.',
+      );
+      assert.equal(
+        await why.locator('.fc-accuracy-tokens').innerText(),
+        'Tried on 4 past tasks here, token estimates are typically off by about 1.9×.',
+      );
+      assertNothingEmpty(await section.innerText());
       assert.doesNotMatch(await section.innerText(), /Ada/);
     } finally {
       await h.close();
     }
   });
 
-  void test('suggests splitting an XL task, and says what tokens wait for', async () => {
+  void test('no token estimate: nothing about tokens but one hint, inside the why', async () => {
     const h = await open('/board?project=laika-core&task=t3', {
       ...stub(),
       '/api/v1/tasks/t3/estimate': {
@@ -454,17 +544,47 @@ void describe('the task panel’s Forecast section', () => {
       },
     });
     try {
-      await forecast(h);
-      const section = h.page.locator('.fc');
+      const section = await effort(h);
       await until(async () => (await section.locator('.fc-note').count()) > 0);
-      assert.equal(await section.locator('.fc-tokens').innerText(), 'Early');
-      assert.equal(
-        await section.locator('.fc-tokens-early').innerText(),
-        'Tokens after 10 finished tasks with attributed token data (3 so far).',
-      );
       assert.deepEqual(await section.locator('.fc-note').allInnerTexts(), [
-        'Consider splitting it: XL tasks here took 2.3 rounds on average (4 finished)',
+        'Consider splitting it: extra large tasks here took 2.3 review rounds on average (4 finished).',
       ]);
+      assert.equal(await section.locator('.fc-tokens').count(), 0);
+      assert.doesNotMatch(await section.innerText(), /[Tt]oken/, 'tokens before the why opened');
+      const why = await openWhy(section);
+      assert.equal(
+        await why.locator('.fc-token-hint').innerText(),
+        'Token estimates start after 10 finished tasks with token data (3 so far).',
+      );
+      const text = await section.innerText();
+      const about = text.split('\n').filter((line) => /token/i.test(line));
+      assert.deepEqual(about, [
+        'Token estimates start after 10 finished tasks with token data (3 so far).',
+      ]);
+      assertNothingEmpty(text);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('says rough estimate when the project is often off, and never × in the headline', async () => {
+    const h = await open('/board?project=laika-core&task=t3', {
+      ...stub(),
+      '/api/v1/projects/laika-core/estimates/accuracy': {
+        ...ACCURACY,
+        live: { n: 6, typical_error: 2.44, bias: 1.4, p80_hit_rate: 0.5 },
+      },
+    });
+    try {
+      const section = await effort(h);
+      await until(async () => (await section.locator('.fc-rough').count()) > 0);
+      assert.equal(await section.locator('.fc-rough').innerText(), 'rough estimate');
+      assert.doesNotMatch(await section.locator('.fc-headline').innerText(), /×|p80|\d%/);
+      const why = await openWhy(section);
+      assert.equal(
+        await why.locator('.fc-accuracy').innerText(),
+        'Estimates here are typically off by about 2.4× (6 tasks so far). 3 of them took no longer than the estimate.',
+      );
     } finally {
       await h.close();
     }
@@ -473,8 +593,9 @@ void describe('the task panel’s Forecast section', () => {
   void test('opens a similar task from its link', async () => {
     const h = await open('/board?project=laika-core&task=t3', stub());
     try {
-      await forecast(h);
-      await h.page.locator('.fc-similar-link', { hasText: 'LC-1' }).click();
+      const section = await effort(h);
+      const why = await openWhy(section);
+      await why.locator('.fc-similar-link', { hasText: 'LC-1' }).click();
       await until(() => h.page.url().includes('task=t1'));
       assert.match(h.page.url(), /task=t1/);
     } finally {
@@ -482,18 +603,41 @@ void describe('the task panel’s Forecast section', () => {
     }
   });
 
-  void test('says early, and how many finished tasks it waits for, in a cold start', async () => {
-    const h = await open('/board?project=laika-core&task=t5', stub());
+  void test('with too little history: the effort, and what the time waits for, once', async () => {
+    const h = await open('/board?project=laika-core&task=t5', {
+      ...stub(),
+      '/api/v1/projects/laika-core/estimates/accuracy': {
+        ...ACCURACY,
+        finished: 3,
+        live: { n: 0, typical_error: null, bias: null, p80_hit_rate: null },
+        backtest: null,
+      },
+    });
     try {
-      await forecast(h);
-      assert.match(await h.page.locator('.fc-range').innerText(), /Early/);
-      assert.match(await h.page.locator('.fc').innerText(), /hours after 10 finished tasks/);
+      const section = await effort(h);
+      assert.equal(await section.locator('.fc-effort').innerText(), 'Medium');
+      assert.equal(await section.locator('.fc-time').count(), 0);
+      await until(async () => (await section.locator('.fc-wait').innerText()).includes('so far'));
+      assert.equal(
+        await section.locator('.fc-wait').innerText(),
+        'Time estimate after 10 finished tasks (3 so far)',
+      );
+      assert.equal(
+        await section.locator('.fc-rough').count(),
+        0,
+        'rough, with no time to be rough',
+      );
+      assert.equal(await section.locator('.fc-compare, .fc-timeline').count(), 0);
+      await openWhy(section);
+      const text = await section.innerText();
+      assert.equal((text.match(/Time estimate after/g) ?? []).length, 1, text);
+      assertNothingEmpty(text);
     } finally {
       await h.close();
     }
   });
 
-  void test('sets a person’s size and goes back to the computed one', async () => {
+  void test('Change sets a person’s effort and goes back to Laika’s', async () => {
     // The task as the server holds it: a PATCH changes what the next read says.
     let current: Record<string, unknown> = LARGE;
     const h = await open('/board?project=laika-core&task=t3', {
@@ -519,18 +663,36 @@ void describe('the task panel’s Forecast section', () => {
       },
     });
     try {
-      await forecast(h);
-      const select = h.page.locator('.fc-override-select');
-      assert.equal(await valueOf(select), 'computed', 'starts on the computed size');
+      const section = await effort(h);
+      const change = section.locator('.fc-change');
+      assert.equal((await change.innerText()).trim(), 'Change');
+      assert.equal(await change.getAttribute('aria-label'), 'Change effort');
+      assert.equal(await valueOf(change), 'computed', 'starts on Laika’s effort');
+      assert.deepEqual((await optionsOf(change)).labels, [
+        'Automatic (Large)',
+        'Extra small',
+        'Small',
+        'Medium',
+        'Large',
+        'Extra large',
+      ]);
 
-      await pick(select, 'XS');
+      await pick(change, 'XS');
       await until(() => h.calls.some((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3'));
       const set = h.calls.find((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3');
       assert.deepEqual(set?.body, { size: 'XS' });
 
-      // The control follows the task as the server now holds it, then goes back.
-      await until(async () => (await valueOf(select)) === 'XS');
-      await pick(select, 'computed');
+      // The control and the headline follow the task as the server now holds it.
+      await until(async () => (await valueOf(change)) === 'XS');
+      await until(async () => (await section.locator('.fc-effort').innerText()) === 'Extra small');
+      assert.equal(await section.locator('.fc-effort').innerText(), 'Extra small');
+      assert.match(await section.locator('.fc-set').innerText(), /Laika’s estimate: Large/);
+      assert.equal(
+        (await section.locator('details.fc-why summary').innerText()).trim(),
+        'Why Laika estimated Large',
+      );
+
+      await pick(change, 'computed');
       await until(() => h.calls.filter((c) => c.method === 'PATCH').length === 2);
       const cleared = h.calls.filter((c) => c.method === 'PATCH')[1];
       assert.deepEqual(cleared?.body, { size: null });
@@ -539,13 +701,13 @@ void describe('the task panel’s Forecast section', () => {
     }
   });
 
-  void test('gives a viewer no control, and still the figures', async () => {
+  void test('gives a viewer no Change, and still the estimate', async () => {
     const h = await open('/board?project=laika-core&task=t3', stub('viewer'));
     try {
-      await forecast(h);
+      const section = await effort(h);
       // Positive control: the section is there.
-      assert.equal(await h.page.locator('.fc-range').innerText(), '1.0–2.5 h');
-      assert.equal(await h.page.locator('.fc-override-select').count(), 0);
+      assert.equal(await section.locator('.fc-time').innerText(), 'about 1 to 2.5 h');
+      assert.equal(await section.locator('.fc-change').count(), 0);
     } finally {
       await h.close();
     }
@@ -563,22 +725,28 @@ void describe('the task panel’s Forecast section', () => {
         await setTheme(h.page, theme);
         await h.page.setViewportSize({ width: 390, height: 844 });
         await h.page.goto(`${h.origin}/board?project=laika-core&task=t3`);
-        await forecast(h);
+        const section = await effort(h);
+        await section.locator('details.fc-why summary').click();
         // The theme survived the navigation, so this really measures `theme`.
         const light = await h.page.evaluate(
           () => document.documentElement.getAttribute('data-theme') === 'light',
         );
         assert.equal(light, theme === 'light', `${theme}: the page is not in that theme`);
-        const overflow = await h.page
-          .locator('.fc')
-          .evaluate((el) => el.scrollWidth - el.clientWidth);
+        const overflow = await section.evaluate((el) => el.scrollWidth - el.clientWidth);
         assert.ok(overflow <= 1, `${theme}: the section scrolls sideways by ${String(overflow)}px`);
-        // The chip's text and background differ in both themes.
-        const chip = await h.page.locator('.fc-size .size-chip').evaluate((el) => {
-          const s = getComputedStyle(el);
-          return { color: s.color, background: s.backgroundColor };
+        // The headline's word and what it sits on differ in both themes.
+        const ink = await section.locator('.fc-effort').evaluate((el) => {
+          let bg = 'rgba(0, 0, 0, 0)';
+          for (let at: Element | null = el; at !== null; at = at.parentElement) {
+            const b = getComputedStyle(at).backgroundColor;
+            if (b !== 'rgba(0, 0, 0, 0)' && b !== 'transparent') {
+              bg = b;
+              break;
+            }
+          }
+          return { color: getComputedStyle(el).color, background: bg };
         });
-        assert.notEqual(chip.color, chip.background, `${theme}: the chip is unreadable`);
+        assert.notEqual(ink.color, ink.background, `${theme}: the effort is unreadable`);
       }
     } finally {
       await h.close();
