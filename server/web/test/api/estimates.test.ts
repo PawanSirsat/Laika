@@ -17,6 +17,8 @@ import {
   accuracySentence,
   buildLabel,
   claimSentence,
+  buildShown,
+  comparison,
   comparisonLine,
   effortTitle,
   effortWord,
@@ -24,6 +26,7 @@ import {
   roughDuration,
   scopeGrewNote,
   shortRange,
+  shownRange,
   SIZE_LEVELS,
   sizeRank,
   splitNote,
@@ -47,6 +50,7 @@ import {
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
+const DAY = 24 * HOUR;
 
 function size(patch: Partial<TaskSize> = {}): TaskSize {
   return {
@@ -192,54 +196,182 @@ void describe('the time estimate as a range', () => {
     assert.equal(shortRange(58 * MIN, 62 * MIN), '1 h');
   });
 
+  void test('never mixes hours and days: a range that reaches days says both ends in days', () => {
+    // The review's `24 h–2 d`.
+    assert.equal(shortRange(DAY, 2.45 * DAY), '1–2 d');
+    assert.equal(timeRange(DAY, 2.45 * DAY), 'about 1 to 2 d');
+    assert.equal(shortRange(DAY, 2.6 * DAY), '1–3 d');
+    assert.equal(shortRange(10 * HOUR, 3 * DAY), '0.5–3 d');
+    assert.equal(shortRange(30 * HOUR, 50 * HOUR), '1–2 d');
+    assert.equal(shortRange(40 * HOUR, 50 * HOUR), '2 d');
+    // Under two days, hours stay hours.
+    assert.equal(shortRange(20 * HOUR, 30 * HOUR), '20–30 h');
+    for (const [p50, p80] of [
+      [DAY, 2.45 * DAY],
+      [10 * HOUR, 3 * DAY],
+      [30 * HOUR, 50 * HOUR],
+    ] as const) {
+      assert.doesNotMatch(shortRange(p50, p80) ?? '', / h–| h to/, `${String(p50)}–${String(p80)}`);
+    }
+  });
+
+  void test('shownRange is the one place the ends are rounded: what is printed and what it means', () => {
+    const range = shownRange(38 * MIN, 1.3 * HOUR);
+    assert.deepEqual(range, {
+      low: { label: '40 min', ms: 40 * MIN },
+      high: { label: '1.5 h', ms: 1.5 * HOUR },
+    });
+    assert.deepEqual(shownRange(DAY, 2.45 * DAY), {
+      low: { label: '1 d', ms: DAY },
+      high: { label: '2 d', ms: 2 * DAY },
+    });
+  });
+
   void test('neither has a range without hours', () => {
     assert.equal(timeRange(null, null), null);
     assert.equal(shortRange(25 * MIN, null), null);
+    assert.equal(shownRange(null, 5), null);
   });
 });
 
-void describe('verdictOf — was the finish on target', () => {
-  const p50 = 38 * MIN;
-  const p80 = 1.3 * HOUR;
+void describe('buildShown — the time that happened, as printed and as judged', () => {
+  void test('is buildLabel’s text and the time that text says', () => {
+    assert.deepEqual(buildShown(1.54 * HOUR), { label: '1.5 h', ms: 1.5 * HOUR });
+    assert.deepEqual(buildShown(39.6 * MIN), { label: '40 min', ms: 40 * MIN });
+    assert.deepEqual(buildShown(2.9 * DAY), { label: '3 d', ms: 3 * DAY });
+    assert.deepEqual(buildShown(21.9 * MIN), { label: '22 min', ms: 22 * MIN });
+    assert.equal(buildShown(1.54 * HOUR).label, buildLabel(1.54 * HOUR));
+  });
+});
 
-  void test('inside the range is on target', () => {
-    assert.equal(verdictOf(45 * MIN, p50, p80), 'on target');
-    assert.equal(verdictOf(p80, p50, p80), 'on target');
+void describe('verdictOf — judged only on the values printed', () => {
+  // `40 min–1.5 h` on screen, from 38 min and 1.3 h.
+  const shown = shownRange(38 * MIN, 1.3 * HOUR);
+  const judge = (ms: number) => (shown === null ? null : verdictOf(buildShown(ms), shown));
+
+  void test('below the shown low end is faster than expected', () => {
+    assert.equal(judge(39 * MIN), 'faster than expected');
+    assert.equal(judge(20 * MIN), 'faster than expected');
   });
 
-  void test('up to half again past the top is a little over; more is well over', () => {
-    assert.equal(verdictOf(1.6 * HOUR, p50, p80), 'a little over');
-    assert.equal(verdictOf(1.5 * p80, p50, p80), 'a little over');
-    assert.equal(verdictOf(1.5 * p80 + MIN, p50, p80), 'well over');
+  void test('the shown ends themselves, and everything between, are on target', () => {
+    // 39.6 min prints as `40 min`: on the low end, so on target.
+    assert.equal(judge(39.6 * MIN), 'on target');
+    assert.equal(judge(40 * MIN), 'on target');
+    assert.equal(judge(HOUR), 'on target');
+    assert.equal(judge(1.5 * HOUR), 'on target');
+    // 1.54 h prints as `1.5 h`, the shown top: still on target.
+    assert.equal(judge(1.54 * HOUR), 'on target');
   });
 
-  void test('well under the bottom is faster than expected; just under is on target', () => {
-    assert.equal(verdictOf(20 * MIN, p50, p80), 'faster than expected');
-    assert.equal(verdictOf(30 * MIN, p50, p80), 'on target');
+  void test('above the shown top: a little over up to 1.5× it, well over beyond', () => {
+    assert.equal(judge(1.56 * HOUR), 'a little over'); // prints `1.6 h`
+    assert.equal(judge(2.2 * HOUR), 'a little over');
+    assert.equal(judge(2.3 * HOUR), 'well over'); // past 1.5 × 1.5 h = 2.25 h
+  });
+
+  void test('exactly 1.5× the shown top is still a little over', () => {
+    const top2h = shownRange(50 * MIN, 2 * HOUR);
+    assert.ok(top2h !== null);
+    assert.equal(verdictOf(buildShown(3 * HOUR), top2h), 'a little over');
+    assert.equal(verdictOf(buildShown(3.04 * HOUR), top2h), 'a little over'); // prints `3.0 h`
+    assert.equal(verdictOf(buildShown(3.1 * HOUR), top2h), 'well over');
+    const top40 = shownRange(20 * MIN, 40 * MIN);
+    assert.ok(top40 !== null);
+    assert.equal(verdictOf(buildShown(HOUR), top40), 'a little over'); // prints `1.0 h` = 1.5 × 40 min
+    assert.equal(verdictOf(buildShown(1.1 * HOUR), top40), 'well over');
+  });
+
+  void test('in days, on the days printed', () => {
+    const days = shownRange(DAY, 2.45 * DAY); // `1–2 d`
+    assert.ok(days !== null);
+    assert.equal(verdictOf(buildShown(21.6 * HOUR), days), 'faster than expected'); // `22 h`
+    assert.equal(verdictOf(buildShown(2.4 * DAY), days), 'on target'); // `2 d`
+    assert.equal(verdictOf(buildShown(3 * DAY), days), 'a little over'); // 1.5 × 2 d
+    assert.equal(verdictOf(buildShown(3.6 * DAY), days), 'well over'); // `4 d`
   });
 });
 
 void describe('comparisonLine — the estimate frozen at start against what happened', () => {
-  void test('the owner’s example, word for word', () => {
+  const at = (p50: number, p80: number) => frozen({ build_p50_ms: p50, build_p80_ms: p80 });
+  const took = (ms: number): ActualTimes => ({
+    ...NOT_YET,
+    build_ms: ms,
+    finishes: 1,
+    first_finish_at: 1,
+  });
+
+  void test('says it is the estimate at start, not the headline’s current one', () => {
     assert.equal(
-      comparisonLine(frozen(), { ...NOT_YET, build_ms: 1.6 * HOUR, finishes: 1 }),
-      'Estimated 40 min–1.5 h · took 1.6 h · a little over',
+      comparisonLine(frozen(), took(1.6 * HOUR)),
+      'Estimated at start 40 min–1.5 h · took 1.6 h · a little over',
     );
+  });
+
+  /**
+   * The five rows the review found, each a verdict that contradicted the
+   * range printed beside it. Before the fix, in order:
+   *
+   *   Estimated 40 min–1.5 h · took 1.4 h · a little over
+   *   Estimated 20–50 min · took 48 min · a little over
+   *   Estimated 24 h–3 d · took 3 d · a little over
+   *   Estimated 40 min–1 h · took 1.2 h · on target
+   *   Estimated 15–20 min · took 22 min · on target
+   */
+  void test('the review’s five rows: the verdict agrees with what is printed', () => {
+    assert.equal(
+      comparisonLine(at(40 * MIN, 1.26 * HOUR), took(1.4 * HOUR)),
+      'Estimated at start 40 min–1.5 h · took 1.4 h · on target',
+    );
+    assert.equal(
+      comparisonLine(at(20 * MIN, 47.6 * MIN), took(48 * MIN)),
+      'Estimated at start 20–50 min · took 48 min · on target',
+    );
+    assert.equal(
+      comparisonLine(at(DAY, 2.6 * DAY), took(2.9 * DAY)),
+      'Estimated at start 1–3 d · took 3 d · on target',
+    );
+    assert.equal(
+      comparisonLine(at(40 * MIN, 1.24 * HOUR), took(1.2 * HOUR)),
+      'Estimated at start 40 min–1 h · took 1.2 h · a little over',
+    );
+    assert.equal(
+      comparisonLine(at(15 * MIN, 22 * MIN), took(21.9 * MIN)),
+      'Estimated at start 15–20 min · took 22 min · a little over',
+    );
+  });
+
+  void test('the time taken is judged as printed too, not as measured', () => {
+    // 1.54 h prints as `1.5 h`, the shown top; 39.6 min prints as `40 min`, the shown low end.
+    assert.equal(
+      comparisonLine(frozen(), took(1.54 * HOUR)),
+      'Estimated at start 40 min–1.5 h · took 1.5 h · on target',
+    );
+    assert.equal(
+      comparisonLine(frozen(), took(39.6 * MIN)),
+      'Estimated at start 40 min–1.5 h · took 40 min · on target',
+    );
+  });
+
+  void test('comparison gives the line and its verdict from the same rounding', () => {
+    assert.deepEqual(comparison(at(40 * MIN, 1.24 * HOUR), took(1.2 * HOUR)), {
+      text: 'Estimated at start 40 min–1 h · took 1.2 h · a little over',
+      verdict: 'a little over',
+    });
+    assert.deepEqual(comparison(null, took(25 * MIN)), { text: 'Took 25 min', verdict: null });
   });
 
   void test('nothing before the first finish', () => {
     assert.equal(comparisonLine(frozen(), NOT_YET), null);
+    assert.equal(comparison(frozen(), NOT_YET), null);
   });
 
   void test('just the time when no hours were frozen at start', () => {
     assert.equal(
-      comparisonLine(frozen({ build_p50_ms: null, build_p80_ms: null }), {
-        ...NOT_YET,
-        build_ms: 1.6 * HOUR,
-      }),
+      comparisonLine(frozen({ build_p50_ms: null, build_p80_ms: null }), took(1.6 * HOUR)),
       'Took 1.6 h',
     );
-    assert.equal(comparisonLine(null, { ...NOT_YET, build_ms: 25 * MIN }), 'Took 25 min');
+    assert.equal(comparisonLine(null, took(25 * MIN)), 'Took 25 min');
   });
 });
 
@@ -463,26 +595,45 @@ void describe('the server’s factor labels, which whyRows rewrites', () => {
 });
 
 void describe('accuracy, in plain words', () => {
-  void test('the measured figure, the owner’s example', () => {
+  void test('the measured figure is a median: typically off by, never on average', () => {
     assert.equal(
       accuracySentence(
         accuracy({ live: { n: 6, typical_error: 2.44, bias: 1, p80_hit_rate: 0.5 } }),
       ),
-      'Estimates here have been off by about 2.4× on average so far (6 tasks). 3 of them took no longer than the estimate.',
+      'Estimates here are typically off by about 2.4× (6 tasks so far). 3 of them took no longer than the estimate.',
     );
   });
 
-  void test('one task is one task', () => {
+  void test('three measured tasks is the fewest it reports', () => {
     assert.equal(
-      accuracySentence(accuracy({ live: { n: 1, typical_error: 1.3, bias: 1, p80_hit_rate: 1 } })),
-      'Estimates here have been off by about 1.3× on average so far (1 task). 1 of them took no longer than the estimate.',
+      accuracySentence(accuracy({ live: { n: 3, typical_error: 1.3, bias: 1, p80_hit_rate: 1 } })),
+      'Estimates here are typically off by about 1.3× (3 tasks so far). 3 of them took no longer than the estimate.',
+    );
+  });
+
+  void test('fewer than three measured: the figure is hidden, and the replay said instead', () => {
+    for (const n of [1, 2]) {
+      const said = accuracySentence(
+        accuracy({ live: { n, typical_error: 1.3, bias: 1, p80_hit_rate: 1 } }),
+      );
+      assert.equal(
+        said,
+        'Too few estimates have been checked against a finish to judge yet. Tried on 30 past tasks here, they are typically off by about 1.7×.',
+      );
+      assert.doesNotMatch(said ?? '', /1\.3×/);
+    }
+    assert.equal(
+      accuracySentence(
+        accuracy({ live: { n: 1, typical_error: 1.3, bias: 1, p80_hit_rate: 1 }, backtest: null }),
+      ),
+      'Too few estimates have been checked against a finish to judge yet.',
     );
   });
 
   void test('before any is measured: the replay on past tasks', () => {
     assert.equal(
       accuracySentence(accuracy({ live: NONE })),
-      'No estimate has been checked against a finish yet. Tried on 30 past tasks here, they were off by about 1.7× on average.',
+      'No estimate has been checked against a finish yet. Tried on 30 past tasks here, they are typically off by about 1.7×.',
     );
     assert.equal(
       accuracySentence(
@@ -497,7 +648,7 @@ void describe('accuracy, in plain words', () => {
           },
         }),
       ),
-      'No estimate has been checked against a finish yet. Tried on 20 past tasks here, they were off by about 2.8× on average, no better than the usual time, so the usual range is shown.',
+      'No estimate has been checked against a finish yet. Tried on 20 past tasks here, they are typically off by about 2.8×, no better than the usual time, so the usual range is shown.',
     );
   });
 
@@ -505,44 +656,49 @@ void describe('accuracy, in plain words', () => {
     assert.equal(accuracySentence(accuracy({ finished: 3, live: NONE, backtest: null })), null);
   });
 
-  void test('never p80', () => {
-    for (const view of [accuracy(), accuracy({ live: NONE })]) {
-      assert.doesNotMatch(accuracySentence(view) ?? '', /p80|held/);
+  void test('never p80, never on average', () => {
+    for (const view of [
+      accuracy(),
+      accuracy({ live: NONE }),
+      accuracy({ live: { n: 1, typical_error: 1.3, bias: 1, p80_hit_rate: 1 } }),
+    ]) {
+      assert.doesNotMatch(accuracySentence(view) ?? '', /p80|held|on average/);
     }
   });
 
-  void test('tokens: a sentence only when there is a record', () => {
+  void test('tokens: the same rules, and nothing with no record', () => {
+    const tokens = (
+      live: EstimateAccuracy['tokens']['live'],
+      backtest: EstimateAccuracy['tokens']['backtest'],
+    ) => accuracy({ tokens: { learned_from: 30, forecasts_after: 10, live, backtest } });
+    const replay = {
+      n: 20,
+      method_error: 2.77,
+      median_error: 2.7,
+      p80_hit_rate: 0.8,
+      beats_median: true,
+    };
     assert.equal(
       tokenAccuracySentence(
-        accuracy({
-          tokens: {
-            learned_from: 30,
-            forecasts_after: 10,
-            live: { n: 4, typical_error: 1.9, bias: 1, p80_hit_rate: 0.75 },
-            backtest: null,
-          },
-        }),
+        tokens({ n: 4, typical_error: 1.9, bias: 1, p80_hit_rate: 0.75 }, null),
       ),
-      'Token estimates have been off by about 1.9× on average (4 tasks).',
+      'Token estimates are typically off by about 1.9× (4 tasks so far).',
     );
     assert.equal(
       tokenAccuracySentence(
-        accuracy({
-          tokens: {
-            learned_from: 30,
-            forecasts_after: 10,
-            live: NONE,
-            backtest: {
-              n: 20,
-              method_error: 2.77,
-              median_error: 2.7,
-              p80_hit_rate: 0.8,
-              beats_median: true,
-            },
-          },
-        }),
+        tokens({ n: 2, typical_error: 1.9, bias: 1, p80_hit_rate: 0.75 }, replay),
       ),
-      'Tried on 20 past tasks here, token estimates were off by about 2.8× on average.',
+      'Tried on 20 past tasks here, token estimates are typically off by about 2.8×.',
+    );
+    assert.equal(
+      tokenAccuracySentence(tokens(NONE, replay)),
+      'Tried on 20 past tasks here, token estimates are typically off by about 2.8×.',
+    );
+    assert.equal(
+      tokenAccuracySentence(
+        tokens({ n: 2, typical_error: 1.9, bias: 1, p80_hit_rate: 0.75 }, null),
+      ),
+      null,
     );
     assert.equal(tokenAccuracySentence(accuracy()), null);
   });

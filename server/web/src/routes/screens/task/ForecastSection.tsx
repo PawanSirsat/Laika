@@ -3,7 +3,7 @@ import {
   accuracySentence,
   buildLabel,
   claimSentence,
-  comparisonLine,
+  comparison,
   effortWord,
   getEstimateAccuracy,
   getTaskEstimate,
@@ -18,7 +18,6 @@ import {
   tokenHint,
   tokenLine,
   typicalSentence,
-  verdictOf,
   whyRows,
   type EstimateAccuracy,
   type SizeLevel,
@@ -65,8 +64,9 @@ function Sep() {
  *   estimates have been few or far off; or, without the history for hours,
  *   the effort and what the time waits for, once;
  * - **once it has finished**, one line against the estimate frozen when work
- *   started, with a verdict — *Estimated 20–45 min · took 1.5 h · well over*
- *   — and where the time went, when more than the build happened;
+ *   started, with a verdict — *Estimated at start 20–45 min · took 1.5 h ·
+ *   well over*, judged on the figures printed — and where the time went,
+ *   when more than the build happened;
  * - **the token estimate**, one line, only when there is one.
  *
  * Everything else — *Why Large?* in sentences with arrows, the similar
@@ -161,12 +161,8 @@ export function ForecastSection({
   };
 
   const actual = estimate?.actual;
-  const atStart = estimate?.at_start ?? null;
-  const compare = actual === undefined ? null : comparisonLine(atStart, actual);
-  const verdict =
-    actual?.build_ms != null && atStart?.build_p50_ms != null && atStart.build_p80_ms !== null
-      ? verdictOf(actual.build_ms, atStart.build_p50_ms, atStart.build_p80_ms)
-      : undefined;
+  // The line and its verdict from one rounding, so they cannot disagree.
+  const compared = actual === undefined ? null : comparison(estimate?.at_start ?? null, actual);
   const timeline = actual === undefined ? null : timelineLine(actual);
   const tokens = estimate === undefined ? null : tokenLine(estimate);
   const notes =
@@ -250,9 +246,9 @@ export function ForecastSection({
         </p>
       )}
 
-      {compare !== null && (
-        <p className="fc-compare" data-verdict={verdict}>
-          {compare}
+      {compared !== null && (
+        <p className="fc-compare" data-verdict={compared.verdict ?? undefined}>
+          {compared.text}
         </p>
       )}
       {timeline !== null && <p className="fc-timeline">{timeline}</p>}

@@ -261,95 +261,179 @@ export function effortWord(level: SizeLevel): string {
   return EFFORT_WORDS[level];
 }
 
-/** `25 min`, `1.5 h`, `3 d` — a time that happened; the server's own `formatBuild`. */
+/**
+ * A time as it is printed, and the time that printed text says: `1.5 h` is
+ * 5 400 000 ms, whatever it was rounded from. A verdict is judged on these,
+ * so it can never disagree with the figures beside it (LAI-785 review).
+ */
+export interface Shown {
+  readonly label: string;
+  readonly ms: number;
+}
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+
+/** `25 min`, `1.5 h`, `3 d` — a time that happened, as printed; the server's own `formatBuild`. */
+export function buildShown(ms: number): Shown {
+  const minutes = Math.round(ms / MINUTE_MS);
+  if (minutes < 60) {
+    const m = Math.max(1, minutes);
+    return { label: `${String(m)} min`, ms: m * MINUTE_MS };
+  }
+  const hours = ms / HOUR_MS;
+  if (hours < 10) {
+    const h = hours.toFixed(1);
+    return { label: `${h} h`, ms: Number(h) * HOUR_MS };
+  }
+  if (hours < 48) {
+    const h = Math.round(hours);
+    return { label: `${String(h)} h`, ms: h * HOUR_MS };
+  }
+  const d = Math.round(hours / 24);
+  return { label: `${String(d)} d`, ms: d * DAY_MS };
+}
+
+/** `25 min`, `1.5 h`, `3 d` — a time that happened. */
 export function buildLabel(ms: number): string {
-  const minutes = Math.round(ms / 60_000);
-  if (minutes < 60) return `${String(Math.max(1, minutes))} min`;
-  const hours = ms / 3_600_000;
-  if (hours < 10) return `${hours.toFixed(1)} h`;
-  if (hours < 48) return `${String(Math.round(hours))} h`;
-  return `${String(Math.round(hours / 24))} d`;
+  return buildShown(ms).label;
+}
+
+/** In days: whole days, or a half under one — never `0 d`. */
+function inDays(ms: number): Shown {
+  const days = ms / DAY_MS;
+  const d = days < 1 ? Math.max(0.5, Math.round(days * 2) / 2) : Math.round(days);
+  return { label: `${String(d)} d`, ms: d * DAY_MS };
 }
 
 /**
- * `40 min`, `1.5 h`, `14 h`, `3 d` — a time that is *estimated*, rounded the
- * way a person says one: minutes to five, hours under ten to a half. `38 min`
- * to `1.3 h` claims a precision the estimate does not have.
+ * A time that is *estimated*, as printed: minutes to five, hours under ten to
+ * a half, then whole hours, then days. `38 min` to `1.3 h` claims a precision
+ * the estimate does not have.
  */
+function roughShown(ms: number): Shown {
+  const minutes = ms / MINUTE_MS;
+  if (minutes < 57.5) {
+    const m = Math.max(5, Math.round(minutes / 5) * 5);
+    return { label: `${String(m)} min`, ms: m * MINUTE_MS };
+  }
+  const hours = ms / HOUR_MS;
+  if (hours < 10) {
+    const h = Math.round(hours * 2) / 2;
+    return { label: `${String(h)} h`, ms: h * HOUR_MS };
+  }
+  if (hours < 48) {
+    const h = Math.round(hours);
+    return { label: `${String(h)} h`, ms: h * HOUR_MS };
+  }
+  return inDays(ms);
+}
+
+/** `40 min`, `1.5 h`, `14 h`, `3 d` — one estimated time. */
 export function roughDuration(ms: number): string {
-  const minutes = ms / 60_000;
-  if (minutes < 57.5) return `${String(Math.max(5, Math.round(minutes / 5) * 5))} min`;
-  const hours = ms / 3_600_000;
-  if (hours < 10) return `${String(Math.round(hours * 2) / 2)} h`;
-  if (hours < 48) return `${String(Math.round(hours))} h`;
-  return `${String(Math.round(hours / 24))} d`;
+  return roughShown(ms).label;
 }
 
-/** The two ends rounded, and the unit they share, or `''`. */
-function ends(p50: number, p80: number): { low: string; high: string; unit: string } {
-  const low = roughDuration(p50);
-  const high = roughDuration(p80);
-  const unitOf = (label: string) => label.slice(label.indexOf(' ') + 1);
-  return { low, high, unit: unitOf(low) === unitOf(high) ? unitOf(high) : '' };
+/** The two ends of an estimate as they are printed. */
+export interface ShownRange {
+  readonly low: Shown;
+  readonly high: Shown;
 }
 
-const number = (label: string) => label.slice(0, label.indexOf(' '));
+/**
+ * **The one place a range's ends are rounded** — the headline, the
+ * comparison line and its verdict all read them from here. A range that
+ * reaches days says both ends in days (`1–2 d`, never `24 h–2 d`); minutes
+ * and hours may share one, as in `40 min–1.5 h`.
+ */
+export function shownRange(p50: number | null, p80: number | null): ShownRange | null {
+  if (p50 === null || p80 === null) return null;
+  const high = roughShown(p80);
+  const low = high.label.endsWith(' d') ? inDays(p50) : roughShown(p50);
+  return { low, high };
+}
+
+const unitOf = (label: string) => label.slice(label.indexOf(' ') + 1);
+const numberOf = (label: string) => label.slice(0, label.indexOf(' '));
+
+/** The low end, without its unit when the high end says the same one. */
+function lowText(range: ShownRange): string {
+  return unitOf(range.low.label) === unitOf(range.high.label)
+    ? numberOf(range.low.label)
+    : range.low.label;
+}
 
 /**
  * The headline's time: `about 45 min to 1.5 h`, `about 20 to 45 min`, or one
  * time when both ends round to it. Null without hours (D-085 item 6).
  */
 export function timeRange(p50: number | null, p80: number | null): string | null {
-  if (p50 === null || p80 === null) return null;
-  const { low, high, unit } = ends(p50, p80);
-  if (low === high) return `about ${low}`;
-  return unit === '' ? `about ${low} to ${high}` : `about ${number(low)} to ${high}`;
+  const range = shownRange(p50, p80);
+  if (range === null) return null;
+  if (range.low.label === range.high.label) return `about ${range.high.label}`;
+  return `about ${lowText(range)} to ${range.high.label}`;
+}
+
+function dashed(range: ShownRange): string {
+  if (range.low.label === range.high.label) return range.high.label;
+  return `${lowText(range)}–${range.high.label}`;
 }
 
 /** The comparison line's: `40 min–1.5 h`, `20–45 min`, `1 h`. */
 export function shortRange(p50: number | null, p80: number | null): string | null {
-  if (p50 === null || p80 === null) return null;
-  const { low, high, unit } = ends(p50, p80);
-  if (low === high) return low;
-  return unit === '' ? `${low}–${high}` : `${number(low)}–${high}`;
+  const range = shownRange(p50, p80);
+  return range === null ? null : dashed(range);
 }
 
 /**
- * How a finish compares with the estimate frozen at start. Inside the range
- * is on target, and so is a little under its bottom: the bottom is the
- * *likely* time, so half of all tasks finish under it.
+ * How a finish compares with the estimate frozen at start, **on the values
+ * printed** (LAI-785 review): below the shown low end is faster than
+ * expected, the shown range itself is on target, up to half again past the
+ * shown top is a little over, and beyond that well over.
  */
 export type Verdict = 'faster than expected' | 'on target' | 'a little over' | 'well over';
 
-/** Under three quarters of the likely time is faster than expected. */
-const FASTER = 0.75;
-/** Up to half again past the pessimistic end is a little over. */
+/** Up to half again past the shown top is a little over. */
 const A_LITTLE = 1.5;
+/** The printed values are exact; the products of floats beside them are not. */
+const SLACK_MS = 0.5;
 
-export function verdictOf(actualMs: number, p50: number, p80: number): Verdict {
-  if (actualMs < p50 * FASTER) return 'faster than expected';
-  if (actualMs <= p80) return 'on target';
-  if (actualMs <= p80 * A_LITTLE) return 'a little over';
+export function verdictOf(took: Shown, range: ShownRange): Verdict {
+  if (took.ms < range.low.ms - SLACK_MS) return 'faster than expected';
+  if (took.ms <= range.high.ms + SLACK_MS) return 'on target';
+  if (took.ms <= range.high.ms * A_LITTLE + SLACK_MS) return 'a little over';
   return 'well over';
 }
 
+/** The comparison line and the verdict in it, from one rounding. */
+export interface Comparison {
+  readonly text: string;
+  /** Null when no hours were frozen at start, so there is nothing to judge against. */
+  readonly verdict: Verdict | null;
+}
+
 /**
- * The one line once there is an actual: `Estimated 40 min–1.5 h · took 1.6 h
- * · a little over`, against the estimate frozen when work started — what the
- * project's accuracy measures too. Null before the first finish.
+ * The one line once there is an actual: `Estimated at start 40 min–1.5 h ·
+ * took 1.6 h · a little over`, against the estimate frozen when work
+ * started — what the project's accuracy measures too, and not the headline's
+ * current one. Null before the first finish.
  */
-export function comparisonLine(atStart: FrozenEstimate | null, actual: ActualTimes): string | null {
+export function comparison(atStart: FrozenEstimate | null, actual: ActualTimes): Comparison | null {
   if (actual.build_ms === null) return null;
-  const took = buildLabel(actual.build_ms);
-  const range = atStart === null ? null : shortRange(atStart.build_p50_ms, atStart.build_p80_ms);
-  if (
-    atStart === null ||
-    range === null ||
-    atStart.build_p50_ms === null ||
-    atStart.build_p80_ms === null
-  )
-    return `Took ${took}`;
-  return `Estimated ${range} · took ${took} · ${verdictOf(actual.build_ms, atStart.build_p50_ms, atStart.build_p80_ms)}`;
+  const took = buildShown(actual.build_ms);
+  const range = atStart === null ? null : shownRange(atStart.build_p50_ms, atStart.build_p80_ms);
+  if (range === null) return { text: `Took ${took.label}`, verdict: null };
+  const verdict = verdictOf(took, range);
+  return {
+    text: `Estimated at start ${dashed(range)} · took ${took.label} · ${verdict}`,
+    verdict,
+  };
+}
+
+/** {@link comparison}'s line alone. */
+export function comparisonLine(atStart: FrozenEstimate | null, actual: ActualTimes): string | null {
+  return comparison(atStart, actual)?.text ?? null;
 }
 
 /**
@@ -491,30 +575,39 @@ function times(value: number): string {
 }
 
 /**
+ * The fewest measured estimates whose typical error is told: a median of one
+ * or two finishes describes those tasks, not the project's estimates.
+ */
+const TOLD_FROM = 3;
+
+/**
  * The project's accuracy in a sentence (D-085 item 8), for inside the
- * disclosure: the estimates frozen at start against what happened when there
- * are any, else the replay on past tasks. Null in a cold start, when the
- * headline already says what the time estimate waits for.
+ * disclosure. `typical_error` is a **median** ratio, so it is *typically off
+ * by*, never *on average* (LAI-785 review). The estimates frozen at start
+ * against what happened, once at least three are measured; else the replay
+ * on past tasks. Null in a cold start, when the headline already says what
+ * the time estimate waits for.
  */
 export function accuracySentence(view: EstimateAccuracy): string | null {
   const { live, backtest } = view;
-  if (live.n > 0 && live.typical_error !== null) {
+  if (live.n >= TOLD_FROM && live.typical_error !== null) {
     const held =
       live.p80_hit_rate === null
         ? ''
         : ` ${String(Math.round(live.p80_hit_rate * live.n))} of them took no longer than the estimate.`;
-    return `Estimates here have been off by about ${times(live.typical_error)} on average so far (${plural(live.n, 'task')}).${held}`;
+    return `Estimates here are typically off by about ${times(live.typical_error)} (${plural(live.n, 'task')} so far).${held}`;
   }
-  const none = 'No estimate has been checked against a finish yet.';
+  const first =
+    live.n === 0
+      ? 'No estimate has been checked against a finish yet.'
+      : 'Too few estimates have been checked against a finish to judge yet.';
   if (backtest !== null) {
-    return `${none} Tried on ${String(backtest.n)} past tasks here, they were off by about ${times(
+    return `${first} Tried on ${String(backtest.n)} past tasks here, they are typically off by about ${times(
       backtest.method_error,
-    )} on average${
-      backtest.beats_median ? '' : ', no better than the usual time, so the usual range is shown'
-    }.`;
+    )}${backtest.beats_median ? '' : ', no better than the usual time, so the usual range is shown'}.`;
   }
-  if (view.finished < view.forecasts_after) return null;
-  return none;
+  if (live.n === 0 && view.finished < view.forecasts_after) return null;
+  return first;
 }
 
 /**
@@ -564,16 +657,16 @@ export function tokenHint(f: TokenForecast): string | null {
   )} so far).`;
 }
 
-/** The token estimate's record in a sentence, or null with none to tell. */
+/** The token estimate's record in a sentence, by the same rules, or null with none to tell. */
 export function tokenAccuracySentence(view: EstimateAccuracy): string | null {
   const { live, backtest } = view.tokens;
-  if (live.n > 0 && live.typical_error !== null) {
-    return `Token estimates have been off by about ${times(live.typical_error)} on average (${plural(live.n, 'task')}).`;
+  if (live.n >= TOLD_FROM && live.typical_error !== null) {
+    return `Token estimates are typically off by about ${times(live.typical_error)} (${plural(live.n, 'task')} so far).`;
   }
   if (backtest !== null) {
-    return `Tried on ${String(backtest.n)} past tasks here, token estimates were off by about ${times(
+    return `Tried on ${String(backtest.n)} past tasks here, token estimates are typically off by about ${times(
       backtest.method_error,
-    )} on average.`;
+    )}.`;
   }
   return null;
 }

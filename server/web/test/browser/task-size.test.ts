@@ -457,9 +457,10 @@ void describe('the task panel’s Effort section', () => {
       assert.equal(await section.locator('.fc-rough').count(), 0);
       assert.equal(
         await section.locator('.fc-compare').innerText(),
-        'Estimated 20–45 min · took 1.5 h · well over',
+        'Estimated at start 20–45 min · took 1.5 h · well over',
       );
       assert.equal(await section.locator('.fc-compare').getAttribute('data-verdict'), 'well over');
+      assert.doesNotMatch(await section.innerText(), /on average/);
       assert.equal(
         await section.locator('.fc-timeline').innerText(),
         'Building 1.5 h · waiting for review 2.0 h · rework 30 min',
@@ -490,7 +491,7 @@ void describe('the task panel’s Effort section', () => {
       );
       assert.equal(
         await why.locator('.fc-accuracy').innerText(),
-        'Estimates here have been off by about 1.7× on average so far (12 tasks). 9 of them took no longer than the estimate.',
+        'Estimates here are typically off by about 1.7× (12 tasks so far). 9 of them took no longer than the estimate.',
       );
       const opened = await section.innerText();
       assertNothingEmpty(opened);
@@ -524,7 +525,7 @@ void describe('the task panel’s Effort section', () => {
       );
       assert.equal(
         await why.locator('.fc-accuracy-tokens').innerText(),
-        'Tried on 4 past tasks here, token estimates were off by about 1.9× on average.',
+        'Tried on 4 past tasks here, token estimates are typically off by about 1.9×.',
       );
       assertNothingEmpty(await section.innerText());
       assert.doesNotMatch(await section.innerText(), /Ada/);
@@ -582,7 +583,7 @@ void describe('the task panel’s Effort section', () => {
       const why = await openWhy(section);
       assert.equal(
         await why.locator('.fc-accuracy').innerText(),
-        'Estimates here have been off by about 2.4× on average so far (6 tasks). 3 of them took no longer than the estimate.',
+        'Estimates here are typically off by about 2.4× (6 tasks so far). 3 of them took no longer than the estimate.',
       );
     } finally {
       await h.close();
