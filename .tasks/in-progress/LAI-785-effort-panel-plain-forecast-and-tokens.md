@@ -2,11 +2,12 @@
 id: LAI-785
 title: 'Task panel: call the size Effort and say the forecast and the tokens in plain words (server/web/ + named server/src/mcp/ text + docs/SPEC.md §11.4)'
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-19T22:21:02Z
 ---
 
 ## Goal
