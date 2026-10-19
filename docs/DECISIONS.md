@@ -4868,3 +4868,87 @@ merged.
   reader who knows one person alone uses some agent can still read that
   person's spend off the row. Item 7 is the owner's rule as decided; a floor
   on the folded row itself would be a new decision.
+
+---
+
+## D-088 — Laika records the time people confirm, drafted on their own machine, never by watching them; Solidtime stays the billing record.
+
+**2026-10-20, the owner, through the orchestrator** (LAI-787 to LAI-790).
+§1.1 lists time tracking as a non-goal and D-085 restated "no timesheet".
+Kvell has adopted Solidtime because customers want the time spent on their
+projects recorded, and management wants per-project capacity and a fair split
+of work. Three options were researched on 20 Oct (reports kept outside the
+repo): (A) read and write Solidtime, (B) Laika drafts each person's day from
+signals it already holds and the person confirms, (C) a full tracker inside
+Laika. The owner approved **B as the core, A as the bridge, and of C only
+manual entries and a period close.**
+
+### Decided
+
+1. **Purposes, named, and one excluded by name.** Time in Laika exists to
+   (a) report hours on customer projects, (b) plan project capacity and
+   budgets, and (c) see whether work is split fairly across the team. It is
+   **not** used to evaluate a person's performance: no score, no ranking, no
+   utilisation figure per person, and no input to ratings (D-078 item 6).
+2. **§1.1's "time tracking" is reversed for confirmed time only.** A time
+   entry is something a person confirms, types or imports. Laika never shows
+   anyone else an hour it computed and the person did not confirm.
+3. **Drafts are made on the developer's machine** by the collector from what
+   it already holds (agent session activity, typed prompts, commits, the task a
+   session claimed), split into blocks that end after a 15-minute gap. Only
+   blocks leave the machine, each with the counts of the signals behind it.
+   They land in a store **only that person reads, on a web session**. No token
+   reads a draft and no admin view of drafts exists.
+4. **Never collected:** screenshots, keystrokes, window titles, URLs, idle
+   tracking, file names, prompt or reply text, agent transcripts.
+5. **Two switches, as D-079:** the organisation's *Time* setting
+   (`off` / `manual` / `drafts`) and each person's own *Draft my time*. Either
+   off stops drafting and deletes held drafts; manual entry still works when
+   the organisation allows it.
+6. **People confirm their own days; a manager closes the month.** A day is
+   confirmed in one click or edited line by line. A closed period is locked;
+   a later change is an append-only revision, and an edit found in Solidtime
+   after close is flagged, never silently taken.
+7. **Who sees confirmed time.** The person sees their own. **Per-person hours
+   are visible to owners and admins only**; every such view is logged, and the
+   person can see who looked and when. Members see task and project totals
+   only, and only where at least three people contributed (D-084 item 7's
+   floor).
+8. **Human time and agent time are different things.** Claude Code's
+   `active_time` telemetry splits keyboard time (`type=user`) from agent time
+   (`type=cli`); the receiver of D-087 keeps both, attributed to cards the way
+   tokens are. Agent time is shown as **agent minutes**, beside tokens and
+   cost, **never as hours and never billed as hours.**
+9. **Automated sessions never draft time** (D-086). **The orchestrator's
+   primary session is the person's** — the session where the owner types to
+   Omnigent counts as their work; the agents it dispatches do not.
+10. **Solidtime is the billing record, reached without a new outbound call.**
+    The developer's CLI, with their own Solidtime key kept on their machine,
+    writes confirmed entries into Solidtime as `KEY title` (the format
+    Solidtime's own extension uses) and reads back entries logged there
+    directly, matched to cards by key; it pushes them inbound. People are
+    matched by email, confirmed by an admin. Laika never stores Solidtime
+    rates or amounts; it reads them when it shows them. §13.4 is unchanged.
+11. **Retention.** Raw blocks and drafts: 30 days. Confirmed entries: three
+    years (BCEA s31). The person can delete their unconfirmed drafts at any
+    time.
+12. **Days are the person's local day**, with the zone stored per entry. The
+    board stays UTC.
+13. **Agents propose, never confirm.** An MCP tool may propose a time entry
+    into the person's drafts; confirming, closing, budgets and clients are
+    web-session only.
+
+### What this does not decide
+
+Invoicing and rates (Solidtime's). Payroll and overtime. Whether members may
+see per-person time on their own project. A server-side Solidtime connector
+(a fourth outbound category, which D-009 rules out and would need its own
+decision).
+
+### Why
+
+Hours are needed for customers and budgets, and people remember them badly
+after the fact; a same-day draft built from real events keeps them honest at
+almost no cost to the developer. Keeping the signals on the developer's
+machine and showing others only what the person confirmed is what keeps D-005's
+line: the board knows what people said they did, not what it watched them do.

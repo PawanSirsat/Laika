@@ -66,6 +66,15 @@ claimant's own optional estimate at claim (§4.34), and a sprint forecast —
 *"85% likely to finish 18–23 of 26"* — computed from the project's throughput
 and those sizes. None of it is a number anybody is asked to type.
 
+**Changed 2026-10-20 (D-088).** *Time tracking* is off this list for
+**confirmed time only**: Laika drafts each person's day on their own machine
+from signals it already holds, the person confirms it, and confirmed entries
+go to Solidtime, which stays the billing record. A manager closes the month.
+Per-person hours are visible to owners and admins only, every view logged and
+shown to the person; members see project totals. It is never a measure of a
+person's performance, and agent time is shown as agent minutes, never hours.
+Screenshots, keystrokes, idle tracking and prompt text stay out.
+
 ---
 
 ## 2. Glossary

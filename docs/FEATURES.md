@@ -165,8 +165,12 @@ From `SPEC.md` §1.1 and `VISION.md` §6, restated so nobody re-proposes them:
 
 Multi-org / multi-tenant hosting · Postgres · WebSockets · custom fields · file
 uploads · a plugin system of our own · mobile apps · SSO/SAML/SCIM · **story
-points and epics** · time tracking and billing · **telemetry of any kind** ·
+points and epics** · billing and invoicing · **telemetry of any kind** ·
 anything that reads file contents, diffs, or prompts from a session.
+
+**Moved off this list 2026-10-20:** *time tracking* → confirmed time only,
+drafted on the developer's machine and confirmed by them, with Solidtime as the
+billing record (D-088).
 
 **Moved off this list 2026-10-06:** *per-task planned or due dates* → shipped
 as `due_on` / `planned_start` (D-066), with subtasks one level deep. Epics and
