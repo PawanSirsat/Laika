@@ -31,12 +31,19 @@ const STATUS_COLOR: Readonly<Record<TaskStatus, string>> = {
  * **It counts what its scope says** (LAI-732): the dashboard's range and the
  * card's own filter (`card-filters.ts`) choose the tasks, and `scope` — the
  * subtitle — says which, so a smaller number never looks wrong unexplained.
+ *
+ * **And so does the centre** (LAI-817, D-092 item 5). Under a range the ring
+ * is the tasks *touched* in it, and its "% done" is of those — 15% on OnRoute
+ * over 7 days against 42% for the whole space. Rather than put the whole
+ * space's figure inside a ring that draws a sample, the centre keeps the
+ * ring's own share and says what it is a share of: `done of touched`.
  */
 export function StatusOverview({
   breakdown,
   slug,
   scope,
   narrowed = false,
+  touchedOnly = false,
   filter,
 }: {
   readonly breakdown: StatusBreakdown;
@@ -45,6 +52,8 @@ export function StatusOverview({
   readonly scope?: string | undefined;
   /** A range or a filter narrows the card, so an empty one is not an empty project. */
   readonly narrowed?: boolean;
+  /** The card counts only the tasks touched in the range, so its "% done" is of those. */
+  readonly touchedOnly?: boolean;
   /** The card's filter control (`CardFilter`). */
   readonly filter?: ReactNode;
 }) {
@@ -77,7 +86,7 @@ export function StatusOverview({
           <Donut
             label="Tasks by status"
             value={`${String(donePct)}%`}
-            caption="done"
+            caption={touchedOnly ? 'done of touched' : 'done'}
             slices={live.map((c) => ({
               key: c.status,
               label: statusLabel(c.status),

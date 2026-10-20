@@ -168,7 +168,7 @@
   background: var(--chip-green-bg);
 }
 
-.dash-stat-updated .dash-stat-icon {
+.dash-stat-touched .dash-stat-icon {
   color: var(--chip-blue);
   background: var(--chip-blue-bg);
 }
@@ -216,6 +216,17 @@
 .dash-stat-overdue {
   color: var(--overdue);
   font-weight: var(--weight-semibold);
+}
+
+/* A caveat on the figure — "only 2 of 301 open tasks have a due date" (LAI-817). */
+.dash-stat-note {
+  margin: 0.125rem 0 0;
+  font-size: var(--text-xs);
+  color: var(--chip-orange);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---------------------------------------------------------------- card grid */
@@ -385,6 +396,96 @@ a.dash-legend-row:focus-visible {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--text-muted);
+}
+
+/* Work waiting for review, beside a person's count and never in it (D-092). */
+.dash-legend-review {
+  color: var(--chip-orange);
+  font-weight: var(--weight-semibold);
+}
+
+/* "done of touched" sits inside the ring's hole, so it wraps there (LAI-817). */
+.dash-status .donut-caption {
+  max-width: 5.5rem;
+  line-height: 1.2;
+}
+
+/* -------------------------------------------------------- contributors */
+
+.dash-people-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.dash-contrib {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.dash-contrib thead th {
+  padding: 0 0.5rem 0.375rem;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dash-contrib-who {
+  text-align: left;
+  font-weight: inherit;
+}
+
+.dash-contrib tbody .dash-contrib-who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0.4375rem 0.5rem;
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+}
+
+.dash-contrib-row + .dash-contrib-row > * {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.dash-contrib-rank {
+  flex: none;
+  width: 1.25rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-muted);
+}
+
+.dash-contrib-n {
+  width: 5.25rem;
+  padding: 0 0.5rem;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+thead .dash-contrib-n {
+  font-family: inherit;
+}
+
+.dash-contrib-reviewed {
+  color: var(--text-secondary);
+  font-weight: var(--weight-semibold);
+}
+
+@container card (max-width: 24rem) {
+  .dash-contrib-n {
+    width: 4.25rem;
+  }
 }
 
 /* ---------------------------------------------------------------- avatars */
@@ -579,8 +680,29 @@ a.dash-event-key:focus-visible {
 
 /* -------------------------------------------------------- needs attention */
 
-.dash-attention .dash-card-head {
+/* Title, tabs and tools wrap rather than squeeze (LAI-817 added a tab to each). */
+.dash-attention .dash-card-head,
+.dash-people .dash-card-head {
   flex-wrap: wrap;
+}
+
+.dash-people .dash-tabs {
+  margin-right: auto;
+}
+
+/* Blocked work not counted — backlog chains, shown apart under the count (D-092). */
+.dash-att-apart {
+  margin: var(--space-3) 0 0.25rem;
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border-default);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+}
+
+.dash-att-list-apart .dash-att-title {
+  color: var(--text-secondary);
 }
 
 .dash-att-list {
