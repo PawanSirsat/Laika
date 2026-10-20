@@ -46,9 +46,9 @@ void describe('the column beside the day', () => {
       await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
       const order = await h.page
         .locator('[data-myday-side] > section')
-        .evaluateAll((els) => els.map((el) => el.className));
+        .evaluateAll((els: Element[]) => els.map((el) => el.className));
       assert.deepEqual(
-        order.map((c) => c.split(' ').find((k) => k !== 'myday-card')),
+        order.map((c) => c.split(' ').find((k: string) => k !== 'myday-card')),
         ['myday-settings', 'myday-plate', 'myday-agent'],
       );
       // One drafted card, one confirmed — never drawn twice.
