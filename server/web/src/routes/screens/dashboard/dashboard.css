@@ -397,8 +397,11 @@ a.dash-legend-row:focus-visible {
   color: var(--text-muted);
 }
 
-/* Work waiting for review, beside a person's count and never in it (D-092). */
+/* Work waiting for review, beside a person's count and never in it (D-092).
+   It wraps rather than ellipsises: at 12px (LAI-828) a phone's legend column
+   cut "+2 waiting for review" by 5px, and a cut count is a wrong count. */
 .dash-legend-review {
+  white-space: normal;
   color: var(--chip-orange);
   font-weight: var(--weight-semibold);
 }
