@@ -136,16 +136,21 @@ prompt twice for anyone who uses `laika-claude`. `laika activity on` puts it in
 
 | Mode | Fired by | Does |
 | --- | --- | --- |
-| `prompt` | prompt submit | appends `p <agent> <epoch>` to `~/.laika/activity/events.log` |
+| `prompt` | prompt submit | appends `p <agent> <epoch>` to `~/.laika/activity/events.log`; for an Omnigent orchestrator's turn, `t omnigent <epoch> <session>` instead (LAI-792), or `w` when Omnigent started it (D-090); nothing for a notice Omnigent typed into a Claude Code primary |
 | `session-start` | session start | appends `s <agent> <epoch>`; remembers the repo's top level in `~/.laika/activity/repos`; starts a detached `laika activity sync` if one is due |
 | `session-end` | session end | starts a detached `laika activity sync` if one is due, and returns at once |
-| `turn-end` | Claude Code's `Stop`, every turn's end (LAI-776) | counts nothing; while collection is on, starts a detached `laika activity sync` if one is due — so a long session's tokens arrive within one sync interval. Not due, under zsh it forks nothing |
+| `turn-end` | Claude Code's `Stop`, every turn's end (LAI-776) | counts nothing — but an Omnigent orchestrator's turn end, `r omnigent <epoch> <session>` (LAI-792); while collection is on, starts a detached `laika activity sync` if one is due — so a long session's tokens arrive within one sync interval. Not due, under zsh it forks nothing |
 
 What it never does:
 
-- **Read the prompt.** Stdin is drained to `/dev/null` without landing in a
-  variable, and `$USER_PROMPT` (Kiro) is unset first. A test sends a prompt
-  carrying a unique marker and asserts it is in no file under `HOME`.
+- **Keep, store or send any part of the prompt.** Stdin is drained to
+  `/dev/null`, and `$USER_PROMPT` (Kiro) is unset first. **On an Omnigent
+  turn only** (D-090) — Claude Code's prompt on an Omnigent orchestrator's
+  turn or in an Omnigent primary — it reads the first 4 KB into a variable to
+  check one thing, whether the prompt begins with Omnigent's `[System: `
+  marker, then clears it and drains the rest. Every other prompt never lands
+  in a variable. A test sends a prompt carrying a unique marker, on the
+  Omnigent paths too, and asserts it is in no file under `HOME`.
 - **Print.** Claude Code feeds `UserPromptSubmit` output to the model, and
   exit 2 blocks the prompt in four agents — on `Stop` it keeps Claude from
   stopping: stdout and stderr go to `/dev/null` and every path exits 0.
@@ -175,10 +180,27 @@ What it never does:
   sets `OMNIGENT=1` on its primary session too. When
   `OMNIGENT_TERMINAL_LAUNCH_SESSION_ID` equals `OMNIGENT_RUNNER_PRIMARY_SESSION_ID`
   (both set), the session is the runner's primary — the conversation the
-  person types in — and counts as theirs in every respect; its id is kept,
-  0600 and never sent, in `~/.laika/activity/primary-sessions`. A dispatched
+  person types in — and counts as theirs; its id is kept, 0600 and never sent,
+  in `~/.laika/activity/primary-sessions`. A notice Omnigent types into a
+  Claude Code primary itself (a sub-agent finishing, a timer, an idle
+  terminal) begins `[System: ` and writes no `p` (D-090). A dispatched
   sub-agent's two ids differ, and it is skipped as above. `CI` and
   `LAIKA_ACTIVITY_SKIP` still skip it.
+- **Skip an Omnigent-native orchestrator's turns** (LAI-792, D-090). polly
+  thinks with Claude Code under the Claude Agent SDK, which loads
+  `~/.claude/settings.json`, so this hook runs at each of its turns — in a
+  runner the Omnigent host launched for a `claude-sdk` session
+  (`OMNIGENT_RUNNER_LAUNCH_HARNESS=claude-sdk`), with
+  `CLAUDE_CODE_ENTRYPOINT=sdk-py` (not `claude -p`'s `sdk-cli`), in no
+  terminal, for `claude-code`. A turn the person started appends
+  `t omnigent <epoch> <session>` to `events.log`; one Omnigent started itself
+  — its prompt begins `[System: ` — appends `w`; every turn's end appends `r`,
+  and `laika activity sync` drops the `r` that closes a `w`. The session is
+  `OMNIGENT_RUNNER_PRIMARY_SESSION_ID`, a plain id or nothing is counted; its
+  start keeps that id in `primary-sessions`. Never a `p` line. No
+  session-start payload is read and no session start or repo is recorded.
+  Under zsh a turn's start, marker check included, forks nothing, and so does
+  its end unless a sync is due.
 
 `~/.laika/activity` is 0700 and its files 0600. Repo paths, the event log and
 extra emails stay there; only per-day counts and one-way commit keys are sent.

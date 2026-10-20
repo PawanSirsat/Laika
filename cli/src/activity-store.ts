@@ -24,7 +24,7 @@ import { writePrivately } from './connect.ts';
  * | file | what | written by |
  * | --- | --- | --- |
  * | `state.json` | the cached switch, the sync schedule, the last result | sync, `on` |
- * | `events.log` | `p <agent> <epoch>` / `s <agent> <epoch>` lines | the hooks |
+ * | `events.log` | `p <agent> <epoch>` / `s <agent> <epoch>` lines; `t`/`w`/`r omnigent <epoch> <session>` — an Omnigent orchestrator's turn started by the person, started by Omnigent (D-090), ending (LAI-792) | the hooks |
  * | `repos` | `<epoch>\t<toplevel>` — repos an agent session started in | session-start hook |
  * | `emails` | extra author emails, one per line | `laika activity emails` |
  * | `collector-id` | a random UUID v4, nothing derived from the machine | sync, `on` |
@@ -35,7 +35,7 @@ import { writePrivately } from './connect.ts';
  * | `usage-days/<day>.json` | token usage: Claude Code's replies of that local day — counts, model, time, directory and session, by message id (LAI-776) | sync |
  * | `sessions` | `<epoch> <session id> <branch>` — a counted session's start (LAI-770) | session-start hook |
  * | `skip-sessions` | `<epoch> <session id>` — sessions nobody was typing in (LAI-775) | the hooks |
- * | `primary-sessions` | `<epoch> <session id>` — an orchestrator's primary, counted as the person's (D-088 item 9) | session-start hook |
+ * | `primary-sessions` | `<epoch> <session id>` — an orchestrator's primary, counted as the person's (D-088 item 9; an Omnigent orchestrator's own session, LAI-792) | session-start hook |
  * | `time-drafts.json` | time drafts: each day's blocks as the board last took them, as a signature (LAI-787) | sync |
  *
  * `sent-keys` holds hashes only: the contract's key, and a hash of (author
