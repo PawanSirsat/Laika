@@ -184,6 +184,19 @@ void describe('the rule (pure)', () => {
     assert.equal(localDay(Number(days.get('2026-10-20')?.[0]?.start) / 1000, tz), '2026-10-20');
   });
 
+  void test('a 25-hour day sends at most 1440 minutes, so the board takes the rest of the report', () => {
+    // New York leaves daylight saving on Sunday 1 November 2026: that local
+    // day runs from 04:00 UTC to 05:00 UTC the next day, 1500 minutes. One
+    // session active all of it drafted 1500, and the board refuses a day over
+    // 1440 — with every other day in the same report (LAI-787 review).
+    const tz = 'America/New_York';
+    const from = Date.UTC(2026, 10, 1, 4, 0) / 1000;
+    const replies = Array.from({ length: 150 }, (_, i) => reply(from + i * 10 * MIN, 's'));
+    const blocks = draftBlocks({ ...none, replies }, tz, ['2026-11-01']).get('2026-11-01') ?? [];
+    assert.equal(total(blocks), 1440);
+    for (const b of blocks) assert.ok(b.minutes <= Math.ceil((b.end - b.start) / 60_000));
+  });
+
   void test('every day asked for is in the answer, an empty one as []', () => {
     const days = draftBlocks(none, 'UTC', ['2026-10-19', '2026-10-20']);
     assert.deepEqual(

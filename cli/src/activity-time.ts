@@ -375,9 +375,39 @@ export function draftBlocks(
     perDay.set(stretch.day, [...(perDay.get(stretch.day) ?? []), ...kept]);
   });
   for (const [day, blocks] of perDay) {
-    out.set(day, capped(blocks).map(toBlock));
+    out.set(day, withinADay(capped(blocks)).map(toBlock));
   }
   return out;
+}
+
+/** The most minutes the board takes for one day (§6.4's `invalid_blocks`). */
+export const DAY_MINUTES = 1440;
+
+/**
+ * A day's blocks held to {@link DAY_MINUTES}. A local day can be longer: the
+ * day a zone leaves daylight saving runs 25 hours, and a session active all
+ * of it drafts up to 1500 minutes — which the board refuses, and with it every
+ * other day in the report (LAI-787 review). Each block keeps its share, by
+ * largest remainder; one left with no whole minute is not sent.
+ */
+function withinADay(blocks: Building[]): Building[] {
+  const sum = blocks.reduce((n, b) => n + b.minutes, 0);
+  if (sum <= DAY_MINUTES) return blocks;
+  const shares = blocks.map((b) => (b.minutes * DAY_MINUTES) / sum);
+  blocks.forEach((b, i) => {
+    b.minutes = Math.floor((shares[i] ?? 0) + 1e-9);
+  });
+  let left = DAY_MINUTES - blocks.reduce((n, b) => n + b.minutes, 0);
+  blocks
+    .map((b, i) => ({ b, frac: (shares[i] ?? 0) - b.minutes }))
+    .sort((x, y) => y.frac - x.frac || x.b.first - y.b.first)
+    .forEach(({ b }) => {
+      if (left > 0) {
+        b.minutes += 1;
+        left -= 1;
+      }
+    });
+  return blocks.filter((b) => b.minutes > 0);
 }
 
 /**
