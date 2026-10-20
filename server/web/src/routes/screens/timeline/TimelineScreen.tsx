@@ -19,7 +19,7 @@ import { statusNameOf } from '../../../api/status-derive.ts';
 import { StatusesById, useProjectStatuses, useStatusesById } from '../../../api/use-statuses.ts';
 import { formatRange, progressFor } from '../sprints/sprint-derive.ts';
 import type { Sprint } from '../../../api/sprints.ts';
-import { listMembers, type Member, type Task } from '../../../api/tasks.ts';
+import { listMembers, type Member, type TaskSummary } from '../../../api/tasks.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
@@ -811,7 +811,7 @@ function TaskRow({
   blocked,
   onOpen,
 }: {
-  readonly task: Task;
+  readonly task: TaskSummary;
   readonly who: Member | undefined;
   /** `undefined` for an unassigned task: a neutral mark, not a colour of its id. */
   readonly ink: { readonly background: string; readonly foreground: string } | undefined;

@@ -15,7 +15,7 @@ import {
   type MeetingReviewDetail,
   type ProposalView,
 } from '../../../api/meeting-reviews.ts';
-import type { Task } from '../../../api/tasks.ts';
+import type { TaskSummary } from '../../../api/tasks.ts';
 import { useProjectTasks } from '../../../api/use-project-tasks.ts';
 import {
   changedFields,
@@ -81,7 +81,8 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
    */
   const set = useProjectTasks(slug);
   const tasksByKey = useMemo(
-    (): ReadonlyMap<string, Task> => new Map((set?.tasks ?? []).map((task) => [task.key, task])),
+    (): ReadonlyMap<string, TaskSummary> =>
+      new Map((set?.tasks ?? []).map((task) => [task.key, task])),
     [set?.tasks],
   );
 
@@ -327,7 +328,7 @@ function ProposalRow({
 }: {
   readonly proposal: ProposalView;
   /** The task this proposal edits, when the board holds it. */
-  readonly before: Task | undefined;
+  readonly before: TaskSummary | undefined;
   readonly accepted: boolean;
   readonly actionable: boolean;
   readonly landed: ReturnType<typeof landedState> | undefined;

@@ -2,7 +2,7 @@ import { tagColor } from './tag-colors.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { blockedState, blockers } from '../../../api/board-derive.ts';
-import type { Member, Task } from '../../../api/tasks.ts';
+import type { Member, TaskSummary } from '../../../api/tasks.ts';
 import type { CardFields } from './card-fields.ts';
 import { dateLabel, dateLabelShort, dueState } from '../../../api/date-only.ts';
 import { childrenOf, parentOf, subtaskProgress } from '../../../api/subtask-derive.ts';
@@ -11,8 +11,8 @@ import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { SizeChip } from '../../../components/SizeChip.tsx';
 
 export interface TaskCardProps {
-  readonly task: Task;
-  readonly byId: ReadonlyMap<string, Task>;
+  readonly task: TaskSummary;
+  readonly byId: ReadonlyMap<string, TaskSummary>;
   readonly members: ReadonlyMap<string, Member>;
   readonly theme: Theme;
   /**

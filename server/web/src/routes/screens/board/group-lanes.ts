@@ -1,6 +1,6 @@
 import { groupByColumn, type Lane, type PendingMove } from '../../../api/board-derive.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
-import type { Member, Task } from '../../../api/tasks.ts';
+import type { Member, TaskSummary } from '../../../api/tasks.ts';
 
 /**
  * Grouping the board into swimlanes (LAI-290).
@@ -58,11 +58,11 @@ export interface GroupOptions {
 interface Bucket {
   name: string;
   avatarId?: string | undefined;
-  tasks: Task[];
+  tasks: TaskSummary[];
 }
 
 function bucketFor(
-  task: Task,
+  task: TaskSummary,
   by: GroupBy,
   options: GroupOptions,
 ): { key: string; bucket: Bucket } {
@@ -98,7 +98,7 @@ function bucketFor(
  * not draw a row for everybody in the org who happens to have no work.
  */
 export function groupSwimlanes(
-  tasks: readonly Task[],
+  tasks: readonly TaskSummary[],
   by: GroupBy,
   columns: readonly ProjectStatus[],
   options: GroupOptions,

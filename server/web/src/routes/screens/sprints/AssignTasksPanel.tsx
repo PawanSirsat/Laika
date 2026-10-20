@@ -1,11 +1,11 @@
 import { Spinner } from '../../../components/Spinner.tsx';
 import { useState } from 'react';
 import type { Sprint } from '../../../api/sprints.ts';
-import type { Task } from '../../../api/tasks.ts';
+import type { TaskSummary } from '../../../api/tasks.ts';
 
 export interface AssignTasksPanelProps {
   readonly sprint: Sprint;
-  readonly available: readonly Task[];
+  readonly available: readonly TaskSummary[];
   readonly busy: boolean;
   readonly onAssign: (taskIds: readonly string[]) => Promise<boolean>;
   readonly onClose: () => void;

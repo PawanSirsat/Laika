@@ -1,5 +1,5 @@
 import { CATEGORY_COPY, type ProjectStatus } from './statuses.ts';
-import type { Task } from './tasks.ts';
+import type { TaskSummary } from './tasks.ts';
 
 /**
  * Board facts about a project's statuses (LAI-739). Pure, so every rule here
@@ -40,7 +40,10 @@ export function hiddenColumns(statuses: readonly ProjectStatus[]): ProjectStatus
  * draws the card only if the answer is a visible column, which is how a card
  * in a hidden column is drawn nowhere.
  */
-export function laneStatusId(task: Task, statuses: readonly ProjectStatus[]): string | undefined {
+export function laneStatusId(
+  task: TaskSummary,
+  statuses: readonly ProjectStatus[],
+): string | undefined {
   if (statuses.some((s) => s.id === task.status_id)) return task.status_id;
   const sameKind = byPosition(statuses).filter((s) => s.category === task.status);
   return (sameKind.find((s) => !s.hidden) ?? sameKind[0])?.id;
@@ -116,7 +119,7 @@ export function nextColumnName(statuses: readonly ProjectStatus[]): string {
 }
 
 /** A card as it will be once moved into `status` — id, name and kind together. */
-export function withStatus(task: Task, status: ProjectStatus): Task {
+export function withStatus(task: TaskSummary, status: ProjectStatus): TaskSummary {
   return { ...task, status: status.category, status_id: status.id, status_name: status.name };
 }
 
@@ -126,7 +129,7 @@ export function withStatus(task: Task, status: ProjectStatus): Task {
  * name the server sent with the task otherwise.
  */
 export function statusNameOf(
-  task: Pick<Task, 'status_id' | 'status_name'>,
+  task: Pick<TaskSummary, 'status_id' | 'status_name'>,
   byId: ReadonlyMap<string, ProjectStatus>,
 ): string {
   return byId.get(task.status_id)?.name ?? task.status_name;

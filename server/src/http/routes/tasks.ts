@@ -15,9 +15,12 @@ import {
   removeTaskDependency,
   reorderTask,
   SIZE_LEVELS,
+  summaryOf,
+  TASK_LIST_FIELDS,
   TASK_PRIORITIES,
   TASK_STATUSES,
   updateTask,
+  type TaskSummaryView,
   type TaskView,
 } from '../../services/tasks.ts';
 import { EVIDENCE_LIMITS, listTaskRounds } from '../../services/rounds.ts';
@@ -210,6 +213,8 @@ export function projectTaskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
   app.get('/:slug/tasks', (c) => {
     const actor = requireActor(c);
     const { limit, cursor } = parsePageQuery(c.req.query());
+    // `slim` leaves out the two texts (LAI-795); absent, the answer is unchanged.
+    const fields = parseEnum(c.req.query('fields'), TASK_LIST_FIELDS, 'fields');
 
     const rows = listTasks(db, actor, c.req.param('slug'), {
       limit,
@@ -239,6 +244,9 @@ export function projectTaskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
       id: row.id,
     }));
 
+    if (fields === 'slim') {
+      return c.json({ ...page, data: page.data.map(summaryOf) } satisfies Page<TaskSummaryView>);
+    }
     return c.json(page);
   });
 

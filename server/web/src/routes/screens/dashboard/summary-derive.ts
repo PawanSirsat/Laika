@@ -1,5 +1,5 @@
 import { DAY_MS, isOverdue, startOfUtcDay } from '../../../api/date-only.ts';
-import { PRIORITIES, type Task, type TaskPriority } from '../../../api/tasks.ts';
+import { PRIORITIES, type TaskSummary, type TaskPriority } from '../../../api/tasks.ts';
 import { blockedTasks } from './dashboard-derive.ts';
 
 /**
@@ -12,7 +12,7 @@ import { blockedTasks } from './dashboard-derive.ts';
  */
 
 /** Work that still means something to do: not finished, not dropped. */
-export function isOpen(task: Pick<Task, 'status'>): boolean {
+export function isOpen(task: Pick<TaskSummary, 'status'>): boolean {
   return task.status !== 'done' && task.status !== 'cancelled';
 }
 
@@ -39,7 +39,7 @@ export interface WindowCounts {
  * back to look, and nothing due in the past is "soon".
  */
 export function windowCounts(
-  tasks: readonly Task[],
+  tasks: readonly TaskSummary[],
   since: number | undefined,
   now: number,
 ): WindowCounts {
@@ -138,7 +138,7 @@ function emptyStatus(): Record<OpenStatus, number> {
  * is the work nobody holds, and it must not hide inside "Others".
  */
 export function workloadByPerson(
-  tasks: readonly Task[],
+  tasks: readonly TaskSummary[],
   nameOf: (id: string) => string = (id) => id,
   max: number = MAX_PEOPLE,
   options: WorkloadOptions = {},
@@ -215,7 +215,7 @@ export interface PriorityCount {
 }
 
 /** Open work per priority, in the order the board ranks them. */
-export function priorityBreakdown(tasks: readonly Task[]): PriorityCount[] {
+export function priorityBreakdown(tasks: readonly TaskSummary[]): PriorityCount[] {
   return PRIORITIES.map((priority) => ({
     priority,
     count: tasks.filter((t) => isOpen(t) && t.priority === priority).length,
@@ -232,7 +232,7 @@ export const STALE_DAYS = 5;
  * could never say more than 5. The count is the list's length; how many rows
  * to draw is the screen's business.
  */
-export function staleTasks(tasks: readonly Task[], now: number): Task[] {
+export function staleTasks(tasks: readonly TaskSummary[], now: number): TaskSummary[] {
   return tasks
     .filter((t) => isOpen(t) && now - t.updated_at > STALE_DAYS * DAY_MS)
     .sort((a, b) => a.updated_at - b.updated_at);

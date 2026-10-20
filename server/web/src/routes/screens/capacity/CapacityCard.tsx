@@ -1,7 +1,7 @@
 import { useId } from 'react';
 import { agentClientName, asAgentClient } from '../../../api/agent-clients.ts';
 import type { CapacityEntry, PresenceEntry } from '../../../api/presence.ts';
-import type { Task } from '../../../api/tasks.ts';
+import type { TaskSummary } from '../../../api/tasks.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { PersonLink } from '../../../components/PersonLink.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
@@ -31,7 +31,7 @@ export interface CapacityCardProps {
   /** Their live presence entry, for the task a session is matched to. */
   readonly presence: PresenceEntry | undefined;
   /** Resolved tasks by id: the matched one, and theirs once *Show tasks* is open. */
-  readonly resolved: ReadonlyMap<string, Task>;
+  readonly resolved: ReadonlyMap<string, TaskSummary>;
   /** Project slug by id, to open a task in its own space (LAI-755). */
   readonly slugs: ReadonlyMap<string, string> | null | undefined;
   readonly expanded: boolean;
@@ -68,7 +68,7 @@ export function CapacityCard({
   const age = oldestAge(person.oldest_in_progress_ms);
   const agents = person.agents.filter((a) => asAgentClient(a.client) !== null);
 
-  const open = (task: Task): void => {
+  const open = (task: TaskSummary): void => {
     onOpenTask({ id: task.id, key: task.key, projectSlug: slugs?.get(task.project_id) });
   };
 

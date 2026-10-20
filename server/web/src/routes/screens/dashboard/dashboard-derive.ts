@@ -1,5 +1,5 @@
 import type { ActivityEvent } from '../../../api/activity.ts';
-import type { Task, TaskStatus } from '../../../api/tasks.ts';
+import type { TaskSummary, TaskStatus } from '../../../api/tasks.ts';
 
 /**
  * The dashboard's arithmetic (SPEC §4.8, §11.4 — LAI-085).
@@ -45,7 +45,7 @@ export interface StatusBreakdown {
  * project look unfinished for ever. `total` keeps it, so the two numbers
  * together still tell you cancellations happened.
  */
-export function statusBreakdown(tasks: readonly Task[]): StatusBreakdown {
+export function statusBreakdown(tasks: readonly TaskSummary[]): StatusBreakdown {
   const counts = STATUS_ORDER.map((status) => ({
     status,
     count: tasks.filter((t) => t.status === status).length,
@@ -58,9 +58,9 @@ export function statusBreakdown(tasks: readonly Task[]): StatusBreakdown {
 }
 
 export interface BlockedTask {
-  readonly task: Task;
+  readonly task: TaskSummary;
   /** The entries in `blocked_by` that are not done yet — what actually holds it. */
-  readonly blockedBy: readonly Task[];
+  readonly blockedBy: readonly TaskSummary[];
   /** Dependency ids the task list did not contain. */
   readonly unknown: readonly string[];
 }
@@ -84,13 +84,13 @@ export interface BlockedTask {
  * a task something nobody can pick up, which is the thing worth surfacing.
  * A `done` or `cancelled` task is never listed however much blocks it.
  */
-export function blockedTasks(tasks: readonly Task[]): BlockedTask[] {
+export function blockedTasks(tasks: readonly TaskSummary[]): BlockedTask[] {
   const byId = new Map(tasks.map((t) => [t.id, t]));
 
   return tasks
     .filter((task) => task.status !== 'done' && task.status !== 'cancelled')
     .map((task) => {
-      const blockedBy: Task[] = [];
+      const blockedBy: TaskSummary[] = [];
       const unknown: string[] = [];
 
       for (const id of task.blocked_by) {

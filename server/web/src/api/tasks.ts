@@ -24,14 +24,23 @@ export interface TaskSendBack {
   readonly created_at: number;
 }
 
-export interface Task {
+/**
+ * A task as every list in the app holds it (LAI-795): `?fields=slim`, which is
+ * {@link Task} without its two texts. Board, List, Timeline, Calendar,
+ * Capacity and the store draw none of them, and they were 83% of a gzip'd
+ * 200-task page (LAI-786). The task panel reads them with `GET /tasks/:id`.
+ *
+ * **The type is the census.** A screen that reads `description_md` off the
+ * store's set does not compile, so a new reader cannot quietly draw an empty
+ * description from a list that never carried it.
+ */
+export interface TaskSummary {
   readonly id: string;
   /** The display key humans and agents both use — `LAI-42` (§4.5). */
   readonly key: string;
   readonly project_id: string;
   readonly number: number;
   readonly title: string;
-  readonly description_md: string | null;
   /**
    * The **kind** of work the task's status is (LAI-738) — one of the six
    * categories the lifecycle rules, `ready` and the MCP tools read. It colours
@@ -101,8 +110,6 @@ export interface Task {
    * schedule.
    */
   readonly stale_flagged_at: number | null;
-  /** Acceptance criteria, as written. Markdown source, not rendered. */
-  readonly acceptance_md: string | null;
   readonly blocked_by: readonly string[];
   /**
    * Ids this task **blocks** — the reverse edge of `blocked_by`.
@@ -183,6 +190,32 @@ export interface Task {
 }
 
 /**
+ * A task in full: `GET /tasks/:id` and the answer to every write (§6.4). Only
+ * the task panel holds one.
+ */
+export interface Task extends TaskSummary {
+  readonly description_md: string | null;
+  /** Acceptance criteria, as written. Markdown source, not rendered. */
+  readonly acceptance_md: string | null;
+}
+
+/** The fields `?fields=slim` leaves out of a list, and {@link toSummary} drops. */
+export const SLIM_OMITS = ['description_md', 'acceptance_md'] as const;
+
+/**
+ * A task as a list holds it. A write answers the task in full, and the store
+ * keeps it without the texts: held with them, the next slim read of the same
+ * task would differ by two fields and glow as a change nobody made (LAI-708).
+ *
+ * The same object when there is nothing to drop, so an unchanged card keeps it.
+ */
+export function toSummary(task: TaskSummary | Task): TaskSummary {
+  if (!SLIM_OMITS.some((field) => field in task)) return task;
+  const { description_md: _description, acceptance_md: _acceptance, ...summary } = task as Task;
+  return summary;
+}
+
+/**
  * The §6.3 page envelope. The array is **`data`**, not `items`.
  *
  * Worth a comment because getting it wrong is silent: a client reading `items`
@@ -230,7 +263,9 @@ export interface TaskFilter {
 }
 
 function toQuery(filter: TaskFilter): string {
-  const params = new URLSearchParams();
+  // Every list the app reads is slim (LAI-795): the store's walk and its live
+  // refresh, the Timeline's sprints, a panel's subtasks.
+  const params = new URLSearchParams({ fields: 'slim' });
   if (filter.status !== undefined) params.set('status', filter.status);
   if (filter.status_id !== undefined) params.set('status_id', filter.status_id);
   if (filter.priority !== undefined) params.set('priority', filter.priority);
@@ -243,16 +278,16 @@ function toQuery(filter: TaskFilter): string {
   if (filter.limit !== undefined) params.set('limit', String(filter.limit));
   if (filter.cursor !== undefined) params.set('cursor', filter.cursor);
 
-  const query = params.toString();
-  return query === '' ? '' : `?${query}`;
+  return `?${params.toString()}`;
 }
 
+/** A page of the project's tasks, without their texts — {@link TaskSummary}. */
 export function listTasks(
   slug: string,
   filter: TaskFilter = {},
   signal?: AbortSignal,
-): Promise<Page<Task>> {
-  return request<Page<Task>>(
+): Promise<Page<TaskSummary>> {
+  return request<Page<TaskSummary>>(
     `/projects/${encodeURIComponent(slug)}/tasks${toQuery(filter)}`,
     signal === undefined ? {} : { signal },
   );

@@ -1,6 +1,6 @@
 import { daysLeft } from '../sprints/sprint-derive.ts';
 import type { Sprint } from '../../../api/sprints.ts';
-import type { Task } from '../../../api/tasks.ts';
+import type { TaskSummary } from '../../../api/tasks.ts';
 
 /**
  * The toolbar's DONE / BLK / LEFT (LAI-727) — the figures the sprint strip
@@ -18,7 +18,7 @@ export interface StatCounts {
   readonly blocked: number;
 }
 
-export function countStats(tasks: readonly Pick<Task, 'status' | 'ready'>[]): StatCounts {
+export function countStats(tasks: readonly Pick<TaskSummary, 'status' | 'ready'>[]): StatCounts {
   let done = 0;
   let blocked = 0;
   for (const task of tasks) {

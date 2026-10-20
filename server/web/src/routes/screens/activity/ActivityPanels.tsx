@@ -7,7 +7,7 @@ import { streamEmptyNote } from '../board/stream-presentation.ts';
 import { describeActor } from '../board/actor-presentation.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import type { ActivityEvent } from '../../../api/activity.ts';
-import type { Member, Task } from '../../../api/tasks.ts';
+import type { Member, TaskSummary } from '../../../api/tasks.ts';
 import { PresencePerson } from '../../../components/PresencePerson.tsx';
 import type { PresenceView } from '../../../api/presence.ts';
 import type { StreamStatus } from '../../../api/use-events.ts';
@@ -21,7 +21,7 @@ export interface ActivityPanelsProps {
   /** `undefined` while the first read is in flight (LAI-440). */
   readonly presence: PresenceView | undefined;
   /** Decided by the screen, so its header count and this panel cannot disagree. */
-  readonly stale: readonly Task[];
+  readonly stale: readonly TaskSummary[];
   readonly staleDays: number;
 }
 
@@ -38,7 +38,7 @@ export { STALE_DAYS };
  * Exported so the screen's header count and this panel's list come from **one**
  * computation. Two callers of one rule cannot drift; two copies of it can.
  */
-export function staleTasks(tasks: readonly Task[], now: number): readonly Task[] {
+export function staleTasks(tasks: readonly TaskSummary[], now: number): readonly TaskSummary[] {
   return tasks
     .filter((t) => t.status !== 'done' && ageDays(t.updated_at, now) >= STALE_DAYS)
     .sort((a, b) => a.updated_at - b.updated_at)

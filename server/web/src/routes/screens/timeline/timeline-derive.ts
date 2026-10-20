@@ -1,5 +1,5 @@
 import type { Sprint, SprintTaskCounts } from '../../../api/sprints.ts';
-import type { Task } from '../../../api/tasks.ts';
+import type { TaskSummary } from '../../../api/tasks.ts';
 import { blockedState, byIdIndex } from '../../../api/board-derive.ts';
 import { daysLeft } from '../sprints/sprint-derive.ts';
 
@@ -290,7 +290,7 @@ export function countsProgress(counts: SprintTaskCounts): {
  * the tray is not loaded, so its task is `unknown`, not unblocked: guessing
  * "not blocked" is the more damaging error (LAI-721 review).
  */
-export function blockedTally(tasks: readonly Task[]): {
+export function blockedTally(tasks: readonly TaskSummary[]): {
   readonly blocked: number;
   readonly unknown: number;
 } {

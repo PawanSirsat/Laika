@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { updatedAge } from '../../../api/board-derive.ts';
-import type { Task } from '../../../api/tasks.ts';
+import type { TaskSummary } from '../../../api/tasks.ts';
 import type { BlockedTask } from './dashboard-derive.ts';
 import { DashLink, boardHref } from './DashLink.tsx';
 import { STALE_DAYS } from './summary-derive.ts';
@@ -20,7 +20,7 @@ export function NeedsAttention({
   now,
 }: {
   readonly blocked: readonly BlockedTask[];
-  readonly stale: readonly Task[];
+  readonly stale: readonly TaskSummary[];
   readonly slug: string;
   readonly now: number;
 }) {

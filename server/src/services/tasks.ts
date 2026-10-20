@@ -84,15 +84,18 @@ export {
   TASK_STATUSES,
 } from '../db/enums.ts';
 
-export interface TaskView {
+/**
+ * A task as a slim list carries it — `?fields=slim` (§6.4, LAI-795): every field
+ * of {@link TaskView} but its two texts. The texts were 83% of a gzip'd
+ * 200-task page (LAI-786), and nothing that draws a list renders them; the task
+ * panel reads them from `GET /tasks/:id`.
+ */
+export interface TaskSummaryView {
   id: string;
   key: string;
   project_id: string;
   number: number;
   title: string;
-  description_md: string | null;
-  /** What "done" means here — prose, nullable (§4.5, LAI-092). */
-  acceptance_md: string | null;
   /**
    * The **category** of the task's status (LAI-738, D-077) — one of the six
    * §5 values, what the lifecycle, readiness and every filter reason about.
@@ -217,6 +220,26 @@ export interface TaskView {
   size: SizeView | null;
   created_at: number;
   updated_at: number;
+}
+
+/** A task in full: every read and write answers this, and a list without `fields`. */
+export interface TaskView extends TaskSummaryView {
+  description_md: string | null;
+  /** What "done" means here — prose, nullable (§4.5, LAI-092). */
+  acceptance_md: string | null;
+}
+
+/** The values `?fields=` takes on a task list (§6.4, LAI-795). */
+export const TASK_LIST_FIELDS = ['slim'] as const;
+export type TaskListFields = (typeof TASK_LIST_FIELDS)[number];
+
+/**
+ * A view without its two texts, the other fields in the same order — so a slim
+ * page is the full page with exactly those removed (LAI-795).
+ */
+export function summaryOf(view: TaskView): TaskSummaryView {
+  const { description_md: _description, acceptance_md: _acceptance, ...summary } = view;
+  return summary;
 }
 
 type TaskRow = typeof tasks.$inferSelect;
