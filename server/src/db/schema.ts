@@ -1676,13 +1676,14 @@ export const taskClaimEstimates = sqliteTable(
  * A **snapshot per (person, collector, day)**: a report deletes that day's
  * rows for the machine and writes the new set, so a retry never counts twice
  * and a model gone from the day is gone from the table. Rows are unique per
- * (person, collector, day, agent, model, task) because the service folds a
- * report before writing; there is no key over a nullable `task_id` that
- * SQLite could enforce, so there is no primary key but the rowid.
+ * (person, collector, day, agent, model, task, automated) because the service
+ * folds a report before writing; there is no key over a nullable `task_id`
+ * that SQLite could enforce, so there is no primary key but the rowid.
  *
  * **Every read is one range of one index** (the Usage page's org total, a
  * project's, a person's, by agent and by model): the day and project indexes
- * carry every column those reads sum, so none of them touches the table.
+ * carry every column those reads sum or filter on — `automated` too, which
+ * `by_developer` leaves out (D-091) — so none of them touches the table.
  * Kept 400 days (§11.6).
  */
 export const tokenUsageDays = sqliteTable(
@@ -1709,6 +1710,12 @@ export const tokenUsageDays = sqliteTable(
     output: integer('output').notNull().default(0),
     cacheWrite: integer('cache_write').notNull().default(0),
     cacheRead: integer('cache_read').notNull().default(0),
+    /**
+     * Spent by an automated session on that machine — an orchestrator's
+     * sub-agent, CI, `LAIKA_ACTIVITY_SKIP` (D-091, LAI-815): counted for the
+     * organisation, the space and the task, never in a per-person figure.
+     */
+    automated: integer('automated', { mode: 'boolean' }).notNull().default(false),
     updatedAt,
   },
   (t) => [
@@ -1729,6 +1736,7 @@ export const tokenUsageDays = sqliteTable(
       t.output,
       t.cacheWrite,
       t.cacheRead,
+      t.automated,
     ),
     // A project's reads, the same way; only rows tied to a task have one.
     index('token_usage_days_project_day_idx')
@@ -1743,6 +1751,7 @@ export const tokenUsageDays = sqliteTable(
         t.output,
         t.cacheWrite,
         t.cacheRead,
+        t.automated,
       )
       .where(sql`project_id IS NOT NULL`),
     // The cascade from a deleted task, and the task panel's read (LAI-770).

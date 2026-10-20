@@ -99,6 +99,16 @@ import {
  * The headline is input + output + cache writes; cache reads — 98% of raw
  * tokens on the measured machine — are always beside it, never in it
  * (item 8). Every figure is a floor (item 9): the client labels it *at least*.
+ *
+ * ## Automated rows: the organisation's, the space's and the task's, nobody's own
+ *
+ * A row a collector marks `automated` is what an automated session on that
+ * machine spent — an orchestrator's sub-agent, CI, `LAIKA_ACTIVITY_SKIP`
+ * (D-091, amending D-086). It counts wherever the organisation, a space or a
+ * task is counted — totals, trend, agents, models, top tasks, cost, cache,
+ * rework, accepted cost, budgets and runaway alerts — and in **no per-person
+ * figure**: `by_developer`, the profile card, the task panel's per-person part
+ * and attributed share, and the plan-limit rate leave it out (`own`).
  */
 
 let tokenUsageLog: Logger = createLogger();
@@ -159,6 +169,11 @@ export interface TokenUsageRowInput {
   output: number;
   cache_write: number;
   cache_read: number;
+  /**
+   * Spent by an automated session (D-091): `true` or absent. A collector
+   * from before LAI-815 never sends it, so every row it sends is the person's.
+   */
+  automated?: true | undefined;
 }
 
 export interface TokenUsageReport {
@@ -167,9 +182,10 @@ export interface TokenUsageReport {
   tz: string;
   usage: true;
   /**
-   * One-way keys of the Claude Code sessions the collector left out of the
-   * rows — automated (D-086) or outside the developer's scope (D-079 item 4)
-   * — so their telemetry is left out too (LAI-773).
+   * One-way keys of the Claude Code sessions whose telemetry is left out
+   * (LAI-773): automated ones (D-086), whose tokens arrive as rows marked
+   * `automated` (D-091), and those outside the developer's scope (D-079
+   * item 4), whose tokens are not sent.
    */
   excluded?: string[] | undefined;
   /**
@@ -555,15 +571,17 @@ export function recordTokenUsage(
     before = Number.POSITIVE_INFINITY;
   }
 
-  // Folded per (day, agent, model, task): an alias and its slug, or two keys
-  // that both turned out unattributed, are one row.
+  // Folded per (day, agent, model, task, automated): an alias and its slug,
+  // or two keys that both turned out unattributed, are one row; a person's
+  // tokens and an automated session's never are (D-091).
   const rows: (typeof tokenUsageDays.$inferInsert)[] = [];
   for (const day of report.days) {
     const folded = new Map<string, typeof tokenUsageDays.$inferInsert>();
     for (const row of day.rows) {
       const agent = agentKindOf(row.agent);
       const task = row.task === null ? undefined : resolved.get(row.task);
-      const id = `${agent}\u0000${row.model}\u0000${task?.taskId ?? ''}`;
+      const automated = row.automated === true;
+      const id = `${agent}\u0000${row.model}\u0000${task?.taskId ?? ''}\u0000${automated ? 1 : 0}`;
       const existing = folded.get(id);
       if (existing === undefined) {
         folded.set(id, {
@@ -578,6 +596,7 @@ export function recordTokenUsage(
           output: row.output,
           cacheWrite: row.cache_write,
           cacheRead: row.cache_read,
+          automated,
           updatedAt: now,
         });
       } else {
@@ -696,14 +715,18 @@ function telemetryMatch(
   }
 }
 
-/** A person's headline tokens over some days, every collector and telemetry. */
+/**
+ * A person's own headline tokens over some days, every collector and
+ * telemetry: the plan-limit rate is theirs alone (D-087), so an automated
+ * session's are not in it (D-091).
+ */
 function headlineOver(db: Db, userId: string, days: readonly string[]): number {
   if (days.length === 0) return 0;
   return (
     db
       .select({ tokens: sums.tokens })
       .from(t)
-      .where(and(eq(t.userId, userId), inArray(t.day, [...days])))
+      .where(and(eq(t.userId, userId), inArray(t.day, [...days]), own))
       .get()?.tokens ?? 0
   );
 }
@@ -737,6 +760,8 @@ function afterUsage(
 // ------------------------------------------------------------------- reads
 
 const t = tokenUsageDays;
+/** A person's own rows: what an automated session spent is never in a per-person figure (D-091). */
+const own = eq(t.automated, false);
 const headline = sql`${t.input} + ${t.output} + ${t.cacheWrite}`;
 const total = (expr: SQLWrapper) => sql<number>`coalesce(sum(${expr}), 0)`.mapWith(Number);
 const sums = {
@@ -1045,7 +1070,7 @@ export function getUsage(
   let byDeveloper: UsageDeveloper[] | null = null;
   if (seesPeople) {
     // By person and model, so each person's figure can be priced (LAI-773);
-    // folded to one row a person here.
+    // folded to one row a person here. Their own tokens only (D-091).
     const people = new Map<
       string,
       {
@@ -1065,7 +1090,7 @@ export function getUsage(
       })
       .from(t)
       .innerJoin(users, eq(users.id, t.userId))
-      .where(where)
+      .where(and(where, own))
       .groupBy(t.userId, t.model)
       .all()) {
       const held = people.get(p.userId) ?? {
@@ -1631,7 +1656,8 @@ export function getPersonUsage(
   const thisWeek = mondayOf(today);
   const from = addDays(thisWeek, -7 * (PERSON_WEEKS - 1));
   const to = addDays(today, 1);
-  const where = and(eq(t.userId, userId), gte(t.day, from), lte(t.day, to));
+  // Their own tokens: an automated session's are not their work (D-091).
+  const where = and(eq(t.userId, userId), gte(t.day, from), lte(t.day, to), own);
 
   const weeks: UsageWeek[] = Array.from({ length: PERSON_WEEKS }, (_, i) => ({
     start: addDays(from, 7 * i),
@@ -1736,6 +1762,7 @@ export function getTaskUsage(
       output: t.output,
       cacheWrite: t.cacheWrite,
       cacheRead: t.cacheRead,
+      automated: t.automated,
     })
     .from(t)
     .where(eq(t.taskId, task.id))
@@ -1757,9 +1784,10 @@ export function getTaskUsage(
   totals.cost = priced(book, models).cost;
   const sortedDays = [...days].sort();
 
-  // ----- per person and agent, for the readers allowed it
-  const visible = (userId: string): boolean =>
-    people === 'everyone' || (people === 'own' && userId === actor.userId);
+  // ----- per person and agent, for the readers allowed it: each person's own
+  // tokens, never an automated session's (D-091), which the totals hold.
+  const visible = (r: { userId: string; automated: boolean }): boolean =>
+    !r.automated && (people === 'everyone' || (people === 'own' && r.userId === actor.userId));
   let byPerson: TaskUsagePerson[] | null = null;
   if (people !== 'none') {
     const mine = new Map<
@@ -1767,7 +1795,7 @@ export function getTaskUsage(
       { slice: UsageSlice; agents: Map<string, UsageSlice>; models: Map<string, ModelCounts> }
     >();
     for (const r of rows) {
-      if (!visible(r.userId)) continue;
+      if (!visible(r)) continue;
       const tokens = r.input + r.output + r.cacheWrite;
       const entry = mine.get(r.userId) ?? {
         slice: { tokens: 0, cache_read: 0 },
@@ -1812,7 +1840,7 @@ export function getTaskUsage(
   if (people !== 'none') {
     const daysOf = new Map<string, Set<string>>();
     for (const r of rows) {
-      if (!visible(r.userId)) continue;
+      if (!visible(r)) continue;
       const set = daysOf.get(r.userId) ?? new Set<string>();
       set.add(r.day);
       daysOf.set(r.userId, set);
@@ -1824,7 +1852,7 @@ export function getTaskUsage(
         const r = db
           .select({ tokens: sums.tokens, attributed: sums.attributed })
           .from(t)
-          .where(and(eq(t.userId, userId), inArray(t.day, [...set])))
+          .where(and(eq(t.userId, userId), inArray(t.day, [...set]), own))
           .get();
         attributed.tokens += r?.attributed ?? 0;
         attributed.of += r?.tokens ?? 0;

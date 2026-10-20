@@ -295,6 +295,13 @@
       "when": 1792471398703,
       "tag": "0042_time_solidtime",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "6",
+      "when": 1792499515134,
+      "tag": "0043_token_usage_automated",
+      "breakpoints": true
     }
   ]
 }

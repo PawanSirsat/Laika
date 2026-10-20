@@ -862,6 +862,29 @@ describe('every Usage query is one indexed query', () => {
     ],
   ];
 
+  // D-091: `by_developer` leaves automated rows out, and still never touches
+  // the table — the flag is the day and project indexes' last column.
+  for (const [name, statement, params] of [
+    [
+      'org by developer and model, a person’s own rows (D-091)',
+      `SELECT user_id, model, ${SUMS}, sum(input), sum(output), sum(cache_write) FROM token_usage_days WHERE ${RANGE} AND automated = 0 GROUP BY user_id, model`,
+      ['a', 'b'],
+    ],
+    [
+      'project by developer and model, a person’s own rows (D-091)',
+      `SELECT user_id, model, ${SUMS} FROM token_usage_days WHERE project_id = ? AND ${RANGE} AND automated = 0 GROUP BY user_id, model`,
+      ['p', 'a', 'b'],
+    ],
+  ] as const) {
+    it(name, () => {
+      expect(
+        plan(statement, [...params]).filter((s) =>
+          /^SEARCH token_usage_days USING COVERING INDEX /.test(s),
+        ),
+      ).toHaveLength(1);
+    });
+  }
+
   for (const [name, statement, params] of cases) {
     it(name, () => {
       const steps = plan(statement, params);

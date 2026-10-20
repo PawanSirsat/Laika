@@ -230,6 +230,65 @@ describe('backfilled days, over the wire (review 1, the blocker)', () => {
   });
 });
 
+describe('rows an automated session spent, over the wire (D-091, LAI-815)', () => {
+  it('a collector from before LAI-815 sends no flag, and every row is the person’s', async () => {
+    switchOn(true, true);
+    const token = await mint(bea.cookie);
+    const old = usage();
+    expect(JSON.stringify(old)).not.toContain('automated');
+    expect(await ok(put(old, token))).toEqual({ accepted_days: 1 });
+    expect(
+      h.db
+        .select()
+        .from(tokenUsageDays)
+        .all()
+        .map((r) => r.automated),
+    ).toEqual([false]);
+    const card = await ok(req(`/api/v1/users/${bea.id}/usage`, {}, bea.cookie));
+    expect((card.totals as Record<string, number>).tokens).toBe(3_718 + 2_094_668 + 5_615_538);
+  });
+
+  it('a marked row counts for the organisation and not in by_developer; the mark is `true` or absent', async () => {
+    switchOn(true, true);
+    const token = await mint(bea.cookie);
+    const plain = usage();
+    const day = plain.days[0]!;
+    const body = {
+      ...plain,
+      days: [
+        {
+          ...day,
+          rows: [
+            ...day.rows,
+            { ...day.rows[0], input: 1, output: 2, cache_write: 3, cache_read: 4, automated: true },
+          ],
+        },
+      ],
+    };
+    expect(await ok(put(body, token))).toEqual({ accepted_days: 1 });
+    expect(
+      h.db
+        .select()
+        .from(tokenUsageDays)
+        .all()
+        .map((r) => [r.output, r.automated]),
+    ).toEqual([
+      [2_094_668, false],
+      [2, true],
+    ]);
+    const own = 3_718 + 2_094_668 + 5_615_538;
+    const view = await ok(req('/api/v1/usage?days=7', {}, ownerCookie));
+    expect((view.totals as Record<string, number>).tokens).toBe(own + 1 + 2 + 3);
+    expect((view.by_developer as { name: string; tokens: number }[]).map((p) => p.tokens)).toEqual([
+      own,
+    ]);
+    for (const odd of [false, 'yes', 1, null]) {
+      const res = await put(usage({}, { automated: odd }), token);
+      expect(res.status, JSON.stringify(odd)).toBe(422);
+    }
+  });
+});
+
 describe('GET /usage', () => {
   it('answers an owner on a session with the per-person split', async () => {
     switchOn(true, true);

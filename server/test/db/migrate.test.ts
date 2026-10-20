@@ -1270,3 +1270,109 @@ describe('0040 adds budgets, alerts, telemetry and plan limits to a populated da
     },
   );
 });
+
+/**
+ * `0043` on a populated database (LAI-815, D-091): an `automated` flag on
+ * `token_usage_days`, and its day and project indexes re-created with it.
+ * **Additive is the property**: the table is altered, not rebuilt — its root
+ * page and every row stay, each row now `automated = 0` — and every other
+ * table, the tasks its rows point at included, is untouched. A rebuild is what
+ * would cascade (the Drizzle migrator keeps foreign keys on, LAI-768), so the
+ * root page is the instrument.
+ */
+describe('0043 marks automated token rows on a populated database (LAI-815)', () => {
+  it(
+    'adds the column, keeps every row as a person’s, and rebuilds nothing',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+      copyMigrations(dir);
+      const journalPath = join(dir, 'meta', '_journal.json');
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+        entries: { idx: number; tag: string; when: number }[];
+      };
+      const at = journal.entries.findIndex((e) => /^\d{4}_token_usage_automated$/.test(e.tag));
+      expect(at, 'the automated-flag migration is in the journal').toBeGreaterThan(0);
+      const dropped = journal.entries.splice(at);
+      writeFileSync(journalPath, JSON.stringify(journal));
+
+      const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: dir });
+        const s = seed(db);
+        const now = Date.now();
+        const task = newId();
+        db.run(sql`
+          INSERT INTO tasks (id, project_id, number, title, status, status_id, priority, created_by, created_via, created_at, updated_at)
+          VALUES (${task}, ${s.projectId}, 1, 'A task', 'todo', ${statusForCategory(db, s.projectId, 'todo').id}, 'p2', ${s.userId}, 'api', ${now}, ${now})
+        `);
+        for (const [taskId, projectId] of [
+          [task, s.projectId],
+          [null, null],
+        ]) {
+          db.run(sql`
+            INSERT INTO token_usage_days (user_id, collector_id, day, agent, model, task_id, project_id, input, output, cache_write, cache_read, updated_at)
+            VALUES (${s.userId}, '6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a', '2026-10-16', 'claude-code', 'claude-opus-5-5', ${taskId}, ${projectId}, 1, 2, 3, 4, ${now})
+          `);
+        }
+        // What every boot does beside the migrations (a new task's position),
+        // done before the census, so the census sees only 0043.
+        runMigrations(db, { migrationsFolder: dir });
+
+        const census = () =>
+          Object.fromEntries(
+            db
+              .all<{ name: string; rootpage: number }>(
+                sql`SELECT name, rootpage FROM sqlite_master
+                     WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                       AND name NOT LIKE '__drizzle%' ORDER BY name`,
+              )
+              .map((t) => [
+                t.name,
+                {
+                  rootpage: t.rootpage,
+                  rows: db.all<Record<string, unknown>>(
+                    sql.raw(`SELECT * FROM "${t.name}" ORDER BY rowid`),
+                  ),
+                },
+              ]),
+          );
+        const before = census();
+        // The guard on the census: the rows it is to keep are in it.
+        expect(before.token_usage_days?.rows).toHaveLength(2);
+        expect(before.tasks?.rows).toHaveLength(1);
+        expect(before.token_usage_days?.rows[0]).not.toHaveProperty('automated');
+
+        journal.entries.push(...dropped);
+        writeFileSync(journalPath, JSON.stringify(journal));
+        runMigrations(db, { migrationsFolder: dir });
+
+        const after = census();
+        const { token_usage_days: usage, ...kept } = after;
+        const { token_usage_days: usageBefore, ...keptBefore } = before;
+        expect(kept).toEqual(keptBefore);
+        expect(usage?.rootpage).toBe(usageBefore?.rootpage);
+        expect(usage?.rows).toEqual(usageBefore?.rows.map((r) => ({ ...r, automated: 0 })));
+        expect(
+          db
+            .all<{ name: string }>(
+              sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'token_usage_days' ORDER BY name`,
+            )
+            .map((r) => r.name),
+        ).toEqual([
+          'token_usage_days_day_idx',
+          'token_usage_days_project_day_idx',
+          'token_usage_days_task_idx',
+          'token_usage_days_telemetry_idx',
+          'token_usage_days_user_day_idx',
+        ]);
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+      } finally {
+        sqlite.close();
+        rmSync(dbDir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
