@@ -552,7 +552,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           clock(),
         );
         return answer(
-          `Proposed ${String(draft.minutes)} min on ${draft.day}${draft.task === null ? '' : ` for **${draft.task.key}**`} into their drafts. They confirm it on My day; until then it is theirs alone.`,
+          `Proposed ${String(draft.minutes)} min on ${draft.day}${task === undefined ? '' : ` for **${task}**`} into their drafts. They confirm it on My day; until then it is theirs alone.`,
           { draft },
         );
       } catch (error) {

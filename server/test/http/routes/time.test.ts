@@ -240,7 +240,7 @@ describe('a person’s time, on a web session', () => {
       token,
     );
     expect(proposed.status, await proposed.clone().text()).toBe(201);
-    expect(await proposed.json()).toMatchObject({ source: 'agent', minutes: 20 });
+    expect(Object.keys((await proposed.json()) as object).sort()).toEqual(['day', 'id', 'minutes']);
 
     const day = await req(`/api/v1/me/time?tz=UTC&day=${today()}`, {}, cookie);
     expect(day.status).toBe(200);

@@ -398,6 +398,13 @@ export function recordTimeDrafts(
 
 // --------------------------------------------------------------- proposals
 
+/** What an agent is told of its proposal: no more than it sent, and where it went. */
+export interface ProposedTimeDraft {
+  id: string;
+  minutes: number;
+  day: string;
+}
+
 export interface ProposalInput {
   minutes: number;
   task?: string | undefined;
@@ -422,13 +429,18 @@ function zoneOf(db: Db, userId: string): string {
  * `POST /me/time-drafts` and §7.1's `propose_time_entry` (D-088 item 13): an
  * agent proposes time into its person's drafts — **never an entry**. Only the
  * person, signed in, confirms it. Both switches must be on.
+ *
+ * The answer is the proposal's id, minutes and day and nothing more: a token
+ * reads no draft, its own proposal included, so nothing of the person's
+ * drafts — the task as resolved, the zone, the project — goes back to it
+ * (LAI-787 review).
  */
 export function proposeTimeDraft(
   db: Db,
   actor: ResolvedActor,
   input: ProposalInput,
   now: number = Date.now(),
-): TimeDraftView {
+): ProposedTimeDraft {
   assertCan(actor, 'time_drafts.send_own');
   assertDrafting(db, actor);
   const tz = input.tz ?? zoneOf(db, actor.userId);
@@ -462,7 +474,7 @@ export function proposeTimeDraft(
       updatedAt: now,
     })
     .run();
-  return draftById(db, actor.userId, id);
+  return { id, minutes: input.minutes, day };
 }
 
 // ------------------------------------------------------------------- views

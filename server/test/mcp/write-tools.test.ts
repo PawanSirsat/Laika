@@ -1172,7 +1172,11 @@ describe('propose_time_entry — an agent proposes, the person confirms (D-088 i
       arguments: { minutes: 30, note: 'Client call' },
     });
     expect(result.isError, JSON.stringify(result.content)).toBeFalsy();
-    expect(payload(result).draft).toMatchObject({ source: 'agent', minutes: 30 });
+    // Only what it sent and where it went: a token reads no draft.
+    const draft = payload(result).draft as Record<string, unknown>;
+    expect(Object.keys(draft).sort()).toEqual(['day', 'id', 'minutes']);
+    expect(draft.minutes).toBe(30);
+    expect(String(draft.day)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     await client.close();
 
     const day = (await (await api('/api/v1/me/time')).json()) as {

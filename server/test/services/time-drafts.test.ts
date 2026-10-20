@@ -290,14 +290,21 @@ describe('an agent’s proposal', () => {
       { minutes: 25, task: 'LAI-2', note: 'Client call', tz: 'UTC' },
       NOW,
     );
-    expect(draft).toMatchObject({
-      source: 'agent',
-      day: DAY,
-      minutes: 25,
-      started_at: null,
-      task: { key: 'LAI-2', title: 'My day' },
-      note: 'Client call',
-    });
+    // The agent is told the id, the minutes and the day — nothing of the
+    // person's drafts (a token reads none, its own proposal included).
+    expect(Object.keys(draft).sort()).toEqual(['day', 'id', 'minutes']);
+    expect([draft.minutes, draft.day]).toEqual([25, DAY]);
+    expect(
+      draftsOn(t.db, bea.userId, DAY).map((d) => [
+        d.id,
+        d.source,
+        d.minutes,
+        d.started_at,
+        d.task?.key,
+        d.task?.title,
+        d.note,
+      ]),
+    ).toEqual([[draft.id, 'agent', 25, null, 'LAI-2', 'My day', 'Client call']]);
     expect(t.db.select().from(timeEntries).all()).toEqual([]);
   });
 
