@@ -6,9 +6,8 @@ assignee: owner-direct
 priority: p2
 depends-on: [LAI-787]
 discovered-from: LAI-787
-status: review
+status: in-progress
 started: 2026-10-20T05:17:26Z
-finished: 2026-10-20T05:45:32Z
 ---
 
 ## Goal
@@ -30,7 +29,7 @@ reason.
 
 ## Acceptance criteria
 
-- [x] A supported way for an orchestrator to tell the collector "the person
+- [ ] A supported way for an orchestrator to tell the collector "the person
       typed now" — a hook Omnigent can call, or a documented event file —
       metadata only, never the text; or a decision that such time is entered
       by hand.
@@ -105,3 +104,24 @@ not a live capture: the live hook is the owner's checkout, outside this task.
 - **Gate.** After the last code edit: test 0, lint 0, format 0. Three later
   full runs (only Markdown changed) exited 1 on load timeouts at load 30–52,
   each failing file passing alone — listed in `logs/polly-time-2026-10-20.md`.
+
+## Review round 1 — CHANGES REQUIRED (2026-10-20, through the orchestrator)
+
+**B1 (blocker)** — turns Omnigent starts itself (a sub-agent finishing, a
+timer, a terminal going idle) are counted as the owner's time: each writes
+`t`, and the `r` after it counts too, so a night of wake-ups drafts the whole
+night. The owner chose to let the hook check the prompt — **D-090**.
+
+Required: (1) on the Omnigent orchestrator's `prompt` only, read at most a few
+KB of stdin, ask whether the prompt field begins `[System: `, clear it, drain
+the rest; a runtime turn writes another letter or nothing; the drafter drops
+the `r` that ends a runtime turn; both `"prompt":"` and `"prompt": "`; a
+fixture quoting Omnigent 0.17.0's notice template; a night of notices 10
+minutes apart drafts nothing while a person's turn among them still drafts.
+(2) The LAI-787 Claude Code primary path too, if the notices reach it as
+prompts — check, and say. (3) `sdk-*` narrowed to `sdk-py`; `sdk-cli` among
+the skipped shapes. (4) Docs per D-090 item 3: "Read the prompt" reworded,
+"one exception" now two, these turns no longer called "yours", "nothing to
+configure" names a host-launched runner, the no-marker-under-HOME test on the
+Omnigent path. (5) This file back to in-progress, AC1 unticked.
+
