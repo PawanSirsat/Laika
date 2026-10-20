@@ -6,9 +6,8 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from:
-status: review
+status: in-progress
 started: 2026-10-19T22:43:15Z
-finished: 2026-10-19T23:30:37Z
 ---
 
 ## Goal
@@ -103,4 +102,36 @@ via `pnpm db:generate` only, regenerated on top of whatever merges first
 - **§11.4.2 has no My day row** (not a named section). Filed LAI-793.
 - `resolveKeys` (token usage) now filters by organisation so the key lookup
   searches `(org_id, prefix)` instead of walking `tasks`.
+
+## Review round 1 — CHANGES REQUIRED (2026-10-20, through the orchestrator)
+
+**B1 (blocker)** — settled drafts damage or resurrect other drafts on re-sync
+(`server/src/services/time-drafts.ts` `settledSpans` and the clip). The
+collector sends one block per task per stretch, so blocks of parallel tasks
+overlap; clipping every new block around the whole span of anything settled
+takes minutes the blocks never shared. Reproduced: two 30-minute tasks on the
+same hour, one confirmed, re-sync loses the other's 30; a dismissed 20-minute
+untied block inside a 40-minute LAI-1 block brings LAI-1 back as 26; confirming
+the outer block makes the inner 20 vanish; deleting a confirmed entry, or
+moving it to another day, brings its block back as pending. Fix: match a
+settled block to its re-sent block by identity (task key and stretch), subtract
+minutes not span, and a confirmed draft stays settled whatever happens to its
+entry. Make the doc comment true. A test per scenario, each shown failing first.
+
+**B2 (blocker)** — `INSERT OR REPLACE` bypasses the three-year keep trigger on
+`time_entries` (BEFORE DELETE only; with `recursive_triggers` off a replace
+fires no delete trigger, and the cascade takes the revisions). Add the
+no-replace trigger as the sibling tables have, kept by the boot check, with a
+test that a replace is refused and the revisions survive.
+
+**Also:** (1) `POST /me/time-drafts` and `propose_time_entry` answer only
+`id`, `minutes`, `day`; (2) the collector never sends more than 1440 minutes a
+day (a 25-hour DST day sent 1495 and the whole request was refused); (3)
+`cli/test/activity-hook.test.ts` carries real Omnigent session ids — make them
+obviously fake; (4) a test that a timeless manual entry and overlapping drafts
+cannot be confirmed past the day's 1440; (5) rewrap SPEC.md:4086 to 80
+columns; (6) §11.6's "so nothing else can" must be true after B2.
+
+Not in scope: LAI-792, the diagnostics-only environment variable concern,
+`users` ON DELETE NO ACTION.
 
