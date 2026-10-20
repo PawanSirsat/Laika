@@ -201,3 +201,25 @@ the rows recorded as not a clock or as relative time.
 - Screenshots, before and after, light and dark, 1440 and 390:
   `/tmp/laika-clock-shots/{before,after}-{my-day,task-panel-effort-activity,task-panel-activity,capacity,insights-usage}-{light,dark}-{1440,390}.png`.
   Capacity's fixture changed between the two (LAI-818 merged in between).
+
+## Review round 1 (fixed in `33d53294`)
+
+1. **Blocking — plan-limit reset time.** `parseMinute` read a bare `2:30` on
+   the 24-hour clock, so a person meaning the afternoon saved a weekly reset
+   12 h off. It now refuses a time without AM/PM with *Add AM or PM, e.g.
+   2:30 PM.*, and the field shows *Reads as 2:30 PM* (or *Add AM or PM:
+   2:30 AM or 2:30 PM?*) before Save. `2:30 PM` and `14:30` save 870. A
+   leading zero (`02:30`, `09:30`) is the 24-hour clock's notation, so
+   `parseClock` no longer marks it ambiguous, and `09:30` still saves 570.
+   New tests failed first: `test/api/plan-limit.test.ts` (missing exports;
+   on the old code `parseMinute('2:30')` returned 150), and
+   `test/browser/usage.test.ts` "the weekly reset time…" (exit 1, no
+   read-back line).
+2. **`formatDuration` of `NaN` / `Infinity`** prints `—`, not `0 min`, with
+   a unit test. A negative is still `0 min`.
+
+Run: `node --test test/api/plan-limit.test.ts test/api/time-label.test.ts
+test/api/duration.test.ts test/routes/screens/my-day/my-day-derive.test.ts`
+exit 0 (71/71); `node --test --test-concurrency=1 test/browser/usage.test.ts
+test/browser/my-day.test.ts` exit 0 (24/24); `pnpm lint` exit 0;
+`pnpm format` exit 0.
