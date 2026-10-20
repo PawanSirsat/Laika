@@ -60,3 +60,10 @@ item 9). **Needs the owner's decision before it is claimed. See "Decision".**
       `~/.laika`), shows the sub-agent tokens arriving in the org total and
       the `start_working`-marked share arriving in `laika`.
 - [ ] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+
+## Decided (CHIEF, 2026-10-20, before any claim)
+
+The owner said *"yes start the LAI 815"* to the three questions above. They
+are recorded as **D-091**: count automated tokens for the organisation, the
+space and the task, never for the person; builders mark their card; polly's
+own tokens are out for now. D-091 is the contract.
