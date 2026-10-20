@@ -133,3 +133,79 @@ and leave the URL to `laika time connect`.
   and `cli/test/activity-sync.test.ts`'s 300 ms deadline test under load
   (43/43 alone; untouched here; LAI-798 filed). See the log for the final
   gate's exit codes.
+
+## Review round 1 — fixed (2026-10-20, owner-direct through the orchestrator)
+
+**B1 — one push deleted a Solidtime billing entry and exited 0; the next pull
+deleted the Laika one.** The owner's ruling, from AC2 ("once pushed, Solidtime
+is the record and Laika never overwrites it"): **an entry that came from
+Solidtime is read-only in Laika.** All three causes fixed, each test shown
+failing on the code before it:
+
+- `PATCH` and `DELETE /me/time-entries/:id` refuse an import, `403` with
+  `details.reason: "imported_entry"` ("change it there, and the next laika
+  time pull brings it here") — `time-entries.ts` `currentFields`; SPEC §4.48
+  and §6.4 say so.
+- The outbox's update/delete query takes `draft` and `manual` twins only —
+  an import is never offered back to Solidtime, however it changed.
+- `recordSolidtimeLinks` refuses a record that both links and removes one
+  Solidtime id, `422 linked_and_removed`, writing nothing.
+- The CLI never updates or deletes a Solidtime entry it took for another
+  entry in the same run (left alone, and said so), and never takes for a new
+  entry one the run deleted.
+- My day (its screen only): an import reads "from Solidtime" and "Change it
+  in Solidtime", with no Edit or Delete; History stays (`canChange` in
+  `my-day-derive.ts`, tested). No screenshots: the change is two buttons
+  hidden and a label, and the Mac was in thermal emergency.
+
+Tests: server `an entry that came from Solidtime is read-only in Laika` (3,
+red then green), the route test's `PATCH`/`DELETE` `403 imported_entry`; CLI
+`never deletes or rewrites a Solidtime entry it took for another entry in
+the same run (review B1)` — the reviewer's repro — and `never takes for a new
+entry a Solidtime entry this run deleted` (both red then green); web
+`an entry from Solidtime is read-only here` (red then green).
+
+**Also fixed:**
+
+1. **Paging.** Every time-entry page must report the first page's
+   `meta.total`, and a read of more than one page reads the first page again
+   at the end; a different total or first page is an incomplete window, from
+   which no delete is inferred. Two tests: a row deleted between pages, and a
+   row deleted and another added with the total unchanged (both red, then
+   green).
+4. **Work only.** Reads ask `type=work` and filter again for a Solidtime that
+   ignores it; creates send `type: work` (test red, then green).
+5. **Task list.** A pull whose Solidtime task list cannot be read stops before
+   signing in and sends nothing (test red, then green).
+6. **Each person's zone.** `pull --all` dates a confirmed person's new
+   entries in their own zone — their latest confirmed or typed entry's, else
+   their drafts', else their activity reports' — and only falls back to the
+   batch's (`personZone`, SPEC §6.4). Test red (UTC day), then green (Los
+   Angeles).
+8. **Board URL.** The board the password goes to must be https or on this
+   machine: refused at `connect` and before every sign-in, without asking for
+   the password (two tests, red then green). The password-per-run sign-in is
+   unchanged, as directed.
+
+**Follow-ups, recorded for the orchestrator to file (no ids taken here):**
+
+- (2) A duplicate after a failed link record and a day move: the CLI wrote
+  S, the board did not record it, and the person then moved the Laika entry
+  to another day. The next push reads Solidtime around the entry's new day,
+  does not see S, and creates a second entry. The sent-log names S; reading
+  it by id would close this.
+- (3) Two machines pushing at once: both read the same outbox and both
+  create, and each sent-log is per machine. Needs a per-person push lease on
+  the board, or the board refusing a second link for one entry in the same
+  revision.
+- (7) The member id an own pull sends is the CLI's word: the board only
+  refuses one an admin confirmed as somebody else. An admin confirmation of
+  the person's own member, or the board remembering the first member a
+  person synced as, would bind it.
+- (9) `GET /org/time/solidtime` gives owners and admins per-member minutes of
+  people not on Laika, and that view is not logged — D-088 item 7 logs every
+  per-person-hours view. LAI-789's view log should cover it.
+
+LAI-797 and LAI-798 (round 0's filings) collide with LAI-792's: left as they
+are for renumbering at merge, as directed. Gate after the last code edit:
+in `logs/time-solidtime-2026-10-20.md`.
