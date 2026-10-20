@@ -67,10 +67,15 @@ void describe('a nav click keeps the project you are reading', () => {
 void describe('it does not attach a project where there is none', () => {
   void test('org-level destinations stay bare', () => {
     assert.equal(navHref('/organisation', SLUG), '/organisation');
-    assert.equal(navHref('/tokens', SLUG), '/tokens');
-    // Connect is org-level too (LAI-622). Without this line its `orgLevel`
-    // flag is untested and a later removal would be silent.
-    assert.equal(navHref('/connect', SLUG), '/connect');
+    // Connect and Tokens became Developer access and its wizard (LAI-796),
+    // both org-level as they were (LAI-622). Without these lines their
+    // `orgLevel` flags are untested and a later removal would be silent.
+    assert.equal(navHref('/developer', SLUG), '/developer');
+    assert.equal(navHref('/developer/connect', SLUG), '/developer/connect');
+    // The rest of the rail is about the reader or the organisation too.
+    for (const path of ['/my-day', '/inbox', '/insights']) {
+      assert.equal(navHref(path, SLUG), path, `${path} carries a space`);
+    }
   });
 
   void test('no project yet means no dangling query string', () => {

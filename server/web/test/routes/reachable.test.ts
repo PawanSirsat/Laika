@@ -41,7 +41,8 @@ const REACHED_FROM: Readonly<Record<string, string>> = {
     'a person — their name on Organisation, a Work by person row or a Capacity card (owners and admins)',
   // A person's own day (LAI-787, D-088): about whoever is signed in, so it
   // sits under their name at the foot of the rail rather than in a group.
-  '/my-day': 'the person in the sidebar footer — My day sits under their name',
+  '/developer/connect':
+    'Developer access — its Connect an agent card opens the wizard, every agent and every step (LAI-796)',
 };
 
 const holds = () => true;
@@ -111,9 +112,11 @@ void describe('the tab bar is honest about scope', () => {
     assert.deepEqual(dropped, [], `these tabs lose the space: ${dropped.join(', ')}`);
   });
 
-  void test('Capacity is global: no tab, and its link never carries a space (LAI-754)', () => {
-    assert.ok(!SPACE_TAB_PATHS.includes('/capacity'), 'Capacity is a space tab again');
-    assert.equal(navHref('/capacity', 'laika-core'), '/capacity');
+  void test('Insights is global: no tab, and its link never carries a space (LAI-754, LAI-796)', () => {
+    // Capacity became one page across every space in LAI-754, and Insights'
+    // first tab in LAI-796; the page that holds it is org-level the same way.
+    assert.ok(!SPACE_TAB_PATHS.includes('/insights'), 'Insights is a space tab');
+    assert.equal(navHref('/insights', 'laika-core'), '/insights');
   });
 
   void test('a project-scoped tab does carry the project', () => {
@@ -130,11 +133,9 @@ void describe('the tab bar is honest about scope', () => {
     }
   });
 
-  void test('Capacity and Unlisted work are in the sidebar, not the tabs (LAI-754)', () => {
-    // Both read across every project, and a tab is a space-scoped place
-    // (LAI-251, LAI-279). The owner put them in the sidebar.
+  void test('the pages across every space are in the sidebar, not the tabs (LAI-754, LAI-796)', () => {
     const grouped = NAV_GROUPS.flatMap((g) => routesInGroup(g, holds).map((r) => r.path));
-    for (const path of ['/capacity', '/review', '/unlisted']) {
+    for (const path of ['/inbox', '/insights', '/developer', '/my-day', '/organisation']) {
       assert.ok(grouped.includes(path), `${path} is not in the sidebar`);
       assert.ok(!SPACE_TAB_PATHS.includes(path), `${path} became a space tab`);
       assert.equal(navHref(path, 'laika-core'), path, `${path} carries a space`);

@@ -57,9 +57,18 @@ function usePlate(me: MeProfile | undefined): Load {
       const pages = await Promise.all(
         spaces.flatMap((space) =>
           OPEN.map((status) =>
-            listTasks(space.slug, { assignee: me.id, status, limit: 100 }, signal).then((page) =>
-              page.data.map((task) => ({ task, slug: space.slug })),
-            ),
+            everyPage((cursor) =>
+              listTasks(
+                space.slug,
+                {
+                  assignee: me.id,
+                  status,
+                  limit: 100,
+                  ...(cursor === undefined ? {} : { cursor }),
+                },
+                signal,
+              ),
+            ).then(({ items: tasks }) => tasks.map((task) => ({ task, slug: space.slug }))),
           ),
         ),
       );

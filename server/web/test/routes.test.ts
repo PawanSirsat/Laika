@@ -18,6 +18,7 @@ import {
   ROUTES,
   matchRoute,
   routesInGroup,
+  spaceTabGroups,
   spaceTabs,
 } from '../src/routes/route-table.ts';
 import { SCREEN_COPY } from '../src/routes/screens/screen-copy.ts';
@@ -54,38 +55,49 @@ void before(async () => {
 });
 
 void describe('sidebar groups (AC1)', () => {
-  void test('the groups beside SPACES, in the design order', () => {
-    // **Two, not three, since LAI-248.** The live design's sidebar is SPACES
-    // then SETTINGS; `ORG` is ours, for the two views that read across every
-    // project and would be misstated by a tab under one space.
+  void test('the groups beside SPACES, in the owner’s order (LAI-796)', () => {
+    // **`HOME` above the spaces, `ORG` below them.** The owner's reference
+    // leads the rail with the reader's own places and ends it with the
+    // organisation's. `SETTINGS` went with LAI-796: Connect and Tokens became
+    // Developer access, which sits under Organisation.
     //
     // `SPACES` is deliberately not a `NAV_GROUP`: its rows are projects, built
     // from the project list rather than from `ROUTES`.
-    assert.deepEqual([...NAV_GROUPS], ['ORG', 'SETTINGS']);
-    assert.ok(!NAV_GROUPS.includes('WORK' as never), 'WORK survived the restructure');
-    assert.ok(!NAV_GROUPS.includes('REVIEW' as never), 'REVIEW survived the restructure');
+    assert.deepEqual([...NAV_GROUPS], ['HOME', 'ORG']);
+    for (const gone of ['WORK', 'REVIEW', 'SETTINGS']) {
+      assert.ok(!NAV_GROUPS.includes(gone as never), `${gone} survived the restructure`);
+    }
   });
 
   void test('each group holds the right items, in order', () => {
-    // **Rewritten by LAI-248, not loosened.** The sidebar stopped listing views:
-    // the live design ties every view to a space, so `WORK` and `REVIEW` are
-    // gone and their project-scoped members are the tab bar
-    // (`SPACE_TAB_PATHS`). What is left beside the spaces is genuinely org-wide.
+    // **Rewritten by LAI-796, not loosened.** Six entries became three pages:
+    // Review and Unlisted work are Inbox's tabs, Capacity and Usage Insights',
+    // Connect and Tokens are Developer access. Their gates moved with them and
+    // are asserted in `page-tabs.test.ts`.
     assert.deepEqual(
-      routesInGroup('ORG', () => true).map((r) => r.label),
-      // **Capacity and Unlisted work, across every space** (owner,
-      // 2026-10-15, LAI-754). Capacity was a space tab from LAI-251 and
-      // Unlisted work hidden from LAI-484; the gate Unlisted carries is
-      // asserted in `nav-truth.test.ts`. **Review between them** (D-082,
-      // LAI-758): the queue of agent work waiting for a person.
-      // **Usage after Review** (D-084, LAI-769): ungated, every reader has spaces.
-      ['Capacity', 'Review', 'Usage', 'Unlisted work'],
+      routesInGroup('HOME', () => true).map((r) => r.label),
+      ['My day', 'Inbox'],
     );
     assert.deepEqual(
-      routesInGroup('SETTINGS').map((r) => r.label),
-      // Connect leads: it is the only entry a reader with nothing set up can
-      // act on, and the other two are where you go afterwards (LAI-622).
-      ['Connect', 'Tokens', 'Organisation'],
+      routesInGroup('ORG', () => true).map((r) => r.label),
+      ['Insights', 'Organisation', 'Developer access'],
+    );
+  });
+
+  void test('every entry has an icon for the rail (LAI-796)', () => {
+    const bare = NAV_GROUPS.flatMap((g) => routesInGroup(g, () => true))
+      .filter((r) => r.icon === undefined)
+      .map((r) => r.path);
+    assert.deepEqual(bare, [], 'these would be blank squares in the icon rail');
+  });
+
+  void test('the space tabs are two groups: looking at the work, then how it is going', () => {
+    assert.deepEqual(
+      spaceTabGroups().map((group) => group.map((r) => r.label)),
+      [
+        ['Board', 'List', 'Timeline', 'Calendar'],
+        ['Sprints', 'Dashboard', 'Activity', 'Meeting review'],
+      ],
     );
   });
 
