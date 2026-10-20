@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-769
-status: review
+status: done
 started: 2026-10-20T12:19:23Z
 finished: 2026-10-20T13:05:06Z
 ---
@@ -270,3 +270,18 @@ install only after the deploy is green.
 - LAI-824: a usage day over 200 rows is refused whole and the collector then
   sends nothing for days. Pre-existing; D-091's flag can at most double a
   day's rows. Measured 10 here.
+
+## Accepted (CHIEF, 2026-10-21)
+
+Review (review-automated-tokens) **APPROVE**, no blockers. The reviewer counted
+the `token_usage_days` readers again from the code and confirmed every line in
+the table above; every per-person read filters to own rows and no total
+filters them out. Migration 0043 only adds a column and re-creates two
+indexes; query plans still use covering indexes.
+
+Follow-ups carried to LAI-825: the collector should feature-detect the
+`automated` flag instead of risking a whole-report 422 on an older board;
+untested paths (accepted cost, rework, forecast coverage with automated rows;
+the people fold with automated-only rows); SPEC fold sentence; the plan-limit
+forecast now under-predicts for someone running an orchestrator, to revisit
+under D-091; the census count in prose should be dropped, not corrected.
