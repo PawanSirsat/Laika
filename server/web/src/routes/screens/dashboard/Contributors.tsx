@@ -225,26 +225,30 @@ function Delivered({
           {contributors.rows.map((row, i) => (
             <tr key={row.id} className="dash-contrib-row" data-person={row.id}>
               <th scope="row" className="dash-contrib-who">
-                <span className="dash-contrib-rank" aria-hidden="true">
-                  {i + 1}
+                {/* The flex row lives inside the cell: a cell that is itself
+                    flex stops being a table cell, and its rule drifts. */}
+                <span className="dash-contrib-person">
+                  <span className="dash-contrib-rank" aria-hidden="true">
+                    {i + 1}
+                  </span>
+                  <Avatar id={row.id} name={nameOf(row.id)} theme={theme} />
+                  <span className="dash-legend-who">
+                    <span className="dash-legend-name">{nameOf(row.id)}</span>
+                    {row.selfClosed > 0 && (
+                      <span className="dash-legend-detail">
+                        {row.selfClosed} closed without review*
+                      </span>
+                    )}
+                  </span>
+                  <PersonLink
+                    userId={row.id}
+                    onlyLink
+                    className="dash-legend-profile"
+                    label={`Open ${nameOf(row.id)}’s profile`}
+                  >
+                    Profile
+                  </PersonLink>
                 </span>
-                <Avatar id={row.id} name={nameOf(row.id)} theme={theme} />
-                <span className="dash-legend-who">
-                  <span className="dash-legend-name">{nameOf(row.id)}</span>
-                  {row.selfClosed > 0 && (
-                    <span className="dash-legend-detail">
-                      {row.selfClosed} closed without review*
-                    </span>
-                  )}
-                </span>
-                <PersonLink
-                  userId={row.id}
-                  onlyLink
-                  className="dash-legend-profile"
-                  label={`Open ${nameOf(row.id)}’s profile`}
-                >
-                  Profile
-                </PersonLink>
               </th>
               <td className="dash-contrib-n" data-col="delivered">
                 {row.delivered}

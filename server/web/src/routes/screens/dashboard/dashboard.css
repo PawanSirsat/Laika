@@ -439,13 +439,17 @@ a.dash-legend-row:focus-visible {
 }
 
 .dash-contrib tbody .dash-contrib-who {
+  padding: 0.4375rem 0.5rem;
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.dash-contrib-person {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   min-width: 0;
-  padding: 0.4375rem 0.5rem;
-  font-size: var(--text-ui);
-  color: var(--text-primary);
 }
 
 .dash-contrib-row + .dash-contrib-row > * {
@@ -464,6 +468,7 @@ a.dash-legend-row:focus-visible {
 .dash-contrib-n {
   width: 5.25rem;
   padding: 0 0.5rem;
+  vertical-align: middle;
   text-align: right;
   font-family: var(--font-mono);
   font-size: var(--text-base);
