@@ -2,11 +2,12 @@
 id: LAI-827
 title: 'Task panel edits in place like Jira: hover shows what is editable, click to edit, and the description gets a real editor with a toolbar'
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-795
-status: backlog
+status: in-progress
+started: 2026-10-20T19:12:35Z
 ---
 
 ## Goal
