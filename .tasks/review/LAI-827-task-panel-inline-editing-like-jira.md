@@ -243,3 +243,70 @@ agent description; plus `after-mention-*`, `after-table-tools-*`,
 - LAI-839 — `mentionable` should answer the handle `@` resolves (area server).
 - LAI-840 — no way to add acceptance where a task has none (area web; SPEC
   line for CHIEF).
+
+## Review round 1 — fixed (owner-direct)
+
+The review came back **BLOCK** on one data-safety bug, with four smaller
+items. Criteria unchanged; this is what was done about each.
+
+1. **Blocking: a save rewrote blocks nobody touched.** When the faithful form
+   could not write one new paragraph, `toMarkdown` sent the *whole* document
+   through the library's escaping, unchecked — `next_cursor`, `p95 < 1 s` and
+   `A -> B` were rewritten and `\# literal hash` became a heading. Now
+   (`markdown-bridge.ts`, d1346ceb):
+   - the opening remembers the source's top-level blocks; on a save every
+     block still as it was is **copied from the source byte for byte**, and
+     only new or changed blocks are written — each faithfully, else in the
+     library's form, **each checked by reading it back**, and the whole result
+     checked again;
+   - when a block cannot be written so, nothing is saved: `UnwritableMarkdown`
+     carries the reason and a draft (untouched blocks as they were), and the
+     editor opens the draft as Markdown with *Not saved: …* (5a6d4c73);
+   - the faithful escaper now escapes a `<` that starts a tag, comment or
+     autolink, an `&` that forms an entity, a line that would be a link
+     reference definition, plain-text `https://` / `www.` / email addresses,
+     and a delimiter beside another mark's syntax;
+   - what markdown cannot hold — spaces at a text block's ends, a last line
+     break — no longer counts as a change (found on the way: a mention ends
+     with a space, so every save after one was refused).
+2. **Fences.** A ```` ```js ```` line inside a ```` ``` ```` block is code, not
+   its close; neither `tidy` nor the normalisation touches lines inside code.
+3. **Flaky test.** The scroll test clicked between two lines and accepted two
+   text nodes; it now clicks the first line and waits for the caret block it
+   asserts. Running the file ten times turned up a second flake (the `@` test,
+   1 in 10): `openEditor` clicked the top-left to open and the tests clicked the
+   end to type, and Playwright typed before ProseMirror read the second click.
+   `openEditor` now clicks after the last word, scrolled into view, and waits
+   for the editor's focus (8b82aa64). **Ten runs in a row: 22/22 each.**
+4. **Escape on a toolbar, Save or Cancel button** reached the drawer and threw
+   the draft away; any Escape inside the editor is now the editor's and asks
+   when something changed.
+5. **A mention** is inserted as a text node, so a name with `<b>` in it stays
+   words.
+
+**Red first.** Unit: the reviewer's inputs (`the <br> tag`, `an <input>
+field`, `use <details> here`, a comment, `use &amp; here`, `[a]: https://x`, a
+`*` beside a bold word), a compact table kept compact, an unwritable block
+refused, and the two fence cases — **11 of the first 12 new cases failed
+against the round-0 bridge** (run from a scratch copy with a stand-in for the
+new error class); block removal passed there and stays as a guard. The three
+cases added later (a trailing space, a paragraph of spaces, two lists that
+merge) are held by mutation. Browser, against the round-0 `RichEditor.tsx` and
+bridge: **all four new tests failed** — the `<br>` save rewrote the first
+paragraph to `Set next\_cursor; see [https://example.com/a\_b](…)`, the
+unwritable change was sent, Escape on Bold closed the panel, and the name came
+out bold.
+
+**Mutations, each restored**: untouched blocks not copied, `<` not escaped, `&`
+not escaped, the per-block check off, the whole-document check off, a fence
+closing on an info string, text-block ends not canonical, Escape on buttons
+unhandled, a mention inserted as an HTML string, a refused save sent anyway —
+**all ten turn a test red** (the whole-document check only once the
+two-merging-lists case was added).
+
+**Ran:** `node --test test/routes/screens/task/editor/*.test.ts` (72 cases,
+exit 0); `node --test test/browser/task-panel-editing.test.ts` ×10 (22 cases,
+exit 0 each); the related panel files `slim-list`, `task-markdown`,
+`task-panel`, `comment-markdown` (35 cases, exit 0); `pnpm lint` and
+`pnpm format` from the root, each its own exit code — in the round-1 report.
+The full root gate is CHIEF's after merging.
