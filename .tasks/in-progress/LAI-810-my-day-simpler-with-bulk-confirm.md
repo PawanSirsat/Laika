@@ -7,8 +7,7 @@ priority: p1
 depends-on: [LAI-796]
 discovered-from: LAI-796
 started: 2026-10-20T11:13:37Z
-status: review
-finished: 2026-10-20T11:50:10Z
+status: in-progress
 ---
 
 ## Goal
@@ -50,7 +49,7 @@ What the screenshots show:
     time, with **Confirm selected**, **General**, **Not work** and **Clear**.
   - Shift-click selects a range.
   - Everything works by keyboard and has labels.
-- [x] **Bulk actions:**
+- [ ] **Bulk actions:**
   - They use the endpoints that exist: `POST /me/time-drafts/:id/confirm`,
     `/dismiss`, and `POST /me/time/days/:day/confirm` when the whole day is
     meant.
@@ -230,3 +229,56 @@ was merged in first).
 `after-{light,dark}-{1440,390}.png`, `…-full.png` and `…-selected.png` (the
 bulk bar). The whole page went from 10,805 px to 1,381 px at 1440, and from
 20,292 px to 2,202 px at 390.
+
+## Review round 1 (2026-10-20) — BLOCK
+
+Relayed by the orchestrator. The "Bulk actions" criterion is unticked until
+B1 is fixed.
+
+- [ ] **B1 (blocker): Confirm selected confirms what the server holds, not
+      what was ticked.** With every block ticked, `runBulk` sent `POST
+      /me/time/days/:day/confirm` (`draft-bulk.ts:178-187`) and reported the
+      page's own ids. The server confirms every pending draft of the day, and
+      an untied one as General (`server/src/services/time-drafts.ts:745-765`).
+      A collector upload, every 600 s, deletes and re-inserts untouched
+      pending drafts under new ids (`time-drafts.ts:341-375`). So after one
+      upload, ticking all can confirm blocks nobody saw, or put a block on a
+      card nobody chose, and those entries go to Solidtime.
+  - Confirm selected always confirms block by block, by id; a stale id fails
+    safely with a 404.
+  - Confirm-day stays for the header button only. After it, the returned
+    `entries` are compared with what the page planned; any difference is said
+    plainly ("3 more blocks arrived since this page loaded and were confirmed
+    too"), and the day is reloaded.
+  - A test with a fixture where the server's day differs from the page's (an
+    extra block on nothing): Confirm selected never sends confirm-day and
+    never confirms the extra block. Proved by mutation, landed first.
+
+Follow-ups, each small:
+- [ ] 1. The header path's report says "still selected" or "stay selected"
+      when nothing is selected (`MyDayScreen.tsx:226`; assertion at
+      `my-day-bulk.test.ts:367`). Word it for the header path.
+- [ ] 2. Stale ids: several `No draft "<id>"` 404s collapse into one sentence
+      ("12 blocks changed since this page loaded — reloaded; please review
+      again"), never "stay selected" when the reload removes them.
+- [ ] 3. A test proving bulk Not work asks first. A mutant that skipped the
+      question stayed green in both browser files.
+- [ ] 4. During a batch, Add time and the week strip's day change are
+      disabled, or the batch's progress and report are tied to its own day.
+- [ ] 5. Bulk General: ask once before moving blocks already on a card, or
+      move only blocks on nothing. Pick one and say why.
+- [ ] 6. The header Confirm with some blocks needing a card stays partial,
+      but its report says exactly how many were confirmed and how many left,
+      and a `day_full` refusal (1440 minutes) part-way is said clearly.
+- [ ] 7. SPEC §11.4.2.1 (around `SPEC.md:4062-4069`) still says "Confirm day
+      with the drafted total" and the old column order. Updated to match, as
+      a named SPEC edit per D-033, that section only.
+- [ ] 8. Small items: remove the unused `.myday-subhead`
+      (`my-day.css:115-122`); blocks with no set time get unique accessible
+      names (duration or index); agent-minute rows (`agent-time.ts:166-178`)
+      link a task only when the reader can read it, as drafts do; "+N more"
+      across several spaces goes to a cross-space destination or says which
+      space it opens.
+
+Left as they are (non-blocking): card links take the space from the draft's
+project.
