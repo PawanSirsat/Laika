@@ -2,11 +2,12 @@
 id: LAI-768
 title: 'Server tests hit the 5-second vitest timeout under load (migrate, build boot, MCP parity) and turn a whole gate red (server/)'
 area: server
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-765
-status: backlog
+status: in-progress
+started: 2026-10-20T10:13:48Z
 ---
 
 ## Goal
