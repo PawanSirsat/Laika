@@ -125,6 +125,9 @@ export const BUSY_DAY = {
   settings: { org_mode: 'drafts', draft_my_time: true, drafting: true, min_sync_interval_s: 300 },
   drafts: DRAFTS,
   entries: ENTRIES,
+  // LAI-831: no gap waved away; every draft held is today's.
+  breaks: [],
+  drafts_held: { count: DRAFTS.length, minutes: DRAFTS.reduce((sum, d) => sum + d.minutes, 0) },
   agent: {
     minutes: 312,
     keyboard_minutes: 48,
@@ -271,6 +274,8 @@ export function busyStub(
     },
     '/api/v1/me/time': day,
     [`/api/v1/me/time/days/${TODAY}/confirm`]: writes,
+    // Undo (LAI-831): the server puts back what a change replaced.
+    '/api/v1/me/time/undo': writes,
     ...draftRoutes,
     '/api/v1/projects': {
       data: [

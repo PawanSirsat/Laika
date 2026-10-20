@@ -43,7 +43,7 @@ export function EntryList({ entries, selected, onSelect, onNavigate, children }:
           Confirmed
         </h2>
         <span className="myday-card-figure" data-confirmed-caption>
-          {entries.length} · {duration(total)}
+          {entries.length} {entries.length === 1 ? 'entry' : 'entries'} · {duration(total)}
         </span>
         <span className="myday-card-head-gap" />
         <span className="myday-card-caption">the only time anyone else can see</span>

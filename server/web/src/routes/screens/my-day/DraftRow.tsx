@@ -98,7 +98,7 @@ export function DraftRow({
         className="myday-check"
         checked={checked}
         disabled={busy}
-        aria-label={`Select ${name}, ${on.label}`}
+        aria-label={`Select ${name}, ${draft.task === null ? on.label : `${draft.task.key} ${draft.task.title}`}`}
         onChange={(event) => {
           onCheck(event.target.checked, shifted(event));
         }}

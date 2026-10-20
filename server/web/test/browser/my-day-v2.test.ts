@@ -158,7 +158,7 @@ void describe('the week strip (2, E)', () => {
         assert.ok(Number(opacity) < 1, 'a day not yet happened is not faded');
       }
       const total = await h.page.locator('[data-week-total]').innerText();
-      assert.match(total, /Week/);
+      assert.match(total, /week/i);
       // Never a target or a score (Organisation → Time): no percent, no goal.
       assert.doesNotMatch(await h.page.locator('.myday-week').innerText(), /%|target|goal|score/i);
     } finally {

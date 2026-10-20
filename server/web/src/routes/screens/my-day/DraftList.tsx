@@ -125,7 +125,7 @@ export function DraftList({
           To settle
         </h2>
         <span className="myday-card-figure" data-drafted-caption>
-          {drafts.length} · {duration(total)}
+          {drafts.length} {drafts.length === 1 ? 'block' : 'blocks'} · {duration(total)}
         </span>
         {headState === 'all' && live.size < drafts.length && (
           <button

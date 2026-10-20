@@ -30,15 +30,17 @@ export function Toast({ toast, busy, onUndo, onClose }: ToastProps) {
   return (
     <div className="myday-toasts">
       {toast !== undefined && (
-        <div
-          key={toast.id}
-          className={`myday-toast myday-toast-${toast.tone}`}
-          role={toast.tone === 'error' ? 'alert' : 'status'}
-          data-toast
-          {...(toast.batch === true ? { 'data-bulk-said': '' } : {})}
-        >
+        <div key={toast.id} className={`myday-toast myday-toast-${toast.tone}`} data-toast>
           <span className="myday-toast-dot" aria-hidden="true" />
-          <span className="myday-toast-text">{toast.text}</span>
+          {/* The sentence alone is announced: an alert when it did not all
+              go as asked (LAI-810), never "Undo ×" read out with it. */}
+          <span
+            className="myday-toast-text"
+            role={toast.tone === 'info' ? 'status' : 'alert'}
+            {...(toast.batch === true ? { 'data-bulk-said': '' } : {})}
+          >
+            {toast.text}
+          </span>
           {toast.undo !== undefined && (
             <button
               type="button"
