@@ -65,7 +65,10 @@ export function LoginScreen({
 }: LoginScreenProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [keepSignedIn, setKeepSignedIn] = useState(false);
+  // Ticked by default (LAI-811). Unticked, better-auth issues a fixed 24-hour
+  // session that is never renewed, and a cookie with no `Max-Age` that iOS
+  // Safari drops whenever it suspends the tab. Untick it on a shared machine.
+  const [keepSignedIn, setKeepSignedIn] = useState(true);
   const [touched, setTouched] = useState(false);
 
   const emailCheck = validateEmail(email);
