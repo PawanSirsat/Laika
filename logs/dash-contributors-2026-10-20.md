@@ -26,8 +26,7 @@
   `dashboard-contributors.test.ts` (new), `onroute-dashboard.ts` (new
   fixture), `dashboard-summary`, `dashboard-card-filters` and
   `member-profile`.
-- `.tasks/review/LAI-817-dashboard-shows-contributors.md`, and
-  `.tasks/backlog/LAI-829-…` (new).
+- `.tasks/review/LAI-817-dashboard-shows-contributors.md`.
 
 **Decisions**
 - The people donut shows all open work rather than a labelled sample. D-092
@@ -54,8 +53,11 @@
 - `pnpm test` under load: three member-profile minute assertions and server
   timeouts. pnpm kills the other workspaces on the first failure. Every
   failing file passed alone.
-- LAI-829: `create_task` with `external_ref` refused with "taken" by the
-  card it had just made (LAIKA-617).
+- I filed LAI-829 ("`create_task` refused with *taken* the card it had
+  just made") and withdrew it within the hour. LAIKA-617's description is the
+  orchestrator mirror's, not mine, so the card was made between my lookup and
+  my create, and the refusal was right. **A lookup's `not_found` is a moment,
+  not a fact**: the §2 claim race, met on the board.
 - SPEC (around line 4111) still says "*Work by person* row". That is CHIEF's
   to reword.
 - Ports: none used. The browser tests use the harness's own server; no

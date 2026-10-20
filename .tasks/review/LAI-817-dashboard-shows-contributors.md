@@ -78,7 +78,7 @@ every other figure on it says what it counts. **D-092 is the contract.**
 
 Card on the board: **LAIKA-617** (`start_working` with branch
 `LAI-817-dashboard-contributors`). Branch commits `cf42644f..c0e7a061`, plus
-the claim and LAI-829.
+this file's move.
 
 ### What each criterion is, and where
 
@@ -200,9 +200,12 @@ and themes, Waiting for review at 1440, Blocked at 390 dark).
 
 ### Discovered
 
-- **LAI-829** filed: `create_task` with `external_ref: LAI-817` answered
-  "already the outside id of LAIKA-617" for a card that, from its timestamps,
-  that same call had just made.
+- ~~LAI-829~~ **filed and withdrawn the same sitting.** `create_task` with
+  `external_ref: LAI-817` answered "already the outside id of LAIKA-617", and
+  I read it as the call refusing its own new card. It was not: LAIKA-617's
+  description ("Mirrors `.tasks/backlog/LAI-817-…` on master") is not the text
+  I sent. The orchestrator's mirror made it between my `not_found` lookup and
+  my create, and the refusal was correct. The id stays burned in the commits.
 - `e36aed7a` carries `WorkByPerson.tsx → Contributors.tsx` as a pure rename
   (an earlier `git mv` was staged); `76107954` lands its content. The build is
   broken only at that one intermediate commit.
