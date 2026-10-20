@@ -14,6 +14,7 @@ import {
   getUsage,
   isFewPeople,
   modelCostText,
+  OUTSIDE_ANY_SPACE,
   percent,
   readerZone,
   shareOf,
@@ -34,18 +35,13 @@ import { UsageCard } from '../profile/UsageCard.tsx';
 import { AlertsBanner } from './AlertsBanner.tsx';
 import { BarRows } from './BarRows.tsx';
 import { BudgetsCard } from './BudgetsCard.tsx';
+import { BySpaceCard } from './BySpaceCard.tsx';
 import { AcceptedCostCard } from './AcceptedCostCard.tsx';
 import { CacheCard } from './CacheCard.tsx';
 import { RunawayCard } from './RunawayCard.tsx';
 import { PlanLimitCard } from './PlanLimitCard.tsx';
 import { Columns, dayPoints } from './Columns.tsx';
-import {
-  axisDays,
-  dayLabel,
-  defaultScope,
-  scopeOptions,
-  type ScopeProject,
-} from './usage-derive.ts';
+import { axisDays, dayLabel, scopeFor, scopeOptions, type ScopeProject } from './usage-derive.ts';
 import '../profile/profile.css';
 import './usage.css';
 
@@ -57,6 +53,13 @@ export interface UsageScreenProps {
   readonly alerts?: readonly TokenAlert[] | undefined;
   /** An alert was put away: the shell reads them again, for the badge too. */
   readonly onAlertsChanged?: () => void;
+  /**
+   * The space `?project=` names (LAI-814) — a By space row, or a link someone
+   * pasted. Absent: where the page opens for this reader.
+   */
+  readonly project?: string | undefined;
+  /** A space was picked, or `''` for all of them: the shell writes it into the address. */
+  readonly onProject: (slug: string) => void;
 }
 
 type Load =
@@ -75,8 +78,10 @@ type Load =
  *
  * The headline is input + output + cache writes, **at least** — the agents'
  * own session files miss their background calls — with cache reads beside it,
- * never in it (D-084 items 8 and 9). A trend by day; then by developer, by
- * agent, by model and the tasks that cost most, and the share no task holds.
+ * never in it (D-084 items 8 and 9). A trend by day; then — on the
+ * organisation — by space, each a link to its own view (LAI-814); by
+ * developer, by agent, by model and the tasks that cost most, and the share
+ * no task holds.
  * **By developer is drawn only when the server sent it** — owners and admins
  * on a web session — and in name order: tokens are not a ranking of people
  * (D-084 item 7). Agents people connect that keep no token count say *no
@@ -87,9 +92,10 @@ export function UsageScreen({
   onNavigate,
   alerts,
   onAlertsChanged = () => undefined,
+  project,
+  onProject,
 }: UsageScreenProps) {
   const [projects, setProjects] = useState<readonly ScopeProject[] | null | undefined>(undefined);
-  const [scope, setScope] = useState<string | undefined>(undefined);
   const [range, setRange] = useState<UsageRange>(30);
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   // A budget a lead set moves the figures: read the page again, in place.
@@ -120,12 +126,15 @@ export function UsageScreen({
     [me, projects],
   );
 
-  // Where the page opens, once who is reading and which spaces exist are known.
-  useEffect(() => {
-    if (scope !== undefined || me === undefined || projects === undefined) return;
-    const first = defaultScope(me, projects ?? []);
-    if (first !== undefined) setScope(first);
-  }, [me, projects, scope]);
+  // The space shown is the address's (LAI-814), once who is reading and which
+  // spaces exist are known: so a link to a space opens it, and Back returns.
+  const scope = useMemo(
+    () =>
+      me === undefined || projects === undefined
+        ? undefined
+        : scopeFor(me, projects ?? [], project),
+    [me, projects, project],
+  );
 
   useEffect(() => {
     if (scope === undefined) return;
@@ -169,7 +178,7 @@ export function UsageScreen({
               value={scope ?? ''}
               options={options}
               onChange={(value) => {
-                setScope(value);
+                onProject(value);
               }}
             />
           </span>
@@ -220,7 +229,7 @@ export function UsageScreen({
             {...(options.some((o) => o.value === '')
               ? {
                   onAllSpaces: () => {
-                    setScope('');
+                    onProject('');
                   },
                 }
               : {})}
@@ -310,7 +319,7 @@ function UsageBody({
           </div>
         ) : (
           <div className="usage-stat" data-stat="outside">
-            <dt className="usage-stat-label">Outside any space</dt>
+            <dt className="usage-stat-label">{OUTSIDE_ANY_SPACE}</dt>
             <dd className="usage-stat-value">
               {org === null ? '—' : shareOf(org.tokens - org.attributed_tokens, org.tokens)}
             </dd>
@@ -433,6 +442,8 @@ function UsageDetail({
       </section>
 
       <div className="usage-grid">
+        <BySpaceCard usage={usage} link={link} />
+
         <section
           className="prof-card usage-card"
           data-section="developers"

@@ -125,6 +125,11 @@ export interface Usage {
   readonly by_developer: readonly UsageDeveloper[] | null;
   readonly by_agent: readonly UsageAgentSlice[];
   readonly by_model: readonly UsageModelSlice[];
+  /**
+   * Each space the reader may read, most tokens first (LAI-814); `null` for a
+   * space. The organisation's tokens less these are {@link outsideAnySpace}.
+   */
+  readonly by_project: readonly UsageProjectTotal[] | null;
   readonly top_tasks: readonly UsageTaskSlice[];
   /** Agents people here connect that keep no token count Laika can read. */
   readonly no_token_data: readonly AgentClient[];
@@ -179,6 +184,17 @@ export interface UsageCacheProject {
   readonly share: number | null;
   /** `null` when none of its models has a price. */
   readonly saving_usd: number | null;
+}
+
+/** One space's tokens over the range and what they cost (LAI-814) — never per person. */
+export interface UsageProjectTotal {
+  readonly project: { readonly slug: string; readonly name: string };
+  readonly tokens: number;
+  readonly cache_read: number;
+  /** Priced as the totals are: API-equivalent, not your bill. */
+  readonly cost: UsageCost;
+  /** Of the organisation's tokens; `null` when those are 0. */
+  readonly share: number | null;
 }
 
 /** Tasks accepted in the range and what they cost (LAI-773) — never per person. */
@@ -447,6 +463,28 @@ export const COST_LABEL = 'API-equivalent, not your bill';
  * used (D-087 item 7) — a figure for fewer would be a person's.
  */
 export const FEW_PEOPLE_LABEL = 'Other (fewer than 3 people)';
+
+/**
+ * The name of what no space holds — beside a space, the organisation's share
+ * tied to no task; on the organisation, the last row of By space (LAI-814).
+ */
+export const OUTSIDE_ANY_SPACE = 'Outside any space';
+
+/**
+ * On the organisation (LAI-814), the tokens and cache reads in no space the
+ * reader may read: the totals less every `by_project` row, so the rows and
+ * this add up to the total. `null` for a space, which has no rows.
+ */
+export function outsideAnySpace(usage: Pick<Usage, 'totals' | 'by_project'>): UsageSlice | null {
+  if (usage.by_project === null) return null;
+  let tokens = usage.totals.tokens;
+  let cacheRead = usage.totals.cache_read;
+  for (const p of usage.by_project) {
+    tokens -= p.tokens;
+    cacheRead -= p.cache_read;
+  }
+  return { tokens: Math.max(0, tokens), cache_read: Math.max(0, cacheRead) };
+}
 
 /** Whether a row is that fold, rather than an agent or model of its own. */
 export function isFewPeople(row: { readonly few_people?: number }): boolean {

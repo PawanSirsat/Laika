@@ -135,6 +135,23 @@ function orgUsage(days = 30) {
       { model: 'claude-fable-5-1', tokens: 24_937_201, cache_read: 1.34e9, cost: 849.18 },
       { model: 'gpt-6.1-sol', tokens: 36_057, cache_read: 6_307_361, cost: 0.42 },
     ],
+    // LAI-814: each space, most first; the 12M tied to a task is all in them.
+    by_project: [
+      {
+        project: { slug: 'laika', name: 'Laika' },
+        tokens: 9_000_000,
+        cache_read: 600_000_000,
+        cost: cost(108.5),
+        share: 9_000_000 / 254_973_258,
+      },
+      {
+        project: { slug: 'onroute', name: 'Onroute' },
+        tokens: 3_000_000,
+        cache_read: 200_000_000,
+        cost: cost(36.2),
+        share: 3_000_000 / 254_973_258,
+      },
+    ],
     top_tasks: [
       {
         task_id: 't1',
@@ -226,6 +243,8 @@ function spaceUsage(slug: string, reader: 'owner' | 'member' = 'member') {
     project: { slug, name: slug === 'laika' ? 'Laika' : 'Onroute' },
     totals: figures(12_000_000, 800_000_000, 12_000_000),
     by_developer: null,
+    // A space is one space: no per-space rows (LAI-814).
+    by_project: null,
     org_totals: reader === 'owner' ? figures(254_973_258, 16_346_307_361, 12_000_000) : null,
     // Telemetry ties to no task, so a space has none; counts are for owners and admins.
     telemetry: null,
@@ -496,6 +515,68 @@ void describe('an owner', () => {
       await h.page.getByRole('button', { name: '7 days' }).click();
       await until(async () => (await h.page.locator('.usage-trend .usage-bar').count()) === 7);
       assert.equal(await h.page.locator('.usage-trend .usage-bar').count(), 7);
+      assert.deepEqual(h.unmatched, []);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('By space: each space’s tokens, share and cost, most first, then what no space holds; a space opens its own view (LAI-814)', async () => {
+    const h = await open('/insights?tab=usage', ownerStub());
+    try {
+      await ready(h.page);
+      const card = h.page.locator('.usage-card[data-section="spaces"]');
+      assert.deepEqual(await rows(h.page, 'spaces'), ['Laika', 'Onroute', 'Outside any space']);
+      const values = (await card.locator('.usage-row-value').allInnerTexts()).map((v) =>
+        v.replace(/\s+/g, ' ').trim(),
+      );
+      assert.deepEqual(values, ['9M 4% · $108.50', '3M 1% · $36.20', '243M 95% · tied to no task']);
+      // The rows add up to the Tokens tile, exactly: each row's title is its count.
+      const exact = await card
+        .locator('.usage-row-value')
+        .evaluateAll((els) =>
+          els.map((el) =>
+            Number((el.getAttribute('title') ?? '').split(' tokens')[0]?.replace(/,/g, '')),
+          ),
+        );
+      assert.deepEqual(exact, [9_000_000, 3_000_000, 242_973_258]);
+      assert.equal(
+        exact.reduce((n, x) => n + x, 0),
+        254_973_258,
+      );
+      // What no space holds is not a space: no link.
+      assert.equal(await card.locator('a').count(), 2);
+
+      const laika = card.getByRole('link', { name: 'Laika' });
+      assert.equal(await laika.getAttribute('href'), '/insights?tab=usage&project=laika');
+      await laika.click();
+      await until(async () => (await stat(h.page, 'tokens')) === '12M');
+      assert.equal(await stat(h.page, 'tokens'), '12M');
+      assert.equal(new URL(h.page.url()).searchParams.get('project'), 'laika');
+      // A space view has no By space.
+      assert.equal(await card.count(), 0);
+      // Back returns to the organisation.
+      await h.page.goBack();
+      await until(async () => (await stat(h.page, 'tokens')) === '255M');
+      assert.equal(new URL(h.page.url()).searchParams.get('project'), null);
+      await card.waitFor();
+      assert.deepEqual(h.unmatched, []);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('?project= is the space shown: a link to a space’s usage opens it, and All spaces leaves it (LAI-814)', async () => {
+    const h = await open('/insights?tab=usage&project=laika', ownerStub());
+    try {
+      await ready(h.page);
+      assert.equal(await stat(h.page, 'tokens'), '12M');
+      assert.equal(await h.page.locator('.usage-card[data-section="spaces"]').count(), 0);
+      await pick(h.page.getByRole('combobox', { name: 'Space' }), '');
+      await until(async () => (await stat(h.page, 'tokens')) === '255M');
+      assert.equal(await stat(h.page, 'tokens'), '255M');
+      assert.equal(new URL(h.page.url()).searchParams.get('project'), null);
+      assert.equal(new URL(h.page.url()).searchParams.get('tab'), 'usage');
       assert.deepEqual(h.unmatched, []);
     } finally {
       await h.close();
@@ -975,7 +1056,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
 });
 
 void describe('both themes, laptop and phone', () => {
-  void test('1366 and 390 px in light and dark: nothing scrolls sideways, every card fits, bars drawn', async () => {
+  void test('1440, 1366 and 390 px in light and dark: nothing scrolls sideways, every card fits, bars drawn', async () => {
     const h = await open('/insights?tab=usage', ownerStub());
     try {
       await ready(h.page);
@@ -985,6 +1066,7 @@ void describe('both themes, laptop and phone', () => {
         await h.page.setViewportSize({ width: 1366, height: 900 });
         await setTheme(h.page, theme);
         for (const [width, height] of [
+          [1440, 900],
           [1366, 900],
           [390, 844],
         ] as const) {
@@ -1006,6 +1088,19 @@ void describe('both themes, laptop and phone', () => {
             .last()
             .evaluate((el) => getComputedStyle(el).backgroundColor);
           assert.notEqual(colour, 'rgba(0, 0, 0, 0)', `${theme}: the bars have no colour`);
+          // By space (LAI-814): drawn at every width, its bars in colour.
+          const spaceBar = h.page
+            .locator('.usage-card[data-section="spaces"] .usage-row-bar')
+            .first();
+          assert.ok(
+            (await spaceBar.evaluate((el) => el.getBoundingClientRect().width)) > 0,
+            `${theme} at ${String(width)}: By space draws no bar`,
+          );
+          assert.notEqual(
+            await spaceBar.evaluate((el) => getComputedStyle(el).backgroundColor),
+            'rgba(0, 0, 0, 0)',
+            `${theme}: By space's bars have no colour`,
+          );
         }
       }
     } finally {

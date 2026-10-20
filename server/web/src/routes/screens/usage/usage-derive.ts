@@ -45,6 +45,28 @@ export function defaultScope(
 }
 
 /**
+ * The space the page shows (LAI-814): the one `?project=` names when this
+ * reader is offered it — a By space row, a pasted link — otherwise where the
+ * page opens. A space they may not read falls back rather than asking for a
+ * 403.
+ */
+export function scopeFor(
+  me: ScopeReader,
+  projects: readonly ScopeProject[],
+  asked: string | undefined,
+): string | undefined {
+  if (asked !== undefined && scopeOptions(me, projects).some((o) => o.value === asked)) {
+    return asked;
+  }
+  return defaultScope(me, projects);
+}
+
+/** One space's own Usage view: Insights → Usage & cost, `?project=` (LAI-814). */
+export function spaceUsageHref(slug: string): string {
+  return `/insights?tab=usage&project=${encodeURIComponent(slug)}`;
+}
+
+/**
  * A bar's height in percent of the tallest, from a shared zero baseline. A day
  * with any tokens is drawn at least 2% tall, so it never reads as none.
  */
