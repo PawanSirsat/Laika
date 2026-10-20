@@ -461,15 +461,23 @@
   display: none;
 }
 
+/*
+ * It wraps, and the context line keeps a 10rem basis (LAI-828): on a phone the
+ * Dashboard's range buttons left "14 tasks · 1 member" 7px, which ellipsised to
+ * a "1." stub beside them. Now the context takes its own line above the
+ * actions when both do not fit, and shares the line as before when they do.
+ */
 .space-slot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2) var(--space-3);
   padding-bottom: 11px;
   min-width: 0;
 }
 
 .space-context {
+  flex: 1 1 10rem;
   margin: 0;
   min-width: 0;
   font-size: var(--text-small);
