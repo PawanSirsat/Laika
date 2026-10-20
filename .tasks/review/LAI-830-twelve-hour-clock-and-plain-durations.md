@@ -6,8 +6,9 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-810
-status: in-progress
+status: review
 started: 2026-10-20T19:45:45Z
+finished: 2026-10-20T20:46:09Z
 ---
 
 ## Goal
@@ -23,7 +24,7 @@ Made on the owner's direct instruction.
 
 ## Acceptance criteria
 
-- [ ] **One formatter.** All clock times in the web app go through one shared
+- [x] **One formatter.** All clock times in the web app go through one shared
       helper that prints a 12-hour clock with AM/PM: `2:29 PM`, ranges as
       `2:29–2:48 PM` (one AM/PM when both ends share it) or
       `11:40 AM–12:10 PM` when they don't. Dates with a time: `20 Oct, 2:29 PM`.
@@ -31,32 +32,32 @@ Made on the owner's direct instruction.
       grep: `toLocaleTimeString`, `Intl.DateTimeFormat`, `hour:`, `HH:mm`-style
       templates, `getHours`, hand-built `padStart` clocks), and move each onto
       the helper. Record the census in the task file.
-- [ ] **One duration formatter.** Durations never print as `h:mm`. They print
+- [x] **One duration formatter.** Durations never print as `h:mm`. They print
       `19 min`, `1 h 9 min`, `2 h`, `3 d 4 h` (rounded sensibly, `< 1 min`
       for under a minute). My day's rows, totals ("1 h 9 min"), the week strip,
       the day bar tooltips, agent minutes, the selection bar ("10 selected ·
       2 h 50 min"), Effort ranges, cycle and review-wait times, Capacity,
       Insights and the profile all use it. Census as above.
-- [ ] **Inputs still accept what people type.** Time inputs (My day "Add
+- [x] **Inputs still accept what people type.** Time inputs (My day "Add
       time", Minutes…, Split…) accept `45`, `45m`, `1h 30m`, `1:30` and show
       what they understood before saving. Stored values do not change (minutes
       and timestamps are unchanged on the wire).
-- [ ] **Machine-readable copies stay.** Anything exported, copied as a
+- [x] **Machine-readable copies stay.** Anything exported, copied as a
       command, or sent to agents (MCP text, CLI output) is unchanged in this
       task; this is the web app's display only. Note any CLI output that
       would benefit and file it rather than change it.
-- [ ] **Flaky clock tests fixed while here.** `member-profile.test.ts` asserts
+- [x] **Flaky clock tests fixed while here.** `member-profile.test.ts` asserts
       exact minutes ("active 2 min") against a moving clock and failed under
       load in two builders' gates on 2026-10-20/21. Pin its clock (or assert
       what the code computed from a fixed `now`) so it cannot drift by a
       minute. Run it 10 times in a row and once under load.
-- [ ] **Tests.** Unit tests for both helpers (midnight, noon, AM/PM span,
+- [x] **Tests.** Unit tests for both helpers (midnight, noon, AM/PM span,
       same-period range, 0 and 59 min, 60 min, 1 day+, rounding). Browser
       tests that My day shows `2:29–2:48 PM` and `19 min` where it showed
       `14:29–14:48` and `0:19`. Each fails on today's code.
-- [ ] **Screenshots** before and after of My day, the task panel's Effort and
+- [x] **Screenshots** before and after of My day, the task panel's Effort and
       activity, Capacity and Insights, light and dark, 1440 and 390.
-- [ ] **Gate.** `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] **Gate.** `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Notes
 
@@ -153,3 +154,50 @@ The CLI already prints durations as `3 h 12 min` (`cli/src/activity.ts:1031`,
 `cli/src/time-solidtime.ts:244`). It prints clock times as 24-hour `HH:MM`
 (`cli/src/activity.ts:1021`, `cli/src/time-solidtime.ts:220`): filed, not
 changed. MCP text is the server's and is untouched.
+
+## Outcome (LAI-830, for review)
+
+**The two helpers.** `server/web/src/api/time-label.ts` — `clockTime`
+(`2:29 PM`, optional zone and seconds), `clockRange` (`2:29–2:48 PM`,
+`11:40 AM–12:10 PM`), `dateTime` (`20 Oct, 2:29 PM`), `hourLabel` (`8 AM`),
+`minuteClock` (`9:00 AM` for a stored minute-of-day) and `parseClock`; built
+from `Intl` `en-US` parts with `hour12: true`, joined with an ordinary space.
+`server/web/src/api/duration.ts` — `formatDuration` / `formatDurationMs`
+(`< 1 min`, `19 min`, `1 h 9 min`, `2 h`, `3 d 4 h`: to the minute under a
+day, to the hour from a day) and `shownMinutes`. Every C- and D-row of the
+census above calls them; re-running the census on the merged tree finds only
+the rows recorded as not a clock or as relative time.
+
+**Decisions a reviewer should check.**
+- Agent minutes go through the helper with `largest: 'min'` and stay `142 min`:
+  D-088 item 8 says agent time is shown "never as hours".
+- Effort keeps LAI-785's settled rounding (5-minute steps, half hours under
+  10 h, hours under two days, whole days beyond) and prints it through the
+  helper with `largest: 'h'` under two days, so `20–30 h` and `1–2 d` stay. Half
+  a day, once `0.5 d`, now reads `12 h` (`12 h–3 d`); the "never `24 h`" guard
+  in `estimates.test.ts` still holds. A time that *happened* is now to the
+  minute (`took 1 h 36 min`, was `1.6 h`), so a verdict can move by the
+  rounding it no longer hides: `1–2 d · took 2 d 10 h` is `a little over`
+  where `2 d` was `on target`. Still judged on the printed values.
+- `Split…` reads a bare `2:35` as whichever of AM/PM falls inside the block.
+- Relative times (`3 min ago`, card footer `2h`, `Used 3m ago`) are "when",
+  not "how long", and are filed as LAI-837 rather than widened into this.
+
+**Verification.**
+- Failing first, on `622a26de`: `node --test test/api/duration.test.ts
+  test/api/time-label.test.ts` (module/exports missing; exit 1) and
+  `node --test test/browser/my-day.test.ts` — exit 1, 3 of 6 failing:
+  `actual: '14:29–14:48'` vs `2:29–2:48 PM`, `actual: 'Confirm day · 1:35'`,
+  and no *Reads as* line.
+- `member-profile.test.ts` pinned with `page.clock.setFixedTime(NOW)`: 10 runs
+  in a row, 37/37 each, exit 0; once more under 10 extra CPU burners (load
+  average 39.7 on 10 cores), 37/37, exit 0. Shifting the pin 90 s reproduces
+  the gate failure exactly (`active 3 min ago`), so the pin is what holds it.
+- Gate on `5a0c3ce0` (after `git merge master`): `pnpm test` exit 0 (web
+  2466/2466 test cases, server 3327 passed + 10 skipped, cli 533 passed + 2
+  skipped), `pnpm lint` exit 0, `pnpm format` exit 0. The first gate run
+  exited 1 on one assertion the census missed (`task-tokens.test.ts`
+  `/landed for 7\d min/`); fixed in `5a0c3ce0`.
+- Screenshots, before and after, light and dark, 1440 and 390:
+  `/tmp/laika-clock-shots/{before,after}-{my-day,task-panel-effort-activity,task-panel-activity,capacity,insights-usage}-{light,dark}-{1440,390}.png`.
+  Capacity's fixture changed between the two (LAI-818 merged in between).
