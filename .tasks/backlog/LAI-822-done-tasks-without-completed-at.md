@@ -12,8 +12,8 @@ status: backlog
 ## Goal
 
 Every done task has a `completed_at`, so ranged figures can see it.
-**The backfill part needs the owner's yes, because it changes production
-data.**
+**Decided (D-093, 2026-10-20): the owner delegated the call and CHIEF said
+yes to the backfill.** It runs as a migration on the next deploy.
 
 ## Found (audit-metrics-sense, 2026-10-20)
 
@@ -26,7 +26,7 @@ shows 0 done for Laika.
 - [ ] **Code fix.** A task created as done, or created straight into
       done, gets `completed_at = created_at`, or `now`; match SPEC, and
       state it. A test fails on today's code.
-- [ ] **Backfill, only after the owner says yes.** A migration sets
+- [ ] **Backfill (approved, D-093).** A migration sets
       `completed_at` for done tasks that lack one. Use the latest move into
       done from activity if there is one, otherwise `created_at`. It must
       be idempotent and reported, with a count before and after on a copy of

@@ -5145,3 +5145,39 @@ production and found:
 On "Last 7 days" in OnRoute the corrected card still ranks **Ashutosh first**
 (23 delivered against 3). On 30 days or all time it ranks **Pawan first**
 (168 against 86). That is the data, not a bug.
+
+## D-093 — Done tasks without a completion date are backfilled; imports and bulk sweeps are left out of delivery figures (settles D-092's open points)
+
+**Date:** 2026-10-20 · **Decided by:** CHIEF, on the owner's delegation · **Status:** accepted
+
+D-092 left two questions to the owner. Asked on 2026-10-20, the owner answered:
+*"1. take decision by yourself. 2. do what is recommended."*
+
+### Decided
+
+1. **Backfill `completed_at` (LAI-822).** Every done task that has no
+   `completed_at` gets one, by a migration that runs on the next deploy:
+   the time of the task's **latest move into a done status** in the activity
+   log, or its **`created_at`** when the log has none. The migration is
+   idempotent, touches only rows where `completed_at` is null and the status
+   is done, and logs how many rows it set. The server's pre-migration snapshot
+   (§11.6) is the backup. New tasks created already done get
+   `completed_at = created_at` from now on, so the gap cannot reopen. This is
+   the one production data change the owner delegated; it is not a precedent
+   for others.
+2. **Imports and bulk sweeps are excluded (LAI-823), as recommended.** A
+   status change that is part of a **bulk sweep** — an explicit import marker,
+   or one actor moving many tasks within a minute (threshold set in LAI-823
+   from production evidence and stated in SPEC) — does not count toward
+   contribution, throughput, cycle time, the sprint forecast or the activity
+   heatmap. It is still recorded and still shown in the activity feed, marked
+   as a bulk move, so nothing is hidden; it simply is not credited as work.
+   The known sweeps are 2026-09-20 (import), 2026-10-07 (bulk done) and
+   2026-10-15 (Laika mirror).
+
+### Consequences
+
+- Laika's 358 mirrored done tasks reappear in ranged figures on the day they
+  actually moved to done, or the day they were created.
+- OnRoute's throughput and Pawan's heatmap lose their three spike days; the
+  contribution ranking reflects work done one task at a time.

@@ -3,7 +3,7 @@ id: LAI-823
 title: 'Imports and bulk sweeps (09-20, 10-07, 10-15) dominate throughput, cycle time, the forecast and contribution'
 area: server
 assignee: unclaimed
-priority: p3
+priority: p2
 depends-on: []
 discovered-from: LAI-796
 status: backlog
@@ -11,8 +11,10 @@ status: backlog
 
 ## Goal
 
-Delivery figures reflect real work, not one-off imports. **Needs the owner's
-decision (D-092, "not decided yet").**
+Delivery figures reflect real work, not one-off imports. **Decided (D-093,
+2026-10-20): bulk sweeps are EXCLUDED** from contribution, throughput, cycle
+time, the forecast and the heatmap, and stay visible in the activity feed
+marked as bulk moves.
 
 ## Found (audit-metrics-sense, 2026-10-20)
 
@@ -25,13 +27,14 @@ decision (D-092, "not decided yet").**
   shows "forecast once 10 are done" despite 358 done.
 - **Heatmap:** 54% of Pawan's 12-week total falls on 3 migration days.
 
-## Acceptance criteria (once decided)
+## Acceptance criteria
 
 - [ ] **Bulk moves.** A rule that recognises a bulk move, for example more
       than N status changes by one actor within one minute, or an explicit
-      import marker. Those moves are excluded from, or marked in, throughput,
-      cycle time, the forecast, contribution and the heatmap, per the owner's
-      decision.
+      import marker. Those moves are excluded from throughput, cycle time,
+      the forecast, contribution and the heatmap (D-093), and marked as bulk
+      moves in the activity feed. The threshold is chosen from production
+      evidence and written into SPEC.
 - [ ] **Cycle time** is split into "building" and "waiting for review".
 - [ ] **The forecast** counts top-level tasks only and never prints a
       whole-range answer as a forecast.
