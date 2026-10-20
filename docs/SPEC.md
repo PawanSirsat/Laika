@@ -4244,9 +4244,9 @@ and its line-height:
 | Step | Size / line-height | For |
 |---|---|---|
 | `body` | 14px / 20px | default UI text, table cells, card titles, form fields, buttons |
-| `reading` | 16px / 24px | text read like a document: a task's description, acceptance, comments |
+| `reading` | 16px / 24px | text read like a document: a task's description, acceptance, comments; their headings are h1 24px, h2 20px, h3 16px |
 | `small` | 12px / 16px | secondary lines, meta, timestamps, chips, keys, field labels, uppercase section labels |
-| `tiny` | 11px / 16px | only the named badges and counters where 12px cannot fit: avatar initials in a circle under 28px, the folded sidebar's count |
+| `tiny` | 11px / 16px | only the named badges and counters where 12px cannot fit: avatar initials in a circle under 28px, the "+N" beside a space's member stack, the folded sidebar's count |
 | `heading-lg` | 24px / 28px | a page title; the task panel's title |
 | `heading-md` | 20px / 24px | a section heading; a dialog title |
 | `heading-sm` | 16px / 20px | a card or panel heading |
