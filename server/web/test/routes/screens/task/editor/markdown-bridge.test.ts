@@ -175,7 +175,24 @@ void describe('the faithful escaper', () => {
   });
 
   void test('text typed to look like markdown is written so it reads back as text', () => {
-    for (const text of ['**not bold**', '[a](b)', '`code`', '~~x~~', '* not a list']) {
+    for (const text of [
+      '**not bold**',
+      '[a](b)',
+      '`code`',
+      '~~x~~',
+      '* not a list',
+      // Block markers at a line's start: written as typed they would come back
+      // as a heading, a list, a quote or a rule.
+      '# not a heading',
+      '- not a list',
+      '+ not a list',
+      '1. not a list',
+      '2) not a list',
+      '> not a quote',
+      'first line\n- second line',
+      'first line\n---',
+      'first line\n===',
+    ]) {
       const doc = bridge.schema.nodeFromJSON({
         type: 'doc',
         content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],

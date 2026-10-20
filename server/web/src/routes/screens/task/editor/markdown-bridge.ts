@@ -87,28 +87,54 @@ function couldPair(text: string, i: number, mark: string): boolean {
 }
 
 /**
+ * At the start of a line, what would make it a block rather than text: a
+ * heading, a quote, a list item, a rule or a setext underline. The length of
+ * the marker, up to and including the character to escape, or 0.
+ *
+ * `@tiptap/markdown`'s own escaper misses these — `# not a heading` typed as
+ * text came back as a heading (LAI-827, measured).
+ */
+function blockMarker(line: string): number {
+  const rule = /^(?:[-*_](?:[ \t]*[-*_]){2,}|=+)[ \t]*$/.test(line);
+  if (rule) return 1;
+  const marker = /^(?:#{1,6}|>|[-+*]|\d{1,9}[.)])(?=[ \t]|$)/.exec(line)?.[0];
+  if (marker === undefined) return 0;
+  // `1.` is escaped at its `.`, the rest at their first character.
+  return /^\d/.test(marker) ? marker.length : 1;
+}
+
+/**
  * Escape a plain-text run only where it could be read as markdown.
  *
  * - `` ` `` always: a lone backtick can pair with one much later.
  * - `\` before ASCII punctuation or at the end, where it would escape what follows.
- * - `*`, `_` and `~` when {@link couldPair} says they might pair, and a `*`
- *   and a space at the start of the run, since a line can start there (`* item`).
+ * - `*`, `_` and `~` when {@link couldPair} says they might pair.
  * - `[` and `]` when they could make a link: `[text](` or `[text][`.
+ * - A block marker where a line starts — the run's start, or after a soft
+ *   line break inside it ({@link blockMarker}).
  *
- * Everything else — `<`, `>`, `&`, `#`, `|` — is written as typed. A `<` that
- * reads as HTML, or `#` at a line start, is caught by the re-parse.
+ * Everything else — `<`, `>`, `&`, `|` — is written as typed. A `<` that reads
+ * as HTML is caught by the re-parse.
  */
 export function escapeFaithfully(text: string): string {
   let out = '';
+  let escapeAt = -1;
   for (let i = 0; i < text.length; i++) {
     const c = text.charAt(i);
     const next = text[i + 1];
-    if (c === '`') {
+    if (i === 0 || text[i - 1] === '\n') {
+      const end = text.indexOf('\n', i);
+      const length = blockMarker(text.slice(i, end === -1 ? undefined : end));
+      escapeAt = length === 0 ? -1 : i + length - 1;
+    }
+    if (i === escapeAt) {
+      out += `\\${c}`;
+    } else if (c === '`') {
       out += '\\`';
     } else if (c === '\\') {
       out += next === undefined || ASCII_PUNCTUATION.test(next) ? '\\\\' : '\\';
     } else if (c === '*' || c === '_' || c === '~') {
-      out += couldPair(text, i, c) || (i === 0 && c === '*' && isSpace(next)) ? `\\${c}` : c;
+      out += couldPair(text, i, c) ? `\\${c}` : c;
     } else if (c === '[') {
       const close = text.indexOf(']', i + 1);
       const after = close === -1 ? undefined : text[close + 1];
