@@ -1293,7 +1293,9 @@ describe('0043 marks automated token rows on a populated database (LAI-815)', ()
       };
       const at = journal.entries.findIndex((e) => /^\d{4}_token_usage_automated$/.test(e.tag));
       expect(at, 'the automated-flag migration is in the journal').toBeGreaterThan(0);
-      const dropped = journal.entries.splice(at);
+      // 0043 alone comes back: a later migration's own tables are not its
+      // census's business (LAI-831's 0044 added two, and read as a change).
+      const dropped = journal.entries.splice(at).slice(0, 1);
       writeFileSync(journalPath, JSON.stringify(journal));
 
       const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
@@ -1375,4 +1377,85 @@ describe('0043 marks automated token rows on a populated database (LAI-815)', ()
       }
     },
   );
+});
+
+/**
+ * `0044` on a populated database (LAI-831): `time_breaks` and `time_undo`,
+ * two new tables of a person's own time. **Additive is the property**: two
+ * tables appear, empty, and every table already there keeps its root page and
+ * every row — a person's drafts and confirmed entries included. A rebuild is
+ * what would cascade (the Drizzle migrator keeps foreign keys on, LAI-768), so
+ * the root page is the instrument.
+ */
+describe('0044 adds breaks and undo on a populated database (LAI-831)', () => {
+  it('creates two empty tables and rebuilds nothing', { timeout: UPGRADE_BUDGET_MS }, () => {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    copyMigrations(dir);
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { idx: number; tag: string; when: number }[];
+    };
+    const at = journal.entries.findIndex((e) => /^\d{4}_time_breaks_and_undo$/.test(e.tag));
+    expect(at, 'the breaks-and-undo migration is in the journal').toBeGreaterThan(0);
+    const dropped = journal.entries.splice(at).slice(0, 1);
+    writeFileSync(journalPath, JSON.stringify(journal));
+
+    const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+    const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+    try {
+      runMigrations(db, { migrationsFolder: dir });
+      const s = seed(db);
+      const now = Date.now();
+      const entry = newId();
+      db.run(sql`
+        INSERT INTO time_entries (id, user_id, day, tz, minutes, source, revision, created_at, updated_at)
+        VALUES (${entry}, ${s.userId}, '2026-10-20', 'UTC', 30, 'manual', 1, ${now}, ${now})
+      `);
+      db.run(sql`
+        INSERT INTO time_drafts (id, user_id, source, collector_id, day, tz, started_at, ended_at, minutes, signals, state, origin_id, origin_started_at, origin_ended_at, origin_minutes, created_at, updated_at)
+        VALUES (${newId()}, ${s.userId}, 'collector', 'c', '2026-10-20', 'UTC', ${now}, ${now + 1_800_000}, 30, '{"prompts":2}', 'pending', 'o', ${now}, ${now + 1_800_000}, 30, ${now}, ${now})
+      `);
+      // What every boot does beside the migrations, done before the census.
+      runMigrations(db, { migrationsFolder: dir });
+
+      const census = () =>
+        Object.fromEntries(
+          db
+            .all<{ name: string; rootpage: number }>(
+              sql`SELECT name, rootpage FROM sqlite_master
+                   WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                     AND name NOT LIKE '__drizzle%' ORDER BY name`,
+            )
+            .map((t) => [
+              t.name,
+              {
+                rootpage: t.rootpage,
+                rows: db.all<Record<string, unknown>>(
+                  sql.raw(`SELECT * FROM "${t.name}" ORDER BY rowid`),
+                ),
+              },
+            ]),
+        );
+      const before = census();
+      // The guard on the census: the rows it is to keep are in it.
+      expect(before.time_drafts?.rows).toHaveLength(1);
+      expect(before.time_entries?.rows).toHaveLength(1);
+      expect(before).not.toHaveProperty('time_breaks');
+      expect(before).not.toHaveProperty('time_undo');
+
+      journal.entries.push(...dropped);
+      writeFileSync(journalPath, JSON.stringify(journal));
+      runMigrations(db, { migrationsFolder: dir });
+
+      const { time_breaks: breaks, time_undo: undo, ...kept } = census();
+      expect(kept).toEqual(before);
+      expect(breaks?.rows).toEqual([]);
+      expect(undo?.rows).toEqual([]);
+      expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+    } finally {
+      sqlite.close();
+      rmSync(dbDir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

@@ -2373,6 +2373,67 @@ export const timeEntryRevisions = sqliteTable(
   ],
 );
 
+// ------------------------------------------------- time_breaks (LAI-831)
+
+/**
+ * A gap in a person's day that they waved away as a break (LAI-831, the
+ * owner's My day design, CHIEF's addition D): a span on their local day that
+ * My day stops counting under *Gaps*. **Never time** — no total, entry,
+ * report or export reads it. The person's own on a web session, as drafts are
+ * (`time_drafts.*_own`), and kept 30 days with them (§11.6). SPEC §4 is
+ * LAI-836.
+ */
+export const timeBreaks = sqliteTable(
+  'time_breaks',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** `YYYY-MM-DD`, the person's local day in `tz`, as a draft's. */
+    day: text('day').notNull(),
+    tz: text('tz').notNull(),
+    startedAt: integer('started_at').notNull(),
+    endedAt: integer('ended_at').notNull(),
+    createdAt,
+  },
+  (t) => [
+    // My day reads one person's day.
+    index('time_breaks_user_day_idx').on(t.userId, t.day),
+    // §11.6's retention deletes by day alone.
+    index('time_breaks_day_idx').on(t.day),
+    check('time_breaks_span_check', sql.raw('ended_at > started_at')),
+  ],
+);
+
+// ---------------------------------------------------- time_undo (LAI-831)
+
+/**
+ * A person's last changes to their own time, as things stood before each
+ * (LAI-831, CHIEF's addition B), so *Undo* puts back **exactly** what was
+ * there — a held block's collector, a split block whole under its own id, a
+ * confirmed draft pending. Kept for `UNDO_WINDOW_MS` and no longer; the
+ * person's own, never read by anyone else. SPEC §4 is LAI-836.
+ */
+export const timeUndo = sqliteTable(
+  'time_undo',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** What the change was asked of: a draft's id, an entry's id, or `day:YYYY-MM-DD`. */
+    subject: text('subject').notNull(),
+    /** The drafts as they stood before, and the drafts and entries the change made or retired. */
+    change: text('change').notNull(),
+    createdAt,
+  },
+  (t) => [
+    index('time_undo_user_subject_idx').on(t.userId, t.subject),
+    index('time_undo_created_at_idx').on(t.createdAt),
+  ],
+);
+
 // ---------------------------------------------------- §4.50 agent_time_days
 
 /**
@@ -2596,3 +2657,4 @@ export type PlanLimit = typeof planLimits.$inferSelect;
 export type TimeDraft = typeof timeDrafts.$inferSelect;
 export type TimeEntry = typeof timeEntries.$inferSelect;
 export type TimeEntryRevision = typeof timeEntryRevisions.$inferSelect;
+export type TimeBreak = typeof timeBreaks.$inferSelect;

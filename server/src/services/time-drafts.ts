@@ -4,13 +4,14 @@ import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type TimeDraftSource } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
-import { projects, tasks, timeDrafts } from '../db/schema.ts';
+import { projects, tasks, timeDrafts, timeEntries, timeUndo } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { addDays, dayIn, isTimeZone } from './calendar-days.ts';
 import { assertReportDays, latestReportZone } from './local-activity.ts';
 import { resolveKeys } from './token-usage.ts';
 import {
+  assertSpanOnDay,
   entryById,
   insertEntry,
   projectRefOf,
@@ -19,10 +20,12 @@ import {
   type Target,
   type TaskRef,
   taskRefOf,
+  syncEntry,
   type TimeEntryView,
   type Tx,
 } from './time-entries.ts';
 import { assertDrafting, assertTimeOn } from './time-settings.ts';
+import { daySubject, recordUndo } from './time-undo-log.ts';
 
 /**
  * Drafted time (D-088 items 3, 4, 11 and 13, SPEC §4.47, LAI-787): blocks a
@@ -579,6 +582,38 @@ export interface DraftPatch {
   project?: string | null | undefined;
   general?: boolean | undefined;
   minutes?: number | undefined;
+  /** A new start or end on the block's own day (LAI-831: an edge dragged), unix ms. */
+  started_at?: number | undefined;
+  ended_at?: number | undefined;
+}
+
+/**
+ * The span a patch gives a block, or `undefined` when it gives none. Only a
+ * block with a span has edges; both stay on its day, and it holds no more
+ * minutes than its span — the collector's own rule (`assertBlocks`).
+ */
+function patchedSpan(
+  row: typeof timeDrafts.$inferSelect,
+  patch: DraftPatch,
+): { startedAt: number; endedAt: number } | undefined {
+  if (patch.started_at === undefined && patch.ended_at === undefined) return undefined;
+  if (row.startedAt === null || row.endedAt === null) {
+    throw new ApiError('unprocessable', 'Only a block with a start and an end has edges', {
+      field: 'started_at',
+      reason: 'no_span',
+    });
+  }
+  const startedAt = patch.started_at ?? row.startedAt;
+  const endedAt = patch.ended_at ?? row.endedAt;
+  assertSpanOnDay(row.day, row.tz, startedAt, endedAt);
+  const minutes = patch.minutes ?? row.minutes;
+  if (minutes > Math.ceil((endedAt - startedAt) / MINUTE_MS)) {
+    throw new ApiError('unprocessable', 'A block holds no more minutes than its span', {
+      field: 'minutes',
+      reason: 'minutes_over_span',
+    });
+  }
+  return { startedAt, endedAt };
 }
 
 /**
@@ -586,6 +621,10 @@ export interface DraftPatch {
  * project or on *General*, or changes its minutes. An edited block is **held
  * for them** — taken out of its collector's replace set — so the next sync
  * neither overwrites nor duplicates it.
+ *
+ * Since LAI-831 it also moves the block's edges on its own day — My day's
+ * drag and −/+ — and records what it replaced, so Undo puts the block back
+ * as its collector left it, held or not.
  */
 export function updateDraft(
   db: Db,
@@ -602,23 +641,28 @@ export function updateDraft(
     : general
       ? { taskId: null, projectId: null }
       : resolveTarget(db, actor, { task: patch.task ?? null, project: patch.project ?? null });
-  pendingRow(db, actor.userId, id);
-  db.update(timeDrafts)
-    .set({
-      ...(target === undefined
-        ? {}
-        : {
-            taskId: target.taskId,
-            projectId: target.projectId,
-            taskKey: null,
-            general: general ? 1 : 0,
-          }),
-      ...(patch.minutes === undefined ? {} : { minutes: patch.minutes }),
-      collectorId: '',
-      updatedAt: now,
-    })
-    .where(eq(timeDrafts.id, id))
-    .run();
+  db.transaction((tx) => {
+    const row = pendingRow(tx, actor.userId, id);
+    const span = patchedSpan(row, patch);
+    tx.update(timeDrafts)
+      .set({
+        ...(target === undefined
+          ? {}
+          : {
+              taskId: target.taskId,
+              projectId: target.projectId,
+              taskKey: null,
+              general: general ? 1 : 0,
+            }),
+        ...(patch.minutes === undefined ? {} : { minutes: patch.minutes }),
+        ...(span ?? {}),
+        collectorId: '',
+        updatedAt: now,
+      })
+      .where(eq(timeDrafts.id, id))
+      .run();
+    recordUndo(tx, actor.userId, id, { drafts: [row] }, now);
+  });
   return draftById(db, actor.userId, id);
 }
 
@@ -662,6 +706,8 @@ export function splitDraft(
     const b = { ...base, id: newId(), startedAt: cut, minutes: row.minutes - first };
     tx.delete(timeDrafts).where(eq(timeDrafts.id, id)).run();
     tx.insert(timeDrafts).values([a, b]).run();
+    // Undo removes the halves and puts the block back under its own id.
+    recordUndo(tx, actor.userId, id, { drafts: [row], made: [a.id, b.id] }, now);
     return [a.id, b.id] as const;
   });
   return [draftById(db, actor.userId, ids[0]), draftById(db, actor.userId, ids[1])];
@@ -679,36 +725,56 @@ export function dismissDraft(
   now: number = Date.now(),
 ): void {
   assertCan(actor, 'time_drafts.manage_own');
-  pendingRow(db, actor.userId, id);
-  db.update(timeDrafts)
-    .set({ state: 'dismissed', updatedAt: now })
-    .where(eq(timeDrafts.id, id))
-    .run();
+  db.transaction((tx) => {
+    const row = pendingRow(tx, actor.userId, id);
+    tx.update(timeDrafts)
+      .set({ state: 'dismissed', updatedAt: now })
+      .where(eq(timeDrafts.id, id))
+      .run();
+    recordUndo(tx, actor.userId, id, { drafts: [row] }, now);
+  });
 }
 
+/**
+ * One block becomes confirmed time, inside the caller's transaction. A block
+ * has **one entry for as long as it is kept** (`time_entries_source_ref_unique`):
+ * confirmed again after an Undo took its entry back (LAI-831), the same entry
+ * is live again as the next revision rather than a second one made.
+ */
 function confirmRow(
   tx: Tx,
   userId: string,
   row: typeof timeDrafts.$inferSelect,
   now: number,
 ): string {
-  const entryId = insertEntry(
-    tx,
-    userId,
-    {
-      // An untied block is confirmed as General: the person confirmed it.
-      target: { taskId: row.taskId, projectId: row.projectId },
-      day: row.day,
-      tz: row.tz,
-      startedAt: row.startedAt,
-      endedAt: row.endedAt,
-      minutes: row.minutes,
-      note: row.note,
-    },
-    'draft',
-    row.id,
-    now,
-  );
+  const fields = {
+    // An untied block is confirmed as General: the person confirmed it.
+    target: { taskId: row.taskId, projectId: row.projectId },
+    day: row.day,
+    tz: row.tz,
+    startedAt: row.startedAt,
+    endedAt: row.endedAt,
+    minutes: row.minutes,
+    note: row.note,
+  };
+  const before = tx
+    .select({ id: timeEntries.id })
+    .from(timeEntries)
+    .where(
+      and(
+        eq(timeEntries.userId, userId),
+        eq(timeEntries.source, 'draft'),
+        eq(timeEntries.sourceRef, row.id),
+      ),
+    )
+    .get();
+  let entryId: string;
+  if (before === undefined) {
+    entryId = insertEntry(tx, userId, fields, 'draft', row.id, now);
+  } else {
+    syncEntry(tx, before.id, fields, userId, now);
+    entryId = before.id;
+  }
   tx.update(timeDrafts)
     .set({ state: 'confirmed', entryId, updatedAt: now })
     .where(eq(timeDrafts.id, row.id))
@@ -726,9 +792,12 @@ export function confirmDraft(
   assertCan(actor, 'time_drafts.manage_own');
   assertCan(actor, 'time_entries.write_own');
   assertTimeOn(db);
-  const entryId = db.transaction((tx) =>
-    confirmRow(tx, actor.userId, pendingRow(tx, actor.userId, id), now),
-  );
+  const entryId = db.transaction((tx) => {
+    const row = pendingRow(tx, actor.userId, id);
+    const made = confirmRow(tx, actor.userId, row, now);
+    recordUndo(tx, actor.userId, id, { drafts: [row], entriesMade: [made] }, now);
+    return made;
+  });
   return entryById(db, actor.userId, entryId);
 }
 
@@ -746,8 +815,8 @@ export function confirmDay(
   assertCan(actor, 'time_drafts.manage_own');
   assertCan(actor, 'time_entries.write_own');
   assertTimeOn(db);
-  const ids = db.transaction((tx) =>
-    tx
+  const ids = db.transaction((tx) => {
+    const rows = tx
       .select()
       .from(timeDrafts)
       .where(
@@ -758,9 +827,14 @@ export function confirmDay(
         ),
       )
       .orderBy(asc(sql`coalesce(${timeDrafts.startedAt}, ${timeDrafts.createdAt})`))
-      .all()
-      .map((row) => confirmRow(tx, actor.userId, row, now)),
-  );
+      .all();
+    const made = rows.map((row) => confirmRow(tx, actor.userId, row, now));
+    // Undo, asked of the day, puts every block of it back pending (LAI-831).
+    if (rows.length > 0) {
+      recordUndo(tx, actor.userId, daySubject(day), { drafts: rows, entriesMade: made }, now);
+    }
+    return made;
+  });
   return ids.map((id) => entryById(db, actor.userId, id));
 }
 
@@ -771,11 +845,36 @@ export function confirmDay(
  */
 export function deleteOwnDrafts(db: Db, actor: ResolvedActor): void {
   assertCan(actor, 'time_drafts.manage_own');
-  db.delete(timeDrafts)
-    .where(
-      and(eq(timeDrafts.userId, actor.userId), inArray(timeDrafts.state, ['pending', 'dismissed'])),
-    )
-    .run();
+  db.transaction((tx) => {
+    tx.delete(timeDrafts)
+      .where(
+        and(
+          eq(timeDrafts.userId, actor.userId),
+          inArray(timeDrafts.state, ['pending', 'dismissed']),
+        ),
+      )
+      .run();
+    // A change's before-image holds a block's counts, and Undo would bring it back.
+    tx.delete(timeUndo).where(eq(timeUndo.userId, actor.userId)).run();
+  });
+}
+
+/**
+ * Every pending draft a person holds, on every day — what turning *Draft my
+ * time* off deletes, for My day to say before it asks (LAI-831, CHIEF's
+ * addition F). One range of `time_drafts_user_day_idx`. A helper of My day,
+ * which asks `time_drafts.read_own` first.
+ */
+export function heldDrafts(db: Db, userId: string): { count: number; minutes: number } {
+  const row = db
+    .select({
+      count: sql<number>`count(*)`.mapWith(Number),
+      minutes: sql<number>`coalesce(sum(${timeDrafts.minutes}), 0)`.mapWith(Number),
+    })
+    .from(timeDrafts)
+    .where(and(eq(timeDrafts.userId, userId), eq(timeDrafts.state, 'pending')))
+    .get();
+  return { count: row?.count ?? 0, minutes: row?.minutes ?? 0 };
 }
 
 /** Today in the zone the person's drafts are read in — for My day's default. */

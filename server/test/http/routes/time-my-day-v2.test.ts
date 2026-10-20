@@ -157,7 +157,11 @@ beforeEach(async () => {
     h.db.select({ id: users.id }).from(users).where(eq(users.email, 'ada@example.test')).get()
       ?.id ?? '';
   for (const title of ['Time', 'Review']) {
-    await ok('/api/v1/projects/laika/tasks', { method: 'POST', body: JSON.stringify({ title }) }, 201);
+    await ok(
+      '/api/v1/projects/laika/tasks',
+      { method: 'POST', body: JSON.stringify({ title }) },
+      201,
+    );
   }
   await ok('/api/v1/org/time', { method: 'PUT', body: JSON.stringify({ mode: 'drafts' }) }, 200);
   await ok(
@@ -184,7 +188,7 @@ async function drafted(): Promise<{ onCard: Draft; untied: Draft }> {
   const untied = drafts.find((d) => d.task === null);
   expect(onCard).toBeDefined();
   expect(untied).toBeDefined();
-  return { onCard: onCard as Draft, untied: untied as Draft };
+  return { onCard: onCard!, untied: untied! };
 }
 
 describe('Break — a gap waved away (D)', () => {
@@ -352,7 +356,11 @@ describe('Undo puts the server back as it was (B)', () => {
   it('confirm, undone: the draft is pending again as it was, and nothing counts', async () => {
     const { onCard } = await drafted();
     const before = await myDay();
-    const confirmed = await ok(`/api/v1/me/time-drafts/${onCard.id}/confirm`, { method: 'POST' }, 201);
+    const confirmed = await ok(
+      `/api/v1/me/time-drafts/${onCard.id}/confirm`,
+      { method: 'POST' },
+      201,
+    );
     const entry = (await confirmed.json()) as { id: string };
 
     expect((await undo({ draft: onCard.id })).status).toBe(204);
@@ -381,7 +389,7 @@ describe('Undo puts the server back as it was (B)', () => {
       await mint(),
     );
     const before = await myDay();
-    const named = before.drafts[0] as Draft;
+    const named = before.drafts[0]!;
     expect(named.task_key).toBe('LAI-404');
 
     await ok(
@@ -468,7 +476,11 @@ describe('Undo puts the server back as it was (B)', () => {
       200,
     );
     // An undo of the first change, after a second one, would undo the second too.
-    const confirmed = await ok(`/api/v1/me/time-drafts/${untied.id}/confirm`, { method: 'POST' }, 201);
+    const confirmed = await ok(
+      `/api/v1/me/time-drafts/${untied.id}/confirm`,
+      { method: 'POST' },
+      201,
+    );
     const entry = (await confirmed.json()) as { id: string };
     await ok(
       `/api/v1/me/time-entries/${entry.id}`,

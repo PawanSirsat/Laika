@@ -152,18 +152,21 @@ describe('the work it does', () => {
     ).filter((s) => /^\s*select/i.test(s));
     // The sections, each one statement: the zone of the drafts (none asked
     // for here, so not run), the org id and two switches, the day's drafts,
-    // its entries, its agent seconds and their split, the week's drafts and
-    // its entries — and nothing that grows with the history.
+    // its entries and its breaks, the drafts held on every day (LAI-831: one
+    // grouped count, bounded by the drafts' 30 days), its agent seconds and
+    // their split, the week's drafts and its entries — and nothing that grows
+    // with the history.
     const sections = {
       org: statements.filter((s) => s.includes('from "orgs"')).length,
       switches: statements.filter((s) => /from "(org|user)_time_settings"/.test(s)).length,
       drafts: statements.filter((s) => s.includes('from "time_drafts"')).length,
       entries: statements.filter((s) => s.includes('from "time_entries"')).length,
+      breaks: statements.filter((s) => s.includes('from "time_breaks"')).length,
       agent: statements.filter((s) => /from "(agent_time_days|token_session_tasks)"/.test(s))
         .length,
     };
-    expect(sections).toEqual({ org: 1, switches: 2, drafts: 2, entries: 2, agent: 2 });
-    expect(statements).toHaveLength(9);
+    expect(sections).toEqual({ org: 1, switches: 2, drafts: 3, entries: 2, breaks: 1, agent: 2 });
+    expect(statements).toHaveLength(11);
   });
 
   it('reads the same number of rows for a day whatever came before it', () => {

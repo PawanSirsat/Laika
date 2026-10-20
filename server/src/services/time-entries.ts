@@ -11,6 +11,7 @@ import { addDays, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
 import { canSeeProject, requireProjectBySlug } from './projects.ts';
 import { resolveTaskRef } from './tasks.ts';
 import { assertTimeOn } from './time-settings.ts';
+import { recordUndo } from './time-undo-log.ts';
 
 /**
  * Confirmed time (D-088 items 2, 6, 11 and 12, SPEC §4.48–§4.49, LAI-787) —
@@ -157,6 +158,26 @@ export function assertEntryDay(day: string, tz: string, now: number): void {
       field: 'day',
       earliest,
       latest,
+    });
+  }
+}
+
+/**
+ * A span on `day` in `tz` (LAI-831): it ends after it starts, and both ends
+ * fall on that day — a block dragged past midnight is refused, not moved to
+ * the next day. `422 invalid_span` or `422 outside_day`.
+ */
+export function assertSpanOnDay(day: string, tz: string, start: number, end: number): void {
+  if (!(end > start)) {
+    throw new ApiError('unprocessable', 'A span ends after it starts', {
+      reason: 'invalid_span',
+      field: 'ended_at',
+    });
+  }
+  if (dayIn(tz, start) !== day || dayIn(tz, end - 1) !== day) {
+    throw new ApiError('unprocessable', `A span stays on ${day} in ${tz}`, {
+      reason: 'outside_day',
+      field: 'started_at',
     });
   }
 }
@@ -400,8 +421,8 @@ export function createEntry(
     });
   }
   const target = resolveTarget(db, actor, input);
-  const id = db.transaction((tx) =>
-    insertEntry(
+  const id = db.transaction((tx) => {
+    const made = insertEntry(
       tx,
       actor.userId,
       {
@@ -416,8 +437,11 @@ export function createEntry(
       'manual',
       null,
       now,
-    ),
-  );
+    );
+    // Undo takes it back (LAI-831).
+    recordUndo(tx, actor.userId, made, { drafts: [], entriesMade: [made] }, now);
+    return made;
+  });
   return entryById(db, actor.userId, id);
 }
 
@@ -427,6 +451,9 @@ export interface EntryPatch {
   project?: string | null | undefined;
   note?: string | null | undefined;
   day?: string | undefined;
+  /** A new start or end on the same day (LAI-831: an edge dragged), unix ms. */
+  started_at?: number | undefined;
+  ended_at?: number | undefined;
 }
 
 /**
@@ -459,6 +486,11 @@ function currentFields(tx: Tx, userId: string, id: string) {
  * `PATCH /me/time-entries/:id`: the person corrects their own entry. Every
  * field is optional; `task: null` and `project: null` move it to *General*.
  * A change writes the next revision; a patch that changes nothing writes none.
+ *
+ * `started_at` and `ended_at` move its edges on its own day (LAI-831): a drag
+ * on My day's timeline is one patch, and so **one revision**, however far it
+ * went. An entry with no set time takes both at once; a new day and a new
+ * span are two edits, not one.
  */
 export function updateEntry(
   db: Db,
@@ -474,14 +506,38 @@ export function updateEntry(
     ? resolveTarget(db, actor, { task: patch.task ?? null, project: patch.project ?? null })
     : undefined;
 
+  const touchesSpan = patch.started_at !== undefined || patch.ended_at !== undefined;
+
   db.transaction((tx) => {
     const row = currentFields(tx, actor.userId, id);
+    const moves = patch.day !== undefined && patch.day !== row.day;
+    let startedAt = moves ? null : row.startedAt;
+    let endedAt = moves ? null : row.endedAt;
+    if (touchesSpan) {
+      if (moves) {
+        throw new ApiError('unprocessable', 'A new day and a new span are two edits', {
+          reason: 'invalid_span',
+          field: 'day',
+        });
+      }
+      const start = patch.started_at ?? row.startedAt;
+      const end = patch.ended_at ?? row.endedAt;
+      if (start === null || end === null) {
+        throw new ApiError('unprocessable', 'An entry with no set time takes a start and an end', {
+          reason: 'no_span',
+          field: 'started_at',
+        });
+      }
+      assertSpanOnDay(row.day, row.tz, start, end);
+      startedAt = start;
+      endedAt = end;
+    }
     const next: EntryFields = {
       target: resolved ?? { taskId: row.taskId, projectId: row.projectId },
       day: patch.day ?? row.day,
       tz: row.tz,
-      startedAt: patch.day !== undefined && patch.day !== row.day ? null : row.startedAt,
-      endedAt: patch.day !== undefined && patch.day !== row.day ? null : row.endedAt,
+      startedAt,
+      endedAt,
       minutes: patch.minutes ?? row.minutes,
       note:
         patch.note === undefined
@@ -495,6 +551,8 @@ export function updateEntry(
       next.target.taskId === row.taskId &&
       next.target.projectId === row.projectId &&
       next.day === row.day &&
+      next.startedAt === row.startedAt &&
+      next.endedAt === row.endedAt &&
       next.minutes === row.minutes &&
       next.note === row.note;
     if (same) return;
@@ -536,6 +594,8 @@ export function deleteEntry(
   db.transaction((tx) => {
     currentFields(tx, actor.userId, id);
     retireEntry(tx, id, actor.userId, now);
+    // Undo makes it live again (LAI-831).
+    recordUndo(tx, actor.userId, id, { drafts: [], entriesRetired: [id] }, now);
   });
 }
 
@@ -615,6 +675,32 @@ export function syncEntry(
     .values(revisionRow(id, revision, 'edited', changedBy, fields, now))
     .run();
   return revision;
+}
+
+/**
+ * An entry its person took back, live again as it stood (LAI-831: Undo of a
+ * delete), inside the caller's transaction — its own fields as the next
+ * `edited` revision, the way an entry Solidtime brings back is. History stays
+ * append-only: the delete and the return are both in it.
+ */
+export function reviveEntry(tx: Tx, id: string, changedBy: string, now: number): number {
+  const row = tx.select().from(timeEntries).where(eq(timeEntries.id, id)).get();
+  if (row === undefined) throw ApiError.notFound(`No time entry "${id}"`);
+  return syncEntry(
+    tx,
+    id,
+    {
+      target: { taskId: row.taskId, projectId: row.projectId },
+      day: row.day,
+      tz: row.tz,
+      startedAt: row.startedAt,
+      endedAt: row.endedAt,
+      minutes: row.minutes,
+      note: row.note,
+    },
+    changedBy,
+    now,
+  );
 }
 
 /**

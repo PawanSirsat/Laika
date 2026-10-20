@@ -3,6 +3,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { getMyDay } from '../../services/my-day.ts';
+import { addBreak, removeBreak } from '../../services/time-breaks.ts';
 import {
   confirmDay,
   confirmDraft,
@@ -45,6 +46,7 @@ import {
   type SolidtimeOutbox,
   type SolidtimeSetup,
 } from '../../services/time-solidtime.ts';
+import { undoChange } from '../../services/time-undo.ts';
 import { TASK_KEY_PATTERN } from '../../services/token-usage.ts';
 import { type AppEnv } from '../context.ts';
 import { parseBody, parseParams, parseQuery, strictObject, z } from '../validation.ts';
@@ -118,11 +120,16 @@ const ProposalBody = strictObject({
   note: z.string().max(200).optional(),
 });
 
+const instantMs = z.number().int().min(0);
+
 const DraftPatchBody = strictObject({
   task: ref.nullable().optional(),
   project: slug.nullable().optional(),
   general: z.literal(true).optional(),
   minutes: minutes.optional(),
+  // An edge moved on its own day (LAI-831).
+  started_at: instantMs.optional(),
+  ended_at: instantMs.optional(),
 });
 
 const SplitBody = strictObject({ at: z.number().int().min(0) });
@@ -143,6 +150,18 @@ const EntryPatchBody = strictObject({
   task: ref.nullable().optional(),
   project: slug.nullable().optional(),
   note: z.string().max(280).nullable().optional(),
+  day: day.optional(),
+  started_at: instantMs.optional(),
+  ended_at: instantMs.optional(),
+});
+
+// A gap waved away (LAI-831): a span on the person's own day, and nothing else.
+const BreakBody = strictObject({ day, tz: zone, started_at: instantMs, ended_at: instantMs });
+
+// Undo names one thing: a draft, an entry, or a day's *Confirm day* (LAI-831).
+const UndoBody = strictObject({
+  draft: z.string().min(1).max(64).optional(),
+  entry: z.string().min(1).max(64).optional(),
   day: day.optional(),
 });
 
@@ -295,6 +314,22 @@ export function meTimeRoutes(options: { db: Db }): Hono<AppEnv> {
   app.get('/time', (c) => {
     const actor = requireActor(c);
     return c.json(getMyDay(db, actor, parseQuery(MyDayQuery, c.req.query())));
+  });
+
+  app.post('/time/undo', async (c) => {
+    const actor = requireActor(c);
+    undoChange(db, actor, parseBody(UndoBody, await json(c)));
+    return c.body(null, 204);
+  });
+
+  app.post('/time-breaks', async (c) => {
+    const actor = requireActor(c);
+    return c.json(addBreak(db, actor, parseBody(BreakBody, await json(c))), 201);
+  });
+
+  app.delete('/time-breaks/:id', (c) => {
+    removeBreak(db, requireActor(c), parseParams(IdParams, c.req.param()).id);
+    return c.body(null, 204);
   });
 
   app.post('/time-entries', async (c) => {
