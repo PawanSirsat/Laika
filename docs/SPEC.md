@@ -4234,6 +4234,33 @@ dependency-aware Gantt with a layout engine, a critical path and a scheduling
 model, which D-014 priced and D-066 accepted — as its own task (LAI-289), not
 as a side effect of the columns existing.
 
+#### 11.4.4 Type scale
+
+The owner, 2026-10-21: *"the text size is very small, we need to increase it
+everywhere … I want the same as the Jira board."* Laika's text is set on
+Atlassian's published scale, which Jira uses (LAI-828). Seven steps, each a size
+and its line-height:
+
+| Step | Size / line-height | For |
+|---|---|---|
+| `body` | 14px / 20px | default UI text, table cells, card titles, form fields, buttons |
+| `reading` | 16px / 24px | text read like a document: a task's description, acceptance, comments |
+| `small` | 12px / 16px | secondary lines, meta, timestamps, chips, keys, field labels, uppercase section labels |
+| `tiny` | 11px / 16px | only the named badges and counters where 12px cannot fit: avatar initials in a circle under 28px, the folded sidebar's count |
+| `heading-lg` | 24px / 28px | a page title; the task panel's title |
+| `heading-md` | 20px / 24px | a section heading; a dialog title |
+| `heading-sm` | 16px / 20px | a card or panel heading |
+
+**Nothing is under 12px** but the `tiny` list. Every `font-size` in a
+stylesheet is a step, written `var(--text-<step>)` with its pair
+`var(--leading-<step>)`; the steps are declared once, in
+`server/web/src/theme/type-roles.ts`, and generated into
+`server/web/src/styles/type.css`. `type-floor.test.ts` fails on a raw size, on
+anything under the floor, and on a `tiny` use not on its list.
+
+`docs/design/` keeps the prototype's smaller sizes (D-020); this scale overrides
+them in the app only.
+
 ### 11.5 Live updates — SSE
 
 `GET /api/v1/events` (D-003). One `text/event-stream` per client, filtered
