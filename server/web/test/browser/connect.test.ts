@@ -195,7 +195,7 @@ after(async () => {
 
 void describe('before a token exists', () => {
   void test('the page reads, and shows a placeholder rather than a hole', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       await bring(h);
       await goTo(h, 3);
@@ -213,7 +213,7 @@ void describe('before a token exists', () => {
   });
 
   void test('the prompt cannot be copied yet, and says why', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       await bring(h);
       await goTo(h, 3);
@@ -233,7 +233,7 @@ void describe('before a token exists', () => {
 
 void describe('minting fills the page in', () => {
   void test('every block that needs the token gets it', async () => {
-    const h = await open('/connect', stub(MINTS));
+    const h = await open('/developer/connect', stub(MINTS));
     try {
       await mint(h);
 
@@ -262,7 +262,7 @@ void describe('minting fills the page in', () => {
      * prompt carries the secret by the owner's decision; this one is pasted
      * into a git repository, where a secret is a leak.
      */
-    const h = await open('/connect', stub(MINTS));
+    const h = await open('/developer/connect', stub(MINTS));
     try {
       await mint(h);
       await openExtra(h, 'Share with your project');
@@ -276,7 +276,7 @@ void describe('minting fills the page in', () => {
   });
 
   void test('CONTROL: hiding the token takes it off the page entirely', async () => {
-    const h = await open('/connect', stub(MINTS));
+    const h = await open('/developer/connect', stub(MINTS));
     try {
       await mint(h);
       await h.page.locator('.conn-hide').click();
@@ -291,7 +291,7 @@ void describe('minting fills the page in', () => {
   });
 
   void test('the block follows the project picker', async () => {
-    const h = await open('/connect', stub(MINTS));
+    const h = await open('/developer/connect', stub(MINTS));
     try {
       await openExtra(h, 'Share with your project');
       await h.page.locator('.conn-project-block').waitFor({ timeout: 20_000 });
@@ -319,7 +319,7 @@ void describe('copy, on a board with no clipboard API', () => {
      * This is the case left over: that refuses too. The button must not say
      * "Copied".
      */
-    const h = await open('/connect', stub(MINTS));
+    const h = await open('/developer/connect', stub(MINTS));
     try {
       await h.page.addInitScript(() => {
         Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
@@ -352,7 +352,7 @@ void describe('copy, on a board with no clipboard API', () => {
 void describe('the live check', () => {
   void test('CONTROL: my own browser does not satisfy the presence watch', async () => {
     const h = await open(
-      '/connect',
+      '/developer/connect',
       stub({ '/api/v1/presence': { enabled: true, present: [agentSession({ is_agent: false })] } }),
     );
     try {
@@ -372,7 +372,7 @@ void describe('the live check', () => {
 
   void test('without a token minted here, any agent session of mine turns it green — and it says so', async () => {
     const h = await open(
-      '/connect',
+      '/developer/connect',
       stub({ '/api/v1/presence': { enabled: true, present: [agentSession()] } }),
     );
     try {
@@ -399,7 +399,7 @@ void describe('the live check', () => {
      * token reported the brand-new one as connected before it was used.
      */
     const h = await open(
-      '/connect',
+      '/developer/connect',
       stub({ ...mints(), '/api/v1/presence': { enabled: true, present: [agentSession()] } }),
     );
     try {
@@ -424,7 +424,7 @@ void describe('the live check', () => {
 
   void test('the minted token calling /mcp turns it green, names the agent, and the watch stops', async () => {
     const h = await open(
-      '/connect?agent=codex',
+      '/developer/connect?agent=codex',
       stub(
         mints({
           last_mcp_at: MINTED_AT + 5_000,
@@ -459,7 +459,7 @@ void describe('the live check', () => {
      * or a working agent spins for three minutes and is reported broken.
      */
     const h = await open(
-      '/connect?agent=omnigent',
+      '/developer/connect?agent=omnigent',
       stub({
         ...mints({ last_used_at: MINTED_AT + 5_000 }),
         '/api/v1/org': {
@@ -487,7 +487,10 @@ void describe('the live check', () => {
   });
 
   void test('No MCP: a REST call on the minted token is the proof, said plainly (re-review)', async () => {
-    const h = await open('/connect?agent=rest', stub(mints({ last_used_at: MINTED_AT + 5_000 })));
+    const h = await open(
+      '/developer/connect?agent=rest',
+      stub(mints({ last_used_at: MINTED_AT + 5_000 })),
+    );
     try {
       await mint(h);
       await goTo(h, 4);
@@ -502,7 +505,7 @@ void describe('the live check', () => {
 
   void test('a recorded client with presence on is weaker, and does not blame presence (re-review)', async () => {
     const h = await open(
-      '/connect?agent=codex',
+      '/developer/connect?agent=codex',
       stub(mints({ last_client: 'codex', last_client_name: 'codex-mcp-client' })),
     );
     try {
@@ -519,7 +522,7 @@ void describe('the live check', () => {
 
   void test('CONTROL: with presence on, a bare use of the minted token is not an MCP connection', async () => {
     const h = await open(
-      '/connect?agent=omnigent',
+      '/developer/connect?agent=omnigent',
       stub(mints({ last_used_at: MINTED_AT + 5_000 })),
     );
     try {
@@ -534,7 +537,10 @@ void describe('the live check', () => {
   });
 
   void test('presence switched off is said, not guessed at', async () => {
-    const h = await open('/connect', stub({ '/api/v1/presence': { enabled: false, present: [] } }));
+    const h = await open(
+      '/developer/connect',
+      stub({ '/api/v1/presence': { enabled: false, present: [] } }),
+    );
     try {
       await bring(h);
       await goTo(h, 4);
@@ -552,7 +558,7 @@ void describe('the agent picker (LAI-737)', () => {
     h.page.getByRole('radiogroup', { name: 'Your coding agent' }).getByRole('radio');
 
   void test('it is one labelled radio group, Claude Code first and chosen by default', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
       const first = radios(h).first();
@@ -567,7 +573,7 @@ void describe('the agent picker (LAI-737)', () => {
   });
 
   void test('every agent is a radio of the one group, and search narrows it (LAI-740)', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
       // No More button any more: all of them are there, under headings.
@@ -585,7 +591,7 @@ void describe('the agent picker (LAI-737)', () => {
   });
 
   void test('the keyboard moves the choice, and the URL and token name follow', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
       await radios(h).first().focus();
@@ -616,7 +622,7 @@ void describe('the agent picker (LAI-737)', () => {
   });
 
   void test('?agent= opens the page on that agent, and the choice is remembered', async () => {
-    const h = await open('/connect?agent=gemini-cli', stub());
+    const h = await open('/developer/connect?agent=gemini-cli', stub());
     try {
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
       assert.equal(
@@ -627,7 +633,7 @@ void describe('the agent picker (LAI-737)', () => {
       assert.match(await h.page.locator('.conn-project-block').innerText(), /Laika/);
       assert.match(await h.page.locator('.conn-extra').first().innerText(), /GEMINI\.md/);
 
-      await h.page.goto(`${h.origin}/connect`);
+      await h.page.goto(`${h.origin}/developer/connect`);
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
       assert.equal(
         await h.page.getByRole('radio', { name: 'Gemini CLI', exact: true }).isChecked(),
@@ -640,7 +646,7 @@ void describe('the agent picker (LAI-737)', () => {
   });
 
   void test('the minted token is named after the agent', async () => {
-    const h = await open('/connect?agent=omnigent', stub(MINTS));
+    const h = await open('/developer/connect?agent=omnigent', stub(MINTS));
     try {
       await mint(h);
       const posted = h.calls.find((c) => c.path === '/api/v1/tokens' && c.method === 'POST');
@@ -651,7 +657,7 @@ void describe('the agent picker (LAI-737)', () => {
   });
 
   void test('CONTROL: after a mint, the token appears only in blocks that say they carry it', async () => {
-    const h = await open('/connect?agent=cursor', stub(MINTS));
+    const h = await open('/developer/connect?agent=cursor', stub(MINTS));
     try {
       await mint(h);
       await goTo(h, 3);
@@ -681,7 +687,7 @@ void describe('the agent picker (LAI-737)', () => {
 
 void describe('review round 1', () => {
   void test('an unknown ?agent= is dropped from the URL, and Claude Code is shown', async () => {
-    const h = await open('/connect?agent=teleporter', stub());
+    const h = await open('/developer/connect?agent=teleporter', stub());
     try {
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
       await h.page.waitForFunction(() => !window.location.search.includes('agent='), undefined, {
@@ -697,7 +703,7 @@ void describe('review round 1', () => {
   });
 
   void test('a search that hides the chosen agent does not change the choice (LAI-740)', async () => {
-    const h = await open('/connect?agent=kiro', stub());
+    const h = await open('/developer/connect?agent=kiro', stub());
     try {
       const kiro = h.page.getByRole('radio', { name: 'Kiro', exact: true });
       await kiro.waitFor({ state: 'attached', timeout: 20_000 });
@@ -712,7 +718,7 @@ void describe('review round 1', () => {
   });
 
   void test('file paths are shown as typed, not upper-cased', async () => {
-    const h = await open('/connect?agent=codex', stub());
+    const h = await open('/developer/connect?agent=codex', stub());
     try {
       await bring(h);
       await goTo(h, 3);
@@ -725,7 +731,7 @@ void describe('review round 1', () => {
   });
 
   void test('Claude Desktop is told to paste the block into its UI, not to commit a file', async () => {
-    const h = await open('/connect?agent=claude-desktop', stub());
+    const h = await open('/developer/connect?agent=claude-desktop', stub());
     try {
       await openExtra(h, 'Share with your project');
       const lead = h.page.locator('.conn-extra').first();
@@ -741,7 +747,7 @@ void describe('review round 1', () => {
 
 void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
   void test('the header spans the content area, not the centred column', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       await h.page.setViewportSize({ width: 1366, height: 900 });
       await h.page.locator('.conn-wizard-card').waitFor({ timeout: 20_000 });
@@ -761,7 +767,7 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
   });
 
   void test('minting ticks the mint step, and hiding the token does not un-tick it', async () => {
-    const h = await open('/connect', stub(MINTS));
+    const h = await open('/developer/connect', stub(MINTS));
     try {
       const steps = h.page.locator('.conn-steps > .conn-step');
       await h.page.locator('.conn-wizard-card').waitFor({ timeout: 20_000 });
@@ -786,7 +792,7 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
   });
 
   void test('every copy button names what it copies', async () => {
-    const h = await open('/connect', stub(MINTS));
+    const h = await open('/developer/connect', stub(MINTS));
     try {
       await mint(h);
       // Each where it now lives (LAI-740): the header on every step, the token
@@ -820,7 +826,7 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
   });
 
   void test('copying the prompt confirms it, and copies the prompt with the token', async () => {
-    const h = await open('/connect', stub(MINTS), {
+    const h = await open('/developer/connect', stub(MINTS), {
       before: async (page) => {
         await page.addInitScript(() => {
           const copied: string[] = [];
@@ -861,7 +867,7 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
 
 void describe('the wizard (LAI-740)', () => {
   void test('Continue and Back walk the steps, and focus lands on the new step', async () => {
-    const h = await open('/connect?agent=codex', stub(MINTS));
+    const h = await open('/developer/connect?agent=codex', stub(MINTS));
     try {
       const card = h.page.locator('.conn-wizard-card');
       await card.waitFor({ timeout: 20_000 });
@@ -887,7 +893,7 @@ void describe('the wizard (LAI-740)', () => {
   });
 
   void test('CONTROL: steps 3 and 4 stay locked until a token is minted', async () => {
-    const h = await open('/connect', stub(MINTS));
+    const h = await open('/developer/connect', stub(MINTS));
     try {
       const rail = h.page.locator('.conn-rail-step');
       await rail.first().waitFor({ timeout: 20_000 });
@@ -916,7 +922,7 @@ void describe('the wizard (LAI-740)', () => {
   });
 
   void test('the line carrying the real token is highlighted, and only after a mint', async () => {
-    const h = await open('/connect', stub(MINTS));
+    const h = await open('/developer/connect', stub(MINTS));
     try {
       await bring(h);
       await goTo(h, 3);
@@ -955,7 +961,7 @@ void describe('the wizard (LAI-740)', () => {
   });
 
   void test('copying a block says so on the rail', async () => {
-    const h = await open('/connect', stub(MINTS), {
+    const h = await open('/developer/connect', stub(MINTS), {
       before: async (page) => {
         await page.addInitScript(() => {
           Object.defineProperty(navigator, 'clipboard', {
@@ -990,7 +996,7 @@ void describe('the wizard (LAI-740)', () => {
 
   void test('connected: the status row goes live and offers the board or another agent', async () => {
     const h = await open(
-      '/connect?agent=codex',
+      '/developer/connect?agent=codex',
       stub(
         mints({
           last_mcp_at: MINTED_AT + 5_000,
@@ -1027,7 +1033,7 @@ void describe('the wizard (LAI-740)', () => {
   });
 
   void test('an empty search points at Any MCP client and No MCP, and they choose', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       const search = h.page.getByRole('searchbox', { name: 'Search agents' });
       await search.waitFor({ timeout: 20_000 });
@@ -1048,7 +1054,7 @@ void describe('the wizard (LAI-740)', () => {
 
   void test('every agent is drawn with its real mark, as inline SVG, and nothing is fetched', async () => {
     const elsewhere: string[] = [];
-    const h = await open('/connect', stub(), {
+    const h = await open('/developer/connect', stub(), {
       before: (page) => {
         page.on('request', (request) => {
           if (!request.url().startsWith('http://127.0.0.1') && !request.url().startsWith('data:'))
@@ -1095,7 +1101,7 @@ void describe('the wizard (LAI-740)', () => {
   });
 
   void test('at 390px the rail sits above the card and nothing scrolls sideways', async () => {
-    const h = await open('/connect', stub(MINTS));
+    const h = await open('/developer/connect', stub(MINTS));
     try {
       await h.page.setViewportSize({ width: 390, height: 900 });
       await mint(h);
@@ -1142,7 +1148,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
     });
 
   void test('on a desktop only the card scrolls: the rail and header stay, the footer is pinned', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       for (const [width, height] of [
         [1366, 768],
@@ -1185,7 +1191,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
   });
 
   void test('at 390px nothing is pinned: the page scrolls, the card does not', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       await h.page.setViewportSize({ width: 390, height: 844 });
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
@@ -1199,7 +1205,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
   });
 
   void test('the optional entries open in the card, uncounted, and Back to steps returns', async () => {
-    const h = await open('/connect', stub(MINTS));
+    const h = await open('/developer/connect', stub(MINTS));
     try {
       await mint(h);
       await goTo(h, 3);
@@ -1263,7 +1269,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
   });
 
   void test('nothing sits on the page outside the rail and the card', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       await h.page.locator('.conn-wizard-card').waitFor({ timeout: 20_000 });
       const outside = await h.page.evaluate(() => ({
@@ -1286,7 +1292,10 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
   });
 
   void test('a viewer who cannot invite sees no Invite entry', async () => {
-    const h = await open('/connect', stub({ '/api/v1/me': { ...ME, org_role: 'member' } }));
+    const h = await open(
+      '/developer/connect',
+      stub({ '/api/v1/me': { ...ME, org_role: 'member' } }),
+    );
     try {
       await h.page.locator('.conn-rail-extra').first().waitFor({ timeout: 20_000 });
       assert.deepEqual(await h.page.locator('.conn-rail-extra').allInnerTexts(), [
@@ -1301,7 +1310,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
 
   void test('connected, step 4 offers Share with your project as the next thing', async () => {
     const h = await open(
-      '/connect?agent=codex',
+      '/developer/connect?agent=codex',
       stub(mints({ last_mcp_at: MINTED_AT + 5_000, last_client: 'codex' })),
     );
     try {
@@ -1321,7 +1330,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
   });
 
   void test('C1: Use a token I already have hands focus to Continue, not to the page', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       await bring(h);
       await h.page.waitForFunction(
@@ -1336,7 +1345,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
   });
 
   void test('C2: the minted token is an alert once, on the mint, not on every return', async () => {
-    const h = await open('/connect', stub(MINTS));
+    const h = await open('/developer/connect', stub(MINTS));
     try {
       await mint(h);
       assert.equal(await h.page.locator('.conn-secret').getAttribute('role'), 'alert');
@@ -1355,7 +1364,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
   });
 
   void test('C3: a refused clipboard does not count as copied', async () => {
-    const h = await open('/connect', stub(MINTS), {
+    const h = await open('/developer/connect', stub(MINTS), {
       before: async (page) => {
         await page.addInitScript(() => {
           // Refused both ways — the API absent and, since LAI-760, the
@@ -1380,7 +1389,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
   });
 
   void test('C3: a copy from Other ways is not the command', async () => {
-    const h = await open('/connect', stub(MINTS), {
+    const h = await open('/developer/connect', stub(MINTS), {
       before: async (page) => {
         await page.addInitScript(() => {
           Object.defineProperty(navigator, 'clipboard', {
@@ -1406,7 +1415,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
   });
 
   void test('C4: under the automatic block, a link switches to By hand', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       await bring(h);
       await goTo(h, 3);
@@ -1443,7 +1452,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
   });
 
   void test('C5: a note that introduces its block sits above it; a follow-up stays below', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       await bring(h);
       await goTo(h, 3);
@@ -1472,7 +1481,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
   });
 
   void test('C6: a wrapped line hangs under its own text, and the text is untouched', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       await h.page.setViewportSize({ width: 390, height: 844 });
       await bring(h);
@@ -1538,7 +1547,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
 
   void test('in light and in dark, the screen fits 1366x768 without scrolling', async () => {
     // Both themes at the size the owner named; the layout must not depend on one.
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       await h.page.setViewportSize({ width: 1366, height: 768 });
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
@@ -1556,7 +1565,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
 
 void describe('the LAI-741 review notes (LAI-742)', () => {
   void test('1: the rail clips neither the current step’s halo nor its focus ring', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       await h.page.setViewportSize({ width: 1366, height: 768 });
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
@@ -1595,7 +1604,7 @@ void describe('the LAI-741 review notes (LAI-742)', () => {
   });
 
   void test('2: a step or entry change starts the card at its top', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       await h.page.setViewportSize({ width: 1366, height: 768 });
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
@@ -1638,7 +1647,7 @@ void describe('the LAI-741 review notes (LAI-742)', () => {
   });
 
   void test('6: on a phone the card follows the steps, and Optional follows the card', async () => {
-    const h = await open('/connect', stub());
+    const h = await open('/developer/connect', stub());
     try {
       await h.page.setViewportSize({ width: 390, height: 844 });
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });

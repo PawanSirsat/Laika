@@ -161,7 +161,7 @@ function connect(
 void describe('Connect: Share local activity', () => {
   void test('with the organisation’s switch off, says so and offers nothing to turn on', async () => {
     const h = await open(
-      '/connect',
+      '/developer/connect',
       connect({ org: false, enabled: false, scope: 'agent-repos' }, { value: NOTHING }),
     );
     try {
@@ -178,7 +178,7 @@ void describe('Connect: Share local activity', () => {
 
   void test('turns sharing on and narrows the scope, shows the command, what is sent and never sent', async () => {
     const state = { org: true, enabled: false, scope: 'agent-repos' };
-    const h = await open('/connect', connect(state, { value: HELD }));
+    const h = await open('/developer/connect', connect(state, { value: HELD }));
     try {
       await h.page.locator('.conn-rail-extra', { hasText: 'Share local activity' }).click();
       const panel = h.page.locator('.share-activity');
@@ -221,7 +221,7 @@ void describe('Connect: Share local activity', () => {
 
   void test('offers OpenTelemetry, metrics only: this board’s address, the token by reference, a copy (LAI-773)', async () => {
     const state = { org: true, enabled: true, scope: 'agent-repos' };
-    const h = await open('/connect', connect(state, { value: HELD }));
+    const h = await open('/developer/connect', connect(state, { value: HELD }));
     try {
       await h.page.locator('.conn-rail-extra', { hasText: 'Share local activity' }).click();
       const block = h.page.locator('.share-activity [data-block="otel"]');
@@ -251,7 +251,7 @@ void describe('Connect: Share local activity', () => {
     const old = new Date(NOW - 370 * DAY);
     const oldest = old.toISOString().slice(0, 10);
     const h = await open(
-      '/connect',
+      '/developer/connect',
       connect(
         { org: true, enabled: true, scope: 'agent-repos' },
         { value: { ...HELD, oldest_day: oldest } },
@@ -282,7 +282,7 @@ void describe('Connect: Share local activity', () => {
   void test('previews what is held, by agent name, and deletes it after a confirmation', async () => {
     const held = { value: HELD as unknown };
     const h = await open(
-      '/connect',
+      '/developer/connect',
       connect({ org: true, enabled: true, scope: 'agent-repos' }, held),
     );
     try {
