@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import { addTasksToSprint, removeTaskFromSprint, type Sprint } from '../../../api/sprints.ts';
 import { copyText } from '../../../components/CopyButton.tsx';
@@ -13,6 +13,7 @@ import {
 } from '../../../api/activity.ts';
 import { dateTime, timeLabel } from '../../../api/time-label.ts';
 import { isAgentComment, type Comment } from '../../../api/comments.ts';
+import { listMentionable, type MentionableUser } from '../../../api/mentions.ts';
 import { useTaskDetail } from '../../../api/use-task-detail.ts';
 import { useTaskText } from '../../../api/use-task-text.ts';
 import { useDelayed } from '../../../components/use-delayed.ts';
@@ -29,7 +30,9 @@ import {
 } from '../../../api/tasks.ts';
 import { TaskMeta } from '../task/TaskMeta.tsx';
 import { InlineEdit } from '../task/InlineEdit.tsx';
-import { TaskMarkdown } from '../task/TaskMarkdown.tsx';
+import { DocumentField } from '../task/DocumentField.tsx';
+import type { CardCandidate, MentionCandidate } from '../task/LazyRichEditor.tsx';
+import { taskHref } from '../my-day/task-link.ts';
 import { DependenciesSection } from '../task/DependenciesSection.tsx';
 import { SubtasksSection } from '../task/SubtasksSection.tsx';
 import { CommentBody } from '../task/CommentBody.tsx';
@@ -112,17 +115,24 @@ export interface TaskDetailPanelProps {
 }
 
 /**
- * The refusal of an edit begun on a description somebody has since replaced
- * (LAI-795 review, B1). An `ApiError` because that is what `InlineEdit` reads
- * aloud, and `conflict` because that is what it is — the server would say the
- * same of a write that raced another.
+ * The refusal of an edit begun on a text somebody has since replaced (LAI-795
+ * review, B1). An `ApiError` because that is what the editor reads aloud, and
+ * `conflict` because that is what it is — the server would say the same of a
+ * write that raced another.
  */
-function staleEdit(): ApiError {
+function staleEdit(what: string): ApiError {
   return new ApiError(
     'conflict',
-    'This description changed while you were editing. Copy your text, press Escape, and edit the new version.',
+    `This ${what} changed while you were editing. Copy your text, cancel, and edit the new version.`,
     409,
   );
+}
+
+/** The part of an email before the `@`: what `@` resolves on the server (§4.19). */
+function handleOf(email: string | undefined): string | null {
+  if (email === undefined) return null;
+  const at = email.indexOf('@');
+  return at > 0 ? email.slice(0, at).toLowerCase() : null;
 }
 
 function personName(id: string | null, members: ReadonlyMap<string, Member>): string {
@@ -172,10 +182,49 @@ export function TaskDetailPanel({
    */
   const text = useTaskText(task, listReadAt);
   const full = text.task;
-  /** The version an open edit began from: a save over a newer one is refused. */
-  const editedFrom = useRef<number | undefined>(undefined);
+  /** The version each open edit began from: a save over a newer one is refused. */
+  const editedFrom = useRef<{ description?: number | undefined; acceptance?: number | undefined }>(
+    {},
+  );
   const textPending = full === undefined && text.error === null;
   const showTextSkeleton = useDelayed(textPending);
+
+  /*
+   * **Who `@` offers, and the cards a link can name** (LAI-827), for the
+   * description, acceptance and comment editors alike. The server decides who
+   * is mentionable; a member's email gives the handle it resolves, and someone
+   * mentionable without a member row (an org Owner, D-006) is written by name.
+   */
+  const [mentionable, setMentionable] = useState<readonly MentionableUser[]>([]);
+  useEffect(() => {
+    const controller = new AbortController();
+    listMentionable(slug, controller.signal)
+      .then((list) => {
+        if (!controller.signal.aborted) setMentionable(list.users);
+      })
+      .catch(() => {
+        // No suggestions rather than wrong ones; typing `@handle` still works.
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [slug]);
+  const people = useMemo<readonly MentionCandidate[]>(
+    () =>
+      mentionable.map((user) => ({
+        id: user.id,
+        name: user.name,
+        handle: handleOf(members.get(user.id)?.email),
+      })),
+    [mentionable, members],
+  );
+  const cards = useMemo<readonly CardCandidate[]>(
+    () =>
+      [...byId.values()]
+        .filter((t) => t.id !== task.id)
+        .map((t) => ({ id: t.id, key: t.key, title: t.title, href: taskHref(t, slug) })),
+    [byId, task.id, slug],
+  );
 
   /*
    * **The parent, from the project's set when it is in it, from the server
@@ -242,7 +291,6 @@ export function TaskDetailPanel({
     [task.id, task.sprint_id, onTaskEdited],
   );
   const panelRef = useRef<HTMLDivElement>(null);
-  const [draft, setDraft] = useState('');
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [handoff, setHandoff] = useState<string | undefined>(undefined);
   const statusRef = useRef<HTMLButtonElement | null>(null);
@@ -477,17 +525,7 @@ export function TaskDetailPanel({
   };
 
   const composer = (
-    <form
-      className="panel-composer"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const body = draft.trim();
-        if (body === '') return;
-        void detail.post(body).then(() => {
-          setDraft('');
-        });
-      }}
-    >
+    <div className="panel-composer">
       {meId !== undefined && (
         <span
           className="cmt-avatar cmt-avatar-me"
@@ -501,28 +539,8 @@ export function TaskDetailPanel({
         </span>
       )}
 
-      <CommentComposer
-        slug={slug}
-        value={draft}
-        busy={detail.posting}
-        onChange={setDraft}
-        onSubmit={() => {
-          const body = draft.trim();
-          if (body === '') return;
-          void detail.post(body).then(() => {
-            setDraft('');
-          });
-        }}
-        send={
-          <Button type="submit" busy={detail.posting} disabled={draft.trim() === ''}>
-            Comment
-          </Button>
-        }
-      />
-      {detail.postError !== null && (
-        <ApiErrorState error={detail.postError} resource="this comment" />
-      )}
-    </form>
+      <CommentComposer people={people} cards={cards} onPost={detail.post} />
+    </div>
   );
 
   return (
@@ -691,8 +709,9 @@ export function TaskDetailPanel({
             <InlineEdit
               value={task.title}
               placeholder="Untitled task"
-              shape="line"
               label="Task title"
+              name="title"
+              required="A task needs a title."
               mayEdit={mayEdit === true}
               onSave={async (next) => {
                 await updateTask(task.id, { title: next });
@@ -730,29 +749,33 @@ export function TaskDetailPanel({
               (full !== undefined ? (
                 <>
                   {/*
-                    Click to edit, and **rendered as markdown** when not editing
-                    (LAI-709). It was plain text until the owner asked. The renderer
-                    builds elements, never HTML, and `TaskMarkdown` says why that
-                    is safe for text anyone on the project writes.
+                    **Rendered as markdown** when not editing (LAI-709), and
+                    edited in place by the rich editor (LAI-827), which writes
+                    markdown back. The renderer builds elements, never HTML, and
+                    `TaskMarkdown` says why that is safe for text anyone on the
+                    project writes.
 
                     **Not editable while it is stale** (review B1): the store
                     has a newer version, and its read is under way or failed.
                   */}
-                  <InlineEdit
-                    render={(source) => <TaskMarkdown source={source} />}
-                    value={full.description_md ?? ''}
-                    placeholder="No description yet. Click to write one."
-                    shape="block"
+                  <DocumentField
+                    name="description"
                     label="Description"
+                    value={full.description_md ?? ''}
+                    placeholder="Add a description…"
                     mayEdit={mayEdit === true && !text.stale}
+                    people={people}
+                    cards={cards}
                     onOpen={() => {
-                      editedFrom.current = text.version;
+                      editedFrom.current.description = text.version;
                     }}
                     onSave={async (next) => {
                       // An edit that began on a version since replaced, or one
                       // the panel knows is out of date, is not sent: it would
                       // write the old text's successor over somebody's newer one.
-                      if (text.stale || text.version !== editedFrom.current) throw staleEdit();
+                      if (text.stale || text.version !== editedFrom.current.description) {
+                        throw staleEdit('description');
+                      }
                       // The answer is the newest text: held, so it is not read again.
                       text.accept(await updateTask(task.id, { description_md: next }));
                       onTaskEdited();
@@ -831,11 +854,29 @@ export function TaskDetailPanel({
                 Acceptance
               </button>
               {acceptanceOpen && (
-                <blockquote className="panel-acceptance">
-                  <div className="panel-acceptance-body">
-                    <TaskMarkdown source={full.acceptance_md} />
-                  </div>
-                </blockquote>
+                <div className="panel-acceptance">
+                  {/* The description's editor and its stale-text rule (LAI-827). */}
+                  <DocumentField
+                    name="acceptance"
+                    label="Acceptance"
+                    value={full.acceptance_md}
+                    placeholder="Add acceptance criteria…"
+                    mayEdit={mayEdit === true && !text.stale}
+                    people={people}
+                    cards={cards}
+                    onOpen={() => {
+                      editedFrom.current.acceptance = text.version;
+                    }}
+                    onSave={async (next) => {
+                      if (text.stale || text.version !== editedFrom.current.acceptance) {
+                        throw staleEdit('acceptance');
+                      }
+                      // Emptied, the section folds away: it is drawn only when set.
+                      text.accept(await updateTask(task.id, { acceptance_md: next }));
+                      onTaskEdited();
+                    }}
+                  />
+                </div>
               )}
             </section>
           )}

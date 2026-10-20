@@ -236,6 +236,19 @@
    * in git.
    */
 
+  /*
+   * Reading text (LAI-827): a task's description, acceptance and comments —
+   * read like a document, not scanned like a board. 15px on 1.6, the task's
+   * own fallback until LAI-828 sets Laika's scale; LAI-828 changes these lines
+   * and the reading view follows. Headings stay under the panel's 24px title.
+   */
+  --text-reading: 0.9375rem; /* 15px */
+  --text-reading-h1: 1.25rem; /* 20px */
+  --text-reading-h2: 1.125rem; /* 18px */
+  --text-reading-h3: 1rem; /* 16px */
+  --text-reading-code: 0.84375rem; /* 13.5px — mono reads larger */
+  --leading-reading: 1.6;
+
   --weight-normal: 400;
   --weight-medium: 500;
   --weight-semibold: 600;

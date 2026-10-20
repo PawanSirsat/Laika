@@ -1,0 +1,516 @@
+/*
+ * The task editor (LAI-827) — loaded with its chunk, so the board never pays
+ * for it.
+ *
+ * The document inside is the reading view's `.md .md-reading`, so editing
+ * looks like the text it replaced; this file adds the frame, the toolbar, and
+ * the rules ProseMirror needs. Those rules are normally injected by TipTap as a
+ * `<style>` element, which `style-src-elem 'self'` refuses (LAI-205), so they
+ * live here instead (`injectCSS: false` in `RichEditor.tsx`). Every colour is a
+ * theme token, so both themes follow.
+ */
+
+.rich-editor {
+  position: relative;
+  margin: 0 -0.5rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  transition: var(--transition);
+}
+
+.rich-editor:focus-within {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+/* ------------------------------------------------------------- the toolbar */
+
+.rte-toolbar,
+.rte-table-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.25rem 0.375rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/*
+ * The toolbar stays in view down a long document. It sticks to the top of what
+ * scrolls — `.panel-main`, whose 1.25rem top padding a sticky box keeps clear
+ * of, hence the pull past it; stacked under 900px it is `.panel-columns`,
+ * which has none.
+ */
+.rte-toolbar {
+  position: sticky;
+  top: -1.25rem;
+  z-index: 2;
+  background: var(--bg-card);
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+
+@media (max-width: 900px) {
+  .rte-toolbar {
+    top: 0;
+  }
+}
+
+.rte-table-tools {
+  background: var(--bg-column);
+}
+
+.rte-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  padding: 0 0.375rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-ui);
+  cursor: pointer;
+}
+
+.rte-tool:hover:not(:disabled) {
+  background: var(--bg-column);
+  color: var(--text-primary);
+}
+
+.rte-table-tools .rte-tool:hover:not(:disabled) {
+  background: var(--bg-card);
+}
+
+.rte-tool-on,
+.rte-tool-on:hover:not(:disabled) {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.rte-tool:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.rte-tool:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.rte-glyph {
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.rte-table-tools .rte-glyph {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.rte-tool[aria-label='Bold'] .rte-glyph {
+  font-weight: var(--weight-heavy);
+}
+
+.rte-tool[aria-label='Italic'] .rte-glyph {
+  font-style: italic;
+}
+
+.rte-tool[aria-label='Strikethrough'] .rte-glyph {
+  text-decoration: line-through;
+}
+
+.rte-tool[aria-label='Markdown'] .rte-glyph {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.rte-sep {
+  width: 1px;
+  height: 1.125rem;
+  margin: 0 0.25rem;
+  background: var(--border-subtle);
+}
+
+.rte-grow {
+  flex: 1;
+}
+
+.rte-style {
+  min-width: 7.5rem;
+  font-size: var(--text-ui);
+}
+
+/* ------------------------------------------------------------ the document */
+
+.rte-body {
+  position: relative;
+}
+
+.rich-editor-doc {
+  min-height: 6rem;
+  padding: 0.75rem;
+  outline: none;
+  /* ProseMirror's own requirements. */
+  position: relative;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  white-space: break-spaces;
+  font-variant-ligatures: none;
+  font-feature-settings: 'liga' 0;
+}
+
+.rich-editor-compact .rich-editor-doc {
+  min-height: 2.75rem;
+}
+
+.rich-editor-doc pre {
+  white-space: pre-wrap;
+}
+
+.rich-editor-doc li {
+  position: relative;
+}
+
+/* TipTap wraps a list item's words in a paragraph; the reading view does not. */
+.rich-editor-doc li > p {
+  margin: 0;
+}
+
+.rich-editor-doc a {
+  cursor: text;
+}
+
+.rich-editor-doc p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.ProseMirror-hideselection *::selection {
+  background: transparent;
+}
+
+.ProseMirror-hideselection {
+  caret-color: transparent;
+}
+
+.ProseMirror [draggable][contenteditable='false'] {
+  user-select: text;
+}
+
+.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+}
+
+li.ProseMirror-selectednode {
+  outline: none;
+}
+
+img.ProseMirror-separator {
+  display: inline !important;
+  border: none !important;
+  margin: 0 !important;
+}
+
+.ProseMirror-gapcursor {
+  display: none;
+  position: absolute;
+  pointer-events: none;
+}
+
+.ProseMirror-gapcursor::after {
+  content: '';
+  display: block;
+  position: absolute;
+  top: -2px;
+  width: 20px;
+  border-top: 1px solid var(--text-primary);
+  animation: rte-cursor-blink 1.1s steps(2, start) infinite;
+}
+
+.ProseMirror-focused .ProseMirror-gapcursor {
+  display: block;
+}
+
+@keyframes rte-cursor-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+/* A checklist, as TipTap draws it: a label holding the box, then the text. */
+.rich-editor-doc ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0.25rem;
+}
+
+.rich-editor-doc ul[data-type='taskList'] li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.rich-editor-doc ul[data-type='taskList'] li > label {
+  flex: none;
+  margin-top: 0.15em;
+  user-select: none;
+}
+
+.rich-editor-doc ul[data-type='taskList'] li > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.rich-editor-doc ul[data-type='taskList'] li > div > p {
+  margin: 0;
+}
+
+.rich-editor-doc input[type='checkbox'] {
+  accent-color: var(--accent);
+}
+
+/* Tables: the reading view's borders, and room to type in an empty cell. */
+.rich-editor-doc .tableWrapper {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0 0 0.625rem;
+}
+
+.rich-editor-doc table {
+  margin: 0;
+  table-layout: fixed;
+}
+
+.rich-editor-doc th,
+.rich-editor-doc td {
+  position: relative;
+  min-width: 4rem;
+}
+
+.rich-editor-doc th > p,
+.rich-editor-doc td > p {
+  margin: 0;
+}
+
+.rich-editor-doc .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent-bg);
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------ the Markdown view */
+
+.rich-editor-source {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 8rem;
+  padding: 0.75rem;
+  border: 0;
+  outline: none;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: var(--text-reading-code);
+  line-height: var(--leading-reading);
+  color: var(--text-primary);
+  background: var(--bg-card);
+}
+
+.rich-editor-compact .rich-editor-source {
+  min-height: 4rem;
+}
+
+.rich-editor-notice {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: var(--text-ui);
+  line-height: 1.45;
+  color: var(--text-secondary);
+  background: var(--accent-bg);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.rich-editor-notice strong {
+  color: var(--text-primary);
+}
+
+/* ------------------------------------------------- popovers and pickers */
+
+.rte-popover {
+  position: absolute;
+  z-index: 5;
+  top: 2.5rem;
+  left: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  width: min(24rem, calc(100% - 1rem));
+  padding: 0.5rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.rte-input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: 0.375rem 0.5rem;
+  font: inherit;
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+}
+
+.rte-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.rte-popover-error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--overdue);
+}
+
+.rich-editor-picker {
+  display: flex;
+  flex-direction: column;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.rte-cards .rich-editor-picker {
+  flex-basis: 100%;
+}
+
+.rte-mentions {
+  position: absolute;
+  z-index: 6;
+  min-width: 14rem;
+  max-width: calc(100% - 1rem);
+  padding: 0.25rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.rich-editor-picker-option {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.375rem 0.5rem;
+  border-radius: 6px;
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.rich-editor-picker-option:hover,
+.rich-editor-picker-option[aria-selected='true'] {
+  background: var(--accent-bg);
+}
+
+.rich-editor-picker-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rich-editor-picker-meta,
+.rich-editor-picker-key {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.rich-editor-picker-empty {
+  margin: 0;
+  padding: 0.375rem 0.5rem;
+  font-size: var(--text-ui);
+  color: var(--text-muted);
+}
+
+/* -------------------------------------------------- Save, Cancel, errors */
+
+.rich-editor-actions,
+.rich-editor-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.rich-editor-confirm {
+  background: var(--bg-column);
+  border-radius: 0 0 var(--radius-card) var(--radius-card);
+}
+
+.rich-editor-confirm p {
+  margin: 0 auto 0 0;
+  font-size: var(--text-ui);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.rich-editor-hint {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.rich-editor-error {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: var(--text-ui);
+  font-weight: var(--weight-semibold);
+  line-height: 1.4;
+  color: var(--overdue);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* A phone: the tools in two rows, not three — the separators go first. */
+@media (max-width: 480px) {
+  .rich-editor {
+    margin: 0;
+  }
+
+  .rte-sep {
+    display: none;
+  }
+
+  .rte-toolbar {
+    gap: 0;
+  }
+
+  .rte-tool {
+    min-width: 1.625rem;
+    padding: 0 0.25rem;
+  }
+
+  .rte-style {
+    min-width: 6.5rem;
+  }
+
+  .rich-editor-hint {
+    display: none;
+  }
+}
