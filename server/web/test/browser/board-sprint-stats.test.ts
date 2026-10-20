@@ -792,6 +792,22 @@ void describe('the pill (LAI-727 review)', () => {
         await reads(h, `S2 ${stripSummary('s2')}`);
         await setTheme(h.page, theme);
         await h.page.setViewportSize({ width: 920, height: 768 });
+        /*
+         * **The open sidebar, as this test was written against** (LAI-796).
+         * At 920px the sidebar is the icon rail by itself since LAI-796, which
+         * leaves the toolbar 860px — on the pill's boundary, where hovering it
+         * re-measures and flips the tier (LAI-804). The toggle opens it for
+         * now, and the toolbar is the narrow one this test is about.
+         */
+        const rail = h.page.locator('.sidebar-toggle');
+        if ((await rail.getAttribute('aria-expanded')) === 'false') await rail.click();
+        await h.page.waitForFunction(
+          () =>
+            Math.round(document.querySelector('#sidebar')?.getBoundingClientRect().width ?? 0) ===
+            232,
+          undefined,
+          { timeout: 5000 },
+        );
         await h.page.locator('.bt-member').first().waitFor({ timeout: 10_000 });
         await settled(h);
 
