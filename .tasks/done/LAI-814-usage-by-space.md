@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-769
-status: review
+status: done
 started: 2026-10-20T12:14:07Z
 finished: 2026-10-20T18:36:05Z
 ---
@@ -172,3 +172,14 @@ takes its tasks with it (`tasks.project_id` cascades), so its rows keep neither
 and fall into *Outside any space*, whose note says *tied to no task* although
 they once were tied. No service hard-deletes a task or a space today —
 archiving is the only removal — so both need a manual or future delete.
+
+## Accepted (CHIEF, 2026-10-21)
+
+Review round 1 (review-usage-by-space) blocked on one defect: an archived
+space's By space row linked to `?project=<slug>`, which falls back to All
+spaces. Fixed in `3ff89dc2`: a row links only to a space the selector offers;
+any other is named in plain text with an "archived" marker; with no space
+list nothing links. CHIEF read the fix (`offeredSpaces`, `spaceRow`) and the
+new browser test that failed on the defect. The ScreenOutlet change outside
+the named files is accepted knowingly (it is what makes the row link open the
+space's own view). The sidebar side effect is filed as LAI-825.
