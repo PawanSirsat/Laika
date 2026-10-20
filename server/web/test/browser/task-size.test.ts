@@ -394,6 +394,35 @@ void describe('the List’s Effort column', () => {
           : `label ${String(label.right)} past cell ${String(box.right)}`;
       });
       assert.equal(clipped, null, 'the Effort header is cut off');
+      // And on a platform whose fonts are not this one's (LAI-794). The resting
+      // `↕` is outside the subset of the fonts Laika ships, so each platform
+      // draws it from its own fallback: 7.9px on a Mac, about 1em (12.5px) on
+      // GitHub's Linux runner, which put the label 0.73px past the cell while a
+      // Mac passed. So the header must also fit with that glyph drawn 1em wide,
+      // whatever width this browser drew it at. The half pixel is the check
+      // above's, for sub-pixel rounding.
+      const anywhere = await header.evaluate((el) => {
+        const cell = el.closest('th');
+        if (cell === null) return 'no header cell';
+        if (cell.getAttribute('aria-sort') !== 'none') return 'the header is not at rest';
+        const label = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        const word = document.createRange();
+        word.selectNodeContents(el);
+        const glyph =
+          label.width -
+          parseFloat(style.paddingLeft) -
+          parseFloat(style.paddingRight) -
+          parseFloat(style.columnGap) -
+          word.getBoundingClientRect().width;
+        const em = parseFloat(getComputedStyle(el, '::after').fontSize);
+        const right = label.right + Math.max(0, em - glyph);
+        const edge = cell.getBoundingClientRect().right;
+        return right <= edge + 0.5
+          ? null
+          : `label ${String(right)} past cell ${String(edge)} with the glyph ${String(em)}px wide`;
+      });
+      assert.equal(anywhere, null, 'the Effort header is cut off where the glyph is 1em wide');
 
       await header.click();
       await until(async () => (await keys())[0]?.startsWith('LC-1') === true);

@@ -122,9 +122,13 @@
 /* The effort chip, `XL` and the dot a person's effort wears (D-085), under a
    header that reads `EFFORT` and its sort glyph (LAI-785) — the 3.5rem held
    `SIZE` and cut the longer word to `EFFOR`. Taken from SUMMARY, not added to
-   the table's minimum, so a laptop scrolls no further. */
+   the table's minimum, so a laptop scrolls no further.
+   5.5rem fit on a Mac and not on GitHub's Linux runner (LAI-794): the resting
+   `↕` is outside the shipped fonts' subset, so each platform draws it in its
+   own fallback, 7.9px on a Mac and about 12.5px on Linux. 6rem leaves room for
+   that glyph up to 1.5em wide. */
 .list-col-size {
-  width: 5.5rem;
+  width: 6rem;
 }
 .list-col-assignee {
   width: 9.375rem;

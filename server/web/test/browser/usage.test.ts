@@ -617,6 +617,30 @@ void describe('a member', () => {
 
 const NOW_MS = Date.now();
 
+/*
+ * The plan limit's forecast names a clock time, and the weekday as well once
+ * that time is not today (`clockLabel`, `api/plan-limit.ts`). On the real clock
+ * the test passed or failed by the hour it ran: GitHub's run at 23:45 UTC got
+ * `around Tue 02:49` where it expected a bare time (LAI-794). So these tests
+ * pin the browser's clock and zone, as `timeline-sprints.test.ts` does: Monday
+ * 19 October 2026, at midday and at a quarter to midnight, in UTC.
+ */
+const MIDDAY = Date.UTC(2026, 9, 19, 12, 0);
+const LATE = Date.UTC(2026, 9, 19, 23, 45);
+
+async function pinClock(page: Page, at: number): Promise<void> {
+  await page.clock.setFixedTime(at);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setTimezoneOverride', { timezoneId: 'UTC' });
+}
+
+/** What the page's own clock reads, so a pin that did not take fails here. */
+const browserClock = (page: Page): Promise<{ now: number; zone: string }> =>
+  page.evaluate(() => ({
+    now: Date.now(),
+    zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  }));
+
 /** A person's own alerts, as `GET /me/token-alerts` answers them (LAI-773). */
 const ALERTS = [
   {
@@ -870,20 +894,25 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       limit_tokens: 3_000_000,
       used: 1_200_000,
       rate_per_hour: 600_000,
-      window_start: NOW_MS - 5 * 3_600_000,
-      reaches_limit_at: NOW_MS + 3 * 3_600_000,
+      window_start: MIDDAY - 5 * 3_600_000,
+      reaches_limit_at: MIDDAY + 3 * 3_600_000,
     });
-    const h = await open('/usage', {
-      ...ownerStub(),
-      '/api/v1/me/plan-limit': (call: StubCall) => {
-        if (call.method === 'PUT') {
-          puts.push(call);
-          return set;
-        }
-        return planLimit();
+    const h = await open(
+      '/usage',
+      {
+        ...ownerStub(),
+        '/api/v1/me/plan-limit': (call: StubCall) => {
+          if (call.method === 'PUT') {
+            puts.push(call);
+            return set;
+          }
+          return planLimit();
+        },
       },
-    });
+      { before: (page) => pinClock(page, MIDDAY) },
+    );
     try {
+      assert.deepEqual(await browserClock(h.page), { now: MIDDAY, zone: 'UTC' });
       const card = h.page.locator('[data-section="plan-limit"]');
       await card.locator('form').waitFor({ timeout: 20_000 });
       assert.match(await card.innerText(), /yours only · an estimate/);
@@ -898,16 +927,45 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       );
       const forecast = card.locator('[data-forecast]');
       await forecast.waitFor();
-      assert.match(
-        await forecast.innerText(),
-        /^At this rate you reach your limit around \d\d:\d\d\.$/,
-      );
+      // Later the same day: the time alone.
+      assert.equal(await forecast.innerText(), 'At this rate you reach your limit around 15:00.');
       assert.match(await card.innerText(), /Estimate\s+1\.2M of 3M used · 600K an hour/);
       // Never asked about anybody else: one path, the reader's own.
       assert.ok(
         h.calls
           .filter((c) => c.path.includes('plan-limit'))
           .every((c) => c.path === '/api/v1/me/plan-limit'),
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the plan limit past midnight: the forecast names the day as well as the time', async () => {
+    // GitHub's run: 23:45 on Monday, 1.84M left at 600K an hour, 3 h 4 min away.
+    const h = await open(
+      '/usage',
+      {
+        ...ownerStub(),
+        '/api/v1/me/plan-limit': planLimit({
+          plan: 'claude-max-5x',
+          window: '5h',
+          limit_tokens: 3_000_000,
+          used: 1_160_000,
+          rate_per_hour: 600_000,
+          window_start: LATE - 2 * 3_600_000,
+          reaches_limit_at: LATE + (3 * 60 + 4) * 60_000,
+        }),
+      },
+      { before: (page) => pinClock(page, LATE) },
+    );
+    try {
+      assert.deepEqual(await browserClock(h.page), { now: LATE, zone: 'UTC' });
+      const forecast = h.page.locator('[data-section="plan-limit"] [data-forecast]');
+      await forecast.waitFor({ timeout: 20_000 });
+      assert.equal(
+        await forecast.innerText(),
+        'At this rate you reach your limit around Tue 02:49.',
       );
     } finally {
       await h.close();
