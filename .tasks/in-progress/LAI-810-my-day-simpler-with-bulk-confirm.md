@@ -94,3 +94,33 @@ What the screenshots show:
       **busy-day fixture**: 40+ drafted blocks and 200 waiting on review.
 - [ ] **Gate:** `pnpm test`, `pnpm lint` and `pnpm format`, each with its own
       exit code.
+
+## Owner addition (2026-10-20)
+
+Relayed by the orchestrator, folded into this task while it was in progress.
+The owner's words: *"also if possible link that draft to the task as well,
+everything must be connected if that is possible"*.
+
+- [ ] **Every row links to its card**, wherever the card is known: drafted
+      blocks, confirmed entries, entries imported from Solidtime, and On your
+      plate items.
+  - The card key and title are a real `<a href>`, so middle-click and "open
+    in new tab" work.
+  - The link opens the task the way the rest of the app does — in its own
+    space, LAI-755's route (`/board?project=…&task=…`, a key search when the
+    space is not known). No new route.
+  - Keyboard-accessible.
+  - A card the person cannot see stays plain text with the existing
+    explanation. Never a dead link.
+- [ ] **Suggested cards for "No task" blocks.** If the API already returns a
+      hint for such a block (a branch, a commit, an outside id like LAI-NNN,
+      or a suggested task), offer it as a one-click "Use LAIKA-123". The
+      person still chooses; nothing is auto-assigned. If the API returns no
+      hint, nothing extra is shown and the report says so.
+- [ ] **Time on the task side.** If an existing endpoint returns a task's
+      confirmed time, the task panel shows a small "time logged" figure
+      linking back to My day for that day. If none exists, no endpoint is
+      added here: a follow-up task is filed in CHIEF's block (D-089) for the
+      endpoint and the panel figure, and named in the report.
+- [ ] **Tests:** the link goes to the right task, and is not a link when the
+      card is not visible; a suggestion test if the second item applies.
