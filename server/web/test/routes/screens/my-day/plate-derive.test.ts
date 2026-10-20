@@ -9,6 +9,7 @@ import {
   blockerIds,
   capped,
   moreHref,
+  moreLinks,
   plateOf,
   PLATE_CAP,
   type PlateItem,
@@ -217,5 +218,44 @@ void describe('five of each, then +N more (LAI-810)', () => {
     // No URL filter says "blocked": the reader's own open work in that space.
     assert.equal(moreHref('blocked', [item(6)], 'u1'), '/list?project=atlas&assignee=u1');
     assert.equal(moreHref('blocked', [{ ...item(6), slug: undefined }], undefined), '/list');
+  });
+});
+
+void describe('+N more across several spaces (review round 1)', () => {
+  const item = (n: number, slug: string): PlateItem => ({
+    id: `t${String(n)}`,
+    key: `LAI-${String(n)}`,
+    title: `Task ${String(n)}`,
+    slug,
+  });
+  const names = new Map([
+    ['atlas', 'Atlas'],
+    ['onroute', 'Onroute'],
+  ]);
+
+  void test('one space: one link', () => {
+    assert.deepEqual(moreLinks('progress', [item(6, 'atlas'), item(7, 'atlas')], 'u1', names), [
+      { href: '/list?project=atlas&assignee=u1&status=in_progress', label: '+2 more' },
+    ]);
+  });
+
+  void test('several spaces: one link a space, naming it', () => {
+    assert.deepEqual(
+      moreLinks('progress', [item(6, 'atlas'), item(7, 'onroute'), item(8, 'atlas')], 'u1', names),
+      [
+        { href: '/list?project=atlas&assignee=u1&status=in_progress', label: '+2 in Atlas' },
+        { href: '/list?project=onroute&assignee=u1&status=in_progress', label: '+1 in Onroute' },
+      ],
+    );
+  });
+
+  void test('waiting on review spans every space in the Inbox: always one link', () => {
+    assert.deepEqual(moreLinks('review', [item(6, 'atlas'), item(7, 'onroute')], 'u1', names), [
+      { href: '/inbox?tab=review', label: '+2 more' },
+    ]);
+  });
+
+  void test('nothing hidden, no link', () => {
+    assert.deepEqual(moreLinks('blocked', [], 'u1', names), []);
   });
 });

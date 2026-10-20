@@ -11,6 +11,11 @@
  * Served as the API would serve it to its own reader. The writes My day makes
  * — confirm, dismiss, patch, confirm day — are recorded by the harness and
  * answered by {@link busyStub}'s `writes`, which a test may replace.
+ *
+ * Review round 1 added: a second space, so the reader's work in progress
+ * spans two; agent minutes on a card in a space the reader cannot read; and a
+ * confirm-day answer that may differ from the page — the server's day, which a
+ * collector upload can change under a page already open.
  */
 
 import type { ApiStub, StubCall } from './harness.ts';
@@ -20,6 +25,9 @@ const MIDNIGHT = Date.parse(`${TODAY}T00:00:00Z`);
 const at = (minutes: number): number => MIDNIGHT + minutes * 60_000;
 
 export const ATLAS = { id: 'p1', slug: 'atlas', name: 'Atlas' };
+
+/** A card in a space the reader cannot read, that one of their sessions touched. */
+export const SECRET = { id: 's9', key: 'SEC-9', title: 'Secret plan' };
 
 /** The cards the day is spent on — all in Atlas, all readable. */
 export const CARDS = [
@@ -33,10 +41,13 @@ export const CARDS = [
 
 export const DRAFT_COUNT = 42;
 
-type Draft = Record<string, unknown> & {
+export type Draft = Record<string, unknown> & {
   readonly id: string;
   readonly minutes: number;
+  readonly started_at: number | null;
+  readonly ended_at: number | null;
   readonly task: unknown;
+  readonly project: unknown;
   readonly general: boolean;
 };
 
@@ -117,7 +128,10 @@ export const BUSY_DAY = {
   agent: {
     minutes: 312,
     keyboard_minutes: 48,
-    by_task: CARDS.map((task, i) => ({ task, minutes: 20 + i * 7 })),
+    by_task: [
+      ...CARDS.map((task, i) => ({ task, minutes: 20 + i * 7 })),
+      { task: SECRET, minutes: 11 },
+    ],
     unattributed_minutes: 40,
   },
   state: 'drafted',
@@ -188,22 +202,57 @@ const queue = Array.from({ length: REVIEW_COUNT }, (_, i) => ({
 
 export const IN_PROGRESS_COUNT = 8;
 
+/** The entry a confirmed draft becomes. */
+export function entryOf(d: Draft): Record<string, unknown> {
+  return {
+    id: `e-${d.id}`,
+    day: TODAY,
+    tz: 'UTC',
+    started_at: d.started_at,
+    ended_at: d.ended_at,
+    minutes: d.minutes,
+    source: 'draft',
+    task: d.task,
+    project: d.project,
+    note: null,
+    revision: 1,
+    created_at: 1,
+    updated_at: 1,
+  };
+}
+
+/** A block on nothing the collector uploaded after the page was read. */
+export const ARRIVED: Draft = {
+  ...draft(41),
+  id: 'dx',
+  minutes: 20,
+  task: null,
+  project: null,
+  general: false,
+};
+
 /**
- * Every write My day can make, answered as the server would — `201` with an
- * entry for a confirm, `204` for a dismiss, the draft for a patch. A test that
+ * Every write My day can make, answered as the server would — an entry for a
+ * confirm, `204` for a dismiss, the draft for a patch, and for confirm-day the
+ * entries of every block **the server** holds (`serverDrafts`). A test that
  * wants a refusal passes its own `writes`.
  */
-export function defaultWrites(call: StubCall): unknown {
+export function defaultWrites(call: StubCall, serverDrafts: readonly Draft[] = DRAFTS): unknown {
+  if (call.path.includes('/time/days/')) return { entries: serverDrafts.map(entryOf) };
   return call.path.endsWith('/confirm') ? { id: 'new-entry' } : {};
 }
 
 /**
  * The busy day's stub. `writes` answers every POST and PATCH to a draft or a
- * day; the default accepts them all.
+ * day; the default accepts them all. `day` is what `GET /me/time` serves —
+ * the page's day.
  */
-export function busyStub(writes: (call: StubCall) => unknown = defaultWrites): ApiStub {
+export function busyStub(
+  writes: (call: StubCall) => unknown = (call) => defaultWrites(call),
+  day: typeof BUSY_DAY = BUSY_DAY,
+): ApiStub {
   const draftRoutes: Record<string, unknown> = {};
-  for (const d of DRAFTS) {
+  for (const d of [...DRAFTS, ARRIVED]) {
     draftRoutes[`/api/v1/me/time-drafts/${d.id}`] = writes;
     draftRoutes[`/api/v1/me/time-drafts/${d.id}/confirm`] = writes;
     draftRoutes[`/api/v1/me/time-drafts/${d.id}/dismiss`] = writes;
@@ -215,9 +264,12 @@ export function busyStub(writes: (call: StubCall) => unknown = defaultWrites): A
       name: 'Ada Lovelace',
       org_role: 'owner',
       is_active: true,
-      memberships: [{ project_id: 'p1', role: 'lead' }],
+      memberships: [
+        { project_id: 'p1', role: 'lead' },
+        { project_id: 'p2', role: 'member' },
+      ],
     },
-    '/api/v1/me/time': BUSY_DAY,
+    '/api/v1/me/time': day,
     [`/api/v1/me/time/days/${TODAY}/confirm`]: writes,
     ...draftRoutes,
     '/api/v1/projects': {
@@ -232,9 +284,28 @@ export function busyStub(writes: (call: StubCall) => unknown = defaultWrites): A
           member_count: 1,
           members: [],
         },
+        {
+          id: 'p2',
+          slug: 'onroute',
+          prefix: 'ON',
+          name: 'Onroute',
+          archived_at: null,
+          task_counts: { backlog: 0, todo: 0, in_progress: 2, review: 0, done: 0, cancelled: 0 },
+          member_count: 1,
+          members: [],
+        },
       ],
       next_cursor: null,
     },
+    // Touched less recently than any in Atlas, so both are past the first five.
+    '/api/v1/projects/onroute/tasks?assignee=u1&status=in_progress': {
+      data: [
+        { ...summary('o1', 'ON-1', 'Route one', 'in_progress', [], 50), project_id: 'p2' },
+        { ...summary('o2', 'ON-2', 'Route two', 'in_progress', [], 49), project_id: 'p2' },
+      ],
+      next_cursor: null,
+    },
+    '/api/v1/projects/onroute/tasks?assignee=u1&status=todo': { data: [], next_cursor: null },
     '/api/v1/projects/atlas/tasks?assignee=u1&status=in_progress': {
       data: Array.from({ length: IN_PROGRESS_COUNT }, (_, i) =>
         summary(

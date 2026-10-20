@@ -7,7 +7,11 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { describe, test } from 'node:test';
-import { plainClick, taskHref } from '../../../../src/routes/screens/my-day/task-link.ts';
+import {
+  plainClick,
+  spaceOfKey,
+  taskHref,
+} from '../../../../src/routes/screens/my-day/task-link.ts';
 import { code } from '../../../helpers/code.ts';
 
 const click = (over: Partial<Parameters<typeof plainClick>[0]> = {}) => ({
@@ -58,5 +62,24 @@ void describe('which clicks the app follows itself', () => {
     ]) {
       assert.equal(plainClick(click(over)), false, JSON.stringify(over));
     }
+  });
+});
+
+void describe('whether the reader can read a card, from its key (review round 1)', () => {
+  const spaces = [
+    { prefix: 'LAI', slug: 'atlas', name: 'Atlas' },
+    { prefix: 'ON-RT', slug: 'onroute', name: 'Onroute' },
+  ];
+
+  void test('a key whose prefix is a space the reader can read names that space', () => {
+    assert.equal(spaceOfKey('LAI-42', spaces)?.slug, 'atlas');
+    assert.equal(spaceOfKey('ON-RT-7', spaces)?.slug, 'onroute');
+  });
+
+  void test('any other key is a card the reader cannot read', () => {
+    assert.equal(spaceOfKey('SEC-1', spaces), undefined);
+    assert.equal(spaceOfKey('LA-42', spaces), undefined);
+    assert.equal(spaceOfKey('LAI', spaces), undefined);
+    assert.equal(spaceOfKey('LAI-42', []), undefined);
   });
 });

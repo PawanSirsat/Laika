@@ -13,8 +13,24 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, refuse, until, type Harness, type StubCall } from './harness.ts';
-import { BUSY_DAY, DRAFTS, TODAY, UNTIED_IDS, busyStub, defaultWrites } from './my-day-busy.ts';
+import {
+  closeBrowser,
+  open,
+  refuse,
+  reply,
+  until,
+  type Harness,
+  type StubCall,
+} from './harness.ts';
+import {
+  ARRIVED,
+  BUSY_DAY,
+  DRAFTS,
+  TODAY,
+  UNTIED_IDS,
+  busyStub,
+  defaultWrites,
+} from './my-day-busy.ts';
 
 void after(async () => {
   await closeBrowser();
@@ -137,19 +153,26 @@ void describe('the column beside the day', () => {
       assert.equal(await reviewMore.getAttribute('href'), '/inbox?tab=review');
 
       assert.equal(await group('progress').locator('a.plate-item').count(), 5);
-      assert.equal(await group('progress').locator('.plate-count').innerText(), '8');
+      assert.equal(await group('progress').locator('.plate-count').innerText(), '10');
+      // The five hidden are in two spaces: one link each, naming it (review round 1).
       const progressMore = group('progress').locator('[data-plate-more]');
-      assert.equal(await progressMore.innerText(), '+3 more');
-      assert.equal(
-        await progressMore.getAttribute('href'),
-        '/list?project=atlas&assignee=u1&status=in_progress',
+      assert.deepEqual(await progressMore.allInnerTexts(), ['+3 in Atlas', '+2 in Onroute']);
+      assert.deepEqual(
+        await progressMore.evaluateAll((els: Element[]) =>
+          els.map((el) => el.getAttribute('href')),
+        ),
+        [
+          '/list?project=atlas&assignee=u1&status=in_progress',
+          '/list?project=onroute&assignee=u1&status=in_progress',
+        ],
       );
 
       assert.equal(await group('blocked').locator('a.plate-item').count(), 2);
       assert.equal(await group('blocked').locator('[data-plate-more]').count(), 0);
 
-      // The shell's queue, not a second read of it.
+      // The shell's queue, not a second read of it; and the spaces read once.
       assert.equal(h.calls.filter((c) => c.path === '/api/v1/review').length, 1);
+      assert.equal(h.calls.filter((c) => c.path === '/api/v1/projects').length, 1);
 
       await reviewMore.click();
       await h.page.waitForURL(
@@ -310,7 +333,7 @@ void describe('confirming in bulk', () => {
     ]);
     const h = await busy((call) =>
       refused.has(call.path)
-        ? refuse(422, 'unprocessable', 'That day would hold more than 24 hours.')
+        ? refuse(500, 'internal', 'The entry could not be written.')
         : defaultWrites(call),
     );
     try {
@@ -320,7 +343,7 @@ void describe('confirming in bulk', () => {
       assert.equal(await said(h).getAttribute('role'), 'alert');
       assert.equal(
         await said(h).innerText(),
-        'Confirmed 7 blocks. 2 blocks did not save and stay selected: That day would hold more than 24 hours. ' +
+        'Confirmed 7 blocks. 2 blocks did not save and stay selected: The entry could not be written. ' +
           'Left out, still selected — 1 needs a card or General: 07:00–07:18.',
       );
       await until(async () => (await count(h).innerText()).startsWith('3 '));
@@ -332,24 +355,93 @@ void describe('confirming in bulk', () => {
     }
   });
 
-  void test('the whole day, every block ready: one confirm-day request', async () => {
-    const tied = { ...BUSY_DAY, drafts: DRAFTS.filter((d) => !UNTIED_IDS.includes(d.id)) };
-    const h = await open('/my-day', { ...busyStub(), '/api/v1/me/time': tied });
+  void test('every block ticked is still confirmed by id — never the day the server holds (B1)', async () => {
+    // The page shows the 36 blocks on a card; the server's day also holds one
+    // that arrived since, on nothing — confirm-day would make it General.
+    const page = { ...BUSY_DAY, drafts: DRAFTS.filter((d) => !UNTIED_IDS.includes(d.id)) };
+    const server = [...page.drafts, ARRIVED];
+    const h = await open(
+      '/my-day',
+      busyStub((call) => defaultWrites(call, server), page),
+    );
     try {
       await h.page.setViewportSize({ width: 1440, height: 900 });
-      const button = h.page.locator('.screen-page .myday-chip-primary');
-      await button.waitFor({ timeout: 30_000 });
-      assert.match(await button.innerText(), /^Confirm day · \d+:\d\d$/);
-      await button.click();
-      await said(h).waitFor({ timeout: 20_000 });
-      assert.deepEqual(posts(h, '/confirm'), [`/api/v1/me/time/days/${TODAY}/confirm`]);
-      assert.equal(await said(h).innerText(), `Confirmed ${String(tied.drafts.length)} blocks.`);
+      await pageBox(h).waitFor({ timeout: 30_000 });
+      await pageBox(h).click();
+      await h.page.getByRole('button', { name: 'Select all 36 drafted' }).click();
+      await until(async () => (await count(h).innerText()).startsWith('36 '));
+      await h.page.getByRole('button', { name: 'Confirm selected' }).click();
+      await said(h).waitFor({ timeout: 60_000 });
+
+      const sent = posts(h, '/confirm');
+      assert.ok(!sent.some((p) => p.includes('/time/days/')), 'Confirm selected confirmed the day');
+      assert.ok(!sent.some((p) => p.includes('/dx/')), 'a block nobody saw was confirmed');
+      assert.deepEqual(
+        sent,
+        page.drafts.map((d) => `/api/v1/me/time-drafts/${d.id}/confirm`),
+      );
+      assert.equal(await said(h).innerText(), 'Confirmed 36 blocks.');
     } finally {
       await h.close();
     }
   });
 
-  void test('Confirm day with blocks on nothing confirms the ready ones and names the rest', async () => {
+  void test('blocks that changed since the page loaded are one sentence, and not kept selected', async () => {
+    const h = await busy((call) =>
+      call.path.endsWith('/d02/confirm') || call.path.endsWith('/d03/confirm')
+        ? refuse(404, 'not_found', `No draft "${call.path.split('/')[5] ?? ''}"`)
+        : defaultWrites(call),
+    );
+    try {
+      await pageBox(h).click();
+      await h.page.getByRole('button', { name: 'Confirm selected' }).click();
+      await said(h).waitFor({ timeout: 20_000 });
+      assert.equal(
+        await said(h).innerText(),
+        'Confirmed 7 blocks. 2 blocks changed since this page loaded — reloaded; please review again. ' +
+          'Left out, still selected — 1 needs a card or General: 07:00–07:18.',
+      );
+      // Only the one left out: the two that changed are not claimed as selected.
+      await until(async () => (await count(h).innerText()).startsWith('1 '));
+      assert.equal(await count(h).innerText(), '1 selected · 0:18');
+      assert.equal(await tick(h, 'd02').isChecked(), false);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Confirm day, every block ready: one request, and a server day that differs is said', async () => {
+    const page = { ...BUSY_DAY, drafts: DRAFTS.filter((d) => !UNTIED_IDS.includes(d.id)) };
+    const server = [...page.drafts, ARRIVED];
+    const h = await open(
+      '/my-day',
+      busyStub((call) => defaultWrites(call, server), page),
+    );
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      const button = h.page.locator('.screen-page .myday-chip-primary');
+      await button.waitFor({ timeout: 30_000 });
+      assert.equal(await button.innerText(), 'Confirm day · 10:08');
+      const reads = dayReads(h);
+      await button.click();
+      await said(h).waitFor({ timeout: 20_000 });
+      assert.deepEqual(posts(h, '/confirm'), [`/api/v1/me/time/days/${TODAY}/confirm`]);
+      assert.equal(await said(h).getAttribute('role'), 'alert');
+      assert.equal(
+        await said(h).innerText(),
+        'Confirmed the day: 37 blocks, 10:28. 1 block more arrived since this page loaded and was ' +
+          'confirmed too. 1 block on no card was confirmed as General — change it under Confirmed ' +
+          'if it belongs on one.',
+      );
+      assert.doesNotMatch(await said(h).innerText(), /selected/);
+      await until(() => dayReads(h) > reads);
+      assert.equal(dayReads(h), reads + 1, 'the day was not re-read');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Confirm day with blocks on nothing: exactly how many were confirmed, and why the rest were left', async () => {
     const h = await busy();
     try {
       const button = h.page.locator('.screen-page .myday-chip-primary');
@@ -362,10 +454,175 @@ void describe('confirming in bulk', () => {
       for (const id of UNTIED_IDS) {
         assert.ok(!sent.includes(`/api/v1/me/time-drafts/${id}/confirm`), `${id} was confirmed`);
       }
+      const text = await said(h).innerText();
       assert.match(
-        await said(h).innerText(),
-        /^Confirmed 36 blocks\. Left out, still selected — 6 need a card or General: 07:00–07:18, /,
+        text,
+        /^Confirmed 36 of 42 blocks; 6 left drafted — 6 need a card or General \(07:00–07:18, 09:20–09:35, /,
       );
+      assert.doesNotMatch(text, /selected/, 'the header selects nothing');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Confirm day that fills the day part-way stops there and says so', async () => {
+    const h = await busy((call) =>
+      call.path.endsWith('/d20/confirm')
+        ? reply(422, {
+            error: {
+              code: 'unprocessable',
+              message: `That would put 1452 minutes on ${TODAY}; a day holds 1440`,
+              details: { reason: 'day_full', field: 'minutes' },
+            },
+          })
+        : defaultWrites(call),
+    );
+    try {
+      await h.page.locator('.screen-page .myday-chip-primary').click();
+      await said(h).waitFor({ timeout: 60_000 });
+      // d01–d19 less the three on nothing, then d20; nothing after it is sent.
+      assert.equal(posts(h, '/confirm').length, 17);
+      assert.equal(
+        await said(h).innerText(),
+        'Confirmed 16 of 42 blocks; 26 left drafted — 6 need a card or General (07:00–07:18, ' +
+          '09:20–09:35, 11:40–11:57, 14:00–14:19, 16:20–16:36 and 1 more); 20 blocks from ' +
+          '12:20–12:39 on would put more than 24 hours on the day.',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the bar asks before what is hard to take back', () => {
+  void test('Not work asks first, and Keep them sends nothing', async () => {
+    const h = await busy();
+    try {
+      await tick(h, 'd01').click();
+      await tick(h, 'd02').click();
+      const dismissals = () => posts(h, '/dismiss');
+      await h.page.getByRole('button', { name: 'Not work' }).click();
+      const ask = h.page.locator('[data-bulk-ask]');
+      await ask.waitFor({ timeout: 5_000 });
+      assert.equal(await ask.innerText(), 'Mark 2 as not work? They stay dismissed.');
+      assert.deepEqual(dismissals(), [], 'Not work sent before it asked');
+
+      await h.page.getByRole('button', { name: 'Keep them' }).click();
+      await until(async () => (await ask.count()) === 0);
+      assert.equal(await ask.count(), 0);
+      assert.deepEqual(dismissals(), []);
+      assert.match(await count(h).innerText(), /^2 selected/);
+
+      await h.page.getByRole('button', { name: 'Not work' }).click();
+      await h.page.getByRole('button', { name: 'Mark not work' }).click();
+      await said(h).waitFor({ timeout: 20_000 });
+      assert.deepEqual(dismissals(), [
+        '/api/v1/me/time-drafts/d01/dismiss',
+        '/api/v1/me/time-drafts/d02/dismiss',
+      ]);
+      assert.equal(await said(h).innerText(), 'Marked 2 blocks as not work.');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('General asks before taking blocks off their card; blocks on nothing move at once', async () => {
+    const h = await busy();
+    try {
+      const patches = () =>
+        h.calls.filter((c) => c.method === 'PATCH').map((c) => c.path.split('/').pop());
+      await tick(h, 'd01').click();
+      await tick(h, 'd04').click();
+      await h.page.getByRole('button', { name: 'General', exact: true }).click();
+      const ask = h.page.locator('[data-bulk-ask]');
+      await ask.waitFor({ timeout: 5_000 });
+      assert.equal(
+        await ask.innerText(),
+        '1 of these is on a card or a space — move it to General too?',
+      );
+      assert.deepEqual(patches(), [], 'General moved a block off its card before asking');
+      await h.page.getByRole('button', { name: 'Only the 1 on nothing' }).click();
+      await said(h).waitFor({ timeout: 20_000 });
+      assert.deepEqual(patches(), ['d04']);
+      // The one left on its card was not part of it, and is still ticked.
+      assert.equal(await tick(h, 'd01').isChecked(), true);
+
+      // Only blocks on nothing: no question.
+      await h.page.getByRole('button', { name: 'Clear' }).click();
+      await h.page.locator('.myday-drafts').getByRole('button', { name: 'Next ›' }).click();
+      await tick(h, 'd11').click();
+      await h.page.getByRole('button', { name: 'General', exact: true }).click();
+      await until(() => patches().length === 2);
+      assert.deepEqual(patches(), ['d04', 'd11']);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('while a batch runs', () => {
+  void test('the day cannot be changed and no time added; both come back after', async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const h = await busy();
+    try {
+      await h.page.route('**/api/v1/me/time-drafts/d02/confirm', async (route) => {
+        await held;
+        await route.continue();
+      });
+      await tick(h, 'd01').click();
+      await tick(h, 'd02').click();
+      await h.page.getByRole('button', { name: 'Confirm selected' }).click();
+      const progress = h.page.locator('.myday-bulk-progress');
+      await progress.waitFor({ timeout: 10_000 });
+
+      const add = h.page.getByRole('button', { name: 'Add time' });
+      const previous = h.page.getByRole('button', { name: 'Previous week' });
+      // An earlier day of this week, when there is one (there is none on a Monday).
+      const earlier = h.page.locator('.myday-week-day.myday-week-confirmed');
+      assert.equal(await add.isDisabled(), true, 'time can be added mid-batch');
+      assert.equal(await previous.isDisabled(), true, 'the week can be changed mid-batch');
+      if ((await earlier.count()) > 0) {
+        assert.equal(
+          await earlier.first().isDisabled(),
+          true,
+          'another day can be opened mid-batch',
+        );
+      }
+
+      release();
+      await said(h).waitFor({ timeout: 20_000 });
+      await until(async () => !(await add.isDisabled()));
+      assert.equal(await add.isDisabled(), false);
+      assert.equal(await previous.isDisabled(), false);
+    } finally {
+      release();
+      await h.page.unrouteAll({ behavior: 'wait' });
+      await h.close();
+    }
+  });
+});
+
+void describe('names a screen reader can tell apart', () => {
+  void test('blocks with no set time are named by their place in the day and how long', async () => {
+    const untimed = (d: (typeof DRAFTS)[number]) => ({ ...d, started_at: null, ended_at: null });
+    const drafts = DRAFTS.slice(0, 2).map(untimed);
+    const h = await open('/my-day', busyStub(undefined, { ...BUSY_DAY, drafts }));
+    try {
+      await h.page.locator('li[data-draft]').first().waitFor({ timeout: 30_000 });
+      const names = await h.page
+        .locator('li[data-draft] input.myday-check')
+        .evaluateAll((els: Element[]) => els.map((el) => el.getAttribute('aria-label')));
+      assert.deepEqual(names, [
+        'Select block 1 of 2, no set time, 0:15, LAI-1 Search matches keys',
+        'Select block 2 of 2, no set time, 0:16, LAI-2 Webhook retries back off',
+      ]);
+      const menus = await h.page
+        .locator('li[data-draft] .myday-more')
+        .evaluateAll((els: Element[]) => els.map((el) => el.getAttribute('aria-label')));
+      assert.equal(new Set(menus).size, 2, `menus share a name: ${JSON.stringify(menus)}`);
     } finally {
       await h.close();
     }
@@ -402,10 +659,17 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
       );
       assert.match(await entry('e02').innerText(), /from Solidtime · Change it in Solidtime/);
       assert.equal(await entry('e03').locator('a').count(), 0, 'General is a link');
+      // Agent minutes: a link only to a card the reader can read, in its space.
+      const agent = h.page.locator('.myday-agent');
       assert.equal(
-        await h.page.locator('.myday-agent a.myday-cardlink').first().getAttribute('href'),
-        '/board?q=LAI-1',
+        await agent.locator('a.myday-cardlink').first().getAttribute('href'),
+        '/board?project=atlas&task=t1',
       );
+      assert.equal(await agent.locator('a.myday-cardlink').count(), 6);
+      const secret = agent.locator('li', { hasText: 'SEC-9' });
+      assert.equal(await secret.locator('a').count(), 0, 'a card the reader cannot read is a link');
+      assert.match(await secret.innerText(), /SEC-9 \(not a card you can see\)/);
+      assert.doesNotMatch(await agent.innerText(), /Secret plan/);
 
       // By keyboard, as a link is.
       await h.page.locator('.myday-drafts').getByRole('button', { name: '‹ Prev' }).click();
