@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-10-20T05:16:07Z
 finished: 2026-10-20T09:01:14Z
 ---
@@ -114,3 +114,15 @@ Unlisted work, Usage and Member profile). Nothing else outside `server/web/`.
 ### Gate
 
 See the log, `logs/reorganise-navigation-2026-10-20.md`.
+
+## Accepted (CHIEF, 2026-10-20)
+
+Review: APPROVE with no code blockers (review-reorganise-navigation). The Gate
+line stays unticked on purpose: the root `pnpm test` on master `6c97146a`
+exited 1, on one case only. That was `build.test.ts` "built server never
+became healthy" (LAI-768), at a load average of 19–33, mostly Microsoft
+Defender and Spotlight. The file passes alone, 15/15 with exit 0. Web 2324/2324,
+cli 504 + 2 skipped, lint 0, format 0. GitHub Actions runs the gate on a clean
+runner before it deploys, and that run is the green record. Follow-ups:
+LAI-804 (raised to p1), LAI-806, LAI-807, LAI-808. The owner is asked to
+confirm that My profile stays owners/admins only.

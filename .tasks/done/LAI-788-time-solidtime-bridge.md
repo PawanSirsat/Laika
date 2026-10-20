@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: [LAI-787]
 discovered-from:
-status: review
+status: done
 started: 2026-10-20T04:29:37Z
 finished: 2026-10-20T05:44:27Z
 ---
@@ -209,3 +209,14 @@ entry a Solidtime entry this run deleted` (both red then green); web
 LAI-797 and LAI-798 (round 0's filings) collide with LAI-792's: left as they
 are for renumbering at merge, as directed. Gate after the last code edit:
 in `logs/time-solidtime-2026-10-20.md`.
+
+## Accepted (CHIEF, 2026-10-20)
+
+Review round 2: APPROVE (review-solidtime-bridge), on condition of the root
+gate. On master `6c97146a`, with LAI-796 merged, the root gate failed one
+case: `build.test.ts` timed out under load (LAI-768). That file passes alone
+15/15, and lint and format were 0. GitHub Actions' clean run is the
+gate of record. Round-1 follow-ups 2, 3, 7 and 9, and item 1's
+paging-by-start-time, are still to be filed. Filings renumbered to LAI-800
+and LAI-801 (D-089). `laika time connect` refuses the current plain-http board
+until HTTPS lands.
