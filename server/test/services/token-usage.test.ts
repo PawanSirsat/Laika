@@ -879,7 +879,7 @@ describe('every Usage query is one indexed query', () => {
     it(name, () => {
       expect(
         plan(statement, [...params]).filter((s) =>
-          /^SEARCH token_usage_days USING COVERING INDEX /.test(s),
+          s.startsWith('SEARCH token_usage_days USING COVERING INDEX '),
         ),
       ).toHaveLength(1);
     });
