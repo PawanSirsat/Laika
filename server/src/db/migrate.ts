@@ -212,6 +212,21 @@ BEGIN
   SELECT RAISE(ABORT, 'time_entries are kept three years: DELETE is not permitted before then (SPEC 4.48)');
 END`,
   },
+  // A delete trigger cannot see `INSERT OR REPLACE` (LAI-746's hole): with
+  // `recursive_triggers` off the row a replace removes fires none, and the
+  // cascade then takes its revisions. An entry is replaced by its id or by
+  // its unique `(user_id, source, source_ref)`, so both are refused (LAI-787
+  // review B2). Retention deletes; nothing replaces.
+  {
+    name: 'time_entries_no_replace',
+    table: 'time_entries',
+    create: `CREATE TRIGGER IF NOT EXISTS \`time_entries_no_replace\`
+BEFORE INSERT ON \`time_entries\`
+WHEN EXISTS (SELECT 1 FROM \`time_entries\` WHERE \`id\` = NEW.\`id\` OR (NEW.\`source_ref\` IS NOT NULL AND \`user_id\` = NEW.\`user_id\` AND \`source\` = NEW.\`source\` AND \`source_ref\` = NEW.\`source_ref\`))
+BEGIN
+  SELECT RAISE(ABORT, 'time_entries are kept three years: INSERT OR REPLACE is not permitted (SPEC 4.48)');
+END`,
+  },
 ] as const;
 
 /**
@@ -294,7 +309,7 @@ export function ensureActivityTriggers(db: Db): void {
 
   if (broken.length > 0) {
     throw new Error(
-      `activity (SPEC §4.8), member_ratings (§4.21), task_estimates (§4.32), task_claim_estimates (§4.34) and time_entry_revisions (§4.49) are append-only, and time_entries (§4.48) are kept three years; their triggers are not enforcing it: ${broken.join(', ')}. Refusing to start without the guarantee.`,
+      `activity (SPEC §4.8), member_ratings (§4.21), task_estimates (§4.32), task_claim_estimates (§4.34) and time_entry_revisions (§4.49) are append-only, and time_entries (§4.48) are kept three years and never replaced; their triggers are not enforcing it: ${broken.join(', ')}. Refusing to start without the guarantee.`,
     );
   }
 }

@@ -227,6 +227,81 @@ describe('history', () => {
   });
 });
 
+/**
+ * Review round 1, B2. A delete trigger cannot see `INSERT OR REPLACE`: with
+ * `recursive_triggers` off, the row a replace removes fires no delete
+ * trigger, and the cascade then takes every revision. A replace over an entry
+ * — by its id, or by its `(user_id, source, source_ref)` — is refused.
+ */
+describe('an entry cannot be replaced', () => {
+  it('refuses a replace by id or by source, and keeps both entries and their history', () => {
+    const typed = createEntry(t.db, owner, { day: DAY, tz: 'UTC', minutes: 30 }, NOW);
+    updateEntry(t.db, owner, typed.id, { minutes: 40 }, NOW);
+    const imported = newId();
+    t.db
+      .insert(timeEntries)
+      .values({
+        id: imported,
+        userId: owner.userId,
+        day: DAY,
+        tz: 'UTC',
+        minutes: 20,
+        source: 'import',
+        sourceRef: 'solidtime-1',
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+    t.db
+      .insert(timeEntryRevisions)
+      .values({
+        id: newId(),
+        entryId: imported,
+        revision: 1,
+        change: 'created',
+        changedBy: owner.userId,
+        day: DAY,
+        tz: 'UTC',
+        minutes: 20,
+        createdAt: NOW,
+      })
+      .run();
+
+    expectSqliteError(
+      () =>
+        t.db.run(
+          sql`INSERT OR REPLACE INTO time_entries (id, user_id, day, tz, minutes, source, created_at, updated_at) VALUES (${typed.id}, ${owner.userId}, ${DAY}, 'UTC', 5, 'manual', ${NOW}, ${NOW})`,
+        ),
+      /INSERT OR REPLACE is not permitted/,
+    );
+    expectSqliteError(
+      () =>
+        t.db.run(
+          sql`INSERT OR REPLACE INTO time_entries (id, user_id, day, tz, minutes, source, source_ref, created_at, updated_at) VALUES (${newId()}, ${owner.userId}, ${DAY}, 'UTC', 5, 'import', 'solidtime-1', ${NOW}, ${NOW})`,
+        ),
+      /INSERT OR REPLACE is not permitted/,
+    );
+
+    expect(
+      t.db
+        .select({ id: timeEntries.id, minutes: timeEntries.minutes })
+        .from(timeEntries)
+        .all()
+        .sort((a, b) => a.minutes - b.minutes),
+    ).toEqual([
+      { id: imported, minutes: 20 },
+      { id: typed.id, minutes: 40 },
+    ]);
+    expect(listRevisions(t.db, owner, typed.id).map((r) => r.change)).toEqual([
+      'created',
+      'edited',
+    ]);
+    expect(
+      t.db.select().from(timeEntryRevisions).where(eq(timeEntryRevisions.entryId, imported)).all(),
+    ).toHaveLength(1);
+  });
+});
+
 describe('retention', () => {
   // Real dates: the trigger compares with SQLite's own clock.
   const now = Date.now();
