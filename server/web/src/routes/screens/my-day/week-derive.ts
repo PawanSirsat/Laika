@@ -64,3 +64,13 @@ export function weekTotal(week: readonly MyDayWeekDay[]): {
   const drafted = week.reduce((n, d) => n + d.drafted_minutes, 0);
   return { confirmed, drafted, total: confirmed + drafted };
 }
+
+/** `Tuesday 20 October` — the day as the page's heading says it. */
+export function dayLong(day: string): string {
+  return new Date(`${day}T00:00:00Z`).toLocaleDateString('en-GB', {
+    timeZone: 'UTC',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+}

@@ -116,7 +116,9 @@ async function xOf(page: Page, minute: number): Promise<number> {
   return box.x + ((minute - from * 60) / ((to - from) * 60)) * box.width;
 }
 
+/** The middle of `locator`, brought into view first — a drag starts where it is seen. */
 async function centre(locator: Locator): Promise<{ x: number; y: number }> {
+  await locator.scrollIntoViewIfNeeded();
   const box = await locator.boundingBox();
   assert.ok(box !== null);
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -192,10 +194,10 @@ void describe('gaps and breaks (4, D)', () => {
       const stat = await h.page.locator('[data-stat="gaps"]').innerText();
       assert.match(stat, new RegExp(dur(75)));
       assert.match(stat, /2 unaccounted/);
-      assert.deepEqual(
-        await h.page.locator('.lane-gap').allInnerTexts(),
-        [`+ ${dur(30)}`, `+ ${dur(45)}`],
-      );
+      assert.deepEqual(await h.page.locator('.lane-gap').allInnerTexts(), [
+        `+ ${dur(30)}`,
+        `+ ${dur(45)}`,
+      ]);
     } finally {
       await h.close();
     }
@@ -223,7 +225,9 @@ void describe('gaps and breaks (4, D)', () => {
       await h.page.getByRole('button', { name: 'Not a break' }).click();
       await until(async () => (await h.page.locator('.lane-gap').count()) === 2);
       assert.ok(
-        writes(h).some((c) => c.method === 'DELETE' && c.path.startsWith('/api/v1/me/time-breaks/')),
+        writes(h).some(
+          (c) => c.method === 'DELETE' && c.path.startsWith('/api/v1/me/time-breaks/'),
+        ),
       );
       assert.equal(await h.page.locator('.lane-break').count(), 0);
     } finally {
@@ -237,10 +241,7 @@ void describe('confirming leaves out what needs a card (1, 6)', () => {
     const h = await openDay(TODAY);
     try {
       const button = h.page.locator('[data-confirm-day]');
-      assert.equal(
-        (await button.innerText()).trim(),
-        `Confirm 3 ready · ${dur(95 + 110 + 25)}`,
-      );
+      assert.equal((await button.innerText()).trim(), `Confirm 3 ready · ${dur(95 + 110 + 25)}`);
       assert.match((await button.getAttribute('title')) ?? '', /2 need a card .*left out/);
       await button.click();
       await until(() => writes(h).length >= 3);
@@ -285,7 +286,10 @@ void describe('the inspector (5)', () => {
       const confirm = inspector.locator('[data-inspector-confirm]');
       assert.equal((await confirm.innerText()).trim(), 'Needs a card');
       assert.ok(await confirm.isDisabled());
-      assert.match(await inspector.locator('[data-card-warning]').innerText(), /Nothing named a card/);
+      assert.match(
+        await inspector.locator('[data-card-warning]').innerText(),
+        /Nothing named a card/,
+      );
       await inspector.locator('[data-card="LAI-12"]').click();
       await until(() => writes(h).length > 0);
       assert.deepEqual(writes(h)[0], {
@@ -418,7 +422,9 @@ void describe('Undo (B)', () => {
       await toast.getByRole('button', { name: 'Undo' }).click();
       await until(() => writes(h).some((c) => c.path === '/api/v1/me/time/undo'));
       assert.deepEqual(
-        writes(h).filter((c) => c.path === '/api/v1/me/time/undo').map((c) => c.body),
+        writes(h)
+          .filter((c) => c.path === '/api/v1/me/time/undo')
+          .map((c) => c.body),
         [{ draft: 'd1' }],
       );
     } finally {
@@ -441,7 +447,9 @@ void describe('Undo (B)', () => {
       await toast.getByRole('button', { name: 'Undo' }).click();
       await until(() => writes(h).filter((c) => c.path === '/api/v1/me/time/undo').length === 2);
       assert.deepEqual(
-        writes(h).filter((c) => c.path === '/api/v1/me/time/undo').map((c) => c.body),
+        writes(h)
+          .filter((c) => c.path === '/api/v1/me/time/undo')
+          .map((c) => c.body),
         [{ draft: 'd2' }, { draft: 'd1' }],
       );
     } finally {
@@ -453,19 +461,29 @@ void describe('Undo (B)', () => {
     const h = await openDay(TODAY);
     try {
       await select(h, 'e1');
-      await h.page.locator('[data-inspector="entry"]').getByRole('button', { name: 'Delete' }).click();
+      await h.page
+        .locator('[data-inspector="entry"]')
+        .getByRole('button', { name: 'Delete' })
+        .click();
       await h.page.locator('[data-toast]').getByRole('button', { name: 'Undo' }).click();
       await until(() => writes(h).some((c) => c.path === '/api/v1/me/time/undo'));
       await h.page.locator('[data-length="15"]').click();
       await h.page.locator('[data-add-submit]').click();
       await until(() => writes(h).some((c) => c.path === '/api/v1/me/time-entries'));
       await until(async () =>
-        /added/i.test((await h.page.locator('[data-toast]').innerText().catch(() => '')) ?? ''),
+        /added/i.test(
+          (await h.page
+            .locator('[data-toast]')
+            .innerText()
+            .catch(() => '')) ?? '',
+        ),
       );
       await h.page.locator('[data-toast]').getByRole('button', { name: 'Undo' }).click();
       await until(() => writes(h).filter((c) => c.path === '/api/v1/me/time/undo').length === 2);
       assert.deepEqual(
-        writes(h).filter((c) => c.path === '/api/v1/me/time/undo').map((c) => c.body),
+        writes(h)
+          .filter((c) => c.path === '/api/v1/me/time/undo')
+          .map((c) => c.body),
         [{ entry: 'e1' }, { entry: 'n1' }],
       );
     } finally {
@@ -484,9 +502,7 @@ void describe('the off switch asks first (F)', () => {
       await dialog.waitFor({ timeout: 5_000 });
       assert.match(
         await dialog.innerText(),
-        new RegExp(
-          `This deletes 5 drafts you hold \\(${dur(310)}\\)\\. Confirmed time stays\\.`,
-        ),
+        new RegExp(`This deletes 5 drafts you hold \\(${dur(310)}\\)\\. Confirmed time stays\\.`),
       );
       await dialog.getByRole('button', { name: 'Keep drafting' }).click();
       assert.equal(await h.page.getByRole('dialog').count(), 0);
@@ -543,7 +559,6 @@ void describe('keyboard shortcuts (H)', () => {
       const note = h.page.getByPlaceholder(/What it was/);
       await note.click();
       await h.page.keyboard.type('xgjk?');
-      await h.page.keyboard.press('Enter');
       assert.equal(await note.inputValue(), 'xgjk?');
       assert.equal(await h.page.getByRole('dialog').count(), 0, 'the sheet opened while typing');
       assert.deepEqual(
@@ -702,9 +717,14 @@ void describe('a phone, and both themes (I)', () => {
               const main = document.querySelector('.shell-main') ?? document.scrollingElement;
               return main === null ? 0 : main.scrollWidth - main.clientWidth;
             });
-            assert.ok(sideways <= 1, `${String(width)} ${theme} folded=${String(folded)}: sideways`);
+            assert.ok(
+              sideways <= 1,
+              `${String(width)} ${theme} folded=${String(folded)}: sideways`,
+            );
             const clipped = await h.page.evaluate(() =>
               [...document.querySelectorAll('.myday-page button, .myday-page h2')]
+                // Clipped on purpose: a heading for assistive tech only.
+                .filter((el) => !el.classList.contains('visually-hidden'))
                 .filter((el) => getComputedStyle(el).textOverflow !== 'ellipsis')
                 .filter((el) => el.scrollWidth > el.clientWidth + 1)
                 .map((el) => (el.textContent ?? '').trim().slice(0, 40)),
@@ -718,4 +738,3 @@ void describe('a phone, and both themes (I)', () => {
     }
   });
 });
-

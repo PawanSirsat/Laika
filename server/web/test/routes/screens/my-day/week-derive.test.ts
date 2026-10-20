@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { MyDayWeekDay } from '../../../../src/api/time.ts';
-import { weekTiles, weekTotal } from '../../../../src/routes/screens/my-day/week-derive.ts';
+import {
+  dayLong,
+  weekTiles,
+  weekTotal,
+} from '../../../../src/routes/screens/my-day/week-derive.ts';
 
 /**
  * The week strip (LAI-831, the owner's design and CHIEF's addition E): each
@@ -65,5 +69,11 @@ void describe('weekTiles', () => {
 void describe('weekTotal', () => {
   void test('adds the week’s confirmed and drafted minutes apart and together', () => {
     assert.deepEqual(weekTotal(week), { confirmed: 540, drafted: 270, total: 810 });
+  });
+});
+
+void describe('dayLong', () => {
+  void test('the day in words, whatever the reader’s zone', () => {
+    assert.equal(dayLong('2026-10-21'), 'Wednesday 21 October');
   });
 });

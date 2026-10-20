@@ -115,10 +115,16 @@ void describe('gapsOf — unaccounted time between blocks', () => {
   });
 
   void test('clip cuts a span around each cut', () => {
-    assert.deepEqual(clip({ start: 0, end: 100 }, [{ start: 20, end: 30 }, { start: 90, end: 120 }]), [
-      { start: 0, end: 20 },
-      { start: 30, end: 90 },
-    ]);
+    assert.deepEqual(
+      clip({ start: 0, end: 100 }, [
+        { start: 20, end: 30 },
+        { start: 90, end: 120 },
+      ]),
+      [
+        { start: 0, end: 20 },
+        { start: 30, end: 90 },
+      ],
+    );
   });
 });
 
@@ -222,7 +228,11 @@ void describe('moving an edge, five minutes at a time (C)', () => {
   });
 
   void test('never closer than a step to the other edge, never off the day, never a no-op', () => {
-    assert.deepEqual(dragEdge(block, 'end', min(11)), { start: min(12), end: min(12, 5), minutes: 5 });
+    assert.deepEqual(dragEdge(block, 'end', min(11)), {
+      start: min(12),
+      end: min(12, 5),
+      minutes: 5,
+    });
     assert.deepEqual(dragEdge(block, 'start', -200), { start: 0, end: min(12, 30), minutes: 750 });
     assert.equal(dragEdge(block, 'end', min(12, 31)), undefined);
   });

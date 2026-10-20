@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { DraftPatch, TimeDraft } from '../../../api/time.ts';
+import type { TimeDraft } from '../../../api/time.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
 import {
   effectiveSelection,
@@ -15,13 +15,12 @@ import {
   needCardLine,
   needsCard,
   pageOf,
-  placed,
   selectRange,
   type BulkKind,
 } from './draft-bulk.ts';
-import { hm } from './my-day-derive.ts';
+import { duration } from './format.ts';
 
-/** A batch in flight, or what the last one did — on the day it ran on. */
+/** A batch in flight, on the day it runs on. Its last word is the page's toast. */
 export type Batch =
   | { readonly kind: 'idle' }
   | {
@@ -30,69 +29,58 @@ export type Batch =
       readonly label: string;
       readonly done: number;
       readonly total: number;
-    }
-  | { readonly kind: 'said'; readonly day: string; readonly text: string; readonly ok: boolean };
-
-/** The bar asks once before a batch that is hard to take back. */
-type Asking = 'none' | 'dismiss' | 'general';
+    };
 
 export interface DraftListProps {
   readonly drafts: readonly TimeDraft[];
   /** The action in flight anywhere on the page. */
   readonly pending: string | undefined;
   readonly batch: Batch;
+  /** The block in the inspector. */
+  readonly selected: string | undefined;
+  readonly onSelect: (draft: TimeDraft) => void;
   readonly onNavigate: (to: string) => void;
-  readonly onPatch: (draft: TimeDraft, patch: DraftPatch, verb: string) => Promise<boolean>;
-  readonly onSplit: (draft: TimeDraft, at: number) => Promise<boolean>;
-  readonly onDismiss: (draft: TimeDraft) => void;
-  readonly onConfirm: (draft: TimeDraft) => void;
   /** Run one batch over `chosen`; resolves to the ids that stay selected. */
   readonly onBulk: (kind: BulkKind, chosen: readonly TimeDraft[]) => Promise<readonly string[]>;
 }
 
 /**
- * The day's drafted blocks (LAI-810, the owner: *"that must show in scroll
- * then in pagination; also add the all select and multi select"*): ten to a
- * page in a scroll area of their own, a box on every row, and a bar that
- * acts on what is ticked.
+ * *To settle* (the owner's design, LAI-831; LAI-810): the day's drafted
+ * blocks — only the reader sees them — ten to a page in a scroll area of
+ * their own, a box on every row and a bar that acts on what is ticked.
+ * Clicking a row puts it in the inspector.
  *
- * The box in the header selects **this page**, as every mail client's does;
- * once it is ticked a link offers every page. Shift-click selects a run.
- * Selection is kept by id across pages, and what a batch acts on is always
- * pruned to the blocks still drafted.
+ * The box in the header selects **this page**, as every mail client's does,
+ * and shows a mixed state when some are; once it is ticked a link offers
+ * every page. Shift-click selects a run. Selection is kept by id across pages,
+ * and what a batch acts on is always pruned to the blocks still drafted.
  *
- * Two batches ask first (LAI-810 review round 1): *Not work*, because a
- * dismissed block cannot be brought back here; and *General* when any ticked
- * block is on a card or a space, because General takes it off — asked
- * rather than refused, since moving blocks the collector put on the wrong
- * card is a correction worth making many at a time.
+ * **Confirm leaves out what needs a card**: those blocks stay ticked and the
+ * toast counts them. *General* and *Not work* act at once — **Undo** takes
+ * either back exactly, which is why LAI-810's two questions are gone.
  */
 export function DraftList({
   drafts,
   pending,
   batch,
+  selected,
+  onSelect,
   onNavigate,
-  onPatch,
-  onSplit,
-  onDismiss,
-  onConfirm,
   onBulk,
 }: DraftListProps) {
-  const [selected, setSelected] = useState<ReadonlySet<string>>(NO_SELECTION);
+  const [checked, setChecked] = useState<ReadonlySet<string>>(NO_SELECTION);
   const [anchor, setAnchor] = useState<string | undefined>(undefined);
   const [page, setPage] = useState(0);
-  const [asking, setAsking] = useState<Asking>('none');
   const head = useRef<HTMLInputElement | null>(null);
   const scroller = useRef<HTMLDivElement | null>(null);
 
-  const live = effectiveSelection(selected, drafts);
+  const live = effectiveSelection(checked, drafts);
   const paged = pageOf(drafts, page);
   const pageIds = paged.items.map((d) => d.id);
   const headState = pageState(live, pageIds);
   const busy = pending !== undefined;
   const chosen = drafts.filter((d) => live.has(d.id));
   const chosenNeedCard = chosen.filter(needsCard).length;
-  const chosenPlaced = chosen.filter(placed);
   const dayNeedCard = drafts.filter(needsCard).length;
   const total = drafts.reduce((sum, d) => sum + d.minutes, 0);
 
@@ -100,23 +88,26 @@ export function DraftList({
     if (head.current !== null) head.current.indeterminate = headState === 'some';
   }, [headState]);
 
+  // The selected block's page is the page shown: J and K walk every page.
+  const selectedAt = selected === undefined ? -1 : drafts.findIndex((d) => d.id === selected);
+  useEffect(() => {
+    if (selectedAt >= 0) setPage(Math.floor(selectedAt / PAGE_SIZE));
+  }, [selectedAt]);
+
   const go = (to: number): void => {
     setPage(to);
     if (scroller.current !== null) scroller.current.scrollTop = 0;
   };
 
-  const act = (kind: BulkKind, blocks: readonly TimeDraft[] = chosen): void => {
-    setAsking('none');
-    // Ticked but not part of this batch ("only the ones on nothing"): still ticked.
-    const untouched = chosen.filter((d) => !blocks.includes(d)).map((d) => d.id);
-    void onBulk(kind, blocks).then((keep) => {
-      setSelected(new Set([...keep, ...untouched]));
+  const act = (kind: BulkKind): void => {
+    void onBulk(kind, chosen).then((keep) => {
+      setChecked(new Set(keep));
       setAnchor(undefined);
     });
   };
 
   return (
-    <section className="myday-card myday-drafts" aria-labelledby="myday-drafts-title">
+    <section className="myday-card myday-drafts myday-settle" aria-labelledby="myday-drafts-title">
       <header className="myday-card-head">
         <input
           ref={head}
@@ -126,17 +117,15 @@ export function DraftList({
           disabled={busy}
           aria-label="Select every block on this page"
           onChange={() => {
-            setSelected(togglePage(live, pageIds));
+            setChecked(togglePage(live, pageIds));
             setAnchor(undefined);
-            setAsking('none');
           }}
         />
         <h2 className="myday-card-title" id="myday-drafts-title">
-          Drafted — not yet confirmed
+          To settle
         </h2>
-        <span className="myday-card-caption" data-drafted-caption>
-          {drafts.length} {drafts.length === 1 ? 'block' : 'blocks'} · {hm(total)}
-          {dayNeedCard > 0 && ` · ${needCardLine(dayNeedCard)}`}
+        <span className="myday-card-figure" data-drafted-caption>
+          {drafts.length} · {duration(total)}
         </span>
         {headState === 'all' && live.size < drafts.length && (
           <button
@@ -144,19 +133,24 @@ export function DraftList({
             className="myday-linkish"
             disabled={busy}
             onClick={() => {
-              setSelected(selectAll(drafts));
-              setAsking('none');
+              setChecked(selectAll(drafts));
             }}
           >
             Select all {drafts.length} drafted
           </button>
+        )}
+        <span className="myday-card-head-gap" />
+        {live.size === 0 && (
+          <span className="myday-card-caption" data-settle-hint>
+            {dayNeedCard > 0 ? needCardLine(dayNeedCard) : 'all ready to confirm'}
+          </span>
         )}
       </header>
 
       {live.size > 0 && (
         <div className="myday-bulk" role="group" aria-label="Selected blocks">
           <span className="myday-bulk-count" data-bulk-count>
-            <strong>{live.size} selected</strong> · {hm(minutesOf(drafts, live))}
+            <strong>{live.size} selected</strong> · {duration(minutesOf(drafts, live))}
           </span>
           {chosenNeedCard > 0 && (
             <span className="myday-bulk-warn" data-bulk-needcard>
@@ -164,112 +158,47 @@ export function DraftList({
             </span>
           )}
           <span className="myday-bulk-actions">
-            {asking === 'dismiss' && (
-              <>
-                <span className="myday-quiet" data-bulk-ask>
-                  Mark {live.size} as not work? They stay dismissed.
-                </span>
-                <button
-                  type="button"
-                  className="myday-chip myday-chip-danger"
-                  disabled={busy}
-                  onClick={() => {
-                    act('dismiss');
-                  }}
-                >
-                  Mark not work
-                </button>
-              </>
-            )}
-            {asking === 'general' && (
-              <>
-                <span className="myday-quiet" data-bulk-ask>
-                  {chosenPlaced.length} of these {chosenPlaced.length === 1 ? 'is' : 'are'} on a
-                  card or a space — move {chosenPlaced.length === 1 ? 'it' : 'them'} to General too?
-                </span>
-                <button
-                  type="button"
-                  className="myday-chip myday-chip-danger"
-                  disabled={busy}
-                  onClick={() => {
-                    act('general');
-                  }}
-                >
-                  Move all {live.size} to General
-                </button>
-                {chosenPlaced.length < live.size && (
-                  <button
-                    type="button"
-                    className="myday-chip"
-                    disabled={busy}
-                    onClick={() => {
-                      act(
-                        'general',
-                        chosen.filter((d) => !placed(d)),
-                      );
-                    }}
-                  >
-                    Only the {live.size - chosenPlaced.length} on nothing
-                  </button>
-                )}
-              </>
-            )}
-            {asking !== 'none' ? (
-              <button
-                type="button"
-                className="myday-chip"
-                onClick={() => {
-                  setAsking('none');
-                }}
-              >
-                Keep them
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="myday-chip myday-chip-primary"
-                  disabled={busy}
-                  onClick={() => {
-                    act('confirm');
-                  }}
-                >
-                  Confirm selected
-                </button>
-                <button
-                  type="button"
-                  className="myday-chip"
-                  disabled={busy}
-                  onClick={() => {
-                    if (chosenPlaced.length > 0) setAsking('general');
-                    else act('general');
-                  }}
-                >
-                  General
-                </button>
-                <button
-                  type="button"
-                  className="myday-chip"
-                  disabled={busy}
-                  onClick={() => {
-                    setAsking('dismiss');
-                  }}
-                >
-                  Not work
-                </button>
-                <button
-                  type="button"
-                  className="myday-chip"
-                  disabled={busy}
-                  onClick={() => {
-                    setSelected(NO_SELECTION);
-                    setAnchor(undefined);
-                  }}
-                >
-                  Clear
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              className="myday-chip myday-chip-primary"
+              disabled={busy}
+              onClick={() => {
+                act('confirm');
+              }}
+            >
+              Confirm
+            </button>
+            <button
+              type="button"
+              className="myday-chip"
+              disabled={busy}
+              onClick={() => {
+                act('general');
+              }}
+            >
+              General
+            </button>
+            <button
+              type="button"
+              className="myday-chip"
+              disabled={busy}
+              onClick={() => {
+                act('dismiss');
+              }}
+            >
+              Not work
+            </button>
+            <button
+              type="button"
+              className="myday-chip"
+              disabled={busy}
+              onClick={() => {
+                setChecked(NO_SELECTION);
+                setAnchor(undefined);
+              }}
+            >
+              Clear
+            </button>
           </span>
         </div>
       )}
@@ -279,15 +208,6 @@ export function DraftList({
           <Spinner size="sm" label={batch.label} />
           <progress max={Math.max(1, batch.total)} value={batch.done} />
           {batch.label} {batch.done} of {batch.total}…
-        </p>
-      )}
-      {batch.kind === 'said' && (
-        <p
-          className={batch.ok ? 'myday-bulk-said' : 'myday-bulk-said myday-bulk-said-warn'}
-          role={batch.ok ? 'status' : 'alert'}
-          data-bulk-said
-        >
-          {batch.text}
         </p>
       )}
 
@@ -306,10 +226,14 @@ export function DraftList({
               draft={draft}
               position={paged.page * PAGE_SIZE + i + 1}
               count={drafts.length}
-              pending={pending}
-              selected={live.has(draft.id)}
-              onSelect={(on, range) => {
-                setSelected(
+              busy={busy}
+              checked={live.has(draft.id)}
+              selected={draft.id === selected}
+              onSelect={() => {
+                onSelect(draft);
+              }}
+              onCheck={(on, range) => {
+                setChecked(
                   range
                     ? selectRange(
                         live,
@@ -321,17 +245,8 @@ export function DraftList({
                     : selectRange(live, [draft.id], undefined, draft.id, on),
                 );
                 setAnchor(draft.id);
-                setAsking('none');
               }}
               onNavigate={onNavigate}
-              onPatch={(patch, verb) => onPatch(draft, patch, verb)}
-              onSplit={(at) => onSplit(draft, at)}
-              onDismiss={() => {
-                onDismiss(draft);
-              }}
-              onConfirm={() => {
-                onConfirm(draft);
-              }}
             />
           ))}
         </ol>

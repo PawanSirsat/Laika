@@ -72,8 +72,7 @@ export interface DayLine {
 
 type Timed = Pick<TimeDraft | TimeEntry, 'id' | 'started_at' | 'ended_at' | 'minutes'>;
 
-const needsCard = (d: TimeDraft): boolean =>
-  d.task === null && d.project === null && !d.general;
+const needsCard = (d: TimeDraft): boolean => d.task === null && d.project === null && !d.general;
 
 /** `[start, end)` less every span in `cuts`, in order. */
 export function clip(span: Span, cuts: readonly Span[]): Span[] {

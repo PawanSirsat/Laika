@@ -8,7 +8,11 @@ import { cardChips } from '../../../../src/routes/screens/my-day/card-chips.ts';
  * other cards — each once, and a handful, never a list of everything.
  */
 
-const card = (n: number) => ({ id: `t${String(n)}`, key: `LAI-${String(n)}`, title: `Card ${String(n)}` });
+const card = (n: number) => ({
+  id: `t${String(n)}`,
+  key: `LAI-${String(n)}`,
+  title: `Card ${String(n)}`,
+});
 
 void describe('cardChips', () => {
   void test('the block’s own card first, then work in progress, then the day’s', () => {
