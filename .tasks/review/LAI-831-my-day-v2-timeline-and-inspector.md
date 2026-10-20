@@ -390,3 +390,60 @@ skipped; `node --test test/routes/screens/my-day/*.test.ts test/api/time.test.ts
 test/api.test.ts` — 135 passed; the three My day browser files — 52 passed;
 `pnpm lint` exit 0; `pnpm format` exit 0. The full root gate is CHIEF's after
 merge.
+
+## Review round 2 (the builder, fixes for CHIEF's BLOCK on blocker 2)
+
+Criteria unchanged. Commits `711394be` and `936f435b` (tests, red first),
+`ac9cdf1d` and `b101661c` (server), `c0e23508` (web).
+
+1. **By the clock, not pro-rated.** `assertNotCountedTwice` is gone. A timed
+   block's span, plus every live timed entry of the person that overlaps it —
+   transitively, the whole connected stretch — may hold no more minutes than
+   the stretch has of wall clock (`services/time-entries.ts` `stretchAround`,
+   `assertFitsTheClock`): `409 overlaps_confirmed` with `stretch_started_at`,
+   `stretch_ended_at`, `stretch_minutes`, `would_hold`, and `draft_id` when a
+   draft is being confirmed. Same places as round 1: a draft's span or length
+   (`updateDraft`), a single confirm, *Confirm day*, a timed entry's create,
+   edit, and revival (Undo of a delete).
+2. **Confirm day is all-or-nothing.** Every block of the day is written, then
+   every block's stretch is judged on the day's final state — so the order of
+   the blocks cannot matter — and the first one over refuses the whole day by
+   name (`draft_id`); the transaction rolls back and nothing is confirmed. The
+   page says so (`draft-bulk.ts` `clashOf`): *"Nothing confirmed: 7:40–7:55 AM
+   would count confirmed time twice — its stretch has 2 h 40 min of clock and
+   would hold 3 h 10 min. Shorten it or mark it not work, then confirm
+   again."*
+3. **P6.** More minutes than a block's own span is `422 minutes_over_span`,
+   judged before any stretch, on drafts and timed entries (`assertWithinSpan`).
+4. **The same rule, one place the brief did not name.** An entry edit was
+   judged only where it landed, so an entry whose slack held a stretch open
+   could be dragged off it — or moved to another day — leaving the blocks it
+   covered counting twice. The edit now also judges every live timed entry
+   its old span met, on the state it leaves (`assertLeftBehindFits`).
+5. The UI clamp is unchanged.
+
+**Order, said plainly.** Each verdict is a function of the set of entries the
+write would leave, never of the order that reached it: P4 confirms either way.
+Confirming one at a time judges each set on the way, so two overlapping half
+hours that only fit inside a long block's slack are refused if they go before
+the long block, and *Confirm day* takes the three together. That is the rule
+as given, not a second rule.
+
+**Open for CHIEF, not done:** a delete, or an Undo that takes an entry back,
+can leave a stretch over — the mirror of item 4. Refusing a delete because
+the rest would then count twice is a decision, not a fix; deletes are not
+refused.
+
+**Failed first.** On `8d4c1923`, `server/test/http/routes/time-my-day-v2.test.ts`
+failed 7 of its 8 new tests. *P4 short block first* passed, because the
+pro-rated rule happened to allow that order; it stays as the either-order
+guard. `server/web/test/routes/screens/my-day/draft-bulk.test.ts` failed 1 of
+26, the new test. On `936f435b`, the left-behind test answered `200`, not
+`409`.
+
+**Run after `b101661c`.** The 12 server time route, service and jobs files:
+176 passed, 2 skipped, exit 0. Server `tsc --noEmit`: exit 0. From
+`server/web`, `node --test test/routes/screens/my-day/*.test.ts
+test/api/time.test.ts test/api.test.ts`: 136 passed, exit 0. The three My day
+browser files: 52 passed, exit 0. `pnpm lint`: exit 0. `pnpm format`: exit 0.
+The full root gate runs after merge.
