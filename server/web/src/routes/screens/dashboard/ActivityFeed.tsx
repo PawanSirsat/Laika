@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ActivityEvent } from '../../../api/activity.ts';
-import type { Task } from '../../../api/tasks.ts';
+import type { TaskSummary } from '../../../api/tasks.ts';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -46,7 +46,7 @@ export function ActivityFeed({
   theme,
 }: {
   readonly events: readonly ActivityEvent[];
-  readonly tasksById: ReadonlyMap<string, Task>;
+  readonly tasksById: ReadonlyMap<string, TaskSummary>;
   readonly nameOf: (id: string | null) => string;
   readonly slug: string;
   readonly now: number;

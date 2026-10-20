@@ -21,6 +21,12 @@ export interface InlineEditProps {
    * title is.
    */
   readonly render?: (value: string) => ReactNode;
+  /**
+   * Editing opened on `value`. The description records which version that was,
+   * so a save can refuse to go over one somebody else has written since
+   * (LAI-795 review, B1).
+   */
+  readonly onOpen?: () => void;
 }
 
 /**
@@ -53,6 +59,7 @@ export function InlineEdit({
   label,
   onSave,
   render,
+  onOpen,
 }: InlineEditProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -69,6 +76,7 @@ export function InlineEdit({
     setDraft(value);
     setError(undefined);
     setEditing(true);
+    onOpen?.();
   };
 
   const commit = async (): Promise<void> => {

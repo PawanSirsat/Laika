@@ -1,5 +1,5 @@
 import type { Sprint, SprintInput } from '../../../api/sprints.ts';
-import type { Task } from '../../../api/tasks.ts';
+import type { TaskSummary } from '../../../api/tasks.ts';
 
 /**
  * The sprints screen's pure logic (LAI-083).
@@ -101,7 +101,7 @@ export interface SprintProgress {
  * incomplete for ever. This is the one judgement call in the file, and it is
  * the reason `total` is not simply "tasks whose `sprint_id` is this one".
  */
-export function progressFor(tasks: readonly Task[]): SprintProgress {
+export function progressFor(tasks: readonly TaskSummary[]): SprintProgress {
   const counted = tasks.filter((t) => t.status !== 'cancelled');
   const done = counted.filter((t) => t.status === 'done').length;
   const total = counted.length;
@@ -110,8 +110,8 @@ export function progressFor(tasks: readonly Task[]): SprintProgress {
 }
 
 /** Tasks grouped by the sprint they are in. Unassigned tasks are under `null`. */
-export function groupBySprint(tasks: readonly Task[]): Map<string | null, Task[]> {
-  const bySprint = new Map<string | null, Task[]>();
+export function groupBySprint(tasks: readonly TaskSummary[]): Map<string | null, TaskSummary[]> {
+  const bySprint = new Map<string | null, TaskSummary[]>();
 
   for (const task of tasks) {
     const key = task.sprint_id;

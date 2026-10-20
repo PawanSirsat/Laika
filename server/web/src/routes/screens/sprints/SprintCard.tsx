@@ -8,11 +8,11 @@ import {
 } from '../../../api/sprints.ts';
 import { LockIcon } from '../../../components/LockIcon.tsx';
 import { formatRange, sprintDays, type SprintProgress } from './sprint-derive.ts';
-import type { Task } from '../../../api/tasks.ts';
+import type { TaskSummary } from '../../../api/tasks.ts';
 
 export interface SprintCardProps {
   readonly sprint: Sprint;
-  readonly tasks: readonly Task[];
+  readonly tasks: readonly TaskSummary[];
   readonly progress: SprintProgress;
   /** `S1` — the sprint's position in the project, as every other screen labels it. */
   readonly index: number;

@@ -63,7 +63,8 @@ import {
   type UsageOutcome,
 } from './activity-usage.ts';
 import { buildDraft, primarySessions, timeDraftBody, type Block } from './activity-time.ts';
-import { ask as askConsole, closePrompt } from './prompt.ts';
+import { ask as askConsole, askSecret as askSecretConsole, closePrompt } from './prompt.ts';
+import { solidtimeCommand, TIME_SOLIDTIME_USAGE } from './time-solidtime.ts';
 
 /**
  * `laika activity on|off|status|sync|emails` (LAI-752, D-079).
@@ -98,6 +99,8 @@ export interface ActivityIo {
   readonly deadlineMs?: number;
   /** Ask a yes/no question and return the answer as typed (`backfill`). */
   readonly ask?: (question: string) => Promise<string>;
+  /** Ask without echoing — a password or a key, never a flag (`laika time`). */
+  readonly askSecret?: (question: string) => Promise<string>;
 }
 
 export const HOOK_SCRIPT = fileURLToPath(
@@ -127,6 +130,13 @@ const CONSOLE: ActivityIo = {
   ask: async (question) => {
     try {
       return await askConsole(question);
+    } finally {
+      closePrompt();
+    }
+  },
+  askSecret: async (question) => {
+    try {
+      return await askSecretConsole(question);
     } finally {
       closePrompt();
     }
@@ -999,6 +1009,7 @@ const TIME_USAGE = [
   '  laika time draft [--days N] [--json]',
   '                                 the blocks of your last N days (1–14, default 1) as',
   '                                 this machine drafts them — what a sync would send',
+  ...TIME_SOLIDTIME_USAGE,
 ];
 
 /** `HH:MM` of a unix-ms instant in `tz`. */
@@ -1046,6 +1057,9 @@ function evidence(b: Block): string {
 export async function time(argv: readonly string[], io: ActivityIo = CONSOLE): Promise<number> {
   const [command, ...rest] = argv;
   if (command !== 'draft') {
+    // The Solidtime bridge (LAI-788): the rest of `laika time`.
+    const bridged = command === undefined ? undefined : await solidtimeCommand(command, rest, io);
+    if (bridged !== undefined) return bridged;
     if (command !== undefined) io.err(`laika time: unknown command "${command}"`);
     for (const line of TIME_USAGE) io.err(line);
     return 1;

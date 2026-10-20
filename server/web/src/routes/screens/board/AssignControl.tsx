@@ -2,11 +2,11 @@ import { Spinner } from '../../../components/Spinner.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { useId, useState } from 'react';
 import { assignTask, claimTask, claimWinner } from '../../../api/tasks.ts';
-import type { Member, Task } from '../../../api/tasks.ts';
+import type { Member, TaskSummary } from '../../../api/tasks.ts';
 import './assign.css';
 
 export interface AssignControlProps {
-  readonly task: Task;
+  readonly task: TaskSummary;
   /** The **project's** members — not the org's. */
   readonly members: ReadonlyMap<string, Member>;
   /** The signed-in user's id, for the Claim path. */

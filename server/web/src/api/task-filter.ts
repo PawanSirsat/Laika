@@ -1,4 +1,4 @@
-import { PRIORITIES, type Task, type TaskFilter, type TaskPriority } from './tasks.ts';
+import { PRIORITIES, type TaskSummary, type TaskFilter, type TaskPriority } from './tasks.ts';
 
 /**
  * The board's filter, applied to the project's one task set (LAI-724).
@@ -19,7 +19,7 @@ import { PRIORITIES, type Task, type TaskFilter, type TaskPriority } from './tas
  *
  * Order is the set's own, which is the server's (`updated_at`, then id).
  */
-export function matchesTaskFilter(task: Task, filter: TaskFilter): boolean {
+export function matchesTaskFilter(task: TaskSummary, filter: TaskFilter): boolean {
   if (filter.status !== undefined && task.status !== filter.status) return false;
   if (filter.status_id !== undefined && task.status_id !== filter.status_id) return false;
   if (filter.priority !== undefined && task.priority !== filter.priority) return false;
@@ -60,7 +60,10 @@ type Unhandled = Exclude<keyof TaskFilter, 'limit' | 'cursor' | (typeof NARROWIN
 export const EVERY_FILTER_FIELD_HANDLED: [Unhandled] extends [never] ? true : never = true;
 
 /** The tasks matching `filter`, in the set's order. No filter returns the set itself. */
-export function applyTaskFilter(tasks: readonly Task[], filter: TaskFilter): readonly Task[] {
+export function applyTaskFilter(
+  tasks: readonly TaskSummary[],
+  filter: TaskFilter,
+): readonly TaskSummary[] {
   if (NARROWING.every((key) => filter[key] === undefined)) return tasks;
   return tasks.filter((task) => matchesTaskFilter(task, filter));
 }

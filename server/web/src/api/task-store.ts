@@ -2,7 +2,7 @@ import { mergeTasks } from './board-merge.ts';
 import { byIdIndex } from './board-derive.ts';
 import { ApiError } from './errors.ts';
 import { everyPage, EVERY_PAGE_CAP } from './every-page.ts';
-import type { Page, Task } from './tasks.ts';
+import { toSummary, type Page, type TaskSummary } from './tasks.ts';
 
 /**
  * The project's task set, one copy for every screen (LAI-724, D-075).
@@ -33,6 +33,9 @@ import type { Page, Task } from './tasks.ts';
  *   local version. A hold (a drag) defers applying a refresh until released.
  * - **`reset`** drops every set and aborts every walk, and a late answer is
  *   never applied: the session calls it on sign-out and on a change of user.
+ * - **No description or acceptance, ever** (LAI-795). Pages are read slim, and
+ *   a write answered in full is held through `toSummary`, so the set is what a
+ *   slim read would say and the next read of the same task is not a change.
  *
  * Framework-free and clock-injected, so all of it is unit-tested
  * (`task-store.test.ts`). The React side is `use-project-tasks.ts` and
@@ -44,9 +47,9 @@ export interface TaskSetSnapshot {
   /** `loading` only until the first answer; a refresh keeps `ready`. */
   readonly status: 'loading' | 'ready' | 'error';
   /** In the server's order (`updated_at`, then id), children included. */
-  readonly tasks: readonly Task[];
+  readonly tasks: readonly TaskSummary[];
   /** Every task by id — every child too, so a parent's `n/m` can count them. */
-  readonly byId: ReadonlyMap<string, Task>;
+  readonly byId: ReadonlyMap<string, TaskSummary>;
   /** The page cap was reached and the server had more: counts are a floor. */
   readonly truncated: boolean;
   readonly error: unknown;
@@ -99,7 +102,7 @@ export interface TaskStore {
   endWrite(slug: string, taskId: string): void;
   writeLocal(
     slug: string,
-    update: (tasks: readonly Task[]) => readonly Task[],
+    update: (tasks: readonly TaskSummary[]) => readonly TaskSummary[],
     meta: LocalWrite,
   ): void;
   /** Sign-out, or a different user: drop everything. */
@@ -111,7 +114,7 @@ export interface TaskStoreDeps {
     slug: string,
     cursor: string | undefined,
     signal: AbortSignal,
-  ) => Promise<Page<Task>>;
+  ) => Promise<Page<TaskSummary>>;
   readonly now?: () => number;
   readonly setTimer?: (fn: () => void, ms: number) => unknown;
   readonly clearTimer?: (handle: unknown) => void;
@@ -233,7 +236,7 @@ export function createTaskStore(deps: TaskStoreDeps): TaskStore {
             else entry.lastLocalWrite.delete(id);
           }
           const prev = entry.snapshot;
-          const merged = mergeTasks(prev.tasks, items, keep);
+          const merged = mergeTasks(prev.tasks, items.map(toSummary), keep);
           entry.snapshot = {
             slug,
             status: 'ready',
@@ -398,7 +401,9 @@ export function createTaskStore(deps: TaskStoreDeps): TaskStore {
         entry.lastLocalWrite.set(meta.record, entry.writeEpoch);
       }
       const prev = entry.snapshot;
-      const tasks = update(prev.tasks);
+      const updated = update(prev.tasks);
+      // A write answers in full; what is held is what a slim read would say.
+      const tasks = updated === prev.tasks ? updated : updated.map(toSummary);
       if (tasks !== prev.tasks) entry.snapshot = { ...prev, tasks, byId: byIdIndex(tasks) };
       emit(entry, {
         origin: 'local',

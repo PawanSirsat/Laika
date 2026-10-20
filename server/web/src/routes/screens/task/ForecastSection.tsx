@@ -24,13 +24,13 @@ import {
   type TaskEstimate,
 } from '../../../api/estimates.ts';
 import { ApiError } from '../../../api/errors.ts';
-import { type Task } from '../../../api/tasks.ts';
+import { type TaskSummary } from '../../../api/tasks.ts';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import './forecast.css';
 
 export interface ForecastSectionProps {
   readonly slug: string;
-  readonly task: Task;
+  readonly task: TaskSummary;
   /** May change the effort: anyone who may edit the task (D-085 item 4). */
   readonly mayEdit: boolean;
   /** Re-read when this changes — the task's `updated_at`, kept current by the stream. */

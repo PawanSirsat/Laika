@@ -208,6 +208,13 @@ const UNPAIRED = new Map<string, string>([
   ['ApplyReviewResult', 'no client type exists'],
   ['HeartbeatView', 'no client type exists'],
   ['MetricsView', 'no client type exists'],
+  // The Solidtime bridge (LAI-788) is the CLI's, not the web app's: `laika
+  // time push` and `pull` read these, and no screen does. They leave this
+  // group the way the rest do, when a screen shows them.
+  ['SolidtimeOutbox', 'no client type exists'],
+  ['SolidtimeSetup', 'no client type exists'],
+  ['ImportResult', 'no client type exists'],
+  ['AllImportResult', 'no client type exists'],
 ]);
 
 /**
@@ -461,7 +468,11 @@ describe('every served response type is paired or named', () => {
     // Not a threshold — a number a reader can see. 7 of 28 was the finding, and
     // a check that never says so lets it stay 7 of 28 quietly.
     const paired = pairedTypes();
-    const inherited = [...coveredByExtends(paired)].filter((name) => servedTypes().has(name));
+    // A base that is also paired itself counts once, as paired:
+    // `TaskSummaryView` is both (LAI-795).
+    const inherited = [...coveredByExtends(paired)].filter(
+      (name) => servedTypes().has(name) && !paired.has(name),
+    );
 
     // **The total is read as a to-do list** (LAI-160), so it has to be one:
     // paired directly, covered through a base type, or genuinely unguarded.

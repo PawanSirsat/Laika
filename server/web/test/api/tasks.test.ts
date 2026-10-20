@@ -21,6 +21,9 @@ import {
   createTask,
   listMembers,
   listTasks,
+  SLIM_OMITS,
+  toSummary,
+  type Task,
 } from '../../src/api/tasks.ts';
 
 interface Call {
@@ -52,10 +55,27 @@ function stub(response: unknown, status = 200): Call[] {
 const page = { data: [], next_cursor: null };
 
 void describe('listTasks query string', () => {
-  void test('sends no filter params when none are set', async () => {
+  void test('sends no filter params when none are set — only the slim selector', async () => {
     const calls = stub(page);
     await listTasks('laika-core');
-    assert.equal(calls[0]?.url, '/api/v1/projects/laika-core/tasks');
+    assert.equal(calls[0]?.url, '/api/v1/projects/laika-core/tasks?fields=slim');
+  });
+
+  void test('every list read asks for the slim shape, whatever else it sends (LAI-795)', async () => {
+    // The store's walk, its live refresh, the Timeline's sprint reads and the
+    // panel's subtasks all go through this one function, so asking here is
+    // asking everywhere — a page and the next page alike.
+    const calls = stub(page);
+    await listTasks('laika-core', { limit: 200 });
+    await listTasks('laika-core', { limit: 200, cursor: 'C2' });
+    await listTasks('laika-core', { sprint: 's1', limit: 200 });
+    await listTasks('laika-core', { parent: 't1', limit: 200 });
+    assert.equal(calls.length, 4);
+    for (const call of calls) {
+      const query = new URL(call.url, 'http://x').searchParams;
+      assert.equal(query.get('fields'), 'slim', call.url);
+      assert.equal(query.getAll('fields').length, 1, call.url);
+    }
   });
 
   void test('maps every filter onto its query param', async () => {
@@ -97,6 +117,28 @@ void describe('listTasks query string', () => {
     const calls = stub(page);
     await listTasks('a project/with slash');
     assert.ok(calls[0]?.url.includes('a%20project%2Fwith%20slash'));
+  });
+});
+
+void describe('toSummary (LAI-795)', () => {
+  const full = {
+    id: 't1',
+    title: 'A task',
+    description_md: 'Long prose',
+    acceptance_md: '- [ ] done',
+    updated_at: 5,
+  } as unknown as Task;
+
+  void test('drops exactly the two texts a slim list leaves out', () => {
+    const summary = toSummary(full);
+    assert.deepEqual(Object.keys(summary), ['id', 'title', 'updated_at']);
+    assert.deepEqual([...SLIM_OMITS], ['description_md', 'acceptance_md']);
+    assert.equal('description_md' in full, true, 'the full task was changed');
+  });
+
+  void test('hands back the same object when there is nothing to drop', () => {
+    const summary = toSummary(full);
+    assert.equal(toSummary(summary), summary);
   });
 });
 

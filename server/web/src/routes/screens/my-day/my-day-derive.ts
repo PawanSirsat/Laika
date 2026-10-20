@@ -185,6 +185,15 @@ export function draftTarget(draft: TimeDraft): {
   return { label: `No task — pick a card or General${unknown}`, untied: true };
 }
 
+/**
+ * Whether the person changes this entry here (LAI-788 review round 1): not
+ * one that came from Solidtime, which is the record for it — it is changed
+ * there, and the next `laika time pull` brings the change here.
+ */
+export function canChange(entry: Pick<TimeEntry, 'source'>): boolean {
+  return entry.source !== 'import';
+}
+
 /** What an entry is on, in words. */
 export function entryTarget(entry: TimeEntry): string {
   if (entry.task !== null) return `${entry.task.key} ${entry.task.title}`;

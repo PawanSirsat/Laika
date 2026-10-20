@@ -2,16 +2,21 @@ import { Spinner } from '../../../components/Spinner.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
-import { addDependency, removeDependency, type Member, type Task } from '../../../api/tasks.ts';
+import {
+  addDependency,
+  removeDependency,
+  type Member,
+  type TaskSummary,
+} from '../../../api/tasks.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import './task-panel.css';
 
 export interface DependenciesSectionProps {
-  readonly task: Task;
+  readonly task: TaskSummary;
   /** Everything loaded, for resolving ids to keys and for the picker. */
-  readonly byId: ReadonlyMap<string, Task>;
+  readonly byId: ReadonlyMap<string, TaskSummary>;
   readonly members: ReadonlyMap<string, Member>;
   readonly theme: Theme;
   readonly mayEdit: boolean;
@@ -193,7 +198,7 @@ export function DependenciesSection({
 
 interface DependencyChipProps {
   /** `undefined` when the blocker is outside the loaded page. */
-  readonly task: Task | undefined;
+  readonly task: TaskSummary | undefined;
   /**
    * `Blocked by` or `Blocks` — the **relation**, on the chip.
    *

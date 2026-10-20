@@ -4,7 +4,7 @@ import { Dropdown } from '../../../components/Dropdown.tsx';
 import { TaskCard, type KeyMove } from './TaskCard.tsx';
 import { dropNeighbours, type Lane } from '../../../api/board-derive.ts';
 import { CATEGORY_COPY, type ProjectStatus } from '../../../api/statuses.ts';
-import type { Member, Task } from '../../../api/tasks.ts';
+import type { Member, TaskSummary } from '../../../api/tasks.ts';
 import { anchorOf, ListMenu, type MenuAnchor } from '../list/ListMenu.tsx';
 import { ColumnComposer } from './ColumnComposer.tsx';
 import { statusOptions } from './status-options.ts';
@@ -13,7 +13,7 @@ import type { Theme } from '../../../theme/theme.ts';
 
 export interface LaneRowProps {
   readonly lanes: readonly Lane[];
-  readonly byId: ReadonlyMap<string, Task>;
+  readonly byId: ReadonlyMap<string, TaskSummary>;
   readonly members: ReadonlyMap<string, Member>;
   readonly theme: Theme;
   readonly movingId: string | undefined;
@@ -118,10 +118,10 @@ function isColumnDrag(transfer: DataTransfer): boolean {
  * so the line sits exactly where the request will put the card.
  */
 function withDropLine(
-  tasks: readonly Task[],
+  tasks: readonly TaskSummary[],
   dragging: string | undefined,
   index: number | undefined,
-  render: (task: Task) => ReactNode,
+  render: (task: TaskSummary) => ReactNode,
 ): ReactNode[] {
   if (index === undefined) return tasks.map(render);
   const line = <div key="lane-drop" className="lane-drop" aria-hidden="true" />;

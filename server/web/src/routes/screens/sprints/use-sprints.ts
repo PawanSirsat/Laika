@@ -10,7 +10,7 @@ import {
   type Sprint,
   type SprintInput,
 } from '../../../api/sprints.ts';
-import type { Task } from '../../../api/tasks.ts';
+import type { TaskSummary } from '../../../api/tasks.ts';
 import { reloadProjectTasks, useProjectTasks } from '../../../api/use-project-tasks.ts';
 import {
   groupBySprint,
@@ -54,7 +54,7 @@ const MAX_PAGES = 20;
 
 export interface SprintRow {
   readonly sprint: Sprint;
-  readonly tasks: readonly Task[];
+  readonly tasks: readonly TaskSummary[];
   readonly progress: SprintProgress;
 }
 
@@ -64,7 +64,7 @@ export type SprintsState =
   | {
       readonly status: 'ready';
       readonly rows: readonly SprintRow[];
-      readonly unassigned: readonly Task[];
+      readonly unassigned: readonly TaskSummary[];
       /** True when a list hit `MAX_PAGES` — the counts below are a floor. */
       readonly truncated: boolean;
     };

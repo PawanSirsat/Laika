@@ -14,6 +14,7 @@ import {
   agentMinutes,
   atClock,
   canAddTime,
+  canChange,
   clockIn,
   dayIn,
   dayLabel,
@@ -257,5 +258,24 @@ void describe('My day is wired to the API and nothing else', () => {
       ),
     );
     assert.match(src, /getMyDay\(selected, tz, controller\.signal\)/);
+  });
+});
+
+void describe('an entry from Solidtime is read-only here (LAI-788 review round 1)', () => {
+  void test('the person changes their own entries, never one Solidtime holds', () => {
+    assert.equal(canChange(entry()), true);
+    assert.equal(canChange(entry({ source: 'draft' })), true);
+    assert.equal(canChange(entry({ source: 'import' })), false);
+  });
+
+  void test('the row offers Edit and Delete only where it may, and says where to change an import', async () => {
+    const src = code(
+      await readFile(
+        new URL('../../../../src/routes/screens/my-day/EntryRow.tsx', import.meta.url),
+        'utf8',
+      ),
+    );
+    assert.match(src, /canChange\(entry\)/);
+    assert.match(src, /Change it in Solidtime/);
   });
 });

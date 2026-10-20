@@ -6,7 +6,7 @@ import { listMembers, type Member } from '../../../api/members.ts';
 import { listMentionable } from '../../../api/mentions.ts';
 import { getMetrics, type MetricsView } from '../../../api/metrics.ts';
 import { activityStore, taskStore } from '../../../api/store.ts';
-import type { Task } from '../../../api/tasks.ts';
+import type { TaskSummary } from '../../../api/tasks.ts';
 import { useProjectTasks } from '../../../api/use-project-tasks.ts';
 import { useLive } from '../../../components/space/SpaceLive.tsx';
 
@@ -49,7 +49,7 @@ export type DashboardState =
   | { readonly status: 'error'; readonly error: unknown }
   | {
       readonly status: 'ready';
-      readonly tasks: readonly Task[];
+      readonly tasks: readonly TaskSummary[];
       readonly events: readonly ActivityEvent[];
       readonly members: ReadonlyMap<string, Member>;
       /**

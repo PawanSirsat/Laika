@@ -761,3 +761,144 @@ describe('an outside id on the wire (LAI-780)', () => {
     expect(((await created.json()) as Refusal).error.details.field).toBe('external_ref');
   });
 });
+
+/**
+ * The list without its two texts (LAI-795). `description_md` and
+ * `acceptance_md` were 83% of a gzip'd 200-task page on production (LAI-786),
+ * and nothing that draws a list renders either. `?fields=slim` leaves them
+ * out; without it the answer is byte-for-byte what it was, because agents,
+ * the CLI and every other client read it.
+ *
+ * Counted in fields and bytes, never in time (LAI-779).
+ */
+describe('a slim list: ?fields=slim (LAI-795)', () => {
+  const TEXTS = ['description_md', 'acceptance_md'] as const;
+
+  interface ListPage {
+    data: Record<string, unknown>[];
+    next_cursor: string | null;
+  }
+
+  /** Every page of the list, with the raw bodies, so bytes can be counted. */
+  async function walk(query: string): Promise<{ items: Record<string, unknown>[]; bytes: number }> {
+    const items: Record<string, unknown>[] = [];
+    let bytes = 0;
+    let cursor: string | null = null;
+    do {
+      const after: string = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
+      const res = await req(`/api/v1/projects/laika/tasks?limit=2${query}${after}`);
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      bytes += Buffer.byteLength(text);
+      const page = JSON.parse(text) as ListPage;
+      items.push(...page.data);
+      cursor = page.next_cursor;
+    } while (cursor !== null);
+    return { items, bytes };
+  }
+
+  async function seed(): Promise<{ textBytes: number }> {
+    const description = 'A long description, as a real one is. '.repeat(40);
+    const acceptance = '- [ ] the first criterion\n- [ ] the second one\n'.repeat(10);
+    const blocker = await newTask('Blocker', { description_md: description });
+    const blocked = await newTask('Blocked', {
+      description_md: description,
+      acceptance_md: acceptance,
+      tags: ['perf'],
+      external_ref: 'LAI-795',
+    });
+    expect(
+      (
+        await post(`/api/v1/tasks/${blocked.id}/dependencies`, {
+          blocked_by_task_id: blocker.id,
+        })
+      ).status,
+    ).toBe(201);
+    await newTask('No texts at all');
+    await newTask('Only acceptance', { acceptance_md: acceptance });
+    await newTask('Child', { parent_task_id: blocker.id, description_md: description });
+    return {
+      textBytes:
+        Buffer.byteLength(JSON.stringify(description)) * 3 +
+        Buffer.byteLength(JSON.stringify(acceptance)) * 2,
+    };
+  }
+
+  it('leaves the default answer as it was: every task carries both texts, as GET /tasks/:id does', async () => {
+    await seed();
+    const { items } = await walk('');
+
+    expect(items).toHaveLength(5);
+    for (const item of items) {
+      const one = (await (await req(`/api/v1/tasks/${String(item.id)}`)).json()) as Record<
+        string,
+        unknown
+      >;
+      expect(item).toEqual(one);
+      for (const field of TEXTS) expect(Object.keys(item)).toContain(field);
+    }
+  });
+
+  it('drops exactly the two texts and nothing else, in the same order and on the same pages', async () => {
+    await seed();
+    const full = await walk('');
+    const slim = await walk('&fields=slim');
+
+    expect(slim.items.map((t) => t.id)).toEqual(full.items.map((t) => t.id));
+    slim.items.forEach((item, i) => {
+      const { description_md: _d, acceptance_md: _a, ...rest } = full.items[i]!;
+      expect(item).toEqual(rest);
+      expect(Object.keys(item)).toEqual(Object.keys(rest));
+      for (const field of TEXTS) expect(Object.keys(item)).not.toContain(field);
+    });
+  });
+
+  it('saves at least the bytes the texts took', async () => {
+    const { textBytes } = await seed();
+    const full = await walk('');
+    const slim = await walk('&fields=slim');
+
+    // Each text is gone with its key; the difference can only be larger.
+    expect(full.bytes - slim.bytes).toBeGreaterThanOrEqual(textBytes);
+  });
+
+  it('is slim under the other filters too — ready, which reads in batches, and parent', async () => {
+    await seed();
+    for (const query of ['&fields=slim&ready=true', '&fields=slim&status=backlog&priority=p2']) {
+      const { items } = await walk(query);
+      expect(items.length, query).toBeGreaterThan(0);
+      for (const item of items) {
+        for (const field of TEXTS) expect(Object.keys(item), query).not.toContain(field);
+      }
+    }
+    const parent = (await (
+      await req('/api/v1/projects/laika/tasks?fields=slim')
+    ).json()) as ListPage;
+    const blocker = parent.data.find((t) => t.title === 'Blocker');
+    const children = (await (
+      await req(`/api/v1/projects/laika/tasks?fields=slim&parent=${String(blocker?.id)}`)
+    ).json()) as ListPage;
+    expect(children.data.map((t) => t.title)).toEqual(['Child']);
+    for (const field of TEXTS) expect(Object.keys(children.data[0]!)).not.toContain(field);
+  });
+
+  it('refuses a value it does not know, 400 naming it, rather than answering the full shape', async () => {
+    await newTask('Any');
+    for (const bad of ['full', 'SLIM', 'description_md', 'title,key', 'slim,full']) {
+      const res = await req(`/api/v1/projects/laika/tasks?fields=${encodeURIComponent(bad)}`);
+      expect(res.status, bad).toBe(400);
+      const body = (await res.json()) as {
+        error: { code: string; message: string; details: { fields: string } };
+      };
+      expect(body.error.code, bad).toBe('bad_request');
+      expect(body.error.details.fields, bad).toBe(bad);
+      expect(body.error.message, bad).toMatch(/fields/);
+    }
+  });
+
+  it('reads an empty value as absent, as every other filter here does', async () => {
+    await newTask('Plain', { description_md: 'text' });
+    const page = (await (await req('/api/v1/projects/laika/tasks?fields=')).json()) as ListPage;
+    expect(page.data[0]?.description_md).toBe('text');
+  });
+});

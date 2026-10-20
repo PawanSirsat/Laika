@@ -1,6 +1,6 @@
 import { laneStatusId } from './status-derive.ts';
 import type { ProjectStatus } from './statuses.ts';
-import { STATUSES, type Task, type TaskStatus } from './tasks.ts';
+import { STATUSES, type TaskSummary, type TaskStatus } from './tasks.ts';
 
 /**
  * Board-level facts that are **not** on the wire, derived from a task list.
@@ -71,7 +71,10 @@ export function statusLabel(status: TaskStatus): string {
  * would draw an unblocked card over a blocked task, which is the more damaging
  * error: it invites someone to start work that cannot proceed.
  */
-export function blockedState(task: Task, byId: ReadonlyMap<string, Task>): boolean | undefined {
+export function blockedState(
+  task: TaskSummary,
+  byId: ReadonlyMap<string, TaskSummary>,
+): boolean | undefined {
   if (task.blocked_by.length === 0) return false;
 
   let unknown = false;
@@ -99,8 +102,11 @@ export function blockedState(task: Task, byId: ReadonlyMap<string, Task>): boole
  * `blockedState` reports — the card says the count is unknown rather than
  * naming a subset and implying it is the whole story.
  */
-export function blockers(task: Task, byId: ReadonlyMap<string, Task>): readonly Task[] {
-  const found: Task[] = [];
+export function blockers(
+  task: TaskSummary,
+  byId: ReadonlyMap<string, TaskSummary>,
+): readonly TaskSummary[] {
+  const found: TaskSummary[] = [];
   for (const id of task.blocked_by) {
     const dependency = byId.get(id);
     if (dependency === undefined) continue;
@@ -182,7 +188,7 @@ export function updatedAge(updatedAt: number, now: number): string {
   return compact === 'now' ? 'just now' : compact;
 }
 
-export function byIdIndex(tasks: readonly Task[]): ReadonlyMap<string, Task> {
+export function byIdIndex(tasks: readonly TaskSummary[]): ReadonlyMap<string, TaskSummary> {
   return new Map(tasks.map((t) => [t.id, t]));
 }
 
@@ -201,10 +207,10 @@ export function byIdIndex(tasks: readonly Task[]): ReadonlyMap<string, Task> {
  * rather than restyling it.
  */
 export function hideOldDone(
-  tasks: readonly Task[],
+  tasks: readonly TaskSummary[],
   days: number | null,
   now: number,
-): { readonly kept: readonly Task[]; readonly hidden: number } {
+): { readonly kept: readonly TaskSummary[]; readonly hidden: number } {
   if (days === null) return { kept: tasks, hidden: 0 };
 
   const cutoff = now - days * 86_400_000;
@@ -218,7 +224,7 @@ export function hideOldDone(
 /** A column — one project status — and the cards in it. */
 export interface Lane {
   readonly column: ProjectStatus;
-  readonly tasks: Task[];
+  readonly tasks: TaskSummary[];
 }
 
 /**
@@ -259,7 +265,7 @@ function compareKeys(a: string, b: string): number {
  * the same position, nudged a half-step — so the drop shows at once without
  * the client computing a key of its own, and the server's answer replaces it.
  */
-function laneOrder(tasks: readonly Task[], pending: PendingMove | undefined) {
+function laneOrder(tasks: readonly TaskSummary[], pending: PendingMove | undefined) {
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const anchor = (() => {
     if (pending === undefined) return undefined;
@@ -269,10 +275,10 @@ function laneOrder(tasks: readonly Task[], pending: PendingMove | undefined) {
     if (before?.position != null) return { position: before.position, nudge: -1 };
     return undefined;
   })();
-  const key = (t: Task) =>
+  const key = (t: TaskSummary) =>
     anchor !== undefined && t.id === pending?.taskId ? anchor : { position: t.position, nudge: 0 };
 
-  return (a: Task, b: Task): number => {
+  return (a: TaskSummary, b: TaskSummary): number => {
     const ka = key(a);
     const kb = key(b);
     if (ka.position === null || kb.position === null) {
@@ -307,7 +313,7 @@ export function dropNeighbours(
 }
 
 export function groupByColumn(
-  tasks: readonly Task[],
+  tasks: readonly TaskSummary[],
   columns: readonly ProjectStatus[],
   all: readonly ProjectStatus[] = columns,
   pending?: PendingMove,
@@ -343,7 +349,7 @@ export function groupByColumn(
  * `needle` is the box's text trimmed and lower-cased, as the board keeps it;
  * an empty one matches everything.
  */
-export function matchesSearch(task: Task, needle: string): boolean {
+export function matchesSearch(task: TaskSummary, needle: string): boolean {
   if (needle === '') return true;
   return (
     task.title.toLowerCase().includes(needle) ||

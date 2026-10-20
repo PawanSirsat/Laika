@@ -4,7 +4,7 @@ import { LoadingState } from '../../../components/LoadingState.tsx';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import { useLive } from '../../../components/space/SpaceLive.tsx';
 import { useEvents } from '../../../api/use-events.ts';
-import { listMembers, type Member, type Task } from '../../../api/tasks.ts';
+import { listMembers, type Member, type TaskSummary } from '../../../api/tasks.ts';
 import { useProjectTasks } from '../../../api/use-project-tasks.ts';
 import { ActivityPanels, staleTasks, STALE_DAYS } from './ActivityPanels.tsx';
 import './activity.css';
@@ -34,9 +34,9 @@ export function ActivityScreen({ slug }: ActivityScreenProps) {
    */
   const set = useProjectTasks(slug);
   const tasks = useMemo(
-    (): readonly Task[] | undefined =>
+    (): readonly TaskSummary[] | undefined =>
       set?.status === 'ready'
-        ? set.tasks.filter((t): t is Task => !('deleted' in t))
+        ? set.tasks.filter((t): t is TaskSummary => !('deleted' in t))
         : set?.status === 'error'
           ? []
           : undefined,
