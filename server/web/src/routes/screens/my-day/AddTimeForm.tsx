@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import type { NewEntry } from '../../../api/time.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
-import { parseMinutes } from './my-day-derive.ts';
+import { Understood } from './Understood.tsx';
+import { minutesUnderstood, parseMinutes } from './my-day-derive.ts';
 
 export interface AddTimeFormProps {
   readonly day: string;
@@ -29,7 +30,7 @@ export function AddTimeForm({ day, tz, busy, locked = false, onAdd }: AddTimeFor
     if (locked) return;
     const parsed = parseMinutes(minutes);
     if (parsed === undefined) {
-      setError('How long, as 30, 1:30 or 1h30 — between 1 minute and 24 hours.');
+      setError('How long, as 45, 45m, 1h 30m or 1:30 — between 1 minute and 24 hours.');
       return;
     }
     setError(undefined);
@@ -76,6 +77,7 @@ export function AddTimeForm({ day, tz, busy, locked = false, onAdd }: AddTimeFor
           />
         </label>
       </div>
+      <Understood text={minutesUnderstood(minutes)} />
       <label className="myday-field">
         <span className="myday-field-label">What it was</span>
         <input

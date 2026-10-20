@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   barSegments,
+  loadIn,
   matchesQuery,
   oldestAge,
   passesFilter,
@@ -21,7 +22,11 @@ import {
   teamLoad,
   workloadIn,
 } from '../../../../src/routes/screens/capacity/capacity-derive.ts';
-import type { CapacityEntry, CapacityWorkload } from '../../../../src/api/presence.ts';
+import type {
+  CapacityEntry,
+  CapacitySpace,
+  CapacityWorkload,
+} from '../../../../src/api/presence.ts';
 
 const MIN = 60_000;
 const HOUR = 3_600_000;
@@ -30,8 +35,10 @@ const NOW = Date.UTC(2026, 9, 17, 12, 0, 0);
 
 const ZERO: CapacityWorkload = {
   in_progress: 0,
-  in_review: 0,
   todo: 0,
+  backlog: 0,
+  in_review: 0,
+  committed: 0,
   overdue: 0,
   due_soon: 0,
   open: 0,
@@ -57,10 +64,22 @@ function person(over: Partial<CapacityEntry> & { user_id: string }): CapacityEnt
   };
 }
 
+/** Counts as the server builds them: committed and open follow from the parts. */
 const work = (over: Partial<CapacityWorkload>): CapacityWorkload => {
   const w = { ...ZERO, ...over };
-  return { ...w, open: over.open ?? w.in_progress + w.in_review + w.todo };
+  return {
+    ...w,
+    committed: w.in_progress + w.todo,
+    open: w.in_progress + w.todo + w.backlog + w.in_review,
+  };
 };
+
+/** One space, as the server sends it: its counts and its own load. */
+const space = (
+  project_id: string,
+  load: CapacitySpace['load'],
+  over: Partial<CapacityWorkload>,
+): CapacitySpace => ({ project_id, slug: project_id, name: project_id, load, ...work(over) });
 
 void describe('oldestAge', () => {
   void test('null in, undefined out — no age is not an age of zero', () => {
@@ -69,9 +88,11 @@ void describe('oldestAge', () => {
 
   void test('reads in the unit a person would use, never negative', () => {
     assert.equal(oldestAge(30_000), 'just now');
-    assert.equal(oldestAge(40 * MIN), '40m');
-    assert.equal(oldestAge(5 * HOUR), '5h');
-    assert.equal(oldestAge(3 * DAY), '3d');
+    assert.equal(oldestAge(40 * MIN), '40 min');
+    assert.equal(oldestAge(5 * HOUR), '5 h');
+    assert.equal(oldestAge(5 * HOUR + 20 * MIN), '5 h 20 min');
+    assert.equal(oldestAge(3 * DAY), '3 d');
+    assert.equal(oldestAge(3 * DAY + 4 * HOUR), '3 d 4 h');
     assert.equal(oldestAge(-5_000), 'just now');
   });
 });
@@ -124,15 +145,42 @@ void describe('passesFilter — each chip', () => {
     const split = person({
       user_id: 'split',
       workload: work({ todo: 2, overdue: 1 }),
-      spaces: [
-        { project_id: 'p1', slug: 'a', name: 'A', ...work({ todo: 1, overdue: 1 }) },
-        { project_id: 'p2', slug: 'b', name: 'B', ...work({ todo: 1 }) },
-      ],
+      spaces: [space('p1', 'light', { todo: 1, overdue: 1 }), space('p2', 'light', { todo: 1 })],
     });
     assert.equal(passesFilter(split, 'overdue', 'p1'), true);
     assert.equal(passesFilter(split, 'overdue', 'p2'), false);
     assert.equal(passesFilter(split, 'none', 'p3'), true);
     assert.deepEqual(workloadIn(split, 'p3'), ZERO);
+  });
+
+  // D-092 item 3: a badge shown while a space is selected is that space's load
+  // (LAI-818). The server sends each space's load; the web reads it.
+  void test('Heavy load reads the chosen space’s load, not the global one', () => {
+    const pawan = person({
+      user_id: 'pawan',
+      load: 'heavy',
+      workload: work({ in_progress: 7, todo: 3 }),
+      spaces: [
+        space('laika', 'normal', { in_progress: 5, todo: 3 }),
+        space('onroute', 'light', { in_progress: 2 }),
+      ],
+    });
+    assert.equal(passesFilter(pawan, 'heavy', null), true);
+    assert.equal(passesFilter(pawan, 'heavy', 'laika'), false);
+    assert.equal(passesFilter(pawan, 'heavy', 'onroute'), false);
+    assert.equal(loadIn(pawan, null), 'heavy');
+    assert.equal(loadIn(pawan, 'laika'), 'normal');
+    assert.equal(loadIn(pawan, 'onroute'), 'light');
+    // No work in that space is no load there.
+    assert.equal(loadIn(pawan, 'elsewhere'), 'none');
+
+    const heavyHere = person({
+      user_id: 'cal',
+      load: 'heavy',
+      workload: work({ in_progress: 7 }),
+      spaces: [space('laika', 'heavy', { in_progress: 7 })],
+    });
+    assert.equal(passesFilter(heavyHere, 'heavy', 'laika'), true);
   });
 });
 
@@ -175,6 +223,31 @@ void describe('sortPeople', () => {
     assert.deepEqual(ids('load'), ['pawan', 'ada', 'bea', 'cal']);
   });
 
+  void test('in a space, by that space’s load, and overdue does not make anyone heavier', () => {
+    const inSpace = [
+      person({
+        user_id: 'late',
+        load: 'heavy',
+        workload: work({ in_progress: 9, todo: 1, overdue: 4 }),
+        spaces: [space('p1', 'light', { todo: 1, overdue: 4 })],
+      }),
+      person({
+        user_id: 'busy',
+        load: 'normal',
+        workload: work({ in_progress: 4 }),
+        spaces: [space('p1', 'normal', { in_progress: 4 })],
+      }),
+    ];
+    assert.deepEqual(
+      sortPeople(inSpace, 'load', 'p1').map((p) => p.user_id),
+      ['busy', 'late'],
+    );
+    assert.deepEqual(
+      sortPeople(inSpace, 'load', null).map((p) => p.user_id),
+      ['late', 'busy'],
+    );
+  });
+
   void test('by name, and by last seen with never seen last', () => {
     assert.deepEqual(ids('name'), ['ada', 'bea', 'cal', 'pawan']);
     assert.deepEqual(ids('seen'), ['pawan', 'bea', 'ada', 'cal']);
@@ -195,11 +268,15 @@ void describe('statusText — words, not only a colour', () => {
       );
     assert.equal(at('online', 40_000).text, 'Online now');
     assert.equal(at('away', 23 * MIN).text, 'Away · 23 min');
+    assert.equal(at('away', 75 * MIN).text, 'Away · 1 h 15 min');
     assert.equal(at('offline', 2 * HOUR).text, 'Last seen 2 h ago');
     assert.equal(at('never', null).text, 'Never seen');
     assert.equal(at(null, null).text, 'Presence is off');
     // The tooltip carries the absolute time and what the signal was.
-    assert.match(at('offline', 2 * HOUR).title ?? '', /2026, \d\d:\d\d:\d\d · a board action$/);
+    assert.match(
+      at('offline', 2 * HOUR).title ?? '',
+      /2026, \d{1,2}:\d\d:\d\d [AP]M · a board action$/,
+    );
   });
 });
 
@@ -232,12 +309,15 @@ void describe('bars and figures', () => {
     assert.deepEqual(sum, { online: 1, sessions: 2, inProgress: 8, overdue: 1 });
   });
 
-  void test('team load is everyone with open work, heaviest first, and a count of the rest', () => {
+  void test('team load is everyone with committed work, heaviest first, and a count of the rest', () => {
     const load = teamLoad(
       [
         person({ user_id: 'light', load: 'light', workload: work({ todo: 2 }) }),
         person({ user_id: 'idle' }),
         person({ user_id: 'heavy', load: 'heavy', workload: work({ in_progress: 7, todo: 5 }) }),
+        // D-092: review waits on the reviewer and backlog is the pipeline, so
+        // a person with only those has nothing committed (LAI-818).
+        person({ user_id: 'waiting', workload: work({ in_review: 100, backlog: 209 }) }),
       ],
       null,
     );
@@ -245,8 +325,19 @@ void describe('bars and figures', () => {
       load.rows.map((p) => p.user_id),
       ['heavy', 'light'],
     );
-    assert.equal(load.idle, 1);
+    assert.equal(load.idle, 2);
     assert.equal(load.scale, 12);
+  });
+
+  void test('the bar is committed work only: in progress and to do', () => {
+    const parts = barSegments(work({ in_progress: 1, todo: 3, backlog: 209, in_review: 77 }), 4);
+    assert.deepEqual(
+      parts.map((p) => [p.key, p.n, p.pct]),
+      [
+        ['in_progress', 1, 25],
+        ['todo', 3, 75],
+      ],
+    );
   });
 });
 

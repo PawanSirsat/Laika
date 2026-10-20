@@ -1,4 +1,5 @@
 import type { AgentClient } from '../../../api/agent-clients.ts';
+import { formatDurationMs } from '../../../api/duration.ts';
 import {
   RATING_NOTE_MAX,
   type AgentWrites,
@@ -13,27 +14,15 @@ import {
  * the one rule that matters is that an absence is never said as a zero.
  */
 
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** One decimal, and none when it is `.0` — `3 d`, `1.8 d`. */
-function oneDecimal(value: number): string {
-  const rounded = Math.round(value * 10) / 10;
-  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
-}
-
 /**
- * A duration at the scale it is: minutes, hours, then days. `null` is a cycle
- * nobody measured and reads as a dash, never as `0`.
+ * A duration at the scale it is: `25 min`, `1 h 30 min`, `1 d 19 h` (LAI-830).
+ * `null` is a cycle nobody measured and reads as a dash, never as `0`.
  */
 export function durationLabel(ms: number | null): string {
   if (ms === null) return '—';
-  if (ms < HOUR) return `${String(Math.round(ms / MINUTE))} min`;
-  if (ms < DAY) return `${oneDecimal(ms / HOUR)} h`;
-  return `${oneDecimal(ms / DAY)} d`;
+  return formatDurationMs(ms);
 }
 
 /** The Monday a week starts on, in UTC — the server's week, not the reader's. */

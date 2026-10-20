@@ -163,6 +163,7 @@ function CapacityRoute() {
     route: { navigate, params, setParams },
     unlistedOpen,
     reviewWaiting,
+    reviewCapped,
   } = useShell();
   const project = params.get('project');
   useEffect(() => {
@@ -176,6 +177,7 @@ function CapacityRoute() {
       onOpenTask={openTaskInItsSpace(navigate)}
       unlistedOpen={unlistedOpen}
       reviewWaiting={reviewWaiting}
+      reviewCapped={reviewCapped}
       onNavigate={navigate}
     />
   );
@@ -190,10 +192,14 @@ function UnlistedRoute() {
   return <UnlistedScreen onOpenTask={openTaskByKey(navigate)} onChanged={refreshUnlisted} />;
 }
 
-/** One page for the organisation (LAI-769), with its own space selector. */
+/**
+ * One page for the organisation (LAI-769), with its own space selector. The
+ * space is `?project=` (LAI-814), so a By space row is a link to that space
+ * and Back returns from it; the selector replaces, as a filter does.
+ */
 function UsageRoute() {
   const {
-    route: { navigate },
+    route: { navigate, params, setParams },
     me,
     tokenAlerts,
     refreshTokenAlerts,
@@ -204,6 +210,13 @@ function UsageRoute() {
       onNavigate={navigate}
       alerts={tokenAlerts}
       onAlertsChanged={refreshTokenAlerts}
+      project={params.get('project') ?? undefined}
+      onProject={(slug) => {
+        const next = new URLSearchParams(params);
+        if (slug === '') next.delete('project');
+        else next.set('project', slug);
+        setParams(next);
+      }}
     />
   );
 }

@@ -2638,9 +2638,20 @@ and the profile's Tokens card:
   cache_read }], by_developer: [{ user_id, name, tokens, cache_read,
   attributed_tokens }] | null, by_agent: [{ agent, tokens, cache_read,
   few_people? }], by_model: [{ model, tokens, cache_read, few_people? }],
-  top_tasks: [{ task_id, key,
+  by_project: [{ project: { slug, name }, tokens, cache_read, cost, share }]
+  | null, top_tasks: [{ task_id, key,
   title, project_slug, tokens, cache_read }], no_token_data: [agent],
-  org_totals, rework }`. `rework` (LAI-772) is, per project the reader may
+  org_totals, rework }`. `by_project` (LAI-814) is the organisation's figure
+  per space: `null` for a space, and otherwise each space the reader may read
+  (§3.2's `usage.read_project`, the rule `rework` and `cache_by_project`
+  follow) with tokens in the range, most tokens first — from one range of the
+  project index grouped by project and model, `cost` priced as `totals.cost`
+  is, caveats included, and `share` the space's part of `totals.tokens`
+  (`null` when that is 0). A space's total names nobody, so it is not
+  `usage.read_people`'s. **`totals.tokens` less the rows is what no space the
+  reader may read holds** — for an owner or admin, the tokens outside any
+  space — and the page shows it as the last row, so the rows add up to the
+  organisation's total. `rework` (LAI-772) is, per project the reader may
   read and in name order, `{ project: { slug, name }, send_backs, tasks,
   tokens, cache_read, time_ms, open, share }` for send-backs decided in the
   range: the tokens tied to the task on days after the round sent back (in
@@ -2746,7 +2757,8 @@ models, the headline tokens of models with no price beside them (never priced
 at zero), and the priced models whose price was inferred. `GET /usage` adds
 `totals.cost`, `org_totals.cost`, `by_model[].cost` (a number, or `null` with no
 price), `by_developer[].cost` (only where `by_developer` is served — owners and
-admins on a session), and:
+admins on a session), `by_project[].cost` (the organisation only, LAI-814),
+and:
 
 - `telemetry` — `{ tokens, cost_usd_reported }`: what OpenTelemetry added over
   the files in the range, and Claude Code's own cost figure for the
@@ -3522,26 +3534,38 @@ hold a result that is legitimately many.
   - `status`: `online` when `last_seen` is inside §9.3's five minutes (the
     same strict `>` as a live session), `away` inside the last hour, `offline`
     after it, `never` with no signal at all.
-  - `workload`: their open assigned tasks — `in_progress`, `in_review`,
-    `todo` (assigned and not started: Backlog and To do), `open` (the three
-    together), `overdue` (due before today, UTC, and not finished — the
-    client's `isOverdue`) and `due_soon` (due today or within the next seven
-    days). Counted over the projects the reader may read, as
-    `in_progress_tasks` always was. `spaces[]` gives the same counts per
-    project they have open work in, with its `slug` and `name`.
-  - `load`, **a fixed rule, not a setting**: `none` with nothing open;
-    `heavy` with more than 5 in progress, **or** anything overdue, **or** more
-    than 15 open; `light` with at most 2 in progress and at most 5 open;
-    `normal` otherwise.
+  - `workload`: their open assigned tasks — `in_progress`, `todo` (a To do
+    status: committed, not started), `backlog` (a Backlog status: the
+    pipeline), `in_review` (waiting on a reviewer, not on them), `committed`
+    (`in_progress` + `todo`), `open` (all four together), `overdue` (due
+    before today, UTC, and not finished — the client's `isOverdue`) and
+    `due_soon` (due today or within the next seven days). Counted over the
+    projects the reader may read, as `in_progress_tasks` always was.
+    `spaces[]` gives the same counts per project they have open work in, with
+    its `slug`, `name` and **its own `load`** by the rule below — the badge
+    shown while that space is selected (D-092, LAI-818). Most committed
+    first, then most open.
+  - `load`, **a fixed rule, not a setting**, on **committed work** (D-092
+    item 3, LAI-818): `none` with nothing committed; `heavy` with more than
+    **5** in progress **or** more than **15** committed; `light` with at most
+    **2** in progress and at most **5** committed; `normal` otherwise. Review
+    waits on the reviewer, backlog is the pipeline and overdue is its own
+    badge, so **none of the three is load**.
   - `agents[]`: `{ client, running, last_at }`. Every reader gets the agents
     running now (what `/presence` already says); an owner or admin also gets
     every agent on that person's usable tokens that has been used, with its
     token's newest use (D-076, D-078) — token metadata a member is not shown.
   - **Owners and admins only, on a web session** — absent, not empty, for
     anyone else and for every token, by `profile.read` and
-    `profile.activity.read` (D-078, D-079): `profile_kind`, and
+    `profile.activity.read` (D-078, D-079): `profile_kind`,
     `activity_14d`, the person's board actions on each of the last 14 UTC
-    days from `board_activity_days`, oldest first, ending today.
+    days from `board_activity_days`, oldest first, ending today, and
+    `activity_14d_split` (LAI-818): `{ by_self, by_agents, bookkeeping }`
+    over the same days. `bookkeeping` is their sprint moves
+    (`sprint.tasks_changed`) and card reorders (`task.updated` naming
+    `position`, D-060.4) by either hand, counted from §4.8 over the window
+    through `activity_org_created_at_idx`; `by_self` and `by_agents` are
+    §4.22's columns less that bookkeeping, so the three sum to the series.
 
   **With `presence_enabled` off**, `status`, `last_seen` and `last_seen_via`
   are `null`, no agent is `running` and every agent's `last_at` is `null`: the org chose not to record who is
@@ -3994,7 +4018,8 @@ anything missing sends the task back.
 - **Capacity** (Insights' first tab, `/insights?tab=capacity`, one page across
   every space, LAI-754; redesigned by LAI-767) — **tiles** that count and
   filter: *Online now*, *Agents running* (sessions), *In progress* (sorts
-  heaviest first), *Waiting for review* (links to Inbox's Review tab), *Overdue*, and for owners and admins
+  heaviest first), *Waiting for review* (links to Inbox's Review tab; *200+*
+  when `GET /review` is `truncated`, LAI-818), *Overdue*, and for owners and admins
   *Unlisted work* (links to `/unlisted`). A **toolbar**: a search by name or
   email, instant and in the browser; filter chips *All*, *Online now*,
   *Agents running*, *Heavy load*, *Overdue*, *No work*, *Never seen*; a space
@@ -4006,15 +4031,21 @@ anything missing sends the task back.
   same in words — *Online now*, *Away · 23 min*, *Last seen 2 h ago* with the
   date and time and the kind of signal on hover, *Never seen*; name, org role,
   and for owners and admins the profile kind; the load badge with its rule on
-  hover; their agents with a green dot on each one running, and *Claude Code ·
+  hover — **the selected space's load** when one is selected, and the *Heavy
+  load* chip reads the same — and beside it an *N overdue* badge of its own
+  (D-092, LAI-818); their agents with a green dot on each one running, and *Claude Code ·
   working on LAI-9* where presence knows the matched task; the workload counts
-  and a thin stacked bar (in progress, in review, to do); the spaces they have
-  open work in; for owners and admins a 14-day board-activity sparkline and
+  *in progress · to do · backlog*, a thin stacked bar of committed work (in
+  progress, to do), and apart from it *N waiting on reviewers* and *due in 7
+  days*; the spaces they have open work in, each showing its committed count
+  with backlog and review on hover; for owners and admins a 14-day
+  board-activity sparkline with its total and, under it, *by hand · by agents
+  · bookkeeping* from `activity_14d_split`, and
   the name linking to the profile; and *Show tasks*, collapsed, listing their
   in-progress tasks, each opening in its own space (LAI-755). People never seen
   fold into one line at the bottom, unless searched for or filtered to.
-  Under the grid, **Team load** — one bar a person with open work, heaviest
-  first — and **Agents running now** (person, agent, when last active). It
+  Under the grid, **Team load** — one bar a person with committed work,
+  heaviest first, and a count of those with nothing committed — and **Agents running now** (person, agent, when last active). It
   re-reads every 20 s while the tab is visible and when it comes back; the
   loading skeleton is the final layout; no matches has its own state. With
   `presence_enabled = 0` it says so, keeps the workload and draws no status.
@@ -4154,7 +4185,7 @@ anything missing sends the task back.
   the share tied to a task beside it; a bar per week; their top agents and
   models; agents with *no token data* named; and plainly when either switch is
   off or nothing has arrived. Reached from a person's name on Organisation, a Capacity card or a
-  *Work by person* row — links for owners and admins, plain text for everyone
+  Dashboard *Contributors* row (LAI-817) — links for owners and admins, plain text for everyone
   else.
 
 #### 11.4.3 Timeline view

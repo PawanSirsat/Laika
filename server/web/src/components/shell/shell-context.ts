@@ -64,6 +64,8 @@ export interface ShellValue {
    * badge; `undefined` until read. Everyone signed in has a queue.
    */
   readonly reviewWaiting: number | undefined;
+  /** More wait than the server's 200, so `reviewWaiting` is a floor (LAI-818). */
+  readonly reviewCapped: boolean | undefined;
   /** The queue that count is, for My day's *Waiting on your review* (LAI-796). */
   readonly reviewQueue: readonly ReviewQueueItem[] | undefined;
   /** Re-read that count — the Review screen calls it after a decision. */

@@ -3,7 +3,7 @@
  * (D-085, LAI-771; plain words since LAI-785).
  *
  * What is decided here rather than drawn: what each level is called, how a
- * time reads (`about 45 min to 1.5 h`), whether a finish was on target, how a
+ * time reads (`about 45 min to 1 h 30 min`), whether a finish was on target, how a
  * factor of the *why* reads as a sentence, what the List sorts by, how the
  * project's accuracy reads — and that none of it says anything about a
  * person, because there is nothing about a person in it to say.
@@ -159,7 +159,7 @@ void describe('buildLabel — a time that happened', () => {
   void test('reads minutes, hours and days the way a person says them', () => {
     assert.equal(buildLabel(20_000), '1 min');
     assert.equal(buildLabel(25 * MIN), '25 min');
-    assert.equal(buildLabel(90 * MIN), '1.5 h');
+    assert.equal(buildLabel(90 * MIN), '1 h 30 min');
     assert.equal(buildLabel(20 * HOUR), '20 h');
     assert.equal(buildLabel(72 * HOUR), '3 d');
   });
@@ -171,9 +171,9 @@ void describe('roughDuration — a time that is estimated', () => {
     assert.equal(roughDuration(44 * MIN), '45 min');
     assert.equal(roughDuration(2 * MIN), '5 min');
     assert.equal(roughDuration(58 * MIN), '1 h');
-    assert.equal(roughDuration(1.3 * HOUR), '1.5 h');
+    assert.equal(roughDuration(1.3 * HOUR), '1 h 30 min');
     assert.equal(roughDuration(1.1 * HOUR), '1 h');
-    assert.equal(roughDuration(2.5 * HOUR), '2.5 h');
+    assert.equal(roughDuration(2.5 * HOUR), '2 h 30 min');
     assert.equal(roughDuration(14.4 * HOUR), '14 h');
     assert.equal(roughDuration(72 * HOUR), '3 d');
   });
@@ -181,9 +181,9 @@ void describe('roughDuration — a time that is estimated', () => {
 
 void describe('the time estimate as a range', () => {
   void test('timeRange is the headline: about one to the other', () => {
-    assert.equal(timeRange(44 * MIN, 1.3 * HOUR), 'about 45 min to 1.5 h');
+    assert.equal(timeRange(44 * MIN, 1.3 * HOUR), 'about 45 min to 1 h 30 min');
     assert.equal(timeRange(20 * MIN, 45 * MIN), 'about 20 to 45 min');
-    assert.equal(timeRange(HOUR, 2.5 * HOUR), 'about 1 to 2.5 h');
+    assert.equal(timeRange(HOUR, 2.5 * HOUR), 'about 1 h to 2 h 30 min');
   });
 
   void test('a range whose ends round to the same time is one time', () => {
@@ -191,7 +191,7 @@ void describe('the time estimate as a range', () => {
   });
 
   void test('shortRange is the comparison line’s: a dash, the unit once when shared', () => {
-    assert.equal(shortRange(38 * MIN, 1.3 * HOUR), '40 min–1.5 h');
+    assert.equal(shortRange(38 * MIN, 1.3 * HOUR), '40 min–1 h 30 min');
     assert.equal(shortRange(20 * MIN, 45 * MIN), '20–45 min');
     assert.equal(shortRange(58 * MIN, 62 * MIN), '1 h');
   });
@@ -201,25 +201,28 @@ void describe('the time estimate as a range', () => {
     assert.equal(shortRange(DAY, 2.45 * DAY), '1–2 d');
     assert.equal(timeRange(DAY, 2.45 * DAY), 'about 1 to 2 d');
     assert.equal(shortRange(DAY, 2.6 * DAY), '1–3 d');
-    assert.equal(shortRange(10 * HOUR, 3 * DAY), '0.5–3 d');
+    // Half a day is said as the 12 h it is (LAI-830): never `24 h`, and never a
+    // decimal day.
+    assert.equal(shortRange(10 * HOUR, 3 * DAY), '12 h–3 d');
     assert.equal(shortRange(30 * HOUR, 50 * HOUR), '1–2 d');
     assert.equal(shortRange(40 * HOUR, 50 * HOUR), '2 d');
     // Under two days, hours stay hours.
     assert.equal(shortRange(20 * HOUR, 30 * HOUR), '20–30 h');
     for (const [p50, p80] of [
       [DAY, 2.45 * DAY],
-      [10 * HOUR, 3 * DAY],
       [30 * HOUR, 50 * HOUR],
     ] as const) {
       assert.doesNotMatch(shortRange(p50, p80) ?? '', / h–| h to/, `${String(p50)}–${String(p80)}`);
     }
+    // Under a day the low end is hours, but a whole day is never said in hours.
+    assert.doesNotMatch(shortRange(23.9 * HOUR, 3 * DAY) ?? '', /\b24 h/);
   });
 
   void test('shownRange is the one place the ends are rounded: what is printed and what it means', () => {
     const range = shownRange(38 * MIN, 1.3 * HOUR);
     assert.deepEqual(range, {
       low: { label: '40 min', ms: 40 * MIN },
-      high: { label: '1.5 h', ms: 1.5 * HOUR },
+      high: { label: '1 h 30 min', ms: 1.5 * HOUR },
     });
     assert.deepEqual(shownRange(DAY, 2.45 * DAY), {
       low: { label: '1 d', ms: DAY },
@@ -236,16 +239,18 @@ void describe('the time estimate as a range', () => {
 
 void describe('buildShown — the time that happened, as printed and as judged', () => {
   void test('is buildLabel’s text and the time that text says', () => {
-    assert.deepEqual(buildShown(1.54 * HOUR), { label: '1.5 h', ms: 1.5 * HOUR });
+    assert.deepEqual(buildShown(1.54 * HOUR), { label: '1 h 32 min', ms: 92 * MIN });
     assert.deepEqual(buildShown(39.6 * MIN), { label: '40 min', ms: 40 * MIN });
-    assert.deepEqual(buildShown(2.9 * DAY), { label: '3 d', ms: 3 * DAY });
+    // Under two days, hours; from two days, days and whole hours.
+    assert.deepEqual(buildShown(41 * HOUR), { label: '41 h', ms: 41 * HOUR });
+    assert.deepEqual(buildShown(2.9 * DAY), { label: '2 d 22 h', ms: 70 * HOUR });
     assert.deepEqual(buildShown(21.9 * MIN), { label: '22 min', ms: 22 * MIN });
     assert.equal(buildShown(1.54 * HOUR).label, buildLabel(1.54 * HOUR));
   });
 });
 
 void describe('verdictOf — judged only on the values printed', () => {
-  // `40 min–1.5 h` on screen, from 38 min and 1.3 h.
+  // `40 min–1 h 30 min` on screen, from 38 min and 1.3 h.
   const shown = shownRange(38 * MIN, 1.3 * HOUR);
   const judge = (ms: number) => (shown === null ? null : verdictOf(buildShown(ms), shown));
 
@@ -260,12 +265,12 @@ void describe('verdictOf — judged only on the values printed', () => {
     assert.equal(judge(40 * MIN), 'on target');
     assert.equal(judge(HOUR), 'on target');
     assert.equal(judge(1.5 * HOUR), 'on target');
-    // 1.54 h prints as `1.5 h`, the shown top: still on target.
-    assert.equal(judge(1.54 * HOUR), 'on target');
+    // 90.4 min prints as `1 h 30 min`, the shown top: still on target.
+    assert.equal(judge(90.4 * MIN), 'on target');
   });
 
   void test('above the shown top: a little over up to 1.5× it, well over beyond', () => {
-    assert.equal(judge(1.56 * HOUR), 'a little over'); // prints `1.6 h`
+    assert.equal(judge(1.56 * HOUR), 'a little over'); // prints `1 h 34 min`
     assert.equal(judge(2.2 * HOUR), 'a little over');
     assert.equal(judge(2.3 * HOUR), 'well over'); // past 1.5 × 1.5 h = 2.25 h
   });
@@ -274,21 +279,22 @@ void describe('verdictOf — judged only on the values printed', () => {
     const top2h = shownRange(50 * MIN, 2 * HOUR);
     assert.ok(top2h !== null);
     assert.equal(verdictOf(buildShown(3 * HOUR), top2h), 'a little over');
-    assert.equal(verdictOf(buildShown(3.04 * HOUR), top2h), 'a little over'); // prints `3.0 h`
+    assert.equal(verdictOf(buildShown(3.005 * HOUR), top2h), 'a little over'); // prints `3 h`
     assert.equal(verdictOf(buildShown(3.1 * HOUR), top2h), 'well over');
     const top40 = shownRange(20 * MIN, 40 * MIN);
     assert.ok(top40 !== null);
-    assert.equal(verdictOf(buildShown(HOUR), top40), 'a little over'); // prints `1.0 h` = 1.5 × 40 min
+    assert.equal(verdictOf(buildShown(HOUR), top40), 'a little over'); // prints `1 h` = 1.5 × 40 min
     assert.equal(verdictOf(buildShown(1.1 * HOUR), top40), 'well over');
   });
 
   void test('in days, on the days printed', () => {
     const days = shownRange(DAY, 2.45 * DAY); // `1–2 d`
     assert.ok(days !== null);
-    assert.equal(verdictOf(buildShown(21.6 * HOUR), days), 'faster than expected'); // `22 h`
-    assert.equal(verdictOf(buildShown(2.4 * DAY), days), 'on target'); // `2 d`
-    assert.equal(verdictOf(buildShown(3 * DAY), days), 'a little over'); // 1.5 × 2 d
-    assert.equal(verdictOf(buildShown(3.6 * DAY), days), 'well over'); // `4 d`
+    assert.equal(verdictOf(buildShown(21.6 * HOUR), days), 'faster than expected'); // `21 h 36 min`
+    assert.equal(verdictOf(buildShown(1.9 * DAY), days), 'on target'); // `46 h`
+    assert.equal(verdictOf(buildShown(2.4 * DAY), days), 'a little over'); // `2 d 10 h`
+    assert.equal(verdictOf(buildShown(3 * DAY), days), 'a little over'); // `3 d` = 1.5 × 2 d
+    assert.equal(verdictOf(buildShown(3.6 * DAY), days), 'well over'); // `3 d 14 h`
   });
 });
 
@@ -304,7 +310,7 @@ void describe('comparisonLine — the estimate frozen at start against what happ
   void test('says it is the estimate at start, not the headline’s current one', () => {
     assert.equal(
       comparisonLine(frozen(), took(1.6 * HOUR)),
-      'Estimated at start 40 min–1.5 h · took 1.6 h · a little over',
+      'Estimated at start 40 min–1 h 30 min · took 1 h 36 min · a little over',
     );
   });
 
@@ -321,7 +327,7 @@ void describe('comparisonLine — the estimate frozen at start against what happ
   void test('the review’s five rows: the verdict agrees with what is printed', () => {
     assert.equal(
       comparisonLine(at(40 * MIN, 1.26 * HOUR), took(1.4 * HOUR)),
-      'Estimated at start 40 min–1.5 h · took 1.4 h · on target',
+      'Estimated at start 40 min–1 h 30 min · took 1 h 24 min · on target',
     );
     assert.equal(
       comparisonLine(at(20 * MIN, 47.6 * MIN), took(48 * MIN)),
@@ -329,11 +335,11 @@ void describe('comparisonLine — the estimate frozen at start against what happ
     );
     assert.equal(
       comparisonLine(at(DAY, 2.6 * DAY), took(2.9 * DAY)),
-      'Estimated at start 1–3 d · took 3 d · on target',
+      'Estimated at start 1–3 d · took 2 d 22 h · on target',
     );
     assert.equal(
       comparisonLine(at(40 * MIN, 1.24 * HOUR), took(1.2 * HOUR)),
-      'Estimated at start 40 min–1 h · took 1.2 h · a little over',
+      'Estimated at start 40 min–1 h · took 1 h 12 min · a little over',
     );
     assert.equal(
       comparisonLine(at(15 * MIN, 22 * MIN), took(21.9 * MIN)),
@@ -342,20 +348,20 @@ void describe('comparisonLine — the estimate frozen at start against what happ
   });
 
   void test('the time taken is judged as printed too, not as measured', () => {
-    // 1.54 h prints as `1.5 h`, the shown top; 39.6 min prints as `40 min`, the shown low end.
+    // 90.4 min prints as `1 h 30 min`, the shown top; 39.6 min prints as `40 min`, the shown low end.
     assert.equal(
-      comparisonLine(frozen(), took(1.54 * HOUR)),
-      'Estimated at start 40 min–1.5 h · took 1.5 h · on target',
+      comparisonLine(frozen(), took(90.4 * MIN)),
+      'Estimated at start 40 min–1 h 30 min · took 1 h 30 min · on target',
     );
     assert.equal(
       comparisonLine(frozen(), took(39.6 * MIN)),
-      'Estimated at start 40 min–1.5 h · took 40 min · on target',
+      'Estimated at start 40 min–1 h 30 min · took 40 min · on target',
     );
   });
 
   void test('comparison gives the line and its verdict from the same rounding', () => {
     assert.deepEqual(comparison(at(40 * MIN, 1.24 * HOUR), took(1.2 * HOUR)), {
-      text: 'Estimated at start 40 min–1 h · took 1.2 h · a little over',
+      text: 'Estimated at start 40 min–1 h · took 1 h 12 min · a little over',
       verdict: 'a little over',
     });
     assert.deepEqual(comparison(null, took(25 * MIN)), { text: 'Took 25 min', verdict: null });
@@ -369,7 +375,7 @@ void describe('comparisonLine — the estimate frozen at start against what happ
   void test('just the time when no hours were frozen at start', () => {
     assert.equal(
       comparisonLine(frozen({ build_p50_ms: null, build_p80_ms: null }), took(1.6 * HOUR)),
-      'Took 1.6 h',
+      'Took 1 h 36 min',
     );
     assert.equal(comparisonLine(null, took(25 * MIN)), 'Took 25 min');
   });
@@ -384,11 +390,11 @@ void describe('timelineLine — where the time went', () => {
         review_wait_ms: 41 * HOUR,
         rework_ms: 20 * MIN,
       }),
-      'Building 1.6 h · waiting for review 41 h · rework 20 min',
+      'Building 1 h 36 min · waiting for review 41 h · rework 20 min',
     );
     assert.equal(
       timelineLine({ ...NOT_YET, build_ms: 1.6 * HOUR, review_wait_ms: 41 * HOUR }),
-      'Building 1.6 h · waiting for review 41 h',
+      'Building 1 h 36 min · waiting for review 41 h',
     );
   });
 
@@ -529,7 +535,7 @@ void describe('whyRows — the factors as sentences with arrows', () => {
         '↓ Tagged “docs”: tasks with that tag are quicker here',
         '↓ Has none of the tags that usually mean more work',
         '↑ Has none of the tags that usually mean quicker work',
-        '↑ 7 similar finished tasks took about 1.2 h',
+        '↑ 7 similar finished tasks took about 1 h 12 min',
         '↑ Its 3 subtasks add up to more than its own description',
         '↑ Estimated Large when it was claimed',
       ],

@@ -40,9 +40,9 @@ void describe('durationLabel', () => {
   void test('reads minutes, hours and days at the scale they are', () => {
     assert.equal(durationLabel(25 * MIN), '25 min');
     assert.equal(durationLabel(4 * HOUR), '4 h');
-    assert.equal(durationLabel(90 * MIN), '1.5 h');
+    assert.equal(durationLabel(90 * MIN), '1 h 30 min');
     assert.equal(durationLabel(3 * DAY), '3 d');
-    assert.equal(durationLabel(1.8 * DAY), '1.8 d');
+    assert.equal(durationLabel(1.8 * DAY), '1 d 19 h');
     assert.equal(durationLabel(0), '0 min');
   });
 });

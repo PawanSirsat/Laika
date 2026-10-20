@@ -22,6 +22,8 @@ import {
   mayReadOrgUsage,
   mayReadPeopleUsage,
   modelCostText,
+  OUTSIDE_ANY_SPACE,
+  outsideAnySpace,
   percent,
   roundLabel,
   shareOf,
@@ -185,6 +187,66 @@ void describe('a task’s tokens (LAI-770)', () => {
   });
 });
 
+void describe('by space, and what no space holds (LAI-814)', () => {
+  const totals = {
+    tokens: 666_606,
+    input: 111_101,
+    output: 222_202,
+    cache_write: 333_303,
+    cache_read: 445_004,
+    attributed_tokens: 666_006,
+    cost: {
+      usd: 3.0442,
+      unpriced_tokens: 6,
+      unpriced_models: ['mystery-model'],
+      unconfirmed_models: [],
+    },
+  };
+  const space = (slug: string, tokens: number, cacheRead: number) => ({
+    project: { slug, name: slug },
+    tokens,
+    cache_read: cacheRead,
+    cost: { usd: 0, unpriced_tokens: 0, unpriced_models: [], unconfirmed_models: [] },
+    share: tokens / totals.tokens,
+  });
+
+  void test('is the organisation less every space, so the rows add up to the total', () => {
+    const by_project = [
+      space('vault', 600_000, 1_000),
+      space('onroute', 60_006, 400_004),
+      space('laika', 6_000, 40_000),
+    ];
+    const outside = outsideAnySpace({ totals, by_project });
+    assert.deepEqual(outside, { tokens: 600, cache_read: 4_000 });
+    assert.equal(
+      by_project.reduce((n, p) => n + p.tokens, 0) + (outside?.tokens ?? 0),
+      totals.tokens,
+    );
+  });
+
+  void test('is everything with no space read, nothing for a space view', () => {
+    assert.deepEqual(outsideAnySpace({ totals, by_project: [] }), {
+      tokens: 666_606,
+      cache_read: 445_004,
+    });
+    assert.equal(outsideAnySpace({ totals, by_project: null }), null);
+  });
+
+  void test('never goes below nothing', () => {
+    assert.deepEqual(
+      outsideAnySpace({
+        totals: { ...totals, tokens: 10, cache_read: 0 },
+        by_project: [space('a', 11, 1)],
+      }),
+      { tokens: 0, cache_read: 0 },
+    );
+  });
+
+  void test('is named as the space tile names it', () => {
+    assert.equal(OUTSIDE_ANY_SPACE, 'Outside any space');
+  });
+});
+
 void describe('rework cost, per project (LAI-772)', () => {
   void test('says what send-backs cost in tokens and time, and names nobody', () => {
     const line = reworkLine({
@@ -199,7 +261,7 @@ void describe('rework cost, per project (LAI-772)', () => {
     });
     assert.equal(
       line,
-      '3 send-backs on 2 tasks · 1.23M tokens (12% of the space’s) · 6.0 h of rework, 1 still open',
+      '3 send-backs on 2 tasks · 1.23M tokens (12% of the space’s) · 6 h of rework, 1 still open',
     );
     assert.equal(
       reworkLine({

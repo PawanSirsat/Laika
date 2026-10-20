@@ -1,13 +1,17 @@
 /**
- * The Dashboard's range reaches Status overview and Work by person, and each
- * card has a filter of its own (LAI-732).
+ * The Dashboard's range reaches Status overview, and each card has a filter of
+ * its own (LAI-732).
  *
  * The owner, on the production Dashboard: the range buttons changed the stat
  * cards *"but not this section in the status overview and the work by person
- * section"*, and *"add more filter in that … in compact popup"*. A card now
- * counts the tasks **updated** within the range (the "N updated" stat's rule)
- * and says so in its subtitle; each has an icon that opens a compact popover,
- * its choices kept in the URL under its own prefix.
+ * section"*, and *"add more filter in that … in compact popup"*. Status
+ * overview counts the tasks **touched** within the range (the "N touched"
+ * stat's rule) and says so in its subtitle; each card has an icon that opens a
+ * compact popover, its choices kept in the URL under its own prefix.
+ *
+ * **Work by person became Contributors** (LAI-817, D-092): its Open work now
+ * tab has no range — every open task, as of now — so its filter has no Range
+ * and no "Include done".
  */
 
 import assert from 'node:assert/strict';
@@ -72,8 +76,8 @@ const task = (n: number, over: Record<string, unknown>) => ({
 
 /*
  * Four touched this week (one cancelled), three forty days ago. Under the
- * default 7 days the Status overview counts 3 live tasks and Work by person 2
- * open ones; under All time, 6 and 4.
+ * default 7 days the Status overview counts 3 live tasks, and under All time
+ * 6. Open work now counts the 4 open ones under both.
  */
 const TASKS = [
   task(1, {
@@ -200,12 +204,21 @@ const meta = async (page: Page, card: string): Promise<string> =>
 const centre = async (page: Page, card: string): Promise<string> =>
   ((await page.locator(`${card} .donut-value`).textContent()) ?? '').trim();
 
+const caption = async (page: Page, card: string): Promise<string> =>
+  ((await page.locator(`${card} .donut-caption`).textContent()) ?? '').trim();
+
 const badge = async (page: Page, card: string): Promise<string | null> => {
   const b = page.locator(`${card} .dcf-badge`);
   return (await b.count()) === 0 ? null : ((await b.textContent()) ?? '').trim();
 };
 
 const param = (page: Page, key: string): string | null => new URL(page.url()).searchParams.get(key);
+
+/** Contributors' second tab: every open task, whatever the range (LAI-817). */
+async function openNow(page: Page): Promise<void> {
+  await page.locator(`${PEOPLE} [role="tab"]`, { hasText: 'Open work now' }).click();
+  await page.locator(`${PEOPLE} .donut-value`).waitFor({ timeout: 5_000 });
+}
 
 async function openPop(page: Page, card: string): Promise<void> {
   await page.locator(`${card} .dcf-button`).click();
@@ -230,15 +243,17 @@ void after(async () => {
   await closeBrowser();
 });
 
-void describe('the range reaches both cards', () => {
-  void test('7 days counts tasks updated within it, and All time is the whole project', async () => {
+void describe('the range reaches Status overview, and never Open work now', () => {
+  void test('7 days counts tasks touched within it, and All time is the whole project', async () => {
     const h = await open('/dashboard?project=laika-core', STUB);
     try {
       await ready(h.page);
+      await openNow(h.page);
       // The default range is 7 days.
-      assert.equal(await meta(h.page, STATUS), '3 tasks updated in the last 7 days');
-      assert.equal(await centre(h.page, PEOPLE), '2');
-      assert.match(await meta(h.page, PEOPLE), /open work updated in the last 7 days$/);
+      assert.equal(await meta(h.page, STATUS), '3 tasks touched in the last 7 days');
+      assert.equal(await caption(h.page, STATUS), 'done of touched');
+      assert.equal(await centre(h.page, PEOPLE), '4', 'open work now is not narrowed');
+      assert.equal(await meta(h.page, PEOPLE), '4 open · now, any range');
       assert.match(
         (await h.page.locator(`${STATUS} .dash-card-foot`).textContent()) ?? '',
         /1 cancelled, not counted in the 3/,
@@ -250,9 +265,11 @@ void describe('the range reaches both cards', () => {
         `${STATUS} .dash-card-meta`,
         { timeout: 10_000 },
       );
+      assert.equal(await caption(h.page, STATUS), 'done', 'the whole space is not a sample');
       assert.equal(await centre(h.page, PEOPLE), '4');
-      assert.equal(await meta(h.page, PEOPLE), '2 people · open work', 'All time is today’s card');
+      // LC-3 and LC-6; LC-5, in review, is drawn as review's share instead.
       assert.equal(await h.page.locator(`${PEOPLE} [data-person="unassigned"]`).textContent(), '2');
+      assert.equal(await h.page.locator(`${PEOPLE} [data-person="review"]`).textContent(), '1');
     } finally {
       await h.close();
     }
@@ -334,44 +351,41 @@ void describe('the Status overview filter', () => {
       await ready(h.page);
       assert.equal(await meta(h.page, STATUS), '6 tasks · all time');
       assert.equal(await badge(h.page, STATUS), '1');
-      // The other card still follows the 7 days.
-      assert.equal(await centre(h.page, PEOPLE), '2');
+      // The other card holds the 7 days for Delivered, and none for open work.
+      assert.equal(await meta(h.page, PEOPLE), '0 people · in the last 7 days');
+      await openNow(h.page);
+      assert.equal(await centre(h.page, PEOPLE), '4');
     } finally {
       await h.close();
     }
   });
 });
 
-void describe('the Work by person filter', () => {
-  void test('kept in the URL: a shared link opens filtered, and Include done counts finished work', async () => {
-    const h = await open(
-      '/dashboard?project=laika-core&range=all&wp_status=all&wp_priority=p1',
-      STUB,
-    );
+void describe('the Contributors filter', () => {
+  void test('kept in the URL: a shared link opens filtered, and a refresh keeps it', async () => {
+    const h = await open('/dashboard?project=laika-core&wp_priority=p1', STUB);
     try {
       await ready(h.page);
-      // p1, open and done: LC-1 and LC-2 (Ada), LC-5 (Grace).
-      assert.equal(await centre(h.page, PEOPLE), '3');
-      assert.equal(await badge(h.page, PEOPLE), '2');
-      assert.equal(await meta(h.page, PEOPLE), '2 people · open and done work · 2 filters');
-      assert.match(
-        (await h.page
-          .locator(`${PEOPLE} .dash-legend-row`, { hasText: 'Ada Lovelace' })
-          .textContent()) ?? '',
-        /1 done/,
-      );
+      await openNow(h.page);
+      // p1 and open: LC-1 (Ada, in progress) and LC-5 (Grace, in review).
+      assert.equal(await centre(h.page, PEOPLE), '2');
+      assert.equal(await badge(h.page, PEOPLE), '1');
+      assert.equal(await meta(h.page, PEOPLE), '2 open · now, any range · 1 filter');
 
       await h.page.reload();
       await ready(h.page);
-      assert.equal(await centre(h.page, PEOPLE), '3', 'a refresh lost the card’s filter');
+      await openNow(h.page);
+      assert.equal(await centre(h.page, PEOPLE), '2', 'a refresh lost the card’s filter');
 
       await openPop(h.page, PEOPLE);
-      assert.equal(await valueOf(field(h.page, PEOPLE, 'Statuses')), 'all');
-      await pick(field(h.page, PEOPLE, 'Statuses'), '');
-      await h.page.waitForFunction(
-        () => new URL(location.href).searchParams.get('wp_status') === null,
+      assert.equal(await valueOf(field(h.page, PEOPLE, 'Priority')), 'p1');
+      // Absent on purpose (LAI-817): open work has no range, and done work is
+      // Delivered's, never open work's.
+      const labels = await h.page.locator(`${PEOPLE} .dcf-pop .dcf-label`).allTextContents();
+      assert.deepEqual(
+        labels.map((l) => l.trim()),
+        ['Sprint', 'Priority', 'Label'],
       );
-      assert.equal(await centre(h.page, PEOPLE), '2', 'open only: LC-1 and LC-5');
     } finally {
       await h.close();
     }
@@ -391,6 +405,7 @@ void describe('the Work by person filter', () => {
       assert.equal(await badge(h.page, PEOPLE), '1');
       // api: LC-1 and LC-5. p1, open: LC-1 and LC-5.
       assert.equal(await meta(h.page, STATUS), '2 tasks · 1 filter');
+      await openNow(h.page);
       assert.equal(await centre(h.page, PEOPLE), '2');
     } finally {
       await h.close();
@@ -453,7 +468,7 @@ void describe('focus in the popover', () => {
  * Filtered to s1, the card no longer holds LC-7; judged from the filtered few
  * it is "unknown", which counts as blocked. It must read as free.
  */
-void describe('Work by person judges blocked from the whole project', () => {
+void describe('Open work now judges blocked from the whole project', () => {
   void test('a blocker the card filters out still frees the task it blocked', async () => {
     const freed = task(8, {
       status: 'todo',
@@ -467,6 +482,7 @@ void describe('Work by person judges blocked from the whole project', () => {
     });
     try {
       await ready(h.page);
+      await openNow(h.page);
       const ada = h.page.locator(`${PEOPLE} .dash-legend-row`, { hasText: 'Ada Lovelace' });
       await ada.waitFor({ timeout: 10_000 });
       // Positive control: LC-8 is counted in Ada's row (LC-1 in progress, LC-8 to do).

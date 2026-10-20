@@ -20,9 +20,35 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { capacityPerson } from './capacity-org.ts';
-import { closeBrowser, open, refuse, setTheme, until, type ApiStub } from './harness.ts';
+import {
+  closeBrowser,
+  open as openPage,
+  refuse,
+  setTheme,
+  until,
+  type ApiStub,
+} from './harness.ts';
 
 const NOW = Date.now();
+
+/**
+ * **Every page here runs on a clock pinned to `NOW`** (LAI-830).
+ *
+ * The fixtures are `NOW - 2 * MIN`, `NOW - 5 * HOUR` and so on, while the
+ * page read its own `Date.now()` — taken after the build and every test before
+ * it. Under load that is a minute or more later, so "active 2 min" read
+ * "active 3 min" and failed two builders' gates on 2026-10-20/21. Pinned, the
+ * page computes every age from the same instant the fixtures were written
+ * against, and an exact-minute assertion cannot drift. Timers still run.
+ */
+const open: typeof openPage = (path, stub, options = {}) =>
+  openPage(path, stub, {
+    ...options,
+    before: async (page) => {
+      await page.clock.setFixedTime(NOW);
+      await options.before?.(page);
+    },
+  });
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 86_400_000;
@@ -440,7 +466,7 @@ void describe('a builder’s profile', () => {
       assert.equal(await stat(h.page, 'cycle'), '3 d');
       assert.equal(
         (await h.page.locator('[data-stat="cycle"] .prof-stat-sub').innerText()).trim(),
-        '/ 4.5 d',
+        '/ 4 d 12 h',
       );
       assert.match(await h.page.locator('.prof-unmeasured').innerText(), /1 .*not measured/i);
 
@@ -1462,12 +1488,17 @@ void describe('the ways in are links for owners and admins only', () => {
     '/api/v1/presence': { enabled: false, present: [] },
   };
 
-  void test('Work by person: each person has a profile link for an owner, none for a member', async () => {
+  // Work by person became Contributors (LAI-817); its Open work now tab holds
+  // the people rows that open the board.
+  void test('Open work now: each person has a profile link for an owner, none for a member', async () => {
     const owner = await open('/dashboard?project=laika-core', {
       ...DASH_STUB,
       '/api/v1/me': me('u1', 'owner'),
     });
     try {
+      await owner.page
+        .locator('.dash-people [role="tab"]', { hasText: 'Open work now' })
+        .click({ timeout: 20_000 });
       await owner.page
         .locator('.dash-people .dash-legend-row')
         .first()
@@ -1491,6 +1522,9 @@ void describe('the ways in are links for owners and admins only', () => {
       '/api/v1/me': me('u3', 'member'),
     });
     try {
+      await member.page
+        .locator('.dash-people [role="tab"]', { hasText: 'Open work now' })
+        .click({ timeout: 20_000 });
       await member.page
         .locator('.dash-people .dash-legend-row')
         .first()
@@ -1564,7 +1598,7 @@ void describe('current work stays a card’s height (LAI-751)', () => {
         await rowKeys(h.page),
         shape.current_work.in_review.slice(0, 5).map((t) => t.key),
       );
-      assert.match(await current.locator('.prof-work-row').first().innerText(), /waiting 1\.7 d/);
+      assert.match(await current.locator('.prof-work-row').first().innerText(), /waiting 1 d 17 h/);
       // One line each: the whole title is on hover.
       const title = current.locator('.prof-work-row .prof-task-title').first();
       assert.equal(await title.getAttribute('title'), shape.current_work.in_review[0]?.title);

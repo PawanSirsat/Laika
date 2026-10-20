@@ -6,10 +6,19 @@ import {
   type TimeEntry,
   type TimeRevision,
 } from '../../../api/time.ts';
+import { formatDuration } from '../../../api/duration.ts';
+import { dateTime } from '../../../api/time-label.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { CardLink } from './CardLink.tsx';
 import { MoreMenu } from './MoreMenu.tsx';
-import { canChange, entryTarget, hm, parseMinutes, rangeLabel } from './my-day-derive.ts';
+import { Understood } from './Understood.tsx';
+import {
+  canChange,
+  entryTarget,
+  minutesUnderstood,
+  parseMinutes,
+  rangeLabel,
+} from './my-day-derive.ts';
 
 export interface EntryRowProps {
   readonly entry: TimeEntry;
@@ -69,7 +78,7 @@ export function EntryRow({
   const range = rangeLabel(entry);
 
   const startEdit = (): void => {
-    setMinutes(hm(entry.minutes));
+    setMinutes(formatDuration(entry.minutes));
     setCard(entry.task?.key ?? '');
     setNote(entry.note ?? '');
     setError(undefined);
@@ -80,7 +89,7 @@ export function EntryRow({
     event.preventDefault();
     const parsed = parseMinutes(minutes);
     if (parsed === undefined) {
-      setError('Minutes as 90, 1:30 or 1h30 — between 1 minute and 24 hours.');
+      setError('How long, as 45, 45m, 1h 30m or 1:30 — between 1 minute and 24 hours.');
       return;
     }
     const key = card.trim();
@@ -117,7 +126,7 @@ export function EntryRow({
   // Its accessible name: the time, or which entry of the day it is, and how long.
   const name =
     range === ''
-      ? `entry ${String(position)} of ${String(count)}, no set time, ${hm(entry.minutes)}`
+      ? `entry ${String(position)} of ${String(count)}, no set time, ${formatDuration(entry.minutes)}`
       : range;
   const changeable = canChange(entry);
   const menu = [
@@ -134,7 +143,7 @@ export function EntryRow({
     <li className="myday-entry" data-entry={entry.id}>
       <div className="myday-block-main">
         <span className="myday-block-time">{when}</span>
-        <span className="myday-block-minutes">{hm(entry.minutes)}</span>
+        <span className="myday-block-minutes">{formatDuration(entry.minutes)}</span>
         <span className="myday-block-target">
           {entry.task === null ? (
             entryTarget(entry)
@@ -199,6 +208,7 @@ export function EntryRow({
               />
             </label>
           </div>
+          <Understood text={minutesUnderstood(minutes)} />
           <label className="myday-field">
             <span className="myday-field-label">Note</span>
             <input
@@ -239,15 +249,10 @@ export function EntryRow({
           {history.revisions.map((r) => (
             <li key={r.revision}>
               <span className="myday-history-n">{String(r.revision)}</span>
-              {CHANGE_LABELS[r.change]} · {hm(r.minutes)} on {r.day}
+              {CHANGE_LABELS[r.change]} · {formatDuration(r.minutes)} on {r.day}
               {r.note !== null && ` · ${r.note}`} ·{' '}
               <time dateTime={new Date(r.created_at).toISOString()}>
-                {new Date(r.created_at).toLocaleString('en-GB', {
-                  day: 'numeric',
-                  month: 'short',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
+                {dateTime(r.created_at, Date.now())}
               </time>
             </li>
           ))}

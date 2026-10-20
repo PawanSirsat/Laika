@@ -19,6 +19,7 @@ import {
 import { ApiError } from '../../src/errors.ts';
 import { pruneLocalActivity } from '../../src/jobs/jobs.ts';
 import { deleteOwnLocalActivity, getActivitySharing } from '../../src/services/local-activity.ts';
+import { setModelPrice } from '../../src/services/org-model-prices.ts';
 import { createProject } from '../../src/services/projects.ts';
 import { createTask } from '../../src/services/tasks.ts';
 import {
@@ -759,6 +760,237 @@ describe('GET /usage — the Usage page', () => {
   });
 });
 
+describe('GET /usage by_project — each space’s tokens and cost on the organisation (LAI-814)', () => {
+  /**
+   * Three spaces and a row no task holds, all yesterday, all through a real
+   * report so each row's project is copied from its task the way it is in
+   * production. Headline tokens per space: Vault 600,000 (private), Onroute
+   * 60,006 (one row of a model nobody priced), Laika 6,000; unattributed 600.
+   */
+  const VAULT = 600_000;
+  const ONROUTE = 60_000 + 6;
+  const LAIKA = 6_000;
+  const UNATTRIBUTED = 600;
+  const WHOLE = VAULT + ONROUTE + LAIKA + UNATTRIBUTED;
+
+  let onrouteId: string;
+  let vaultId: string;
+
+  function seedSpaces(): void {
+    onrouteId = createProject(t.sqlite, t.db, actor(owner), {
+      name: 'Onroute',
+      slug: 'onroute',
+      prefix: 'ONR',
+      now: NOW,
+    }).id;
+    vaultId = createProject(t.sqlite, t.db, actor(owner), {
+      name: 'Vault',
+      slug: 'vault',
+      prefix: 'VLT',
+      visibility: 'private',
+      now: NOW,
+    }).id;
+    const key = (slug: string) =>
+      createTask(t.sqlite, t.db, actor(owner), slug, { title: `${slug} work`, now: NOW }).key;
+    const [laika, onroute, vault] = [key('laika'), key('onroute'), key('vault')];
+    share(owner);
+    recordTokenUsage(
+      t.db,
+      actor(owner),
+      report([
+        {
+          day: YESTERDAY,
+          rows: [
+            row({
+              task: laika,
+              input: 1_000,
+              output: 2_000,
+              cache_write: 3_000,
+              cache_read: 40_000,
+            }),
+            row({
+              task: onroute,
+              input: 10_000,
+              output: 20_000,
+              cache_write: 30_000,
+              cache_read: 400_000,
+            }),
+            row({
+              task: onroute,
+              model: 'mystery-model',
+              input: 1,
+              output: 2,
+              cache_write: 3,
+              cache_read: 4,
+            }),
+            row({
+              task: vault,
+              input: 100_000,
+              output: 200_000,
+              cache_write: 300_000,
+              cache_read: 1_000,
+            }),
+            row({ task: null, input: 100, output: 200, cache_write: 300, cache_read: 4_000 }),
+          ],
+        },
+      ]),
+      NOW,
+    );
+  }
+
+  const listed = (view: ReturnType<typeof getUsage>) =>
+    view.by_project?.map((p) => [p.project.slug, p.tokens, p.cache_read]);
+
+  it('gives an owner every space, most tokens first, with the right figures and share', () => {
+    seedSpaces();
+    const view = getUsage(t.db, actor(owner), { days: 7 }, NOW);
+    expect(view.totals.tokens).toBe(WHOLE);
+    expect(listed(view)).toEqual([
+      ['vault', VAULT, 1_000],
+      ['onroute', ONROUTE, 400_004],
+      ['laika', LAIKA, 40_000],
+    ]);
+    expect(view.by_project?.map((p) => p.project)).toEqual([
+      { slug: 'vault', name: 'Vault' },
+      { slug: 'onroute', name: 'Onroute' },
+      { slug: 'laika', name: 'Laika' },
+    ]);
+    expect(view.by_project?.map((p) => p.share)).toEqual([
+      VAULT / WHOLE,
+      ONROUTE / WHOLE,
+      LAIKA / WHOLE,
+    ]);
+  });
+
+  it('adds up: the rows and what lies outside any space are the organisation’s tokens', () => {
+    seedSpaces();
+    const view = getUsage(t.db, actor(owner), { days: 7 }, NOW);
+    const inSpaces = (view.by_project ?? []).reduce((n, p) => n + p.tokens, 0);
+    expect(inSpaces).toBe(VAULT + ONROUTE + LAIKA);
+    // What no space holds is exactly the row no task holds.
+    expect(view.totals.tokens - inSpaces).toBe(UNATTRIBUTED);
+    expect(view.totals.tokens - inSpaces).toBe(view.totals.tokens - view.totals.attributed_tokens);
+  });
+
+  it('prices each space with the organisation’s own prices, as the totals are — caveats included', () => {
+    seedSpaces();
+    // Per million: $1 in, $10 out, $2 cache writes, $0.10 cache reads — not the table's.
+    setModelPrice(
+      t.db,
+      actor(owner),
+      'claude-opus-5-5',
+      { input: 1, output: 10, cache_write: 2, cache_read: 0.1 },
+      NOW,
+    );
+    const view = getUsage(t.db, actor(owner), { days: 7 }, NOW);
+    const cost = (slug: string) => view.by_project?.find((p) => p.project.slug === slug)?.cost;
+    // Laika: 1,000 + 20,000 + 6,000 + 4,000 micro-dollars.
+    expect(cost('laika')?.usd).toBeCloseTo(0.031, 12);
+    expect(cost('onroute')?.usd).toBeCloseTo(0.31, 12);
+    expect(cost('vault')?.usd).toBeCloseTo(2.7001, 12);
+    // The model nobody priced is said, never priced at zero.
+    expect(cost('onroute')).toMatchObject({
+      unpriced_tokens: 6,
+      unpriced_models: ['mystery-model'],
+      unconfirmed_models: [],
+    });
+    expect(cost('laika')).toMatchObject({ unpriced_tokens: 0, unpriced_models: [] });
+    // The same book as the totals: spaces plus the unattributed row's
+    // 100 + 2,000 + 600 + 400 micro-dollars is the organisation's cost.
+    const spaces = (view.by_project ?? []).reduce((n, p) => n + p.cost.usd, 0);
+    expect(spaces + 0.0031).toBeCloseTo(view.totals.cost.usd, 12);
+    expect(view.totals.cost.usd).toBeCloseTo(3.0442, 12);
+  });
+
+  it('gives an admin who is in no space every space, the private one too', () => {
+    seedSpaces();
+    const admin = makeUser('Ada', 'admin');
+    const view = getUsage(t.db, actor(admin), { days: 7 }, NOW);
+    expect(listed(view)).toEqual([
+      ['vault', VAULT, 1_000],
+      ['onroute', ONROUTE, 400_004],
+      ['laika', LAIKA, 40_000],
+    ]);
+  });
+
+  it('leaves out a space the reader cannot read: a token pinned to one space sees that one', () => {
+    seedSpaces();
+    const admin = makeUser('Ada', 'admin');
+    const pinned: ResolvedActor = {
+      ...actor(admin),
+      token: { id: 'tok_pin', scope: 'read_only', projectIds: [projectId] },
+    };
+    const view = getUsage(t.db, pinned, { days: 7 }, NOW);
+    // The organisation's figure is still the whole, which the token may read…
+    expect(view.totals.tokens).toBe(WHOLE);
+    // …but no space it cannot open with ?project= is named or counted.
+    expect(listed(view)).toEqual([['laika', LAIKA, 40_000]]);
+    expect(JSON.stringify(view.by_project)).not.toMatch(/vault|Vault|onroute|Onroute/);
+    expect(refusal(() => getUsage(t.db, pinned, { days: 7, project: 'vault' }, NOW))).toMatchObject(
+      { code: 'forbidden' },
+    );
+  });
+
+  it('is never a member’s: the organisation is refused, and a space view has none', () => {
+    seedSpaces();
+    member(bea, projectId);
+    expect(refusal(() => getUsage(t.db, actor(bea), { days: 7 }, NOW))).toMatchObject({
+      code: 'forbidden',
+    });
+    const space = getUsage(t.db, actor(bea), { days: 7, project: 'laika' }, NOW);
+    expect(space.totals.tokens).toBe(LAIKA);
+    expect(space.by_project).toBeNull();
+    // Not even for an owner: a space is one space.
+    expect(getUsage(t.db, actor(owner), { days: 7, project: 'laika' }, NOW).by_project).toBeNull();
+  });
+
+  it('is an empty list, not null, for an organisation with nothing in the range', () => {
+    seedSpaces();
+    const later = NOW + 30 * 86_400_000;
+    const view = getUsage(t.db, actor(owner), { days: 7 }, later);
+    expect(view.totals.tokens).toBe(0);
+    expect(view.by_project).toEqual([]);
+  });
+
+  it('is one grouped query over the project index, shared with the cache card', () => {
+    seedSpaces();
+    const prepare = t.sqlite.prepare.bind(t.sqlite);
+    const grouped: { source: string; params: unknown[] }[] = [];
+    t.sqlite.prepare = ((source: string) => {
+      const stmt = prepare(source);
+      if (/group by "token_usage_days"\."project_id"/i.test(source)) {
+        const all = stmt.all.bind(stmt);
+        stmt.all = (...params: unknown[]) => {
+          grouped.push({ source, params });
+          return all(...params);
+        };
+      }
+      return stmt;
+    }) as typeof t.sqlite.prepare;
+    try {
+      getUsage(t.db, actor(owner), { days: 7 }, NOW);
+    } finally {
+      Reflect.deleteProperty(t.sqlite, 'prepare');
+    }
+    expect(grouped).toHaveLength(1);
+    const [{ source, params }] = grouped as [{ source: string; params: unknown[] }];
+    const steps = (
+      t.sqlite.prepare(`EXPLAIN QUERY PLAN ${source}`).all(...params) as { detail: string }[]
+    ).map((r) => r.detail);
+    expect(
+      steps.filter((s) =>
+        /^SEARCH token_usage_days USING (COVERING )?INDEX token_usage_days_project_day_idx /.test(
+          s,
+        ),
+      ),
+    ).toHaveLength(1);
+    expect(steps.filter((s) => /^SCAN token_usage_days\b/.test(s))).toEqual([]);
+    // Every space an owner may read, then the range — one range of the index.
+    expect([...params.slice(0, 3)].sort()).toEqual([projectId, onrouteId, vaultId].sort());
+    expect(params.slice(3)).toEqual(['2026-10-11', TODAY]);
+  });
+});
+
 describe('GET /users/:id/usage — the profile card', () => {
   it('gives an owner anyone’s weeks, top agents and models, and the attributed share', () => {
     seedUsage();
@@ -856,8 +1088,9 @@ describe('every Usage query is one indexed query', () => {
       ['p', 'a', 'b'],
     ],
     [
-      'cache by project and model',
-      `SELECT project_id, model, sum(input), sum(cache_write), sum(cache_read) FROM token_usage_days WHERE project_id IN (?, ?) AND ${RANGE} GROUP BY project_id, model`,
+      // LAI-814: the same range serves each space's total, so it sums every count.
+      'by project and model: cache efficiency and each space’s total',
+      `SELECT project_id, model, ${SUMS}, sum(input), sum(output), sum(cache_write) FROM token_usage_days WHERE project_id IN (?, ?) AND ${RANGE} GROUP BY project_id, model`,
       ['p', 'q', 'a', 'b'],
     ],
   ];

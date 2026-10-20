@@ -135,6 +135,23 @@ function orgUsage(days = 30) {
       { model: 'claude-fable-5-1', tokens: 24_937_201, cache_read: 1.34e9, cost: 849.18 },
       { model: 'gpt-6.1-sol', tokens: 36_057, cache_read: 6_307_361, cost: 0.42 },
     ],
+    // LAI-814: each space, most first; the 12M tied to a task is all in them.
+    by_project: [
+      {
+        project: { slug: 'laika', name: 'Laika' },
+        tokens: 9_000_000,
+        cache_read: 600_000_000,
+        cost: cost(108.5),
+        share: 9_000_000 / 254_973_258,
+      },
+      {
+        project: { slug: 'onroute', name: 'Onroute' },
+        tokens: 3_000_000,
+        cache_read: 200_000_000,
+        cost: cost(36.2),
+        share: 3_000_000 / 254_973_258,
+      },
+    ],
     top_tasks: [
       {
         task_id: 't1',
@@ -226,6 +243,8 @@ function spaceUsage(slug: string, reader: 'owner' | 'member' = 'member') {
     project: { slug, name: slug === 'laika' ? 'Laika' : 'Onroute' },
     totals: figures(12_000_000, 800_000_000, 12_000_000),
     by_developer: null,
+    // A space is one space: no per-space rows (LAI-814).
+    by_project: null,
     org_totals: reader === 'owner' ? figures(254_973_258, 16_346_307_361, 12_000_000) : null,
     // Telemetry ties to no task, so a space has none; counts are for owners and admins.
     telemetry: null,
@@ -425,7 +444,7 @@ void describe('an owner', () => {
       assert.equal(await rework.locator('.usage-rework-name').innerText(), 'Laika');
       assert.equal(
         await rework.locator('.usage-rework-line').innerText(),
-        '3 send-backs on 2 tasks · 1.23M tokens (12% of the space’s) · 6.0 h of rework, 1 still open',
+        '3 send-backs on 2 tasks · 1.23M tokens (12% of the space’s) · 6 h of rework, 1 still open',
       );
       // Asked for the organisation: no project, the reader's zone.
       const asked = h.calls.find((c) => c.path === '/api/v1/usage');
@@ -496,6 +515,112 @@ void describe('an owner', () => {
       await h.page.getByRole('button', { name: '7 days' }).click();
       await until(async () => (await h.page.locator('.usage-trend .usage-bar').count()) === 7);
       assert.equal(await h.page.locator('.usage-trend .usage-bar').count(), 7);
+      assert.deepEqual(h.unmatched, []);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('By space: each space’s tokens, share and cost, most first, then what no space holds; a space opens its own view (LAI-814)', async () => {
+    const h = await open('/insights?tab=usage', ownerStub());
+    try {
+      await ready(h.page);
+      const card = h.page.locator('.usage-card[data-section="spaces"]');
+      assert.deepEqual(await rows(h.page, 'spaces'), ['Laika', 'Onroute', 'Outside any space']);
+      const values = (await card.locator('.usage-row-value').allInnerTexts()).map((v) =>
+        v.replace(/\s+/g, ' ').trim(),
+      );
+      assert.deepEqual(values, ['9M 4% · $108.50', '3M 1% · $36.20', '243M 95% · tied to no task']);
+      // The rows add up to the Tokens tile, exactly: each row's title is its count.
+      const exact = await card
+        .locator('.usage-row-value')
+        .evaluateAll((els) =>
+          els.map((el) =>
+            Number((el.getAttribute('title') ?? '').split(' tokens')[0]?.replace(/,/g, '')),
+          ),
+        );
+      assert.deepEqual(exact, [9_000_000, 3_000_000, 242_973_258]);
+      assert.equal(
+        exact.reduce((n, x) => n + x, 0),
+        254_973_258,
+      );
+      // What no space holds is not a space: no link.
+      assert.equal(await card.locator('a').count(), 2);
+
+      const laika = card.getByRole('link', { name: 'Laika' });
+      assert.equal(await laika.getAttribute('href'), '/insights?tab=usage&project=laika');
+      await laika.click();
+      await until(async () => (await stat(h.page, 'tokens')) === '12M');
+      assert.equal(await stat(h.page, 'tokens'), '12M');
+      assert.equal(new URL(h.page.url()).searchParams.get('project'), 'laika');
+      // A space view has no By space.
+      assert.equal(await card.count(), 0);
+      // Back returns to the organisation.
+      await h.page.goBack();
+      await until(async () => (await stat(h.page, 'tokens')) === '255M');
+      assert.equal(new URL(h.page.url()).searchParams.get('project'), null);
+      await card.waitFor();
+      assert.deepEqual(h.unmatched, []);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an archived space is counted but not a link — its ?project= would open All spaces — and says archived (LAI-814 review)', async () => {
+    const usage = orgUsage(30);
+    const archived = {
+      project: { slug: 'oldsite', name: 'Old site' },
+      tokens: 2_000_000,
+      cache_read: 100_000_000,
+      cost: cost(20),
+      share: 2_000_000 / 254_973_258,
+    };
+    const h = await open('/insights?tab=usage', {
+      ...ownerStub(),
+      // `GET /projects` sends an archived space as a tombstone (§6.3).
+      '/api/v1/projects': {
+        data: [LAIKA, ONROUTE, { id: 'p9', deleted: true }],
+        next_cursor: null,
+      },
+      '/api/v1/usage?days=30': { ...usage, by_project: [...usage.by_project, archived] },
+    });
+    try {
+      await ready(h.page);
+      const card = h.page.locator('.usage-card[data-section="spaces"]');
+      await card.locator('.usage-row').first().waitFor();
+      // Still a row, so the rows add up…
+      assert.equal(await card.locator('.usage-row').count(), 4);
+      const row = card.locator('.usage-row', { hasText: 'Old site' });
+      assert.equal(await row.count(), 1);
+      assert.match(
+        (await row.locator('.usage-row-value').innerText()).replace(/\s+/g, ' '),
+        /^2M <1% · \$20\.00$/,
+      );
+      // …but no way into a view the selector does not offer.
+      assert.equal(await row.locator('a').count(), 0);
+      assert.equal((await row.locator('.usage-space-archived').innerText()).trim(), 'archived');
+      assert.deepEqual(
+        (await card.locator('a').allInnerTexts()).map((t) => t.trim()),
+        ['Laika', 'Onroute'],
+      );
+      // The spaces the selector does offer keep their links and no marker.
+      assert.equal(await card.locator('.usage-space-archived').count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('?project= is the space shown: a link to a space’s usage opens it, and All spaces leaves it (LAI-814)', async () => {
+    const h = await open('/insights?tab=usage&project=laika', ownerStub());
+    try {
+      await ready(h.page);
+      assert.equal(await stat(h.page, 'tokens'), '12M');
+      assert.equal(await h.page.locator('.usage-card[data-section="spaces"]').count(), 0);
+      await pick(h.page.getByRole('combobox', { name: 'Space' }), '');
+      await until(async () => (await stat(h.page, 'tokens')) === '255M');
+      assert.equal(await stat(h.page, 'tokens'), '255M');
+      assert.equal(new URL(h.page.url()).searchParams.get('project'), null);
+      assert.equal(new URL(h.page.url()).searchParams.get('tab'), 'usage');
       assert.deepEqual(h.unmatched, []);
     } finally {
       await h.close();
@@ -621,7 +746,7 @@ const NOW_MS = Date.now();
  * The plan limit's forecast names a clock time, and the weekday as well once
  * that time is not today (`clockLabel`, `api/plan-limit.ts`). On the real clock
  * the test passed or failed by the hour it ran: GitHub's run at 23:45 UTC got
- * `around Tue 02:49` where it expected a bare time (LAI-794). So these tests
+ * `around Tue 02:49` (now `Tue 2:49 AM`, LAI-830) where it expected a bare time (LAI-794). So these tests
  * pin the browser's clock and zone, as `timeline-sprints.test.ts` does: Monday
  * 19 October 2026, at midday and at a quarter to midnight, in UTC.
  */
@@ -929,7 +1054,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       const forecast = card.locator('[data-forecast]');
       await forecast.waitFor();
       // Later the same day: the time alone.
-      assert.equal(await forecast.innerText(), 'At this rate you reach your limit around 15:00.');
+      assert.equal(await forecast.innerText(), 'At this rate you reach your limit around 3:00 PM.');
       assert.match(await card.innerText(), /Estimate\s+1\.2M of 3M used · 600K an hour/);
       // Never asked about anybody else: one path, the reader's own.
       assert.ok(
@@ -937,6 +1062,48 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
           .filter((c) => c.path.includes('plan-limit'))
           .every((c) => c.path === '/api/v1/me/plan-limit'),
       );
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * LAI-830 review round 1: the reset field said `such as 9:00 AM` and read a
+   * bare `2:30` on the 24-hour clock, so a person meaning the afternoon saved
+   * a weekly reset twelve hours off, with nothing on screen to say so.
+   */
+  void test('the weekly reset time: a bare 2:30 is refused, and the field says what it read', async () => {
+    const puts: StubCall[] = [];
+    const h = await open('/insights?tab=usage', {
+      ...ownerStub(),
+      '/api/v1/me/plan-limit': (call: StubCall) => {
+        if (call.method === 'PUT') puts.push(call);
+        return planLimit();
+      },
+    });
+    try {
+      const card = h.page.locator('[data-section="plan-limit"]');
+      await card.locator('form').waitFor({ timeout: 20_000 });
+      await pick(card.getByRole('combobox', { name: 'Counted over' }), 'week');
+      await card.getByLabel('Your limit, in tokens').fill('3M');
+      const at = card.getByLabel('Reset time, such as 9:00 AM');
+      const read = card.locator('[data-understood]');
+
+      await at.fill('2:30');
+      assert.equal(await read.innerText(), 'Add AM or PM: 2:30 AM or 2:30 PM?');
+      await card.getByRole('button', { name: 'Save' }).click();
+      assert.equal(
+        await card.locator('.usage-form-error').innerText(),
+        'Add AM or PM, e.g. 2:30 PM.',
+      );
+      assert.equal(puts.length, 0, 'a bare 2:30 was saved');
+
+      await at.fill('2:30 PM');
+      assert.equal(await read.innerText(), 'Reads as 2:30 PM');
+      await card.getByRole('button', { name: 'Save' }).click();
+      await until(() => puts.length === 1);
+      const body = puts[0]?.body as { week_reset?: { minute: number } };
+      assert.equal(body.week_reset?.minute, 870);
     } finally {
       await h.close();
     }
@@ -966,7 +1133,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       await forecast.waitFor({ timeout: 20_000 });
       assert.equal(
         await forecast.innerText(),
-        'At this rate you reach your limit around Tue 02:49.',
+        'At this rate you reach your limit around Tue 2:49 AM.',
       );
     } finally {
       await h.close();
@@ -975,7 +1142,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
 });
 
 void describe('both themes, laptop and phone', () => {
-  void test('1366 and 390 px in light and dark: nothing scrolls sideways, every card fits, bars drawn', async () => {
+  void test('1440, 1366 and 390 px in light and dark: nothing scrolls sideways, every card fits, bars drawn', async () => {
     const h = await open('/insights?tab=usage', ownerStub());
     try {
       await ready(h.page);
@@ -985,6 +1152,7 @@ void describe('both themes, laptop and phone', () => {
         await h.page.setViewportSize({ width: 1366, height: 900 });
         await setTheme(h.page, theme);
         for (const [width, height] of [
+          [1440, 900],
           [1366, 900],
           [390, 844],
         ] as const) {
@@ -1006,6 +1174,19 @@ void describe('both themes, laptop and phone', () => {
             .last()
             .evaluate((el) => getComputedStyle(el).backgroundColor);
           assert.notEqual(colour, 'rgba(0, 0, 0, 0)', `${theme}: the bars have no colour`);
+          // By space (LAI-814): drawn at every width, its bars in colour.
+          const spaceBar = h.page
+            .locator('.usage-card[data-section="spaces"] .usage-row-bar')
+            .first();
+          assert.ok(
+            (await spaceBar.evaluate((el) => el.getBoundingClientRect().width)) > 0,
+            `${theme} at ${String(width)}: By space draws no bar`,
+          );
+          assert.notEqual(
+            await spaceBar.evaluate((el) => getComputedStyle(el).backgroundColor),
+            'rgba(0, 0, 0, 0)',
+            `${theme}: By space's bars have no colour`,
+          );
         }
       }
     } finally {

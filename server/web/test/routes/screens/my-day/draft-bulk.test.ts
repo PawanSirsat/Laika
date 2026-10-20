@@ -192,10 +192,10 @@ void describe('what Confirm selected confirms', () => {
   void test('the ones left out are named by when they were', () => {
     assert.equal(needCardLine(1), '1 needs a card or General');
     assert.equal(needCardLine(2), '2 need a card or General');
-    assert.equal(nameBlocks([untied(1), untied(2)]), '07:20–07:35, 07:40–07:55');
+    assert.equal(nameBlocks([untied(1), untied(2)]), '7:20–7:35 AM, 7:40–7:55 AM');
     assert.equal(
       nameBlocks([untied(1, { started_at: null, ended_at: null, minutes: 30 })]),
-      'a 0:30 block with no set time',
+      'a 30 min block with no set time',
     );
     assert.match(nameBlocks(Array.from({ length: 7 }, (_, i) => untied(i))), / and 2 more$/);
   });
@@ -233,7 +233,7 @@ void describe('Confirm selected', () => {
     assert.deepEqual(result.keep, ['d2']);
     assert.equal(
       result.text,
-      'Confirmed 2 blocks. Left out, still selected — 1 needs a card or General: 07:40–07:55.',
+      'Confirmed 2 blocks. Left out, still selected — 1 needs a card or General: 7:40–7:55 AM.',
     );
   });
 
@@ -274,7 +274,7 @@ void describe('Confirm selected', () => {
     assert.equal(
       result.text,
       'Confirmed 1 block. 2 blocks changed since this page loaded — reloaded; please review again. ' +
-        'Left out, still selected — 1 needs a card or General: 08:20–08:35.',
+        'Left out, still selected — 1 needs a card or General: 8:20–8:35 AM.',
     );
     assert.doesNotMatch(result.text, /No draft/);
   });
@@ -287,7 +287,7 @@ void describe('Confirm selected', () => {
     assert.deepEqual(result.keep, ['d2', 'd3', 'd4']);
     assert.equal(
       result.text,
-      'Confirmed 1 block. Stopped at 07:40–07:55: confirming it would put more than 24 hours on ' +
+      'Confirmed 1 block. Stopped at 7:40–7:55 AM: confirming it would put more than 24 hours on ' +
         'the day. 3 blocks not confirmed, still selected.',
     );
   });
@@ -312,7 +312,7 @@ void describe('the header’s Confirm day', () => {
     const { api, sent } = fakeApi(new Map(), all.map(entryOf));
     const result = await runConfirmDay(all, '2026-10-20', api);
     assert.deepEqual(sent, ['day 2026-10-20']);
-    assert.equal(result.text, 'Confirmed the day: 3 blocks, 0:45.');
+    assert.equal(result.text, 'Confirmed the day: 3 blocks, 45 min.');
     assert.equal(result.ok, true);
     assert.deepEqual(result.keep, []);
   });
@@ -325,7 +325,7 @@ void describe('the header’s Confirm day', () => {
     assert.equal(result.ok, false);
     assert.equal(
       result.text,
-      'Confirmed the day: 3 blocks, 0:50. 1 block more arrived since this page loaded and was ' +
+      'Confirmed the day: 3 blocks, 50 min. 1 block more arrived since this page loaded and was ' +
         'confirmed too. 1 block on no card was confirmed as General — change it under Confirmed ' +
         'if it belongs on one.',
     );
@@ -339,7 +339,7 @@ void describe('the header’s Confirm day', () => {
     );
     assert.match(
       dayReport(all, [entryOf(draft(1)), entryOf(draft(3, { minutes: 40 }))]).text,
-      /The day changed since this page loaded: 0:55 was confirmed, not the 0:30 shown\.$/,
+      /The day changed since this page loaded: 55 min was confirmed, not the 30 min shown\.$/,
     );
   });
 
@@ -357,7 +357,7 @@ void describe('the header’s Confirm day', () => {
     assert.deepEqual(sent, ['confirm d1', 'confirm d3']);
     assert.equal(
       result.text,
-      'Confirmed 2 of 3 blocks; 1 left drafted — 1 needs a card or General (07:40–07:55).',
+      'Confirmed 2 of 3 blocks; 1 left drafted — 1 needs a card or General (7:40–7:55 AM).',
     );
     assert.doesNotMatch(result.text, /selected/);
   });
@@ -369,8 +369,8 @@ void describe('the header’s Confirm day', () => {
     assert.deepEqual(sent, ['confirm d1', 'confirm d3']);
     assert.equal(
       result.text,
-      'Confirmed 1 of 5 blocks; 4 left drafted — 1 needs a card or General (07:40–07:55); ' +
-        '3 blocks from 08:00–08:15 on would put more than 24 hours on the day.',
+      'Confirmed 1 of 5 blocks; 4 left drafted — 1 needs a card or General (7:40–7:55 AM); ' +
+        '3 blocks from 8:00–8:15 AM on would put more than 24 hours on the day.',
     );
     assert.doesNotMatch(result.text, /selected/);
   });

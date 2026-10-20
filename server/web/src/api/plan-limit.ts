@@ -1,10 +1,11 @@
 import { request } from './client.ts';
+import { clockTime, minuteClock, parseClock } from './time-label.ts';
 import { compactTokens } from './usage.ts';
 
 /**
  * The plan-limit forecast (LAI-773, D-087, SPEC §6.4): the developer's own
  * limit and their own recent rate — *"at this rate you reach your limit
- * around 15:40"* — **for them and nobody else**. A web session's, and only
+ * around 3:40 PM"* — **for them and nobody else**. A web session's, and only
  * the caller's: there is no way to ask for anybody else's. An estimate, and
  * said to be.
  *
@@ -98,26 +99,45 @@ export function clearPlanLimit(): Promise<void> {
   return request<void>('/me/plan-limit', { method: 'DELETE' });
 }
 
-/** `15:40`, or `Mon 09:00` when it is not today — in the reader's own clock. */
+/** `3:40 PM`, or `Mon 9:00 AM` when it is not today — in the reader's own clock. */
 export function clockLabel(at: number, now: number = Date.now()): string {
   const date = new Date(at);
-  const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  const time = clockTime(at);
   if (date.toDateString() === new Date(now).toDateString()) return time;
   return `${date.toLocaleDateString('en-GB', { weekday: 'short' })} ${time}`;
 }
 
-/** `09:00` from minutes after midnight. */
-export function minuteLabel(minute: number): string {
-  return `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+/**
+ * `9:30 AM`, `14:30`, `09:30` → the minute after midnight; anything else
+ * `undefined`. **A bare `2:30` is refused, never guessed** (LAI-830 review
+ * round 1): the field shows a 12-hour clock, so `2:30` may mean the
+ * afternoon, and reading it as 2:30 AM put a weekly reset twelve hours off
+ * with nothing on screen to say so. A leading zero is the 24-hour clock.
+ */
+export function parseMinute(text: string): number | undefined {
+  const parsed = parseClock(text);
+  return parsed === undefined || parsed.ambiguous ? undefined : parsed.minute;
 }
 
-/** `09:30` → 570; anything else `undefined`. */
-export function parseMinute(text: string): number | undefined {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(text.trim());
-  if (match === null) return undefined;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  return hours < 24 && minutes < 60 ? hours * 60 + minutes : undefined;
+/** Why the reset time was refused: AM or PM missing, or not a time at all. */
+export function resetTimeError(text: string): string {
+  return parseClock(text)?.ambiguous === true
+    ? 'Add AM or PM, e.g. 2:30 PM.'
+    : 'Enter the reset time, such as 9:00 AM.';
+}
+
+/**
+ * What the reset field read, under it, before anything is saved: `Reads as
+ * 2:30 PM`, or the question when it could be either. `undefined` while the
+ * text is not a time.
+ */
+export function resetTimeUnderstood(text: string): string | undefined {
+  const parsed = parseClock(text);
+  if (parsed === undefined) return undefined;
+  if (!parsed.ambiguous) return `Reads as ${minuteClock(parsed.minute)}`;
+  const am = minuteClock(parsed.minute % 720);
+  const pm = minuteClock((parsed.minute % 720) + 720);
+  return `Add AM or PM: ${am} or ${pm}?`;
 }
 
 /**

@@ -314,6 +314,12 @@ export interface UsageView {
   by_developer: UsageDeveloper[] | null;
   by_agent: UsageAgentSlice[];
   by_model: UsageModelSlice[];
+  /**
+   * Each space the reader may read, most tokens first (LAI-814) — on the
+   * organisation only, `null` for a space. `totals.tokens` less these rows is
+   * what no space the reader may read holds.
+   */
+  by_project: UsageProjectTotal[] | null;
   /** The tasks that cost most, where a key was sent (phase 2 sends them). */
   top_tasks: UsageTaskSlice[];
   /** Agents people here connect that keep no token count Laika can read. */
@@ -363,6 +369,22 @@ export interface UsageCacheProject {
   share: number | null;
   /** `null` when none of its models has a price. */
   saving_usd: number | null;
+}
+
+/**
+ * One space's tokens over the range and what they cost (LAI-814): every row
+ * tied to its tasks. A total per space names nobody, so it is a
+ * `usage.read_project` figure and never a `usage.read_people` one.
+ */
+export interface UsageProjectTotal {
+  project: { slug: string; name: string };
+  /** input + output + cache_write — the headline (D-084 item 8). */
+  tokens: number;
+  cache_read: number;
+  /** Priced per model as `totals.cost` is — API-equivalent, not your bill. */
+  cost: UsageCost;
+  /** Of the organisation's `totals.tokens`; `null` when those are 0. */
+  share: number | null;
 }
 
 /** Tasks accepted in the range and what they cost — the cost of agent work (LAI-773). */
@@ -1214,6 +1236,8 @@ export function getUsage(
           .all()
           .filter((p) => can(withProject(actor, p.id), 'usage.read_project', { projectId: p.id }))
       : [{ id: project.id, slug: project.slug, name: project.name }];
+  // One range of the project index serves the cache card and By space.
+  const perProject = projectModels(db, scope, { from, to });
 
   return {
     from,
@@ -1226,6 +1250,8 @@ export function getUsage(
     by_developer: byDeveloper,
     by_agent: people === null ? byAgent : foldAgents(byAgent, people.agents),
     by_model: people === null ? byModel : foldModels(byModel, people.models, counts, book),
+    by_project:
+      project === undefined ? usageByProject(book, scope, perProject, totals.tokens) : null,
     top_tasks: top,
     no_token_data: agentsWithoutTokens(db, memberIds),
     org_totals: orgTotals,
@@ -1235,7 +1261,7 @@ export function getUsage(
       share: cacheShare(totals.input, totals.cacheWrite, totals.cacheRead),
       saving_usd: saving,
     },
-    cache_by_project: cacheByProject(db, book, scope, { from, to }),
+    cache_by_project: cacheByProject(book, scope, perProject),
     accepted: acceptedCost(db, book, scope, { from, to, tz }, now, seesPeople),
     budgets: budgetsForUsage(
       db,
@@ -1283,17 +1309,18 @@ function telemetryShare(
 }
 
 /**
- * Cache efficiency per project the reader may read (LAI-773): one range of
- * the project index, grouped by project and model so the saving is priced.
+ * Each project the reader may read, its four counts per model over the range
+ * (LAI-773, LAI-814): one range of the project index, grouped by project and
+ * model so every figure drawn from it is priced. A project with no rows in the
+ * range is absent.
  */
-function cacheByProject(
+function projectModels(
   db: Db,
-  book: PriceBook,
-  scope: readonly { id: string; slug: string; name: string }[],
+  scope: readonly { id: string }[],
   range: { from: string; to: string },
-): UsageCacheProject[] {
-  if (scope.length === 0) return [];
+): Map<string, Map<string, ModelCounts>> {
   const per = new Map<string, Map<string, ModelCounts>>();
+  if (scope.length === 0) return per;
   for (const r of db
     .select({ projectId: t.projectId, model: t.model, ...sums })
     .from(t)
@@ -1314,6 +1341,48 @@ function cacheByProject(
     addCounts(models, r.model, r);
     per.set(r.projectId, models);
   }
+  return per;
+}
+
+/**
+ * Each space's tokens and cost over the range (LAI-814), most tokens first,
+ * then by name: priced per model with the same book as `totals.cost`, so a
+ * space's caveats — a model with no price, a price inferred — travel with it.
+ * `share` is of `whole`, the organisation's headline.
+ */
+function usageByProject(
+  book: PriceBook,
+  scope: readonly { id: string; slug: string; name: string }[],
+  per: ReadonlyMap<string, ReadonlyMap<string, ModelCounts>>,
+  whole: number,
+): UsageProjectTotal[] {
+  return scope
+    .filter((p) => per.has(p.id))
+    .map((p) => {
+      const models = per.get(p.id)!;
+      let tokens = 0;
+      let cacheRead = 0;
+      for (const c of models.values()) {
+        tokens += c.input + c.output + c.cache_write;
+        cacheRead += c.cache_read;
+      }
+      return {
+        project: { slug: p.slug, name: p.name },
+        tokens,
+        cache_read: cacheRead,
+        cost: priced(book, models).cost,
+        share: whole === 0 ? null : tokens / whole,
+      };
+    })
+    .sort((a, b) => b.tokens - a.tokens || a.project.name.localeCompare(b.project.name));
+}
+
+/** Cache efficiency per project the reader may read (LAI-773), from {@link projectModels}. */
+function cacheByProject(
+  book: PriceBook,
+  scope: readonly { id: string; slug: string; name: string }[],
+  per: ReadonlyMap<string, ReadonlyMap<string, ModelCounts>>,
+): UsageCacheProject[] {
   return scope
     .filter((p) => per.has(p.id))
     .map((p) => {
