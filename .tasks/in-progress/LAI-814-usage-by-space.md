@@ -2,11 +2,12 @@
 id: LAI-814
 title: 'Usage & cost has no per-space comparison: the organisation view never shows each space''s tokens and cost side by side'
 area: server
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-769
-status: backlog
+status: in-progress
+started: 2026-10-20T12:14:07Z
 ---
 
 ## Goal
