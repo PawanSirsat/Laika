@@ -7,7 +7,7 @@ import {
   type TimeRevision,
 } from '../../../api/time.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
-import { entryTarget, hm, parseMinutes, rangeLabel } from './my-day-derive.ts';
+import { canChange, entryTarget, hm, parseMinutes, rangeLabel } from './my-day-derive.ts';
 
 export interface EntryRowProps {
   readonly entry: TimeEntry;
@@ -20,7 +20,7 @@ export interface EntryRowProps {
 const SOURCE_LABELS: Readonly<Record<TimeEntry['source'], string>> = {
   draft: 'confirmed draft',
   manual: 'added by hand',
-  import: 'imported',
+  import: 'from Solidtime',
 };
 
 const CHANGE_LABELS: Readonly<Record<TimeRevision['change'], string>> = {
@@ -38,7 +38,8 @@ type History =
 /**
  * One confirmed entry (LAI-787): the time anybody else may ever see of the
  * reader's day. Edit it — minutes, card, note — or delete it; every change is
- * a revision kept beside it, append-only, and the history opens here.
+ * a revision kept beside it, append-only, and the history opens here. One
+ * that came from Solidtime is read here and changed there (LAI-788).
  */
 export function EntryRow({ entry, pending, onSave, onDelete }: EntryRowProps) {
   const [editing, setEditing] = useState(false);
@@ -168,13 +169,21 @@ export function EntryRow({ entry, pending, onSave, onDelete }: EntryRowProps) {
         </form>
       ) : (
         <div className="myday-block-actions">
-          <button type="button" className="myday-chip" disabled={busy} onClick={startEdit}>
-            Edit
-          </button>
-          <button type="button" className="myday-chip" disabled={busy} onClick={onDelete}>
-            {pending === `delete:${entry.id}` && <Spinner size="sm" label="Deleting this entry" />}
-            Delete
-          </button>
+          {canChange(entry) ? (
+            <>
+              <button type="button" className="myday-chip" disabled={busy} onClick={startEdit}>
+                Edit
+              </button>
+              <button type="button" className="myday-chip" disabled={busy} onClick={onDelete}>
+                {pending === `delete:${entry.id}` && (
+                  <Spinner size="sm" label="Deleting this entry" />
+                )}
+                Delete
+              </button>
+            </>
+          ) : (
+            <span className="myday-block-note">Change it in Solidtime</span>
+          )}
           <button
             type="button"
             className="myday-chip"

@@ -4952,3 +4952,41 @@ after the fact; a same-day draft built from real events keeps them honest at
 almost no cost to the developer. Keeping the signals on the developer's
 machine and showing others only what the person confirmed is what keeps D-005's
 line: the board knows what people said they did, not what it watched them do.
+
+## D-089 — CHIEF's third id block is full; CHIEF continues in `LAI-800`–`LAI-899`
+
+**Date:** 2026-10-20 · **Decided by:** CHIEF · **Status:** accepted
+
+`LAI-799` was the last free number in `LAI-700`–`LAI-799`, taken on
+2026-10-20. The same day, **two builders CHIEF had dispatched filed `LAI-797`
+and `LAI-798` independently**, each from its own worktree. The polly-time
+builder (LAI-792) filed first and keeps them; the Solidtime builder's two
+(LAI-788) are renumbered.
+
+**Decision: CHIEF files from `LAI-800`–`LAI-899`**, which D-068 gave CORE as a
+third block. Measured across every branch on 2026-10-20: CORE has used 77 of
+`LAI-100`–`LAI-199` and **none** of `LAI-500`–`LAI-599`, and has had no
+standing worktree since 2026-10-08. CORE keeps both of those blocks, which is
+123 free numbers. Nobody has filed in `LAI-800`–`LAI-899`.
+
+| Session | Blocks in use |
+| --- | --- |
+| CHIEF | `001`–`099`, `400`–`499`, `700`–`799` (all full); **`800`–`899`** |
+| CORE | `100`–`199`, `500`–`599` |
+| SHELL | `200`–`299`, `600`–`699`, `900`–`999` |
+
+`LAI-300`–`LAI-399` stays reserved for a fourth session (D-017).
+
+**A builder CHIEF dispatches files from CHIEF's block.** That is how two of
+them took the same two ids on the same day, so the §3 sweep is run
+**immediately before each `git mv`**, as §3 already says, and the earlier
+filing wins.
+
+**What this costs:** the §3 sweeps still grep `LAI-[0-9]\{3\}`, and that still
+matches. CORE, if its second block ever fills, has no third block. That case
+needs a decision, and the move to four-digit ids needs to be made with it.
+
+### Revisit when
+
+CHIEF's `LAI-800`–`LAI-899` fills, CORE starts filing again, or a fourth
+session takes `LAI-300`.

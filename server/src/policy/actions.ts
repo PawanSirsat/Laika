@@ -62,6 +62,12 @@ export const ORG_ACTIONS = [
   'time_drafts.manage_own',
   'time_entries.read_own',
   'time_entries.write_own',
+  // LAI-788: the Solidtime bridge (D-088 item 10) — a person's own CLI
+  // writing their confirmed time to Solidtime and bringing back what they
+  // logged there, and an owner's or admin's mapping and pull of everyone.
+  'time_sync.own',
+  'time_sync.map',
+  'time_sync.import_all',
 ] as const;
 
 /** SPEC §3.2 — gated by project role, with org owner/admin holding implicit lead. */
@@ -218,4 +224,12 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'time_drafts.manage_own',
   'time_entries.read_own',
   'time_entries.write_own',
+  // **The Solidtime bridge reads and writes hours per person** (LAI-788), so
+  // it follows the rule above: the person's CLI signs in for it, with their
+  // password, and keeps no session — a token, an agent's included, never
+  // reads the hours it would push. Mapping people is an identity a person
+  // vouches for, and pulling everyone writes everyone's hours.
+  'time_sync.own',
+  'time_sync.map',
+  'time_sync.import_all',
 ]);

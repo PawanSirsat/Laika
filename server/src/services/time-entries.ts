@@ -429,6 +429,13 @@ export interface EntryPatch {
   day?: string | undefined;
 }
 
+/**
+ * One of the person's live entries, for them to change — never one that came
+ * from Solidtime (LAI-788 review round 1). Once there, **Solidtime is the
+ * record** (D-088 item 10): an import is changed in Solidtime and the next
+ * pull brings the change here. Changing it here as well is how one hour came
+ * to be deleted from both systems at once.
+ */
 function currentFields(tx: Tx, userId: string, id: string) {
   const row = tx
     .select()
@@ -438,6 +445,13 @@ function currentFields(tx: Tx, userId: string, id: string) {
     )
     .get();
   if (row === undefined) throw ApiError.notFound(`No time entry "${id}"`);
+  if (row.source === 'import') {
+    throw new ApiError(
+      'forbidden',
+      'This entry came from Solidtime: change it there, and the next laika time pull brings it here',
+      { reason: 'imported_entry', entry_id: id },
+    );
+  }
   return row;
 }
 
@@ -520,33 +534,87 @@ export function deleteEntry(
 ): void {
   assertCan(actor, 'time_entries.write_own');
   db.transaction((tx) => {
-    const row = currentFields(tx, actor.userId, id);
-    const revision = row.revision + 1;
-    tx.update(timeEntries)
-      .set({ deletedAt: now, revision, updatedAt: now })
-      .where(eq(timeEntries.id, id))
-      .run();
-    tx.insert(timeEntryRevisions)
-      .values(
-        revisionRow(
-          id,
-          revision,
-          'deleted',
-          actor.userId,
-          {
-            target: { taskId: row.taskId, projectId: row.projectId },
-            day: row.day,
-            tz: row.tz,
-            startedAt: row.startedAt,
-            endedAt: row.endedAt,
-            minutes: row.minutes,
-            note: row.note,
-          },
-          now,
-        ),
-      )
-      .run();
+    currentFields(tx, actor.userId, id);
+    retireEntry(tx, id, actor.userId, now);
   });
+}
+
+/**
+ * Delete an entry inside the caller's transaction: `deleted_at` and a
+ * `deleted` revision by `changedBy`, the row kept. The person's own delete,
+ * and Solidtime's when an entry there is gone (LAI-788). One already deleted
+ * is left as it is. Returns its revision.
+ */
+export function retireEntry(tx: Tx, id: string, changedBy: string, now: number): number {
+  const row = tx.select().from(timeEntries).where(eq(timeEntries.id, id)).get();
+  if (row === undefined) throw ApiError.notFound(`No time entry "${id}"`);
+  if (row.deletedAt !== null) return row.revision;
+  const revision = row.revision + 1;
+  tx.update(timeEntries)
+    .set({ deletedAt: now, revision, updatedAt: now })
+    .where(eq(timeEntries.id, id))
+    .run();
+  tx.insert(timeEntryRevisions)
+    .values(
+      revisionRow(
+        id,
+        revision,
+        'deleted',
+        changedBy,
+        {
+          target: { taskId: row.taskId, projectId: row.projectId },
+          day: row.day,
+          tz: row.tz,
+          startedAt: row.startedAt,
+          endedAt: row.endedAt,
+          minutes: row.minutes,
+          note: row.note,
+        },
+        now,
+      ),
+    )
+    .run();
+  return revision;
+}
+
+/**
+ * An entry changed from outside, inside the caller's transaction — by
+ * Solidtime, which is the record once an entry is there (D-088 item 10,
+ * LAI-788): the new fields as the next `edited` revision by `changedBy`, and
+ * the entry live again if it had been deleted. Refuses a day that would hold
+ * more than a day. Returns the new revision.
+ */
+export function syncEntry(
+  tx: Tx,
+  id: string,
+  fields: EntryFields,
+  changedBy: string,
+  now: number,
+): number {
+  const row = tx.select().from(timeEntries).where(eq(timeEntries.id, id)).get();
+  if (row === undefined) throw ApiError.notFound(`No time entry "${id}"`);
+  assertRoom(tx, row.userId, fields.day, fields.minutes, id);
+  const revision = row.revision + 1;
+  tx.update(timeEntries)
+    .set({
+      taskId: fields.target.taskId,
+      projectId: fields.target.projectId,
+      day: fields.day,
+      tz: fields.tz,
+      startedAt: fields.startedAt,
+      endedAt: fields.endedAt,
+      minutes: fields.minutes,
+      note: fields.note,
+      deletedAt: null,
+      revision,
+      updatedAt: now,
+    })
+    .where(eq(timeEntries.id, id))
+    .run();
+  tx.insert(timeEntryRevisions)
+    .values(revisionRow(id, revision, 'edited', changedBy, fields, now))
+    .run();
+  return revision;
 }
 
 /**

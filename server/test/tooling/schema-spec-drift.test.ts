@@ -576,7 +576,9 @@ describe('the parser itself', () => {
     // count or settle — an organisation's model, a person's plan, a person's
     // five minutes, a session's day, a series, a key, a person's dismissal.
     // LAI-787's are a person's or the organisation's switch, a session's day
-    // of agent time, and a session's split between tasks.
+    // of agent time, and a session's split between tasks. LAI-788's are keyed
+    // by what Solidtime names — a project, a member, an entry — because the
+    // point of each row is to be found again by that id on the next pull.
     const withoutId = [...specTables.entries()]
       .filter(([, fields]) => !fields.includes('id'))
       .map(([table]) => table)
@@ -593,6 +595,9 @@ describe('the parser itself', () => {
       'org_time_settings',
       'plan_limits',
       'pushed_commit_keys',
+      'solidtime_entries',
+      'solidtime_people',
+      'solidtime_projects',
       'task_dependencies',
       'task_round_github',
       'task_tags',

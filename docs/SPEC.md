@@ -203,6 +203,9 @@ be obvious because someone will be asking for it.
 | Send own time drafts | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
 | Read and manage own time drafts | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Read and write own time entries | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| Sync own time with Solidtime | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| Map Solidtime projects and people | ✓ (session only) | ✓ (session only) | — | — |
+| Import everyone's Solidtime time | ✓ (session only) | ✓ (session only) | — | — |
 
 **"View the organisation" is `org.read` and is a read action** (D-048) — a
 `read_only` token may do it. It does **not** cover the AI provider block:
@@ -322,6 +325,22 @@ project's totals and **never a per-person split**.
   and there is **no admin row** for drafts at all. Confirmed time per person is
   never served to a token either, the rule *View own token usage* follows; who
   else may see a person's hours is LAI-789's, behind rows of its own.
+
+**The Solidtime rows are D-088 item 10's** (LAI-788): `time_sync.own`,
+`time_sync.map` and `time_sync.import_all`, behind §6.4's
+`/me/time/solidtime` and `/org/time/solidtime`. All three are **session
+only**.
+
+- **The CLI signs in for them.** Pushing a person's confirmed time to
+  Solidtime means reading it, and the rule above serves it to no token — so
+  `laika time push` and `pull` ask for the person's password, sign in, and
+  keep no session after the run. An agent holding the person's token can
+  neither read the hours nor write them anywhere.
+- **Every role syncs their own**, the time-entry rows' reason; the services
+  touch the caller's own entries only.
+- **Saying which Solidtime member is which person, and pulling everyone, are
+  an owner's or admin's** (D-088 item 7): the CLI suggests a match by email
+  on its own machine, and only the confirmation reaches the board.
 
 ### 3.2 Project-level permission matrix
 
@@ -1726,6 +1745,7 @@ by an owner or admin on a web session (`org.time.set`, §3.1).
 | --- | --- |
 | `org_id` | primary key, FK `orgs`, cascade |
 | `mode` | `off` \| `manual` \| `drafts` — `manual`: people type their own entries; `drafts`: their collectors may also draft their day |
+| `closed_through` | nullable `YYYY-MM-DD` — the last day of the closed period (LAI-788). On or before it a Solidtime change is flagged, never taken, and nothing is written to Solidtime (D-088 item 6). Set by LAI-789's month close; null until then |
 | `updated_at` | |
 
 Leaving `drafts` deletes every draft anybody has not confirmed (§4.47), in the
@@ -1821,7 +1841,7 @@ row.
 | `tz` | IANA zone, stored per entry; the board stays UTC |
 | `started_at`, `ended_at` | nullable, together, end after start (CHECK) — a confirmed block keeps its span |
 | `minutes` | 1–1440 (CHECK); a person's live entries on one day sum to at most 1440 (`422 day_full`) |
-| `source` | `draft` \| `manual` \| `import` |
+| `source` | `draft` \| `manual` \| `import` — an `import` came from Solidtime and is read-only here: changed in Solidtime, and taken by the next pull (LAI-788) |
 | `source_ref` | nullable — the draft it came from, or an import's own id (LAI-788); unique per `(user_id, source)` where set |
 | `note` | nullable, ≤ 280 characters |
 | `revision` | integer ≥ 1, its newest revision's number |
@@ -1892,6 +1912,76 @@ tokens are tied (D-084 item 5).
 Primary key `(user_id, day, collector_id, session_key, task_id)`. Replaced per
 (person, collector, day) with each usage report, as its rows are; kept 400 days
 and deleted with the person's history.
+
+### 4.52 `solidtime_projects`
+
+Which space a Solidtime project's hours belong to (D-088 item 10, LAI-788).
+**Many Solidtime projects to one space** — a customer's *build* and *support*
+may be two projects there and one space here. Set by an owner or admin, signed
+in, from the CLI that can see Solidtime (`time_sync.map`); the server never
+calls Solidtime.
+
+| field | notes |
+| --- | --- |
+| `solidtime_project_id` | primary key — Solidtime's project id |
+| `project_id` | FK `projects`, cascade — the space |
+| `name` | the project's name in Solidtime, 1–255 characters, so a list says what was mapped |
+| `push` | 0 or 1 — the one its space's confirmed time is written to when several map to it; at most one per space (partial unique index) |
+| `updated_by` | FK `users` |
+| `updated_at` | |
+
+A space with one Solidtime project pushes there; with several, to the one
+marked `push`, and holds its time until one is (§6.4). Rates and amounts are
+Solidtime's and never stored (D-088 item 10).
+
+### 4.53 `solidtime_people`
+
+A Solidtime member who is a Laika person (D-088 item 10, LAI-788): **suggested
+by email on the CLI's machine, confirmed by an owner or admin, signed in.**
+Only the confirmation reaches the board — neither side's email. A member with
+no row is one of the *people not on Laika* (§4.54).
+
+| field | notes |
+| --- | --- |
+| `solidtime_member_id` | primary key — Solidtime's member id, not its user id |
+| `user_id` | FK `users`, unique — one member per person |
+| `confirmed_by` | FK `users` |
+| `confirmed_at` | |
+| `updated_at` | |
+
+Undoing a link moves the hours it brought in back to *people not on Laika*:
+each imported entry is deleted from the person's time with a revision. Nothing
+in the closed period moves.
+
+### 4.54 `solidtime_entries`
+
+Every Solidtime entry the board knows (D-088 items 6 and 10, LAI-788): **what
+Laika last took from it or wrote to it.** Solidtime has no webhook, no
+`updated_at`, no soft delete and no idempotency key, so a pull re-reads a
+window whole and compares — a different `hash` is an edit, an id missing is a
+delete — and the same entry is never written twice, whoever's CLI reads it.
+
+| field | notes |
+| --- | --- |
+| `solidtime_id` | primary key — Solidtime's entry id |
+| `member_id` | the Solidtime member it is of |
+| `user_id` | nullable FK `users` — the Laika person; null for *people not on Laika* |
+| `entry_id` | nullable FK `time_entries`, cascade, unique where set — its twin; set exactly when `user_id` is (CHECK) |
+| `entry_revision` | nullable — the twin's revision when the two last agreed |
+| `hash` | the CLI's SHA-256 of the entry's start, end, project, task and the key read from its description — **never the description** |
+| `started_at` | unix ms, Solidtime's start — the window a re-read covers |
+| `day` | `YYYY-MM-DD`, its local day |
+| `minutes` | 1–1440 (CHECK) |
+| `project_id` | nullable FK `projects`, set null — the space |
+| `task_id` | nullable FK `tasks`, set null — the card its key names |
+| `updated_at` | |
+
+Indexes: `(member_id, started_at)` for the window, `(day)` for retention, and
+each FK's. **Once there, Solidtime is the record**: a change Laika has not
+seen is taken over Laika's own — an edit the person made since is counted as a
+conflict and kept in the entry's revisions — and a Laika change goes out only
+while Solidtime still holds what Laika last saw. A person's rows go with their
+entry; *people not on Laika* are kept three years by §11.6, as entries are.
 
 ## 5. Task lifecycle
 
@@ -2143,6 +2233,12 @@ GET    /api/v1/me/time                       ?day=&tz= — My day: drafts, entri
 POST   /api/v1/me/time-entries               body { day, tz, minutes, task?, project?, note? } → 201   PATCH/DELETE .../:id   (session only)
 GET    /api/v1/me/time-entries/:id/revisions an entry's append-only history   (session only)
 PUT    /api/v1/org/time                      body { mode } — off | manual | drafts   (owner, admin; session only; LAI-787)
+GET    /api/v1/me/time/solidtime             ?since= — what the person's CLI writes to Solidtime → { closed_through, push, held, projects, taken }   (session only; LAI-788)
+PUT    /api/v1/me/time/solidtime/links       body { member_id, links } — what it wrote → { linked, removed, retired }   (session only)
+PUT    /api/v1/me/time/solidtime/import      body { v, member_id, tz, from, to, complete, entries } → what changed   (session only)
+GET    /api/v1/org/time/solidtime            the map, the people confirmed, and people not on Laika   (owner, admin; session only)
+PUT    /api/v1/org/time/solidtime/projects   body { projects } → { projects }   PUT .../people body { people } → { people }   (owner, admin; session only)
+PUT    /api/v1/org/time/solidtime/import     body { v, members, tz, from, to, complete, entries } → what changed, and not_on_laika   (owner, admin; session only)
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only)
 POST   /api/v1/org/github-webhook            set or rotate the GitHub webhook secret; answers it once (session only)
 DELETE /api/v1/org/github-webhook            clear it (204; session only)
@@ -2764,10 +2860,64 @@ parameter names anybody else.
   transaction, an untied one as *General*, answering `{ entries }`.
   `POST /me/time-entries` is time typed by hand — a meeting, a call — needing
   only the organisation's *Time* not `off` (`403 time_off`). `PATCH` and
-  `DELETE /me/time-entries/:id` write the next revision; `GET …/revisions`
+  `DELETE /me/time-entries/:id` write the next revision — except on an entry
+  imported from Solidtime, which is changed there and refused here `403
+  imported_entry` (LAI-788); `GET …/revisions`
   answers `{ revisions }`, oldest first. A day holds at most 1440 minutes of a
   person's live entries (`422 day_full`). All of these are **session only**:
   no token reads, confirms or writes a person's time.
+
+**The Solidtime bridge (D-088 items 6 and 10, LAI-788).** The board never
+calls Solidtime: the person's CLI does, with their own Solidtime key kept on
+their machine, and tells the board what it did. Every route is **session
+only** — the CLI signs in for the run and keeps no session.
+
+- **The outbox.** `GET /me/time/solidtime?since=` answers `{ closed_through,
+  push, held, projects, taken }`. Each `push` item is `{ entry_id, revision,
+  action, day, tz, started_at, offset_minutes, minutes, task, project,
+  solidtime_project_id, note, moved, solidtime }`: `create` for a confirmed or
+  typed entry (`draft`, `manual` — never `import`, never agent minutes) on or
+  after `since` that Solidtime has not got; `update` for one it has that
+  changed in Laika since they last agreed; `delete` for one deleted in Laika.
+  `solidtime` is `{ id, hash, started_at }` as Laika last saw it, for the CLI
+  to compare before it writes; `moved` says an update's card or space changed
+  in Laika, the only time the CLI may change Solidtime's project and
+  description. A timeless entry starts at 09:00 local plus `offset_minutes`,
+  the day's earlier timeless minutes. `held` is
+  `{ entry_id, day, reason }`: `closed_period`, `space_not_mapped` or
+  `space_has_several_projects`. `projects` is each space's push target,
+  `{ space, space_id, solidtime_project_id }`. `taken` is the Solidtime ids
+  already twinned with the person's confirmed or typed entries near the days
+  to create, which the CLI's duplicate check must never take for a new one.
+- **Links.** `PUT /me/time/solidtime/links` takes `{ member_id, links:
+  [{ entry_id, revision, solidtime_id, hash, started_at, removed? }] }` —
+  what the CLI created, updated or deleted — and answers `{ linked, removed,
+  retired }`; a Solidtime entry an admin's pull had already brought in as the
+  person's import is that entry's duplicate, deleted (`retired`).
+- **An import.** `PUT /me/time/solidtime/import` takes `{ v: 1, member_id,
+  tz, from, to, complete, entries: [{ id, start, end, project_id, key, hash
+  }] }` — unix ms, at most 92 days and 2000 entries, `key` a key read from the
+  description or `null`, and **no field for the description**. An entry new to
+  Laika becomes an `import` entry on the card its key names — never guessed,
+  as §4.5's outside ids — else on its project's mapped space, else *General*;
+  a different `hash` is an edit; with `complete`, an entry missing from the
+  window is a delete. It answers `{ created, updated, deleted, unchanged,
+  ignored, conflicts, flagged }`; `flagged` is `{ solidtime_id, day, reason }`
+  — `closed_period`, `day_full`, `day_out_of_range`, `too_long` — never
+  taken. Under half a minute is `ignored`. `409 member_linked_elsewhere` when
+  an admin confirmed the member as somebody else.
+- **Everyone's.** `PUT /org/time/solidtime/import` takes `members` — every
+  member the batch carries, the only ones an absence can delete — and an
+  entry's `member_id`; a confirmed member's time is theirs, dated on their
+  own day (D-088 item 12) — in the zone of their latest confirmed or typed
+  entry, else their drafts', else their activity reports', else the batch's
+  `tz` — and anybody else's is kept as *people not on Laika*, in the batch's
+  zone, and counted in `not_on_laika: { people, minutes }`. `GET /org/time/solidtime` answers `{ closed_through, projects,
+  people, not_on_laika }`, the last with each member's minutes;
+  `PUT …/projects` takes `{ projects: [{ solidtime_project_id, name, space,
+  push? }] }` (`space: null` unmaps) and `PUT …/people` `{ people: [{
+  solidtime_member_id, user_id }] }` (`user_id: null` undoes). Owners and
+  admins only.
 
 **API-equivalent prices.** `GET /org/model-prices` answers `{ as_of, can_set,
 entries }` under `org.read` — every price in force, the organisation's first:
@@ -4087,8 +4237,9 @@ One interval-driven scheduler in the same process:
   days ago, whatever their state, and `time_entries` dated before three years
   ago with their revisions, daily **and once at boot**, under §3.4's
   `system.time.prune`. Triggers refuse deleting a younger entry and replacing
-  any (§4.48), so nothing else removes one. No `activity` row, for the reason
-  local activity's has none
+  any (§4.48), so nothing else removes one. Solidtime's rows (§4.54) follow: a
+  person's with their entry, *people not on Laika* by the same three years
+  (LAI-788). No `activity` row, for the reason local activity's has none
 - **stale-task flagging** — `in_progress` with no heartbeat or commit for 3 days
   sets `stale_flagged_at`
 - invite expiry, meeting-review expiry (7 days)
@@ -4210,6 +4361,13 @@ computed from what the board already holds and shown to the developer alone.
 and sends only start, end, the local day and zone, a task key or none, and the
 counts of the signals behind each block — never prompt text, paths, repository
 or branch names, or window titles — to a store only they read, signed in.
+
+**Solidtime is reached by the person's CLI, never by the board** (D-088 item
+10, LAI-788). The developer's own Solidtime URL and key stay in a `0600` file
+on their machine and are never sent to Laika; the CLI writes their confirmed
+entries to Solidtime and brings back what they logged there, sending the
+board start, end, a key read from each description and a digest — never the
+description, never a rate or an amount.
 
 ---
 

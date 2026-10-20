@@ -28,6 +28,23 @@ import {
   setTimeSettings,
   TIME_MODES,
 } from '../../services/time-settings.ts';
+import {
+  assertSolidtimeAccess,
+  importAllSolidtime,
+  importOwnSolidtime,
+  recordSolidtimeLinks,
+  setSolidtimePeople,
+  setSolidtimeProjects,
+  SOLIDTIME_BATCH_MAX,
+  SOLIDTIME_BODY_MAX,
+  SOLIDTIME_HASH,
+  solidtimeOutbox,
+  solidtimeSetup,
+  type AllImportResult,
+  type ImportResult,
+  type SolidtimeOutbox,
+  type SolidtimeSetup,
+} from '../../services/time-solidtime.ts';
 import { TASK_KEY_PATTERN } from '../../services/token-usage.ts';
 import { type AppEnv } from '../context.ts';
 import { parseBody, parseParams, parseQuery, strictObject, z } from '../validation.ts';
@@ -130,6 +147,81 @@ const EntryPatchBody = strictObject({
 });
 
 const MyDayQuery = strictObject({ day: day.optional(), tz: zone.optional() });
+
+// The Solidtime bridge (LAI-788). **No field can hold a description**: an
+// entry carries the key the CLI read from it, or none, and a digest.
+const solidtimeId = z.string().trim().min(1).max(64);
+const digest = z.string().regex(SOLIDTIME_HASH, 'hash is SHA-256 in lower-case hex');
+const instant = z.number().int().min(0);
+
+const OutboxQuery = strictObject({ since: day });
+
+const LinksBody = strictObject({
+  member_id: solidtimeId,
+  links: z
+    .array(
+      strictObject({
+        entry_id: z.string().min(1).max(64),
+        revision: z.number().int().min(1),
+        solidtime_id: solidtimeId,
+        hash: digest,
+        started_at: instant,
+        removed: z.literal(true).optional(),
+      }),
+    )
+    .max(SOLIDTIME_BATCH_MAX),
+});
+
+const ImportedEntry = strictObject({
+  id: solidtimeId,
+  member_id: solidtimeId.optional(),
+  start: instant,
+  end: instant,
+  project_id: solidtimeId.nullable(),
+  key: z
+    .string()
+    .regex(TASK_KEY_PATTERN, 'a key is a Laika key or an outside id, PREFIX-n')
+    .nullable(),
+  hash: digest,
+});
+
+const importWindow = {
+  v: z.literal(1),
+  tz: zone,
+  from: instant,
+  to: instant,
+  complete: z.boolean(),
+  entries: z.array(ImportedEntry).max(SOLIDTIME_BATCH_MAX),
+};
+const OwnImportBody = strictObject({ ...importWindow, member_id: solidtimeId });
+const AllImportBody = strictObject({
+  ...importWindow,
+  members: z.array(solidtimeId).max(SOLIDTIME_BATCH_MAX),
+});
+
+const SolidtimeProjectsBody = strictObject({
+  projects: z
+    .array(
+      strictObject({
+        solidtime_project_id: solidtimeId,
+        name: z.string().trim().min(1).max(255),
+        space: slug.nullable(),
+        push: z.boolean().optional(),
+      }),
+    )
+    .max(SOLIDTIME_BATCH_MAX),
+});
+
+const SolidtimePeopleBody = strictObject({
+  people: z
+    .array(
+      strictObject({
+        solidtime_member_id: solidtimeId,
+        user_id: z.string().min(1).max(64).nullable(),
+      }),
+    )
+    .max(SOLIDTIME_BATCH_MAX),
+});
 const IdParams = z.object({ id: z.string().min(1).max(64) });
 const DayParams = z.object({ day });
 
@@ -226,10 +318,36 @@ export function meTimeRoutes(options: { db: Db }): Hono<AppEnv> {
     return c.json({ revisions: listRevisions(db, actor, parseParams(IdParams, c.req.param()).id) });
   });
 
+  // The Solidtime bridge (LAI-788): the person's own CLI, signed in.
+  app.get('/time/solidtime', (c) => {
+    const actor = requireActor(c);
+    assertSolidtimeAccess(db, actor, 'time_sync.own');
+    return c.json<SolidtimeOutbox>(
+      solidtimeOutbox(db, actor, parseQuery(OutboxQuery, c.req.query())),
+    );
+  });
+
+  app.put('/time/solidtime/links', bodyLimit({ maxSize: SOLIDTIME_BODY_MAX }), async (c) => {
+    const actor = requireActor(c);
+    assertSolidtimeAccess(db, actor, 'time_sync.own');
+    return c.json(recordSolidtimeLinks(db, actor, parseBody(LinksBody, await json(c))));
+  });
+
+  app.put('/time/solidtime/import', bodyLimit({ maxSize: SOLIDTIME_BODY_MAX }), async (c) => {
+    const actor = requireActor(c);
+    assertSolidtimeAccess(db, actor, 'time_sync.own');
+    return c.json<ImportResult>(
+      importOwnSolidtime(db, actor, parseBody(OwnImportBody, await json(c))),
+    );
+  });
+
   return app;
 }
 
-/** `PUT /org/time` — the organisation's *Time*, owners and admins on a web session. */
+/**
+ * `PUT /org/time` — the organisation's *Time*, owners and admins on a web
+ * session — and the Solidtime bridge's map, people and pull of everyone.
+ */
 export function orgTimeRoutes(options: { db: Db }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db } = options;
@@ -237,6 +355,31 @@ export function orgTimeRoutes(options: { db: Db }): Hono<AppEnv> {
   app.put('/time', async (c) => {
     const actor = requireActor(c);
     return c.json(setOrgTimeMode(db, actor, parseBody(OrgTimeBody, await json(c)).mode));
+  });
+
+  // The Solidtime bridge (LAI-788): an owner's or admin's CLI, signed in.
+  app.get('/time/solidtime', (c) => c.json<SolidtimeSetup>(solidtimeSetup(db, requireActor(c))));
+
+  app.put('/time/solidtime/projects', async (c) => {
+    const actor = requireActor(c);
+    assertSolidtimeAccess(db, actor, 'time_sync.map');
+    const body = parseBody(SolidtimeProjectsBody, await json(c));
+    return c.json({ projects: setSolidtimeProjects(db, actor, body) });
+  });
+
+  app.put('/time/solidtime/people', async (c) => {
+    const actor = requireActor(c);
+    assertSolidtimeAccess(db, actor, 'time_sync.map');
+    const body = parseBody(SolidtimePeopleBody, await json(c));
+    return c.json({ people: setSolidtimePeople(db, actor, body) });
+  });
+
+  app.put('/time/solidtime/import', bodyLimit({ maxSize: SOLIDTIME_BODY_MAX }), async (c) => {
+    const actor = requireActor(c);
+    assertSolidtimeAccess(db, actor, 'time_sync.import_all');
+    return c.json<AllImportResult>(
+      importAllSolidtime(db, actor, parseBody(AllImportBody, await json(c))),
+    );
   });
 
   return app;
