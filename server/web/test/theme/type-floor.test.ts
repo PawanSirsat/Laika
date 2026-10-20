@@ -7,8 +7,9 @@
  * text is 14px, the floor is 12px, and 11px is allowed only on the short list
  * of badges and counters below, where 12px truly cannot fit.
  *
- * The test reads every `font-size` in `src/**\/*.css`, every type role and
- * every density override. It holds three rules:
+ * The test reads every size in `src/**\/*.css` — `font-size`, and the size in a
+ * `font` shorthand, with or without the `;` a block's last declaration may
+ * omit — every type role and every density override. It holds three rules:
  *
  *  - **Tokens only.** A `font-size` is `var(--text-<step>)` for a step of
  *    `TYPE_SCALE`, or `0` — the toolbar's "hide the label, keep the icon"
@@ -114,11 +115,51 @@ function stepOf(value: string): StepName | null {
 interface Declaration {
   readonly where: string;
   readonly selector: string;
+  /** `font-size`, or `font` when the size came from the shorthand. */
+  readonly property: 'font-size' | 'font';
   readonly value: string;
   readonly px: number | null;
 }
 
-/** Every `font-size`, with the selector of the rule it sits in. */
+/** The CSS-wide keywords: a `font` shorthand set to one of these names no size. */
+const CSS_WIDE = /^(inherit|initial|unset|revert|revert-layer)$/;
+
+/** A size as the `font` shorthand may give it: a length, a step token, a keyword. */
+const SHORTHAND_SIZE =
+  /^([0-9.]+(px|rem|em|%)|var\(--text-[a-z0-9-]+\)|(xx?-|xxx-)?(small|large)|medium|smaller|larger)$/;
+
+/**
+ * The size inside a `font` shorthand: `null` when it sets none (`font: inherit`),
+ * else the size token — or the whole value when no token reads as a size, such
+ * as a system font (`font: caption`), so `px()` cannot read it and the test
+ * below names it instead of passing over it.
+ */
+function shorthandSize(value: string): string | null {
+  if (CSS_WIDE.test(value)) return null;
+  for (const token of value.split(/\s+/)) {
+    const size = token.split('/')[0] ?? '';
+    if (SHORTHAND_SIZE.test(size)) return size;
+  }
+  return value;
+}
+
+/**
+ * A rule body's declarations, split on `;` rather than matched up to one: the
+ * last declaration in a block needs no `;`, and `font-size: 11px }` is as much
+ * a size as one that has it.
+ */
+function declarations(body: string): [string, string][] {
+  return body
+    .split(';')
+    .map((d) => d.trim())
+    .filter((d) => d.indexOf(':') > 0)
+    .map((d) => [
+      d.slice(0, d.indexOf(':')).trim().toLowerCase(),
+      d.slice(d.indexOf(':') + 1).trim(),
+    ]);
+}
+
+/** Every size a stylesheet sets — `font-size` or the `font` shorthand — with its selector. */
 const DECLARATIONS: Declaration[] = CSS_FILES.flatMap((file) =>
   [
     ...readFileSync(file, 'utf8')
@@ -128,9 +169,11 @@ const DECLARATIONS: Declaration[] = CSS_FILES.flatMap((file) =>
     // `@import …;` lines have no braces, so they ride along at the front of
     // the first rule's selector; the selector is what follows the last `;`.
     const selector = (rule[1] ?? '').split(';').pop()?.replace(/\s+/g, ' ').trim() ?? '';
-    return [...(rule[2] ?? '').matchAll(/font-size:\s*([^;]+);/g)].map((m) => {
-      const value = (m[1] ?? '').trim();
-      return { where: relative(SRC, file), selector, value, px: px(value) };
+    return declarations(rule[2] ?? '').flatMap(([property, raw]): Declaration[] => {
+      if (property !== 'font-size' && property !== 'font') return [];
+      const value = property === 'font' ? shorthandSize(raw) : raw;
+      if (value === null) return [];
+      return [{ where: relative(SRC, file), selector, property, value, px: px(value) }];
     });
   }),
 );
@@ -138,7 +181,7 @@ const DECLARATIONS: Declaration[] = CSS_FILES.flatMap((file) =>
 const isMyDay = (d: Declaration) => d.where.startsWith(MY_DAY);
 const isRootAnchor = (d: Declaration) =>
   d.where === 'index.css' && d.selector === ':root' && d.value === '16px';
-const label = (d: Declaration) => `${d.where} ${d.selector}: ${d.value}`;
+const label = (d: Declaration) => `${d.where} ${d.selector} ${d.property}: ${d.value}`;
 
 void describe('the type floor', () => {
   void test('the scan reaches the files the owner pointed at', () => {
