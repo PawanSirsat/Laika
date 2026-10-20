@@ -1,5 +1,6 @@
 /**
- * The type roles in CSS say exactly what `TYPE_ROLES` says (LAI-606).
+ * The type scale and roles in CSS say exactly what `type-roles.ts` says (LAI-606,
+ * LAI-828).
  *
  * The brief asks for the classes to be *generated* from one object so the two
  * cannot drift. They are hand-written instead — CSS cannot import TypeScript,
@@ -15,7 +16,17 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
-import { DENSITY, rem, ROLE_NAMES, ROLES } from '../../src/theme/type-roles.ts';
+import { LEADING_TOKENS, TYPE_TOKENS } from '../../src/theme/token-list.ts';
+import {
+  DENSITY,
+  leadingCss,
+  LEGACY_TEXT_ALIASES,
+  rem,
+  ROLE_NAMES,
+  ROLES,
+  STEP_NAMES,
+  TYPE_SCALE,
+} from '../../src/theme/type-roles.ts';
 
 const CSS = readFileSync(new URL('../../src/styles/type.css', import.meta.url).pathname, 'utf8');
 
@@ -35,6 +46,57 @@ function block(name: string): Record<string, string> {
       }),
   );
 }
+
+/** The custom properties in type.css's `:root` block, in source order. */
+function rootVars(): [string, string][] {
+  const match = /^:root\s*\{([^}]*)\}/m.exec(CSS);
+  assert.ok(match?.[1], 'no :root block in type.css');
+  return [...match[1].matchAll(/(--[a-z0-9-]+):\s*([^;]+);/g)].map((m) => [m[1] ?? '', m[2] ?? '']);
+}
+
+void describe('the scale in CSS is TYPE_SCALE', () => {
+  void test('the seven steps LAI-828 names, at the sizes the owner asked for', () => {
+    // Stated independently of TYPE_SCALE, for the same reason as the role list
+    // below: a step lost from the object would vanish from CSS and test alike.
+    assert.deepEqual(
+      Object.fromEntries(STEP_NAMES.map((s) => [s, [TYPE_SCALE[s].size, TYPE_SCALE[s].leading]])),
+      {
+        tiny: [11, 16],
+        small: [12, 16],
+        body: [14, 20],
+        reading: [16, 24],
+        'heading-sm': [16, 20],
+        'heading-md': [20, 24],
+        'heading-lg': [24, 28],
+      },
+    );
+  });
+
+  void test('every step is declared once, in rem, size and leading', () => {
+    const vars = new Map(rootVars());
+    for (const step of STEP_NAMES) {
+      assert.equal(vars.get(`--text-${step}`), rem(TYPE_SCALE[step].size), `--text-${step}`);
+      assert.equal(
+        vars.get(`--leading-${step}`),
+        rem(TYPE_SCALE[step].leading),
+        `--leading-${step}`,
+      );
+    }
+  });
+
+  void test('the root block declares the scale, the legacy aliases, and nothing else', () => {
+    assert.deepEqual(
+      rootVars()
+        .map(([name]) => name)
+        .sort(),
+      [...TYPE_TOKENS, ...LEADING_TOKENS, ...Object.keys(LEGACY_TEXT_ALIASES)].sort(),
+    );
+    const vars = new Map(rootVars());
+    for (const [alias, step] of Object.entries(LEGACY_TEXT_ALIASES)) {
+      assert.equal(vars.get(alias), `var(--text-${step})`, alias);
+    }
+  });
+});
 
 void describe('every role matches its declaration', () => {
   void test('the sixteen roles the brief names, plus avatar, all exist', () => {
@@ -75,15 +137,9 @@ void describe('every role matches its declaration', () => {
       const css = block(name);
 
       assert.equal(css['font-family'], `var(--font-${role.family})`, 'family');
-      assert.equal(css['font-size'], rem(role.size), 'size');
+      assert.equal(css['font-size'], `var(--text-${role.step})`, 'size');
       assert.equal(css['font-weight'], String(role.weight), 'weight');
-      assert.equal(
-        css['line-height'],
-        typeof role.leading === 'number'
-          ? String(role.leading)
-          : rem(Number.parseFloat(role.leading)),
-        'line-height',
-      );
+      assert.equal(css['line-height'], leadingCss(role.leading, role.step), 'line-height');
       assert.equal(
         css['letter-spacing'],
         role.tracking === 0 ? '0' : `${String(role.tracking)}em`,
@@ -144,14 +200,14 @@ void describe('every role matches its declaration', () => {
     }
   });
 
-  void test('density overrides size and leading only, never weight or colour', () => {
+  void test('density overrides step and leading only, never weight or colour', () => {
     // The rule that keeps a dense board the same hierarchy, closer together.
     for (const roles of Object.values(DENSITY)) {
       for (const [role, over] of Object.entries(roles)) {
         assert.deepEqual(
-          Object.keys(over).filter((k) => k !== 'size' && k !== 'leading'),
+          Object.keys(over).filter((k) => k !== 'step' && k !== 'leading'),
           [],
-          `density override for '${role}' changes more than size and leading`,
+          `density override for '${role}' changes more than step and leading`,
         );
       }
     }

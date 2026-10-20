@@ -9,6 +9,8 @@
  * token added to one place shows up as a failure in the other.
  */
 
+import { STEP_NAMES } from './type-roles.ts';
+
 export interface TokenGroup {
   readonly title: string;
   readonly note: string;
@@ -121,18 +123,13 @@ export const ALL_COLOR_TOKENS: readonly string[] = COLOR_TOKENS.flatMap((g) => g
 /** Themed but not a colour, so it is listed separately. */
 export const ELEVATION_TOKENS = ['--shadow-card'] as const;
 
-/** Theme-independent. */
-export const TYPE_TOKENS = [
-  '--text-xs',
-  '--text-sm',
-  '--text-base',
-  '--text-ui',
-  '--text-md',
-  '--text-lg',
-  '--text-xl',
-  '--text-mono',
-  '--leading-body',
-] as const;
+/**
+ * Theme-independent: the type scale's sizes and line-heights, one pair per step.
+ * Declared in `styles/type.css`, not here in `theme.css` — generated from
+ * `TYPE_SCALE` (LAI-828), so this list is derived rather than typed out.
+ */
+export const TYPE_TOKENS: readonly string[] = STEP_NAMES.map((step) => `--text-${step}`);
+export const LEADING_TOKENS: readonly string[] = STEP_NAMES.map((step) => `--leading-${step}`);
 
 export const WEIGHT_TOKENS = [
   '--weight-normal',

@@ -11,21 +11,21 @@
  */
 
 import { writeFileSync } from 'node:fs';
-import { DENSITY, rem, ROLE_NAMES, ROLES } from '../src/theme/type-roles.ts';
-
-/**
- * A ratio stays a ratio; a px length is emitted in rem.
- *
- * Both forms exist because both are meant — see `TypeRole.leading`. Converting
- * a px line-height to a ratio here would silently make it scale with the size,
- * which is the property it was chosen to avoid.
- */
-function leading(value: number | `${number}px`): string {
-  return typeof value === 'number' ? String(value) : rem(Number.parseFloat(value));
-}
+import {
+  DENSITY,
+  leadingCss,
+  LEGACY_TEXT_ALIASES,
+  rem,
+  ROLE_NAMES,
+  ROLES,
+  STEP_NAMES,
+  TYPE_SCALE,
+  type RoleName,
+  type StepName,
+} from '../src/theme/type-roles.ts';
 
 const header = `/*
- * The type roles, as classes — GENERATED (LAI-606).
+ * The type scale and the type roles — GENERATED (LAI-606, LAI-828).
  *
  * Source of truth: \`theme/type-roles.ts\`. Regenerate with
  * \`npx tsx scripts/generate-type-css.ts\`; \`type-roles.test.ts\` fails if this
@@ -37,14 +37,32 @@ const header = `/*
  */
 `;
 
+const scaleNote = `/*
+ * The scale (LAI-828): every font-size in a stylesheet is one of these.
+ * \`--text-*\` is the size and \`--leading-*\` its line-height, as Atlassian
+ * pairs them. The aliases after it are the pre-LAI-828 names, for My day only
+ * until LAI-831 moves it onto the steps; \`type-floor.test.ts\` holds both rules.
+ */`;
+
+const scale = [
+  ':root {',
+  ...STEP_NAMES.flatMap((step) => [
+    `  --text-${step}: ${rem(TYPE_SCALE[step].size)};`,
+    `  --leading-${step}: ${rem(TYPE_SCALE[step].leading)};`,
+  ]),
+  '',
+  ...Object.entries(LEGACY_TEXT_ALIASES).map(([alias, step]) => `  ${alias}: var(--text-${step});`),
+  '}',
+].join('\n');
+
 const blocks = ROLE_NAMES.map((name) => {
   const r = ROLES[name];
   const lines = [
     `.t-${name} {`,
     `  font-family: var(--font-${r.family});`,
-    `  font-size: ${rem(r.size)};`,
+    `  font-size: var(--text-${r.step});`,
     `  font-weight: ${String(r.weight)};`,
-    `  line-height: ${leading(r.leading)};`,
+    `  line-height: ${leadingCss(r.leading, r.step)};`,
     `  letter-spacing: ${r.tracking === 0 ? '0' : `${String(r.tracking)}em`};`,
     `  color: ${r.color === 'inherit' ? 'inherit' : `var(--${r.color})`};`,
   ];
@@ -66,21 +84,28 @@ const densityNote = `/*
  */`;
 
 const density = Object.entries(DENSITY).flatMap(([, roles]) =>
-  Object.entries(roles).map(([role, over]) => {
-    const lines = [`.kanban-dense .t-${role} {`];
-    if (over.size !== undefined) lines.push(`  font-size: ${rem(over.size)};`);
-    if ('leading' in over && over.leading !== undefined)
-      lines.push(`  line-height: ${leading(over.leading)};`);
-    lines.push('}');
-    return lines.join('\n');
-  }),
+  Object.entries(roles).map(
+    ([role, over]: [string, { step?: StepName; leading?: number | 'step' }]) => {
+      const step = over.step ?? ROLES[role as RoleName].step;
+      const lines = [`.kanban-dense .t-${role} {`];
+      if (over.step !== undefined) lines.push(`  font-size: var(--text-${over.step});`);
+      if (over.leading !== undefined)
+        lines.push(`  line-height: ${leadingCss(over.leading, step)};`);
+      lines.push('}');
+      return lines.join('\n');
+    },
+  ),
 );
 
 writeFileSync(
   new URL('../src/styles/type.css', import.meta.url).pathname,
   // trimEnd each piece: the header template ends in its own newline, and a
   // double blank after join is exactly what `pnpm format` rejects.
-  [header, ...blocks, densityNote, ...density].map((s) => s.trimEnd()).join('\n\n') + '\n',
+  [header, scaleNote, scale, ...blocks, densityNote, ...density]
+    .map((s) => s.trimEnd())
+    .join('\n\n') + '\n',
 );
 
-console.log(`${String(ROLE_NAMES.length)} roles, ${String(density.length)} density overrides`);
+console.log(
+  `${String(STEP_NAMES.length)} steps, ${String(ROLE_NAMES.length)} roles, ${String(density.length)} density overrides`,
+);

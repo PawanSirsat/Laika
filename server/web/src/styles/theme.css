@@ -14,8 +14,8 @@
  * *same* list — no theme may invent a token, because a component reading it
  * would then break on the themes that lack it. Add to one, add to all.
  *
- * **Shared tokens** sit outside the blocks: type, weight, radius, spacing,
- * transitions. They are the same in every theme by definition, and repeating
+ * **Shared tokens** sit outside the blocks: weight, radius, spacing,
+ * transitions — and the type scale, which is in `styles/type.css`. They are the same in every theme by definition, and repeating
  * them per block is how they drift apart.
  *
  * ## Semantic names only
@@ -230,31 +230,17 @@
   --font-mono: 'JetBrains Mono Variable', ui-monospace, Menlo, monospace;
 
   /*
-   * The prototype's scale (LAI-605). It is authored small — the board reads
-   * at 13.5px titles and 10.5px column heads — and the owner chose the file's
-   * numbers over the earlier addendum's.
-   *
-   * LAI-706 lifted every step under 13.5px, because on a laptop the small end
-   * was too small to read. The comments name the sizes as they are now; the
-   * prototype's originals are in git. `type-floor.test.ts` keeps 10px as the
-   * floor.
+   * The type scale — sizes and their line-heights — lives in `styles/type.css`,
+   * generated from `theme/type-roles.ts` (LAI-828). It was here until the owner
+   * asked for Jira's sizes; the prototype's 13.5px titles and 10.5px heads are
+   * in git.
    */
-  --text-xs: 0.6875rem; /* 11px — chips, sidebar group headings */
-  --text-sm: 0.71875rem; /* 11.5px — blocked banner, column meta, counts */
-  --text-base: 0.75rem; /* 12px — issue keys, sprint tile names */
-  --text-ui: 0.8125rem; /* 13px — buttons, working-now names, search */
-  --text-md: 0.84375rem; /* 13.5px — tabs */
-  --text-lg: 0.84375rem; /* 13.5px — card titles */
-  --text-xl: 1.1875rem; /* 19px — space title */
-  --text-mono: 0.75rem; /* 12px — keys */
 
   --weight-normal: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
   --weight-heavy: 800;
-
-  --leading-body: 1.45;
 
   /* 4px grid. */
   --space-1: 0.25rem;
