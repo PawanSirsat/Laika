@@ -24,7 +24,7 @@ compact form, where `m` could be read as months:
 | `server/web/src/routes/screens/ProjectStats.tsx:26` | `3m ago`, `2h ago`, `4d ago` |
 | `server/web/src/routes/screens/task/TaskMeta.tsx:77` | `3m ago`, `2h ago`, `4d ago` |
 | `server/web/src/routes/screens/timeline/TimelineScreen.tsx:65` | `starts in 3d`, `ended 3d ago` |
-| `server/web/src/api/board-derive.ts:144` `staleFor` / `updatedAge` | `12m`, `2h`, `3d` (card footer) |
+| `server/web/src/api/board-derive.ts:148,186` `staleFor` / `updatedAge` | `12m`, `2h`, `3d` (card footer) |
 
 `board-derive.ts`'s compact form on the card footer was kept on purpose
 (D-065: a footer has no room); this task should say whether that still
