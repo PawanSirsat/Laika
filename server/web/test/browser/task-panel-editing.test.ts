@@ -286,6 +286,8 @@ function stub(server: Server, role: 'lead' | 'viewer' = 'lead'): ApiStub {
       users: [
         { id: 'u1', name: 'Ada Lovelace' },
         { id: 'u2', name: 'Grace Hopper' },
+        // No member row, so no handle: written by name — a name with HTML in it.
+        { id: 'u9', name: 'Mallory <b>Root</b>' },
       ],
     },
     '/api/v1/projects/laika-core/sprints': { data: [], next_cursor: null },
@@ -519,17 +521,27 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
       const before = await main.evaluate((el) => el.scrollTop);
       const text = await description(h).locator('.md p').first().boundingBox();
       assert.ok(text !== null);
-      await h.page.mouse.click(text.x + 8, text.y + text.height / 2);
+      // On the first line, not the paragraph's middle — between two lines the
+      // caret may land on either (review round 1: this flaked once in two).
+      await h.page.mouse.click(text.x + 8, text.y + 8);
       const editor = description(h).locator('.rich-editor');
       await content(editor).waitFor({ timeout: 10_000 });
-      await h.page.waitForTimeout(400);
+      /** Which top-level block of the editor holds the caret, by index. */
+      const caretBlock = (): Promise<number> =>
+        h.page.evaluate(() => {
+          const doc = document.querySelector('.rich-editor .ProseMirror');
+          const node = window.getSelection()?.anchorNode ?? null;
+          if (doc === null || node === null || !doc.contains(node)) return -1;
+          return [...doc.children].findIndex((block) => block.contains(node));
+        });
+      // Wait for what is asserted: the caret placed in the editor at all.
+      await until(async () => (await caretBlock()) !== -1, 5_000);
+      await h.page.waitForTimeout(200);
       const after = await main.evaluate((el) => el.scrollTop);
       assert.ok(Math.abs(after - before) <= 2, `the panel scrolled ${String(after - before)}px`);
-      // And the caret is where the click was: in the paragraph, not at the end.
-      assert.match(
-        await h.page.evaluate(() => window.getSelection()?.anchorNode?.textContent ?? ''),
-        /every trip of the day|The console loads/,
-      );
+      // And the caret is where the click was: the first paragraph (block 1,
+      // after the heading), not the end of the document.
+      assert.equal(await caretBlock(), 1, 'the caret is not in the paragraph clicked');
     } finally {
       await h.close();
     }
@@ -914,6 +926,104 @@ void describe('acceptance edits in place like the description', () => {
       assert.deepEqual(patches(h)[0]?.body, {
         acceptance_md: `${ACCEPTANCE}\n- [ ] the map is unchanged`,
       });
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('review round 1: a save never rewrites what was not touched', () => {
+  const BASE = [
+    'Set next_cursor; see https://example.com/a_b.',
+    '',
+    'p95 < 1 s, A -> B.',
+    '',
+    '\\# literal hash',
+  ].join('\n');
+
+  /** Open BASE, add a paragraph after its last line, and type into it. */
+  async function addParagraph(h: Harness, typed: string): Promise<Locator> {
+    await description(h).locator('.md p').last().waitFor({ timeout: 20_000 });
+    const editor = await openEditor(h);
+    await caretAtEnd(h.page, content(editor).locator('p').last());
+    await h.page.keyboard.press('Enter');
+    await h.page.keyboard.type(typed);
+    return editor;
+  }
+
+  void test('typing the <br> tag leaves every other paragraph byte for byte', async () => {
+    const server: Server = { t3: subject({ description_md: BASE }) };
+    const h = await open(URL, stub(server), { before: fakeStream });
+    try {
+      const editor = await addParagraph(h, 'the <br> tag');
+      await editor.getByRole('button', { name: 'Save' }).click();
+      await until(() => patches(h).length > 0, 5_000);
+      assert.deepEqual(patches(h)[0]?.body, { description_md: `${BASE}\n\nthe \\<br> tag` });
+      // Read back by the safe renderer: the words, no break.
+      await editor.waitFor({ state: 'detached', timeout: 5_000 });
+      assert.match(await description(h).locator('.md').innerText(), /the <br> tag/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a change that would not read back as typed is not saved: the reason, and the draft as Markdown', async () => {
+    const server: Server = { t3: subject({ description_md: BASE }) };
+    const h = await open(URL, stub(server), { before: fakeStream });
+    try {
+      // Four leading spaces are a code block in markdown, however it is escaped.
+      const editor = await addParagraph(h, '    indented');
+      await editor.getByRole('button', { name: 'Save' }).click();
+      const source = editor.locator('textarea.rich-editor-source');
+      await source.waitFor({ timeout: 5_000 });
+      assert.equal(patches(h).length, 0, 'a text that reads back differently was saved');
+      assert.match(await editor.locator('.rich-editor-notice').innerText(), /Not saved/);
+      assert.equal(await source.inputValue(), `${BASE}\n\n    indented`);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Escape on a toolbar button asks first, and the panel stays', async () => {
+    const server: Server = { t3: subject({ description_md: BASE }) };
+    const h = await open(URL, stub(server), { before: fakeStream });
+    try {
+      const editor = await addParagraph(h, 'a draft');
+      await editor.getByRole('button', { name: 'Bold', exact: true }).focus();
+      await h.page.keyboard.press('Escape');
+      const ask = h.page.getByRole('alertdialog');
+      await ask.waitFor({ timeout: 5_000 });
+      assert.equal(await h.page.locator('.drawer').count(), 1, 'the panel closed');
+      await ask.getByRole('button', { name: 'Keep editing' }).click();
+      // And from Save, which the question had stood in place of.
+      await editor.getByRole('button', { name: 'Save' }).focus();
+      await h.page.keyboard.press('Escape');
+      await ask.waitFor({ timeout: 5_000 });
+      assert.equal(await h.page.locator('.drawer').count(), 1, 'the panel closed from Save');
+      assert.match(await content(editor).innerText(), /a draft/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a mention by name is inserted as text, not read as HTML', async () => {
+    const server: Server = { t3: subject({ description_md: 'Ask' }) };
+    const h = await open(URL, stub(server), { before: fakeStream });
+    try {
+      await description(h).locator('.md p').waitFor({ timeout: 20_000 });
+      const editor = await openEditor(h);
+      await caretAtEnd(h.page, content(editor).locator('p').last());
+      await h.page.keyboard.type(' @mal');
+      await h.page
+        .locator('.rich-editor-picker [role="option"]')
+        .first()
+        .waitFor({ timeout: 5_000 });
+      await h.page.keyboard.press('Enter');
+      assert.equal(await content(editor).locator('strong, b').count(), 0, 'the name came out bold');
+      assert.match(await content(editor).innerText(), /@Mallory <b>Root<\/b>/);
+      await editor.getByRole('button', { name: 'Save' }).click();
+      await until(() => patches(h).length > 0, 5_000);
+      assert.deepEqual(patches(h)[0]?.body, { description_md: 'Ask @Mallory \\<b>Root\\</b>' });
     } finally {
       await h.close();
     }

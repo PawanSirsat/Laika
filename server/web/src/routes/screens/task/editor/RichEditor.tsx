@@ -7,7 +7,14 @@ import { Dropdown } from '../../../../components/Dropdown.tsx';
 import { Button } from '../../../../components/forms/Button.tsx';
 import type { CardCandidate, MentionCandidate, RichEditorProps } from '../LazyRichEditor.tsx';
 import { MARKDOWN_EXTENSIONS } from './extensions.ts';
-import { createBridge, normaliseMarkdown, openDocument, toMarkdown } from './markdown-bridge.ts';
+import {
+  createBridge,
+  normaliseMarkdown,
+  openDocument,
+  toMarkdown,
+  UnwritableMarkdown,
+  type Opening,
+} from './markdown-bridge.ts';
 import { reducePastedHtml } from './paste.ts';
 import './rich-editor.css';
 
@@ -32,6 +39,17 @@ import './rich-editor.css';
 const bridge = createBridge(MARKDOWN_EXTENSIONS);
 
 type Mode = 'rich' | 'source';
+
+/** What a save would send, or why it cannot be sent as it stands. */
+type Written =
+  | { readonly ok: true; readonly markdown: string }
+  | { readonly ok: false; readonly reason: string; readonly draft: string };
+
+/** The line above the Markdown view: a word in bold, then why. */
+interface Notice {
+  readonly lead: string;
+  readonly rest: string;
+}
 
 /** An open suggestion list: people after `@`, or cards from the toolbar. */
 type Picker =
@@ -205,8 +223,15 @@ export function RichEditor({
   /** Decided once, on the text editing opened on — never on a later one. */
   const opening = useMemo(() => openDocument(bridge, value), [value]);
   const [mode, setMode] = useState<Mode>(opening.kind);
-  const [notice, setNotice] = useState<string | undefined>(
-    opening.kind === 'source' ? opening.reason : undefined,
+  /** What the rich view was opened from: an untouched block is copied from it. */
+  const [opened, setOpened] = useState<Opening>(opening);
+  const [notice, setNotice] = useState<Notice | undefined>(
+    opening.kind === 'source'
+      ? {
+          lead: 'Opened as Markdown',
+          rest: `, so nothing you do not touch changes. ${opening.reason}`,
+        }
+      : undefined,
   );
   const [source, setSource] = useState(value);
   const [busy, setBusy] = useState(false);
@@ -290,11 +315,35 @@ export function RichEditor({
     }),
   });
 
-  /** The markdown a submit would send now. */
-  const current = useCallback(
-    (): string => (mode === 'rich' ? toMarkdown(bridge, editor.state.doc) : tidySource(source)),
-    [editor, mode, source],
-  );
+  /**
+   * The markdown a submit would send now: in the rich view, every untouched
+   * block copied from what it was opened from and only the rest written — or,
+   * when a block would not read back as typed, why not and a draft.
+   */
+  const written = useCallback((): Written => {
+    if (mode === 'source') return { ok: true, markdown: tidySource(source) };
+    try {
+      return { ok: true, markdown: toMarkdown(bridge, editor.state.doc, opened) };
+    } catch (error) {
+      if (!(error instanceof UnwritableMarkdown)) throw error;
+      return { ok: false, reason: error.message, draft: error.draft };
+    }
+  }, [editor, mode, source, opened]);
+
+  /**
+   * Nothing is sent: the draft goes to the Markdown view, the rest of the text
+   * as it was, with the reason above it (review round 1). Saving a text that
+   * would read back as something else is the one thing this must not do.
+   */
+  const toSource = useCallback((refused: Extract<Written, { ok: false }>, lead: string): void => {
+    setSource(refused.draft);
+    setPicker(null);
+    setNotice({
+      lead,
+      rest: `: ${refused.reason} Here it is as Markdown, the rest of the text as it was — change it here and save.`,
+    });
+    setMode('source');
+  }, []);
 
   /**
    * Nothing changed, so nothing is sent. In the rich view a document changes
@@ -311,7 +360,12 @@ export function RichEditor({
 
   const submit = useCallback(async (): Promise<void> => {
     if (busy) return;
-    const next = current();
+    const result = written();
+    if (!result.ok) {
+      toSource(result, 'Not saved');
+      return;
+    }
+    const next = result.markdown;
     if (unchanged(next)) {
       onClose();
       return;
@@ -326,12 +380,13 @@ export function RichEditor({
     } finally {
       setBusy(false);
     }
-  }, [busy, current, unchanged, onSubmit, onClose]);
+  }, [busy, written, toSource, unchanged, onSubmit, onClose]);
 
   const requestCancel = useCallback((): void => {
-    if (unchanged(current())) onClose();
+    const result = written();
+    if (result.ok && unchanged(result.markdown)) onClose();
     else setConfirming(true);
-  }, [current, unchanged, onClose]);
+  }, [written, unchanged, onClose]);
 
   const mentionMatches =
     picker?.kind === 'mention' ? peopleMatching(people, picker.query) : ([] as MentionCandidate[]);
@@ -341,7 +396,9 @@ export function RichEditor({
       editor
         .chain()
         .focus()
-        .insertContentAt(at, `@${person.handle ?? person.name} `)
+        // A text node, not a string: a string is read as HTML, and a name
+        // with `<b>` in it would come out bold (review round 1).
+        .insertContentAt(at, { type: 'text', text: `@${person.handle ?? person.name} ` })
         .run();
       setPicker(null);
     },
@@ -440,18 +497,23 @@ export function RichEditor({
 
   const toggleSource = (): void => {
     if (mode === 'rich') {
-      const next = current();
+      const result = written();
+      if (!result.ok) {
+        toSource(result, 'Shown as Markdown');
+        return;
+      }
       // Untouched, the source is the text as stored, not the editor's rewrite of it.
-      setSource(unchanged(next) ? value : next);
+      setSource(unchanged(result.markdown) ? value : result.markdown);
       setPicker(null);
       setMode('source');
       return;
     }
     const reopened = openDocument(bridge, source);
     if (reopened.kind === 'source') {
-      setNotice(`This Markdown stays as Markdown. ${reopened.reason}`);
+      setNotice({ lead: 'This Markdown stays as Markdown', rest: `. ${reopened.reason}` });
       return;
     }
+    setOpened(reopened);
     editor.commands.setContent(reopened.content, { emitUpdate: false });
     setNotice(undefined);
     setMode('rich');
@@ -502,6 +564,17 @@ export function RichEditor({
       className={compact ? 'rich-editor rich-editor-compact' : 'rich-editor'}
       ref={wrap}
       data-mode={mode}
+      /*
+       * **Escape anywhere in the editor is the editor's** (review round 1).
+       * From the document and the Markdown view it is handled already; from a
+       * toolbar, Save or Cancel button it reached the drawer, which closed the
+       * panel and threw the draft away. It asks first when something changed.
+       */
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape' || event.defaultPrevented) return;
+        event.preventDefault();
+        if (!confirming) requestCancel();
+      }}
     >
       <div className="rte-toolbar" role="toolbar" aria-label="Formatting">
         <span className="rte-style">
@@ -631,7 +704,10 @@ export function RichEditor({
           onRun={() => {
             const before = editor.state.selection.$from.nodeBefore?.text ?? '';
             chain()
-              .insertContent(before === '' || /\s$/.test(before) ? '@' : ' @')
+              .insertContent({
+                type: 'text',
+                text: before === '' || /\s$/.test(before) ? '@' : ' @',
+              })
               .run();
           }}
         >
@@ -793,7 +869,8 @@ export function RichEditor({
 
       {notice !== undefined && mode === 'source' && (
         <p className="rich-editor-notice" role="status">
-          <strong>Opened as Markdown</strong>, so nothing you do not touch changes. {notice}
+          <strong>{notice.lead}</strong>
+          {notice.rest}
         </p>
       )}
 
