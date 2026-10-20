@@ -36,3 +36,21 @@ the same day the polly-time builder filed its own `LAI-798` from LAI-792's
 branch. That one was filed first and keeps the id; this one became
 `LAI-801` at the merge (D-089). **Commits and LAI-788's log and task file
 that say `LAI-798` for this task mean this file**, and are not rewritten (§4).
+
+## Re-diagnosed: a real bug in cli/src, not a slow test (CHIEF, 2026-10-20, before any claim)
+
+The LAI-768 builder reproduced this **without any load**, by making the fake
+board's request hang. In `cli/src/activity-sync.ts`, when the 300 ms deadline
+fires while the board request is still in flight, `fail()` records a second
+failure (`failures: 2`, next sync 1200 s away instead of 600 s). That happens
+because, unlike `save()`, `fail()` never checks whether the sync has already
+been abandoned.
+
+**This changes the criteria**: the fix is the missing abandoned-check in
+`fail()` in `cli/src/activity-sync.ts`. It is **not** a longer deadline, a
+retry, or an edited test. Required:
+- a test that hangs the request with no load and asserts `failures: 1` and
+  the 600 s back-off;
+- proof that the test fails on today's code.
+
+The review of LAI-768 is checking the diagnosis.

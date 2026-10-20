@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { SERVER_ROOT } from '../../src/paths.ts';
 
@@ -129,17 +130,39 @@ function sourceFiles(dir: string): string[] {
   return files;
 }
 
-/** Package names in the runtime closure whose code branches on the environment. */
-export function packagesBranchingOnEnvironment(): string[] {
-  return runtimeClosure()
-    .filter(({ dir }) =>
-      sourceFiles(dir).some((file) => {
+/**
+ * How many files the walk reads at once (LAI-768).
+ *
+ * The time is in the reads: measured on 2026-10-20, ~2,600 files and 14 MB
+ * across the closure, against ~40 ms of directory listing. One file at a time,
+ * the walk took 0.5 s at normal load and 30 to 47 s under one `yes` per core —
+ * most of the 60 s budget `environment-posture.test.ts` gives it. In batches it
+ * gives the same answer in 0.3 s and 19 to 26 s. A bound rather than everything
+ * at once, so the walk never holds thousands of files open.
+ */
+const READS_IN_FLIGHT = 32;
+
+async function anyFileBranches(files: readonly string[]): Promise<boolean> {
+  for (let start = 0; start < files.length; start += READS_IN_FLIGHT) {
+    const batch = await Promise.all(
+      files.slice(start, start + READS_IN_FLIGHT).map(async (file) => {
         try {
-          return ENVIRONMENT_BRANCH.test(readFileSync(file, 'utf8'));
+          return ENVIRONMENT_BRANCH.test(await readFile(file, 'utf8'));
         } catch {
           return false;
         }
       }),
-    )
-    .map(({ name }) => name);
+    );
+    if (batch.includes(true)) return true;
+  }
+  return false;
+}
+
+/** Package names in the runtime closure whose code branches on the environment. */
+export async function packagesBranchingOnEnvironment(): Promise<string[]> {
+  const branching: string[] = [];
+  for (const { name, dir } of runtimeClosure()) {
+    if (await anyFileBranches(sourceFiles(dir))) branching.push(name);
+  }
+  return branching;
 }
