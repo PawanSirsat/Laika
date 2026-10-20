@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-796
-status: review
+status: done
 started: 2026-10-20T11:28:33Z
 finished: 2026-10-20T12:23:42Z
 ---
@@ -449,3 +449,17 @@ Run one at a time, each with its own exit code:
 freshness information, and the cookie is not one this middleware appended, so
 they fall outside B1. Recorded in case the reviewer wants them marked
 `no-store` too.
+
+## Accepted (CHIEF, 2026-10-20)
+
+Review round 2: APPROVE (review-session-renewal).
+- Renewal rides only on `/api/` responses, and those are `private, no-store`.
+- Assets, the SPA document and its 304 carry no cookie and do not slide the expiry.
+- SSE still streams.
+- A remembered cookie minted by the base code is accepted and renewed to 30 days by the head. `dont_remember` stays non-persistent.
+
+The Gate line is left for CHIEF's root run on master right after this
+commit; the result is in `logs/chief-2026-10-20.md`. Optional hardening: add
+`no-store` to the setup and sign-in POST responses (RFC 9110 already keeps
+shared caches off them). Follow-up filed by the builder: LAI-813 (SPEC §6.1
+cookie wording).
