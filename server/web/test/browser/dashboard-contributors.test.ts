@@ -174,6 +174,21 @@ void describe('Open work now has no range (D-092 item 2)', () => {
         new RegExp(`\\+${String(inReview(ASH))} waiting for review`),
       );
       assert.equal(await text(h.page, `${PEOPLE} [data-person="${ASH}"]`), String(held(ASH)));
+      // Seen, not merely present: at the end of the detail line an ellipsis
+      // cut it off while its text still matched (LAI-817's own screenshots).
+      // Measured against the column's edge — an inline span's clientWidth is
+      // 0, so its own scroll width cannot say it was clipped.
+      for (const width of [1440, 390]) {
+        await h.page.setViewportSize({ width, height: 900 });
+        const clipped = await ash.locator('.dash-legend-review').evaluate((el) => {
+          const edge = el.closest('.dash-legend-who')?.getBoundingClientRect().right ?? 0;
+          return Math.max(el.getBoundingClientRect().right - edge, el.scrollWidth - el.clientWidth);
+        });
+        assert.ok(
+          clipped <= 0.5,
+          `${String(width)}px: the review line is cut by ${String(clipped)}px`,
+        );
+      }
     } finally {
       await close(h);
     }

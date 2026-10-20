@@ -359,14 +359,14 @@ function OpenWorkNow({
               )}
               <span className="dash-legend-who">
                 <span className="dash-legend-name">{label(row)}</span>
-                <span className="dash-legend-detail">
-                  {detail(row)}
-                  {row.review > 0 && (
-                    <span className="dash-legend-review">
-                      {detail(row) === '' ? '' : ' · '}+{row.review} waiting for review
-                    </span>
-                  )}
-                </span>
+                <span className="dash-legend-detail">{detail(row)}</span>
+                {/* Its own line: at the end of the detail it was the first
+                    thing an ellipsis cut, and it is the split D-092 asks for. */}
+                {row.review > 0 && (
+                  <span className="dash-legend-detail dash-legend-review">
+                    +{row.review} waiting for review
+                  </span>
+                )}
               </span>
               <span className="dash-legend-n" data-person={row.id}>
                 {row.count}

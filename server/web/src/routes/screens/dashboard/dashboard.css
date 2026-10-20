@@ -218,15 +218,14 @@
   font-weight: var(--weight-semibold);
 }
 
-/* A caveat on the figure — "only 2 of 301 open tasks have a due date" (LAI-817). */
+/* A caveat on the figure — "only 2 of 301 open tasks have a due date" (LAI-817).
+   It wraps: a caveat cut by an ellipsis is the part nobody reads. */
 .dash-stat-note {
   margin: 0.125rem 0 0;
   font-size: var(--text-xs);
+  line-height: 1.3;
   color: var(--chip-orange);
   font-weight: var(--weight-semibold);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* ---------------------------------------------------------------- card grid */
@@ -482,9 +481,18 @@ thead .dash-contrib-n {
   font-weight: var(--weight-semibold);
 }
 
+/* A phone-width card: the order is the rank, and the names need the room. */
 @container card (max-width: 24rem) {
   .dash-contrib-n {
     width: 4.25rem;
+  }
+
+  .dash-contrib-rank {
+    display: none;
+  }
+
+  .dash-contrib .dash-legend-detail {
+    white-space: normal;
   }
 }
 
