@@ -544,6 +544,8 @@ const PAIRS: readonly Pair[] = [
       ['UsageCost', 'services/model-prices.ts', 'usage.ts'],
       ['UsageCacheProject', 'services/token-usage.ts', 'usage.ts'],
       ['UsageAccepted', 'services/token-usage.ts', 'usage.ts'],
+      // LAI-814: each space's tokens and cost on the organisation view.
+      ['UsageProjectTotal', 'services/token-usage.ts', 'usage.ts'],
       ['ProjectBudgets', 'services/token-budgets.ts', 'budgets.ts'],
       ['ModelPrice', 'services/model-prices.ts', 'model-prices.ts'],
     ] as const

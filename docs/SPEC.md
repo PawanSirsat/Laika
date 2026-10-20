@@ -2638,9 +2638,20 @@ and the profile's Tokens card:
   cache_read }], by_developer: [{ user_id, name, tokens, cache_read,
   attributed_tokens }] | null, by_agent: [{ agent, tokens, cache_read,
   few_people? }], by_model: [{ model, tokens, cache_read, few_people? }],
-  top_tasks: [{ task_id, key,
+  by_project: [{ project: { slug, name }, tokens, cache_read, cost, share }]
+  | null, top_tasks: [{ task_id, key,
   title, project_slug, tokens, cache_read }], no_token_data: [agent],
-  org_totals, rework }`. `rework` (LAI-772) is, per project the reader may
+  org_totals, rework }`. `by_project` (LAI-814) is the organisation's figure
+  per space: `null` for a space, and otherwise each space the reader may read
+  (§3.2's `usage.read_project`, the rule `rework` and `cache_by_project`
+  follow) with tokens in the range, most tokens first — from one range of the
+  project index grouped by project and model, `cost` priced as `totals.cost`
+  is, caveats included, and `share` the space's part of `totals.tokens`
+  (`null` when that is 0). A space's total names nobody, so it is not
+  `usage.read_people`'s. **`totals.tokens` less the rows is what no space the
+  reader may read holds** — for an owner or admin, the tokens outside any
+  space — and the page shows it as the last row, so the rows add up to the
+  organisation's total. `rework` (LAI-772) is, per project the reader may
   read and in name order, `{ project: { slug, name }, send_backs, tasks,
   tokens, cache_read, time_ms, open, share }` for send-backs decided in the
   range: the tokens tied to the task on days after the round sent back (in
@@ -2746,7 +2757,8 @@ models, the headline tokens of models with no price beside them (never priced
 at zero), and the priced models whose price was inferred. `GET /usage` adds
 `totals.cost`, `org_totals.cost`, `by_model[].cost` (a number, or `null` with no
 price), `by_developer[].cost` (only where `by_developer` is served — owners and
-admins on a session), and:
+admins on a session), `by_project[].cost` (the organisation only, LAI-814),
+and:
 
 - `telemetry` — `{ tokens, cost_usd_reported }`: what OpenTelemetry added over
   the files in the range, and Claude Code's own cost figure for the

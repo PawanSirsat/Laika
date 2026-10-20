@@ -306,7 +306,8 @@
 }
 
 .usage-row-name > a,
-.usage-row-name > code {
+.usage-row-name > code,
+.usage-row-name > .usage-space-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -368,15 +369,18 @@
   color: var(--text-primary);
 }
 
-/* A name that opens the profile — the Organisation screen's quiet underline. */
-.usage-person-link {
+/* A name that opens the profile — the Organisation screen's quiet underline —
+   and a space's name that opens its own view (LAI-814). */
+.usage-person-link,
+.usage-space-link {
   color: inherit;
   text-decoration: underline;
   text-decoration-color: var(--border-default);
   text-underline-offset: 3px;
 }
 
-.usage-person-link:hover {
+.usage-person-link:hover,
+.usage-space-link:hover {
   color: var(--accent);
   text-decoration-color: currentColor;
 }
@@ -391,10 +395,23 @@
 }
 
 .usage-person-link:focus-visible,
+.usage-space-link:focus-visible,
 .usage-task:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 2px;
+}
+
+/* A space counted but not offered — archived — is named, not linked (LAI-814 review). */
+.usage-space-archived {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* What no space holds (LAI-814): a remainder, not a space, so it is quieter. */
+.usage-outside {
+  color: var(--text-muted);
 }
 
 .usage-task-key {

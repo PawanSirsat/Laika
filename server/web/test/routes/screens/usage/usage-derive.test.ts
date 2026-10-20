@@ -9,7 +9,11 @@ import {
   axisDays,
   barHeight,
   defaultScope,
+  offeredSpaces,
+  scopeFor,
   scopeOptions,
+  spaceRow,
+  spaceUsageHref,
 } from '../../../../src/routes/screens/usage/usage-derive.ts';
 
 const PROJECTS = [
@@ -46,6 +50,56 @@ void describe('the space selector', () => {
     const me = { org_role: 'member', memberships: [] };
     assert.deepEqual(scopeOptions(me, PROJECTS), []);
     assert.equal(defaultScope(me, PROJECTS), undefined);
+  });
+});
+
+void describe('the space in the address, ?project= (LAI-814)', () => {
+  const owner = { org_role: 'owner', memberships: [] };
+  const member = { org_role: 'member', memberships: [{ project_id: 'p3' }, { project_id: 'p1' }] };
+
+  void test('opens the space it names, for a reader offered it', () => {
+    assert.equal(scopeFor(owner, PROJECTS, 'atlas'), 'atlas');
+    assert.equal(scopeFor(member, PROJECTS, 'zebra'), 'zebra');
+    // `''` is All spaces: an owner's, never a member's.
+    assert.equal(scopeFor(owner, PROJECTS, ''), '');
+    assert.equal(scopeFor(member, PROJECTS, ''), 'laika');
+  });
+
+  void test('without one, or naming a space the reader is not offered, opens where the page would', () => {
+    assert.equal(scopeFor(owner, PROJECTS, undefined), '');
+    assert.equal(scopeFor(member, PROJECTS, undefined), 'laika');
+    // Atlas is not theirs, and a slug nobody has is nobody's: never a 403.
+    assert.equal(scopeFor(member, PROJECTS, 'atlas'), 'laika');
+    assert.equal(scopeFor(owner, PROJECTS, 'gone'), '');
+    assert.equal(scopeFor({ org_role: 'member', memberships: [] }, PROJECTS, 'laika'), undefined);
+  });
+
+  void test('a space’s own view is Insights → Usage & cost with its slug', () => {
+    assert.equal(spaceUsageHref('laika'), '/insights?tab=usage&project=laika');
+    assert.equal(spaceUsageHref('a b&c'), '/insights?tab=usage&project=a%20b%26c');
+  });
+});
+
+void describe('a By space row is a link only to a space the selector offers (LAI-814 review)', () => {
+  const owner = { org_role: 'owner', memberships: [] };
+
+  void test('the offered spaces are the selector’s, All spaces aside', () => {
+    assert.deepEqual([...(offeredSpaces(owner, PROJECTS) ?? [])].sort(), [
+      'atlas',
+      'laika',
+      'zebra',
+    ]);
+    // No list: nothing is known to be offered, or to be archived.
+    assert.equal(offeredSpaces(owner, null), null);
+  });
+
+  void test('a space the selector offers is a link; one the loaded list lacks is archived', () => {
+    const offered = offeredSpaces(owner, PROJECTS);
+    assert.equal(spaceRow('laika', offered), 'link');
+    // `GET /projects` sends an archived space as a tombstone, so the list lacks
+    // it, and its ?project= would open All spaces.
+    assert.equal(spaceRow('oldsite', offered), 'archived');
+    assert.equal(spaceRow('laika', null), 'plain');
   });
 });
 

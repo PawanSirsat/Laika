@@ -45,6 +45,58 @@ export function defaultScope(
 }
 
 /**
+ * The space the page shows (LAI-814): the one `?project=` names when this
+ * reader is offered it — a By space row, a pasted link — otherwise where the
+ * page opens. A space they may not read falls back rather than asking for a
+ * 403.
+ */
+export function scopeFor(
+  me: ScopeReader,
+  projects: readonly ScopeProject[],
+  asked: string | undefined,
+): string | undefined {
+  if (asked !== undefined && scopeOptions(me, projects).some((o) => o.value === asked)) {
+    return asked;
+  }
+  return defaultScope(me, projects);
+}
+
+/**
+ * The spaces the selector offers, All spaces aside (LAI-814 review) — the
+ * only ones a `?project=` link opens. `null` when the space list did not load.
+ */
+export function offeredSpaces(
+  me: ScopeReader,
+  projects: readonly ScopeProject[] | null,
+): ReadonlySet<string> | null {
+  if (projects === null) return null;
+  return new Set(
+    scopeOptions(me, projects)
+      .map((o) => o.value)
+      .filter((value) => value !== ''),
+  );
+}
+
+/**
+ * How a By space row names its space (LAI-814 review): a link to its own view
+ * only when the selector offers it, since `?project=` for any other opens All
+ * spaces. A space the server counts and the loaded list lacks is archived —
+ * `GET /projects` sends one as a tombstone. With no list, nothing is known.
+ */
+export function spaceRow(
+  slug: string,
+  offered: ReadonlySet<string> | null,
+): 'link' | 'archived' | 'plain' {
+  if (offered === null) return 'plain';
+  return offered.has(slug) ? 'link' : 'archived';
+}
+
+/** One space's own Usage view: Insights → Usage & cost, `?project=` (LAI-814). */
+export function spaceUsageHref(slug: string): string {
+  return `/insights?tab=usage&project=${encodeURIComponent(slug)}`;
+}
+
+/**
  * A bar's height in percent of the tallest, from a shared zero baseline. A day
  * with any tokens is drawn at least 2% tall, so it never reads as none.
  */
