@@ -2,11 +2,12 @@
 id: LAI-817
 title: 'Dashboard: "Work by person" ranks open work instead of contribution, and Stale, Blocked, the donut and % done mislead'
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-796
-status: backlog
+status: in-progress
+started: 2026-10-20T13:01:46Z
 ---
 
 ## Goal
