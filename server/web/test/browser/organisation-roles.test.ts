@@ -77,14 +77,28 @@ void describe('the org itself', () => {
   void test('its name and settings come from GET /org, and the key never does', async () => {
     const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
+      // The name heads the page since LAI-796; the settings are Overview's.
       const card = h.page.locator('.org-card').first();
       await card.locator('#org-name').waitFor({ timeout: 20_000 });
+      assert.equal(
+        await h.page.locator('.screen-page-title').innerText(),
+        'Kvelld Dynamics',
+        'the org name is not rendered',
+      );
+      assert.match(await card.innerText(), /recorded/i, 'presence state is not rendered');
 
-      const text = await card.innerText();
-      assert.match(text, /Kvelld Dynamics/, 'the org name is not rendered');
+      // The AI provider is an integration: its own tab, reached by its tab.
+      await h.page.locator('.page-tab[data-tab="integrations"]').click();
+      const ai = h.page.locator('.org-card', { has: h.page.locator('#org-ai') });
+      await ai.waitFor({ timeout: 20_000 });
+      const text = await ai.innerText();
       assert.match(text, /anthropic/i, 'the AI provider is not rendered');
       assert.match(text, /9f2a/, 'the key tail is not rendered');
-      assert.match(text, /recorded/i, 'presence state is not rendered');
+      assert.equal(
+        new URL(h.page.url()).search,
+        '?tab=integrations',
+        'the tab is not in the address',
+      );
 
       // It came from `/org`, not from a literal and not from `/me`.
       assert.ok(
@@ -106,19 +120,22 @@ void describe('the org itself', () => {
     // @ts-expect-error — the point of the fixture is the key's absence.
     delete withheld.ai;
 
-    const h = await open('/organisation', {
+    const h = await open('/organisation?tab=people', {
       ...BASE,
       '/api/v1/me': me('u2', 'viewer'),
       '/api/v1/org': withheld,
     });
     try {
-      const card = h.page.locator('.org-card').first();
-      await card.locator('#org-name').waitFor({ timeout: 20_000 });
+      // Integrations is where the provider would be (LAI-796); for a viewer
+      // its card is absent, not empty.
+      await h.page.locator('.page-tab[data-tab="integrations"]').click();
+      await h.page.locator('.org-body[data-tab="integrations"]').waitFor({ timeout: 20_000 });
+      await h.page.locator('.org-card').first().waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.screen-page-title').innerText(), 'Kvelld Dynamics');
 
-      const text = await card.innerText();
-      assert.match(text, /Kvelld Dynamics/, 'the org is missing entirely');
+      const text = await h.page.locator('.org-body').innerText();
       assert.doesNotMatch(text, /AI provider/i, 'told a viewer about the AI settings');
-      assert.doesNotMatch(text, /none/i, 'told a viewer there is no provider');
+      assert.doesNotMatch(text, /\bnone\b/i, 'told a viewer there is no provider');
       assert.doesNotMatch(text, /undefined|null/i, 'leaked a placeholder');
     } finally {
       await h.close();
@@ -134,7 +151,10 @@ void describe('the org itself', () => {
  */
 void describe('what it actually looks like', () => {
   void test('the provider and its key tail share a line', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    const h = await open('/organisation?tab=integrations', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+    });
     try {
       const ai = h.page.locator('.org-ai');
       await ai.waitFor({ timeout: 20_000 });
@@ -166,7 +186,7 @@ void describe('what it actually looks like', () => {
    * out, arriving through CSS rather than through a `disabled` attribute.
    */
   void test('the deactivated row is dimmed and its Reactivate button is not', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
       await h.page.locator('.org-reactivate').first().waitFor({ timeout: 20_000 });
       const row = h.page.locator('.org-person', { hasText: 'Sam Okafor' });
@@ -199,7 +219,7 @@ void describe('what it actually looks like', () => {
 
 void describe('role management', () => {
   void test('a member gets no controls at all — absent, not disabled', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u2', 'member') });
+    const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u2', 'member') });
     try {
       await h.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.org-person').count(), 4);
@@ -237,7 +257,7 @@ void describe('role management', () => {
       ['owner', true],
       ['admin', false],
     ] as const) {
-      const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u3', role) });
+      const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u3', role) });
       try {
         await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
 
@@ -267,7 +287,7 @@ void describe('role management', () => {
    * an Owner as having no role at all.
    */
   void test("an admin sees an owner's actual role even though they cannot grant it", async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u3', 'admin') });
+    const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u3', 'admin') });
     try {
       await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
       const select = h.page
@@ -289,7 +309,7 @@ void describe('role management', () => {
   });
 
   void test('your own row has no controls', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
       await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
       const mine = h.page.locator('.org-person', { hasText: 'Ada Lovelace' });
@@ -308,7 +328,7 @@ void describe('role management', () => {
   });
 
   void test('changing a role PATCHes that person with that role', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
       await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
       const select = h.page.locator('.org-person', { hasText: 'Tomas Nel' }).getByRole('combobox');
@@ -339,7 +359,7 @@ void describe('deactivation', () => {
    * one audit row — which the decision explicitly refused.
    */
   void test('an active person is deactivated and an inactive one reactivated', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
       await h.page.locator('.org-deactivate').first().waitFor({ timeout: 20_000 });
 
@@ -366,7 +386,7 @@ void describe('deactivation', () => {
   });
 
   void test('deactivating asks first, and says it is not deletion', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
       await h.page.locator('.org-deactivate').first().waitFor({ timeout: 20_000 });
 
@@ -410,7 +430,7 @@ void describe('the directory includes people who left (LAI-240)', () => {
    * is the instrument that can actually see it.
    */
   void test('the Organisation screen asks for inactive people', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
       const urls: string[] = [];
       h.page.on('request', (r) => {
@@ -447,7 +467,7 @@ void describe('the directory includes people who left (LAI-240)', () => {
       '/api/v1/unlisted': { data: [], next_cursor: null },
     };
 
-    const org = await open('/organisation', stub);
+    const org = await open('/organisation?tab=people', stub);
     let orgCount = 0;
     try {
       await org.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
@@ -456,7 +476,7 @@ void describe('the directory includes people who left (LAI-240)', () => {
       await org.close();
     }
 
-    const cap = await open('/capacity', stub);
+    const cap = await open('/insights?tab=capacity', stub);
     let capCount = 0;
     try {
       // Wait for the loaded screen, not for the first `cap-*` element. The
@@ -498,7 +518,7 @@ void describe('deactivation is not deletion', () => {
    * and comment they wrote unattributable.
    */
   void test('a deactivated person stays in the list, wearing the chip', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u2', 'member') });
+    const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u2', 'member') });
     try {
       await h.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
 
@@ -517,7 +537,7 @@ void describe('deactivation is not deletion', () => {
 
 void describe('both themes', () => {
   void test('the org card and the controls render in light and dark', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
       await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
 
@@ -527,13 +547,17 @@ void describe('both themes', () => {
 
         const card = h.page.locator('.org-card').first();
         const box = await card.boundingBox();
-        assert.ok(box !== null && box.height > 0, `${theme}: the org card has no box`);
-        assert.match(await card.innerText(), /Kvelld Dynamics/, `${theme}: the org name is gone`);
+        assert.ok(box !== null && box.height > 0, `${theme}: the people card has no box`);
+        assert.equal(
+          await h.page.locator('.screen-page-title').innerText(),
+          'Kvelld Dynamics',
+          `${theme}: the org name is gone`,
+        );
 
         // A colour, not a class name — the class is identical in both themes and
         // so tells you nothing about whether the theme reached the element.
         const ink = await card
-          .locator('#org-name')
+          .locator('.org-card-head h2')
           .evaluate((el: Element) => getComputedStyle(el).color);
         const paper = await card.evaluate((el: Element) => getComputedStyle(el).backgroundColor);
         assert.ok(/^rgba?\(/.test(ink) && /^rgba?\(/.test(paper), `${theme}: unresolved colours`);
@@ -561,7 +585,7 @@ void describe('a refusal', () => {
     const MESSAGE =
       'This is the last active Owner. Promote somebody else to Owner first — an organisation with no Owner cannot be recovered.';
 
-    const h = await open('/organisation', {
+    const h = await open('/organisation?tab=people', {
       ...BASE,
       '/api/v1/me': me('u3', 'admin'),
       '/api/v1/users/u1': refuse(409, 'conflict', MESSAGE),

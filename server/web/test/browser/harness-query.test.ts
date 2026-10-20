@@ -55,7 +55,7 @@ void after(async () => {
 
 void describe('a stub may be keyed on its query', () => {
   void test('a request carrying the query is served by it', async () => {
-    const h = await open('/organisation', {
+    const h = await open('/organisation?tab=people', {
       ...BASE,
       '/api/v1/users?include_inactive=true': { data: PEOPLE, next_cursor: null },
     });
@@ -75,7 +75,7 @@ void describe('a stub may be keyed on its query', () => {
    * which would be the original defect with an extra step.
    */
   void test('a request missing the query is refused, and says what was asked', async () => {
-    const h = await open('/organisation', {
+    const h = await open('/organisation?tab=people', {
       ...BASE,
       // The client sends `include_inactive=true`. This demands the opposite.
       '/api/v1/users?include_inactive=false': { data: PEOPLE, next_cursor: null },
@@ -107,7 +107,7 @@ void describe('a stub may be keyed on its query', () => {
    * making every fixture query-exact would break dozens to fix a handful.
    */
   void test('a path-only stub still ignores the query, as it always did', async () => {
-    const h = await open('/organisation', {
+    const h = await open('/organisation?tab=people', {
       ...BASE,
       '/api/v1/users': { data: PEOPLE, next_cursor: null },
     });
@@ -135,7 +135,7 @@ void describe('a stub may be keyed on its query', () => {
    */
   void test('matching is by subset, so unrelated parameters do not break it', async () => {
     let served = 0;
-    const h = await open('/organisation', {
+    const h = await open('/organisation?tab=people', {
       ...BASE,
       '/api/v1/users?include_inactive=true': () => {
         served += 1;

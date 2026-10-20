@@ -225,8 +225,7 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
       tabs={tabs}
       current={tab}
       counts={{
-        people:
-          state.status === 'ready' && !state.truncated ? state.people.length : undefined,
+        people: state.status === 'ready' && !state.truncated ? state.people.length : undefined,
       }}
       onNavigate={onNavigate}
     />
@@ -294,7 +293,9 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
   const owners = state.people.filter((p) => p.org_role === 'owner' && p.is_active);
   const admins = state.people.filter((p) => p.org_role === 'admin' && p.is_active).length;
   const context = [
-    owners.length === 0 ? undefined : `${owners.length === 1 ? 'Owner' : 'Owners'} · ${owners.map((p) => p.name).join(', ')}`,
+    owners.length === 0
+      ? undefined
+      : `${owners.length === 1 ? 'Owner' : 'Owners'} · ${owners.map((p) => p.name).join(', ')}`,
     org === undefined ? undefined : `Created ${createdLabel(org.created_at)}`,
     people,
   ]
@@ -390,12 +391,12 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
                         <span>{org.developer_insights ? 'on' : 'off'}</span>
                       )}
                       <span className="org-fact-note" id="org-insights-note">
-                        When on, each developer can choose — for themselves, on Connect — to share daily
-                        counts from their own machine: prompts to agents, agent sessions, and commits
-                        pushed or not yet pushed. They appear on that person’s profile as activity.
-                        Nothing is collected from anyone who has not turned it on, and never prompt text,
-                        file or repository names, branches or commit messages. Off stops it for everyone
-                        at once.
+                        When on, each developer can choose — for themselves, on Connect — to share
+                        daily counts from their own machine: prompts to agents, agent sessions, and
+                        commits pushed or not yet pushed. They appear on that person’s profile as
+                        activity. Nothing is collected from anyone who has not turned it on, and
+                        never prompt text, file or repository names, branches or commit messages.
+                        Off stops it for everyone at once.
                       </span>
                       {insightsError !== undefined && (
                         <span className="org-fact-error" role="alert">
@@ -460,7 +461,9 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
                           >
                             {person.name}
                           </PersonLink>
-                          {person.id === me.id && <span className="org-chip org-chip-you">YOU</span>}
+                          {person.id === me.id && (
+                            <span className="org-chip org-chip-you">YOU</span>
+                          )}
                           {!person.is_active && (
                             <span className="org-chip org-chip-off">DEACTIVATED</span>
                           )}
@@ -524,7 +527,6 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
                           {orgRoleLabel(person.org_role as OrgRole)}
                         </span>
                       )}
-
                     </li>
                   );
                 })}
@@ -637,8 +639,8 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
                       Invite created{issued.email === null ? ' as a link' : ` for ${issued.email}`}
                     </p>
                     <p className="org-issued-body">
-                      This link is shown once — the server stores only a hash of it. Send it now; if it is
-                      lost, revoke this invite and create another.
+                      This link is shown once — the server stores only a hash of it. Send it now; if
+                      it is lost, revoke this invite and create another.
                     </p>
                     <code className="org-issued-url">{issued.url}</code>
                     <Button
@@ -741,8 +743,8 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
                               )}
                             </span>
                             <span className="org-fact-note">
-                              The key itself is never shown — §12 stores it encrypted and nothing decrypts
-                              it to build this page.
+                              The key itself is never shown — §12 stores it encrypted and nothing
+                              decrypts it to build this page.
                             </span>
                           </>
                         ) : (
@@ -786,20 +788,37 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
                     <span className="org-person-email">{person.email}</span>
                   </span>
                   {/* **`token.list_any`** — Owner and Admin (§3.1), the same
-                      grade as this tab's own gate. */}
+                      grade as this tab's own gate. Not on the reader's own
+                      row, as it never was: theirs are on Developer access. */}
                   <span className="org-person-controls">
-                    <button
-                      type="button"
-                      className="org-tokens-toggle"
-                      aria-expanded={tokensFor === person.id}
-                      aria-controls={`tokens-${person.id}`}
-                      onClick={() => {
-                        setTokenError(undefined);
-                        setTokensFor((open) => (open === person.id ? undefined : person.id));
-                      }}
-                    >
-                      {tokensFor === person.id ? 'Hide tokens' : 'Tokens'}
-                    </button>
+                    {person.id === me.id ? (
+                      <a
+                        className="org-person-role"
+                        href="/developer"
+                        onClick={(event) => {
+                          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                            return;
+                          }
+                          event.preventDefault();
+                          onNavigate('/developer');
+                        }}
+                      >
+                        On Developer access
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        className="org-tokens-toggle"
+                        aria-expanded={tokensFor === person.id}
+                        aria-controls={`tokens-${person.id}`}
+                        onClick={() => {
+                          setTokenError(undefined);
+                          setTokensFor((open) => (open === person.id ? undefined : person.id));
+                        }}
+                      >
+                        {tokensFor === person.id ? 'Hide tokens' : 'Tokens'}
+                      </button>
+                    )}
                   </span>
 
                   {tokensFor === person.id && (
@@ -812,8 +831,8 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
                             answer is that §4.9 stores a hash and there has never
                             been one to show. */}
                         <span className="org-tokens-note">
-                          The token itself is never shown — Laika stores only a hash of it. The prefix
-                          is there to tell them apart.
+                          The token itself is never shown — Laika stores only a hash of it. The
+                          prefix is there to tell them apart.
                         </span>
                       </p>
 

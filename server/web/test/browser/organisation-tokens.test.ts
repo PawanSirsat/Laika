@@ -107,8 +107,19 @@ void after(async () => {
 
 void describe('who is offered it', () => {
   void test('a member gets no Tokens control — absent, not disabled', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u2', 'member') });
+    // Everyone's tokens are the Security tab since LAI-796, and the tab is an
+    // owner's or an admin's: a member is not offered it, and asking for it by
+    // address lands on Overview rather than on the panel.
+    const h = await open('/organisation?tab=security', {
+      ...BASE,
+      '/api/v1/me': me('u2', 'member'),
+    });
     try {
+      await h.page.locator('.org-body[data-tab="overview"]').waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.page-tab[data-tab="security"]').count(), 0);
+      assert.equal(await h.page.locator('.org-tokens-toggle').count(), 0);
+
+      await h.page.locator('.page-tab[data-tab="people"]').click();
       await h.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.org-tokens-toggle').count(), 0);
       assert.equal(await h.page.locator('.org-person [disabled]').count(), 0);
@@ -118,7 +129,10 @@ void describe('who is offered it', () => {
   });
 
   void test('an admin gets one per person, except their own row', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    const h = await open('/organisation?tab=security', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+    });
     try {
       await h.page.locator('.org-tokens-toggle').first().waitFor({ timeout: 20_000 });
       assert.equal(
@@ -131,7 +145,7 @@ void describe('who is offered it', () => {
       assert.equal(
         await mine.locator('.org-tokens-toggle').count(),
         0,
-        'offered on my own row — my tokens are the Tokens screen',
+        'offered on my own row — my tokens are on Developer access',
       );
     } finally {
       await h.close();
@@ -143,7 +157,10 @@ void describe('who is offered it', () => {
    * on a screen whose main job is the member list.
    */
   void test('nothing is fetched until a panel is opened', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    const h = await open('/organisation?tab=security', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+    });
     try {
       await h.page.locator('.org-tokens-toggle').first().waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(400);
@@ -167,7 +184,7 @@ void describe('who is offered it', () => {
 
 void describe('what the panel shows', () => {
   void test('the prefix, and never anything that could be the token', async () => {
-    const h = await open('/organisation', {
+    const h = await open('/organisation?tab=security', {
       ...BASE,
       '/api/v1/me': me('u1', 'owner'),
       // A response carrying the secret anyway — the server never sends this, and
@@ -197,7 +214,10 @@ void describe('what the panel shows', () => {
   });
 
   void test('a revoked token stays listed and offers no Revoke', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    const h = await open('/organisation?tab=security', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+    });
     try {
       const row = await openPanel(h, 'Tomas Nel');
       await row.locator('.tok-row').first().waitFor({ timeout: 20_000 });
@@ -216,7 +236,10 @@ void describe('what the panel shows', () => {
   });
 
   void test('somebody with no tokens says so, rather than showing an empty box', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    const h = await open('/organisation?tab=security', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+    });
     try {
       const row = await openPanel(h, 'Sam Okafor');
       await row.locator('.org-tokens-empty').waitFor({ timeout: 20_000 });
@@ -231,7 +254,10 @@ void describe('what the panel shows', () => {
    * somebody having left is the whole reason to be looking at their tokens.
    */
   void test("a deactivated person's panel is not dimmed with their row", async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    const h = await open('/organisation?tab=security', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+    });
     try {
       const row = await openPanel(h, 'Sam Okafor');
       await row.locator('.org-tokens').waitFor({ timeout: 20_000 });
@@ -255,7 +281,10 @@ void describe('what the panel shows', () => {
 
 void describe('revoking', () => {
   void test('it asks first, and says what stops working', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    const h = await open('/organisation?tab=security', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+    });
     try {
       const row = await openPanel(h, 'Tomas Nel');
       await row.locator('.tok-revoke').first().waitFor({ timeout: 20_000 });
@@ -291,7 +320,7 @@ void describe('revoking', () => {
    * row could name the wrong owner.
    */
   void test('confirming DELETEs the token under its owner, and reloads', async () => {
-    const h = await open('/organisation', {
+    const h = await open('/organisation?tab=security', {
       ...BASE,
       '/api/v1/me': me('u1', 'owner'),
       '/api/v1/users/u2/tokens/t1': null,
@@ -323,7 +352,7 @@ void describe('revoking', () => {
 
   void test("a refusal is shown in the server's own words", async () => {
     const MESSAGE = 'No token with id "t1" for that user';
-    const h = await open('/organisation', {
+    const h = await open('/organisation?tab=security', {
       ...BASE,
       '/api/v1/me': me('u1', 'owner'),
       '/api/v1/users/u2/tokens/t1': refuse(404, 'not_found', MESSAGE),
@@ -349,7 +378,10 @@ void describe('revoking', () => {
 
 void describe('both themes', () => {
   void test('the panel renders in light and dark', async () => {
-    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    const h = await open('/organisation?tab=security', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+    });
     try {
       const row = await openPanel(h, 'Tomas Nel');
       await row.locator('.tok-row').first().waitFor({ timeout: 20_000 });
