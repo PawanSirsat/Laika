@@ -1,4 +1,5 @@
 import { Placeholder } from '@tiptap/extensions';
+import { Selection, TextSelection } from '@tiptap/pm/state';
 import { EditorContent, useEditor, useEditorState, type Editor } from '@tiptap/react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ApiError } from '../../../../api/errors.ts';
@@ -199,6 +200,8 @@ export function RichEditor({
   people,
   cards,
   compact = false,
+  caretAt,
+  holdHeight,
 }: RichEditorProps) {
   /** Decided once, on the text editing opened on — never on a later one. */
   const opening = useMemo(() => openDocument(bridge, value), [value]);
@@ -211,6 +214,8 @@ export function RichEditor({
   const [error, setError] = useState<string | undefined>(undefined);
   const [confirming, setConfirming] = useState(false);
   const [picker, setPicker] = useState<Picker | null>(null);
+  /** The reading view's height, held until the document is drawn (see `holdHeight`). */
+  const [held, setHeld] = useState(holdHeight);
   /** An `@` someone pressed Escape on: no list again until they move on. */
   const dismissedAt = useRef<number | null>(null);
   const wrap = useRef<HTMLDivElement | null>(null);
@@ -219,30 +224,53 @@ export function RichEditor({
   /** Handlers the editor calls: it is created once, so they are read through a ref. */
   const keys = useRef<(event: KeyboardEvent) => boolean>(() => false);
   const onTransaction = useRef<(editor: Editor) => void>(() => undefined);
+  const placeCaret = useRef<(editor: Editor, attempt: number) => void>(() => undefined);
 
-  const editor = useEditor({
-    extensions: [...MARKDOWN_EXTENSIONS, Placeholder.configure({ placeholder })],
-    content: opening.kind === 'rich' ? opening.content : null,
-    // `style-src-elem 'self'` (LAI-205): an injected <style> would be refused.
-    // ProseMirror's own rules are in rich-editor.css instead.
-    injectCSS: false,
-    autofocus: opening.kind === 'rich' ? 'end' : false,
-    editorProps: {
-      attributes: {
-        class: 'md md-reading rich-editor-doc',
-        'aria-label': label,
-        'aria-multiline': 'true',
-        role: 'textbox',
+  /*
+   * **Built once.** `useEditor` compares its options by reference on every
+   * render and calls `setOptions` when they differ — which re-applies the
+   * editor's state and writes its last-known selection over a click the
+   * browser has not reported yet. Options rebuilt per render (a new
+   * Placeholder, new handlers) did exactly that: the caret jumped back to
+   * where the editor opened. Everything that changes is read through a ref.
+   */
+  const options = useMemo(
+    () => ({
+      extensions: [...MARKDOWN_EXTENSIONS, Placeholder.configure({ placeholder })],
+      content: opening.kind === 'rich' ? opening.content : null,
+      // `style-src-elem 'self'` (LAI-205): an injected <style> would be refused.
+      // ProseMirror's own rules are in rich-editor.css instead.
+      injectCSS: false,
+      // Focused below, where the person clicked, and without scrolling.
+      autofocus: false,
+      editorProps: {
+        attributes: {
+          class: 'md md-reading rich-editor-doc',
+          'aria-label': label,
+          'aria-multiline': 'true',
+          role: 'textbox',
+        },
+        transformPastedHTML: reducePastedHtml,
+        handleKeyDown: (_view: unknown, event: KeyboardEvent) => keys.current(event),
+        // A dropped file is not text: nothing to insert, and the browser must not open it.
+        handleDrop: (_view: unknown, event: DragEvent) =>
+          (event.dataTransfer?.files.length ?? 0) > 0,
       },
-      transformPastedHTML: reducePastedHtml,
-      handleKeyDown: (_view, event) => keys.current(event),
-      // A dropped file is not text: nothing to insert, and the browser must not open it.
-      handleDrop: (_view, event) => (event.dataTransfer?.files.length ?? 0) > 0,
-    },
-    onTransaction: ({ editor: current }) => {
-      onTransaction.current(current);
-    },
-  });
+      onTransaction: ({ editor: current }: { editor: Editor }) => {
+        onTransaction.current(current);
+      },
+      // Fired while the first render is still running: the caret is placed on
+      // the next frame, when the document is on the page to be measured.
+      onMount: ({ editor: mounted }: { editor: Editor }) => {
+        requestAnimationFrame(() => {
+          placeCaret.current(mounted, 0);
+        });
+      },
+    }),
+    // One editor per opening: its text, label and placeholder are fixed.
+    [],
+  );
+  const editor = useEditor(options);
 
   const state = useEditorState({
     editor,
@@ -372,8 +400,47 @@ export function RichEditor({
   };
 
   useEffect(() => {
-    if (mode === 'source') sourceField.current?.focus();
+    if (mode === 'source') sourceField.current?.focus({ preventScroll: true });
   }, [mode]);
+
+  /**
+   * Once the view exists: the caret where the reading view was clicked. The
+   * document is drawn as it was read, so the point lands on the same words,
+   * a toolbar's height lower.
+   */
+  placeCaret.current = (mounted: Editor, attempt: number): void => {
+    if (mounted.isDestroyed) return;
+    if (!mounted.view.dom.isConnected) {
+      // Not on the page yet: try the next frame, for a few.
+      if (attempt < 10) {
+        requestAnimationFrame(() => {
+          placeCaret.current(mounted, attempt + 1);
+        });
+      }
+      return;
+    }
+    setHeld(undefined);
+    // Clicked into already: that caret is the person's, not ours to move.
+    if (opening.kind !== 'rich' || mounted.view.hasFocus()) return;
+    const { state, view } = mounted;
+    let selection: Selection = Selection.atStart(state.doc);
+    if (caretAt !== undefined) {
+      const box = view.dom.getBoundingClientRect();
+      const style = getComputedStyle(view.dom);
+      const hit = view.posAtCoords({
+        left: box.left + Number.parseFloat(style.paddingLeft) + caretAt.x,
+        top: box.top + Number.parseFloat(style.paddingTop) + caretAt.y,
+      });
+      if (hit !== null) selection = TextSelection.near(state.doc.resolve(hit.pos));
+    }
+    /*
+     * At once, and not through `commands.focus()`: that focuses a frame
+     * later and writes its selection back over a click made in between.
+     * `view.focus()` does not scroll.
+     */
+    view.dispatch(state.tr.setSelection(selection));
+    view.focus();
+  };
 
   const toggleSource = (): void => {
     if (mode === 'rich') {
@@ -439,6 +506,7 @@ export function RichEditor({
       className={compact ? 'rich-editor rich-editor-compact' : 'rich-editor'}
       ref={wrap}
       data-mode={mode}
+      style={held === undefined ? undefined : { minHeight: held }}
     >
       <div className="rte-toolbar" role="toolbar" aria-label="Formatting">
         <span className="rte-style">

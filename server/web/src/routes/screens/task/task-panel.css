@@ -164,6 +164,19 @@
   display: inline-flex;
 }
 
+/*
+ * **No scroll anchoring while an editor is open** (LAI-827). The editor is a
+ * toolbar and a button row taller than the text it replaces, and Chrome's
+ * scroll anchoring answered the growth by scrolling the panel 100px down —
+ * measured, and gone with this — so the text a person clicked moved out from
+ * under them. Reading keeps the browser's anchoring; only an open editor
+ * opts out.
+ */
+.panel-main:has(.rich-editor, .rich-editor-loading),
+.panel-columns:has(.rich-editor, .rich-editor-loading) {
+  overflow-anchor: none;
+}
+
 /* The editor's chunk is on its way, or could not come (LazyRichEditor). */
 .rich-editor-loading,
 .rich-editor-failed {
@@ -181,6 +194,15 @@
 .rich-editor-failed p {
   margin: 0;
   color: var(--overdue);
+}
+
+/* The text it replaces stands in, so the panel does not move while it loads. */
+.rich-editor-holding {
+  display: block;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0.6;
 }
 
 .inline-edit-hint,

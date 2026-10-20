@@ -51,6 +51,24 @@ export interface RichEditorProps {
   readonly cards: readonly CardCandidate[];
   /** The composer's shape: no Cancel when empty, one line at rest. */
   readonly compact?: boolean;
+  /**
+   * Where the reading view was clicked, from the top left of its text: the
+   * caret goes there, as Jira's does, rather than to the end of a long
+   * document — which would also scroll the page away from where the person
+   * was looking.
+   */
+  readonly caretAt?: { readonly x: number; readonly y: number } | undefined;
+  /**
+   * What stands in the editor's place while its chunk loads: the text it is
+   * replacing, so the panel neither shrinks nor scrolls in between.
+   */
+  readonly holding?: ReactNode;
+  /**
+   * The height of what it replaces, held by the editor until its document is
+   * on the page: for a frame it is a toolbar and an empty box, and a panel
+   * that briefly shrinks loses its scroll position for good.
+   */
+  readonly holdHeight?: number | undefined;
 }
 
 const Editor = lazy(async () => {
@@ -93,10 +111,19 @@ export function LazyRichEditor(props: RichEditorProps) {
     <LoadFailure onClose={props.onClose}>
       <Suspense
         fallback={
-          <div className="rich-editor-loading" role="status">
-            <Spinner size="sm" label={`Opening the ${props.label.toLowerCase()} editor`} />
-            Opening the editor…
-          </div>
+          props.holding === undefined ? (
+            <div className="rich-editor-loading" role="status">
+              <Spinner size="sm" label={`Opening the ${props.label.toLowerCase()} editor`} />
+              Opening the editor…
+            </div>
+          ) : (
+            <div className="rich-editor-loading rich-editor-holding" role="status" aria-busy="true">
+              <span className="visually-hidden">
+                Opening the {props.label.toLowerCase()} editor
+              </span>
+              {props.holding}
+            </div>
+          )
         }
       >
         <Editor {...props} />

@@ -36,12 +36,24 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
+/*
+ * The toolbar stays in view down a long document. It sticks to the top of what
+ * scrolls — `.panel-main`, whose 1.25rem top padding a sticky box keeps clear
+ * of, hence the pull past it; stacked under 900px it is `.panel-columns`,
+ * which has none.
+ */
 .rte-toolbar {
   position: sticky;
-  top: 0;
+  top: -1.25rem;
   z-index: 2;
   background: var(--bg-card);
   border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+
+@media (max-width: 900px) {
+  .rte-toolbar {
+    top: 0;
+  }
 }
 
 .rte-table-tools {
@@ -162,6 +174,11 @@
 
 .rich-editor-doc li {
   position: relative;
+}
+
+/* TipTap wraps a list item's words in a paragraph; the reading view does not. */
+.rich-editor-doc li > p {
+  margin: 0;
 }
 
 .rich-editor-doc a {
@@ -470,9 +487,18 @@ img.ProseMirror-separator {
   border-top: 1px solid var(--border-subtle);
 }
 
+/* A phone: the tools in two rows, not three — the separators go first. */
 @media (max-width: 480px) {
   .rich-editor {
     margin: 0;
+  }
+
+  .rte-sep {
+    display: none;
+  }
+
+  .rte-style {
+    min-width: 6.5rem;
   }
 
   .rich-editor-hint {

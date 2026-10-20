@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { LazyRichEditor, type CardCandidate, type MentionCandidate } from './LazyRichEditor.tsx';
 import { TaskMarkdown } from './TaskMarkdown.tsx';
 import './task-panel.css';
@@ -54,17 +54,32 @@ export function DocumentField({
 }: DocumentFieldProps) {
   /** The text editing opened on, kept: a newer one arriving does not change it. */
   const [editing, setEditing] = useState<string | null>(null);
+  const [caretAt, setCaretAt] = useState<{ x: number; y: number } | undefined>(undefined);
+  const [height, setHeight] = useState<number | undefined>(undefined);
+  const field = useRef<HTMLDivElement | null>(null);
 
-  const open = (): void => {
+  const open = (at?: { x: number; y: number }): void => {
     if (!mayEdit || editing !== null) return;
+    setCaretAt(at);
+    setHeight(field.current?.offsetHeight);
     setEditing(value);
     onOpen();
   };
+
+  const reading = (text: string) =>
+    text.trim() === '' ? (
+      <p className="doc-field-placeholder">{placeholder}</p>
+    ) : (
+      <TaskMarkdown source={text} className="md-reading" />
+    );
 
   if (editing !== null) {
     return (
       <LazyRichEditor
         value={editing}
+        caretAt={caretAt}
+        holdHeight={height}
+        holding={<div className="doc-field">{reading(editing)}</div>}
         label={label}
         placeholder={placeholder}
         submitLabel="Save"
@@ -81,11 +96,10 @@ export function DocumentField({
     );
   }
 
-  const empty = value.trim() === '';
   if (!mayEdit) {
     return (
       <div className="doc-field">
-        {empty ? (
+        {value.trim() === '' ? (
           <p className="doc-field-placeholder">Nothing here yet.</p>
         ) : (
           <TaskMarkdown source={value} className="md-reading" />
@@ -96,21 +110,29 @@ export function DocumentField({
 
   return (
     <div
+      ref={field}
       className="doc-field doc-field-can"
       data-editable={name}
       onClick={(event) => {
         // A link is followed, not edited; the click ending a selection was copying.
         if ((event.target as HTMLElement).closest('a, input, button') !== null) return;
         if ((window.getSelection()?.toString() ?? '') !== '') return;
-        open();
+        const text = event.currentTarget.querySelector('.md')?.getBoundingClientRect();
+        open(
+          text === undefined
+            ? undefined
+            : { x: event.clientX - text.left, y: event.clientY - text.top },
+        );
       }}
     >
-      {empty ? (
-        <p className="doc-field-placeholder">{placeholder}</p>
-      ) : (
-        <TaskMarkdown source={value} className="md-reading" />
-      )}
-      <button type="button" className="visually-hidden" onClick={open}>
+      {reading(value)}
+      <button
+        type="button"
+        className="visually-hidden"
+        onClick={() => {
+          open();
+        }}
+      >
         Edit {label.toLowerCase()}
       </button>
     </div>
