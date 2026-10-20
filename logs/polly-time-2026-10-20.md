@@ -122,3 +122,9 @@ Merged local `master` (badb2d06: LAI-788, D-089, D-090) first; clean.
   still draft from the transcript → LAI-805.
 - The review quoted the notice as "1 results"; 0.17.0's template says
   "1 result" for one and "N results" otherwise. The fixture quotes the source.
+
+**Gate, round 1** (one repo-root run after the last code edit, load 15–53):
+`pnpm test` **1** — cli 530 passed + 2 skipped of 532, web 2231/2231, server
+3275 passed + 10 skipped, 3 failed of 3288: all three `tooling/build.test.ts`
+("built server never became healthy", LAI-768). `build.test.ts` alone: 15/15,
+exit 0. `pnpm lint` 0. `pnpm format` 0.
