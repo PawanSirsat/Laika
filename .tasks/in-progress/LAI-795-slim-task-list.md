@@ -2,11 +2,12 @@
 id: LAI-795
 title: 'Slim task list: Board and List load tasks without their description and acceptance text; the task panel loads them when opened'
 area: server
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: [LAI-785]
 discovered-from: LAI-786
-status: backlog
+status: in-progress
+started: 2026-10-20T04:32:27Z
 ---
 
 ## Goal
