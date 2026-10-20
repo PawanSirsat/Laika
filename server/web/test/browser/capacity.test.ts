@@ -425,14 +425,40 @@ void describe('states', () => {
 
 void describe('live', () => {
   void test('re-reads when the tab comes back, and every 20 s', async () => {
-    const h = await open('/insights?tab=capacity', orgStub('owner'), {
-      before: async (page) => {
-        await page.clock.install();
+    /*
+     * Each answer carries its read's number in a name, so the test can wait for
+     * an answer to be *drawn*, not only for its request to arrive (LAI-809).
+     * Until the answer settles, `/capacity` is a request in flight, and a poll
+     * that fires then joins it (`query-cache.ts`) rather than asking again — on
+     * a slow runner the clock jump below landed first, and CI read 2 !== 3.
+     */
+    const answer = capacityFor('owner');
+    let served = 0;
+    const h = await open(
+      '/insights?tab=capacity',
+      {
+        ...orgStub('owner'),
+        '/api/v1/capacity': () => {
+          served += 1;
+          return {
+            ...answer,
+            people: answer.people.map((p) =>
+              p.user_id === 'u2' ? { ...p, name: `Bea Nkosi ${String(served)}` } : p,
+            ),
+          };
+        },
       },
-    });
+      {
+        before: async (page) => {
+          await page.clock.install();
+        },
+      },
+    );
     try {
       await ready(h.page);
       const reads = () => h.calls.filter((c) => c.path === '/api/v1/capacity').length;
+      const drawn = async (read: number) =>
+        (await cardNames(h.page)).includes(`Bea Nkosi ${String(read)}`);
       const first = reads();
 
       await h.page.clock.fastForward(5_000);
@@ -441,6 +467,8 @@ void describe('live', () => {
       });
       await until(() => reads() === first + 1);
       assert.equal(reads(), first + 1, 'coming back to the tab did not re-read');
+      await until(() => drawn(first + 1));
+      assert.equal(await drawn(first + 1), true, 'the re-read was not drawn');
 
       await h.page.clock.fastForward(20_000);
       await until(() => reads() === first + 2);
@@ -590,6 +618,12 @@ void describe('tasks are drawn only when asked for', () => {
       await pawan.locator('button.cap-task', { hasText: 'LAI-9' }).waitFor({ timeout: 10_000 });
       await until(() => tries === 1);
       assert.equal(tries, 1);
+      // Wait for t2's failure to settle, not only to be asked (LAI-809): t3–t7
+      // resolve in the same `Promise.all` as t2, so six are drawn only once its
+      // 503 is back. A poll that fires while t2 is still in flight joins that
+      // request rather than asking again.
+      await until(async () => (await pawan.locator('button.cap-task').count()) === 6);
+      assert.equal(await pawan.locator('button.cap-task').count(), 6);
       assert.equal(await pawan.locator('button.cap-task', { hasText: 'LAI-12' }).count(), 0);
 
       await h.page.clock.fastForward(21_000);
