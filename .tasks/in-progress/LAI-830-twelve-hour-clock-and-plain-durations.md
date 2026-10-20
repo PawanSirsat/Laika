@@ -2,11 +2,12 @@
 id: LAI-830
 title: 'Times show on a 12-hour clock with AM/PM everywhere, and durations say "19 min" or "1 h 9 min" instead of "0:19"'
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-810
-status: backlog
+status: in-progress
+started: 2026-10-20T19:45:45Z
 ---
 
 ## Goal
