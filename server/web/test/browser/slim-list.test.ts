@@ -224,12 +224,29 @@ void describe('every list the Board reads is slim (LAI-795)', () => {
 
 void describe('the panel reads the task in full when it opens (LAI-795)', () => {
   void test('one GET /tasks/:id, and the description and acceptance come from it', async () => {
-    const server: Server = { t3: task('t3', 3, 'in_progress') };
-    const h = await open('/board?project=laika-core', stub(server));
+    // The list and the full read carry **different** texts, so what the panel
+    // draws says which one it came from.
+    const server: Server = {
+      t3: task('t3', 3, 'in_progress', {
+        description_md: 'The copy in the **list**, which the panel must not draw.',
+        acceptance_md: '- [ ] from the list',
+      }),
+    };
+    const h = await open('/board?project=laika-core', {
+      ...stub(server),
+      '/api/v1/tasks/t3': () => ({
+        ...server.t3,
+        description_md: 'The **whole** description, from GET /tasks/:id.',
+        acceptance_md: '- [ ] from the full read',
+      }),
+    });
     try {
       await h.page.locator('article.card[data-task-id="t3"]').click();
       await h.page.locator('.panel-main strong', { hasText: 'whole' }).waitFor({ timeout: 10_000 });
-      assert.match(await h.page.locator('.panel-main').innerText(), /the board does not/);
+      const main = await h.page.locator('.panel-main').innerText();
+      assert.match(main, /from GET \/tasks\/:id/);
+      assert.match(main, /from the full read/);
+      assert.doesNotMatch(main, /copy in the list|from the list/);
 
       const reads = h.calls.filter((c) => c.method === 'GET' && c.path === '/api/v1/tasks/t3');
       assert.equal(reads.length, 1, 'the panel read the task more than once on open');
@@ -375,7 +392,7 @@ void describe('the panel reads the task in full when it opens (LAI-795)', () => 
 });
 
 void describe('nothing reads a text off the list (LAI-795)', () => {
-  void test('the request a list sends never lacks the selector, across Board, List and Timeline', async () => {
+  void test('switching views and reloading reads no list in full, and no task by id without a panel', async () => {
     const server: Server = { t3: task('t3', 3, 'in_progress') };
     const h = await open('/board?project=laika-core', stub(server));
     const seen = record(h);
