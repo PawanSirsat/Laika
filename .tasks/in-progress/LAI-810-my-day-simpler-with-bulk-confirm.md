@@ -2,11 +2,12 @@
 id: LAI-810
 title: 'My day: a bounded right column with Draft my time on top, and drafted blocks you can select, page through and confirm in bulk'
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: [LAI-796]
 discovered-from: LAI-796
-status: backlog
+started: 2026-10-20T11:13:37Z
+status: in-progress
 ---
 
 ## Goal
