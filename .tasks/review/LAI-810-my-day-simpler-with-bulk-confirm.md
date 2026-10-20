@@ -7,7 +7,8 @@ priority: p1
 depends-on: [LAI-796]
 discovered-from: LAI-796
 started: 2026-10-20T11:13:37Z
-status: in-progress
+status: review
+finished: 2026-10-20T12:41:44Z
 ---
 
 ## Goal
@@ -49,7 +50,7 @@ What the screenshots show:
     time, with **Confirm selected**, **General**, **Not work** and **Clear**.
   - Shift-click selects a range.
   - Everything works by keyboard and has labels.
-- [ ] **Bulk actions:**
+- [x] **Bulk actions:**
   - They use the endpoints that exist: `POST /me/time-drafts/:id/confirm`,
     `/dismiss`, and `POST /me/time/days/:day/confirm` when the whole day is
     meant.
@@ -92,7 +93,7 @@ What the screenshots show:
   - Prove at least two of these by mutation, confirming each mutation landed.
 - [x] **Before/after screenshots** in `/tmp/laika-myday-shots/`, with a
       **busy-day fixture**: 40+ drafted blocks and 200 waiting on review.
-- [x] **Gate:** `pnpm test`, `pnpm lint` and `pnpm format`, each with its own
+- [ ] **Gate:** `pnpm test`, `pnpm lint` and `pnpm format`, each with its own
       exit code.
 
 ## Owner addition (2026-10-20)
@@ -235,7 +236,7 @@ bulk bar). The whole page went from 10,805 px to 1,381 px at 1440, and from
 Relayed by the orchestrator. The "Bulk actions" criterion is unticked until
 B1 is fixed.
 
-- [ ] **B1 (blocker): Confirm selected confirms what the server holds, not
+- [x] **B1 (blocker): Confirm selected confirms what the server holds, not
       what was ticked.** With every block ticked, `runBulk` sent `POST
       /me/time/days/:day/confirm` (`draft-bulk.ts:178-187`) and reported the
       page's own ids. The server confirms every pending draft of the day, and
@@ -255,25 +256,25 @@ B1 is fixed.
     never confirms the extra block. Proved by mutation, landed first.
 
 Follow-ups, each small:
-- [ ] 1. The header path's report says "still selected" or "stay selected"
+- [x] 1. The header path's report says "still selected" or "stay selected"
       when nothing is selected (`MyDayScreen.tsx:226`; assertion at
       `my-day-bulk.test.ts:367`). Word it for the header path.
-- [ ] 2. Stale ids: several `No draft "<id>"` 404s collapse into one sentence
+- [x] 2. Stale ids: several `No draft "<id>"` 404s collapse into one sentence
       ("12 blocks changed since this page loaded — reloaded; please review
       again"), never "stay selected" when the reload removes them.
-- [ ] 3. A test proving bulk Not work asks first. A mutant that skipped the
+- [x] 3. A test proving bulk Not work asks first. A mutant that skipped the
       question stayed green in both browser files.
-- [ ] 4. During a batch, Add time and the week strip's day change are
+- [x] 4. During a batch, Add time and the week strip's day change are
       disabled, or the batch's progress and report are tied to its own day.
-- [ ] 5. Bulk General: ask once before moving blocks already on a card, or
+- [x] 5. Bulk General: ask once before moving blocks already on a card, or
       move only blocks on nothing. Pick one and say why.
-- [ ] 6. The header Confirm with some blocks needing a card stays partial,
+- [x] 6. The header Confirm with some blocks needing a card stays partial,
       but its report says exactly how many were confirmed and how many left,
       and a `day_full` refusal (1440 minutes) part-way is said clearly.
-- [ ] 7. SPEC §11.4.2.1 (around `SPEC.md:4062-4069`) still says "Confirm day
+- [x] 7. SPEC §11.4.2.1 (around `SPEC.md:4062-4069`) still says "Confirm day
       with the drafted total" and the old column order. Updated to match, as
       a named SPEC edit per D-033, that section only.
-- [ ] 8. Small items: remove the unused `.myday-subhead`
+- [x] 8. Small items: remove the unused `.myday-subhead`
       (`my-day.css:115-122`); blocks with no set time get unique accessible
       names (duration or index); agent-minute rows (`agent-time.ts:166-178`)
       link a task only when the reader can read it, as drafts do; "+N more"
@@ -282,3 +283,91 @@ Follow-ups, each small:
 
 Left as they are (non-blocking): card links take the space from the draft's
 project.
+
+## Builder notes, round 1 (2026-10-20)
+
+**Gate is unticked.** This round's one repo-root run was **TEST 1**, LINT 0,
+FMT 0. The only failure was `server/test/tooling/build.test.ts`, *"produces
+an identical tree on a second run"*, timing out at 120 s: one of LAI-768's
+load-timeout files, which this branch does not touch. The machine was at a
+load average of 12 to 42 with another builder running. Re-run alone,
+`npx vitest run test/tooling/build.test.ts` (in `server/`): 16 of 16 passed,
+exit 0, in 112.8 s. Both runs are reported, and per the dispatch the Gate line
+stays unticked unless TEST is 0.
+
+**B1.** *Confirm selected* now always confirms block by block, by id
+(`runBulk` in `draft-bulk.ts`), however many are ticked. It never sends
+`POST /me/time/days/:day/confirm`. A block that changed since the page loaded
+answers 404 and is not replaced by anything. Confirm-day stays for the
+header button, only when every block on the page is ready
+(`runConfirmDay`). What comes back is compared with the page (`dayReport`):
+more blocks, fewer blocks, other minutes, or a block on no card now General
+are each said, and the day is reloaded.
+
+**The other items:**
+1. **Header wording.** The header path has its own report and never says
+   "selected": "Confirmed 36 of 42 blocks; 6 left drafted — 6 need a card or
+   General (…)".
+2. **Stale ids.** 404s become one sentence: "N blocks changed since this page
+   loaded — reloaded; please review again". They are not kept selected.
+3. **Not work** asks first. A new browser test catches the reviewer's mutant
+   (see below).
+4. **During a batch,** Add time, the week arrows, the other days and *Today*
+   are disabled. The batch's progress and report carry its day and show only
+   on that day.
+5. **General asks once** when any ticked block is on a card or a space: "N of
+   these are on a card or a space — move them to General too?", with *Move
+   all*, *Only the K on nothing*, and *Keep them*. I chose asking over
+   refusing because moving many blocks the collector put on the wrong card is
+   a real correction, and refusing would force it row by row. Blocks only on
+   nothing move at once, and ticked blocks the batch did not touch stay
+   ticked.
+6. **The header with blocks needing a card** is still partial. It says how
+   many were confirmed and how many were left, and why. A `422 day_full`
+   stops the pass at that block in both paths, and the report names the
+   block where it stopped and counts the rest as not confirmed.
+7. **SPEC §11.4.2.1, the My day entry only,** is rewritten to match
+   (fcc7cdc9).
+8. **Small items:**
+   - `.myday-subhead` is removed.
+   - Blocks and entries with no set time are named "block 3 of 42, no set
+     time, 0:15".
+   - Agent-minute rows link only when the card's key prefix is a space the
+     reader can read. `GET /projects` lists only those, and prefixes are
+     unique per organisation. It is read once for the page and shared with
+     On your plate. An unreadable card shows as "SEC-9 (not a card you can
+     see)", without its title.
+   - "+N more" spanning several spaces gives one link per space, naming it
+     ("+3 in Atlas", "+2 in Onroute").
+
+**Discovered:** the server still sends those unreadable titles in `GET
+/me/time`'s `by_task` → **LAI-816** filed (CHIEF's block, D-089).
+
+**Tests** (in `server/web`, one file at a time):
+- **Unit,** `node --test test/routes/screens/my-day/<file>.test.ts`, every
+  file exit 0: task-link 7, plate-derive 18, draft-bulk 25, my-day-derive 18,
+  day-timeline 12. That is 80 cases across 5 files.
+- **Browser,** `node --test --test-concurrency=1 test/browser/my-day-bulk.test.ts`
+  → 17 cases, exit 0. `test/browser/my-day.test.ts` → 4 cases, exit 0.
+  - The new cases are: B1 (the server's day holds an extra block on nothing,
+    and Confirm selected sends only the page's ids), stale ids, the header's
+    confirm-day with a differing server day, the header's partial report,
+    `day_full` part-way, Not work asks first, General asks, mid-batch locks,
+    and untimed names.
+
+**Mutations,** six, each confirmed landed (checksum changed, new text grepped;
+the Not work mutant carried a unique marker), then restored by checksum.
+`git status` was clean afterwards. Each red was its intended assertion, with
+a clean build:
+1. `runBulk` sends confirm-day when every ticked block is ready → red: B1
+   browser ("Confirm selected confirmed the day") and its unit test.
+2. Not work skips the question → red: *Not work asks first*. The 4 older My
+   day cases stayed green, which is the gap the reviewer found.
+3. General skips the question → red: *General asks before…*.
+4. Stale 404s kept selected → red: "3 selected · 0:51" ≠ "1 selected · 0:18",
+   plus the unit test.
+5. An unreadable agent card linked → red: 7 links ≠ 6.
+6. Add time not locked → red: "time can be added mid-batch".
+
+`master` was merged in (72344c83: decisions, logs and task files only) before
+the gate.
