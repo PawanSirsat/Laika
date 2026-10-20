@@ -1,5 +1,5 @@
 ---
-id: LAI-797
+id: LAI-800
 title: 'REST has no task lookup by key or outside id — GET /tasks/:id takes an id only, so a CLI goes through /mcp'
 area: server
 assignee: unclaimed
@@ -33,3 +33,11 @@ stub board had answered a key there, which the real server never did. The CLI
 now reads `structuredContent.task` from a stateless `tools/call` on `/mcp`,
 which works and is §7.1's interface, but parses a JSON-RPC envelope to read
 three fields.
+
+## Renumbered
+
+Filed as `LAI-797` on branch `LAI-788-solidtime-bridge` (commit e1035a86),
+the same day the polly-time builder filed its own `LAI-797` from LAI-792's
+branch. That one was filed first and keeps the id; this one became
+`LAI-800` at the merge (D-089). **Commits and LAI-788's log and task file
+that say `LAI-797` for this task mean this file**, and are not rewritten (§4).
