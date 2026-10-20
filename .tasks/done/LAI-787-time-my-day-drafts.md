@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-10-19T22:43:15Z
 finished: 2026-10-20T03:56:49Z
 ---
