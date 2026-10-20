@@ -15,7 +15,7 @@
   background: var(--chip-neutral-bg);
   color: var(--chip-neutral);
   font-family: var(--font-mono);
-  font-size: 0.65625rem;
+  font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   line-height: 1.25;
   white-space: nowrap;

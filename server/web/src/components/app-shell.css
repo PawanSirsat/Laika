@@ -27,7 +27,7 @@
   background: var(--bg-canvas);
   color: var(--text-primary);
   font-family: var(--font-ui);
-  font-size: var(--text-base);
+  font-size: var(--text-body);
 }
 
 /* The 60px icon rail (LAI-796), and the pre-auth pages, which have none. */
@@ -88,7 +88,7 @@
 
 .sidebar-wordmark {
   font-weight: var(--weight-heavy);
-  font-size: 0.875rem;
+  font-size: var(--text-body);
   line-height: 1;
   letter-spacing: -0.02em;
 }

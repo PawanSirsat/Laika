@@ -18,7 +18,7 @@
   padding: 0 0.75rem;
   border-bottom: 2px solid transparent;
   color: var(--text-secondary);
-  font-size: var(--text-md);
+  font-size: var(--text-body);
   font-weight: var(--weight-semibold);
   text-decoration: none;
   white-space: nowrap;
@@ -42,7 +42,7 @@
 
 .page-tab-count {
   font-family: var(--font-mono);
-  font-size: var(--text-base);
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
 }

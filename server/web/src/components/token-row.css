@@ -47,20 +47,20 @@
 }
 
 .tok-name {
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
 }
 
 .tok-prefix {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   color: var(--text-muted);
 }
 
 .tok-state {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-muted);
@@ -74,7 +74,7 @@
   flex-wrap: wrap;
   gap: var(--space-1) var(--space-3);
   margin-left: auto;
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   color: var(--text-muted);
 }
 
@@ -88,7 +88,7 @@
 .tok-revoke {
   flex: none;
   padding: var(--space-1) var(--space-3);
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
   border-radius: var(--radius-chip);
   cursor: pointer;
   color: var(--overdue);
@@ -97,6 +97,6 @@
 }
 
 .tok-revoked-at {
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   color: var(--text-muted);
 }
