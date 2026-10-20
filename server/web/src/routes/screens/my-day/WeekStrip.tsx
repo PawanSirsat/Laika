@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import type { MyDayWeekDay } from '../../../api/time.ts';
 import { duration } from './format.ts';
 import { addDays, dayLabel } from './my-day-derive.ts';
@@ -13,6 +14,26 @@ export interface WeekStripProps {
 }
 
 const pct = (share: number): string => `${String(Math.round(share * 1000) / 10)}%`;
+
+/**
+ * A day's figure breaks between its units, never inside one — `7 h` over
+ * `30 min` — so a narrow tile, or a wider font than ours, never cuts it short
+ * (LAI-831). The words are the shared helper's own; only the line breaks are
+ * placed.
+ */
+function Figure({ text }: { readonly text: string }) {
+  const units = text.match(/\d+ \S+/g) ?? [text];
+  return (
+    <span className="myday-week-figure">
+      {units.map((unit, i) => (
+        <Fragment key={unit}>
+          {i > 0 && ' '}
+          <span className="myday-week-unit">{unit}</span>
+        </Fragment>
+      ))}
+    </span>
+  );
+}
 
 /**
  * The week around the open day, Monday to Sunday (LAI-787; the owner's
@@ -123,7 +144,7 @@ export function WeekStrip({ week, selected, today, locked = false, onPick }: Wee
                     />
                   )}
                 </span>
-                <span className="myday-week-figure">{tile.figure}</span>
+                <Figure text={tile.figure} />
                 <span className="myday-week-meter" aria-hidden="true">
                   <span
                     className="myday-week-meter-confirmed"
