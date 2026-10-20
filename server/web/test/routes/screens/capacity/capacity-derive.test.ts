@@ -202,7 +202,10 @@ void describe('statusText — words, not only a colour', () => {
     assert.equal(at('never', null).text, 'Never seen');
     assert.equal(at(null, null).text, 'Presence is off');
     // The tooltip carries the absolute time and what the signal was.
-    assert.match(at('offline', 2 * HOUR).title ?? '', /2026, \d{1,2}:\d\d:\d\d [AP]M · a board action$/);
+    assert.match(
+      at('offline', 2 * HOUR).title ?? '',
+      /2026, \d{1,2}:\d\d:\d\d [AP]M · a board action$/,
+    );
   });
 });
 

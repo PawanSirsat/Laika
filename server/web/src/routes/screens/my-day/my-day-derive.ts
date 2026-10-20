@@ -136,7 +136,9 @@ export function parseMinutes(text: string): number | undefined {
   if ((m = /^(\d{1,4})(?:m|mins?|minutes?)?$/.exec(t)) !== null) minutes = Number(m[1]);
   else if ((m = /^(\d{1,2}):(\d{2})$/.exec(t)) !== null) {
     if (Number(m[2]) < 60) minutes = Number(m[1]) * 60 + Number(m[2]);
-  } else if ((m = /^(\d{1,2})(?:h|hrs?|hours?)(?:(\d{1,2})(?:m|mins?|minutes?)?)?$/.exec(t)) !== null) {
+  } else if (
+    (m = /^(\d{1,2})(?:h|hrs?|hours?)(?:(\d{1,2})(?:m|mins?|minutes?)?)?$/.exec(t)) !== null
+  ) {
     const extra = Number(m[2] ?? '0');
     if (extra < 60) minutes = Number(m[1]) * 60 + extra;
   } else if ((m = /^(\d{1,2}(?:\.\d{1,2})?)(?:h|hrs?|hours?)$/.exec(t)) !== null) {
@@ -174,7 +176,9 @@ export function splitAt(
     ? [parsed.minute, (parsed.minute + 720) % 1440]
     : [parsed.minute];
   const { started_at: from, ended_at: to } = item;
-  return readings.map((minute) => atMinute(item.day, minute, item.tz)).find((at) => at > from && at < to);
+  return readings
+    .map((minute) => atMinute(item.day, minute, item.tz))
+    .find((at) => at > from && at < to);
 }
 
 /** What *Split…* understood: `Splits at 2:35 PM`, or `undefined` outside the block. */

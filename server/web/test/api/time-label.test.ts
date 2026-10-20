@@ -201,7 +201,17 @@ void describe('parseClock — a time of day as a person types it', () => {
   });
 
   void test('anything else is undefined', () => {
-    for (const text of ['', 'soon', '14', '13:00 PM', '0:30 AM', '2:60', '25:00', '2:3', '2:35 xm']) {
+    for (const text of [
+      '',
+      'soon',
+      '14',
+      '13:00 PM',
+      '0:30 AM',
+      '2:60',
+      '25:00',
+      '2:3',
+      '2:35 xm',
+    ]) {
       assert.equal(parseClock(text), undefined, text);
     }
   });

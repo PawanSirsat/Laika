@@ -299,7 +299,13 @@ void describe('My day after the reference', () => {
  * confirmed draft`, `0:19`, `0:15`, `0:08` and `entries · 1:09`: *"is this
  * minutes or hours?"*. The same day, as it reads now.
  */
-const entry = (id: string, from: number | null, to: number | null, minutes: number, note: string) => ({
+const entry = (
+  id: string,
+  from: number | null,
+  to: number | null,
+  minutes: number,
+  note: string,
+) => ({
   id,
   day: TODAY,
   tz: 'UTC',
@@ -337,10 +343,7 @@ void describe('times and durations say their units (LAI-830)', () => {
       assert.equal(await row('o1').locator('.myday-block-time').innerText(), '2:29–2:48 PM');
       assert.equal(await row('o1').locator('.myday-block-minutes').innerText(), '19 min');
       // Each end says its own AM/PM across noon.
-      assert.equal(
-        await row('o2').locator('.myday-block-time').innerText(),
-        '11:40 AM–12:10 PM',
-      );
+      assert.equal(await row('o2').locator('.myday-block-time').innerText(), '11:40 AM–12:10 PM');
       assert.equal(await row('o3').locator('.myday-block-minutes').innerText(), '15 min');
       assert.equal(await row('o4').locator('.myday-block-minutes').innerText(), '8 min');
       // The header total: was `entries · 1:09`.
@@ -367,7 +370,11 @@ void describe('times and durations say their units (LAI-830)', () => {
 
       // Nothing on the page is a duration or a clock in the old form.
       const text = await h.page.locator('.myday-main').innerText();
-      assert.doesNotMatch(text, /\b\d{1,2}:\d{2}\b(?! ?[AP]M)(?!–\d)/, 'an h:mm or 24-hour time is left');
+      assert.doesNotMatch(
+        text,
+        /\b\d{1,2}:\d{2}\b(?! ?[AP]M)(?!–\d)/,
+        'an h:mm or 24-hour time is left',
+      );
       assert.doesNotMatch(text, /\b(?:1[3-9]|2[0-3]):\d{2}\b/, 'a 24-hour time is left');
     } finally {
       await h.close();
@@ -405,11 +412,7 @@ void describe('times and durations say their units (LAI-830)', () => {
       await form.locator('input').fill('9:30 PM');
       assert.equal(await form.locator('[data-understood]').count(), 0, '9:30 PM is outside');
       // Nothing was sent while typing.
-      assert.equal(
-        h.calls.filter((c) => c.method !== 'GET').length,
-        0,
-        'typing saved something',
-      );
+      assert.equal(h.calls.filter((c) => c.method !== 'GET').length, 0, 'typing saved something');
     } finally {
       await h.close();
     }

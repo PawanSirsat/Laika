@@ -487,8 +487,7 @@ export function DashboardScreen() {
       )}
       {refreshError !== null && (
         <p className="dash-note dash-note-stale" role="status">
-          Could not refresh — this is the dashboard as of{' '}
-          {clockTime(asOf)}.{' '}
+          Could not refresh — this is the dashboard as of {clockTime(asOf)}.{' '}
           <button type="button" className="dash-note-retry" onClick={dashboard.reload}>
             Retry
           </button>

@@ -64,7 +64,13 @@ export function dayTimeline(
       untimed += 1;
       return;
     }
-    blocks.push({ kind, id: item.id, start, end, label: `${target} · ${formatDuration(item.minutes)}` });
+    blocks.push({
+      kind,
+      id: item.id,
+      start,
+      end,
+      label: `${target} · ${formatDuration(item.minutes)}`,
+    });
   };
 
   for (const entry of view.entries) place('confirmed', entry, entryTarget(entry));

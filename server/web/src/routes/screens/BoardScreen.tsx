@@ -1352,10 +1352,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       {board.state.status === 'ready' && board.state.refreshError !== null && (
         <p className="board-scope board-stale" role="status">
           Could not refresh — this is the board as of{' '}
-          {board.state.asOf === null
-            ? 'its last read'
-            : clockTime(board.state.asOf)}
-          .{' '}
+          {board.state.asOf === null ? 'its last read' : clockTime(board.state.asOf)}.{' '}
           <button type="button" className="board-alert-close" onClick={refresh}>
             Retry
           </button>
