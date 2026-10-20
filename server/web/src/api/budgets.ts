@@ -1,4 +1,5 @@
 import { request } from './client.ts';
+import { formatDuration } from './duration.ts';
 import { compactTokens } from './usage.ts';
 
 /**
@@ -159,7 +160,7 @@ export function parseTokens(input: string): number | undefined {
  */
 export function runawayLine(runaway: Runaway, now: number = Date.now()): string {
   const quiet = Math.max(1, Math.round((now - runaway.last_progress_at) / 60_000));
-  const since = quiet < 120 ? `${String(quiet)} min` : `${String(Math.round(quiet / 60))} h`;
+  const since = formatDuration(quiet);
   return `Your agent has spent ${compactTokens(runaway.tokens)} on this task, past its p95 of ${compactTokens(
     runaway.p95,
   )}, and nothing has landed for ${since} — no commit pushed and no new session on it.`;

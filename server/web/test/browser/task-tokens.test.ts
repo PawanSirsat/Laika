@@ -743,7 +743,7 @@ void describe('LAI-773: cost, the budget and the runaway banner', () => {
       await banner.waitFor();
       assert.match(
         await banner.innerText(),
-        /^Your agent has spent 7M on this task, past its p95 of 5\.99M, and nothing has landed for 7\d min — no commit pushed and no new session on it\.$/,
+        /^Your agent has spent 7M on this task, past its p95 of 5\.99M, and nothing has landed for 1 h 1\d min — no commit pushed and no new session on it\.$/,
       );
     } finally {
       await h.close();

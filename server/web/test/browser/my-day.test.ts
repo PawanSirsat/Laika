@@ -171,7 +171,7 @@ void describe('My day after the reference', () => {
       assert.match(await head.innerText(), /yours only/);
       assert.match(
         await head.locator('.myday-chip-primary').innerText(),
-        /Confirm day · 1:35/,
+        /Confirm day · 1 h 35 min/,
         'Confirm day does not say what it confirms',
       );
       assert.equal(await head.getByRole('button', { name: 'Previous week' }).count(), 1);
@@ -288,6 +288,131 @@ void describe('My day after the reference', () => {
           }
         }
       }
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/*
+ * LAI-830 — the owner's two crops of the Confirmed list read `14:29–14:48 ·
+ * confirmed draft`, `0:19`, `0:15`, `0:08` and `entries · 1:09`: *"is this
+ * minutes or hours?"*. The same day, as it reads now.
+ */
+const entry = (
+  id: string,
+  from: number | null,
+  to: number | null,
+  minutes: number,
+  note: string,
+) => ({
+  id,
+  day: TODAY,
+  tz: 'UTC',
+  started_at: from,
+  ended_at: to,
+  minutes,
+  source: 'manual',
+  task: null,
+  project: null,
+  note,
+  revision: 1,
+  created_at: 1,
+  updated_at: 1,
+});
+
+const OWNER_DAY = {
+  ...DAY,
+  entries: [
+    entry('o1', at(14, 29), at(14, 48), 19, 'confirmed draft'),
+    entry('o2', at(11, 40), at(12, 10), 27, 'across noon'),
+    entry('o3', at(15, 0), at(15, 15), 15, 'a review'),
+    entry('o4', null, null, 8, 'a call'),
+  ],
+};
+
+void describe('times and durations say their units (LAI-830)', () => {
+  void test('a 12-hour clock with AM/PM, and minutes and hours in words', async () => {
+    const h = await open('/my-day', { ...STUB, '/api/v1/me/time': OWNER_DAY });
+    try {
+      const confirmed = h.page.locator('.myday-entries');
+      await confirmed.locator('[data-entry="o1"]').waitFor({ timeout: 20_000 });
+      const row = (id: string) => confirmed.locator(`[data-entry="${id}"]`);
+
+      // The owner's row: was `14:29–14:48` and `0:19`.
+      assert.equal(await row('o1').locator('.myday-block-time').innerText(), '2:29–2:48 PM');
+      assert.equal(await row('o1').locator('.myday-block-minutes').innerText(), '19 min');
+      // Each end says its own AM/PM across noon.
+      assert.equal(await row('o2').locator('.myday-block-time').innerText(), '11:40 AM–12:10 PM');
+      assert.equal(await row('o3').locator('.myday-block-minutes').innerText(), '15 min');
+      assert.equal(await row('o4').locator('.myday-block-minutes').innerText(), '8 min');
+      // The header total: was `entries · 1:09`.
+      assert.equal(
+        await confirmed.locator('[data-confirmed-caption]').innerText(),
+        '4 entries · 1 h 9 min',
+      );
+
+      // The drafted list, Confirm day, the week strip and the bar say the same.
+      const drafted = h.page.locator('[data-draft="d1"]');
+      assert.equal(await drafted.locator('.myday-block-time').innerText(), '8:40–10:15 AM');
+      assert.equal(await drafted.locator('.myday-block-minutes').innerText(), '1 h 35 min');
+      assert.match(
+        await h.page.locator('.screen-page .myday-chip-primary').innerText(),
+        /Confirm day · 1 h 35 min/,
+      );
+      // Today's cell: 75 confirmed and 95 drafted, was `2:50`.
+      assert.equal(
+        await h.page.locator('.myday-week-today .myday-week-figure').innerText(),
+        '2 h 50 min',
+      );
+      const ticks = await h.page.locator('.dayline-hours span').allInnerTexts();
+      assert.ok(ticks.includes('8 AM') && ticks.includes('12 PM'), `ticks: ${ticks.join(', ')}`);
+
+      // Nothing on the page is a duration or a clock in the old form.
+      const text = await h.page.locator('.myday-main').innerText();
+      assert.doesNotMatch(
+        text,
+        /\b\d{1,2}:\d{2}\b(?! ?[AP]M)(?!–\d)/,
+        'an h:mm or 24-hour time is left',
+      );
+      assert.doesNotMatch(text, /\b(?:1[3-9]|2[0-3]):\d{2}\b/, 'a 24-hour time is left');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the inputs say what they understood before anything is saved', async () => {
+    const h = await open('/my-day', { ...STUB, '/api/v1/me/time': OWNER_DAY });
+    try {
+      const add = h.page.locator('form[aria-label="Add time"]');
+      await add.waitFor({ timeout: 20_000 });
+      const howLong = add.getByLabel('How long');
+      for (const [typed, read] of [
+        ['45', '45 min'],
+        ['45m', '45 min'],
+        ['1h 30m', '1 h 30 min'],
+        ['1:30', '1 h 30 min'],
+      ] as const) {
+        await howLong.fill(typed);
+        assert.equal(
+          await add.locator('[data-understood]').innerText(),
+          `Reads as ${read}`,
+          `"${typed}" is not shown as understood`,
+        );
+      }
+
+      // Split… on the 8:40–10:15 AM block: `9:30` can only be the morning.
+      const drafted = h.page.locator('[data-draft="d1"]');
+      await drafted.getByRole('button', { name: /^More for / }).click();
+      await h.page.getByRole('menuitem', { name: 'Split…' }).click();
+      const form = drafted.locator('.myday-block-form');
+      assert.match(await form.innerText(), /Split at \(inside 8:40–10:15 AM\)/);
+      await form.locator('input').fill('9:30');
+      assert.equal(await form.locator('[data-understood]').innerText(), 'Splits at 9:30 AM');
+      await form.locator('input').fill('9:30 PM');
+      assert.equal(await form.locator('[data-understood]').count(), 0, '9:30 PM is outside');
+      // Nothing was sent while typing.
+      assert.equal(h.calls.filter((c) => c.method !== 'GET').length, 0, 'typing saved something');
     } finally {
       await h.close();
     }

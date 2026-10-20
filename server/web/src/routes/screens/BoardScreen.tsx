@@ -85,6 +85,7 @@ import './board/board.css';
 import './board/board-motion.css';
 import { pickProject } from '../../api/pick-project.ts';
 import { withProjectParam } from '../nav-url.ts';
+import { clockTime } from '../../api/time-label.ts';
 
 export type BoardViewMode = 'kanban' | 'list';
 
@@ -1351,13 +1352,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       {board.state.status === 'ready' && board.state.refreshError !== null && (
         <p className="board-scope board-stale" role="status">
           Could not refresh — this is the board as of{' '}
-          {board.state.asOf === null
-            ? 'its last read'
-            : new Date(board.state.asOf).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
-          .{' '}
+          {board.state.asOf === null ? 'its last read' : clockTime(board.state.asOf)}.{' '}
           <button type="button" className="board-alert-close" onClick={refresh}>
             Retry
           </button>

@@ -7,12 +7,15 @@ import type {
   TimeSettings,
   TimeSignals,
 } from '../../../api/time.ts';
+import { formatDuration } from '../../../api/duration.ts';
+import { clockRange, clockTime, parseClock } from '../../../api/time-label.ts';
 
 /**
  * Everything My day works out before it draws (LAI-787, D-088): days in the
  * person's own zone, the week strip, the words for a block's evidence, and the
- * two units the page uses — **h:mm for the person's own time, and minutes for
- * an agent's, never hours** (D-088 item 8).
+ * two units the page uses — **the person's own time in words (`1 h 9 min`,
+ * LAI-830), and an agent's in minutes, never hours** (D-088 item 8). Times of
+ * day are on the 12-hour clock, in the block's own zone.
  *
  * Pure: no clock is read here unless one is passed in, so every answer is the
  * same on a slow machine and a fast one.
@@ -55,12 +58,6 @@ export function dayIn(tz: string, ms: number): string {
   return `${String(w.y)}-${pad(w.m)}-${pad(w.d)}`;
 }
 
-/** `09:40` in `tz`. */
-export function clockIn(tz: string, ms: number): string {
-  const w = wallOf(tz, ms);
-  return `${pad(w.h)}:${pad(w.mi)}`;
-}
-
 /** `2026-10-20` + 3 → `2026-10-23`, on the calendar, whatever the zone. */
 export function addDays(day: string, n: number): string {
   return new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
@@ -94,14 +91,19 @@ export function weekdayShort(day: string): string {
 /**
  * The instant a wall-clock time on `day` names in `tz` — for *split at 10:15*.
  * The later one when a clock change folds the hour; `undefined` for a time
- * that is not `HH:MM`.
+ * {@link parseClock} cannot read. Without AM/PM it is the 24-hour reading;
+ * {@link splitAt} is the one that picks between the two.
  */
 export function atClock(day: string, clock: string, tz: string): number | undefined {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(clock.trim());
-  if (match === null || !isDay(day)) return undefined;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  if (hours > 23 || minutes > 59) return undefined;
+  const parsed = parseClock(clock);
+  if (parsed === undefined || !isDay(day)) return undefined;
+  return atMinute(day, parsed.minute, tz);
+}
+
+/** The instant minute `minute` of `day` names in `tz`. */
+function atMinute(day: string, minute: number, tz: string): number {
+  const hours = Math.floor(minute / 60);
+  const minutes = minute % 60;
   const [y, m, d] = day.split('-').map(Number) as [number, number, number];
   const guess = Date.UTC(y, m - 1, d, hours, minutes);
   const offsetAt = (at: number): number => {
@@ -112,39 +114,80 @@ export function atClock(day: string, clock: string, tz: string): number | undefi
   return guess - offsetAt(first);
 }
 
-/** The person's own time: `2:05`, `0:45`. */
-export function hm(minutes: number): string {
-  const whole = Math.max(0, Math.round(minutes));
-  return `${String(Math.floor(whole / 60))}:${pad(whole % 60)}`;
-}
-
 /**
  * An agent's time: `142 min` — **always minutes, never hours** (D-088 item 8).
  * Agent time is not a person's time, and an hour figure beside the person's
  * own would read as one: 600 minutes stays `600 min`.
  */
 export function agentMinutes(minutes: number): string {
-  return `${String(Math.max(0, Math.round(minutes)))} min`;
+  return formatDuration(minutes, { largest: 'min' });
 }
 
 /**
- * How long, as a person types it: `90`, `1:30`, `1h30`, `1h`, `45m`, `1.5h`.
- * `undefined` for anything else or for nothing at all; 1 to 1440 minutes.
+ * How long, as a person types it: `90`, `45m`, `45 min`, `1:30`, `1h30`,
+ * `1h 30m`, `1 h 30 min`, `1h`, `1.5h`, `1 d` — so every duration the page
+ * prints, and prefills a field with, reads back as itself. `undefined` for anything else or for nothing
+ * at all; 1 to 1440 minutes.
  */
 export function parseMinutes(text: string): number | undefined {
   const t = text.trim().toLowerCase().replace(/\s+/g, '');
   let minutes: number | undefined;
   let m: RegExpExecArray | null;
-  if ((m = /^(\d{1,4})m?(?:in)?$/.exec(t)) !== null) minutes = Number(m[1]);
+  if ((m = /^(\d{1,4})(?:m|mins?|minutes?)?$/.exec(t)) !== null) minutes = Number(m[1]);
   else if ((m = /^(\d{1,2}):(\d{2})$/.exec(t)) !== null) {
     if (Number(m[2]) < 60) minutes = Number(m[1]) * 60 + Number(m[2]);
-  } else if ((m = /^(\d{1,2})h(?:(\d{1,2})m?)?$/.exec(t)) !== null) {
+  } else if (
+    (m = /^(\d{1,2})(?:h|hrs?|hours?)(?:(\d{1,2})(?:m|mins?|minutes?)?)?$/.exec(t)) !== null
+  ) {
     const extra = Number(m[2] ?? '0');
     if (extra < 60) minutes = Number(m[1]) * 60 + extra;
-  } else if ((m = /^(\d{1,2}(?:\.\d{1,2})?)h$/.exec(t)) !== null) {
+  } else if ((m = /^(\d{1,2}(?:\.\d{1,2})?)(?:h|hrs?|hours?)$/.exec(t)) !== null) {
     minutes = Math.round(Number(m[1]) * 60);
+  } else if (/^1(?:d|days?)$/.test(t)) {
+    // A whole day is the most there is, and how a 24-hour block now prints.
+    minutes = 1440;
   }
   return minutes !== undefined && minutes >= 1 && minutes <= 1440 ? minutes : undefined;
+}
+
+/**
+ * What a *How long* field understood, said back before anything is saved:
+ * `Reads as 1 h 30 min`. `undefined` while it reads as nothing yet.
+ */
+export function minutesUnderstood(text: string): string | undefined {
+  const minutes = parseMinutes(text);
+  return minutes === undefined ? undefined : `Reads as ${formatDuration(minutes)}`;
+}
+
+/**
+ * Where *Split…* would cut a block: the instant `text` names **inside** it.
+ * `2:35 PM` and `14:35` say which; a bare `2:35` is taken as whichever of
+ * 2:35 AM and 2:35 PM falls inside the block, since the screen shows a
+ * 12-hour clock and nobody should have to type the 24-hour one.
+ */
+export function splitAt(
+  item: Pick<TimeDraft, 'day' | 'tz' | 'started_at' | 'ended_at'>,
+  text: string,
+): number | undefined {
+  const parsed = parseClock(text);
+  if (parsed === undefined || item.started_at === null || item.ended_at === null) return undefined;
+  if (!isDay(item.day)) return undefined;
+  const readings = parsed.ambiguous
+    ? [parsed.minute, (parsed.minute + 720) % 1440]
+    : [parsed.minute];
+  const { started_at: from, ended_at: to } = item;
+  return readings
+    .map((minute) => atMinute(item.day, minute, item.tz))
+    .find((at) => at > from && at < to);
+}
+
+/** What *Split…* understood: `Splits at 2:35 PM`, or `undefined` outside the block. */
+export function splitUnderstood(
+  item: Pick<TimeDraft, 'day' | 'tz' | 'started_at' | 'ended_at'>,
+  text: string,
+): string | undefined {
+  const at = splitAt(item, text);
+  return at === undefined ? undefined : `Splits at ${clockTime(at, { timeZone: item.tz })}`;
 }
 
 const plural = (n: number, one: string, many: string): string =>
@@ -167,10 +210,10 @@ export function evidenceLine(signals: TimeSignals, source: TimeDraft['source']):
   return source === 'agent' ? 'Proposed by one of your agents' : 'No signals counted';
 }
 
-/** `09:40–11:05` in the block's own zone, or `''` when it has no times. */
+/** `9:40–11:05 AM` in the block's own zone, or `''` when it has no times. */
 export function rangeLabel(item: Pick<TimeDraft | TimeEntry, 'started_at' | 'ended_at' | 'tz'>) {
   if (item.started_at === null || item.ended_at === null) return '';
-  return `${clockIn(item.tz, item.started_at)}–${clockIn(item.tz, item.ended_at)}`;
+  return clockRange(item.started_at, item.ended_at, { timeZone: item.tz });
 }
 
 /** What a draft is on, in words, and whether it still needs a card or General. */
@@ -245,11 +288,11 @@ export function weekCell(cell: MyDay['week'][number]): {
 } {
   switch (cell.state) {
     case 'confirmed':
-      return { label: STATE_LABELS.confirmed, figure: hm(cell.confirmed_minutes) };
+      return { label: STATE_LABELS.confirmed, figure: formatDuration(cell.confirmed_minutes) };
     case 'drafted':
       return {
         label: STATE_LABELS.drafted,
-        figure: `${hm(cell.confirmed_minutes + cell.drafted_minutes)}`,
+        figure: formatDuration(cell.confirmed_minutes + cell.drafted_minutes),
       };
     case 'no_signal':
       // Not zero hours: nothing reached the board, which is a different fact.

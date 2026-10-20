@@ -261,7 +261,7 @@ void describe('rework cost, per project (LAI-772)', () => {
     });
     assert.equal(
       line,
-      '3 send-backs on 2 tasks · 1.23M tokens (12% of the space’s) · 6.0 h of rework, 1 still open',
+      '3 send-backs on 2 tasks · 1.23M tokens (12% of the space’s) · 6 h of rework, 1 still open',
     );
     assert.equal(
       reworkLine({

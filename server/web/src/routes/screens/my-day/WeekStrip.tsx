@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import type { MyDayWeekDay } from '../../../api/time.ts';
 import { addDays, dayLabel, weekCell, weekdayShort } from './my-day-derive.ts';
 
@@ -65,7 +66,17 @@ export function WeekStrip({ week, selected, today, locked = false, onPick }: Wee
                 <span className="myday-week-name">
                   {weekdayShort(cell.day)} {String(Number(cell.day.slice(8)))}
                 </span>
-                <span className="myday-week-figure">{figure === '' ? '—' : figure}</span>
+                <span className="myday-week-figure">
+                  {figure === ''
+                    ? '—'
+                    : // One span per `2 h`, `50 min`: a narrow cell breaks between them.
+                      figure.split(/(?<=[a-z]) (?=\d)/).map((pair, i) => (
+                        <Fragment key={pair}>
+                          {i > 0 && ' '}
+                          <span>{pair}</span>
+                        </Fragment>
+                      ))}
+                </span>
                 <span className="myday-week-state">
                   {cell.day === today
                     ? `Today${label === '' ? '' : ` · ${label.toLowerCase()}`}`

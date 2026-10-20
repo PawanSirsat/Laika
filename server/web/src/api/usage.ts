@@ -1,6 +1,7 @@
 import { agentClientName, type AgentClient } from './agent-clients.ts';
 import type { Budget, Runaway } from './budgets.ts';
 import { request } from './client.ts';
+import { formatDurationMs } from './duration.ts';
 
 /**
  * Token usage, read back (D-084, SPEC §6.4, §11.4.2, LAI-769): the Usage page
@@ -425,14 +426,9 @@ export function shareOf(part: number, whole: number): string {
   return `${String(Math.min(100, Math.round(pct)))}%`;
 }
 
-/** `30 min`, `6.0 h`, `3 d` — as the forecast reads a build time. */
+/** `30 min`, `6 h`, `3 d 4 h` — rework time, through the one duration helper (LAI-830). */
 function spentLabel(ms: number): string {
-  const minutes = Math.round(ms / 60_000);
-  if (minutes < 60) return `${String(Math.max(1, minutes))} min`;
-  const hours = ms / 3_600_000;
-  if (hours < 10) return `${hours.toFixed(1)} h`;
-  if (hours < 48) return `${String(Math.round(hours))} h`;
-  return `${String(Math.round(hours / 24))} d`;
+  return formatDurationMs(Math.max(60_000, ms));
 }
 
 /** One project's rework cost in words (LAI-772): the cost of a false done. */

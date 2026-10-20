@@ -259,6 +259,9 @@ void describe('waitingFor and the small labels', () => {
     assert.equal(waitingFor(now - 12 * 60_000, now), '12 min');
     assert.equal(waitingFor(now - 3 * 3_600_000, now), '3 h');
     assert.equal(waitingFor(now - 2 * 24 * 3_600_000, now), '2 d');
+    // In words with both units (LAI-830), never a floor that drops 59 minutes.
+    assert.equal(waitingFor(now - (3 * 3_600_000 + 12 * 60_000), now), '3 h 12 min');
+    assert.equal(waitingFor(now - (2 * 24 + 5) * 3_600_000, now), '2 d 5 h');
     assert.equal(
       waitingFor(now + 5_000, now),
       'just now',

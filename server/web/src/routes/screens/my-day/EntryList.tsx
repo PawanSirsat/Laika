@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react';
 import type { EntryPatch, TimeEntry } from '../../../api/time.ts';
+import { formatDuration } from '../../../api/duration.ts';
 import { EntryRow } from './EntryRow.tsx';
 import { PAGE_SIZE, pageOf } from './draft-bulk.ts';
-import { hm } from './my-day-derive.ts';
 
 export interface EntryListProps {
   readonly entries: readonly TimeEntry[];
@@ -40,7 +40,7 @@ export function EntryList({ entries, pending, onNavigate, onSave, onDelete }: En
           Confirmed
         </h2>
         <span className="myday-card-caption" data-confirmed-caption>
-          {entries.length} {entries.length === 1 ? 'entry' : 'entries'} · {hm(total)}
+          {entries.length} {entries.length === 1 ? 'entry' : 'entries'} · {formatDuration(total)}
         </span>
         {long && (
           <button

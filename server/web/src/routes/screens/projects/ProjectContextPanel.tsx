@@ -11,6 +11,7 @@ import {
 } from '../../../api/project-context.ts';
 import { CONTEXT_BELONGS, CONTEXT_EXCLUDED, CONTEXT_PURPOSE } from './context-copy.ts';
 import type { Member } from '../../../api/tasks.ts';
+import { dateTime } from '../../../api/time-label.ts';
 import './project-context.css';
 
 export interface ProjectContextPanelProps {
@@ -199,7 +200,7 @@ export function ProjectContextPanel({
             <p className="ctx-edited">
               {loaded.updated_at === null
                 ? 'Never edited.'
-                : `Last edited ${new Date(loaded.updated_at).toLocaleString()}${
+                : `Last edited ${dateTime(loaded.updated_at, Date.now())}${
                     editedBy === undefined ? '' : ` by ${editedBy.name}`
                   }`}
             </p>

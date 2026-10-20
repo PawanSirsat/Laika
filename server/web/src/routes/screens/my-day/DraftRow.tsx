@@ -1,15 +1,18 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react';
 import type { DraftPatch, TimeDraft } from '../../../api/time.ts';
+import { formatDuration } from '../../../api/duration.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { CardLink } from './CardLink.tsx';
 import { MoreMenu } from './MoreMenu.tsx';
+import { Understood } from './Understood.tsx';
 import {
-  atClock,
   draftTarget,
   evidenceLine,
-  hm,
+  minutesUnderstood,
   parseMinutes,
   rangeLabel,
+  splitAt,
+  splitUnderstood,
 } from './my-day-derive.ts';
 
 export interface DraftRowProps {
@@ -90,22 +93,16 @@ export function DraftRow({
     } else if (editing === 'minutes') {
       const minutes = parseMinutes(text);
       if (minutes === undefined) {
-        setError('Minutes as 90, 1:30 or 1h30 — between 1 minute and 24 hours.');
+        setError('How long, as 45, 45m, 1h 30m or 1:30 — between 1 minute and 24 hours.');
         return;
       }
       void onPatch({ minutes }, 'minutes').then((ok) => {
         if (ok) setEditing('none');
       });
     } else if (editing === 'split') {
-      const at = atClock(draft.day, text, draft.tz);
-      if (
-        at === undefined ||
-        draft.started_at === null ||
-        draft.ended_at === null ||
-        at <= draft.started_at ||
-        at >= draft.ended_at
-      ) {
-        setError(`A time inside ${range}, as HH:MM.`);
+      const at = splitAt(draft, text);
+      if (at === undefined) {
+        setError(`A time inside ${range}, such as 2:35 or 2:35 PM.`);
         return;
       }
       void onSplit(at).then((ok) => {
@@ -119,7 +116,7 @@ export function DraftRow({
   // block of the day it is, and how long.
   const name =
     range === ''
-      ? `block ${String(position)} of ${String(count)}, no set time, ${hm(draft.minutes)}`
+      ? `block ${String(position)} of ${String(count)}, no set time, ${formatDuration(draft.minutes)}`
       : range;
   const menu = [
     { value: 'assign', label: 'Card…' },
@@ -135,7 +132,7 @@ export function DraftRow({
     if (value === 'assign') open('assign', draft.task?.key ?? draft.task_key ?? '');
     else if (value === 'general') {
       void onPatch({ task: null, project: null, general: true }, 'general');
-    } else if (value === 'minutes') open('minutes', hm(draft.minutes));
+    } else if (value === 'minutes') open('minutes', formatDuration(draft.minutes));
     else if (value === 'split') open('split', '');
     else if (value === 'dismiss') onDismiss();
   };
@@ -162,7 +159,7 @@ export function DraftRow({
           }}
         />
         <span className="myday-block-time">{when}</span>
-        <span className="myday-block-minutes">{hm(draft.minutes)}</span>
+        <span className="myday-block-minutes">{formatDuration(draft.minutes)}</span>
         <span className="myday-block-target">
           {draft.task === null ? (
             target.label
@@ -218,14 +215,17 @@ export function DraftRow({
               // Opened from the "⋯" menu, so the field is where focus goes.
               autoFocus
               placeholder={
-                editing === 'assign' ? 'LAI-42' : editing === 'minutes' ? '1:30' : '10:15'
+                editing === 'assign' ? 'LAI-42' : editing === 'minutes' ? '1h 30m' : '2:35 PM'
               }
-              inputMode={editing === 'assign' ? 'text' : 'numeric'}
+              // A split time may carry AM or PM, so it gets letters too.
+              inputMode={editing === 'minutes' ? 'numeric' : 'text'}
               onChange={(e) => {
                 setText(e.target.value);
               }}
             />
           </label>
+          {editing === 'minutes' && <Understood text={minutesUnderstood(text)} />}
+          {editing === 'split' && <Understood text={splitUnderstood(draft, text)} />}
           <div className="myday-block-actions">
             <button type="submit" className="myday-chip myday-chip-primary" disabled={busy}>
               {mine(editing) && <Spinner size="sm" label="Saving this block" />}
