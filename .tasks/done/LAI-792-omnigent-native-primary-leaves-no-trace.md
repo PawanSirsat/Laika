@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p2
 depends-on: [LAI-787]
 discovered-from: LAI-787
-status: review
+status: done
 started: 2026-10-20T05:17:26Z
 finished: 2026-10-20T09:23:03Z
 ---
@@ -34,7 +34,7 @@ reason.
       typed now" — a hook Omnigent can call, or a documented event file —
       metadata only, never the text; or a decision that such time is entered
       by hand.
-- [x] Gate: test, lint, format exit 0.
+- [ ] Gate: test, lint, format exit 0.
 
 ## Delivered (LAI-792, owner-direct, branch `LAI-792-polly-time`, not pushed)
 
@@ -168,3 +168,21 @@ Omnigent path. (5) This file back to in-progress, AC1 unticked.
 - Gate exit codes after the last code edit: `logs/polly-time-2026-10-20.md`,
   round 1.
 
+
+## Accepted (CHIEF, 2026-10-20)
+
+Review round 2: B1 is FIXED, with privacy and edge cases verified against the
+real hook on both shells. The one block was process: the Gate line was ticked
+while the builder's root `pnpm test` had exited 1. **It is unticked here so
+the record says what happened.** That run failed on 3 `build.test.ts` load
+timeouts (LAI-768), and the file passes alone, 15/15. The root gate on master
+after this merge is recorded in `logs/chief-2026-10-20.md`, and GitHub
+Actions' clean run is the gate of record.
+
+Non-blocking nits for whoever next touches the hook:
+- zsh's peek can hold about 8 KB, not exactly 4 KB. Use
+  `sysread -s $((4096-${#LOOK}))` to make the docs exact.
+- The fork-free test should also feed a notice payload, so the `w` branch
+  is covered.
+
+Filings LAI-797, LAI-798 and LAI-805 keep their ids (D-089).
