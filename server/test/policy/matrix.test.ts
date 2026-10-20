@@ -127,6 +127,13 @@ const ORG_MATRIX: OrgRow[] = [
   // | Read and write own time entries | ✓ (session only) | … | ✓ (session only) |
   ['time_entries.read_own', true, true, true, true],
   ['time_entries.write_own', true, true, true, true],
+  // | Sync own time with Solidtime | ✓ (session only) | … | ✓ (session only) |
+  // D-088 item 10 (LAI-788): the person's own CLI, signed in.
+  ['time_sync.own', true, true, true, true],
+  // | Map Solidtime projects and people | ✓ (session only) | ✓ (session only) | — | — |
+  ['time_sync.map', true, true, false, false],
+  // | Import everyone's Solidtime time | ✓ (session only) | ✓ (session only) | — | — |
+  ['time_sync.import_all', true, true, false, false],
 ];
 
 describe('SPEC §3.1 — org-level matrix', () => {

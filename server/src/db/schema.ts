@@ -2137,6 +2137,13 @@ export const orgTimeSettings = sqliteTable(
       .primaryKey()
       .references(() => orgs.id, { onDelete: 'cascade' }),
     mode: text('mode', { enum: TIME_MODES }).notNull(),
+    /**
+     * The last day of the closed period, `YYYY-MM-DD`, or null — nothing is
+     * closed (LAI-788). Solidtime's changes on or before it are flagged, never
+     * taken, and the CLI never rewrites a Solidtime entry there (D-088 item 6).
+     * The month close that sets it is LAI-789's.
+     */
+    closedThrough: text('closed_through'),
     updatedAt,
   },
   () => [check('org_time_settings_mode_check', oneOf('mode', TIME_MODES))],
@@ -2418,6 +2425,124 @@ export const tokenSessionTasks = sqliteTable(
     index('token_session_tasks_task_id_idx').on(t.taskId),
     index('token_session_tasks_day_idx').on(t.day),
     check('token_session_tasks_tokens_check', sql.raw('tokens >= 0')),
+  ],
+);
+
+// -------------------------------------------------- §4.52 solidtime_projects
+
+/**
+ * Which Laika space a Solidtime project's hours belong to (§4.52, D-088 item
+ * 10, LAI-788). **Many Solidtime projects to one space**: a customer's
+ * "build" and "support" may be two projects there and one space here. Set by
+ * an owner or admin, signed in, from the CLI that can see Solidtime — the
+ * server never calls it. `push` marks the one a space's confirmed time is
+ * written to when several map to it.
+ */
+export const solidtimeProjects = sqliteTable(
+  'solidtime_projects',
+  {
+    solidtimeProjectId: text('solidtime_project_id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** As Solidtime names it, so a list can say what was mapped. */
+    name: text('name').notNull(),
+    push: integer('push').notNull().default(0),
+    updatedBy: text('updated_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt,
+  },
+  (t) => [
+    index('solidtime_projects_project_id_idx').on(t.projectId),
+    index('solidtime_projects_updated_by_idx').on(t.updatedBy),
+    // A space has at most one project its time is pushed to.
+    uniqueIndex('solidtime_projects_push_unique')
+      .on(t.projectId)
+      .where(sql`${t.push} = 1`),
+    check('solidtime_projects_push_check', sql.raw('push IN (0, 1)')),
+    check('solidtime_projects_name_check', sql.raw('length(name) BETWEEN 1 AND 255')),
+  ],
+);
+
+// ---------------------------------------------------- §4.53 solidtime_people
+
+/**
+ * A Solidtime member who is a Laika person (§4.53, D-088 item 10, LAI-788):
+ * **suggested by email on the CLI's machine and confirmed by an owner or
+ * admin, signed in.** Only the confirmation reaches the server — never either
+ * side's email. A member with no row is one of the *people not on Laika*.
+ */
+export const solidtimePeople = sqliteTable(
+  'solidtime_people',
+  {
+    solidtimeMemberId: text('solidtime_member_id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    confirmedBy: text('confirmed_by')
+      .notNull()
+      .references(() => users.id),
+    confirmedAt: integer('confirmed_at').notNull(),
+    updatedAt,
+  },
+  (t) => [
+    // One Solidtime member per person: two would split their day in two.
+    uniqueIndex('solidtime_people_user_id_unique').on(t.userId),
+    index('solidtime_people_confirmed_by_idx').on(t.confirmedBy),
+  ],
+);
+
+// --------------------------------------------------- §4.54 solidtime_entries
+
+/**
+ * Every Solidtime entry the board knows (§4.54, D-088 items 6 and 10,
+ * LAI-788): **what Laika last took from it or wrote to it**, so a re-read of
+ * a window can tell an edit (`hash` differs) and a delete (absent) — Solidtime
+ * has no webhook, no `updated_at` and no soft delete — and so the same entry
+ * is never written twice, whoever's CLI reads it.
+ *
+ * A Laika person's entry is twinned with a `time_entries` row (`entry_id`);
+ * a member not on Laika has none and keeps day, minutes, space and card here
+ * — *people not on Laika*, kept rather than dropped. The description is never
+ * stored, only the key read from it, inside `hash`.
+ */
+export const solidtimeEntries = sqliteTable(
+  'solidtime_entries',
+  {
+    solidtimeId: text('solidtime_id').primaryKey(),
+    memberId: text('member_id').notNull(),
+    userId: text('user_id').references(() => users.id),
+    entryId: text('entry_id').references(() => timeEntries.id, { onDelete: 'cascade' }),
+    /** The twin's revision as it was when the two last agreed. */
+    entryRevision: integer('entry_revision'),
+    /** A one-way digest of the Solidtime entry as Laika last took or wrote it. */
+    hash: text('hash').notNull(),
+    /** Solidtime's start, unix ms — the window a re-read covers. */
+    startedAt: integer('started_at').notNull(),
+    day: text('day').notNull(),
+    minutes: integer('minutes').notNull(),
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    updatedAt,
+  },
+  (t) => [
+    uniqueIndex('solidtime_entries_entry_id_unique')
+      .on(t.entryId)
+      .where(sql`${t.entryId} IS NOT NULL`),
+    index('solidtime_entries_member_started_idx').on(t.memberId, t.startedAt),
+    index('solidtime_entries_user_id_idx').on(t.userId),
+    index('solidtime_entries_project_id_idx').on(t.projectId),
+    index('solidtime_entries_task_id_idx').on(t.taskId),
+    index('solidtime_entries_day_idx').on(t.day),
+    check('solidtime_entries_minutes_check', sql.raw('minutes BETWEEN 1 AND 1440')),
+    // A person's entry has its twin; a member not on Laika has neither.
+    check(
+      'solidtime_entries_twin_check',
+      sql.raw(
+        '(user_id IS NULL AND entry_id IS NULL AND entry_revision IS NULL) OR (user_id IS NOT NULL AND entry_id IS NOT NULL AND entry_revision >= 1)',
+      ),
+    ),
   ],
 );
 

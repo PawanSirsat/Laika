@@ -17,6 +17,7 @@ import {
   tokenTelemetrySeries,
   tokenUsageDays,
   tasks,
+  solidtimeEntries,
   timeDrafts,
   timeEntries,
 } from '../db/schema.ts';
@@ -204,7 +205,9 @@ export const TIME_ENTRIES_RETENTION_YEARS = 3;
 /**
  * Time retention (§11.6, D-088 item 11, LAI-787): drafts dated before 30 days
  * ago — pending, dismissed and confirmed alike — and entries dated before
- * three years ago, with their revisions. Daily, and once at boot.
+ * three years ago, with their revisions. Daily, and once at boot. Solidtime's
+ * rows (§4.54) follow: a person's go with their entry, by its foreign key,
+ * and *people not on Laika* are kept three years by the same cutoff (LAI-788).
  *
  * **By day, not by instant**, as local activity's: both hold the person's
  * local dates. The entries' cutoff is three years before `now`; the trigger
@@ -226,7 +229,11 @@ export function pruneTime(db: Db, now: number): JobResult {
   const changed = db.transaction((tx) => {
     const drafts = tx.delete(timeDrafts).where(lt(timeDrafts.day, draftCutoff)).run();
     const entries = tx.delete(timeEntries).where(lt(timeEntries.day, entryCutoff)).run();
-    return drafts.changes + entries.changes;
+    const elsewhere = tx
+      .delete(solidtimeEntries)
+      .where(and(isNull(solidtimeEntries.entryId), lt(solidtimeEntries.day, entryCutoff)))
+      .run();
+    return drafts.changes + entries.changes + elsewhere.changes;
   });
   return { changed };
 }

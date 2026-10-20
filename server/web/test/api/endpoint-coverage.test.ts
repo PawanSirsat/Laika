@@ -68,6 +68,17 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
     "Claude Code's OpenTelemetry exporter posts here (LAI-773); Connect only prints its settings",
   'api/v1/otlp/v1/*':
     'logs and traces are refused there (LAI-773): no client is meant to call them, and none does',
+  // LAI-788: the Solidtime bridge is the person's CLI, which holds their
+  // Solidtime key on their machine — the browser never has it, and the board
+  // never calls Solidtime. The CLI signs in for the run.
+  'api/v1/me/time/solidtime':
+    'laika time push reads it (LAI-788); only the CLI holds a Solidtime key',
+  'api/v1/me/time/solidtime/links': 'laika time push records what it wrote (LAI-788)',
+  'api/v1/me/time/solidtime/import': 'laika time pull sends what it read (LAI-788)',
+  'api/v1/org/time/solidtime': 'laika time map and people read it (LAI-788)',
+  'api/v1/org/time/solidtime/projects': 'laika time map writes it (LAI-788)',
+  'api/v1/org/time/solidtime/people': 'laika time people writes it (LAI-788)',
+  'api/v1/org/time/solidtime/import': 'laika time pull --all sends everyone’s (LAI-788)',
 
   // Built, served, and waiting on a screen. Each names the task, not a reason.
   'api/v1/comments/*': 'LAI-234 — a comment cannot be edited or deleted from the UI',
