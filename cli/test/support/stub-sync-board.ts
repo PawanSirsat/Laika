@@ -161,11 +161,25 @@ export async function stubSyncBoard(
         send(res, 200, { name: 'Ada', email: board.email, org_role: 'owner', memberships: [] });
         return;
       }
-      const task = /^\/api\/v1\/tasks\/([^/]+)$/.exec(path);
-      if (method === 'GET' && task !== null) {
-        const found = board.tasks.get(decodeURIComponent(task[1] ?? ''));
-        if (found === undefined) refuse(res, 404, 'not_found');
-        else send(res, 200, { id: 'task-id', ...found });
+      // §7.1's `get_task_context`, as the stateless MCP endpoint answers one
+      // JSON-RPC call: the card in `structuredContent.task`, or a tool error.
+      if (method === 'POST' && path === '/mcp' && token) {
+        const call = JSON.parse(body || '{}') as {
+          id?: number;
+          params?: { name?: string; arguments?: { task?: string } };
+        };
+        const found =
+          call.params?.name === 'get_task_context'
+            ? board.tasks.get(call.params.arguments?.task ?? '')
+            : undefined;
+        send(res, 200, {
+          jsonrpc: '2.0',
+          id: call.id ?? null,
+          result:
+            found === undefined
+              ? { isError: true, content: [{ type: 'text', text: 'No task' }] }
+              : { content: [], structuredContent: { task: { id: 'task-id', ...found } } },
+        });
         return;
       }
       if (method === 'GET' && path === '/api/v1/users') {

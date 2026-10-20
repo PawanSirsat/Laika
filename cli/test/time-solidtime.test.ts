@@ -452,7 +452,8 @@ void describe('laika time pull', () => {
     assert.equal(body.member_id, st.me.id);
     assert.equal(body.tz, TZ);
     assert.equal(body.complete, true);
-    assert.equal(body.to, NOW);
+    // To the end of the local day: 23:59:59 in Johannesburg.
+    assert.equal(body.to, Date.UTC(2026, 9, 20, 21, 59, 59));
     // 35 local days back, from local midnight.
     assert.equal(body.from, localInstant('2026-09-16', 0, TZ));
     assert.deepEqual(
@@ -464,6 +465,21 @@ void describe('laika time pull', () => {
     }
     assert.ok(!toBoard().includes('secret client words'));
     assert.match(out.join('\n'), /1 still running in Solidtime/);
+  });
+
+  void test('reads what starts later today — a typed entry pushed for 09:00, read at 07:00', async () => {
+    await connected();
+    const morning = Date.UTC(2026, 9, 20, 5); // 07:00 in Johannesburg
+    st.add({
+      start: '2026-10-20T07:00:00Z',
+      end: '2026-10-20T08:00:00Z',
+      description: 'ONR-1 Login page',
+    });
+    answers = [PASSWORD];
+    assert.equal(await run(['pull'], { nowMs: () => morning }), 0, err.join('\n'));
+    const body = board.imports[0] as { to: number; entries: unknown[] };
+    assert.equal(body.entries.length, 1);
+    assert.ok(body.to - morning <= 86_400_000);
   });
 
   void test('reads every page, and says nothing is deleted when a page went missing', async () => {

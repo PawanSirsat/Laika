@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { chmodSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { localDay } from './activity-census.ts';
+import { addDays, localDay } from './activity-census.ts';
 import { findCredentials } from './activity-sync.ts';
 import { normaliseUrl, signIn, whoAmI } from './api.ts';
 import { writePrivately } from './connect.ts';
@@ -971,9 +971,16 @@ async function pull(args: readonly string[], io: TimeIo): Promise<number> {
   }
   const everyone = args.includes('--all');
   const c = connection(store);
-  const toMs = io.nowMs();
-  const fromDay = localDay(seconds(toMs) - (days - 1) * 86_400, io.tz);
+  const nowMs = io.nowMs();
+  const fromDay = localDay(seconds(nowMs) - (days - 1) * 86_400, io.tz);
   const fromMs = localInstant(fromDay, 0, io.tz);
+  // To the end of today, not to now: a typed entry is pushed at 09:00, and a
+  // meeting is logged before it happens — both start later than a morning's
+  // "now". Never past a day ahead, which the board refuses.
+  const toMs = Math.min(
+    localInstant(addDays(localDay(seconds(nowMs), io.tz), 1), 0, io.tz) - 1000,
+    nowMs + DAY_MS,
+  );
 
   // Solidtime first: if it cannot be read there is nothing to sign in for.
   let memberOf = new Map<string, string>([]);
@@ -1367,26 +1374,12 @@ async function start(args: readonly string[], io: TimeIo): Promise<number> {
     io.err('This machine is not connected to a Laika board: laika connect');
     return 1;
   }
-  // The card's title is no one's hours: the machine's token may read it.
-  let card: { key: string; title: string; project_id: string };
-  try {
-    const response = await fetch(`${creds.url}/api/v1/tasks/${encodeURIComponent(key)}`, {
-      headers: { Authorization: `Bearer ${creds.token}`, Accept: 'application/json' },
-      signal: AbortSignal.timeout(st.REQUEST_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      io.err(
-        response.status === 404
-          ? `No card ${key} on the board.`
-          : `The board answered ${String(response.status)}.`,
-      );
-      return 1;
-    }
-    card = (await response.json()) as typeof card;
-  } catch (cause) {
-    io.err(
-      `Could not reach the board (${cause instanceof Error ? cause.message : String(cause)}).`,
-    );
+  // The card's title is no one's hours: the machine's token may read it,
+  // through §7.1's `get_task_context`, which takes a key or an outside id —
+  // the REST `GET /tasks/:id` takes an id only.
+  const card = await cardByKey(creds, key);
+  if (typeof card === 'string') {
+    io.err(card);
     return 1;
   }
   const c = connection(store);
@@ -1437,6 +1430,57 @@ async function start(args: readonly string[], io: TimeIo): Promise<number> {
   }
   io.out('Stop it with laika time stop; the next laika time pull brings it to Laika.');
   return 0;
+}
+
+interface Card {
+  readonly key: string;
+  readonly title: string;
+  readonly project_id: string;
+}
+
+/** A card by key, from the board's MCP endpoint (stateless, one request), or why not. */
+async function cardByKey(
+  creds: { readonly url: string; readonly token: string },
+  key: string,
+): Promise<Card | string> {
+  let response: Response;
+  try {
+    response = await fetch(`${creds.url}/mcp`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${creds.token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'get_task_context', arguments: { task: key } },
+      }),
+      signal: AbortSignal.timeout(st.REQUEST_TIMEOUT_MS),
+    });
+  } catch (cause) {
+    return `Could not reach the board (${cause instanceof Error ? cause.message : String(cause)}).`;
+  }
+  if (!response.ok) return `The board answered ${String(response.status)}.`;
+  try {
+    const body = (await response.json()) as {
+      result?: { isError?: boolean; structuredContent?: { task?: Partial<Card> } };
+    };
+    const task = body.result?.structuredContent?.task;
+    if (
+      body.result?.isError === true ||
+      typeof task?.key !== 'string' ||
+      typeof task.title !== 'string' ||
+      typeof task.project_id !== 'string'
+    ) {
+      return `No card ${key} on the board that you can read.`;
+    }
+    return { key: task.key, title: task.title, project_id: task.project_id };
+  } catch {
+    return 'The board’s answer was not one this understands.';
+  }
 }
 
 async function stop(io: TimeIo): Promise<number> {
