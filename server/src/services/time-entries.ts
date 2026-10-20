@@ -289,6 +289,34 @@ export function assertFitsTheClock(
   }
 }
 
+/**
+ * What an entry moved or shortened leaves behind must fit too: every live
+ * timed entry `[start, end)` met is judged on the stretch it stands in once
+ * the edit is written. An entry that held a stretch open — its slack the room
+ * two overlapping blocks share — cannot be moved off and leave them counting
+ * twice.
+ */
+function assertLeftBehindFits(tx: Tx, userId: string, start: number, end: number): void {
+  const met = tx
+    .select({ startedAt: timeEntries.startedAt, endedAt: timeEntries.endedAt })
+    .from(timeEntries)
+    .where(
+      and(
+        eq(timeEntries.userId, userId),
+        isNull(timeEntries.deletedAt),
+        isNotNull(timeEntries.startedAt),
+        lt(timeEntries.startedAt, end),
+        gt(timeEntries.endedAt, start),
+      ),
+    )
+    .all();
+  for (const e of met) {
+    if (e.startedAt !== null && e.endedAt !== null) {
+      assertFitsTheClock(tx, userId, e.startedAt, e.endedAt, 0);
+    }
+  }
+}
+
 /** The minutes a person's live entries already hold on a day. */
 function minutesOn(tx: Tx | Db, userId: string, day: string, except?: string): number {
   return (
@@ -700,6 +728,13 @@ export function updateEntry(
     tx.insert(timeEntryRevisions)
       .values(revisionRow(id, revision, 'edited', actor.userId, next, now))
       .run();
+    if (
+      row.startedAt !== null &&
+      row.endedAt !== null &&
+      (next.startedAt !== row.startedAt || next.endedAt !== row.endedAt)
+    ) {
+      assertLeftBehindFits(tx, actor.userId, row.startedAt, row.endedAt);
+    }
   });
   return entryById(db, actor.userId, id);
 }
