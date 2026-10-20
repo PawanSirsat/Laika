@@ -356,7 +356,7 @@ void describe('the task panel', () => {
       for (const t of m.times) {
         assert.match(
           t,
-          /^just now$|^[0-9]+ min ago$|^[0-9]+ h ago$|^[0-9]{1,2} [A-Z][a-z]{2}( [0-9]{4})?, [0-9]{2}:[0-9]{2}$/,
+          /^just now$|^[0-9]+ min ago$|^[0-9]+ h ago$|^[0-9]{1,2} [A-Z][a-z]{2}( [0-9]{4})?, [0-9]{1,2}:[0-9]{2} [AP]M$/,
           `a timestamp reads "${t}"`,
         );
         assert.doesNotMatch(t, /just now ago/, 'the drawer says "just now ago" again');
