@@ -6,6 +6,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -278,6 +279,99 @@ void describe('the sessions left out, only with telemetry from this machine', ()
     assert.match(on.out.join('\n'), new RegExp(`"excluded": \\[\\s*"${sessionKey(ROBOT)}"`));
     assert.equal(await on.run('backfill', '--yes'), 0, on.out.join('\n'));
     assert.deepEqual(excludedOf(on.board), [[sessionKey(ROBOT)]]);
+  });
+});
+
+void describe('an Omnigent sub-agent, end to end: its tokens go marked, its activity counts nothing (D-091)', () => {
+  const ROBOT = 'dddddddd-2222-4333-8444-555555555555';
+  const PERSON = 'eeeeeeee-3333-4444-8555-666666666666';
+
+  /** The real activity hook, as Claude Code runs it, under this HOME. */
+  function hook(h: Harness, mode: string, sessionId: string, env: Record<string, string>): void {
+    const r = spawnSync('/bin/sh', [HOOK_SCRIPT, mode, 'claude-code'], {
+      env: { PATH: process.env.PATH ?? '', HOME: h.home, ...env },
+      input: JSON.stringify({
+        session_id: sessionId,
+        transcript_path: join(h.home, '.claude', 'projects', '-work', `${sessionId}.jsonl`),
+        cwd: '/work',
+        hook_event_name: mode,
+        ...(mode === 'prompt' ? { prompt: 'a prompt' } : {}),
+      }),
+      encoding: 'utf8',
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout + r.stderr, '');
+  }
+
+  /** One session's transcript: a reply of `output` tokens, just after `on` began counting. */
+  function session(h: Harness, id: string, output: number): void {
+    const dir = join(h.home, '.claude', 'projects', '-work');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, `${id}.jsonl`),
+      `${JSON.stringify({
+        type: 'assistant',
+        cwd: '/work',
+        sessionId: id,
+        timestamp: new Date(Date.now() + 1_000).toISOString(),
+        message: {
+          id: `msg_${id.slice(0, 8)}`,
+          model: 'claude-opus-5-5',
+          usage: {
+            input_tokens: 1,
+            output_tokens: output,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+          },
+        },
+      })}\n`,
+    );
+  }
+
+  void test('a sync sends the sub-agent’s tokens as an automated row, and its prompt and session nowhere', async () => {
+    const h = await harness();
+    h.answers = ['n'];
+    assert.equal(await h.run('on'), 0, h.out.join('\n'));
+    // The person types one prompt; the sub-agent Omnigent launched starts,
+    // is prompted and ends — each through the hook, as Claude Code runs it.
+    hook(h, 'prompt', PERSON, {});
+    for (const mode of ['session-start', 'prompt', 'session-end']) {
+      hook(h, mode, ROBOT, { OMNIGENT: '1' });
+    }
+    session(h, PERSON, 70);
+    session(h, ROBOT, 9_000);
+    assert.equal(await h.run('sync'), 0, h.out.join('\n'));
+    assert.deepEqual(h.board.violations, []);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const snapshots = h.board.requests
+      .filter((r) => r.method === 'PUT' && r.url.startsWith('/api/v1/me/local-activity'))
+      .map((r) => JSON.parse(r.body) as Record<string, unknown>)
+      .filter((b) => !('usage' in b) && !('lookback' in b)) as {
+      days: { day: string; prompts: Record<string, number>; sessions: number }[];
+    }[];
+    const counted = snapshots.flatMap((b) => b.days).filter((d) => d.day === today);
+    // Activity (D-080): the person's one prompt, and nothing of the sub-agent's.
+    assert.deepEqual(
+      counted.map((d) => d.prompts),
+      [{ 'claude-code': 1 }],
+    );
+
+    const rows = h.board.requests
+      .filter((r) => r.method === 'PUT' && r.body.includes('"usage":true'))
+      .flatMap(
+        (r) =>
+          (JSON.parse(r.body) as { days: { rows: Record<string, unknown>[] }[] }).days.flatMap(
+            (d) => d.rows,
+          ) ?? [],
+      );
+    assert.deepEqual(
+      rows.map((r) => [r.output, r.automated ?? false]),
+      [
+        [70, false],
+        [9_000, true],
+      ],
+    );
   });
 });
 

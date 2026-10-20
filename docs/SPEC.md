@@ -1474,11 +1474,23 @@ LAI-769) — the Usage page and the profile's token card.
 | `output` | integer — output tokens, reasoning included |
 | `cache_write` | integer — tokens written to the prompt cache |
 | `cache_read` | integer — tokens read from it; never in a headline (D-084 item 8) |
+| `automated` | boolean, default false — spent by an automated session on that machine (`OMNIGENT=1` sub-agents, `CI`, `LAIKA_ACTIVITY_SKIP`; D-091, LAI-815): the organisation's, the space's and the task's, never a person's |
 | `updated_at` | integer — when this snapshot arrived |
 
 No primary key but the rowid: a key over the nullable `task_id` would not hold
 in SQLite, so the service folds a report to one row per (`user_id`,
-`collector_id`, `day`, `agent`, `model`, `task_id`) before writing.
+`collector_id`, `day`, `agent`, `model`, `task_id`, `automated`) before
+writing.
+
+**An automated row counts for the organisation, the space and the task, and
+for no person** (D-091, amending D-086). It is in every organisation, space
+and task figure — totals, trend, agents, models, top tasks, cost, cache,
+rework, accepted cost, budgets, runaway alerts, forecasts' actuals — and in
+no per-person one: `by_developer`, the profile's card, the task panel's
+`by_person` and `attributed`, and the plan-limit rate (§4.42) read only rows
+with `automated` false. The rows stay under the person's `user_id`, since
+their machine sent them: what is held for them (§6.4's `GET
+/me/local-activity`) and *delete my history* reach them too.
 
 **Counts only** — there is deliberately no column that could hold a prompt, a
 reply, a tool's input, a path, a repository, a branch or a session id; a task
@@ -1489,7 +1501,9 @@ the table. Machines sum. A day reported as a backfill (§6.4) also replaces the
 other collectors' rows for its agents, so the same machine under a new
 collector id is never counted twice. Every read is a range of one index
 (§4.13) — a task's (`GET /tasks/:id/usage`, LAI-770) on `task_id`. Kept 400
-days (§11.6).
+days (§11.6). The day and project indexes carry `automated` as their last
+column, so `by_developer`'s read of a person's own rows is still one range
+that never touches the table.
 
 ### 4.34 `task_claim_estimates`
 
@@ -1666,9 +1680,10 @@ point.
 
 ### 4.40 `token_session_skips`
 
-The sessions a collector left out of its rows — automated (D-086) or outside
-the developer's `laika-repos` scope (D-079 item 4) — by one-way key, so their
-telemetry is left out too (LAI-773).
+The sessions whose telemetry a collector asks to be left out, by one-way key
+(LAI-773): automated ones (D-086), whose tokens arrive as rows marked
+`automated` (D-091, §4.33), and those outside the developer's `laika-repos`
+scope (D-079 item 4), whose tokens are not sent.
 
 | field | notes |
 | --- | --- |
@@ -1700,8 +1715,9 @@ person, on a web session**: no admin read, no other endpoint, no token.
 
 When a person's tokens reached the board, in five-minute buckets (D-087,
 LAI-773): the rate the plan-limit forecast reads. Each usage report and each
-telemetry export adds what it changed in the person's headline tokens for
-today and yesterday; a backfilled day adds nothing.
+telemetry export adds what it changed in the person's own headline tokens for
+today and yesterday — never an automated session's (D-091, §4.33); a
+backfilled day adds nothing.
 
 | field | notes |
 | --- | --- |
@@ -2484,8 +2500,11 @@ reaches SSE, an MCP tool or an export (§4.21).
 - **A usage report** (D-084, LAI-769) is the same `PUT` marked `"usage":
   true`: `{ "v": 1, "collector_id", "tz", "usage": true, "days": [{ "day":
   "YYYY-MM-DD", "rows": [{ "agent", "model", "task", "input", "output",
-  "cache_write", "cache_read" }] }] }` — per day × agent × model × task the
-  four token counts the agents' own session files record. `agent` is an agent
+  "cache_write", "cache_read", "automated"? }] }] }` — per day × agent × model
+  × task × automated the four token counts the agents' own session files
+  record. `automated` is `true` on a row an automated session spent (D-091,
+  LAI-815; §4.33) and absent otherwise — anything else is refused — so a
+  collector from before it sends every row as the person's. `agent` is an agent
   kind id as above; `model` is 1–64 of lowercase `a–z`, `0–9`, `.`, `_`, `:`
   and `-` (the collector removes Claude Code's `[1m]` suffix and drops
   `<synthetic>`); `task` is `null`, a Laika key `PREFIX-n`, or an outside id
@@ -2523,13 +2542,15 @@ reaches SSE, an MCP tool or an export (§4.21).
   matched to the files without either counting twice. A usage report's day
   may carry `"sessions": [{ "key", "model", "input", "output", "cache_write",
   "cache_read" }]` — the day's Claude Code rows split by session, subagents
-  under their parent, at most 100 — and the report may carry `"excluded":
-  ["<key>", …]`, at most 200: the sessions the collector left out of its rows,
-  automated (D-086) or outside the developer's `laika-repos` scope (D-079 item
-  4) — **sent only when Claude Code on that machine exports its metrics to
-  this board** (telemetry on, an OTLP metrics exporter, an endpoint under
-  `/api/v1/otlp/`, in `~/.claude/settings.json`'s `env` or the environment;
-  review): with none from there, there is nothing of theirs to drop. A key is
+  under their parent, at most 100, an automated session's never — and the
+  report may carry `"excluded": ["<key>", …]`, at most 200: the sessions whose
+  telemetry is to be dropped, automated ones (D-086; their tokens are the
+  rows marked `automated`, D-091) and those outside the developer's
+  `laika-repos` scope (D-079 item 4) — **sent only when Claude Code on that
+  machine exports its metrics to this board** (telemetry on, an OTLP metrics
+  exporter, an endpoint under `/api/v1/otlp/`, in `~/.claude/settings.json`'s
+  `env` or the environment; review): with none from there, there is nothing
+  of theirs to drop. A key is
   the first 16 hex of `sha256("laika-session:" + session id)`, lower case —
   never the id. Each (person, collector, day) carried replaces
   that machine's session rows (§4.38); a day sent without `sessions` leaves its
@@ -2577,11 +2598,15 @@ reaches SSE, an MCP tool or an export (§4.21).
   sees for the first time and has not been declined, after the snapshot and
   inside the same lock and 2-minute limit; a repository git cannot read stays
   due and is tried again after a backoff. **Sessions nobody is
-  typing in count nothing**: the activity hook counts nothing when
-  `OMNIGENT=1`, `CI` or `LAIKA_ACTIVITY_SKIP` is set (D-080), and keeps only
-  that session's id, from its start and end payloads, in a local file never
-  sent, so the collector leaves its tokens out too (LAI-775, the owner's
-  decision). Sessions from before activity was on cannot be told apart.
+  typing in count nothing for the person**: the activity hook counts nothing
+  when `OMNIGENT=1`, `CI` or `LAIKA_ACTIVITY_SKIP` is set (D-080), and keeps
+  only that session's id, from its start and end payloads, in a local file
+  never sent (LAI-775). The collector sends that session's tokens — subagents,
+  Codex and Gemini CLI files included — as rows marked `automated`, tied to a
+  task by the same marks and branch rules (D-091, LAI-815): the
+  organisation's, the space's and the task's, never the person's, and still
+  no prompts, sessions or drafted time. Sessions from before activity was on
+  cannot be told apart.
   **Tokens arrive while a session runs** (LAI-776): Claude Code's `Stop` hook,
   which fires at the end of every turn, launches the detached sync only when
   `next_sync_at` has passed — fork-free otherwise under zsh, as the prompt path
@@ -2593,11 +2618,12 @@ reaches SSE, an MCP tool or an export (§4.21).
   prompts_by_agent, sessions, commits_local, pushed_commits, tokens,
   cache_read }], collectors, oldest_day }`, newest first, only days with
   something held — `tokens` and `cache_read` their agents' token totals that
-  day (D-084 item 4), and `oldest_day` counting token rows too — **whatever
-  the switches say**: what was kept before sharing was turned off is still
-  theirs to see. `DELETE /me/local-activity` removes every local row, pushed
-  key and token row of theirs, `204`. Both **web session only**: an agent must
-  not read back or erase what its person consented to.
+  day (D-084 item 4), automated sessions' rows included, since they are held
+  under the caller's account (§4.33), and `oldest_day` counting token rows
+  too — **whatever the switches say**: what was kept before sharing was
+  turned off is still theirs to see. `DELETE /me/local-activity` removes every
+  local row, pushed key and token row of theirs, `204`. Both **web session
+  only**: an agent must not read back or erase what its person consented to.
 
 **Token usage, read back** (D-084, LAI-769) — §4.33's rows, for the Usage page
 and the profile's Tokens card:
@@ -2628,7 +2654,9 @@ and the profile's Tokens card:
   included. **`by_developer` is `null` unless the reader holds
   `usage.read_people`** — an owner or admin on a web session — so a member and
   every token get totals only (D-084 item 7); when present it is in name
-  order, never ranked by volume. **An agent or model fewer than three people
+  order, never ranked by volume, and holds each person's own tokens only:
+  rows marked `automated` are in every other figure here and in no person's
+  (D-091, §4.33). **An agent or model fewer than three people
   used is folded for a reader without `usage.read_people`** (D-087 item 7):
   in `by_agent` and `by_model`, every agent and every model used by fewer than
   three distinct people within the response's scope — the organisation, or the
@@ -2650,7 +2678,8 @@ and the profile's Tokens card:
   org_enabled, enabled } }`. Their own (`usage.read_own`), or anyone's for an
   owner or admin (`usage.read_people`); **web session only**, so every token
   is refused `session_required`, the person's own included. Permission is
-  asked before the person is looked up.
+  asked before the person is looked up. Their own tokens only: an automated
+  session's rows are not in it (D-091).
 - **Every read is one range of one index** (§4.13): the organisation's on
   `day`, a space's on `project_id`, a person's on `user_id`. Measured with 300
   people × 400 days (720,000 rows): each query under 30 ms at 90 days, a
@@ -2983,7 +3012,10 @@ invalid_tz` otherwise) — a round's finish day counts toward that round — and
 what comes after the last finish is the open round, `finished_on: null`.
 `attributed` is `{ tokens, of }` — of everything the people this reader sees
 spent on the days the task has tokens, the part tied to a task, this one or
-another (D-084 item 6) — or `null` when they see nobody's.
+another (D-084 item 6) — or `null` when they see nobody's. `totals`,
+`first_day`, `last_day` and `by_round` hold every row tied to the task, those
+marked `automated` included; `by_person` and `attributed` hold the people's own
+rows only (D-091, §4.33), so `by_person` may sum to less than `totals`.
 
 **Sizes and forecasts (D-085, LAI-771).** `POST /projects/:slug/tasks` and
 `PATCH /tasks/:id` take an optional `size` — `XS` to `XL`, or `null` on `PATCH`

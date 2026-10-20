@@ -573,6 +573,38 @@ describe('telemetry never counts a token the files already counted', () => {
     ).toHaveLength(0);
   });
 
+  it('an automated session’s rows, sent and excluded, leave the person’s own gap whole (D-091)', () => {
+    const files = filesReport(
+      [{ id: SESSION, input: 10, output: 300, cacheWrite: 40, cacheRead: 8000 }],
+      { excluded: [OTHER_SESSION] },
+    );
+    // What OTHER_SESSION spent, sent as the collector sends it now: a row of
+    // its own, marked, in no session list.
+    files.days[0]?.rows.push({
+      agent: 'claude-code',
+      model: 'claude-opus-5-5',
+      task: null,
+      input: 0,
+      output: 5_000,
+      cache_write: 0,
+      cache_read: 0,
+      automated: true,
+    });
+    recordTokenUsage(t.db, actor(owner), files, NOW);
+    recordTelemetry(
+      t.db,
+      actor(owner),
+      body([
+        ...session(SESSION, { input: 10, output: 420, cacheWrite: 40, cacheRead: 9000 }),
+        ...session(OTHER_SESSION, { input: 0, output: 5_400, cacheWrite: 0, cacheRead: 0 }),
+      ]),
+      NOW,
+    );
+    // SESSION's side calls, exactly; OTHER_SESSION's telemetry dropped, its
+    // file tokens counted once, as the automated row.
+    expect(totals()).toMatchObject({ output: 300 + 120 + 5_000, gapOutput: 120 });
+  });
+
   it('drops what telemetry had already added when the exclusion arrives later', () => {
     recordTelemetry(
       t.db,

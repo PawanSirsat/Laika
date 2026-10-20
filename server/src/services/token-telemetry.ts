@@ -626,7 +626,10 @@ export function recomputeGap(tx: Tx, userId: string, days: readonly string[], no
   }
 
   // The file tokens no session list placed, on the span and the days beside
-  // it: they may be any session's, so they are taken to be these.
+  // it: they may be any session's, so they are taken to be these. Not an
+  // automated session's (D-091): the collector names those in `excluded`
+  // whenever this machine sends telemetry, so no telemetry of theirs is kept
+  // to match, and taking them as unplaced would empty the person's own gap.
   const near = [...new Set(spanDays.flatMap((d) => [neighbour(d, -1), d, neighbour(d, 1)]))];
   const dayFiles = new Map<string, Counts>();
   for (const r of tx
@@ -645,6 +648,7 @@ export function recomputeGap(tx: Tx, userId: string, days: readonly string[], no
         inArray(tokenUsageDays.day, near),
         eq(tokenUsageDays.agent, 'claude-code'),
         ne(tokenUsageDays.collectorId, TELEMETRY_COLLECTOR),
+        eq(tokenUsageDays.automated, false),
       ),
     )
     .groupBy(tokenUsageDays.day, tokenUsageDays.model)

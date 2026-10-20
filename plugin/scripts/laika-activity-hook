@@ -99,8 +99,9 @@
 # counts the same.
 #
 # **One thing is kept for an automated session** (LAI-775, the owner's
-# decision): its session id, so `laika activity sync` leaves that session's
-# tokens out — its session files sit beside the developer's own. Only the session-start and session-end
+# decision): its session id, so `laika activity sync` sends that session's
+# tokens marked automated — the team's, never the developer's (D-091) — since
+# its session files sit beside the developer's own. Only the session-start and session-end
 # payloads are read for it, never a prompt's, and from them only a
 # `"session_id"` that is a plain id (letters, digits, `.`, `_`, `-`, at most
 # 128). It is appended to ~/.laika/activity/skip-sessions, 0600, and never

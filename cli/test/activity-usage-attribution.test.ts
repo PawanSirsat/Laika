@@ -25,9 +25,11 @@ import { localDay } from '../src/activity-census.ts';
 import { activityPaths, rotate, type ActivityState } from '../src/activity-store.ts';
 import { startCollecting, sync, type SyncContext } from '../src/activity-sync.ts';
 import {
+  draftSources,
   readUsage,
   sessionKey,
   sessionsFile,
+  skipSessionsFile,
   usageRoots,
   usageStep,
   type UsageRow,
@@ -435,6 +437,65 @@ void describe('a session’s tokens follow the task its agent marked, split by t
 });
 
 /* -------------------------------------------------------------------------- */
+/* An automated session's marks (D-091)                                       */
+/* -------------------------------------------------------------------------- */
+
+void describe('an automated session’s tokens follow its own marks, and go marked automated (D-091)', () => {
+  const ROBOT = '5e4d3c2b-1a09-4f8e-9d7c-6b5a4f3e2d1c';
+
+  function world() {
+    const root = home();
+    transcript(root, 'mine.jsonl', [claude({ at: T0, out: 7 })]);
+    transcript(root, 'robot.jsonl', [
+      claude({ at: T0 + 60, out: 1, session: ROBOT }),
+      claude({
+        at: T0 + 120,
+        out: 10,
+        session: ROBOT,
+        call: mark('start_working', { task: 'LAI-3', branch: SECRET.markBranch }),
+      }),
+      claude({ at: T0 + 180, out: 100, session: ROBOT }),
+    ]);
+    const paths = activityPaths(root);
+    mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
+    writeFileSync(skipSessionsFile(paths), `${String(T0)} ${ROBOT}\n`, { mode: 0o600 });
+    return { root, paths };
+  }
+
+  void test('its stretch on LAI-3 is LAI-3’s, the rest unattributed, every row of it marked', async () => {
+    const { root } = world();
+    const rows = (await read(root, ['LAI'])).days.get(localDay(T0, TZ)) ?? [];
+    assert.deepEqual(
+      rows.map((r) => [r.task ?? '-', r.automated ?? false, r.output]),
+      [
+        ['-', false, 7],
+        ['-', true, 1],
+        ['LAI-3', true, 110],
+      ],
+    );
+    assert.deepEqual(byTask(new Map([['d', rows]])), { '-': 8, 'LAI-3': 110 });
+  });
+
+  void test('time drafting still leaves it out: no reply and no mark of it reaches the drafter', async () => {
+    const { root, paths } = world();
+    const drafted = await draftSources({
+      paths,
+      roots: usageRoots(root, {}),
+      state: state(),
+      tz: TZ,
+      nowS: NOW_S,
+      prefixes: ['LAI'],
+      days: [localDay(T0, TZ)],
+    });
+    assert.deepEqual(
+      drafted.replies.map((r) => r.session),
+      [SECRET.session],
+    );
+    assert.deepEqual(drafted.marks, []);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
 /* The branch, when nothing was marked                                        */
 /* -------------------------------------------------------------------------- */
 
@@ -519,7 +580,7 @@ void describe('a card’s outside id, when the board serves its prefix (LAI-780)
     });
   });
 
-  void test('an automated session’s tokens stay out, outside id or not (D-086)', async () => {
+  void test('an automated session’s tokens go marked, tied by an outside id like any other (D-086, D-091)', async () => {
     const root = home();
     transcript(root, 's.jsonl', [
       claude({ at: T0, out: 1, branch: 'LAI-780-external-ref' }),
@@ -528,7 +589,12 @@ void describe('a card’s outside id, when the board serves its prefix (LAI-780)
     const paths = activityPaths(root);
     mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
     writeFileSync(join(paths.dir, 'skip-sessions'), `${String(NOW_S - H)} ${SECRET.session}\n`);
-    assert.deepEqual(byTask((await read(root, ['LAI'])).days), {});
+    const { days } = await read(root, ['LAI']);
+    assert.deepEqual(byTask(days), { 'LAI-780': 11 });
+    assert.ok(
+      [...days.values()].flat().every((r) => r.automated === true),
+      'an automated session’s row went unmarked',
+    );
   });
 });
 

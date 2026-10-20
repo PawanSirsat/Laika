@@ -77,7 +77,16 @@ function lookbackViolation(b: Record<string, unknown>, now: Date): string | unde
   return undefined;
 }
 
-const USAGE_ROW_KEYS = ['agent', 'model', 'task', 'input', 'output', 'cache_write', 'cache_read'];
+const USAGE_ROW_KEYS = [
+  'agent',
+  'model',
+  'task',
+  'input',
+  'output',
+  'cache_write',
+  'cache_read',
+  'automated',
+];
 const SESSION_ROW_KEYS = ['key', 'model', 'input', 'output', 'cache_write', 'cache_read'];
 const KEY16 = /^[0-9a-f]{16}$/;
 
@@ -190,6 +199,8 @@ function usageViolation(b: Record<string, unknown>, now: Date): string | undefin
         const n = r[key];
         if (!isInt(n) || n > 1e12) return `${key} invalid`;
       }
+      // D-091: an automated session's row is marked `true`; anything else is refused.
+      if ('automated' in r && r.automated !== true) return 'automated is true or absent';
     }
   }
   return undefined;

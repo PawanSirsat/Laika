@@ -156,10 +156,11 @@ const CONSOLE: ActivityIo = {
 
 /**
  * What the hook skips (LAI-757, D-080), in the words `on` and `status` print.
- * The rule itself is in `plugin/scripts/laika-activity-hook`.
+ * The rule itself is in `plugin/scripts/laika-activity-hook`; their tokens go
+ * marked automated, the team's and never the person's (D-091).
  */
 export const SKIP_RULE =
-  'agent sessions run with OMNIGENT=1 (Omnigent’s sub-agents — its primary session, where you type, is yours), a non-empty CI or a non-empty LAIKA_ACTIVITY_SKIP count nothing';
+  'agent sessions run with OMNIGENT=1 (Omnigent’s sub-agents — its primary session, where you type, is yours), a non-empty CI or a non-empty LAIKA_ACTIVITY_SKIP count nothing as yours — their tokens go marked automated, for the organisation, the space and the task';
 
 const USAGE = [
   'Usage:',
@@ -714,10 +715,15 @@ async function tokensFound(
   for (const [agent, n] of [...found.byAgent].sort((a, b) => b[1] - a[1])) {
     io.out(`  ${(AGENT_NAMES[agent] ?? agent).padEnd(12)} ${thousands(n)}`);
   }
+  if (found.automated > 0) {
+    io.out(`  of which ${thousands(found.automated)} from automated sessions`);
+  }
   io.out('Sent as totals per day, agent and model: never what was said, tool input, paths,');
   io.out('branches or session ids.');
-  io.out('Sessions Omnigent, CI or LAIKA_ACTIVITY_SKIP ran from now on are left out. Ones that');
-  io.out('ran before activity was on here cannot be told apart from yours, and are in these.');
+  io.out('Sessions Omnigent, CI or LAIKA_ACTIVITY_SKIP ran from now on go marked automated:');
+  io.out('they count for the organisation, the space and the task, never as yours (D-091).');
+  io.out('Ones that ran before activity was on here cannot be told apart from yours, and');
+  io.out('are in these as yours.');
   return true;
 }
 

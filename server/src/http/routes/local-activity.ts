@@ -116,9 +116,10 @@ const LookbackBody = strictObject({
 
 /**
  * A usage report (D-084, LAI-769): per day, the agents' token totals —
- * agent, model, a Laika task key or null, and four counts. **Nothing here can
- * hold text**: every string is a pattern (an agent kind, a model id, a key),
- * and anything else in a row or a day is an unknown field, refused (§6.3).
+ * agent, model, a Laika task key or null, four counts, and whether an
+ * automated session spent them (D-091). **Nothing here can hold text**:
+ * every string is a pattern (an agent kind, a model id, a key), and anything
+ * else in a row or a day is an unknown field, refused (§6.3).
  * The window and the uniqueness of days are the service's
  * `day_out_of_range`.
  */
@@ -132,8 +133,9 @@ const UsageBody = strictObject({
   collector_id: ReportBody.shape.collector_id,
   tz: z.string().min(1).max(64),
   usage: z.literal(true),
-  // Sessions left out of the rows — automated or out of scope — so their
-  // telemetry is left out too (LAI-773).
+  // Sessions whose telemetry is left out (LAI-773): automated ones, whose
+  // tokens are rows marked `automated` (D-091), and the out-of-scope ones,
+  // whose tokens are not sent.
   excluded: z.array(sessionKeyField).max(EXCLUDED_MAX).optional(),
   days: z.array(
     strictObject({
@@ -183,6 +185,9 @@ const UsageBody = strictObject({
             output: tokenCount,
             cache_write: tokenCount,
             cache_read: tokenCount,
+            // Spent by an automated session (D-091): `true` or absent, so a
+            // collector from before LAI-815 is a person's every row.
+            automated: z.literal(true).optional(),
           }),
         )
         .max(TOKEN_USAGE_ROWS_PER_DAY_MAX),

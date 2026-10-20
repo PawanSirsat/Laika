@@ -221,13 +221,19 @@ no token counts on the machine, so they have none to send.
   (`--yes` does not ask). A no is kept until a later `backfill` is answered yes.
 - **Scope.** With `laika-repos`, only sessions whose working directory is in a
   repo carrying the Laika block count.
-- **Automated sessions' tokens are not yours** (LAI-775, the owner's
-  decision). A session file does not say who started it, so the hook keeps the
+- **Automated sessions' tokens count for the team, never as yours** (LAI-775,
+  D-091). A session file does not say who started it, so the hook keeps the
   session id of every session started with `OMNIGENT=1`, `CI` or
   `LAIKA_ACTIVITY_SKIP` in `~/.laika/activity/skip-sessions` (0600, never
-  sent), and the sync leaves that session's files out — its subagents too,
-  which share its id. **Sessions from before activity was on here cannot be
-  told apart** and are counted; `on` and `backfill` say so before they ask.
+  sent), and the sync sends that session's tokens — its subagents too, which
+  share its id, and its Codex and Gemini CLI files — in rows of their own
+  marked `automated`. The board counts them for the organisation, the space
+  and the task they are tied to (by the agent's own `start_working`, or a key
+  in its branch, as yours are), and in none of your figures: not your line in
+  the Usage page, not your profile card, not your plan-limit forecast. They
+  still add no prompt, session or minute of drafted time. **Sessions from
+  before activity was on here cannot be told apart** and are counted as yours;
+  `on` and `backfill` say so before they ask.
 - **Counted once across collectors.** `laika activity off` deletes everything
   here, the collector id included, and the board keeps what it was sent. So the
   30 days go with the board's answer of which days it already holds tokens for
@@ -243,9 +249,11 @@ no token counts on the machine, so they have none to send.
   first 16 hex characters of `sha256("laika-session:" + session id)` — never
   the id — and, once Claude Code here sends its metrics to the board
   (`laika activity otel`), every report names the same way the sessions whose
-  tokens are left out (`excluded`): automated ones, and under `laika-repos`
-  the ones outside your scope. Without that, they are not named at all, since
-  the board has nothing of theirs to drop. The board uses them only to put
+  telemetry is to be dropped (`excluded`): automated ones, whose tokens are the
+  rows marked `automated` and in no session's split, and under `laika-repos`
+  the ones outside your scope, whose tokens are left out. Without that, they
+  are not named at all, since the board has nothing of theirs to drop. The
+  board uses them only to put
   Claude Code's own OpenTelemetry counts beside its session files: it
   adds what the files missed — background calls — never what they already
   hold, and drops the telemetry of every session left out here.
@@ -263,11 +271,12 @@ printed. Only the exports go to stdout, so `eval "$(laika activity otel)"`
 works. Logs are switched off, and the board refuses them: they can carry
 prompts. The board takes the metrics only under the same two switches.
 
-**Sessions nobody is typing in count nothing.** The hook counts nothing — no
-event, no repo, no sync — when `OMNIGENT=1` (Omnigent sets it in every process
-it launches), `CI` is set, or `LAIKA_ACTIVITY_SKIP` is set; it only keeps that
-session's id, from its start and end payloads (never a prompt's), so its
-tokens are left out too (LAI-775). `on` and `status` say so.
+**Sessions nobody is typing in count nothing as yours.** The hook counts
+nothing — no event, no repo, no sync — when `OMNIGENT=1` (Omnigent sets it in
+every process it launches), `CI` is set, or `LAIKA_ACTIVITY_SKIP` is set; it
+only keeps that session's id, from its start and end payloads (never a
+prompt's), so its tokens go marked `automated` (LAI-775, D-091): the team's,
+never yours. `on` and `status` say so.
 
 **The orchestrator's primary session is yours** (D-088 item 9, LAI-787).
 Omnigent sets `OMNIGENT=1` on the session you type to as well as on the
