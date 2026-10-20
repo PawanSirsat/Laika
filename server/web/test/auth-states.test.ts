@@ -24,10 +24,12 @@ const read = (rel: string): Promise<string> =>
 
 let login = '';
 let banner = '';
+let loginRoute = '';
 
 before(async () => {
   login = await read('routes/screens/LoginScreen.tsx');
   banner = await read('components/ConnectionBanner.tsx');
+  loginRoute = await read('routes/screens/LoginRoute.tsx');
 });
 
 void describe('the sign-in form invents no lockout', () => {
@@ -126,5 +128,31 @@ void describe('the retry line is measured, not assumed', () => {
     // showing the state without a countdown; losing the attempt along with the
     // countdown would show an empty line instead.
     assert.match(banner, /parts/, 'countdown and attempt are not assembled independently');
+  });
+});
+
+void describe('"Keep me signed in" starts ticked (LAI-811)', () => {
+  void test('the box is ticked until the person unticks it', () => {
+    // Unticked, better-auth issues a fixed 24-hour session that is never
+    // renewed and a cookie with no Max-Age, which iOS Safari drops whenever it
+    // suspends the tab. LAI-811 found seven such 24.0 h sessions on the owner's
+    // phone since 2026-10-17.
+    assert.match(login, /\[keepSignedIn, setKeepSignedIn\] = useState\(true\)/);
+    assert.ok(
+      !login.includes('[keepSignedIn, setKeepSignedIn] = useState(false)'),
+      'the box starts unticked',
+    );
+  });
+
+  void test('it can still be unticked on a shared machine', () => {
+    // A ticked box nobody can clear would be a default dressed as a choice.
+    assert.match(login, /checked=\{keepSignedIn\}/);
+    assert.match(login, /onChange=\{setKeepSignedIn\}/);
+  });
+
+  void test('what the box says is what the sign-in sends', () => {
+    // The default only matters if it reaches better-auth as `rememberMe`.
+    assert.match(login, /onSubmit\?\.\(\{ email, password, keepSignedIn \}\)/);
+    assert.match(loginRoute, /rememberMe: values\.keepSignedIn/);
   });
 });

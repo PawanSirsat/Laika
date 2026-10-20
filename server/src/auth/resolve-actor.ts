@@ -40,6 +40,17 @@ export interface ResolveActorOptions {
    * database it cannot write (LAI-156).
    */
   log?: Logger;
+  /**
+   * Receives each `Set-Cookie` better-auth produced while reading the session
+   * (LAI-811): the renewed cookie when the session was older than its
+   * `updateAge`, or the expiring one when the session was dead.
+   *
+   * **Absent means the session is not renewed at all.** A caller with no way
+   * to deliver the renewed cookie must not slide the database expiry either,
+   * or the two fall out of step, which is the defect LAI-811 fixed. The auth
+   * middleware passes it only for `/api/` requests; see `middleware/auth.ts`.
+   */
+  setCookie?: (cookie: string) => void;
 }
 
 /**
@@ -82,7 +93,27 @@ export async function resolveActor(
   // escalation the previous paragraph rules out.
   if (bearer !== null) return resolveTokenActor(options.db, bearer, now, options.log);
 
-  const session = await options.auth.api.getSession({ headers: request.headers });
+  // **`returnHeaders`, or the renewal never reaches the browser** (LAI-811).
+  //
+  // On a session older than `updateAge`, better-auth slides the database
+  // expiry out and writes a fresh cookie with the full `Max-Age`. Without
+  // `returnHeaders` that cookie was thrown away: the database said the session
+  // had weeks left while the browser's copy kept the `Max-Age` it got at
+  // sign-in, and dropped it on schedule. `setup.ts` already does this.
+  //
+  // `disableRefresh` when there is nowhere to deliver the cookie: see
+  // `setCookie`. An expiring cookie for a dead session is produced either way,
+  // and is likewise only handed over to a caller that asked.
+  const setCookie = options.setCookie;
+  const { headers, response: session } = await options.auth.api.getSession({
+    headers: request.headers,
+    query: { disableRefresh: setCookie === undefined },
+    returnHeaders: true,
+  });
+  if (setCookie !== undefined) {
+    for (const cookie of headers.getSetCookie()) setCookie(cookie);
+  }
+
   if (session === null) return null;
 
   const actor = loadActor(options.db, session.user.id);

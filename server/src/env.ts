@@ -25,7 +25,7 @@ export interface Env {
   /** Signs session cookies and derives the AES key of §12. Required. */
   readonly serverSecret: string;
   readonly publicUrl: string;
-  /** `Secure` cookies need HTTPS; localhost is the documented exception (§6.1). */
+  /** Only an `https://` public URL gets `Secure` cookies (LAI-811); see `isHttpsUrl`. */
   readonly secureCookies: boolean;
   /**
    * Where the built SPA is served from. Defaults to `server/public` (§11.4).
@@ -185,10 +185,20 @@ function resolvePublicUrl(
   return `http://localhost:${String(port)}`;
 }
 
-function isLocalUrl(url: string): boolean {
+/**
+ * Whether the public URL is `https://`, which is when the session cookie is
+ * marked `Secure` (LAI-811).
+ *
+ * The host does not enter into it. This used to answer "anything but
+ * localhost", which made `secureCookies` true for `http://<IP>`. Browsers
+ * accept a `Secure` cookie from `http://localhost`, which they treat as
+ * trustworthy, but not from `http://<IP>` or any other plain-http host, so
+ * nobody could have signed in on production had better-auth been reading the
+ * flag. It was not; see `auth.ts`.
+ */
+function isHttpsUrl(url: string): boolean {
   try {
-    const { hostname, protocol } = new URL(url);
-    return protocol === 'https:' ? false : hostname === 'localhost' || hostname === '127.0.0.1';
+    return new URL(url).protocol === 'https:';
   } catch {
     return false;
   }
@@ -206,7 +216,7 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
     dbPath: resolveDbPath(source, nodeEnv),
     serverSecret: resolveServerSecret(source),
     publicUrl,
-    secureCookies: !isLocalUrl(publicUrl),
+    secureCookies: isHttpsUrl(publicUrl),
     publicDir:
       source.LAIKA_PUBLIC_DIR === undefined || source.LAIKA_PUBLIC_DIR === ''
         ? undefined

@@ -39,6 +39,8 @@ process.stdout.write(
     rateLimitEnabled: context.rateLimit.enabled,
     trustsForeignOrigin: context.isTrustedOrigin('https://evil.example'),
     trustsLoopback: context.isTrustedOrigin('http://127.0.0.1:3000'),
+    sessionCookieName: context.authCookies.sessionToken.name,
+    sessionCookieSecure: context.authCookies.sessionToken.attributes.secure ?? null,
   })}\n`,
 );
 

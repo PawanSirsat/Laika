@@ -24,9 +24,17 @@ import { type AppEnv } from '../context.ts';
 export function authMiddleware(options: { auth: Auth; db: Db }) {
   return createMiddleware<AppEnv>(async (c, next) => {
     let actor: ResolvedActor | null = null;
+    const sessionCookies: string[] = [];
 
     try {
-      actor = await resolveActor(c.req.raw, { ...options, log: c.get('log') });
+      actor = await resolveActor(c.req.raw, {
+        ...options,
+        log: c.get('log'),
+        // Renewal rides on API responses only; see the end of this function.
+        ...(renewsSession(c.req.path)
+          ? { setCookie: (cookie: string) => sessionCookies.push(cookie) }
+          : {}),
+      });
     } catch (err) {
       // A **presented token** that is refused is a 401, not an anonymous
       // request. Falling through to `actor: null` would turn "your token is
@@ -129,7 +137,42 @@ export function authMiddleware(options: { auth: Auth; db: Db }) {
     }
 
     await next();
+
+    // ## The renewed session cookie goes out on the response (LAI-811)
+    //
+    // **After `next()`, not before.** A `Set-Cookie` set before `next()` meets
+    // a route that returns a `Response` of its own, as better-auth's handler
+    // does, in one of two ways, both measured on Hono 4.13: it is dropped, or,
+    // when anything upstream has read `c.res`, it *replaces* the route's own.
+    //
+    // **And only when the route set no cookie itself.** This middleware runs on
+    // `/api/v1/auth/*` too. Sign-in issues a new session and sign-out expires
+    // the old one; appending the old session's renewal after either would
+    // override what the route just told the browser.
+    //
+    // **And never where a shared cache may keep it** (LAI-811 review round 1).
+    // Only `/api/` requests are given a cookie sink at all (`renewsSession`), so
+    // a hashed asset (`public, max-age=31536000, immutable`) or the SPA
+    // document never carries one: not the renewal, and not the expiring cookie
+    // of a dead session. A response that does carry one is made `private,
+    // no-store` whatever the route said, so no cache serves one person's
+    // session to another.
+    if (sessionCookies.length > 0 && c.res.headers.getSetCookie().length === 0) {
+      for (const cookie of sessionCookies) c.header('Set-Cookie', cookie, { append: true });
+      c.header('Cache-Control', 'private, no-store');
+    }
   });
+}
+
+/**
+ * Whether a request may renew the session and carry the cookie back (LAI-811).
+ *
+ * `/api/` only. The SPA reads `/api/v1/me` on every load, so a session is still
+ * renewed on the first request after a day away; static files and the SPA
+ * document never need to do it, and are the responses a cache may store.
+ */
+function renewsSession(path: string): boolean {
+  return path.startsWith('/api/');
 }
 
 /** Pass-through, for apps built without auth (the LAI-002 HTTP tests). */

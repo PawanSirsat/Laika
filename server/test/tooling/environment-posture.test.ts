@@ -94,10 +94,10 @@ export const DIFFERENCES: readonly Difference[] = [
   {
     what: '__Secure- cookie prefix',
     where: 'better-auth cookies/index.mjs — falls back to isProduction',
-    trigger: 'only when baseURL is unset',
+    trigger: 'only when advanced.useSecureCookies is unset and baseURL is not a string',
     verdict: 'safe',
     reason:
-      'createAuth always passes baseUrl, so the prefix is decided by that URL’s scheme and never reaches the isProduction fallback. Asserted below, because it stops being true the moment baseUrl becomes optional.',
+      'createAuth passes useSecureCookies (LAI-811) and always a string baseURL, so the isProduction fallback is never reached. What is asserted below is the resolved session cookie, in this environment and, through the probe, in development and production. That createAuth passes the flag at all is asserted in test/auth/session-lifetime.test.ts, which sets it against the URL scheme.',
   },
   {
     what: 'default error page detail',
@@ -160,15 +160,19 @@ describe('the security-relevant switches are on, whatever NODE_ENV says', () => 
     }
   });
 
-  it('decides the cookie prefix from the configured URL, never from NODE_ENV', async () => {
+  it('resolves the session cookie to its plain name, without Secure, in this environment', async () => {
     const h = authHarness();
     try {
       const context = await h.auth.$context;
 
-      // baseURL is always set, so the `isProduction` fallback in better-auth's
-      // cookie naming is unreachable. This fails if baseUrl ever becomes optional.
-      expect(context.baseURL).not.toBe('');
-      expect(context.baseURL).toContain('http');
+      // What better-auth will actually set here: `http://localhost`,
+      // `secureCookies: false`, NODE_ENV=test. **It cannot tell whether the
+      // flag is read**: the flag and the URL's scheme agree, so either alone
+      // gives this answer. `session-lifetime.test.ts` sets them against each
+      // other, and that is the test that fails when the flag is not read. The
+      // other environments are the probe's, below.
+      expect(context.authCookies.sessionToken.name).toBe('better-auth.session_token');
+      expect(context.authCookies.sessionToken.attributes.secure).toBe(false);
     } finally {
       h.close();
     }
@@ -220,6 +224,8 @@ interface Posture {
   readonly rateLimitEnabled: boolean;
   readonly trustsForeignOrigin: boolean;
   readonly trustsLoopback: boolean;
+  readonly sessionCookieName: string;
+  readonly sessionCookieSecure: boolean;
 }
 
 /**
@@ -321,6 +327,11 @@ describe('development and production resolve the same posture as test (AC4)', ()
       expect(posture_.trustsForeignOrigin).toBe(false);
       // LAI-090's fix must hold everywhere too, not only where it was tested.
       expect(posture_.trustsLoopback).toBe(true);
+      // The name every session already issued carries (LAI-811), measured under
+      // each NODE_ENV because `isProduction` is the one input to better-auth's
+      // cookie naming that differs between them.
+      expect(posture_.sessionCookieName).toBe('better-auth.session_token');
+      expect(posture_.sessionCookieSecure).toBe(false);
     });
   }
 
