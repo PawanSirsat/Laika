@@ -1841,7 +1841,7 @@ row.
 | `tz` | IANA zone, stored per entry; the board stays UTC |
 | `started_at`, `ended_at` | nullable, together, end after start (CHECK) — a confirmed block keeps its span |
 | `minutes` | 1–1440 (CHECK); a person's live entries on one day sum to at most 1440 (`422 day_full`) |
-| `source` | `draft` \| `manual` \| `import` |
+| `source` | `draft` \| `manual` \| `import` — an `import` came from Solidtime and is read-only here: changed in Solidtime, and taken by the next pull (LAI-788) |
 | `source_ref` | nullable — the draft it came from, or an import's own id (LAI-788); unique per `(user_id, source)` where set |
 | `note` | nullable, ≤ 280 characters |
 | `revision` | integer ≥ 1, its newest revision's number |
@@ -2845,7 +2845,9 @@ parameter names anybody else.
   transaction, an untied one as *General*, answering `{ entries }`.
   `POST /me/time-entries` is time typed by hand — a meeting, a call — needing
   only the organisation's *Time* not `off` (`403 time_off`). `PATCH` and
-  `DELETE /me/time-entries/:id` write the next revision; `GET …/revisions`
+  `DELETE /me/time-entries/:id` write the next revision — except on an entry
+  imported from Solidtime, which is changed there and refused here `403
+  imported_entry` (LAI-788); `GET …/revisions`
   answers `{ revisions }`, oldest first. A day holds at most 1440 minutes of a
   person's live entries (`422 day_full`). All of these are **session only**:
   no token reads, confirms or writes a person's time.

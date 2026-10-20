@@ -420,6 +420,8 @@ export function solidtimeOutbox(
     .where(
       and(
         eq(solidtimeEntries.userId, actor.userId),
+        // An import is Solidtime's own entry: never written back (review B1).
+        inArray(timeEntries.source, ['draft', 'manual']),
         or(
           isNotNull(timeEntries.deletedAt),
           gt(timeEntries.revision, solidtimeEntries.entryRevision),
@@ -587,6 +589,16 @@ export function recordSolidtimeLinks(
   assertCan(actor, 'time_sync.own');
   assertTimeOn(db);
   assertOwnMember(db, actor, input.member_id);
+  // One run either took a Solidtime entry for an entry or deleted it — never
+  // both (review B1): a record saying both is a CLI that deleted what it took.
+  const linking = new Set(input.links.filter((l) => l.removed !== true).map((l) => l.solidtime_id));
+  const both = input.links.find((l) => l.removed === true && linking.has(l.solidtime_id));
+  if (both !== undefined) {
+    throw new ApiError('unprocessable', 'A record links and removes the same Solidtime entry', {
+      reason: 'linked_and_removed',
+      solidtime_id: both.solidtime_id,
+    });
+  }
   const counts = { linked: 0, removed: 0, retired: 0 };
   db.transaction((tx) => {
     for (const link of input.links) {

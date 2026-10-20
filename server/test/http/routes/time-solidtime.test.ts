@@ -141,8 +141,21 @@ describe('a signed-in session', () => {
     );
     expect(await again.json()).toMatchObject({ created: 0, unchanged: 1 });
     const day = await req(`/api/v1/me/time?day=${today()}&tz=UTC`, {}, cookie);
-    const body = (await day.json()) as { entries: { source: string; task: { key: string } }[] };
+    const body = (await day.json()) as {
+      entries: { id: string; source: string; task: { key: string } }[];
+    };
     expect(body.entries.map((e) => [e.source, e.task.key])).toEqual([['import', 'LAI-1']]);
+
+    // Read-only here (review B1): changed in Solidtime, and said so.
+    const id = body.entries[0]?.id ?? '';
+    for (const init of [
+      { method: 'PATCH', body: JSON.stringify({ minutes: 5 }) },
+      { method: 'DELETE' },
+    ]) {
+      const res = await req(`/api/v1/me/time-entries/${id}`, init, cookie);
+      expect(res.status, init.method).toBe(403);
+      expect(await reasonOf(res), init.method).toBe('imported_entry');
+    }
   });
 
   it('refuses a description, or anything else an import has no field for', async () => {

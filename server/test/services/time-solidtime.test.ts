@@ -196,6 +196,93 @@ describe('who may', () => {
   });
 });
 
+describe('an entry that came from Solidtime is read-only in Laika (review round 1, B1)', () => {
+  /**
+   * The reviewer's repro: a meeting logged in Solidtime comes in as I; the
+   * person also typed the same hour in Laika as E and deleted I in My day.
+   * The outbox then offered "create E" and "delete I", the CLI took S1 for E
+   * and deleted it for I, and the next pull deleted E — the hour gone from
+   * both. Solidtime is the record for what came from it (AC2): an import is
+   * changed in Solidtime, never in Laika.
+   */
+  it('refuses to edit or delete an imported entry, and says where to change it', () => {
+    own([entry({ id: 'st-1', key: 'ONR-1' })]);
+    const [imported] = live(owner.userId);
+    if (imported === undefined) throw new Error('no import');
+    expect(reason(() => deleteEntry(t.db, owner, imported.id, NOW))).toBe(
+      'forbidden:imported_entry',
+    );
+    expect(reason(() => updateEntry(t.db, owner, imported.id, { minutes: 30 }, NOW))).toBe(
+      'forbidden:imported_entry',
+    );
+    expect(live(owner.userId)).toMatchObject([{ id: imported.id, minutes: 60, revision: 1 }]);
+  });
+
+  it('never offers an import to Solidtime as an update or a delete, however it changed', () => {
+    own([entry({ id: 'st-1', key: 'ONR-1' })]);
+    const [imported] = live(owner.userId);
+    if (imported === undefined) throw new Error('no import');
+    // A change no service makes now, as an older build or a hand could have.
+    t.db
+      .update(timeEntries)
+      .set({ deletedAt: NOW, revision: 2 })
+      .where(eq(timeEntries.id, imported.id))
+      .run();
+    expect(solidtimeOutbox(t.db, owner, { since: DAY }, NOW).push).toEqual([]);
+  });
+
+  it('refuses a record that both links and removes one Solidtime entry', () => {
+    own([entry({ id: 'st-1', key: 'ONR-1' })]);
+    const [imported] = live(owner.userId);
+    const typed = createEntry(
+      t.db,
+      owner,
+      {
+        day: DAY,
+        tz: 'UTC',
+        minutes: 60,
+        task: 'ONR-1',
+        started_at: at(DAY, 9),
+        ended_at: at(DAY, 10),
+      },
+      NOW,
+    );
+    expect(
+      reason(() =>
+        recordSolidtimeLinks(
+          t.db,
+          owner,
+          {
+            member_id: ME,
+            links: [
+              {
+                entry_id: typed.id,
+                revision: 1,
+                solidtime_id: 'st-1',
+                hash: hash('a'),
+                started_at: at(DAY, 9),
+              },
+              {
+                entry_id: imported?.id ?? '',
+                revision: 1,
+                solidtime_id: 'st-1',
+                hash: hash('a'),
+                started_at: at(DAY, 9),
+                removed: true,
+              },
+            ],
+          },
+          NOW,
+        ),
+      ),
+    ).toBe('unprocessable:linked_and_removed');
+    // Nothing was written: the import still holds st-1.
+    expect(t.db.select().from(solidtimeEntries).all()).toMatchObject([
+      { solidtimeId: 'st-1', entryId: imported?.id },
+    ]);
+  });
+});
+
 describe('the outbox — what the person’s CLI writes to Solidtime', () => {
   it('offers confirmed entries since a day as KEY title on the mapped project, and nothing else', () => {
     const onCard = createEntry(

@@ -429,6 +429,13 @@ export interface EntryPatch {
   day?: string | undefined;
 }
 
+/**
+ * One of the person's live entries, for them to change — never one that came
+ * from Solidtime (LAI-788 review round 1). Once there, **Solidtime is the
+ * record** (D-088 item 10): an import is changed in Solidtime and the next
+ * pull brings the change here. Changing it here as well is how one hour came
+ * to be deleted from both systems at once.
+ */
 function currentFields(tx: Tx, userId: string, id: string) {
   const row = tx
     .select()
@@ -438,6 +445,13 @@ function currentFields(tx: Tx, userId: string, id: string) {
     )
     .get();
   if (row === undefined) throw ApiError.notFound(`No time entry "${id}"`);
+  if (row.source === 'import') {
+    throw new ApiError(
+      'forbidden',
+      'This entry came from Solidtime: change it there, and the next laika time pull brings it here',
+      { reason: 'imported_entry', entry_id: id },
+    );
+  }
   return row;
 }
 
