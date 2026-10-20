@@ -6,8 +6,9 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-810
-status: in-progress
+status: review
 started: 2026-10-20T19:53:15Z
+finished: 2026-10-20T21:40:10Z
 ---
 
 ## Goal
@@ -129,24 +130,24 @@ web and server, and must say in the task file which server files it touched.
 
 ## Acceptance criteria
 
-- [ ] **Census first, in the task file.** For every numbered item and every
+- [x] **Census first, in the task file.** For every numbered item and every
       addition above, record: already live (with file), changed or new; and
       which endpoint provides its data. Anything with no data source is
       **filed as its own task and left out**. Do not stub it (§5.1, D-032).
-- [ ] Everything in sections 1–9 and A–I is built, except items the census
+- [x] Everything in sections 1–9 and A–I is built, except items the census
       filed. Every number, name, key and count comes from an API response,
       and no mockup data (LAIKA-381, "Standup", 4:50 PM …) appears in the
       code or the bundle.
-- [ ] **Privacy holds.** Drafts are only ever visible to their owner. The
+- [x] **Privacy holds.** Drafts are only ever visible to their owner. The
       inspector shows counts only. No prompt text, file names, branches or
       commit messages are fetched or shown.
-- [ ] Both themes, at 1440, 1024 and 390 px, and with the sidebar folded or
+- [x] Both themes, at 1440, 1024 and 390 px, and with the sidebar folded or
       open. No overflow, no clipped text and no page-wide horizontal scroll.
       Sizes come from type tokens (LAI-828 will raise the scale).
-- [ ] **Keyboard.** ↵ / G / X / J / K / ? work on the selected draft and never
+- [x] **Keyboard.** ↵ / G / X / J / K / ? work on the selected draft and never
       fire while typing. Focus is visible, and every control is reachable by
       Tab.
-- [ ] **Tests**, each failing on today's code:
+- [x] **Tests**, each failing on today's code:
       - week strip states and navigation;
       - gap detection, and Break;
       - confirm or bulk confirm leaving out drafts that need a card;
@@ -158,10 +159,10 @@ web and server, and must say in the task file which server files it touched.
       - no mockup string in the built bundle;
       - and, for any server change, a route test with `can()` and the
         owner-only rule.
-- [ ] **Screenshots**, before and after, light and dark, 1440 and 390: a
+- [x] **Screenshots**, before and after, light and dark, 1440 and 390: a
       drafted day, a settled day, a No signal day, a future day, the inspector
       for both kinds, and bulk selection. Save them to `/tmp/laika-myday-shots/`.
-- [ ] **Gate.** `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] **Gate.** `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Notes
 
@@ -236,3 +237,111 @@ LAI-833 (agent time has no time of day), LAI-834 (signals have no
 timestamps), LAI-835 (a proposal does not name its agent), and LAI-836 (SPEC
 §4 and §6.4 for the server additions below — CHIEF's area; the two new
 tables carry a `TABLES_NOT_IN_SPEC` exemption naming it until then).
+
+## Server changes (owner-direct; every server file this touched)
+
+All additive; existing `can()` actions only, all `SESSION_ONLY_ACTIONS` — a
+token is refused every one of them, and none reads or writes anybody else's
+rows. No new §3.1 row.
+
+- `server/src/db/schema.ts`, `server/src/db/migrations/0044_time_breaks_and_undo.sql`,
+  `meta/0044_snapshot.json`, `meta/_journal.json` — two new tables, nothing
+  rebuilt. `time_breaks` (D): a gap waved away, per person and day, never
+  time. `time_undo` (B): what a change replaced, kept `UNDO_WINDOW_MS` (2 min;
+  the page offers 10 s).
+- `server/src/services/time-breaks.ts` (new) — `POST /me/time-breaks`,
+  `DELETE /me/time-breaks/:id`; `time_drafts.manage_own`; on its own day,
+  no overlap (`422 overlaps_break`), at most 48 a day.
+- `server/src/services/time-undo-log.ts` (new) and `time-undo.ts` (new) —
+  `POST /me/time/undo` `{ draft | entry | day }`; `time_drafts.manage_own` and
+  `time_entries.write_own`. Drafts come back **column for column** (collector,
+  origin, task key, `updated_at`); a split's original returns under its own id.
+  Entries keep their append-only history: a confirm taken back is a `deleted`
+  revision, a delete taken back an `edited` one — what counts is restored, and
+  the record says it happened. Anything changed since is `409 changed_since`;
+  undo runs newest first, as a stack.
+- `server/src/services/time-drafts.ts` — `PATCH` takes `started_at` /
+  `ended_at` (C; `422 no_span | invalid_span | outside_day |
+  minutes_over_span`); every PATCH, split, dismiss, confirm and Confirm day
+  records its undo; a block confirmed again after an undo **revives its one
+  entry** (`time_entries_source_ref_unique`) instead of making a second;
+  `deleteOwnDrafts` also clears the undo rows (they hold counts); `heldDrafts`.
+- `server/src/services/time-entries.ts` — `assertSpanOnDay`; `PATCH` takes
+  `started_at` / `ended_at`, **one revision per patch** (a drag is one patch);
+  create and delete record their undo; `reviveEntry`.
+- `server/src/services/time-settings.ts` — turning drafting off clears the
+  undo rows with the drafts.
+- `server/src/services/my-day.ts` — `breaks` and `drafts_held` (F) on
+  `GET /me/time`.
+- `server/src/http/routes/time.ts` — the three routes and the span fields.
+- `server/src/jobs/jobs.ts` — `pruneTime` takes breaks with the drafts (30
+  days) and undo rows after the window.
+- Tests: `server/test/http/routes/time-my-day-v2.test.ts` (new),
+  `server/test/services/time-{breaks,undo,undo-log}.test.ts` (new);
+  `my-day.test.ts` (query census: +breaks, +held), `db/migrate.test.ts` (0043's
+  census isolated to 0043; a 0044 additive test), `db/schema.test.ts`,
+  `tooling/schema-spec-drift.test.ts` (two `TABLES_NOT_IN_SPEC` entries naming
+  LAI-836).
+
+Web outside `my-day/`: `server/web/src/api/time.ts` (types and calls),
+`server/web/src/components/shell/ScreenOutlet.tsx` (passes `reviewCapped`),
+`server/web/test/api/view-type-drift.test.ts` (the `TimeBreak` pair).
+
+## Decisions (the builder)
+
+- **G: the counts case.** Blocks carry counts and no timestamps, so each
+  block wears a `18p 3c` badge (titled in words) and no dot or tick is drawn.
+- **Undo replaces LAI-810's two asks** (bulk *Not work*, bulk *General* on
+  carded blocks): the reason they existed — a dismissed block cannot come back
+  — is no longer true for the ten seconds that matter.
+- **The inspector's Confirm is disabled until a card or General** — the old
+  row's Confirm quietly confirmed an untied block as General.
+- **Typed minutes and a typed split time are gone** from blocks: −/+, drag and
+  *Split in two* do it in five-minute steps. A typed length stays in Add time
+  (*Other…*, with LAI-830's *Reads as …*).
+- **"Delete my drafts…" is gone** from the column: turning the switch off asks
+  and does it, and while drafting stays on the collector would re-send them.
+- **Card chips**: the block's own card, the reader's cards in progress (the
+  read *On your plate* already makes), then the day's cards; any other typed.
+- **Week bars are shares of the week's busiest day**, never of a fixed day
+  length (E: no target).
+- **Agent source reads "Proposed by an agent"** until LAI-835.
+- The toast is the inverse surface (dark on light, light on dark), so it reads
+  as "dark" against either theme.
+
+## Verification (the builder, at review)
+
+**Tests that failed first, on today's code** (evidence kept in `/tmp`):
+
+- `cd server && npx vitest run test/http/routes/time-my-day-v2.test.ts` —
+  18 of 18 failed on `0f9c3cbd` (`/tmp/lai831-server-red-evidence.txt`);
+  one passed at first for the wrong reason (the strict body refused the
+  field) and was tightened to assert the refusal's `reason` before it counted.
+- `cd server/web && node --test test/browser/my-day-v2.test.ts` — 23 of 23
+  failed on the LAI-810 screen (`/tmp/lai831-web-red-evidence.txt`); four more
+  stayed red on the new screen until LAI-830's wording landed.
+- `cd server/web && node --test test/routes/screens/my-day/{timeline-derive,week-derive,shortcuts,card-chips}.test.ts`
+  — all four files failed with the modules absent; `format.test.ts` failed
+  3 of 4 until `format.ts` pointed at LAI-830's helpers.
+
+**The gate**, repo root, on `8f647a26` (master `2b94b48c` merged), each
+redirected to its own file and its own exit code:
+
+```
+pnpm test   > /tmp/lai831-test.txt 2>&1; echo TEST $?   →  TEST 0
+pnpm lint   > /tmp/lai831-lint.txt 2>&1; echo LINT $?   →  LINT 0
+pnpm format > /tmp/lai831-fmt.txt  2>&1; echo FMT  $?   →  FMT  0
+```
+
+`server`: 165 test files passed, 2 skipped; 3360 tests passed, 10 skipped.
+`server/web`: 2518 tests, 0 failed. `cli`: 535 tests, 0 failed. A grep of
+the output for `Unhandled|Errors|Failed|not ok` finds only a test named
+`fieldErrors`. Under load earlier (load average ~95), `pre-migration-snapshot`,
+`project-statuses` and `response-type-coverage` timed out once in a targeted
+run and passed alone (38/38); they passed in the gate.
+
+**Screenshots** in `/tmp/laika-myday-shots/`: `before-*` and `after-*` for
+drafted, settled, nosignal, future, inspector-draft, inspector-entry and bulk,
+each light and dark at 1440 and 390 (56 files), plus `design-1440.png` (the
+owner's mockup). The *before* inspector shots show the old row menu — there
+was no inspector.
