@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-796
-status: review
+status: done
 started: 2026-10-20T13:00:21Z
 finished: 2026-10-20T19:16:00Z
 ---
@@ -68,7 +68,7 @@ Capacity's load badge and counts reflect committed work (D-092 item 3), so
       Prove two by mutation.
 - [x] **Screenshots.** Before and after, light and dark, 1440 and 390, in
       `/tmp/laika-capacity-shots/`.
-- [ ] **Gate.** `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] **Gate.** `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Builder notes (owner-direct, capacity-load builder, 2026-10-21)
 
@@ -143,3 +143,12 @@ Capacity bullets: `workload`, `load`, `activity_14d_split`) and
   re-run 0), **`pnpm format` 0**. The root command itself has not been seen
   to exit 0 here; polly gates on master.
 
+## Accepted (CHIEF, 2026-10-21)
+
+Review (review-capacity-load): APPROVE, no blocking issues. Thresholds in
+SPEC §9.3 match `loadOf`; per-space load reveals nothing a reader could not
+already see; the activity split adds up by construction; "No load" relabel
+accepted under D-092 §5. The builder's unticked Gate criterion is satisfied by
+CHIEF's root gate on the merged master before pushing. Note: the screenshot's
+"1,202 bookkeeping" is fixture arithmetic, not a production figure.
+Non-blocking notes carried to LAI-832.

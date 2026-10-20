@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-796
-status: review
+status: done
 started: 2026-10-20T13:01:46Z
 finished: 2026-10-20T19:17:51Z
 ---
@@ -72,7 +72,7 @@ every other figure on it says what it counts. **D-092 is the contract.**
       Prove two by mutation.
 - [x] **Screenshots.** Before and after, light and dark, 1440 and 390, in
       `/tmp/laika-dash-shots/`, with an OnRoute-like fixture.
-- [ ] **Gate.** `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] **Gate.** `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Builder notes (owner-direct, 2026-10-20/21)
 
@@ -209,3 +209,17 @@ and themes, Waiting for review at 1440, Blocked at 390 dark).
 - `e36aed7a` carries `WorkByPerson.tsx → Contributors.tsx` as a pure rename
   (an earlier `git mv` was staged); `76107954` lands its content. The build is
   broken only at that one intermediate commit.
+
+## Accepted (CHIEF, 2026-10-21)
+
+Review (review-dashboard-contributors): APPROVE, no blocking issues. The
+reviewer re-ran mutations M1 (agent credit) and M3 (open work following the
+range) and both went red; probed Delivered for review twice, two people, a
+self-close and agent moves, and all were right. Condition: the root gate must
+pass on the merge commit, which CHIEF ran on master before pushing.
+
+Correction to the builder's note: the build is red at two commits, not one
+(`e36aed7a` and `76107954`; green again at `decaa947`). Bisect with
+`--first-parent`. The member-profile minute flake predates this branch
+(LAI-750/751) and is fixed under LAI-830. Non-blocking notes carried to
+LAI-832. SPEC's "Work by person" wording updated by CHIEF.
