@@ -85,3 +85,40 @@ After the Markdown-only commits (task files, this log) the machine ran at load
   `tooling/environment-posture` `beforeAll` over 60 s; alone 13/13, exit 0.
   Web 2206/2206, cli 484 + 2 skipped of 486.
 `pnpm lint` 0 and `pnpm format` 0 after the last edit.
+
+## 2026-10-20T09:25:00Z — LAI-792, review round 1
+
+Merged local `master` (badb2d06: LAI-788, D-089, D-090) first; clean.
+
+**What changed**
+- plugin/scripts/laika-activity-hook — D-090's check: on Claude Code's prompt
+  on an Omnigent orchestrator's turn or in an Omnigent primary, at most 4 KB
+  read, one question (`"prompt"` value begins `[System: `), cleared, rest
+  drained; the orchestrator writes `w` for a runtime turn, a primary no `p`;
+  `sdk-py` exactly; header reworded (the prompt promise, two exceptions,
+  turns the person started)
+- cli/src/activity-time.ts — `TurnEvent.kind` (`start`/`wake`/`end`),
+  `personTurns`: an end is kept only after a `t` in its session;
+  `read.runtimeTurns`; cli/src/activity.ts — `laika time draft` says how many
+  runtime turns it left out; cli/src/activity-store.ts — file table
+- cli/test/activity-hook.test.ts, cli/test/activity-time.test.ts; READMEs
+- .tasks/review/LAI-792-…md; .tasks/backlog/LAI-805 (filed)
+
+**Decisions**
+- **`w`, not nothing, for a runtime turn.** The `r` that ends it must be
+  dropped and `Stop` cannot say which turn it ends; an explicit start lets
+  the drafter pair each end with the start before it, a torn or missing line
+  costs at most that one turn, and the preview can count what it left out.
+- **An end with no start counts nothing** — D-090's safe direction.
+- **The check is Claude Code's prompt only**, on the two Omnigent paths D-090
+  names. A codex or other-agent primary is unchanged (a test says so).
+- **Peek 4 KB.** The payload's fields before `prompt` are a session id, two
+  paths and two short words, well under it.
+
+**Discovered**
+- Item 2 does happen: Omnigent 0.17.0 posts its wake notice to every parent
+  but a codex-native one, and the claude-native harness pastes it into the
+  terminal as typed input. The `p` is gone; the replies Claude Code gives it
+  still draft from the transcript → LAI-805.
+- The review quoted the notice as "1 results"; 0.17.0's template says
+  "1 result" for one and "N results" otherwise. The fixture quotes the source.
