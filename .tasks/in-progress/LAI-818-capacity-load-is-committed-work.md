@@ -2,11 +2,12 @@
 id: LAI-818
 title: 'Capacity calls everyone Heavy: load counts review and backlog, overdue triggers it, the badge ignores the selected space, and board activity counts bookkeeping'
 area: server
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-796
-status: backlog
+status: in-progress
+started: 2026-10-20T13:00:21Z
 ---
 
 ## Goal
