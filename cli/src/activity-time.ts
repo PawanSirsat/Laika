@@ -28,7 +28,9 @@ import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-
  * From what the collector already holds, and nothing else: the times of
  * Claude Code's replies and the session each is in (the token reader's
  * records — the same automated sessions left out, the same task rule), the
- * times of the prompts the person typed (`events.log`), the Laika marks that
+ * times of the prompts the person typed (`events.log`), the times an
+ * Omnigent-native orchestrator's turns started and ended in the person's
+ * primary session (`events.log` too, LAI-792), the Laika marks that
  * start work on a task, and the person's own commits in the repos the hook has
  * seen sessions start in (author time, and a key from the subject, which is
  * read and dropped at once). **Only blocks leave**: a start, an end, minutes,
@@ -41,6 +43,10 @@ import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-
  * - A **lane** is one session — its subagents with it — or the prompts the
  *   person typed. A lane's events no more than {@link GAP_S} apart chain; after
  *   its last event before a longer gap it stays active {@link TAIL_S}.
+ * - An Omnigent-native orchestrator's session (polly) is a lane of its own:
+ *   its turns' starts and ends. A turn's end is a reply. A turn's start is
+ *   **not** a typed prompt: Omnigent also starts one when a sub-agent finishes,
+ *   and only the message, which is never read, could tell them apart.
  * - A **minute** counts once, whatever number of lanes are active in it:
  *   parallel sessions share a person's time and never multiply it.
  * - A minute's **tasks** are the distinct keys of the lanes active in it. A
@@ -73,6 +79,8 @@ export const TIME_REPORTS_PER_RUN = 3;
 export const TIME_RECHECK_S = 3600;
 /** The agents whose typed prompts draft time; Codex and Gemini CLI are LAI-790. */
 export const DRAFT_AGENTS: readonly string[] = ['claude-code'];
+/** The orchestrators whose turns draft time (LAI-792): the hook's `t`/`r` lines. */
+export const TURN_AGENTS: readonly string[] = ['omnigent'];
 /** The server's bound on one signal count. */
 const SIGNAL_MAX = 100_000;
 
@@ -116,12 +124,22 @@ export interface MarkEvent {
   readonly session: string;
 }
 
+/** A turn of an Omnigent-native orchestrator's primary session (LAI-792). */
+export interface TurnEvent {
+  readonly at: number;
+  /** Local only: the orchestrator session it is in — its lane. */
+  readonly session: string;
+  /** Its end, which is a reply; else its start, which is no typed prompt. */
+  readonly end: boolean;
+}
+
 export interface DraftInputs {
   readonly replies: readonly ReplyEvent[];
   /** Epoch seconds of the prompts the person typed. */
   readonly prompts: readonly number[];
   readonly commits: readonly CommitEvent[];
   readonly marks: readonly MarkEvent[];
+  readonly turns: readonly TurnEvent[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -188,6 +206,7 @@ export function draftBlocks(
   };
   for (const r of inputs.replies) push(`s:${r.session}`, r);
   for (const at of inputs.prompts) push('p', { at, task: null, repo: null });
+  for (const t of inputs.turns) push(`o:${t.session}`, { at: t.at, task: null, repo: null });
 
   // --- each lane's active minutes ---------------------------------------------
   const active = new Map<number, Map<string, LaneMinute>>();
@@ -327,6 +346,13 @@ export function draftBlocks(
   for (const m of inputs.marks) {
     const b = laneTarget(Math.floor(m.at / 60), `s:${m.session}`);
     if (b !== undefined) b.signals.marks += 1;
+  }
+  for (const t of inputs.turns) {
+    const lane = `o:${t.session}`;
+    const b = laneTarget(Math.floor(t.at / 60), lane);
+    if (b === undefined) continue;
+    if (t.end) b.signals.replies += 1;
+    b.sessions.add(lane);
   }
   // A prompt is evidence for every task its minute was split between.
   for (const at of inputs.prompts) {
@@ -492,21 +518,41 @@ export interface Draft {
     readonly prompts: number;
     readonly commits: number;
     readonly marks: number;
+    /** Omnigent orchestrator turns begun (LAI-792). */
+    readonly turns: number;
   };
 }
 
 const PROMPT_LINE = /^p ([a-z0-9-]{1,40}) (\d{1,12})$/;
+const TURN_LINE = /^([tr]) ([a-z0-9-]{1,40}) (\d{1,12}) ([A-Za-z0-9._-]{1,128})$/;
 
-/** Prompt times from `events.log` (and a half-compacted one), for the drafting agents. */
-function promptTimes(paths: ActivityPaths, fromS: number): number[] {
+/** `events.log`, and a half-compacted one a crashed sync left. */
+function eventLines(paths: ActivityPaths): string[] {
+  return `${readText(paths.eventsCompacting) ?? ''}\n${readText(paths.events) ?? ''}`.split('\n');
+}
+
+/** Prompt times from `events.log`, for the drafting agents. */
+function promptTimes(lines: readonly string[], fromS: number): number[] {
   const agents = new Set(DRAFT_AGENTS);
-  const text = `${readText(paths.eventsCompacting) ?? ''}\n${readText(paths.events) ?? ''}`;
   const out: number[] = [];
-  for (const line of text.split('\n')) {
+  for (const line of lines) {
     const match = PROMPT_LINE.exec(line.trim());
     if (match === null || !agents.has(match[1] ?? '')) continue;
     const at = Number(match[2]);
     if (at >= fromS) out.push(at);
+  }
+  return out;
+}
+
+/** An orchestrator's turns from `events.log` (LAI-792): `t` starts one, `r` ends it. */
+function turnTimes(lines: readonly string[], fromS: number): TurnEvent[] {
+  const agents = new Set(TURN_AGENTS);
+  const out: TurnEvent[] = [];
+  for (const line of lines) {
+    const match = TURN_LINE.exec(line.trim());
+    if (match === null || !agents.has(match[2] ?? '')) continue;
+    const at = Number(match[3]);
+    if (at >= fromS) out.push({ at, session: match[4] ?? '', end: match[1] === 'r' });
   }
   return out;
 }
@@ -640,14 +686,17 @@ export async function buildDraft(options: DraftOptions): Promise<Draft> {
     repo: r.cwd === undefined ? null : (repoOf.get(r.cwd) ?? null),
     task: r.task,
   }));
-  const prompts = promptTimes(options.paths, fromS);
+  const lines = eventLines(options.paths);
+  const prompts = promptTimes(lines, fromS);
+  const turns = turnTimes(lines, fromS);
   return {
-    days: draftBlocks({ replies, prompts, commits, marks: sources.marks }, tz, days),
+    days: draftBlocks({ replies, prompts, commits, marks: sources.marks, turns }, tz, days),
     read: {
       replies: replies.length,
       prompts: prompts.length,
       commits: commits.length,
       marks: sources.marks.length,
+      turns: turns.filter((t) => !t.end).length,
     },
   };
 }
@@ -702,7 +751,11 @@ export function timeDraftsFile(paths: ActivityPaths): string {
   return join(paths.dir, 'time-drafts.json');
 }
 
-/** Written by the hook for an orchestrator's primary session (D-088 item 9). */
+/**
+ * Written by the hook for an orchestrator's primary session (D-088 item 9):
+ * a Claude Code primary's session id, or an Omnigent-native orchestrator's
+ * Omnigent session id (LAI-792).
+ */
 export function primarySessionsFile(paths: ActivityPaths): string {
   return join(paths.dir, 'primary-sessions');
 }

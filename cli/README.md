@@ -279,9 +279,27 @@ counts as yours in every respect: its prompts, its start, its tokens and its
 time. A sub-agent's two ids differ and it is skipped as before; `CI` and
 `LAIKA_ACTIVITY_SKIP` skip a primary all the same. Each primary's id is kept,
 0600 and never sent, in `~/.laika/activity/primary-sessions`, and `status`
-says how many there were. An Omnigent primary that is not a Claude Code
-session (Omnigent's own agent) runs no hooks and writes no transcript: there is
-nothing here to count, so its time is yours to add by hand.
+says how many there were.
+
+**An Omnigent-native orchestrator's turns are yours too** (LAI-792). polly,
+Omnigent's own orchestrator, is no terminal session, but it thinks with Claude
+Code under the Claude Agent SDK, and the SDK loads `~/.claude/settings.json` —
+so the hooks `laika activity on` installed already run at every one of its
+turns. The hook knows it by Omnigent's own marks: a runner launched for a
+`claude-sdk` session (`OMNIGENT_RUNNER_LAUNCH_HARNESS`), the SDK's
+`CLAUDE_CODE_ENTRYPOINT`, and no terminal. Each turn's start and end go to
+`events.log` as `t`/`r omnigent <epoch> <session>` — the time and Omnigent's
+session id, never what was said — and the session's id is kept as a primary.
+A turn's start is **not** counted as a typed prompt: Omnigent also starts one
+when a sub-agent finishes, and only the message, which is never read, could
+tell them apart. So its turns draft time as your primary session's activity,
+each end a reply, the way Claude Code's replies do. Nothing to configure
+beyond `laika activity on`. The sub-agents it dispatches run in terminals of
+their own, or are other agents, and are skipped as before; `CI` and
+`LAIKA_ACTIVITY_SKIP` skip it all the same. It writes no transcript, so it has
+no tokens here, and its minutes are tied to no task until you assign them in
+*My day*. A child session the orchestrator defines itself on the `claude-sdk`
+harness cannot be told from it and counts the same.
 
 **Which board.** The one `laika activity on` was run against, recorded in
 `state.json`, with that board's token (from `~/.laika/env` first). A session
@@ -335,7 +353,9 @@ remembered sending is forgotten; the board deletes the drafts it held.
 and the session each is in (the token reader's records — automated sessions
 left out, the same task rule: a session's own Laika mark, else a key in its
 branch), the prompts you typed (`events.log`, Claude Code's for now — Codex
-and Gemini CLI are LAI-790), the Laika marks that start work on a task, and
+and Gemini CLI are LAI-790), the turns of an Omnigent orchestrator's session
+(`events.log` too, LAI-792 — a lane of their own, each end a reply, never a
+typed prompt), the Laika marks that start work on a task, and
 your own commits in the repos sessions started in (author time, and a task key
 from the subject, which is read and dropped at once).
 
@@ -359,8 +379,9 @@ blocks changed: per local day and zone, each block's start, end, minutes, task
 key or `null`, and counts — prompts, replies, sessions, commits, marks. Never
 prompt or reply text, paths, repository or branch names, session ids, commit
 messages or window titles. `laika time draft [--days N]` prints the blocks for
-your last days; `--json` prints the exact body. Neither writes or sends
-anything.
+your last days, and what they were built from — Omnigent orchestrator turns
+included, since a block carries counts only; `--json` prints the exact body.
+Neither writes or sends anything.
 
 **Agent minutes are not your hours.** With Claude Code's OpenTelemetry on
 (`laika activity otel`), each usage report also carries every session's tokens

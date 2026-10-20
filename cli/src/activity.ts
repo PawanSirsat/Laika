@@ -1123,5 +1123,14 @@ export async function time(argv: readonly string[], io: ActivityIo = CONSOLE): P
       );
     }
   }
+  // Where the time came from: a block carries counts only, so it is said here
+  // (LAI-792 — an Omnigent orchestrator's turns count as replies, never prompts).
+  const n = (count: number, one: string, many: string): string =>
+    `${String(count)} ${count === 1 ? one : many}`;
+  const { read } = draft;
+  io.out('');
+  io.out(
+    `Built from ${n(read.replies, 'Claude Code reply', 'Claude Code replies')}, ${n(read.prompts, 'typed prompt', 'typed prompts')}, ${n(read.turns, 'Omnigent orchestrator turn', 'Omnigent orchestrator turns')}, ${n(read.commits, 'commit', 'commits')} and ${n(read.marks, 'Laika mark', 'Laika marks')}.`,
+  );
   return 0;
 }

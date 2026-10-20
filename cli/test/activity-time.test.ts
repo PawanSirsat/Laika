@@ -23,7 +23,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 
-import { addDays, gitRunner, localDay } from '../src/activity-census.ts';
+import { addDays, countEvents, gitRunner, localDay } from '../src/activity-census.ts';
 import { activityPaths, readState, writeState, type ActivityState } from '../src/activity-store.ts';
 import { startCollecting, sync, type SyncContext } from '../src/activity-sync.ts';
 import { time, type ActivityIo } from '../src/activity.ts';
@@ -59,7 +59,7 @@ function dir(prefix: string): string {
   return made;
 }
 
-const none: DraftInputs = { replies: [], prompts: [], commits: [], marks: [] };
+const none: DraftInputs = { replies: [], prompts: [], commits: [], marks: [], turns: [] };
 const reply = (
   at: number,
   session: string,
@@ -71,6 +71,8 @@ const reply = (
   task,
   repo,
 });
+/** An Omnigent orchestrator's turn: its start, or its end — its reply (LAI-792). */
+const turn = (at: number, session: string, end: boolean) => ({ at, session, end });
 const total = (blocks: readonly Block[]): number => blocks.reduce((n, b) => n + b.minutes, 0);
 const day = (inputs: Partial<DraftInputs>, tz = 'UTC', on = UTC_DAY): Block[] =>
   draftBlocks({ ...none, ...inputs }, tz, [on]).get(on) ?? [];
@@ -230,6 +232,58 @@ void describe('the rule (pure)', () => {
     ]);
   });
 
+  void test('an Omnigent orchestrator’s turns are a lane: each end a reply, never a typed prompt (LAI-792)', () => {
+    const blocks = day({
+      turns: [
+        turn(T0, 'o1', false),
+        turn(T0 + 3 * MIN, 'o1', true),
+        turn(T0 + 10 * MIN, 'o1', false),
+      ],
+    });
+    assert.deepEqual(blocks, [
+      {
+        start: T0 * 1000,
+        end: (T0 + 15 * MIN) * 1000,
+        minutes: 15,
+        task: null,
+        signals: { prompts: 0, replies: 1, sessions: 1, commits: 0, marks: 0 },
+      },
+    ]);
+  });
+
+  void test('beside Claude Code and typed prompts an orchestrator’s minute counts once; two orchestrators are two sessions', () => {
+    const alone = day({ replies: [reply(T0, 'a', 'LAI-1'), reply(T0 + 10 * MIN, 'a', 'LAI-1')] });
+    assert.equal(total(alone), 15);
+    const together = day({
+      replies: [reply(T0, 'a', 'LAI-1'), reply(T0 + 10 * MIN, 'a', 'LAI-1')],
+      prompts: [T0 + 2 * MIN],
+      turns: [
+        turn(T0 + MIN, 'o1', false),
+        turn(T0 + 4 * MIN, 'o1', true),
+        turn(T0 + 2 * MIN, 'o2', false),
+        turn(T0 + 9 * MIN, 'o2', true),
+      ],
+    });
+    // The orchestrators ran inside the Claude Code session's 15 minutes: no more.
+    assert.equal(total(together), 15);
+    // Their untied minutes beside tied ones are the tied task's, as a session's are.
+    assert.deepEqual(
+      together.map((b) => [b.task, b.signals]),
+      [['LAI-1', { prompts: 1, replies: 4, sessions: 3, commits: 0, marks: 0 }]],
+    );
+    const after = day({
+      replies: [reply(T0, 'a', 'LAI-1')],
+      turns: [turn(T0 + 30 * MIN, 'o1', true)],
+    });
+    assert.deepEqual(
+      after.map((b) => [b.task, b.minutes]),
+      [
+        ['LAI-1', 5],
+        [null, 5],
+      ],
+    );
+  });
+
   void test(`at most ${String(BLOCKS_PER_DAY_MAX)} a day: same-task blocks merged, never moved to another task`, () => {
     // 60 stretches, 20 minutes apart, alternating two tasks.
     const replies = Array.from({ length: 60 }, (_, i) =>
@@ -273,6 +327,8 @@ const SECRET = {
 const PERSON = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
 const PRIMARY = 'bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb';
 const ROBOT = 'cccccccc-1111-4111-8111-cccccccccccc';
+// An Omnigent session id: 32 hex characters, made up, and looks it.
+const ORCHESTRATOR = 'dddddddddddddddddddddddddddddddd';
 const EMAIL = 'dev@example.test';
 
 function state(): ActivityState {
@@ -371,7 +427,17 @@ function machine() {
   writeFileSync(join(paths.dir, 'primary-sessions'), `${String(T0)} ${PRIMARY}\n`, { mode: 0o600 });
   writeFileSync(
     paths.events,
-    `p claude-code ${String(T0 + 2 * MIN)}\np codex ${String(T0 + 200 * MIN)}\n`,
+    [
+      `p claude-code ${String(T0 + 2 * MIN)}`,
+      `p codex ${String(T0 + 200 * MIN)}`,
+      // An Omnigent orchestrator's turn, 12:00–12:04 (LAI-792), and lines that are not.
+      `t omnigent ${String(T0 + 180 * MIN)} ${ORCHESTRATOR}`,
+      `r omnigent ${String(T0 + 184 * MIN)} ${ORCHESTRATOR}`,
+      `t omnigent ${String(T0 + 184 * MIN)} not/a/plain/id`,
+      `t somebody-else ${String(T0 + 184 * MIN)} ${ORCHESTRATOR}`,
+      `r omnigent ${String(T0 + 184 * MIN)}`,
+      '',
+    ].join('\n'),
     { mode: 0o600 },
   );
   // The typed prompt's text was never written anywhere the drafter reads;
@@ -408,11 +474,27 @@ void describe('from the machine’s own files', () => {
         ['09:40', 10, 'ACME-80'],
         // 11:00–11:05, the primary session, on main and no commit after it.
         ['11:00', 5, null],
+        // 12:00–12:09, the Omnigent orchestrator's turn and its 5-minute tail.
+        ['12:00', 9, null],
       ],
     );
     assert.equal(blocks[0]?.signals.prompts, 1, 'the Claude Code prompt; the Codex one is LAI-790');
     assert.equal(blocks[1]?.signals.commits, 1);
+    assert.deepEqual(blocks[3]?.signals, {
+      prompts: 0,
+      replies: 1,
+      sessions: 1,
+      commits: 0,
+      marks: 0,
+    });
     assert.equal(draft.read.replies, 7, 'the automated session’s four replies were read');
+    assert.equal(draft.read.turns, 1, 'one turn begun; the malformed lines were not read');
+  });
+
+  void test('an orchestrator’s turns are not typed prompts on the heatmap (LAI-792)', () => {
+    const m = machine();
+    const counts = countEvents(m.paths, TZ, T0 - 86_400).get(UTC_DAY);
+    assert.deepEqual(counts, { prompts: { 'claude-code': 1, codex: 1 }, sessions: 0 });
   });
 
   void test('only blocks leave: no text, path, branch, session id or subject in the body', async () => {
@@ -432,6 +514,7 @@ void describe('from the machine’s own files', () => {
       PERSON,
       PRIMARY,
       ROBOT,
+      ORCHESTRATOR,
       'feature',
       EMAIL,
     ]) {
@@ -446,9 +529,10 @@ void describe('from the machine’s own files', () => {
   void test('until the board names its prefixes, nothing is tied to a task', async () => {
     const m = machine();
     const draft = await buildDraft({ ...m.options, prefixes: undefined });
+    // The person's morning, the primary's 11:00 and the orchestrator's 12:00.
     assert.deepEqual(
       (draft.days.get(UTC_DAY) ?? []).map((b) => b.task),
-      [null, null],
+      [null, null, null],
     );
   });
 
@@ -756,9 +840,11 @@ void describe('`laika time draft`', () => {
     const { value, out, err } = io(m.home);
     assert.equal(await time(['draft'], value), 0, err.join('\n'));
     const text = out.join('\n');
-    assert.match(text, /2026-10-20 {2}55 min in 3 blocks, 50 min tied to a task/);
+    assert.match(text, /2026-10-20 {2}1 h 4 min in 4 blocks, 50 min tied to a task/);
     assert.match(text, /09:00–09:40 +40 min {2}ACME-77 +1 prompt · 4 replies · 1 session/);
-    for (const secret of [...Object.values(SECRET), m.top, PERSON, PRIMARY, ROBOT]) {
+    assert.match(text, /12:00–12:09 +9 min {2}no task +1 reply · 1 session/);
+    assert.match(text, /1 Omnigent orchestrator turn/);
+    for (const secret of [...Object.values(SECRET), m.top, PERSON, PRIMARY, ROBOT, ORCHESTRATOR]) {
       assert.equal(text.includes(secret), false, `${secret} printed`);
     }
     assert.throws(() => statSync(join(m.paths.dir, 'usage-data.json')), 'it wrote');
