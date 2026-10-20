@@ -224,18 +224,57 @@ describe('the build is idempotent (LAI-028)', () => {
 });
 
 /**
- * Run the built server against a public directory this test owns.
+ * How long the built server gets to answer its first health check (LAI-768).
+ *
+ * **Wall-clock, and sized from measurements**, rather than a count of attempts.
+ * Spawn to the first `200`, a fresh database each time, on a 10-core Mac
+ * (4 performance, 6 efficiency) on 2026-10-20:
+ *
+ * | load | time to healthy |
+ * | --- | --- |
+ * | normal — load average ~13 | 0.6 s |
+ * | one `yes` per core — load ~22 to 40 | 7.4 to 14.8 s |
+ *
+ * Nearly all of it is Node loading the server's modules, before `db.ready`; the
+ * migrations are ~25 ms of it. The old limit was 100 tries × 100 ms, about 10 s,
+ * which two of those five loaded boots missed — and so did GitHub's runner in
+ * CI / Deploy run 39405262872, which is why that release never deployed.
+ *
+ * 40 s is 2.7× the slowest boot measured, and leaves a third of each case's
+ * 60 s for the case itself. A server that is not coming does not cost the whole
+ * budget: a child that exits ends the wait at once, with its exit code and
+ * everything it printed.
+ */
+const HEALTH_BUDGET_MS = 40_000;
+
+/** A built server this file started. */
+interface BuiltServer {
+  readonly baseUrl: string;
+  /** Resolves with the exit code once the child has exited. */
+  readonly exited: Promise<number | null>;
+  /** What the child printed to stdout — its structured log. */
+  stdout(): string;
+  /** stdout and stderr together, in arrival order, for failure messages. */
+  output(): string;
+  /** SIGTERM, which is what the container's runtime sends. */
+  stop(): void;
+  /** SIGKILL if it is still running, wait for the exit, remove its database. */
+  dispose(): Promise<void>;
+}
+
+/**
+ * Run the built server against a public directory this test owns, and return
+ * once it answers health.
  *
  * `LAIKA_PUBLIC_DIR` exists so these cases do not depend on whether the person
  * running them happens to have built the SPA (LAI-204). Before that, the fallback
  * assertion passed on a clean clone and failed after `pnpm build` — the same
  * source, two answers, decided by an untracked directory.
+ *
+ * **The one place this file spawns the server** (LAI-768): the health wait has
+ * to know when the child has died, so it needs the child.
  */
-async function withBuiltServer<T>(
-  port: number,
-  publicDir: string,
-  fn: (baseUrl: string) => Promise<T>,
-): Promise<{ result: T; exitCode: number | null; serverLog: string }> {
+async function startBuiltServer(port: number, publicDir: string): Promise<BuiltServer> {
   const dbDir = mkdtempSync(join(tmpdir(), 'laika-built-run-'));
 
   // For the identity check in `waitForHealth`: our child's age.
@@ -255,10 +294,16 @@ async function withBuiltServer<T>(
   });
 
   // The child's own log, for the cases that assert what the process did at
-  // boot rather than what it answers (LAI-722).
-  let serverLog = '';
+  // boot rather than what it answers (LAI-722) — and, with stderr, for saying
+  // why when it did not boot at all.
+  let stdout = '';
+  let output = '';
   child.stdout.on('data', (chunk: Buffer) => {
-    serverLog += chunk.toString();
+    stdout += chunk.toString();
+    output += chunk.toString();
+  });
+  child.stderr.on('data', (chunk: Buffer) => {
+    output += chunk.toString();
   });
 
   const exited = new Promise<number | null>((resolve) => {
@@ -267,40 +312,158 @@ async function withBuiltServer<T>(
     });
   });
 
-  let result: T;
+  const dispose = async (): Promise<void> => {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    await exited;
+    rmSync(dbDir, { recursive: true, force: true });
+  };
+
   try {
-    await waitForHealth(port, spawnedAt);
-    result = await fn(`http://127.0.0.1:${String(port)}`);
-  } finally {
-    child.kill('SIGTERM');
+    await waitForHealth(port, spawnedAt, exited, () => output);
+  } catch (error) {
+    await dispose();
+    throw error;
   }
 
-  const exitCode = await exited;
-  rmSync(dbDir, { recursive: true, force: true });
+  return {
+    baseUrl: `http://127.0.0.1:${String(port)}`,
+    exited,
+    stdout: () => stdout,
+    output: () => output,
+    stop: () => {
+      child.kill('SIGTERM');
+    },
+    dispose,
+  };
+}
 
-  return { result, exitCode, serverLog };
+/** A server of its own for one case: boot it, run `fn` against it, remove it. */
+async function withBuiltServer<T>(
+  port: number,
+  publicDir: string,
+  fn: (baseUrl: string) => Promise<T>,
+): Promise<T> {
+  const server = await startBuiltServer(port, publicDir);
+  try {
+    return await fn(server.baseUrl);
+  } finally {
+    await server.dispose();
+  }
 }
 
 describe('the built server, run the way the container runs it', () => {
-  it('boots, migrates, serves health, and exits 0 on SIGTERM', async (ctx) => {
-    skipIfBuildFailed(ctx);
-    const emptyPublic = mkdtempSync(join(tmpdir(), 'laika-public-empty-'));
+  /**
+   * **One server for the cases that only read from it** (LAI-768).
+   *
+   * Health, the `Keep-Alive` header and the fallback document are all `GET`s
+   * against a server with no SPA built: none of them writes, and none needs a
+   * server no other case has used. A boot is the expensive thing this file does
+   * — see `HEALTH_BUDGET_MS` — so they share one, and the case that stops it
+   * comes last. The two cases below that need a server of their own still get
+   * one: the shutdown timing kills its server with a stream open, and the built
+   * SPA needs a different public directory at boot.
+   */
+  describe('one server with no SPA built, shared by the cases that only read from it', () => {
+    let server: BuiltServer | undefined;
+    /** Captured, not thrown, for the reason `buildError` is (LAI-137). */
+    let bootError: string | null = null;
+    let emptyPublic: string | undefined;
 
-    const { result, exitCode } = await withBuiltServer(
-      await freePort(),
-      emptyPublic,
-      async (baseUrl) => {
-        const health = await fetch(`${baseUrl}/api/v1/health`);
-        return { status: health.status, body: (await health.json()) as { status: string } };
-      },
-    );
+    beforeAll(async () => {
+      if (buildError !== null) return;
+      // An empty directory *is* the "no build yet" condition, stated rather
+      // than assumed — and it proves dist/static/fallback.html shipped, which
+      // is the asset `tsc` does not copy.
+      emptyPublic = mkdtempSync(join(tmpdir(), 'laika-public-empty-'));
+      try {
+        server = await startBuiltServer(await freePort(), emptyPublic);
+      } catch (error) {
+        bootError = error instanceof Error ? error.message : String(error);
+      }
+    }, HEALTH_BUDGET_MS + 20_000);
 
-    expect(result.status).toBe(200);
-    expect(result.body.status).toBe('ok');
-    expect(exitCode).toBe(0);
+    afterAll(async () => {
+      await server?.dispose();
+      if (emptyPublic !== undefined) rmSync(emptyPublic, { recursive: true, force: true });
+    });
 
-    rmSync(emptyPublic, { recursive: true, force: true });
-  }, 60_000);
+    /** Every case after the first, which is the one that reports a failed boot. */
+    function skipIfNotBooted(ctx: { skip: (note?: string) => void }): void {
+      skipIfBuildFailed(ctx);
+      if (server === undefined) {
+        ctx.skip('the shared server did not boot — see "boots, migrates and serves health"');
+      }
+    }
+
+    it('boots, migrates and serves health', async (ctx) => {
+      skipIfBuildFailed(ctx);
+      expect(bootError, `the built server did not boot:\n${bootError ?? ''}`).toBeNull();
+
+      const health = await fetch(`${server!.baseUrl}/api/v1/health`);
+      const body = (await health.json()) as { status: string };
+
+      expect(health.status).toBe(200);
+      expect(body.status).toBe('ok');
+    }, 60_000);
+
+    it('keeps an idle connection open for 65 s, and says so (LAI-722)', async (ctx) => {
+      skipIfNotBooted(ctx);
+      // Node advertises its `keepAliveTimeout` in the `Keep-Alive` response
+      // header, so this reads the value the running process actually applied —
+      // the only check that would notice `index.ts` no longer calling
+      // `applyKeepAlive`. Node's default answers `timeout=5`.
+      const agent = new Agent({ keepAlive: true });
+      let result: string | undefined;
+      try {
+        result = await new Promise<string | undefined>((resolve, reject) => {
+          httpGet(`${server!.baseUrl}/api/v1/health`, { agent }, (res) => {
+            res.resume();
+            res.on('end', () => {
+              const header = res.headers['keep-alive'];
+              resolve(Array.isArray(header) ? header.join(', ') : header);
+            });
+          }).on('error', reject);
+        });
+      } finally {
+        agent.destroy();
+      }
+
+      expect(result).toBe('timeout=65');
+
+      // `headersTimeout` has no response header to read, so it is read off the
+      // record `index.ts` writes from the live server object.
+      const serverLog = server!.stdout();
+      const timeouts = serverLog
+        .split('\n')
+        .filter((line) => line.startsWith('{'))
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .find((record) => record.event === 'server.timeouts');
+      expect(timeouts, serverLog).toMatchObject({
+        keep_alive_timeout_ms: 65_000,
+        headers_timeout_ms: 66_000,
+      });
+      // And `index.ts` turns the boot-time cache warm-up on (an empty build
+      // warms nothing, but the record says it ran).
+      expect(serverLog).toContain('"event":"static.warmed"');
+    }, 60_000);
+
+    it('serves the committed fallback when no SPA has been built', async (ctx) => {
+      skipIfNotBooted(ctx);
+      const spa = await fetch(`${server!.baseUrl}/board/LAI-1`);
+      const text = await spa.text();
+
+      expect(spa.status).toBe(200);
+      expect(text).toContain('Laika is running.');
+    }, 60_000);
+
+    it('exits 0 on SIGTERM, after serving the cases above', async (ctx) => {
+      skipIfNotBooted(ctx);
+      // Last, because it ends the server the cases above share.
+      server!.stop();
+
+      expect(await server!.exited, server!.output()).toBe(0);
+    }, 60_000);
+  });
 
   it('shuts down promptly with an SSE stream open (LAI-057)', async (ctx) => {
     skipIfBuildFailed(ctx);
@@ -343,73 +506,6 @@ describe('the built server, run the way the container runs it', () => {
     rmSync(emptyPublic, { recursive: true, force: true });
   }, 60_000);
 
-  it('keeps an idle connection open for 65 s, and says so (LAI-722)', async (ctx) => {
-    skipIfBuildFailed(ctx);
-    // Node advertises its `keepAliveTimeout` in the `Keep-Alive` response
-    // header, so this reads the value the running process actually applied —
-    // the only check that would notice `index.ts` no longer calling
-    // `applyKeepAlive`. Node's default answers `timeout=5`.
-    const emptyPublic = mkdtempSync(join(tmpdir(), 'laika-public-keepalive-'));
-
-    const { result, serverLog } = await withBuiltServer(
-      await freePort(),
-      emptyPublic,
-      async (baseUrl) => {
-        const agent = new Agent({ keepAlive: true });
-        try {
-          return await new Promise<string | undefined>((resolve, reject) => {
-            httpGet(`${baseUrl}/api/v1/health`, { agent }, (res) => {
-              res.resume();
-              res.on('end', () => {
-                const header = res.headers['keep-alive'];
-                resolve(Array.isArray(header) ? header.join(', ') : header);
-              });
-            }).on('error', reject);
-          });
-        } finally {
-          agent.destroy();
-        }
-      },
-    );
-
-    expect(result).toBe('timeout=65');
-
-    // `headersTimeout` has no response header to read, so it is read off the
-    // record `index.ts` writes from the live server object.
-    const timeouts = serverLog
-      .split('\n')
-      .filter((line) => line.startsWith('{'))
-      .map((line) => JSON.parse(line) as Record<string, unknown>)
-      .find((record) => record.event === 'server.timeouts');
-    expect(timeouts, serverLog).toMatchObject({
-      keep_alive_timeout_ms: 65_000,
-      headers_timeout_ms: 66_000,
-    });
-    // And `index.ts` turns the boot-time cache warm-up on (an empty build
-    // warms nothing, but the record says it ran).
-    expect(serverLog).toContain('"event":"static.warmed"');
-
-    rmSync(emptyPublic, { recursive: true, force: true });
-  }, 60_000);
-
-  it('serves the committed fallback when no SPA has been built', async (ctx) => {
-    skipIfBuildFailed(ctx);
-    // An empty directory *is* the "no build yet" condition, stated rather than
-    // assumed — and it proves dist/static/fallback.html shipped, which is the
-    // asset `tsc` does not copy.
-    const emptyPublic = mkdtempSync(join(tmpdir(), 'laika-public-empty-'));
-
-    const { result } = await withBuiltServer(await freePort(), emptyPublic, async (baseUrl) => {
-      const spa = await fetch(`${baseUrl}/board/LAI-1`);
-      return { status: spa.status, text: await spa.text() };
-    });
-
-    expect(result.status).toBe(200);
-    expect(result.text).toContain('Laika is running.');
-
-    rmSync(emptyPublic, { recursive: true, force: true });
-  }, 60_000);
-
   it('serves the built SPA instead when one is present', async (ctx) => {
     skipIfBuildFailed(ctx);
     // The other behaviour, as its own case. Collapsing the two into one
@@ -421,7 +517,7 @@ describe('the built server, run the way the container runs it', () => {
       'utf8',
     );
 
-    const { result } = await withBuiltServer(await freePort(), builtPublic, async (baseUrl) => {
+    const result = await withBuiltServer(await freePort(), builtPublic, async (baseUrl) => {
       const spa = await fetch(`${baseUrl}/board/LAI-1`);
       return { status: spa.status, text: await spa.text() };
     });
@@ -450,45 +546,11 @@ async function timeShutdownWithOpenStream(
   port: number,
   publicDir: string,
 ): Promise<{ elapsed: number; serverLog: string }> {
-  const dbDir = mkdtempSync(join(tmpdir(), 'laika-shutdown-'));
-
-  // For the identity check in `waitForHealth`: our child's age.
-  const spawnedAt = Date.now();
-  const child = spawn('node', [join(DIST, 'index.js')], {
-    cwd: SERVER_ROOT,
-    env: {
-      ...process.env,
-      PORT: String(port),
-      NODE_ENV: 'development',
-      LAIKA_PUBLIC_URL: `http://127.0.0.1:${String(port)}`,
-      LAIKA_SECRET: 'a-test-secret-that-is-long-enough-to-be-accepted',
-      LAIKA_DB_PATH: join(dbDir, 'laika.db'),
-      LAIKA_PUBLIC_DIR: publicDir,
-    },
-    stdio: 'pipe',
-  });
-
-  const exited = new Promise<void>((resolve) => {
-    child.on('exit', () => {
-      resolve();
-    });
-  });
-
-  // The server's own view, so a slow exit can be attributed rather than guessed
-  // at: its log says when it started stopping and when it finished.
-  let serverLog = '';
-  child.stdout.on('data', (chunk: Buffer) => {
-    serverLog += chunk.toString();
-  });
-  child.stderr.on('data', (chunk: Buffer) => {
-    serverLog += chunk.toString();
-  });
-
+  const server = await startBuiltServer(port, publicDir);
   let elapsed = Number.NaN;
 
   try {
-    await waitForHealth(port, spawnedAt);
-    const base = `http://127.0.0.1:${String(port)}`;
+    const base = server.baseUrl;
 
     // A session, because `/events` needs an actor.
     const setup = await fetch(`${base}/api/v1/setup`, {
@@ -515,31 +577,51 @@ async function timeShutdownWithOpenStream(
     if (stream.status !== 200) throw new Error(`stream failed: ${String(stream.status)}`);
 
     const startedAt = Date.now();
-    child.kill('SIGTERM');
-    await exited;
+    server.stop();
+    await server.exited;
     elapsed = Date.now() - startedAt;
 
     controller.abort();
   } finally {
-    child.kill('SIGKILL');
-    rmSync(dbDir, { recursive: true, force: true });
+    await server.dispose();
   }
 
-  return { elapsed, serverLog };
+  return { elapsed, serverLog: server.output() };
 }
 
 /**
- * Wait for **our** server's health (LAI-489).
+ * Wait for **our** server's health (LAI-489), within `HEALTH_BUDGET_MS`
+ * (LAI-768).
  *
  * A `200` is not enough: another process on the port answers exactly as ours
  * would (§4.3, LAI-402). `uptime_ms` is the tell — a server started before
  * this child cannot have been up for less time than the child has existed. A
  * foreign answer is **refused loudly**, never waited through.
+ *
+ * Giving up is loud too: the error names the port, how long it waited and how
+ * many times it asked, and carries everything the child printed. A child that
+ * exits is reported as exited, at once, rather than waited out.
  */
-async function waitForHealth(port: number, spawnedAt: number): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt++) {
+async function waitForHealth(
+  port: number,
+  spawnedAt: number,
+  exited: Promise<number | null>,
+  output: () => string,
+): Promise<void> {
+  let exit: { code: number | null } | undefined;
+  void exited.then((code) => {
+    exit = { code };
+  });
+
+  const deadline = spawnedAt + HEALTH_BUDGET_MS;
+  let attempts = 0;
+  while (exit === undefined && Date.now() < deadline) {
+    attempts++;
     try {
-      const res = await fetch(`http://127.0.0.1:${String(port)}/api/v1/health`);
+      const res = await fetch(`http://127.0.0.1:${String(port)}/api/v1/health`, {
+        // A server that accepts and never answers must not outlast the budget.
+        signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+      });
       if (res.ok) {
         const { uptime_ms: uptime } = (await res.json()) as { uptime_ms: number };
         const ours = Date.now() - spawnedAt;
@@ -556,5 +638,14 @@ async function waitForHealth(port: number, spawnedAt: number): Promise<void> {
     }
     await new Promise((r) => setTimeout(r, 100));
   }
-  throw new Error(`built server never became healthy on port ${String(port)}`);
+
+  const waited = `${String(Date.now() - spawnedAt)}ms`;
+  if (exit !== undefined) {
+    throw new Error(
+      `built server on port ${String(port)} exited with code ${String(exit.code)} after ${waited}, before it ever answered health\n\nserver output:\n${output()}`,
+    );
+  }
+  throw new Error(
+    `built server never became healthy on port ${String(port)}: waited ${waited} over ${String(attempts)} attempts, against a budget of ${String(HEALTH_BUDGET_MS)}ms (LAI-768)\n\nserver output:\n${output()}`,
+  );
 }
