@@ -127,6 +127,18 @@ export interface MyDayAgent {
   readonly unattributed_minutes: number;
 }
 
+/**
+ * A gap the person waved away as a break (LAI-831): never time, never counted.
+ * Mirrors `services/time-breaks.ts`' `TimeBreakView`.
+ */
+export interface TimeBreak {
+  readonly id: string;
+  readonly day: string;
+  readonly tz: string;
+  readonly started_at: number;
+  readonly ended_at: number;
+}
+
 /** One day of the week strip. Mirrors `services/my-day.ts`' `WeekDayView`. */
 export interface MyDayWeekDay {
   readonly day: string;
@@ -143,6 +155,10 @@ export interface MyDay {
   readonly settings: TimeSettings;
   readonly drafts: readonly TimeDraft[];
   readonly entries: readonly TimeEntry[];
+  /** Gaps waved away (LAI-831), in the order they happened. */
+  readonly breaks: readonly TimeBreak[];
+  /** Every pending draft held, on every day — what *Draft my time* off deletes. */
+  readonly drafts_held: { readonly count: number; readonly minutes: number };
   readonly agent: MyDayAgent;
   readonly state: DayState;
   /** Monday to Sunday of the week holding `day`. */
@@ -156,6 +172,9 @@ export interface DraftPatch {
   readonly project?: string | null;
   readonly general?: boolean;
   readonly minutes?: number;
+  /** An edge moved on the block's own day (LAI-831), unix ms. */
+  readonly started_at?: number;
+  readonly ended_at?: number;
 }
 
 export interface NewEntry {
@@ -175,6 +194,20 @@ export interface EntryPatch {
   readonly project?: string | null;
   readonly note?: string | null;
   readonly day?: string;
+  /** An edge moved on the entry's own day (LAI-831): one revision. */
+  readonly started_at?: number;
+  readonly ended_at?: number;
+}
+
+/** What Undo takes back: the newest change to one draft, one entry or one day. */
+export type UndoSubject =
+  { readonly draft: string } | { readonly entry: string } | { readonly day: string };
+
+export interface NewBreak {
+  readonly day: string;
+  readonly tz: string;
+  readonly started_at: number;
+  readonly ended_at: number;
 }
 
 const opts = (signal?: AbortSignal) => (signal === undefined ? {} : { signal });
@@ -257,6 +290,24 @@ export function updateEntry(id: string, patch: EntryPatch): Promise<TimeEntry> {
 
 export function deleteEntry(id: string): Promise<void> {
   return request<void>(`/me/time-entries/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/**
+ * Undo (LAI-831): the server puts back exactly what the newest change to
+ * `subject` replaced — `409` once that has changed since, `404` once it is
+ * too old to take back.
+ */
+export function undo(subject: UndoSubject): Promise<void> {
+  return request<void>('/me/time/undo', { method: 'POST', body: subject });
+}
+
+/** A gap waved away as a break: it stops counting under *Gaps*. Never time. */
+export function addBreak(span: NewBreak): Promise<TimeBreak> {
+  return request<TimeBreak>('/me/time-breaks', { method: 'POST', body: span });
+}
+
+export function removeBreak(id: string): Promise<void> {
+  return request<void>(`/me/time-breaks/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 export function getRevisions(
