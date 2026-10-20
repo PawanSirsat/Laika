@@ -6,9 +6,8 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-796
-status: review
+status: in-progress
 started: 2026-10-20T11:28:33Z
-finished: 2026-10-20T11:58:15Z
 ---
 
 ## Goal
@@ -45,7 +44,7 @@ Deploys are not the cause: `LAIKA_SECRET` is stable, sessions persist on the
 
 ## Acceptance criteria
 
-- [x] **Renewal.** `resolve-actor.ts` uses
+- [ ] **Renewal.** `resolve-actor.ts` uses
       `getSession({ headers, returnHeaders: true })`, and the auth middleware
       passes its `set-cookie` through on the response, the way `setup.ts:93,
       115-117` already does.
@@ -255,3 +254,56 @@ own exit code:
 - **LAI-813 filed.** SPEC §6.1 still says the cookie is "`Secure` when not on
   localhost". That was never true in production, and §6.1 was not LAI-811's
   named edit.
+
+## Review round 1 (2026-10-20): BLOCK
+
+The renewal criterion is unticked until both points below are fixed and
+re-proven.
+
+**B1, blocker: session cookies go out on responses a shared cache may store.**
+`authMiddleware` is mounted on `*` (`server/src/app.ts:273-278`), so the static
+and SPA handlers (`app.ts:477`) run inside it, and the pass-through in
+`server/src/http/middleware/auth.ts` appended better-auth's cookies to any
+response. Measured by the reviewer with a 2-day-old session:
+
+- `GET /assets/index-*.js` answered `Cache-Control: public, max-age=31536000,
+  immutable` **and** `Set-Cookie: better-auth.session_token=…; Max-Age=2592000`.
+- The SPA document `/board` and its `304` carried the same cookie.
+- A dead session's `Max-Age=0` cookies went out on the immutable asset.
+
+A shared cache could then hand one person's session to another. The fix is
+two layers of defence:
+
+1. Renew only on API requests. Everywhere else, no refresh and nothing
+   forwarded, including expiring cookies.
+2. Any response that carries an appended session cookie also gets
+   `Cache-Control: private, no-store`, overriding whatever the route set.
+
+Prove that the SPA's `/api/v1/me` on load still renews after a day away.
+Tests, each failing on the round-1 head:
+
+- an asset with an aged session: no `Set-Cookie`, immutable `Cache-Control`
+  kept;
+- the SPA document and its `304`: no `Set-Cookie`;
+- `/api/v1/me` with an aged session: the renewal and `private, no-store`;
+- a dead session on an asset: no expiring cookie.
+
+Prove one of them by mutation.
+
+**B2: two comments claim more than the code proves (CLAUDE.md §5).**
+
+- `server/test/tooling/environment-posture.test.ts:167-169` claims it catches
+  the flag not being read. Removing `useSecureCookies` leaves it green, because
+  the harness URL is localhost and `NODE_ENV` is `test`. Either narrow the
+  comment, or make the probe use a non-local http URL and prove it by
+  mutation.
+- `server/src/auth/auth.ts:123-125` says "fixing either one alone" would have
+  put `Secure` on a plain-http cookie. Only re-keying the block alone would
+  have.
+
+**Non-blocking.**
+
+- SPEC §13.1 should say that renewal rides on API responses only, that those
+  responses are `private, no-store`, and when the cookie catches up.
+- `env.ts`: correct "the only case", since browsers also send `Secure` cookies
+  to `http://localhost`.
