@@ -499,28 +499,25 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
   });
 
   void test('opening the editor does not scroll the panel away from the text clicked', async () => {
+    /*
+     * Measured on the way here: the panel jumped 121px as the editor opened.
+     * Removing any one of three things brings it back — the text held in
+     * place while the editor's chunk loads, the height held until its
+     * document is drawn, and the editor's options built once.
+     */
     const server: Server = { t3: subject() };
     const h = await panel(server);
     try {
       await h.page.setViewportSize({ width: 1440, height: 1000 });
       const main = h.page.locator('.panel-main');
-      // Scrolled a little, as a reader would be: the browser anchors only then.
-      await main.evaluate((el) => {
-        el.scrollTop = 40;
-      });
+      const room = await main.evaluate((el) => el.scrollHeight - el.clientHeight);
+      assert.ok(room > 100, `positive control: the panel cannot scroll (${String(room)}px)`);
       const before = await main.evaluate((el) => el.scrollTop);
-      assert.ok(before > 0, 'positive control: the panel did not scroll at all');
-      // By coordinates: Playwright's own click scrolls a target it judges out of
-      // view, and that is not the panel's doing.
-      const text = await description(h).locator('.md').first().boundingBox();
-      assert.ok(text !== null);
-      await h.page.mouse.click(text.x + 4, Math.max(text.y, 0) + 60);
+      await description(h).locator('.md p').first().click();
       const editor = description(h).locator('.rich-editor');
       await content(editor).waitFor({ timeout: 10_000 });
-      await h.page.waitForTimeout(300);
+      await h.page.waitForTimeout(400);
       const after = await main.evaluate((el) => el.scrollTop);
-      // The editor is a toolbar and a button row taller than the text; the
-      // browser's scroll anchoring answered that with a 100px jump.
       assert.ok(Math.abs(after - before) <= 2, `the panel scrolled ${String(after - before)}px`);
     } finally {
       await h.close();

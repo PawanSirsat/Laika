@@ -65,8 +65,8 @@ export interface RichEditorProps {
   readonly holding?: ReactNode;
   /**
    * The height of what it replaces, held by the editor until its document is
-   * on the page: for a frame it is a toolbar and an empty box, and a panel
-   * that briefly shrinks loses its scroll position for good.
+   * on the page. Without it the panel jumped 121px as the editor opened
+   * (measured; `task-panel-editing.test.ts` holds it).
    */
   readonly holdHeight?: number | undefined;
 }

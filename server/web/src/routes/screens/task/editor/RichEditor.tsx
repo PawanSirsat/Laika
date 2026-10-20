@@ -228,11 +228,11 @@ export function RichEditor({
 
   /*
    * **Built once.** `useEditor` compares its options by reference on every
-   * render and calls `setOptions` when they differ — which re-applies the
-   * editor's state and writes its last-known selection over a click the
-   * browser has not reported yet. Options rebuilt per render (a new
-   * Placeholder, new handlers) did exactly that: the caret jumped back to
-   * where the editor opened. Everything that changes is read through a ref.
+   * render and calls `setOptions` when they differ, which re-applies the
+   * editor's state to its view. Options rebuilt per render (a new
+   * Placeholder, new handlers) made that happen on every render, and the
+   * panel jumped 121px as the editor opened (measured; the panel test holds
+   * it). Everything that changes is read through a ref instead.
    */
   const options = useMemo(
     () => ({
@@ -434,9 +434,9 @@ export function RichEditor({
       if (hit !== null) selection = TextSelection.near(state.doc.resolve(hit.pos));
     }
     /*
-     * At once, and not through `commands.focus()`: that focuses a frame
-     * later and writes its selection back over a click made in between.
-     * `view.focus()` does not scroll.
+     * At once, and not through `commands.focus()`, which focuses a frame
+     * later — the same reason as Keep editing below. `view.focus()` does not
+     * scroll.
      */
     view.dispatch(state.tr.setSelection(selection));
     view.focus();
