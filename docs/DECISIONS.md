@@ -4990,3 +4990,57 @@ needs a decision, and the move to four-digit ids needs to be made with it.
 
 CHIEF's `LAI-800`–`LAI-899` fills, CORE starts filing again, or a fourth
 session takes `LAI-300`.
+
+## D-090 — On an Omnigent turn, the activity hook may check whether the prompt is the runtime's own notice
+
+**Date:** 2026-10-20 · **Decided by:** the owner, carried by CHIEF · **Status:** accepted
+
+LAI-792 counts an Omnigent orchestrator's turns (polly) as the owner's time.
+Review found that **most of those turns nobody typed**. Omnigent starts a turn
+itself whenever a sub-agent finishes, a timer fires or a terminal goes idle,
+and every such turn's prompt begins `[System: `. Counted as typed, a night of
+sub-agent wake-ups drafts the whole night. Nothing else in the hook's input or
+environment can tell the two apart; only the prompt can.
+
+The owner chose, from two options offered: **option 1, let the hook check the
+prompt**. Option 2 was to drop polly's drafted time and enter it by hand.
+
+### What was decided
+
+1. **One question, two paths.** On an Omnigent orchestrator's `prompt` turn
+   (LAI-792), and on an Omnigent Claude Code primary's prompt (LAI-787's path)
+   if the runtime's notices reach it as prompts, the hook may read **the start
+   of the prompt**, at most a few KB. It asks **one thing**: does the prompt
+   begin with `[System: `? The variable holding it is cleared at once, and the
+   rest of stdin is drained as before. Every other agent and mode is
+   unchanged: the prompt goes straight to `/dev/null`.
+2. **Only the yes or no is kept.** The answer decides which letter is
+   written: a person's turn as before, a runtime turn as a different letter or
+   nothing. No character of the prompt is written, stored or sent. A runtime
+   turn's end (`r`) is dropped by the drafter, because `Stop` cannot tell the
+   two apart.
+3. **The published promise changes, narrowly.** *"Never reads the prompt"* in
+   `plugin/README.md` and the hook's header becomes: never keeps, stores or
+   sends any part of the prompt; **on an Omnigent turn only**, it checks whether
+   the prompt begins with Omnigent's `[System: ` marker. The test that a unique
+   marker in a prompt lands in no file under `HOME` stays, and it must cover
+   the Omnigent path too.
+4. **D-088 item 4 is unchanged.** Prompt text is still never collected; one
+   bit derived from it, never stored, is not collection.
+
+### Known limits, accepted
+
+- **Joined prompts undercount.** When a notice and the owner's text are
+  delivered as one prompt, notice first, the owner's turn is dropped. That is
+  the safe direction.
+- **A runner restart counts once.** A fresh session's history-replay prompt
+  begins differently, so one runtime turn per restart is counted.
+- **The marker is Omnigent's, not ours.** If a later Omnigent renames it, the
+  overcount comes back silently. A test fixture quotes the 0.17.0 template, so
+  the change shows up as a red test rather than as a padded timesheet.
+
+### Revisit when
+
+Omnigent gives a hook a real signal for "a person typed this", such as a field
+in the payload or an environment variable set per turn. Then the prompt check
+goes, and so does item 3's exception.
