@@ -25,7 +25,7 @@ export interface Env {
   /** Signs session cookies and derives the AES key of §12. Required. */
   readonly serverSecret: string;
   readonly publicUrl: string;
-  /** `Secure` cookies need HTTPS, so only an `https://` public URL gets them (LAI-811). */
+  /** Only an `https://` public URL gets `Secure` cookies (LAI-811); see `isHttpsUrl`. */
   readonly secureCookies: boolean;
   /**
    * Where the built SPA is served from. Defaults to `server/public` (§11.4).
@@ -186,13 +186,15 @@ function resolvePublicUrl(
 }
 
 /**
- * Whether the public URL is `https://` — the only case where a `Secure` cookie
- * reaches the server again (LAI-811).
+ * Whether the public URL is `https://`, which is when the session cookie is
+ * marked `Secure` (LAI-811).
  *
  * The host does not enter into it. This used to answer "anything but
- * localhost", which made `secureCookies` true for `http://<IP>`; a browser drops
- * a `Secure` cookie set over plain http, so nobody could have signed in had
- * better-auth been reading the flag. It was not — see `auth.ts`.
+ * localhost", which made `secureCookies` true for `http://<IP>`. Browsers
+ * accept a `Secure` cookie from `http://localhost`, which they treat as
+ * trustworthy, but not from `http://<IP>` or any other plain-http host, so
+ * nobody could have signed in on production had better-auth been reading the
+ * flag. It was not; see `auth.ts`.
  */
 function isHttpsUrl(url: string): boolean {
   try {

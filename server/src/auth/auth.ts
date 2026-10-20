@@ -44,9 +44,10 @@ export interface CreateAuthOptions {
   /** Public origin, used for cookie and redirect correctness. */
   baseUrl: string;
   /**
-   * `Secure` cookies require HTTPS: a browser drops a `Secure` cookie that
-   * arrives over plain http, and nobody can stay signed in. `env.ts` sets it
-   * only for an `https://` public URL (LAI-811, SPEC §13.1).
+   * Whether the session cookie is `Secure`. A browser refuses a `Secure` cookie
+   * from a plain-http origin other than localhost, and nobody can stay signed
+   * in. `env.ts` sets it only for an `https://` public URL (LAI-811, SPEC
+   * §13.1).
    */
   secureCookies: boolean;
   now?: () => number;
@@ -120,9 +121,10 @@ export function createAuth(options: CreateAuthOptions) {
        * block here instead, and better-auth never read it: it looks cookies up
        * by `session_token`. The block only repeated better-auth's defaults
        * (`HttpOnly`, `SameSite=Lax`, `Path=/`) plus a `secure` that
-       * `env.ts` got wrong for `http://<IP>`. The two faults cancelled out, so
-       * fixing either one alone would have put `Secure` on a plain-http cookie
-       * and signed everyone out.
+       * `env.ts` got wrong for `http://<IP>`. The two faults cancelled out.
+       * Re-keying the block alone would have put `env.ts`'s wrong `Secure` on
+       * the plain-http cookie and signed everyone out; fixing `env.ts` alone
+       * would have changed nothing, since the block was not read.
        *
        * **The cookie's name is unchanged by this**, in either scheme. Before,
        * better-auth derived the prefix from `baseURL`; `env.ts` now derives
