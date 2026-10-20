@@ -5044,3 +5044,49 @@ prompt**. Option 2 was to drop polly's drafted time and enter it by hand.
 Omnigent gives a hook a real signal for "a person typed this", such as a field
 in the payload or an environment variable set per turn. Then the prompt check
 goes, and so does item 3's exception.
+
+## D-091 — Tokens an orchestrator's agents spend count for the organisation, the space and the task, never for the person (amends D-086)
+
+**Date:** 2026-10-20 · **Decided by:** the owner, carried by CHIEF · **Status:** accepted
+
+D-086 item 1 dropped every record of an `OMNIGENT=1` session, so that an
+orchestrator's builders would not inflate the person's tokens. It achieved
+that, and it also erased the spend from every other figure. Measured on the
+owner's Mac on 2026-10-20 (LAI-815): 23.47M headline tokens from Omnigent
+sub-agents never left the machine since 10-16, 14.26M of them that day. The
+`laika` space showed 0 tokens over 30 days. LAI-769's goal was *"how many
+tokens the team's agents consume … per project"*.
+
+The owner was offered three questions and answered *"yes, start LAI-815"*:
+
+### Decided
+
+1. **Count them, but not for the person.** An automated session's tokens
+   (`OMNIGENT=1`, `LAIKA_ACTIVITY_SKIP`, CI) are sent, marked `automated`.
+   They count toward the organisation's, the space's and the task's
+   consumption and cost. They count toward **no per-person figure**: not
+   `by_developer`, not the person's usage card, not the plan-limit forecast,
+   and not anything shown as one person's work. D-086's purpose, keeping the
+   person's numbers theirs, is unchanged. D-086 item 1's "skips every record"
+   becomes "keeps every record out of the person's figures".
+2. **Tying them to a task.** CHIEF has every builder it dispatches mark its
+   card at the start (`start_working LAI-NNN` with its branch). That needs no
+   code and took effect the same day. The collector's existing mark and
+   branch rules then attribute the tokens. Anything unmarked stays
+   unattributed and counts only toward the organisation total.
+3. **polly's own tokens are left out for now.** polly keeps no transcript, so
+   counting them needs telemetry or a persisted session. Revisit when one
+   exists.
+4. **Old data.** Usage from before this lands is not recovered, except what
+   the collector's normal look-back window re-reads. Whatever it re-reads is
+   counted under item 1's rule. Nothing is back-filled by hand.
+
+### What this does not decide
+
+Activity counts (D-080) are unchanged: an automated session still adds no
+prompts, sessions or heatmap minutes for the person. Time drafting (D-088,
+D-090) is unchanged.
+
+### Revisit when
+
+A second person runs an orchestrator, or polly gains a transcript.
