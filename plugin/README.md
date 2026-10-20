@@ -136,10 +136,10 @@ prompt twice for anyone who uses `laika-claude`. `laika activity on` puts it in
 
 | Mode | Fired by | Does |
 | --- | --- | --- |
-| `prompt` | prompt submit | appends `p <agent> <epoch>` to `~/.laika/activity/events.log` |
+| `prompt` | prompt submit | appends `p <agent> <epoch>` to `~/.laika/activity/events.log`; for an Omnigent orchestrator's turn, `t omnigent <epoch> <session>` instead (LAI-792) |
 | `session-start` | session start | appends `s <agent> <epoch>`; remembers the repo's top level in `~/.laika/activity/repos`; starts a detached `laika activity sync` if one is due |
 | `session-end` | session end | starts a detached `laika activity sync` if one is due, and returns at once |
-| `turn-end` | Claude Code's `Stop`, every turn's end (LAI-776) | counts nothing; while collection is on, starts a detached `laika activity sync` if one is due — so a long session's tokens arrive within one sync interval. Not due, under zsh it forks nothing |
+| `turn-end` | Claude Code's `Stop`, every turn's end (LAI-776) | counts nothing — but an Omnigent orchestrator's turn end, `r omnigent <epoch> <session>` (LAI-792); while collection is on, starts a detached `laika activity sync` if one is due — so a long session's tokens arrive within one sync interval. Not due, under zsh it forks nothing |
 
 What it never does:
 
@@ -179,6 +179,19 @@ What it never does:
   0600 and never sent, in `~/.laika/activity/primary-sessions`. A dispatched
   sub-agent's two ids differ, and it is skipped as above. `CI` and
   `LAIKA_ACTIVITY_SKIP` still skip it.
+- **Skip an Omnigent-native orchestrator's turns** (LAI-792). polly thinks
+  with Claude Code under the Claude Agent SDK, which loads
+  `~/.claude/settings.json`, so this hook runs at each of its turns — in a
+  runner launched for a `claude-sdk` session
+  (`OMNIGENT_RUNNER_LAUNCH_HARNESS=claude-sdk`), with
+  `CLAUDE_CODE_ENTRYPOINT=sdk-*`, in no terminal, for `claude-code`. Then a
+  turn's start and end append `t`/`r omnigent <epoch> <session>` to
+  `events.log` (the session is `OMNIGENT_RUNNER_PRIMARY_SESSION_ID`, a plain id
+  or nothing is counted), and its start keeps that id in `primary-sessions`.
+  Never a `p` line: a turn's start may be Omnigent waking it, not the person
+  typing. No payload is read and no session start or repo is recorded. Under
+  zsh a turn's start, like the prompt path, forks nothing, and so does its end
+  unless a sync is due.
 
 `~/.laika/activity` is 0700 and its files 0600. Repo paths, the event log and
 extra emails stay there; only per-day counts and one-way commit keys are sent.

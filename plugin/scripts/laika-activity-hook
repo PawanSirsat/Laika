@@ -53,6 +53,33 @@
 # can say how many there were. A sub-agent's two ids differ, and it is
 # skipped as before. `CI` and `LAIKA_ACTIVITY_SKIP` skip whatever Omnigent says.
 #
+# **An Omnigent-native orchestrator's turns are the person's too** (LAI-792).
+# polly is not a terminal session: it thinks with Claude Code under the Claude
+# Agent SDK — Omnigent's `claude-sdk` harness (inner/claude_sdk_executor.py) —
+# and the SDK loads ~/.claude/settings.json, so this hook runs at every one of
+# its turns, `prompt` as a turn starts and `turn-end` as it ends. It runs in
+# the runner Omnigent launched for that session, which stamps
+# `OMNIGENT_RUNNER_LAUNCH_HARNESS=claude-sdk` (runner/identity.py); the SDK
+# sets `CLAUDE_CODE_ENTRYPOINT=sdk-py` (claude_agent_sdk's subprocess_cli.py);
+# and it is in no terminal, so `OMNIGENT_TERMINAL_LAUNCH_SESSION_ID` is unset.
+# All three, for `claude-code`, under a runner primary id that is a plain id,
+# is the orchestrator. A sub-agent it dispatches runs in a terminal of its own,
+# or is another agent, and is skipped as before.
+#
+# A turn's start is not always the person typing — Omnigent also starts one
+# when a sub-agent it is waiting on finishes — and telling them apart means
+# reading the message, which this hook never does. So its turns are never
+# counted as typed prompts: one line `t omnigent <epoch> <session>` as a turn
+# starts and `r omnigent <epoch> <session>` as it ends goes to events.log, the
+# session being the runner's primary id, for `laika activity sync` to draft as
+# the activity of the person's primary session, as Claude Code's replies are.
+# At its start that id is kept in primary-sessions; nothing else is: no
+# payload is read, no session start or repo is recorded, nothing is skipped.
+# Omnigent runs it with `--no-session-persistence`, so it writes no transcript
+# and has no tokens to read. One thing this cannot tell: a child session the
+# orchestrator itself defines on the `claude-sdk` harness looks the same, and
+# counts the same.
+#
 # **One thing is kept for an automated session** (LAI-775, the owner's
 # decision): its session id, so `laika activity sync` leaves that session's
 # tokens out — its session files sit beside the developer's own. Only the session-start and session-end
@@ -84,7 +111,7 @@
 # no fork. It never prints (Claude Code parses `Stop` output) and always
 # exits 0 (exit 2 there keeps Claude from stopping).
 #
-# Owned by SHELL (plugin/). LAI-752, LAI-757, LAI-787.
+# Owned by SHELL (plugin/). LAI-752, LAI-757, LAI-787, LAI-792.
 
 exec >/dev/null 2>&1
 unset USER_PROMPT
@@ -94,31 +121,46 @@ MODE="${1:-}"
 AGENT="${2:-}"
 case "$AGENT" in '' | *[!a-z0-9-]*) AGENT=other ;; esac
 
-# Whose session this is, decided once, by builtins alone (D-088 item 9; see
-# the header): automated, the orchestrator's primary, or simply the person's.
+# Whose session this is, decided once, by builtins alone (D-088 item 9,
+# LAI-792; see the header): automated, the orchestrator's primary, an
+# Omnigent-native orchestrator's turns, or simply the person's.
 AUTOMATED=no
 PRIMARY=no
+ORCHESTRATOR=no
+OSID=''
 if [ -n "${CI:-}" ] || [ -n "${LAIKA_ACTIVITY_SKIP:-}" ]; then
   AUTOMATED=yes
 elif [ "${OMNIGENT:-}" = 1 ]; then
-  if [ -n "${OMNIGENT_RUNNER_PRIMARY_SESSION_ID:-}" ] &&
-    [ "${OMNIGENT_TERMINAL_LAUNCH_SESSION_ID:-}" = "$OMNIGENT_RUNNER_PRIMARY_SESSION_ID" ]; then
-    PRIMARY=yes
-  else
-    AUTOMATED=yes
+  AUTOMATED=yes
+  if [ -n "${OMNIGENT_RUNNER_PRIMARY_SESSION_ID:-}" ]; then
+    if [ "${OMNIGENT_TERMINAL_LAUNCH_SESSION_ID:-}" = "$OMNIGENT_RUNNER_PRIMARY_SESSION_ID" ]; then
+      PRIMARY=yes
+      AUTOMATED=no
+    elif [ "$AGENT" = claude-code ] && [ -z "${OMNIGENT_TERMINAL_LAUNCH_SESSION_ID:-}" ] &&
+      [ "${OMNIGENT_RUNNER_LAUNCH_HARNESS:-}" = claude-sdk ]; then
+      # Its lane is the runner's primary id, written to events.log: a plain
+      # id (as a payload's session id must be), or it counts nothing.
+      LC_ALL=C
+      OSID="$OMNIGENT_RUNNER_PRIMARY_SESSION_ID"
+      case "${CLAUDE_CODE_ENTRYPOINT:-}" in sdk-*) ORCHESTRATOR=yes ;; esac
+      case "$OSID" in *[!A-Za-z0-9._-]*) ORCHESTRATOR=no ;; esac
+      [ "${#OSID}" -gt 128 ] && ORCHESTRATOR=no
+      [ "$ORCHESTRATOR" = yes ] && AUTOMATED=no
+    fi
   fi
 fi
 
 # A session's start or end payload is the only one ever read, and only for
 # its id: neither carries a prompt. An automated session's (LAI-775); a
-# person's start, for an agent whose tokens are read (LAI-770). The prompt
-# path pays one test for it, which is all its budget allows.
+# person's start, for an agent whose tokens are read (LAI-770) — never the
+# orchestrator's, whose id comes from Omnigent. The prompt path pays one test
+# for it, which is all its budget allows.
 KEEP=no
 PAYLOAD=''
 if [ "$MODE" != prompt ]; then
   if [ "$AUTOMATED" = yes ]; then
     case "$MODE" in session-start | session-end) KEEP=yes ;; esac
-  elif [ "$MODE" = session-start ]; then
+  elif [ "$MODE" = session-start ] && [ "$ORCHESTRATOR" = no ]; then
     case "$AGENT" in claude-code | codex | gemini-cli) KEEP=yes ;; esac
   fi
 fi
@@ -193,6 +235,20 @@ fi
 COLLECT=no
 case "$STATE" in *'"collect":true'*) COLLECT=yes ;; esac
 
+# --- an Omnigent-native orchestrator's turn (LAI-792) -----------------------------
+# Its start and end, never as a typed prompt; at its start, its id as a primary.
+# One printf, one O_APPEND write each, as below.
+if [ "$ORCHESTRATOR" = yes ]; then
+  if [ "$COLLECT" = yes ]; then
+    case "$MODE" in
+      prompt) printf 't omnigent %s %s\n' "$NOW" "$OSID" >>"$DIR/events.log" ;;
+      turn-end) printf 'r omnigent %s %s\n' "$NOW" "$OSID" >>"$DIR/events.log" ;;
+      session-start) printf '%s %s\n' "$NOW" "$OSID" >>"$DIR/primary-sessions" ;;
+    esac
+  fi
+  [ "$MODE" = prompt ] && exit 0
+fi
+
 if [ "$MODE" = prompt ]; then
   # One printf, one O_APPEND write: two hooks at once cannot interleave a line.
   [ "$COLLECT" = yes ] && printf 'p %s %s\n' "$AGENT" "$NOW" >>"$DIR/events.log"
@@ -200,7 +256,7 @@ if [ "$MODE" = prompt ]; then
 fi
 
 # --- session start / end -------------------------------------------------------
-if [ "$MODE" = session-start ] && [ "$COLLECT" = yes ]; then
+if [ "$MODE" = session-start ] && [ "$COLLECT" = yes ] && [ "$ORCHESTRATOR" = no ]; then
   printf 's %s %s\n' "$AGENT" "$NOW" >>"$DIR/events.log"
 
   # Which repository this session is in, and the branch it is on. Kept on
