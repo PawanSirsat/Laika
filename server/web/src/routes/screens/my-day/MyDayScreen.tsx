@@ -4,29 +4,27 @@ import {
   addEntry,
   confirmDay,
   confirmDraft,
-  deleteDrafts,
   deleteEntry,
   dismissDraft,
   getMyDay,
-  setDraftMyTime,
   splitDraft,
   updateDraft,
   updateEntry,
-  type DraftPatch,
-  type EntryPatch,
   type MyDay,
   type NewEntry,
 } from '../../../api/time.ts';
+import { everyPage } from '../../../api/every-page.ts';
+import { isProject, listProjects, type Project } from '../../../api/projects.ts';
 import { readerZone } from '../../../api/usage.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
-import { Switch } from '../../../components/Switch.tsx';
 import { AddTimeForm } from './AddTimeForm.tsx';
 import { AgentStrip } from './AgentStrip.tsx';
-import { DraftRow } from './DraftRow.tsx';
-import { EntryRow } from './EntryRow.tsx';
+import { DraftList, type Batch } from './DraftList.tsx';
+import { DraftMyTime } from './DraftMyTime.tsx';
+import { EntryList } from './EntryList.tsx';
 import { WeekStrip } from './WeekStrip.tsx';
 import { DayBar } from './DayBar.tsx';
 import { OnYourPlate } from './OnYourPlate.tsx';
@@ -34,14 +32,15 @@ import { dayLong } from './day-timeline.ts';
 import type { MeProfile } from '../../../api/me.ts';
 import type { ReviewQueueItem } from '../../../api/review.ts';
 import {
-  MODE_NOTES,
-  STATE_LABELS,
-  canAddTime,
-  dayIn,
-  dayTotals,
-  hm,
-  isDay,
-} from './my-day-derive.ts';
+  confirmPlan,
+  needCardLine,
+  runBulk,
+  runConfirmDay,
+  type BulkApi,
+  type BulkKind,
+  type BulkResult,
+} from './draft-bulk.ts';
+import { STATE_LABELS, canAddTime, dayIn, dayTotals, hm, isDay } from './my-day-derive.ts';
 import './my-day.css';
 
 export interface MyDayScreenProps {
@@ -61,6 +60,50 @@ type Load =
   | { readonly kind: 'ready'; readonly view: MyDay }
   | { readonly kind: 'error'; readonly error: unknown };
 
+/** The writes a batch makes (LAI-810) — the endpoints that exist, one block at a time. */
+const BULK_API: BulkApi = {
+  confirmDraft,
+  confirmDay,
+  dismissDraft,
+  toGeneral: (id) => updateDraft(id, { task: null, project: null, general: true }),
+};
+
+const RUNNING: Readonly<Record<BulkKind, string>> = {
+  confirm: 'Confirming',
+  general: 'Moving to General',
+  dismiss: 'Marking not work',
+};
+
+/** The keys a batch runs under: the bar's, and the header's *Confirm day*. */
+const BATCHES: ReadonlySet<string> = new Set(['bulk', 'confirm-day']);
+
+/**
+ * The spaces the reader can read, once for the page (LAI-810 review round
+ * 1): *On your plate* reads the reader's work in the ones they belong to, and
+ * *Agent minutes* links a card only when its space is one of them.
+ * `undefined` while reading, `null` if the read failed.
+ */
+function useSpaces(): readonly Project[] | null | undefined {
+  const [spaces, setSpaces] = useState<readonly Project[] | null | undefined>(undefined);
+  useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    everyPage((cursor) =>
+      listProjects(cursor === undefined ? { limit: 200 } : { limit: 200, cursor }, signal),
+    )
+      .then(({ items }) => {
+        if (!signal.aborted) setSpaces(items.filter(isProject));
+      })
+      .catch(() => {
+        if (!signal.aborted) setSpaces(null);
+      });
+    return () => {
+      controller.abort();
+    };
+  }, []);
+  return spaces;
+}
+
 /**
  * My day (LAI-787, D-088): the reader's own day, drafted on their own machine
  * from what their collector already holds, confirmed in one click or edited
@@ -75,6 +118,11 @@ type Load =
  * the day as a bar of confirmed and drafted blocks above its two lists, and a
  * column beside it with *On your plate*, *Agent minutes* and the *Draft my
  * time* switch. Every action is the one LAI-787 built, where it was.
+ *
+ * **Made for a busy day** (LAI-810): the drafted blocks paged in a scroll area
+ * of their own, selected and confirmed many at a time; the confirmed ones a
+ * summary line when long; and the column beside the day bounded — *Draft my
+ * time* first, five of each kind of work, scrolling on its own.
  */
 export function MyDayScreen({
   day,
@@ -88,8 +136,10 @@ export function MyDayScreen({
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [pending, setPending] = useState<string | undefined>(undefined);
   const [actionError, setActionError] = useState<string | undefined>(undefined);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [batch, setBatch] = useState<Batch>({ kind: 'idle' });
   const [tick, setTick] = useState(0);
+  const spaces = useSpaces();
+  const batching = pending !== undefined && BATCHES.has(pending);
 
   const reload = useCallback(() => {
     setTick((n) => n + 1);
@@ -109,6 +159,11 @@ export function MyDayScreen({
     };
   }, [selected, tz, tick]);
 
+  // A batch's last word is about the day it ran on.
+  useEffect(() => {
+    setBatch({ kind: 'idle' });
+  }, [selected]);
+
   /** Run one write, keyed so only its own control spins; re-read the day after. */
   const run = async (key: string, write: () => Promise<unknown>): Promise<boolean> => {
     setPending(key);
@@ -122,6 +177,35 @@ export function MyDayScreen({
       return false;
     } finally {
       setPending(undefined);
+    }
+  };
+
+  /**
+   * One batch over many blocks: one request each, in order, the progress
+   * said as it goes — and **the day re-read once at the end**, not once per
+   * block. Its progress and its last word belong to the day it ran on, and
+   * the day cannot be changed, nor time added, while it runs. Resolves to the
+   * blocks that stay selected.
+   */
+  const runBatch = async (
+    key: string,
+    label: string,
+    day: string,
+    total: number,
+    work: (onProgress: (done: number, total: number) => void) => Promise<BulkResult>,
+  ): Promise<readonly string[]> => {
+    setPending(key);
+    setActionError(undefined);
+    setBatch({ kind: 'running', day, label, done: 0, total });
+    try {
+      const result = await work((done, of) => {
+        setBatch({ kind: 'running', day, label, done, total: of });
+      });
+      setBatch({ kind: 'said', day, text: result.text, ok: result.ok });
+      return result.keep;
+    } finally {
+      setPending(undefined);
+      reload();
     }
   };
 
@@ -160,6 +244,11 @@ export function MyDayScreen({
   const totals = dayTotals(view);
   const addable = canAddTime(settings);
   const nothing = view.drafts.length === 0 && view.entries.length === 0;
+  // *Confirm day* confirms what is ready; a block on nothing is left out and named.
+  const dayPlan = confirmPlan(view.drafts);
+  // A batch's progress and last word are shown on its own day only.
+  const shown: Batch = batch.kind !== 'idle' && batch.day === view.day ? batch : { kind: 'idle' };
+  const readyMinutes = dayPlan.ready.reduce((sum, d) => sum + d.minutes, 0);
 
   return (
     <div className="myday-page">
@@ -167,19 +256,36 @@ export function MyDayScreen({
         variant="page"
         title="My day"
         description={`${dayLong(view.day)} · yours only`}
-        below={<WeekStrip week={view.week} selected={view.day} today={view.today} onPick={onDay} />}
+        below={
+          <WeekStrip
+            week={view.week}
+            selected={view.day}
+            today={view.today}
+            locked={batching}
+            onPick={onDay}
+          />
+        }
       >
         {view.drafts.length > 0 && (
           <button
             type="button"
             className="myday-chip myday-chip-primary"
-            disabled={pending !== undefined}
+            disabled={pending !== undefined || dayPlan.ready.length === 0}
+            title={
+              dayPlan.needCard.length > 0
+                ? `${needCardLine(dayPlan.needCard.length)} first — left out`
+                : undefined
+            }
             onClick={() => {
-              void run('confirm-day', () => confirmDay(view.day));
+              void runBatch('confirm-day', 'Confirming', view.day, view.drafts.length, (progress) =>
+                runConfirmDay(view.drafts, view.day, BULK_API, progress),
+              );
             }}
           >
             {pending === 'confirm-day' && <Spinner size="sm" label="Confirming the day" />}
-            Confirm day · {hm(totals.drafted)}
+            {dayPlan.needCard.length === 0
+              ? `Confirm day · ${hm(readyMinutes)}`
+              : `Confirm ${String(dayPlan.ready.length)} ready · ${hm(readyMinutes)}`}
           </button>
         )}
       </ScreenHeader>
@@ -231,53 +337,48 @@ export function MyDayScreen({
                   </p>
                 </div>
               )}
-
-              {view.drafts.length > 0 && (
-                <>
-                  <h3 className="myday-subhead">Drafted — not yet confirmed</h3>
-                  <ol className="myday-blocks" aria-label="Drafted blocks">
-                    {view.drafts.map((draft) => (
-                      <DraftRow
-                        key={draft.id}
-                        draft={draft}
-                        pending={pending}
-                        onPatch={(patch: DraftPatch, verb: string) =>
-                          run(`${verb}:${draft.id}`, () => updateDraft(draft.id, patch))
-                        }
-                        onSplit={(at) => run(`split:${draft.id}`, () => splitDraft(draft.id, at))}
-                        onDismiss={() => {
-                          void run(`dismiss:${draft.id}`, () => dismissDraft(draft.id));
-                        }}
-                        onConfirm={() => {
-                          void run(`confirm:${draft.id}`, () => confirmDraft(draft.id));
-                        }}
-                      />
-                    ))}
-                  </ol>
-                </>
-              )}
-
-              {view.entries.length > 0 && (
-                <>
-                  <h3 className="myday-subhead">Confirmed</h3>
-                  <ol className="myday-blocks" aria-label="Confirmed entries">
-                    {view.entries.map((entry) => (
-                      <EntryRow
-                        key={entry.id}
-                        entry={entry}
-                        pending={pending}
-                        onSave={(patch: EntryPatch) =>
-                          run(`save:${entry.id}`, () => updateEntry(entry.id, patch))
-                        }
-                        onDelete={() => {
-                          void run(`delete:${entry.id}`, () => deleteEntry(entry.id));
-                        }}
-                      />
-                    ))}
-                  </ol>
-                </>
-              )}
             </section>
+
+            {view.drafts.length > 0 && (
+              <DraftList
+                // A new day starts with nothing selected and on its first page.
+                key={`drafts-${view.day}`}
+                drafts={view.drafts}
+                pending={pending}
+                batch={shown}
+                onNavigate={onNavigate}
+                onPatch={(draft, patch, verb) =>
+                  run(`${verb}:${draft.id}`, () => updateDraft(draft.id, patch))
+                }
+                onSplit={(draft, at) => run(`split:${draft.id}`, () => splitDraft(draft.id, at))}
+                onDismiss={(draft) => {
+                  void run(`dismiss:${draft.id}`, () => dismissDraft(draft.id));
+                }}
+                onConfirm={(draft) => {
+                  void run(`confirm:${draft.id}`, () => confirmDraft(draft.id));
+                }}
+                onBulk={(kind, chosen) =>
+                  runBatch('bulk', RUNNING[kind], view.day, chosen.length, (progress) =>
+                    runBulk(kind, chosen, BULK_API, progress),
+                  )
+                }
+              />
+            )}
+
+            {view.entries.length > 0 && (
+              <EntryList
+                key={`entries-${view.day}`}
+                entries={view.entries}
+                pending={pending}
+                onNavigate={onNavigate}
+                onSave={(entry, patch) =>
+                  run(`save:${entry.id}`, () => updateEntry(entry.id, patch))
+                }
+                onDelete={(entry) => {
+                  void run(`delete:${entry.id}`, () => deleteEntry(entry.id));
+                }}
+              />
+            )}
 
             {addable && view.state !== 'future' && (
               <section className="myday-card" aria-labelledby="myday-add-title">
@@ -293,89 +394,17 @@ export function MyDayScreen({
                   day={view.day}
                   tz={view.tz}
                   busy={pending === 'add'}
+                  locked={batching}
                   onAdd={(entry: NewEntry) => run('add', () => addEntry(entry))}
                 />
               </section>
             )}
           </div>
 
-          <aside className="myday-side" aria-label="Beside your day">
-            <OnYourPlate me={me} queue={queue} onNavigate={onNavigate} />
-            <AgentStrip agent={view.agent} />
-            <section className="myday-card myday-settings" aria-labelledby="myday-draft-label">
-              {settings.org_mode === 'drafts' ? (
-                <>
-                  <div className="myday-settings-row">
-                    <span className="myday-card-title" id="myday-draft-label">
-                      Draft my time
-                    </span>
-                    <Switch
-                      checked={settings.draft_my_time}
-                      labelledBy="myday-draft-label"
-                      describedBy="myday-draft-note"
-                      disabled={pending !== undefined}
-                      onChange={(on) => {
-                        void run('switch', () => setDraftMyTime(on));
-                      }}
-                    >
-                      {settings.draft_my_time ? 'On' : 'Off'}
-                    </Switch>
-                  </div>
-                  <p className="myday-quiet" id="myday-draft-note">
-                    Drafted on your own machine by the Laika collector (
-                    <code>laika activity on</code>) from your agent sessions, prompts and commits —
-                    counts only, never what you typed. Only you see drafts. Off deletes every draft
-                    held; confirmed time stays.
-                  </p>
-                  {settings.draft_my_time &&
-                    (confirmingDelete ? (
-                      <div className="myday-block-actions">
-                        <span className="myday-quiet">Delete every unconfirmed draft?</span>
-                        <button
-                          type="button"
-                          className="myday-chip myday-chip-danger"
-                          disabled={pending !== undefined}
-                          onClick={() => {
-                            void run('delete-drafts', () => deleteDrafts()).then(() => {
-                              setConfirmingDelete(false);
-                            });
-                          }}
-                        >
-                          {pending === 'delete-drafts' && (
-                            <Spinner size="sm" label="Deleting your drafts" />
-                          )}
-                          Delete drafts
-                        </button>
-                        <button
-                          type="button"
-                          className="myday-chip"
-                          onClick={() => {
-                            setConfirmingDelete(false);
-                          }}
-                        >
-                          Keep them
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="myday-block-actions">
-                        <button
-                          type="button"
-                          className="myday-chip"
-                          onClick={() => {
-                            setConfirmingDelete(true);
-                          }}
-                        >
-                          Delete my drafts…
-                        </button>
-                      </div>
-                    ))}
-                </>
-              ) : (
-                <p className="myday-quiet" id="myday-draft-label">
-                  {MODE_NOTES[settings.org_mode]}
-                </p>
-              )}
-            </section>
+          <aside className="myday-side" aria-label="Beside your day" data-myday-side>
+            <DraftMyTime settings={settings} pending={pending} run={run} />
+            <OnYourPlate me={me} spaces={spaces} queue={queue} onNavigate={onNavigate} />
+            <AgentStrip agent={view.agent} spaces={spaces} onNavigate={onNavigate} />
           </aside>
         </div>
       </div>

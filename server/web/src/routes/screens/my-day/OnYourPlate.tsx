@@ -1,20 +1,29 @@
 import { useEffect, useState, type MouseEvent } from 'react';
 import { everyPage } from '../../../api/every-page.ts';
 import type { MeProfile } from '../../../api/me.ts';
-import { isProject, listProjects } from '../../../api/projects.ts';
+import type { Project } from '../../../api/projects.ts';
 import type { ReviewQueueItem } from '../../../api/review.ts';
 import { getTask, listTasks, type TaskStatus } from '../../../api/tasks.ts';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import {
   blockerIds,
+  capped,
+  moreLinks,
   plateOf,
   type Blocker,
   type MineTask,
+  type PlateGroup,
   type PlateItem,
 } from './plate-derive.ts';
+import { plainClick, taskHref } from './task-link.ts';
 
 export interface OnYourPlateProps {
   readonly me: MeProfile | undefined;
+  /**
+   * The spaces the reader can read, read once by the page: `undefined` while
+   * reading, `null` if the read failed.
+   */
+  readonly spaces: readonly Project[] | null | undefined;
   /** The review queue the shell already holds for the sidebar's badge. */
   readonly queue: readonly ReviewQueueItem[] | undefined;
   readonly onNavigate: (to: string) => void;
@@ -39,21 +48,23 @@ const BLOCKER_LIMIT = 20;
  * filtered read per space and kind (`assignee`, `status`), never the
  * space's whole list — and each outside blocker once, by id.
  */
-function usePlate(me: MeProfile | undefined): Load {
+function usePlate(
+  me: MeProfile | undefined,
+  readable: readonly Project[] | null | undefined,
+): Load {
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   useEffect(() => {
-    if (me === undefined) return;
+    if (me === undefined || readable === undefined) return;
+    if (readable === null) {
+      setLoad({ kind: 'error' });
+      return;
+    }
     const controller = new AbortController();
     const { signal } = controller;
     const member = new Set(me.memberships.map((m) => m.project_id));
 
     void (async () => {
-      const { items } = await everyPage((cursor) =>
-        listProjects(cursor === undefined ? { limit: 200 } : { limit: 200, cursor }, signal),
-      );
-      const spaces = items
-        .filter(isProject)
-        .filter((p) => p.archived_at === null && member.has(p.id));
+      const spaces = readable.filter((p) => p.archived_at === null && member.has(p.id));
       const pages = await Promise.all(
         spaces.flatMap((space) =>
           OPEN.map((status) =>
@@ -94,7 +105,7 @@ function usePlate(me: MeProfile | undefined): Load {
     return () => {
       controller.abort();
     };
-  }, [me]);
+  }, [me, readable]);
   return load;
 }
 
@@ -104,12 +115,13 @@ function usePlate(me: MeProfile | undefined): Load {
  * blocked — each opening in its own space. Everything here is something the
  * board already shows; this gathers the reader's own.
  */
-export function OnYourPlate({ me, queue, onNavigate }: OnYourPlateProps) {
-  const load = usePlate(me);
+export function OnYourPlate({ me, spaces, queue, onNavigate }: OnYourPlateProps) {
+  const load = usePlate(me, spaces);
+  const names = new Map((spaces ?? []).map((p) => [p.slug, p.name]));
 
   const follow = (to: string) => (event: MouseEvent) => {
     // Modified clicks stay the browser's — new tab, new window.
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (!plainClick(event)) return;
     event.preventDefault();
     onNavigate(to);
   };
@@ -117,53 +129,69 @@ export function OnYourPlate({ me, queue, onNavigate }: OnYourPlateProps) {
   const plate = load.kind === 'ready' ? plateOf(load.mine, load.blockers, queue) : undefined;
 
   const group = (
-    id: string,
+    id: PlateGroup,
     title: string,
-    tone: 'progress' | 'review' | 'blocked',
     items: readonly PlateItem[] | undefined,
     empty: string,
     more?: { readonly href: string; readonly label: string },
-  ) => (
-    <div className="plate-group" data-plate={id}>
-      <h3 className="plate-head">
-        <span className={`plate-dot plate-dot-${tone}`} aria-hidden="true" />
-        {title}
-        {items !== undefined && <span className="plate-count">{items.length}</span>}
-        {more !== undefined && (
-          <a className="plate-more" href={more.href} onClick={follow(more.href)}>
-            {more.label} →
-          </a>
-        )}
-      </h3>
-      {items === undefined ? (
-        <p className="myday-quiet">Reading…</p>
-      ) : items.length === 0 ? (
-        <p className="myday-quiet">{empty}</p>
-      ) : (
-        <ul className="plate-list">
-          {items.map((item) => {
-            const href =
-              item.slug === undefined
-                ? `/board?q=${encodeURIComponent(item.key)}`
-                : `/board?project=${encodeURIComponent(item.slug)}&task=${encodeURIComponent(item.id)}`;
-            return (
-              <li key={item.id}>
-                <a className="plate-item" href={href} onClick={follow(href)}>
-                  <span className="plate-key">{item.key}</span>
-                  <span className="plate-title">{item.title}</span>
-                </a>
-                {item.note !== undefined && (
-                  <span className={`plate-note plate-note-${item.tone ?? 'wait'}`}>
-                    {item.note}
-                  </span>
-                )}
+  ) => {
+    const { shown, more: hidden } = capped(items ?? []);
+    const rest = moreLinks(id, (items ?? []).slice(shown.length), me?.id, names);
+    return (
+      <div className="plate-group" data-plate={id}>
+        <h3 className="plate-head">
+          <span className={`plate-dot plate-dot-${id}`} aria-hidden="true" />
+          {title}
+          {items !== undefined && <span className="plate-count">{items.length}</span>}
+          {/* Once *+N more* leads to the same place, the header need not. */}
+          {more !== undefined && hidden === 0 && (
+            <a className="plate-more" href={more.href} onClick={follow(more.href)}>
+              {more.label} →
+            </a>
+          )}
+        </h3>
+        {items === undefined ? (
+          <p className="myday-quiet">Reading…</p>
+        ) : items.length === 0 ? (
+          <p className="myday-quiet">{empty}</p>
+        ) : (
+          <ul className="plate-list">
+            {shown.map((item) => {
+              const href = taskHref(item, item.slug);
+              return (
+                <li key={item.id}>
+                  <a className="plate-item" href={href} onClick={follow(href)}>
+                    <span className="plate-key">{item.key}</span>
+                    <span className="plate-title">{item.title}</span>
+                  </a>
+                  {item.note !== undefined && (
+                    <span className={`plate-note plate-note-${item.tone ?? 'wait'}`}>
+                      {item.note}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+            {rest.length > 0 && (
+              <li className="plate-rests">
+                {rest.map((link) => (
+                  <a
+                    key={link.href}
+                    className="plate-rest"
+                    href={link.href}
+                    onClick={follow(link.href)}
+                    data-plate-more
+                  >
+                    {link.label}
+                  </a>
+                ))}
               </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
+            )}
+          </ul>
+        )}
+      </div>
+    );
+  };
 
   return (
     <section className="myday-card myday-plate" aria-labelledby="myday-plate-title">
@@ -180,16 +208,15 @@ export function OnYourPlate({ me, queue, onNavigate }: OnYourPlateProps) {
       )}
       {plate !== undefined && (
         <div className="plate-groups">
-          {group('progress', 'In progress', 'progress', plate.inProgress, 'Nothing in progress.')}
+          {group('progress', 'In progress', plate.inProgress, 'Nothing in progress.')}
           {group(
             'review',
             'Waiting on your review',
-            'review',
             plate.review,
             'Nothing waiting for you to decide.',
             { href: '/inbox?tab=review', label: 'Inbox' },
           )}
-          {group('blocked', 'Blocked', 'blocked', plate.blocked, 'Nothing of yours is blocked.')}
+          {group('blocked', 'Blocked', plate.blocked, 'Nothing of yours is blocked.')}
         </div>
       )}
     </section>

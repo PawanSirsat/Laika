@@ -103,3 +103,81 @@ export function plateOf(
 
   return { inProgress, review, blocked };
 }
+
+/**
+ * At most this many items a group (LAI-810): a column beside the day, not a
+ * second inbox. The owner's live review queue was 200 long, drawn whole.
+ */
+export const PLATE_CAP = 5;
+
+export type PlateGroup = 'progress' | 'review' | 'blocked';
+
+/** The first `cap` items, and how many more there are. */
+export function capped<T>(
+  items: readonly T[],
+  cap: number = PLATE_CAP,
+): { readonly shown: readonly T[]; readonly more: number } {
+  return { shown: items.slice(0, cap), more: Math.max(0, items.length - cap) };
+}
+
+/**
+ * Where *+N more* leads: the review tab of the Inbox for what waits on the
+ * reader, and otherwise the List of the space the hidden items are in,
+ * filtered to the reader — in progress, or all their open work for what is
+ * blocked (no URL filter says *blocked*; `?ready=false` means something
+ * else, SPEC §4.5).
+ */
+export function moreHref(
+  group: PlateGroup,
+  hidden: readonly PlateItem[],
+  meId: string | undefined,
+): string {
+  if (group === 'review') return '/inbox?tab=review';
+  const params = new URLSearchParams();
+  const slug = hidden[0]?.slug;
+  if (slug !== undefined) params.set('project', slug);
+  if (meId !== undefined) params.set('assignee', meId);
+  if (group === 'progress') params.set('status', 'in_progress');
+  const query = params.toString();
+  return query === '' ? '/list' : `/list?${query}`;
+}
+
+export interface MoreLink {
+  readonly href: string;
+  readonly label: string;
+}
+
+/**
+ * The *+N more* links under a group (LAI-810 review round 1). The Inbox's
+ * review tab spans every space, so it is one link. The List is one space's,
+ * and no page lists a person's work in progress across spaces in full, so
+ * when the hidden items are in several spaces there is **one link a space,
+ * naming it** — `+2 in Atlas`, `+1 in Onroute` — rather than one that quietly
+ * opens the first.
+ */
+export function moreLinks(
+  group: PlateGroup,
+  hidden: readonly PlateItem[],
+  meId: string | undefined,
+  names: ReadonlyMap<string, string>,
+): readonly MoreLink[] {
+  if (hidden.length === 0) return [];
+  const more = `+${String(hidden.length)} more`;
+  if (group === 'review') return [{ href: moreHref(group, hidden, meId), label: more }];
+  const bySpace = new Map<string | undefined, PlateItem[]>();
+  for (const item of hidden) {
+    const list = bySpace.get(item.slug) ?? [];
+    list.push(item);
+    bySpace.set(item.slug, list);
+  }
+  const groups = [...bySpace.values()];
+  if (groups.length === 1) return [{ href: moreHref(group, hidden, meId), label: more }];
+  return groups.map((items) => {
+    const slug = items[0]?.slug;
+    const name = slug === undefined ? 'another space' : (names.get(slug) ?? slug);
+    return {
+      href: moreHref(group, items, meId),
+      label: `+${String(items.length)} in ${name}`,
+    };
+  });
+}

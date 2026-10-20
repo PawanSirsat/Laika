@@ -4057,16 +4057,30 @@ anything missing sends the task back.
   publishes a token figure. **The sidebar's Usage item carries a count** of the
   reader's open alerts, none at zero. Light and
   dark; one column on a phone with nothing scrolling sideways.
-- **My day** (`/my-day`, the reader's own, D-088; laid out by LAI-796) — the
-  week in the header between *previous* and *next*, with *Today* away from
-  it, and *Confirm day* with the drafted total while anything is drafted; the
-  day as a bar of confirmed (solid) and drafted (dashed) blocks over its hours
-  with a line at now on today, a block with no set time counted beneath it
-  rather than placed; drafted then confirmed lists with every LAI-787 action;
-  *Add time*; beside it **On your plate** — in progress, waiting on the
-  reader's review (with CI's result where GitHub sent one), and blocked
-  (naming what it waits on), each opening in its own space — **Agent
-  minutes**, and the **Draft my time** switch.
+- **My day** (`/my-day`, the reader's own, D-088; laid out by LAI-796, made
+  for a busy day by LAI-810) — the week in the header between *previous* and
+  *next*, with *Today* away from it, and while anything is drafted a confirm
+  button: *Confirm day* with the drafted total when every block is ready,
+  which confirms the day in one request and says so if the server's day held
+  other blocks than the page; otherwise *Confirm N ready*, which confirms
+  those one by one and says how many were confirmed and why the rest were
+  left. The day as a bar of confirmed (solid) and drafted (dashed) blocks over
+  its hours with a line at now on today, a block with no set time counted
+  beneath it rather than placed. The drafted blocks ten to a page in a scroll
+  area of their own, one line each with *Confirm* and a menu holding every
+  other LAI-787 action; a box on each, select-all for the page and then every
+  page, Shift for a run, and a bar acting on what is ticked — *Confirm
+  selected*, *General*, *Not work*, *Clear* — one block at a time by id,
+  leaving out and naming a block on no card, and asking before *Not work* or
+  before taking blocks off their card. The confirmed entries paged the same
+  way, one summary line when there are more than a page; *Add time*. Beside
+  it, sticky and scrolling on its own within the viewport (under the day and
+  still bounded on a phone): the **Draft my time** switch first, then **On
+  your plate** — in progress, waiting on the reader's review (with CI's
+  result where GitHub sent one), and blocked (naming what it waits on), at
+  most five of each with the true count and *+N more* where the rest live,
+  each opening in its own space — then **Agent minutes**. A card's key and
+  title link to it in its own space wherever the reader can read it.
 - **Member profile** (`/people?user=<id>`, D-078; *My profile* in the user
   menu opens the reader's own, for an owner or an admin) — owners and admins only:
   anyone else sees a permission notice and the profile is never requested.

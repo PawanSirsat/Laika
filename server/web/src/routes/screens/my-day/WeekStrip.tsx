@@ -5,6 +5,8 @@ export interface WeekStripProps {
   readonly week: readonly MyDayWeekDay[];
   readonly selected: string;
   readonly today: string;
+  /** While a batch runs on this day (LAI-810), the day is not changed under it. */
+  readonly locked?: boolean;
   readonly onPick: (day: string) => void;
 }
 
@@ -14,7 +16,7 @@ export interface WeekStripProps {
  * day nothing reached the board on said as **No signal** rather than drawn as
  * zero hours. Every cell is a button that opens that day.
  */
-export function WeekStrip({ week, selected, today, onPick }: WeekStripProps) {
+export function WeekStrip({ week, selected, today, locked = false, onPick }: WeekStripProps) {
   const first = week[0]?.day ?? selected;
   const previous = addDays(first, -7);
   const following = addDays(first, 7);
@@ -26,6 +28,7 @@ export function WeekStrip({ week, selected, today, onPick }: WeekStripProps) {
         type="button"
         className="myday-week-step"
         aria-label="Previous week"
+        disabled={locked}
         onClick={() => {
           onPick(previous);
         }}
@@ -54,7 +57,7 @@ export function WeekStrip({ week, selected, today, onPick }: WeekStripProps) {
                 aria-label={[dayLabel(cell.day), label, figure === '—' ? '' : figure]
                   .filter((part) => part !== '')
                   .join(', ')}
-                disabled={cell.state === 'future'}
+                disabled={cell.state === 'future' || (locked && !isSelected)}
                 onClick={() => {
                   onPick(cell.day);
                 }}
@@ -79,7 +82,7 @@ export function WeekStrip({ week, selected, today, onPick }: WeekStripProps) {
         type="button"
         className="myday-week-step"
         aria-label="Next week"
-        disabled={following > today}
+        disabled={following > today || locked}
         onClick={() => {
           onPick(following);
         }}
@@ -90,6 +93,7 @@ export function WeekStrip({ week, selected, today, onPick }: WeekStripProps) {
         <button
           type="button"
           className="myday-chip myday-week-back"
+          disabled={locked}
           onClick={() => {
             onPick(today);
           }}

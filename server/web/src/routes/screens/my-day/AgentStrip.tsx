@@ -1,8 +1,14 @@
-import type { MyDayAgent } from '../../../api/time.ts';
+import type { ReactNode } from 'react';
+import type { MyDayAgent, TaskRef } from '../../../api/time.ts';
+import { CardLink } from './CardLink.tsx';
 import { agentMinutes } from './my-day-derive.ts';
+import { spaceOfKey, type Space } from './task-link.ts';
 
 export interface AgentStripProps {
   readonly agent: MyDayAgent;
+  /** The spaces the reader can read: `undefined` while reading, `null` if that failed. */
+  readonly spaces: readonly Space[] | null | undefined;
+  readonly onNavigate: (to: string) => void;
 }
 
 /**
@@ -11,8 +17,22 @@ export interface AgentStripProps {
  * not the person working, and an hour figure beside theirs would read as one.
  * Keyboard minutes are the person's own time inside Claude Code, shown as
  * evidence beside it. Per card the way tokens are tied to cards.
+ *
+ * **A card is a link only when the reader can read it** (LAI-810 review
+ * round 1) — the drafts' rule. This view names cards from the reader's own
+ * sessions and does not say whether they can read them, so the card's key is
+ * looked up among the spaces they can (`spaceOfKey`), which also says where it
+ * opens. One they cannot read is its key and *not a card you can see*, as a
+ * draft says; while the spaces are still being read, or could not be, plain
+ * words and no link.
  */
-export function AgentStrip({ agent }: AgentStripProps) {
+export function AgentStrip({ agent, spaces, onNavigate }: AgentStripProps) {
+  const card = (task: TaskRef): ReactNode => {
+    if (spaces === undefined || spaces === null) return `${task.key} ${task.title}`;
+    const space = spaceOfKey(task.key, spaces);
+    if (space === undefined) return `${task.key} (not a card you can see)`;
+    return <CardLink task={task} slug={space.slug} onNavigate={onNavigate} />;
+  };
   const nothing =
     agent.minutes === 0 && agent.keyboard_minutes === 0 && agent.unattributed_minutes === 0;
   return (
@@ -42,9 +62,7 @@ export function AgentStrip({ agent }: AgentStripProps) {
             <ul className="myday-agent-tasks">
               {agent.by_task.map((row) => (
                 <li key={row.task.id}>
-                  <span className="myday-agent-task">
-                    {row.task.key} {row.task.title}
-                  </span>
+                  <span className="myday-agent-task">{card(row.task)}</span>
                   <span className="myday-agent-min">{agentMinutes(row.minutes)}</span>
                 </li>
               ))}

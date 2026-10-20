@@ -7,6 +7,8 @@ export interface AddTimeFormProps {
   readonly day: string;
   readonly tz: string;
   readonly busy: boolean;
+  /** While a batch runs (LAI-810): nothing added that its report would not count. */
+  readonly locked?: boolean;
   readonly onAdd: (entry: NewEntry) => Promise<boolean>;
 }
 
@@ -16,7 +18,7 @@ export interface AddTimeFormProps {
  * they said, so there is nothing to confirm. A card's key, or nothing for
  * General.
  */
-export function AddTimeForm({ day, tz, busy, onAdd }: AddTimeFormProps) {
+export function AddTimeForm({ day, tz, busy, locked = false, onAdd }: AddTimeFormProps) {
   const [minutes, setMinutes] = useState('');
   const [card, setCard] = useState('');
   const [note, setNote] = useState('');
@@ -24,6 +26,7 @@ export function AddTimeForm({ day, tz, busy, onAdd }: AddTimeFormProps) {
 
   const submit = (event: FormEvent): void => {
     event.preventDefault();
+    if (locked) return;
     const parsed = parseMinutes(minutes);
     if (parsed === undefined) {
       setError('How long, as 30, 1:30 or 1h30 — between 1 minute and 24 hours.');
@@ -86,7 +89,7 @@ export function AddTimeForm({ day, tz, busy, onAdd }: AddTimeFormProps) {
         />
       </label>
       <div className="myday-block-actions">
-        <button type="submit" className="myday-chip myday-chip-primary" disabled={busy}>
+        <button type="submit" className="myday-chip myday-chip-primary" disabled={busy || locked}>
           {busy && <Spinner size="sm" label="Adding this time" />}
           Add time
         </button>
