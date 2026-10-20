@@ -2,11 +2,12 @@
 id: LAI-788
 title: 'Time, phase 2: Solidtime bridge — the developer''s CLI writes confirmed time to Solidtime and reads back what was logged there'
 area: cli
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: [LAI-787]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-20T04:29:37Z
 ---
 
 ## Goal
