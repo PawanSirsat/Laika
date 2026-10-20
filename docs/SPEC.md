@@ -4185,7 +4185,7 @@ anything missing sends the task back.
   the share tied to a task beside it; a bar per week; their top agents and
   models; agents with *no token data* named; and plainly when either switch is
   off or nothing has arrived. Reached from a person's name on Organisation, a Capacity card or a
-  *Work by person* row — links for owners and admins, plain text for everyone
+  Dashboard *Contributors* row (LAI-817) — links for owners and admins, plain text for everyone
   else.
 
 #### 11.4.3 Timeline view
