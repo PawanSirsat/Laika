@@ -188,18 +188,18 @@ void describe('My day after the reference', () => {
   void test('the day is a lane of confirmed and drafted blocks, with a line at now', async () => {
     const h = await open('/my-day', STUB);
     try {
-      const track = h.page.locator('[data-lane-track]');
+      const track = h.page.locator('[data-dayline-track]');
       await track.waitFor({ timeout: 20_000 });
-      assert.equal(await h.page.locator('.lane-block.lane-confirmed').count(), 1);
-      assert.equal(await h.page.locator('.lane-block.lane-drafted').count(), 1);
-      assert.equal(await h.page.locator('.lane-now').count(), 1, 'today has no now line');
+      assert.equal(await h.page.locator('.dayline-block.dayline-confirmed').count(), 1);
+      assert.equal(await h.page.locator('.dayline-block.dayline-drafted').count(), 1);
+      assert.equal(await h.page.locator('.dayline-now').count(), 1, 'today has no now line');
       // The untimed call is not placed somewhere invented; it is counted.
-      assert.match(await h.page.locator('.lane-untimed').innerText(), /1 block has no set time/);
+      assert.match(await h.page.locator('.dayline-untimed').innerText(), /1 block has no set time/);
 
       // Inside the track, in the order of the day.
       const box = await track.boundingBox();
-      const drafted = await h.page.locator('.lane-block.lane-drafted').boundingBox();
-      const confirmed = await h.page.locator('.lane-block.lane-confirmed').boundingBox();
+      const drafted = await h.page.locator('.dayline-block.dayline-drafted').boundingBox();
+      const confirmed = await h.page.locator('.dayline-block.dayline-confirmed').boundingBox();
       assert.ok(box && drafted && confirmed);
       for (const b of [drafted, confirmed]) {
         assert.ok(b.x >= box.x - 1 && b.x + b.width <= box.x + box.width + 1, 'a block escapes');
@@ -368,7 +368,7 @@ void describe('times and durations say their units (LAI-830)', () => {
         await h.page.locator(`.myday-week-day[data-day="${TODAY}"] .myday-week-figure`).innerText(),
         '2 h 50 min',
       );
-      const ticks = await h.page.locator('.lane-axis-hour').allInnerTexts();
+      const ticks = await h.page.locator('.dayline-axis-hour').allInnerTexts();
       assert.ok(ticks.includes('8 AM') && ticks.includes('12 PM'), `ticks: ${ticks.join(', ')}`);
 
       // Nothing on the page is a duration or a clock in the old form.

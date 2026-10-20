@@ -215,18 +215,18 @@ export function Timeline({
   const nothing = line.blocks.length === 0;
 
   return (
-    <div className="lane">
-      <div className="lane-tools">
-        <h3 className="lane-title">Timeline</h3>
-        <span className="lane-hint">
+    <div className="dayline">
+      <div className="dayline-tools">
+        <h3 className="dayline-title">Timeline</h3>
+        <span className="dayline-hint">
           {zoom === 'fit' ? '' : 'scroll sideways · '}
           {hourName(from)} – {hourName(to)}
         </span>
-        <span className="lane-tools-gap" />
+        <span className="dayline-tools-gap" />
         {zoom !== 'fit' && (
           <button
             type="button"
-            className="lane-tool"
+            className="dayline-tool"
             aria-label="Earlier"
             title="Earlier"
             onClick={() => {
@@ -239,7 +239,7 @@ export function Timeline({
         {line.now !== undefined && zoom !== 'fit' && (
           <button
             type="button"
-            className="lane-tool lane-tool-now"
+            className="dayline-tool dayline-tool-now"
             onClick={() => {
               const box = scroller.current;
               if (box !== null && line.now !== undefined) {
@@ -256,7 +256,7 @@ export function Timeline({
         {zoom !== 'fit' && (
           <button
             type="button"
-            className="lane-tool"
+            className="dayline-tool"
             aria-label="Later"
             title="Later"
             onClick={() => {
@@ -266,12 +266,12 @@ export function Timeline({
             <span aria-hidden="true">›</span>
           </button>
         )}
-        <div className="lane-zoom" role="group" aria-label="Zoom">
+        <div className="dayline-zoom" role="group" aria-label="Zoom">
           {ZOOMS.map(([key, label, title]) => (
             <button
               key={key}
               type="button"
-              className="lane-zoom-option"
+              className="dayline-zoom-option"
               data-zoom={key}
               aria-pressed={zoom === key}
               title={title}
@@ -285,15 +285,15 @@ export function Timeline({
         </div>
       </div>
 
-      <div className="lane-grid">
-        <span className="lane-label" aria-hidden="true">
+      <div className="dayline-grid">
+        <span className="dayline-label" aria-hidden="true">
           You
         </span>
-        <div className="lane-scroller" ref={scroller} data-lane-scroller>
+        <div className="dayline-scroller" ref={scroller} data-dayline-scroller>
           <div
             ref={track}
-            className="lane-track"
-            data-lane-track
+            className="dayline-track"
+            data-dayline-track
             data-from-hour={from}
             data-to-hour={to}
             style={pph === undefined ? undefined : { width: `${String(hours * pph)}px` }}
@@ -301,15 +301,15 @@ export function Timeline({
             {Array.from({ length: hours * 2 + 1 }, (_, i) => from * 60 + i * 30).map((m) => (
               <span
                 key={m}
-                className={m % 60 === 0 ? 'lane-hour-line' : 'lane-half-line'}
+                className={m % 60 === 0 ? 'dayline-hour-line' : 'dayline-half-line'}
                 style={{ left: left(m) }}
                 aria-hidden="true"
               />
             ))}
-            <div className="lane-row">
+            <div className="dayline-row">
               {view.state === 'no_signal' && nothing && (
-                <div className="lane-nosignal" data-no-signal>
-                  <p className="lane-nosignal-text">
+                <div className="dayline-nosignal" data-no-signal>
+                  <p className="dayline-nosignal-text">
                     {view.settings.drafting
                       ? 'No signal — nothing reached Laika from your machine. That is not zero hours; add what you worked below.'
                       : view.settings.org_mode === 'off'
@@ -326,7 +326,7 @@ export function Timeline({
                   <button
                     key={`gap-${String(gap.start)}`}
                     type="button"
-                    className={on ? 'lane-gap lane-gap-picked' : 'lane-gap'}
+                    className={on ? 'dayline-gap dayline-gap-picked' : 'dayline-gap'}
                     data-gap-start={gap.start}
                     style={{ left: left(gap.start), width: wide(gap.start, gap.end) }}
                     aria-label={`Unaccounted ${rangeOf(gap)}, ${duration(gap.end - gap.start)} — add time or mark a break`}
@@ -345,7 +345,9 @@ export function Timeline({
                   key={b.id}
                   type="button"
                   className={
-                    isSelected('break', b.id) ? 'lane-break lane-break-picked' : 'lane-break'
+                    isSelected('break', b.id)
+                      ? 'dayline-break dayline-break-picked'
+                      : 'dayline-break'
                   }
                   style={{ left: left(b.start), width: wide(b.start, b.end) }}
                   aria-label={`Break ${rangeOf(b)} — not counted`}
@@ -372,11 +374,11 @@ export function Timeline({
                   <div
                     key={`${block.kind}-${block.id}`}
                     className={[
-                      'lane-block',
-                      `lane-${block.kind}`,
-                      block.needsCard ? 'lane-needs-card' : '',
-                      selected ? 'lane-selected' : '',
-                      preview?.id === block.id ? 'lane-dragging' : '',
+                      'dayline-block',
+                      `dayline-${block.kind}`,
+                      block.needsCard ? 'dayline-needs-card' : '',
+                      selected ? 'dayline-selected' : '',
+                      preview?.id === block.id ? 'dayline-dragging' : '',
                     ]
                       .filter((c) => c !== '')
                       .join(' ')}
@@ -386,7 +388,7 @@ export function Timeline({
                   >
                     <button
                       type="button"
-                      className="lane-block-body"
+                      className="dayline-block-body"
                       data-block-select={block.id}
                       aria-pressed={selected}
                       aria-label={`${range}, ${top}, ${duration(shape.minutes)}`}
@@ -395,12 +397,12 @@ export function Timeline({
                         onSelect({ kind, id: block.id });
                       }}
                     >
-                      <span className="lane-block-top">{top}</span>
+                      <span className="dayline-block-top">{top}</span>
                       {px > 120 && title !== '' && (
-                        <span className="lane-block-title">{title}</span>
+                        <span className="dayline-block-title">{title}</span>
                       )}
                       {px > 44 && (
-                        <span className="lane-block-sub">
+                        <span className="dayline-block-sub">
                           {px > 150
                             ? `${range} · ${duration(shape.minutes)}`
                             : duration(shape.minutes)}
@@ -409,7 +411,7 @@ export function Timeline({
                     </button>
                     {prompts + commits > 0 && (
                       <span
-                        className="lane-signals"
+                        className="dayline-signals"
                         title={`${String(prompts)} prompts, ${String(commits)} commits — counted for the block; when in it is not known`}
                       >
                         {String(prompts)}p {String(commits)}c
@@ -419,14 +421,14 @@ export function Timeline({
                       <>
                         <button
                           type="button"
-                          className="lane-edge lane-edge-start"
+                          className="dayline-edge dayline-edge-start"
                           data-edge="start"
                           aria-label="Move the start: drag, or ← and → for five minutes"
                           {...handle(block, 'start')}
                         />
                         <button
                           type="button"
-                          className="lane-edge lane-edge-end"
+                          className="dayline-edge dayline-edge-end"
                           data-edge="end"
                           aria-label="Move the end: drag, or ← and → for five minutes"
                           {...handle(block, 'end')}
@@ -437,11 +439,13 @@ export function Timeline({
                 );
               })}
             </div>
-            <div className="lane-axis" aria-hidden="true">
+            <div className="dayline-axis" aria-hidden="true">
               {axisHours(from, to, zoom).map((hour) => (
                 <span
                   key={hour}
-                  className={hour === 12 ? 'lane-axis-hour lane-axis-noon' : 'lane-axis-hour'}
+                  className={
+                    hour === 12 ? 'dayline-axis-hour dayline-axis-noon' : 'dayline-axis-hour'
+                  }
                   style={{ left: left(hour * 60) }}
                 >
                   {hourName(hour)}
@@ -449,43 +453,43 @@ export function Timeline({
               ))}
             </div>
             {line.now !== undefined && (
-              <div className="lane-now" data-now style={{ left: left(line.now) }}>
-                <span className="lane-now-label">{clock(nowMs, view.tz)}</span>
+              <div className="dayline-now" data-now style={{ left: left(line.now) }}>
+                <span className="dayline-now-label">{clock(nowMs, view.tz)}</span>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      <ul className="lane-legend" aria-label="Legend">
+      <ul className="dayline-legend" aria-label="Legend">
         <li>
-          <span className="lane-key lane-key-confirmed" aria-hidden="true" />
+          <span className="dayline-key dayline-key-confirmed" aria-hidden="true" />
           Confirmed
         </li>
         <li>
-          <span className="lane-key lane-key-drafted" aria-hidden="true" />
+          <span className="dayline-key dayline-key-drafted" aria-hidden="true" />
           Drafted
         </li>
         <li>
-          <span className="lane-key lane-key-needs-card" aria-hidden="true" />
+          <span className="dayline-key dayline-key-needs-card" aria-hidden="true" />
           Needs a card
         </li>
         <li>
-          <span className="lane-key lane-key-gap" aria-hidden="true" />
+          <span className="dayline-key dayline-key-gap" aria-hidden="true" />
           Gap — click to fill
         </li>
         <li>
-          <span className="lane-key lane-key-break" aria-hidden="true" />
+          <span className="dayline-key dayline-key-break" aria-hidden="true" />
           Break
         </li>
         <li>
-          <span className="lane-key-text" aria-hidden="true">
+          <span className="dayline-key-text" aria-hidden="true">
             9p 2c
           </span>
           Prompts and commits, counted per block
         </li>
         {line.untimed > 0 && (
-          <li className="lane-untimed">
+          <li className="dayline-untimed">
             {line.untimed === 1 ? '1 block has' : `${String(line.untimed)} blocks have`} no set time
             — listed below only
           </li>

@@ -108,7 +108,7 @@ async function select(h: Harness, row: string): Promise<void> {
 
 /** The x of minute `m` of the day along the lane's track. */
 async function xOf(page: Page, minute: number): Promise<number> {
-  const track = page.locator('[data-lane-track]');
+  const track = page.locator('[data-dayline-track]');
   const box = await track.boundingBox();
   const from = Number(await track.getAttribute('data-from-hour'));
   const to = Number(await track.getAttribute('data-to-hour'));
@@ -190,11 +190,11 @@ void describe('gaps and breaks (4, D)', () => {
     const h = await openDay(EARLIER);
     try {
       // 11:30–12:00 and 12:45–1:30 count; 4:30–4:45 is a breath.
-      assert.equal(await h.page.locator('.lane-gap').count(), 2);
+      assert.equal(await h.page.locator('.dayline-gap').count(), 2);
       const stat = await h.page.locator('[data-stat="gaps"]').innerText();
       assert.match(stat, new RegExp(dur(75)));
       assert.match(stat, /2 unaccounted/);
-      assert.deepEqual(await h.page.locator('.lane-gap').allInnerTexts(), [
+      assert.deepEqual(await h.page.locator('.dayline-gap').allInnerTexts(), [
         `+ ${dur(30)}`,
         `+ ${dur(45)}`,
       ]);
@@ -207,10 +207,10 @@ void describe('gaps and breaks (4, D)', () => {
     const data = weekData();
     const h = await openDay(EARLIER, data);
     try {
-      await h.page.locator('.lane-gap').first().click();
+      await h.page.locator('.dayline-gap').first().click();
       await h.page.locator('[data-inspector="gap"]').waitFor({ timeout: 5_000 });
       await h.page.getByRole('button', { name: 'Mark as break' }).click();
-      await until(async () => (await h.page.locator('.lane-break').count()) === 1);
+      await until(async () => (await h.page.locator('.dayline-break').count()) === 1);
       const made = writes(h).find((c) => c.path === '/api/v1/me/time-breaks');
       assert.deepEqual(made?.body, {
         day: EARLIER,
@@ -218,18 +218,36 @@ void describe('gaps and breaks (4, D)', () => {
         started_at: at(EARLIER, 11, 30),
         ended_at: at(EARLIER, 12, 0),
       });
-      assert.equal(await h.page.locator('.lane-gap').count(), 1);
+      assert.equal(await h.page.locator('.dayline-gap').count(), 1);
       assert.match(await h.page.locator('[data-stat="gaps"]').innerText(), /1 unaccounted/);
 
-      await h.page.locator('.lane-break').click();
+      await h.page.locator('.dayline-break').click();
       await h.page.getByRole('button', { name: 'Not a break' }).click();
-      await until(async () => (await h.page.locator('.lane-gap').count()) === 2);
+      await until(async () => (await h.page.locator('.dayline-gap').count()) === 2);
       assert.ok(
         writes(h).some(
           (c) => c.method === 'DELETE' && c.path.startsWith('/api/v1/me/time-breaks/'),
         ),
       );
-      assert.equal(await h.page.locator('.lane-break').count(), 0);
+      assert.equal(await h.page.locator('.dayline-break').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('no signal is not zero hours (3, 4)', () => {
+  void test('a day with no signal says so on its lane and gives no figure, never 0 min', async () => {
+    const h = await openDay(QUIET);
+    try {
+      assert.match(
+        await h.page.locator('[data-no-signal]').innerText(),
+        /No signal — nothing reached Laika from your machine\. That is not zero hours/,
+      );
+      for (const stat of ['confirmed', 'settle', 'gaps']) {
+        const figure = await h.page.locator(`[data-stat="${stat}"] .myday-stat-figure`).innerText();
+        assert.equal(figure, '—', `${stat} reads ${figure}`);
+      }
     } finally {
       await h.close();
     }
@@ -524,7 +542,7 @@ void describe('Add time into a picked gap (7)', () => {
   void test('a gap picked on the timeline is the time it is added at', async () => {
     const h = await openDay(EARLIER);
     try {
-      await h.page.locator('.lane-gap').nth(1).click();
+      await h.page.locator('.dayline-gap').nth(1).click();
       const slot = h.page.locator('[data-slot]');
       await slot.waitFor({ timeout: 5_000 });
       assert.equal(await h.page.locator('[data-length="45"]').getAttribute('aria-pressed'), 'true');
@@ -612,7 +630,7 @@ void describe('honest signals (G)', () => {
   void test('a block shows its counts as a badge, and nothing is spread along it', async () => {
     const h = await openDay(TODAY);
     try {
-      const badge = h.page.locator('[data-block-id="d1"] .lane-signals');
+      const badge = h.page.locator('[data-block-id="d1"] .dayline-signals');
       assert.equal(await badge.count(), 1);
       assert.match((await badge.getAttribute('title')) ?? '', /18 prompts.*3 commits/);
       assert.equal(await h.page.locator('[data-signal-dot], [data-signal-tick]').count(), 0);
@@ -679,7 +697,7 @@ void describe('a phone, and both themes (I)', () => {
             auto: ['auto', 'scroll'].includes(getComputedStyle(el).overflowX),
           }));
         assert.deepEqual(await scrolls('.myday-week-days'), { over: true, auto: true });
-        assert.deepEqual(await scrolls('[data-lane-scroller]'), { over: true, auto: true });
+        assert.deepEqual(await scrolls('[data-dayline-scroller]'), { over: true, auto: true });
         const main = await h.page.locator('.myday-main').boundingBox();
         const side = await h.page.locator('[data-myday-side]').boundingBox();
         assert.ok(main !== null && side !== null);
