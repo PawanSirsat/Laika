@@ -2,8 +2,9 @@
  * The type scale and the type roles — GENERATED (LAI-606, LAI-828).
  *
  * Source of truth: `theme/type-roles.ts`. Regenerate with
- * `npx tsx scripts/generate-type-css.ts`; `type-roles.test.ts` fails if this
- * file and that object ever disagree, so editing this by hand is a red build.
+ * `npx tsx scripts/generate-type-css.ts`; `type-css-drift.test.ts` fails if
+ * this file differs from the generator's output by a byte, so editing it by
+ * hand is a red build.
  *
  * Colour comes from a semantic token, so switching theme re-colours every role
  * at once. `inherit` on `label`, `control` and `avatar` is deliberate: those

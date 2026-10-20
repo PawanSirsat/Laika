@@ -2,11 +2,12 @@
  * The type scale and roles in CSS say exactly what `type-roles.ts` says (LAI-606,
  * LAI-828).
  *
- * The brief asks for the classes to be *generated* from one object so the two
- * cannot drift. They are hand-written instead — CSS cannot import TypeScript,
- * and a stylesheet-emitting build step is a second pipeline to keep alive — so
- * this test supplies the same guarantee: the pair is declared twice and any
- * disagreement is a red build.
+ * `styles/type.css` is generated from `type-roles.ts` by
+ * `scripts/generate-type-css.ts`. This test reads the generated `:root` scale
+ * and each `.t-*` block back and checks them against the object, so a wrong
+ * value is named by role and field; `type-css-drift.test.ts` compares the whole
+ * file with the generator's output byte for byte, which also covers the
+ * density block and the comments that this test does not read.
  *
  * **It asserts field by field, not class-count.** A check that only counted
  * `.t-*` blocks would pass while every size in them was wrong, which is the
