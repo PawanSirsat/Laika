@@ -6,8 +6,9 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-19T22:43:15Z
+finished: 2026-10-20T03:56:49Z
 ---
 
 ## Goal
@@ -52,13 +53,9 @@ minutes. This is D-088 items 2–9, 11–13. Owner-approved 2026-10-20.
       **Gone past, each forced:** §3.4 (`system.time.prune`) and §11.6 (the
       retention this task's criteria set), §7.2's count of twinned tools and
       an existing §13.4 metric count — see *For the reviewer* below.
-- [ ] Gate: test, lint, format exit 0.
-      **Not met as written:** `pnpm lint` 0 and `pnpm format` 0, but the root
-      `pnpm test` exited 1 in each of three runs on a machine at load average
-      40–50, every time only by LAI-768's timeouts (`build.test.ts`,
-      `migrate.test.ts`, `project-statuses.test.ts`; a different set each
-      run), each 0 when run alone on the final tree. Left unticked for the
-      reviewer to re-run the gate on a quieter machine.
+- [x] Gate: test, lint, format exit 0.
+      Round 1 left this unticked (three load-timeout runs); after round 1's
+      fixes the root gate ran once, all three `0` — recorded below.
 
 ## Notes / context
 
@@ -134,4 +131,39 @@ columns; (6) §11.6's "so nothing else can" must be true after B2.
 
 Not in scope: LAI-792, the diagnostics-only environment variable concern,
 `users` ON DELETE NO ACTION.
+
+## Review round 1 — fixed
+
+- **B1.** Each draft keeps its **origin** — the block as first stored, shared
+  by the halves of a split, untouched by any edit (`time_drafts.origin_*`,
+  migration 0041 regenerated, still `CREATE TABLE` only). A re-sent block
+  loses what **same-task** origins overlapping it hold, in minutes; a stretch
+  (blocks whose spans touch or overlap) keeps no more than its own minutes
+  less what is settled across it. Entries are no longer consulted, so a
+  deleted or moved entry cannot bring its block back. A switch turned off
+  keeps confirmed drafts (evidence blanked), so turning it back on drafts
+  nothing already confirmed. The doc comment and SPEC §4.47 say this.
+  Tests: the five reviewer scenarios, each shown failing on the round 0 code
+  first, plus four guards (growth after a confirmed head, a later commit
+  tying a confirmed untied stretch to a card, the person's edited minutes,
+  off and on).
+- **B2.** `time_entries_no_replace` refuses `INSERT OR REPLACE` by `id` or by
+  `(user_id, source, source_ref)`; kept by the boot check. Test shown failing
+  first (both replaces went through and took every revision).
+- **1.** The proposal answers `{ id, minutes, day }`, REST and MCP.
+- **2.** The collector holds each day to 1440 minutes (a 25-hour day sent
+  1495; test shown failing first).
+- **3.** The hook test's Omnigent ids are made up. The real ones remain in
+  commit `9a3ba1a0`'s history on this unpushed branch.
+- **4.** A test: drafts and a timeless manual entry cannot be confirmed past
+  1440, one by one or all at once.
+- **5, 6.** SPEC prose rewrapped; §11.6 now reads "Triggers refuse deleting a
+  younger entry and replacing any (§4.48), so nothing else removes one."
+- Mutations, each red then restored: the identity match, the stretch cap,
+  confirmed origins, origin minutes, the switch keeping confirmed drafts,
+  both halves of the no-replace trigger, the day clamp, the proposal reply.
+- Gate after the last code edit: `pnpm test` 0 (server 3216 passed + 10
+  skipped of 3226 cases, web 2205/2205, cli 469 passed + 2 skipped of 471),
+  `pnpm lint` 0, `pnpm format` 0. Measured: a day stored in 1.9 ms, My day
+  0.7 ms (270,030 drafts, 429,000 entries).
 
