@@ -496,8 +496,8 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
     const h = await panel(server);
     try {
       const md = description(h).locator('.md').first();
-      // 15px on 1.6 until LAI-828 raises the scale (the task's own fallback).
-      assert.equal(await md.evaluate((el) => getComputedStyle(el).fontSize), '15px');
+      // The scale's reading step, 16/24 (LAI-828); 15px on 1.6 before it.
+      assert.equal(await md.evaluate((el) => getComputedStyle(el).fontSize), '16px');
       assert.equal(await md.evaluate((el) => getComputedStyle(el).lineHeight), '24px');
 
       const button = description(h).getByRole('button', { name: 'Edit description' });

@@ -67,6 +67,11 @@ const TINY = [
   '.dash-avatar', // 24px, the dashboard's contributors
   '.list-avatar', // 22px, the List view's assignee cell
   '.tlx-avatar', // 22px, a timeline row
+  '.dep-avatar', // 22px (20px before LAI-828), a linked task in the task panel
+  // 22px. Styled in task-panel.css but drawn by no component today; listed so
+  // the rule cannot come back at a size nobody checked.
+  '.watch-avatar',
+  '.comment-avatar',
   // Counters.
   '.space-member-more', // "+3" beside the member stack, the stack's own height
   '.sidebar-collapsed .sidebar-count', // the badge over a folded sidebar icon

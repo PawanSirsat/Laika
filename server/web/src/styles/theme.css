@@ -15,8 +15,9 @@
  * would then break on the themes that lack it. Add to one, add to all.
  *
  * **Shared tokens** sit outside the blocks: weight, radius, spacing,
- * transitions — and the type scale, which is in `styles/type.css`. They are the same in every theme by definition, and repeating
- * them per block is how they drift apart.
+ * transitions — and the type scale, which is in `styles/type.css`. They are
+ * the same in every theme by definition, and repeating them per block is how
+ * they drift apart.
  *
  * ## Semantic names only
  *
@@ -233,21 +234,9 @@
    * The type scale — sizes and their line-heights — lives in `styles/type.css`,
    * generated from `theme/type-roles.ts` (LAI-828). It was here until the owner
    * asked for Jira's sizes; the prototype's 13.5px titles and 10.5px heads are
-   * in git.
+   * in git. LAI-827's interim reading tokens (15px on 1.6) are now the scale's
+   * `reading` step, 16px on 24px.
    */
-
-  /*
-   * Reading text (LAI-827): a task's description, acceptance and comments —
-   * read like a document, not scanned like a board. 15px on 1.6, the task's
-   * own fallback until LAI-828 sets Laika's scale; LAI-828 changes these lines
-   * and the reading view follows. Headings stay under the panel's 24px title.
-   */
-  --text-reading: 0.9375rem; /* 15px */
-  --text-reading-h1: 1.25rem; /* 20px */
-  --text-reading-h2: 1.125rem; /* 18px */
-  --text-reading-h3: 1rem; /* 16px */
-  --text-reading-code: 0.84375rem; /* 13.5px — mono reads larger */
-  --leading-reading: 1.6;
 
   --weight-normal: 400;
   --weight-medium: 500;

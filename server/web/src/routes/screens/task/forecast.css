@@ -18,7 +18,7 @@
   flex: 1 1 14rem;
   min-width: 0;
   margin: 0;
-  font-size: var(--text-md);
+  font-size: var(--text-body);
   color: var(--text-primary);
   overflow-wrap: anywhere;
 }
@@ -38,7 +38,7 @@
 
 /* A confidence word, not a warning: muted, never red. */
 .fc-rough {
-  font-size: var(--text-sm);
+  font-size: var(--text-small);
   color: var(--text-muted);
   font-style: italic;
 }
@@ -50,7 +50,7 @@
   gap: 0.25rem;
   padding: 0.125rem 0.25rem;
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--accent);
   background: none;
@@ -79,7 +79,7 @@
 .fc-timeline,
 .fc-tokens {
   margin: 0 0 var(--space-1);
-  font-size: var(--text-sm);
+  font-size: var(--text-small);
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
@@ -104,7 +104,7 @@
 }
 
 .fc-note {
-  font-size: var(--text-sm);
+  font-size: var(--text-small);
   color: var(--text-secondary);
   padding: var(--space-1) var(--space-2);
   border-left: 2px solid var(--chip-purple-border);
@@ -120,7 +120,7 @@
   cursor: pointer;
   width: fit-content;
   padding: var(--space-1) 0;
-  font-size: var(--text-sm);
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-secondary);
 }
@@ -131,7 +131,7 @@
 
 .fc-why > p {
   margin: var(--space-1) 0 0;
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
@@ -149,7 +149,7 @@
   grid-template-columns: 1.25rem minmax(0, 1fr);
   align-items: baseline;
   gap: var(--space-1);
-  font-size: var(--text-sm);
+  font-size: var(--text-small);
   color: var(--text-secondary);
 }
 
@@ -200,13 +200,13 @@
 
 .fc-similar-time {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   color: var(--text-muted);
 }
 
 .fc-why > .fc-accuracy,
 .fc-why > .fc-accuracy-tokens,
 .fc-why > .fc-token-hint {
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   color: var(--text-muted);
 }
