@@ -11,15 +11,19 @@ import {
 import { Spinner } from '../../../components/Spinner.tsx';
 import { CardLink } from './CardLink.tsx';
 import { clock, duration, span } from './format.ts';
-import { canChange, dayIn, dayLabel } from './my-day-derive.ts';
+import { canChange, dayIn, dayLabel, minutesUnderstood, parseMinutes } from './my-day-derive.ts';
 import type { Selection } from './Timeline.tsx';
 import {
   instantOf,
+  limitsIn,
   splitPoint,
+  stepEnd,
+  stepMinutes,
   type DayLine,
   type LaneBlock,
   type Span,
 } from './timeline-derive.ts';
+import { Understood } from './Understood.tsx';
 
 /** A draft or an entry — the two things −/+ and the card chips act on. */
 export type Held =
@@ -32,6 +36,8 @@ export interface InspectorActions {
   /** A card's key, or `general`. */
   readonly setCard: (held: Held, card: string) => void;
   readonly step: (held: Held, by: number) => void;
+  /** A length typed for the block (review round 1, LAI-830's parser). */
+  readonly setLength: (held: Held, minutes: number) => void;
   readonly split: (draft: TimeDraft) => void;
   readonly remove: (entry: TimeEntry) => void;
   readonly saveNote: (entry: TimeEntry, note: string) => void;
@@ -171,6 +177,61 @@ function CardPicker({
   );
 }
 
+/**
+ * A length typed for the block (review round 1): LAI-830's parser — `45`,
+ * `45m`, `1h 30m`, `1:30` — and its *Reads as …* line under the field before
+ * anything is saved. Enter sets it.
+ */
+function LengthField({
+  minutes,
+  busy,
+  onSet,
+}: {
+  readonly minutes: number;
+  readonly busy: boolean;
+  readonly onSet: (minutes: number) => void;
+}) {
+  const [text, setText] = useState('');
+  const [error, setError] = useState<string | undefined>(undefined);
+  return (
+    <form
+      className="inspector-length-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const read = parseMinutes(text);
+        if (read === undefined) {
+          setError('A length as 45, 45m, 1h 30m or 1:30 — up to a day.');
+          return;
+        }
+        setError(undefined);
+        if (read !== minutes) onSet(read);
+        setText('');
+      }}
+    >
+      <input
+        className="input inspector-length-input"
+        value={text}
+        placeholder={duration(minutes)}
+        aria-label="Length, typed"
+        disabled={busy}
+        onChange={(event) => {
+          setText(event.target.value);
+          setError(undefined);
+        }}
+      />
+      <button type="submit" className="myday-chip" disabled={busy || text.trim() === ''}>
+        Set
+      </button>
+      <Understood text={minutesUnderstood(text)} />
+      {error !== undefined && (
+        <p className="myday-error" role="alert">
+          {error}
+        </p>
+      )}
+    </form>
+  );
+}
+
 function Stepper({
   minutes,
   canShorten,
@@ -254,7 +315,8 @@ export function Inspector({
       const block = placed(draft.id);
       const ready = draft.task !== null || draft.project !== null || draft.general;
       const held: Held = { kind: 'draft', draft };
-      const step = block === undefined ? draft.minutes : block.end - block.start;
+      // −/+ only where there is room: a step of span, and never into confirmed time.
+      const hi = block === undefined ? undefined : limitsIn(line, block).hi;
       return (
         <section
           className="myday-card inspector"
@@ -327,8 +389,16 @@ export function Inspector({
               <div className="inspector-row">
                 <Stepper
                   minutes={draft.minutes}
-                  canShorten={draft.minutes > 5 && step > 5}
-                  canLengthen={block === undefined || block.end + 5 <= line.length}
+                  canShorten={
+                    block === undefined
+                      ? stepMinutes(draft.minutes, -5) !== undefined
+                      : stepEnd(block, -5) !== undefined
+                  }
+                  canLengthen={
+                    block === undefined
+                      ? stepMinutes(draft.minutes, 5) !== undefined
+                      : stepEnd(block, 5, hi) !== undefined
+                  }
                   busy={busy}
                   onStep={(by) => {
                     actions.step(held, by);
@@ -345,8 +415,16 @@ export function Inspector({
                   Split in two
                 </button>
               </div>
+              <LengthField
+                minutes={draft.minutes}
+                busy={busy}
+                onSet={(minutes) => {
+                  actions.setLength(held, minutes);
+                }}
+              />
               <p className="inspector-note">
-                5-minute steps. Confirming makes this visible to your organisation.
+                5-minute steps, or type a length. Confirming makes this visible to your
+                organisation.
               </p>
             </div>
             <div className="inspector-part">
@@ -382,7 +460,7 @@ export function Inspector({
       const changeable = canChange(entry);
       const held: Held = { kind: 'entry', entry };
       const typed = note?.id === entry.id ? note.text : (entry.note ?? '');
-      const span5 = block === undefined ? entry.minutes : block.end - block.start;
+      const hi = block === undefined ? undefined : limitsIn(line, block).hi;
       const toggleHistory = (): void => {
         if (history.kind !== 'closed') {
           setHistory({ kind: 'closed' });
@@ -454,15 +532,32 @@ export function Inspector({
             <div className="inspector-part">
               <h3 className="inspector-label">Length</h3>
               {changeable ? (
-                <Stepper
-                  minutes={entry.minutes}
-                  canShorten={entry.minutes > 5 && span5 > 5}
-                  canLengthen={block === undefined || block.end + 5 <= line.length}
-                  busy={busy}
-                  onStep={(by) => {
-                    actions.step(held, by);
-                  }}
-                />
+                <>
+                  <Stepper
+                    minutes={entry.minutes}
+                    canShorten={
+                      block === undefined
+                        ? stepMinutes(entry.minutes, -5) !== undefined
+                        : stepEnd(block, -5) !== undefined
+                    }
+                    canLengthen={
+                      block === undefined
+                        ? stepMinutes(entry.minutes, 5) !== undefined
+                        : stepEnd(block, 5, hi) !== undefined
+                    }
+                    busy={busy}
+                    onStep={(by) => {
+                      actions.step(held, by);
+                    }}
+                  />
+                  <LengthField
+                    minutes={entry.minutes}
+                    busy={busy}
+                    onSet={(minutes) => {
+                      actions.setLength(held, minutes);
+                    }}
+                  />
+                </>
               ) : (
                 <p className="inspector-length">{duration(entry.minutes)}</p>
               )}

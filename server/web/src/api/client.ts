@@ -33,6 +33,11 @@ export interface RequestOptions {
    * (LAI-746). Added to the JSON content type, never in place of it.
    */
   readonly headers?: Readonly<Record<string, string>>;
+  /**
+   * The response's headers, before its body is read — My day reads the
+   * `X-Undo-Id` a change answers with (LAI-831). Called on every response.
+   */
+  readonly onHeaders?: (headers: Headers) => void;
 }
 
 /**
@@ -151,6 +156,7 @@ async function send<T>(path: string, options: RequestOptions): Promise<T> {
   }
 
   const requestId = response.headers.get(REQUEST_ID_HEADER) ?? undefined;
+  options.onHeaders?.(response.headers);
 
   if (response.status === 204) return undefined as T;
 

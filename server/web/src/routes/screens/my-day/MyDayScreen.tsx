@@ -18,8 +18,8 @@ import {
   type MyDay,
   type NewEntry,
   type TaskRef,
+  type OnUndo,
   type TimeDraft,
-  type UndoSubject,
 } from '../../../api/time.ts';
 import { everyPage } from '../../../api/every-page.ts';
 import { isProject, listProjects, type Project } from '../../../api/projects.ts';
@@ -56,6 +56,8 @@ import { Timeline, type Selection } from './Timeline.tsx';
 import {
   dayLine,
   instantOf,
+  limitsIn,
+  setLength,
   splitPoint,
   stepEnd,
   stepMinutes,
@@ -104,44 +106,42 @@ const SAID_MS = 6_000;
 const messageOf = (cause: unknown): string =>
   cause instanceof ApiError ? cause.message : 'That change did not save.';
 
+/** A change the page made: the undo id the server answered with, and what it touched. */
+interface Made {
+  readonly undoId: string;
+  readonly blocks: readonly string[];
+}
+
 /**
- * The writes a batch makes (LAI-810), **each recorded as it succeeds** so
- * Undo can take back exactly those (LAI-831).
+ * The writes a batch makes (LAI-810), **each recorded with the undo id its
+ * change answered with** (review round 1), so Undo takes back exactly those
+ * changes and never a later one. `day` is every block a *Confirm day* touches.
  */
-function recording(subjects: UndoSubject[]): BulkApi {
+function recording(made: Made[], day: readonly string[]): BulkApi {
+  const keep =
+    (blocks: readonly string[]): OnUndo =>
+    (undoId) => {
+      made.push({ undoId, blocks });
+    };
   return {
-    confirmDraft: (id) =>
-      confirmDraft(id).then((entry) => {
-        subjects.push({ draft: id });
-        return entry;
-      }),
-    confirmDay: (day) =>
-      confirmDay(day).then((result) => {
-        subjects.push({ day });
-        return result;
-      }),
-    dismissDraft: (id) =>
-      dismissDraft(id).then(() => {
-        subjects.push({ draft: id });
-      }),
-    toGeneral: (id) =>
-      updateDraft(id, { task: null, project: null, general: true }).then((draft) => {
-        subjects.push({ draft: id });
-        return draft;
-      }),
+    confirmDraft: (id) => confirmDraft(id, keep([id])),
+    confirmDay: (on) => confirmDay(on, keep(day)),
+    dismissDraft: (id) => dismissDraft(id, keep([id])),
+    toGeneral: (id) => updateDraft(id, { task: null, project: null, general: true }, keep([id])),
   };
 }
 
 /**
- * Undo many, **newest first**, each by the server (`POST /me/time/undo`). What
- * it could not take back — changed since — is said, never hidden.
+ * Undo many, **newest first**, each by the id its change answered with
+ * (`POST /me/time/undo`). What the server would not take back — changed
+ * since, or a later change after it — is said, never hidden.
  */
-async function undoEach(subjects: readonly UndoSubject[]): Promise<string> {
+async function undoEach(made: readonly Made[]): Promise<string> {
   let undone = 0;
   const refused: string[] = [];
-  for (const subject of [...subjects].reverse()) {
+  for (const change of [...made].reverse()) {
     try {
-      await undo(subject);
+      await undo(change.undoId);
       undone += 1;
     } catch (cause) {
       refused.push(messageOf(cause));
@@ -320,7 +320,7 @@ export function MyDayScreen({
   const say = (
     text: string,
     tone: ToastState['tone'] = 'info',
-    undoIt?: () => Promise<string>,
+    made: readonly Made[] = [],
     batchReport = false,
   ): void => {
     toastSeq.current += 1;
@@ -328,30 +328,57 @@ export function MyDayScreen({
       id: toastSeq.current,
       text,
       tone,
-      ...(undoIt === undefined ? {} : { undo: undoIt }),
+      ...(made.length === 0
+        ? {}
+        : { undo: () => undoEach(made), blocks: new Set(made.flatMap((m) => m.blocks)) }),
       ...(batchReport ? { batch: true } : {}),
     });
   };
 
-  /** Run one write, keyed so only its own control spins; re-read the day after. */
+  /**
+   * A later edit to a block retires the Undo of an earlier change to it
+   * (review round 1): Undo of *General* never stands beside a *+* made after
+   * it — the server would refuse it, and the page does not offer it.
+   */
+  const retire = (blocks: readonly string[]): void => {
+    if (blocks.length === 0) return;
+    setToast((current) =>
+      current?.undo !== undefined && blocks.some((b) => current.blocks?.has(b) === true)
+        ? { id: current.id, text: current.text, tone: current.tone }
+        : current,
+    );
+  };
+
+  /**
+   * Run one write to `blocks`, keyed so only its own control spins; re-read
+   * the day after. When `said` asks, Undo is offered **for this change**, by
+   * the id it answered with; any write retires an earlier Undo on its blocks.
+   */
   const run = async <T,>(
     key: string,
-    write: () => Promise<T>,
+    blocks: readonly string[],
+    write: (onUndo: OnUndo) => Promise<T>,
     said?:
-      string | ((result: T) => { readonly text: string; readonly undo?: readonly UndoSubject[] }),
+      | string
+      | ((result: T) => {
+          readonly text: string;
+          readonly undoable?: boolean;
+          readonly blocks?: readonly string[];
+        }),
   ): Promise<T | undefined> => {
     setPending(key);
+    let undoId: string | undefined;
     try {
-      const result = await write();
+      const result = await write((id) => {
+        undoId = id;
+      });
       reload();
+      retire(blocks);
       if (said !== undefined) {
         const word = typeof said === 'string' ? { text: said } : said(result);
-        const subjects = 'undo' in word ? word.undo : undefined;
-        say(
-          word.text,
-          'info',
-          subjects === undefined || subjects.length === 0 ? undefined : () => undoEach(subjects),
-        );
+        const offered = 'undoable' in word && word.undoable === true && undoId !== undefined;
+        const touched = [...blocks, ...('blocks' in word ? (word.blocks ?? []) : [])];
+        say(word.text, 'info', offered ? [{ undoId: undoId ?? '', blocks: touched }] : []);
       }
       return result;
     } catch (cause) {
@@ -389,22 +416,19 @@ export function MyDayScreen({
     key: string,
     label: string,
     onDay: string,
-    total: number,
+    touches: readonly string[],
     work: (api: BulkApi, onProgress: (done: number, total: number) => void) => Promise<BulkResult>,
   ): Promise<readonly string[]> => {
+    const total = touches.length;
     setPending(key);
     setBatch({ kind: 'running', day: onDay, label, done: 0, total });
-    const subjects: UndoSubject[] = [];
+    const made: Made[] = [];
     try {
-      const result = await work(recording(subjects), (done, of) => {
+      const result = await work(recording(made, touches), (done, of) => {
         setBatch({ kind: 'running', day: onDay, label, done, total: of });
       });
-      say(
-        result.text,
-        result.ok ? 'info' : 'warn',
-        subjects.length === 0 ? undefined : () => undoEach(subjects),
-        true,
-      );
+      retire(touches);
+      say(result.text, result.ok ? 'info' : 'warn', made, true);
       return result.keep;
     } finally {
       setPending(undefined);
@@ -484,8 +508,8 @@ export function MyDayScreen({
 
   const write = (held: Held, patch: DraftPatch & EntryPatch, key: string, said?: string) =>
     held.kind === 'draft'
-      ? run(key, () => updateDraft(held.draft.id, patch), said)
-      : run(key, () => updateEntry(held.entry.id, patch), said);
+      ? run(key, [held.draft.id], (onUndo) => updateDraft(held.draft.id, patch, onUndo), said)
+      : run(key, [held.entry.id], () => updateEntry(held.entry.id, patch), said);
 
   const onEdge = (lane: LaneBlock, edit: Edit): void => {
     const patch: { started_at?: number; ended_at?: number; minutes: number } = {
@@ -493,8 +517,11 @@ export function MyDayScreen({
     };
     if (edit.start !== lane.start) patch.started_at = instant(edit.start);
     if (edit.end !== lane.end) patch.ended_at = instant(edit.end);
-    if (lane.kind === 'drafted') void run(`edge:${lane.id}`, () => updateDraft(lane.id, patch));
-    else void run(`edge:${lane.id}`, () => updateEntry(lane.id, patch));
+    if (lane.kind === 'drafted') {
+      void run(`edge:${lane.id}`, [lane.id], (onUndo) => updateDraft(lane.id, patch, onUndo));
+    } else {
+      void run(`edge:${lane.id}`, [lane.id], () => updateEntry(lane.id, patch));
+    }
   };
 
   const confirmOne = (draft: TimeDraft): void => {
@@ -505,10 +532,12 @@ export function MyDayScreen({
     const where = draft.task?.key ?? draft.project?.name ?? 'General';
     void run(
       `confirm:${draft.id}`,
-      () => confirmDraft(draft.id),
-      () => ({
+      [draft.id],
+      (onUndo) => confirmDraft(draft.id, onUndo),
+      (entry) => ({
         text: `${duration(draft.minutes)} confirmed to ${where} — your organisation can see it now.`,
-        undo: [{ draft: draft.id }],
+        undoable: true,
+        blocks: [entry.id],
       }),
     );
   };
@@ -516,12 +545,29 @@ export function MyDayScreen({
   const dismissOne = (draft: TimeDraft): void => {
     void run(
       `dismiss:${draft.id}`,
-      () => dismissDraft(draft.id),
-      () => ({
-        text: 'Marked not work. A later sync won’t bring it back.',
-        undo: [{ draft: draft.id }],
-      }),
+      [draft.id],
+      (onUndo) => dismissDraft(draft.id, onUndo),
+      () => ({ text: 'Marked not work. A later sync won’t bring it back.', undoable: true }),
     );
+  };
+
+  /** A length for a block: its end moves with it, never into confirmed time (review round 1). */
+  const lengthOf = (held: Held, minutes: number, key: string): void => {
+    const item = held.kind === 'draft' ? held.draft : held.entry;
+    const placed = block(item.id);
+    if (placed === undefined) {
+      void write(held, { minutes }, key);
+      return;
+    }
+    const edit = setLength(placed, minutes, limitsIn(line, placed).hi);
+    if (edit === undefined) {
+      say(
+        `${duration(minutes)} would run past the end of the day or into confirmed time — shorten it, or move the block first.`,
+        'warn',
+      );
+      return;
+    }
+    void write(held, { minutes: edit.minutes, ended_at: instant(edit.end) }, key);
   };
 
   const actions: InspectorActions = {
@@ -532,13 +578,14 @@ export function MyDayScreen({
         const patch: DraftPatch = card === 'general' ? { general: true } : { task: card };
         void run(
           `card:${held.draft.id}`,
-          () => updateDraft(held.draft.id, patch),
+          [held.draft.id],
+          (onUndo) => updateDraft(held.draft.id, patch, onUndo),
           () => ({
             text:
               card === 'general'
                 ? 'Moved to General — ready to confirm.'
                 : `Put on ${card} — ready to confirm.`,
-            undo: [{ draft: held.draft.id }],
+            undoable: true,
           }),
         );
       } else {
@@ -560,10 +607,14 @@ export function MyDayScreen({
         if (minutes !== undefined) void write(held, { minutes }, `step:${item.id}`);
         return;
       }
-      const edit = stepEnd(placed, by, line.length);
+      // On the five-minute grid, and never into the confirmed block after it.
+      const edit = stepEnd(placed, by, limitsIn(line, placed).hi);
       if (edit !== undefined) {
         void write(held, { minutes: edit.minutes, ended_at: instant(edit.end) }, `step:${item.id}`);
       }
+    },
+    setLength: (held, minutes) => {
+      lengthOf(held, minutes, `length:${held.kind === 'draft' ? held.draft.id : held.entry.id}`);
     },
     split: (draft) => {
       const placed = block(draft.id);
@@ -571,7 +622,8 @@ export function MyDayScreen({
       if (at === undefined) return;
       void run(
         `split:${draft.id}`,
-        () => splitDraft(draft.id, instant(at)),
+        [draft.id],
+        (onUndo) => splitDraft(draft.id, instant(at), onUndo),
         (result) => {
           const [a, b] = result.drafts;
           if (a !== undefined) setSelection({ kind: 'draft', id: a.id });
@@ -580,7 +632,8 @@ export function MyDayScreen({
               a === undefined || b === undefined
                 ? `Split at ${clock(instant(at), view.tz)}.`
                 : `Split at ${clock(instant(at), view.tz)} into ${duration(a.minutes)} and ${duration(b.minutes)}.`,
-            undo: [{ draft: draft.id }],
+            undoable: true,
+            blocks: result.drafts.map((d) => d.id),
           };
         },
       );
@@ -588,10 +641,11 @@ export function MyDayScreen({
     remove: (entry) => {
       void run(
         `delete:${entry.id}`,
-        () => deleteEntry(entry.id),
+        [entry.id],
+        (onUndo) => deleteEntry(entry.id, onUndo),
         () => ({
           text: `${duration(entry.minutes)} deleted. The revision history keeps a record.`,
-          undo: [{ entry: entry.id }],
+          undoable: true,
         }),
       );
     },
@@ -599,6 +653,7 @@ export function MyDayScreen({
       const text = note.trim();
       void run(
         `note:${entry.id}`,
+        [entry.id],
         () => updateEntry(entry.id, { note: text === '' ? null : text }),
         'Note saved. Every edit is kept as a revision.',
       );
@@ -612,6 +667,7 @@ export function MyDayScreen({
       const range = span(instant(gap.start), instant(gap.end), view.tz);
       void run(
         'break',
+        [],
         () =>
           addBreak({
             day: view.day,
@@ -627,7 +683,7 @@ export function MyDayScreen({
       );
     },
     unbreak: (id) => {
-      void run('unbreak', () => removeBreak(id), 'Not a break — it counts as a gap again.');
+      void run('unbreak', [], () => removeBreak(id), 'Not a break — it counts as a gap again.');
     },
   };
 
@@ -705,7 +761,9 @@ export function MyDayScreen({
           settings={settings}
           held={view.drafts_held}
           pending={pending}
-          run={(key, writeIt, said) => run(key, writeIt, said).then((r) => r !== undefined)}
+          run={(key, writeIt, said) =>
+            run(key, [], () => writeIt(), said).then((r) => r !== undefined)
+          }
         />
         {view.drafts.length > 0 && (
           <button
@@ -723,7 +781,7 @@ export function MyDayScreen({
                 'confirm-day',
                 'Confirming',
                 view.day,
-                view.drafts.length,
+                view.drafts.map((d) => d.id),
                 (api, progress) => runConfirmDay(view.drafts, view.day, api, progress),
               );
             }}
@@ -798,8 +856,12 @@ export function MyDayScreen({
                 }}
                 onNavigate={onNavigate}
                 onBulk={(kind, chosen) =>
-                  runBatch('bulk', RUNNING[kind], view.day, chosen.length, (api, progress) =>
-                    runBulk(kind, chosen, api, progress),
+                  runBatch(
+                    'bulk',
+                    RUNNING[kind],
+                    view.day,
+                    chosen.map((d) => d.id),
+                    (api, progress) => runBulk(kind, chosen, api, progress),
                   )
                 }
               />
@@ -833,10 +895,12 @@ export function MyDayScreen({
                     onAdd={async (entry: NewEntry, label: string) => {
                       const made = await run(
                         'add',
-                        () => addEntry(entry),
+                        [],
+                        (onUndo) => addEntry(entry, onUndo),
                         (created) => ({
                           text: `${duration(entry.minutes)} added to ${label} — confirmed as you add it.`,
-                          undo: [{ entry: created.id }],
+                          undoable: true,
+                          blocks: [created.id],
                         }),
                       );
                       if (made === undefined) return false;

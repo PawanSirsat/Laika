@@ -199,10 +199,6 @@ export interface EntryPatch {
   readonly ended_at?: number;
 }
 
-/** What Undo takes back: the newest change to one draft, one entry or one day. */
-export type UndoSubject =
-  { readonly draft: string } | { readonly entry: string } | { readonly day: string };
-
 export interface NewBreak {
   readonly day: string;
   readonly tz: string;
@@ -211,6 +207,26 @@ export interface NewBreak {
 }
 
 const opts = (signal?: AbortSignal) => (signal === undefined ? {} : { signal });
+
+/**
+ * The header a change answers with: the id of **that** change, which
+ * {@link undo} takes (LAI-831 review round 1). Mirrors
+ * `services/time-undo-log.ts`' `UNDO_HEADER`.
+ */
+export const UNDO_HEADER = 'X-Undo-Id';
+
+/** Told the undo id of the change just made, when the server recorded one. */
+export type OnUndo = (id: string) => void;
+
+const undoable = (onUndo?: OnUndo) =>
+  onUndo === undefined
+    ? {}
+    : {
+        onHeaders: (headers: Headers) => {
+          const id = headers.get(UNDO_HEADER);
+          if (id !== null && id !== '') onUndo(id);
+        },
+      };
 
 export function getTimeSettings(signal?: AbortSignal): Promise<TimeSettings> {
   return request<TimeSettings>('/me/time-settings', opts(signal));
@@ -234,10 +250,11 @@ export function getMyDay(day: string, tz: string, signal?: AbortSignal): Promise
   return request<MyDay>(`/me/time?${query}`, opts(signal));
 }
 
-export function updateDraft(id: string, patch: DraftPatch): Promise<TimeDraft> {
+export function updateDraft(id: string, patch: DraftPatch, onUndo?: OnUndo): Promise<TimeDraft> {
   return request<TimeDraft>(`/me/time-drafts/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: patch,
+    ...undoable(onUndo),
   });
 }
 
@@ -245,29 +262,37 @@ export function updateDraft(id: string, patch: DraftPatch): Promise<TimeDraft> {
 export function splitDraft(
   id: string,
   at: number,
+  onUndo?: OnUndo,
 ): Promise<{ readonly drafts: readonly [TimeDraft, TimeDraft] }> {
   return request<{ readonly drafts: readonly [TimeDraft, TimeDraft] }>(
     `/me/time-drafts/${encodeURIComponent(id)}/split`,
-    { method: 'POST', body: { at } },
+    { method: 'POST', body: { at }, ...undoable(onUndo) },
   );
 }
 
 /** Not work: it stays dismissed, and a later sync does not bring it back. */
-export function dismissDraft(id: string): Promise<void> {
-  return request<void>(`/me/time-drafts/${encodeURIComponent(id)}/dismiss`, { method: 'POST' });
+export function dismissDraft(id: string, onUndo?: OnUndo): Promise<void> {
+  return request<void>(`/me/time-drafts/${encodeURIComponent(id)}/dismiss`, {
+    method: 'POST',
+    ...undoable(onUndo),
+  });
 }
 
-export function confirmDraft(id: string): Promise<TimeEntry> {
+export function confirmDraft(id: string, onUndo?: OnUndo): Promise<TimeEntry> {
   return request<TimeEntry>(`/me/time-drafts/${encodeURIComponent(id)}/confirm`, {
     method: 'POST',
+    ...undoable(onUndo),
   });
 }
 
 /** Confirm day: every unconfirmed block of it, in one click. */
-export function confirmDay(day: string): Promise<{ readonly entries: readonly TimeEntry[] }> {
+export function confirmDay(
+  day: string,
+  onUndo?: OnUndo,
+): Promise<{ readonly entries: readonly TimeEntry[] }> {
   return request<{ readonly entries: readonly TimeEntry[] }>(
     `/me/time/days/${encodeURIComponent(day)}/confirm`,
-    { method: 'POST' },
+    { method: 'POST', ...undoable(onUndo) },
   );
 }
 
@@ -277,8 +302,12 @@ export function deleteDrafts(): Promise<void> {
 }
 
 /** Time typed by hand — a meeting, a call. */
-export function addEntry(entry: NewEntry): Promise<TimeEntry> {
-  return request<TimeEntry>('/me/time-entries', { method: 'POST', body: entry });
+export function addEntry(entry: NewEntry, onUndo?: OnUndo): Promise<TimeEntry> {
+  return request<TimeEntry>('/me/time-entries', {
+    method: 'POST',
+    body: entry,
+    ...undoable(onUndo),
+  });
 }
 
 export function updateEntry(id: string, patch: EntryPatch): Promise<TimeEntry> {
@@ -288,17 +317,20 @@ export function updateEntry(id: string, patch: EntryPatch): Promise<TimeEntry> {
   });
 }
 
-export function deleteEntry(id: string): Promise<void> {
-  return request<void>(`/me/time-entries/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export function deleteEntry(id: string, onUndo?: OnUndo): Promise<void> {
+  return request<void>(`/me/time-entries/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    ...undoable(onUndo),
+  });
 }
 
 /**
- * Undo (LAI-831): the server puts back exactly what the newest change to
- * `subject` replaced — `409` once that has changed since, `404` once it is
- * too old to take back.
+ * Undo (LAI-831): the server puts back exactly what change `id` replaced —
+ * the id that change answered with ({@link UNDO_HEADER}). `409` once the
+ * block changed since or a later change touched it, `404` once too old.
  */
-export function undo(subject: UndoSubject): Promise<void> {
-  return request<void>('/me/time/undo', { method: 'POST', body: subject });
+export function undo(id: string): Promise<void> {
+  return request<void>('/me/time/undo', { method: 'POST', body: { id } });
 }
 
 /** A gap waved away as a break: it stops counting under *Gaps*. Never time. */

@@ -11,6 +11,11 @@ export interface ToastState {
   readonly undo?: () => Promise<string>;
   /** A batch's report (LAI-810), which says how it went in full. */
   readonly batch?: boolean;
+  /**
+   * The drafts and entries the undoable change touched: a later edit to any of
+   * them retires this Undo (review round 1).
+   */
+  readonly blocks?: ReadonlySet<string>;
 }
 
 export interface ToastProps {
