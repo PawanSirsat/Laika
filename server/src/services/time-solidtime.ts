@@ -1,15 +1,17 @@
-import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { requireOrgId } from '../db/orgs.ts';
 import {
+  localActivityDays,
   orgTimeSettings,
   projects,
   solidtimeEntries,
   solidtimePeople,
   solidtimeProjects,
   tasks,
+  timeDrafts,
   timeEntries,
   users,
 } from '../db/schema.ts';
@@ -709,6 +711,8 @@ function assertWindow(input: ImportWindow, now: number): void {
 interface Scope {
   /** The Laika person a member is, or null for people not on Laika. */
   userFor: (memberId: string) => string | null;
+  /** The zone a person's new entries are dated in (D-088 item 12). */
+  zoneFor: (userId: string) => string;
   /** Members a re-read covers: only their entries may be inferred deleted. */
   covered: ReadonlySet<string>;
   /** An own pull: a twin of another person's is not this caller's to touch. */
@@ -867,11 +871,11 @@ function reconcile(
       }
 
       // ---- new to Laika, or a member who has since been confirmed
-      if (isClosed(closed, day, ...(row === undefined ? [] : [row.day]))) {
-        flag(e.id, day, 'closed_period');
-        continue;
-      }
       if (userId === null) {
+        if (isClosed(closed, day, ...(row === undefined ? [] : [row.day]))) {
+          flag(e.id, day, 'closed_period');
+          continue;
+        }
         tx.insert(solidtimeEntries)
           .values({
             solidtimeId: e.id,
@@ -891,16 +895,23 @@ function reconcile(
         result.created += 1;
         continue;
       }
+      // A person's day is their own local day (D-088 item 12), whoever pulls.
+      const zone = scope.zoneFor(userId);
+      const ownDay = dayIn(zone, e.start);
+      if (isClosed(closed, ownDay, ...(row === undefined ? [] : [row.day]))) {
+        flag(e.id, ownDay, 'closed_period');
+        continue;
+      }
       try {
-        assertEntryDay(day, input.tz, now);
+        assertEntryDay(ownDay, zone, now);
       } catch {
-        flag(e.id, day, 'day_out_of_range');
+        flag(e.id, ownDay, 'day_out_of_range');
         continue;
       }
       const fields: EntryFields = {
         target,
-        day,
-        tz: input.tz,
+        day: ownDay,
+        tz: zone,
         startedAt: e.start,
         endedAt: e.end,
         minutes,
@@ -912,7 +923,7 @@ function reconcile(
         ({ entryId, revision } = takeImport(tx, userId, e.id, fields, now));
       } catch (err) {
         if (isDayFull(err)) {
-          flag(e.id, day, 'day_full');
+          flag(e.id, ownDay, 'day_full');
           continue;
         }
         throw err;
@@ -929,7 +940,7 @@ function reconcile(
           entryRevision: revision,
           hash: e.hash,
           startedAt: e.start,
-          day,
+          day: ownDay,
           minutes,
           projectId: target.projectId,
           taskId: target.taskId,
@@ -1028,7 +1039,13 @@ export function importOwnSolidtime(
     db,
     actor,
     input,
-    { userFor: () => actor.userId, covered: new Set([input.member_id]), ownUser: actor.userId },
+    {
+      userFor: () => actor.userId,
+      // The person's own machine said its zone: theirs.
+      zoneFor: () => input.tz,
+      covered: new Set([input.member_id]),
+      ownUser: actor.userId,
+    },
     () => input.member_id,
     now,
   );
@@ -1065,16 +1082,59 @@ export function importAllSolidtime(
       .all()
       .map((p) => [p.member, p.user]),
   );
+  const zones = new Map<string, string | null>();
   const result = reconcile(
     db,
     actor,
     input,
-    { userFor: (m) => people.get(m) ?? null, covered, ownUser: null },
+    {
+      userFor: (m) => people.get(m) ?? null,
+      zoneFor: (u) => {
+        const known = zones.get(u) ?? personZone(db, u);
+        zones.set(u, known);
+        return known ?? input.tz;
+      },
+      covered,
+      ownUser: null,
+    },
     (e) => e.member_id ?? '',
     now,
   );
   const bucket = notOnLaika(db);
   return { ...result, not_on_laika: { people: bucket.people, minutes: bucket.minutes } };
+}
+
+/**
+ * The zone a person keeps their own time in — that of their latest entry
+ * they confirmed or typed, else of their drafts, else of their machine's
+ * activity reports — or null when Laika has never been told (D-088 item 12:
+ * a person's days are their own local days). One indexed read each.
+ */
+export function personZone(db: Db, userId: string): string | null {
+  const own = db
+    .select({ tz: timeEntries.tz })
+    .from(timeEntries)
+    .where(and(eq(timeEntries.userId, userId), inArray(timeEntries.source, ['draft', 'manual'])))
+    .orderBy(desc(timeEntries.day), desc(timeEntries.createdAt))
+    .limit(1)
+    .get();
+  if (own !== undefined && isTimeZone(own.tz)) return own.tz;
+  const drafted = db
+    .select({ tz: timeDrafts.tz })
+    .from(timeDrafts)
+    .where(eq(timeDrafts.userId, userId))
+    .orderBy(desc(timeDrafts.day))
+    .limit(1)
+    .get();
+  if (drafted !== undefined && isTimeZone(drafted.tz)) return drafted.tz;
+  const reported = db
+    .select({ tz: localActivityDays.tz })
+    .from(localActivityDays)
+    .where(eq(localActivityDays.userId, userId))
+    .orderBy(desc(localActivityDays.day))
+    .limit(1)
+    .get();
+  return reported !== undefined && isTimeZone(reported.tz) ? reported.tz : null;
 }
 
 function notOnLaika(db: Db): SolidtimeSetup['not_on_laika'] {

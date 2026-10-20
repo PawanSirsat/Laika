@@ -895,6 +895,28 @@ describe('an owner’s or admin’s pull of everyone', () => {
     expect(solidtimeSetup(t.db, owner).not_on_laika.people).toBe(0);
   });
 
+  it('files a person’s hours on their own day, in their own zone — not the puller’s (D-088 item 12)', () => {
+    setSolidtimePeople(
+      t.db,
+      owner,
+      { people: [{ solidtime_member_id: BEA_MEMBER, user_id: bea.userId }] },
+      NOW,
+    );
+    // Bea keeps her time in Los Angeles; the admin pulls from UTC.
+    createEntry(t.db, bea, { day: YESTERDAY, tz: 'America/Los_Angeles', minutes: 10 }, NOW);
+    all([
+      entry({ id: 'st-b', member_id: BEA_MEMBER, start: at(DAY, 3), end: at(DAY, 4) }),
+      entry({ id: 'st-c', member_id: CARA_MEMBER, start: at(DAY, 3), end: at(DAY, 4) }),
+    ]);
+    const imported = live(bea.userId).find((e) => e.sourceRef === 'st-b');
+    expect([imported?.day, imported?.tz]).toEqual([YESTERDAY, 'America/Los_Angeles']);
+    // Somebody not on Laika has no zone of their own: the puller's.
+    expect(
+      t.db.select().from(solidtimeEntries).where(eq(solidtimeEntries.solidtimeId, 'st-c')).get()
+        ?.day,
+    ).toBe(DAY);
+  });
+
   it('refuses an entry of a member the batch does not cover', () => {
     expect(reason(() => all([entry({ id: 'st-x', member_id: 'member-other' })]))).toBe(
       'unprocessable:member_not_covered',

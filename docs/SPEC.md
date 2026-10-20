@@ -2893,9 +2893,11 @@ only** — the CLI signs in for the run and keeps no session.
   an admin confirmed the member as somebody else.
 - **Everyone's.** `PUT /org/time/solidtime/import` takes `members` — every
   member the batch carries, the only ones an absence can delete — and an
-  entry's `member_id`; a confirmed member's time is theirs, anybody else's is
-  kept as *people not on Laika* and counted in `not_on_laika: { people,
-  minutes }`. `GET /org/time/solidtime` answers `{ closed_through, projects,
+  entry's `member_id`; a confirmed member's time is theirs, dated on their
+  own day (D-088 item 12) — in the zone of their latest confirmed or typed
+  entry, else their drafts', else their activity reports', else the batch's
+  `tz` — and anybody else's is kept as *people not on Laika*, in the batch's
+  zone, and counted in `not_on_laika: { people, minutes }`. `GET /org/time/solidtime` answers `{ closed_through, projects,
   people, not_on_laika }`, the last with each member's minutes;
   `PUT …/projects` takes `{ projects: [{ solidtime_project_id, name, space,
   push? }] }` (`space: null` unmaps) and `PUT …/people` `{ people: [{
