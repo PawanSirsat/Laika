@@ -8,6 +8,12 @@ export interface ReviewCount {
   /** Tasks waiting for a person, or `undefined` — not asked yet, or the read failed. */
   readonly waiting: number | undefined;
   /**
+   * The server stopped at its 200 and more wait (`truncated`, §6.4), so
+   * `waiting` is a floor: a count shown from it says "200+" (LAI-818, D-092
+   * item 5). `undefined` until read.
+   */
+  readonly capped: boolean | undefined;
+  /**
    * The queue the count was read from (LAI-796): My day's *Waiting on your
    * review* lists it, so that page asks for nothing the badge has not already
    * fetched. `undefined` until read.
@@ -27,18 +33,22 @@ export interface ReviewCount {
  */
 export function useReviewCount(enabled: boolean): ReviewCount {
   const [queue, setQueue] = useState<readonly ReviewQueueItem[] | undefined>(undefined);
+  const [capped, setCapped] = useState<boolean | undefined>(undefined);
   const [asked, setAsked] = useState(0);
 
   useEffect(() => {
     if (!enabled) {
       setQueue(undefined);
+      setCapped(undefined);
       return;
     }
     const controller = new AbortController();
     const read = (): void => {
       getReviewQueue(controller.signal)
         .then((queue) => {
-          if (!controller.signal.aborted) setQueue(queue.tasks);
+          if (controller.signal.aborted) return;
+          setQueue(queue.tasks);
+          setCapped(queue.truncated);
         })
         .catch(() => undefined);
     };
@@ -54,5 +64,5 @@ export function useReviewCount(enabled: boolean): ReviewCount {
     setAsked((n) => n + 1);
   }, []);
 
-  return { waiting: queue?.length, queue, refresh };
+  return { waiting: queue?.length, capped, queue, refresh };
 }

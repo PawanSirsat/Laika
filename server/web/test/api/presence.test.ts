@@ -129,9 +129,9 @@ void describe('the capacity entry mirrors the server, optionality and all', () =
 
     // Absent for a reader without `audit_log.export`, and `[]` is a different
     // claim — "this person has logged nothing". Never `?? []`. The profile
-    // kind and the 14-day series follow `profile.read` and
-    // `profile.activity.read` the same way (LAI-767).
-    const gated = ['activity_14d', 'profile_kind', 'unlisted'];
+    // kind, the 14-day series and its split follow `profile.read` and
+    // `profile.activity.read` the same way (LAI-767, LAI-818).
+    const gated = ['activity_14d', 'activity_14d_split', 'profile_kind', 'unlisted'];
     assert.deepEqual(optional(there), gated);
     assert.deepEqual(optional(here), gated);
   });
@@ -143,6 +143,40 @@ void describe('the capacity entry mirrors the server, optionality and all', () =
       assert.equal(there.get(field), false, `server ${field}`);
       assert.equal(here.get(field), false, `client ${field}`);
     }
+  });
+});
+
+/*
+ * The counts inside an entry (LAI-818). Nested, so neither the census nor the
+ * entry check above reads them — and D-092 changed what `todo` means and added
+ * `backlog`, `committed`, a per-space `load` and the activity split, which is
+ * exactly a field served and never seen if the two sides drift.
+ */
+for (const name of ['CapacityWorkload', 'CapacitySpace', 'ActivitySplit']) {
+  void describe(`${name} mirrors the server`, () => {
+    const there = shapeOf(server, name);
+    const here = shapeOf(client, name);
+
+    void test('the same fields, all of them required', () => {
+      assert.ok(there.size >= 3, `server ${name} parsed as ${String(there.size)} fields`);
+      assert.deepEqual([...here.keys()].sort(), [...there.keys()].sort());
+      assert.deepEqual([...here.values()].filter(Boolean), []);
+      assert.deepEqual([...there.values()].filter(Boolean), []);
+    });
+  });
+}
+
+void describe('the workload says what D-092 counts', () => {
+  const fields = [...shapeOf(client, 'CapacityWorkload').keys()];
+
+  void test('backlog apart from to do, and committed beside them', () => {
+    for (const field of ['in_progress', 'todo', 'backlog', 'in_review', 'committed', 'overdue']) {
+      assert.ok(fields.includes(field), `no ${field}`);
+    }
+  });
+
+  void test('a space carries its own load', () => {
+    assert.equal(shapeOf(client, 'CapacitySpace').get('load'), false);
   });
 });
 

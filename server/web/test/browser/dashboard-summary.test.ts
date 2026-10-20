@@ -88,7 +88,9 @@ function makeTask(i: number): FixtureTask {
     planned_start: null,
     branch: null,
     external_ref: null,
-    stale_flagged_at: null,
+    // The server's job flags some work in progress (§11.6); the rest of the
+    // quiet work is merely quiet, and must not read as stale (LAI-817).
+    stale_flagged_at: i < 40 && i % 5 === 2 ? NOW - (1 + (i % 4)) * DAY : null,
     created_at: NOW - i * DAY - 3_600_000,
     updated_at: NOW - (i % 10) * DAY - 3_600_000,
     started_at: null,
@@ -190,7 +192,13 @@ function world(): World {
 const open7 = (t: FixtureTask): boolean => t.status !== 'done' && t.status !== 'cancelled';
 
 async function ready(page: Page): Promise<void> {
-  await page.locator('.dash-people .dash-legend-row').first().waitFor({ timeout: 20_000 });
+  await page.locator('.dash-status .dash-legend-row').first().waitFor({ timeout: 20_000 });
+}
+
+/** Contributors' second tab: every open task, whatever the range (LAI-817). */
+async function openNow(page: Page): Promise<void> {
+  await page.locator('.dash-people [role="tab"]', { hasText: 'Open work now' }).click();
+  await page.locator('.dash-people .dash-legend-row').first().waitFor({ timeout: 5_000 });
 }
 
 async function numberOf(page: Page, selector: string): Promise<number> {
@@ -288,7 +296,7 @@ void describe('the numbers are the fixture’s (LAI-711)', () => {
       const since = NOW - 7 * DAY;
       const expected = {
         done: 3 + 0 + 5 + 2 + 0 + 4 + 1 + 6,
-        updated: w.tasks.filter((t) => t.updated_at >= since).length,
+        touched: w.tasks.filter((t) => t.updated_at >= since).length,
         created: w.tasks.filter((t) => t.created_at >= since).length,
         due: w.tasks.filter(
           (t) => open7(t) && t.due_on !== null && t.due_on >= TODAY && t.due_on < TODAY + 7 * DAY,
@@ -340,25 +348,32 @@ void describe('the numbers are the fixture’s (LAI-711)', () => {
     }
   });
 
-  void test('work by person: open work for every assignee, the owner named, Unassigned its own share', async () => {
+  void test('open work now: every assignee, the owner named, Unassigned and review their own shares', async () => {
     const w = world();
-    // **All time** (LAI-732): the range now reaches this card, counting tasks
-    // updated within it, and All time is the whole project — what this pins.
-    // The range itself is `dashboard-card-filters.test.ts`'s.
-    const h = await open('/dashboard?project=laika-core&range=all', w.stub);
+    // Open work now has no range (LAI-817, D-092 item 2); the default 7 days
+    // must not narrow it. `dashboard-contributors.test.ts` holds that across
+    // every range.
+    const h = await open('/dashboard?project=laika-core', w.stub);
     try {
       await ready(h.page);
+      await openNow(h.page);
       const openWork = w.tasks.filter(open7);
+      const held = openWork.filter((t) => t.status !== 'review');
       for (const id of ['u1', 'u2', 'u3', 'u9']) {
         assert.equal(
           await numberOf(h.page, `.dash-people [data-person="${id}"]`),
-          openWork.filter((t) => t.assignee_id === id).length,
+          held.filter((t) => t.assignee_id === id).length,
           id,
         );
       }
       assert.equal(
         await numberOf(h.page, '.dash-people [data-person="unassigned"]'),
-        openWork.filter((t) => t.assignee_id === null).length,
+        held.filter((t) => t.assignee_id === null).length,
+      );
+      assert.equal(
+        await numberOf(h.page, '.dash-people [data-person="review"]'),
+        openWork.length - held.length,
+        'review is its own share, whoever holds it',
       );
       assert.equal(
         await numberOf(h.page, '.dash-people .donut-value'),
@@ -368,7 +383,7 @@ void describe('the numbers are the fixture’s (LAI-711)', () => {
       const names = await h.page.locator('.dash-people .dash-legend-name').allTextContents();
       assert.ok(names.includes('Pawan Owner'), `the owner is not named: ${JSON.stringify(names)}`);
       assert.ok(!names.some((n) => /^u\d$/.test(n)), `a raw id is shown: ${JSON.stringify(names)}`);
-      assert.equal(names.at(-1), 'Unassigned', 'Unassigned is last');
+      assert.deepEqual(names.slice(-2), ['Unassigned', 'Waiting for review']);
       // The ring has a slice per row, each drawn in a real colour.
       const strokes = await h.page
         .locator('.dash-people .donut-slice')
@@ -384,16 +399,18 @@ void describe('the numbers are the fixture’s (LAI-711)', () => {
     }
   });
 
-  void test('needs attention counts every stale task, not the first five', async () => {
+  void test('needs attention counts every task the server flagged stale, not the first five', async () => {
     const w = world();
     const h = await open('/dashboard?project=laika-core', w.stub);
     try {
       await ready(h.page);
-      const stale = w.tasks.filter((t) => open7(t) && NOW - t.updated_at > 5 * DAY).length;
+      const stale = w.tasks.filter((t) => open7(t) && t.stale_flagged_at !== null).length;
+      const quiet = w.tasks.filter((t) => open7(t) && NOW - t.updated_at > 5 * DAY).length;
       assert.ok(
         stale > 5,
         `the fixture must have more than five stale tasks, has ${String(stale)}`,
       );
+      assert.ok(quiet > stale, 'positive control: more is quiet than is flagged');
       const tab = h.page.locator('.dash-tab', { hasText: 'Stale' });
       assert.equal(Number(await tab.locator('.dash-tab-count').textContent()), stale);
       await tab.click();
@@ -412,6 +429,7 @@ void describe('every row goes somewhere (LAI-711)', () => {
     const h = await open('/dashboard?project=laika-core', w.stub);
     try {
       await ready(h.page);
+      await openNow(h.page);
       await h.page.locator('.dash-people a.dash-legend-row', { hasText: 'Grace Hopper' }).click();
       await h.page.waitForURL(/\/board\?/, { timeout: 5000 });
       const url = new URL(h.page.url());
@@ -471,12 +489,14 @@ void describe('the page never blanks (LAI-711)', () => {
     const h = await open('/dashboard?project=laika-core', w.stub, { before: fakeStream });
     try {
       await ready(h.page);
+      await openNow(h.page);
       const before = await numberOf(h.page, '.dash-people [data-person="u3"]');
       const card = await h.page.locator('.dash-people').elementHandle();
-      // An agent hands three unassigned tasks to Alan.
+      // An agent hands three unassigned tasks to Alan — not ones in review,
+      // which wait on a reviewer and are not in his count.
       let moved = 0;
       for (const t of w.tasks) {
-        if (moved < 3 && open7(t) && t.assignee_id === null) {
+        if (moved < 3 && open7(t) && t.status !== 'review' && t.assignee_id === null) {
           t.assignee_id = 'u3';
           moved += 1;
         }
@@ -527,6 +547,7 @@ void describe('both themes (LAI-711)', () => {
     const h = await open('/dashboard?project=laika-core', w.stub);
     try {
       await ready(h.page);
+      await openNow(h.page);
       for (const theme of ['light', 'dark']) {
         await setTheme(h.page, theme);
         const strokes = await h.page

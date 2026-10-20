@@ -44,8 +44,10 @@ export type CapacitySort = (typeof SORTS)[number]['id'];
 
 const ZERO: CapacityWorkload = {
   in_progress: 0,
-  in_review: 0,
   todo: 0,
+  backlog: 0,
+  in_review: 0,
+  committed: 0,
   overdue: 0,
   due_soon: 0,
   open: 0,
@@ -55,6 +57,17 @@ const ZERO: CapacityWorkload = {
 export function workloadIn(person: CapacityEntry, space: string | null): CapacityWorkload {
   if (space === null) return person.workload;
   return person.spaces.find((s) => s.project_id === space) ?? ZERO;
+}
+
+/**
+ * Their load badge in one space, or across every space when `space` is
+ * `null` — **the server's**, either way (D-092, LAI-818). Each space arrives
+ * with its own load by the same rule, so the badge, the *Heavy load* chip and
+ * the sort agree with the counts beside them. No work there is no load there.
+ */
+export function loadIn(person: CapacityEntry, space: string | null): LoadLevel {
+  if (space === null) return person.load;
+  return person.spaces.find((s) => s.project_id === space)?.load ?? 'none';
 }
 
 /** Their agents running now. */
@@ -94,7 +107,7 @@ export function passesFilter(
     case 'agents':
       return runningAgents(person).length > 0;
     case 'heavy':
-      return person.load === 'heavy';
+      return loadIn(person, space) === 'heavy';
     case 'overdue':
       return workloadIn(person, space).overdue > 0;
     case 'none':
@@ -114,15 +127,18 @@ const STATUS_RANK: Readonly<Record<PersonStatus, number>> = {
 const LOAD_RANK: Readonly<Record<LoadLevel, number>> = { heavy: 3, normal: 2, light: 1, none: 0 };
 
 /**
- * Heaviest first. Across every space the server's load badge leads; in one
- * space only that space's counts can say who is heavier there. Then overdue,
- * in progress and open work.
+ * Heaviest first: the load badge in the chosen space, then committed work,
+ * then in progress. **Overdue is not load** (D-092), so it orders nobody here;
+ * it has its own badge and its own filter.
  */
 export function byLoad(a: CapacityEntry, b: CapacityEntry, space: string | null): number {
-  if (space === null && a.load !== b.load) return LOAD_RANK[b.load] - LOAD_RANK[a.load];
   const x = workloadIn(a, space);
   const y = workloadIn(b, space);
-  return y.overdue - x.overdue || y.in_progress - x.in_progress || y.open - x.open;
+  return (
+    LOAD_RANK[loadIn(b, space)] - LOAD_RANK[loadIn(a, space)] ||
+    y.committed - x.committed ||
+    y.in_progress - x.in_progress
+  );
 }
 
 /** People in the chosen order; ties fall back to name so the order is stable. */
@@ -182,16 +198,21 @@ export function statusText(person: CapacityEntry, now: number): StatusText {
 }
 
 export const LOAD_LABEL: Readonly<Record<LoadLevel, string>> = {
-  none: 'No work',
+  // Nothing committed — they may still have backlog or work waiting on a
+  // reviewer, so "No work" would say something the counts beside it deny.
+  none: 'No load',
   light: 'Light',
   normal: 'Normal',
   heavy: 'Heavy',
 };
 
-/** The stacked bar's parts, in drawing order. */
+/**
+ * The stacked bar's parts, in drawing order: **committed work only** (D-092).
+ * Review waits on the reviewer and backlog is the pipeline; both are counted
+ * beside the bar, never in it.
+ */
 export const BAR_PARTS = [
   { key: 'in_progress', label: 'In progress' },
-  { key: 'in_review', label: 'In review' },
   { key: 'todo', label: 'To do' },
 ] as const;
 
@@ -204,9 +225,9 @@ export interface BarSegment {
 }
 
 /**
- * The stacked bar of open work: in progress, in review, to do, each as a share
- * of `scale` — the person's own open count on a card, the heaviest person's in
- * *Team load* so the bars compare. Empty parts are left out.
+ * The stacked bar of committed work: in progress and to do, each as a share
+ * of `scale` — the person's own committed count on a card, the heaviest
+ * person's in *Team load* so the bars compare. Empty parts are left out.
  */
 export function barSegments(work: CapacityWorkload, scale: number): BarSegment[] {
   const of = Math.max(scale, 1);
@@ -244,16 +265,18 @@ export function summarize(people: readonly CapacityEntry[], space: string | null
 }
 
 /**
- * *Team load*: everyone with open work in the chosen space, heaviest first, and
- * how many have none — so an imbalance is one glance.
+ * *Team load*: everyone with **committed** work in the chosen space, heaviest
+ * first, and how many have none — so an imbalance is one glance. Backlog and
+ * review are not load (D-092), so a person holding only those is counted with
+ * the people who have nothing committed.
  */
 export function teamLoad(
   people: readonly CapacityEntry[],
   space: string | null,
 ): { readonly rows: CapacityEntry[]; readonly idle: number; readonly scale: number } {
-  const busy = people.filter((p) => workloadIn(p, space).open > 0);
+  const busy = people.filter((p) => workloadIn(p, space).committed > 0);
   const rows = [...busy].sort((a, b) => byLoad(a, b, space) || a.name.localeCompare(b.name));
-  const scale = Math.max(1, ...rows.map((p) => workloadIn(p, space).open));
+  const scale = Math.max(1, ...rows.map((p) => workloadIn(p, space).committed));
   return { rows, idle: people.length - busy.length, scale };
 }
 

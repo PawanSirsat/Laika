@@ -163,6 +163,7 @@ function CapacityRoute() {
     route: { navigate, params, setParams },
     unlistedOpen,
     reviewWaiting,
+    reviewCapped,
   } = useShell();
   const project = params.get('project');
   useEffect(() => {
@@ -176,6 +177,7 @@ function CapacityRoute() {
       onOpenTask={openTaskInItsSpace(navigate)}
       unlistedOpen={unlistedOpen}
       reviewWaiting={reviewWaiting}
+      reviewCapped={reviewCapped}
       onNavigate={navigate}
     />
   );
