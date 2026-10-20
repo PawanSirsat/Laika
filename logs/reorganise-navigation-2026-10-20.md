@@ -25,7 +25,8 @@
 
 **Discovered**
 - The board toolbar's sprint pill flips tier when hovered at its pill/compact boundary (an 860px column — now what a 920px window gives with the rail), so the pill never opens; `board-sprint-stats.test.ts` failed on it in the gate. The test now opens the sidebar at 920px, the geometry it was written for. → LAI-804 filed (discovered-from: LAI-796).
-- Two merges of master during the work: LAI-795 (slim lists — `listTasks` is slim, so On your plate reads `TaskSummary`) and LAI-788 (Solidtime; `EntryRow`'s import rule is unchanged inside the new layout). No conflicts. LAI-799 (slim the review queue) will change what the shell holds; My day's plate reads only `task.id`, `key`, `title`, `project.slug`, `can_decide` and `round.ci`, so it should survive a slimmer queue — whoever builds LAI-799 should keep those.
+- Two merges of master during the work: LAI-795 (slim lists — `listTasks` is slim, so On your plate reads `TaskSummary`) and LAI-788 (Solidtime; `EntryRow`'s import rule is unchanged inside the new layout). No conflicts.
+- LAI-799 (slim the review queue) will change what the shell holds; My day's plate reads only `task.id`, `key`, `title`, `project.slug`, `can_decide` and `round.ci`, so it should survive a slimmer queue — whoever builds LAI-799 should keep those.
 - Before: the sidebar was 212px while `--rail-width` said 280px, and nothing read `--rail-width`; it now matches the sidebar (232/60px).
 
 **State**
