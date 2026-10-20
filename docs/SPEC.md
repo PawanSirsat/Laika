@@ -2728,7 +2728,8 @@ models, the headline tokens of models with no price beside them (never priced
 at zero), and the priced models whose price was inferred. `GET /usage` adds
 `totals.cost`, `org_totals.cost`, `by_model[].cost` (a number, or `null` with no
 price), `by_developer[].cost` (only where `by_developer` is served — owners and
-admins on a session), and:
+admins on a session), `by_project[].cost` (the organisation only, LAI-814),
+and:
 
 - `telemetry` — `{ tokens, cost_usd_reported }`: what OpenTelemetry added over
   the files in the range, and Claude Code's own cost figure for the
