@@ -103,3 +103,41 @@ export function plateOf(
 
   return { inProgress, review, blocked };
 }
+
+/**
+ * At most this many items a group (LAI-810): a column beside the day, not a
+ * second inbox. The owner's live review queue was 200 long, drawn whole.
+ */
+export const PLATE_CAP = 5;
+
+export type PlateGroup = 'progress' | 'review' | 'blocked';
+
+/** The first `cap` items, and how many more there are. */
+export function capped<T>(
+  items: readonly T[],
+  cap: number = PLATE_CAP,
+): { readonly shown: readonly T[]; readonly more: number } {
+  return { shown: items.slice(0, cap), more: Math.max(0, items.length - cap) };
+}
+
+/**
+ * Where *+N more* leads: the review tab of the Inbox for what waits on the
+ * reader, and otherwise the List of the space the first hidden item is in,
+ * filtered to the reader — in progress, or all their open work for what is
+ * blocked (no URL filter says *blocked*; `?ready=false` means something
+ * else, SPEC §4.5).
+ */
+export function moreHref(
+  group: PlateGroup,
+  hidden: readonly PlateItem[],
+  meId: string | undefined,
+): string {
+  if (group === 'review') return '/inbox?tab=review';
+  const params = new URLSearchParams();
+  const slug = hidden[0]?.slug;
+  if (slug !== undefined) params.set('project', slug);
+  if (meId !== undefined) params.set('assignee', meId);
+  if (group === 'progress') params.set('status', 'in_progress');
+  const query = params.toString();
+  return query === '' ? '/list' : `/list?${query}`;
+}

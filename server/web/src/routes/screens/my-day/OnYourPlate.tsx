@@ -7,11 +7,15 @@ import { getTask, listTasks, type TaskStatus } from '../../../api/tasks.ts';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import {
   blockerIds,
+  capped,
+  moreHref,
   plateOf,
   type Blocker,
   type MineTask,
+  type PlateGroup,
   type PlateItem,
 } from './plate-derive.ts';
+import { plainClick, taskHref } from './task-link.ts';
 
 export interface OnYourPlateProps {
   readonly me: MeProfile | undefined;
@@ -109,7 +113,7 @@ export function OnYourPlate({ me, queue, onNavigate }: OnYourPlateProps) {
 
   const follow = (to: string) => (event: MouseEvent) => {
     // Modified clicks stay the browser's — new tab, new window.
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (!plainClick(event)) return;
     event.preventDefault();
     onNavigate(to);
   };
@@ -117,53 +121,61 @@ export function OnYourPlate({ me, queue, onNavigate }: OnYourPlateProps) {
   const plate = load.kind === 'ready' ? plateOf(load.mine, load.blockers, queue) : undefined;
 
   const group = (
-    id: string,
+    id: PlateGroup,
     title: string,
-    tone: 'progress' | 'review' | 'blocked',
     items: readonly PlateItem[] | undefined,
     empty: string,
     more?: { readonly href: string; readonly label: string },
-  ) => (
-    <div className="plate-group" data-plate={id}>
-      <h3 className="plate-head">
-        <span className={`plate-dot plate-dot-${tone}`} aria-hidden="true" />
-        {title}
-        {items !== undefined && <span className="plate-count">{items.length}</span>}
-        {more !== undefined && (
-          <a className="plate-more" href={more.href} onClick={follow(more.href)}>
-            {more.label} →
-          </a>
-        )}
-      </h3>
-      {items === undefined ? (
-        <p className="myday-quiet">Reading…</p>
-      ) : items.length === 0 ? (
-        <p className="myday-quiet">{empty}</p>
-      ) : (
-        <ul className="plate-list">
-          {items.map((item) => {
-            const href =
-              item.slug === undefined
-                ? `/board?q=${encodeURIComponent(item.key)}`
-                : `/board?project=${encodeURIComponent(item.slug)}&task=${encodeURIComponent(item.id)}`;
-            return (
-              <li key={item.id}>
-                <a className="plate-item" href={href} onClick={follow(href)}>
-                  <span className="plate-key">{item.key}</span>
-                  <span className="plate-title">{item.title}</span>
+  ) => {
+    const { shown, more: hidden } = capped(items ?? []);
+    const rest = moreHref(id, (items ?? []).slice(shown.length), me?.id);
+    return (
+      <div className="plate-group" data-plate={id}>
+        <h3 className="plate-head">
+          <span className={`plate-dot plate-dot-${id}`} aria-hidden="true" />
+          {title}
+          {items !== undefined && <span className="plate-count">{items.length}</span>}
+          {/* Once *+N more* leads to the same place, the header need not. */}
+          {more !== undefined && hidden === 0 && (
+            <a className="plate-more" href={more.href} onClick={follow(more.href)}>
+              {more.label} →
+            </a>
+          )}
+        </h3>
+        {items === undefined ? (
+          <p className="myday-quiet">Reading…</p>
+        ) : items.length === 0 ? (
+          <p className="myday-quiet">{empty}</p>
+        ) : (
+          <ul className="plate-list">
+            {shown.map((item) => {
+              const href = taskHref(item, item.slug);
+              return (
+                <li key={item.id}>
+                  <a className="plate-item" href={href} onClick={follow(href)}>
+                    <span className="plate-key">{item.key}</span>
+                    <span className="plate-title">{item.title}</span>
+                  </a>
+                  {item.note !== undefined && (
+                    <span className={`plate-note plate-note-${item.tone ?? 'wait'}`}>
+                      {item.note}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+            {hidden > 0 && (
+              <li>
+                <a className="plate-rest" href={rest} onClick={follow(rest)} data-plate-more>
+                  +{hidden} more
                 </a>
-                {item.note !== undefined && (
-                  <span className={`plate-note plate-note-${item.tone ?? 'wait'}`}>
-                    {item.note}
-                  </span>
-                )}
               </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
+            )}
+          </ul>
+        )}
+      </div>
+    );
+  };
 
   return (
     <section className="myday-card myday-plate" aria-labelledby="myday-plate-title">
@@ -180,16 +192,15 @@ export function OnYourPlate({ me, queue, onNavigate }: OnYourPlateProps) {
       )}
       {plate !== undefined && (
         <div className="plate-groups">
-          {group('progress', 'In progress', 'progress', plate.inProgress, 'Nothing in progress.')}
+          {group('progress', 'In progress', plate.inProgress, 'Nothing in progress.')}
           {group(
             'review',
             'Waiting on your review',
-            'review',
             plate.review,
             'Nothing waiting for you to decide.',
             { href: '/inbox?tab=review', label: 'Inbox' },
           )}
-          {group('blocked', 'Blocked', 'blocked', plate.blocked, 'Nothing of yours is blocked.')}
+          {group('blocked', 'Blocked', plate.blocked, 'Nothing of yours is blocked.')}
         </div>
       )}
     </section>

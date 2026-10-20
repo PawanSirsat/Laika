@@ -1,8 +1,10 @@
 import type { MyDayAgent } from '../../../api/time.ts';
+import { CardLink } from './CardLink.tsx';
 import { agentMinutes } from './my-day-derive.ts';
 
 export interface AgentStripProps {
   readonly agent: MyDayAgent;
+  readonly onNavigate: (to: string) => void;
 }
 
 /**
@@ -10,9 +12,10 @@ export interface AgentStripProps {
  * never hours, and never added to the person's day.** The agent working is
  * not the person working, and an hour figure beside theirs would read as one.
  * Keyboard minutes are the person's own time inside Claude Code, shown as
- * evidence beside it. Per card the way tokens are tied to cards.
+ * evidence beside it. Per card the way tokens are tied to cards, each card a
+ * link to it (LAI-810) — by key, as this view does not say its space.
  */
-export function AgentStrip({ agent }: AgentStripProps) {
+export function AgentStrip({ agent, onNavigate }: AgentStripProps) {
   const nothing =
     agent.minutes === 0 && agent.keyboard_minutes === 0 && agent.unattributed_minutes === 0;
   return (
@@ -43,7 +46,7 @@ export function AgentStrip({ agent }: AgentStripProps) {
               {agent.by_task.map((row) => (
                 <li key={row.task.id}>
                   <span className="myday-agent-task">
-                    {row.task.key} {row.task.title}
+                    <CardLink task={row.task} slug={undefined} onNavigate={onNavigate} />
                   </span>
                   <span className="myday-agent-min">{agentMinutes(row.minutes)}</span>
                 </li>

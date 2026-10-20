@@ -11,6 +11,11 @@
  * Laid out after the owner's reference (LAI-796): the week in the header,
  * the day and its lists in the wide column, and *On your plate*, *Agent
  * minutes* and *Draft my time* in a column beside it.
+ *
+ * Made for a busy day (LAI-810): each list pages in a scroll area of its
+ * own, and the column beside the day is bounded — sticky on a laptop and
+ * scrolling within the viewport, so the page is as long as the day and no
+ * longer.
  */
 
 .myday-page {
@@ -44,9 +49,31 @@
   gap: 1rem;
 }
 
+/*
+ * Beside the day, and never longer than the viewport (LAI-810): sticky in
+ * `.shell-main`, the one scroller, and scrolling on its own past that. The
+ * shell draws no header above the scroller while there are two columns, so
+ * the viewport is the whole budget. `overscroll-behavior` keeps a wheel at
+ * its end from scrolling the page underneath.
+ */
+.myday-side {
+  position: sticky;
+  top: 1rem;
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
 @container myday (max-width: 60rem) {
   .myday-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Stacked under the day on a phone, and still bounded. */
+  .myday-side {
+    position: static;
+    max-height: min(44rem, 80dvh);
   }
 }
 
@@ -118,11 +145,45 @@
   color: var(--overdue);
 }
 
+.myday-settings {
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
 .myday-settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.myday-settings-note {
+  font-size: var(--text-xs);
+}
+
+.myday-settings-more {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: var(--text-xs);
+}
+
+.myday-settings-more > summary {
+  cursor: pointer;
+  width: max-content;
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+}
+
+.myday-settings-more > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.myday-settings-more[open] > summary {
+  margin-bottom: 0.5rem;
 }
 
 /* ------------------------------------------------------------------ chips */
@@ -352,58 +413,76 @@
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
 }
 
+/*
+ * One line a row (LAI-810), divided rather than boxed: forty dashed cards
+ * were the noise. A draft keeps its dashed mark — not yet anybody's record —
+ * on its left edge; an entry's is solid.
+ */
 .myday-block,
 .myday-entry {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
-  padding: 0.625rem 0.75rem;
-  border-radius: var(--radius-card);
+  gap: 0.125rem;
+  padding: 0.4375rem 0.625rem 0.4375rem 0.75rem;
+  border-left: 3px dashed var(--accent-border);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
-/* A draft is dashed — not yet anybody's record; an entry is solid. */
-.myday-block {
-  border: 1px dashed var(--accent-border);
-  background: var(--bg-card);
+.myday-blocks > li:last-child {
+  border-bottom: none;
 }
 
 .myday-block-untied {
-  border-color: var(--chip-orange-border);
+  border-left-color: var(--chip-orange);
+}
+
+.myday-block-selected {
+  background: var(--accent-bg);
 }
 
 .myday-entry {
-  border: 1px solid var(--border-card);
-  background: var(--bg-column);
+  border-left-style: solid;
+  border-left-color: var(--chip-green-border);
 }
 
 .myday-block-main {
-  display: grid;
-  grid-template-columns: 7.5rem 3.5rem minmax(0, 1fr);
-  align-items: baseline;
-  gap: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+  min-height: 2rem;
 }
 
 .myday-block-time,
 .myday-block-minutes {
+  flex: none;
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   color: var(--text-secondary);
 }
 
+.myday-block-time {
+  width: 7.25rem;
+}
+
 .myday-block-minutes {
+  width: 2.75rem;
   font-weight: var(--weight-bold);
   color: var(--text-primary);
 }
 
 .myday-block-target {
+  flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-ui);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
-  overflow-wrap: anywhere;
 }
 
 .myday-block-untied .myday-block-target {
@@ -411,9 +490,18 @@
 }
 
 .myday-block-evidence {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
   margin: 0;
+  /* Lined up with the time, past the box. */
+  padding-left: calc(1rem + 0.625rem);
   font-size: var(--text-xs);
   color: var(--text-muted);
+}
+
+.myday-entry .myday-block-evidence {
+  padding-left: 0;
 }
 
 .myday-block-note {
@@ -422,9 +510,182 @@
 
 .myday-block-actions {
   display: flex;
+  flex: none;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.375rem;
+}
+
+.myday-block-main > .myday-block-actions {
+  margin-left: auto;
+}
+
+.myday-block-main .myday-chip {
+  padding: 0.1875rem 0.625rem;
+  font-size: var(--text-xs);
+}
+
+.myday-more {
+  min-width: 2rem;
+  justify-content: center;
+  letter-spacing: 0.08em;
+}
+
+.myday-check {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.myday-check:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.myday-check:disabled {
+  cursor: default;
+}
+
+/* A card's key and title, as a link to it (LAI-810). */
+.myday-cardlink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.myday-cardlink-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.myday-cardlink:hover .myday-cardlink-title {
+  text-decoration: underline;
+}
+
+.myday-cardlink:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* ------------------------------------------------- scroll areas and paging */
+
+/*
+ * A list in a scroll area of its own (LAI-810), so the bulk bar above it and
+ * the pager under it stay in view on a page of ten.
+ */
+.myday-scroll {
+  max-height: min(34rem, 62dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+}
+
+.myday-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.myday-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.myday-pager-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* A button that reads as a link: *Select all 37 drafted*, *Show them*. */
+.myday-linkish {
+  margin: 0 0 0 auto;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.myday-linkish:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.myday-linkish:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.myday-linkish:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* --------------------------------------------------------------- bulk bar */
+
+.myday-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-card);
+  background: var(--accent-bg);
+}
+
+.myday-bulk-count {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.myday-bulk-count strong {
+  color: var(--text-primary);
+}
+
+.myday-bulk-warn {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--chip-orange);
+}
+
+.myday-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin-left: auto;
+}
+
+.myday-bulk-progress,
+.myday-bulk-said {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.myday-bulk-progress progress {
+  width: 8rem;
+  accent-color: var(--accent);
+}
+
+.myday-bulk-said-warn {
+  color: var(--chip-orange);
+  font-weight: var(--weight-semibold);
 }
 
 .myday-block-form,
@@ -710,12 +971,13 @@
 
 .plate-list li {
   display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
+  align-items: baseline;
+  gap: 0.5rem;
   min-width: 0;
 }
 
 .plate-item {
+  flex: 1;
   display: flex;
   align-items: baseline;
   gap: 0.625rem;
@@ -731,7 +993,8 @@
 }
 
 .plate-item:focus-visible,
-.plate-more:focus-visible {
+.plate-more:focus-visible,
+.plate-rest:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: var(--radius-chip);
@@ -753,8 +1016,22 @@
 }
 
 .plate-note {
+  flex: none;
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
+}
+
+/* *+N more*: the rest, where they live (LAI-810). */
+.plate-rest {
+  padding: 0.1875rem 0;
+  font-size: var(--text-ui);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.plate-rest:hover {
+  text-decoration: underline;
 }
 
 .plate-note-ok {
@@ -798,14 +1075,29 @@
     display: none;
   }
 
+  /* The title on a line of its own, under when and how long. */
   .myday-block-main {
-    grid-template-columns: auto auto;
-    justify-content: start;
-    column-gap: 0.75rem;
+    flex-wrap: wrap;
+    row-gap: 0.125rem;
+  }
+
+  .myday-block-time {
+    width: auto;
   }
 
   .myday-block-target {
-    grid-column: 1 / -1;
+    order: 1;
+    flex: 1 1 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .myday-block-evidence {
+    padding-left: 0;
+  }
+
+  .myday-bulk-actions {
+    margin-left: 0;
   }
 
   .myday-form-row {
