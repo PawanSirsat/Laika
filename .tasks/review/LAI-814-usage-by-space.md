@@ -8,7 +8,7 @@ depends-on: []
 discovered-from: LAI-769
 status: review
 started: 2026-10-20T12:14:07Z
-finished: 2026-10-20T12:47:04Z
+finished: 2026-10-20T18:36:05Z
 ---
 
 ## Goal
@@ -63,7 +63,7 @@ unattributed row has `project_id = NULL`.
       - A space the reader cannot read is absent.
       - Cost uses the same prices as the totals.
       - Prove one by mutation, confirming the mutation landed.
-- [ ] **Gate.** `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] **Gate.** `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Notes
 
@@ -118,11 +118,12 @@ Full record in `logs/usage-by-space-2026-10-20.md`.
   (pinned-token test red); client type without `share` (drift red);
   `outsideAnySpace` not subtracting (2 red); `?project=` not passed to the
   screen (both new browser tests red).
-- **Gate — not ticked.** `pnpm lint` 0 and `pnpm format` 0. **`pnpm test` was
-  not run**: the task was dispatched with the root gate forbidden (the machine
-  was hot and another builder was gating; polly gates on master after the
-  merge). Instead every affected file was run alone, each exit 0 — the list
-  and counts are in the log.
+- **Gate.** Round 0 left it unticked: the root gate was forbidden at dispatch,
+  so every affected file was run alone instead (list in the log). **Round 1
+  ran it once, on `161a1559` with a clean tree**: `pnpm test` 0 (web
+  2336/2336; cli 530 pass, 2 skipped; server 3287 pass, 10 skipped, 159 files
+  + 2 skipped), `pnpm lint` 0, `pnpm format` 0 — each to its own file, its own
+  exit code.
 
 **Filed: LAI-825** (round 1, from review). `?project=` on `/insights` makes the
 shell treat that space as open, as on Members and Meeting review: the sidebar

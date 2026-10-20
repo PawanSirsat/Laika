@@ -107,3 +107,63 @@ and 10.3M unattributed: `usage-by-space-{light,dark}-{1440,390}-{page,card}.png`
 
 **State**
 Moved to .tasks/review/. Gate criterion left unticked: `pnpm test` not run here.
+
+## 2026-10-20T18:36:05Z — LAI-814 (review round 1)
+
+Sent back BLOCK on one defect, plus three non-blocking notes. The card's
+`start_working` refused while it sat in Review (409, *already claimed*), so it
+was moved to In progress with `update_status` and then marked.
+
+**What changed**
+- server/web/src/routes/screens/usage/usage-derive.ts — `offeredSpaces()` (the
+  selector's spaces, All spaces aside; `null` with no list) and `spaceRow()`
+  (`link` / `archived` / `plain`).
+- server/web/src/routes/screens/usage/BySpaceCard.tsx — a row links only when
+  `spaceRow` says `link`; otherwise the name is plain text, with an
+  **archived** marker when the list loaded and lacks the space.
+- server/web/src/routes/screens/usage/UsageScreen.tsx — computes `offered` and
+  threads it to the card.
+- server/web/src/routes/screens/usage/usage.css — `.usage-space-name` truncates
+  like a link; `.usage-space-archived` is the muted marker.
+- server/web/test/browser/usage.test.ts — an org view whose `by_project` holds
+  an archived space and whose `GET /projects` sends its tombstone.
+- server/web/test/routes/screens/usage/usage-derive.test.ts — the two helpers.
+- .tasks/backlog/LAI-825-usage-project-param-lights-a-space.md — filed.
+- .tasks/review/LAI-814-usage-by-space.md — round-1 notes, Gate ticked,
+  `finished` updated.
+
+**Decisions**
+- The marker says *archived* only when the space list loaded: if
+  `GET /projects` failed nothing is known, so no row links and none is marked,
+  rather than calling every space archived.
+- Kept the fix on the client, as the reviewer decided, rather than adding an
+  `archived` field to `by_project`: the rule that matters is *what the selector
+  can open*, and that is the client's to know.
+
+**Discovered**
+- `?project=` on Insights lights the space in the sidebar and opens its event
+  stream → LAI-825 filed (discovered-from: LAI-814). The id sweep, both halves
+  plus subjects, was run twice — before writing the file and again immediately
+  before staging it — and was unchanged; LAI-815…824 are all taken on some
+  branch, so 825 was the lowest free in CHIEF's block.
+- No service hard-deletes a task or a space (searched `server/src` for both
+  forms); the *tied to no task* edge in the task notes needs a manual or future
+  delete.
+
+**Tests**
+- Before the fix, each failing: `node --test --test-name-pattern archived
+  test/browser/usage.test.ts` exit 1 (`expected: 0, actual: 1` on the archived
+  row's links); `node --test test/routes/screens/usage/usage-derive.test.ts`
+  exit 1 (no export).
+- After: usage-derive 0 (10/10), browser/usage 0 (17/17), web typecheck 0.
+- **Full gate once, on `161a1559`, clean tree**: `pnpm test` 0 — web 2336/2336,
+  cli 530 pass / 2 skipped, server 3287 pass / 10 skipped (159 files + 2
+  skipped); `pnpm lint` 0; `pnpm format` 0. Run as one background job (so the
+  tool's 10-minute cap could not kill it mid-run) and waited on with nothing
+  else running, each command to its own file and exit code.
+
+**Screenshots** — added
+`/tmp/laika-usage-shots/usage-by-space-archived-{light,dark}-{1440,390}-card.png`.
+
+**State**
+Back in .tasks/review/, every criterion ticked. Not pushed.
