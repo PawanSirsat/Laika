@@ -21,13 +21,14 @@ import {
   confirmDraft,
   deleteOwnDrafts,
   dismissDraft,
+  draftsOn,
   proposeTimeDraft,
   recordTimeDrafts,
   splitDraft,
   type DraftBlockInput,
   updateDraft,
 } from '../../src/services/time-drafts.ts';
-import { createEntry } from '../../src/services/time-entries.ts';
+import { createEntry, deleteEntry, updateEntry } from '../../src/services/time-entries.ts';
 import { setOrgTimeMode, setTimeSettings } from '../../src/services/time-settings.ts';
 import { freshDb, seed, type TestDb } from '../helpers/db.ts';
 import { work } from '../helpers/work.ts';
@@ -424,6 +425,125 @@ describe('the person’s hands', () => {
         .all()
         .map((r) => r.state),
     ).toEqual(['confirmed']);
+  });
+});
+
+/**
+ * Review round 1, B1. The collector sends one block per task per stretch, so
+ * the blocks of tasks worked in parallel overlap — the normal case, not the
+ * edge. A re-sent day is matched to what the person settled by **identity**,
+ * the same task's overlapping stretch, and only **minutes** are taken off:
+ * settling one task's block never costs another task's, and nothing confirmed
+ * comes back, whatever has happened to its entry since.
+ */
+describe('a re-sent day after the person settled part of it', () => {
+  const shown = () =>
+    draftsOn(t.db, bea.userId, DAY).map((d) => [
+      d.task?.key ?? d.task_key,
+      d.started_at,
+      d.ended_at,
+      d.minutes,
+    ]);
+  const idOf = (key: string | null): string =>
+    draftsOn(t.db, bea.userId, DAY).find((d) => (d.task?.key ?? null) === key)?.id ?? '';
+
+  it('keeps a parallel task’s block whole when the other task is confirmed', () => {
+    const day = [
+      block(AT(9), AT(10), 'LAI-1', { minutes: 30 }),
+      block(AT(9), AT(10), 'LAI-2', { minutes: 30 }),
+    ];
+    send(day);
+    confirmDraft(t.db, bea, idOf('LAI-1'), NOW);
+    send(day);
+    expect(shown()).toEqual([['LAI-2', AT(9), AT(10), 30]]);
+  });
+
+  it('keeps a block whole when an untied block inside it is dismissed', () => {
+    const day = [block(AT(9), AT(9, 40), 'LAI-1'), block(AT(9, 10), AT(9, 30))];
+    send(day);
+    dismissDraft(t.db, bea, idOf(null), NOW);
+    send(day);
+    expect(shown()).toEqual([['LAI-1', AT(9), AT(9, 40), 40]]);
+  });
+
+  it('keeps the inner block when the outer one is confirmed', () => {
+    const day = [block(AT(9), AT(9, 40), 'LAI-1'), block(AT(9, 10), AT(9, 30))];
+    send(day);
+    confirmDraft(t.db, bea, idOf('LAI-1'), NOW);
+    send(day);
+    expect(shown()).toEqual([[null, AT(9, 10), AT(9, 30), 20]]);
+  });
+
+  it('does not bring a confirmed block back when its entry is deleted', () => {
+    send([block(AT(9), AT(10), 'LAI-1')]);
+    const entry = confirmDraft(t.db, bea, idOf('LAI-1'), NOW);
+    deleteEntry(t.db, bea, entry.id, NOW);
+    send([block(AT(9), AT(10), 'LAI-1')]);
+    expect(shown()).toEqual([]);
+  });
+
+  it('does not bring a confirmed block back when its entry moves to another day', () => {
+    send([block(AT(9), AT(10), 'LAI-1')]);
+    const entry = confirmDraft(t.db, bea, idOf('LAI-1'), NOW);
+    updateEntry(t.db, bea, entry.id, { day: '2026-10-19' }, NOW);
+    send([block(AT(9), AT(10), 'LAI-1')]);
+    expect(shown()).toEqual([]);
+  });
+
+  it('drafts only the growth of a stretch whose start was confirmed', () => {
+    send([block(AT(9), AT(10), 'LAI-1')]);
+    confirmDraft(t.db, bea, idOf('LAI-1'), NOW);
+    send([block(AT(9), AT(11), 'LAI-1')]);
+    expect(shown()).toEqual([['LAI-1', AT(10), AT(11), 60]]);
+  });
+
+  it('does not draft again a confirmed stretch that a later commit tied to a card', () => {
+    // Confirmed untied, as General; a commit then gives its last 11 minutes a key.
+    send([block(AT(9), AT(9, 40))]);
+    confirmDraft(t.db, bea, idOf(null), NOW);
+    send([block(AT(9), AT(9, 29)), block(AT(9, 29), AT(9, 40), 'LAI-1')]);
+    expect(shown()).toEqual([]);
+  });
+
+  it('keeps the minutes the person confirmed, not the ones the collector sent', () => {
+    send([block(AT(9), AT(10), 'LAI-1')]);
+    updateDraft(t.db, bea, idOf('LAI-1'), { minutes: 45 }, NOW);
+    confirmDraft(t.db, bea, idOf('LAI-1'), NOW);
+    send([block(AT(9), AT(10), 'LAI-1')]);
+    expect(shown()).toEqual([]);
+  });
+
+  it('keeps what was confirmed settled when Draft my time is turned off and on', () => {
+    send([block(AT(9), AT(10), 'LAI-1')]);
+    confirmDraft(t.db, bea, idOf('LAI-1'), NOW);
+    setTimeSettings(t.db, bea, { draft_my_time: false }, NOW);
+    setTimeSettings(t.db, bea, { draft_my_time: true }, NOW);
+    send([block(AT(9), AT(10), 'LAI-1')]);
+    expect(shown()).toEqual([]);
+  });
+});
+
+/**
+ * Review round 1, item 4. A timeless manual entry — a call, a meeting —
+ * overlaps nothing it can be compared with, so the day's 1440 minutes are what
+ * keep drafts and manual time from being confirmed past a day.
+ */
+describe('manual time and drafts on one day', () => {
+  it('cannot be confirmed past the day’s 1440 minutes, one by one or all at once', () => {
+    send([
+      block(AT(0), AT(8, 20), 'LAI-1', { minutes: 500 }),
+      block(AT(9), AT(17, 20), 'LAI-2', { minutes: 500 }),
+    ]);
+    createEntry(t.db, bea, { day: DAY, tz: 'UTC', minutes: 600, note: 'Workshop' }, NOW);
+    const [first, second] = draftsOn(t.db, bea.userId, DAY);
+    expect(reason(() => confirmDay(t.db, bea, DAY, NOW))).toBe('unprocessable:day_full');
+    expect(reason(() => confirmDraft(t.db, bea, first?.id ?? '', NOW))).toBe('no error');
+    expect(reason(() => confirmDraft(t.db, bea, second?.id ?? '', NOW))).toBe(
+      'unprocessable:day_full',
+    );
+    expect(
+      getMyDay(t.db, bea, { day: DAY, tz: 'UTC' }, NOW).entries.reduce((n, e) => n + e.minutes, 0),
+    ).toBe(1100);
   });
 });
 

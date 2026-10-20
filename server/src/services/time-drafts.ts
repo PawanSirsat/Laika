@@ -1,10 +1,10 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type TimeDraftSource } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
-import { projects, tasks, timeDrafts, timeEntries } from '../db/schema.ts';
+import { projects, tasks, timeDrafts } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { addDays, dayIn, isTimeZone } from './calendar-days.ts';
@@ -41,17 +41,38 @@ import { assertDrafting, assertTimeOn } from './time-settings.ts';
  * of numbers, a zone and a key-shaped string, and the table has no column that
  * could hold a prompt, a path, a repository or a branch.
  *
- * ## An upload replaces, and is clipped around what is settled
+ * ## An upload replaces its own blocks, and is measured by origin
  *
- * A collector's upload replaces **its own pending** blocks for each day it
- * carries — a retry changes nothing, and a block that grew since the last sync
- * is sent whole again. Each new block is then **clipped to the parts outside**
- * every span already settled that day: the person's live entries (time they
- * confirmed), drafts they dismissed, drafts they edited or split (held for
- * them), and another machine's blocks (so two machines working at once are a
- * union, not a sum). Its minutes shrink by the share of its span clipped. So a
- * confirmed or dismissed block never comes back, and a person's edit is never
- * overwritten by the next sync.
+ * A collector's upload replaces **its own unheld pending** blocks for each day
+ * it carries — a retry changes nothing, and a block that grew since the last
+ * sync is sent whole again. What it is then measured against is everything
+ * else on the day that came from a block: drafts the person confirmed,
+ * dismissed, or edited or split (held for them), and another machine's
+ * blocks. Each keeps its **origin** — the block as first stored, which no
+ * edit changes and the halves of a split share (§4.47) — so a confirmed
+ * draft is measured against for as long as it is kept, **whatever has since
+ * happened to its entry**: deleted, or moved to another day, its block does
+ * not come back.
+ *
+ * The collector sends one block per task per stretch (a run of active
+ * minutes), so the blocks of tasks worked in parallel overlap, and a
+ * stretch's blocks add up to its wall-clock minutes. Two rules follow, and
+ * both take off **minutes, never span**:
+ *
+ * - **By identity.** A block loses what origins of the **same task** that
+ *   overlap it already hold — each origin's minutes in proportion to how much
+ *   of its span lies in the block. Another task's settled block costs it
+ *   nothing. What is left sits on the part of its span those origins do not
+ *   cover, when that part can hold it.
+ * - **By the clock.** A stretch — blocks whose spans touch or overlap — keeps
+ *   no more than its own minutes less what is settled across it, of any
+ *   task. So a stretch confirmed whole is not drafted again when a later
+ *   commit ties part of it to a card, and two machines working the same
+ *   hours draft them once, never twice.
+ *
+ * Entries are not consulted: a confirmed block is measured by its draft, and
+ * a timeless manual entry overlaps nothing it could be compared with — the
+ * day's 1440 minutes are what keep the two from being confirmed past a day.
  */
 
 /** A collector may report this many days back, as a snapshot can (§6.4). */
@@ -166,48 +187,139 @@ export function clip(start: number, end: number, cuts: readonly Interval[]): Int
   return pieces;
 }
 
-/** The settled spans of a person's day that a collector's new blocks go around. */
-function settledSpans(tx: Tx, userId: string, day: string, collectorId: string): Interval[] {
-  const spans: Interval[] = [];
+/** A block as first stored: the halves of a split share one. */
+interface Origin {
+  task: string | null;
+  start: number;
+  end: number;
+  minutes: number;
+}
+
+/**
+ * Every origin on a person's day, once each — what a collector's new blocks
+ * are measured against once its own unheld blocks are gone. One range of
+ * `time_drafts_user_day_idx`. An agent's proposal has no origin.
+ */
+function originsOn(tx: Tx, userId: string, day: string): Origin[] {
+  const seen = new Map<string, Origin>();
   for (const r of tx
-    .select({ s: timeEntries.startedAt, e: timeEntries.endedAt })
-    .from(timeEntries)
-    .where(
-      and(
-        eq(timeEntries.userId, userId),
-        eq(timeEntries.day, day),
-        isNull(timeEntries.deletedAt),
-        isNotNull(timeEntries.startedAt),
-      ),
-    )
-    .all()) {
-    if (r.s !== null && r.e !== null) spans.push([r.s, r.e]);
-  }
-  for (const r of tx
-    .select({ s: timeDrafts.startedAt, e: timeDrafts.endedAt })
+    .select({
+      id: timeDrafts.originId,
+      task: timeDrafts.originTask,
+      start: timeDrafts.originStartedAt,
+      end: timeDrafts.originEndedAt,
+      minutes: timeDrafts.originMinutes,
+    })
     .from(timeDrafts)
     .where(
-      and(
-        eq(timeDrafts.userId, userId),
-        eq(timeDrafts.day, day),
-        isNotNull(timeDrafts.startedAt),
-        // Everything but this collector's own pending blocks, which the
-        // upload replaces — and a confirmed draft is its entry, above.
-        sql`NOT (${timeDrafts.collectorId} = ${collectorId} AND ${timeDrafts.state} = 'pending')`,
-        ne(timeDrafts.state, 'confirmed'),
-      ),
+      and(eq(timeDrafts.userId, userId), eq(timeDrafts.day, day), isNotNull(timeDrafts.originId)),
     )
     .all()) {
-    if (r.s !== null && r.e !== null) spans.push([r.s, r.e]);
+    if (r.id === null || r.start === null || r.end === null || r.minutes === null) continue;
+    if (!seen.has(r.id)) {
+      seen.set(r.id, { task: r.task, start: r.start, end: r.end, minutes: r.minutes });
+    }
   }
-  return spans.sort((a, b) => a[0] - b[0]);
+  return [...seen.values()];
+}
+
+/** The minutes of an origin that fall in `[start, end)`, by its share of the origin's span. */
+function heldIn(o: Origin, start: number, end: number): number {
+  const overlap = Math.min(o.end, end) - Math.max(o.start, start);
+  return overlap <= 0 ? 0 : (o.minutes * overlap) / (o.end - o.start);
+}
+
+/** What of a new block is still to draft: its minutes, and where they sit. */
+interface Remainder {
+  readonly block: DraftBlockInput;
+  readonly start: number;
+  readonly end: number;
+  readonly minutes: number;
+}
+
+/**
+ * New blocks measured against a day's origins, by the module comment's two
+ * rules: the same task's origins by identity, each stretch by the clock. Whole
+ * minutes, by largest remainder within a stretch; a block left with none is
+ * not kept.
+ */
+function remainders(blocks: readonly DraftBlockInput[], origins: readonly Origin[]): Remainder[] {
+  const draft = blocks.map((b) => {
+    const same = origins.filter((o) => o.task === b.task && o.end > b.start && o.start < b.end);
+    const held = same.reduce((n, o) => n + heldIn(o, b.start, b.end), 0);
+    const exact = Math.max(0, b.minutes - held);
+    const rest = clip(
+      b.start,
+      b.end,
+      same.map((o): Interval => [o.start, o.end]),
+    );
+    const first = rest[0];
+    const last = rest.at(-1);
+    const fits =
+      first !== undefined && last !== undefined && exact <= (last[1] - first[0]) / MINUTE_MS;
+    return {
+      block: b,
+      start: fits ? first[0] : b.start,
+      end: fits ? last[1] : b.end,
+      exact,
+      minutes: 0,
+    };
+  });
+
+  // Stretches: blocks whose spans touch or overlap, in order of start.
+  const order = draft
+    .map((_, i) => i)
+    .sort((a, b) => (draft[a]?.block.start ?? 0) - (draft[b]?.block.start ?? 0));
+  const stretches: number[][] = [];
+  let reach = -Infinity;
+  for (const i of order) {
+    const b = draft[i]?.block;
+    if (b === undefined) continue;
+    if (b.start > reach) {
+      stretches.push([i]);
+      reach = b.end;
+    } else {
+      stretches.at(-1)?.push(i);
+      reach = Math.max(reach, b.end);
+    }
+  }
+
+  for (const stretch of stretches) {
+    const members = stretch.map((i) => draft[i]).filter((d) => d !== undefined);
+    const from = Math.min(...members.map((d) => d.block.start));
+    const to = Math.max(...members.map((d) => d.block.end));
+    const own = members.reduce((n, d) => n + d.block.minutes, 0);
+    const settled = origins.reduce((n, o) => n + heldIn(o, from, to), 0);
+    const room = Math.max(0, own - settled);
+    const wanted = members.reduce((n, d) => n + d.exact, 0);
+    const scale = wanted > room && wanted > 0 ? room / wanted : 1;
+    const shares = members.map((d) => d.exact * scale);
+    const target = Math.floor(Math.min(room, wanted) + 1e-9);
+    members.forEach((d, k) => {
+      d.minutes = Math.floor((shares[k] ?? 0) + 1e-9);
+    });
+    let left = target - members.reduce((n, d) => n + d.minutes, 0);
+    members
+      .map((d, k) => ({ d, frac: (shares[k] ?? 0) - d.minutes }))
+      .sort((a, b) => b.frac - a.frac || a.d.block.start - b.d.block.start)
+      .forEach(({ d, frac }) => {
+        if (left > 0 && frac > 1e-9) {
+          d.minutes += 1;
+          left -= 1;
+        }
+      });
+  }
+
+  return draft
+    .filter((d) => d.minutes >= 1)
+    .map((d) => ({ block: d.block, start: d.start, end: d.end, minutes: d.minutes }));
 }
 
 const REPORT_WINDOW = { daysBack: DRAFT_DAYS_BACK, maxDays: DRAFT_DAYS_BACK + 1 };
 
 /**
  * `PUT /me/time-drafts`: one collector's blocks for the days it carries, each
- * day's pending blocks replaced and clipped around what is settled.
+ * day's own unheld blocks replaced and the new ones measured by origin.
  */
 export function recordTimeDrafts(
   db: Db,
@@ -240,36 +352,38 @@ export function recordTimeDrafts(
           ),
         )
         .run();
-      const settled = settledSpans(tx, actor.userId, day, collectorId);
       const rows: (typeof timeDrafts.$inferInsert)[] = [];
-      for (const b of blocks) {
-        const span = b.end - b.start;
+      for (const r of remainders(blocks, originsOn(tx, actor.userId, day))) {
+        const b = r.block;
         const task = b.task === null ? undefined : resolved.get(b.task);
         const signals = zeroSignals();
         for (const kind of SIGNAL_KINDS) signals[kind] = b.signals[kind] ?? 0;
-        for (const [s, e] of clip(b.start, b.end, settled)) {
-          const minutes =
-            s === b.start && e === b.end ? b.minutes : Math.round((b.minutes * (e - s)) / span);
-          if (minutes < 1) continue;
-          rows.push({
-            id: newId(),
-            userId: actor.userId,
-            source: 'collector',
-            collectorId,
-            day,
-            tz: report.tz,
-            startedAt: s,
-            endedAt: e,
-            minutes,
-            taskKey: b.task !== null && task === undefined ? b.task : null,
-            taskId: task?.taskId ?? null,
-            projectId: task?.projectId ?? null,
-            signals: JSON.stringify(signals),
-            state: 'pending',
-            createdAt: now,
-            updatedAt: now,
-          });
-        }
+        const id = newId();
+        rows.push({
+          id,
+          userId: actor.userId,
+          source: 'collector',
+          collectorId,
+          day,
+          tz: report.tz,
+          startedAt: r.start,
+          endedAt: r.end,
+          minutes: r.minutes,
+          taskKey: b.task !== null && task === undefined ? b.task : null,
+          taskId: task?.taskId ?? null,
+          projectId: task?.projectId ?? null,
+          signals: JSON.stringify(signals),
+          state: 'pending',
+          // Its own origin: what a later upload is measured against once the
+          // person settles it.
+          originId: id,
+          originTask: b.task,
+          originStartedAt: r.start,
+          originEndedAt: r.end,
+          originMinutes: r.minutes,
+          createdAt: now,
+          updatedAt: now,
+        });
       }
       for (let i = 0; i < rows.length; i += 50) {
         tx.insert(timeDrafts)
@@ -542,9 +656,9 @@ export function splitDraft(
 }
 
 /**
- * `POST /me/time-drafts/:id/dismiss`: not work, or not worth keeping. Kept as
- * a tombstone until retention, so the collector's next upload is clipped
- * around it and the block does not come back.
+ * `POST /me/time-drafts/:id/dismiss`: not work, or not worth keeping. Kept
+ * until retention with its origin, so the collector's next upload of the same
+ * stretch is measured against it and the block does not come back.
  */
 export function dismissDraft(
   db: Db,

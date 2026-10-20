@@ -2172,9 +2172,12 @@ export const userTimeSettings = sqliteTable(
  * branch.
  *
  * A collector's pending blocks for a (person, collector, day) are replaced by
- * its next upload. A confirmed or dismissed draft stays as a tombstone until
- * retention, so a later upload is clipped around it and never brings it back.
- * Kept 30 days (§11.6).
+ * its next upload. Every block keeps its **origin** — the block as it was
+ * first stored, which a person's edit never changes and the two halves of a
+ * split share — and a re-sent block is matched to what is settled by that
+ * origin: the same task's overlapping stretch, its minutes taken off (§4.47).
+ * A confirmed or dismissed draft stays until retention for that reason, so
+ * nothing confirmed or dismissed comes back. Kept 30 days (§11.6).
  */
 export const timeDrafts = sqliteTable(
   'time_drafts',
@@ -2208,6 +2211,17 @@ export const timeDrafts = sqliteTable(
     entryId: text('entry_id').references((): AnySQLiteColumn => timeEntries.id, {
       onDelete: 'set null',
     }),
+    /**
+     * A collector block's origin (LAI-787 review B1): the id of the row as
+     * first stored, shared by the halves of a split; null for an agent's
+     * proposal. With it, the block as the collector sent it — its key (null
+     * when untied), span and minutes — which nothing the person does changes.
+     */
+    originId: text('origin_id'),
+    originTask: text('origin_task'),
+    originStartedAt: integer('origin_started_at'),
+    originEndedAt: integer('origin_ended_at'),
+    originMinutes: integer('origin_minutes'),
     createdAt,
     updatedAt,
   },
@@ -2230,6 +2244,12 @@ export const timeDrafts = sqliteTable(
       ),
     ),
     check('time_drafts_note_check', sql.raw('note IS NULL OR length(note) <= 200')),
+    check(
+      'time_drafts_origin_check',
+      sql.raw(
+        '(origin_id IS NULL AND origin_task IS NULL AND origin_started_at IS NULL AND origin_ended_at IS NULL AND origin_minutes IS NULL) OR (origin_id IS NOT NULL AND origin_started_at IS NOT NULL AND origin_ended_at > origin_started_at AND origin_minutes BETWEEN 1 AND 1440)',
+      ),
+    ),
   ],
 );
 

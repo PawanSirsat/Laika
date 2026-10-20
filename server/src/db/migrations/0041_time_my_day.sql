@@ -39,6 +39,11 @@ CREATE TABLE `time_drafts` (
 	`note` text,
 	`state` text DEFAULT 'pending' NOT NULL,
 	`entry_id` text,
+	`origin_id` text,
+	`origin_task` text,
+	`origin_started_at` integer,
+	`origin_ended_at` integer,
+	`origin_minutes` integer,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade,
@@ -50,7 +55,8 @@ CREATE TABLE `time_drafts` (
 	CONSTRAINT "time_drafts_minutes_check" CHECK(minutes BETWEEN 1 AND 1440),
 	CONSTRAINT "time_drafts_general_check" CHECK(general IN (0, 1)),
 	CONSTRAINT "time_drafts_span_check" CHECK((started_at IS NULL AND ended_at IS NULL) OR (started_at IS NOT NULL AND ended_at IS NOT NULL AND ended_at > started_at)),
-	CONSTRAINT "time_drafts_note_check" CHECK(note IS NULL OR length(note) <= 200)
+	CONSTRAINT "time_drafts_note_check" CHECK(note IS NULL OR length(note) <= 200),
+	CONSTRAINT "time_drafts_origin_check" CHECK((origin_id IS NULL AND origin_task IS NULL AND origin_started_at IS NULL AND origin_ended_at IS NULL AND origin_minutes IS NULL) OR (origin_id IS NOT NULL AND origin_started_at IS NOT NULL AND origin_ended_at > origin_started_at AND origin_minutes BETWEEN 1 AND 1440))
 );
 --> statement-breakpoint
 CREATE INDEX `time_drafts_user_day_idx` ON `time_drafts` (`user_id`,`day`);--> statement-breakpoint

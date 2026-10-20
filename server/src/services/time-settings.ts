@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { TIME_MODES, type TimeMode } from '../db/enums.ts';
@@ -20,11 +20,14 @@ export { TIME_MODES };
  * ## Either off stops drafting and deletes what is held
  *
  * A draft exists only while both are on. The organisation leaving `drafts`
- * deletes every person's drafts; a person turning *Draft my time* off deletes
- * theirs — in the same transaction as the switch, so there is no moment when
- * the switch says off and a draft is still readable. Confirmed entries are
- * records the person made and no switch touches them; `manual` still lets
- * people type their own.
+ * deletes every person's unconfirmed drafts; a person turning *Draft my time*
+ * off deletes theirs — in the same transaction as the switch, so there is no
+ * moment when the switch says off and a draft is still readable. **A confirmed
+ * draft stays**, its evidence blanked: it is what keeps the block it came from
+ * from being drafted again when drafting is turned back on (LAI-787 review
+ * B1), and retention deletes it after 30 days. Confirmed entries are records
+ * the person made and no switch touches them; `manual` still lets people type
+ * their own.
  *
  * Changing either writes no `activity` row: §4.8 has no verb for it, and a
  * verb is an `activity` rebuild — the reason D-079's switches give.
@@ -73,6 +76,24 @@ function viewFor(db: Db, userId: string): TimeSettingsView {
   };
 }
 
+type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+/**
+ * A switch turned off: every draft not confirmed goes — one person's, or
+ * everybody's — and a confirmed one keeps only what ties it to its entry and
+ * to the block it came from, its evidence blanked.
+ */
+function forgetDrafts(tx: Tx, userId?: string): void {
+  const whose = userId === undefined ? undefined : eq(timeDrafts.userId, userId);
+  tx.delete(timeDrafts)
+    .where(and(whose, ne(timeDrafts.state, 'confirmed')))
+    .run();
+  tx.update(timeDrafts)
+    .set({ signals: '{}' })
+    .where(and(whose, eq(timeDrafts.state, 'confirmed')))
+    .run();
+}
+
 /** `GET /me/time-settings`: a session or any token of theirs (§3.1). */
 export function getTimeSettings(db: Db, actor: ResolvedActor): TimeSettingsView {
   assertCan(actor, 'time_settings.read_own');
@@ -81,7 +102,7 @@ export function getTimeSettings(db: Db, actor: ResolvedActor): TimeSettingsView 
 
 /**
  * `PUT /me/time-settings`: the person's own *Draft my time*, from a web
- * session only. Off deletes every draft they hold, now.
+ * session only. Off deletes every draft they have not confirmed, now.
  */
 export function setTimeSettings(
   db: Db,
@@ -99,14 +120,14 @@ export function setTimeSettings(
         set: { draftMyTime: value, updatedAt: now },
       })
       .run();
-    if (value === 0) tx.delete(timeDrafts).where(eq(timeDrafts.userId, actor.userId)).run();
+    if (value === 0) forgetDrafts(tx, actor.userId);
   });
   return viewFor(db, actor.userId);
 }
 
 /**
  * `PUT /org/time`: owners and admins, from a web session only. Leaving
- * `drafts` deletes every draft anybody holds, now.
+ * `drafts` deletes every draft anybody has not confirmed, now.
  */
 export function setOrgTimeMode(
   db: Db,
@@ -121,7 +142,7 @@ export function setOrgTimeMode(
       .values({ orgId, mode, updatedAt: now })
       .onConflictDoUpdate({ target: orgTimeSettings.orgId, set: { mode, updatedAt: now } })
       .run();
-    if (mode !== 'drafts') tx.delete(timeDrafts).run();
+    if (mode !== 'drafts') forgetDrafts(tx);
   });
   return { mode };
 }

@@ -182,6 +182,22 @@ describe('either off deletes the drafts it held', () => {
     expect(t.db.select().from(timeEntries).all()).toHaveLength(1);
   });
 
+  it('keeps a confirmed draft, its evidence blanked, whichever switch goes off', () => {
+    t.db
+      .update(timeDrafts)
+      .set({ state: 'confirmed', signals: '{"prompts":4}' })
+      .where(eq(timeDrafts.userId, bea.userId))
+      .run();
+    setTimeSettings(t.db, bea, { draft_my_time: false }, NOW);
+    setOrgTimeMode(t.db, owner, 'manual', NOW);
+    expect(
+      t.db
+        .select({ who: timeDrafts.userId, state: timeDrafts.state, signals: timeDrafts.signals })
+        .from(timeDrafts)
+        .all(),
+    ).toEqual([{ who: bea.userId, state: 'confirmed', signals: '{}' }]);
+  });
+
   it('the organisation staying on drafts deletes nothing', () => {
     setOrgTimeMode(t.db, owner, 'drafts', NOW);
     expect(draftsOf(bea.userId) + draftsOf(owner.userId)).toBe(2);

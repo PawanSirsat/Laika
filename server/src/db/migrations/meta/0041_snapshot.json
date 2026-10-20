@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "fbf8cf2d-e2a1-40d6-8135-6347c09237bb",
+  "id": "a1d0fe04-439e-4ba7-b29a-564eb8c87183",
   "prevId": "76173603-e352-4d58-861d-7106fbdd1ffe",
   "tables": {
     "accounts": {
@@ -3957,6 +3957,41 @@
           "notNull": false,
           "autoincrement": false
         },
+        "origin_id": {
+          "name": "origin_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "origin_task": {
+          "name": "origin_task",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "origin_started_at": {
+          "name": "origin_started_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "origin_ended_at": {
+          "name": "origin_ended_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "origin_minutes": {
+          "name": "origin_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -4063,6 +4098,10 @@
         "time_drafts_note_check": {
           "name": "time_drafts_note_check",
           "value": "note IS NULL OR length(note) <= 200"
+        },
+        "time_drafts_origin_check": {
+          "name": "time_drafts_origin_check",
+          "value": "(origin_id IS NULL AND origin_task IS NULL AND origin_started_at IS NULL AND origin_ended_at IS NULL AND origin_minutes IS NULL) OR (origin_id IS NOT NULL AND origin_started_at IS NOT NULL AND origin_ended_at > origin_started_at AND origin_minutes BETWEEN 1 AND 1440)"
         }
       }
     },
