@@ -54,7 +54,7 @@ function px(value: string): number | null {
   if (remMatch?.[1]) return Number(remMatch[1]) * 16;
   const pxMatch = /^([0-9.]+)px$/.exec(v);
   if (pxMatch?.[1]) return Number(pxMatch[1]);
-  const token = /^var\((--text-[a-z]+)\)$/.exec(v);
+  const token = /^var\((--text-[a-z0-9-]+)\)$/.exec(v);
   if (token?.[1]) return tokenPx(token[1]);
   return null;
 }

@@ -132,6 +132,12 @@ export const TYPE_TOKENS = [
   '--text-xl',
   '--text-mono',
   '--leading-body',
+  '--text-reading',
+  '--text-reading-h1',
+  '--text-reading-h2',
+  '--text-reading-h3',
+  '--text-reading-code',
+  '--leading-reading',
 ] as const;
 
 export const WEIGHT_TOKENS = [
