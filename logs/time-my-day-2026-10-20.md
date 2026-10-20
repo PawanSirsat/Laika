@@ -66,3 +66,41 @@ clicks are not used, and polly's typing leaves no trace.
 
 **State**
 In .tasks/review/. Not pushed.
+
+## 2026-10-20T04:00:00Z — LAI-787 (review round 1)
+
+**What changed**
+- .tasks/in-progress → .tasks/review/LAI-787-time-my-day-drafts.md — back with the round 1 notes, then forward with what fixed them
+- (merge) master into the branch — LAI-785 and LAI-786; no conflicts, no new migration
+- server/src/db/migrate.ts — `time_entries_no_replace`: a replace by `id` or by `(user_id, source, source_ref)` refused, kept by the boot check (B2)
+- server/src/db/schema.ts, migrations/0041_time_my_day.sql + meta — five `origin_*` columns on `time_drafts`; 0041 deleted and regenerated with `pnpm db:generate` (unshipped), still CREATE TABLE only, a second run "No schema changes" (B1)
+- server/src/services/time-drafts.ts — span clipping replaced: a re-sent block is measured against origins (same-task overlap in minutes; a stretch capped at its minutes less what is settled); entries no longer consulted; the proposal answers `{ id, minutes, day }` (B1, item 1)
+- server/src/services/time-settings.ts — a switch turned off keeps confirmed drafts, evidence blanked (B1)
+- server/src/mcp/write-tools.ts — the tool's text echoes the task the agent sent (item 1)
+- cli/src/activity-time.ts — each day held to 1440 minutes (item 2)
+- cli/test/activity-hook.test.ts — made-up Omnigent ids (item 3)
+- server/test/services/time-drafts.test.ts, time-entries.test.ts, time-settings.test.ts, routes/time.test.ts, mcp/write-tools.test.ts; cli/test/activity-time.test.ts — the reviewer's scenarios, the guards, the reply shape
+- docs/SPEC.md §4.45–§4.48, §6.4, §7.1, §11.6, §13.4 (items 5, 6)
+
+**Decisions**
+- **Identity is the task plus an overlapping stretch, not the collector.** A collector id changes when local sharing is turned off and on (it rotates), and two machines have two; matching by task and overlap means a rotated collector's re-send and another machine's same-task work are both measured against what is there, rather than drafted again.
+- **Two rules, both in minutes.** Same-task origins are taken off a block in proportion to how much of each origin's span lies in it; then each stretch is capped at its own minutes less everything settled across it, any task. The second is what stops a confirmed untied stretch coming back when a later commit ties its tail to a card — the first alone let those minutes back under the new key.
+- **Another machine's pending blocks count as settled** for both rules, which keeps "two machines, never twice" (the round 0 test still passes). It is order-dependent and can under-draft a little when both machines keep re-sending the same hours — never over.
+- **Switch-off keeps confirmed drafts.** Deleting them (round 0) was harmless only while entries' spans did the work; with entries no longer consulted, a confirmed block would come back after off and on. Their signals are blanked, so what remains is only what ties them to their entry and origin.
+- Commits split by fix; the two files carrying both B1 and the proposal change were staged as B1-only blobs and the staged tree typechecked and tested on its own before the B1 commit.
+
+**Discovered**
+- `INSERT OR REPLACE` also replaces through the partial unique index `(user_id, source, source_ref)` with a **different** id — the sibling triggers' `id = NEW.id` check alone would not have closed it.
+- zsh: a loop variable named `path` overwrote `PATH` and every command after it failed "command not found"; nothing was staged. Renamed.
+- My first B2 commit swept in the migration deletions `git rm` had staged earlier; undone with `reset --soft` before anything else happened (my own unpushed commit) and recommitted with its two files.
+- The real Omnigent ids remain in commit `9a3ba1a0` on this unpushed branch; rewriting reviewed history was not mine to do here. Squash on merge, or rewrite before a push, if they must not reach origin.
+- `migrate.test.ts` timed out once while 26 server files ran at once (load average 22); 24/24 alone.
+
+**Gate** (after the last code edit, each to its own file, nothing piped)
+- `pnpm test` **0** — server 3216 passed + 10 skipped of 3226 cases (157 files + 2 skipped), web 2205/2205 cases, cli 469 passed + 2 skipped of 471 cases.
+- `pnpm lint` **0**; `pnpm format` **0**. The task-file move came after; `task-file-state.test.ts` re-run, 11/11.
+- Before/after: on the round 0 code the five B1 scenarios and the B2 test failed (6 of 45 in the two files), the 25-hour day sent 1495; after, all pass.
+- Measured again (`LAIKA_PERF=1`): a day stored in 1.94 ms, My day 0.73 ms.
+
+**State**
+In .tasks/review/. Not pushed.
