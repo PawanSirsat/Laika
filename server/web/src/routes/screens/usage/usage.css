@@ -306,7 +306,8 @@
 }
 
 .usage-row-name > a,
-.usage-row-name > code {
+.usage-row-name > code,
+.usage-row-name > .usage-space-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -399,6 +400,13 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 2px;
+}
+
+/* A space counted but not offered — archived — is named, not linked (LAI-814 review). */
+.usage-space-archived {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
 }
 
 /* What no space holds (LAI-814): a remainder, not a space, so it is quieter. */

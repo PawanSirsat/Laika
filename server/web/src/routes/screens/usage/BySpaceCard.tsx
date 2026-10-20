@@ -9,20 +9,25 @@ import {
 } from '../../../api/usage.ts';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { BarRows, type BarRow } from './BarRows.tsx';
-import { spaceUsageHref } from './usage-derive.ts';
+import { spaceRow, spaceUsageHref } from './usage-derive.ts';
 
 /**
  * *By space* (LAI-814): on the organisation, each space's tokens, its share of
  * the organisation's and what they cost, most tokens first — then what no
  * space holds, last, so the rows add up to the Tokens tile. A space's name is
- * the way to its own view. Per space, never per person.
+ * the way to its own view — only for a space the selector offers: an archived
+ * one is counted, and named plainly, because its view would open All spaces.
+ * Per space, never per person.
  */
 export function BySpaceCard({
   usage,
   link,
+  offered,
 }: {
   readonly usage: Usage;
   readonly link: (to: string) => (event: MouseEvent<HTMLAnchorElement>) => void;
+  /** The spaces the selector offers (`offeredSpaces`); `null` with no list. */
+  readonly offered: ReadonlySet<string> | null;
 }) {
   const spaces = usage.by_project;
   const outside = outsideAnySpace(usage);
@@ -31,13 +36,20 @@ export function BySpaceCard({
 
   const rows: BarRow[] = spaces.map((p) => {
     const to = spaceUsageHref(p.project.slug);
+    const kind = spaceRow(p.project.slug, offered);
     return {
       key: p.project.slug,
-      name: (
-        <a className="usage-space-link" href={to} onClick={link(to)}>
-          {p.project.name}
-        </a>
-      ),
+      name:
+        kind === 'link' ? (
+          <a className="usage-space-link" href={to} onClick={link(to)}>
+            {p.project.name}
+          </a>
+        ) : (
+          <>
+            <span className="usage-space-name">{p.project.name}</span>
+            {kind === 'archived' && <span className="usage-space-archived">archived</span>}
+          </>
+        ),
       tokens: p.tokens,
       cacheRead: p.cache_read,
       note: `${percent(p.share)} · ${costText(p.cost)}`,

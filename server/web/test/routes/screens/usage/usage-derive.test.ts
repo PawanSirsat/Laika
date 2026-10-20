@@ -9,8 +9,10 @@ import {
   axisDays,
   barHeight,
   defaultScope,
+  offeredSpaces,
   scopeFor,
   scopeOptions,
+  spaceRow,
   spaceUsageHref,
 } from '../../../../src/routes/screens/usage/usage-derive.ts';
 
@@ -75,6 +77,29 @@ void describe('the space in the address, ?project= (LAI-814)', () => {
   void test('a space’s own view is Insights → Usage & cost with its slug', () => {
     assert.equal(spaceUsageHref('laika'), '/insights?tab=usage&project=laika');
     assert.equal(spaceUsageHref('a b&c'), '/insights?tab=usage&project=a%20b%26c');
+  });
+});
+
+void describe('a By space row is a link only to a space the selector offers (LAI-814 review)', () => {
+  const owner = { org_role: 'owner', memberships: [] };
+
+  void test('the offered spaces are the selector’s, All spaces aside', () => {
+    assert.deepEqual([...(offeredSpaces(owner, PROJECTS) ?? [])].sort(), [
+      'atlas',
+      'laika',
+      'zebra',
+    ]);
+    // No list: nothing is known to be offered, or to be archived.
+    assert.equal(offeredSpaces(owner, null), null);
+  });
+
+  void test('a space the selector offers is a link; one the loaded list lacks is archived', () => {
+    const offered = offeredSpaces(owner, PROJECTS);
+    assert.equal(spaceRow('laika', offered), 'link');
+    // `GET /projects` sends an archived space as a tombstone, so the list lacks
+    // it, and its ?project= would open All spaces.
+    assert.equal(spaceRow('oldsite', offered), 'archived');
+    assert.equal(spaceRow('laika', null), 'plain');
   });
 });
 

@@ -41,7 +41,14 @@ import { CacheCard } from './CacheCard.tsx';
 import { RunawayCard } from './RunawayCard.tsx';
 import { PlanLimitCard } from './PlanLimitCard.tsx';
 import { Columns, dayPoints } from './Columns.tsx';
-import { axisDays, dayLabel, scopeFor, scopeOptions, type ScopeProject } from './usage-derive.ts';
+import {
+  axisDays,
+  dayLabel,
+  offeredSpaces,
+  scopeFor,
+  scopeOptions,
+  type ScopeProject,
+} from './usage-derive.ts';
 import '../profile/profile.css';
 import './usage.css';
 
@@ -135,6 +142,12 @@ export function UsageScreen({
         : scopeFor(me, projects ?? [], project),
     [me, projects, project],
   );
+  // What a By space row may link to: only a space the selector offers, so an
+  // archived one — absent from the list — is named, not linked (LAI-814 review).
+  const offered = useMemo(
+    () => (me === undefined || projects === undefined ? null : offeredSpaces(me, projects)),
+    [me, projects],
+  );
 
   useEffect(() => {
     if (scope === undefined) return;
@@ -222,6 +235,7 @@ export function UsageScreen({
         ) : (
           <UsageBody
             usage={load.usage}
+            offered={offered}
             onNavigate={onNavigate}
             onChanged={() => {
               setAsked((n) => n + 1);
@@ -255,11 +269,14 @@ export function UsageScreen({
 
 function UsageBody({
   usage,
+  offered,
   onNavigate,
   onChanged,
   onAllSpaces,
 }: {
   readonly usage: Usage;
+  /** The spaces the selector offers; `null` with no list. */
+  readonly offered: ReadonlySet<string> | null;
   readonly onNavigate: (to: string) => void;
   /** A budget changed: read the page again. */
   readonly onChanged: () => void;
@@ -392,7 +409,7 @@ function UsageBody({
           />
         </div>
       ) : (
-        <UsageDetail usage={usage} link={link} onChanged={onChanged} />
+        <UsageDetail usage={usage} link={link} offered={offered} onChanged={onChanged} />
       )}
     </>
   );
@@ -401,10 +418,12 @@ function UsageBody({
 function UsageDetail({
   usage,
   link,
+  offered,
   onChanged,
 }: {
   readonly usage: Usage;
   readonly link: (to: string) => (event: MouseEvent<HTMLAnchorElement>) => void;
+  readonly offered: ReadonlySet<string> | null;
   readonly onChanged: () => void;
 }) {
   const { totals } = usage;
@@ -442,7 +461,7 @@ function UsageDetail({
       </section>
 
       <div className="usage-grid">
-        <BySpaceCard usage={usage} link={link} />
+        <BySpaceCard usage={usage} link={link} offered={offered} />
 
         <section
           className="prof-card usage-card"

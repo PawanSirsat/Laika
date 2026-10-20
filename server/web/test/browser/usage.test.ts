@@ -566,6 +566,50 @@ void describe('an owner', () => {
     }
   });
 
+  void test('an archived space is counted but not a link — its ?project= would open All spaces — and says archived (LAI-814 review)', async () => {
+    const usage = orgUsage(30);
+    const archived = {
+      project: { slug: 'oldsite', name: 'Old site' },
+      tokens: 2_000_000,
+      cache_read: 100_000_000,
+      cost: cost(20),
+      share: 2_000_000 / 254_973_258,
+    };
+    const h = await open('/insights?tab=usage', {
+      ...ownerStub(),
+      // `GET /projects` sends an archived space as a tombstone (§6.3).
+      '/api/v1/projects': {
+        data: [LAIKA, ONROUTE, { id: 'p9', deleted: true }],
+        next_cursor: null,
+      },
+      '/api/v1/usage?days=30': { ...usage, by_project: [...usage.by_project, archived] },
+    });
+    try {
+      await ready(h.page);
+      const card = h.page.locator('.usage-card[data-section="spaces"]');
+      await card.locator('.usage-row').first().waitFor();
+      // Still a row, so the rows add up…
+      assert.equal(await card.locator('.usage-row').count(), 4);
+      const row = card.locator('.usage-row', { hasText: 'Old site' });
+      assert.equal(await row.count(), 1);
+      assert.match(
+        (await row.locator('.usage-row-value').innerText()).replace(/\s+/g, ' '),
+        /^2M <1% · \$20\.00$/,
+      );
+      // …but no way into a view the selector does not offer.
+      assert.equal(await row.locator('a').count(), 0);
+      assert.equal((await row.locator('.usage-space-archived').innerText()).trim(), 'archived');
+      assert.deepEqual(
+        (await card.locator('a').allInnerTexts()).map((t) => t.trim()),
+        ['Laika', 'Onroute'],
+      );
+      // The spaces the selector does offer keep their links and no marker.
+      assert.equal(await card.locator('.usage-space-archived').count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('?project= is the space shown: a link to a space’s usage opens it, and All spaces leaves it (LAI-814)', async () => {
     const h = await open('/insights?tab=usage&project=laika', ownerStub());
     try {
