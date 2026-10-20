@@ -322,6 +322,22 @@ async function openEditor(h: Harness, where: Locator = description(h)): Promise<
 /** The editable surface inside an open editor. */
 const content = (editor: Locator): Locator => editor.locator('.ProseMirror');
 
+/**
+ * Put the caret at the end of `line`, as a person clicking after its last word
+ * would.
+ *
+ * Not `End`: on macOS that key scrolls the page and leaves the caret where it
+ * was. And then a pause: the browser moves the caret at once, but ProseMirror
+ * reads the move from a `selectionchange` a moment later, and Playwright's
+ * next key arrives sooner than any person's would.
+ */
+async function caretAtEnd(page: Page, line: Locator): Promise<void> {
+  const box = await line.boundingBox();
+  assert.ok(box !== null, 'the line is not on screen');
+  await page.mouse.click(box.x + box.width - 2, box.y + box.height - 4);
+  await page.waitForTimeout(150);
+}
+
 async function selectAll(page: Page): Promise<void> {
   await page.keyboard.press('ControlOrMeta+A');
 }
@@ -482,6 +498,35 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
     }
   });
 
+  void test('opening the editor does not scroll the panel away from the text clicked', async () => {
+    const server: Server = { t3: subject() };
+    const h = await panel(server);
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 1000 });
+      const main = h.page.locator('.panel-main');
+      // Scrolled a little, as a reader would be: the browser anchors only then.
+      await main.evaluate((el) => {
+        el.scrollTop = 40;
+      });
+      const before = await main.evaluate((el) => el.scrollTop);
+      assert.ok(before > 0, 'positive control: the panel did not scroll at all');
+      // By coordinates: Playwright's own click scrolls a target it judges out of
+      // view, and that is not the panel's doing.
+      const text = await description(h).locator('.md').first().boundingBox();
+      assert.ok(text !== null);
+      await h.page.mouse.click(text.x + 4, Math.max(text.y, 0) + 60);
+      const editor = description(h).locator('.rich-editor');
+      await content(editor).waitFor({ timeout: 10_000 });
+      await h.page.waitForTimeout(300);
+      const after = await main.evaluate((el) => el.scrollTop);
+      // The editor is a toolbar and a button row taller than the text; the
+      // browser's scroll anchoring answered that with a 100px jump.
+      assert.ok(Math.abs(after - before) <= 2, `the panel scrolled ${String(after - before)}px`);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('a toolbar, Bold and a list, saved as markdown; Cancel sends nothing', async () => {
     const server: Server = { t3: subject({ description_md: 'Plain words to start.' }) };
     const h = await open(URL, stub(server), { before: fakeStream });
@@ -529,8 +574,7 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
       assert.equal(patches(h).length, 0, 'Cancel saved');
 
       const again = await openEditor(h);
-      await content(again).click();
-      await h.page.keyboard.press('End');
+      await caretAtEnd(h.page, content(again).locator('p').last());
       await h.page.keyboard.press('Enter');
       await again.getByRole('button', { name: 'Bold' }).click();
       await h.page.keyboard.type('Loud');
@@ -561,8 +605,7 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
     try {
       await description(h).locator('.md p').waitFor({ timeout: 20_000 });
       const editor = await openEditor(h);
-      await content(editor).click();
-      await h.page.keyboard.press('End');
+      await caretAtEnd(h.page, content(editor).locator('p').last());
       await h.page.keyboard.type(' Typed.');
       await h.page.keyboard.press('Escape');
       const ask = h.page.getByRole('alertdialog');
@@ -618,8 +661,7 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
     try {
       await description(h).locator('.md p').waitFor({ timeout: 20_000 });
       const editor = await openEditor(h);
-      await content(editor).click();
-      await h.page.keyboard.press('End');
+      await caretAtEnd(h.page, content(editor).locator('p').last());
       await editor.getByRole('button', { name: 'Table' }).click();
       assert.equal(await content(editor).locator('table tr').count(), 3);
       await editor.getByRole('button', { name: 'Add row below' }).click();
@@ -642,8 +684,7 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
     try {
       await description(h).locator('.md p').waitFor({ timeout: 20_000 });
       const editor = await openEditor(h);
-      await content(editor).click();
-      await h.page.keyboard.press('End');
+      await caretAtEnd(h.page, content(editor).locator('p').last());
       await h.page.keyboard.type(' @gra');
       const options = h.page.locator('.rich-editor-picker [role="option"]');
       await options.first().waitFor({ timeout: 5_000 });
@@ -712,8 +753,7 @@ void describe('the stale-text protection of LAI-795 holds in the editor', () => 
     try {
       await description(h).locator('.md strong').waitFor({ timeout: 20_000 });
       const editor = await openEditor(h);
-      await content(editor).click();
-      await h.page.keyboard.press('End');
+      await caretAtEnd(h.page, content(editor).locator('p').last());
       await h.page.keyboard.type(' My addition.');
 
       server.t3 = {
@@ -858,8 +898,7 @@ void describe('acceptance edits in place like the description', () => {
     try {
       await acceptance(h).locator('.md li').first().waitFor({ timeout: 10_000 });
       const editor = await openEditor(h, acceptance(h));
-      await content(editor).locator('li').last().click();
-      await h.page.keyboard.press('End');
+      await caretAtEnd(h.page, content(editor).locator('li').last());
       await h.page.keyboard.press('Enter');
       await h.page.keyboard.type('the map is unchanged');
       await editor.getByRole('button', { name: 'Save' }).click();
