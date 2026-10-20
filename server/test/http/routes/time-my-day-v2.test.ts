@@ -690,6 +690,140 @@ describe('confirmed time is never counted twice (review round 1)', () => {
   });
 });
 
+describe('by the clock: a stretch holds no more minutes than it has (review round 2)', () => {
+  /** A collector block: `minutes` of work somewhere in `from`–`to`. */
+  const worked = (from: number, to: number, minutes: number, task: string | null) => ({
+    start: from,
+    end: to,
+    minutes,
+    task,
+    signals: { prompts: 1 },
+  });
+  const collect = async (blocks: unknown[]) =>
+    ok('/api/v1/me/time-drafts', { method: 'PUT', body: upload(blocks) }, 200, await mint());
+  const typed = (from: number, to: number, minutes: number) =>
+    ok(
+      '/api/v1/me/time-entries',
+      {
+        method: 'POST',
+        body: JSON.stringify({ day: today(), tz: 'UTC', minutes, started_at: from, ended_at: to }),
+      },
+      201,
+    );
+  const draftOn = async (from: number) => {
+    const found = (await myDay()).drafts.find((d) => d.started_at === from);
+    expect(found, `no draft at ${String(from)}`).toBeDefined();
+    return found!;
+  };
+  const confirm = (id: string) =>
+    req(`/api/v1/me/time-drafts/${id}/confirm`, { method: 'POST' }, cookie);
+
+  // P4: LAI-1 worked 90 of 9:00–11:00, LAI-2 all of 9:30–10:00 — 120 in 120.
+  const p4 = [worked(at(9), at(11), 90, 'LAI-1'), worked(at(9, 30), at(10), 30, 'LAI-2')];
+
+  it('P4 confirms as a day', async () => {
+    await collect(p4);
+    await ok(`/api/v1/me/time/days/${today()}/confirm`, { method: 'POST' }, 200);
+    expect((await myDay()).entries.map((e) => e.minutes).sort()).toEqual([30, 90]);
+  });
+
+  it('P4 confirms long block first', async () => {
+    await collect(p4);
+    expect((await confirm((await draftOn(at(9))).id)).status).toBe(201);
+    expect((await confirm((await draftOn(at(9, 30))).id)).status).toBe(201);
+  });
+
+  it('P4 confirms short block first', async () => {
+    await collect(p4);
+    expect((await confirm((await draftOn(at(9, 30))).id)).status).toBe(201);
+    expect((await confirm((await draftOn(at(9))).id)).status).toBe(201);
+  });
+
+  it('the blocker-2 drag: the stretch 9:00–11:40 has 160 minutes and would hold 190', async () => {
+    const { onCard, untied } = await drafted();
+    await ok(`/api/v1/me/time-drafts/${onCard.id}/confirm`, { method: 'POST' }, 201);
+    const res = await req(
+      `/api/v1/me/time-drafts/${untied.id}`,
+      { method: 'PATCH', body: JSON.stringify({ started_at: at(9, 30), minutes: 130 }) },
+      cookie,
+    );
+    expect(res.status).toBe(409);
+    const { error } = (await res.json()) as { error: { details: Record<string, unknown> } };
+    expect(error.details).toMatchObject({
+      reason: 'overlaps_confirmed',
+      stretch_minutes: 160,
+      would_hold: 190,
+    });
+  });
+
+  // A 9:00–10:00, B 9:45–10:30, C 10:15–11:00: A meets B, B meets C, A never C.
+  it('a three-block stretch is one stretch: A’s slack is B’s room', async () => {
+    await typed(at(9), at(10), 30);
+    await typed(at(10, 15), at(11), 45);
+    await collect([worked(at(9, 45), at(10, 30), 45, null)]);
+    // 30 + 45 + 45 = 120 in 9:00–11:00; B and C alone would be 90 in 75.
+    expect((await confirm((await draftOn(at(9, 45))).id)).status).toBe(201);
+  });
+
+  it('a three-block stretch is one stretch: each pair fits, all three do not', async () => {
+    await typed(at(9), at(10), 60);
+    await typed(at(10, 15), at(11), 45);
+    await collect([worked(at(9, 45), at(10, 30), 25, null)]);
+    // A + B = 85 in 90, B + C = 70 in 75 — but 60 + 25 + 45 = 130 in 120.
+    const res = await confirm((await draftOn(at(9, 45))).id);
+    expect(res.status).toBe(409);
+    const { error } = (await res.json()) as { error: { details: Record<string, unknown> } };
+    expect(error.details).toMatchObject({
+      reason: 'overlaps_confirmed',
+      stretch_minutes: 120,
+      would_hold: 130,
+    });
+  });
+
+  it('Confirm day names the block it refuses, and confirms nothing (all or nothing)', async () => {
+    const { untied } = await drafted();
+    await typed(at(11), at(11, 30), 30);
+    const res = await req(`/api/v1/me/time/days/${today()}/confirm`, { method: 'POST' }, cookie);
+    expect(res.status).toBe(409);
+    const { error } = (await res.json()) as { error: { details: Record<string, unknown> } };
+    expect(error.details).toMatchObject({
+      reason: 'overlaps_confirmed',
+      draft_id: untied.id,
+      stretch_minutes: 40,
+      would_hold: 70,
+    });
+    expect((await myDay()).entries.map((e) => e.minutes)).toEqual([30]);
+    expect((await myDay()).drafts).toHaveLength(2);
+  });
+
+  it('P6: more minutes than a block’s own span is 422 minutes_over_span, not 409', async () => {
+    const { untied } = await drafted();
+    const res = await req(
+      `/api/v1/me/time-drafts/${untied.id}`,
+      { method: 'PATCH', body: JSON.stringify({ minutes: 60 }) },
+      cookie,
+    );
+    expect(res.status).toBe(422);
+    expect((await errorOf(res)).reason).toBe('minutes_over_span');
+    const entry = await req(
+      '/api/v1/me/time-entries',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          day: today(),
+          tz: 'UTC',
+          minutes: 45,
+          started_at: at(14),
+          ended_at: at(14, 30),
+        }),
+      },
+      cookie,
+    );
+    expect(entry.status).toBe(422);
+    expect((await errorOf(entry)).reason).toBe('minutes_over_span');
+  });
+});
+
 describe('the drafts a person holds, for the off switch (F)', () => {
   it('counts every pending draft on every day, and nothing confirmed', async () => {
     const { onCard } = await drafted();
