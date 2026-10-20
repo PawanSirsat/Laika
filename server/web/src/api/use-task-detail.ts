@@ -14,6 +14,7 @@ export interface TaskDetail {
 export interface UseTaskDetail extends TaskDetail {
   readonly posting: boolean;
   readonly postError: unknown;
+  /** Rejects with the cause when the post fails, so a composer can keep the draft. */
   readonly post: (bodyMd: string) => Promise<void>;
   readonly reload: () => void;
 }
@@ -106,6 +107,9 @@ export function useTaskDetail(slug: string | undefined, taskId: string | undefin
         setAttempt((n) => n + 1);
       } catch (cause) {
         setPostError(cause);
+        // The composer keeps the draft and says why (LAI-827): a failed post
+        // must not read as a sent one.
+        throw cause;
       } finally {
         setPosting(false);
       }

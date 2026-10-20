@@ -35,8 +35,14 @@ export function TaskDrawer({ onClose }: TaskDrawerProps) {
   }, []);
 
   useEffect(() => {
+    /*
+     * **An Escape something inside already spent is not ours** (LAI-827). The
+     * task editor and the title field both cancel on Escape and say so with
+     * `preventDefault`; closing the whole panel as well threw the reader out of
+     * a task they only meant to stop editing.
+     */
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape' && !event.defaultPrevented) onClose();
     };
     addEventListener('keydown', onKey);
     return () => {

@@ -210,21 +210,27 @@ export function ForecastSection({
           )}
         </p>
         {mayEdit && (
-          <Dropdown
-            className="fc-change"
-            variant="bare"
-            display="Change"
-            aria-label="Change effort"
-            title="Set the effort by hand, or go back to Laika’s"
-            value={chosen}
-            disabled={saving !== undefined}
-            searchable={false}
-            options={[
-              { value: COMPUTED, label: `Automatic (${effortWord(size.computed)})`, pinned: true },
-              ...SIZE_LEVELS.map((level) => ({ value: level, label: effortWord(level) })),
-            ]}
-            onChange={pick}
-          />
+          <span className="fc-change-wrap" data-editable="effort">
+            <Dropdown
+              className="fc-change"
+              variant="bare"
+              display="Change"
+              aria-label="Change effort"
+              title="Set the effort by hand, or go back to Laika’s"
+              value={chosen}
+              disabled={saving !== undefined}
+              searchable={false}
+              options={[
+                {
+                  value: COMPUTED,
+                  label: `Automatic (${effortWord(size.computed)})`,
+                  pinned: true,
+                },
+                ...SIZE_LEVELS.map((level) => ({ value: level, label: effortWord(level) })),
+              ]}
+              onChange={pick}
+            />
+          </span>
         )}
       </div>
 
