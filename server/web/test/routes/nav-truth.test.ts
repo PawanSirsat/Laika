@@ -269,7 +269,11 @@ void describe('a gated nav entry is hidden unless the reader holds it', () => {
     // Inbox, and its old address redirects there. The gate it always had is
     // the tab's now — asserted in `page-tabs.test.ts` through this same
     // predicate — so nothing it showed reaches a reader it did not before.
-    assert.equal(ROUTES.find((r) => r.path === '/unlisted'), undefined, '/unlisted is routed again');
+    assert.equal(
+      ROUTES.find((r) => r.path === '/unlisted'),
+      undefined,
+      '/unlisted is routed again',
+    );
     assert.ok(!navRoutes(holdsAll).some((r) => r.label === 'Unlisted work'));
   });
 });

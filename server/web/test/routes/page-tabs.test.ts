@@ -62,10 +62,14 @@ void describe('a gated tab is absent, not disabled', () => {
   });
 
   void test('Security — everyone’s tokens — is an owner’s or an admin’s', () => {
-    assert.ok(visibleTabs(ORGANISATION_TABS, permissionHolder('owner')).some((t) => t.id === 'security'));
+    assert.ok(
+      visibleTabs(ORGANISATION_TABS, permissionHolder('owner')).some((t) => t.id === 'security'),
+    );
     assert.ok(visibleTabs(ORGANISATION_TABS, admin).some((t) => t.id === 'security'));
     assert.ok(!visibleTabs(ORGANISATION_TABS, member).some((t) => t.id === 'security'));
-    assert.ok(!visibleTabs(ORGANISATION_TABS, permissionHolder('viewer')).some((t) => t.id === 'security'));
+    assert.ok(
+      !visibleTabs(ORGANISATION_TABS, permissionHolder('viewer')).some((t) => t.id === 'security'),
+    );
   });
 
   void test('no predicate hides every gated tab rather than revealing it', () => {

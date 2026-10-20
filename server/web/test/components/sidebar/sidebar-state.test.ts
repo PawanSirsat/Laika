@@ -46,7 +46,10 @@ void describe('the choice is remembered per browser', () => {
 
   void test('nothing stored is no choice — the rail opens expanded on a wide window', () => {
     assert.equal(readSidebar(memory()), undefined);
-    assert.equal(railCollapsed({ preference: undefined, narrow: false, openedWhileNarrow: false }), false);
+    assert.equal(
+      railCollapsed({ preference: undefined, narrow: false, openedWhileNarrow: false }),
+      false,
+    );
   });
 
   void test('a stored value it does not know is no choice, not a crash', () => {
@@ -71,45 +74,69 @@ void describe('a narrow window collapses it by itself', () => {
   });
 
   void test('narrow is the rail even when the stored choice is expanded', () => {
-    assert.equal(railCollapsed({ preference: 'expanded', narrow: true, openedWhileNarrow: false }), true);
+    assert.equal(
+      railCollapsed({ preference: 'expanded', narrow: true, openedWhileNarrow: false }),
+      true,
+    );
   });
 
   void test('the toggle still opens it while narrow, for now', () => {
-    assert.equal(railCollapsed({ preference: 'expanded', narrow: true, openedWhileNarrow: true }), false);
+    assert.equal(
+      railCollapsed({ preference: 'expanded', narrow: true, openedWhileNarrow: true }),
+      false,
+    );
   });
 
   void test('wide follows the stored choice', () => {
-    assert.equal(railCollapsed({ preference: 'collapsed', narrow: false, openedWhileNarrow: false }), true);
-    assert.equal(railCollapsed({ preference: 'expanded', narrow: false, openedWhileNarrow: true }), false);
+    assert.equal(
+      railCollapsed({ preference: 'collapsed', narrow: false, openedWhileNarrow: false }),
+      true,
+    );
+    assert.equal(
+      railCollapsed({ preference: 'expanded', narrow: false, openedWhileNarrow: true }),
+      false,
+    );
   });
 });
 
 void describe('what the toggle changes', () => {
   void test('wide, it flips and remembers the choice', () => {
-    assert.deepEqual(toggleRail({ preference: undefined, narrow: false, openedWhileNarrow: false }), {
-      preference: 'collapsed',
-      openedWhileNarrow: false,
-      remember: true,
-    });
-    assert.deepEqual(toggleRail({ preference: 'collapsed', narrow: false, openedWhileNarrow: false }), {
-      preference: 'expanded',
-      openedWhileNarrow: false,
-      remember: true,
-    });
+    assert.deepEqual(
+      toggleRail({ preference: undefined, narrow: false, openedWhileNarrow: false }),
+      {
+        preference: 'collapsed',
+        openedWhileNarrow: false,
+        remember: true,
+      },
+    );
+    assert.deepEqual(
+      toggleRail({ preference: 'collapsed', narrow: false, openedWhileNarrow: false }),
+      {
+        preference: 'expanded',
+        openedWhileNarrow: false,
+        remember: true,
+      },
+    );
   });
 
   void test('narrow, it opens or closes for now and leaves the stored choice alone', () => {
     // Remembering here would mean a reader who once peeked at the full
     // sidebar on a small window finds it collapsed on their wide one.
-    assert.deepEqual(toggleRail({ preference: 'expanded', narrow: true, openedWhileNarrow: false }), {
-      preference: 'expanded',
-      openedWhileNarrow: true,
-      remember: false,
-    });
-    assert.deepEqual(toggleRail({ preference: 'expanded', narrow: true, openedWhileNarrow: true }), {
-      preference: 'expanded',
-      openedWhileNarrow: false,
-      remember: false,
-    });
+    assert.deepEqual(
+      toggleRail({ preference: 'expanded', narrow: true, openedWhileNarrow: false }),
+      {
+        preference: 'expanded',
+        openedWhileNarrow: true,
+        remember: false,
+      },
+    );
+    assert.deepEqual(
+      toggleRail({ preference: 'expanded', narrow: true, openedWhileNarrow: true }),
+      {
+        preference: 'expanded',
+        openedWhileNarrow: false,
+        remember: false,
+      },
+    );
   });
 });

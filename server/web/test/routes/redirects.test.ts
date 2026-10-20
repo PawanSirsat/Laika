@@ -34,7 +34,10 @@ void describe('every old address has a new home', () => {
       const to = redirectFor(from, '');
       assert.ok(to !== undefined, `${from} has no redirect`);
       const path = to.split('?')[0] ?? '';
-      assert.ok(matchRoute(path) !== undefined, `${from} redirects to ${path}, which is not routed`);
+      assert.ok(
+        matchRoute(path) !== undefined,
+        `${from} redirects to ${path}, which is not routed`,
+      );
     }
   });
 
@@ -86,7 +89,14 @@ void describe('the query travels with the redirect', () => {
 
 void describe('nothing else is redirected', () => {
   void test('a current page answers undefined', () => {
-    for (const path of ['/board', '/inbox', '/insights', '/developer', '/my-day', '/organisation']) {
+    for (const path of [
+      '/board',
+      '/inbox',
+      '/insights',
+      '/developer',
+      '/my-day',
+      '/organisation',
+    ]) {
       assert.equal(redirectFor(path, ''), undefined, `${path} was redirected`);
     }
   });

@@ -138,7 +138,9 @@ export function ConnectCard({ me, origin, onNavigate }: ConnectCardProps) {
               </code>
             </pre>
           )}
-          <p className="dev-step-note">The wizard fills in your token and checks the agent arrives.</p>
+          <p className="dev-step-note">
+            The wizard fills in your token and checks the agent arrives.
+          </p>
         </li>
       </ol>
     </section>

@@ -37,7 +37,7 @@ function waiting(
     finished_by_name: null,
     can_decide: can,
     cue: null,
-  } as unknown as ReviewQueueItem;
+  };
 }
 
 void describe('in progress', () => {

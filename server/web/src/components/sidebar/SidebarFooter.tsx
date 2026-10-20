@@ -94,7 +94,11 @@ export function SidebarFooter({
       return;
     }
     const list = items();
-    const to = menuStep(list.length, list.indexOf(document.activeElement as HTMLElement), event.key);
+    const to = menuStep(
+      list.length,
+      list.indexOf(document.activeElement as HTMLElement),
+      event.key,
+    );
     if (to === undefined) return;
     event.preventDefault();
     list[to]?.focus();
@@ -197,9 +201,7 @@ export function SidebarFooter({
           <span className="sidebar-user-name">{user.name}</span>
           <span className="sidebar-user-role">{user.org_role}</span>
         </span>
-        {!collapsed && (
-          <NavIcon name="chevron" size={12} className="user-menu-caret" />
-        )}
+        {!collapsed && <NavIcon name="chevron" size={12} className="user-menu-caret" />}
       </button>
     </div>
   );

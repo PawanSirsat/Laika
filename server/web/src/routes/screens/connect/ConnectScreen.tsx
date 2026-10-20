@@ -1551,8 +1551,8 @@ function LiveCheck({
           {live.by === 'mcp' && (
             <>
               {' '}
-              <a href="/insights?tab=capacity">Capacity</a> shows the session beside everyone else’s while it
-              works.
+              <a href="/insights?tab=capacity">Capacity</a> shows the session beside everyone else’s
+              while it works.
             </>
           )}
         </p>
