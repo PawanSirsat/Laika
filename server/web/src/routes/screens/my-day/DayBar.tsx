@@ -1,12 +1,11 @@
 import type { MyDay } from '../../../api/time.ts';
+import { hourLabel } from '../../../api/time-label.ts';
 import { dayTimeline, hourTicks } from './day-timeline.ts';
 
 export interface DayBarProps {
   readonly view: Pick<MyDay, 'day' | 'tz' | 'today' | 'drafts' | 'entries'>;
   readonly now: number;
 }
-
-const pad = (n: number): string => String(n).padStart(2, '0');
 
 /**
  * The day as a bar (LAI-796, the owner's reference): confirmed blocks solid,
@@ -38,7 +37,7 @@ export function DayBar({ view, now }: DayBarProps) {
       <div className="dayline-hours" aria-hidden="true">
         {hourTicks(line.from, line.to).map((hour) => (
           <span key={hour} style={{ left: at(hour * 60) }}>
-            {pad(hour)}
+            {hourLabel(hour)}
           </span>
         ))}
       </div>

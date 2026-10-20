@@ -81,7 +81,7 @@ void describe('the blocks', () => {
     );
     assert.deepEqual(
       line.blocks.map((b) => b.label),
-      ['LAI-1 A card · 1:00', 'General · 0:30'],
+      ['LAI-1 A card · 1 h', 'General · 30 min'],
     );
   });
 

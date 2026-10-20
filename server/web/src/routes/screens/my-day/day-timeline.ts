@@ -1,5 +1,6 @@
 import type { MyDay } from '../../../api/time.ts';
-import { atClock, draftTarget, entryTarget, hm } from './my-day-derive.ts';
+import { formatDuration } from '../../../api/duration.ts';
+import { atClock, draftTarget, entryTarget } from './my-day-derive.ts';
 
 /**
  * My day's timeline bar (LAI-796, the owner's reference): the day's
@@ -63,7 +64,7 @@ export function dayTimeline(
       untimed += 1;
       return;
     }
-    blocks.push({ kind, id: item.id, start, end, label: `${target} · ${hm(item.minutes)}` });
+    blocks.push({ kind, id: item.id, start, end, label: `${target} · ${formatDuration(item.minutes)}` });
   };
 
   for (const entry of view.entries) place('confirmed', entry, entryTarget(entry));

@@ -20,6 +20,7 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { formatDuration } from '../../../api/duration.ts';
 import { AddTimeForm } from './AddTimeForm.tsx';
 import { AgentStrip } from './AgentStrip.tsx';
 import { DraftList, type Batch } from './DraftList.tsx';
@@ -40,7 +41,7 @@ import {
   type BulkKind,
   type BulkResult,
 } from './draft-bulk.ts';
-import { STATE_LABELS, canAddTime, dayIn, dayTotals, hm, isDay } from './my-day-derive.ts';
+import { STATE_LABELS, canAddTime, dayIn, dayTotals, isDay } from './my-day-derive.ts';
 import './my-day.css';
 
 export interface MyDayScreenProps {
@@ -284,8 +285,8 @@ export function MyDayScreen({
           >
             {pending === 'confirm-day' && <Spinner size="sm" label="Confirming the day" />}
             {dayPlan.needCard.length === 0
-              ? `Confirm day · ${hm(readyMinutes)}`
-              : `Confirm ${String(dayPlan.ready.length)} ready · ${hm(readyMinutes)}`}
+              ? `Confirm day · ${formatDuration(readyMinutes)}`
+              : `Confirm ${String(dayPlan.ready.length)} ready · ${formatDuration(readyMinutes)}`}
           </button>
         )}
       </ScreenHeader>
@@ -312,8 +313,8 @@ export function MyDayScreen({
                 )}
                 {!nothing && (
                   <span className="myday-card-caption" data-day-totals>
-                    {hm(totals.confirmed)} confirmed
-                    {totals.drafted > 0 && ` · ${hm(totals.drafted)} drafted`}
+                    {formatDuration(totals.confirmed)} confirmed
+                    {totals.drafted > 0 && ` · ${formatDuration(totals.drafted)} drafted`}
                   </span>
                 )}
               </header>

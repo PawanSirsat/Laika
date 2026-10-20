@@ -15,21 +15,24 @@ import {
   atClock,
   canAddTime,
   canChange,
-  clockIn,
   dayIn,
   dayLabel,
   dayTotals,
   draftTarget,
   entryTarget,
   evidenceLine,
-  hm,
   isDay,
+  minutesUnderstood,
   MODE_NOTES,
   parseMinutes,
   rangeLabel,
+  splitAt,
+  splitUnderstood,
   weekCell,
   weekDays,
 } from '../../../../src/routes/screens/my-day/my-day-derive.ts';
+import { formatDuration } from '../../../../src/api/duration.ts';
+import { clockTime } from '../../../../src/api/time-label.ts';
 import { code } from '../../../helpers/code.ts';
 
 const SIGNALS: TimeSignals = { prompts: 0, replies: 0, sessions: 0, commits: 0, marks: 0 };
@@ -69,12 +72,15 @@ const entry = (over: Partial<TimeEntry> = {}): TimeEntry => ({
   ...over,
 });
 
-void describe('two units: the person’s h:mm, and an agent’s minutes', () => {
-  void test('the person’s own time is h:mm', () => {
-    assert.equal(hm(0), '0:00');
-    assert.equal(hm(45), '0:45');
-    assert.equal(hm(125), '2:05');
-    assert.equal(hm(600), '10:00');
+void describe('two units: the person’s time in words, and an agent’s minutes', () => {
+  void test('the person’s own time says its units, never h:mm (LAI-830)', async () => {
+    const dir = new URL('../../../../src/routes/screens/my-day/', import.meta.url);
+    for (const file of await readdir(dir)) {
+      if (!/\.tsx?$/.test(file)) continue;
+      const src = code(await readFile(new URL(file, dir), 'utf8'));
+      // `hm` printed `0:19`; nothing on the screen may print a duration that way.
+      assert.doesNotMatch(src, /\bhm\(/, `${file} still prints h:mm`);
+    }
   });
 
   void test('an agent’s time is minutes, and never hours, however large (D-088 item 8)', () => {
@@ -98,7 +104,7 @@ void describe('two units: the person’s h:mm, and an agent’s minutes', () => 
     // is not a file that draws nothing.
     assert.match(src, /agentMinutes\(agent\.minutes\)/);
     assert.match(src, /agentMinutes\(row\.minutes\)/);
-    assert.doesNotMatch(src, /\bhm\(/, 'an agent figure drawn as h:mm');
+    assert.doesNotMatch(src, /\bhm\(|formatDuration\(/, 'an agent figure drawn as hours');
     // And it says so to the reader, beside the figure.
     assert.match(src, /minutes, never hours/);
   });
@@ -113,6 +119,29 @@ void describe('what a person types', () => {
     assert.equal(parseMinutes('1h30'), 90);
     assert.equal(parseMinutes('1h'), 60);
     assert.equal(parseMinutes('1.5h'), 90);
+  });
+
+  void test('the forms the owner listed, and every duration the page prints (LAI-830)', () => {
+    assert.equal(parseMinutes('45'), 45);
+    assert.equal(parseMinutes('45m'), 45);
+    assert.equal(parseMinutes('1h 30m'), 90);
+    assert.equal(parseMinutes('1:30'), 90);
+    assert.equal(parseMinutes('1 h 30 min'), 90);
+    assert.equal(parseMinutes('45 mins'), 45);
+    assert.equal(parseMinutes('2 hours'), 120);
+    // Minutes… and Edit open prefilled with the row's own words, so each one
+    // must read back as itself, all the way to a whole day.
+    for (let n = 1; n <= 1440; n += 1) {
+      assert.equal(parseMinutes(formatDuration(n)), n, formatDuration(n));
+    }
+  });
+
+  void test('a How long field says what it understood, and nothing for nonsense', () => {
+    assert.equal(minutesUnderstood('45'), 'Reads as 45 min');
+    assert.equal(minutesUnderstood('1h 30m'), 'Reads as 1 h 30 min');
+    assert.equal(minutesUnderstood('1:30'), 'Reads as 1 h 30 min');
+    assert.equal(minutesUnderstood(''), undefined);
+    assert.equal(minutesUnderstood('soon'), undefined);
   });
 
   void test('nothing, nonsense, zero and more than a day are refused', () => {
@@ -130,6 +159,44 @@ void describe('what a person types', () => {
     assert.equal(atClock('2026-10-20', '25:00', 'UTC'), undefined);
     assert.equal(atClock('2026-10-20', 'ten', 'UTC'), undefined);
     assert.equal(atClock('nope', '10:00', 'UTC'), undefined);
+    // The 12-hour form is read too.
+    assert.equal(atClock('2026-10-20', '2:35 PM', 'UTC'), Date.UTC(2026, 9, 20, 14, 35));
+  });
+
+  void test('Split… takes the reading inside the block, and nothing outside it (LAI-830)', () => {
+    const utc = (h: number, m = 0): number => Date.UTC(2026, 9, 20, h, m);
+    const block = (from: number, to: number) => ({
+      day: '2026-10-20',
+      tz: 'UTC',
+      started_at: from,
+      ended_at: to,
+    });
+    const morning = block(utc(8, 40), utc(10, 15));
+    assert.equal(splitAt(morning, '9:30'), utc(9, 30));
+    assert.equal(splitAt(morning, '9:30 AM'), utc(9, 30));
+    assert.equal(splitAt(morning, '9:30 PM'), undefined);
+    assert.equal(splitAt(morning, '21:30'), undefined);
+    // The ends are not inside: a split there would leave an empty half.
+    assert.equal(splitAt(morning, '8:40'), undefined);
+    assert.equal(splitAt(morning, '10:15'), undefined);
+
+    // The owner's afternoon block: a bare 2:35 can only be 2:35 PM.
+    const afternoon = block(utc(14, 29), utc(14, 48));
+    assert.equal(splitAt(afternoon, '2:35'), utc(14, 35));
+    assert.equal(splitAt(afternoon, '2:35 pm'), utc(14, 35));
+    assert.equal(splitAt(afternoon, '14:35'), utc(14, 35));
+    assert.equal(splitAt(afternoon, '2:35 AM'), undefined);
+
+    // Across noon, 12:05 is noon, not midnight.
+    assert.equal(splitAt(block(utc(11, 40), utc(12, 10)), '12:05'), utc(12, 5));
+
+    // And in the block's own zone: 10:15 in Kolkata.
+    assert.equal(splitAt(draft(), '10:15'), Date.UTC(2026, 9, 20, 4, 45));
+    assert.equal(splitAt(draft({ started_at: null, ended_at: null }), '10:15'), undefined);
+
+    assert.equal(splitUnderstood(afternoon, '2:35'), 'Splits at 2:35 PM');
+    assert.equal(splitUnderstood(draft(), '10:15'), 'Splits at 10:15 AM');
+    assert.equal(splitUnderstood(morning, '9:30 PM'), undefined);
   });
 });
 
@@ -138,7 +205,7 @@ void describe('days and the week', () => {
     const at = Date.UTC(2026, 9, 19, 20, 0); // 01:30 on the 20th in Kolkata
     assert.equal(dayIn('Asia/Kolkata', at), '2026-10-20');
     assert.equal(dayIn('UTC', at), '2026-10-19');
-    assert.equal(clockIn('Asia/Kolkata', at), '01:30');
+    assert.equal(clockTime(at, { timeZone: 'Asia/Kolkata' }), '1:30 AM');
   });
 
   void test('the week runs Monday to Sunday around any of its days', () => {
@@ -164,8 +231,11 @@ void describe('days and the week', () => {
     });
     assert.deepEqual(weekCell(cell('no_signal')), { label: 'No signal', figure: '—' });
     assert.doesNotMatch(weekCell(cell('no_signal')).figure, /0:00|^0/);
-    assert.deepEqual(weekCell(cell('confirmed', 220)), { label: 'Confirmed', figure: '3:40' });
-    assert.deepEqual(weekCell(cell('drafted', 60, 30)), { label: 'Drafted', figure: '1:30' });
+    assert.deepEqual(weekCell(cell('confirmed', 220)), {
+      label: 'Confirmed',
+      figure: '3 h 40 min',
+    });
+    assert.deepEqual(weekCell(cell('drafted', 60, 30)), { label: 'Drafted', figure: '1 h 30 min' });
     assert.deepEqual(weekCell(cell('future')), { label: '', figure: '' });
   });
 });
@@ -185,7 +255,7 @@ void describe('a block in words', () => {
   });
 
   void test('its time range is in its own zone, and absent when it has none', () => {
-    assert.equal(rangeLabel(draft()), '09:40–11:05');
+    assert.equal(rangeLabel(draft()), '9:40–11:05 AM');
     assert.equal(rangeLabel(draft({ started_at: null, ended_at: null })), '');
   });
 

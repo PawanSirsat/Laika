@@ -229,7 +229,7 @@ void describe('the drafted blocks', () => {
       const entries = h.page.locator('.myday-entries');
       assert.equal(
         await entries.locator('[data-confirmed-caption]').innerText(),
-        '14 entries · 1:52',
+        '14 entries · 1 h 52 min',
       );
       assert.equal(await entries.locator('li[data-entry]').count(), 0);
       const show = entries.getByRole('button', { name: 'Show them' });
@@ -249,12 +249,12 @@ void describe('the drafted blocks', () => {
       await pageBox(h).click();
       await count(h).waitFor({ timeout: 5_000 });
       // d01–d10 are 15 to 19 minutes, twice over.
-      assert.equal(await count(h).innerText(), '10 selected · 2:50');
+      assert.equal(await count(h).innerText(), '10 selected · 2 h 50 min');
 
       const everyPage = h.page.getByRole('button', { name: 'Select all 42 drafted' });
       await everyPage.click();
       await until(async () => (await count(h).innerText()).startsWith('42'));
-      assert.equal(await count(h).innerText(), '42 selected · 11:51');
+      assert.equal(await count(h).innerText(), '42 selected · 11 h 51 min');
       assert.equal(await everyPage.count(), 0, 'every page is selected, and it is still offered');
 
       await h.page.getByRole('button', { name: 'Clear' }).click();
@@ -281,7 +281,7 @@ void describe('the drafted blocks', () => {
       assert.equal(await tick(h, 'd08').isChecked(), true);
       assert.equal(
         await tick(h, 'd08').getAttribute('aria-label'),
-        'Select 08:20–08:37, LAI-2 Webhook retries back off',
+        'Select 8:20–8:37 AM, LAI-2 Webhook retries back off',
       );
     } finally {
       await h.close();
@@ -311,10 +311,10 @@ void describe('confirming in bulk', () => {
       );
       assert.equal(
         await said(h).innerText(),
-        'Confirmed 9 blocks. Left out, still selected — 1 needs a card or General: 07:00–07:18.',
+        'Confirmed 9 blocks. Left out, still selected — 1 needs a card or General: 7:00–7:18 AM.',
       );
       // The one left out stays selected, to be put on a card next.
-      assert.equal(await count(h).innerText(), '1 selected · 0:18');
+      assert.equal(await count(h).innerText(), '1 selected · 18 min');
       assert.equal(await tick(h, 'd04').isChecked(), true);
 
       // One re-read for the whole batch, not one per block.
@@ -344,7 +344,7 @@ void describe('confirming in bulk', () => {
       assert.equal(
         await said(h).innerText(),
         'Confirmed 7 blocks. 2 blocks did not save and stay selected: The entry could not be written. ' +
-          'Left out, still selected — 1 needs a card or General: 07:00–07:18.',
+          'Left out, still selected — 1 needs a card or General: 7:00–7:18 AM.',
       );
       await until(async () => (await count(h).innerText()).startsWith('3 '));
       assert.match(await count(h).innerText(), /^3 selected/);
@@ -399,11 +399,11 @@ void describe('confirming in bulk', () => {
       assert.equal(
         await said(h).innerText(),
         'Confirmed 7 blocks. 2 blocks changed since this page loaded — reloaded; please review again. ' +
-          'Left out, still selected — 1 needs a card or General: 07:00–07:18.',
+          'Left out, still selected — 1 needs a card or General: 7:00–7:18 AM.',
       );
       // Only the one left out: the two that changed are not claimed as selected.
       await until(async () => (await count(h).innerText()).startsWith('1 '));
-      assert.equal(await count(h).innerText(), '1 selected · 0:18');
+      assert.equal(await count(h).innerText(), '1 selected · 18 min');
       assert.equal(await tick(h, 'd02').isChecked(), false);
     } finally {
       await h.close();
@@ -421,7 +421,7 @@ void describe('confirming in bulk', () => {
       await h.page.setViewportSize({ width: 1440, height: 900 });
       const button = h.page.locator('.screen-page .myday-chip-primary');
       await button.waitFor({ timeout: 30_000 });
-      assert.equal(await button.innerText(), 'Confirm day · 10:08');
+      assert.equal(await button.innerText(), 'Confirm day · 10 h 8 min');
       const reads = dayReads(h);
       await button.click();
       await said(h).waitFor({ timeout: 20_000 });
@@ -429,7 +429,7 @@ void describe('confirming in bulk', () => {
       assert.equal(await said(h).getAttribute('role'), 'alert');
       assert.equal(
         await said(h).innerText(),
-        'Confirmed the day: 37 blocks, 10:28. 1 block more arrived since this page loaded and was ' +
+        'Confirmed the day: 37 blocks, 10 h 28 min. 1 block more arrived since this page loaded and was ' +
           'confirmed too. 1 block on no card was confirmed as General — change it under Confirmed ' +
           'if it belongs on one.',
       );
@@ -445,7 +445,7 @@ void describe('confirming in bulk', () => {
     const h = await busy();
     try {
       const button = h.page.locator('.screen-page .myday-chip-primary');
-      assert.equal(await button.innerText(), 'Confirm 36 ready · 10:08');
+      assert.equal(await button.innerText(), 'Confirm 36 ready · 10 h 8 min');
       await button.click();
       await said(h).waitFor({ timeout: 60_000 });
       const sent = posts(h, '/confirm');
@@ -457,7 +457,7 @@ void describe('confirming in bulk', () => {
       const text = await said(h).innerText();
       assert.match(
         text,
-        /^Confirmed 36 of 42 blocks; 6 left drafted — 6 need a card or General \(07:00–07:18, 09:20–09:35, /,
+        /^Confirmed 36 of 42 blocks; 6 left drafted — 6 need a card or General \(7:00–7:18 AM, 9:20–9:35 AM, /,
       );
       assert.doesNotMatch(text, /selected/, 'the header selects nothing');
     } finally {
@@ -484,9 +484,9 @@ void describe('confirming in bulk', () => {
       assert.equal(posts(h, '/confirm').length, 17);
       assert.equal(
         await said(h).innerText(),
-        'Confirmed 16 of 42 blocks; 26 left drafted — 6 need a card or General (07:00–07:18, ' +
-          '09:20–09:35, 11:40–11:57, 14:00–14:19, 16:20–16:36 and 1 more); 20 blocks from ' +
-          '12:20–12:39 on would put more than 24 hours on the day.',
+        'Confirmed 16 of 42 blocks; 26 left drafted — 6 need a card or General (7:00–7:18 AM, ' +
+          '9:20–9:35 AM, 11:40–11:57 AM, 2:00–2:19 PM, 4:20–4:36 PM and 1 more); 20 blocks from ' +
+          '12:20–12:39 PM on would put more than 24 hours on the day.',
       );
     } finally {
       await h.close();
@@ -616,8 +616,8 @@ void describe('names a screen reader can tell apart', () => {
         .locator('li[data-draft] input.myday-check')
         .evaluateAll((els: Element[]) => els.map((el) => el.getAttribute('aria-label')));
       assert.deepEqual(names, [
-        'Select block 1 of 2, no set time, 0:15, LAI-1 Search matches keys',
-        'Select block 2 of 2, no set time, 0:16, LAI-2 Webhook retries back off',
+        'Select block 1 of 2, no set time, 15 min, LAI-1 Search matches keys',
+        'Select block 2 of 2, no set time, 16 min, LAI-2 Webhook retries back off',
       ]);
       const menus = await h.page
         .locator('li[data-draft] .myday-more')
@@ -690,7 +690,7 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
   void test('the row menu holds the rest, by keyboard, and closes on Escape', async () => {
     const h = await busy();
     try {
-      const trigger = row(h, 'd01').getByRole('button', { name: 'More for 06:00–06:15' });
+      const trigger = row(h, 'd01').getByRole('button', { name: 'More for 6:00–6:15 AM' });
       await trigger.focus();
       await h.page.keyboard.press('Enter');
       const menu = h.page.getByRole('menu', { name: 'Change this block' });
@@ -711,7 +711,7 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
       assert.equal(await menu.count(), 0);
       assert.equal(
         await h.page.evaluate(() => document.activeElement?.getAttribute('aria-label')),
-        'More for 06:00–06:15',
+        'More for 6:00–6:15 AM',
       );
 
       // Card… opens the field, and focus is in it.

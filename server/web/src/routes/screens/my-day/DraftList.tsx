@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DraftPatch, TimeDraft } from '../../../api/time.ts';
+import { formatDuration } from '../../../api/duration.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
 import {
   effectiveSelection,
@@ -19,7 +20,6 @@ import {
   selectRange,
   type BulkKind,
 } from './draft-bulk.ts';
-import { hm } from './my-day-derive.ts';
 
 /** A batch in flight, or what the last one did — on the day it ran on. */
 export type Batch =
@@ -135,7 +135,7 @@ export function DraftList({
           Drafted — not yet confirmed
         </h2>
         <span className="myday-card-caption" data-drafted-caption>
-          {drafts.length} {drafts.length === 1 ? 'block' : 'blocks'} · {hm(total)}
+          {drafts.length} {drafts.length === 1 ? 'block' : 'blocks'} · {formatDuration(total)}
           {dayNeedCard > 0 && ` · ${needCardLine(dayNeedCard)}`}
         </span>
         {headState === 'all' && live.size < drafts.length && (
@@ -156,7 +156,7 @@ export function DraftList({
       {live.size > 0 && (
         <div className="myday-bulk" role="group" aria-label="Selected blocks">
           <span className="myday-bulk-count" data-bulk-count>
-            <strong>{live.size} selected</strong> · {hm(minutesOf(drafts, live))}
+            <strong>{live.size} selected</strong> · {formatDuration(minutesOf(drafts, live))}
           </span>
           {chosenNeedCard > 0 && (
             <span className="myday-bulk-warn" data-bulk-needcard>
