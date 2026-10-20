@@ -2,11 +2,12 @@
 id: LAI-796
 title: 'Reorganise the app: a simpler sidebar that collapses to icons, Inbox, Insights and Developer access as merged pages, a user menu, and a calmer My day'
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-20T05:16:07Z
 ---
 
 ## Goal
