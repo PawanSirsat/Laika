@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm';
 import { AGENT_CLIENTS, agentClientSlug, type AgentClient } from '../auth/agent-clients.ts';
 import { loadActor, withProject, type ResolvedActor } from '../auth/resolve-actor.ts';
 import { boardDayOf } from '../db/activity.ts';
@@ -9,6 +9,7 @@ import {
   activity,
   boardActivityDays,
   heartbeats,
+  orgs,
   projects,
   sessions,
   tasks,
@@ -138,27 +139,59 @@ export type LoadLevel = 'none' | 'light' | 'normal' | 'heavy';
 
 /**
  * A person's open assigned work, counted over the projects the reader may read
- * (LAI-767).
+ * (LAI-767, reshaped by D-092 and LAI-818).
  *
- * `in_progress`, `in_review` and `todo` partition `open` by category; `todo`
- * is assigned and not started, Backlog and To do alike. `overdue` and
- * `due_soon` cut across them, by the client's `isOverdue` rule: due before
+ * `in_progress`, `todo`, `backlog` and `in_review` partition `open` by
+ * category. **`committed` is `in_progress` + `todo`** — the person's load, the
+ * only number {@link loadOf} reads. Backlog is the pipeline and review waits on
+ * the reviewer, so neither is load (D-092 items 2 and 3). `overdue` and
+ * `due_soon` cut across all four, by the client's `isOverdue` rule: due before
  * today (UTC) is overdue, due today or within the next seven days is soon.
  */
 export interface CapacityWorkload {
   in_progress: number;
-  in_review: number;
+  /** Assigned in a To do status: committed and not started. **Not** backlog (LAI-818). */
   todo: number;
+  /** Assigned in a Backlog status: the pipeline, shown apart, never load. */
+  backlog: number;
+  /** Waiting on a reviewer — never the assignee's load (D-092 item 2). */
+  in_review: number;
+  /** `in_progress` + `todo`: what the load rule reads. */
+  committed: number;
+  /** Past its due date, in any open category. Its own badge, not a load trigger. */
   overdue: number;
   due_soon: number;
+  /** All four categories together. */
   open: number;
 }
 
-/** One space a person has open work in, with the same counts (LAI-767). */
+/**
+ * One space a person has open work in, with the same counts and **that
+ * space's load**, by the same rule (LAI-767, LAI-818): a badge shown while one
+ * space is selected is that space's load (D-092 item 3).
+ */
 export interface CapacitySpace extends CapacityWorkload {
   project_id: string;
   slug: string;
   name: string;
+  load: LoadLevel;
+}
+
+/**
+ * The fortnight's board actions, split by who did them (D-092, LAI-818).
+ * `by_self` and `by_agents` leave out bookkeeping, which is counted apart:
+ * the three sum to the `activity_14d` series.
+ */
+export interface ActivitySplit {
+  /** Their own, on a web session (§4.22's `by_self`), less bookkeeping. */
+  by_self: number;
+  /** On their tokens (§4.22's `by_agents`), less bookkeeping. */
+  by_agents: number;
+  /**
+   * Sprint moves (`sprint.tasks_changed`) and card reorders (`task.updated`
+   * naming `position`, D-060.4) by either — tidying, not work.
+   */
+  bookkeeping: number;
 }
 
 /**
@@ -201,8 +234,9 @@ export interface CapacityEntry {
   /** `null` while presence is off (§4.2): no status is a fact the org chose. */
   status: PersonStatus | null;
   workload: CapacityWorkload;
+  /** {@link loadOf} across every space the reader may read; each space has its own. */
   load: LoadLevel;
-  /** Spaces they have open work in, most open first. */
+  /** Spaces they have open work in, most committed first, then most open. */
   spaces: CapacitySpace[];
   /**
    * Their agents. Everyone sees the ones running now, as `/presence` already
@@ -219,6 +253,11 @@ export interface CapacityEntry {
    * (D-079's rollup). Present only for `profile.activity.read`. Absent, not empty.
    */
   activity_14d?: number[];
+  /**
+   * The same fortnight split by who did it, bookkeeping apart (LAI-818). Gated
+   * with `activity_14d`, by `profile.activity.read`. Absent, not empty.
+   */
+  activity_14d_split?: ActivitySplit;
 }
 
 export interface CapacityView {
@@ -428,25 +467,56 @@ export const ACTIVITY_DAYS = 14;
 
 const DAY_MS = 86_400_000;
 
+/**
+ * Board bookkeeping (LAI-818): a sprint move, or a card reorder — the
+ * `task.updated` row naming `position` that the web's feed already hides as
+ * `isReorder` (D-060.4). Tidying a board, not work on it, and an agent
+ * mirroring a backlog writes it by the hundred.
+ */
+function isBookkeeping() {
+  return or(
+    eq(activity.type, 'sprint.tasks_changed'),
+    and(
+      eq(activity.type, 'task.updated'),
+      sql`json_extract(${activity.payloadJson}, '$.field') = 'position'`,
+    ),
+  );
+}
+
 /** A task assigned and not finished: every category before Done (D-077). */
 const OPEN_CATEGORIES = ['backlog', 'todo', 'in_progress', 'review'] as const;
 
+/** `heavy` above this many in progress (LAI-767, SPEC §9.3). */
+const HEAVY_IN_PROGRESS = 5;
+/** `heavy` above this much committed work (D-092, SPEC §9.3). */
+const HEAVY_COMMITTED = 15;
+/** `light` at or below this many in progress… */
+const LIGHT_IN_PROGRESS = 2;
+/** …and at or below this much committed work. */
+const LIGHT_COMMITTED = 5;
+
 /**
  * The load badge (LAI-767) — **a fixed rule, not a setting**, so a badge means
- * the same on every board:
+ * the same on every board. **Load is committed work** (D-092 item 3, LAI-818):
+ * in progress plus to do.
  *
- * - `none`: nothing open is assigned to them.
- * - `heavy`: more than 5 in progress, **or** anything overdue, **or** more than
- *   15 open.
- * - `light`: at most 2 in progress and at most 5 open.
+ * - `none`: nothing committed.
+ * - `heavy`: more than 5 in progress, **or** more than 15 committed.
+ * - `light`: at most 2 in progress and at most 5 committed.
  * - `normal`: the rest.
  *
- * Counted over what the reader may read, as every other figure here is.
+ * **Review, backlog and overdue are not read.** Review waits on the reviewer,
+ * backlog is the pipeline, and overdue is its own badge: counting any of them
+ * is what called every person on the board Heavy (LAI-818's audit — 77 and 163
+ * in review, 209 in backlog, one overdue task each).
+ *
+ * Counted over what the reader may read, as every other figure here is, and
+ * applied to each space's counts as well as to the whole.
  */
 export function loadOf(work: CapacityWorkload): LoadLevel {
-  if (work.open === 0) return 'none';
-  if (work.in_progress > 5 || work.overdue > 0 || work.open > 15) return 'heavy';
-  if (work.in_progress <= 2 && work.open <= 5) return 'light';
+  if (work.committed === 0) return 'none';
+  if (work.in_progress > HEAVY_IN_PROGRESS || work.committed > HEAVY_COMMITTED) return 'heavy';
+  if (work.in_progress <= LIGHT_IN_PROGRESS && work.committed <= LIGHT_COMMITTED) return 'light';
   return 'normal';
 }
 
@@ -462,7 +532,16 @@ export function statusOf(lastSeen: number | null, now: number): PersonStatus {
 }
 
 function emptyWorkload(): CapacityWorkload {
-  return { in_progress: 0, in_review: 0, todo: 0, overdue: 0, due_soon: 0, open: 0 };
+  return {
+    in_progress: 0,
+    todo: 0,
+    backlog: 0,
+    in_review: 0,
+    committed: 0,
+    overdue: 0,
+    due_soon: 0,
+    open: 0,
+  };
 }
 
 /** One open task into a set of counts, by category and by its due date. */
@@ -472,8 +551,10 @@ function countTask(
   today: number,
 ): void {
   if (task.status === 'in_progress') work.in_progress += 1;
+  else if (task.status === 'todo') work.todo += 1;
   else if (task.status === 'review') work.in_review += 1;
-  else work.todo += 1;
+  else work.backlog += 1;
+  work.committed = work.in_progress + work.todo;
   work.open += 1;
   if (task.dueOn === null) return;
   if (task.dueOn < today) work.overdue += 1;
@@ -699,6 +780,31 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
         .all()
     : [];
 
+  // The same fortnight's bookkeeping, per person and kind (LAI-818). The
+  // rollup has no verb, so this one count reads the log — through
+  // `activity_org_created_at_idx`, as a range over the window, never a scan.
+  const org = mayReadActivity ? db.select({ id: orgs.id }).from(orgs).limit(1).get() : undefined;
+  const tidying =
+    org === undefined
+      ? []
+      : db
+          .select({
+            actorId: activity.actorId,
+            actorKind: activity.actorKind,
+            n: sql<number>`count(*)`,
+          })
+          .from(activity)
+          .where(
+            and(
+              eq(activity.orgId, org.id),
+              gte(activity.createdAt, Date.parse(`${firstDay}T00:00:00Z`)),
+              lt(activity.createdAt, today + DAY_MS),
+              isBookkeeping(),
+            ),
+          )
+          .groupBy(activity.actorId, activity.actorKind)
+          .all();
+
   const people: CapacityEntry[] = everyone.map((person) => {
     const theirs = tasksOf.get(person.id) ?? [];
     const inProgress = theirs.filter((t) => t.status === 'in_progress');
@@ -715,11 +821,13 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
           slug: task.slug,
           name: task.projectName,
           ...emptyWorkload(),
+          load: 'none',
         };
         spaces.set(task.projectId, space);
       }
       countTask(space, task, today);
     }
+    for (const space of spaces.values()) space.load = loadOf(space);
 
     const theirBeats = beats.filter((b) => b.userId === person.id);
     const theirCalls = calls.filter((c) => c.userId === person.id);
@@ -786,7 +894,9 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
       status: enabled ? statusOf(last?.at ?? null, now) : null,
       workload,
       load: loadOf(workload),
-      spaces: [...spaces.values()].sort((a, b) => b.open - a.open || a.name.localeCompare(b.name)),
+      spaces: [...spaces.values()].sort(
+        (a, b) => b.committed - a.committed || b.open - a.open || a.name.localeCompare(b.name),
+      ),
       agents: [...agents.values()].sort(
         (a, b) =>
           Number(b.running) - Number(a.running) ||
@@ -806,13 +916,34 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
 
     if (mayReadActivity) {
       const perDay = new Map<string, number>();
+      let bySelf = 0;
+      let byAgents = 0;
       for (const d of days) {
-        if (d.userId === person.id) perDay.set(d.day, d.bySelf + d.byAgents);
+        if (d.userId !== person.id) continue;
+        perDay.set(d.day, d.bySelf + d.byAgents);
+        bySelf += d.bySelf;
+        byAgents += d.byAgents;
       }
       entry.activity_14d = Array.from(
         { length: ACTIVITY_DAYS },
         (_, i) => perDay.get(addDays(firstDay, i)) ?? 0,
       );
+
+      // §4.22 counts `actor_kind = 'user'` as by_self and every other kind
+      // with a person as by_agents; the same split here, so the subtraction
+      // takes each row from the column that counted it.
+      let tidySelf = 0;
+      let tidyAgents = 0;
+      for (const row of tidying) {
+        if (row.actorId !== person.id) continue;
+        if (row.actorKind === 'user') tidySelf += row.n;
+        else tidyAgents += row.n;
+      }
+      entry.activity_14d_split = {
+        by_self: bySelf - tidySelf,
+        by_agents: byAgents - tidyAgents,
+        bookkeeping: tidySelf + tidyAgents,
+      };
     }
 
     return entry;

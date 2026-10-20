@@ -987,16 +987,27 @@ describe('capacity per person (LAI-767)', () => {
 
       const mine = entry(ada);
 
+      // D-092: to do and backlog apart, review apart, and the committed figure
+      // the load rule reads beside them.
       expect(mine.workload).toEqual({
         in_progress: 2,
+        todo: 1,
+        backlog: 1,
         in_review: 1,
-        todo: 2,
+        committed: 3,
         overdue: 1,
         due_soon: 2,
         open: 5,
       });
       expect(mine.spaces).toEqual([
-        expect.objectContaining({ slug: 'laika', name: 'Laika', open: 5, in_progress: 2 }),
+        expect.objectContaining({
+          slug: 'laika',
+          name: 'Laika',
+          open: 5,
+          in_progress: 2,
+          committed: 3,
+          load: 'light',
+        }),
       ]);
       // The ids the plugin reads keep their meaning.
       expect(mine.in_progress_tasks).toHaveLength(2);
@@ -1026,27 +1037,56 @@ describe('capacity per person (LAI-767)', () => {
   });
 
   describe('the load rule', () => {
+    /** Counts as the server builds them: committed and open follow from the parts. */
     const work = (over: Partial<CapacityWorkload>): CapacityWorkload => {
-      const w = { in_progress: 0, in_review: 0, todo: 0, overdue: 0, due_soon: 0, ...over };
-      return { ...w, open: over.open ?? w.in_progress + w.in_review + w.todo };
+      const w = {
+        in_progress: 0,
+        todo: 0,
+        backlog: 0,
+        in_review: 0,
+        overdue: 0,
+        due_soon: 0,
+        ...over,
+      };
+      return {
+        ...w,
+        committed: w.in_progress + w.todo,
+        open: w.in_progress + w.todo + w.backlog + w.in_review,
+      };
     };
 
-    it('is none with nothing open', () => {
+    it('is none with nothing committed', () => {
       expect(loadOf(work({}))).toBe('none');
     });
 
-    it('is heavy above 5 in progress, with anything overdue, or above 15 open', () => {
+    it('is heavy above 5 in progress or above 15 committed', () => {
       expect(loadOf(work({ in_progress: 6 }))).toBe('heavy');
       expect(loadOf(work({ in_progress: 5 }))).toBe('normal');
-      expect(loadOf(work({ todo: 1, overdue: 1 }))).toBe('heavy');
       expect(loadOf(work({ todo: 16 }))).toBe('heavy');
       expect(loadOf(work({ todo: 15 }))).toBe('normal');
+      expect(loadOf(work({ in_progress: 4, todo: 12 }))).toBe('heavy');
     });
 
-    it('is light at up to 2 in progress and up to 5 open, normal above', () => {
+    it('is light at up to 2 in progress and up to 5 committed, normal above', () => {
       expect(loadOf(work({ in_progress: 2, todo: 3 }))).toBe('light');
       expect(loadOf(work({ in_progress: 3 }))).toBe('normal');
       expect(loadOf(work({ in_progress: 1, todo: 5 }))).toBe('normal');
+    });
+
+    // D-092 item 3, the three causes of "everyone is Heavy" (LAI-818).
+    it('does not count review: 100 waiting on reviewers, nothing committed, is no load', () => {
+      expect(loadOf(work({ in_review: 100 }))).toBe('none');
+      expect(loadOf(work({ in_progress: 1, in_review: 100 }))).toBe('light');
+    });
+
+    it('does not count backlog: it is the pipeline', () => {
+      expect(loadOf(work({ backlog: 209 }))).toBe('none');
+      expect(loadOf(work({ todo: 4, backlog: 209 }))).toBe('light');
+    });
+
+    it('does not count overdue: it is its own badge', () => {
+      expect(loadOf(work({ todo: 1, overdue: 1 }))).toBe('light');
+      expect(loadOf(work({ backlog: 3, overdue: 3 }))).toBe('none');
     });
 
     it('is served beside the counts it came from', () => {
@@ -1054,6 +1094,61 @@ describe('capacity per person (LAI-767)', () => {
       for (let i = 0; i < 7; i += 1) assigned(ada, 'in_progress');
 
       expect(entry(ada)).toMatchObject({ load: 'heavy', workload: { in_progress: 7 } });
+    });
+  });
+
+  describe('load is committed work (D-092, LAI-818)', () => {
+    it('a person with 0 in progress, 0 to do and 100 in review is not Heavy', () => {
+      const ada = makeUser('member', 'Ada');
+      for (let i = 0; i < 100; i += 1) assigned(ada, 'review');
+
+      const mine = entry(ada);
+      expect(mine.load).toBe('none');
+      expect(mine.workload).toMatchObject({ in_review: 100, committed: 0, open: 100 });
+      // The ids are unchanged: the plugin's "In review" line still reads them.
+      expect(mine.tasks_in_review).toHaveLength(100);
+    });
+
+    it('backlog is shown apart and is not load', () => {
+      const ada = makeUser('member', 'Ada');
+      for (let i = 0; i < 20; i += 1) assigned(ada, 'backlog');
+      assigned(ada, 'todo');
+
+      expect(entry(ada)).toMatchObject({
+        load: 'light',
+        workload: { todo: 1, backlog: 20, committed: 1, open: 21 },
+      });
+    });
+
+    it('overdue alone is not Heavy, and is still served as its own count', () => {
+      const ada = makeUser('member', 'Ada');
+      assigned(ada, 'todo', TODAY - DAY);
+      assigned(ada, 'backlog', TODAY - 3 * DAY);
+
+      expect(entry(ada)).toMatchObject({
+        load: 'light',
+        workload: { overdue: 2, committed: 1 },
+      });
+    });
+
+    it('each space carries its own load, by the same rule', () => {
+      const ada = makeUser('member', 'Ada');
+      createProject(t.sqlite, t.db, actor(adminId), {
+        name: 'Secret',
+        slug: 'secret',
+        prefix: 'SEC',
+      });
+      for (let i = 0; i < 6; i += 1) assigned(ada, 'in_progress', null, 'laika');
+      assigned(ada, 'in_progress', null, 'secret');
+      for (let i = 0; i < 30; i += 1) assigned(ada, 'backlog', null, 'secret');
+
+      const mine = entry(ada);
+      expect(mine.load).toBe('heavy');
+      // Secret has the most open work and the least committed: committed sorts.
+      expect(mine.spaces.map((s) => [s.slug, s.committed, s.backlog, s.load])).toEqual([
+        ['laika', 6, 0, 'heavy'],
+        ['secret', 1, 30, 'light'],
+      ]);
     });
   });
 
@@ -1076,6 +1171,55 @@ describe('capacity per person (LAI-767)', () => {
       const asMember = entry(ada, bea);
       expect('profile_kind' in asMember).toBe(false);
       expect('activity_14d' in asMember).toBe(false);
+      expect('activity_14d_split' in asMember).toBe(false);
+    });
+
+    it('splits the fortnight into by hand, by agents and bookkeeping (D-092, LAI-818)', () => {
+      const ada = makeUser('member', 'Ada');
+      const agent = token(ada, { lastMcpAt: NOW - DAY });
+      const log = (
+        at: number,
+        actorKind: 'user' | 'agent',
+        type: 'token.created' | 'task.updated' | 'sprint.tasks_changed',
+        payload: unknown = {},
+      ): void => {
+        appendActivity(t.db, {
+          orgId: orgId(),
+          actorId: ada,
+          actorKind,
+          actorTokenId: actorKind === 'agent' ? agent : null,
+          type,
+          payload,
+          now: at,
+        });
+      };
+
+      log(NOW - 1000, 'user', 'token.created');
+      log(NOW - 2000, 'user', 'task.updated', { field: 'title' });
+      log(NOW - DAY, 'agent', 'token.created');
+      log(NOW - 2 * DAY, 'agent', 'task.updated', { field: 'description_md' });
+      log(NOW - 3 * DAY, 'agent', 'token.created');
+      // Bookkeeping: a sprint move, and a reorder either way (D-060.4).
+      log(NOW - 3000, 'agent', 'sprint.tasks_changed', { field: 'sprint_id', from: null, to: 's' });
+      log(NOW - 4000, 'agent', 'task.updated', { field: 'position', from: 'a0', to: 'a1' });
+      log(NOW - 5000, 'user', 'task.updated', { field: 'position', from: 'a1', to: 'a2' });
+      // Before the window, so in neither the series nor the split.
+      log(NOW - 14 * DAY, 'agent', 'sprint.tasks_changed', { field: 'sprint_id' });
+
+      const mine = entry(ada);
+      expect(mine.activity_14d_split).toEqual({ by_self: 2, by_agents: 3, bookkeeping: 3 });
+      // The three are the series' total, split: nothing lost, nothing twice.
+      expect(mine.activity_14d?.reduce((a, b) => a + b, 0)).toBe(8);
+    });
+
+    it('counts the bookkeeping through the activity window index, not a scan', () => {
+      makeUser('member', 'Ada');
+      const plans = queryPlansOf(t.sqlite, 'activity', () =>
+        capacityNow(t.db, actor(adminId), NOW),
+      );
+
+      expect(plans.join('\n')).toContain('activity_org_created_at_idx');
+      expect(plans.join('\n')).not.toMatch(/SCAN activity\b/);
     });
 
     it('shows every agent they use to an admin, and only the running ones to a member', () => {

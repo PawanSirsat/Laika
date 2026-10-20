@@ -72,6 +72,11 @@ export interface CapacityScreenProps {
   readonly unlistedOpen?: number | undefined;
   /** Tasks waiting for a person on Review, from the shell (D-082); `undefined` until read. */
   readonly reviewWaiting?: number | undefined;
+  /**
+   * The server returned its 200 and said more wait (LAI-818): the tile reads
+   * "200+", because a cap shown as a total is a number that lies (D-092 item 5).
+   */
+  readonly reviewCapped?: boolean | undefined;
   /** Follow a tile's link without reloading the page. */
   readonly onNavigate: (to: string) => void;
 }
@@ -115,6 +120,7 @@ export function CapacityScreen({
   onOpenTask,
   unlistedOpen,
   reviewWaiting,
+  reviewCapped,
   onNavigate,
 }: CapacityScreenProps) {
   const { theme } = useTheme();
@@ -393,7 +399,11 @@ export function CapacityScreen({
           />
           <Tile
             label="Waiting for review"
-            value={reviewWaiting ?? '—'}
+            value={
+              reviewWaiting === undefined
+                ? '—'
+                : `${String(reviewWaiting)}${reviewCapped === true ? '+' : ''}`
+            }
             sub="open Review"
             href="/inbox?tab=review"
             onLink={link('/inbox?tab=review')}
@@ -497,8 +507,16 @@ export function CapacityScreen({
                 <dd>{LOAD_RULE}</dd>
                 <dt>Workload</dt>
                 <dd>
-                  Open tasks assigned to them, in the spaces you can see. To do is assigned and not
-                  started; overdue is past its due date.
+                  Open tasks assigned to them, in the spaces you can see. To do is committed and not
+                  started; backlog is the pipeline, not yet committed. Waiting on reviewers is their
+                  work in review: it waits on the reviewer, not on them. Overdue is past its due
+                  date, and is its own badge.
+                </dd>
+                <dt>Board activity</dt>
+                <dd>
+                  Their board actions over 14 days, owners and admins only: by hand on the web, by
+                  their agents, and bookkeeping (sprint moves and card reorders) counted apart from
+                  both.
                 </dd>
               </dl>
             </InfoTip>
@@ -587,12 +605,13 @@ export function CapacityScreen({
                 Team load
               </h2>
               <span className="prof-card-caption">
-                open work{space === null ? '' : ` in ${spaces?.get(space)?.name ?? 'this space'}`},
-                heaviest first
+                committed work
+                {space === null ? '' : ` in ${spaces?.get(space)?.name ?? 'this space'}`}, heaviest
+                first
               </span>
             </div>
             {load.rows.length === 0 ? (
-              <p className="cap-quiet">Nobody has open work here.</p>
+              <p className="cap-quiet">Nobody has committed work here.</p>
             ) : (
               <ul className="cap-team-rows">
                 {load.rows.map((person) => {
@@ -619,7 +638,7 @@ export function CapacityScreen({
                         ))}
                       </span>
                       <span className="cap-team-n" aria-hidden="true">
-                        {work.open}
+                        {work.committed}
                         {work.overdue > 0 && (
                           <span className="cap-team-overdue">{work.overdue} overdue</span>
                         )}
@@ -635,17 +654,13 @@ export function CapacityScreen({
                 In progress
               </li>
               <li>
-                <span className="cap-swatch cap-part-in_review" />
-                In review
-              </li>
-              <li>
                 <span className="cap-swatch cap-part-todo" />
                 To do
               </li>
             </ul>
             {load.idle > 0 && (
               <p className="cap-quiet">
-                {load.idle} {load.idle === 1 ? 'person has' : 'people have'} no open work
+                {load.idle} {load.idle === 1 ? 'person has' : 'people have'} nothing committed
                 {space === null ? '' : ' here'}.
               </p>
             )}
