@@ -341,6 +341,78 @@ void describe('laika time push', () => {
     assert.match(out.join('\n'), /changed in Solidtime too; Solidtime's is kept/);
   });
 
+  void test('never deletes or rewrites a Solidtime entry it took for another entry in the same run (review B1)', async () => {
+    // The reviewer's repro: S1 came in as I; the person typed the same hour
+    // as E and deleted I. E takes S1 — and S1 must then outlive I's delete.
+    await connected();
+    const s1 = st.add({
+      start: '2026-10-20T07:00:00Z',
+      end: '2026-10-20T08:00:00Z',
+      description: 'ONR-1 client meeting',
+      project_id: 'p-build',
+    });
+    board.outbox.push = [
+      item({ entry_id: 'E', started_at: Date.parse('2026-10-20T07:00:00Z') }),
+      item({
+        entry_id: 'I',
+        action: 'delete',
+        solidtime: {
+          id: s1.id,
+          hash: entryHash(s1, keyIn(s1.description)),
+          started_at: Date.parse(s1.start),
+        },
+      }),
+    ];
+    answers = [PASSWORD];
+    assert.equal(await run(['push']), 0, err.join('\n'));
+    assert.deepEqual(
+      st.entries.map((e) => e.id),
+      [s1.id],
+    );
+    assert.equal(st.requests.filter((r) => r.method === 'DELETE').length, 0);
+    const links = (
+      board.linked[0] as { links: { entry_id: string; solidtime_id: string; removed?: boolean }[] }
+    ).links;
+    assert.deepEqual(
+      links.map((l) => [l.entry_id, l.solidtime_id, l.removed ?? false]),
+      [['E', s1.id, false]],
+    );
+    assert.match(out.join('\n'), /left alone .* now another entry's in Solidtime/);
+  });
+
+  void test('never takes for a new entry a Solidtime entry this run deleted', async () => {
+    await connected();
+    const s1 = st.add({
+      start: '2026-10-20T07:00:00Z',
+      end: '2026-10-20T08:00:00Z',
+      description: 'ONR-1 client meeting',
+      project_id: 'p-build',
+    });
+    board.outbox.push = [
+      item({
+        entry_id: 'I',
+        action: 'delete',
+        solidtime: {
+          id: s1.id,
+          hash: entryHash(s1, keyIn(s1.description)),
+          started_at: Date.parse(s1.start),
+        },
+      }),
+      item({ entry_id: 'E', started_at: Date.parse('2026-10-20T07:00:00Z') }),
+    ];
+    answers = [PASSWORD];
+    assert.equal(await run(['push']), 0, err.join('\n'));
+    assert.equal(posts().length, 1);
+    const links = (board.linked[0] as { links: { entry_id: string; solidtime_id: string }[] })
+      .links;
+    const e = links.find((l) => l.entry_id === 'E');
+    assert.notEqual(e?.solidtime_id, s1.id);
+    assert.deepEqual(
+      st.entries.map((x) => x.id),
+      [e?.solidtime_id],
+    );
+  });
+
   void test('deletes what was deleted in Laika, and leaves alone what Solidtime changed since', async () => {
     await connected();
     const a = st.add({

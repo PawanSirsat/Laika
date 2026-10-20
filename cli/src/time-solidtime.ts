@@ -711,6 +711,11 @@ async function push(args: readonly string[], io: TimeIo): Promise<number> {
       taskNames = new Map(list.value.map((t) => [t.id, t.name]));
     }
     const taken = new Set(outbox.taken ?? []);
+    // What this run itself took for an entry, and what it deleted: a
+    // Solidtime entry taken for one is never deleted or rewritten for another,
+    // and one deleted is never taken (review B1 — an hour lost from both).
+    const linkedNow = new Set<string>();
+    const deletedNow = new Set<string>();
     const sent = readSent(io.home);
     const links: Link[] = [];
     const done = { created: 0, matched: 0, updated: 0, deleted: 0 };
@@ -718,6 +723,7 @@ async function push(args: readonly string[], io: TimeIo): Promise<number> {
     const hashOf = (e: StEntry) => entryHash(e, entryKey(e, taskNames));
     const link = (item: PushItem, e: StEntry): void => {
       taken.add(e.id);
+      linkedNow.add(e.id);
       links.push({
         entry_id: item.entry_id,
         revision: item.revision,
@@ -772,6 +778,7 @@ async function push(args: readonly string[], io: TimeIo): Promise<number> {
         const same = existing.find(
           (e) =>
             !taken.has(e.id) &&
+            !deletedNow.has(e.id) &&
             e.end !== null &&
             seconds(stMs(e.start)) === seconds(startMs) &&
             seconds(stMs(e.end)) === seconds(endMs) &&
@@ -822,6 +829,12 @@ async function push(args: readonly string[], io: TimeIo): Promise<number> {
 
       const twin = item.solidtime === null ? undefined : byId.get(item.solidtime.id);
       if (item.solidtime === null) continue;
+      if (linkedNow.has(item.solidtime.id)) {
+        notes.push(
+          `  left alone    ${label(item)} — it is now another entry's in Solidtime, taken this run`,
+        );
+        continue;
+      }
       if (twin === undefined) {
         if (item.action === 'delete') {
           if (!dry) links.push({ ...linkOf(item), removed: true });
@@ -849,6 +862,8 @@ async function push(args: readonly string[], io: TimeIo): Promise<number> {
           continue;
         }
         links.push({ ...linkOf(item), removed: true });
+        deletedNow.add(twin.id);
+        byId.delete(twin.id);
         done.deleted += 1;
         continue;
       }
