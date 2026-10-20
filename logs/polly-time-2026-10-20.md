@@ -67,6 +67,21 @@ Board card LAIKA-595 was already In progress and was not touched.
 - A child session polly defines itself on `claude-sdk` would look the same and
   count the same; recorded in the hook header and the README.
 
-**Gate** (repo root, after the last code edit): `pnpm test` 0 — server 3216
-passed + 10 skipped of 3226 cases, web 2206/2206, cli 484 passed + 2 skipped of
-486; `pnpm lint` 0; `pnpm format` 0. No load timeout this run.
+**Gate** (repo root). Run 1, after the last code edit: `pnpm test` 0 — server
+3216 passed + 10 skipped of 3226 cases, web 2206/2206, cli 484 passed + 2
+skipped of 486; `pnpm lint` 0; `pnpm format` 0.
+
+After the Markdown-only commits (task files, this log) the machine ran at load
+30–52 and three more `pnpm test` runs each exited 1 on timeouts alone (LAI-768):
+- run 2: 10 server cases (`db/migrate`, `mcp/parity`, `tooling/build` — the
+  built server never healthy); those three files alone: 67/67, exit 0.
+- run 3: cli `activity-lookback` (120 s test timeout) and web
+  `column-statuses` (`page.goto` 30 s); `pnpm -r` then stopped before the
+  server. Alone: web 19/19 exit 0; look-back 26/27 once (a different case,
+  "the hard deadline was reached" after 785 s), then 27/27 exit 0 at load 8.
+  Its two timing cases run on `master`'s cli and on this branch one after the
+  other: both pass, 3.12 s / 15.81 s against 3.08 s / 15.80 s.
+- run 4: server 3213 passed + 13 skipped, one file failed at suite level —
+  `tooling/environment-posture` `beforeAll` over 60 s; alone 13/13, exit 0.
+  Web 2206/2206, cli 484 + 2 skipped of 486.
+`pnpm lint` 0 and `pnpm format` 0 after the last edit.

@@ -102,3 +102,6 @@ not a live capture: the live hook is the owner's checkout, outside this task.
   launched a real background sync, because the copy's `next_sync_at` had
   passed; it stopped at "no token in ~/.laika/env" (only `activity/` was
   copied) and sent nothing. Neutralise `next_sync_at` first next time.
+- **Gate.** After the last code edit: test 0, lint 0, format 0. Three later
+  full runs (only Markdown changed) exited 1 on load timeouts at load 30–52,
+  each failing file passing alone — listed in `logs/polly-time-2026-10-20.md`.
