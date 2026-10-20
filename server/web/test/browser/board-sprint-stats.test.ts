@@ -359,7 +359,8 @@ void describe('DONE / BLK / LEFT are the strip’s figures (LAI-727)', () => {
 const theWalk = (urls: readonly string[]): string[] =>
   urls.filter((q) => {
     const p = new URLSearchParams(q);
-    return [...p.keys()].every((k) => k === 'limit' || k === 'cursor');
+    // `fields=slim` is how every list is read (LAI-795), not a scope.
+    return [...p.keys()].every((k) => k === 'limit' || k === 'cursor' || k === 'fields');
   });
 
 void describe('the figures come from the task set in the browser (LAI-727)', () => {
@@ -370,7 +371,11 @@ void describe('the figures come from the task set in the browser (LAI-727)', () 
       await reads(h, `S2 ${stripSummary('s2')}`);
       // Kept as a sleep (LAI-715 sweep): a quiet window: a second read would come after this, so no condition can stand in.
       await h.page.waitForTimeout(800);
-      assert.deepEqual(urls, ['?limit=200'], 'a task read beside the project’s one walk');
+      assert.deepEqual(
+        urls,
+        ['?fields=slim&limit=200'],
+        'a task read beside the project’s one walk',
+      );
       assert.deepEqual(h.unmatched, []);
     } finally {
       await h.close();

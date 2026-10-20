@@ -74,7 +74,7 @@ import {
   canConfigureProject,
   canCreateTask,
   type Member,
-  type Task,
+  type TaskSummary,
   type TaskFilter,
   type TaskPriority,
 } from '../../api/tasks.ts';
@@ -647,7 +647,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const needle = query.trim().toLowerCase();
 
   const matches = useMemo(() => {
-    return (task: Task): boolean => {
+    return (task: TaskSummary): boolean => {
       if (agentOnly && task.created_via !== AGENT_VIA) return false;
       /*
        * Blocked is decided here, not by the server: it needs the dependency

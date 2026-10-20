@@ -1185,7 +1185,11 @@ void describe('the Timeline reads the task set the Board already holds (LAI-724)
     try {
       await h.page.setViewportSize({ width: 1440, height: 900 });
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
-      assert.deepEqual(seen, ['?limit=200'], 'positive control: the Board walked the project');
+      assert.deepEqual(
+        seen,
+        ['?fields=slim&limit=200'],
+        'positive control: the Board walked the project',
+      );
 
       await h.page.locator('.view-tab', { hasText: 'Timeline' }).click();
       await h.page.locator('.tlx-sprint').first().waitFor({ timeout: 20_000 });

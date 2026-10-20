@@ -1,6 +1,6 @@
 import { everyPage } from '../../../api/every-page.ts';
 import { useEffect, useMemo, useState } from 'react';
-import type { Task } from '../../../api/tasks.ts';
+import type { TaskSummary } from '../../../api/tasks.ts';
 import { useProjectTasks } from '../../../api/use-project-tasks.ts';
 import { statusNameOf } from '../../../api/status-derive.ts';
 import { useProjectStatuses } from '../../../api/use-statuses.ts';
@@ -43,9 +43,9 @@ export function CalendarScreen({ slug, onOpenTask }: CalendarScreenProps) {
   /** So a chip can say which column the task is in (LAI-739). */
   const statuses = useProjectStatuses(slug);
   const tasks = useMemo(
-    (): readonly Task[] | undefined =>
+    (): readonly TaskSummary[] | undefined =>
       set?.status === 'ready'
-        ? set.tasks.filter((t): t is Task => !('deleted' in t))
+        ? set.tasks.filter((t): t is TaskSummary => !('deleted' in t))
         : set?.status === 'error'
           ? []
           : undefined,

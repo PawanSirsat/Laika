@@ -18,16 +18,15 @@ import {
   type TaskStore,
 } from '../../src/api/task-store.ts';
 import { ApiError } from '../../src/api/errors.ts';
-import type { Page, Task } from '../../src/api/tasks.ts';
+import type { Page, Task, TaskSummary } from '../../src/api/tasks.ts';
 
-function task(over: Partial<Task> & { id: string }): Task {
+/** A task as the store holds it: a slim list's, without the two texts (LAI-795). */
+function task(over: Partial<TaskSummary> & { id: string }): TaskSummary {
   return {
     key: `LC-${over.id}`,
     project_id: 'p',
     number: 1,
     title: 'A task',
-    description_md: null,
-    acceptance_md: null,
     status: 'todo',
     status_id: 'st-todo',
     status_name: 'To do',
@@ -90,7 +89,7 @@ interface PageCall {
   readonly slug: string;
   readonly cursor: string | undefined;
   readonly signal: AbortSignal;
-  resolve(page: Page<Task>): void;
+  resolve(page: Page<TaskSummary>): void;
   reject(cause: unknown): void;
 }
 
@@ -98,7 +97,7 @@ interface PageCall {
 function server() {
   const calls: PageCall[] = [];
   const fetchPage = (slug: string, cursor: string | undefined, signal: AbortSignal) =>
-    new Promise<Page<Task>>((resolve, reject) => {
+    new Promise<Page<TaskSummary>>((resolve, reject) => {
       calls.push({ slug, cursor, signal, resolve, reject });
       signal.addEventListener('abort', () => {
         reject(new DOMException('aborted', 'AbortError'));
@@ -135,7 +134,11 @@ function watch(store: TaskStore, slug: string) {
 }
 
 /** Answer the newest outstanding page call. */
-async function answer(api: ReturnType<typeof server>, data: Task[], next: string | null = null) {
+async function answer(
+  api: ReturnType<typeof server>,
+  data: TaskSummary[],
+  next: string | null = null,
+) {
   const call = api.calls[api.calls.length - 1]!;
   call.resolve({ data, next_cursor: next });
   await flush();
@@ -437,6 +440,54 @@ void describe('a change of user clears the set (no cross-user data)', () => {
     old.resolve({ data: [A, B], next_cursor: null });
     await flush();
     assert.equal(store.peek('core'), undefined, 'a late answer for the old user was stored');
+    w.stop();
+  });
+});
+
+void describe('the set holds no description or acceptance (LAI-795)', () => {
+  const TEXTS = ['description_md', 'acceptance_md'];
+  const full = (over: Partial<Task> & { id: string }): Task => ({
+    ...task(over),
+    description_md: 'A long description',
+    acceptance_md: '- [ ] a criterion',
+    ...over,
+  });
+
+  void test('a page that still carries them is held without them', async () => {
+    const { store, api } = setup();
+    const w = watch(store, 'core');
+    await answer(api, [full({ id: 'a' }), B]);
+    const held = w.last()?.snap.tasks ?? [];
+    assert.equal(held.length, 2);
+    for (const t of held) {
+      for (const field of TEXTS) assert.equal(field in t, false, `${t.id} kept ${field}`);
+    }
+    assert.equal(w.last()?.snap.byId.get('b'), B, 'a slim task was copied for nothing');
+    w.stop();
+  });
+
+  void test('a write answered in full is held as a summary, and the next slim read is no change', async () => {
+    const { store, api } = setup();
+    const w = watch(store, 'core');
+    await answer(api, [A, B]);
+    const written = full({ id: 'a', title: 'Renamed', updated_at: 5 });
+    store.writeLocal('core', (tasks) => tasks.map((t) => (t.id === 'a' ? written : t)), {
+      changed: new Set(['a']),
+      record: 'a',
+    });
+    const after = w.last()!.snap;
+    const held = after.byId.get('a')!;
+    for (const field of TEXTS) assert.equal(field in held, false, `the write kept ${field}`);
+    assert.equal(held.title, 'Renamed');
+    assert.equal(after.byId.get('b'), B, 'an untouched task lost its object');
+
+    // The server's slim answer about the same write: nothing changed, so no glow.
+    store.reload('core');
+    await answer(api, [{ ...A, title: 'Renamed', updated_at: 5 }, B]);
+    const { snap, change } = w.last()!;
+    assert.equal(change.origin, 'refresh');
+    assert.deepEqual([...(change.changed ?? [])], [], 'the texts it dropped read as a change');
+    assert.equal(snap.byId.get('a'), held);
     w.stop();
   });
 });

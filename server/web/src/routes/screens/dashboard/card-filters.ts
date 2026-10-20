@@ -1,5 +1,5 @@
 import { isPriority, isTagName } from '../../../api/task-filter.ts';
-import type { Task, TaskPriority } from '../../../api/tasks.ts';
+import type { TaskSummary, TaskPriority } from '../../../api/tasks.ts';
 import { blockedTasks } from './dashboard-derive.ts';
 
 /**
@@ -158,10 +158,10 @@ export function rangeApplies(scope: CardScope, ctx: CardContext): boolean {
  * is the set itself, so the card is exactly what it was before LAI-732.
  */
 export function cardTasks(
-  all: readonly Task[],
+  all: readonly TaskSummary[],
   scope: CardScope,
   ctx: CardContext,
-): readonly Task[] {
+): readonly TaskSummary[] {
   const since = rangeApplies(scope, ctx) ? ctx.since : undefined;
   const sprint = scope.sprint === ACTIVE_SPRINT ? (ctx.activeSprintId ?? null) : scope.sprint;
   const assignee = scope.assignee === UNASSIGNED ? null : scope.assignee;
@@ -189,6 +189,6 @@ export function cardTasks(
 }
 
 /** Blocked tasks judged from the **whole project**, for Work by person's rows. */
-export function blockedIdsOf(all: readonly Task[]): ReadonlySet<string> {
+export function blockedIdsOf(all: readonly TaskSummary[]): ReadonlySet<string> {
   return new Set(blockedTasks(all).map((row) => row.task.id));
 }

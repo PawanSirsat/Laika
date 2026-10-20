@@ -14,6 +14,8 @@ import {
 import { timeLabel } from '../../../api/time-label.ts';
 import { isAgentComment, type Comment } from '../../../api/comments.ts';
 import { useTaskDetail } from '../../../api/use-task-detail.ts';
+import { useTaskText } from '../../../api/use-task-text.ts';
+import { useDelayed } from '../../../components/use-delayed.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
 import { describeActor } from './actor-presentation.ts';
 import {
@@ -23,7 +25,7 @@ import {
   updateTask,
   watchTask,
   type Member,
-  type Task,
+  type TaskSummary,
 } from '../../../api/tasks.ts';
 import { TaskMeta } from '../task/TaskMeta.tsx';
 import { InlineEdit } from '../task/InlineEdit.tsx';
@@ -49,8 +51,12 @@ import './task-detail.css';
 
 export interface TaskDetailPanelProps {
   readonly slug: string;
-  readonly task: Task;
-  readonly byId: ReadonlyMap<string, Task>;
+  /**
+   * The store's copy, which is live and has no description or acceptance
+   * (LAI-795). The panel reads those itself — {@link useTaskText}.
+   */
+  readonly task: TaskSummary;
+  readonly byId: ReadonlyMap<string, TaskSummary>;
   readonly members: ReadonlyMap<string, Member>;
   readonly moving: boolean;
   readonly moveError: string | undefined;
@@ -137,6 +143,15 @@ export function TaskDetailPanel({
   onOpen,
 }: TaskDetailPanelProps) {
   const detail = useTaskDetail(slug, task.id);
+  /*
+   * **The texts, read on open** (LAI-795). Until they land the two sections
+   * hold their place rather than drawing an empty description someone could
+   * click into and save over the real one.
+   */
+  const text = useTaskText(task);
+  const full = text.task;
+  const textPending = full === undefined && text.error === null;
+  const showTextSkeleton = useDelayed(textPending);
 
   /*
    * **The parent, from the project's set when it is in it, from the server
@@ -147,7 +162,7 @@ export function TaskDetailPanel({
    * one.
    */
   const parentOnPage = task.parent_task_id === null ? undefined : byId.get(task.parent_task_id);
-  const [parentFetched, setParentFetched] = useState<Task | undefined>(undefined);
+  const [parentFetched, setParentFetched] = useState<TaskSummary | undefined>(undefined);
   useEffect(() => {
     setParentFetched(undefined);
     if (task.parent_task_id === null || parentOnPage !== undefined) return;
@@ -673,7 +688,7 @@ export function TaskDetailPanel({
             </p>
           )}
 
-          <section className="panel-section">
+          <section className="panel-section" data-section="description">
             <button
               type="button"
               className="panel-fold"
@@ -687,26 +702,57 @@ export function TaskDetailPanel({
               />
               Description
             </button>
-            {descriptionOpen && (
-              /*
-                Click to edit, and **rendered as markdown** when not editing
-                (LAI-709). It was plain text until the owner asked. The renderer
-                builds elements, never HTML, and `TaskMarkdown` says why that
-                is safe for text anyone on the project writes.
-              */
-              <InlineEdit
-                render={(source) => <TaskMarkdown source={source} />}
-                value={task.description_md ?? ''}
-                placeholder="No description yet. Click to write one."
-                shape="block"
-                label="Description"
-                mayEdit={mayEdit === true}
-                onSave={async (next) => {
-                  await updateTask(task.id, { description_md: next });
-                  onTaskEdited();
-                }}
-              />
-            )}
+            {descriptionOpen &&
+              (full !== undefined ? (
+                /*
+                  Click to edit, and **rendered as markdown** when not editing
+                  (LAI-709). It was plain text until the owner asked. The renderer
+                  builds elements, never HTML, and `TaskMarkdown` says why that
+                  is safe for text anyone on the project writes.
+                */
+                <InlineEdit
+                  render={(source) => <TaskMarkdown source={source} />}
+                  value={full.description_md ?? ''}
+                  placeholder="No description yet. Click to write one."
+                  shape="block"
+                  label="Description"
+                  mayEdit={mayEdit === true}
+                  onSave={async (next) => {
+                    // The answer is the newest text: held, so it is not read again.
+                    text.accept(await updateTask(task.id, { description_md: next }));
+                    onTaskEdited();
+                  }}
+                />
+              ) : textPending ? (
+                /*
+                  **Holds the description's place** (LAI-795): a fixed height
+                  from the first frame, the pulse only if the read is slow
+                  (`useDelayed`), so the title and the rail never move when the
+                  text lands.
+                */
+                <div
+                  className="panel-text-pending"
+                  data-loading="description"
+                  role="status"
+                  aria-busy="true"
+                  aria-live="polite"
+                >
+                  <span className="visually-hidden">Loading the description</span>
+                  {showTextSkeleton && (
+                    <div aria-hidden="true" className="panel-text-skeleton">
+                      <div className="skeleton skeleton-line" style={{ width: '92%' }} />
+                      <div className="skeleton skeleton-line" style={{ width: '78%' }} />
+                      <div className="skeleton skeleton-line" style={{ width: '55%' }} />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <ApiErrorState
+                  error={text.error}
+                  resource="this description"
+                  onRetry={text.retry}
+                />
+              ))}
           </section>
 
           {/*
@@ -715,8 +761,8 @@ export function TaskDetailPanel({
             gets its own section, because "what counts as done" is read at a
             different moment from the description.
           */}
-          {task.acceptance_md !== null && task.acceptance_md !== '' && (
-            <section className="panel-section">
+          {full !== undefined && full.acceptance_md !== null && full.acceptance_md !== '' && (
+            <section className="panel-section" data-section="acceptance">
               <button
                 type="button"
                 className="panel-fold"
@@ -733,7 +779,7 @@ export function TaskDetailPanel({
               {acceptanceOpen && (
                 <blockquote className="panel-acceptance">
                   <div className="panel-acceptance-body">
-                    <TaskMarkdown source={task.acceptance_md} />
+                    <TaskMarkdown source={full.acceptance_md} />
                   </div>
                 </blockquote>
               )}

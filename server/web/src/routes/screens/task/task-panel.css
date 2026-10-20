@@ -44,6 +44,23 @@
 }
 
 /*
+ * The description's place while its text is read (LAI-795): three lines of the
+ * block above from the first frame, so the panel does not grow under the
+ * reader when the text lands. The pulse shows only if the read is slow.
+ */
+.panel-text-pending {
+  min-height: calc(3 * 1.55em);
+  padding: 0.125rem 0;
+}
+
+.panel-text-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: calc(1.55em - 0.75rem);
+  padding-top: 0.4em;
+}
+
+/*
  * A rendered description (LAI-709): a block, not a button, so its markdown can
  * hold headings and tables. The Edit button appears on hover and on focus.
  */

@@ -224,6 +224,16 @@ const PAIRS: readonly Pair[] = [
     client: 'Task',
     clientFile: 'tasks.ts',
   },
+  // LAI-795: the slim list's shape, which every list in the app holds. Paired
+  // on its own, because the pair above compares both sides with the texts
+  // folded in and cannot see a field on one side's summary that the other has
+  // in its full half.
+  {
+    server: 'TaskSummaryView',
+    serverFile: 'services/tasks.ts',
+    client: 'TaskSummary',
+    clientFile: 'tasks.ts',
+  },
   // D-085, LAI-771: sizes and forecasts — the size on every task, the task
   // panel's estimate, and the project's accuracy.
   {
