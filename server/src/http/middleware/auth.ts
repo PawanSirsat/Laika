@@ -30,7 +30,10 @@ export function authMiddleware(options: { auth: Auth; db: Db }) {
       actor = await resolveActor(c.req.raw, {
         ...options,
         log: c.get('log'),
-        setCookie: (cookie) => sessionCookies.push(cookie),
+        // Renewal rides on API responses only; see the end of this function.
+        ...(renewsSession(c.req.path)
+          ? { setCookie: (cookie: string) => sessionCookies.push(cookie) }
+          : {}),
       });
     } catch (err) {
       // A **presented token** that is refused is a 401, not an anonymous
@@ -146,10 +149,30 @@ export function authMiddleware(options: { auth: Auth; db: Db }) {
     // `/api/v1/auth/*` too. Sign-in issues a new session and sign-out expires
     // the old one; appending the old session's renewal after either would
     // override what the route just told the browser.
+    //
+    // **And never where a shared cache may keep it** (LAI-811 review round 1).
+    // Only `/api/` requests are given a cookie sink at all (`renewsSession`), so
+    // a hashed asset (`public, max-age=31536000, immutable`) or the SPA
+    // document never carries one: not the renewal, and not the expiring cookie
+    // of a dead session. A response that does carry one is made `private,
+    // no-store` whatever the route said, so no cache serves one person's
+    // session to another.
     if (sessionCookies.length > 0 && c.res.headers.getSetCookie().length === 0) {
       for (const cookie of sessionCookies) c.header('Set-Cookie', cookie, { append: true });
+      c.header('Cache-Control', 'private, no-store');
     }
   });
+}
+
+/**
+ * Whether a request may renew the session and carry the cookie back (LAI-811).
+ *
+ * `/api/` only. The SPA reads `/api/v1/me` on every load, so a session is still
+ * renewed on the first request after a day away; static files and the SPA
+ * document never need to do it, and are the responses a cache may store.
+ */
+function renewsSession(path: string): boolean {
+  return path.startsWith('/api/');
 }
 
 /** Pass-through, for apps built without auth (the LAI-002 HTTP tests). */

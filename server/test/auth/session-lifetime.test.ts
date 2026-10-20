@@ -1,10 +1,12 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.ts';
 import { createAuth, SESSION_EXPIRES_IN } from '../../src/auth/auth.ts';
 import { sessions } from '../../src/db/schema.ts';
 import { readEnv } from '../../src/env.ts';
 import { ActivityFeed } from '../../src/services/activity-feed.ts';
-import { captureLog } from '../helpers/app.ts';
+import { captureLog, withTempDir } from '../helpers/app.ts';
 import { TEST_SECRET } from '../helpers/auth.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
@@ -43,7 +45,7 @@ interface Instance {
  * its `baseUrl` and the `secureCookies` it is told. A second instance over the
  * same database is a server restart.
  */
-function instance(t: TestDb, origin: string, secureCookies: boolean): Instance {
+function instance(t: TestDb, origin: string, secureCookies: boolean, publicDir?: string): Instance {
   const log = captureLog();
   const activityFeed = new ActivityFeed({ db: t.db });
   const auth = createAuth({
@@ -62,6 +64,7 @@ function instance(t: TestDb, origin: string, secureCookies: boolean): Instance {
     publicUrl: origin,
     serverSecret: TEST_SECRET,
     activityFeed,
+    ...(publicDir === undefined ? {} : { publicDir }),
   });
 
   return { app, auth, origin, close: () => activityFeed.closeAll() };
@@ -164,6 +167,15 @@ function age(t: TestDb, ageSeconds: number): void {
   expect(result.changes).toBeGreaterThan(0);
 }
 
+/** As if the session had run out a minute ago. */
+function kill(t: TestDb): void {
+  const result = t.db
+    .update(sessions)
+    .set({ expiresAt: new Date(Date.now() - 60_000) })
+    .run();
+  expect(result.changes).toBeGreaterThan(0);
+}
+
 function expiries(t: TestDb): number[] {
   return t.db
     .select({ expiresAt: sessions.expiresAt })
@@ -175,8 +187,8 @@ function expiries(t: TestDb): number[] {
 let t: TestDb;
 const open: Instance[] = [];
 
-function start(origin: string, secureCookies: boolean): Instance {
-  const i = instance(t, origin, secureCookies);
+function start(origin: string, secureCookies: boolean, publicDir?: string): Instance {
+  const i = instance(t, origin, secureCookies, publicDir);
   open.push(i);
   return i;
 }
@@ -393,5 +405,101 @@ describe('Secure follows the scheme, and the cookie keeps its name (LAI-811)', (
     } finally {
       other.close();
     }
+  });
+});
+
+describe('a session cookie never rides on a response a cache may keep (LAI-811 review round 1)', () => {
+  const HASHED_JS = '/assets/index-DfSpNg7Z.js';
+  const IMMUTABLE = 'public, max-age=31536000, immutable';
+
+  /** A build output this test owns: the SPA document and one hashed bundle. */
+  async function withBuild(fn: (i: Instance) => Promise<void>): Promise<void> {
+    await withTempDir(async (dir) => {
+      await mkdir(join(dir, 'assets'));
+      await writeFile(join(dir, 'index.html'), '<!doctype html><title>built spa</title>', 'utf8');
+      await writeFile(join(dir, HASHED_JS), 'export const built = true;\n', 'utf8');
+      await fn(start(HTTP_IP, false, dir));
+    });
+  }
+
+  it('serves a hashed asset to an aged session with no Set-Cookie and its immutable Cache-Control', async () => {
+    await withBuild(async (i) => {
+      await setUp(i);
+      const signedIn = asRequestCookie(sessionCookie(await signIn(i)));
+
+      age(t, 2 * DAY);
+      const asset = await i.app.request(HASHED_JS, { headers: { Cookie: signedIn } });
+
+      expect(asset.status).toBe(200);
+      expect(asset.headers.getSetCookie()).toEqual([]);
+      expect(asset.headers.get('cache-control')).toBe(IMMUTABLE);
+      // Nor did it renew the session behind the browser's back: the database
+      // and the cookie move together, or not at all.
+      expect(Math.max(...expiries(t)) - Date.now()).toBeLessThan(28 * DAY * 1000 + 5_000);
+
+      // The SPA reads /api/v1/me on load, and that is where the renewal lands.
+      const onLoad = await me(i, { Cookie: signedIn });
+      expect(onLoad.status).toBe(200);
+      expect(sessionCookie(onLoad).attributes.get('max-age')).toBe(String(30 * DAY));
+      expect(Math.max(...expiries(t)) - Date.now()).toBeGreaterThan(30 * DAY * 1000 - 5_000);
+    });
+  });
+
+  it('serves the SPA document, and its 304, to an aged session with no Set-Cookie', async () => {
+    await withBuild(async (i) => {
+      await setUp(i);
+      const signedIn = asRequestCookie(sessionCookie(await signIn(i)));
+
+      age(t, 2 * DAY);
+      const page = await i.app.request('/board', { headers: { Cookie: signedIn } });
+
+      expect(page.status).toBe(200);
+      expect(page.headers.getSetCookie()).toEqual([]);
+      expect(page.headers.get('cache-control')).toBe('no-cache');
+      const etag = page.headers.get('etag');
+      expect(etag).toMatch(/^"[^"]+"$/);
+
+      // Aged again, so a renewal that the first request had already spent
+      // cannot be why this one carries nothing.
+      age(t, 2 * DAY);
+      const unchanged = await i.app.request('/board', {
+        headers: { Cookie: signedIn, 'If-None-Match': etag ?? '' },
+      });
+
+      expect(unchanged.status).toBe(304);
+      expect(unchanged.headers.getSetCookie()).toEqual([]);
+    });
+  });
+
+  it('renews on /api/v1/me, and makes that response private, no-store', async () => {
+    const i = start(HTTP_IP, false);
+    await setUp(i);
+    const signedIn = asRequestCookie(sessionCookie(await signIn(i)));
+
+    age(t, 2 * DAY);
+    const res = await me(i, { Cookie: signedIn });
+
+    expect(res.status).toBe(200);
+    expect(sessionCookie(res).attributes.get('max-age')).toBe(String(30 * DAY));
+    expect(res.headers.get('cache-control')).toBe('private, no-store');
+  });
+
+  it('sends no expiring cookie for a dead session on an asset; the next API request clears it, uncacheably', async () => {
+    await withBuild(async (i) => {
+      await setUp(i);
+      const signedIn = asRequestCookie(sessionCookie(await signIn(i)));
+
+      kill(t);
+      const asset = await i.app.request(HASHED_JS, { headers: { Cookie: signedIn } });
+
+      expect(asset.status).toBe(200);
+      expect(asset.headers.getSetCookie()).toEqual([]);
+      expect(asset.headers.get('cache-control')).toBe(IMMUTABLE);
+
+      const res = await me(i, { Cookie: signedIn });
+      expect(res.status).toBe(401);
+      expect(sessionCookie(res).attributes.get('max-age')).toBe('0');
+      expect(res.headers.get('cache-control')).toBe('private, no-store');
+    });
   });
 });
