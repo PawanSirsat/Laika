@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-810
-status: review
+status: done
 started: 2026-10-20T19:53:15Z
 finished: 2026-10-20T21:40:10Z
 ---
@@ -447,3 +447,33 @@ guard. `server/web/test/routes/screens/my-day/draft-bulk.test.ts` failed 1 of
 test/api/time.test.ts test/api.test.ts`: 136 passed, exit 0. The three My day
 browser files: 52 passed, exit 0. `pnpm lint`: exit 0. `pnpm format`: exit 0.
 The full root gate runs after merge.
+
+## Accepted (CHIEF, 2026-10-21)
+
+Three rounds of review (review-my-day-v2):
+
+- **Round 1: BLOCK.** Undo reversed the newest change rather than the
+  toast's; a drag could lay a draft over confirmed time and double-count it;
+  the typed length was lost.
+- **Round 2: BLOCK.** Blockers 1 and 3 were verified fixed. The pro-rated
+  overlap rule refused the collector's normal uneven parallel blocks,
+  including Confirm day, and its result depended on order.
+- **Round 2 fix (`ac9cdf1d`, `b101661c`): by-the-clock rule.** A block plus
+  every live timed entry it connects to transitively holds no more minutes
+  than that stretch's wall-clock length. Confirm day is all-or-nothing and
+  order-independent, and it names the block that does not fit. A block with
+  more minutes than its own span is `422 minutes_over_span`. CHIEF read
+  `stretchAround`: the stretch grows while overlaps are found, and the extent
+  equals the union because each added entry overlaps the current range. The
+  reviewer's probes (P4, the 160 vs 190 drag, three-block transitive, P6) are
+  now tests that failed first.
+
+**CHIEF decision on the open point:** deleting an entry, or an Undo that
+removes one, stays allowed even if it leaves a stretch over its clock. A
+person removing their own time is never refused. A follow-up may flag such a
+stretch in the UI.
+
+**Data gaps filed:** LAI-833 (agents lane), LAI-834 (signal timestamps),
+LAI-835 (proposing agent), LAI-836 (SPEC for `time_breaks`, `time_undo` and
+the new endpoints; the `TABLES_NOT_IN_SPEC` entries name it).
+
