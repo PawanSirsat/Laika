@@ -453,7 +453,8 @@ void describe('Capacity resolves tasks from the store (LAI-724)', () => {
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
       const seen = record(h);
-      await h.page.locator('#sidebar .sidebar-link', { hasText: 'Capacity' }).click();
+      // Capacity is Insights' first tab since LAI-796.
+      await h.page.locator('#sidebar .sidebar-link', { hasText: 'Insights' }).click();
       // Since LAI-767 a person's tasks are drawn when their *Show tasks* is
       // opened, and only then resolved.
       await h.page.getByRole('button', { name: /Show tasks/ }).click({ timeout: 20_000 });
