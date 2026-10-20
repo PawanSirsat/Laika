@@ -245,6 +245,56 @@ void describe('finding people', () => {
       await h.close();
     }
   });
+
+  // D-092 item 3: a badge shown while a space is selected is that space's
+  // load. The server sends each space's load (LAI-818); the card and the
+  // Heavy load chip read it.
+  void test('with a space chosen, the badge and Heavy load are that space’s load', async () => {
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
+    try {
+      await ready(h.page);
+      const pawan = card(h.page, 'Pawan Sirsat');
+      const badge = async () => (await pawan.locator('.cap-load').innerText()).trim();
+      assert.match(await badge(), /Heavy$/);
+
+      const space = h.page.getByRole('combobox', { name: 'Space' });
+      await pick(space, 'p1');
+      await until(async () => /Normal$/.test(await badge()));
+      assert.match(await badge(), /Normal$/);
+
+      const heavy = h.page.locator('.cap-chip', { hasText: 'Heavy load' });
+      await heavy.click();
+      await until(async () => (await cardNames(h.page)).length === 0);
+      assert.deepEqual(await cardNames(h.page), [], 'nobody is heavy in Laika');
+
+      await pick(space, '');
+      await until(async () => (await cardNames(h.page)).join() === 'Pawan Sirsat');
+      assert.deepEqual(await cardNames(h.page), ['Pawan Sirsat']);
+      assert.match(await badge(), /Heavy$/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a card counts in progress, to do and backlog, with review and overdue apart', async () => {
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
+    try {
+      await ready(h.page);
+      const pawan = card(h.page, 'Pawan Sirsat');
+      const counts = (await pawan.locator('.cap-counts').innerText()).replace(/\s+/g, ' ').trim();
+      assert.equal(counts, '7 in progress 3 to do 12 backlog');
+      assert.match(await pawan.locator('.cap-waits').innerText(), /2\s*waiting on reviewers/);
+      // Overdue is its own badge beside the load, not a count inside it.
+      assert.equal((await pawan.locator('.cap-overdue').innerText()).trim(), '1 overdue');
+      assert.equal(await card(h.page, 'Bea Nkosi').locator('.cap-overdue').count(), 0);
+      // A space chip's figure is committed work; backlog is on hover.
+      const laika = pawan.locator('.cap-space', { hasText: 'Laika' });
+      assert.match(await laika.innerText(), /^Laika\s*8\b/);
+      assert.match((await laika.getAttribute('title')) ?? '', /8 committed in Laika.*12 in backlog/);
+    } finally {
+      await h.close();
+    }
+  });
 });
 
 void describe('what an owner sees and a member does not', () => {
@@ -255,6 +305,12 @@ void describe('what an owner sees and a member does not', () => {
       const pawan = card(h.page, 'Pawan Sirsat');
       assert.match(await pawan.locator('.cap-role').innerText(), /Owner · Builder/);
       assert.equal(await pawan.locator('.cap-spark-bar').count(), 14);
+      // Who did the fortnight's 79 (LAI-818): bookkeeping apart from both.
+      assert.match(await pawan.locator('.cap-spark-block .cap-label-note').innerText(), /· 79$/);
+      assert.equal(
+        (await pawan.locator('.cap-spark-split').innerText()).replace(/\s+/g, ' ').trim(),
+        '21 by hand 40 by agents 18 bookkeeping',
+      );
       // The link waits on the shell's `/me` as well as the cards, so wait for
       // it before counting (LAI-765's rule: wait for what you read).
       await pawan.locator('a.cap-name-link').waitFor({ timeout: 10_000 });
@@ -287,6 +343,7 @@ void describe('what an owner sees and a member does not', () => {
 
       assert.equal(await h.page.locator('.cap-kind').count(), 0, 'a profile kind is drawn');
       assert.equal(await h.page.locator('.cap-spark').count(), 0, 'activity is drawn');
+      assert.equal(await h.page.locator('.cap-spark-split').count(), 0, 'the split is drawn');
       assert.equal(await h.page.locator('a.cap-name-link').count(), 0, 'a profile link is drawn');
       assert.equal(await pawan.locator('.cap-agent', { hasText: 'Cursor' }).count(), 0);
       assert.equal(await h.page.locator('.cap-tile-unlisted').count(), 0);
@@ -636,6 +693,29 @@ void describe('tasks are drawn only when asked for', () => {
 });
 
 void describe('links out', () => {
+  void test('Waiting for review says 200+ when the server’s queue is capped', async () => {
+    // D-092 item 5: a cap is labelled as one. The server returns its first 200
+    // and `truncated: true`; the cap is not raised (LAI-818).
+    const h = await open('/insights?tab=capacity', {
+      ...orgStub('owner'),
+      '/api/v1/review': {
+        tasks: Array.from({ length: 200 }, (_, i) => ({
+          task: { id: `q${String(i)}` },
+          waiting_since: NOW - 86_400_000,
+        })),
+        truncated: true,
+      },
+    });
+    try {
+      await ready(h.page);
+      const review = h.page.locator('.cap-tile', { hasText: 'Waiting for review' });
+      await until(async () => /Waiting for review\s*200\+/.test(await review.innerText()), 10_000);
+      assert.match(await review.innerText(), /Waiting for review\s*200\+/);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('Waiting for review and Unlisted work open their pages', async () => {
     const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
