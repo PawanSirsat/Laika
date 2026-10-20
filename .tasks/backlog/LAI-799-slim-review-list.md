@@ -1,5 +1,5 @@
 ---
-id: LAI-797
+id: LAI-799
 title: 'The Review list and the sidebar Review badge still download every waiting task with its description and acceptance text'
 area: server
 assignee: unclaimed
@@ -25,3 +25,11 @@ waiting today).
 - [ ] Bytes of one Review page and of the badge request measured before and
       after; tests count fields or bytes, never time.
 - [ ] Gate: test, lint, format exit 0.
+
+## Renumbered
+
+Filed as LAI-797 at 2026-10-20 11:17 +0530, two minutes after the LAI-792
+builder had already filed LAI-797 and LAI-798 on its branch (`349d18c3`,
+11:15). The earlier filing keeps the id (CLAUDE.md section 3), so this one
+became LAI-799. Commit `84b8fdce` ("file LAI-797, slim the Review list and
+badge") carries `[LAI-797]` but is this task's; it is not rewritten.
