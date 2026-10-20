@@ -914,4 +914,53 @@ void describe('a phone, and both themes (I)', () => {
       await h.close();
     }
   });
+
+  // CI's Linux drew `+ 30 min` wider than this Mac does and the gap cut it: a
+  // label is chosen by what fits as drawn, never by a pixel count set for one
+  // machine's font. Wider letters stand in for a wider font.
+  void test('a font wider than ours: a gap, a break, a block’s figures and the week’s are never cut', async () => {
+    const h = await openDay(TODAY);
+    try {
+      await h.page.addStyleTag({ content: '.myday-page * { letter-spacing: 0.12em !important; }' });
+      for (const width of [1440, 1024]) {
+        await h.page.setViewportSize({ width, height: 900 });
+        for (const folded of [false, true]) {
+          const fold = h.page.locator('.sidebar-toggle');
+          if ((await fold.count()) > 0) {
+            const open = (await fold.first().getAttribute('aria-expanded')) === 'true';
+            if (folded === open) {
+              await fold.first().click();
+              await until(
+                async () =>
+                  ((await fold.first().getAttribute('aria-expanded')) === 'true') !== open,
+              );
+            }
+          }
+          const cut = await h.page.evaluate(() =>
+            [
+              ...document.querySelectorAll(
+                '.dayline-gap, .dayline-break, .dayline-block-sub, .myday-week-figure, .myday-stat',
+              ),
+            ]
+              .filter((el) => el.scrollWidth > el.clientWidth + 1)
+              .map((el) => `${el.className}: ${(el.textContent ?? '').trim().slice(0, 40)}`),
+          );
+          assert.deepEqual(cut, [], `${String(width)} folded=${String(folded)}: cut`);
+        }
+      }
+      // The positive control: with room, a gap says how long it is.
+      await h.page.locator('[data-zoom="2"]').click();
+      const gaps = await h.page
+        .locator('.dayline-gap')
+        .evaluateAll((els) =>
+          els.map((el) => [el.clientWidth, (el.textContent ?? '').trim()] as const),
+        );
+      assert.ok(gaps.length > 0, 'no gap to look at');
+      for (const [px, text] of gaps) {
+        if (px >= 120) assert.match(text, /^\+ \d/, `a ${String(px)}px gap says only "${text}"`);
+      }
+    } finally {
+      await h.close();
+    }
+  });
 });

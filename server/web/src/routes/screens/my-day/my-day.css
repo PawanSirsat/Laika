@@ -534,9 +534,11 @@
   font-size: var(--text-md);
   font-weight: var(--weight-semibold);
   min-height: 1.3em;
+}
+
+/* A figure breaks between its units, never inside one, and is never cut. */
+.myday-week-unit {
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Confirmed solid, drafted striped — shares of the week's busiest day. */
@@ -913,11 +915,16 @@
 }
 
 .dayline-block-top,
-.dayline-block-title,
-.dayline-block-sub {
+.dayline-block-title {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* A figure is never cut short: FitLabel picks the form that fits, or none. */
+.dayline-block-sub {
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .dayline-block-top {

@@ -7,6 +7,7 @@ import {
   type PointerEvent,
 } from 'react';
 import type { MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
+import { FitLabel } from './FitLabel.tsx';
 import { clock, duration, hourName, span as spanOf } from './format.ts';
 import {
   along,
@@ -47,9 +48,6 @@ const ZOOMS: readonly (readonly [Zoom, string, string])[] = [
   ['1', '1×', '110 px an hour'],
   ['2', '2×', '220 px an hour'],
 ];
-
-/** A gap's "+ length" fits from this wide; narrower, it is a bare "+". */
-const GAP_LABEL_PX = 46;
 
 /** What a block is on, in a word or two, and the card's title when there is one. */
 function labelOf(
@@ -332,8 +330,6 @@ export function Timeline({
                 </div>
               )}
               {line.gaps.map((gap) => {
-                const label = `+ ${duration(gap.end - gap.start)}`;
-                const fits = (gap.end - gap.start) * pxPerMinute > GAP_LABEL_PX;
                 const on = pickedGap?.start === gap.start;
                 return (
                   <button
@@ -349,7 +345,7 @@ export function Timeline({
                       onSelect({ kind: 'gap', start: gap.start, end: gap.end });
                     }}
                   >
-                    {fits ? label : '+'}
+                    <FitLabel options={[`+ ${duration(gap.end - gap.start)}`, '+']} />
                   </button>
                 );
               })}
@@ -369,7 +365,7 @@ export function Timeline({
                     onSelect({ kind: 'break', id: b.id });
                   }}
                 >
-                  {(b.end - b.start) * pxPerMinute > GAP_LABEL_PX ? 'Break' : ''}
+                  <FitLabel options={['Break']} />
                 </button>
               ))}
               {line.blocks.map((block) => {
@@ -414,13 +410,14 @@ export function Timeline({
                       {px > 120 && title !== '' && (
                         <span className="dayline-block-title">{title}</span>
                       )}
-                      {px > 44 && (
-                        <span className="dayline-block-sub">
-                          {px > 150
-                            ? `${range} · ${duration(shape.minutes)}`
-                            : duration(shape.minutes)}
-                        </span>
-                      )}
+                      <span className="dayline-block-sub">
+                        <FitLabel
+                          options={[
+                            `${range} · ${duration(shape.minutes)}`,
+                            duration(shape.minutes),
+                          ]}
+                        />
+                      </span>
                     </button>
                     {prompts + commits > 0 && (
                       <span
