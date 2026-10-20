@@ -259,7 +259,7 @@ void describe('finding people', () => {
 
       const space = h.page.getByRole('combobox', { name: 'Space' });
       await pick(space, 'p1');
-      await until(async () => /Normal$/.test(await badge()));
+      await until(async () => (await badge()).endsWith('Normal'));
       assert.match(await badge(), /Normal$/);
 
       const heavy = h.page.locator('.cap-chip', { hasText: 'Heavy load' });
