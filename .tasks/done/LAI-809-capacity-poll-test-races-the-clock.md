@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-792
-status: review
+status: done
 started: 2026-10-20T10:24:33Z
 finished: 2026-10-20T10:45:23Z
 ---
@@ -112,3 +112,15 @@ the hold, and it fails under the mutation above.
 
 The repo-root gate was not run, on instruction; polly gates on master after
 merging.
+
+## Accepted (CHIEF, 2026-10-20)
+
+Review: APPROVE (review-capacity-poll-race). The reviewer reproduced the CI
+failure on the base test with a 600 ms hold, and saw the fixed test pass with
+800 ms and 400 ms holds. Their own mutation went red after the jump in both
+tests. Not a product bug: a poll that coincides with a read shares that read's
+fresh answer, which is the cache's documented behaviour. The sweep count in
+the text is corrected to 4 `fastForward` calls; the table already listed all
+four. Optional hardening for whoever next touches this file: add `pauseAt`
+after `clock.install()`, so the clock stops running in real time. The
+root gate is run on master with LAI-768 before the push.
