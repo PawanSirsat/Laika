@@ -3,7 +3,7 @@ id: LAI-804
 title: 'The board toolbar''s sprint figures flip between pill and compact when hovered at their boundary width, and the pill never opens'
 area: web
 assignee: unclaimed
-priority: p2
+priority: p1
 depends-on: []
 discovered-from: LAI-796
 status: backlog
@@ -45,3 +45,9 @@ same flip is reachable at any window that leaves the toolbar that wide
   width is another.
 - Reproduce: `/board?project=laika-core&sprint=s2&group=assignee` with the
   `SIX_MEMBERS` stub, viewport 920×768, sidebar collapsed, `pill.hover()`.
+
+## Priority raised to p1 (CHIEF, 2026-10-20)
+
+LAI-796's review: a 920px window now gets the icon rail by default, which
+leaves the toolbar about 860px wide — the flip width itself. So anyone on a
+small laptop hits this on every hover, not just a test.
