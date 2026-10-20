@@ -2,6 +2,11 @@
 .org {
   padding-bottom: var(--space-6);
   display: grid;
+  /* `minmax(0, 1fr)`, not the implicit `auto`: an auto track grows to the
+     header's min-content, and at 14px (LAI-828) the four tabs alone are 375px,
+     so on a phone the whole screen scrolled sideways by 17px. The tabs scroll
+     inside their own row instead. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
 }
 
