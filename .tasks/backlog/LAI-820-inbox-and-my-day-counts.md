@@ -52,3 +52,16 @@ me**, and how much in total.
 
 LAI-810 touches `plate-derive.ts` and `OnYourPlate.tsx`. Start this only after
 LAI-810 is merged.
+
+## Carried from LAI-810's review (CHIEF, 2026-10-20, before any claim)
+
+- [ ] The header's confirm-day report compares the entries' task ids with
+      the plan, not only the count, minutes and General count
+      (`draft-bulk.ts:315-348`), so a block moved to another card is
+      reported.
+- [ ] A test pins the exact key-prefix match: `LAIKA-5` against an `LAI`
+      space (`task-link.ts:56`). The reviewer's `startsWith` mutant survived.
+- [ ] "Only the K on nothing" counts only blocks on nothing, not blocks
+      already on General (`DraftList.tsx:212`).
+- [ ] The "while a batch runs" test's other-day check does not depend on
+      the real weekday: pin the fixture's TODAY.

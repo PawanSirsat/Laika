@@ -7,7 +7,7 @@ priority: p1
 depends-on: [LAI-796]
 discovered-from: LAI-796
 started: 2026-10-20T11:13:37Z
-status: review
+status: done
 finished: 2026-10-20T12:41:44Z
 ---
 
@@ -371,3 +371,22 @@ a clean build:
 
 `master` was merged in (72344c83: decisions, logs and task files only) before
 the gate.
+
+## Accepted (CHIEF, 2026-10-20)
+
+Review round 2: APPROVE (review-my-day-bulk).
+- B1 is fixed: no bulk-bar path reaches confirm-day. A stale id gets a 404
+  and nothing is confirmed in its place.
+- All eight round-1 follow-ups are done.
+- The reviewer's mutant that put confirm-day back into Confirm selected went
+  red.
+
+Any unticked Gate line was settled by CHIEF's root run on master right after
+this commit; the result is in `logs/chief-2026-10-20.md`.
+
+Carried to LAI-820, which is still in backlog:
+- the header's day report misses a block moved to another card with the same
+  count and minutes;
+- no test pins the exact key-prefix match (LAI against LAIKA);
+- "Only the K on nothing" can overstate K;
+- the other-day lock check is skipped on Mondays.
