@@ -708,7 +708,7 @@ void describe('review round 1', () => {
       await h.page.locator('[data-inspector-confirm]').click();
       const toast = h.page.locator('[data-toast]');
       await toast.getByRole('button', { name: 'Undo' }).click();
-      await until(async () => /later change/.test(await toast.innerText().catch(() => '')));
+      await until(async () => (await toast.innerText().catch(() => '')).includes('later change'));
       assert.match(await toast.innerText(), /can no longer be undone/);
       assert.equal(await toast.locator('[role="alert"]').count(), 1);
       assert.doesNotMatch(await toast.innerText(), /^Undone/);
