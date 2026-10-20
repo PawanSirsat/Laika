@@ -48,3 +48,42 @@
 In `.tasks/review/` on `LAI-811-session-renewal`, not pushed. The gate
 criterion is unticked: the root `pnpm test` was not run, by the dispatch's
 instruction. The targeted files, lint and format all exit 0.
+
+## 2026-10-20T12:23:57Z — LAI-811 (review round 1)
+
+**What changed**
+- server/src/http/middleware/auth.ts — only `/api/` requests get a cookie
+  sink (`renewsSession`). A response that gets an appended session cookie is
+  `Cache-Control: private, no-store`.
+- server/src/auth/resolve-actor.ts — `getSession` with
+  `disableRefresh: true` when the caller gave no sink.
+- server/test/auth/session-lifetime.test.ts — four tests: asset, SPA document
+  and 304, `/api/v1/me` cache header, dead session on an asset.
+- server/src/auth/auth.ts, server/src/env.ts,
+  server/test/tooling/environment-posture.test.ts — comments narrowed to what
+  they prove (B2).
+- docs/SPEC.md — §13.1: renewal on API responses only, `private, no-store`,
+  when the cookie catches up.
+
+**Decisions**
+- **No sink, no refresh** — the alternative was to refresh everywhere and
+  forward only on `/api/`. That slides the database on an asset request
+  while the cookie stays behind, so the next API call finds a fresh session
+  and does not renew: the original defect again, one layer over.
+- **Narrowed the posture comment instead of changing the probe** — `env.ts`
+  derives the flag from the URL's scheme, so no real configuration makes them
+  disagree, and no probe on one can see whether the flag is read. Only a
+  mismatched pair can, and `session-lifetime.test.ts` already has one.
+
+**Discovered**
+- Round 0's shipped pass-through put session cookies on `public, immutable`
+  assets. The reviewer caught it, not me. I had reasoned only about the
+  routes under `/api/` and never asked what else the middleware wraps.
+- Round 0's sweep grepped for cookies and so missed
+  `test/auth/resolve-actor.test.ts`. It passes (7/7).
+- Setup and sign-in `POST` responses carry the route's own cookie with no
+  `Cache-Control`. Outside B1, and recorded in the task file → nothing filed.
+
+**State**
+In `.tasks/review/`, not pushed. The gate criterion is unticked (the root
+gate is polly's). The targeted files, lint and format exit 0.
