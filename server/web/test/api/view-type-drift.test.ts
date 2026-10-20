@@ -524,6 +524,13 @@ const PAIRS: readonly Pair[] = [
     client: 'MyDayWeekDay',
     clientFile: 'time.ts',
   },
+  // A gap waved away (LAI-831), served in the day and by `POST /me/time-breaks`.
+  {
+    server: 'TimeBreakView',
+    serverFile: 'services/time-breaks.ts',
+    client: 'TimeBreak',
+    clientFile: 'time.ts',
+  },
   // Nested, through a table for the reason given below the profile's.
   ...(
     [

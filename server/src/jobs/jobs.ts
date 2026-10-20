@@ -18,10 +18,13 @@ import {
   tokenUsageDays,
   tasks,
   solidtimeEntries,
+  timeBreaks,
   timeDrafts,
   timeEntries,
+  timeUndo,
 } from '../db/schema.ts';
 import { ARRIVALS_KEPT_MS } from '../services/plan-limit.ts';
+import { UNDO_WINDOW_MS } from '../services/time-undo-log.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Per-session totals, matched against telemetry (§4.38), are settled after the 31-day window. */
@@ -228,12 +231,18 @@ export function pruneTime(db: Db, now: number): JobResult {
   const entryCutoff = at.toISOString().slice(0, 10);
   const changed = db.transaction((tx) => {
     const drafts = tx.delete(timeDrafts).where(lt(timeDrafts.day, draftCutoff)).run();
+    // Breaks go with the drafts; what Undo could put back, after minutes (LAI-831).
+    const breaks = tx.delete(timeBreaks).where(lt(timeBreaks.day, draftCutoff)).run();
+    const undo = tx
+      .delete(timeUndo)
+      .where(lt(timeUndo.createdAt, now - UNDO_WINDOW_MS))
+      .run();
     const entries = tx.delete(timeEntries).where(lt(timeEntries.day, entryCutoff)).run();
     const elsewhere = tx
       .delete(solidtimeEntries)
       .where(and(isNull(solidtimeEntries.entryId), lt(solidtimeEntries.day, entryCutoff)))
       .run();
-    return drafts.changes + entries.changes + elsewhere.changes;
+    return drafts.changes + breaks.changes + undo.changes + entries.changes + elsewhere.changes;
   });
   return { changed };
 }

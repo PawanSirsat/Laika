@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
@@ -11,6 +11,7 @@ import { addDays, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
 import { canSeeProject, requireProjectBySlug } from './projects.ts';
 import { resolveTaskRef } from './tasks.ts';
 import { assertTimeOn } from './time-settings.ts';
+import { recordUndo, type OnUndo } from './time-undo-log.ts';
 
 /**
  * Confirmed time (D-088 items 2, 6, 11 and 12, SPEC §4.48–§4.49, LAI-787) —
@@ -158,6 +159,161 @@ export function assertEntryDay(day: string, tz: string, now: number): void {
       earliest,
       latest,
     });
+  }
+}
+
+/**
+ * A span on `day` in `tz` (LAI-831): it ends after it starts, and both ends
+ * fall on that day — a block dragged past midnight is refused, not moved to
+ * the next day. `422 invalid_span` or `422 outside_day`.
+ */
+export function assertSpanOnDay(day: string, tz: string, start: number, end: number): void {
+  if (!(end > start)) {
+    throw new ApiError('unprocessable', 'A span ends after it starts', {
+      reason: 'invalid_span',
+      field: 'ended_at',
+    });
+  }
+  if (dayIn(tz, start) !== day || dayIn(tz, end - 1) !== day) {
+    throw new ApiError('unprocessable', `A span stays on ${day} in ${tz}`, {
+      reason: 'outside_day',
+      field: 'started_at',
+    });
+  }
+}
+
+/**
+ * A timed block holds no more minutes than its own span — whatever else is
+ * confirmed (review round 2): `422 minutes_over_span`, before any stretch is
+ * judged.
+ */
+export function assertWithinSpan(start: number, end: number, minutes: number): void {
+  if (minutes > Math.ceil((end - start) / 60_000 - 1e-9)) {
+    throw new ApiError('unprocessable', 'A block holds no more minutes than its span', {
+      field: 'minutes',
+      reason: 'minutes_over_span',
+    });
+  }
+}
+
+/**
+ * The stretch `[start, end)` joins: it and every live timed entry of the
+ * person that overlaps it, **transitively** — A meets B, B meets C, so A, B
+ * and C are one stretch though A never meets C. Its extent, and the minutes
+ * its entries hold. `except` is an entry being moved.
+ */
+function stretchAround(
+  tx: Tx | Db,
+  userId: string,
+  start: number,
+  end: number,
+  except?: string,
+): { from: number; to: number; held: number } {
+  let from = start;
+  let to = end;
+  const held = new Map<string, number>();
+  for (;;) {
+    const overlapping = tx
+      .select({
+        id: timeEntries.id,
+        startedAt: timeEntries.startedAt,
+        endedAt: timeEntries.endedAt,
+        minutes: timeEntries.minutes,
+      })
+      .from(timeEntries)
+      .where(
+        and(
+          eq(timeEntries.userId, userId),
+          isNull(timeEntries.deletedAt),
+          isNotNull(timeEntries.startedAt),
+          lt(timeEntries.startedAt, to),
+          gt(timeEntries.endedAt, from),
+          ...(except === undefined ? [] : [ne(timeEntries.id, except)]),
+        ),
+      )
+      .all();
+    let grew = false;
+    for (const e of overlapping) {
+      if (held.has(e.id) || e.startedAt === null || e.endedAt === null) continue;
+      held.set(e.id, e.minutes);
+      if (e.startedAt < from) {
+        from = e.startedAt;
+        grew = true;
+      }
+      if (e.endedAt > to) {
+        to = e.endedAt;
+        grew = true;
+      }
+    }
+    if (!grew) break;
+  }
+  return { from, to, held: [...held.values()].reduce((n, m) => n + m, 0) };
+}
+
+/**
+ * **Confirmed time is never counted twice, by the clock** (LAI-831 review
+ * round 2) — the collector's own rule (`time-drafts.ts`): the stretch a block
+ * joins holds no more minutes than it has of wall clock. `minutes` placed on
+ * `[start, end)`, plus every live timed entry in its stretch, must fit the
+ * stretch's length. Two tasks worked at once — the collector's blocks that
+ * share a stretch, however unevenly — fit in any order; a block dragged over a
+ * confirmed hour does not. `409 overlaps_confirmed`, naming the stretch, and
+ * the draft when one is being confirmed.
+ */
+export function assertFitsTheClock(
+  tx: Tx | Db,
+  userId: string,
+  start: number,
+  end: number,
+  minutes: number,
+  options: { readonly except?: string; readonly draftId?: string } = {},
+): void {
+  const stretch = stretchAround(tx, userId, start, end, options.except);
+  const clock = (stretch.to - stretch.from) / 60_000;
+  const would = stretch.held + minutes;
+  if (would > Math.ceil(clock - 1e-9)) {
+    throw new ApiError(
+      'conflict',
+      `That would count confirmed time twice: the stretch it joins has ${String(Math.round(clock))} minutes of clock and would hold ${String(would)}`,
+      {
+        reason: 'overlaps_confirmed',
+        ...(options.draftId === undefined ? {} : { draft_id: options.draftId }),
+        started_at: start,
+        ended_at: end,
+        stretch_started_at: stretch.from,
+        stretch_ended_at: stretch.to,
+        stretch_minutes: Math.round(clock),
+        would_hold: would,
+      },
+    );
+  }
+}
+
+/**
+ * What an entry moved or shortened leaves behind must fit too: every live
+ * timed entry `[start, end)` met is judged on the stretch it stands in once
+ * the edit is written. An entry that held a stretch open — its slack the room
+ * two overlapping blocks share — cannot be moved off and leave them counting
+ * twice.
+ */
+function assertLeftBehindFits(tx: Tx, userId: string, start: number, end: number): void {
+  const met = tx
+    .select({ startedAt: timeEntries.startedAt, endedAt: timeEntries.endedAt })
+    .from(timeEntries)
+    .where(
+      and(
+        eq(timeEntries.userId, userId),
+        isNull(timeEntries.deletedAt),
+        isNotNull(timeEntries.startedAt),
+        lt(timeEntries.startedAt, end),
+        gt(timeEntries.endedAt, start),
+      ),
+    )
+    .all();
+  for (const e of met) {
+    if (e.startedAt !== null && e.endedAt !== null) {
+      assertFitsTheClock(tx, userId, e.startedAt, e.endedAt, 0);
+    }
   }
 }
 
@@ -388,6 +544,7 @@ export function createEntry(
   actor: ResolvedActor,
   input: NewEntryInput,
   now: number = Date.now(),
+  onUndo?: OnUndo,
 ): TimeEntryView {
   assertCan(actor, 'time_entries.write_own');
   assertTimeOn(db);
@@ -400,8 +557,12 @@ export function createEntry(
     });
   }
   const target = resolveTarget(db, actor, input);
-  const id = db.transaction((tx) =>
-    insertEntry(
+  const { id, undoId } = db.transaction((tx) => {
+    if (startedAt !== null && endedAt !== null) {
+      assertWithinSpan(startedAt, endedAt, input.minutes);
+      assertFitsTheClock(tx, actor.userId, startedAt, endedAt, input.minutes);
+    }
+    const made = insertEntry(
       tx,
       actor.userId,
       {
@@ -416,8 +577,14 @@ export function createEntry(
       'manual',
       null,
       now,
-    ),
-  );
+    );
+    // Undo takes it back (LAI-831).
+    return {
+      id: made,
+      undoId: recordUndo(tx, actor.userId, made, { drafts: [], entriesMade: [made] }, now),
+    };
+  });
+  onUndo?.(undoId);
   return entryById(db, actor.userId, id);
 }
 
@@ -427,6 +594,9 @@ export interface EntryPatch {
   project?: string | null | undefined;
   note?: string | null | undefined;
   day?: string | undefined;
+  /** A new start or end on the same day (LAI-831: an edge dragged), unix ms. */
+  started_at?: number | undefined;
+  ended_at?: number | undefined;
 }
 
 /**
@@ -459,6 +629,11 @@ function currentFields(tx: Tx, userId: string, id: string) {
  * `PATCH /me/time-entries/:id`: the person corrects their own entry. Every
  * field is optional; `task: null` and `project: null` move it to *General*.
  * A change writes the next revision; a patch that changes nothing writes none.
+ *
+ * `started_at` and `ended_at` move its edges on its own day (LAI-831): a drag
+ * on My day's timeline is one patch, and so **one revision**, however far it
+ * went. An entry with no set time takes both at once; a new day and a new
+ * span are two edits, not one.
  */
 export function updateEntry(
   db: Db,
@@ -474,14 +649,38 @@ export function updateEntry(
     ? resolveTarget(db, actor, { task: patch.task ?? null, project: patch.project ?? null })
     : undefined;
 
+  const touchesSpan = patch.started_at !== undefined || patch.ended_at !== undefined;
+
   db.transaction((tx) => {
     const row = currentFields(tx, actor.userId, id);
+    const moves = patch.day !== undefined && patch.day !== row.day;
+    let startedAt = moves ? null : row.startedAt;
+    let endedAt = moves ? null : row.endedAt;
+    if (touchesSpan) {
+      if (moves) {
+        throw new ApiError('unprocessable', 'A new day and a new span are two edits', {
+          reason: 'invalid_span',
+          field: 'day',
+        });
+      }
+      const start = patch.started_at ?? row.startedAt;
+      const end = patch.ended_at ?? row.endedAt;
+      if (start === null || end === null) {
+        throw new ApiError('unprocessable', 'An entry with no set time takes a start and an end', {
+          reason: 'no_span',
+          field: 'started_at',
+        });
+      }
+      assertSpanOnDay(row.day, row.tz, start, end);
+      startedAt = start;
+      endedAt = end;
+    }
     const next: EntryFields = {
       target: resolved ?? { taskId: row.taskId, projectId: row.projectId },
       day: patch.day ?? row.day,
       tz: row.tz,
-      startedAt: patch.day !== undefined && patch.day !== row.day ? null : row.startedAt,
-      endedAt: patch.day !== undefined && patch.day !== row.day ? null : row.endedAt,
+      startedAt,
+      endedAt,
       minutes: patch.minutes ?? row.minutes,
       note:
         patch.note === undefined
@@ -491,10 +690,22 @@ export function updateEntry(
             : patch.note.trim(),
     };
     if (patch.day !== undefined) assertEntryDay(next.day, next.tz, now);
+    if (
+      next.startedAt !== null &&
+      next.endedAt !== null &&
+      (touchesSpan || patch.minutes !== undefined)
+    ) {
+      assertWithinSpan(next.startedAt, next.endedAt, next.minutes);
+      assertFitsTheClock(tx, actor.userId, next.startedAt, next.endedAt, next.minutes, {
+        except: id,
+      });
+    }
     const same =
       next.target.taskId === row.taskId &&
       next.target.projectId === row.projectId &&
       next.day === row.day &&
+      next.startedAt === row.startedAt &&
+      next.endedAt === row.endedAt &&
       next.minutes === row.minutes &&
       next.note === row.note;
     if (same) return;
@@ -517,6 +728,13 @@ export function updateEntry(
     tx.insert(timeEntryRevisions)
       .values(revisionRow(id, revision, 'edited', actor.userId, next, now))
       .run();
+    if (
+      row.startedAt !== null &&
+      row.endedAt !== null &&
+      (next.startedAt !== row.startedAt || next.endedAt !== row.endedAt)
+    ) {
+      assertLeftBehindFits(tx, actor.userId, row.startedAt, row.endedAt);
+    }
   });
   return entryById(db, actor.userId, id);
 }
@@ -531,12 +749,16 @@ export function deleteEntry(
   actor: ResolvedActor,
   id: string,
   now: number = Date.now(),
+  onUndo?: OnUndo,
 ): void {
   assertCan(actor, 'time_entries.write_own');
-  db.transaction((tx) => {
+  const undoId = db.transaction((tx) => {
     currentFields(tx, actor.userId, id);
     retireEntry(tx, id, actor.userId, now);
+    // Undo makes it live again (LAI-831).
+    return recordUndo(tx, actor.userId, id, { drafts: [], entriesRetired: [id] }, now);
   });
+  onUndo?.(undoId);
 }
 
 /**
@@ -615,6 +837,35 @@ export function syncEntry(
     .values(revisionRow(id, revision, 'edited', changedBy, fields, now))
     .run();
   return revision;
+}
+
+/**
+ * An entry its person took back, live again as it stood (LAI-831: Undo of a
+ * delete), inside the caller's transaction — its own fields as the next
+ * `edited` revision, the way an entry Solidtime brings back is. History stays
+ * append-only: the delete and the return are both in it.
+ */
+export function reviveEntry(tx: Tx, id: string, changedBy: string, now: number): number {
+  const row = tx.select().from(timeEntries).where(eq(timeEntries.id, id)).get();
+  if (row === undefined) throw ApiError.notFound(`No time entry "${id}"`);
+  if (row.startedAt !== null && row.endedAt !== null) {
+    assertFitsTheClock(tx, row.userId, row.startedAt, row.endedAt, row.minutes, { except: id });
+  }
+  return syncEntry(
+    tx,
+    id,
+    {
+      target: { taskId: row.taskId, projectId: row.projectId },
+      day: row.day,
+      tz: row.tz,
+      startedAt: row.startedAt,
+      endedAt: row.endedAt,
+      minutes: row.minutes,
+      note: row.note,
+    },
+    changedBy,
+    now,
+  );
 }
 
 /**

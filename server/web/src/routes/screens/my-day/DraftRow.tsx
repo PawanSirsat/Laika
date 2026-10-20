@@ -1,36 +1,21 @@
-import { useState, type ChangeEvent, type FormEvent } from 'react';
-import type { DraftPatch, TimeDraft } from '../../../api/time.ts';
-import { formatDuration } from '../../../api/duration.ts';
-import { Spinner } from '../../../components/Spinner.tsx';
+import type { ChangeEvent } from 'react';
+import type { TimeDraft } from '../../../api/time.ts';
 import { CardLink } from './CardLink.tsx';
-import { MoreMenu } from './MoreMenu.tsx';
-import { Understood } from './Understood.tsx';
-import {
-  draftTarget,
-  evidenceLine,
-  minutesUnderstood,
-  parseMinutes,
-  rangeLabel,
-  splitAt,
-  splitUnderstood,
-} from './my-day-derive.ts';
+import { duration, span } from './format.ts';
 
 export interface DraftRowProps {
   readonly draft: TimeDraft;
   /** Its place in the day's drafted list, 1-based, and how many there are. */
   readonly position: number;
   readonly count: number;
-  /** The action in flight anywhere on the page, as `<verb>:<id>`. */
-  readonly pending: string | undefined;
-  /** `verb` names the control that spins while it saves. */
-  readonly onPatch: (patch: DraftPatch, verb: string) => Promise<boolean>;
-  readonly onSplit: (at: number) => Promise<boolean>;
-  readonly onDismiss: () => void;
-  readonly onConfirm: () => void;
+  readonly busy: boolean;
   /** Ticked for a bulk action (LAI-810). */
-  readonly selected: boolean;
+  readonly checked: boolean;
   /** `range`: the click held Shift, so every row since the last one follows. */
-  readonly onSelect: (on: boolean, range: boolean) => void;
+  readonly onCheck: (on: boolean, range: boolean) => void;
+  /** The one in the inspector. */
+  readonly selected: boolean;
+  readonly onSelect: () => void;
   readonly onNavigate: (to: string) => void;
 }
 
@@ -40,214 +25,108 @@ function shifted(event: ChangeEvent<HTMLInputElement>): boolean {
   return native.shiftKey === true;
 }
 
-type Editing = 'none' | 'assign' | 'minutes' | 'split';
+/** What a block is on: its key, General, a space, or *Needs a card* — and the line under it. */
+function target(draft: TimeDraft): {
+  readonly label: string;
+  readonly line: string;
+  readonly ready: boolean;
+} {
+  if (draft.task !== null) return { label: draft.task.key, line: draft.task.title, ready: true };
+  if (draft.project !== null)
+    return { label: draft.project.name, line: 'A space, no card', ready: true };
+  if (draft.general) return { label: 'General', line: 'No card, on purpose', ready: true };
+  return {
+    label: 'Needs a card',
+    line:
+      draft.task_key === null
+        ? 'Nothing named a card'
+        : `${draft.task_key} was named — a card you can’t read`,
+    ready: false,
+  };
+}
 
 /**
- * One unconfirmed block (LAI-787): when it was, how long, what it is on —
- * or *No task — pick a card or General* — and the evidence it was drafted
- * from, as counts. Assign it, change its minutes, split it at a time, dismiss
- * it, or confirm it; nothing here is anybody's but the reader's.
- *
- * **One line since LAI-810**: a box to select it, when, how long, and the
- * card as a link to it; the evidence under it, smaller. *Confirm* is the one
- * action every block needs; the rest are in its "⋯".
+ * One block still to settle (LAI-810; the owner's design, LAI-831): a box to
+ * tick it for a bulk action, when, how long, what it is on — its card a link
+ * to it — the line under that, and where it came from. **The row selects the
+ * block**; what to do with it is in the inspector, and the keys.
  */
 export function DraftRow({
   draft,
   position,
   count,
-  pending,
-  onPatch,
-  onSplit,
-  onDismiss,
-  onConfirm,
+  busy,
+  checked,
+  onCheck,
   selected,
   onSelect,
   onNavigate,
 }: DraftRowProps) {
-  const [editing, setEditing] = useState<Editing>('none');
-  const [text, setText] = useState('');
-  const [error, setError] = useState<string | undefined>(undefined);
-  const target = draftTarget(draft);
-  const range = rangeLabel(draft);
-  const busy = pending !== undefined;
-  const mine = (verb: string): boolean => pending === `${verb}:${draft.id}`;
-
-  const open = (next: Editing, initial: string): void => {
-    setEditing(next);
-    setText(initial);
-    setError(undefined);
-  };
-
-  const submit = (event: FormEvent): void => {
-    event.preventDefault();
-    if (editing === 'assign') {
-      const key = text.trim();
-      if (key === '') {
-        setError('Type a card’s key, such as LAI-42 — or choose General.');
-        return;
-      }
-      void onPatch({ task: key }, 'assign').then((ok) => {
-        if (ok) setEditing('none');
-      });
-    } else if (editing === 'minutes') {
-      const minutes = parseMinutes(text);
-      if (minutes === undefined) {
-        setError('How long, as 45, 45m, 1h 30m or 1:30 — between 1 minute and 24 hours.');
-        return;
-      }
-      void onPatch({ minutes }, 'minutes').then((ok) => {
-        if (ok) setEditing('none');
-      });
-    } else if (editing === 'split') {
-      const at = splitAt(draft, text);
-      if (at === undefined) {
-        setError(`A time inside ${range}, such as 2:35 or 2:35 PM.`);
-        return;
-      }
-      void onSplit(at).then((ok) => {
-        if (ok) setEditing('none');
-      });
-    }
-  };
-
-  const when = range === '' ? 'No set time' : range;
+  const when =
+    draft.started_at === null || draft.ended_at === null
+      ? 'No set time'
+      : span(draft.started_at, draft.ended_at, draft.tz);
+  const on = target(draft);
   // Its accessible name: the time, or — with none to tell two apart — which
   // block of the day it is, and how long.
   const name =
-    range === ''
-      ? `block ${String(position)} of ${String(count)}, no set time, ${formatDuration(draft.minutes)}`
-      : range;
-  const menu = [
-    { value: 'assign', label: 'Card…' },
-    ...(draft.general ? [] : [{ value: 'general', label: 'General' }]),
-    { value: 'minutes', label: 'Minutes…' },
-    ...(draft.started_at !== null && draft.ended_at !== null
-      ? [{ value: 'split', label: 'Split…' }]
-      : []),
-    { value: 'dismiss', label: 'Not work', danger: true },
-  ];
-
-  const pick = (value: string): void => {
-    if (value === 'assign') open('assign', draft.task?.key ?? draft.task_key ?? '');
-    else if (value === 'general') {
-      void onPatch({ task: null, project: null, general: true }, 'general');
-    } else if (value === 'minutes') open('minutes', formatDuration(draft.minutes));
-    else if (value === 'split') open('split', '');
-    else if (value === 'dismiss') onDismiss();
-  };
-
-  const className = [
-    'myday-block',
-    target.untied ? 'myday-block-untied' : '',
-    selected ? 'myday-block-selected' : '',
-  ]
-    .filter((c) => c !== '')
-    .join(' ');
+    when === 'No set time'
+      ? `block ${String(position)} of ${String(count)}, no set time, ${duration(draft.minutes)}`
+      : when;
 
   return (
-    <li className={className} data-draft={draft.id}>
-      <div className="myday-block-main">
-        <input
-          type="checkbox"
-          className="myday-check"
-          checked={selected}
-          disabled={busy}
-          aria-label={`Select ${name}, ${target.label}`}
-          onChange={(event) => {
-            onSelect(event.target.checked, shifted(event));
-          }}
-        />
-        <span className="myday-block-time">{when}</span>
-        <span className="myday-block-minutes">{formatDuration(draft.minutes)}</span>
-        <span className="myday-block-target">
+    <li
+      className={[
+        'myday-settle-row',
+        on.ready ? '' : 'myday-settle-untied',
+        selected ? 'myday-row-selected' : '',
+        checked ? 'myday-row-checked' : '',
+      ]
+        .filter((c) => c !== '')
+        .join(' ')}
+      data-settle-row={draft.id}
+      data-draft={draft.id}
+      onClick={(event) => {
+        // The whole row selects, as the design has it — but a box or a link
+        // keeps its own click.
+        const from = event.target as HTMLElement;
+        if (from.closest('a, input, button') === null) onSelect();
+      }}
+    >
+      <input
+        type="checkbox"
+        className="myday-check"
+        checked={checked}
+        disabled={busy}
+        aria-label={`Select ${name}, ${draft.task === null ? on.label : `${draft.task.key} ${draft.task.title}`}`}
+        onChange={(event) => {
+          onCheck(event.target.checked, shifted(event));
+        }}
+      />
+      <button
+        type="button"
+        className="myday-row-select"
+        data-select={draft.id}
+        aria-pressed={selected}
+        aria-label={`Review ${name}, ${on.label}, ${duration(draft.minutes)}`}
+        onClick={onSelect}
+      >
+        <span className="myday-row-time">{when}</span>
+        <span className="myday-row-minutes">{duration(draft.minutes)}</span>
+      </button>
+      <span className="myday-row-target">
+        <span className={on.ready ? 'myday-row-key' : 'myday-row-key myday-row-needs'}>
           {draft.task === null ? (
-            target.label
+            on.label
           ) : (
             <CardLink task={draft.task} slug={draft.project?.slug} onNavigate={onNavigate} />
           )}
         </span>
-        {editing === 'none' && (
-          <span className="myday-block-actions">
-            <button
-              type="button"
-              className="myday-chip myday-chip-primary"
-              disabled={busy}
-              onClick={onConfirm}
-            >
-              {mine('confirm') && <Spinner size="sm" label="Confirming this block" />}
-              Confirm
-            </button>
-            <MoreMenu
-              label={`More for ${name}`}
-              menuLabel="Change this block"
-              items={menu}
-              disabled={busy}
-              onPick={pick}
-            />
-          </span>
-        )}
-      </div>
-      <p className="myday-block-evidence">
-        {evidenceLine(draft.signals, draft.source)}
-        {draft.note !== null && <span className="myday-block-note"> · {draft.note}</span>}
-        {(mine('general') || mine('dismiss')) && (
-          <Spinner
-            size="sm"
-            label={mine('general') ? 'Moving to General' : 'Dismissing this block'}
-          />
-        )}
-      </p>
-
-      {editing !== 'none' && (
-        <form className="myday-block-form" onSubmit={submit}>
-          <label className="myday-field">
-            <span className="myday-field-label">
-              {editing === 'assign'
-                ? 'Card'
-                : editing === 'minutes'
-                  ? 'How long'
-                  : `Split at (inside ${range})`}
-            </span>
-            <input
-              className="input"
-              value={text}
-              // Opened from the "⋯" menu, so the field is where focus goes.
-              autoFocus
-              placeholder={
-                editing === 'assign' ? 'LAI-42' : editing === 'minutes' ? '1h 30m' : '2:35 PM'
-              }
-              // A split time may carry AM or PM, so it gets letters too.
-              inputMode={editing === 'minutes' ? 'numeric' : 'text'}
-              onChange={(e) => {
-                setText(e.target.value);
-              }}
-            />
-          </label>
-          {editing === 'minutes' && <Understood text={minutesUnderstood(text)} />}
-          {editing === 'split' && <Understood text={splitUnderstood(draft, text)} />}
-          <div className="myday-block-actions">
-            <button type="submit" className="myday-chip myday-chip-primary" disabled={busy}>
-              {mine(editing) && <Spinner size="sm" label="Saving this block" />}
-              {editing === 'split' ? 'Split' : 'Save'}
-            </button>
-            <button
-              type="button"
-              className="myday-chip"
-              onClick={() => {
-                setEditing('none');
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-          {error !== undefined && (
-            <p className="myday-error" role="alert">
-              {error}
-            </p>
-          )}
-        </form>
-      )}
+        {draft.task === null && <span className="myday-row-line">{on.line}</span>}
+      </span>
+      <span className={`myday-source myday-source-${draft.source}`}>
+        {draft.source === 'agent' ? 'agent' : 'collector'}
+      </span>
     </li>
   );
 }

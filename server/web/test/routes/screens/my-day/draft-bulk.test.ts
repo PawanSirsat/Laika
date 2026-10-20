@@ -343,6 +343,31 @@ void describe('the header’s Confirm day', () => {
     );
   });
 
+  void test('a stretch over the clock: nothing confirmed, and the block named (review round 2)', async () => {
+    const all = [draft(1), draft(2), draft(3)];
+    const api: BulkApi = {
+      confirmDraft: () => Promise.resolve({}),
+      dismissDraft: () => Promise.resolve(),
+      toGeneral: () => Promise.resolve({}),
+      confirmDay: () =>
+        Promise.reject(
+          new ApiError('conflict', 'That would count confirmed time twice', 409, {
+            reason: 'overlaps_confirmed',
+            draft_id: 'd2',
+            stretch_minutes: 160,
+            would_hold: 190,
+          }),
+        ),
+    };
+    const result = await runConfirmDay(all, '2026-10-20', api);
+    assert.equal(result.ok, false);
+    assert.equal(
+      result.text,
+      'Nothing confirmed: 7:40–7:55 AM would count confirmed time twice — its stretch has ' +
+        '2 h 40 min of clock and would hold 3 h 10 min. Shorten it or mark it not work, then confirm again.',
+    );
+  });
+
   void test('a full day refuses the whole request: nothing confirmed, said so', async () => {
     const all = [draft(1)];
     const { api } = fakeApi(new Map([['2026-10-20', 'full']]));

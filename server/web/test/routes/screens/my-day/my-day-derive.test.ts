@@ -93,7 +93,7 @@ void describe('two units: the person’s time in words, and an agent’s minutes
     }
   });
 
-  void test('the agent strip draws every agent figure through agentMinutes, never hm', async () => {
+  void test('the agent strip draws every agent figure in agent minutes, never a person’s duration', async () => {
     const src = code(
       await readFile(
         new URL('../../../../src/routes/screens/my-day/AgentStrip.tsx', import.meta.url),
@@ -101,10 +101,16 @@ void describe('two units: the person’s time in words, and an agent’s minutes
       ),
     );
     // The positive control: the strip does draw minutes, so the absence below
-    // is not a file that draws nothing.
-    assert.match(src, /agentMinutes\(agent\.minutes\)/);
-    assert.match(src, /agentMinutes\(row\.minutes\)/);
-    assert.doesNotMatch(src, /\bhm\(|formatDuration\(/, 'an agent figure drawn as hours');
+    // is not a file that draws nothing. Since LAI-831 every figure goes
+    // through `format.ts`'s `agentDuration` — LAI-830's minutes-only form.
+    assert.match(src, /agentDuration\(agent\.minutes\)/);
+    assert.match(src, /agentDuration\(row\.minutes\)/);
+    assert.match(src, /agentDuration\(agent\.keyboard_minutes\)/);
+    assert.doesNotMatch(
+      src,
+      /\bhm\(|formatDuration\(|\bduration\(/,
+      'an agent figure drawn as hours',
+    );
     // And it says so to the reader, beside the figure.
     assert.match(src, /minutes, never hours/);
   });
@@ -327,7 +333,7 @@ void describe('My day is wired to the API and nothing else', () => {
         'utf8',
       ),
     );
-    assert.match(src, /getMyDay\(selected, tz, controller\.signal\)/);
+    assert.match(src, /getMyDay\(selectedDay, tz, controller\.signal\)/);
   });
 });
 
@@ -338,14 +344,15 @@ void describe('an entry from Solidtime is read-only here (LAI-788 review round 1
     assert.equal(canChange(entry({ source: 'import' })), false);
   });
 
-  void test('the row offers Edit and Delete only where it may, and says where to change an import', async () => {
+  void test('the inspector offers Delete, a card and −/+ only where it may, and says where to change an import', async () => {
+    // Since LAI-831 a confirmed entry is changed in the inspector, not its row.
     const src = code(
       await readFile(
-        new URL('../../../../src/routes/screens/my-day/EntryRow.tsx', import.meta.url),
+        new URL('../../../../src/routes/screens/my-day/Inspector.tsx', import.meta.url),
         'utf8',
       ),
     );
     assert.match(src, /canChange\(entry\)/);
-    assert.match(src, /Change it in Solidtime/);
+    assert.match(src, /change it in Solidtime/);
   });
 });

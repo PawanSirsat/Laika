@@ -230,11 +230,13 @@ function MyDayRoute() {
     route: { params, setParams, navigate },
     me,
     reviewQueue,
+    reviewCapped,
   } = useShell();
   return (
     <MyDayScreen
       me={me}
       queue={reviewQueue}
+      queueCapped={reviewCapped}
       onNavigate={navigate}
       day={params.get('day') ?? undefined}
       onDay={(day) => {

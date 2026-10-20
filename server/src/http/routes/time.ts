@@ -3,6 +3,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { getMyDay } from '../../services/my-day.ts';
+import { addBreak, removeBreak } from '../../services/time-breaks.ts';
 import {
   confirmDay,
   confirmDraft,
@@ -45,6 +46,8 @@ import {
   type SolidtimeOutbox,
   type SolidtimeSetup,
 } from '../../services/time-solidtime.ts';
+import { undoChange } from '../../services/time-undo.ts';
+import { UNDO_HEADER } from '../../services/time-undo-log.ts';
 import { TASK_KEY_PATTERN } from '../../services/token-usage.ts';
 import { type AppEnv } from '../context.ts';
 import { parseBody, parseParams, parseQuery, strictObject, z } from '../validation.ts';
@@ -118,11 +121,16 @@ const ProposalBody = strictObject({
   note: z.string().max(200).optional(),
 });
 
+const instantMs = z.number().int().min(0);
+
 const DraftPatchBody = strictObject({
   task: ref.nullable().optional(),
   project: slug.nullable().optional(),
   general: z.literal(true).optional(),
   minutes: minutes.optional(),
+  // An edge moved on its own day (LAI-831).
+  started_at: instantMs.optional(),
+  ended_at: instantMs.optional(),
 });
 
 const SplitBody = strictObject({ at: z.number().int().min(0) });
@@ -144,7 +152,15 @@ const EntryPatchBody = strictObject({
   project: slug.nullable().optional(),
   note: z.string().max(280).nullable().optional(),
   day: day.optional(),
+  started_at: instantMs.optional(),
+  ended_at: instantMs.optional(),
 });
+
+// A gap waved away (LAI-831): a span on the person's own day, and nothing else.
+const BreakBody = strictObject({ day, tz: zone, started_at: instantMs, ended_at: instantMs });
+
+// Undo names one change: the id that change answered with (LAI-831 review round 1).
+const UndoBody = strictObject({ id: z.string().min(1).max(64) });
 
 const MyDayQuery = strictObject({ day: day.optional(), tz: zone.optional() });
 
@@ -234,6 +250,16 @@ function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) 
 const json = async (c: { req: { json: () => Promise<unknown> } }): Promise<unknown> =>
   c.req.json().catch(() => null);
 
+/**
+ * A recorded change answers with its own undo id (LAI-831 review round 1):
+ * `onUndo` for the service, and the header set once it has the id.
+ */
+function undoable(c: { header: (name: string, value: string) => void }): (id: string) => void {
+  return (id) => {
+    c.header(UNDO_HEADER, id);
+  };
+}
+
 export function meTimeRoutes(options: { db: Db }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db } = options;
@@ -266,30 +292,33 @@ export function meTimeRoutes(options: { db: Db }): Hono<AppEnv> {
   app.patch('/time-drafts/:id', async (c) => {
     const actor = requireActor(c);
     const { id } = parseParams(IdParams, c.req.param());
-    return c.json(updateDraft(db, actor, id, parseBody(DraftPatchBody, await json(c))));
+    const patch = parseBody(DraftPatchBody, await json(c));
+    return c.json(updateDraft(db, actor, id, patch, Date.now(), undoable(c)));
   });
 
   app.post('/time-drafts/:id/split', async (c) => {
     const actor = requireActor(c);
     const { id } = parseParams(IdParams, c.req.param());
     const { at } = parseBody(SplitBody, await json(c));
-    return c.json({ drafts: splitDraft(db, actor, id, at) });
+    return c.json({ drafts: splitDraft(db, actor, id, at, Date.now(), undoable(c)) });
   });
 
   app.post('/time-drafts/:id/dismiss', (c) => {
     const actor = requireActor(c);
-    dismissDraft(db, actor, parseParams(IdParams, c.req.param()).id);
+    dismissDraft(db, actor, parseParams(IdParams, c.req.param()).id, Date.now(), undoable(c));
     return c.body(null, 204);
   });
 
   app.post('/time-drafts/:id/confirm', (c) => {
     const actor = requireActor(c);
-    return c.json(confirmDraft(db, actor, parseParams(IdParams, c.req.param()).id), 201);
+    const { id } = parseParams(IdParams, c.req.param());
+    return c.json(confirmDraft(db, actor, id, Date.now(), undoable(c)), 201);
   });
 
   app.post('/time/days/:day/confirm', (c) => {
     const actor = requireActor(c);
-    return c.json({ entries: confirmDay(db, actor, parseParams(DayParams, c.req.param()).day) });
+    const { day: on } = parseParams(DayParams, c.req.param());
+    return c.json({ entries: confirmDay(db, actor, on, Date.now(), undoable(c)) });
   });
 
   app.get('/time', (c) => {
@@ -297,9 +326,26 @@ export function meTimeRoutes(options: { db: Db }): Hono<AppEnv> {
     return c.json(getMyDay(db, actor, parseQuery(MyDayQuery, c.req.query())));
   });
 
+  app.post('/time/undo', async (c) => {
+    const actor = requireActor(c);
+    undoChange(db, actor, parseBody(UndoBody, await json(c)).id);
+    return c.body(null, 204);
+  });
+
+  app.post('/time-breaks', async (c) => {
+    const actor = requireActor(c);
+    return c.json(addBreak(db, actor, parseBody(BreakBody, await json(c))), 201);
+  });
+
+  app.delete('/time-breaks/:id', (c) => {
+    removeBreak(db, requireActor(c), parseParams(IdParams, c.req.param()).id);
+    return c.body(null, 204);
+  });
+
   app.post('/time-entries', async (c) => {
     const actor = requireActor(c);
-    return c.json(createEntry(db, actor, parseBody(EntryBody, await json(c))), 201);
+    const entry = parseBody(EntryBody, await json(c));
+    return c.json(createEntry(db, actor, entry, Date.now(), undoable(c)), 201);
   });
 
   app.patch('/time-entries/:id', async (c) => {
@@ -309,7 +355,8 @@ export function meTimeRoutes(options: { db: Db }): Hono<AppEnv> {
   });
 
   app.delete('/time-entries/:id', (c) => {
-    deleteEntry(db, requireActor(c), parseParams(IdParams, c.req.param()).id);
+    const actor = requireActor(c);
+    deleteEntry(db, actor, parseParams(IdParams, c.req.param()).id, Date.now(), undoable(c));
     return c.body(null, 204);
   });
 
