@@ -279,7 +279,7 @@ the table above; every per-person read filters to own rows and no total
 filters them out. Migration 0043 only adds a column and re-creates two
 indexes; query plans still use covering indexes.
 
-Follow-ups carried to LAI-825: the collector should feature-detect the
+Follow-ups carried to LAI-826: the collector should feature-detect the
 `automated` flag instead of risking a whole-report 422 on an older board;
 untested paths (accepted cost, rework, forecast coverage with automated rows;
 the people fold with automated-only rows); SPEC fold sentence; the plan-limit
