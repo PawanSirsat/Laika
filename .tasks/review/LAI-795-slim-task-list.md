@@ -279,3 +279,85 @@ alone and report both. **It is not a clean `EXIT 0`.** Re-gate before any
 push. This section was added after the runs and is Markdown only;
 `task-file-state.test.ts` was re-run after it.
 
+## Review round 1 — fixed
+
+**B1: a stale description stayed editable after a failed re-read, and was
+never read again.** Fixed in `fd6a4314`.
+
+- `server/web/src/api/use-task-text.ts`: the hook now returns `stale` (the
+  store has a newer version, and its read is under way or failed) and
+  `version` (the `updated_at` of the text it holds). **A failed read is tried
+  again at the board's next list refresh**, even one that did not move the
+  task. That retry lives in its own effect, keyed on `listReadAt` (the board's
+  `asOf`) alone. In the read's own deps, setting the failure would change them
+  and read again at once.
+- `TaskDetailPanel.tsx`:
+  - **The description is not editable while it is stale.** `mayEdit` is false,
+    so the editor cannot open on the old text, whether the newer read is in
+    flight or has failed.
+  - **A failed newer read says so inline, with Try again.** This is the
+    panel's own `role="alert"`, not `ApiErrorState`, because that offers a
+    retry only for `internal` and `rate_limited`, and the likeliest cause
+    here is a restart's `503 unavailable`.
+  - **A save is refused** when the text is stale, or when the version the edit
+    began from (recorded by `InlineEdit`'s new `onOpen`) is no longer the one
+    held. The refusal is a `409 conflict` message in the editor, and the
+    draft stays.
+- `BoardScreen.tsx` passes `listReadAt={board.state.asOf}`. `InlineEdit.tsx`
+  gains the optional `onOpen`; the title does not use it.
+
+**Red first.** I added the four tests below to `slim-list.test.ts` and ran
+them on the code before the fix (`c5f33204`, with `git diff -- src` empty).
+**All four failed:**
+
+| test | failure on the old code |
+| --- | --- |
+| a failed re-read locks the old text, says so with Try again, and reads again on the next refresh | *a failed re-read of a stale text said nothing* (0 alerts) |
+| Try again reads it again, after a 503 | no Try again button (10 s timeout) |
+| while a newer version is being read, the old text does not open for editing | *the old text was editable while its successor loaded* |
+| an edit begun on a version someone else has since replaced is not saved over it | *the edit was saved over the newer version* (1 `PATCH`) |
+
+**One limit of that proof.** On the old code, the first test fails at the
+alert, before it reaches its last step: the 503 is lifted, a frame arrives
+that does not move the task, and the test expects a re-read. So the
+retry-on-refresh step has not been shown red by itself. I skipped the
+mutation that would show it, to keep the machine cool as asked. On the fixed
+code it passes in every run.
+
+**Non-blocking, also done** (`8a690957`):
+
+1. The last test in the file claimed *"across Board, List and Timeline"*, but
+   the Timeline reads no list in that fixture. It is now *switching views and
+   reloading reads no list in full, and no task by id without a panel*.
+2. The panel-text test now serves **different** texts from the list and from
+   `GET /tasks/:id`. It asserts the panel shows the full read's texts and
+   neither of the list's.
+
+**Runs.** `test/browser/slim-list.test.ts` ran three times in a row at
+`f4b0a7c8`: **11 of 11 each** (13–14 s). `test/api/use-task-text.test.ts`:
+7 of 7.
+
+**Gate, once, at `f4b0a7c8`, from the repo root**, each command to its own
+file with its exit code on its own line:
+
+| command | exit | result |
+| --- | --- | --- |
+| `pnpm test` | **1** | `server/web`: 2,229 of 2,229. `cli`: 469 pass, 0 fail, 2 skipped. `server`: 3,216 pass, 13 skipped and **3 fail**, all load timeouts LAI-768 names: `mcp/parity.test.ts`, three cases at 5 s (`create_task`, `list_projects`, `list_ready_tasks`), and `tooling/environment-posture.test.ts`, its 60 s setup hook. Load averages read 25–30. |
+| `pnpm exec vitest run test/mcp/parity.test.ts` (in `server/`) | **0** | 28 of 28 |
+| `pnpm exec vitest run test/tooling/environment-posture.test.ts` | **0** | 13 of 13 |
+| `pnpm lint` | **0** | |
+| `pnpm format` | **0** | |
+
+**Root `pnpm test` is still not a clean exit 0.** This round changed no
+server code. Re-gate before any push.
+
+`master` was merged twice this round: `c5f33204` brought in LAI-796 and
+LAI-797 filings, and `f4b0a7c8` brought in the renumber to LAI-799. Both
+touch `.tasks/` only.
+
+**Found, not done here:** `ApiErrorState` offers no Try again for `503
+unavailable` (`ApiError.retryable` is only `internal` and `rate_limited`).
+That is true on every screen, not only this panel. §6.3 calls `unavailable`
+the shutting-down answer, which is the case most worth retrying. For the
+orchestrator or CHIEF to file.
+
