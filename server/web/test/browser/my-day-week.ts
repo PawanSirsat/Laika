@@ -136,9 +136,18 @@ const settledEntries = (day: string): Entry[] => [
 const sum = (list: readonly { minutes: number }[]): number =>
   list.reduce((n, x) => n + x.minutes, 0);
 
-interface DayData {
-  readonly drafts: Draft[];
-  readonly entries: Entry[];
+export interface Break {
+  readonly id: string;
+  readonly day: string;
+  readonly tz: string;
+  readonly started_at: number;
+  readonly ended_at: number;
+}
+
+export interface DayData {
+  drafts: Draft[];
+  entries: Entry[];
+  breaks?: Break[];
 }
 
 /** What each day holds; anything not named is empty. */
@@ -192,7 +201,7 @@ export function viewOf(day: string, data: Map<string, DayData> = weekData()): un
     settings: SETTINGS,
     drafts: own?.drafts ?? [],
     entries: own?.entries ?? [],
-    breaks: [],
+    breaks: own?.breaks ?? [],
     drafts_held: { count: held.length, minutes: sum(held) },
     agent: day === TODAY ? AGENT : NO_AGENT,
     state: stateOf(day, own),

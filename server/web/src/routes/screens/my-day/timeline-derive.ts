@@ -1,0 +1,262 @@
+import type { MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
+import { addDays, atClock } from './my-day-derive.ts';
+
+/**
+ * My day's lane timeline (LAI-831, the owner's "Laika App v2" design): the
+ * day's blocks along the hours, the **gaps** between them, the breaks the
+ * person waved away, and the arithmetic of moving an edge.
+ *
+ * **Minutes after the day's midnight**, in the day's own zone (`view.tz`), are
+ * the unit throughout; the page turns them back into instants only to write.
+ * **Only what has a time is placed**: a block added by its length alone has
+ * no place on the day, so it is counted and listed rather than put somewhere
+ * invented — and so it never closes a gap.
+ *
+ * Pure: the clock is passed in.
+ */
+
+/** A gap shorter than this is a breath, not unaccounted time (the owner's design). */
+export const GAP_MIN = 20;
+/** Edges move, and lengths change, in steps of this many minutes. */
+export const STEP = 5;
+/** The working day the axis shows when nothing falls outside it: 6 AM to 10 PM. */
+export const AXIS_FROM = 6;
+export const AXIS_TO = 22;
+
+export type Zoom = 'fit' | '1' | '2';
+/** Pixels an hour at each zoom; `fit` is the whole axis in the width there is. */
+export const PX_PER_HOUR: Readonly<Record<Zoom, number | undefined>> = {
+  fit: undefined,
+  '1': 110,
+  '2': 220,
+};
+
+export interface LaneBlock {
+  readonly kind: 'confirmed' | 'drafted';
+  readonly id: string;
+  /** Minutes after the day's midnight. */
+  readonly start: number;
+  readonly end: number;
+  readonly minutes: number;
+  /** A drafted block on no card, no space and not General. */
+  readonly needsCard: boolean;
+  /** Imported from Solidtime: changed there, never dragged here (LAI-788). */
+  readonly locked: boolean;
+}
+
+export interface Span {
+  readonly start: number;
+  readonly end: number;
+}
+
+export interface BreakSpan extends Span {
+  readonly id: string;
+}
+
+export interface DayLine {
+  /** The day's midnight, unix ms, or `undefined` for a day that is not one. */
+  readonly midnight: number | undefined;
+  /** How many minutes the day has — 1440, or one hour either side on a clock change. */
+  readonly length: number;
+  readonly blocks: readonly LaneBlock[];
+  /** Blocks with no set time, which the lane cannot place. */
+  readonly untimed: number;
+  readonly gaps: readonly Span[];
+  readonly breaks: readonly BreakSpan[];
+  /** Minutes after midnight, on today only. */
+  readonly now: number | undefined;
+  /** The first and last hour on the axis. */
+  readonly from: number;
+  readonly to: number;
+}
+
+type Timed = Pick<TimeDraft | TimeEntry, 'id' | 'started_at' | 'ended_at' | 'minutes'>;
+
+const needsCard = (d: TimeDraft): boolean =>
+  d.task === null && d.project === null && !d.general;
+
+/** `[start, end)` less every span in `cuts`, in order. */
+export function clip(span: Span, cuts: readonly Span[]): Span[] {
+  let pieces: Span[] = [span];
+  for (const cut of cuts) {
+    const next: Span[] = [];
+    for (const piece of pieces) {
+      if (cut.end <= piece.start || cut.start >= piece.end) {
+        next.push(piece);
+        continue;
+      }
+      if (cut.start > piece.start) next.push({ start: piece.start, end: cut.start });
+      if (cut.end < piece.end) next.push({ start: cut.end, end: piece.end });
+    }
+    pieces = next;
+  }
+  return pieces;
+}
+
+/**
+ * The gaps of a day: stretches of at least {@link GAP_MIN} minutes between
+ * placed blocks — and, on today, between the last block and now — less every
+ * break. Nothing before the first block counts: the day starts when the person
+ * did.
+ */
+export function gapsOf(
+  blocks: readonly Span[],
+  breaks: readonly Span[],
+  now: number | undefined,
+): Span[] {
+  const sorted = [...blocks].sort((a, b) => a.start - b.start);
+  const gaps: Span[] = [];
+  let reach: number | undefined;
+  for (const block of sorted) {
+    if (reach !== undefined && block.start - reach >= GAP_MIN) {
+      gaps.push({ start: reach, end: block.start });
+    }
+    reach = reach === undefined ? block.end : Math.max(reach, block.end);
+  }
+  if (reach !== undefined && now !== undefined && now - reach >= GAP_MIN) {
+    gaps.push({ start: reach, end: now });
+  }
+  return gaps
+    .flatMap((gap) => clip(gap, breaks))
+    .filter((piece) => piece.end - piece.start >= GAP_MIN);
+}
+
+export function dayLine(
+  view: Pick<MyDay, 'day' | 'tz' | 'today' | 'drafts' | 'entries' | 'breaks'>,
+  nowMs: number,
+): DayLine {
+  const midnight = atClock(view.day, '00:00', view.tz);
+  const next = atClock(addDays(view.day, 1), '00:00', view.tz);
+  const length =
+    midnight === undefined || next === undefined ? 1440 : Math.round((next - midnight) / 60_000);
+  const minute = (ms: number): number =>
+    midnight === undefined
+      ? 0
+      : Math.min(length, Math.max(0, Math.round((ms - midnight) / 60_000)));
+
+  const blocks: LaneBlock[] = [];
+  let untimed = 0;
+  const place = (
+    kind: LaneBlock['kind'],
+    item: Timed,
+    extra: Pick<LaneBlock, 'needsCard' | 'locked'>,
+  ): void => {
+    if (item.started_at === null || item.ended_at === null) {
+      untimed += 1;
+      return;
+    }
+    const start = minute(item.started_at);
+    const end = minute(item.ended_at);
+    if (end <= start) {
+      untimed += 1;
+      return;
+    }
+    blocks.push({ kind, id: item.id, start, end, minutes: item.minutes, ...extra });
+  };
+  for (const entry of view.entries) {
+    place('confirmed', entry, { needsCard: false, locked: entry.source === 'import' });
+  }
+  for (const draft of view.drafts) {
+    place('drafted', draft, { needsCard: needsCard(draft), locked: false });
+  }
+  blocks.sort((a, b) => a.start - b.start);
+
+  const breaks: BreakSpan[] = view.breaks.map((b) => ({
+    id: b.id,
+    start: minute(b.started_at),
+    end: minute(b.ended_at),
+  }));
+  const now = view.day === view.today ? minute(nowMs) : undefined;
+  const gaps = gapsOf(blocks, breaks, now);
+
+  const starts = [...blocks, ...breaks].map((s) => s.start);
+  const ends = [...blocks, ...breaks].map((s) => s.end);
+  if (now !== undefined) {
+    starts.push(now);
+    ends.push(now);
+  }
+  const from = Math.max(0, Math.min(AXIS_FROM, ...starts.map((m) => Math.floor(m / 60))));
+  const to = Math.min(24, Math.max(AXIS_TO, ...ends.map((m) => Math.ceil(m / 60))));
+  return { midnight, length, blocks, untimed, gaps, breaks, now, from, to };
+}
+
+/** Where `minute` sits along an axis from hour `from` to hour `to`, as a percentage. */
+export function along(minute: number, from: number, to: number): number {
+  const span = (to - from) * 60;
+  return span <= 0 ? 0 : ((minute - from * 60) / span) * 100;
+}
+
+/** The axis's labelled hours: every hour, or every other one when the whole day must fit. */
+export function axisHours(from: number, to: number, zoom: Zoom): number[] {
+  const hours: number[] = [];
+  for (let hour = from; hour <= to; hour += 1) {
+    if (zoom !== 'fit' || hour % 2 === 0) hours.push(hour);
+  }
+  return hours;
+}
+
+/** The nearest step on the clock: 8:42 → 8:40, 8:43 → 8:45. */
+export const snap = (minute: number): number => Math.round(minute / STEP) * STEP;
+
+/** A block's place and length after an edit, in minutes after midnight. */
+export interface Edit {
+  readonly start: number;
+  readonly end: number;
+  readonly minutes: number;
+}
+
+type Shape = Pick<LaneBlock, 'start' | 'end' | 'minutes'>;
+
+/**
+ * Drag one edge to `to` (minutes after midnight): the edge lands on the
+ * nearest {@link STEP} of the clock, never closer than one step to the other
+ * edge nor off the day, and the block's minutes change by as much as its span
+ * did — a block that held less than its span (two tasks at once) keeps that
+ * difference. `undefined` when nothing would change.
+ */
+export function dragEdge(
+  block: Shape,
+  edge: 'start' | 'end',
+  to: number,
+  length = 1440,
+): Edit | undefined {
+  const at = Math.min(length, Math.max(0, snap(to)));
+  const start = edge === 'start' ? Math.min(at, block.end - STEP) : block.start;
+  const end = edge === 'end' ? Math.max(at, block.start + STEP) : block.end;
+  const moved = edge === 'start' ? block.start - start : end - block.end;
+  if (moved === 0) return undefined;
+  const minutes = Math.min(end - start, Math.max(1, block.minutes + moved));
+  return { start, end, minutes };
+}
+
+/**
+ * −/+ on a placed block: its end moves by `by` minutes and its length with
+ * it, so the lane and the figure agree. `undefined` past a step of length, or
+ * past the end of the day.
+ */
+export function stepEnd(block: Shape, by: number, length = 1440): Edit | undefined {
+  const end = block.end + by;
+  const minutes = block.minutes + by;
+  if (end - block.start < STEP || minutes < 1 || end > length) return undefined;
+  return { start: block.start, end, minutes: Math.min(end - block.start, minutes) };
+}
+
+/** −/+ on a block with no set time: its minutes alone, a step at a time, within a day. */
+export function stepMinutes(minutes: number, by: number): number | undefined {
+  const next = minutes + by;
+  return next < STEP || next > 1440 ? undefined : next;
+}
+
+/**
+ * *Split in two*: the middle of the block's span, to the nearest step from its
+ * start. `undefined` for a block too short to halve, or one with no span.
+ */
+export function splitPoint(block: Shape): number | undefined {
+  const span = block.end - block.start;
+  if (span < 2 * STEP || block.minutes < 2) return undefined;
+  const at = block.start + Math.round(span / 2 / STEP) * STEP;
+  return at > block.start && at < block.end ? at : undefined;
+}
+
+/** The instant minute `m` of the day names, for a write. */
+export const instantOf = (midnight: number, m: number): number => midnight + m * 60_000;
