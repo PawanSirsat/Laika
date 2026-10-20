@@ -6,8 +6,9 @@ assignee: owner-direct
 priority: p2
 depends-on: [LAI-787]
 discovered-from: LAI-787
-status: in-progress
+status: review
 started: 2026-10-20T05:17:26Z
+finished: 2026-10-20T09:23:03Z
 ---
 
 ## Goal
@@ -29,7 +30,7 @@ reason.
 
 ## Acceptance criteria
 
-- [ ] A supported way for an orchestrator to tell the collector "the person
+- [x] A supported way for an orchestrator to tell the collector "the person
       typed now" — a hook Omnigent can call, or a documented event file —
       metadata only, never the text; or a decision that such time is entered
       by hand.
@@ -124,4 +125,46 @@ the skipped shapes. (4) Docs per D-090 item 3: "Read the prompt" reworded,
 "one exception" now two, these turns no longer called "yours", "nothing to
 configure" names a host-launched runner, the no-marker-under-HOME test on the
 Omnigent path. (5) This file back to in-progress, AC1 unticked.
+
+## Review round 1 — fixed
+
+- **B1, D-090.** On Claude Code's prompt on an Omnigent orchestrator's turn
+  or in an Omnigent primary, the hook reads at most 4 KB (zsh `sysread`, no
+  fork; sh `head -c 4096`), asks whether the `"prompt"` value — after `:` and
+  spaces only, so `"prompt":"` and `"prompt": "` — begins `[System: `,
+  clears the variable, then drains the rest. Every other prompt stays unread.
+  The orchestrator writes **`w`** for a runtime turn, not nothing: the `r`
+  its end writes must be dropped, and an explicit start lets the drafter pair
+  each end with the start before it (and `laika time draft` say how many it
+  left out). The drafter keeps an `r` only when the turn before it in that
+  session is a `t`; a `w`, its `r`, and an `r` with no start make no time.
+  Tests: fixtures quote Omnigent 0.17.0's sub-agent, timer and idle-terminal
+  templates; compact, spaced and notice-on-the-first-line payloads are `w`;
+  the marker anywhere but at the start, lower case or without its space is
+  `t`; a 512 KB prompt drains; a night of notices ten minutes apart drafts
+  nothing while the owner's 03:05 turn among them drafts 8 minutes.
+- **2. The Claude Code primary path — it does happen.** Omnigent 0.17.0
+  posts the notice to every parent but a codex-native one
+  (`runner/app.py` `_schedule_subagent_wake`) and the claude-native harness
+  pastes the latest user message into the terminal
+  (`inner/claude_native_executor.py` → `inject_user_message`), so
+  `UserPromptSubmit` fires with it. Such a prompt now writes no
+  `p claude-code` (heatmap and prompt lane). Its **replies**, read from the
+  session's transcript, still draft → filed **LAI-805**.
+- **3.** `CLAUDE_CODE_ENTRYPOINT` must be `sdk-py`; `sdk-cli` (`claude -p`)
+  and `sdk-ts` are among the skipped shapes.
+- **4.** Hook header and `plugin/README.md`: "never keeps, stores or sends any
+  part of the prompt; on an Omnigent turn only, checks for the marker";
+  "two exceptions"; these turns count only when the person started them;
+  `cli/README.md` names the host-launched runner (a CLI-started polly is
+  never counted) and D-090's known limits. The no-marker-under-HOME test runs
+  on plain, Omnigent-primary and orchestrator paths with a person's prompt
+  and a notice, and passes.
+- **Mutations**, each anchor-checked, red, restored by checksum: marker never
+  seen; spaced key refused; marker without its space; primary counting
+  notices; any agent peeked; `sdk-*` again; rest not drained; `t` for a
+  notice; wakes kept; every end kept; same-second ties reversed; `w` lines not
+  read; the left-out line gone — 13 of 13 red.
+- Gate exit codes after the last code edit: `logs/polly-time-2026-10-20.md`,
+  round 1.
 
