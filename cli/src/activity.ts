@@ -1146,5 +1146,11 @@ export async function time(argv: readonly string[], io: ActivityIo = CONSOLE): P
   io.out(
     `Built from ${n(read.replies, 'Claude Code reply', 'Claude Code replies')}, ${n(read.prompts, 'typed prompt', 'typed prompts')}, ${n(read.turns, 'Omnigent orchestrator turn', 'Omnigent orchestrator turns')}, ${n(read.commits, 'commit', 'commits')} and ${n(read.marks, 'Laika mark', 'Laika marks')}.`,
   );
+  // D-090: the turns Omnigent started itself, said so they are not a mystery.
+  if (read.runtimeTurns > 0) {
+    io.out(
+      `${n(read.runtimeTurns, 'turn Omnigent started itself', 'turns Omnigent started itself')} left out — a sub-agent finishing, a timer or an idle terminal, not you.`,
+    );
+  }
   return 0;
 }

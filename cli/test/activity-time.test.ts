@@ -71,8 +71,15 @@ const reply = (
   task,
   repo,
 });
-/** An Omnigent orchestrator's turn: its start, or its end — its reply (LAI-792). */
-const turn = (at: number, session: string, end: boolean) => ({ at, session, end });
+/**
+ * An Omnigent orchestrator's turn (LAI-792): started by the person, started by
+ * Omnigent itself (a wake, D-090), or its end — its reply.
+ */
+const turn = (at: number, session: string, kind: 'start' | 'wake' | 'end') => ({
+  at,
+  session,
+  kind,
+});
 const total = (blocks: readonly Block[]): number => blocks.reduce((n, b) => n + b.minutes, 0);
 const day = (inputs: Partial<DraftInputs>, tz = 'UTC', on = UTC_DAY): Block[] =>
   draftBlocks({ ...none, ...inputs }, tz, [on]).get(on) ?? [];
@@ -235,9 +242,9 @@ void describe('the rule (pure)', () => {
   void test('an Omnigent orchestrator’s turns are a lane: each end a reply, never a typed prompt (LAI-792)', () => {
     const blocks = day({
       turns: [
-        turn(T0, 'o1', false),
-        turn(T0 + 3 * MIN, 'o1', true),
-        turn(T0 + 10 * MIN, 'o1', false),
+        turn(T0, 'o1', 'start'),
+        turn(T0 + 3 * MIN, 'o1', 'end'),
+        turn(T0 + 10 * MIN, 'o1', 'start'),
       ],
     });
     assert.deepEqual(blocks, [
@@ -258,10 +265,10 @@ void describe('the rule (pure)', () => {
       replies: [reply(T0, 'a', 'LAI-1'), reply(T0 + 10 * MIN, 'a', 'LAI-1')],
       prompts: [T0 + 2 * MIN],
       turns: [
-        turn(T0 + MIN, 'o1', false),
-        turn(T0 + 4 * MIN, 'o1', true),
-        turn(T0 + 2 * MIN, 'o2', false),
-        turn(T0 + 9 * MIN, 'o2', true),
+        turn(T0 + MIN, 'o1', 'start'),
+        turn(T0 + 4 * MIN, 'o1', 'end'),
+        turn(T0 + 2 * MIN, 'o2', 'start'),
+        turn(T0 + 9 * MIN, 'o2', 'end'),
       ],
     });
     // The orchestrators ran inside the Claude Code session's 15 minutes: no more.
@@ -273,7 +280,7 @@ void describe('the rule (pure)', () => {
     );
     const after = day({
       replies: [reply(T0, 'a', 'LAI-1')],
-      turns: [turn(T0 + 30 * MIN, 'o1', true)],
+      turns: [turn(T0 + 30 * MIN, 'o1', 'start')],
     });
     assert.deepEqual(
       after.map((b) => [b.task, b.minutes]),
@@ -281,6 +288,47 @@ void describe('the rule (pure)', () => {
         ['LAI-1', 5],
         [null, 5],
       ],
+    );
+  });
+
+  void test('a night of turns Omnigent started drafts nothing; a person’s turn among them still does (D-090)', () => {
+    const night = Date.UTC(2026, 9, 20, 0, 0, 0) / 1000;
+    const wakes: ReturnType<typeof turn>[] = [];
+    for (let m = 0; m < 6 * 60; m += 10) {
+      wakes.push(turn(night + m * MIN, 'o1', 'wake'), turn(night + (m + 2) * MIN, 'o1', 'end'));
+    }
+    assert.deepEqual(day({ turns: wakes }), [], 'a night of wake-ups drafted time');
+    // The owner types at 03:05, between the 03:00 and 03:10 wake-ups.
+    const owner = [turn(night + 185 * MIN, 'o1', 'start'), turn(night + 188 * MIN, 'o1', 'end')];
+    const blocks = day({ turns: [...wakes, ...owner].sort((a, b) => a.at - b.at) });
+    assert.deepEqual(
+      blocks.map((b) => [new Date(b.start).toISOString().slice(11, 16), b.minutes, b.task]),
+      [['03:05', 8, null]],
+    );
+    assert.deepEqual(blocks[0]?.signals, {
+      prompts: 0,
+      replies: 1,
+      sessions: 1,
+      commits: 0,
+      marks: 0,
+    });
+  });
+
+  void test('each end closes the turn before it: in order within a second, and an end with no start counts nothing', () => {
+    const blocks = day({
+      turns: [
+        // A wake-up and its end in one second, then the person at once.
+        turn(T0, 'o1', 'wake'),
+        turn(T0, 'o1', 'end'),
+        turn(T0, 'o1', 'start'),
+        turn(T0 + 2 * MIN, 'o1', 'end'),
+        // Another session's end whose start was never seen.
+        turn(T0 + 60 * MIN, 'o2', 'end'),
+      ],
+    });
+    assert.deepEqual(
+      blocks.map((b) => [b.start, b.minutes, b.signals.replies]),
+      [[T0 * 1000, 7, 1]],
     );
   });
 
@@ -433,6 +481,9 @@ function machine() {
       // An Omnigent orchestrator's turn, 12:00–12:04 (LAI-792), and lines that are not.
       `t omnigent ${String(T0 + 180 * MIN)} ${ORCHESTRATOR}`,
       `r omnigent ${String(T0 + 184 * MIN)} ${ORCHESTRATOR}`,
+      // A turn Omnigent started itself at 12:20 (D-090): no block.
+      `w omnigent ${String(T0 + 200 * MIN)} ${ORCHESTRATOR}`,
+      `r omnigent ${String(T0 + 201 * MIN)} ${ORCHESTRATOR}`,
       `t omnigent ${String(T0 + 184 * MIN)} not/a/plain/id`,
       `t somebody-else ${String(T0 + 184 * MIN)} ${ORCHESTRATOR}`,
       `r omnigent ${String(T0 + 184 * MIN)}`,
@@ -489,6 +540,7 @@ void describe('from the machine’s own files', () => {
     });
     assert.equal(draft.read.replies, 7, 'the automated session’s four replies were read');
     assert.equal(draft.read.turns, 1, 'one turn begun; the malformed lines were not read');
+    assert.equal(draft.read.runtimeTurns, 1, 'the turn Omnigent started was read, and left out');
   });
 
   void test('an orchestrator’s turns are not typed prompts on the heatmap (LAI-792)', () => {
@@ -843,7 +895,8 @@ void describe('`laika time draft`', () => {
     assert.match(text, /2026-10-20 {2}1 h 4 min in 4 blocks, 50 min tied to a task/);
     assert.match(text, /09:00–09:40 +40 min {2}ACME-77 +1 prompt · 4 replies · 1 session/);
     assert.match(text, /12:00–12:09 +9 min {2}no task +1 reply · 1 session/);
-    assert.match(text, /1 Omnigent orchestrator turn/);
+    assert.match(text, /1 Omnigent orchestrator turn\b/);
+    assert.match(text, /1 turn Omnigent started itself left out/);
     for (const secret of [...Object.values(SECRET), m.top, PERSON, PRIMARY, ROBOT, ORCHESTRATOR]) {
       assert.equal(text.includes(secret), false, `${secret} printed`);
     }

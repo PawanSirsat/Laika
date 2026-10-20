@@ -24,7 +24,7 @@ import { writePrivately } from './connect.ts';
  * | file | what | written by |
  * | --- | --- | --- |
  * | `state.json` | the cached switch, the sync schedule, the last result | sync, `on` |
- * | `events.log` | `p <agent> <epoch>` / `s <agent> <epoch>` lines; `t`/`r omnigent <epoch> <session>` — an Omnigent orchestrator's turn starting and ending (LAI-792) | the hooks |
+ * | `events.log` | `p <agent> <epoch>` / `s <agent> <epoch>` lines; `t`/`w`/`r omnigent <epoch> <session>` — an Omnigent orchestrator's turn started by the person, started by Omnigent (D-090), ending (LAI-792) | the hooks |
  * | `repos` | `<epoch>\t<toplevel>` — repos an agent session started in | session-start hook |
  * | `emails` | extra author emails, one per line | `laika activity emails` |
  * | `collector-id` | a random UUID v4, nothing derived from the machine | sync, `on` |

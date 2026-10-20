@@ -44,9 +44,11 @@ import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-
  *   person typed. A lane's events no more than {@link GAP_S} apart chain; after
  *   its last event before a longer gap it stays active {@link TAIL_S}.
  * - An Omnigent-native orchestrator's session (polly) is a lane of its own:
- *   its turns' starts and ends. A turn's end is a reply. A turn's start is
- *   **not** a typed prompt: Omnigent also starts one when a sub-agent finishes,
- *   and only the message, which is never read, could tell them apart.
+ *   the starts and ends of the turns the person started. A turn Omnigent
+ *   started itself — a sub-agent finishing, a timer, an idle terminal; the
+ *   hook's `w` (D-090) — makes no time, and nor does the end that closes it:
+ *   each end closes the start before it in its session, and an end with no
+ *   start counts nothing. A kept end is a reply; no start is a typed prompt.
  * - A **minute** counts once, whatever number of lanes are active in it:
  *   parallel sessions share a person's time and never multiply it.
  * - A minute's **tasks** are the distinct keys of the lanes active in it. A
@@ -79,7 +81,7 @@ export const TIME_REPORTS_PER_RUN = 3;
 export const TIME_RECHECK_S = 3600;
 /** The agents whose typed prompts draft time; Codex and Gemini CLI are LAI-790. */
 export const DRAFT_AGENTS: readonly string[] = ['claude-code'];
-/** The orchestrators whose turns draft time (LAI-792): the hook's `t`/`r` lines. */
+/** The orchestrators whose turns draft time (LAI-792): the hook's `t`/`w`/`r` lines. */
 export const TURN_AGENTS: readonly string[] = ['omnigent'];
 /** The server's bound on one signal count. */
 const SIGNAL_MAX = 100_000;
@@ -129,8 +131,32 @@ export interface TurnEvent {
   readonly at: number;
   /** Local only: the orchestrator session it is in — its lane. */
   readonly session: string;
-  /** Its end, which is a reply; else its start, which is no typed prompt. */
-  readonly end: boolean;
+  /**
+   * `start`: a turn the person started. `wake`: one Omnigent started itself
+   * (D-090). `end`: a turn's end, whichever started it.
+   */
+  readonly kind: 'start' | 'wake' | 'end';
+}
+
+/**
+ * The turns the person started, starts and ends: each end closes the start
+ * before it in its session — in their order, which is the hook's, within a
+ * second — and is kept only when the person started that turn (D-090).
+ */
+export function personTurns(turns: readonly TurnEvent[]): TurnEvent[] {
+  const open = new Map<string, TurnEvent['kind']>();
+  const kept: TurnEvent[] = [];
+  const ordered = turns.map((t, i) => ({ t, i })).sort((a, b) => a.t.at - b.t.at || a.i - b.i);
+  for (const { t } of ordered) {
+    if (t.kind === 'end') {
+      if (open.get(t.session) === 'start') kept.push(t);
+      open.delete(t.session);
+    } else {
+      open.set(t.session, t.kind);
+      if (t.kind === 'start') kept.push(t);
+    }
+  }
+  return kept;
 }
 
 export interface DraftInputs {
@@ -206,7 +232,8 @@ export function draftBlocks(
   };
   for (const r of inputs.replies) push(`s:${r.session}`, r);
   for (const at of inputs.prompts) push('p', { at, task: null, repo: null });
-  for (const t of inputs.turns) push(`o:${t.session}`, { at: t.at, task: null, repo: null });
+  const turns = personTurns(inputs.turns);
+  for (const t of turns) push(`o:${t.session}`, { at: t.at, task: null, repo: null });
 
   // --- each lane's active minutes ---------------------------------------------
   const active = new Map<number, Map<string, LaneMinute>>();
@@ -347,11 +374,11 @@ export function draftBlocks(
     const b = laneTarget(Math.floor(m.at / 60), `s:${m.session}`);
     if (b !== undefined) b.signals.marks += 1;
   }
-  for (const t of inputs.turns) {
+  for (const t of turns) {
     const lane = `o:${t.session}`;
     const b = laneTarget(Math.floor(t.at / 60), lane);
     if (b === undefined) continue;
-    if (t.end) b.signals.replies += 1;
+    if (t.kind === 'end') b.signals.replies += 1;
     b.sessions.add(lane);
   }
   // A prompt is evidence for every task its minute was split between.
@@ -518,13 +545,16 @@ export interface Draft {
     readonly prompts: number;
     readonly commits: number;
     readonly marks: number;
-    /** Omnigent orchestrator turns begun (LAI-792). */
+    /** Omnigent orchestrator turns the person began (LAI-792). */
     readonly turns: number;
+    /** Omnigent orchestrator turns Omnigent began itself, left out (D-090). */
+    readonly runtimeTurns: number;
   };
 }
 
 const PROMPT_LINE = /^p ([a-z0-9-]{1,40}) (\d{1,12})$/;
-const TURN_LINE = /^([tr]) ([a-z0-9-]{1,40}) (\d{1,12}) ([A-Za-z0-9._-]{1,128})$/;
+const TURN_LINE = /^([twr]) ([a-z0-9-]{1,40}) (\d{1,12}) ([A-Za-z0-9._-]{1,128})$/;
+const TURN_KIND = { t: 'start', w: 'wake', r: 'end' } as const;
 
 /** `events.log`, and a half-compacted one a crashed sync left. */
 function eventLines(paths: ActivityPaths): string[] {
@@ -544,7 +574,10 @@ function promptTimes(lines: readonly string[], fromS: number): number[] {
   return out;
 }
 
-/** An orchestrator's turns from `events.log` (LAI-792): `t` starts one, `r` ends it. */
+/**
+ * An orchestrator's turns from `events.log` (LAI-792): `t` the person started
+ * one, `w` Omnigent did (D-090), `r` one ended.
+ */
 function turnTimes(lines: readonly string[], fromS: number): TurnEvent[] {
   const agents = new Set(TURN_AGENTS);
   const out: TurnEvent[] = [];
@@ -552,7 +585,8 @@ function turnTimes(lines: readonly string[], fromS: number): TurnEvent[] {
     const match = TURN_LINE.exec(line.trim());
     if (match === null || !agents.has(match[2] ?? '')) continue;
     const at = Number(match[3]);
-    if (at >= fromS) out.push({ at, session: match[4] ?? '', end: match[1] === 'r' });
+    const kind = TURN_KIND[(match[1] ?? 'r') as keyof typeof TURN_KIND];
+    if (at >= fromS) out.push({ at, session: match[4] ?? '', kind });
   }
   return out;
 }
@@ -696,7 +730,8 @@ export async function buildDraft(options: DraftOptions): Promise<Draft> {
       prompts: prompts.length,
       commits: commits.length,
       marks: sources.marks.length,
-      turns: turns.filter((t) => !t.end).length,
+      turns: turns.filter((t) => t.kind === 'start').length,
+      runtimeTurns: turns.filter((t) => t.kind === 'wake').length,
     },
   };
 }
