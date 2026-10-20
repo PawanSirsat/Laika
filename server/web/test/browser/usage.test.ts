@@ -403,7 +403,7 @@ const rows = async (page: Page, section: string): Promise<string[]> =>
 
 void describe('an owner', () => {
   void test('sees the organisation: a floor without cache reads, cache reads apart, the unattributed share', async () => {
-    const h = await open('/usage', ownerStub());
+    const h = await open('/insights?tab=usage', ownerStub());
     try {
       await ready(h.page);
       assert.equal(await stat(h.page, 'tokens'), '255M');
@@ -437,7 +437,7 @@ void describe('an owner', () => {
   });
 
   void test('by developer in name order — never ranked — then agents, models and tasks', async () => {
-    const h = await open('/usage', ownerStub());
+    const h = await open('/insights?tab=usage', ownerStub());
     try {
       await ready(h.page);
       assert.deepEqual(await rows(h.page, 'developers'), ['Ada Owner', 'Bea Builder']);
@@ -471,7 +471,7 @@ void describe('an owner', () => {
   });
 
   void test('can narrow to a space and a range', async () => {
-    const h = await open('/usage', ownerStub());
+    const h = await open('/insights?tab=usage', ownerStub());
     try {
       await ready(h.page);
       const space = h.page.getByRole('combobox', { name: 'Space' });
@@ -568,7 +568,7 @@ void describe('an owner', () => {
 
 void describe('a member', () => {
   void test('sees their spaces’ totals and never a per-person split', async () => {
-    const h = await open('/usage', memberStub());
+    const h = await open('/insights?tab=usage', memberStub());
     try {
       await ready(h.page);
       const space = h.page.getByRole('combobox', { name: 'Space' });
@@ -600,7 +600,7 @@ void describe('a member', () => {
   });
 
   void test('a space nothing is tied to yet says so honestly, rather than showing zeros', async () => {
-    const h = await open('/usage', memberStub());
+    const h = await open('/insights?tab=usage', memberStub());
     try {
       await ready(h.page);
       await pick(h.page.getByRole('combobox', { name: 'Space' }), 'onroute');
@@ -674,7 +674,7 @@ const text = async (page: Page, selector: string): Promise<string> =>
 
 void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => {
   void test('an owner: cost labelled API-equivalent, cache, telemetry, accepted-task cost, budgets and runaway counts', async () => {
-    const h = await open('/usage', ownerStub());
+    const h = await open('/insights?tab=usage', ownerStub());
     try {
       await ready(h.page);
       assert.equal(await stat(h.page, 'cost'), '$3,060');
@@ -727,7 +727,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
   });
 
   void test('a member in a space: no runaway counts, no per-person cost, no budget to set', async () => {
-    const h = await open('/usage', memberStub());
+    const h = await open('/insights?tab=usage', memberStub());
     try {
       await ready(h.page);
       assert.equal(await h.page.locator('.usage-card[data-section="runaway"]').count(), 0);
@@ -745,7 +745,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
   });
 
   void test('a member: what fewer than three people used is one row, Other (fewer than 3 people), and no price is never $0', async () => {
-    const h = await open('/usage', memberStub());
+    const h = await open('/insights?tab=usage', memberStub());
     try {
       await ready(h.page);
       // Beside the `other` kind's own row, under its own name (review B2);
@@ -785,7 +785,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
 
   void test('a lead in a space sets the month’s budget and a sprint’s, and the page reads again', async () => {
     const writes: StubCall[] = [];
-    const h = await open('/usage', {
+    const h = await open('/insights?tab=usage', {
       ...ownerStub(),
       '/api/v1/projects/laika/budgets': projectBudgets(true),
       '/api/v1/projects/laika/sprints': {
@@ -843,7 +843,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
   void test('alerts for the person: a banner with a way to each, put away one at a time, and the rail’s count', async () => {
     let open_ = [...ALERTS];
     const dismissed: string[] = [];
-    const h = await open('/usage', {
+    const h = await open('/insights?tab=usage', {
       ...ownerStub(),
       '/api/v1/me/token-alerts': () => ({ alerts: open_ }),
       '/api/v1/me/token-alerts/a-80/dismiss': (call: StubCall) => {
@@ -866,7 +866,8 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
         /LAI-770 reached 80% of its budget — 2\.1M of 2\.5M\./,
       );
       assert.match(await banner.innerText(), /never reported on you/);
-      const badge = h.page.locator('a[href="/usage"] .sidebar-count');
+      // Usage is Insights' tab since LAI-796; the badge rides on Insights.
+      const badge = h.page.locator('a[href="/insights"] .sidebar-count');
       // The figure, then the visually hidden name the rail adds for a reader.
       const count = async (): Promise<string> => (await badge.innerText()).split('\n')[0] ?? '';
       await until(async () => (await badge.count()) > 0);
@@ -898,7 +899,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       reaches_limit_at: MIDDAY + 3 * 3_600_000,
     });
     const h = await open(
-      '/usage',
+      '/insights?tab=usage',
       {
         ...ownerStub(),
         '/api/v1/me/plan-limit': (call: StubCall) => {
@@ -944,7 +945,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
   void test('the plan limit past midnight: the forecast names the day as well as the time', async () => {
     // GitHub's run: 23:45 on Monday, 1.84M left at 600K an hour, 3 h 4 min away.
     const h = await open(
-      '/usage',
+      '/insights?tab=usage',
       {
         ...ownerStub(),
         '/api/v1/me/plan-limit': planLimit({
@@ -975,7 +976,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
 
 void describe('both themes, laptop and phone', () => {
   void test('1366 and 390 px in light and dark: nothing scrolls sideways, every card fits, bars drawn', async () => {
-    const h = await open('/usage', ownerStub());
+    const h = await open('/insights?tab=usage', ownerStub());
     try {
       await ready(h.page);
       for (const theme of ['Light', 'Dark']) {

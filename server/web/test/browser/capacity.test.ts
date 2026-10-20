@@ -43,7 +43,7 @@ const card = (page: Page, name: string) =>
 
 void describe('who is here', () => {
   void test('online first, with a green ring and dot, and the status in words', async () => {
-    const h = await open('/capacity', orgStub('owner'));
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await ready(h.page);
       assert.deepEqual(await cardNames(h.page), ['Pawan Sirsat', 'Bea Nkosi']);
@@ -83,7 +83,7 @@ void describe('who is here', () => {
   });
 
   void test('never-seen people fold into one line, and Show brings them back', async () => {
-    const h = await open('/capacity', orgStub('owner'));
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await ready(h.page);
       const line = h.page.locator('.cap-never');
@@ -107,7 +107,7 @@ void describe('who is here', () => {
 
 void describe('finding people', () => {
   void test('the search finds by name or by email, and says when nobody matches', async () => {
-    const h = await open('/capacity', orgStub('owner'));
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await ready(h.page);
       const search = h.page.getByRole('searchbox', { name: 'Search people' });
@@ -133,7 +133,7 @@ void describe('finding people', () => {
   });
 
   void test('each filter chip shows exactly its people', async () => {
-    const h = await open('/capacity', orgStub('owner'));
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await ready(h.page);
       const expected: readonly (readonly [string, readonly string[], number])[] = [
@@ -165,7 +165,7 @@ void describe('finding people', () => {
   });
 
   void test('a tile applies its filter, and another click lifts it', async () => {
-    const h = await open('/capacity', orgStub('owner'));
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await ready(h.page);
       const tile = h.page.locator('.cap-tile', { hasText: 'Online now' });
@@ -183,7 +183,7 @@ void describe('finding people', () => {
   });
 
   void test('sort: online first by default, then by name, last seen and load', async () => {
-    const h = await open('/capacity', orgStub('owner'));
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await ready(h.page);
       await h.page.locator('.cap-never').getByRole('button', { name: 'Show' }).click();
@@ -227,7 +227,7 @@ void describe('finding people', () => {
   });
 
   void test('a space narrows the counts to that space', async () => {
-    const h = await open('/capacity', orgStub('owner'));
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await ready(h.page);
       const pawan = card(h.page, 'Pawan Sirsat');
@@ -249,7 +249,7 @@ void describe('finding people', () => {
 
 void describe('what an owner sees and a member does not', () => {
   void test('an owner: profile kind, 14-day activity, a profile link, every agent, Unlisted', async () => {
-    const h = await open('/capacity', orgStub('owner'));
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await ready(h.page);
       const pawan = card(h.page, 'Pawan Sirsat');
@@ -268,14 +268,14 @@ void describe('what an owner sees and a member does not', () => {
       assert.equal(await pawan.locator('.cap-agent-dot').count(), 2, 'a running dot each');
       const unlisted = h.page.locator('.cap-tile-unlisted');
       assert.match(await unlisted.innerText(), /Unlisted work\s*1/);
-      assert.equal(await unlisted.getAttribute('href'), '/unlisted');
+      assert.equal(await unlisted.getAttribute('href'), '/inbox?tab=unlisted');
     } finally {
       await h.close();
     }
   });
 
   void test('a member: presence and workload only — no kind, no activity, no link, no queue', async () => {
-    const h = await open('/capacity', orgStub('member'));
+    const h = await open('/insights?tab=capacity', orgStub('member'));
     try {
       await ready(h.page);
       const pawan = card(h.page, 'Pawan Sirsat');
@@ -319,7 +319,7 @@ void describe('states', () => {
         })),
       },
     };
-    const h = await open('/capacity', off);
+    const h = await open('/insights?tab=capacity', off);
     try {
       await ready(h.page);
       const text = await h.page.locator('.cap').innerText();
@@ -352,7 +352,7 @@ void describe('states', () => {
     const gate = new Promise<void>((done) => {
       release = done;
     });
-    const h = await open('/capacity', orgStub('owner'), {
+    const h = await open('/insights?tab=capacity', orgStub('owner'), {
       before: async (page) => {
         await page.route('**/api/v1/capacity', async (route) => {
           await gate;
@@ -382,7 +382,7 @@ void describe('states', () => {
   });
 
   void test('at 390px nothing is clipped or pushes the page sideways', async () => {
-    const h = await open('/capacity', orgStub('owner'));
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await h.page.setViewportSize({ width: 390, height: 900 });
       await ready(h.page);
@@ -425,7 +425,7 @@ void describe('states', () => {
 
 void describe('live', () => {
   void test('re-reads when the tab comes back, and every 20 s', async () => {
-    const h = await open('/capacity', orgStub('owner'), {
+    const h = await open('/insights?tab=capacity', orgStub('owner'), {
       before: async (page) => {
         await page.clock.install();
       },
@@ -453,7 +453,7 @@ void describe('live', () => {
 
 void describe('tasks are drawn only when asked for', () => {
   void test('only the matched task is read until Show tasks; then theirs', async () => {
-    const h = await open('/capacity', orgStub('owner'));
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await ready(h.page);
       const pawan = card(h.page, 'Pawan Sirsat');
@@ -578,7 +578,7 @@ void describe('tasks are drawn only when asked for', () => {
           : task('t2', 'LAI-12', 'Heartbeat retention job', 'in_progress');
       },
     };
-    const h = await open('/capacity', flaky, {
+    const h = await open('/insights?tab=capacity', flaky, {
       before: async (page) => {
         await page.clock.install();
       },
@@ -603,37 +603,46 @@ void describe('tasks are drawn only when asked for', () => {
 
 void describe('links out', () => {
   void test('Waiting for review and Unlisted work open their pages', async () => {
-    const h = await open('/capacity', orgStub('owner'));
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await ready(h.page);
       const review = h.page.locator('.cap-tile', { hasText: 'Waiting for review' });
       await until(async () => /Waiting for review\s*3/.test(await review.innerText()));
       assert.match(await review.innerText(), /Waiting for review\s*3/);
-      assert.equal(await review.getAttribute('href'), '/review');
+      assert.equal(await review.getAttribute('href'), '/inbox?tab=review');
 
-      // The sidebar carries the same count beside Unlisted work.
-      // The shell reads its count apart from the page, so the entry can be
-      // drawn before the number is (LAI-765): wait for it, then assert it.
-      const entry = h.page.locator('#sidebar .sidebar-link', { hasText: 'Unlisted work' });
-      await until(async () => /Unlisted work\s*1/.test(await entry.innerText()), 10_000);
-      assert.match(await entry.innerText(), /Unlisted work\s*1/);
+      // The sidebar's Inbox carries both counts added (LAI-796): 3 waiting for
+      // review and 1 unlisted. The shell reads its counts apart from the page,
+      // so the entry can be drawn before the number is (LAI-765): wait for it,
+      // then assert it.
+      const entry = h.page.locator('#sidebar .sidebar-link', { hasText: 'Inbox' });
+      await until(async () => /Inbox\s*4/.test(await entry.innerText()), 10_000);
+      assert.match(await entry.innerText(), /Inbox\s*4/);
 
       await h.page.locator('.cap-tile-unlisted').click();
-      await h.page.waitForURL((url) => url.pathname === '/unlisted', { timeout: 10_000 });
+      await h.page.waitForURL(
+        (url) => url.pathname === '/inbox' && url.search === '?tab=unlisted',
+        { timeout: 10_000 },
+      );
     } finally {
       await h.close();
     }
   });
 
-  void test('an old space-tab link opens the one global page (LAI-754)', async () => {
+  void test('an old space-tab link opens the one global page (LAI-754, LAI-796)', async () => {
+    // `/capacity?project=` is two moves old: Capacity left the space (LAI-754)
+    // and became Insights' first tab (LAI-796). The link still lands there,
+    // without the space.
     const h = await open('/capacity?project=laika', orgStub('owner'));
     try {
       await ready(h.page);
-      await h.page.waitForURL((url) => url.pathname === '/capacity' && url.search === '', {
-        timeout: 10_000,
-      });
+      await h.page.waitForURL(
+        (url) => url.pathname === '/insights' && url.search === '?tab=capacity',
+        { timeout: 10_000 },
+      );
       assert.equal(await h.page.locator('.view-tab').count(), 0, 'the space tabs are drawn');
-      assert.match(await h.page.locator('.screen-bar-title').innerText(), /Capacity/);
+      assert.equal(await h.page.locator('.screen-page-title').innerText(), 'Insights');
+      assert.match(await h.page.locator('.page-tab-active').innerText(), /Capacity/);
     } finally {
       await h.close();
     }
