@@ -110,3 +110,60 @@ Owner-direct, through the orchestrator. Worktree `Laika-solidtime`, branch
 
 **State**
 Moved to .tasks/review/. Board card LAIKA-591 not touched, as directed.
+
+## 2026-10-20T08:45:00Z — LAI-788 review round 1
+
+**What changed**
+- server/src/services/time-entries.ts — `currentFields` refuses an import
+  (`403 imported_entry`): `PATCH`/`DELETE /me/time-entries/:id` cannot change
+  what came from Solidtime
+- server/src/services/time-solidtime.ts — the outbox's update/delete query
+  takes `draft`/`manual` twins only; `recordSolidtimeLinks` refuses a record
+  that links and removes one Solidtime id (`422 linked_and_removed`);
+  `personZone` dates `pull --all` entries in each person's own zone
+- cli/src/time-solidtime.ts — a run never updates or deletes a Solidtime
+  entry it took for another entry, never takes one it deleted; pull stops on
+  an unreadable task list; the board must be https or local before a
+  password is asked (connect and every sign-in)
+- cli/src/solidtime.ts — work entries only (`type=work`); a window is whole
+  only if every page reports the first page's total and the first page reads
+  the same at the end
+- server/web/src/routes/screens/my-day/{EntryRow.tsx,my-day-derive.ts} —
+  an import shows without Edit/Delete, "Change it in Solidtime"
+- docs/SPEC.md §4.48, §6.4; cli/README.md; tests beside each
+- .tasks/review/LAI-788-time-solidtime-bridge.md — "Review round 1 — fixed",
+  follow-ups 2, 3, 7 and 9 recorded there for the orchestrator to file
+
+**Decisions**
+- Imports are read-only (the owner's ruling, through the orchestrator), not
+  "pushed back while unchanged" as round 0 built: round 0's rule was right
+  for the person's own entries and wrong for Solidtime's, where a delete in
+  Laika reached the billing record.
+- The import refusal is `403 forbidden` with `details.reason` — the
+  `time_off` pattern — rather than `422`: nothing is wrong with the request
+  except that this entry is not the person's to change here.
+- Each person's zone comes from what they last told Laika (their own entry,
+  then drafts, then activity reports); somebody Laika knows nothing of keeps
+  the puller's zone, and the batch's `tz` stays required.
+- No screenshots for the My day change: two buttons hidden and a label,
+  while the Mac was in thermal emergency.
+
+**Discovered**
+- The paging defect had a second shape the reviewer's did not name: a row
+  deleted and another added between pages leaves the total unchanged, so the
+  first page is read again as well. Both shapes are tests.
+- Follow-ups recorded in the task file, not filed (the id range is being
+  reassigned): (2) duplicate after a failed link record and a day move; (3)
+  two machines pushing at once; (7) the own pull's member id is the CLI's
+  word; (9) per-member minutes to admins with no view log.
+
+**Gate** (repo root, once, after the last code edit, each its own exit code)
+- `pnpm test` → **1**: server 3269 passed, 10 skipped, 3 failed of 3282 —
+  all three `build.test.ts` "built server never became healthy" (a ~10 s
+  wait, 100 × 100 ms; the LAI-768 build-boot class); web 2208/2208; cli 504
+  passed, 2 skipped of 506. Load average 18–31.
+- `build.test.ts` alone: 15/15, exit 0.
+- `pnpm lint` → 0. `pnpm format` → 0.
+
+**State**
+In .tasks/review/, round 1 fixed. Not pushed; LAIKA-591 not touched.
