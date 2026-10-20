@@ -175,3 +175,23 @@ LAI-788's symptom. Reproduced deterministically with no load, by setting
 right; the fix is a guard in `cli/src`, outside this task's files. LAI-801's
 criteria ask for a test that does not depend on timing — they should ask for
 that guard instead.
+
+### The gate
+
+One root gate at the machine's normal load (1-minute load average 29 at the
+start, no other session's tests running), on `dc556a86` — after this file
+moved to `review/`, so `task-file-state.test.ts` read it in its final state.
+Each command to its own file, each exit code on its own line, nothing piped:
+
+```
+pnpm test   > /tmp/l768-gate.txt 2>&1; echo TEST $?   →  TEST 0   (16:51:20 – 16:55:41)
+pnpm lint   > /tmp/l768-lint.txt 2>&1; echo LINT $?   →  LINT 0
+pnpm format > /tmp/l768-fmt.txt  2>&1; echo FMT $?    →  FMT 0
+```
+
+`grep -E "Unhandled|Errors|Failed|not ok|✗"` over the test output finds only a
+passing case named *"completeSetup and fieldErrors"*. Per workspace, in
+collected test cases: server 159 files passed and 2 skipped of 161 (the two
+opt-in `PERF` suites), 3279 cases passed and 10 skipped of 3289; server/web
+2324 of 2324 pass; cli 530 pass, 2 skipped, 0 fail of 532. This commit adds
+only this section and the log, both Markdown, after the gate.
