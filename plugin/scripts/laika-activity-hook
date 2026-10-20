@@ -10,10 +10,16 @@
 #
 # ## What it must never do
 #
-# - **Read the prompt.** Every agent hands the prompt text to this hook, on
-#   stdin (Kiro also in $USER_PROMPT). Stdin is drained straight to /dev/null
-#   and never lands in a variable; $USER_PROMPT is unset before anything runs.
-#   The only things written are a letter, the agent kind and the time.
+# - **Keep, store or send any part of the prompt.** Every agent hands the
+#   prompt text to this hook, on stdin (Kiro also in $USER_PROMPT). No
+#   character of it is ever written anywhere: stdin is drained to /dev/null,
+#   and $USER_PROMPT is unset before anything runs. **On an Omnigent turn
+#   only** (D-090) — Claude Code's prompt on an Omnigent orchestrator's turn or
+#   in an Omnigent primary — the first 4 KB are read into a variable to ask one
+#   thing: does the prompt begin with Omnigent's `[System: ` marker? The
+#   variable is cleared at once and the rest drained. Every other prompt never
+#   lands in a variable. The only things written are a letter, the agent kind,
+#   the time and, for an Omnigent orchestrator, its Omnigent session id.
 # - **Print.** Claude Code adds UserPromptSubmit and SessionStart stdout to the
 #   model's context, and exit 2 blocks the prompt in four agents. So stdout and
 #   stderr go to /dev/null on the first line of real work, and every path ends
@@ -21,8 +27,9 @@
 # - **Be slow.** The prompt path runs before every prompt. It forks nothing
 #   when run by zsh (`laika activity on` installs it as `/bin/zsh -f <this>`
 #   wherever zsh exists): zsh/datetime gives the time and zsh/system's sysread
-#   drains stdin, both builtins. Under plain sh it costs one `cat` and one
-#   `date`. No network, no git and no node on this path.
+#   drains stdin, both builtins — the marker check too. Under plain sh it costs
+#   one `cat` and one `date` (and a `head` for the marker check). No network,
+#   no git and no node on this path.
 #
 # ## The switch
 #
@@ -33,7 +40,8 @@
 # ## Sessions nobody is typing in (LAI-757, D-080; LAI-775)
 #
 # A session started with `OMNIGENT=1` (Omnigent sets it in every process it
-# launches; its primary session is the exception below), a non-empty `CI`, or
+# launches; its primary session and its orchestrator's turns are the two
+# exceptions below), a non-empty `CI`, or
 # a non-empty `LAIKA_ACTIVITY_SKIP` is not the developer's, and counts
 # nothing: stdin is drained and the hook exits before state.json is read — no
 # event, no repo, no sync. Under zsh the check, like the drain before it, is
@@ -52,28 +60,38 @@
 # never sent, in ~/.laika/activity/primary-sessions, so `laika activity status`
 # can say how many there were. A sub-agent's two ids differ, and it is
 # skipped as before. `CI` and `LAIKA_ACTIVITY_SKIP` skip whatever Omnigent says.
+# One prompt of the primary's is not the person's: a notice Omnigent types
+# into it itself when a sub-agent finishes, a timer fires or a terminal goes
+# idle (runner/app.py posts it; the claude-native harness pastes it into the
+# terminal). For Claude Code such a prompt begins `[System: ` and no `p` is
+# written for it (D-090).
 #
-# **An Omnigent-native orchestrator's turns are the person's too** (LAI-792).
+# **An Omnigent-native orchestrator's turns, when the person started them**
+# (LAI-792, D-090).
 # polly is not a terminal session: it thinks with Claude Code under the Claude
 # Agent SDK — Omnigent's `claude-sdk` harness (inner/claude_sdk_executor.py) —
 # and the SDK loads ~/.claude/settings.json, so this hook runs at every one of
 # its turns, `prompt` as a turn starts and `turn-end` as it ends. It runs in
 # the runner Omnigent launched for that session, which stamps
 # `OMNIGENT_RUNNER_LAUNCH_HARNESS=claude-sdk` (runner/identity.py); the SDK
-# sets `CLAUDE_CODE_ENTRYPOINT=sdk-py` (claude_agent_sdk's subprocess_cli.py);
-# and it is in no terminal, so `OMNIGENT_TERMINAL_LAUNCH_SESSION_ID` is unset.
+# sets `CLAUDE_CODE_ENTRYPOINT=sdk-py` (claude_agent_sdk's subprocess_cli.py;
+# `claude -p` sets `sdk-cli` and is not it); and it is in no terminal, so
+# `OMNIGENT_TERMINAL_LAUNCH_SESSION_ID` is unset.
 # All three, for `claude-code`, under a runner primary id that is a plain id,
 # is the orchestrator. A sub-agent it dispatches runs in a terminal of its own,
 # or is another agent, and is skipped as before.
 #
-# A turn's start is not always the person typing — Omnigent also starts one
-# when a sub-agent it is waiting on finishes — and telling them apart means
-# reading the message, which this hook never does. So its turns are never
-# counted as typed prompts: one line `t omnigent <epoch> <session>` as a turn
-# starts and `r omnigent <epoch> <session>` as it ends goes to events.log, the
-# session being the runner's primary id, for `laika activity sync` to draft as
-# the activity of the person's primary session, as Claude Code's replies are.
-# At its start that id is kept in primary-sessions; nothing else is: no
+# Most of its turns nobody typed: Omnigent starts one itself whenever a
+# sub-agent finishes, a timer fires or a terminal goes idle, and each such
+# prompt begins `[System: `. So its `prompt` asks that one question of the
+# prompt's start (above). A turn the person started appends
+# `t omnigent <epoch> <session>` to events.log; one Omnigent started appends
+# `w omnigent <epoch> <session>` — a letter rather than nothing, so that the
+# `r omnigent <epoch> <session>` its end appends can be dropped, since `Stop`
+# cannot tell the two apart. The session is the runner's primary id.
+# `laika activity sync` drafts only the turns the person started, as the
+# activity of their primary session; none is a typed prompt. At its start
+# that id is kept in primary-sessions; nothing else is: no session-start
 # payload is read, no session start or repo is recorded, nothing is skipped.
 # Omnigent runs it with `--no-session-persistence`, so it writes no transcript
 # and has no tokens to read. One thing this cannot tell: a child session the
@@ -106,7 +124,7 @@
 # tokens only when it ends. On `turn-end` the hook is a trigger and nothing
 # else: it drains stdin as the prompt path does — the payload carries the
 # turn's last reply, `last_assistant_message`, and is never read — counts
-# nothing, and launches the detached sync only while collection is on and
+# nothing but an Omnigent orchestrator's `r` (above), and launches the detached sync only while collection is on and
 # `next_sync_at` has passed. Not due, it costs what a prompt costs: under zsh
 # no fork. It never prints (Claude Code parses `Stop` output) and always
 # exits 0 (exit 2 there keeps Claude from stopping).
@@ -142,7 +160,7 @@ elif [ "${OMNIGENT:-}" = 1 ]; then
       # id (as a payload's session id must be), or it counts nothing.
       LC_ALL=C
       OSID="$OMNIGENT_RUNNER_PRIMARY_SESSION_ID"
-      case "${CLAUDE_CODE_ENTRYPOINT:-}" in sdk-*) ORCHESTRATOR=yes ;; esac
+      [ "${CLAUDE_CODE_ENTRYPOINT:-}" = sdk-py ] && ORCHESTRATOR=yes
       case "$OSID" in *[!A-Za-z0-9._-]*) ORCHESTRATOR=no ;; esac
       [ "${#OSID}" -gt 128 ] && ORCHESTRATOR=no
       [ "$ORCHESTRATOR" = yes ] && AUTOMATED=no
@@ -165,15 +183,35 @@ if [ "$MODE" != prompt ]; then
   fi
 fi
 
+# The one prompt whose start is looked at (D-090): Claude Code's, on an
+# Omnigent orchestrator's turn or in an Omnigent primary. Every other prompt
+# goes straight to /dev/null, unread.
+PEEK=no
+if [ "$MODE" = prompt ] && [ "$AGENT" = claude-code ]; then
+  if [ "$ORCHESTRATOR" = yes ] || [ "$PRIMARY" = yes ]; then
+    PEEK=yes
+    LC_ALL=C
+  fi
+fi
+LOOK=''
+CHUNK=''
+
 # --- drain stdin, and the time ------------------------------------------------
 # First, whatever happens next: an agent writing the prompt to a hook that
 # exited unread would get EPIPE. A terminal on stdin means somebody ran this
 # by hand: there is nothing to drain, and reading would wait for them.
 NOW=''
+BUILTINS=no
 if [ -n "${ZSH_VERSION:-}" ] && zmodload zsh/datetime zsh/system; then
+  BUILTINS=yes
   # -o 1 writes what was read to fd 1, which is /dev/null: nothing is stored.
   if [ "$KEEP" = yes ]; then
     [ -t 0 ] || { sysread -s 65536 PAYLOAD; while sysread -o 1 -s 65536; do :; done; }
+  elif [ "$PEEK" = yes ]; then
+    # The first 4 KB at most; the rest is drained below, once it is decided.
+    [ -t 0 ] || while [ "${#LOOK}" -lt 4096 ] && sysread -s 4096 CHUNK; do
+      LOOK="$LOOK$CHUNK"
+    done
   else
     [ -t 0 ] || while sysread -o 1 -s 65536; do :; done
   fi
@@ -181,10 +219,40 @@ if [ -n "${ZSH_VERSION:-}" ] && zmodload zsh/datetime zsh/system; then
 else
   if [ "$KEEP" = yes ]; then
     [ -t 0 ] || { PAYLOAD="$(head -c 65536)"; cat >/dev/null; }
+  elif [ "$PEEK" = yes ]; then
+    [ -t 0 ] || LOOK="$(head -c 4096)"
   else
     [ -t 0 ] || cat >/dev/null
   fi
   NOW="${EPOCHSECONDS:-}"
+fi
+
+# --- one question of the prompt's start (D-090) -------------------------------------
+# Does the "prompt" value begin with Omnigent's `[System: ` marker? A string
+# straight after the key — only `:` and spaces between — whatever comes after
+# the marker. Then everything read is cleared and the rest drained: only the
+# answer, RUNTIME, goes any further.
+RUNTIME=no
+if [ "$PEEK" = yes ]; then
+  REST="$LOOK"
+  while :; do
+    case "$REST" in *'"prompt"'*) ;; *) break ;; esac
+    REST="${REST#*\"prompt\"}"
+    GAP="${REST%%\"*}"
+    case "$GAP" in *:*) ;; *) continue ;; esac
+    case "$GAP" in *[!:\ ]*) continue ;; esac
+    case "${REST#*\"}" in '[System: '*) RUNTIME=yes ;; esac
+    break
+  done
+  LOOK=''
+  CHUNK=''
+  REST=''
+  GAP=''
+  if [ "$BUILTINS" = yes ]; then
+    [ -t 0 ] || while sysread -o 1 -s 65536; do :; done
+  else
+    [ -t 0 ] || cat >/dev/null
+  fi
 fi
 
 # --- the payload's session id: a plain id, or nothing ------------------------------
@@ -241,7 +309,13 @@ case "$STATE" in *'"collect":true'*) COLLECT=yes ;; esac
 if [ "$ORCHESTRATOR" = yes ]; then
   if [ "$COLLECT" = yes ]; then
     case "$MODE" in
-      prompt) printf 't omnigent %s %s\n' "$NOW" "$OSID" >>"$DIR/events.log" ;;
+      prompt)
+        if [ "$RUNTIME" = yes ]; then
+          printf 'w omnigent %s %s\n' "$NOW" "$OSID" >>"$DIR/events.log"
+        else
+          printf 't omnigent %s %s\n' "$NOW" "$OSID" >>"$DIR/events.log"
+        fi
+        ;;
       turn-end) printf 'r omnigent %s %s\n' "$NOW" "$OSID" >>"$DIR/events.log" ;;
       session-start) printf '%s %s\n' "$NOW" "$OSID" >>"$DIR/primary-sessions" ;;
     esac
@@ -250,6 +324,9 @@ if [ "$ORCHESTRATOR" = yes ]; then
 fi
 
 if [ "$MODE" = prompt ]; then
+  # A notice Omnigent typed into its Claude Code primary is no prompt of the
+  # person's (D-090): nothing is written for it.
+  [ "$RUNTIME" = yes ] && exit 0
   # One printf, one O_APPEND write: two hooks at once cannot interleave a line.
   [ "$COLLECT" = yes ] && printf 'p %s %s\n' "$AGENT" "$NOW" >>"$DIR/events.log"
   exit 0

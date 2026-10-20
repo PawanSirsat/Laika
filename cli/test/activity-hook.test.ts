@@ -150,22 +150,33 @@ for (const shell of SHELLS) {
     void test('the prompt text is stored nowhere — not from stdin, not from $USER_PROMPT', () => {
       // Not due: the launched sync is covered below with a fake CLI, and a real
       // one writing here while the files are read would make this flaky.
-      const h = home();
       const marker = `MARKER-${String(process.pid)}-q7Zx`;
       const repoDir = gitRepo();
-      for (const mode of ['prompt', 'session-start', 'session-end']) {
-        const r = run(shell, [mode, 'kiro'], {
-          home: h,
-          cwd: repoDir,
-          input: JSON.stringify({ prompt: `please ${marker} now`, session_id: 's' }),
-          env: { USER_PROMPT: `please ${marker} now` },
-        });
-        assert.equal(r.code, 0);
-      }
-      const files = filesUnder(h);
-      assert.ok(files.length >= 2, 'nothing was written — this test proves nothing');
-      for (const file of files) {
-        assert.ok(!readFileSync(file, 'utf8').includes(marker), `${file} holds the prompt`);
+      // D-090: on an Omnigent turn the start of the prompt is looked at, so the
+      // Omnigent paths are here too — a person's prompt and a runtime notice.
+      for (const [agent, env] of [
+        ['kiro', {}],
+        ['claude-code', OMNI_PRIMARY],
+        ['claude-code', OMNI_ORCHESTRATOR],
+      ] as const) {
+        const h = home();
+        for (const prompt of [`please ${marker} now`, `[System: ${marker} finished]`]) {
+          for (const mode of ['prompt', 'session-start', 'session-end', 'turn-end']) {
+            const r = run(shell, [mode, agent], {
+              home: h,
+              cwd: repoDir,
+              input: promptPayload(prompt),
+              env: { ...env, USER_PROMPT: prompt },
+            });
+            assert.equal(r.code, 0);
+          }
+        }
+        const files = filesUnder(h);
+        assert.ok(files.length >= 2, `${agent}: nothing was written — this proves nothing`);
+        assert.ok(events(h).length >= 2, `${agent}: no event — this proves nothing`);
+        for (const file of files) {
+          assert.ok(!readFileSync(file, 'utf8').includes(marker), `${file} holds the prompt`);
+        }
       }
     });
 
@@ -494,6 +505,35 @@ const payload = (sessionId: unknown): string =>
     source: 'startup',
   });
 
+/**
+ * D-090: Omnigent starts a turn itself when a sub-agent finishes, a timer fires
+ * or a terminal goes idle, and each such prompt begins `[System: `. These are
+ * Omnigent 0.17.0's own templates, quoted from its source, so a later Omnigent
+ * that renames the marker turns these tests red instead of padding a timesheet.
+ */
+const RUNTIME_NOTICES: readonly string[] = [
+  // runner/subagent_work.py, _format_subagent_wake_notice
+  '[System: sub-agent claude_code/x finished (completed) — 1 result waiting in inbox. Call sys_read_inbox to collect.]',
+  // runner/tool_dispatch.py, a timer firing
+  '[System: timer t1 fired]',
+  // runner/tool_dispatch.py, a terminal going idle
+  '[System: inbox item terminal_idle — terminal shell:main is idle]',
+];
+/** A `UserPromptSubmit` payload: compact (`"prompt":"`), or spaced (`"prompt": "`). */
+const promptPayload = (prompt: string, spaced = false): string => {
+  const head = {
+    session_id: 's',
+    transcript_path: '/Users/dev/.claude/projects/-work/x.jsonl',
+    cwd: '/Users/dev/work',
+    permission_mode: 'default',
+    hook_event_name: 'UserPromptSubmit',
+  };
+  return spaced
+    ? `${JSON.stringify(head, null, 1).replace(/\n/g, '').slice(0, -1)}, "prompt": ${JSON.stringify(prompt)}}`
+    : JSON.stringify({ ...head, prompt });
+};
+const kindOf = (line: string): string => line.split(' ')[0] ?? '';
+
 for (const shell of SHELLS) {
   void describe(`automated sessions are remembered, locally, under ${shell.join(' ')} (LAI-775)`, () => {
     void test('session start and end keep the session id, and count nothing', () => {
@@ -682,6 +722,41 @@ for (const shell of SHELLS) {
       }
     });
 
+    void test('a runtime notice typed into the primary is no typed prompt; everyone else is unchanged (D-090)', () => {
+      const h = home();
+      for (const notice of RUNTIME_NOTICES) {
+        for (const spaced of [false, true]) {
+          const r = run(shell, ['prompt', 'claude-code'], {
+            home: h,
+            env: OMNI_PRIMARY,
+            input: promptPayload(notice, spaced),
+          });
+          assert.equal(r.code, 0);
+          assert.equal(r.stdout + r.stderr, '');
+          assert.equal(r.error, undefined, 'stdin was not drained');
+        }
+      }
+      assert.deepEqual(events(h), [], 'a notice was counted as a typed prompt');
+      run(shell, ['prompt', 'claude-code'], {
+        home: h,
+        env: OMNI_PRIMARY,
+        input: promptPayload('please fix the build'),
+      });
+      assert.deepEqual(
+        events(h).map((line) => line.split(' ').slice(0, 2).join(' ')),
+        ['p claude-code'],
+      );
+      // No Omnigent, or another agent: the prompt is not looked at, and counts.
+      const plain = home();
+      const notice = promptPayload(RUNTIME_NOTICES[0] ?? '');
+      run(shell, ['prompt', 'claude-code'], { home: plain, input: notice });
+      run(shell, ['prompt', 'codex'], { home: plain, env: OMNI_PRIMARY, input: notice });
+      assert.deepEqual(
+        events(plain).map((line) => line.split(' ').slice(0, 2).join(' ')),
+        ['p claude-code', 'p codex'],
+      );
+    });
+
     void test('a person’s plain session (no Omnigent) is kept as before and is no primary', () => {
       const h = home();
       run(shell, ['session-start', 'claude-code'], {
@@ -700,11 +775,10 @@ for (const shell of SHELLS) {
  * loads `~/.claude/settings.json`, so this hook runs at every one of its turns:
  * `UserPromptSubmit` as a turn starts, `Stop` as it ends. It runs in the runner
  * Omnigent launched for that session (`OMNIGENT_RUNNER_LAUNCH_HARNESS`), with
- * the SDK's `CLAUDE_CODE_ENTRYPOINT`, and in no terminal. A turn's start is not
- * always the person typing — Omnigent also wakes it when a sub-agent finishes —
- * and telling them apart means reading the message, which the hook never does.
- * So its turns are kept as the activity of the person's primary session,
- * `t`/`r omnigent <epoch> <session>`, and never as a typed prompt.
+ * the SDK's `CLAUDE_CODE_ENTRYPOINT=sdk-py`, and in no terminal. A turn the
+ * person started is `t omnigent <epoch> <session>`; one Omnigent started itself
+ * — its prompt begins `[System: ` (D-090) — is `w`; every turn's end is `r`,
+ * and the drafter drops the `r` that ends a `w`. None is a typed prompt.
  */
 const FAKE_ORCHESTRATOR = 'cccccccccccccccccccccccccccccccc';
 const OMNI_ORCHESTRATOR = {
@@ -754,6 +828,66 @@ for (const shell of SHELLS) {
       assert.deepEqual(skipped(h), []);
     });
 
+    void test('a turn Omnigent started is `w`, never `t`: compact or spaced, alone or on the first line (D-090)', () => {
+      const h = home();
+      const notice = RUNTIME_NOTICES[0] ?? '';
+      const inputs = [
+        ...RUNTIME_NOTICES.map((n) => promptPayload(n)),
+        ...RUNTIME_NOTICES.map((n) => promptPayload(n, true)),
+        promptPayload(`${notice}\n\nThe owner's words, joined after it.`),
+      ];
+      for (const input of inputs) {
+        const r = run(shell, ['prompt', 'claude-code'], { home: h, env: OMNI_ORCHESTRATOR, input });
+        assert.equal(r.code, 0);
+        assert.equal(r.stdout + r.stderr, '');
+        assert.equal(r.error, undefined, 'stdin was not drained');
+      }
+      run(shell, ['turn-end', 'claude-code'], { home: h, env: OMNI_ORCHESTRATOR });
+      assert.deepEqual(events(h).map(kindOf), [...inputs.map(() => 'w'), 'r']);
+      assert.ok(events(h).every((line) => line.endsWith(` ${FAKE_ORCHESTRATOR}`)));
+    });
+
+    void test('a person’s prompt is `t` — the marker anywhere but at the very start included', () => {
+      const h = home();
+      const prompts = [
+        'please fix the build',
+        ' [System: sub-agent x/y finished (completed)]',
+        'look at this: [System: timer t1 fired]',
+        '[system: lower case is not the marker]',
+        '[System:no space]',
+        '',
+      ];
+      for (const prompt of prompts) {
+        for (const spaced of [false, true]) {
+          const r = run(shell, ['prompt', 'claude-code'], {
+            home: h,
+            env: OMNI_ORCHESTRATOR,
+            input: promptPayload(prompt, spaced),
+          });
+          assert.equal(r.code, 0);
+        }
+      }
+      assert.deepEqual(
+        events(h).map(kindOf),
+        prompts.flatMap(() => ['t', 't']),
+      );
+    });
+
+    void test('only the start is looked at: a long prompt drains, and a notice heading one is still a notice', () => {
+      const h = home();
+      const long = 'x'.repeat(512 * 1024);
+      for (const prompt of [long, `${RUNTIME_NOTICES[1] ?? ''}${long}`]) {
+        const r = run(shell, ['prompt', 'claude-code'], {
+          home: h,
+          env: OMNI_ORCHESTRATOR,
+          input: promptPayload(prompt),
+        });
+        assert.equal(r.code, 0);
+        assert.equal(r.error, undefined, 'stdin was not drained');
+      }
+      assert.deepEqual(events(h).map(kindOf), ['t', 'w']);
+    });
+
     void test('its start keeps its Omnigent session id as a primary — not the payload’s — and no session start, repo or skip', () => {
       const h = home();
       const repoDir = gitRepo();
@@ -779,6 +913,9 @@ for (const shell of SHELLS) {
       for (const env of [
         { ...OMNI_ORCHESTRATOR, OMNIGENT_TERMINAL_LAUNCH_SESSION_ID: FAKE_SUBAGENT },
         { ...OMNI_ORCHESTRATOR, CLAUDE_CODE_ENTRYPOINT: 'cli' },
+        // `claude -p` (sdk-cli) and the TypeScript SDK are not Omnigent's brain.
+        { ...OMNI_ORCHESTRATOR, CLAUDE_CODE_ENTRYPOINT: 'sdk-cli' },
+        { ...OMNI_ORCHESTRATOR, CLAUDE_CODE_ENTRYPOINT: 'sdk-ts' },
         withoutKey(OMNI_ORCHESTRATOR, 'CLAUDE_CODE_ENTRYPOINT'),
         { ...OMNI_ORCHESTRATOR, OMNIGENT_RUNNER_LAUNCH_HARNESS: 'claude-native' },
         withoutKey(OMNI_ORCHESTRATOR, 'OMNIGENT_RUNNER_LAUNCH_HARNESS'),
@@ -1133,12 +1270,17 @@ void describe('cost of the prompt path', () => {
    * whose fork fails and exits 1. As root the limit is ignored, which is why
    * each test below first shows it refusing a fork.
    */
-  const forkless = (args: readonly string[], h: string, env: Record<string, string> = {}): Run => {
+  const forkless = (
+    args: readonly string[],
+    h: string,
+    env: Record<string, string> = {},
+    input = '{"prompt":"hello"}',
+  ): Run => {
     const result = spawnSync(
       '/bin/sh',
       ['-c', 'ulimit -u 1 && exec "$@"', 'sh', ...shell, ...args],
       {
-        input: '{"prompt":"hello"}',
+        input,
         env: { PATH: process.env.PATH ?? '', HOME: h, ...env },
         encoding: 'utf8',
       },
@@ -1194,6 +1336,42 @@ void describe('cost of the prompt path', () => {
         ['t', 'r'],
         'a turn forked before it wrote',
       );
+    },
+  );
+
+  /** D-090: looking for the marker is builtins too — on both Omnigent paths. */
+  void test(
+    'under zsh the marker check forks nothing: with fork() refused a notice still records `w`, a person `t`',
+    { skip: ZSH === undefined },
+    () => {
+      const control = forkless([script('/usr/bin/true\nexit 0\n')], home());
+      assert.notEqual(control.code, 0, 'fork() was not refused here — this test proves nothing');
+      const h = home();
+      for (const prompt of [RUNTIME_NOTICES[0] ?? '', 'please fix the build']) {
+        const r = forkless(
+          [HOOK, 'prompt', 'claude-code'],
+          h,
+          OMNI_ORCHESTRATOR,
+          promptPayload(prompt),
+        );
+        assert.equal(r.code, 0, 'the marker check forked');
+      }
+      assert.deepEqual(
+        events(h).map(kindOf),
+        ['w', 't'],
+        'the marker check forked before it wrote',
+      );
+      const primary = home();
+      for (const prompt of [RUNTIME_NOTICES[0] ?? '', 'please fix the build']) {
+        const r = forkless(
+          [HOOK, 'prompt', 'claude-code'],
+          primary,
+          OMNI_PRIMARY,
+          promptPayload(prompt),
+        );
+        assert.equal(r.code, 0, 'the primary’s marker check forked');
+      }
+      assert.deepEqual(events(primary).map(kindOf), ['p']);
     },
   );
 
