@@ -7,6 +7,8 @@ import {
   forecastLine,
   getPlanLimit,
   parseMinute,
+  resetTimeError,
+  resetTimeUnderstood,
   planFact,
   PLAN_KINDS,
   PLAN_LABELS,
@@ -51,7 +53,7 @@ export function PlanLimitCard() {
   const [span, setSpan] = useState<PlanWindow>('5h');
   const [limit, setLimit] = useState('');
   const [weekday, setWeekday] = useState(1);
-  const [time, setTime] = useState('09:00');
+  const [time, setTime] = useState(() => minuteClock(540));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -92,7 +94,7 @@ export function PlanLimitCard() {
     }
     const minute = parseMinute(time);
     if (span === 'week' && minute === undefined) {
-      setError('Enter the reset time, such as 9:00 AM.');
+      setError(resetTimeError(time));
       return;
     }
     setBusy(true);
@@ -241,6 +243,12 @@ export function PlanLimitCard() {
                     setTime(e.target.value);
                   }}
                 />
+                {/* What it read, before Save (LAI-830 review round 1). */}
+                <span className="usage-field-note" aria-live="polite">
+                  {resetTimeUnderstood(time) !== undefined && (
+                    <span data-understood>{resetTimeUnderstood(time)}</span>
+                  )}
+                </span>
               </label>
             </div>
           )}

@@ -151,9 +151,12 @@ export interface ParsedClock {
   /** 0–1439, read on the 24-hour clock when no AM/PM was typed. */
   readonly minute: number;
   /**
-   * No AM/PM, and an hour from 1 to 12 — `2:35` could be either. The reader
-   * of the answer decides which: My day's *Split…* takes the one inside the
-   * block. `minute + 720` (mod a day) is the other reading.
+   * No AM/PM, and an hour from 1 to 12 written without a leading zero —
+   * `2:35` could be either. `02:35` and `09:30` are the 24-hour clock's own
+   * notation and are not. The reader of the answer decides what an ambiguous
+   * one means: My day's *Split…* takes the reading inside the block, and the
+   * plan limit's reset time refuses it. `minute + 720` (mod a day) is the
+   * other reading.
    */
   readonly ambiguous: boolean;
 }
@@ -178,7 +181,8 @@ export function parseClock(text: string): ParsedClock | undefined {
   }
   // Without AM/PM a bare hour is not a time: `14` could be a duration.
   if (match[2] === undefined || hour > 23) return undefined;
-  return { minute: hour * 60 + minute, ambiguous: hour >= 1 && hour <= 12 };
+  const leadingZero = match[1]?.length === 2 && match[1].startsWith('0');
+  return { minute: hour * 60 + minute, ambiguous: hour >= 1 && hour <= 12 && !leadingZero };
 }
 
 /**

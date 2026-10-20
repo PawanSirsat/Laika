@@ -55,10 +55,17 @@ void describe('formatDuration — minutes in, words out', () => {
     assert.equal(formatDuration(2 * 24 * 60 + 23 * 60 + 40), '3 d');
   });
 
-  void test('a negative or a non-number is 0 min, never a minus sign or NaN', () => {
+  void test('a negative is 0 min, never a minus sign', () => {
     assert.equal(formatDuration(-5), '0 min');
-    assert.equal(formatDuration(Number.NaN), '0 min');
-    assert.equal(formatDuration(Number.POSITIVE_INFINITY), '0 min');
+    assert.equal(formatDurationMs(-60_000), '0 min');
+  });
+
+  void test('a non-number is unknown, a dash — never 0 min or NaN (LAI-830 review round 1)', () => {
+    assert.equal(formatDuration(Number.NaN), '—');
+    assert.equal(formatDuration(Number.POSITIVE_INFINITY), '—');
+    assert.equal(formatDuration(Number.NEGATIVE_INFINITY), '—');
+    assert.equal(formatDuration(Number.POSITIVE_INFINITY, { largest: 'min' }), '—');
+    assert.equal(formatDurationMs(Number.NaN), '—');
   });
 
   void test('largest min keeps an agent’s time in minutes, however long (D-088 item 8)', () => {

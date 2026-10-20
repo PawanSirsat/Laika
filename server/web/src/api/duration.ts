@@ -48,11 +48,13 @@ export function shownMinutes(minutes: number): number {
 }
 
 /**
- * `minutes` in words, rounded as {@link shownMinutes} says; anything that is
- * not a positive number is `0 min`, and a positive one under a minute `< 1 min`.
+ * `minutes` in words, rounded as {@link shownMinutes} says. A negative is
+ * `0 min`, a positive under a minute `< 1 min`, and a figure that is not a
+ * number at all — `NaN`, `Infinity` — is unknown, a dash, never `0 min`.
  */
 export function formatDuration(minutes: number, options: DurationOptions = {}): string {
-  if (!Number.isFinite(minutes) || minutes <= 0) return '0 min';
+  if (!Number.isFinite(minutes)) return '—';
+  if (minutes <= 0) return '0 min';
   if (minutes < 1) return '< 1 min';
   if (options.largest === 'min') return `${String(Math.round(minutes))} min`;
 

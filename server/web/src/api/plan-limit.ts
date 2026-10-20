@@ -1,5 +1,5 @@
 import { request } from './client.ts';
-import { clockTime, parseClock } from './time-label.ts';
+import { clockTime, minuteClock, parseClock } from './time-label.ts';
 import { compactTokens } from './usage.ts';
 
 /**
@@ -108,11 +108,36 @@ export function clockLabel(at: number, now: number = Date.now()): string {
 }
 
 /**
- * `9:30 AM`, `09:30` → 570; anything else `undefined`. A time with no AM/PM
- * is read on the 24-hour clock, as this field always did.
+ * `9:30 AM`, `14:30`, `09:30` → the minute after midnight; anything else
+ * `undefined`. **A bare `2:30` is refused, never guessed** (LAI-830 review
+ * round 1): the field shows a 12-hour clock, so `2:30` may mean the
+ * afternoon, and reading it as 2:30 AM put a weekly reset twelve hours off
+ * with nothing on screen to say so. A leading zero is the 24-hour clock.
  */
 export function parseMinute(text: string): number | undefined {
-  return parseClock(text)?.minute;
+  const parsed = parseClock(text);
+  return parsed === undefined || parsed.ambiguous ? undefined : parsed.minute;
+}
+
+/** Why the reset time was refused: AM or PM missing, or not a time at all. */
+export function resetTimeError(text: string): string {
+  return parseClock(text)?.ambiguous === true
+    ? 'Add AM or PM, e.g. 2:30 PM.'
+    : 'Enter the reset time, such as 9:00 AM.';
+}
+
+/**
+ * What the reset field read, under it, before anything is saved: `Reads as
+ * 2:30 PM`, or the question when it could be either. `undefined` while the
+ * text is not a time.
+ */
+export function resetTimeUnderstood(text: string): string | undefined {
+  const parsed = parseClock(text);
+  if (parsed === undefined) return undefined;
+  if (!parsed.ambiguous) return `Reads as ${minuteClock(parsed.minute)}`;
+  const am = minuteClock(parsed.minute % 720);
+  const pm = minuteClock((parsed.minute % 720) + 720);
+  return `Add AM or PM: ${am} or ${pm}?`;
 }
 
 /**

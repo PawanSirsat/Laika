@@ -192,7 +192,9 @@ void describe('parseClock — a time of day as a person types it', () => {
   void test('a 24-hour time is still read, and is not ambiguous past 12', () => {
     assert.deepEqual(parseClock('14:35'), { minute: 14 * 60 + 35, ambiguous: false });
     assert.deepEqual(parseClock('0:15'), { minute: 15, ambiguous: false });
-    assert.deepEqual(parseClock('09:30'), { minute: 9 * 60 + 30, ambiguous: true });
+    // A leading zero is the 24-hour clock's own notation (LAI-830 review round 1).
+    assert.deepEqual(parseClock('09:30'), { minute: 9 * 60 + 30, ambiguous: false });
+    assert.deepEqual(parseClock('02:30'), { minute: 2 * 60 + 30, ambiguous: false });
   });
 
   void test('1:00 to 12:59 with no AM/PM is read on the 24-hour clock and marked ambiguous', () => {
