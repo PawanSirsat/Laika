@@ -367,3 +367,65 @@ anything.
 per task (`session_tasks`: a session's one-way key, a task key, a count), so
 the board can split Claude Code's own `active_time` the way tokens are split.
 The board shows it as agent minutes, never as hours.
+
+## `laika time push` and `pull` — the Solidtime bridge (LAI-788, D-088)
+
+Solidtime is the billing record. **This machine is the only thing that talks
+to it**: the board never calls Solidtime, and never sees your Solidtime URL or
+key.
+
+```
+laika time connect               # once: your Solidtime URL, then your API key
+laika time push                  # your confirmed time → Solidtime, as KEY title
+laika time pull                  # what was logged in Solidtime → Laika (35 days)
+laika time status                # where it goes, and the last push and pull
+```
+
+**Connect** asks for the URL (https, or http on this machine only) and your
+personal API key — from your Solidtime profile, *API tokens*; never a flag, so
+it stays out of shell history. It checks the Solidtime account's email is your
+Laika email, here, and keeps both in `~/.laika/solidtime.json` (`0600`). Time
+from today on is pushed; `--since YYYY-MM-DD` reaches back.
+
+**Each push and pull asks for your Laika password**, signs in, and signs out
+when it is done. The board serves a person's hours to no token, so the token
+in `~/.laika/env` — the one your agents use — cannot read them or send them
+anywhere.
+
+**Push** writes each confirmed or typed entry as `KEY title` (the form
+Solidtime's own browser extension writes) on the Solidtime project its space
+is mapped to, billable as that project is. An entry with no start goes at
+09:00 on its day, after the day's earlier ones. Nothing is written twice:
+every entry this machine creates is noted in `~/.laika/solidtime-sent.json`
+before the board is told, and before each one what Solidtime already holds is
+read back. An edit or delete in Laika is written to Solidtime only while
+Solidtime still holds what Laika last saw; if it changed there too,
+Solidtime's is kept. Nothing in a closed period is rewritten, and agent
+minutes are never sent: they never become entries.
+
+**Pull** re-reads the last 35 days (`--days N`, up to 92) — Solidtime has no
+webhooks and no `updated_at` — and sends the board each entry's start, end,
+project, a card key read from its description and a digest. **Never the
+description.** The key is the one the description starts with, else the only
+one in it; the board resolves it and never guesses. An edit is a new revision
+of the entry, a delete is a delete, and a change in a closed period is flagged
+and not taken.
+
+**For owners and admins**, with a Solidtime key that sees everyone (manager
+or above):
+
+```
+laika time map                   # Solidtime projects, and the space each is mapped to
+laika time map "Acme build" acme [--push]     # many Solidtime projects → one space
+laika time people                # confirm which Solidtime member is which person
+laika time pull --all            # everyone's hours; people not on Laika are kept
+```
+
+`people` matches members by email **on this machine** and asks you to confirm
+each; only the pairing — a Solidtime member id and a Laika person — reaches the
+board.
+
+**Timers**: `laika time start ONR-123` starts a Solidtime timer for a card
+(`--switch` stops a running one first) and `laika time stop` stops it. Only a
+person starts one: it refuses in CI, under `LAIKA_ACTIVITY_SKIP` and in an
+Omnigent agent's session, and nothing starts one when an agent claims a card.
