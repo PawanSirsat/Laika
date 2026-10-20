@@ -444,7 +444,7 @@ void describe('an owner', () => {
       assert.equal(await rework.locator('.usage-rework-name').innerText(), 'Laika');
       assert.equal(
         await rework.locator('.usage-rework-line').innerText(),
-        '3 send-backs on 2 tasks · 1.23M tokens (12% of the space’s) · 6.0 h of rework, 1 still open',
+        '3 send-backs on 2 tasks · 1.23M tokens (12% of the space’s) · 6 h of rework, 1 still open',
       );
       // Asked for the organisation: no project, the reader's zone.
       const asked = h.calls.find((c) => c.path === '/api/v1/usage');

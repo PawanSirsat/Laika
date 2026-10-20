@@ -11,6 +11,7 @@ import type { Member, TaskSummary } from '../../../api/tasks.ts';
 import { PresencePerson } from '../../../components/PresencePerson.tsx';
 import type { PresenceView } from '../../../api/presence.ts';
 import type { StreamStatus } from '../../../api/use-events.ts';
+import { formatDuration } from '../../../api/duration.ts';
 import { clockTime } from '../../../api/time-label.ts';
 import '../board/board-rail.css';
 
@@ -228,7 +229,7 @@ export function ActivityPanels({
                 <span className="rail-stale-title">{task.title}</span>
                 <span className="rail-stale-meta">
                   <code>{task.key}</code>
-                  {ageDays(task.updated_at, now)}d idle
+                  {formatDuration(ageDays(task.updated_at, now) * 24 * 60)} idle
                   {task.assignee_id !== null && members.has(task.assignee_id) && (
                     <em>{members.get(task.assignee_id)?.name}</em>
                   )}

@@ -6,6 +6,7 @@ import type {
   PersonStatus,
   SeenVia,
 } from '../../../api/presence.ts';
+import { formatDurationMs } from '../../../api/duration.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 
 /**
@@ -175,8 +176,8 @@ export function statusText(person: CapacityEntry, now: number): StatusText {
 
   if (person.status === 'online') return { text: 'Online now', title };
   if (person.status === 'away') {
-    const minutes = Math.max(1, Math.floor((now - person.last_seen) / 60_000));
-    return { text: `Away · ${String(minutes)} min`, title };
+    const away = Math.max(60_000, Math.floor((now - person.last_seen) / 60_000) * 60_000);
+    return { text: `Away · ${formatDurationMs(away)}`, title };
   }
   return { text: `Last seen ${label.text}`, title };
 }
@@ -258,7 +259,7 @@ export function teamLoad(
 }
 
 /**
- * `4h`, `3d`, `just now` — the age of the oldest in-progress task.
+ * `4 h 20 min`, `3 d`, `just now` — the age of the oldest in-progress task.
  *
  * Coarse, because the number answers *"has this been sitting?"*. `null` in
  * means `undefined` out: **a person with nothing in progress has no age, and
@@ -268,12 +269,8 @@ export function oldestAge(ms: number | null): string | undefined {
   if (ms === null) return undefined;
   // Server clock, browser clock; a hair either side of zero is normal.
   const elapsed = Math.max(0, ms);
-  const minutes = Math.floor(elapsed / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${String(minutes)}m`;
-  const hours = Math.floor(elapsed / 3_600_000);
-  if (hours < 24) return `${String(hours)}h`;
-  return `${String(Math.floor(elapsed / 86_400_000))}d`;
+  if (elapsed < 60_000) return 'just now';
+  return formatDurationMs(elapsed);
 }
 
 /**

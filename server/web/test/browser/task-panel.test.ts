@@ -690,7 +690,10 @@ void describe('the Jira-shaped task view (D-066)', () => {
       assert.match(await reporter.innerText(), /Ada Lovelace/);
 
       const foot = (await h.page.locator('.panel-foot-times').innerText()).replace(/\s+/g, ' ');
-      assert.match(foot, /^Created \w{3} \d{1,2} \w{3} \d{4}, \d{2}:\d{2}:\d{2} Updated \w{3} /);
+      assert.match(
+        foot,
+        /^Created \w{3} \d{1,2} \w{3} \d{4}, \d{1,2}:\d{2}:\d{2} [AP]M Updated \w{3} /,
+      );
       assert.doesNotMatch(foot, /ago/);
 
       // t3 has no branch, no PR and no commits: no Development card.

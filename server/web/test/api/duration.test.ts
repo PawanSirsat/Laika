@@ -8,7 +8,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { formatDuration, formatDurationMs } from '../../src/api/duration.ts';
+import { formatDuration, formatDurationMs, shownMinutes } from '../../src/api/duration.ts';
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -61,11 +61,19 @@ void describe('formatDuration — minutes in, words out', () => {
     assert.equal(formatDuration(Number.POSITIVE_INFINITY), '0 min');
   });
 
-  void test('minutesOnly keeps an agent’s time in minutes, however long (D-088 item 8)', () => {
-    assert.equal(formatDuration(600, { minutesOnly: true }), '600 min');
-    assert.equal(formatDuration(142, { minutesOnly: true }), '142 min');
-    assert.equal(formatDuration(0, { minutesOnly: true }), '0 min');
-    assert.equal(formatDuration(0.4, { minutesOnly: true }), '< 1 min');
+  void test('largest min keeps an agent’s time in minutes, however long (D-088 item 8)', () => {
+    assert.equal(formatDuration(600, { largest: 'min' }), '600 min');
+    assert.equal(formatDuration(142, { largest: 'min' }), '142 min');
+    assert.equal(formatDuration(5000, { largest: 'min' }), '5000 min');
+    assert.equal(formatDuration(0, { largest: 'min' }), '0 min');
+    assert.equal(formatDuration(0.4, { largest: 'min' }), '< 1 min');
+  });
+
+  void test('largest h keeps a day and more in hours, still rounded to the hour', () => {
+    assert.equal(formatDuration(30 * 60, { largest: 'h' }), '30 h');
+    assert.equal(formatDuration(30 * 60 + 20, { largest: 'h' }), '30 h');
+    assert.equal(formatDuration(90, { largest: 'h' }), '1 h 30 min');
+    assert.equal(formatDuration(45, { largest: 'h' }), '45 min');
   });
 
   void test('never prints h:mm', () => {
@@ -82,5 +90,22 @@ void describe('formatDurationMs — the same words from milliseconds', () => {
     assert.equal(formatDurationMs(3 * DAY + 4 * HOUR), '3 d 4 h');
     assert.equal(formatDurationMs(20_000), '< 1 min');
     assert.equal(formatDurationMs(0), '0 min');
+  });
+});
+
+void describe('shownMinutes — the minutes the words say', () => {
+  void test('the same rounding as the words, so a figure is judged on what it prints', () => {
+    assert.equal(shownMinutes(18.4), 18);
+    assert.equal(shownMinutes(92.4), 92);
+    assert.equal(shownMinutes(24 * 60 + 29), 24 * 60);
+    assert.equal(shownMinutes(24 * 60 + 30), 25 * 60);
+    assert.equal(shownMinutes(0), 0);
+    assert.equal(shownMinutes(-3), 0);
+  });
+
+  void test('formatDuration of the shown minutes is the same words, at every scale', () => {
+    for (const m of [1, 18.4, 59.6, 92.4, 1439.6, 1469, 1470, 4300, 10_000.7]) {
+      assert.equal(formatDuration(shownMinutes(m)), formatDuration(m), String(m));
+    }
   });
 });

@@ -737,10 +737,10 @@ void describe('timestamps read as moments (LAI-486)', () => {
     const h = await onTheClock('/list?project=laika-core');
     try {
       assert.equal((await cell(h, 'LC-1', 'updated').innerText()).trim(), 'just now');
-      assert.equal((await cell(h, 'LC-2', 'updated').innerText()).trim(), '25 Sep, 15:30');
+      assert.equal((await cell(h, 'LC-2', 'updated').innerText()).trim(), '25 Sep, 3:30 PM');
       assert.equal(
         await cell(h, 'LC-2', 'created').getAttribute('title'),
-        'Fri 25 Sep 2026, 15:30:00',
+        'Fri 25 Sep 2026, 3:30:00 PM',
       );
       assert.ok(
         (await cell(h, 'LC-1', 'created').getAttribute('datetime')) !== null,
@@ -789,7 +789,7 @@ void describe('timestamps read as moments (LAI-486)', () => {
       const text = (await foot.innerText()).replace(/\s+/g, ' ').trim();
       assert.match(
         text,
-        /^Created \w{3} \d{1,2} \w{3} \d{4}, \d{2}:\d{2}:\d{2} Updated /,
+        /^Created \w{3} \d{1,2} \w{3} \d{4}, \d{1,2}:\d{2}:\d{2} [AP]M Updated /,
         `the foot reads "${text}"`,
       );
       assert.doesNotMatch(text, /ago/);

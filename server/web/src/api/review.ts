@@ -1,4 +1,5 @@
 import { request } from './client.ts';
+import { formatDurationMs } from './duration.ts';
 import { type Task } from './tasks.ts';
 
 /**
@@ -286,16 +287,12 @@ export function filterQueue(
 }
 
 const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
 
-/** How long something has waited, compactly: `just now`, `12 min`, `3 h`, `2 d`. */
+/** How long something has waited: `just now`, `12 min`, `3 h 12 min`, `2 d 5 h` (LAI-830). */
 export function waitingFor(since: number, now: number): string {
   const age = Math.max(0, now - since);
   if (age < MINUTE) return 'just now';
-  if (age < HOUR) return `${String(Math.floor(age / MINUTE))} min`;
-  if (age < DAY) return `${String(Math.floor(age / HOUR))} h`;
-  return `${String(Math.floor(age / DAY))} d`;
+  return formatDurationMs(age);
 }
 
 /** Why a send-back reason cannot be sent yet, or null when it can. */

@@ -69,9 +69,11 @@ void describe('oldestAge', () => {
 
   void test('reads in the unit a person would use, never negative', () => {
     assert.equal(oldestAge(30_000), 'just now');
-    assert.equal(oldestAge(40 * MIN), '40m');
-    assert.equal(oldestAge(5 * HOUR), '5h');
-    assert.equal(oldestAge(3 * DAY), '3d');
+    assert.equal(oldestAge(40 * MIN), '40 min');
+    assert.equal(oldestAge(5 * HOUR), '5 h');
+    assert.equal(oldestAge(5 * HOUR + 20 * MIN), '5 h 20 min');
+    assert.equal(oldestAge(3 * DAY), '3 d');
+    assert.equal(oldestAge(3 * DAY + 4 * HOUR), '3 d 4 h');
     assert.equal(oldestAge(-5_000), 'just now');
   });
 });
@@ -195,11 +197,12 @@ void describe('statusText — words, not only a colour', () => {
       );
     assert.equal(at('online', 40_000).text, 'Online now');
     assert.equal(at('away', 23 * MIN).text, 'Away · 23 min');
+    assert.equal(at('away', 75 * MIN).text, 'Away · 1 h 15 min');
     assert.equal(at('offline', 2 * HOUR).text, 'Last seen 2 h ago');
     assert.equal(at('never', null).text, 'Never seen');
     assert.equal(at(null, null).text, 'Presence is off');
     // The tooltip carries the absolute time and what the signal was.
-    assert.match(at('offline', 2 * HOUR).title ?? '', /2026, \d\d:\d\d:\d\d · a board action$/);
+    assert.match(at('offline', 2 * HOUR).title ?? '', /2026, \d{1,2}:\d\d:\d\d [AP]M · a board action$/);
   });
 });
 

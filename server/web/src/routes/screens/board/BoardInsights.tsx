@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getMetrics, type MetricsView } from '../../../api/metrics.ts';
 import { ApiError } from '../../../api/errors.ts';
+import { formatDurationMs } from '../../../api/duration.ts';
 import './board-insights.css';
 
 export interface BoardInsightsProps {
@@ -9,17 +10,9 @@ export interface BoardInsightsProps {
   readonly onClose: () => void;
 }
 
-/** `3d 4h`, `5h`, `40m` — the same coarseness `staleFor` uses. */
+/** `3 d 4 h`, `5 h 12 min`, `40 min` — through the one duration helper (LAI-830). */
 function duration(ms: number): string {
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 60) return `${String(minutes)}m`;
-
-  const hours = Math.floor(ms / 3_600_000);
-  if (hours < 24) return `${String(hours)}h`;
-
-  const days = Math.floor(ms / 86_400_000);
-  const rest = Math.floor((ms - days * 86_400_000) / 3_600_000);
-  return rest === 0 ? `${String(days)}d` : `${String(days)}d ${String(rest)}h`;
+  return formatDurationMs(ms);
 }
 
 /**

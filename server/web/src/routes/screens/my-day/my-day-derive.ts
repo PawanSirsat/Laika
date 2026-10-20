@@ -120,7 +120,7 @@ function atMinute(day: string, minute: number, tz: string): number {
  * own would read as one: 600 minutes stays `600 min`.
  */
 export function agentMinutes(minutes: number): string {
-  return formatDuration(minutes, { minutesOnly: true });
+  return formatDuration(minutes, { largest: 'min' });
 }
 
 /**
