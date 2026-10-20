@@ -2,11 +2,12 @@
 id: LAI-809
 title: 'capacity.test.ts "re-reads when the tab comes back, and every 20 s" races the fake clock and failed CI (2 !== 3)'
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-792
-status: backlog
+status: in-progress
+started: 2026-10-20T10:24:33Z
 ---
 
 ## Goal
