@@ -11,8 +11,9 @@ import { addDays, dayIn, isTimeZone } from './calendar-days.ts';
 import { assertReportDays, latestReportZone } from './local-activity.ts';
 import { resolveKeys } from './token-usage.ts';
 import {
-  assertNotCountedTwice,
+  assertFitsTheClock,
   assertSpanOnDay,
+  assertWithinSpan,
   entryById,
   insertEntry,
   projectRefOf,
@@ -646,11 +647,14 @@ export function updateDraft(
   const undoId = db.transaction((tx) => {
     const row = pendingRow(tx, actor.userId, id);
     const span = patchedSpan(row, patch);
-    // A longer or moved block must not lie over confirmed time (review round 1).
+    // A longer or moved block holds no more than its span, and its stretch no
+    // more than the clock: confirmed time is never counted twice (review round 2).
     const start = span?.startedAt ?? row.startedAt;
     const end = span?.endedAt ?? row.endedAt;
     if (start !== null && end !== null && (span !== undefined || patch.minutes !== undefined)) {
-      assertNotCountedTwice(tx, actor.userId, start, end, patch.minutes ?? row.minutes);
+      const minutes = patch.minutes ?? row.minutes;
+      assertWithinSpan(start, end, minutes);
+      assertFitsTheClock(tx, actor.userId, start, end, minutes);
     }
     tx.update(timeDrafts)
       .set({
@@ -761,10 +765,12 @@ function confirmRow(
   userId: string,
   row: typeof timeDrafts.$inferSelect,
   now: number,
+  judge = true,
 ): string {
-  // Confirmed time is never counted twice (review round 1).
-  if (row.startedAt !== null && row.endedAt !== null) {
-    assertNotCountedTwice(tx, userId, row.startedAt, row.endedAt, row.minutes);
+  // Confirmed time is never counted twice, by the clock (review round 2).
+  // *Confirm day* judges the day once, when every block of it is in.
+  if (judge && row.startedAt !== null && row.endedAt !== null) {
+    assertFitsTheClock(tx, userId, row.startedAt, row.endedAt, row.minutes, { draftId: row.id });
   }
   const fields = {
     // An untied block is confirmed as General: the person confirmed it.
@@ -852,7 +858,15 @@ export function confirmDay(
       )
       .orderBy(asc(sql`coalesce(${timeDrafts.startedAt}, ${timeDrafts.createdAt})`))
       .all();
-    const made = rows.map((row) => confirmRow(tx, actor.userId, row, now));
+    const made = rows.map((row) => confirmRow(tx, actor.userId, row, now, false));
+    // **All or nothing, judged on the day as it would stand** (review round 2):
+    // every block's stretch, with every block of the day in it, against the
+    // clock — so the order the blocks are taken in changes nothing. The first
+    // that does not fit is named, and the whole day stays drafted.
+    for (const row of rows) {
+      if (row.startedAt === null || row.endedAt === null) continue;
+      assertFitsTheClock(tx, actor.userId, row.startedAt, row.endedAt, 0, { draftId: row.id });
+    }
     // Undo puts every block of the day back pending (LAI-831).
     return {
       ids: made,
