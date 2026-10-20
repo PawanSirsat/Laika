@@ -93,10 +93,10 @@ export const DIFFERENCES: readonly Difference[] = [
   {
     what: '__Secure- cookie prefix',
     where: 'better-auth cookies/index.mjs — falls back to isProduction',
-    trigger: 'only when baseURL is unset',
+    trigger: 'only when advanced.useSecureCookies is unset and baseURL is not a string',
     verdict: 'safe',
     reason:
-      'createAuth always passes baseUrl, so the prefix is decided by that URL’s scheme and never reaches the isProduction fallback. Asserted below, because it stops being true the moment baseUrl becomes optional.',
+      'createAuth always passes useSecureCookies (LAI-811), from the secureCookies env.ts sets for an https:// LAIKA_PUBLIC_URL only, so neither the prefix nor the Secure attribute reaches the isProduction fallback. Asserted below in this environment, and in development and production through the probe.',
   },
   {
     what: 'default error page detail',
@@ -159,15 +159,16 @@ describe('the security-relevant switches are on, whatever NODE_ENV says', () => 
     }
   });
 
-  it('decides the cookie prefix from the configured URL, never from NODE_ENV', async () => {
+  it('decides the cookie prefix from secureCookies, never from NODE_ENV', async () => {
     const h = authHarness();
     try {
       const context = await h.auth.$context;
 
-      // baseURL is always set, so the `isProduction` fallback in better-auth's
-      // cookie naming is unreachable. This fails if baseUrl ever becomes optional.
-      expect(context.baseURL).not.toBe('');
-      expect(context.baseURL).toContain('http');
+      // The harness passes `secureCookies: false`. The resolved cookie is what
+      // better-auth will actually set, so this fails if the flag stops being
+      // read (LAI-811) as well as if the prefix starts following NODE_ENV.
+      expect(context.authCookies.sessionToken.name).toBe('better-auth.session_token');
+      expect(context.authCookies.sessionToken.attributes.secure).toBe(false);
     } finally {
       h.close();
     }
@@ -219,6 +220,8 @@ interface Posture {
   readonly rateLimitEnabled: boolean;
   readonly trustsForeignOrigin: boolean;
   readonly trustsLoopback: boolean;
+  readonly sessionCookieName: string;
+  readonly sessionCookieSecure: boolean;
 }
 
 /**
@@ -308,6 +311,10 @@ describe('development and production resolve the same posture as test (AC4)', ()
       expect(posture_.trustsForeignOrigin).toBe(false);
       // LAI-090's fix must hold everywhere too, not only where it was tested.
       expect(posture_.trustsLoopback).toBe(true);
+      // The name every session already issued carries (LAI-811). Production is
+      // where better-auth's prefix fallback would bite, so it is measured there.
+      expect(posture_.sessionCookieName).toBe('better-auth.session_token');
+      expect(posture_.sessionCookieSecure).toBe(false);
     });
   }
 

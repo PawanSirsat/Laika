@@ -40,6 +40,13 @@ export interface ResolveActorOptions {
    * database it cannot write (LAI-156).
    */
   log?: Logger;
+  /**
+   * Receives each `Set-Cookie` better-auth produced while reading the session
+   * (LAI-811): the renewed cookie when the session was older than its
+   * `updateAge`, or the expiring one when the session was dead. The caller
+   * decides whether the response carries them; see `middleware/auth.ts`.
+   */
+  setCookie?: (cookie: string) => void;
 }
 
 /**
@@ -82,7 +89,19 @@ export async function resolveActor(
   // escalation the previous paragraph rules out.
   if (bearer !== null) return resolveTokenActor(options.db, bearer, now, options.log);
 
-  const session = await options.auth.api.getSession({ headers: request.headers });
+  // **`returnHeaders`, or the renewal never reaches the browser** (LAI-811).
+  //
+  // On a session older than `updateAge`, better-auth slides the database
+  // expiry out and writes a fresh cookie with the full `Max-Age`. Without
+  // `returnHeaders` that cookie was thrown away: the database said the session
+  // had weeks left while the browser's copy kept the `Max-Age` it got at
+  // sign-in, and dropped it on schedule. `setup.ts` already does this.
+  const { headers, response: session } = await options.auth.api.getSession({
+    headers: request.headers,
+    returnHeaders: true,
+  });
+  for (const cookie of headers.getSetCookie()) options.setCookie?.(cookie);
+
   if (session === null) return null;
 
   const actor = loadActor(options.db, session.user.id);

@@ -12,6 +12,19 @@ import { trustedOriginsFor } from './trusted-origins.ts';
 
 export const AUTH_BASE_PATH = '/api/v1/auth';
 
+/**
+ * How long a remembered session lasts **idle**, in seconds (LAI-811, SPEC §13.1).
+ *
+ * Idle, not absolute: a request on a session older than `SESSION_UPDATE_AGE`
+ * pushes its expiry back out to this, and `resolve-actor.ts` hands the renewed
+ * cookie to the browser. Someone who uses Laika at least once a month never
+ * signs in again on that device.
+ */
+export const SESSION_EXPIRES_IN = 30 * 24 * 60 * 60;
+
+/** How old a session must be before a request renews it, in seconds. */
+export const SESSION_UPDATE_AGE = 24 * 60 * 60;
+
 /** The `inviteToken` better-auth drops before validation but the hooks can read. */
 function inviteTokenFrom(body: unknown): string {
   const value = (body as { inviteToken?: unknown } | null | undefined)?.inviteToken;
@@ -31,8 +44,9 @@ export interface CreateAuthOptions {
   /** Public origin, used for cookie and redirect correctness. */
   baseUrl: string;
   /**
-   * `Secure` cookies require HTTPS. Off on localhost so `pnpm dev` can hold a
-   * session at all; on everywhere else (SPEC §6.1).
+   * `Secure` cookies require HTTPS: a browser drops a `Secure` cookie that
+   * arrives over plain http, and nobody can stay signed in. `env.ts` sets it
+   * only for an `https://` public URL (LAI-811, SPEC §13.1).
    */
   secureCookies: boolean;
   now?: () => number;
@@ -81,7 +95,11 @@ export function createAuth(options: CreateAuthOptions) {
         isActive: { type: 'number', required: false, defaultValue: 1, input: false },
       },
     },
-    session: { modelName: 'sessions' },
+    session: {
+      modelName: 'sessions',
+      expiresIn: SESSION_EXPIRES_IN,
+      updateAge: SESSION_UPDATE_AGE,
+    },
     account: { modelName: 'accounts' },
     verification: { modelName: 'verifications' },
 
@@ -94,16 +112,25 @@ export function createAuth(options: CreateAuthOptions) {
 
     advanced: {
       database: { generateId: () => newId() },
-      cookies: {
-        sessionToken: {
-          attributes: {
-            httpOnly: true,
-            sameSite: 'lax',
-            secure: options.secureCookies,
-            path: '/',
-          },
-        },
-      },
+      /**
+       * **The one switch better-auth reads for `Secure`** (LAI-811).
+       *
+       * It decides both the attribute and the `__Secure-` name prefix, so the
+       * two cannot disagree. There used to be a `cookies.sessionToken.attributes`
+       * block here instead, and better-auth never read it: it looks cookies up
+       * by `session_token`. The block only repeated better-auth's defaults
+       * (`HttpOnly`, `SameSite=Lax`, `Path=/`) plus a `secure` that
+       * `env.ts` got wrong for `http://<IP>`. The two faults cancelled out, so
+       * fixing either one alone would have put `Secure` on a plain-http cookie
+       * and signed everyone out.
+       *
+       * **The cookie's name is unchanged by this**, in either scheme. Before,
+       * better-auth derived the prefix from `baseURL`; `env.ts` now derives
+       * this flag from the same URL's scheme. Over http the name is still
+       * `better-auth.session_token`, which every session already issued
+       * carries, so nobody is signed out by the deploy.
+       */
+      useSecureCookies: options.secureCookies,
       // `SameSite=Lax` plus better-auth's own origin check is the CSRF story for
       // cookie-authenticated mutations (§6.1, §13.1).
       disableCSRFCheck: false,

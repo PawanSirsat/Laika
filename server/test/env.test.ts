@@ -204,8 +204,22 @@ describe('cookie security (SPEC §6.1)', () => {
     );
   });
 
-  it('treats any other http origin as needing Secure', () => {
-    expect(readEnv({ ...SECRET, LAIKA_PUBLIC_URL: 'http://laika.example.com' }).secureCookies).toBe(
+  it('leaves them insecure on any plain-http origin, whatever the host (LAI-811)', () => {
+    // This used to say every non-localhost http origin needs Secure. A browser
+    // drops a Secure cookie set over plain http, so on `http://<IP>` — which is
+    // production — nobody could have signed in, had better-auth read the flag.
+    for (const url of [
+      'http://203.0.113.7:3000',
+      'http://203.0.113.7',
+      'http://laika.example.com',
+      'http://[2001:db8::1]:3000',
+    ]) {
+      expect(readEnv({ ...SECRET, LAIKA_PUBLIC_URL: url }).secureCookies, url).toBe(false);
+    }
+  });
+
+  it('marks them Secure for https on a bare address too', () => {
+    expect(readEnv({ ...SECRET, LAIKA_PUBLIC_URL: 'https://203.0.113.7' }).secureCookies).toBe(
       true,
     );
   });
