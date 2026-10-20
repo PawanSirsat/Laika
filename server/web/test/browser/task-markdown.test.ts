@@ -164,7 +164,7 @@ void describe('the description renders as markdown', () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await openSubject(h);
-      const md = h.page.locator('.panel-section .inline-edit .md');
+      const md = h.page.locator('[data-section="description"] .doc-field .md');
 
       assert.equal(await md.locator('h2').innerText(), 'What exists today');
       assert.equal(await md.locator('strong').first().innerText(), 'Deliverable of this task:');
@@ -198,7 +198,7 @@ void describe('the description renders as markdown', () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await openSubject(h);
-      const md = h.page.locator('.panel-section .inline-edit .md');
+      const md = h.page.locator('[data-section="description"] .doc-field .md');
 
       assert.equal(await md.locator('script').count(), 0, 'a <script> became an element');
       // …and is still there to read, as text.
@@ -233,12 +233,18 @@ void describe('the description renders as markdown', () => {
       const popup = h.page.context().waitForEvent('page', { timeout: 5_000 });
       await section.locator('.md a', { hasText: 'the repo' }).click();
       await (await popup).close();
-      assert.equal(await section.locator('textarea').count(), 0, 'a link click opened the editor');
+      assert.equal(
+        await section.locator('.rich-editor, .rich-editor-loading').count(),
+        0,
+        'a link click opened the editor',
+      );
 
-      // The text itself opens the editor, holding the source, not the render.
+      // The text itself opens the editor. This one holds raw HTML, which the
+      // rich view would not keep as written, so it opens as the source
+      // (LAI-827), not the render.
       await section.locator('.md h2').click();
-      const field = section.locator('textarea');
-      await field.waitFor({ timeout: 5_000 });
+      const field = section.locator('textarea.rich-editor-source');
+      await field.waitFor({ timeout: 10_000 });
       assert.equal(await field.inputValue(), DESCRIPTION);
     } finally {
       await h.close();
@@ -253,7 +259,7 @@ void describe('the description renders as markdown', () => {
       const button = section.getByRole('button', { name: 'Edit description' });
       await button.focus();
       await h.page.keyboard.press('Enter');
-      await section.locator('textarea').waitFor({ timeout: 5_000 });
+      await section.locator('.rich-editor').waitFor({ timeout: 10_000 });
     } finally {
       await h.close();
     }

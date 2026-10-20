@@ -1,9 +1,9 @@
 /*
  * Rendered markdown in the task view (LAI-709).
  *
- * The text keeps the size of the panel it sits in. Headings stay below the
- * panel's own 15px section headings ("Description", "Acceptance"), so a
- * `# Title` inside a description never outranks the section that holds it.
+ * `.md` alone keeps the size of the panel it sits in, with headings a step
+ * apart and below it. The task panel's documents add `.md-reading` (LAI-827),
+ * which sets the reading size and heading scale from tokens — further down.
  * Colour, borders and surfaces are the theme's tokens, so both themes follow.
  */
 
@@ -167,6 +167,55 @@
 }
 
 /*
+ * Reading text (LAI-827): the description, acceptance and comments are read
+ * like a document — Jira's issue view, which the owner set beside ONR-516 —
+ * not scanned like a board. The size and leading are tokens (`--text-reading`,
+ * `--leading-reading` in `styles/theme.css`) so LAI-828 raises them in one
+ * place. Headings step up from the reading size and stay under the panel's
+ * 24px title. The editor draws its document with these same rules, so reading
+ * and editing look like one page.
+ */
+.md-reading {
+  font-size: var(--text-reading);
+  line-height: var(--leading-reading);
+  color: var(--text-primary);
+}
+
+.md-reading h1 {
+  font-size: var(--text-reading-h1);
+}
+
+.md-reading h2 {
+  font-size: var(--text-reading-h2);
+}
+
+.md-reading h3 {
+  font-size: var(--text-reading-h3);
+}
+
+.md-reading h4,
+.md-reading h5,
+.md-reading h6 {
+  font-size: var(--text-reading);
+}
+
+.md-reading code,
+.md-reading pre code,
+.md-reading table {
+  font-size: var(--text-reading-code);
+}
+
+.md-reading p,
+.md-reading ul,
+.md-reading ol,
+.md-reading blockquote,
+.md-reading pre,
+.md-reading .md-table-wrap,
+.md-reading hr {
+  margin-bottom: 0.75rem;
+}
+
+/*
  * A comment's markdown (LAI-734): the thread's body size, tighter spacing.
  *
  * `pre-line` keeps a single newline a line break, as a comment always showed
@@ -203,11 +252,12 @@
 .md-comment h5,
 .md-comment h6 {
   margin: 0.625rem 0 0.25rem;
-  font-size: 0.875rem;
+  font-size: var(--text-reading);
 }
 
-.md-comment h1 {
-  font-size: 0.90625rem;
+.md-comment h1,
+.md-comment h2 {
+  font-size: var(--text-reading-h3);
 }
 
 .md-comment li + li {
@@ -215,5 +265,5 @@
 }
 
 .md-comment code {
-  font-size: 0.8125rem;
+  font-size: var(--text-reading-code);
 }

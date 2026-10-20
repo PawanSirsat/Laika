@@ -287,7 +287,7 @@ void describe('the panel reads the task in full when it opens (LAI-795)', () => 
         `the pulse changed the height of the place held: ${String(early.height)}px → ${String(pulsing.height)}px`,
       );
       assert.equal(
-        await h.page.locator('[data-section="description"] .inline-edit').count(),
+        await h.page.locator('[data-section="description"] .doc-field').count(),
         0,
         'an editable, empty description was drawn before its text was read',
       );
@@ -318,7 +318,7 @@ void describe('the panel reads the task in full when it opens (LAI-795)', () => 
       }
       assert.ok(same(afterLanding.description.y, before.description.y), 'the description moved');
       // The text is one line here; the place held for it was not smaller.
-      const text = await box('[data-section="description"] .inline-edit');
+      const text = await box('[data-section="description"] .doc-field');
       assert.ok(
         early.height >= text.height,
         `the place held (${String(early.height)}px) was smaller than the text (${String(text.height)}px)`,
@@ -431,7 +431,7 @@ void describe('nothing reads a text off the list (LAI-795)', () => {
 void describe('a stale description is never edited (LAI-795 review B1)', () => {
   const description = (h: Harness) => h.page.locator('[data-section="description"]');
   const editable = async (h: Harness): Promise<number> =>
-    description(h).locator('.inline-edit-can').count();
+    description(h).locator('[data-editable="description"]').count();
   const reads = (h: Harness): number =>
     h.calls.filter((c) => c.method === 'GET' && c.path === '/api/v1/tasks/t3').length;
   const patches = (h: Harness): number =>
@@ -439,12 +439,18 @@ void describe('a stale description is never edited (LAI-795 review B1)', () => {
   const walks = (h: Harness): number =>
     h.calls.filter((c) => c.path === '/api/v1/projects/laika-core/tasks').length;
 
-  /** Click the description and say whether an editor opened. */
+  /**
+   * Click the description and say whether an editor opened — the editor
+   * itself, or its chunk on the way (LAI-827: it loads on the first edit).
+   */
   async function tryToEdit(h: Harness): Promise<boolean> {
-    await description(h).locator('.inline-edit').first().click();
+    await description(h)
+      .locator('.doc-field')
+      .first()
+      .click({ position: { x: 4, y: 4 } });
     // A fixed window: what is asserted may be that something does *not* happen.
     await h.page.waitForTimeout(300);
-    return (await description(h).locator('textarea').count()) > 0;
+    return (await description(h).locator('.rich-editor, .rich-editor-loading').count()) > 0;
   }
 
   void test('a failed re-read locks the old text, says so with Try again, and reads again on the next refresh', async () => {
@@ -585,8 +591,12 @@ void describe('a stale description is never edited (LAI-795 review B1)', () => {
     try {
       await h.page.locator('.panel-main strong', { hasText: 'whole' }).waitFor({ timeout: 20_000 });
       assert.equal(await tryToEdit(h), true, 'positive control: the editor opens');
-      const field = description(h).locator('textarea');
-      await field.fill('My own rewrite, typed over the old version.');
+      // The rich editor (LAI-827): this description round-trips, so it opens rich.
+      const field = description(h).locator('.rich-editor .ProseMirror');
+      await field.waitFor({ timeout: 10_000 });
+      await field.click();
+      await h.page.keyboard.press('ControlOrMeta+A');
+      await h.page.keyboard.type('My own rewrite, typed over the old version.');
 
       server.t3 = {
         ...server.t3,
@@ -600,13 +610,13 @@ void describe('a stale description is never edited (LAI-795 review B1)', () => {
       await landed;
       await h.page.waitForTimeout(300);
 
-      await field.press('Control+Enter');
-      const refusal = description(h).locator('.inline-edit-error');
+      await field.press('ControlOrMeta+Enter');
+      const refusal = description(h).locator('.rich-editor-error');
       await until(async () => (await refusal.count()) > 0 || patches(h) > 0, 5_000);
       assert.equal(patches(h), 0, 'the edit was saved over the newer version');
       assert.match(await refusal.innerText(), /changed/i);
       assert.equal(
-        await field.inputValue(),
+        await field.innerText(),
         'My own rewrite, typed over the old version.',
         'the draft was thrown away',
       );

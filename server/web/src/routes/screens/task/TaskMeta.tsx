@@ -290,7 +290,10 @@ export function TaskMeta({
           <div className="meta-rows">
             <div className="meta-row">
               <p className="meta-label">Assignee</p>
-              <div className="meta-value meta-person">
+              <div
+                className="meta-value meta-person"
+                data-editable={mayAssign ? 'assignee' : undefined}
+              >
                 <span
                   className={
                     assignee === undefined ? 'meta-avatar meta-avatar-empty' : 'meta-avatar'
@@ -330,7 +333,10 @@ export function TaskMeta({
 
             <div className="meta-row">
               <p className="meta-label">Priority</p>
-              <div className="meta-value meta-value-prio">
+              <div
+                className="meta-value meta-value-prio"
+                data-editable={mayEdit ? 'priority' : undefined}
+              >
                 {/* Jira's icon before the control (LAI-705), outside the
                     `<label>` so its name does not join the select's. */}
                 <PriorityIcon priority={task.priority} />
@@ -382,7 +388,7 @@ export function TaskMeta({
 
             <div className="meta-row">
               <p className="meta-label">Labels</p>
-              <div className="meta-value meta-tags">
+              <div className="meta-value meta-tags" data-editable={mayEdit ? 'labels' : undefined}>
                 {/*
                   **The tag editor stays.** It renders the same chips the
                   design draws and offers a way in; it sits here because a
@@ -400,7 +406,7 @@ export function TaskMeta({
 
             <div className="meta-row">
               <p className="meta-label">Sprint</p>
-              <div className="meta-value">
+              <div className="meta-value" data-editable={maySetSprint ? 'sprint' : undefined}>
                 <label className="meta-select">
                   <span className="visually-hidden" id={sprintId}>
                     Sprint
@@ -770,7 +776,7 @@ function DateRow({ id, label, value, overdue, mayEdit, onChange }: DateRowProps)
     <div className={`meta-row meta-row-${id}`}>
       <p className="meta-label">{label}</p>
       {editing ? (
-        <div className="meta-value dep-add meta-add">
+        <div className="meta-value dep-add meta-add" data-editable={id}>
           <label className="visually-hidden" htmlFor={`${id}-date`}>
             {label}
           </label>
@@ -807,7 +813,7 @@ function DateRow({ id, label, value, overdue, mayEdit, onChange }: DateRowProps)
           </button>
         </div>
       ) : value === null ? (
-        <p className="meta-value meta-plain">
+        <p className="meta-value meta-plain" data-editable={mayEdit ? id : undefined}>
           {mayEdit ? (
             <button
               type="button"
@@ -823,7 +829,7 @@ function DateRow({ id, label, value, overdue, mayEdit, onChange }: DateRowProps)
           )}
         </p>
       ) : (
-        <div className="meta-value meta-date">
+        <div className="meta-value meta-date" data-editable={mayEdit ? id : undefined}>
           <button
             type="button"
             className={overdue ? 'meta-date-chip meta-date-overdue' : 'meta-date-chip'}

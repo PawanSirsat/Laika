@@ -46,7 +46,7 @@ export function CommentBody({ body }: CommentBodyProps) {
     <div className="panel-comment-body">
       <TaskMarkdown
         source={body}
-        className="md-comment"
+        className="md-comment md-reading"
         components={COMMENT_COMPONENTS}
         singleHardBreaks
       />
