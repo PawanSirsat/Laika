@@ -2,11 +2,12 @@
 id: LAI-828
 title: 'Text is too small across the web app: raise the type scale to Jira''s (body 14px, reading text 16px, nothing under 12px)'
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-827
-status: backlog
+status: in-progress
+started: 2026-10-20T21:30:56Z
 ---
 
 ## Goal
