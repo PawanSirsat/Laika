@@ -592,15 +592,18 @@ const primaries = (h: string): string[] =>
         .filter(Boolean)
         .map((line) => line.split(' ')[1] ?? '')
     : [];
+// Omnigent's ids are 32 hex characters; these are made up, and look it.
+const FAKE_PRIMARY = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const FAKE_SUBAGENT = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const OMNI_PRIMARY = {
   OMNIGENT: '1',
-  OMNIGENT_RUNNER_PRIMARY_SESSION_ID: '5bd58648202e4db4a68ea734a63be4db',
-  OMNIGENT_TERMINAL_LAUNCH_SESSION_ID: '5bd58648202e4db4a68ea734a63be4db',
+  OMNIGENT_RUNNER_PRIMARY_SESSION_ID: FAKE_PRIMARY,
+  OMNIGENT_TERMINAL_LAUNCH_SESSION_ID: FAKE_PRIMARY,
 };
 const OMNI_SUBAGENT = {
   OMNIGENT: '1',
-  OMNIGENT_RUNNER_PRIMARY_SESSION_ID: '5bd58648202e4db4a68ea734a63be4db',
-  OMNIGENT_TERMINAL_LAUNCH_SESSION_ID: '72e4a381111b429a83f004862fa71714',
+  OMNIGENT_RUNNER_PRIMARY_SESSION_ID: FAKE_PRIMARY,
+  OMNIGENT_TERMINAL_LAUNCH_SESSION_ID: FAKE_SUBAGENT,
 };
 
 for (const shell of SHELLS) {
