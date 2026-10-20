@@ -5090,3 +5090,58 @@ D-090) is unchanged.
 ### Revisit when
 
 A second person runs an orchestrator, or polly gains a transcript.
+
+## D-092 — What the people numbers mean: contribution is delivered work, open work has no range, review is not the builder's load
+
+**Date:** 2026-10-20 · **Decided by:** CHIEF, on the owner's delegation · **Status:** accepted
+
+The owner, looking at OnRoute's dashboard (Ashutosh 24, Pawan 6), said: *"I don't
+think these are making any sense … we want to show the highest contributor
+there. Check from your side and do what makes sense."* The audit
+(audit-metrics-sense, 2026-10-20) checked every people-number against
+production and found:
+- "Work by person" counts **open tasks touched in the range, by current
+  assignee**. Ashutosh's 24 is 14 tasks waiting on a reviewer plus 8 backlog.
+- Capacity calls everyone **Heavy**, because review and backlog count as load.
+- "Stale 266" uses a different rule from the server's (which gives 7).
+- Profile "Delivered" credits the wrong person.
+
+### Decided
+
+1. **Contribution is delivered work.** A person's contribution in a range is
+   the number of **distinct tasks moved into review, or into done without
+   review**, by that person or by an agent on their token, according to
+   `task.status_changed` activity in the range. **Reviewed** sits beside it:
+   distinct tasks they moved from review to done, or sent back, on work
+   someone else delivered. Self-closes (done without review) are counted and
+   footnoted.
+2. **Open work is "now", with no time range.** Open work is shown as of now,
+   whatever range is selected. **Review is shown as "waiting for review",
+   never as the assignee's load**: it waits on the reviewer.
+3. **Load is committed work.** A person's load is **in progress + to do**.
+   Backlog is shown apart, as a pipeline. Overdue is its own badge, not a
+   "Heavy" trigger. A load badge shown while a space is selected is that
+   space's load. This also stops the convention of assigning every Laika card
+   to the owner from reading as 254 tasks of load.
+4. **One stale rule: the server's** (§11.6). A task is stale when it is in
+   progress with no heartbeat or commit for 3 days, and `stale_flagged_at`
+   is the record. Long waits in review get their own label, "waiting for
+   review > 5 days".
+5. **Labels say what they count.** If a number is a sample (touched in the
+   range), a cap (200+) or a share of something other than the whole, the
+   label says so.
+
+### Not decided yet (owner)
+
+- Whether imports and bulk sweeps (09-20 import, 10-07 bulk-done, 10-15
+  mirror) are excluded from contribution, throughput, cycle time and the
+  forecast. Until then they are counted, and the range picker shows them
+  honestly (LAI-823).
+- Whether to backfill `completed_at` for done tasks that never had one: 358 in
+  Laika. That is a production data change (LAI-822).
+
+### Note
+
+On "Last 7 days" in OnRoute the corrected card still ranks **Ashutosh first**
+(23 delivered against 3). On 30 days or all time it ranks **Pawan first**
+(168 against 86). That is the data, not a bug.
