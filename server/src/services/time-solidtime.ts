@@ -117,6 +117,12 @@ export interface PushItem {
   /** Where its space's time goes in Solidtime; null for *General*. */
   solidtime_project_id: string | null;
   note: string | null;
+  /**
+   * An update whose card or space changed in Laika since the two last
+   * agreed: only then may the CLI change Solidtime's project and
+   * description, which are otherwise the person's own words there.
+   */
+  moved: boolean;
   /** The Solidtime entry, as Laika last saw it, when there is one. */
   solidtime: { id: string; hash: string; started_at: number } | null;
 }
@@ -133,7 +139,13 @@ export interface SolidtimeOutbox {
   push: PushItem[];
   held: HeldItem[];
   /** Each space whose time has one place to go, and that place. */
-  projects: { space: string; solidtime_project_id: string }[];
+  projects: { space: string; space_id: string; solidtime_project_id: string }[];
+  /**
+   * Solidtime entries already twinned with the person's confirmed or typed
+   * entries around the days to create: the CLI's check of what Solidtime
+   * holds must never take one of these for a new entry.
+   */
+  taken: string[];
 }
 
 export interface LinkInput {
@@ -254,10 +266,10 @@ export function closedThrough(db: Db): string | null {
 const isClosed = (closed: string | null, ...days: string[]): boolean =>
   closed !== null && days.some((d) => d <= closed);
 
-type PushTarget = { solidtimeProjectId: string } | 'several';
+type PushTarget = { solidtimeProjectId: string; slug: string } | 'several';
 
 /** Each mapped space's push target: its one project, or the one marked `push`. */
-function pushTargets(db: Db): Map<string, PushTarget & { slug?: string }> {
+function pushTargets(db: Db): Map<string, PushTarget> {
   const rows = db
     .select({
       solidtimeProjectId: solidtimeProjects.solidtimeProjectId,
@@ -270,7 +282,7 @@ function pushTargets(db: Db): Map<string, PushTarget & { slug?: string }> {
     .all();
   const bySpace = new Map<string, typeof rows>();
   for (const r of rows) bySpace.set(r.projectId, [...(bySpace.get(r.projectId) ?? []), r]);
-  const out = new Map<string, PushTarget & { slug?: string }>();
+  const out = new Map<string, PushTarget>();
   for (const [projectId, mapped] of bySpace) {
     const chosen = mapped.length === 1 ? mapped[0] : mapped.find((m) => m.push === 1);
     out.set(
@@ -345,6 +357,8 @@ function outboxQuery(db: Db) {
       stHash: solidtimeEntries.hash,
       stStartedAt: solidtimeEntries.startedAt,
       stDay: solidtimeEntries.day,
+      stTaskId: solidtimeEntries.taskId,
+      stProjectId: solidtimeEntries.projectId,
     })
     .from(timeEntries)
     .leftJoin(tasks, eq(tasks.id, timeEntries.taskId))
@@ -460,6 +474,7 @@ export function solidtimeOutbox(
           : { slug: r.projectSlug, name: r.projectName },
       solidtime_project_id: solidtimeProjectId,
       note: r.note,
+      moved: action === 'update' && (r.stTaskId !== r.taskId || r.stProjectId !== r.projectId),
       solidtime:
         r.stId === null || r.stHash === null || r.stStartedAt === null
           ? null
@@ -468,13 +483,56 @@ export function solidtimeOutbox(
   }
 
   const projectsOut: SolidtimeOutbox['projects'] = [];
-  for (const target of targets.values()) {
-    if (target !== 'several' && target.slug !== undefined) {
-      projectsOut.push({ space: target.slug, solidtime_project_id: target.solidtimeProjectId });
+  for (const [spaceId, target] of targets) {
+    if (target !== 'several') {
+      projectsOut.push({
+        space: target.slug,
+        space_id: spaceId,
+        solidtime_project_id: target.solidtimeProjectId,
+      });
     }
   }
   projectsOut.sort((a, b) => a.space.localeCompare(b.space));
-  return { closed_through: closed, push, held, projects: projectsOut };
+  return {
+    closed_through: closed,
+    push,
+    held,
+    projects: projectsOut,
+    taken: takenAround(
+      db,
+      actor.userId,
+      creates.map((r) => r.day),
+    ),
+  };
+}
+
+/**
+ * The Solidtime ids twinned with the person's `draft` and `manual` entries
+ * whose Solidtime start falls within two days of the days given — one range
+ * on `solidtime_entries_user_id_idx`'s rows. An imported twin is left out on
+ * purpose: a new entry matching it is the same hour logged twice, and
+ * `recordSolidtimeLinks` retires the import.
+ */
+function takenAround(db: Db, userId: string, days: string[]): string[] {
+  if (days.length === 0) return [];
+  const sorted = [...days].sort();
+  const from = Date.parse(`${sorted[0] ?? ''}T00:00:00Z`) - 2 * 86_400_000;
+  const to = Date.parse(`${sorted[sorted.length - 1] ?? ''}T00:00:00Z`) + 3 * 86_400_000;
+  return db
+    .select({ id: solidtimeEntries.solidtimeId })
+    .from(solidtimeEntries)
+    .innerJoin(timeEntries, eq(timeEntries.id, solidtimeEntries.entryId))
+    .where(
+      and(
+        eq(solidtimeEntries.userId, userId),
+        inArray(timeEntries.source, ['draft', 'manual']),
+        gte(solidtimeEntries.startedAt, from),
+        lte(solidtimeEntries.startedAt, to),
+      ),
+    )
+    .orderBy(asc(solidtimeEntries.solidtimeId))
+    .all()
+    .map((r) => r.id);
 }
 
 /**

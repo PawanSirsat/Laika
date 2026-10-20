@@ -2233,7 +2233,7 @@ GET    /api/v1/me/time                       ?day=&tz= — My day: drafts, entri
 POST   /api/v1/me/time-entries               body { day, tz, minutes, task?, project?, note? } → 201   PATCH/DELETE .../:id   (session only)
 GET    /api/v1/me/time-entries/:id/revisions an entry's append-only history   (session only)
 PUT    /api/v1/org/time                      body { mode } — off | manual | drafts   (owner, admin; session only; LAI-787)
-GET    /api/v1/me/time/solidtime             ?since= — what the person's CLI writes to Solidtime → { closed_through, push, held, projects }   (session only; LAI-788)
+GET    /api/v1/me/time/solidtime             ?since= — what the person's CLI writes to Solidtime → { closed_through, push, held, projects, taken }   (session only; LAI-788)
 PUT    /api/v1/me/time/solidtime/links       body { member_id, links } — what it wrote → { linked, removed, retired }   (session only)
 PUT    /api/v1/me/time/solidtime/import      body { v, member_id, tz, from, to, complete, entries } → what changed   (session only)
 GET    /api/v1/org/time/solidtime            the map, the people confirmed, and people not on Laika   (owner, admin; session only)
@@ -2856,17 +2856,22 @@ their machine, and tells the board what it did. Every route is **session
 only** — the CLI signs in for the run and keeps no session.
 
 - **The outbox.** `GET /me/time/solidtime?since=` answers `{ closed_through,
-  push, held, projects }`. Each `push` item is `{ entry_id, revision, action,
-  day, tz, started_at, offset_minutes, minutes, task, project,
-  solidtime_project_id, note, solidtime }`: `create` for a confirmed or typed
-  entry (`draft`, `manual` — never `import`, never agent minutes) on or after
-  `since` that Solidtime has not got; `update` for one it has that changed in
-  Laika since they last agreed; `delete` for one deleted in Laika. `solidtime`
-  is `{ id, hash, started_at }` as Laika last saw it, for the CLI to compare
-  before it writes. A timeless entry starts at 09:00 local plus
-  `offset_minutes`, the day's earlier timeless minutes. `held` is
+  push, held, projects, taken }`. Each `push` item is `{ entry_id, revision,
+  action, day, tz, started_at, offset_minutes, minutes, task, project,
+  solidtime_project_id, note, moved, solidtime }`: `create` for a confirmed or
+  typed entry (`draft`, `manual` — never `import`, never agent minutes) on or
+  after `since` that Solidtime has not got; `update` for one it has that
+  changed in Laika since they last agreed; `delete` for one deleted in Laika.
+  `solidtime` is `{ id, hash, started_at }` as Laika last saw it, for the CLI
+  to compare before it writes; `moved` says an update's card or space changed
+  in Laika, the only time the CLI may change Solidtime's project and
+  description. A timeless entry starts at 09:00 local plus `offset_minutes`,
+  the day's earlier timeless minutes. `held` is
   `{ entry_id, day, reason }`: `closed_period`, `space_not_mapped` or
-  `space_has_several_projects`. `projects` is each space's push target.
+  `space_has_several_projects`. `projects` is each space's push target,
+  `{ space, space_id, solidtime_project_id }`. `taken` is the Solidtime ids
+  already twinned with the person's confirmed or typed entries near the days
+  to create, which the CLI's duplicate check must never take for a new one.
 - **Links.** `PUT /me/time/solidtime/links` takes `{ member_id, links:
   [{ entry_id, revision, solidtime_id, hash, started_at, removed? }] }` —
   what the CLI created, updated or deleted — and answers `{ linked, removed,

@@ -316,7 +316,13 @@ describe('the outbox — what the person’s CLI writes to Solidtime', () => {
     box = solidtimeOutbox(t.db, owner, { since: DAY }, NOW);
     expect(box.push.find((p) => p.entry_id === onroute.id)?.solidtime_project_id).toBe(ST_SUPPORT);
     expect(box.projects).toEqual(
-      expect.arrayContaining([{ space: 'onroute', solidtime_project_id: ST_SUPPORT }]),
+      expect.arrayContaining([
+        {
+          space: 'onroute',
+          space_id: expect.any(String) as unknown,
+          solidtime_project_id: ST_SUPPORT,
+        },
+      ]),
     );
   });
 
@@ -351,9 +357,15 @@ describe('the outbox — what the person’s CLI writes to Solidtime', () => {
         action: 'update',
         revision: 2,
         minutes: 45,
+        moved: false,
         solidtime: { id: 'st-1', hash: hash('a'), started_at: at(DAY, 9) },
       }),
     ]);
+    // Moved to General: the CLI may change Solidtime's project and
+    // description only when Laika's card or space changed.
+    updateEntry(t.db, owner, e.id, { task: null, project: null }, NOW);
+    box = solidtimeOutbox(t.db, owner, { since: DAY }, NOW);
+    expect(box.push[0]).toMatchObject({ revision: 3, moved: true, task: null, project: null });
 
     deleteEntry(t.db, owner, e.id, NOW);
     box = solidtimeOutbox(t.db, owner, { since: DAY }, NOW);
@@ -373,7 +385,7 @@ describe('the outbox — what the person’s CLI writes to Solidtime', () => {
         links: [
           {
             entry_id: e.id,
-            revision: 3,
+            revision: 4,
             solidtime_id: 'st-1',
             hash: hash('a'),
             started_at: at(DAY, 9),
@@ -400,6 +412,47 @@ describe('the outbox — what the person’s CLI writes to Solidtime', () => {
     expect(box.closed_through).toBe(YESTERDAY);
     expect(box.push.map((p) => p.entry_id)).toEqual([open.id]);
     expect(box.held).toEqual([{ entry_id: closed.id, day: YESTERDAY, reason: 'closed_period' }]);
+  });
+
+  it('names the Solidtime entries already the person’s, so the CLI never takes one for a new entry', () => {
+    const pushed = createEntry(
+      t.db,
+      owner,
+      { day: DAY, tz: 'UTC', minutes: 60, task: 'ONR-1' },
+      NOW,
+    );
+    recordSolidtimeLinks(
+      t.db,
+      owner,
+      {
+        member_id: ME,
+        links: [
+          {
+            entry_id: pushed.id,
+            revision: 1,
+            solidtime_id: 'st-mine',
+            hash: hash('a'),
+            started_at: at(DAY, 9),
+          },
+        ],
+      },
+      NOW,
+    );
+    own([
+      entry({ id: 'st-mine', key: 'ONR-1' }),
+      entry({ id: 'st-imported', start: at(DAY, 11), end: at(DAY, 12) }),
+    ]);
+    const fresh = createEntry(
+      t.db,
+      owner,
+      { day: DAY, tz: 'UTC', minutes: 60, task: 'ONR-1' },
+      NOW + 1,
+    );
+    const box = solidtimeOutbox(t.db, owner, { since: DAY }, NOW);
+    expect(box.push.map((p) => p.entry_id)).toEqual([fresh.id]);
+    // An imported twin is not listed: taking it for the new entry is the
+    // duplicate the person made by logging the hour twice, and links retire it.
+    expect(box.taken).toEqual(['st-mine']);
   });
 
   it('never offers back as new what came from Solidtime — an import is already there', () => {
