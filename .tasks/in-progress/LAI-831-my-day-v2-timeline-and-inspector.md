@@ -175,3 +175,64 @@ web and server, and must say in the task file which server files it touched.
 - **"Waiting on your review"** uses the server's count. If the server says the
   count is capped, show "200+" (LAI-820).
 - No new dependencies.
+
+## Census (the builder, 2026-10-20, before any code)
+
+Read against `server/web/src/routes/screens/my-day/` at `0f9c3cbd` (LAI-810)
+and `server/src/services/{my-day,time-drafts,time-entries}.ts`. **live** = on
+the screen today (file), **changed** = there but reshaped, **new** = not there.
+Every endpoint named is `/api/v1`. `GET /me/time` is "the day" below.
+
+| # | Item | State | Data from |
+| --- | --- | --- | --- |
+| 1 | Title *My day*, the date | live (`MyDayScreen.tsx`, `ScreenHeader`); date gains "· today" | the day: `day`, `today` |
+| 1 | "Only you see drafts" lock | new (fixed words) | — |
+| 1 | *Draft my time* switch in the header | changed: moved from the side column (`DraftMyTime.tsx`) | `GET`/`PUT /me/time-settings`, the day's `settings` |
+| 1 | *Confirm day · total* / *Confirm N ready · total*, tooltip | live (`MyDayScreen.tsx`, `draft-bulk.ts` `confirmPlan`) | `POST /me/time/days/:day/confirm`, `POST /me/time-drafts/:id/confirm` |
+| 2 | Seven tiles, name and date, click opens the day | live (`WeekStrip.tsx`) | the day's `week[]` |
+| 2 | Red dot on today | new | `today` |
+| 2 | Day total | live (`weekCell`) | `week[].confirmed_minutes + drafted_minutes` |
+| 2 | Two-part bar, confirmed solid and drafted striped | new | `week[].confirmed_minutes`, `drafted_minutes` |
+| 2 | *Not yet* / *No signal* (hatched) / *N to settle* / *Settled* | changed (was *Drafted* / *Confirmed*); "N" is minutes, the only per-day figure served | `week[].state`, `drafted_minutes` |
+| 3 | CONFIRMED · TO SETTLE · GAPS · AGENT strip | new | `entries[]`, `drafts[]`, derived gaps, `agent.minutes` |
+| 4 | SIGNALS lane: prompts as dots, commits as ticks | **filed, left out — LAI-834**: a block carries counts only, no timestamp (`time_drafts.signals`). G's badge is drawn instead | — |
+| 4 | YOU lane: confirmed solid, drafted dashed purple | changed (`DayBar.tsx`, a thin bar) | `entries[]`, `drafts[]` spans |
+| 4 | YOU lane: needs-a-card dashed amber | new | `drafts[]` with no task, project or General |
+| 4 | YOU lane: gaps ≥ 20 min, dashed, "+ length", click to fill | new, derived on the client from the spans | `entries[]`, `drafts[]`, `breaks[]` (D) |
+| 4 | AGENTS lane: agent working time, grey when on no card | **filed, left out — LAI-833**: `agent_time_days` holds seconds per session per day, never a time of day. Agent minutes stay in the right column | — |
+| 4 | Now line with its time | live (line, `DayBar.tsx`); the time label new | `today`, the clock |
+| 4 | Axis 6 AM–10 PM, 12 PM emphasised | changed (was 08–18, 24-hour); widens to any block outside it | — |
+| 4 | Zoom Fit / 1× / 2×, Earlier / Now / Later, sideways scroll, open on first block | new | — |
+| 4 | Legend; *No signal* hatched sentence; future sentence | changed / changed / live | the day's `state` |
+| 5 | Inspector, drafted: range, source line, *Not work*, *Confirm length* / disabled *Needs a card* | new (replaces the row's "⋯" menu, `DraftRow.tsx`) | `drafts[]`; `POST …/dismiss`, `POST …/confirm` |
+| 5 | Source "Proposed by claude-code" | changed: "Proposed by an agent". **The name is filed — LAI-835**: a draft carries `source: 'agent'` and no client | `drafts[].source` |
+| 5 | CARD: warning (no card / a key you cannot read), chips + General | new; chips are the reader's own cards in progress (what *On your plate* already reads) and the block's own, plus *Other card…* by key | `GET /projects/:slug/tasks?assignee=&status=in_progress`; `drafts[].task_key`; `PATCH /me/time-drafts/:id` |
+| 5 | LENGTH −/+ (5 min), *Split in two* | changed: minutes were a typed form; split was a typed time | `PATCH /me/time-drafts/:id` (**server: span, C**), `POST …/split` |
+| 5 | DRAFTED FROM counts, "Counts only — …" | changed (was one line of evidence) | `drafts[].signals` |
+| 5 | Key hint row | new | — |
+| 5 | Inspector, confirmed: range, source · rev N, *Delete*, chips, −/+, "Every edit is kept as a revision." | new (replaces `EntryRow.tsx`'s menu; History kept) | `entries[]`; `PATCH`/`DELETE /me/time-entries/:id`, `GET …/revisions` |
+| 6 | *To settle*: select-all with mixed state, count and total | live (`DraftList.tsx`, LAI-810) | `drafts[]` |
+| 6 | Bulk Confirm / General / Not work; needs-a-card left out, kept checked, counted | live (`draft-bulk.ts` `runBulk`); its report becomes the toast | `POST …/confirm`, `PATCH …`, `POST …/dismiss`, one block each |
+| 6 | Rows: box, range, length, key / General / *Needs a card*, title line, source badge, click selects | changed (title line, badge and click-to-select new) | `drafts[]` |
+| 7 | *Confirmed* list: range, length, key + title + note, *From draft* / *Typed*, rev N; header line | changed (`EntryList.tsx`) | `entries[]` |
+| 7 | Add time: slot chip from a gap, or "No set time — …" | new | `POST /me/time-entries` with `started_at`/`ended_at` (already accepted) |
+| 7 | Length chips 15m … 1 h 30 min, card chips + General, note, *Add length* | changed (`AddTimeForm.tsx` was typed fields); a typed length stays | `POST /me/time-entries` |
+| 8 | Agent minutes: per-card bars, then keyboard minutes | changed (`AgentStrip.tsx`, a list) | `agent.by_task`, `unattributed_minutes`, `keyboard_minutes` |
+| 8 | On your plate: In progress (Board →), Waiting (Inbox →, proof lines), Blocked | live (`OnYourPlate.tsx`); *Board →* new; "200+" when `truncated` new | `GET /projects/:slug/tasks`, `GET /review` (`truncated`) |
+| 8 | Right column sticky | new | — |
+| 9 | Dark toasts with a close button | new (replaces the batch line and the error paragraph) | — |
+| A | 12-hour clock, durations "19 min" / "1 h 35 min" | changed; every call goes through `my-day/format.ts`, pointed at LAI-830's helpers once it lands | — |
+| B | Undo on confirm, bulk confirm, General, Not work, delete, split, add | new. **Server**: nothing could restore a held block's collector, a split's original or a confirmed draft; see *Server changes* | `POST /me/time/undo` (new) |
+| C | Drag a block's edge, 5-min snap; confirmed = one revision | new. **Server**: neither `PATCH` took a start or an end | `PATCH /me/time-drafts/:id`, `PATCH /me/time-entries/:id` (+ `started_at`, `ended_at`) |
+| D | Break: a gap waved away, per person and day, never counted | new. **Server**: no field existed | `breaks[]` in the day; `POST /me/time-breaks`, `DELETE /me/time-breaks/:id` (new) |
+| E | Previous / next week, week total, no target or score | arrows live (`WeekStrip.tsx`); week total new; bars scale to the week's busiest day, never to a fixed day length | `week[]` |
+| F | Off asks first: "This deletes N drafts you hold (H h M min)" | new. **Server**: the day carried one day's drafts; `DELETE /me/time-drafts` deletes every day's | `drafts_held` in the day (new) |
+| G | Honest signals | **the counts case applies**: the server holds counts per block and no timestamp, so each block shows a small count badge and nothing is spread along it | `drafts[].signals` |
+| H | `?` opens a shortcut sheet; nothing fires while typing | new | — |
+| I | 390 px: week scrolls sideways, inspector stacks, column below, timeline scrolls alone | changed (`my-day.css`) | — |
+
+**Filed and left out** (each from CHIEF's block, `discovered-from: LAI-831`):
+LAI-833 (agent time has no time of day), LAI-834 (signals have no
+timestamps), LAI-835 (a proposal does not name its agent), and LAI-836 (SPEC
+§4 and §6.4 for the server additions below — CHIEF's area; the two new
+tables carry a `TABLES_NOT_IN_SPEC` exemption naming it until then).
