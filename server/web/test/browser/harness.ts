@@ -201,6 +201,8 @@ interface StubReply {
   readonly [REPLY]: true;
   readonly status: number;
   readonly body: unknown;
+  /** Response headers beside the JSON content type — My day's `X-Undo-Id` (LAI-831). */
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -211,8 +213,24 @@ interface StubReply {
  * a marker that a plain fixture can accidentally wear is a stub that silently
  * answers `503` because the response happened to look like a directive.
  */
-export function reply(status: number, body: unknown): StubReply {
-  return { [REPLY]: true, status, body };
+export function reply(
+  status: number,
+  body: unknown,
+  headers?: Readonly<Record<string, string>>,
+): StubReply {
+  return headers === undefined
+    ? { [REPLY]: true, status, body }
+    : { [REPLY]: true, status, body, headers };
+}
+
+/**
+ * `answer` — a fixture or a {@link reply} — with `headers` added, on a success
+ * only: a refusal says nothing a success would.
+ */
+export function withHeaders(answer: unknown, headers: Readonly<Record<string, string>>): StubReply {
+  if (!isReply(answer)) return reply(200, answer, headers);
+  if (answer.status >= 400) return answer;
+  return { ...answer, headers: { ...answer.headers, ...headers } };
 }
 
 /** An API error envelope, the shape `toApiError` reads. */
@@ -467,13 +485,15 @@ function serve(
         const { route } = chosen;
         const answer =
           typeof route === 'function' ? (route as (c: StubCall) => unknown)(call) : route;
-        const { status, body } = isReply(answer) ? answer : { status: 200, body: answer };
+        const { status, body, headers } = isReply(answer)
+          ? answer
+          : { status: 200, body: answer, headers: undefined };
         const slim =
           req.method === 'GET' &&
           status === 200 &&
           TASK_LIST_PATH.test(path) &&
           url.searchParams.get('fields') === 'slim';
-        res.writeHead(status, { 'content-type': 'application/json' });
+        res.writeHead(status, { 'content-type': 'application/json', ...headers });
         res.end(JSON.stringify(slim ? slimPage(body, listed) : body));
       });
       return;

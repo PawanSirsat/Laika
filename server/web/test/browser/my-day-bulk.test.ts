@@ -518,7 +518,10 @@ void describe('the bar acts at once, and Undo takes it back (LAI-831)', () => {
       await until(() => posts(h, '/time/undo').length === 2);
       assert.deepEqual(
         h.calls.filter((c) => c.path === '/api/v1/me/time/undo').map((c) => c.body),
-        [{ draft: 'd02' }, { draft: 'd01' }],
+        [
+          { id: 'u:POST:/api/v1/me/time-drafts/d02/dismiss' },
+          { id: 'u:POST:/api/v1/me/time-drafts/d01/dismiss' },
+        ],
       );
     } finally {
       await h.close();
@@ -543,7 +546,10 @@ void describe('the bar acts at once, and Undo takes it back (LAI-831)', () => {
       await until(() => posts(h, '/time/undo').length === 2);
       assert.deepEqual(
         h.calls.filter((c) => c.path === '/api/v1/me/time/undo').map((c) => c.body),
-        [{ draft: 'd04' }, { draft: 'd01' }],
+        [
+          { id: 'u:PATCH:/api/v1/me/time-drafts/d04' },
+          { id: 'u:PATCH:/api/v1/me/time-drafts/d01' },
+        ],
       );
     } finally {
       await h.close();

@@ -8,6 +8,8 @@ import {
   dayLine,
   dragEdge,
   gapsOf,
+  limitsOf,
+  setLength,
   snap,
   splitPoint,
   stepEnd,
@@ -82,14 +84,12 @@ void describe('gapsOf — unaccounted time between blocks', () => {
       { start: min(10, 19), end: min(11) },
       { start: min(11, 20), end: min(12) },
     ];
-    assert.deepEqual(gapsOf(blocks, [], undefined), [{ start: min(11), end: min(11, 20) }]);
+    assert.deepEqual(gapsOf(blocks, []), [{ start: min(11), end: min(11, 20) }]);
   });
 
-  void test('nothing before the first block, and up to now on today only', () => {
-    const blocks = [{ start: min(9), end: min(10) }];
-    assert.deepEqual(gapsOf(blocks, [], undefined), []);
-    assert.deepEqual(gapsOf(blocks, [], min(10, 30)), [{ start: min(10), end: min(10, 30) }]);
-    assert.deepEqual(gapsOf(blocks, [], min(10, 15)), []);
+  void test('only between blocks — nothing before the first, nothing after the last (review round 1)', () => {
+    // An evening is not seven hours unaccounted: the day ends with its last block.
+    assert.deepEqual(gapsOf([{ start: min(9), end: min(10) }], []), []);
   });
 
   void test('overlapping blocks are one stretch', () => {
@@ -98,7 +98,7 @@ void describe('gapsOf — unaccounted time between blocks', () => {
       { start: min(9, 30), end: min(10) },
       { start: min(11, 40), end: min(12) },
     ];
-    assert.deepEqual(gapsOf(blocks, [], undefined), [{ start: min(11), end: min(11, 40) }]);
+    assert.deepEqual(gapsOf(blocks, []), [{ start: min(11), end: min(11, 40) }]);
   });
 
   void test('a break takes its span out; what is left counts only if it is still a gap', () => {
@@ -107,9 +107,9 @@ void describe('gapsOf — unaccounted time between blocks', () => {
       { start: min(11), end: min(12) },
     ];
     // 10:00–11:00, less 10:10–10:45: 10 minutes (a breath) and 15 (a breath).
-    assert.deepEqual(gapsOf(blocks, [{ start: min(10, 10), end: min(10, 45) }], undefined), []);
+    assert.deepEqual(gapsOf(blocks, [{ start: min(10, 10), end: min(10, 45) }]), []);
     // Less 10:00–10:30: 10:30–11:00 is still a gap.
-    assert.deepEqual(gapsOf(blocks, [{ start: min(10), end: min(10, 30) }], undefined), [
+    assert.deepEqual(gapsOf(blocks, [{ start: min(10), end: min(10, 30) }]), [
       { start: min(10, 30), end: min(11) },
     ]);
   });
@@ -155,12 +155,37 @@ void describe('dayLine — the day placed on its lane', () => {
     assert.deepEqual(line.gaps, [{ start: min(10, 15), end: min(10, 40) }]);
   });
 
-  void test('on today the gap runs to now, and the axis widens to hold it', () => {
+  void test('on today the axis widens to hold now, and no gap runs to it', () => {
     const line = dayLine(view({ today: DAY, drafts: [draft('d1', at(21), 30)] }), at(23, 10));
     assert.equal(line.now, min(23, 10));
-    assert.deepEqual(line.gaps, [{ start: min(21, 30), end: min(23, 10) }]);
+    assert.deepEqual(line.gaps, []);
     assert.equal(line.from, 6);
     assert.equal(line.to, 24);
+  });
+
+  void test('a clock-change day labels each hour where that hour really falls (review round 1)', () => {
+    // Europe/London leaves summer time at 2:00 on 25 October 2026: the day has
+    // 25 hours, and 6 AM is seven hours after midnight, not six.
+    const autumn = dayLine(
+      {
+        day: '2026-10-25',
+        tz: 'Europe/London',
+        today: '2026-10-26',
+        drafts: [draft('d', Date.UTC(2026, 9, 25, 8), 30)],
+        entries: [],
+        breaks: [],
+      },
+      0,
+    );
+    assert.equal(autumn.length, 25 * 60);
+    const mark = (hour: number) => autumn.hours.find((h) => h.hour === hour)?.minute;
+    assert.equal(mark(6), 7 * 60);
+    assert.equal(mark(12), 13 * 60);
+    // The block at 8:00 GMT sits under its own label.
+    assert.equal(autumn.blocks[0]?.start, mark(8));
+    // An ordinary day: an hour is sixty minutes after the one before.
+    const plain = dayLine(view({ drafts: [draft('d', at(9), 30)] }), 0);
+    assert.equal(plain.hours.find((h) => h.hour === 6)?.minute, 6 * 60);
   });
 
   void test('6 AM to 10 PM unless a block falls outside', () => {
@@ -237,11 +262,45 @@ void describe('moving an edge, five minutes at a time (C)', () => {
     assert.equal(dragEdge(block, 'end', min(12, 31)), undefined);
   });
 
+  void test('an edge stops at a neighbouring confirmed block (review round 1)', () => {
+    const confirmed = [
+      { start: min(9), end: min(11, 10) },
+      { start: min(12, 40), end: min(13) },
+    ];
+    const limits = limitsOf(block, confirmed);
+    assert.deepEqual(limits, { lo: min(11, 10), hi: min(12, 40) });
+    assert.deepEqual(dragEdge(block, 'start', min(9, 30), limits), {
+      start: min(11, 10),
+      end: min(12, 30),
+      minutes: 80,
+    });
+    assert.deepEqual(dragEdge(block, 'end', min(13, 30), limits), {
+      start: min(12),
+      end: min(12, 40),
+      minutes: 40,
+    });
+    // One that already overlaps the block bounds nothing; the server refuses that confirm.
+    assert.deepEqual(limitsOf(block, [{ start: min(12, 10), end: min(12, 20) }]), {
+      lo: 0,
+      hi: 1440,
+    });
+  });
+
   void test('−/+ move the end and the length together', () => {
     assert.deepEqual(stepEnd(block, 5), { start: min(12), end: min(12, 35), minutes: 35 });
     assert.deepEqual(stepEnd(block, -5), { start: min(12), end: min(12, 25), minutes: 25 });
     assert.equal(stepEnd({ start: min(12), end: min(12, 5), minutes: 5 }, -5), undefined);
     assert.equal(stepEnd({ start: min(23, 50), end: 1440, minutes: 10 }, 5), undefined);
+    // Never past a confirmed block's edge.
+    assert.equal(stepEnd(block, 5, min(12, 30)), undefined);
+  });
+
+  void test('−/+ and Split land on the five-minute grid from an off-grid edge (review round 1)', () => {
+    const off = { start: min(10, 2), end: min(10, 13), minutes: 11 };
+    assert.deepEqual(stepEnd(off, 5), { start: min(10, 2), end: min(10, 15), minutes: 13 });
+    assert.deepEqual(stepEnd(off, -5), { start: min(10, 2), end: min(10, 10), minutes: 8 });
+    // 9:03–10:01: the middle is 9:32, and the cut is 9:30.
+    assert.equal(splitPoint({ start: min(9, 3), end: min(10, 1), minutes: 58 }), min(9, 30));
     assert.equal(stepMinutes(25, 5), 30);
     assert.equal(stepMinutes(5, -5), undefined);
   });
@@ -249,5 +308,18 @@ void describe('moving an edge, five minutes at a time (C)', () => {
   void test('Split in two: the middle, to five minutes from the start', () => {
     assert.equal(splitPoint({ start: min(8, 40), end: min(10, 15), minutes: 95 }), min(9, 30));
     assert.equal(splitPoint({ start: min(9), end: min(9, 8), minutes: 8 }), undefined);
+  });
+
+  void test('a typed length moves the end by as much, within the day and its neighbours', () => {
+    assert.deepEqual(setLength(block, 90), { start: min(12), end: min(13, 30), minutes: 90 });
+    assert.deepEqual(setLength(block, 10), { start: min(12), end: min(12, 10), minutes: 10 });
+    // A block that held less than its span keeps the difference.
+    assert.deepEqual(setLength({ start: min(9), end: min(10), minutes: 40 }, 50), {
+      start: min(9),
+      end: min(10, 10),
+      minutes: 50,
+    });
+    assert.equal(setLength(block, 45, min(12, 40)), undefined, 'past a confirmed block');
+    assert.equal(setLength({ start: min(23), end: min(23, 30), minutes: 30 }, 90), undefined);
   });
 });

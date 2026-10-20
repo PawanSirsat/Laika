@@ -18,7 +18,7 @@
  * collector upload can change under a page already open.
  */
 
-import type { ApiStub, StubCall } from './harness.ts';
+import { withHeaders, type ApiStub, type StubCall } from './harness.ts';
 
 export const TODAY = new Date().toISOString().slice(0, 10);
 const MIDNIGHT = Date.parse(`${TODAY}T00:00:00Z`);
@@ -254,11 +254,14 @@ export function busyStub(
   writes: (call: StubCall) => unknown = (call) => defaultWrites(call),
   day: typeof BUSY_DAY = BUSY_DAY,
 ): ApiStub {
+  // Every change answers with its undo id, as the server does (LAI-831 review round 1).
+  const undoable = (call: StubCall): unknown =>
+    withHeaders(writes(call), { 'X-Undo-Id': `u:${call.method}:${call.path}` });
   const draftRoutes: Record<string, unknown> = {};
   for (const d of [...DRAFTS, ARRIVED]) {
-    draftRoutes[`/api/v1/me/time-drafts/${d.id}`] = writes;
-    draftRoutes[`/api/v1/me/time-drafts/${d.id}/confirm`] = writes;
-    draftRoutes[`/api/v1/me/time-drafts/${d.id}/dismiss`] = writes;
+    draftRoutes[`/api/v1/me/time-drafts/${d.id}`] = undoable;
+    draftRoutes[`/api/v1/me/time-drafts/${d.id}/confirm`] = undoable;
+    draftRoutes[`/api/v1/me/time-drafts/${d.id}/dismiss`] = undoable;
   }
   return {
     '/api/v1/me': {
@@ -273,7 +276,7 @@ export function busyStub(
       ],
     },
     '/api/v1/me/time': day,
-    [`/api/v1/me/time/days/${TODAY}/confirm`]: writes,
+    [`/api/v1/me/time/days/${TODAY}/confirm`]: undoable,
     // Undo (LAI-831): the server puts back what a change replaced.
     '/api/v1/me/time/undo': writes,
     ...draftRoutes,

@@ -17,8 +17,10 @@ import {
   closeBrowser,
   open,
   reply,
+  refuse,
   setTheme,
   until,
+  withHeaders,
   type ApiStub,
   type Harness,
   type StubCall,
@@ -50,13 +52,26 @@ const mondayOf = (day: string): string => {
   return addDays(day, -((weekday + 6) % 7));
 };
 
-/** The writes My day makes, answered as the server would; breaks kept in `data`. */
-function stub(data: Map<string, DayData> = weekData()): ApiStub {
+/** The undo id the stub gives a change: its method and path, so a test can name it. */
+const undoId = (method: string, path: string): string => `u:${method}:${path}`;
+
+/**
+ * The writes My day makes, answered as the server would — each with the
+ * `X-Undo-Id` of the change, as the server sends it (review round 1); breaks
+ * kept in `data`. `undoAnswer` replaces what `POST /me/time/undo` says.
+ */
+function stub(
+  data: Map<string, DayData> = weekData(),
+  undoAnswer?: (call: StubCall) => unknown,
+): ApiStub {
   const routes: Record<string, unknown> = { ...weekStub(data) };
   const answer = (call: StubCall): unknown => {
-    if (call.path.endsWith('/confirm')) return reply(201, { id: 'new-entry' });
-    if (call.path.endsWith('/split')) return { drafts: [] };
-    return {};
+    const said = call.path.endsWith('/confirm')
+      ? reply(201, { id: 'new-entry' })
+      : call.path.endsWith('/split')
+        ? { drafts: [] }
+        : {};
+    return withHeaders(said, { 'X-Undo-Id': undoId(call.method, call.path) });
   };
   for (const day of data.values()) {
     for (const d of day.drafts) {
@@ -66,8 +81,8 @@ function stub(data: Map<string, DayData> = weekData()): ApiStub {
     }
     for (const e of day.entries) routes[`/api/v1/me/time-entries/${e.id}`] = answer;
   }
-  routes[`/api/v1/me/time/days/${TODAY}/confirm`] = { entries: [] };
-  routes['/api/v1/me/time/undo'] = answer;
+  routes[`/api/v1/me/time/days/${TODAY}/confirm`] = answer;
+  routes['/api/v1/me/time/undo'] = undoAnswer ?? (() => ({}));
   routes['/api/v1/me/time-settings'] = (call: StubCall) => ({
     org_mode: 'drafts',
     draft_my_time: (call.body as { draft_my_time?: boolean } | undefined)?.draft_my_time ?? true,
@@ -75,7 +90,11 @@ function stub(data: Map<string, DayData> = weekData()): ApiStub {
     min_sync_interval_s: 300,
   });
   routes['/api/v1/me/time-entries'] = (call: StubCall) =>
-    reply(201, { ...(call.body as object), id: 'n1', source: 'manual', revision: 1 });
+    reply(
+      201,
+      { ...(call.body as object), id: 'n1', source: 'manual', revision: 1 },
+      { 'X-Undo-Id': undoId(call.method, call.path) },
+    );
   routes['/api/v1/me/time-breaks'] = (call: StubCall) => {
     const body = call.body as Omit<Break, 'id'>;
     const made: Break = { ...body, id: `b${String(Math.random()).slice(2, 8)}` };
@@ -92,8 +111,12 @@ function stub(data: Map<string, DayData> = weekData()): ApiStub {
 }
 
 /** The harness's routes are read at request time, so later keys take effect. */
-async function openDay(day: string, data?: Map<string, DayData>): Promise<Harness> {
-  const h = await open(`/my-day?day=${day}`, stub(data));
+async function openDay(
+  day: string,
+  data?: Map<string, DayData>,
+  undoAnswer?: (call: StubCall) => unknown,
+): Promise<Harness> {
+  const h = await open(`/my-day?day=${day}`, stub(data, undoAnswer));
   await h.page.locator('.myday-week').waitFor({ timeout: 20_000 });
   await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
   return h;
@@ -443,7 +466,7 @@ void describe('Undo (B)', () => {
         writes(h)
           .filter((c) => c.path === '/api/v1/me/time/undo')
           .map((c) => c.body),
-        [{ draft: 'd1' }],
+        [{ id: undoId('POST', '/api/v1/me/time-drafts/d1/confirm') }],
       );
     } finally {
       await h.close();
@@ -468,7 +491,10 @@ void describe('Undo (B)', () => {
         writes(h)
           .filter((c) => c.path === '/api/v1/me/time/undo')
           .map((c) => c.body),
-        [{ draft: 'd2' }, { draft: 'd1' }],
+        [
+          { id: undoId('POST', '/api/v1/me/time-drafts/d2/dismiss') },
+          { id: undoId('POST', '/api/v1/me/time-drafts/d1/dismiss') },
+        ],
       );
     } finally {
       await h.close();
@@ -502,7 +528,10 @@ void describe('Undo (B)', () => {
         writes(h)
           .filter((c) => c.path === '/api/v1/me/time/undo')
           .map((c) => c.body),
-        [{ entry: 'e1' }, { entry: 'n1' }],
+        [
+          { id: undoId('DELETE', '/api/v1/me/time-entries/e1') },
+          { id: undoId('POST', '/api/v1/me/time-entries') },
+        ],
       );
     } finally {
       await h.close();
@@ -634,6 +663,136 @@ void describe('honest signals (G)', () => {
       assert.equal(await badge.count(), 1);
       assert.match((await badge.getAttribute('title')) ?? '', /18 prompts.*3 commits/);
       assert.equal(await h.page.locator('[data-signal-dot], [data-signal-tick]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('review round 1', () => {
+  void test('a later edit to the same block retires the earlier Undo (the probe)', async () => {
+    const h = await openDay(TODAY);
+    try {
+      await select(h, 'd2');
+      await h.page.locator('[data-inspector="draft"] [data-card="general"]').click();
+      const toast = h.page.locator('[data-toast]');
+      await toast.getByRole('button', { name: 'Undo' }).waitFor({ timeout: 5_000 });
+      await h.page.getByRole('button', { name: 'Longer by 5 minutes' }).click();
+      await until(() => writes(h).length === 2);
+      await until(async () => (await toast.getByRole('button', { name: 'Undo' }).count()) === 0);
+      assert.equal(
+        await toast.getByRole('button', { name: 'Undo' }).count(),
+        0,
+        'General’s Undo outlived the + after it',
+      );
+      assert.deepEqual(
+        writes(h).filter((c) => c.path === '/api/v1/me/time/undo'),
+        [],
+        'something was undone',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an Undo the server refuses says why, and changes nothing', async () => {
+    const h = await openDay(TODAY, undefined, () =>
+      refuse(
+        409,
+        'conflict',
+        'A later change to this block came after it, so this one can no longer be undone.',
+      ),
+    );
+    try {
+      await select(h, 'd1');
+      await h.page.locator('[data-inspector-confirm]').click();
+      const toast = h.page.locator('[data-toast]');
+      await toast.getByRole('button', { name: 'Undo' }).click();
+      await until(async () => /later change/.test(await toast.innerText().catch(() => '')));
+      assert.match(await toast.innerText(), /can no longer be undone/);
+      assert.equal(await toast.locator('[role="alert"]').count(), 1);
+      assert.doesNotMatch(await toast.innerText(), /^Undone/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a dragged edge stops at the next confirmed block', async () => {
+    const h = await openDay(TODAY);
+    try {
+      await h.page.locator('[data-zoom="2"]').click();
+      await select(h, 'd2');
+      // 10:40–11:20 drafted; confirmed time starts at 11:30.
+      const handle = h.page.locator('[data-block-id="d2"] [data-edge="end"]');
+      const from = await centre(handle);
+      await h.page.mouse.move(from.x, from.y);
+      await h.page.mouse.down();
+      await h.page.mouse.move(await xOf(h.page, 11 * 60 + 50), from.y, { steps: 6 });
+      await h.page.mouse.up();
+      await until(() => writes(h).length > 0);
+      assert.deepEqual(writes(h), [
+        {
+          method: 'PATCH',
+          path: '/api/v1/me/time-drafts/d2',
+          body: { ended_at: at(TODAY, 11, 30), minutes: 50 },
+        },
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a typed length says what it read, for a block with no set time and a timed one', async () => {
+    const h = await openDay(TODAY);
+    try {
+      await select(h, 'd5');
+      const field = h.page.locator('[data-inspector="draft"]').getByLabel('Length, typed');
+      await field.fill('1h 30m');
+      assert.equal(
+        await h.page.locator('[data-inspector="draft"] [data-understood]').innerText(),
+        'Reads as 1 h 30 min',
+      );
+      await field.press('Enter');
+      await until(() => writes(h).length === 1);
+      assert.deepEqual(writes(h)[0], {
+        method: 'PATCH',
+        path: '/api/v1/me/time-drafts/d5',
+        body: { minutes: 90 },
+      });
+
+      await select(h, 'e2');
+      const entryField = h.page.locator('[data-inspector="entry"]').getByLabel('Length, typed');
+      for (const [typed, read] of [
+        ['45', '45 min'],
+        ['45m', '45 min'],
+        ['1:30', '1 h 30 min'],
+      ] as const) {
+        await entryField.fill(typed);
+        assert.equal(
+          await h.page.locator('[data-inspector="entry"] [data-understood]').innerText(),
+          `Reads as ${read}`,
+        );
+      }
+      await entryField.fill('45');
+      await entryField.press('Enter');
+      await until(() => writes(h).length === 2);
+      assert.deepEqual(writes(h)[1], {
+        method: 'PATCH',
+        path: '/api/v1/me/time-entries/e2',
+        body: { minutes: 45, ended_at: at(TODAY, 12, 45) },
+      });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('today’s gaps are between its blocks — nothing runs to now', async () => {
+    const h = await openDay(TODAY);
+    try {
+      // 10:15–10:40, 12:30–1:00 and 2:50–3:30; never 4:10 PM onward.
+      const stat = await h.page.locator('[data-stat="gaps"]').innerText();
+      assert.match(stat, new RegExp(dur(25 + 30 + 40)));
+      assert.match(stat, /3 unaccounted/);
     } finally {
       await h.close();
     }
