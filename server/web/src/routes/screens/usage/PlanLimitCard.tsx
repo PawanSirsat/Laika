@@ -1,11 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import { parseTokens } from '../../../api/budgets.ts';
+import { minuteClock } from '../../../api/time-label.ts';
 import {
   clearPlanLimit,
   forecastLine,
   getPlanLimit,
-  minuteLabel,
   parseMinute,
   planFact,
   PLAN_KINDS,
@@ -78,7 +78,7 @@ export function PlanLimitCard() {
     setSpan(view.window ?? '5h');
     setLimit(view.limit_tokens === null ? '' : compactTokens(view.limit_tokens));
     setWeekday(view.week_reset?.weekday ?? 1);
-    setTime(minuteLabel(view.week_reset?.minute ?? 540));
+    setTime(minuteClock(view.week_reset?.minute ?? 540));
     setError(undefined);
     setEditing(true);
   };
@@ -92,7 +92,7 @@ export function PlanLimitCard() {
     }
     const minute = parseMinute(time);
     if (span === 'week' && minute === undefined) {
-      setError('Enter the reset time as HH:MM.');
+      setError('Enter the reset time, such as 9:00 AM.');
       return;
     }
     setBusy(true);
@@ -172,7 +172,7 @@ export function PlanLimitCard() {
             <span className="usage-plan-estimate">Estimate</span> {usedLine(view)} ·{' '}
             {PLAN_LABELS[view.plan]} · {view.window === null ? '' : WINDOW_LABELS[view.window]}
             {view.week_reset !== null &&
-              ` (resets ${WEEKDAYS[view.week_reset.weekday] ?? ''} ${minuteLabel(view.week_reset.minute)})`}
+              ` (resets ${WEEKDAYS[view.week_reset.weekday] ?? ''} ${minuteClock(view.week_reset.minute)})`}
           </p>
           <div className="usage-plan-actions">
             <button
@@ -236,8 +236,7 @@ export function PlanLimitCard() {
                 <input
                   className="input"
                   value={time}
-                  inputMode="numeric"
-                  aria-label="Reset time, HH:MM"
+                  aria-label="Reset time, such as 9:00 AM"
                   onChange={(e) => {
                     setTime(e.target.value);
                   }}

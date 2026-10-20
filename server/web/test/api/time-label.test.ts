@@ -14,6 +14,7 @@ import {
   clockTime,
   dateTime,
   hourLabel,
+  minuteClock,
   parseClock,
   startTicker,
   timeLabel,
@@ -159,6 +160,22 @@ void describe('hourLabel — an hour on an axis', () => {
     assert.equal(hourLabel(13), '1 PM');
     assert.equal(hourLabel(18), '6 PM');
     assert.equal(hourLabel(24), '12 AM');
+  });
+});
+
+void describe('minuteClock — a minute after midnight, as a setting stores it', () => {
+  void test('9:00 AM, midnight, noon and the last minute', () => {
+    assert.equal(minuteClock(540), '9:00 AM');
+    assert.equal(minuteClock(570), '9:30 AM');
+    assert.equal(minuteClock(0), '12:00 AM');
+    assert.equal(minuteClock(720), '12:00 PM');
+    assert.equal(minuteClock(1439), '11:59 PM');
+  });
+
+  void test('reads back through parseClock as itself, every minute of the day', () => {
+    for (let minute = 0; minute < 1440; minute += 1) {
+      assert.equal(parseClock(minuteClock(minute))?.minute, minute, minuteClock(minute));
+    }
   });
 });
 

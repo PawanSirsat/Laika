@@ -1,3 +1,4 @@
+import { clockTime } from '../api/time-label.ts';
 import { DEMO_ENABLED } from './enabled.ts';
 
 /**
@@ -61,18 +62,17 @@ export function demoClaimLock(
   const minutes = 20 + (hash(task.id) % 60);
   const until = now + minutes * 60_000;
   /*
-   * **Formatted by hand, not with `toLocaleTimeString`.**
+   * **Through the shared clock, not `toLocaleTimeString` here.**
    *
-   * Its options object carries the literal `'2-digit'`, and a string literal in
-   * this directory **reaches the production bundle** — `DEMO_ENABLED` is a
-   * runtime value, not a build-time constant the minifier can fold, so the early
-   * return above removes the *behaviour* and not the *text*.
-   * `not-in-bundle.test.ts` caught exactly that. Digits and a colon are
-   * everywhere in the app already, so nothing distinctive is left behind.
+   * An options object here would carry the literal `'2-digit'`, and a string
+   * literal in this directory **reaches the production bundle** —
+   * `DEMO_ENABLED` is a runtime value, not a build-time constant the minifier
+   * can fold, so the early return above removes the *behaviour* and not the
+   * *text*. `not-in-bundle.test.ts` caught exactly that. `clockTime` lives in
+   * `api/` and ships anyway, so calling it leaves nothing distinctive behind,
+   * and the label reads `2:05 PM` like every other time (LAI-830).
    */
-  const at = new Date(until);
-  const pad = (n: number): string => (n < 10 ? `0${String(n)}` : String(n));
-  return { until, label: `${pad(at.getHours())}:${pad(at.getMinutes())}` };
+  return { until, label: clockTime(until) };
 }
 
 export interface DemoAgentBuild {

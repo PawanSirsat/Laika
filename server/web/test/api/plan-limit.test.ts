@@ -12,7 +12,6 @@ import {
   clockLabel,
   forecastLine,
   getPlanLimit,
-  minuteLabel,
   parseMinute,
   planFact,
   PLAN_KINDS,
@@ -21,6 +20,7 @@ import {
   usedLine,
   type PlanLimit,
 } from '../../src/api/plan-limit.ts';
+import { minuteClock } from '../../src/api/time-label.ts';
 
 const sent: { url: string; method: string; body: unknown }[] = [];
 globalThis.fetch = ((input: string | URL, init?: RequestInit) => {
@@ -106,9 +106,9 @@ void describe('the forecast, always an estimate', () => {
   void test('a time when there is one, in the reader’s clock', () => {
     assert.equal(
       forecastLine(view({ reaches_limit_at: NOW + 3 * 3_600_000 }), NOW),
-      'At this rate you reach your limit around 15:00.',
+      'At this rate you reach your limit around 3:00 PM.',
     );
-    assert.match(clockLabel(NOW + 30 * 3_600_000, NOW), /^[A-Z][a-z]{2} 18:00$/);
+    assert.match(clockLabel(NOW + 30 * 3_600_000, NOW), /^[A-Z][a-z]{2} 6:00 PM$/);
   });
 
   void test('reached, no rate, or not before the reset — each said', () => {
@@ -123,8 +123,13 @@ void describe('the forecast, always an estimate', () => {
   });
 
   void test('a reset time, written and read', () => {
-    assert.equal(minuteLabel(540), '09:00');
+    assert.equal(minuteClock(540), '9:00 AM');
+    assert.equal(minuteClock(1020), '5:00 PM');
     assert.equal(parseMinute('09:30'), 570);
+    // The 12-hour form it now shows, and prefills the field with, reads back.
+    assert.equal(parseMinute('9:30 AM'), 570);
+    assert.equal(parseMinute('5:00 pm'), 1020);
+    assert.equal(parseMinute(minuteClock(1020)), 1020);
     assert.equal(parseMinute('24:00'), undefined);
     assert.equal(parseMinute('nine'), undefined);
   });

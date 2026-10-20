@@ -125,10 +125,25 @@ export function dateTime(at: number, now: number): string {
   return `${sameYear ? day : `${day} ${String(when.getFullYear())}`}, ${clockTime(at)}`;
 }
 
+/** An hour of the day, 0–23 or 24, on the 12-hour clock. */
+function twelve(hour: number): { readonly hour: string; readonly period: 'AM' | 'PM' } {
+  const h = ((hour % 24) + 24) % 24;
+  return { hour: String(h % 12 === 0 ? 12 : h % 12), period: h < 12 ? 'AM' : 'PM' };
+}
+
 /** `8 AM`, `12 PM`, `6 PM` — an hour of the day on an axis; 24 is midnight again. */
 export function hourLabel(hour: number): string {
-  const h = ((hour % 24) + 24) % 24;
-  return `${String(h % 12 === 0 ? 12 : h % 12)} ${h < 12 ? 'AM' : 'PM'}`;
+  const { hour: h, period } = twelve(hour);
+  return `${h} ${period}`;
+}
+
+/**
+ * `9:00 AM` — a minute after midnight, as a setting stores it rather than an
+ * instant: no zone, no date. It reads back through {@link parseClock}.
+ */
+export function minuteClock(minute: number): string {
+  const { hour, period } = twelve(Math.floor(minute / 60));
+  return `${hour}:${String(minute % 60).padStart(2, '0')} ${period}`;
 }
 
 /** A time of day as typed: the minute after midnight it names. */

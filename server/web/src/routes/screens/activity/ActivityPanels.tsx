@@ -11,6 +11,7 @@ import type { Member, TaskSummary } from '../../../api/tasks.ts';
 import { PresencePerson } from '../../../components/PresencePerson.tsx';
 import type { PresenceView } from '../../../api/presence.ts';
 import type { StreamStatus } from '../../../api/use-events.ts';
+import { clockTime } from '../../../api/time-label.ts';
 import '../board/board-rail.css';
 
 export interface ActivityPanelsProps {
@@ -46,7 +47,7 @@ export function staleTasks(tasks: readonly TaskSummary[], now: number): readonly
 }
 
 function clock(at: number): string {
-  return new Date(at).toLocaleTimeString([], { hour12: false });
+  return clockTime(at, { seconds: true });
 }
 
 /**
@@ -200,7 +201,7 @@ export function ActivityPanels({
                     <span className="rail-session-state">RUNNING</span>
                   </div>
                   <p className="rail-session-meta">
-                    last seen {new Date(entry.last_seen).toLocaleTimeString()}
+                    last seen {clockTime(entry.last_seen, { seconds: true })}
                   </p>
                 </li>
               ))}

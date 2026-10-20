@@ -746,7 +746,7 @@ const NOW_MS = Date.now();
  * The plan limit's forecast names a clock time, and the weekday as well once
  * that time is not today (`clockLabel`, `api/plan-limit.ts`). On the real clock
  * the test passed or failed by the hour it ran: GitHub's run at 23:45 UTC got
- * `around Tue 02:49` where it expected a bare time (LAI-794). So these tests
+ * `around Tue 02:49` (now `Tue 2:49 AM`, LAI-830) where it expected a bare time (LAI-794). So these tests
  * pin the browser's clock and zone, as `timeline-sprints.test.ts` does: Monday
  * 19 October 2026, at midday and at a quarter to midnight, in UTC.
  */
@@ -1054,7 +1054,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       const forecast = card.locator('[data-forecast]');
       await forecast.waitFor();
       // Later the same day: the time alone.
-      assert.equal(await forecast.innerText(), 'At this rate you reach your limit around 15:00.');
+      assert.equal(await forecast.innerText(), 'At this rate you reach your limit around 3:00 PM.');
       assert.match(await card.innerText(), /Estimate\s+1\.2M of 3M used · 600K an hour/);
       // Never asked about anybody else: one path, the reader's own.
       assert.ok(
@@ -1091,7 +1091,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       await forecast.waitFor({ timeout: 20_000 });
       assert.equal(
         await forecast.innerText(),
-        'At this rate you reach your limit around Tue 02:49.',
+        'At this rate you reach your limit around Tue 2:49 AM.',
       );
     } finally {
       await h.close();

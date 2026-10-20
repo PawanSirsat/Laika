@@ -1,10 +1,11 @@
 import { request } from './client.ts';
+import { clockTime, parseClock } from './time-label.ts';
 import { compactTokens } from './usage.ts';
 
 /**
  * The plan-limit forecast (LAI-773, D-087, SPEC §6.4): the developer's own
  * limit and their own recent rate — *"at this rate you reach your limit
- * around 15:40"* — **for them and nobody else**. A web session's, and only
+ * around 3:40 PM"* — **for them and nobody else**. A web session's, and only
  * the caller's: there is no way to ask for anybody else's. An estimate, and
  * said to be.
  *
@@ -98,26 +99,20 @@ export function clearPlanLimit(): Promise<void> {
   return request<void>('/me/plan-limit', { method: 'DELETE' });
 }
 
-/** `15:40`, or `Mon 09:00` when it is not today — in the reader's own clock. */
+/** `3:40 PM`, or `Mon 9:00 AM` when it is not today — in the reader's own clock. */
 export function clockLabel(at: number, now: number = Date.now()): string {
   const date = new Date(at);
-  const time = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  const time = clockTime(at);
   if (date.toDateString() === new Date(now).toDateString()) return time;
   return `${date.toLocaleDateString('en-GB', { weekday: 'short' })} ${time}`;
 }
 
-/** `09:00` from minutes after midnight. */
-export function minuteLabel(minute: number): string {
-  return `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
-}
-
-/** `09:30` → 570; anything else `undefined`. */
+/**
+ * `9:30 AM`, `09:30` → 570; anything else `undefined`. A time with no AM/PM
+ * is read on the 24-hour clock, as this field always did.
+ */
 export function parseMinute(text: string): number | undefined {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(text.trim());
-  if (match === null) return undefined;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  return hours < 24 && minutes < 60 ? hours * 60 + minutes : undefined;
+  return parseClock(text)?.minute;
 }
 
 /**

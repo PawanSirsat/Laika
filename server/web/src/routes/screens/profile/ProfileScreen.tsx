@@ -37,7 +37,7 @@ import {
   type ProfileReview,
   type ProfileTask,
 } from '../../../api/profiles.ts';
-import { timeLabel } from '../../../api/time-label.ts';
+import { dateTime, timeLabel } from '../../../api/time-label.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
@@ -822,8 +822,8 @@ function TaskRow({
           since === null
             ? undefined
             : tab === 'in_review'
-              ? `In Review since ${new Date(since).toLocaleString()}`
-              : `First started ${new Date(since).toLocaleString()}`
+              ? `In Review since ${dateTime(since, Date.now())}`
+              : `First started ${dateTime(since, Date.now())}`
         }
       >
         {since === null

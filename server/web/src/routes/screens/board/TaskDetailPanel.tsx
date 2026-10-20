@@ -11,7 +11,7 @@ import {
   statusMoveNames,
   type ActivityEvent,
 } from '../../../api/activity.ts';
-import { timeLabel } from '../../../api/time-label.ts';
+import { dateTime, timeLabel } from '../../../api/time-label.ts';
 import { isAgentComment, type Comment } from '../../../api/comments.ts';
 import { useTaskDetail } from '../../../api/use-task-detail.ts';
 import { useTaskText } from '../../../api/use-task-text.ts';
@@ -470,7 +470,7 @@ export function TaskDetailPanel({
           )}
         </span>
         <time className="panel-time" dateTime={new Date(event.created_at).toISOString()}>
-          {new Date(event.created_at).toLocaleString()}
+          {dateTime(event.created_at, Date.now())}
         </time>
       </li>
     );
@@ -1044,7 +1044,7 @@ export function TaskDetailPanel({
                               className="panel-time"
                               dateTime={new Date(event.created_at).toISOString()}
                             >
-                              {new Date(event.created_at).toLocaleString()}
+                              {dateTime(event.created_at, Date.now())}
                             </time>
                           </li>
                         ))}
