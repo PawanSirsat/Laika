@@ -188,7 +188,7 @@ void describe('ranking and scope', () => {
  */
 void describe('the OnRoute shape', () => {
   const since = (days: number): ActivityEvent[] =>
-    EVENTS.filter((e) => e.created_at >= NOW - days * DAY) as ActivityEvent[];
+    EVENTS.filter((e) => e.created_at >= NOW - days * DAY);
 
   void test('7 days: Ashutosh 23 delivered, Pawan 3', () => {
     const result = contributors(since(7));

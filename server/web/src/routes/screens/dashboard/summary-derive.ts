@@ -307,7 +307,7 @@ export function waitingForReview(
   for (const event of events) {
     if (event.task_id === null) continue;
     const move = statusTransition(event);
-    if (move === undefined || move.to !== 'review' || move.from === 'review') continue;
+    if (move?.to !== 'review' || move.from === 'review') continue;
     entered.set(event.task_id, Math.max(entered.get(event.task_id) ?? 0, event.created_at));
   }
   return tasks
