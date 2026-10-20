@@ -1,9 +1,10 @@
 import { isPriority, isTagName } from '../../../api/task-filter.ts';
 import type { TaskSummary, TaskPriority } from '../../../api/tasks.ts';
 import { blockedTasks } from './dashboard-derive.ts';
+import { splitBlocked } from './summary-derive.ts';
 
 /**
- * What the Status overview and Work by person cards count (LAI-732).
+ * What the Status overview and Contributors cards count (LAI-732, LAI-817).
  *
  * The owner: the range buttons changed the stat cards *"but not this section
  * in the status overview and the work by person section"*, and *"add more
@@ -17,11 +18,17 @@ import { blockedTasks } from './dashboard-derive.ts';
  * exactly what it did before. A card may say **All tasks** instead, ignoring
  * the range.
  *
+ * **Contributors never follows it this way** (LAI-817, D-092): its first tab
+ * reads the range's *activity*, not tasks touched in it, and its second, Open
+ * work now, has no range at all. So its filter has no Range field and no
+ * "Include done" — done work is what Contributors counts, and it is never
+ * open work.
+ *
  * ## The filters
  *
  * Each card reads its own URL parameters, under its own prefix, so a refresh
  * or a shared link keeps them and the two never collide: `so_` for Status
- * overview, `wp_` for Work by person. Every value is checked the way LAI-487
+ * overview, `wp_` for Contributors (named when it was Work by person). Every value is checked the way LAI-487
  * checks the board's — an invalid one is **ignored and not counted**: a
  * priority or label by the server's rules (`task-filter.ts`), a sprint or
  * member against the lists this project has. A sprint or member is not applied
@@ -43,8 +50,6 @@ export const PEOPLE_KEYS = {
   sprint: 'wp_sprint',
   priority: 'wp_priority',
   tag: 'wp_tag',
-  status: 'wp_status',
-  range: 'wp_range',
 } as const;
 
 /** `?so_sprint=active`: whichever sprint is active, as the board opens on (LAI-713). */
@@ -53,8 +58,6 @@ export const ACTIVE_SPRINT = 'active';
 export const UNASSIGNED = 'none';
 /** `?so_range=all`: ignore the dashboard's range. */
 export const ALL_TASKS = 'all';
-/** `?wp_status=all`: count done work beside open work. */
-export const INCLUDE_DONE = 'all';
 
 /** The lists a sprint or member value is checked against; absent while loading. */
 export interface Known {
@@ -79,8 +82,9 @@ export interface StatusCardFilter extends CardScope {
   readonly agentOnly: boolean;
 }
 
+/** Contributors' filter: which tasks count. It never follows the range (LAI-817). */
 export interface PeopleCardFilter extends CardScope {
-  readonly includeDone: boolean;
+  readonly allTasks: true;
 }
 
 function readSprint(raw: string | null, known: Known): string | undefined {
@@ -117,8 +121,7 @@ export function readPeopleCard(params: URLSearchParams, known: Known): PeopleCar
     sprint: readSprint(params.get(PEOPLE_KEYS.sprint), known),
     priority: readPriority(params.get(PEOPLE_KEYS.priority)),
     tag: readTag(params.get(PEOPLE_KEYS.tag)),
-    includeDone: params.get(PEOPLE_KEYS.status) === INCLUDE_DONE,
-    allTasks: params.get(PEOPLE_KEYS.range) === ALL_TASKS,
+    allTasks: true,
   };
 }
 
@@ -137,7 +140,7 @@ export function statusCardActive(f: StatusCardFilter): number {
 }
 
 export function peopleCardActive(f: PeopleCardFilter): number {
-  return set(f.sprint) + set(f.priority) + set(f.tag) + set(f.includeDone) + set(f.allTasks);
+  return set(f.sprint) + set(f.priority) + set(f.tag);
 }
 
 /** The dashboard's state a card reads besides its own filter. */
@@ -188,7 +191,11 @@ export function cardTasks(
   });
 }
 
-/** Blocked tasks judged from the **whole project**, for Work by person's rows. */
+/**
+ * Blocked tasks judged from the **whole project**, for Open work now's rows —
+ * by Needs attention's rule (`splitBlocked`), so "3 blocked" on a person and
+ * the Blocked tab count the same thing.
+ */
 export function blockedIdsOf(all: readonly TaskSummary[]): ReadonlySet<string> {
-  return new Set(blockedTasks(all).map((row) => row.task.id));
+  return new Set(splitBlocked(blockedTasks(all)).committed.map((row) => row.task.id));
 }

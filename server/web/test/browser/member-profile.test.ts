@@ -1462,12 +1462,17 @@ void describe('the ways in are links for owners and admins only', () => {
     '/api/v1/presence': { enabled: false, present: [] },
   };
 
-  void test('Work by person: each person has a profile link for an owner, none for a member', async () => {
+  // Work by person became Contributors (LAI-817); its Open work now tab holds
+  // the people rows that open the board.
+  void test('Open work now: each person has a profile link for an owner, none for a member', async () => {
     const owner = await open('/dashboard?project=laika-core', {
       ...DASH_STUB,
       '/api/v1/me': me('u1', 'owner'),
     });
     try {
+      await owner.page
+        .locator('.dash-people [role="tab"]', { hasText: 'Open work now' })
+        .click({ timeout: 20_000 });
       await owner.page
         .locator('.dash-people .dash-legend-row')
         .first()
@@ -1491,6 +1496,9 @@ void describe('the ways in are links for owners and admins only', () => {
       '/api/v1/me': me('u3', 'member'),
     });
     try {
+      await member.page
+        .locator('.dash-people [role="tab"]', { hasText: 'Open work now' })
+        .click({ timeout: 20_000 });
       await member.page
         .locator('.dash-people .dash-legend-row')
         .first()
