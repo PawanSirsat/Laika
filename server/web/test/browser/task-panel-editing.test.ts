@@ -310,14 +310,29 @@ const acceptance = (h: Harness): Locator => h.page.locator('[data-section="accep
 const patches = (h: Harness): { method: string; path: string; body: unknown }[] =>
   h.calls.filter((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3');
 
-/** Click the description's text and wait for the rich editor to open on it. */
+/**
+ * Click after the last word of the text and wait for the rich editor to open
+ * there and take focus.
+ *
+ * **There, and focused, before anything else happens.** The editor puts its
+ * caret where the text was clicked; ProseMirror reads a later click's caret a
+ * moment after the browser moves it, and Playwright types sooner than that. A
+ * test that clicked the top-left to open and the end to type flaked 1 in 10
+ * (review round 1): its words went in where the editor had opened.
+ */
 async function openEditor(h: Harness, where: Locator = description(h)): Promise<Locator> {
-  await where
-    .locator('.md')
-    .first()
-    .click({ position: { x: 4, y: 4 } });
+  const last = where.locator('.md').first().locator(':scope > *').last();
+  // A mouse click lands where the box is, on screen or not.
+  await last.scrollIntoViewIfNeeded();
+  const box = await last.boundingBox();
+  assert.ok(box !== null, 'the text to click is not on screen');
+  await h.page.mouse.click(box.x + box.width - 2, box.y + box.height - 4);
   const editor = where.locator('.rich-editor');
   await editor.waitFor({ timeout: 10_000 });
+  await until(
+    () => h.page.evaluate(() => document.activeElement?.closest('.rich-editor') != null),
+    5_000,
+  );
   return editor;
 }
 
@@ -334,6 +349,7 @@ const content = (editor: Locator): Locator => editor.locator('.ProseMirror');
  * next key arrives sooner than any person's would.
  */
 async function caretAtEnd(page: Page, line: Locator): Promise<void> {
+  await line.scrollIntoViewIfNeeded();
   const box = await line.boundingBox();
   assert.ok(box !== null, 'the line is not on screen');
   await page.mouse.click(box.x + box.width - 2, box.y + box.height - 4);
