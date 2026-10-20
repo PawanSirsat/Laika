@@ -60,6 +60,18 @@
   padding-top: 0.4em;
 }
 
+/* A newer version that could not be read (LAI-795 review, B1): why, and a retry. */
+.panel-text-stale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.panel-text-stale p {
+  margin: 0;
+}
+
 /*
  * A rendered description (LAI-709): a block, not a button, so its markdown can
  * hold headings and tables. The Edit button appears on hover and on focus.

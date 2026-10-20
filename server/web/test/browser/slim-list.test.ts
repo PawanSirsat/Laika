@@ -419,3 +419,199 @@ void describe('nothing reads a text off the list (LAI-795)', () => {
     }
   });
 });
+
+/**
+ * **A held text the panel knows is stale is never edited** (LAI-795 review,
+ * B1). A re-read of the open task that failed — a 5xx during a deploy's
+ * restart while an agent edits it over MCP — left the old text on screen,
+ * editable, and never read again: the next save sent the stale text over the
+ * other writer's. These are the reviewer's reproduction and its two smaller
+ * forms.
+ */
+void describe('a stale description is never edited (LAI-795 review B1)', () => {
+  const description = (h: Harness) => h.page.locator('[data-section="description"]');
+  const editable = async (h: Harness): Promise<number> =>
+    description(h).locator('.inline-edit-can').count();
+  const reads = (h: Harness): number =>
+    h.calls.filter((c) => c.method === 'GET' && c.path === '/api/v1/tasks/t3').length;
+  const patches = (h: Harness): number =>
+    h.calls.filter((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3').length;
+  const walks = (h: Harness): number =>
+    h.calls.filter((c) => c.path === '/api/v1/projects/laika-core/tasks').length;
+
+  /** Click the description and say whether an editor opened. */
+  async function tryToEdit(h: Harness): Promise<boolean> {
+    await description(h).locator('.inline-edit').first().click();
+    // A fixed window: what is asserted may be that something does *not* happen.
+    await h.page.waitForTimeout(300);
+    return (await description(h).locator('textarea').count()) > 0;
+  }
+
+  void test('a failed re-read locks the old text, says so with Try again, and reads again on the next refresh', async () => {
+    const server: Server = { t3: task('t3', 3, 'in_progress') };
+    const h = await open('/board?project=laika-core&task=t3', stub(server), {
+      before: fakeStream,
+    });
+    let refused = 0;
+    try {
+      await h.page.locator('.panel-main strong', { hasText: 'whole' }).waitFor({ timeout: 20_000 });
+      assert.ok((await editable(h)) > 0, 'positive control: the description is editable');
+
+      await h.page.route('**/api/v1/tasks/t3', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue();
+        refused += 1;
+        return route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { code: 'unavailable', message: 'Laika is restarting.' } }),
+        });
+      });
+      server.t3 = {
+        ...server.t3,
+        description_md: 'Rewritten by **someone else**.',
+        updated_at: Date.now(),
+      };
+      const walked = walks(h);
+      await emit(h.page, 40);
+      await until(() => walks(h) > walked && refused >= 1, 10_000);
+      assert.ok(refused >= 1, 'the newer version was never asked for');
+
+      const alert = description(h).locator('[role="alert"]');
+      await until(async () => (await alert.count()) > 0, 5_000);
+      assert.equal(await alert.count(), 1, 'a failed re-read of a stale text said nothing');
+      assert.equal(await editable(h), 0, 'the stale text was still editable');
+      assert.equal(await tryToEdit(h), false, 'an editor opened on the stale text');
+      assert.equal(patches(h), 0);
+
+      // The 5xx is over; the next refresh reads again, with no new version to prompt it.
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      const before = reads(h);
+      await emit(h.page, 41);
+      await h.page
+        .locator('.panel-main strong', { hasText: 'someone else' })
+        .waitFor({ timeout: 10_000 });
+      assert.ok(reads(h) > before, 'the text changed without a read');
+      assert.equal(await alert.count(), 0, 'the alert outlived the read that cleared it');
+      assert.ok((await editable(h)) > 0, 'the fresh text is not editable');
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('Try again reads it again, after a 503', async () => {
+    const server: Server = { t3: task('t3', 3, 'in_progress') };
+    const h = await open('/board?project=laika-core&task=t3', stub(server), {
+      before: fakeStream,
+    });
+    let refusing = true;
+    try {
+      await h.page.locator('.panel-main strong', { hasText: 'whole' }).waitFor({ timeout: 20_000 });
+      await h.page.route('**/api/v1/tasks/t3', async (route) => {
+        if (route.request().method() !== 'GET' || !refusing) return route.continue();
+        return route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { code: 'unavailable', message: 'Laika is restarting.' } }),
+        });
+      });
+      server.t3 = {
+        ...server.t3,
+        description_md: 'Retried into **view**.',
+        updated_at: Date.now(),
+      };
+      await emit(h.page, 50);
+      const retry = description(h).locator('[role="alert"] button', { hasText: 'Try again' });
+      await retry.waitFor({ timeout: 10_000 });
+
+      refusing = false;
+      await retry.click();
+      await h.page.locator('.panel-main strong', { hasText: 'view' }).waitFor({ timeout: 10_000 });
+      assert.ok((await editable(h)) > 0);
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('while a newer version is being read, the old text does not open for editing', async () => {
+    const server: Server = { t3: task('t3', 3, 'in_progress') };
+    const h = await open('/board?project=laika-core&task=t3', stub(server), {
+      before: fakeStream,
+    });
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let held = 0;
+    try {
+      await h.page.locator('.panel-main strong', { hasText: 'whole' }).waitFor({ timeout: 20_000 });
+      await h.page.route('**/api/v1/tasks/t3', async (route) => {
+        if (route.request().method() === 'GET') {
+          held += 1;
+          await gate;
+        }
+        await route.continue();
+      });
+      server.t3 = {
+        ...server.t3,
+        description_md: 'Rewritten by **someone else**.',
+        updated_at: Date.now(),
+      };
+      await emit(h.page, 60);
+      await until(() => held >= 1, 10_000);
+      assert.ok(held >= 1, 'the newer version was never asked for');
+
+      assert.equal(await editable(h), 0, 'the old text was editable while its successor loaded');
+      assert.equal(await tryToEdit(h), false, 'an editor opened on the old text');
+
+      release();
+      await h.page
+        .locator('.panel-main strong', { hasText: 'someone else' })
+        .waitFor({ timeout: 10_000 });
+      assert.ok((await editable(h)) > 0, 'the fresh text is not editable');
+    } finally {
+      release();
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('an edit begun on a version someone else has since replaced is not saved over it', async () => {
+    const server: Server = { t3: task('t3', 3, 'in_progress') };
+    const h = await open('/board?project=laika-core&task=t3', stub(server), {
+      before: fakeStream,
+    });
+    try {
+      await h.page.locator('.panel-main strong', { hasText: 'whole' }).waitFor({ timeout: 20_000 });
+      assert.equal(await tryToEdit(h), true, 'positive control: the editor opens');
+      const field = description(h).locator('textarea');
+      await field.fill('My own rewrite, typed over the old version.');
+
+      server.t3 = {
+        ...server.t3,
+        description_md: 'Rewritten by **someone else**.',
+        updated_at: Date.now(),
+      };
+      const landed = h.page.waitForResponse(
+        (r) => r.url().endsWith('/api/v1/tasks/t3') && r.request().method() === 'GET',
+      );
+      await emit(h.page, 70);
+      await landed;
+      await h.page.waitForTimeout(300);
+
+      await field.press('Control+Enter');
+      const refusal = description(h).locator('.inline-edit-error');
+      await until(async () => (await refusal.count()) > 0 || patches(h) > 0, 5_000);
+      assert.equal(patches(h), 0, 'the edit was saved over the newer version');
+      assert.match(await refusal.innerText(), /changed/i);
+      assert.equal(
+        await field.inputValue(),
+        'My own rewrite, typed over the old version.',
+        'the draft was thrown away',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});

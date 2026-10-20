@@ -1737,6 +1737,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             onTaskEdited={refresh}
             onOpen={openTaskInUrl}
             task={openTask}
+            listReadAt={board.state.asOf}
             byId={board.byId}
             members={members}
             moving={board.movingId === openTask.id}
