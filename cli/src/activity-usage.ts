@@ -42,6 +42,17 @@ import {
  * counts — input, output, cache write, cache read — in a usage report on the
  * same `PUT /me/local-activity` as the snapshot (SPEC §6.4).
  *
+ * ## Automated sessions (LAI-775, D-091)
+ *
+ * A session the activity hook marked automated (`skip-sessions`: `OMNIGENT=1`
+ * sub-agents, `CI`, `LAIKA_ACTIVITY_SKIP`) is read like any other — its
+ * subagents, Codex and Gemini CLI files too, tied to a task by the same marks
+ * and branch rules — and its tokens go in rows of their own marked
+ * `automated`: the board counts them for the organisation, the space and the
+ * task and never for the person. It is in no session row and no session's
+ * split between tasks, and is named in `excluded`, so its telemetry is
+ * dropped; the time drafter still leaves it out whole (`draftSources`).
+ *
  * ## Which task (D-084 items 5–6, LAI-770)
  *
  * A reply's task is the one its agent **marked** in that session, from its own
@@ -159,9 +170,11 @@ const SPLIT_FROM_V = 3;
 const EDGE_S = 3600;
 /**
  * Changes the meaning of a cached day: every day is counted again. 2: a day
- * carries its sessions' tokens per task (`t`, LAI-787).
+ * carries its sessions' tokens per task (`t`, LAI-787). 3: an automated
+ * session's tokens are counted, in rows marked automated (D-091), so a day
+ * counted when they were left out is counted again — and sent again.
  */
-const CACHE_V = 2;
+const CACHE_V = 3;
 
 export type UsageAgent = 'claude-code' | 'codex' | 'gemini-cli';
 
@@ -198,6 +211,11 @@ export interface UsageRow {
   output: number;
   cache_write: number;
   cache_read: number;
+  /**
+   * Spent by an automated session (D-091): `true` or absent — never `false`,
+   * so a person's row is exactly what a board from before LAI-815 accepts.
+   */
+  automated?: true;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -291,13 +309,14 @@ export interface SessionTaskRow {
 
 /**
  * A day's Claude Code part, as last computed: rows `[model, task, input,
- * output, cache_write, cache_read]`, sessions `[key, model, …the four]`, each
+ * output, cache_write, cache_read, automated?]` (`1` for an automated
+ * session's, D-091), sessions `[key, model, …the four]`, each
  * session's headline tokens per task `[key, task, tokens]` (LAI-787), the keys
  * of sessions whose replies that day were left out of scope, and whether it
  * holds tokens from before counting began.
  */
 interface ClaudeDay {
-  r: [string, string | null, number, number, number, number][];
+  r: [string, string | null, number, number, number, number, 1?][];
   s: [string, string, number, number, number, number][];
   t?: [string, string, number][];
   x: string[];
@@ -2017,10 +2036,11 @@ interface Days {
   /** Days whose rows include tokens from before counting began — the backfill. */
   readonly older: ReadonlySet<string>;
   /**
-   * The keys of the Claude Code sessions whose tokens are left out of the
-   * rows — automated (D-086) or out of the developer's scope (D-079 item 4)
-   * — newest first, at most {@link EXCLUDED_MAX}: the board drops their
-   * OpenTelemetry, which has no directory to judge.
+   * The keys of the Claude Code sessions whose telemetry the board is to drop
+   * — automated ones (D-086), whose tokens are the rows marked automated
+   * (D-091), and those out of the developer's scope (D-079 item 4), whose
+   * tokens are left out — newest first, at most {@link EXCLUDED_MAX}:
+   * OpenTelemetry has no directory to judge and no way to say automated.
    */
   readonly excluded: string[];
 }
@@ -2046,9 +2066,10 @@ interface DayRules {
 }
 
 /**
- * One day's Claude Code replies, as a report carries them: rows per model and
- * task, the same tokens per session and model, and the sessions left out of
- * scope. `undefined` for a day that holds nothing to send.
+ * One day's Claude Code replies, as a report carries them: rows per model,
+ * task and whether an automated session spent them, the person's tokens per
+ * session and model, and the sessions left out of scope. `undefined` for a
+ * day that holds nothing to send.
  */
 function claudeDay(recs: Readonly<Record<string, Rec>>, rules: DayRules): ClaudeDay | undefined {
   const rows = new Map<string, ClaudeDay['r'][number]>();
@@ -2064,7 +2085,8 @@ function claudeDay(recs: Readonly<Record<string, Rec>>, rules: DayRules): Claude
       if (key !== undefined) excluded.add(key);
       continue;
     }
-    if (session >= 0 && rules.skipped.has(session)) continue;
+    // An automated session's tokens go too, in rows of their own (D-091).
+    const automated = session >= 0 && rules.skipped.has(session);
     if (rec[6] < rules.sinceS) {
       if (!rules.older) continue;
       if (!rules.all && (rules.held === 'unknown' || rules.held.has(rec[0]))) continue;
@@ -2073,16 +2095,19 @@ function claudeDay(recs: Readonly<Record<string, Rec>>, rules: DayRules): Claude
     // The 30 days counted once from files already here go unattributed
     // (D-084 item 11): a task is tied from when counting began.
     const task = rec[6] < rules.sinceS ? null : rules.taskOf(rec);
-    const rowKey = `${rec[1]} ${task ?? ''}`;
+    const rowKey = `${rec[1]} ${task ?? ''} ${automated ? 'a' : ''}`;
     let row = rows.get(rowKey);
     if (row === undefined) {
-      row = [rec[1], task, 0, 0, 0, 0];
+      row = automated ? [rec[1], task, 0, 0, 0, 0, 1] : [rec[1], task, 0, 0, 0, 0];
       rows.set(rowKey, row);
     }
     row[2] += rec[2];
     row[3] += rec[3];
     row[4] += rec[4];
     row[5] += rec[5];
+    // In no session row and no session's split: its telemetry is dropped
+    // (`excluded`), and its agent minutes are not the developer's (LAI-787).
+    if (automated) continue;
     const key = session >= 0 ? rules.keyOf(session) : undefined;
     if (key === undefined) continue;
     const splitKey = `${key} ${rec[1]}`;
@@ -2126,8 +2151,10 @@ function claudeDay(recs: Readonly<Record<string, Rec>>, rules: DayRules): Claude
  *   what came since is sent (LAI-769 review 1). `held: 'unknown'` — the board
  *   has not said yet — leaves every older token out. `all` counts everything:
  *   what `backfill` shows before it asks.
- * - **Never an automated session's** (LAI-775): a record whose session the
- *   hook marked in `skip-sessions` is left out, subagents included.
+ * - **An automated session's marked** (LAI-775, D-091): a record whose
+ *   session the hook marked in `skip-sessions`, subagents included, goes in a
+ *   row marked automated — the organisation's, the space's and the task's,
+ *   never the developer's.
  * - **A Codex rollout with per-response records counts those**, each response
  *   once across every rollout; one without counts its total's differences.
  *
@@ -2255,7 +2282,7 @@ async function daysOf(
   const olderDays = new Set<string>();
   const add = (agent: UsageAgent, rec: Rec): void => {
     if (rec[0] < firstDay || !inScope(rec[7])) return;
-    if (rec[8] !== undefined && skipped.has(rec[8])) return;
+    const automated = rec[8] !== undefined && skipped.has(rec[8]);
     if (rec[6] < sinceS) {
       if (!older) return;
       if (!everything && (heldDays === 'unknown' || heldDays.has(rec[0]))) return;
@@ -2267,10 +2294,19 @@ async function daysOf(
       others.set(rec[0], rows);
     }
     const task = rec[6] < sinceS ? null : taskOf(rec);
-    const key = `${agent} ${rec[1]} ${task ?? ''}`;
+    const key = `${agent} ${rec[1]} ${task ?? ''} ${automated ? 'a' : ''}`;
     let row = rows.get(key);
     if (row === undefined) {
-      row = { agent, model: rec[1], task, input: 0, output: 0, cache_write: 0, cache_read: 0 };
+      row = {
+        agent,
+        model: rec[1],
+        task,
+        input: 0,
+        output: 0,
+        cache_write: 0,
+        cache_read: 0,
+        ...(automated ? { automated: true as const } : {}),
+      };
       rows.set(key, row);
     }
     row.input += rec[2];
@@ -2321,15 +2357,18 @@ async function daysOf(
     const claude = cache.days[day];
     if (claude?.o === 1) olderDays.add(day);
     const rows: UsageRow[] = [
-      ...(claude?.r ?? []).map(([model, task, input, output, cache_write, cache_read]) => ({
-        agent: 'claude-code',
-        model,
-        task,
-        input,
-        output,
-        cache_write,
-        cache_read,
-      })),
+      ...(claude?.r ?? []).map(
+        ([model, task, input, output, cache_write, cache_read, automated]): UsageRow => ({
+          agent: 'claude-code',
+          model,
+          task,
+          input,
+          output,
+          cache_write,
+          cache_read,
+          ...(automated === 1 ? { automated: true as const } : {}),
+        }),
+      ),
       ...(others.get(day)?.values() ?? []),
     ]
       .map(capped)
@@ -2338,7 +2377,8 @@ async function daysOf(
         (a, b) =>
           a.agent.localeCompare(b.agent) ||
           a.model.localeCompare(b.model) ||
-          (a.task ?? '').localeCompare(b.task ?? ''),
+          (a.task ?? '').localeCompare(b.task ?? '') ||
+          Number(a.automated === true) - Number(b.automated === true),
       );
     if (rows.length > 0) outRows.set(day, rows);
     const sessions = (claude?.s ?? [])
@@ -2354,8 +2394,10 @@ async function daysOf(
     if (tasks.length > 0 && rows.length > 0) outTasks.set(day, tasks);
     for (const key of claude?.x ?? []) scopeOut.push(`${day} ${key}`);
   }
-  // Automated first, newest first; then the out-of-scope, newest day first —
-  // and none at all unless this machine's Claude Code sends telemetry here.
+  // Automated first, newest first — their tokens are in the rows, marked, and
+  // their telemetry is not the developer's (D-091) — then the out-of-scope,
+  // newest day first; and none at all unless this machine's Claude Code sends
+  // telemetry here.
   const excluded =
     options.telemetry !== true
       ? []
@@ -2456,10 +2498,12 @@ export interface DraftSources {
 
 /**
  * The replies and marks of `days` the time drafter builds blocks from
- * (LAI-787): the same records, the same task rule and the same exclusions as
- * the token counts — automated sessions (`skip-sessions`, subagents included)
- * and, under `laika-repos`, directories out of scope are left out. Reads what
- * is new, as `status` does, and writes nothing.
+ * (LAI-787): the same records and the same task rule as the token counts.
+ * Automated sessions (`skip-sessions`, subagents included) are left out
+ * whole — the token counts send theirs marked automated (D-091), but an
+ * automated session never drafts the person's time (D-088 item 9) — and so,
+ * under `laika-repos`, are directories out of scope. Reads what is new, as
+ * `status` does, and writes nothing.
  */
 export async function draftSources(
   options: UsageReadOptions & { readonly days: readonly string[] },
@@ -2914,21 +2958,25 @@ export interface UsageSummary {
   readonly byAgent: ReadonlyMap<string, number>;
   /** Of `tokens`, the part tied to a task (D-084 item 6). */
   readonly attributed: number;
+  /** Of `tokens`, the part automated sessions spent (D-091): counted, never as the developer's. */
+  readonly automated: number;
 }
 
 export function summarise(days: ReadonlyMap<string, readonly UsageRow[]>): UsageSummary {
   let tokens = 0;
   let cacheRead = 0;
   let attributed = 0;
+  let automated = 0;
   const byAgent = new Map<string, number>();
   for (const rows of days.values()) {
     for (const r of rows) {
       const headline = r.input + r.output + r.cache_write;
       tokens += headline;
       if (r.task !== null) attributed += headline;
+      if (r.automated === true) automated += headline;
       cacheRead += r.cache_read;
       byAgent.set(r.agent, (byAgent.get(r.agent) ?? 0) + headline);
     }
   }
-  return { days: days.size, tokens, cacheRead, byAgent, attributed };
+  return { days: days.size, tokens, cacheRead, byAgent, attributed, automated };
 }

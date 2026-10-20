@@ -174,8 +174,9 @@ What it never does:
   the prompt path, needs no external command. **It keeps one thing**
   (LAI-775): from the session-start and session-end payloads only — never a
   prompt's — a `"session_id"` that is a plain id, appended to
-  `~/.laika/activity/skip-sessions`, so `laika activity sync` leaves that
-  session's tokens out. Never sent.
+  `~/.laika/activity/skip-sessions`, so `laika activity sync` sends that
+  session's tokens marked automated — the team's, never the person's (D-091).
+  Never sent.
 - **Skip the session the person types to** (D-088 item 9, LAI-787). Omnigent
   sets `OMNIGENT=1` on its primary session too. When
   `OMNIGENT_TERMINAL_LAUNCH_SESSION_ID` equals `OMNIGENT_RUNNER_PRIMARY_SESSION_ID`

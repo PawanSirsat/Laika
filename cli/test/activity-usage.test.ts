@@ -657,8 +657,8 @@ void describe('Codex: per-response records, when the rollout has them (review 1)
   });
 });
 
-void describe('automated sessions’ tokens are not the developer’s (LAI-775)', () => {
-  void test('a session the hook marked is left out — its subagents, its Codex and Gemini files too', async () => {
+void describe('automated sessions’ tokens go marked automated, never as the developer’s (LAI-775, D-091)', () => {
+  void test('a session the hook marked goes marked — its subagents, its Codex and Gemini files too', async () => {
     const root = home();
     const robot = '7e1d2c3b-aaaa-4bbb-8ccc-0123456789ab';
     writeClaude(root, 'p/robot.jsonl', [
@@ -721,10 +721,23 @@ void describe('automated sessions’ tokens are not the developer’s (LAI-775)'
     writeFileSync(join(paths.dir, 'skip-sessions'), `${String(NOW_S - 950)} ${robot}\n`, {
       mode: 0o600,
     });
-    assert.equal(totals((await read(root)).days).output, 7);
+    const rows = (await read(root)).days.get(TODAY) ?? [];
+    // Every token still goes; the session's go marked, each agent's apart.
+    assert.equal(totals(new Map([[TODAY, rows]])).output, 7 + 1_000 + 2_000 + 300 + 400);
+    assert.deepEqual(
+      rows.map((r) => [r.agent, r.automated ?? false, r.output]),
+      [
+        ['claude-code', false, 7],
+        ['claude-code', true, 1_000 + 2_000],
+        ['codex', true, 300],
+        ['gemini-cli', true, 400],
+      ],
+    );
+    // A person's row carries no flag at all, as before D-091.
+    assert.ok(!('automated' in (rows[0] ?? {})), 'a person’s row is marked');
   });
 
-  void test('a session marked after its tokens were sent is taken back out at the next sync', async () => {
+  void test('a session marked after its tokens were sent moves into an automated row at the next sync', async () => {
     const root = home();
     const robot = '7e1d2c3b-aaaa-4bbb-8ccc-0123456789ab';
     writeClaude(root, 'p/robot.jsonl', [
@@ -754,10 +767,21 @@ void describe('automated sessions’ tokens are not the developer’s (LAI-775)'
         },
       });
     await step();
+    const first = JSON.parse(sent.at(-1) ?? '{}') as { days: { rows: UsageRow[] }[] };
+    assert.deepEqual(
+      first.days[0]?.rows.map((r) => [r.output, r.automated ?? false]),
+      [[1_007, false]],
+    );
     writeFileSync(join(paths.dir, 'skip-sessions'), `${String(NOW_S - 950)} ${robot}\n`);
     assert.equal((await step()).kind, 'sent');
     const last = JSON.parse(sent.at(-1) ?? '{}') as { days: { rows: UsageRow[] }[] };
-    assert.equal(last.days[0]?.rows[0]?.output, 7);
+    assert.deepEqual(
+      last.days[0]?.rows.map((r) => [r.output, r.automated ?? false]),
+      [
+        [7, false],
+        [1_000, true],
+      ],
+    );
   });
 });
 
@@ -1706,7 +1730,7 @@ void describe('Claude Code sessions in a usage report (LAI-773, design.md §2)',
     return { root, paths, bodies, step, last };
   }
 
-  void test('each session’s tokens by model, its subagents rolled in; an automated session left out and named by key', async () => {
+  void test('each session’s tokens by model, its subagents rolled in; an automated session in a marked row, in no session, and named by key', async () => {
     const w = world();
     writeClaude(w.root, 'p/a.jsonl', [
       claudeLine(
@@ -1781,6 +1805,18 @@ void describe('Claude Code sessions in a usage report (LAI-773, design.md §2)',
             output: 70,
             cache_write: 300,
             cache_read: 3_000,
+          },
+          // ROBOT's tokens (D-091): a row of their own, marked, and in no
+          // session row — its telemetry is dropped by `excluded`.
+          {
+            agent: 'claude-code',
+            model: 'claude-opus-5-5',
+            task: null,
+            input: 0,
+            output: 999,
+            cache_write: 0,
+            cache_read: 0,
+            automated: true,
           },
           {
             agent: 'claude-code',
