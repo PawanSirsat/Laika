@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { LazyRichEditor, type CardCandidate, type MentionCandidate } from './LazyRichEditor.tsx';
 import { TaskMarkdown } from './TaskMarkdown.tsx';
 import './task-panel.css';
@@ -55,13 +55,10 @@ export function DocumentField({
   /** The text editing opened on, kept: a newer one arriving does not change it. */
   const [editing, setEditing] = useState<string | null>(null);
   const [caretAt, setCaretAt] = useState<{ x: number; y: number } | undefined>(undefined);
-  const [height, setHeight] = useState<number | undefined>(undefined);
-  const field = useRef<HTMLDivElement | null>(null);
 
   const open = (at?: { x: number; y: number }): void => {
     if (!mayEdit || editing !== null) return;
     setCaretAt(at);
-    setHeight(field.current?.offsetHeight);
     setEditing(value);
     onOpen();
   };
@@ -78,7 +75,6 @@ export function DocumentField({
       <LazyRichEditor
         value={editing}
         caretAt={caretAt}
-        holdHeight={height}
         holding={<div className="doc-field">{reading(editing)}</div>}
         label={label}
         placeholder={placeholder}
@@ -110,7 +106,6 @@ export function DocumentField({
 
   return (
     <div
-      ref={field}
       className="doc-field doc-field-can"
       data-editable={name}
       onClick={(event) => {

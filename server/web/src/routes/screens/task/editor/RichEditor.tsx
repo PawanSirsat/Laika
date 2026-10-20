@@ -201,7 +201,6 @@ export function RichEditor({
   cards,
   compact = false,
   caretAt,
-  holdHeight,
 }: RichEditorProps) {
   /** Decided once, on the text editing opened on — never on a later one. */
   const opening = useMemo(() => openDocument(bridge, value), [value]);
@@ -214,8 +213,6 @@ export function RichEditor({
   const [error, setError] = useState<string | undefined>(undefined);
   const [confirming, setConfirming] = useState(false);
   const [picker, setPicker] = useState<Picker | null>(null);
-  /** The reading view's height, held until the document is drawn (see `holdHeight`). */
-  const [held, setHeld] = useState(holdHeight);
   /** An `@` someone pressed Escape on: no list again until they move on. */
   const dismissedAt = useRef<number | null>(null);
   const wrap = useRef<HTMLDivElement | null>(null);
@@ -229,10 +226,10 @@ export function RichEditor({
   /*
    * **Built once.** `useEditor` compares its options by reference on every
    * render and calls `setOptions` when they differ, which re-applies the
-   * editor's state to its view. Options rebuilt per render (a new
-   * Placeholder, new handlers) made that happen on every render, and the
-   * panel jumped 121px as the editor opened (measured; the panel test holds
-   * it). Everything that changes is read through a ref instead.
+   * editor's state to its view. Options rebuilt per render — a new
+   * Placeholder, new handlers — would make that happen on every render: every
+   * keystroke's re-render, every picker move. Everything that changes is read
+   * through a ref instead.
    */
   const options = useMemo(
     () => ({
@@ -419,7 +416,6 @@ export function RichEditor({
       }
       return;
     }
-    setHeld(undefined);
     // Clicked into already: that caret is the person's, not ours to move.
     if (opening.kind !== 'rich' || mounted.view.hasFocus()) return;
     const { state, view } = mounted;
@@ -506,7 +502,6 @@ export function RichEditor({
       className={compact ? 'rich-editor rich-editor-compact' : 'rich-editor'}
       ref={wrap}
       data-mode={mode}
-      style={held === undefined ? undefined : { minHeight: held }}
     >
       <div className="rte-toolbar" role="toolbar" aria-label="Formatting">
         <span className="rte-style">

@@ -500,10 +500,14 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
 
   void test('opening the editor does not scroll the panel away from the text clicked', async () => {
     /*
-     * Measured on the way here: the panel jumped 121px as the editor opened.
-     * Removing any one of three things brings it back — the text held in
-     * place while the editor's chunk loads, the height held until its
-     * document is drawn, and the editor's options built once.
+     * Seen in the first screenshots: the editor opened with the caret at the
+     * end of the document, and a long one scrolled the panel to its bottom,
+     * away from where the person clicked.
+     *
+     * **A mouse click at a point, not `locator.click()`**: Playwright's own
+     * click scrolls this panel 121px before clicking — measured, even for a
+     * reader for whom no editor opens — so it cannot tell the app's scroll
+     * from its own.
      */
     const server: Server = { t3: subject() };
     const h = await panel(server);
@@ -513,12 +517,19 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
       const room = await main.evaluate((el) => el.scrollHeight - el.clientHeight);
       assert.ok(room > 100, `positive control: the panel cannot scroll (${String(room)}px)`);
       const before = await main.evaluate((el) => el.scrollTop);
-      await description(h).locator('.md p').first().click();
+      const text = await description(h).locator('.md p').first().boundingBox();
+      assert.ok(text !== null);
+      await h.page.mouse.click(text.x + 8, text.y + text.height / 2);
       const editor = description(h).locator('.rich-editor');
       await content(editor).waitFor({ timeout: 10_000 });
       await h.page.waitForTimeout(400);
       const after = await main.evaluate((el) => el.scrollTop);
       assert.ok(Math.abs(after - before) <= 2, `the panel scrolled ${String(after - before)}px`);
+      // And the caret is where the click was: in the paragraph, not at the end.
+      assert.match(
+        await h.page.evaluate(() => window.getSelection()?.anchorNode?.textContent ?? ''),
+        /every trip of the day|The console loads/,
+      );
     } finally {
       await h.close();
     }

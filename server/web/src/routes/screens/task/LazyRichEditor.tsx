@@ -60,15 +60,10 @@ export interface RichEditorProps {
   readonly caretAt?: { readonly x: number; readonly y: number } | undefined;
   /**
    * What stands in the editor's place while its chunk loads: the text it is
-   * replacing, so the panel neither shrinks nor scrolls in between.
+   * replacing, so the panel does not collapse to a one-line *Opening…* box
+   * and spring back when the editor arrives.
    */
   readonly holding?: ReactNode;
-  /**
-   * The height of what it replaces, held by the editor until its document is
-   * on the page. Without it the panel jumped 121px as the editor opened
-   * (measured; `task-panel-editing.test.ts` holds it).
-   */
-  readonly holdHeight?: number | undefined;
 }
 
 const Editor = lazy(async () => {
