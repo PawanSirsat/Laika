@@ -388,7 +388,7 @@ Laika email, here, and keeps both in `~/.laika/solidtime.json` (`0600`). Time
 from today on is pushed; `--since YYYY-MM-DD` reaches back.
 
 **Each push and pull asks for your Laika password**, signs in, and signs out
-when it is done. The board serves a person's hours to no token, so the token
+when it is done — only to a board on https, or on this machine. The board serves a person's hours to no token, so the token
 in `~/.laika/env` — the one your agents use — cannot read them or send them
 anywhere.
 
@@ -409,7 +409,9 @@ project, a card key read from its description and a digest. **Never the
 description.** The key is the one the description starts with, else the only
 one in it; the board resolves it and never guesses. An edit is a new revision
 of the entry, a delete is a delete, and a change in a closed period is flagged
-and not taken.
+and not taken. Only work comes in, never breaks. **An entry that came from
+Solidtime is read-only in Laika**: My day shows it without Edit or Delete —
+change it in Solidtime, and the next pull brings the change.
 
 **For owners and admins**, with a Solidtime key that sees everyone (manager
 or above):
