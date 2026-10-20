@@ -6,8 +6,9 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-827
-status: in-progress
+status: review
 started: 2026-10-20T21:30:56Z
+finished: 2026-10-20T22:53:13Z
 ---
 
 ## Goal
@@ -57,7 +58,7 @@ Made on the owner's direct instruction.
 - [x] **`docs/design/` is not touched** (D-020); the owner's instruction here
       overrides the mockup's sizes in the app only. Record the new scale in
       SPEC's design-tokens section and as a decision.
-- [ ] **Gate.** `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] **Gate.** `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Notes
 
@@ -219,6 +220,22 @@ the fair "before" for that screen; `after/` is this branch. Each folder holds
 `<screen>-<1440|390>-<light|dark>-<open|folded>.png` and `measure.json` with
 all four widths; `after-mid/` adds the Board at 1024 and 920. At 390 the
 sidebar is a drawer, so "open" and "folded" render the same page there.
+
+### Gate
+
+Run from the repo root on `97fc95e2` (the last code commit; only this file and
+the log changed after it), each to its own file with its own exit code:
+
+```
+pnpm test   > /tmp/lai828-test.txt 2>&1; echo "TEST $?"   →  TEST 0
+pnpm lint   > /tmp/lai828-lint.txt 2>&1; echo "LINT $?"   →  LINT 0
+pnpm format > /tmp/lai828-fmt.txt  2>&1; echo "FMT  $?"   →  FMT  0
+```
+
+server: 161 test files passed, 2 skipped; 3327 tests passed, 10 skipped.
+server/web: 2571 tests, 2571 pass, 0 fail. cli: 535 tests, 533 pass, 0 fail.
+`grep -E "Unhandled|Errors|Failed|not ok|✗"` on the test output matched only a
+test named `completeSetup and fieldErrors`.
 
 ### Decision draft (for CHIEF to file in `docs/DECISIONS.md`; not filed here)
 
