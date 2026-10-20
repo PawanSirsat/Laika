@@ -822,6 +822,31 @@ describe('by the clock: a stretch holds no more minutes than it has (review roun
     expect(entry.status).toBe(422);
     expect((await errorOf(entry)).reason).toBe('minutes_over_span');
   });
+
+  // 8:00–12:00 holds 10 and gives its slack to two half hours that overlap:
+  // 70 in 240 fits; without it, 60 in 9:00–9:45 does not.
+  it('an entry moved off the stretch it held open is refused: what it leaves must fit too', async () => {
+    const long = (await (await typed(at(8), at(12), 10)).json()) as { id: string };
+    await typed(at(9), at(9, 30), 30);
+    await typed(at(9, 15), at(9, 45), 30);
+    const yesterday = new Date(Date.parse(today()) - 86_400_000).toISOString().slice(0, 10);
+    for (const patch of [{ started_at: at(11) }, { day: yesterday }]) {
+      const res = await req(
+        `/api/v1/me/time-entries/${long.id}`,
+        { method: 'PATCH', body: JSON.stringify(patch) },
+        cookie,
+      );
+      expect(res.status, JSON.stringify(patch)).toBe(409);
+      const { error } = (await res.json()) as { error: { details: Record<string, unknown> } };
+      expect(error.details).toMatchObject({
+        reason: 'overlaps_confirmed',
+        stretch_minutes: 45,
+        would_hold: 60,
+      });
+    }
+    const still = (await myDay()).entries.find((e) => e.id === long.id);
+    expect([still?.started_at, still?.ended_at]).toEqual([at(8), at(12)]);
+  });
 });
 
 describe('the drafts a person holds, for the off switch (F)', () => {
