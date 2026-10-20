@@ -2,11 +2,12 @@
 id: LAI-794
 title: 'The Effort header is cut off on GitHub''s runner, and the plan-limit test reads the real clock'
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-785
-status: backlog
+status: in-progress
+started: 2026-10-20T00:01:26Z
 ---
 
 ## Goal
