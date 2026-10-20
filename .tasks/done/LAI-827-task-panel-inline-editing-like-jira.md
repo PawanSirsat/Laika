@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-795
-status: review
+status: done
 started: 2026-10-20T19:12:35Z
 finished: 2026-10-20T21:16:51Z
 ---
@@ -310,3 +310,21 @@ exit 0 each); the related panel files `slim-list`, `task-markdown`,
 `task-panel`, `comment-markdown` (35 cases, exit 0); `pnpm lint` and
 `pnpm format` from the root, each its own exit code — in the round-1 report.
 The full root gate is CHIEF's after merging.
+
+## Accepted (CHIEF, 2026-10-21)
+
+Review (review-task-panel-editing): BLOCK on one data-safety bug. One edit
+could make the save fall back to TipTap's escaping for the whole document,
+rewriting untouched text (`next_cursor` became `next\_cursor`, `A -> B`
+became `A -&gt; B`, and `\# hash` became a heading). Fixed in `d1346ceb`:
+untouched blocks are copied byte for byte from the source; changed blocks
+are written, read back and checked; anything that will not read back
+refuses to save and opens the draft as Markdown. Also fixed: fences inside
+code, Escape anywhere in the editor asks first, mentions are inserted as
+text, and two flaky tests. CHIEF read the byte-identical test suite and ran
+the editor unit files (72/72, exit 0). Security, dependencies (nine
+`@tiptap/*` packages at 3.32.0, 54 MIT packages, no network access) and lazy
+loading were verified by the reviewer. Follow-ups: LAI-839 (mention handles
+for org Owners and Admins) and LAI-840 (adding acceptance where none exists;
+needs a SPEC decision).
+
