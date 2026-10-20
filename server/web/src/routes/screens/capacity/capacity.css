@@ -425,7 +425,15 @@ a.cap-tile:hover {
   color: var(--chip-orange);
 }
 
-/* --- the load badge --- */
+/* --- the load badge, and overdue beside it (its own badge, D-092) --- */
+
+.cap-badges {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
 
 .cap-load {
   flex: none;
@@ -457,6 +465,18 @@ a.cap-tile:hover {
   border-color: var(--overdue-border);
   background: var(--blocked-bg);
   color: var(--overdue);
+}
+
+.cap-overdue {
+  padding: 0.125rem 0.5rem;
+  border: 1px dashed var(--overdue-border);
+  border-radius: var(--radius-pill);
+  color: var(--overdue);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1.5;
+  white-space: nowrap;
+  cursor: help;
 }
 
 /* --- blocks inside a card --- */
@@ -563,6 +583,16 @@ a.cap-tile:hover {
   gap: 0.25rem 0.875rem;
 }
 
+/* Waiting on reviewers and due soon: beside the load, not part of it. */
+.cap-waits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.875rem;
+}
+
 /* "7 in progress": the figure first, read as one phrase. */
 .cap-count {
   display: inline-flex;
@@ -588,18 +618,6 @@ a.cap-tile:hover {
   font-weight: var(--weight-semibold);
 }
 
-.cap-count-overdue {
-  padding: 0 0.4375rem;
-  border: 1px solid var(--overdue-border);
-  border-radius: var(--radius-pill);
-  background: var(--blocked-bg);
-  color: var(--overdue);
-}
-
-.cap-count-overdue .cap-count-n {
-  color: var(--overdue);
-}
-
 .cap-bar {
   display: flex;
   height: 0.5rem;
@@ -616,10 +634,6 @@ a.cap-tile:hover {
 
 .cap-part-in_progress {
   background: var(--chip-blue);
-}
-
-.cap-part-in_review {
-  background: var(--chip-purple);
 }
 
 .cap-part-todo {
@@ -689,6 +703,29 @@ a.cap-tile:hover {
   height: 2px;
   background: var(--border-default);
   opacity: 1;
+}
+
+/* Who did it: by hand, by agents, and bookkeeping apart (LAI-818). */
+.cap-spark-split {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.125rem 0.875rem;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+.cap-spark-split .cap-count-n {
+  font-size: var(--text-sm);
+}
+
+.cap-spark-tidy {
+  cursor: help;
+}
+
+.cap-spark-tidy .cap-count-n {
+  color: var(--text-muted);
 }
 
 /* --- show tasks --- */
