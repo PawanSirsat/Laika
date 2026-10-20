@@ -104,10 +104,31 @@ export function budgetLine(budget: Pick<Budget, 'used' | 'tokens' | 'share'>): s
   )}%`;
 }
 
+/**
+ * A task's **default** budget in the task panel (LAI-785 review): the token
+ * estimate's high end frozen at claim is not a budget anybody set, so it is
+ * no bar — nothing under 80%, then this one line. Null for a budget a lead
+ * set, which is the bar.
+ */
+export function estimateAlertLine(
+  budget: Pick<Budget, 'source' | 'used' | 'tokens' | 'share' | 'state'>,
+): string | null {
+  if (budget.source !== 'forecast' || budget.state === 'under') return null;
+  const figures = `${compactTokens(budget.used)} of ${compactTokens(budget.tokens)} (${String(
+    Math.round(budget.share * 100),
+  )}%)`;
+  return budget.state === 'over'
+    ? `Past its token estimate: ${figures}.`
+    : `Over 80% of its token estimate: ${figures}.`;
+}
+
 /** Where a budget's figure came from, in words. */
 export function budgetSource(budget: Pick<Budget, 'scope' | 'source' | 'period'>): string {
   if (budget.scope === 'task') {
-    return budget.source === 'forecast' ? 'the forecast’s p80, frozen at claim' : 'set by a lead';
+    // Plain words, not "p80" (LAI-785): the pessimistic end of the estimate.
+    return budget.source === 'forecast'
+      ? 'the token estimate’s high end, frozen at claim'
+      : 'set by a lead';
   }
   const days = budget.period === null ? '' : ` · ${budget.period.from} – ${budget.period.to}`;
   return `${budget.scope === 'project' ? 'this month' : 'the sprint’s days'}${days}`;

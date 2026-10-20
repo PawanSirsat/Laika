@@ -178,8 +178,8 @@ export function BudgetsCard({
         <h4 className="usage-person-h">Tasks at 80% or more</h4>
         {ofTasks.length === 0 ? (
           <p className="prof-empty">
-            None. A task’s budget is its forecast’s p80, frozen at claim, unless a lead sets one on
-            the task.
+            None. A task’s budget is the high end of its token estimate, frozen at claim, unless a
+            lead sets one on the task.
           </p>
         ) : (
           ofTasks.map((b) => (

@@ -3,14 +3,19 @@ import { type Task } from './tasks.ts';
 import { compactTokens } from './usage.ts';
 
 /**
- * Sizes and build-time forecasts, the client half (§4.32, §6.4, D-085, LAI-771).
+ * Effort and its time estimate, the client half (§4.32, §6.4, D-085, LAI-771).
  *
  * Laika computes a size for every task — `XS` to `XL`, relative to the
  * project's typical task, each level double the last — and, once the project
  * has ten finished tasks, a build-time range. A person may set the size by
  * hand; the computed one stays beside it. These are the types the server
- * sends, the three reads and one write, and the few decisions about how a
- * figure reads, kept here so the card, the List and the panel say the same.
+ * sends, the three reads and one write, and the decisions about how a figure
+ * reads, kept here so the card, the List and the panel say the same.
+ *
+ * **The screen calls it effort, in plain words** (LAI-785): *Small · about
+ * 45 min to 1.5 h*, not `S` and `44 min–1.3 h`. The API, the database and the
+ * MCP tools keep `size` and its levels, so nothing an agent or a URL sends
+ * changes.
  *
  * **Nothing here is about a person.** The accuracy figure is the project's;
  * the server sends no per-person breakdown, and none is derived here.
@@ -239,85 +244,382 @@ export function setTaskSize(taskId: string, size: SizeLevel | null): Promise<Tas
 
 // ------------------------------------------------------------- how it reads
 
-/** `25 min`, `1.5 h`, `3 d` — the server's own `formatBuild`, for the same reading. */
-export function buildLabel(ms: number): string {
-  const minutes = Math.round(ms / 60_000);
-  if (minutes < 60) return `${String(Math.max(1, minutes))} min`;
-  const hours = ms / 3_600_000;
-  if (hours < 10) return `${hours.toFixed(1)} h`;
-  if (hours < 48) return `${String(Math.round(hours))} h`;
-  return `${String(Math.round(hours / 24))} d`;
+/**
+ * What each level is called on screen (LAI-785). The API, the database and the
+ * MCP tools keep `size` and `XS`…`XL`; a person reads *effort*, in words where
+ * there is room and as the level on a card's chip.
+ */
+const EFFORT_WORDS: Readonly<Record<SizeLevel, string>> = {
+  XS: 'Extra small',
+  S: 'Small',
+  M: 'Medium',
+  L: 'Large',
+  XL: 'Extra large',
+};
+
+export function effortWord(level: SizeLevel): string {
+  return EFFORT_WORDS[level];
 }
 
 /**
- * `25–50 min` — p50 to p80, the unit written once when both share it. Null
- * in a cold start, which has no hours to show (D-085 item 6).
+ * A time as it is printed, and the time that printed text says: `1.5 h` is
+ * 5 400 000 ms, whatever it was rounded from. A verdict is judged on these,
+ * so it can never disagree with the figures beside it (LAI-785 review).
  */
-export function forecastRange(size: TaskSize | null | undefined): string | null {
-  if (size?.build_p50_ms == null || size.build_p80_ms === null) return null;
-  const low = buildLabel(size.build_p50_ms);
-  const high = buildLabel(size.build_p80_ms);
-  const unit = (label: string) => label.slice(label.indexOf(' '));
-  if (unit(low) === unit(high)) return `${low.slice(0, low.indexOf(' '))}–${high}`;
-  return `${low}–${high}`;
+export interface Shown {
+  readonly label: string;
+  readonly ms: number;
 }
 
-/** `+0.8`, `−1.0`, `0.0` — a factor's contribution, in levels. */
-export function levelsLabel(levels: number): string {
-  const rounded = Math.round(levels * 10) / 10;
-  if (rounded === 0) return '0.0';
-  return `${rounded > 0 ? '+' : '−'}${Math.abs(rounded).toFixed(1)}`;
+const MINUTE_MS = 60_000;
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+
+/** `25 min`, `1.5 h`, `3 d` — a time that happened, as printed; the server's own `formatBuild`. */
+export function buildShown(ms: number): Shown {
+  const minutes = Math.round(ms / MINUTE_MS);
+  if (minutes < 60) {
+    const m = Math.max(1, minutes);
+    return { label: `${String(m)} min`, ms: m * MINUTE_MS };
+  }
+  const hours = ms / HOUR_MS;
+  if (hours < 10) {
+    const h = hours.toFixed(1);
+    return { label: `${h} h`, ms: Number(h) * HOUR_MS };
+  }
+  if (hours < 48) {
+    const h = Math.round(hours);
+    return { label: `${String(h)} h`, ms: h * HOUR_MS };
+  }
+  const d = Math.round(hours / 24);
+  return { label: `${String(d)} d`, ms: d * DAY_MS };
+}
+
+/** `25 min`, `1.5 h`, `3 d` — a time that happened. */
+export function buildLabel(ms: number): string {
+  return buildShown(ms).label;
+}
+
+/** In days: whole days, or a half under one — never `0 d`. */
+function inDays(ms: number): Shown {
+  const days = ms / DAY_MS;
+  const d = days < 1 ? Math.max(0.5, Math.round(days * 2) / 2) : Math.round(days);
+  return { label: `${String(d)} d`, ms: d * DAY_MS };
+}
+
+/**
+ * A time that is *estimated*, as printed: minutes to five, hours under ten to
+ * a half, then whole hours, then days. `38 min` to `1.3 h` claims a precision
+ * the estimate does not have.
+ */
+function roughShown(ms: number): Shown {
+  const minutes = ms / MINUTE_MS;
+  if (minutes < 57.5) {
+    const m = Math.max(5, Math.round(minutes / 5) * 5);
+    return { label: `${String(m)} min`, ms: m * MINUTE_MS };
+  }
+  const hours = ms / HOUR_MS;
+  if (hours < 10) {
+    const h = Math.round(hours * 2) / 2;
+    return { label: `${String(h)} h`, ms: h * HOUR_MS };
+  }
+  if (hours < 48) {
+    const h = Math.round(hours);
+    return { label: `${String(h)} h`, ms: h * HOUR_MS };
+  }
+  return inDays(ms);
+}
+
+/** `40 min`, `1.5 h`, `14 h`, `3 d` — one estimated time. */
+export function roughDuration(ms: number): string {
+  return roughShown(ms).label;
+}
+
+/** The two ends of an estimate as they are printed. */
+export interface ShownRange {
+  readonly low: Shown;
+  readonly high: Shown;
+}
+
+/**
+ * **The one place a range's ends are rounded** — the headline, the
+ * comparison line and its verdict all read them from here. A range that
+ * reaches days says both ends in days (`1–2 d`, never `24 h–2 d`); minutes
+ * and hours may share one, as in `40 min–1.5 h`.
+ */
+export function shownRange(p50: number | null, p80: number | null): ShownRange | null {
+  if (p50 === null || p80 === null) return null;
+  const high = roughShown(p80);
+  const low = high.label.endsWith(' d') ? inDays(p50) : roughShown(p50);
+  return { low, high };
+}
+
+const unitOf = (label: string) => label.slice(label.indexOf(' ') + 1);
+const numberOf = (label: string) => label.slice(0, label.indexOf(' '));
+
+/** The low end, without its unit when the high end says the same one. */
+function lowText(range: ShownRange): string {
+  return unitOf(range.low.label) === unitOf(range.high.label)
+    ? numberOf(range.low.label)
+    : range.low.label;
+}
+
+/**
+ * The headline's time: `about 45 min to 1.5 h`, `about 20 to 45 min`, or one
+ * time when both ends round to it. Null without hours (D-085 item 6).
+ */
+export function timeRange(p50: number | null, p80: number | null): string | null {
+  const range = shownRange(p50, p80);
+  if (range === null) return null;
+  if (range.low.label === range.high.label) return `about ${range.high.label}`;
+  return `about ${lowText(range)} to ${range.high.label}`;
+}
+
+function dashed(range: ShownRange): string {
+  if (range.low.label === range.high.label) return range.high.label;
+  return `${lowText(range)}–${range.high.label}`;
+}
+
+/** The comparison line's: `40 min–1.5 h`, `20–45 min`, `1 h`. */
+export function shortRange(p50: number | null, p80: number | null): string | null {
+  const range = shownRange(p50, p80);
+  return range === null ? null : dashed(range);
+}
+
+/**
+ * How a finish compares with the estimate frozen at start, **on the values
+ * printed** (LAI-785 review): below the shown low end is faster than
+ * expected, the shown range itself is on target, up to half again past the
+ * shown top is a little over, and beyond that well over.
+ */
+export type Verdict = 'faster than expected' | 'on target' | 'a little over' | 'well over';
+
+/** Up to half again past the shown top is a little over. */
+const A_LITTLE = 1.5;
+/** The printed values are exact; the products of floats beside them are not. */
+const SLACK_MS = 0.5;
+
+export function verdictOf(took: Shown, range: ShownRange): Verdict {
+  if (took.ms < range.low.ms - SLACK_MS) return 'faster than expected';
+  if (took.ms <= range.high.ms + SLACK_MS) return 'on target';
+  if (took.ms <= range.high.ms * A_LITTLE + SLACK_MS) return 'a little over';
+  return 'well over';
+}
+
+/** The comparison line and the verdict in it, from one rounding. */
+export interface Comparison {
+  readonly text: string;
+  /** Null when no hours were frozen at start, so there is nothing to judge against. */
+  readonly verdict: Verdict | null;
+}
+
+/**
+ * The one line once there is an actual: `Estimated at start 40 min–1.5 h ·
+ * took 1.6 h · a little over`, against the estimate frozen when work
+ * started — what the project's accuracy measures too, and not the headline's
+ * current one. Null before the first finish.
+ */
+export function comparison(atStart: FrozenEstimate | null, actual: ActualTimes): Comparison | null {
+  if (actual.build_ms === null) return null;
+  const took = buildShown(actual.build_ms);
+  const range = atStart === null ? null : shownRange(atStart.build_p50_ms, atStart.build_p80_ms);
+  if (range === null) return { text: `Took ${took.label}`, verdict: null };
+  const verdict = verdictOf(took, range);
+  return {
+    text: `Estimated at start ${dashed(range)} · took ${took.label} · ${verdict}`,
+    verdict,
+  };
+}
+
+/** {@link comparison}'s line alone. */
+export function comparisonLine(atStart: FrozenEstimate | null, actual: ActualTimes): string | null {
+  return comparison(atStart, actual)?.text ?? null;
+}
+
+/**
+ * Where the time went: `Building 1.6 h · waiting for review 41 h · rework
+ * 20 min`, each part only when it happened. Null when the build is all there
+ * is — the comparison line already says how long it took.
+ */
+export function timelineLine(actual: ActualTimes): string | null {
+  if (actual.review_wait_ms <= 0 && actual.rework_ms <= 0) return null;
+  const parts = [
+    ...(actual.build_ms === null ? [] : [`building ${buildLabel(actual.build_ms)}`]),
+    ...(actual.review_wait_ms > 0
+      ? [`waiting for review ${buildLabel(actual.review_wait_ms)}`]
+      : []),
+    ...(actual.rework_ms > 0 ? [`rework ${buildLabel(actual.rework_ms)}`] : []),
+  ];
+  const line = parts.join(' · ');
+  return `${line.charAt(0).toUpperCase()}${line.slice(1)}`;
 }
 
 /**
  * The List's sort key: the level shown, then the computed weight within it.
- * A task with no size yet sorts after every sized one.
+ * A task with no effort yet sorts after every one that has one.
  */
 export function sizeRank(size: TaskSize | null | undefined): number {
   if (size == null) return Number.POSITIVE_INFINITY;
   return SIZE_LEVELS.indexOf(size.level) * 1000 + Math.min(size.weight, 999);
 }
 
-/** The hover text of a size chip: who set it, what Laika computed, and the range. */
-export function sizeTitle(size: TaskSize): string {
-  const range = forecastRange(size);
+/** The hover text of an effort chip: the level in words, who set it, and the time. */
+export function effortTitle(size: TaskSize): string {
+  const time = timeRange(size.build_p50_ms, size.build_p80_ms);
   return [
-    size.overridden ? `Size ${size.level}, set by a person` : `Size ${size.level}`,
-    ...(size.overridden ? [`Laika computed ${size.computed}`] : []),
-    range ?? 'early: no hours yet',
+    `Effort: ${effortWord(size.level)}${size.overridden ? ', set by a person' : ''}`,
+    ...(size.overridden ? [`Laika’s estimate: ${effortWord(size.computed)}`] : []),
+    time ?? 'no time estimate yet',
   ].join(' · ');
 }
 
-/** `1.7`, `2.1`, `1.68` — a ratio with no trailing zeros. */
-function ratio(value: number): string {
-  return value.toFixed(2).replace(/\.?0+$/, '');
+// ------------------------------------------------------------- the why
+
+/** A factor smaller than this is rounding: it changes nothing worth a row. */
+const SHOWN = 0.05;
+
+export type WhyArrow = '↑' | '↓' | '=';
+
+/** One row of *Why Small?*: which way it moved the effort, in a sentence. */
+export interface WhyRow {
+  readonly key: string;
+  readonly arrow: WhyArrow;
+  readonly text: string;
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${String(n)} ${n === 1 ? one : many}`;
+
+/**
+ * A factor as a person says it. The labels are the server's sentences
+ * (`estimate-model.ts`, `forecast()` and `rollUp()`); this rewrites the ones
+ * it recognises and keeps the server's own words for anything else, so a new
+ * factor reads, untidily, rather than vanishing. `estimates.test.ts` reads
+ * the server's templates so a reworded label fails there first.
+ */
+function factorSentence(f: EstimateFactor, arrow: WhyArrow): string {
+  const up = arrow === '↑';
+  switch (f.key) {
+    case 'words': {
+      const m = /^(\d+) words? of description and acceptance \(typical here: (\d+)\)$/.exec(
+        f.label,
+      );
+      if (m === null) break;
+      const n = Number(m[1]);
+      if (arrow === '=') return `Description length is typical (${plural(n, 'word')})`;
+      return `${up ? 'Longer' : 'Shorter'} description than most tasks here (${plural(n, 'word')}; most have about ${m[2] ?? ''})`;
+    }
+    case 'criteria': {
+      const m = /^(\d+) acceptance criteri(?:on|a) \(typical here: (\d+)\)$/.exec(f.label);
+      if (m === null) break;
+      const n = Number(m[1]);
+      if (n === 0) return `No acceptance criteria (most tasks here have ${m[2] ?? ''})`;
+      return `${up ? 'More' : 'Fewer'} acceptance criteria than most tasks here (${String(n)}; most have ${m[2] ?? ''})`;
+    }
+    case 'deps':
+      if (f.label === 'Blocked by nothing') return 'Not blocked by anything';
+      break;
+    case 'tag': {
+      const m = /^Tagged (.+)$/.exec(f.label);
+      if (m === null) break;
+      return `Tagged “${m[1] ?? ''}”: tasks with that tag ${up ? 'take longer' : 'are quicker'} here`;
+    }
+    case 'other_tags':
+      if (f.label !== 'Tags it does not carry') break;
+      return `Has none of the tags that usually mean ${up ? 'quicker work' : 'more work'}`;
+    case 'similar': {
+      const m = /^(\d+) similar finished tasks? \(median (.+)\)$/.exec(f.label);
+      if (m === null) break;
+      return `${plural(Number(m[1]), 'similar finished task')} took about ${m[2] ?? ''}`;
+    }
+    case 'subtasks': {
+      const m = /^(\d+) subtasks? add up to more than its own text$/.exec(f.label);
+      if (m === null) break;
+      return `Its ${plural(Number(m[1]), 'subtask')} add up to more than its own description`;
+    }
+    case 'agent': {
+      const m = /^The claimant’s own size at claim: (XS|S|M|L|XL)\b/.exec(f.label);
+      if (m === null) break;
+      return `Estimated ${effortWord(m[1] as SizeLevel)} when it was claimed`;
+    }
+  }
+  return f.label;
 }
 
 /**
- * The project's accuracy, in one line (D-085 item 8): the frozen-at-claim
- * forecasts against what happened when there are any, else the back-test
- * against the plain median, else how many finished tasks hours wait for.
+ * *Why Small?* as rows: arrows instead of signed levels, and only the factors
+ * that moved it — except the description's length, the main signal, which
+ * says *typical* when it is. Priority never moves it, so it is not a row.
  */
-export function accuracyLine(view: EstimateAccuracy): string {
+export function whyRows(why: EstimateWhy): WhyRow[] {
+  return why.factors
+    .filter((f) => f.key !== 'priority' && (Math.abs(f.levels) >= SHOWN || f.key === 'words'))
+    .map((f) => {
+      const arrow: WhyArrow = Math.abs(f.levels) < SHOWN ? '=' : f.levels > 0 ? '↑' : '↓';
+      return { key: f.key, arrow, text: factorSentence(f, arrow) };
+    });
+}
+
+/** `A typical task here has about 174 words and takes about 55 min.` */
+export function typicalSentence(why: EstimateWhy): string {
+  const { words, build_ms } = why.typical;
+  return `A typical task here has about ${String(words)} words${
+    build_ms === null ? '' : ` and takes about ${roughDuration(build_ms)}`
+  }.`;
+}
+
+// ------------------------------------------------------- how good it is
+
+/** `2.4`, `1.7`, `2` — a ratio to one decimal, no trailing zero. */
+function times(value: number): string {
+  return `${value.toFixed(1).replace(/\.0$/, '')}×`;
+}
+
+/**
+ * The fewest measured estimates whose typical error is told: a median of one
+ * or two finishes describes those tasks, not the project's estimates.
+ */
+const TOLD_FROM = 3;
+
+/**
+ * The project's accuracy in a sentence (D-085 item 8), for inside the
+ * disclosure. `typical_error` is a **median** ratio, so it is *typically off
+ * by*, never *on average* (LAI-785 review). The estimates frozen at start
+ * against what happened, once at least three are measured; else the replay
+ * on past tasks. Null in a cold start, when the headline already says what
+ * the time estimate waits for.
+ */
+export function accuracySentence(view: EstimateAccuracy): string | null {
   const { live, backtest } = view;
-  if (live.n > 0 && live.typical_error !== null && live.p80_hit_rate !== null) {
-    return `Typically off by ×${ratio(live.typical_error)} · p80 held ${String(
-      Math.round(live.p80_hit_rate * 100),
-    )}% · ${String(live.n)} ${live.n === 1 ? 'task' : 'tasks'} measured`;
+  if (live.n >= TOLD_FROM && live.typical_error !== null) {
+    const held =
+      live.p80_hit_rate === null
+        ? ''
+        : ` ${String(Math.round(live.p80_hit_rate * live.n))} of them took no longer than the estimate.`;
+    return `Estimates here are typically off by about ${times(live.typical_error)} (${plural(live.n, 'task')} so far).${held}`;
   }
+  const first =
+    live.n === 0
+      ? 'No estimate has been checked against a finish yet.'
+      : 'Too few estimates have been checked against a finish to judge yet.';
   if (backtest !== null) {
-    return `Back-test: ×${ratio(backtest.method_error)} against ×${ratio(
-      backtest.median_error,
-    )} for the project median, over ${String(backtest.n)} tasks${
-      backtest.beats_median ? '' : ' — forecasts use the median range'
-    }`;
+    return `${first} Tried on ${String(backtest.n)} past tasks here, they are typically off by about ${times(
+      backtest.method_error,
+    )}${backtest.beats_median ? '' : ', no better than the usual time, so the usual range is shown'}.`;
   }
-  if (view.finished < view.forecasts_after) {
-    return `Sizes only: hours after ${String(view.forecasts_after)} finished tasks (${String(
-      view.finished,
-    )} so far)`;
-  }
-  return 'No forecast has been measured against a finish yet';
+  if (live.n === 0 && view.finished < view.forecasts_after) return null;
+  return first;
+}
+
+/**
+ * Whether to say *rough estimate* beside the time: fewer than five estimates
+ * measured here, or typically off by more than 2×.
+ */
+const ROUGH_BELOW = 5;
+const ROUGH_OVER = 2;
+
+export function isRough(view: EstimateAccuracy): boolean {
+  const { live } = view;
+  return live.n < ROUGH_BELOW || live.typical_error === null || live.typical_error > ROUGH_OVER;
 }
 
 // ------------------------------------------------------ tokens (LAI-772)
@@ -328,51 +630,79 @@ export function tokenRange(f: Pick<TokenForecast, 'p50' | 'p80'>): string | null
   return `${compactTokens(f.p50)}–${compactTokens(f.p80)}`;
 }
 
-/** What the token forecast waits for (D-085 item 6), or null once it forecasts. */
-export function tokensWaitNote(f: TokenForecast): string | null {
+/**
+ * The token estimate as one line, or null when there is none — never an
+ * *early*. Once work started, the range frozen then and what the build used;
+ * before, the forecast.
+ */
+export function tokenLine(e: TaskEstimate): string | null {
+  const used =
+    e.actual_tokens === null
+      ? ''
+      : ` · used ${compactTokens(e.actual_tokens.build)}${e.actual.first_finish_at === null ? ' so far' : ''}`;
+  const frozenRange =
+    e.at_start === null
+      ? null
+      : tokenRange({ p50: e.at_start.tokens_p50, p80: e.at_start.tokens_p80 });
+  if (frozenRange !== null) return `Tokens: estimated ${frozenRange}${used}`;
+  if (e.tokens.p50 === null || e.tokens.p80 === null) return null;
+  return `Tokens: about ${compactTokens(e.tokens.p50)} to ${compactTokens(e.tokens.p80)} to build${used}`;
+}
+
+/** The one hint about tokens, for inside the disclosure, while there is no forecast. */
+export function tokenHint(f: TokenForecast): string | null {
   if (f.p50 !== null) return null;
-  return `Tokens after ${String(f.forecasts_after)} finished tasks with attributed token data (${String(
+  return `Token estimates start after ${String(f.forecasts_after)} finished tasks with token data (${String(
     f.learned_from,
   )} so far).`;
 }
 
-/** The token forecast's record in one line, as `accuracyLine` reads the hours'. */
-export function tokenAccuracyLine(view: EstimateAccuracy): string {
+/** The token estimate's record in a sentence, by the same rules, or null with none to tell. */
+export function tokenAccuracySentence(view: EstimateAccuracy): string | null {
   const { live, backtest } = view.tokens;
-  if (live.n > 0 && live.typical_error !== null && live.p80_hit_rate !== null) {
-    return `Tokens: typically off by ×${ratio(live.typical_error)} · p80 held ${String(
-      Math.round(live.p80_hit_rate * 100),
-    )}% · ${String(live.n)} ${live.n === 1 ? 'task' : 'tasks'} measured`;
+  if (live.n >= TOLD_FROM && live.typical_error !== null) {
+    return `Token estimates are typically off by about ${times(live.typical_error)} (${plural(live.n, 'task')} so far).`;
   }
   if (backtest !== null) {
-    return `Tokens back-test: ×${ratio(backtest.method_error)} against ×${ratio(
-      backtest.median_error,
-    )} for the project median, over ${String(backtest.n)} tasks${
-      backtest.beats_median ? '' : ' — forecasts use the median range'
-    }`;
+    return `Tried on ${String(backtest.n)} past tasks here, token estimates are typically off by about ${times(
+      backtest.method_error,
+    )}.`;
   }
-  return `Tokens: no forecast until ${String(view.tokens.forecasts_after)} finished tasks have attributed token data (${String(
-    view.tokens.learned_from,
-  )} so far)`;
+  return null;
 }
+
+// ------------------------------------------------- notes (LAI-772)
 
 /** "Scope grew after start" (the R&D's idea 12): about the task, never its author. */
 export function scopeGrewNote(grew: ScopeGrowth | null): string | null {
   if (grew === null) return null;
-  return `Scope grew after start: ${grew.from} when work began, ${grew.to} now`;
+  return `It grew after work started: ${effortWord(grew.from)} then, ${effortWord(grew.to)} now.`;
 }
 
 /** The split suggestion for an XL task (idea 9), with the rounds XL tasks here took. */
 export function splitNote(split: SplitSuggestion | null): string | null {
   if (split === null) return null;
-  if (split.rounds_avg === null) return 'Consider splitting it into smaller tasks';
-  return `Consider splitting it: XL tasks here took ${String(split.rounds_avg)} rounds on average (${String(
+  if (split.rounds_avg === null) return 'Consider splitting it into smaller tasks.';
+  return `Consider splitting it: extra large tasks here took ${String(split.rounds_avg)} review rounds on average (${String(
     split.xl_finished,
-  )} finished)`;
+  )} finished).`;
 }
 
+const CONFIDENCE_WORDS: Readonly<Record<ClaimConfidence, string>> = {
+  green: 'confident',
+  yellow: 'somewhat unsure',
+  red: 'not confident',
+};
+
 /** What the claimant said at claim — never who, when, or with which agent. */
-export function claimNote(claim: ClaimEstimate | null): string | null {
+export function claimSentence(claim: ClaimEstimate | null): string | null {
   if (claim === null) return null;
-  return `Said at claim: ${[claim.level, claim.confidence].filter((x) => x !== null).join(', ')}`;
+  const parts = [
+    ...(claim.level === null ? [] : [`estimated ${effortWord(claim.level)}`]),
+    ...(claim.confidence === null
+      ? []
+      : [`${CONFIDENCE_WORDS[claim.confidence]} it would land as asked`]),
+  ];
+  if (parts.length === 0) return null;
+  return `At claim: ${parts.join(', ')}.`;
 }

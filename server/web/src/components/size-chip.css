@@ -1,6 +1,6 @@
 /*
- * The size chip (D-085, LAI-771): the card, the List's Size column and the
- * task panel draw the same one. Existing tokens only (D-020), so both themes
+ * The effort chip (D-085, LAI-771; effort since LAI-785): the card and the
+ * List's Effort column draw the same one. Existing tokens only (D-020), so both themes
  * come for free: the small sizes neutral, a typical task blue, the large ones
  * stronger — never red, because a large task is not a problem.
  */
