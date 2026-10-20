@@ -52,6 +52,19 @@ const mondayOf = (day: string): string => {
   return addDays(day, -((weekday + 6) % 7));
 };
 
+/**
+ * What a gap may show, by the room the font leaves it: its length, a bare
+ * "+", or nothing. Its name says which gap and how long, always.
+ */
+const gapForms = (length: string): readonly string[] => [`+ ${length}`, '+', ''];
+
+/** What a block's second line may show, by the same measure: both, the length, or nothing. */
+const subForms = (range: string, length: string): readonly string[] => [
+  `${range} · ${length}`,
+  length,
+  '',
+];
+
 /** The undo id the stub gives a change: its method and path, so a test can name it. */
 const undoId = (method: string, path: string): string => `u:${method}:${path}`;
 
@@ -217,10 +230,23 @@ void describe('gaps and breaks (4, D)', () => {
       const stat = await h.page.locator('[data-stat="gaps"]').innerText();
       assert.match(stat, new RegExp(dur(75)));
       assert.match(stat, /2 unaccounted/);
-      assert.deepEqual(await h.page.locator('.dayline-gap').allInnerTexts(), [
-        `+ ${dur(30)}`,
-        `+ ${dur(45)}`,
-      ]);
+      // Which gap, and how long, is in its name whatever fits on the line:
+      // CI's fonts draw "+ 30 min" wider than this Mac's, and it is a "+".
+      const gaps = h.page.locator('.dayline-gap');
+      assert.deepEqual(
+        await gaps.evaluateAll((els) => els.map((el) => el.getAttribute('aria-label'))),
+        [
+          `Unaccounted 11:30 AM–12:00 PM, ${dur(30)} — add time or mark a break`,
+          `Unaccounted 12:45–1:30 PM, ${dur(45)} — add time or mark a break`,
+        ],
+      );
+      const shown = await gaps.allInnerTexts();
+      for (const [i, minutes] of [30, 45].entries()) {
+        assert.ok(
+          gapForms(dur(minutes)).includes(shown[i] ?? '?'),
+          `gap ${String(i)}: "${shown[i] ?? ''}"`,
+        );
+      }
     } finally {
       await h.close();
     }
@@ -243,6 +269,9 @@ void describe('gaps and breaks (4, D)', () => {
       });
       assert.equal(await h.page.locator('.dayline-gap').count(), 1);
       assert.match(await h.page.locator('[data-stat="gaps"]').innerText(), /1 unaccounted/);
+      const drawn = h.page.locator('.dayline-break');
+      assert.equal(await drawn.getAttribute('aria-label'), 'Break 11:30 AM–12:00 PM — not counted');
+      assert.ok(['Break', ''].includes(await drawn.innerText()), 'the break shows something else');
 
       await h.page.locator('.dayline-break').click();
       await h.page.getByRole('button', { name: 'Not a break' }).click();
@@ -946,6 +975,28 @@ void describe('a phone, and both themes (I)', () => {
               .map((el) => `${el.className}: ${(el.textContent ?? '').trim().slice(0, 40)}`),
           );
           assert.deepEqual(cut, [], `${String(width)} folded=${String(folded)}: cut`);
+          // Whatever form fits, the name keeps which and how long.
+          const drawn = await h.page.evaluate(() => ({
+            gaps: [...document.querySelectorAll('.dayline-gap')].map((el) => [
+              el.getAttribute('aria-label') ?? '',
+              (el.textContent ?? '').trim(),
+            ]),
+            blocks: [...document.querySelectorAll('[data-block-select]')].map((el) => [
+              el.getAttribute('aria-label') ?? '',
+              (el.querySelector('.dayline-block-sub')?.textContent ?? '').trim(),
+            ]),
+          }));
+          assert.ok(drawn.gaps.length > 0 && drawn.blocks.length > 0, 'nothing drawn to look at');
+          for (const [name = '', text = ''] of drawn.gaps) {
+            const said = /^Unaccounted .+, (.+) — add time or mark a break$/.exec(name);
+            assert.ok(said?.[1] !== undefined, `a gap named "${name}"`);
+            assert.ok(gapForms(said[1]).includes(text), `${name}: shows "${text}"`);
+          }
+          for (const [name = '', text = ''] of drawn.blocks) {
+            const said = /^(.+?), .*, ([^,]+)$/.exec(name);
+            assert.ok(said?.[1] !== undefined && said[2] !== undefined, `a block named "${name}"`);
+            assert.ok(subForms(said[1], said[2]).includes(text), `${name}: shows "${text}"`);
+          }
         }
       }
       // The positive control: with room, a gap says how long it is.
