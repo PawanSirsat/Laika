@@ -561,10 +561,15 @@ void describe('the project is named in the bar, wherever the rail is', () => {
       await h.page.setViewportSize({ width: 1600, height: 900 });
       await h.page.locator('.sidebar-wordmark').waitFor({ timeout: 20_000 });
 
-      // The rail's own header button is what collapses it.
-      await h.page.locator('.sidebar-logo').click();
+      // The toggle in the rail's head is what collapses it (LAI-796).
+      await h.page.locator('.sidebar-toggle').click();
       await h.page.waitForSelector('.shell-rail-mini', { timeout: 10_000 });
-      await h.page.waitForTimeout(400);
+      await h.page.waitForFunction(
+        () =>
+          Math.round(document.querySelector('#sidebar')?.getBoundingClientRect().width ?? 0) === 60,
+        undefined,
+        { timeout: 5000 },
+      );
 
       const m = await naming(h);
       assert.equal(m.rail, null, 'the wordmark survived the collapse — wrong state');
