@@ -2,11 +2,12 @@
 id: LAI-811
 title: 'Signed out too often: a remembered session''s cookie is never renewed, and "Keep me signed in" starts unticked (24 h, browser-session cookie)'
 area: server
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-796
-status: backlog
+status: in-progress
+started: 2026-10-20T11:28:33Z
 ---
 
 ## Goal
