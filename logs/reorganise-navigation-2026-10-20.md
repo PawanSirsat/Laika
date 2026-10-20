@@ -32,3 +32,10 @@
 
 **State**
 In `.tasks/review/`. Gate below.
+
+**Gate** (repo root, after the last code edit `8a7de57a`, master `6a94951c` merged; load average about 20)
+- `pnpm test` → **TEST 1**: web 2324/2324 pass (0 cancelled), cli 504 pass / 0 fail, server 3275 pass / 3 fail — `test/db/migrate.test.ts` (1: *keeps the ratings and refuses a replace of one*, 8.4s timeout) and `test/tooling/build.test.ts` (2: *keeps an idle connection open for 65 s*, *serves the committed fallback*, 10s health waits). Both are on the known load-timeout list (LAI-768).
+- Alone: `vitest run test/db/migrate.test.ts` → exit 0, 24/24; `vitest run test/tooling/build.test.ts` → exit 0, 15/15.
+- `pnpm lint` → **LINT 0**. `pnpm format` → **FMT 0**.
+- Failure grep: only `Failed Tests 3` (the server's three above) and two passing `fieldErrors` test names.
+- The task's *Gate* criterion is left unticked: `pnpm test` did not exit 0.
