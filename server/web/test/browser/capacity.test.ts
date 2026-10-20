@@ -290,7 +290,10 @@ void describe('finding people', () => {
       // A space chip's figure is committed work; backlog is on hover.
       const laika = pawan.locator('.cap-space', { hasText: 'Laika' });
       assert.match(await laika.innerText(), /^Laika\s*8\b/);
-      assert.match((await laika.getAttribute('title')) ?? '', /8 committed in Laika.*12 in backlog/);
+      assert.match(
+        (await laika.getAttribute('title')) ?? '',
+        /8 committed in Laika.*12 in backlog/,
+      );
     } finally {
       await h.close();
     }
