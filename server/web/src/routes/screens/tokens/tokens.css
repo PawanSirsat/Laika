@@ -200,6 +200,15 @@
   flex: none;
 }
 
+/* Under 40rem a token row stacks its meta below its name (token-row.css), so
+   these column heads no longer sit over anything — and their fixed widths,
+   460px together, scrolled a phone sideways. They go with the columns. */
+@media (max-width: 40rem) {
+  .tok-head {
+    display: none;
+  }
+}
+
 .tok-ref,
 .tok-cli {
   margin-top: 1.125rem;

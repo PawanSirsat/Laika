@@ -36,8 +36,11 @@
 
 /* ---------------------------------------------------------------- toolbar */
 
+/* It wraps: on a 390px phone the row scrolled the screen sideways — by 18px at
+   the old sizes, by 46px at 14px (LAI-828). */
 .tlx-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   margin-top: 0.75rem;
