@@ -212,8 +212,9 @@ void describe('the card', () => {
           const s = getComputedStyle(el);
           return { size: s.fontSize, weight: s.fontWeight, clamp: s.webkitLineClamp };
         });
-      // `.t-body` carries the title: the file's 13.5/600 (LAI-605).
-      assert.equal(title.size, '13.5px');
+      // `.t-body` carries the title: the body step, 14/600 — the file's 13.5
+      // (LAI-605) until the owner asked for Jira's sizes (LAI-828).
+      assert.equal(title.size, '14px');
       assert.equal(title.weight, '600');
       assert.equal(title.clamp, '2', 'the title must clamp rather than push the footer about');
     } finally {
