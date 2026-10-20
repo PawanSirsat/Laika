@@ -4319,6 +4319,20 @@ constant-time comparison for tokens and HMACs; CSRF on cookie-auth mutations;
 (HSTS, `X-Content-Type-Options`, CSP with no inline script); no secrets in logs
 or error responses.
 
+**Sessions last 30 days idle and renew once a day of use** (LAI-811). A
+remembered session's expiry is 30 days out, and the first request on a session
+older than a day slides it back to 30 days and re-sends the cookie with the full
+`Max-Age`. "Keep me signed in" starts ticked; unticked, the session is a fixed
+24 hours and the cookie lasts as long as the browser session does. Bearer tokens
+are unaffected and never receive a cookie.
+
+**The trade-off, stated because it is the owner's to know:** the cookie is
+`Secure` only when `LAIKA_PUBLIC_URL` is `https://`. Until HTTPS lands, the
+session cookie and every sign-in's password cross the network in clear, and a
+30-day session is a 30-day replay window for anyone who captures the cookie.
+TLS is the real fix. Turning it on adds the `__Secure-` prefix to the cookie's
+name, which signs everyone out once.
+
 ### 13.2 Errors and logging
 
 Structured JSON to stdout: `request_id`, `actor_id`, `actor_kind`, `token_id`,
