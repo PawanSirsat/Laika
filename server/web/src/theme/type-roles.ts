@@ -269,8 +269,9 @@ export const TYPE_ROLES = {
    * sidebar's owner chip. Its colour is `inherit` because the circle supplies
    * a background *and* a matching foreground from `avatarColor()`; a role that
    * fixed the colour would make every avatar identical, which is the one thing
-   * an avatar must not be. `tiny`, because two heavy capitals at 12px leave
-   * under 2px to the edge of the board's 22–26px circles (LAI-828).
+   * an avatar must not be. `tiny`, because the widest initials, "WM", are
+   * 23.8px at 12px in this weight — wider than a 22px circle — and 21.8px at
+   * 11px (LAI-828).
    */
   avatar: {
     family: 'ui',
