@@ -2,11 +2,12 @@
 id: LAI-815
 title: 'Tokens spent by Omnigent sub-agents never reach the board: D-086''s skip drops them from org and project totals, not only from the person''s'
 area: cli
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-769
-status: backlog
+status: in-progress
+started: 2026-10-20T12:19:23Z
 ---
 
 ## Goal
