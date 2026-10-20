@@ -5,7 +5,11 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { dayTimeline, hourTicks } from '../../../../src/routes/screens/my-day/day-timeline.ts';
+import {
+  dayLong,
+  dayTimeline,
+  hourTicks,
+} from '../../../../src/routes/screens/my-day/day-timeline.ts';
 import type { TimeDraft, TimeEntry } from '../../../../src/api/time.ts';
 
 const TZ = 'Asia/Kolkata'; // UTC+5:30, no daylight saving: a fixed fixture
@@ -57,7 +61,10 @@ const view = (
 
 void describe('the blocks', () => {
   void test('each timed block is placed by its own clock in the reader’s zone', () => {
-    const line = dayTimeline(view([draft('d1', at(13), at(14, 50), 110)], [entry('e1', at(11, 30), at(12), 30)]), at(23));
+    const line = dayTimeline(
+      view([draft('d1', at(13), at(14, 50), 110)], [entry('e1', at(11, 30), at(12), 30)]),
+      at(23),
+    );
     assert.deepEqual(
       line.blocks.map((b) => [b.kind, b.id, b.start, b.end]),
       [
@@ -68,7 +75,10 @@ void describe('the blocks', () => {
   });
 
   void test('labels say what it was and how long, in the order of the day', () => {
-    const line = dayTimeline(view([draft('d1', at(9), at(10), 60)], [entry('e1', at(11), at(11, 30), 30)]), at(23));
+    const line = dayTimeline(
+      view([draft('d1', at(9), at(10), 60)], [entry('e1', at(11), at(11, 30), 30)]),
+      at(23),
+    );
     assert.deepEqual(
       line.blocks.map((b) => b.label),
       ['LAI-1 A card · 1:00', 'General · 0:30'],
@@ -76,7 +86,10 @@ void describe('the blocks', () => {
   });
 
   void test('a block with no set time is not drawn, and is counted', () => {
-    const line = dayTimeline(view([draft('d1', null, null, 45)], [entry('e1', null, null, 30)]), at(23));
+    const line = dayTimeline(
+      view([draft('d1', null, null, 45)], [entry('e1', null, null, 30)]),
+      at(23),
+    );
     assert.deepEqual(line.blocks, []);
     assert.equal(line.untimed, 2);
   });
@@ -96,7 +109,10 @@ void describe('the span', () => {
   });
 
   void test('widens to whole hours to hold an early or a late block', () => {
-    const line = dayTimeline(view([], [entry('e1', at(6, 45), at(7, 15), 30), entry('e2', at(19, 10), at(20, 5), 55)]), at(23));
+    const line = dayTimeline(
+      view([], [entry('e1', at(6, 45), at(7, 15), 30), entry('e2', at(19, 10), at(20, 5), 55)]),
+      at(23),
+    );
     assert.equal(line.from, 6);
     assert.equal(line.to, 21);
   });
@@ -125,5 +141,11 @@ void describe('the hours under it', () => {
 
   void test('an odd start ticks the even hours inside it', () => {
     assert.deepEqual(hourTicks(7, 13), [8, 10, 12]);
+  });
+});
+
+void describe('the day, in words', () => {
+  void test('weekday, day and month, as the heading says it', () => {
+    assert.equal(dayLong('2026-10-20'), 'Tuesday 20 October');
   });
 });

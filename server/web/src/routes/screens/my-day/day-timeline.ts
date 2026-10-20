@@ -89,3 +89,13 @@ export function hourTicks(from: number, to: number): readonly number[] {
   for (let hour = from % 2 === 0 ? from : from + 1; hour <= to; hour += 2) ticks.push(hour);
   return ticks;
 }
+
+/** `Tuesday 20 October` — the day as the page's heading says it. */
+export function dayLong(day: string): string {
+  return new Date(`${day}T00:00:00Z`).toLocaleDateString('en-GB', {
+    timeZone: 'UTC',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+}

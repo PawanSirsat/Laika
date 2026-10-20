@@ -4,6 +4,7 @@ import type { SessionState } from '../../api/use-session.ts';
 import type { SetupSystemStatus } from '../../api/setup.ts';
 import type { Credentials } from '../../api/auth.ts';
 import type { TokenAlert } from '../../api/token-alerts.ts';
+import type { ReviewQueueItem } from '../../api/review.ts';
 import type { UseRoute } from '../../routes/use-route.ts';
 
 /**
@@ -63,6 +64,8 @@ export interface ShellValue {
    * badge; `undefined` until read. Everyone signed in has a queue.
    */
   readonly reviewWaiting: number | undefined;
+  /** The queue that count is, for My day's *Waiting on your review* (LAI-796). */
+  readonly reviewQueue: readonly ReviewQueueItem[] | undefined;
   /** Re-read that count — the Review screen calls it after a decision. */
   readonly refreshReview: () => void;
   /**

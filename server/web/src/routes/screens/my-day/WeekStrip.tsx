@@ -16,40 +16,22 @@ export interface WeekStripProps {
  */
 export function WeekStrip({ week, selected, today, onPick }: WeekStripProps) {
   const first = week[0]?.day ?? selected;
+  const previous = addDays(first, -7);
+  const following = addDays(first, 7);
   return (
     <nav className="myday-week" aria-label="Week">
-      <div className="myday-week-nav">
-        <button
-          type="button"
-          className="myday-chip"
-          onClick={() => {
-            onPick(addDays(first, -7));
-          }}
-        >
-          ← Previous week
-        </button>
-        {selected !== today && (
-          <button
-            type="button"
-            className="myday-chip"
-            onClick={() => {
-              onPick(today);
-            }}
-          >
-            Today
-          </button>
-        )}
-        <button
-          type="button"
-          className="myday-chip"
-          disabled={addDays(first, 7) > today}
-          onClick={() => {
-            onPick(addDays(first, 7));
-          }}
-        >
-          Next week →
-        </button>
-      </div>
+      {/* The owner's reference (LAI-796): the week between two arrows, and a
+          way back to today from any other week. */}
+      <button
+        type="button"
+        className="myday-week-step"
+        aria-label="Previous week"
+        onClick={() => {
+          onPick(previous);
+        }}
+      >
+        <span aria-hidden="true">‹</span>
+      </button>
       <ol className="myday-week-days">
         {week.map((cell) => {
           const { label, figure } = weekCell(cell);
@@ -80,13 +62,41 @@ export function WeekStrip({ week, selected, today, onPick }: WeekStripProps) {
                 <span className="myday-week-name">
                   {weekdayShort(cell.day)} {String(Number(cell.day.slice(8)))}
                 </span>
-                <span className="myday-week-figure">{figure}</span>
-                <span className="myday-week-state">{label}</span>
+                <span className="myday-week-figure">{figure === '' ? '—' : figure}</span>
+                <span className="myday-week-state">
+                  {cell.day === today
+                    ? `Today${label === '' ? '' : ` · ${label.toLowerCase()}`}`
+                    : label === ''
+                      ? 'Not yet'
+                      : label}
+                </span>
               </button>
             </li>
           );
         })}
       </ol>
+      <button
+        type="button"
+        className="myday-week-step"
+        aria-label="Next week"
+        disabled={following > today}
+        onClick={() => {
+          onPick(following);
+        }}
+      >
+        <span aria-hidden="true">›</span>
+      </button>
+      {selected !== today && (
+        <button
+          type="button"
+          className="myday-chip myday-week-back"
+          onClick={() => {
+            onPick(today);
+          }}
+        >
+          Today
+        </button>
+      )}
     </nav>
   );
 }

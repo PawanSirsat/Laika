@@ -216,10 +216,12 @@ function MyDayRoute() {
   const {
     route: { params, setParams, navigate },
     me,
+    reviewQueue,
   } = useShell();
   return (
     <MyDayScreen
       me={me}
+      queue={reviewQueue}
       onNavigate={navigate}
       day={params.get('day') ?? undefined}
       onDay={(day) => {
@@ -286,11 +288,7 @@ function InsightsRoute() {
   const holds = permissionHolder(me?.org_role);
   const tab = currentTab(INSIGHTS_TABS, params, holds);
   return (
-    <InsightsScreen
-      tabs={visibleTabs(INSIGHTS_TABS, holds)}
-      current={tab}
-      onNavigate={navigate}
-    >
+    <InsightsScreen tabs={visibleTabs(INSIGHTS_TABS, holds)} current={tab} onNavigate={navigate}>
       {tab === 'usage' ? <UsageRoute /> : <CapacityRoute />}
     </InsightsScreen>
   );
