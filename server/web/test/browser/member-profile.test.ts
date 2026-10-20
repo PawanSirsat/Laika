@@ -20,9 +20,35 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { capacityPerson } from './capacity-org.ts';
-import { closeBrowser, open, refuse, setTheme, until, type ApiStub } from './harness.ts';
+import {
+  closeBrowser,
+  open as openPage,
+  refuse,
+  setTheme,
+  until,
+  type ApiStub,
+} from './harness.ts';
 
 const NOW = Date.now();
+
+/**
+ * **Every page here runs on a clock pinned to `NOW`** (LAI-830).
+ *
+ * The fixtures are `NOW - 2 * MIN`, `NOW - 5 * HOUR` and so on, while the
+ * page read its own `Date.now()` — taken after the build and every test before
+ * it. Under load that is a minute or more later, so "active 2 min" read
+ * "active 3 min" and failed two builders' gates on 2026-10-20/21. Pinned, the
+ * page computes every age from the same instant the fixtures were written
+ * against, and an exact-minute assertion cannot drift. Timers still run.
+ */
+const open: typeof openPage = (path, stub, options = {}) =>
+  openPage(path, stub, {
+    ...options,
+    before: async (page) => {
+      await page.clock.setFixedTime(NOW);
+      await options.before?.(page);
+    },
+  });
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 86_400_000;
@@ -440,7 +466,7 @@ void describe('a builder’s profile', () => {
       assert.equal(await stat(h.page, 'cycle'), '3 d');
       assert.equal(
         (await h.page.locator('[data-stat="cycle"] .prof-stat-sub').innerText()).trim(),
-        '/ 4.5 d',
+        '/ 4 d 12 h',
       );
       assert.match(await h.page.locator('.prof-unmeasured').innerText(), /1 .*not measured/i);
 
@@ -1564,7 +1590,7 @@ void describe('current work stays a card’s height (LAI-751)', () => {
         await rowKeys(h.page),
         shape.current_work.in_review.slice(0, 5).map((t) => t.key),
       );
-      assert.match(await current.locator('.prof-work-row').first().innerText(), /waiting 1\.7 d/);
+      assert.match(await current.locator('.prof-work-row').first().innerText(), /waiting 1 d 17 h/);
       // One line each: the whole title is on hover.
       const title = current.locator('.prof-work-row .prof-task-title').first();
       assert.equal(await title.getAttribute('title'), shape.current_work.in_review[0]?.title);
