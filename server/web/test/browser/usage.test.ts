@@ -444,7 +444,7 @@ void describe('an owner', () => {
       assert.equal(await rework.locator('.usage-rework-name').innerText(), 'Laika');
       assert.equal(
         await rework.locator('.usage-rework-line').innerText(),
-        '3 send-backs on 2 tasks · 1.23M tokens (12% of the space’s) · 6.0 h of rework, 1 still open',
+        '3 send-backs on 2 tasks · 1.23M tokens (12% of the space’s) · 6 h of rework, 1 still open',
       );
       // Asked for the organisation: no project, the reader's zone.
       const asked = h.calls.find((c) => c.path === '/api/v1/usage');
@@ -746,7 +746,7 @@ const NOW_MS = Date.now();
  * The plan limit's forecast names a clock time, and the weekday as well once
  * that time is not today (`clockLabel`, `api/plan-limit.ts`). On the real clock
  * the test passed or failed by the hour it ran: GitHub's run at 23:45 UTC got
- * `around Tue 02:49` where it expected a bare time (LAI-794). So these tests
+ * `around Tue 02:49` (now `Tue 2:49 AM`, LAI-830) where it expected a bare time (LAI-794). So these tests
  * pin the browser's clock and zone, as `timeline-sprints.test.ts` does: Monday
  * 19 October 2026, at midday and at a quarter to midnight, in UTC.
  */
@@ -1054,7 +1054,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       const forecast = card.locator('[data-forecast]');
       await forecast.waitFor();
       // Later the same day: the time alone.
-      assert.equal(await forecast.innerText(), 'At this rate you reach your limit around 15:00.');
+      assert.equal(await forecast.innerText(), 'At this rate you reach your limit around 3:00 PM.');
       assert.match(await card.innerText(), /Estimate\s+1\.2M of 3M used · 600K an hour/);
       // Never asked about anybody else: one path, the reader's own.
       assert.ok(
@@ -1062,6 +1062,48 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
           .filter((c) => c.path.includes('plan-limit'))
           .every((c) => c.path === '/api/v1/me/plan-limit'),
       );
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * LAI-830 review round 1: the reset field said `such as 9:00 AM` and read a
+   * bare `2:30` on the 24-hour clock, so a person meaning the afternoon saved
+   * a weekly reset twelve hours off, with nothing on screen to say so.
+   */
+  void test('the weekly reset time: a bare 2:30 is refused, and the field says what it read', async () => {
+    const puts: StubCall[] = [];
+    const h = await open('/insights?tab=usage', {
+      ...ownerStub(),
+      '/api/v1/me/plan-limit': (call: StubCall) => {
+        if (call.method === 'PUT') puts.push(call);
+        return planLimit();
+      },
+    });
+    try {
+      const card = h.page.locator('[data-section="plan-limit"]');
+      await card.locator('form').waitFor({ timeout: 20_000 });
+      await pick(card.getByRole('combobox', { name: 'Counted over' }), 'week');
+      await card.getByLabel('Your limit, in tokens').fill('3M');
+      const at = card.getByLabel('Reset time, such as 9:00 AM');
+      const read = card.locator('[data-understood]');
+
+      await at.fill('2:30');
+      assert.equal(await read.innerText(), 'Add AM or PM: 2:30 AM or 2:30 PM?');
+      await card.getByRole('button', { name: 'Save' }).click();
+      assert.equal(
+        await card.locator('.usage-form-error').innerText(),
+        'Add AM or PM, e.g. 2:30 PM.',
+      );
+      assert.equal(puts.length, 0, 'a bare 2:30 was saved');
+
+      await at.fill('2:30 PM');
+      assert.equal(await read.innerText(), 'Reads as 2:30 PM');
+      await card.getByRole('button', { name: 'Save' }).click();
+      await until(() => puts.length === 1);
+      const body = puts[0]?.body as { week_reset?: { minute: number } };
+      assert.equal(body.week_reset?.minute, 870);
     } finally {
       await h.close();
     }
@@ -1091,7 +1133,7 @@ void describe('LAI-773: cost, cache, budgets, alerts and the plan limit', () => 
       await forecast.waitFor({ timeout: 20_000 });
       assert.equal(
         await forecast.innerText(),
-        'At this rate you reach your limit around Tue 02:49.',
+        'At this rate you reach your limit around Tue 2:49 AM.',
       );
     } finally {
       await h.close();

@@ -1,12 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import { parseTokens } from '../../../api/budgets.ts';
+import { minuteClock } from '../../../api/time-label.ts';
 import {
   clearPlanLimit,
   forecastLine,
   getPlanLimit,
-  minuteLabel,
   parseMinute,
+  resetTimeError,
+  resetTimeUnderstood,
   planFact,
   PLAN_KINDS,
   PLAN_LABELS,
@@ -51,7 +53,7 @@ export function PlanLimitCard() {
   const [span, setSpan] = useState<PlanWindow>('5h');
   const [limit, setLimit] = useState('');
   const [weekday, setWeekday] = useState(1);
-  const [time, setTime] = useState('09:00');
+  const [time, setTime] = useState(() => minuteClock(540));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -78,7 +80,7 @@ export function PlanLimitCard() {
     setSpan(view.window ?? '5h');
     setLimit(view.limit_tokens === null ? '' : compactTokens(view.limit_tokens));
     setWeekday(view.week_reset?.weekday ?? 1);
-    setTime(minuteLabel(view.week_reset?.minute ?? 540));
+    setTime(minuteClock(view.week_reset?.minute ?? 540));
     setError(undefined);
     setEditing(true);
   };
@@ -92,7 +94,7 @@ export function PlanLimitCard() {
     }
     const minute = parseMinute(time);
     if (span === 'week' && minute === undefined) {
-      setError('Enter the reset time as HH:MM.');
+      setError(resetTimeError(time));
       return;
     }
     setBusy(true);
@@ -172,7 +174,7 @@ export function PlanLimitCard() {
             <span className="usage-plan-estimate">Estimate</span> {usedLine(view)} ·{' '}
             {PLAN_LABELS[view.plan]} · {view.window === null ? '' : WINDOW_LABELS[view.window]}
             {view.week_reset !== null &&
-              ` (resets ${WEEKDAYS[view.week_reset.weekday] ?? ''} ${minuteLabel(view.week_reset.minute)})`}
+              ` (resets ${WEEKDAYS[view.week_reset.weekday] ?? ''} ${minuteClock(view.week_reset.minute)})`}
           </p>
           <div className="usage-plan-actions">
             <button
@@ -236,12 +238,17 @@ export function PlanLimitCard() {
                 <input
                   className="input"
                   value={time}
-                  inputMode="numeric"
-                  aria-label="Reset time, HH:MM"
+                  aria-label="Reset time, such as 9:00 AM"
                   onChange={(e) => {
                     setTime(e.target.value);
                   }}
                 />
+                {/* What it read, before Save (LAI-830 review round 1). */}
+                <span className="usage-field-note" aria-live="polite">
+                  {resetTimeUnderstood(time) !== undefined && (
+                    <span data-understood>{resetTimeUnderstood(time)}</span>
+                  )}
+                </span>
               </label>
             </div>
           )}

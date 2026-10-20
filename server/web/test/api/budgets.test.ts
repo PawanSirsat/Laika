@@ -154,7 +154,7 @@ void describe('the runaway banner (LAI-773)', () => {
     );
     assert.equal(
       line,
-      'Your agent has spent 7M on this task, past its p95 of 5.99M, and nothing has landed for 70 min — no commit pushed and no new session on it.',
+      'Your agent has spent 7M on this task, past its p95 of 5.99M, and nothing has landed for 1 h 10 min — no commit pushed and no new session on it.',
     );
   });
 });

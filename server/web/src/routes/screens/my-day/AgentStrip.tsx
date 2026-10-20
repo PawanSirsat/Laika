@@ -66,7 +66,8 @@ export function AgentStrip({ agent, spaces, onNavigate }: AgentStripProps) {
         </span>
       </header>
       <p className="myday-quiet myday-pad">
-        Claude Code working on your behalf — shown beside your day, never added to it.
+        Claude Code working on your behalf: minutes, never hours — shown beside your day, never
+        added to it.
       </p>
       {nothing ? (
         <p className="myday-quiet myday-pad">

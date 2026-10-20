@@ -1,12 +1,10 @@
+import { formatDurationMs } from '../../../api/duration.ts';
 import type { MetricsState } from './use-dashboard.ts';
 import { completedIn } from './summary-derive.ts';
 
-/** `4h`, `3d` — a duration a person reads, not milliseconds. */
+/** `4 h 12 min`, `3 d 2 h` — a duration a person reads, not milliseconds (LAI-830). */
 function humanMs(ms: number): string {
-  const hours = Math.round(ms / 3_600_000);
-  if (hours < 1) return `${String(Math.max(1, Math.round(ms / 60_000)))}m`;
-  if (hours < 48) return `${String(hours)}h`;
-  return `${String(Math.round(hours / 24))}d`;
+  return formatDurationMs(Math.max(60_000, ms));
 }
 
 /** `7 Oct` from the server's `2026-10-07` — a UTC day, read as one. */

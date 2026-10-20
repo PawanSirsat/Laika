@@ -1,4 +1,5 @@
-import { agentMinutes, clockIn, hm } from './my-day-derive.ts';
+import { formatDuration } from '../../../api/duration.ts';
+import { clockRange, clockTime, hourLabel } from '../../../api/time-label.ts';
 
 /**
  * **Every time and duration My day prints goes through here** (LAI-831,
@@ -10,25 +11,25 @@ import { agentMinutes, clockIn, hm } from './my-day-derive.ts';
 
 /** The person's own time: `19 min`, `1 h 35 min`. */
 export function duration(minutes: number): string {
-  return hm(minutes);
+  return formatDuration(minutes);
 }
 
 /** An agent's time, minutes however long (D-088 item 8): `142 min`. */
 export function agentDuration(minutes: number): string {
-  return agentMinutes(minutes);
+  return formatDuration(minutes, { largest: 'min' });
 }
 
 /** A time of day in `tz`: `2:29 PM`. */
 export function clock(at: number, tz: string): string {
-  return clockIn(tz, at);
+  return clockTime(at, { timeZone: tz });
 }
 
 /** From and to in `tz`, one AM/PM when they share it: `2:29–2:48 PM`. */
 export function span(from: number, to: number, tz: string): string {
-  return `${clockIn(tz, from)}–${clockIn(tz, to)}`;
+  return clockRange(from, to, { timeZone: tz });
 }
 
 /** An hour on the timeline's axis, `0`–`24`: `6 AM`, `12 PM`. */
 export function hourName(hour: number): string {
-  return String(hour).padStart(2, '0');
+  return hourLabel(hour);
 }

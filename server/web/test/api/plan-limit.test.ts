@@ -12,8 +12,9 @@ import {
   clockLabel,
   forecastLine,
   getPlanLimit,
-  minuteLabel,
   parseMinute,
+  resetTimeError,
+  resetTimeUnderstood,
   planFact,
   PLAN_KINDS,
   PLAN_WINDOWS,
@@ -21,6 +22,7 @@ import {
   usedLine,
   type PlanLimit,
 } from '../../src/api/plan-limit.ts';
+import { minuteClock } from '../../src/api/time-label.ts';
 
 const sent: { url: string; method: string; body: unknown }[] = [];
 globalThis.fetch = ((input: string | URL, init?: RequestInit) => {
@@ -106,9 +108,9 @@ void describe('the forecast, always an estimate', () => {
   void test('a time when there is one, in the reader’s clock', () => {
     assert.equal(
       forecastLine(view({ reaches_limit_at: NOW + 3 * 3_600_000 }), NOW),
-      'At this rate you reach your limit around 15:00.',
+      'At this rate you reach your limit around 3:00 PM.',
     );
-    assert.match(clockLabel(NOW + 30 * 3_600_000, NOW), /^[A-Z][a-z]{2} 18:00$/);
+    assert.match(clockLabel(NOW + 30 * 3_600_000, NOW), /^[A-Z][a-z]{2} 6:00 PM$/);
   });
 
   void test('reached, no rate, or not before the reset — each said', () => {
@@ -123,8 +125,35 @@ void describe('the forecast, always an estimate', () => {
   });
 
   void test('a reset time, written and read', () => {
-    assert.equal(minuteLabel(540), '09:00');
+    assert.equal(minuteClock(540), '9:00 AM');
+    assert.equal(minuteClock(1020), '5:00 PM');
     assert.equal(parseMinute('09:30'), 570);
+    // The 12-hour form it now shows, and prefills the field with, reads back.
+    assert.equal(parseMinute('9:30 AM'), 570);
+    assert.equal(parseMinute('5:00 pm'), 1020);
+    assert.equal(parseMinute(minuteClock(1020)), 1020);
+  });
+
+  // LAI-830 review round 1: a bare `2:30` saved 2:30 AM — a weekly reset 12 h off.
+  void test('a reset time without AM/PM is refused, never guessed', () => {
+    assert.equal(parseMinute('2:30'), undefined);
+    assert.equal(parseMinute('12:15'), undefined);
+    assert.equal(parseMinute('2:30 PM'), 870);
+    assert.equal(parseMinute('14:30'), 870);
+    // A leading zero is the 24-hour clock: `02:30` and `09:30` mean the morning.
+    assert.equal(parseMinute('02:30'), 150);
+    assert.equal(parseMinute('09:30'), 570);
+    assert.equal(resetTimeError('2:30'), 'Add AM or PM, e.g. 2:30 PM.');
+    assert.equal(resetTimeError('soon'), 'Enter the reset time, such as 9:00 AM.');
+  });
+
+  void test('the field says what it read before anything is saved', () => {
+    assert.equal(resetTimeUnderstood('2:30 PM'), 'Reads as 2:30 PM');
+    assert.equal(resetTimeUnderstood('14:30'), 'Reads as 2:30 PM');
+    assert.equal(resetTimeUnderstood('09:30'), 'Reads as 9:30 AM');
+    assert.equal(resetTimeUnderstood('2:30'), 'Add AM or PM: 2:30 AM or 2:30 PM?');
+    assert.equal(resetTimeUnderstood(''), undefined);
+    assert.equal(resetTimeUnderstood('soon'), undefined);
     assert.equal(parseMinute('24:00'), undefined);
     assert.equal(parseMinute('nine'), undefined);
   });

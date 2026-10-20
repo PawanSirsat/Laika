@@ -1,5 +1,6 @@
 import { request } from './client.ts';
 import { type Task } from './tasks.ts';
+import { formatDuration, shownMinutes, type DurationOptions } from './duration.ts';
 import { compactTokens } from './usage.ts';
 
 /**
@@ -13,7 +14,8 @@ import { compactTokens } from './usage.ts';
  * reads, kept here so the card, the List and the panel say the same.
  *
  * **The screen calls it effort, in plain words** (LAI-785): *Small · about
- * 45 min to 1.5 h*, not `S` and `44 min–1.3 h`. The API, the database and the
+ * 45 min to 1 h 30 min*, not `S` and `44 min–1.3 h` — the times through the one
+ * duration helper (LAI-830). The API, the database and the
  * MCP tools keep `size` and its levels, so nothing an agent or a URL sends
  * changes.
  *
@@ -262,8 +264,8 @@ export function effortWord(level: SizeLevel): string {
 }
 
 /**
- * A time as it is printed, and the time that printed text says: `1.5 h` is
- * 5 400 000 ms, whatever it was rounded from. A verdict is judged on these,
+ * A time as it is printed, and the time that printed text says: `1 h 30 min`
+ * is 5 400 000 ms, whatever it was rounded from. A verdict is judged on these,
  * so it can never disagree with the figures beside it (LAI-785 review).
  */
 export interface Shown {
@@ -275,36 +277,34 @@ const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
-/** `25 min`, `1.5 h`, `3 d` — a time that happened, as printed; the server's own `formatBuild`. */
-export function buildShown(ms: number): Shown {
-  const minutes = Math.round(ms / MINUTE_MS);
-  if (minutes < 60) {
-    const m = Math.max(1, minutes);
-    return { label: `${String(m)} min`, ms: m * MINUTE_MS };
-  }
-  const hours = ms / HOUR_MS;
-  if (hours < 10) {
-    const h = hours.toFixed(1);
-    return { label: `${h} h`, ms: Number(h) * HOUR_MS };
-  }
-  if (hours < 48) {
-    const h = Math.round(hours);
-    return { label: `${String(h)} h`, ms: h * HOUR_MS };
-  }
-  const d = Math.round(hours / 24);
-  return { label: `${String(d)} d`, ms: d * DAY_MS };
+/** Hours stay hours under two days, as the server's `formatBuild` has it (LAI-785). */
+const IN_HOURS: DurationOptions = { largest: 'h' };
+
+/** `minutes`, rounded the way the duration helper says it, and the time that says. */
+function shown(minutes: number, options: DurationOptions = {}): Shown {
+  const m = shownMinutes(minutes);
+  return { label: formatDuration(m, options), ms: m * MINUTE_MS };
 }
 
-/** `25 min`, `1.5 h`, `3 d` — a time that happened. */
+/**
+ * `25 min`, `1 h 32 min`, `41 h`, `2 d 22 h` — a time that happened, as
+ * printed: to the minute, in hours under two days, then days and hours.
+ */
+export function buildShown(ms: number): Shown {
+  const minutes = Math.max(1, ms / MINUTE_MS);
+  return shown(minutes, ms < 2 * DAY_MS ? IN_HOURS : {});
+}
+
+/** `25 min`, `1 h 32 min`, `3 d` — a time that happened. */
 export function buildLabel(ms: number): string {
   return buildShown(ms).label;
 }
 
-/** In days: whole days, or a half under one — never `0 d`. */
+/** In days: whole days, or a half under one, said as `12 h` — never `0 d`. */
 function inDays(ms: number): Shown {
   const days = ms / DAY_MS;
   const d = days < 1 ? Math.max(0.5, Math.round(days * 2) / 2) : Math.round(days);
-  return { label: `${String(d)} d`, ms: d * DAY_MS };
+  return shown(d * 24 * 60);
 }
 
 /**
@@ -314,23 +314,14 @@ function inDays(ms: number): Shown {
  */
 function roughShown(ms: number): Shown {
   const minutes = ms / MINUTE_MS;
-  if (minutes < 57.5) {
-    const m = Math.max(5, Math.round(minutes / 5) * 5);
-    return { label: `${String(m)} min`, ms: m * MINUTE_MS };
-  }
+  if (minutes < 57.5) return shown(Math.max(5, Math.round(minutes / 5) * 5));
   const hours = ms / HOUR_MS;
-  if (hours < 10) {
-    const h = Math.round(hours * 2) / 2;
-    return { label: `${String(h)} h`, ms: h * HOUR_MS };
-  }
-  if (hours < 48) {
-    const h = Math.round(hours);
-    return { label: `${String(h)} h`, ms: h * HOUR_MS };
-  }
+  if (hours < 10) return shown((Math.round(hours * 2) / 2) * 60);
+  if (hours < 48) return shown(Math.round(hours) * 60, IN_HOURS);
   return inDays(ms);
 }
 
-/** `40 min`, `1.5 h`, `14 h`, `3 d` — one estimated time. */
+/** `40 min`, `1 h 30 min`, `14 h`, `3 d` — one estimated time. */
 export function roughDuration(ms: number): string {
   return roughShown(ms).label;
 }
@@ -344,8 +335,9 @@ export interface ShownRange {
 /**
  * **The one place a range's ends are rounded** — the headline, the
  * comparison line and its verdict all read them from here. A range that
- * reaches days says both ends in days (`1–2 d`, never `24 h–2 d`); minutes
- * and hours may share one, as in `40 min–1.5 h`.
+ * reaches days says both ends in days (`1–2 d`, never `24 h–2 d`) — half a
+ * day as `12 h` — and minutes and hours may share one, as in
+ * `40 min–1 h 30 min`.
  */
 export function shownRange(p50: number | null, p80: number | null): ShownRange | null {
   if (p50 === null || p80 === null) return null;
@@ -354,18 +346,21 @@ export function shownRange(p50: number | null, p80: number | null): ShownRange |
   return { low, high };
 }
 
-const unitOf = (label: string) => label.slice(label.indexOf(' ') + 1);
-const numberOf = (label: string) => label.slice(0, label.indexOf(' '));
+/** `20 min` → `['20', 'min']`; `null` for a label of more than one unit, such as `1 h 30 min`. */
+const single = (label: string) => /^(\d+) (min|h|d)$/.exec(label);
 
-/** The low end, without its unit when the high end says the same one. */
+/**
+ * The low end, without its unit when both ends are one figure in the same
+ * unit — `20–45 min`, `1–2 d` — and whole otherwise: `1 h–2 h 30 min`.
+ */
 function lowText(range: ShownRange): string {
-  return unitOf(range.low.label) === unitOf(range.high.label)
-    ? numberOf(range.low.label)
-    : range.low.label;
+  const low = single(range.low.label);
+  const high = single(range.high.label);
+  return low !== null && high !== null && low[2] === high[2] ? (low[1] ?? '') : range.low.label;
 }
 
 /**
- * The headline's time: `about 45 min to 1.5 h`, `about 20 to 45 min`, or one
+ * The headline's time: `about 45 min to 1 h 30 min`, `about 20 to 45 min`, or one
  * time when both ends round to it. Null without hours (D-085 item 6).
  */
 export function timeRange(p50: number | null, p80: number | null): string | null {
@@ -380,7 +375,7 @@ function dashed(range: ShownRange): string {
   return `${lowText(range)}–${range.high.label}`;
 }
 
-/** The comparison line's: `40 min–1.5 h`, `20–45 min`, `1 h`. */
+/** The comparison line's: `40 min–1 h 30 min`, `20–45 min`, `1 h`. */
 export function shortRange(p50: number | null, p80: number | null): string | null {
   const range = shownRange(p50, p80);
   return range === null ? null : dashed(range);
@@ -414,8 +409,8 @@ export interface Comparison {
 }
 
 /**
- * The one line once there is an actual: `Estimated at start 40 min–1.5 h ·
- * took 1.6 h · a little over`, against the estimate frozen when work
+ * The one line once there is an actual: `Estimated at start 40 min–1 h 30 min
+ * · took 1 h 36 min · a little over`, against the estimate frozen when work
  * started — what the project's accuracy measures too, and not the headline's
  * current one. Null before the first finish.
  */
@@ -437,8 +432,8 @@ export function comparisonLine(atStart: FrozenEstimate | null, actual: ActualTim
 }
 
 /**
- * Where the time went: `Building 1.6 h · waiting for review 41 h · rework
- * 20 min`, each part only when it happened. Null when the build is all there
+ * Where the time went: `Building 1 h 36 min · waiting for review 41 h ·
+ * rework 20 min`, each part only when it happened. Null when the build is all there
  * is — the comparison line already says how long it took.
  */
 export function timelineLine(actual: ActualTimes): string | null {
@@ -529,7 +524,7 @@ function factorSentence(f: EstimateFactor, arrow: WhyArrow): string {
     case 'similar': {
       const m = /^(\d+) similar finished tasks? \(median (.+)\)$/.exec(f.label);
       if (m === null) break;
-      return `${plural(Number(m[1]), 'similar finished task')} took about ${m[2] ?? ''}`;
+      return `${plural(Number(m[1]), 'similar finished task')} took about ${resaid(m[2] ?? '')}`;
     }
     case 'subtasks': {
       const m = /^(\d+) subtasks? add up to more than its own text$/.exec(f.label);
@@ -543,6 +538,18 @@ function factorSentence(f: EstimateFactor, arrow: WhyArrow): string {
     }
   }
   return f.label;
+}
+
+/**
+ * The server's own `formatBuild` text — `25 min`, `1.2 h`, `3 d` — said the
+ * way every other duration on the screen is (LAI-830): `1 h 12 min`. Anything
+ * it does not recognise is kept as the server wrote it.
+ */
+function resaid(text: string): string {
+  const m = /^(\d+(?:\.\d+)?) (min|h|d)$/.exec(text);
+  if (m === null) return text;
+  const per = m[2] === 'd' ? 24 * 60 : m[2] === 'h' ? 60 : 1;
+  return formatDuration(Number(m[1]) * per, m[2] === 'd' ? {} : IN_HOURS);
 }
 
 /**

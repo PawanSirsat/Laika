@@ -2,7 +2,8 @@ import { useState, type FormEvent, type RefObject } from 'react';
 import type { NewEntry, TaskRef } from '../../../api/time.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { duration, span } from './format.ts';
-import { parseMinutes } from './my-day-derive.ts';
+import { minutesUnderstood, parseMinutes } from './my-day-derive.ts';
+import { Understood } from './Understood.tsx';
 import type { Span } from './timeline-derive.ts';
 
 export interface AddTimeFormProps {
@@ -189,6 +190,7 @@ export function AddTimeForm({
               }}
             />
           )}
+          {typed !== undefined && <Understood text={minutesUnderstood(typed)} />}
         </div>
         <div className="inspector-chips" role="group" aria-label="On which card">
           <button

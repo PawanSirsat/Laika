@@ -1,7 +1,8 @@
 import { ApiError } from '../../../api/errors.ts';
 import type { TimeDraft, TimeEntry } from '../../../api/time.ts';
 import { failureMessage } from '../list/list-bulk.ts';
-import { draftTarget, hm, rangeLabel } from './my-day-derive.ts';
+import { formatDuration } from '../../../api/duration.ts';
+import { draftTarget, rangeLabel } from './my-day-derive.ts';
 
 /**
  * Many drafted blocks at once (LAI-810, the owner: *"lot of task but i need
@@ -110,7 +111,7 @@ const NAMED = 5;
 export function nameBlocks(drafts: readonly TimeDraft[]): string {
   const names = drafts.slice(0, NAMED).map((d) => {
     const range = rangeLabel(d);
-    return range === '' ? `a ${hm(d.minutes)} block with no set time` : range;
+    return range === '' ? `a ${formatDuration(d.minutes)} block with no set time` : range;
   });
   const rest = drafts.length - NAMED;
   return rest > 0 ? `${names.join(', ')} and ${String(rest)} more` : names.join(', ');
@@ -323,7 +324,7 @@ export function dayReport(
   const general = entries.filter((e) => e.task === null && e.project === null).length;
   const chosenGeneral = planned.filter((d) => d.task === null && d.project === null).length;
 
-  const parts = [`Confirmed the day: ${blocks(entries.length)}, ${hm(gotMinutes)}.`];
+  const parts = [`Confirmed the day: ${blocks(entries.length)}, ${formatDuration(gotMinutes)}.`];
   if (extra > 0) {
     parts.push(
       `${blocks(extra)} more arrived since this page loaded and ${was(extra)} confirmed too.`,
@@ -334,7 +335,7 @@ export function dayReport(
     );
   } else if (gotMinutes !== plannedMinutes) {
     parts.push(
-      `The day changed since this page loaded: ${hm(gotMinutes)} was confirmed, not the ${hm(plannedMinutes)} shown.`,
+      `The day changed since this page loaded: ${formatDuration(gotMinutes)} was confirmed, not the ${formatDuration(plannedMinutes)} shown.`,
     );
   }
   if (general > chosenGeneral) {

@@ -55,6 +55,7 @@ import {
 } from './summary-derive.ts';
 import { Throughput } from './Throughput.tsx';
 import { useDashboard } from './use-dashboard.ts';
+import { clockTime } from '../../../api/time-label.ts';
 import './dashboard.css';
 
 /**
@@ -475,8 +476,7 @@ export function DashboardScreen() {
       )}
       {refreshError !== null && (
         <p className="dash-note dash-note-stale" role="status">
-          Could not refresh — this is the dashboard as of{' '}
-          {new Date(asOf).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}.{' '}
+          Could not refresh — this is the dashboard as of {clockTime(asOf)}.{' '}
           <button type="button" className="dash-note-retry" onClick={dashboard.reload}>
             Retry
           </button>

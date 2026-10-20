@@ -481,18 +481,18 @@ void describe('the task panel’s Effort section', () => {
       assert.equal((await section.locator('.panel-section-title').textContent())?.trim(), 'Effort');
 
       assert.equal(await section.locator('.fc-effort').innerText(), 'Large');
-      assert.equal(await section.locator('.fc-time').innerText(), 'about 1 to 2.5 h');
+      assert.equal(await section.locator('.fc-time').innerText(), 'about 1 h to 2 h 30 min');
       // Twelve measured, typically within 2×: not rough.
       assert.equal(await section.locator('.fc-rough').count(), 0);
       assert.equal(
         await section.locator('.fc-compare').innerText(),
-        'Estimated at start 20–45 min · took 1.5 h · well over',
+        'Estimated at start 20–45 min · took 1 h 30 min · well over',
       );
       assert.equal(await section.locator('.fc-compare').getAttribute('data-verdict'), 'well over');
       assert.doesNotMatch(await section.innerText(), /on average/);
       assert.equal(
         await section.locator('.fc-timeline').innerText(),
-        'Building 1.5 h · waiting for review 2.0 h · rework 30 min',
+        'Building 1 h 30 min · waiting for review 2 h · rework 30 min',
       );
       // No token estimate: no line at all.
       assert.equal(await section.locator('.fc-tokens').count(), 0);
@@ -511,7 +511,7 @@ void describe('the task panel’s Effort section', () => {
       assert.deepEqual(rows, [
         '↑ Longer description than most tasks here (640 words; most have about 220)',
         '↓ Tagged “docs”: tasks with that tag are quicker here',
-        '↑ 7 similar finished tasks took about 1.2 h',
+        '↑ 7 similar finished tasks took about 1 h 12 min',
       ]);
       assert.deepEqual(await why.locator('.fc-similar-link').allInnerTexts(), ['LC-1', 'LC-2']);
       assert.equal(
@@ -735,7 +735,7 @@ void describe('the task panel’s Effort section', () => {
     try {
       const section = await effort(h);
       // Positive control: the section is there.
-      assert.equal(await section.locator('.fc-time').innerText(), 'about 1 to 2.5 h');
+      assert.equal(await section.locator('.fc-time').innerText(), 'about 1 h to 2 h 30 min');
       assert.equal(await section.locator('.fc-change').count(), 0);
     } finally {
       await h.close();

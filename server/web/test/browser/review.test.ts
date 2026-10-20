@@ -184,7 +184,7 @@ void describe('the Review page', () => {
       assert.equal(await chip.innerText(), 'check this one');
       assert.match(
         (await chip.getAttribute('title')) ?? '',
-        /Finished in 1 min against a forecast of 2\.0 h, and CI has not confirmed it/,
+        /Finished in 1 min against a forecast of 2 h, and CI has not confirmed it/,
       );
       assert.equal(await h.page.locator('[data-stat="check"] .prof-stat-value').innerText(), '1');
       await h.page.getByRole('button', { name: 'Check this one', exact: true }).click();
