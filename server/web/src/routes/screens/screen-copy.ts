@@ -115,7 +115,7 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
   },
   '/people': {
     headline: 'No person chosen',
-    body: 'A profile opens from a person’s name — on Organisation, a Capacity card or the Dashboard’s Work by person.',
+    body: 'A profile opens from a person’s name — on Organisation, a Capacity card or the Dashboard’s Contributors.',
   },
   '/members': {
     headline: 'No project chosen',
