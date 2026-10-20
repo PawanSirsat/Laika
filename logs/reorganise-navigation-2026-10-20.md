@@ -21,13 +21,14 @@
 - The Connect card never mints: the wizard's single hook is the only holder of a one-time secret, so *Create token* opens the wizard on its token step. A second minting surface would be a second thing to blank (`TokensScreen.forget`).
 - Redirects in `useRoute` as a `replace`, not a server redirect: the SPA owns its routing and the server's fallback already serves every path; a push would make Back bounce. A mutation (push instead of replace) turned the browser test red, so the check is live.
 - My day's *Waiting on your review* reuses the queue the shell already downloads for the badge, rather than a second `GET /review` — that response is the heavy one LAI-799 is about.
+- The sidebar stays the prototype's 212px, not the reference's 232px: with the sidebar open at 1024px, 232px squeezed the board toolbar's search to 82px against LAI-727's 120px guarantee (the gate caught it). The tests that mean "sidebar open" between 901 and 1180px open it with the toggle, as a reader would.
 - The per-person Tokens panel moved to Organisation → Security (owners and admins), keeping the old rule of no control on your own row.
 
 **Discovered**
 - The board toolbar's sprint pill flips tier when hovered at its pill/compact boundary (an 860px column — now what a 920px window gives with the rail), so the pill never opens; `board-sprint-stats.test.ts` failed on it in the gate. The test now opens the sidebar at 920px, the geometry it was written for. → LAI-804 filed (discovered-from: LAI-796).
 - Two merges of master during the work: LAI-795 (slim lists — `listTasks` is slim, so On your plate reads `TaskSummary`) and LAI-788 (Solidtime; `EntryRow`'s import rule is unchanged inside the new layout). No conflicts.
 - LAI-799 (slim the review queue) will change what the shell holds; My day's plate reads only `task.id`, `key`, `title`, `project.slug`, `can_decide` and `round.ci`, so it should survive a slimmer queue — whoever builds LAI-799 should keep those.
-- Before: the sidebar was 212px while `--rail-width` said 280px, and nothing read `--rail-width`; it now matches the sidebar (232/60px).
+- Before: the sidebar was 212px while `--rail-width` said 280px, and nothing read `--rail-width`; it now matches the sidebar (212/60px).
 
 **State**
 In `.tasks/review/`. Gate below.
