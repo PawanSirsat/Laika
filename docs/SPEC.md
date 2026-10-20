@@ -3608,10 +3608,14 @@ the decision currently governing it rather than the table naming one for all.
 
 | | | decision |
 | --- | --- | --- |
-| the sidebar | **ORG** — *Capacity*, *Review* with its waiting count for everyone signed in (D-082), and *Unlisted work* with its open count for owners and admins — then **SPACES** — two recent spaces, *More spaces* — then SETTINGS. A space is a project with a two-letter key, a count and a colour | D-059.1, amended by **D-061**; ORG by **LAI-754** (the owner, 2026-10-15) |
+| the sidebar | **My day** and **Inbox** (its count is Review's waiting plus Unlisted work's open, for whoever may see each) at the top; **SPACES** — the recent spaces, each with a coloured letter, *+* to create, *More spaces*; **ORGANISATION** — *Insights* (with the reader's open token alerts), *Organisation*, *Developer access*. At the foot, the person: a menu with *My profile* (owners and admins, who alone may open a profile), *Switch to dark / light*, *Developer access* and *Sign out*. No other entries | D-059.1, amended by **D-061**; **LAI-796** (the owner, 2026-10-20) |
+| the icon rail | a toggle in the sidebar's head collapses it to icons — each entry's icon, its count on the icon's corner, its name in a tooltip on hover and keyboard focus — remembered per browser; automatic between the phone's off-canvas width and a laptop's; never on a phone, where the sidebar is off-canvas | **LAI-796** |
+| a space's tabs | two groups with a hairline between — *Board, List, Timeline, Calendar* \| *Sprints, Dashboard, Activity, Meeting review* — and *Agents* and *Create* on the right | **LAI-796** |
 | Task detail | a **centred modal over a dimmed board**, dismissed by the scrim or Escape — not a screen, and not a right-hand drawer | D-059.2, amended by **D-063** |
 | Timeline, Calendar, Dashboard, Meeting review | **tabs across the top of a space** | **D-059.3** |
-| Capacity, Review, Unlisted work | **one page each, across every space the reader can see**, reached from the sidebar's ORG group — `/capacity`, `/review` and `/unlisted`, no space bar and no tabs. A `/capacity?project=` link from when Capacity was a tab is rewritten to `/capacity` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"* |
+| Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is a compact *Connect an agent* card above the reader's tokens, the full Connect wizard at `/developer/connect`. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
+| old addresses | each redirects, in place and keeping its query, to its new home: `/review` → `/inbox?tab=review`, `/unlisted` → `/inbox?tab=unlisted`, `/capacity` → `/insights?tab=capacity` (dropping a `?project=` from when it was a space tab), `/usage` → `/insights?tab=usage`, `/tokens` → `/developer`, `/connect` → `/developer/connect` (keeping `?agent=`) | **LAI-796** |
+| Organisation | four tabs — **Overview** (members, spaces and pending invites counted; *Presence*, *Developer insights*, *Time*; the spaces), **People** (members and invites), **Integrations** (GitHub webhook, model prices, AI provider), **Security** (everyone's tokens, owners and admins) | **LAI-796** |
 
 Checked against `docs/design/Laika Prototype.dc.html` — **which is dated 24 August
 and is behind the owner's live design.** `docs/design/README.md` says which copy
@@ -3635,14 +3639,15 @@ call MCP; agents do.
 | **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage` (with cost, budget and runaway, LAI-773), `GET /projects/:slug/budgets`, `PUT /tasks/:id/budget`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=`, `GET /sprints/:id/forecast` (each sprint not completed, LAI-772) | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
-| **Tokens** | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
-| **Organisation** | 1 basic / 6 LLM | `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
-| **Connect** *(not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` | — | ✅ D-079, D-084, D-087 |
-| **Capacity** *(sidebar, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects`, `GET /tasks/:id` (only a matched task and an opened *Show tasks*), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
-| **Review** *(sidebar, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
-| **Unlisted work** *(sidebar, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
+| **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read | `propose_time_entry` | ✅ D-088, LAI-796 |
+| **Tokens** *(on Developer access)* | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
+| **Organisation** *(four tabs, LAI-796)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
+| **Connect** *(Developer access's card, and the wizard at `/developer/connect`; not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` | — | ✅ D-079, D-084, D-087 |
+| **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects`, `GET /tasks/:id` (only a matched task and an opened *Show tasks*), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
+| **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
+| **Unlisted work** *(Inbox's tab, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
 | **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage` | — | ✅ D-078, D-079, D-084 |
-| **Usage** *(sidebar, global; not in the prototype)* | 7 | `GET /usage` (with `rework` per project, LAI-772; cost, cache, accepted, budgets, runaway, LAI-773), `GET /projects`, `GET /users/:id/usage` (the reader's own), `GET /projects/:slug/budgets`, `PUT /projects/:slug/budget`, `PUT /sprints/:id/budget`, `GET /me/token-alerts`, `POST /me/token-alerts/:id/dismiss`, `GET/PUT/DELETE /me/plan-limit` | — | ✅ D-084, D-087 |
+| **Usage** *(Insights' *Usage & cost* tab, global; not in the prototype)* | 7 | `GET /usage` (with `rework` per project, LAI-772; cost, cache, accepted, budgets, runaway, LAI-773), `GET /projects`, `GET /users/:id/usage` (the reader's own), `GET /projects/:slug/budgets`, `PUT /projects/:slug/budget`, `PUT /sprints/:id/budget`, `GET /me/token-alerts`, `POST /me/token-alerts/:id/dismiss`, `GET/PUT/DELETE /me/plan-limit` | — | ✅ D-084, D-087 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
 | **Laika Assistant** | 6 | *undefined — three questions first (§14, q9)* | — | ⏸ scheduled, unspecified |
@@ -3751,11 +3756,30 @@ anything missing sends the task back.
 - **Timeline** — one bar per sprint across a time axis, today marked, past
   dimmed; task counts per bar; unscheduled tray; drag an edge to reschedule with
   overlap rejection. **No per-task bars** (D-014).
-- **Tokens** — create with name and scope; **value shown exactly once** with a
+- **The sidebar and its rail** (LAI-796) — the entries and their order as the
+  §11.4.2 table says; every entry an icon and a label, a count only where it
+  is real and non-zero; the rail keeping every icon and count and naming each
+  in a tooltip on hover and on keyboard focus; the user menu opening from the
+  person at the foot, reachable and closable from the keyboard (arrows, Home,
+  End, Escape) and by a click outside.
+- **Developer access** (`/developer`, LAI-796) — a sentence on what a token
+  is; a **Connect an agent** card in three steps — pick the agent (the
+  wizard's primary agents), the token the wizard will mint with its real name,
+  scope and expiry, and the start of that agent's setup with the token left as
+  a placeholder — whose buttons open the wizard (on its token step, or its
+  first), so the card itself never holds a secret; then the reader's tokens,
+  their *New token* in the page's header.
+- **Tokens** (on Developer access) — create with name and scope; **value shown exactly once** with a
   copy affordance and an explicit "you will not see this again"; list with
   prefix, scope, last used, expiry; revoke with confirmation; admin view of
-  another user's tokens.
-- **Organisation** — org name; AI provider config showing `configured / provider
+  another user's tokens (Organisation's *Security* tab).
+- **Organisation** — in four tabs since LAI-796 (§11.4.2's table): the org's
+  name, mark, owners and creation date in the header with *Invite people* for
+  owners and admins, which opens *People* at the invite form; on *Overview*
+  members, spaces and pending invites counted from the page's own reads, and
+  the spaces with members, open tasks and status, each opening its board.
+  Nothing the organisation has no data for — a plan, an admin log, a
+  permission matrix, a token lifetime, a danger zone — is drawn. Org name; AI provider config showing `configured / provider
   / key_last4` and **never the key**; invites with role at invite time; member
   list with role controls; danger zone gated to Owner; a **Developer insights**
   switch for owners and admins (§4.2, D-079) with a plain sentence of what it
@@ -3772,7 +3796,8 @@ anything missing sends the task back.
   API-equivalent, not a bill, and that Laika never fetches a price. Owners and
   admins (`can_set`) edit a row, remove an override, or price a model the
   table does not have.
-- **Connect** — the four-step wizard, and under *Optional* a **Share local
+- **Connect** (`/developer/connect`, opened from Developer access; `?agent=`
+  sets the agent and `?step=2` opens on the token) — the four-step wizard, and under *Optional* a **Share local
   activity** item for the signed-in developer (D-079): what is sent — token
   counts per agent and model among it (D-084 item 4) — and what is never sent,
   on/off, the scope (every repo where they use an agent, or only
@@ -3784,10 +3809,10 @@ anything missing sends the task back.
   (optional)** (LAI-773): the exact variables of §6.4 with this board's URL
   filled in and `$LAIKA_TOKEN` left as a reference, a Copy button, and one
   line saying it is metrics only and fills in what the session files miss.
-- **Capacity** (`/capacity`, one page across every space, LAI-754; redesigned
-  by LAI-767) — **tiles** that count and filter: *Online now*, *Agents
-  running* (sessions), *In progress* (sorts heaviest first), *Waiting for
-  review* (links to `/review`), *Overdue*, and for owners and admins
+- **Capacity** (Insights' first tab, `/insights?tab=capacity`, one page across
+  every space, LAI-754; redesigned by LAI-767) — **tiles** that count and
+  filter: *Online now*, *Agents running* (sessions), *In progress* (sorts
+  heaviest first), *Waiting for review* (links to Inbox's Review tab), *Overdue*, and for owners and admins
   *Unlisted work* (links to `/unlisted`). A **toolbar**: a search by name or
   email, instant and in the browser; filter chips *All*, *Online now*,
   *Agents running*, *Heavy load*, *Overdue*, *No work*, *Never seen*; a space
@@ -3812,7 +3837,10 @@ anything missing sends the task back.
   loading skeleton is the final layout; no matches has its own state. With
   `presence_enabled = 0` it says so, keeps the workload and draws no status.
   **No unlisted notes on this screen** — they are on their own page.
-- **Review** (`/review`, everyone signed in, D-082) — the queue of tasks in a
+- **Inbox** (`/inbox`, LAI-796) — *Review* and *Unlisted work* as tabs, each
+  with its count; Unlisted work only for owners and admins. The sidebar's
+  Inbox count is the two added.
+- **Review** (Inbox's first tab, `/inbox?tab=review`, everyone signed in, D-082) — the queue of tasks in a
   review status on every project the reader can act on, **oldest waiting
   first**: key, title, project, assignee, the agent that finished it, time
   waiting, the proof in brief (commits, PR, tests passed and failed, or *no
@@ -3822,14 +3850,14 @@ anything missing sends the task back.
   carries the CI result when GitHub reported one. A row opens the full proof (the task panel's Proof section) with
   **Accept** and **Send back…**, the second asking for a required reason in a
   dialog; both are disabled, saying why, for a reader who may not decide.
-  *Open on board* opens the task. The waiting count is in the header and beside
-  the sidebar entry. There is no organisation-wide stream, so the page re-reads
+  *Open on board* opens the task. The waiting count is on the tab and in the
+  sidebar's Inbox count. There is no organisation-wide stream, so the page re-reads
   every 20 seconds, when the tab returns and after each decision.
-- **Unlisted work** (`/unlisted`, owners and admins, LAI-754) — **one line per
+- **Unlisted work** (Inbox's tab, `/inbox?tab=unlisted`, owners and admins, LAI-754) — **one line per
   note**: repo, who, when and the note's first line, newest first; a click opens
   the full text with **Promote to task** and **Dismiss** under it; the first
   page of lines and then *Show more*; a *Show dismissed* toggle; the open count
-  in the header and beside the sidebar entry.
+  on the tab and in the sidebar's Inbox count.
 - **Dashboard** — shaped like Jira's project Summary (D-072): **done, updated,
   created and due soon** for the chosen range; a **status donut** with the share
   done at its centre; a **donut of open work by person**, Unassigned as its own
@@ -3843,8 +3871,8 @@ anything missing sends the task back.
   **There is no transcript pane, because there is no transcript** (D-056): §4.12
   keeps a `transcript_hash` and never the words. The quotes are what makes a
   proposal reviewable, and they are all that is kept.
-- **Usage** (`/usage`, in the sidebar's ORG group, everyone signed in, D-084,
-  LAI-769) — a **space selector** (an owner or admin: *All spaces* and every
+- **Usage** (Insights' *Usage & cost* tab, `/insights?tab=usage`, everyone
+  signed in, D-084, LAI-769) — in the page's header, a **space selector** (an owner or admin: *All spaces* and every
   space; a member: only the spaces they are in, never the organisation) and a
   range of 7, 30 or 90 days. **Tiles**: *Tokens* — input, output and cache
   writes, labelled **at least** — *Cache reads* apart, *Unattributed* with the
@@ -3879,7 +3907,18 @@ anything missing sends the task back.
   publishes a token figure. **The sidebar's Usage item carries a count** of the
   reader's open alerts, none at zero. Light and
   dark; one column on a phone with nothing scrolling sideways.
-- **Member profile** (`/people?user=<id>`, D-078) — owners and admins only:
+- **My day** (`/my-day`, the reader's own, D-088; laid out by LAI-796) — the
+  week in the header between *previous* and *next*, with *Today* away from
+  it, and *Confirm day* with the drafted total while anything is drafted; the
+  day as a bar of confirmed (solid) and drafted (dashed) blocks over its hours
+  with a line at now on today, a block with no set time counted beneath it
+  rather than placed; drafted then confirmed lists with every LAI-787 action;
+  *Add time*; beside it **On your plate** — in progress, waiting on the
+  reader's review (with CI's result where GitHub sent one), and blocked
+  (naming what it waits on), each opening in its own space — **Agent
+  minutes**, and the **Draft my time** switch.
+- **Member profile** (`/people?user=<id>`, D-078; *My profile* in the user
+  menu opens the reader's own, for an owner or an admin) — owners and admins only:
   anyone else sees a permission notice and the profile is never requested.
   Laid out as cards on a grid that folds to one column on a phone (LAI-750).
   A head card with name, org role, project count, email, member since, an
