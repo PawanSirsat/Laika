@@ -249,3 +249,33 @@ branch risks a collision (LAI-786 §5 did the same).
   id. They are a known historical pair (LAI-131, `KNOWN_COLLISIONS` in
   `task-file-state.test.ts`), so this is not a new finding; the fixture holds
   one card per id.
+
+### 8. Gate
+
+**Root `pnpm test` did not exit 0 in any run here.** Run 1 found one real
+failure, fixed in `9c038603`. Every other failure was a wall-clock test under
+load, in a file this branch does not touch or in one LAI-768 names, and each
+passed alone or in a later full run. Load averages read 25, 34 and 28 during runs 3–5, while
+Microsoft Defender and Spotlight scanned and three workspaces and Chromium
+ran at once. Lint and format exited 0. Run 1 was at `66c11737`.
+Runs 2–5, lint and format were at `6e688aa5`: the code as of `9c038603`, plus
+the task file and the log. All ran from the repo root, in the foreground, each
+command's output to its own file and its exit code on its own line.
+
+| run | command | exit | what failed |
+| --- | --- | --- | --- |
+| 1 (before the census fix) | `pnpm test` | 1 | `response-type-coverage.test.ts`, **a real failure**, read 68 of 67 (fixed in `9c038603`), plus two `migrate.test.ts` 5 s timeouts. `cli`: 469 pass, 0 fail, 2 skipped. `server/web`: 2,225 of 2,225 |
+| 2 | `pnpm test` | 1 | `cli/test/activity-lookback.test.ts`, *the deadline nears* (17.8 s). pnpm then stopped the other workspaces. Alone: **27 of 27, exit 0** |
+| 3 | `pnpm test` | 1 | `cli/test/activity-hook.test.ts`, *took 1005 ms*. pnpm stopped the rest. It passed in the full `cli` runs 4 and 5; not re-run alone |
+| 4 | `pnpm -r --no-bail run test` (diagnostic) | 1 | `cli`: 469 pass, 0 fail, 2 skipped. `server/web`: 2,225 of 2,225. `server`: 3,217 pass and 5 fail, all LAI-768's: `migrate.test.ts` ×2 (5 s timeouts) and `build.test.ts` ×3 (*never became healthy*). `migrate.test.ts` alone: **24 of 24, exit 0** |
+| 5 | `pnpm test` | 1 | **The only failure was `server/test/tooling/build.test.ts`**, *boots, migrates, serves health* (*never became healthy*). `cli`: 469 pass, 0 fail, 2 skipped. `server/web`: 2,225 of 2,225. `server`: 3,221 pass, 1 fail, 10 skipped |
+| 5, re-run alone | `pnpm exec vitest run test/tooling/build.test.ts` (in `server/`) | **0** | 15 of 15 |
+| | `pnpm lint` | **0** | |
+| | `pnpm format` | **0** | |
+
+**Criterion 8 is ticked on the brief's rule** for this case: if the only
+failure is `build.test.ts` or another known load timeout, re-run that file
+alone and report both. **It is not a clean `EXIT 0`.** Re-gate before any
+push. This section was added after the runs and is Markdown only;
+`task-file-state.test.ts` was re-run after it.
+
