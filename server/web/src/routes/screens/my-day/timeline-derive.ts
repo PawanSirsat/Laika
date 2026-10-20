@@ -65,9 +65,22 @@ export interface DayLine {
   readonly breaks: readonly BreakSpan[];
   /** Minutes after midnight, on today only. */
   readonly now: number | undefined;
-  /** The first and last hour on the axis. */
+  /** The first and last hour on the axis, counted from midnight. */
   readonly from: number;
   readonly to: number;
+  /**
+   * Each hour of the clock and the minute after midnight it really falls on
+   * (review round 1): on a clock-change day 6 AM is seven hours, or five,
+   * after midnight, so a label is placed by its instant, never at `h × 60`.
+   */
+  readonly hours: readonly HourMark[];
+}
+
+export interface HourMark {
+  /** `0`–`24` on the wall clock. */
+  readonly hour: number;
+  /** Minutes after the day's midnight. */
+  readonly minute: number;
 }
 
 type Timed = Pick<TimeDraft | TimeEntry, 'id' | 'started_at' | 'ended_at' | 'minutes'>;
@@ -93,16 +106,12 @@ export function clip(span: Span, cuts: readonly Span[]): Span[] {
 }
 
 /**
- * The gaps of a day: stretches of at least {@link GAP_MIN} minutes between
- * placed blocks — and, on today, between the last block and now — less every
- * break. Nothing before the first block counts: the day starts when the person
- * did.
+ * The gaps of a day: stretches of at least {@link GAP_MIN} minutes **between**
+ * placed blocks, less every break. Nothing before the first block and nothing
+ * after the last counts — the day starts when the person did and ends with its
+ * last block; an evening is not hours unaccounted (review round 1).
  */
-export function gapsOf(
-  blocks: readonly Span[],
-  breaks: readonly Span[],
-  now: number | undefined,
-): Span[] {
+export function gapsOf(blocks: readonly Span[], breaks: readonly Span[]): Span[] {
   const sorted = [...blocks].sort((a, b) => a.start - b.start);
   const gaps: Span[] = [];
   let reach: number | undefined;
@@ -111,9 +120,6 @@ export function gapsOf(
       gaps.push({ start: reach, end: block.start });
     }
     reach = reach === undefined ? block.end : Math.max(reach, block.end);
-  }
-  if (reach !== undefined && now !== undefined && now - reach >= GAP_MIN) {
-    gaps.push({ start: reach, end: now });
   }
   return gaps
     .flatMap((gap) => clip(gap, breaks))
@@ -166,7 +172,7 @@ export function dayLine(
     end: minute(b.ended_at),
   }));
   const now = view.day === view.today ? minute(nowMs) : undefined;
-  const gaps = gapsOf(blocks, breaks, now);
+  const gaps = gapsOf(blocks, breaks);
 
   const starts = [...blocks, ...breaks].map((s) => s.start);
   const ends = [...blocks, ...breaks].map((s) => s.end);
@@ -174,9 +180,22 @@ export function dayLine(
     starts.push(now);
     ends.push(now);
   }
+  const last = Math.ceil(length / 60);
   const from = Math.max(0, Math.min(AXIS_FROM, ...starts.map((m) => Math.floor(m / 60))));
-  const to = Math.min(24, Math.max(AXIS_TO, ...ends.map((m) => Math.ceil(m / 60))));
-  return { midnight, length, blocks, untimed, gaps, breaks, now, from, to };
+  const to = Math.min(last, Math.max(AXIS_TO, ...ends.map((m) => Math.ceil(m / 60))));
+  const hours: HourMark[] = [];
+  for (let hour = 0; hour <= 24; hour += 1) {
+    const at =
+      hour === 24 ? next : atClock(view.day, `${String(hour).padStart(2, '0')}:00`, view.tz);
+    if (midnight === undefined || at === undefined) {
+      hours.push({ hour, minute: hour * 60 });
+      continue;
+    }
+    const m = Math.round((at - midnight) / 60_000);
+    // A wall hour the clock skips names the same instant as the next one: once.
+    if (hours.at(-1)?.minute !== m) hours.push({ hour, minute: m });
+  }
+  return { midnight, length, blocks, untimed, gaps, breaks, now, from, to, hours };
 }
 
 /** Where `minute` sits along an axis from hour `from` to hour `to`, as a percentage. */
@@ -194,6 +213,16 @@ export function axisHours(from: number, to: number, zoom: Zoom): number[] {
   return hours;
 }
 
+/** The labelled hours inside the axis: every hour, or every other one when the day must fit. */
+export function axisMarks(line: Pick<DayLine, 'hours' | 'from' | 'to'>, zoom: Zoom): HourMark[] {
+  return line.hours.filter(
+    (h) =>
+      h.minute >= line.from * 60 &&
+      h.minute <= line.to * 60 &&
+      (zoom !== 'fit' || h.hour % 2 === 0),
+  );
+}
+
 /** The nearest step on the clock: 8:42 → 8:40, 8:43 → 8:45. */
 export const snap = (minute: number): number => Math.round(minute / STEP) * STEP;
 
@@ -206,20 +235,52 @@ export interface Edit {
 
 type Shape = Pick<LaneBlock, 'start' | 'end' | 'minutes'>;
 
+/** How far a block's edges may go: from `lo` to `hi`, minutes after midnight. */
+export interface Limits {
+  readonly lo: number;
+  readonly hi: number;
+}
+
+/**
+ * The room a block has (review round 1): back to the end of the confirmed
+ * block before it, on to the start of the one after it, and never off the
+ * day — so a drag or a + cannot lay it over confirmed time, which would count
+ * that time twice. A confirmed block that already overlaps it bounds nothing:
+ * moving an edge cannot fix that, and the server refuses its confirm.
+ */
+export function limitsOf(block: Span, confirmed: readonly Span[], length = 1440): Limits {
+  let lo = 0;
+  let hi = length;
+  for (const c of confirmed) {
+    if (c.end <= block.start) lo = Math.max(lo, c.end);
+    else if (c.start >= block.end) hi = Math.min(hi, c.start);
+  }
+  return { lo, hi };
+}
+
+/** {@link limitsOf} a placed block, among the day's other confirmed blocks. */
+export function limitsIn(line: Pick<DayLine, 'blocks' | 'length'>, block: LaneBlock): Limits {
+  return limitsOf(
+    block,
+    line.blocks.filter((b) => b.kind === 'confirmed' && b.id !== block.id),
+    line.length,
+  );
+}
+
 /**
  * Drag one edge to `to` (minutes after midnight): the edge lands on the
  * nearest {@link STEP} of the clock, never closer than one step to the other
- * edge nor off the day, and the block's minutes change by as much as its span
- * did — a block that held less than its span (two tasks at once) keeps that
- * difference. `undefined` when nothing would change.
+ * edge nor past its {@link Limits}, and the block's minutes change by as much
+ * as its span did — a block that held less than its span (two tasks at once)
+ * keeps that difference. `undefined` when nothing would change.
  */
 export function dragEdge(
   block: Shape,
   edge: 'start' | 'end',
   to: number,
-  length = 1440,
+  limits: Limits = { lo: 0, hi: 1440 },
 ): Edit | undefined {
-  const at = Math.min(length, Math.max(0, snap(to)));
+  const at = Math.min(limits.hi, Math.max(limits.lo, snap(to)));
   const start = edge === 'start' ? Math.min(at, block.end - STEP) : block.start;
   const end = edge === 'end' ? Math.max(at, block.start + STEP) : block.end;
   const moved = edge === 'start' ? block.start - start : end - block.end;
@@ -229,14 +290,27 @@ export function dragEdge(
 }
 
 /**
- * −/+ on a placed block: its end moves by `by` minutes and its length with
- * it, so the lane and the figure agree. `undefined` past a step of length, or
- * past the end of the day.
+ * −/+ on a placed block: its end moves to the next {@link STEP} of the clock
+ * that way — 10:13 goes to 10:15 or 10:10, as a drag lands (review round 1) —
+ * and its length by as much, so the lane and the figure agree. `undefined`
+ * under a step of span, or past `hi`: the day's end, or confirmed time.
  */
-export function stepEnd(block: Shape, by: number, length = 1440): Edit | undefined {
-  const end = block.end + by;
-  const minutes = block.minutes + by;
-  if (end - block.start < STEP || minutes < 1 || end > length) return undefined;
+export function stepEnd(block: Shape, by: number, hi = 1440): Edit | undefined {
+  const end =
+    by > 0 ? Math.floor(block.end / STEP) * STEP + STEP : Math.ceil(block.end / STEP) * STEP - STEP;
+  const minutes = block.minutes + (end - block.end);
+  if (end - block.start < STEP || minutes < 1 || end > hi) return undefined;
+  return { start: block.start, end, minutes: Math.min(end - block.start, minutes) };
+}
+
+/**
+ * A length typed for a placed block (review round 1, LAI-830's parser): its
+ * end moves by as much as its length does, as −/+ would — exact, not on the
+ * grid, because it was typed. `undefined` under a step of span or past `hi`.
+ */
+export function setLength(block: Shape, minutes: number, hi = 1440): Edit | undefined {
+  const end = block.end + (minutes - block.minutes);
+  if (minutes < 1 || end - block.start < STEP || end > hi) return undefined;
   return { start: block.start, end, minutes: Math.min(end - block.start, minutes) };
 }
 
@@ -247,14 +321,18 @@ export function stepMinutes(minutes: number, by: number): number | undefined {
 }
 
 /**
- * *Split in two*: the middle of the block's span, to the nearest step from its
- * start. `undefined` for a block too short to halve, or one with no span.
+ * *Split in two*: the middle of the block's span, on the five-minute grid of
+ * the clock (review round 1) — 9:03–10:01 is cut at 9:30, not 9:33.
+ * `undefined` for a block too short to halve, or one with no span.
  */
 export function splitPoint(block: Shape): number | undefined {
   const span = block.end - block.start;
   if (span < 2 * STEP || block.minutes < 2) return undefined;
-  const at = block.start + Math.round(span / 2 / STEP) * STEP;
-  return at > block.start && at < block.end ? at : undefined;
+  const middle = (block.start + block.end) / 2;
+  const inside = (m: number): boolean => m > block.start && m < block.end;
+  return [snap(middle), Math.floor(middle / STEP) * STEP, Math.ceil(middle / STEP) * STEP].find(
+    inside,
+  );
 }
 
 /** The instant minute `m` of the day names, for a write. */

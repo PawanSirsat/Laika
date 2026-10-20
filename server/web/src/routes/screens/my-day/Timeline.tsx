@@ -10,9 +10,10 @@ import type { MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
 import { clock, duration, hourName, span as spanOf } from './format.ts';
 import {
   along,
-  axisHours,
+  axisMarks,
   dragEdge,
   instantOf,
+  limitsIn,
   PX_PER_HOUR,
   STEP,
   type DayLine,
@@ -179,7 +180,8 @@ export function Timeline({
     onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
       const drag = dragging.current;
       if (drag?.id !== block.id || drag.edge !== edge) return;
-      drag.edit = dragEdge(block, edge, minuteAt(event.clientX), line.length);
+      // Never over a confirmed neighbour: that time would count twice (review round 1).
+      drag.edit = dragEdge(block, edge, minuteAt(event.clientX), limitsIn(line, block));
       setPreview(drag.edit === undefined ? undefined : { id: block.id, edit: drag.edit });
     },
     onPointerUp: (event: PointerEvent<HTMLButtonElement>) => {
@@ -203,7 +205,7 @@ export function Timeline({
         block,
         edge,
         (edge === 'start' ? block.start : block.end) + by,
-        line.length,
+        limitsIn(line, block),
       );
       if (edit !== undefined) onEdge(block, edit);
     },
@@ -298,14 +300,25 @@ export function Timeline({
             data-to-hour={to}
             style={pph === undefined ? undefined : { width: `${String(hours * pph)}px` }}
           >
-            {Array.from({ length: hours * 2 + 1 }, (_, i) => from * 60 + i * 30).map((m) => (
+            {/* Each hour where it really falls — a clock-change day included. */}
+            {axisMarks(line, '1').flatMap((mark) => [
               <span
-                key={m}
-                className={m % 60 === 0 ? 'dayline-hour-line' : 'dayline-half-line'}
-                style={{ left: left(m) }}
+                key={`h${String(mark.minute)}`}
+                className="dayline-hour-line"
+                style={{ left: left(mark.minute) }}
                 aria-hidden="true"
-              />
-            ))}
+              />,
+              ...(mark.minute + 30 < to * 60
+                ? [
+                    <span
+                      key={`m${String(mark.minute)}`}
+                      className="dayline-half-line"
+                      style={{ left: left(mark.minute + 30) }}
+                      aria-hidden="true"
+                    />,
+                  ]
+                : []),
+            ])}
             <div className="dayline-row">
               {view.state === 'no_signal' && nothing && (
                 <div className="dayline-nosignal" data-no-signal>
@@ -440,13 +453,13 @@ export function Timeline({
               })}
             </div>
             <div className="dayline-axis" aria-hidden="true">
-              {axisHours(from, to, zoom).map((hour) => (
+              {axisMarks(line, zoom).map(({ hour, minute }) => (
                 <span
                   key={hour}
                   className={
                     hour === 12 ? 'dayline-axis-hour dayline-axis-noon' : 'dayline-axis-hour'
                   }
-                  style={{ left: left(hour * 60) }}
+                  style={{ left: left(minute) }}
                 >
                   {hourName(hour)}
                 </span>

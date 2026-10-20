@@ -1261,6 +1261,21 @@ p.inspector-length {
   padding: 0;
 }
 
+.inspector-length-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.5rem;
+}
+
+.inspector-length-input {
+  width: 8rem;
+}
+
+.inspector-length-form .myday-understood {
+  flex-basis: 100%;
+}
+
 .inspector-note {
   margin: 0;
   font-size: var(--text-sm);
@@ -2094,7 +2109,7 @@ p.inspector-length {
     padding: 0.75rem 0.875rem;
   }
 
-  .lane {
+  .dayline {
     padding-left: 0.75rem;
     padding-right: 0.75rem;
   }
