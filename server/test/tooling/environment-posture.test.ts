@@ -1,6 +1,7 @@
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { SERVER_ROOT } from '../../src/paths.ts';
 import { authHarness } from '../helpers/auth.ts';
@@ -248,16 +249,20 @@ function tsxBinary(): { command: string; leading: readonly string[] } {
  * test that tried would pass while measuring the environment vitest set. Going
  * and being the environment is the only honest way to know.
  */
-function postureUnder(nodeEnv: string): Posture {
+async function postureUnder(nodeEnv: string): Promise<Posture> {
   const { command, leading } = tsxBinary();
 
-  const output = execFileSync(command, [...leading, join('test', 'helpers', 'posture-probe.ts')], {
-    cwd: SERVER_ROOT,
-    env: { ...process.env, NODE_ENV: nodeEnv },
-    encoding: 'utf8',
-  });
+  const { stdout } = await promisify(execFile)(
+    command,
+    [...leading, join('test', 'helpers', 'posture-probe.ts')],
+    {
+      cwd: SERVER_ROOT,
+      env: { ...process.env, NODE_ENV: nodeEnv },
+      encoding: 'utf8',
+    },
+  );
 
-  const last = output.trim().split('\n').at(-1) ?? '{}';
+  const last = stdout.trim().split('\n').at(-1) ?? '{}';
   return JSON.parse(last) as Posture;
 }
 
@@ -273,6 +278,11 @@ function postureUnder(nodeEnv: string): Posture {
  * The timeout is on the **spawning**, not on any assertion. If this ever trips,
  * something is genuinely wrong with the child process — not with the machine
  * being busy.
+ *
+ * **And the two run at once** (LAI-768). Measured on 2026-10-20: one after the
+ * other they took 1.3 to 1.4 s at normal load and 17.8 to 29.8 s under one
+ * `yes` per core, against 0.7 to 0.9 s and 11.6 to 13.9 s side by side.
+ * Neither child depends on the other, so neither has to wait.
  */
 const SPAWN_BUDGET_MS = 60_000;
 
@@ -286,10 +296,13 @@ const CLOSURE_BUDGET_MS = 60_000;
 describe('development and production resolve the same posture as test (AC4)', () => {
   const measured = new Map<string, Posture>();
 
-  beforeAll(() => {
-    for (const nodeEnv of ['development', 'production']) {
-      measured.set(nodeEnv, postureUnder(nodeEnv));
-    }
+  beforeAll(async () => {
+    const [development, production] = await Promise.all([
+      postureUnder('development'),
+      postureUnder('production'),
+    ]);
+    measured.set('development', development);
+    measured.set('production', production);
   }, SPAWN_BUDGET_MS);
 
   const posture = (nodeEnv: string): Posture => {
@@ -340,15 +353,16 @@ describe('development and production resolve the same posture as test (AC4)', ()
 describe('the list of differences stays honest', () => {
   /*
    * **The closure walk runs once, here, on a named budget** (LAI-489). It
-   * `readFileSync`s every source file of every package the shipped process
-   * loads — 28 of them — and it ran inside an `it` on vitest's 5s default,
+   * reads every source file of every package the shipped process loads — 28
+   * of them then, 115 on 2026-10-20, in batches since LAI-768 (see
+   * `READS_IN_FLIGHT`) — and it ran inside an `it` on vitest's 5s default,
    * which is the defect the spawn comment above names, one call further down.
    * Measured: two full-gate runs timed out on it at load ~20 while the file
    * passed alone in 3.6s. The tests below only read the result.
    */
   let branching: readonly string[] = [];
-  beforeAll(() => {
-    branching = packagesBranchingOnEnvironment();
+  beforeAll(async () => {
+    branching = await packagesBranchingOnEnvironment();
   }, CLOSURE_BUDGET_MS);
 
   it('gives every difference a verdict and a reason someone can disagree with', () => {

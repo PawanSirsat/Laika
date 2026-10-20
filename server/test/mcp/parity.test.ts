@@ -64,6 +64,17 @@ interface Side {
 
 const open: Side[] = [];
 
+/**
+ * What a case that builds a side may take (LAI-768). A side is a database
+ * migrated from nothing, an owner set up through better-auth, a token and a
+ * project, and most cases build two: setup, not the property, is what a slow
+ * runner pays for. Measured on 2026-10-20 — 90 to 210 ms a case at normal load,
+ * 1.0 to 5.2 s under one `yes` per core, where `set_task_sprint` failed on
+ * vitest's 5 s default at 5183 ms, as `create_task` had in a loaded gate on
+ * 17 Oct. 30 s is nearly 6× the slowest.
+ */
+const SIDE_BUDGET_MS = 30_000;
+
 async function makeSide(): Promise<Side> {
   const h = authHarness();
 
@@ -532,7 +543,7 @@ function readsNothingMcp(tool: string, args: Record<string, unknown>) {
 // ----------------------------------------------------------------- the tests
 
 describe('the pair list is derived from the server, not written down', () => {
-  it('covers every tool the server actually registers', async () => {
+  it('covers every tool the server actually registers', { timeout: SIDE_BUDGET_MS }, async () => {
     // The load-bearing test. A tool added in six months appears in neither map
     // and is named here — nobody has to remember this file exists.
     const side = await makeSide();
@@ -554,17 +565,21 @@ describe('the pair list is derived from the server, not written down', () => {
     ).toEqual([]);
   });
 
-  it('does not list a pair for a tool that no longer exists', async () => {
-    // The other direction: a stale pair is a test asserting nothing about a
-    // tool that is gone, which reads as coverage and is not.
-    const side = await makeSide();
-    const client = await connect(side);
-    const registered = new Set((await client.listTools()).tools.map((t) => t.name));
-    await client.close();
+  it(
+    'does not list a pair for a tool that no longer exists',
+    { timeout: SIDE_BUDGET_MS },
+    async () => {
+      // The other direction: a stale pair is a test asserting nothing about a
+      // tool that is gone, which reads as coverage and is not.
+      const side = await makeSide();
+      const client = await connect(side);
+      const registered = new Set((await client.listTools()).tools.map((t) => t.name));
+      await client.close();
 
-    const stale = [...PAIRS.keys(), ...EXEMPT.keys()].filter((name) => !registered.has(name));
-    expect(stale, 'these are listed here but the server registers no such tool').toEqual([]);
-  });
+      const stale = [...PAIRS.keys(), ...EXEMPT.keys()].filter((name) => !registered.has(name));
+      expect(stale, 'these are listed here but the server registers no such tool').toEqual([]);
+    },
+  );
 
   it('exempts exactly one tool, with a reason that cites the decision', () => {
     expect([...EXEMPT.keys()]).toEqual(['log_unlisted_work']);
@@ -576,53 +591,61 @@ describe('the pair list is derived from the server, not written down', () => {
 });
 
 describe('the exemption self-expires', () => {
-  it('fails if a REST twin for log_unlisted_work ever appears', async () => {
-    // The shape LAI-052, LAI-080, LAI-043 and LAI-213 all needed: an exemption
-    // that survives the condition that justified it is worse than none, because
-    // it reads as a decision somebody is still standing behind.
-    const side = await makeSide();
+  it(
+    'fails if a REST twin for log_unlisted_work ever appears',
+    { timeout: SIDE_BUDGET_MS },
+    async () => {
+      // The shape LAI-052, LAI-080, LAI-043 and LAI-213 all needed: an exemption
+      // that survives the condition that justified it is worse than none, because
+      // it reads as a decision somebody is still standing behind.
+      const side = await makeSide();
 
-    for (const method of ['POST', 'PUT']) {
-      const res = await request(side, '/api/v1/unlisted', {
-        method,
-        body: JSON.stringify({ repo: 'kvell/laika', note: 'via REST' }),
-      });
+      for (const method of ['POST', 'PUT']) {
+        const res = await request(side, '/api/v1/unlisted', {
+          method,
+          body: JSON.stringify({ repo: 'kvell/laika', note: 'via REST' }),
+        });
 
-      expect(
-        [404, 405],
-        `${method} /api/v1/unlisted answered ${String(res.status)} — a REST twin for log_unlisted_work now exists, so remove its entry from EXEMPT and add a pair`,
-      ).toContain(res.status);
-    }
-  });
+        expect(
+          [404, 405],
+          `${method} /api/v1/unlisted answered ${String(res.status)} — a REST twin for log_unlisted_work now exists, so remove its entry from EXEMPT and add a pair`,
+        ).toContain(res.status);
+      }
+    },
+  );
 });
 
 describe('each tool writes what its REST twin writes', () => {
   for (const [tool, pair] of PAIRS) {
-    it(`${tool} — identical activity, differing only in attribution`, async () => {
-      // Two clean databases, so the comparison is structural rather than a
-      // matter of one run happening after the other.
-      const viaRest = await makeSide();
-      const viaMcp = await makeSide();
+    it(
+      `${tool} — identical activity, differing only in attribution`,
+      { timeout: SIDE_BUDGET_MS },
+      async () => {
+        // Two clean databases, so the comparison is structural rather than a
+        // matter of one run happening after the other.
+        const viaRest = await makeSide();
+        const viaMcp = await makeSide();
 
-      await pair.rest(viaRest);
+        await pair.rest(viaRest);
 
-      const client = await connect(viaMcp);
-      await pair.mcp(viaMcp, client);
-      await client.close();
+        const client = await connect(viaMcp);
+        await pair.mcp(viaMcp, client);
+        await client.close();
 
-      const restEvents = await events(viaRest);
-      const mcpEvents = await events(viaMcp);
+        const restEvents = await events(viaRest);
+        const mcpEvents = await events(viaMcp);
 
-      expect(
-        mcpEvents,
-        `${tool} does not write what its REST twin writes${pair.note === undefined ? '' : ` — ${pair.note}`}`,
-      ).toEqual(restEvents);
-    });
+        expect(
+          mcpEvents,
+          `${tool} does not write what its REST twin writes${pair.note === undefined ? '' : ` — ${pair.note}`}`,
+        ).toEqual(restEvents);
+      },
+    );
   }
 });
 
 describe('attribution is the only thing that differs', () => {
-  it('the agent’s rows say agent, the human’s say user', async () => {
+  it('the agent’s rows say agent, the human’s say user', { timeout: SIDE_BUDGET_MS }, async () => {
     // The counterpart to `normalise` stripping those fields: having removed
     // them from the comparison, something has to assert they are not identical,
     // or the parity tests above would pass on a tool that forgot it was an agent.
@@ -663,7 +686,7 @@ describe('attribution is the only thing that differs', () => {
 });
 
 describe('the read tools write nothing at all', () => {
-  it('leaves the activity table untouched', async () => {
+  it('leaves the activity table untouched', { timeout: SIDE_BUDGET_MS }, async () => {
     const side = await makeSide();
     await seedTask(side);
     const before = rowCount(side);
@@ -702,19 +725,23 @@ describe('§7.1 lists the tools the server actually serves', () => {
     return rows.sort();
   }
 
-  it('names exactly the registered tools, in neither direction short', async () => {
-    const side = await makeSide();
-    const client = await connect(side);
-    const registered = (await client.listTools()).tools.map((t) => t.name).sort();
-    await client.close();
+  it(
+    'names exactly the registered tools, in neither direction short',
+    { timeout: SIDE_BUDGET_MS },
+    async () => {
+      const side = await makeSide();
+      const client = await connect(side);
+      const registered = (await client.listTools()).tools.map((t) => t.name).sort();
+      await client.close();
 
-    // Both directions in one assertion: a tool §7.1 lists and the server does
-    // not serve is as wrong as the reverse, and `toEqual` on sorted names says
-    // which without anybody having to count.
-    expect(registered).toEqual(specTools());
-  });
+      // Both directions in one assertion: a tool §7.1 lists and the server does
+      // not serve is as wrong as the reverse, and `toEqual` on sorted names says
+      // which without anybody having to count.
+      expect(registered).toEqual(specTools());
+    },
+  );
 
-  it('agrees with §7.2 about how many have REST twins', async () => {
+  it('agrees with §7.2 about how many have REST twins', { timeout: SIDE_BUDGET_MS }, async () => {
     const side = await makeSide();
     const client = await connect(side);
     const registered = (await client.listTools()).tools.map((t) => t.name);
@@ -775,20 +802,24 @@ describe('§7.1 lists the tools the server actually serves', () => {
 describe('the README names the tools the server serves (LAI-744)', () => {
   const readme = (): string => readFileSync(join(SPEC_DIR, '..', 'README.md'), 'utf8');
 
-  it('lists exactly the registered tools in its MCP tools table', async () => {
-    const text = readme();
-    const start = text.indexOf('## 🧰 MCP tools');
-    expect(start, 'the README has no MCP tools section').toBeGreaterThan(-1);
-    const section = text.slice(start, text.indexOf('\n---', start));
-    const listed = [...new Set([...section.matchAll(/`([a-z_]+)`/g)].map((m) => m[1]!))].sort();
+  it(
+    'lists exactly the registered tools in its MCP tools table',
+    { timeout: SIDE_BUDGET_MS },
+    async () => {
+      const text = readme();
+      const start = text.indexOf('## 🧰 MCP tools');
+      expect(start, 'the README has no MCP tools section').toBeGreaterThan(-1);
+      const section = text.slice(start, text.indexOf('\n---', start));
+      const listed = [...new Set([...section.matchAll(/`([a-z_]+)`/g)].map((m) => m[1]!))].sort();
 
-    const side = await makeSide();
-    const client = await connect(side);
-    const registered = (await client.listTools()).tools.map((t) => t.name).sort();
-    await client.close();
+      const side = await makeSide();
+      const client = await connect(side);
+      const registered = (await client.listTools()).tools.map((t) => t.name).sort();
+      await client.close();
 
-    expect(listed).toEqual(registered);
-  });
+      expect(listed).toEqual(registered);
+    },
+  );
 
   it('puts no number on the MCP badge', () => {
     const badge = /img\.shields\.io\/badge\/MCP-([^)\s]*)/.exec(readme());
