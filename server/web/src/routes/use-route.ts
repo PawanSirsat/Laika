@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { redirectFor } from './redirects.ts';
 import { DEFAULT_PATH, matchRoute, type Route } from './route-table.ts';
 
 /**
@@ -36,6 +37,27 @@ export interface UseRoute {
   readonly setParams: (next: URLSearchParams, options?: { readonly push?: boolean }) => void;
 }
 
+/**
+ * Move an old address to its new home in place (LAI-796), before anything
+ * reads the location. A `replace`, never a `push`: Back must not return to an
+ * address whose only job is to bounce forward again.
+ */
+function followRedirect(): void {
+  const to = redirectFor(window.location.pathname, window.location.search);
+  if (to !== undefined) window.history.replaceState({}, '', `${to}${window.location.hash}`);
+}
+
+/** Where an in-app link to `to` should land — its new home, if it moved. */
+function redirected(to: string): string {
+  const mark = to.search(/[?#]/);
+  const path = mark === -1 ? to : to.slice(0, mark);
+  const rest = mark === -1 ? '' : to.slice(mark);
+  const hash = rest.includes('#') ? rest.slice(rest.indexOf('#')) : '';
+  const search = rest.includes('#') ? rest.slice(0, rest.indexOf('#')) : rest;
+  const moved = redirectFor(path, search);
+  return moved === undefined ? to : `${moved}${hash}`;
+}
+
 function currentPath(): string {
   const { pathname } = window.location;
   return pathname === '/' ? DEFAULT_PATH : pathname;
@@ -46,10 +68,14 @@ function currentSearch(): string {
 }
 
 export function useRoute(): UseRoute {
-  const [path, setPath] = useState<string>(() => currentPath());
+  const [path, setPath] = useState<string>(() => {
+    followRedirect();
+    return currentPath();
+  });
   const [search, setSearch] = useState<string>(() => currentSearch());
 
-  const navigate = useCallback((to: string): void => {
+  const navigate = useCallback((link: string): void => {
+    const to = redirected(link);
     if (to === window.location.pathname + window.location.search) return;
     window.history.pushState({}, '', to);
     setPath(currentPath());
@@ -79,6 +105,8 @@ export function useRoute(): UseRoute {
   // not, which is the classic hand-rolled-router bug.
   useEffect(() => {
     const onPop = (): void => {
+      // An old address can be in the history from before LAI-796.
+      followRedirect();
       setPath(currentPath());
       setSearch(currentSearch());
     };

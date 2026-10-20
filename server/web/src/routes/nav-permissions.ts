@@ -1,3 +1,4 @@
+import { canManageOrg } from '../api/invites.ts';
 import { mayOpenProfiles } from '../api/profiles.ts';
 import { mayTriageUnlisted } from '../api/unlisted.ts';
 
@@ -19,6 +20,9 @@ export function permissionHolder(orgRole: string | undefined): (permission: stri
     if (permission === 'audit_log.export') return mayTriageUnlisted(orgRole ?? '');
     // §3.1 `profile.read` (LAI-743), through the predicate the links use.
     if (permission === 'profile.read') return mayOpenProfiles(orgRole);
+    // §3.1 `token.list_any` — everyone's tokens, the Organisation page's
+    // Security tab (LAI-796) — through the predicate that page's controls use.
+    if (permission === 'token.list_any') return canManageOrg(orgRole ?? '');
     return false;
   };
 }
