@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-810
-status: review
+status: done
 started: 2026-10-20T19:45:45Z
 finished: 2026-10-20T20:46:09Z
 ---
@@ -223,3 +223,16 @@ test/api/duration.test.ts test/routes/screens/my-day/my-day-derive.test.ts`
 exit 0 (71/71); `node --test --test-concurrency=1 test/browser/usage.test.ts
 test/browser/my-day.test.ts` exit 0 (24/24); `pnpm lint` exit 0;
 `pnpm format` exit 0.
+
+## Accepted (CHIEF, 2026-10-21)
+
+Review (review-twelve-hour-clock): BLOCK on one issue. The plan-limit reset
+field read a bare `2:30` as 2:30 AM, which put the weekly reset 12 h off.
+Fixed in `33d53294`: an ambiguous time is refused, the field reads back
+"Reads as …" or asks "Add AM or PM", and a leading zero counts as the 24-hour
+clock. CHIEF read the fix. The rest of the review found no clock or duration
+site missed, helpers correct at noon and midnight, nothing sent to agents or
+the CLI changed, and the member-profile clock truly pinned. The "a little
+over" verdict shift is correct: it judges on the printed figures. Relative
+times are LAI-837; the CLI's 24-hour output is LAI-838.
+
