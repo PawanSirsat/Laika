@@ -462,6 +462,22 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'time_entries.write_own':
       return true;
 
+    // | Sync own time with Solidtime | ✓ (session only) | … | ✓ (session only) |
+    // | Map Solidtime projects and people | ✓ (session only) | ✓ (session only) | — | — |
+    // | Import everyone's Solidtime time | ✓ (session only) | ✓ (session only) | — | — |
+    //
+    // D-088 item 10 (LAI-788). A person's own time is theirs to sync, every
+    // role, the time-entry rows' reason; the services touch the caller's own
+    // entries only. Saying which Solidtime member is which person, and
+    // bringing everyone's hours in, are an owner's or admin's — D-088 item 7
+    // puts per-person hours with them. All three are `SESSION_ONLY_ACTIONS`.
+    case 'time_sync.own':
+      return true;
+
+    case 'time_sync.map':
+    case 'time_sync.import_all':
+      return isAdminUp;
+
     default:
       return assertNever(action);
   }

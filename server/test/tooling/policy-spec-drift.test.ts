@@ -91,6 +91,10 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Send own time drafts', ['time_drafts.send_own']],
   ['Read and manage own time drafts', ['time_drafts.read_own', 'time_drafts.manage_own']],
   ['Read and write own time entries', ['time_entries.read_own', 'time_entries.write_own']],
+  // LAI-788's rows: the Solidtime bridge, from the CLI on a signed-in session.
+  ['Sync own time with Solidtime', ['time_sync.own']],
+  ['Map Solidtime projects and people', ['time_sync.map']],
+  ["Import everyone's Solidtime time", ['time_sync.import_all']],
 ]);
 
 const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([

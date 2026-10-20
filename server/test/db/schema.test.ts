@@ -99,6 +99,10 @@ describe('migrations', () => {
     'projects',
     'pushed_commit_keys',
     'sessions',
+    // LAI-788: the Solidtime bridge's map, people and entries.
+    'solidtime_entries',
+    'solidtime_people',
+    'solidtime_projects',
     'sprints',
     'tags',
     // LAI-772, D-085: what a claimant said at claim, as append-only history.

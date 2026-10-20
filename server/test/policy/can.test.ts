@@ -344,7 +344,9 @@ describe('the cases LAI-004 calls out by name', () => {
         action === 'time_drafts.read_own' ||
         action === 'time_drafts.manage_own' ||
         action === 'time_entries.read_own' ||
-        action === 'time_entries.write_own';
+        action === 'time_entries.write_own' ||
+        // LAI-788: syncing their own time with Solidtime, signed in.
+        action === 'time_sync.own';
 
       expect(allowed, `${action} allowed for viewer`).toBe(
         selfToken ||
