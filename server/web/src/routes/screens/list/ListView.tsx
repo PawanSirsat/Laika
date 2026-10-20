@@ -11,7 +11,7 @@ import {
   changeStatus,
   updateTask,
   type Member,
-  type Task,
+  type TaskSummary,
 } from '../../../api/tasks.ts';
 import { addTasksToSprint, removeTaskFromSprint, type Sprint } from '../../../api/sprints.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
@@ -39,8 +39,8 @@ import './list.css';
 const ROWS_PER_PAGE = 50;
 
 export interface ListViewProps {
-  readonly tasks: readonly Task[];
-  readonly byId: ReadonlyMap<string, Task>;
+  readonly tasks: readonly TaskSummary[];
+  readonly byId: ReadonlyMap<string, TaskSummary>;
   readonly members: ReadonlyMap<string, Member>;
   readonly sprintLabels: ReadonlyMap<string, { readonly label: string }>;
   /** The project's statuses, so STATUS says what the board says (LAI-490, LAI-739). */
@@ -92,7 +92,7 @@ export interface ListViewProps {
 }
 
 /** One task's request for a bulk action. */
-function applyAction(action: BulkAction, task: Task): Promise<unknown> {
+function applyAction(action: BulkAction, task: TaskSummary): Promise<unknown> {
   switch (action.kind) {
     case 'status':
       return changeStatus(task.id, { status_id: action.statusId });

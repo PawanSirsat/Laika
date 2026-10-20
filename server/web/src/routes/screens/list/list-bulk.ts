@@ -1,7 +1,7 @@
 import { ALL_STATUSES } from '../../../api/board-derive.ts';
 import { ApiError } from '../../../api/errors.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
-import type { Task, TaskPriority, TaskStatus } from '../../../api/tasks.ts';
+import type { TaskSummary, TaskPriority, TaskStatus } from '../../../api/tasks.ts';
 
 /**
  * Acting on many tasks at once (LAI-496).
@@ -37,7 +37,7 @@ export function statusTargets(from: TaskStatus): readonly TaskStatus[] {
  * kinds only those {@link statusTargets} allows.
  */
 export function statusChoices(
-  task: Pick<Task, 'status' | 'status_id'>,
+  task: Pick<TaskSummary, 'status' | 'status_id'>,
   statuses: readonly ProjectStatus[],
 ): ProjectStatus[] {
   const kinds = new Set<TaskStatus>([task.status, ...statusTargets(task.status)]);
@@ -139,7 +139,7 @@ export interface BulkPlan {
 }
 
 /** Does this task already have what the action would give it? */
-function alreadyThere(action: BulkAction, task: Task): boolean {
+function alreadyThere(action: BulkAction, task: TaskSummary): boolean {
   switch (action.kind) {
     case 'status':
       return task.status_id === action.statusId;
@@ -161,7 +161,7 @@ function alreadyThere(action: BulkAction, task: Task): boolean {
  * write a no-op elsewhere; neither is a refusal the reader could have avoided,
  * so those tasks are counted and never sent.
  */
-export function bulkPlan(action: BulkAction, tasks: readonly Task[]): BulkPlan {
+export function bulkPlan(action: BulkAction, tasks: readonly TaskSummary[]): BulkPlan {
   const ids: string[] = [];
   let skipped = 0;
   for (const task of tasks) {

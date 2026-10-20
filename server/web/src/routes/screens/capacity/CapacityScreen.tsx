@@ -17,7 +17,7 @@ import {
 } from '../../../api/presence.ts';
 import { isProject, listProjects } from '../../../api/projects.ts';
 import { taskStore } from '../../../api/store.ts';
-import { getTask, type Task } from '../../../api/tasks.ts';
+import { getTask, type TaskSummary } from '../../../api/tasks.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
@@ -138,7 +138,7 @@ export function CapacityScreen({
    * answers first (LAI-724); otherwise one `GET /tasks/:id`, asked again on the
    * next poll if it failed.
    */
-  const [resolved, setResolved] = useState<ReadonlyMap<string, Task>>(new Map());
+  const [resolved, setResolved] = useState<ReadonlyMap<string, TaskSummary>>(new Map());
 
   /**
    * Every space this reader can see: for the selector, and so a task opens in
@@ -236,7 +236,7 @@ export function CapacityScreen({
     // by id first would spend the requests LAI-724 saved.
     if (missing.length === 0 || spaces === undefined) return;
 
-    const held = new Map<string, Task>();
+    const held = new Map<string, TaskSummary>();
     for (const { slug } of spaces?.values() ?? []) {
       const set = taskStore.peek(slug);
       if (set?.status !== 'ready') continue;

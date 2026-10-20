@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { everyPage } from '../../../api/every-page.ts';
 import { listSprints, type Sprint } from '../../../api/sprints.ts';
 import { taskStore } from '../../../api/store.ts';
-import { listTasks, type Task } from '../../../api/tasks.ts';
+import { listTasks, type TaskSummary } from '../../../api/tasks.ts';
 import { useProjectTasks } from '../../../api/use-project-tasks.ts';
 import { useLive } from '../../../components/space/SpaceLive.tsx';
 
@@ -20,7 +20,11 @@ export type SprintsLoad =
 export type TasksLoad =
   | { readonly status: 'loading' }
   | { readonly status: 'error'; readonly error: unknown }
-  | { readonly status: 'ready'; readonly tasks: readonly Task[]; readonly truncated: boolean };
+  | {
+      readonly status: 'ready';
+      readonly tasks: readonly TaskSummary[];
+      readonly truncated: boolean;
+    };
 
 export interface UseTimeline {
   readonly sprints: SprintsLoad;
@@ -83,7 +87,7 @@ export function useTimeline(slug: string | undefined, open: ReadonlySet<string>)
       const pending: TasksLoad = { status: 'loading' };
       return (): TasksLoad => pending;
     }
-    const byKey = new Map<string, Task[]>();
+    const byKey = new Map<string, TaskSummary[]>();
     for (const task of held.tasks) {
       const key = task.sprint_id ?? 'none';
       const list = byKey.get(key);

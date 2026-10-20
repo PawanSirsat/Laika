@@ -4,7 +4,7 @@ import type { ProjectStatus } from '../../../api/statuses.ts';
 import { timeLabel, type TimeLabel } from '../../../api/time-label.ts';
 import { dateLabel, isOverdue } from '../../../api/date-only.ts';
 import { parentOf } from '../../../api/subtask-derive.ts';
-import type { Member, Task } from '../../../api/tasks.ts';
+import type { Member, TaskSummary } from '../../../api/tasks.ts';
 import { sizeRank } from '../../../api/estimates.ts';
 
 /**
@@ -31,7 +31,7 @@ export interface ListRow {
   /** `P1`, upper-case — the design's form, not the API's `p1`. */
   readonly priority: string;
   /** The API's `p1`, for the icon beside that text (LAI-705). */
-  readonly priorityLevel: Task['priority'];
+  readonly priorityLevel: TaskSummary['priority'];
   readonly priorityTone: Tone;
   readonly who: string;
   readonly assigned: boolean;
@@ -53,7 +53,7 @@ export interface ListRow {
   /** `↳ LC-1` for a subtask, by the parent's key; empty for a top-level task (D-066). */
   readonly parentKey: string;
   /** The size in force (D-085), or null before one is computed. */
-  readonly size: Task['size'];
+  readonly size: TaskSummary['size'];
   /** `12 Jul 2026`, or empty when no due date is set. */
   readonly due: string;
   /** `bad` once it is past and the task is still open. */
@@ -76,13 +76,13 @@ function initialsOf(name: string): string {
   return `${(parts[0] ?? '').charAt(0)}${(parts[parts.length - 1] ?? '').charAt(0)}`.toUpperCase();
 }
 
-function statusTone(status: Task['status']): Tone {
+function statusTone(status: TaskSummary['status']): Tone {
   if (status === 'in_progress') return 'accent';
   if (status === 'done') return 'good';
   return 'flat';
 }
 
-function priorityTone(priority: Task['priority']): Tone {
+function priorityTone(priority: TaskSummary['priority']): Tone {
   if (priority === 'p1') return 'bad';
   if (priority === 'p2') return 'warn';
   return 'flat';
@@ -99,7 +99,12 @@ function priorityTone(priority: Task['priority']): Tone {
  *   Done row in the owner's screenshot looked like a problem.
  * - Otherwise muted.
  */
-function ageTone(at: number, now: number, status: Task['status'], staleCounts: boolean): Tone {
+function ageTone(
+  at: number,
+  now: number,
+  status: TaskSummary['status'],
+  staleCounts: boolean,
+): Tone {
   if (timeLabel(at, now).fresh) return 'accent';
   const finished = status === 'done' || status === 'cancelled';
   if (staleCounts && !finished && ageDays(at, now) >= STALE_DAYS) return 'warn';
@@ -107,8 +112,8 @@ function ageTone(at: number, now: number, status: Task['status'], staleCounts: b
 }
 
 export interface ListRowInput {
-  readonly tasks: readonly Task[];
-  readonly byId: ReadonlyMap<string, Task>;
+  readonly tasks: readonly TaskSummary[];
+  readonly byId: ReadonlyMap<string, TaskSummary>;
   readonly members: ReadonlyMap<string, Member>;
   /**
    * Sprint id → the label the board already derived, e.g. `S2`.
@@ -231,7 +236,7 @@ export const LIST_COLUMNS: readonly { readonly key: SortKey; readonly label: str
  * which put `cancelled` second and `todo` last (LAI-485). The board's own
  * column order comes first (LAI-739); this orders only statuses not loaded.
  */
-const STATUS_ORDER: readonly Task['status'][] = [
+const STATUS_ORDER: readonly TaskSummary['status'][] = [
   'backlog',
   'todo',
   'in_progress',
@@ -252,7 +257,7 @@ function sprintNumber(tag: string): number {
  * **Unassigned sorts after every name** rather than alphabetically among them:
  * "Unassigned" is the absence of a person, not a person called Unassigned.
  */
-function compareBy(key: SortKey, a: Task, b: Task, ra: ListRow, rb: ListRow): number {
+function compareBy(key: SortKey, a: TaskSummary, b: TaskSummary, ra: ListRow, rb: ListRow): number {
   switch (key) {
     case 'key':
       return a.number - b.number;
@@ -292,7 +297,7 @@ function compareBy(key: SortKey, a: Task, b: Task, ra: ListRow, rb: ListRow): nu
  */
 export function sortRows(
   rows: readonly ListRow[],
-  byId: ReadonlyMap<string, Task>,
+  byId: ReadonlyMap<string, TaskSummary>,
   key: SortKey,
   ascending: boolean,
 ): readonly ListRow[] {

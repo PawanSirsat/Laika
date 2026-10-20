@@ -111,6 +111,43 @@ const REVIEW_PATH = '/api/v1/review';
 const TOKEN_ALERTS_PATH = '/api/v1/me/token-alerts';
 
 /**
+ * The task list and one task (LAI-795). **The list is answered as the server
+ * answers it**: asked `fields=slim`, the stub leaves out `description_md` and
+ * `acceptance_md`, so a fixture written in full still reaches the app as the
+ * real board would — and a screen that read the texts off the list would draw
+ * nothing here, as it would there.
+ *
+ * **And a task the list served is answered by id** when no stub names that
+ * path: the task panel reads its texts with `GET /tasks/:id`, and a fixture
+ * about cards, filters or the drawer should not have to say so. A test about
+ * the panel's read names its own.
+ */
+const TASK_LIST_PATH = /^\/api\/v1\/projects\/[^/]+\/tasks$/;
+const ONE_TASK_PATH = /^\/api\/v1\/tasks\/([^/]+)$/;
+const SLIM_OMITS = ['description_md', 'acceptance_md'];
+
+/** A list page with the texts left out, remembering each task in full by id. */
+function slimPage(body: unknown, seen: Map<string, unknown>): unknown {
+  if (
+    typeof body !== 'object' ||
+    body === null ||
+    !Array.isArray((body as { data?: unknown }).data)
+  ) {
+    return body;
+  }
+  const page = body as { data: unknown[] };
+  return {
+    ...page,
+    data: page.data.map((item) => {
+      if (typeof item !== 'object' || item === null) return item;
+      const task = item as Record<string, unknown>;
+      if (typeof task.id === 'string') seen.set(task.id, task);
+      return Object.fromEntries(Object.entries(task).filter(([key]) => !SLIM_OMITS.includes(key)));
+    }),
+  };
+}
+
+/**
  * A fixture task as the server sends it since LAI-738: in its kind's default
  * status, by id and name, unless the fixture names one. For fixtures written
  * before statuses had ids, so a filter or a picker by id has something to
@@ -334,6 +371,8 @@ function serve(
   calls: StubCall[],
   unmatched: string[],
 ): Promise<{ server: Server; origin: string }> {
+  /** Every task a list has served, in full, by id — see {@link ONE_TASK_PATH}. */
+  const listed = new Map<string, unknown>();
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const path = url.pathname;
@@ -388,6 +427,16 @@ function serve(
           return;
         }
 
+        const listedTask =
+          chosen === undefined && req.method === 'GET'
+            ? listed.get(decodeURIComponent(ONE_TASK_PATH.exec(path)?.[1] ?? ''))
+            : undefined;
+        if (listedTask !== undefined) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(listedTask));
+          return;
+        }
+
         if (chosen === undefined) {
           res.writeHead(404, { 'content-type': 'application/json' });
           res.end(JSON.stringify({ error: { code: 'not_found', message: `no stub for ${path}` } }));
@@ -419,8 +468,13 @@ function serve(
         const answer =
           typeof route === 'function' ? (route as (c: StubCall) => unknown)(call) : route;
         const { status, body } = isReply(answer) ? answer : { status: 200, body: answer };
+        const slim =
+          req.method === 'GET' &&
+          status === 200 &&
+          TASK_LIST_PATH.test(path) &&
+          url.searchParams.get('fields') === 'slim';
         res.writeHead(status, { 'content-type': 'application/json' });
-        res.end(JSON.stringify(body));
+        res.end(JSON.stringify(slim ? slimPage(body, listed) : body));
       });
       return;
     }

@@ -6,7 +6,7 @@ import { applyTaskFilter } from './task-filter.ts';
 import type { TaskSetChange, TaskSetSnapshot } from './task-store.ts';
 import { withStatus } from './status-derive.ts';
 import type { ProjectStatus } from './statuses.ts';
-import { changeStatus, reorderTask, type Task, type TaskFilter } from './tasks.ts';
+import { changeStatus, reorderTask, type TaskSummary, type TaskFilter } from './tasks.ts';
 
 export interface BoardState {
   /**
@@ -17,19 +17,19 @@ export interface BoardState {
    */
   readonly status: 'loading' | 'ready' | 'error';
   /** The tasks the filter matches, in the server's order. */
-  readonly tasks: readonly Task[];
+  readonly tasks: readonly TaskSummary[];
   /**
    * Every task in the project, unfiltered (LAI-724) — the sprint strip counts
    * across sprints from this. The same set the board filters, so the List no
    * longer walks the project twice.
    */
-  readonly all: readonly Task[];
+  readonly all: readonly TaskSummary[];
   /**
    * Every task in the project by id — children too (LAI-724 review). Blockers
    * and parents outside the filter resolve, so "blocked" and `n/m` are judged
    * against the project rather than answered "cannot tell".
    */
-  readonly allById: ReadonlyMap<string, Task>;
+  readonly allById: ReadonlyMap<string, TaskSummary>;
   readonly error: unknown;
   /**
    * Set when the page cap was reached and the server still had more.
@@ -86,7 +86,7 @@ export type BoardPresenter = (change: BoardChange, apply: () => void) => void;
 
 export interface UseBoard {
   readonly state: BoardState;
-  readonly byId: ReadonlyMap<string, Task>;
+  readonly byId: ReadonlyMap<string, TaskSummary>;
   /** Set while a drop is in flight, so the card can show it is moving. */
   readonly movingId: string | undefined;
   /** The server's reason for refusing the last move. Cleared on the next one. */
@@ -158,7 +158,7 @@ const INITIAL: BoardState = {
 };
 
 /** The same elements in the same order — so an unchanged filter result keeps its identity. */
-function sameItems(a: readonly Task[], b: readonly Task[]): boolean {
+function sameItems(a: readonly TaskSummary[], b: readonly TaskSummary[]): boolean {
   return a.length === b.length && a.every((task, i) => task === b[i]);
 }
 
@@ -365,7 +365,7 @@ export function useBoard(
       if (target === undefined && !reorders) return;
 
       const replace = (
-        next: Task,
+        next: TaskSummary,
         settled: boolean,
         alongside?: () => void,
         record?: string,
@@ -415,7 +415,7 @@ export function useBoard(
       let handed = false;
       let statusLanded = false;
       try {
-        let answer: Task | undefined;
+        let answer: TaskSummary | undefined;
         if (target !== undefined) {
           answer = await changeStatus(taskId, { status_id: target.id });
           statusLanded = true;

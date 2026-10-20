@@ -7,7 +7,13 @@ import { statusOptions } from '../board/status-options.ts';
 import { dateInputToMs, dateLabel, isOverdue, msToDateInput } from '../../../api/date-only.ts';
 import type { Sprint } from '../../../api/sprints.ts';
 import { timeLabel } from '../../../api/time-label.ts';
-import { isOutsideId, updateTask, PRIORITIES, type Member, type Task } from '../../../api/tasks.ts';
+import {
+  isOutsideId,
+  updateTask,
+  PRIORITIES,
+  type Member,
+  type TaskSummary,
+} from '../../../api/tasks.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
@@ -18,9 +24,9 @@ import './task-panel.css';
 
 export interface TaskMetaProps {
   readonly slug: string;
-  readonly task: Task;
+  readonly task: TaskSummary;
   /** Everything loaded, for naming the parent and offering one. */
-  readonly byId: ReadonlyMap<string, Task>;
+  readonly byId: ReadonlyMap<string, TaskSummary>;
   /** The project's statuses — the board's columns — for the status control (LAI-739). */
   readonly statuses: readonly ProjectStatus[];
   /** Every sprint on the project, for the sprint control. */
@@ -44,7 +50,7 @@ export interface TaskMetaProps {
   readonly claimLock: DemoClaimLock | undefined;
   readonly agentBuild: DemoAgentBuild | undefined;
   /** The parent, resolved by the panel (it may be outside `byId`). */
-  readonly parent: Task | undefined;
+  readonly parent: TaskSummary | undefined;
   /** How many of this task's subtasks are still open — for the warning under a `done` status. */
   readonly openSubtasks: number;
   /** Commits recorded against the task — the Changes tab's count, for the Development card. */
@@ -608,9 +614,9 @@ export function TaskMeta({
 }
 
 interface ParentRowProps {
-  readonly task: Task;
-  readonly parent: Task | undefined;
-  readonly candidates: readonly Task[];
+  readonly task: TaskSummary;
+  readonly parent: TaskSummary | undefined;
+  readonly candidates: readonly TaskSummary[];
   readonly mayEdit: boolean;
   readonly onOpen: (taskId: string) => void;
   readonly onChange: (parentId: string | null) => Promise<void>;

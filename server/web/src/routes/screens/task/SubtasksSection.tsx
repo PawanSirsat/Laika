@@ -11,7 +11,7 @@ import {
   listTasks,
   updateTask,
   type Member,
-  type Task,
+  type TaskSummary,
 } from '../../../api/tasks.ts';
 import { statusNameOf } from '../../../api/status-derive.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
@@ -23,9 +23,9 @@ import './task-panel.css';
 
 export interface SubtasksSectionProps {
   readonly slug: string;
-  readonly task: Task;
+  readonly task: TaskSummary;
   /** Everything loaded — the first answer, before the server's. */
-  readonly byId: ReadonlyMap<string, Task>;
+  readonly byId: ReadonlyMap<string, TaskSummary>;
   readonly members: ReadonlyMap<string, Member>;
   readonly theme: Theme;
   /** Member+ — adds, detaches, and changes a child's status (§3.2). */
@@ -70,7 +70,7 @@ export function SubtasksSection({
   onChanged,
 }: SubtasksSectionProps) {
   const byStatusId = new Map(statuses.map((s) => [s.id, s]));
-  const [children, setChildren] = useState<readonly Task[]>(() => childrenOf(task.id, byId));
+  const [children, setChildren] = useState<readonly TaskSummary[]>(() => childrenOf(task.id, byId));
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState('');
   const [busy, setBusy] = useState(false);

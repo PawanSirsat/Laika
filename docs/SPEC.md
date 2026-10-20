@@ -2165,8 +2165,9 @@ POST   /api/v1/projects/:slug/join           (public projects)
 GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
 GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
 GET    /api/v1/projects/:slug/budgets        PUT /api/v1/projects/:slug/budget  body { tokens | null }   (set: lead, session only; LAI-773)
-GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=
-                                             status is a category (§4.5), status_id one project status (§4.20)
+GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=&fields=
+                                             status is a category (§4.5), status_id one project status (§4.20);
+                                             fields=slim leaves out description_md and acceptance_md (LAI-795)
 GET    /api/v1/projects/:slug/statuses       POST .../statuses  body { name, category, position? } → 201  (lead+)
 PATCH  /api/v1/projects/:slug/statuses/:id   body { name?, hidden? } — category is refused   (lead+)
 PUT    /api/v1/projects/:slug/statuses/order body { ids } — every status exactly once   (lead+)
@@ -2238,6 +2239,20 @@ anything of another shape is `422` on that field, and one another task of the
 project holds is `422` with `details: { field: 'external_ref', reason:
 'taken', external_ref, task }` — and `PATCH` clears it with `null` (LAI-780). `?parent=<id>` on the list returns that task's
 subtasks only, and pages with `cursor` like any other filter (D-066).
+
+**A slim list: `?fields=slim`** (LAI-795). The task list answers every field
+of the task view below **except `description_md` and `acceptance_md`**, the
+rest in the same order, on the same pages and with the same `next_cursor`, and
+with every filter. **Without it the answer is unchanged** — agents, the CLI and
+other clients read the list whole. `slim` is the only value: any other is `400
+bad_request` with `details: { fields }`, and an empty one reads as absent, as
+every filter's does. The two texts were 83% of a gzip'd 200-task page (LAI-786)
+and nothing that draws a list renders them, so **the web app reads every list
+slim** — the store's walk and its live refresh, the Timeline's sprints, a
+panel's subtasks — and **the task panel reads the task in full with `GET
+/tasks/:id` when it opens**, and again when the task's `updated_at` moves past
+the copy it holds. `GET /tasks/:id` and every write still answer the whole
+task.
 
 **A project in `GET /projects` is §4.3's columns plus five derived at read
 time** (LAI-053). None is stored, which is why §4.3 does not carry them and a
@@ -2766,7 +2781,8 @@ only), answering the same shape.
 **A task's read shape is §4.5's columns** — `branch` and `external_ref`
 included, which `TaskView` omitted until LAI-493 (LAI-286) — and `TaskView`
 adds the fields below, which are not stored there — **derived at read time, so a reader who looks for them in §4 will
-not find them and should not**:
+not find them and should not**. A slim list's task, `TaskSummaryView`, is the
+same shape without `description_md` and `acceptance_md` (LAI-795):
 
 | field | where it comes from |
 | --- | --- |
@@ -3556,6 +3572,14 @@ of it.
 Both views:
 
 - share one filter state, reflected in the URL so a filtered board is linkable;
+- share one **search box, which matches a task's title, its key and its outside
+  id** (LAI-251, LAI-780), in the browser, over the project's task set — and
+  **not its description or acceptance**. The list is read slim (§6.4,
+  LAI-795), so the texts are not there to match, and that is the decision, not
+  a gap: loading every task's text into every list to search it is the cost
+  LAI-795 removed, and the search never matched descriptions before it either.
+  Searching the texts would be a server-side text parameter on the list, which
+  §6.4 does not have;
 - update live over SSE (§11.5) rather than polling;
 - paginate through the same cursor API (§6.3) — the kanban board loads per
   column, and a column with more results says so rather than silently truncating.

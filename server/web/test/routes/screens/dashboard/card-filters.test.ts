@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { DAY_MS } from '../../../../src/api/date-only.ts';
-import type { Task } from '../../../../src/api/tasks.ts';
+import type { Task, TaskSummary } from '../../../../src/api/tasks.ts';
 import {
   blockedIdsOf,
   cardTasks,
@@ -100,7 +100,7 @@ const SET: readonly Task[] = [
 
 const KNOWN = { sprintIds: new Set(['s1', 's2']), memberIds: new Set(['ada', 'bob']) };
 const q = (s: string): URLSearchParams => new URLSearchParams(s);
-const ids = (tasks: readonly Task[]): string[] => tasks.map((t) => t.id);
+const ids = (tasks: readonly TaskSummary[]): string[] => tasks.map((t) => t.id);
 const ALL = { since: undefined, activeSprintId: 's1' };
 const SEVEN = { since: WEEK, activeSprintId: 's1' };
 

@@ -1,4 +1,4 @@
-import type { Task } from './tasks.ts';
+import type { TaskSummary } from './tasks.ts';
 
 /**
  * Fold a fresh read of the board into what is on screen (LAI-707).
@@ -37,7 +37,7 @@ export function sameValue(a: unknown, b: unknown): boolean {
 
 export interface MergedTasks {
   /** The server's order; unchanged tasks are the old objects. */
-  readonly tasks: readonly Task[];
+  readonly tasks: readonly TaskSummary[];
   /** Ids that are new or whose content changed. */
   readonly changed: ReadonlySet<string>;
   /** Ids on screen that the server no longer lists (and that are not kept). */
@@ -50,15 +50,15 @@ export interface MergedTasks {
  *   the screen already shows, and drawing it would snap the card back.
  */
 export function mergeTasks(
-  prev: readonly Task[],
-  incoming: readonly Task[],
+  prev: readonly TaskSummary[],
+  incoming: readonly TaskSummary[],
   keep: ReadonlySet<string>,
 ): MergedTasks {
   const before = new Map(prev.map((t) => [t.id, t]));
   const changed = new Set<string>();
   const seen = new Set<string>();
 
-  const tasks: Task[] = incoming.map((fresh) => {
+  const tasks: TaskSummary[] = incoming.map((fresh) => {
     seen.add(fresh.id);
     const old = before.get(fresh.id);
     if (old !== undefined && keep.has(fresh.id)) return old;
