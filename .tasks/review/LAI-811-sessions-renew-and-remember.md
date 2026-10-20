@@ -6,8 +6,9 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-796
-status: in-progress
+status: review
 started: 2026-10-20T11:28:33Z
+finished: 2026-10-20T12:23:42Z
 ---
 
 ## Goal
@@ -44,7 +45,7 @@ Deploys are not the cause: `LAIKA_SECRET` is stable, sessions persist on the
 
 ## Acceptance criteria
 
-- [ ] **Renewal.** `resolve-actor.ts` uses
+- [x] **Renewal.** `resolve-actor.ts` uses
       `getSession({ headers, returnHeaders: true })`, and the auth middleware
       passes its `set-cookie` through on the response, the way `setup.ts:93,
       115-117` already does.
@@ -307,3 +308,144 @@ Prove one of them by mutation.
   responses are `private, no-store`, and when the cookie catches up.
 - `env.ts`: correct "the only case", since browsers also send `Secure` cookies
   to `http://localhost`.
+
+## Round 1 response (2026-10-20)
+
+Commits: `0e9195b0` (B1), `0b1281b6` (B2 comments), `6cd831a6` (SPEC §13.1).
+Not pushed.
+
+### B1: session cookies only on API responses, and those are uncacheable
+
+Both layers are in place.
+
+1. **Renew only on `/api/`.** `middleware/auth.ts`'s `renewsSession(path)`
+   is `path.startsWith('/api/')`, the same idiom as `compression.ts:47`. It
+   hands `resolveActor` a cookie sink only for those paths.
+   - `resolveActor` calls `getSession` with `query: { disableRefresh: true }`
+     whenever there is no sink. That is Better Auth 1.7.1's
+     `getSessionQuerySchema` option (`dist/cookies/session-store.mjs:163`).
+     A caller that cannot deliver the cookie therefore never slides the
+     database either, so the two cannot fall out of step: the LAI-811 defect,
+     one layer over.
+   - Nothing reaches an asset or the SPA document. That includes the
+     `Max-Age=0` cookies for a dead session: better-auth produces them even
+     with refresh off, and nobody is given them.
+2. **`Cache-Control: private, no-store`** goes on any response that gets an
+   appended session cookie. It replaces whatever the route set.
+
+**Tests.** Four in `session-lifetime.test.ts`, each failing on the round-1 head.
+I swapped in the head's `resolve-actor.ts` and `middleware/auth.ts` and got
+exit 1:
+
+| test | what it checks | failure on the round-1 head |
+| --- | --- | --- |
+| hashed asset, aged session | no `Set-Cookie`, `public, max-age=31536000, immutable` kept, DB not slid (+28 d), then `/api/v1/me` renews to the full `Max-Age` with the DB at +30 d (the SPA's on-load call after a day away) | `[ Array(1) ]` not `[]` |
+| SPA document and its `304`, aged session (re-aged before the 304) | no `Set-Cookie` on either | `[ Array(1) ]` not `[]` |
+| `/api/v1/me`, aged session | renewal cookie and `private, no-store` | `null` not `'private, no-store'` |
+| dead session on an asset; then `/api/v1/me` | asset: no cookie, immutable kept. `/me`: `401`, `Max-Age=0`, `private, no-store` | 3 expiring cookies on the asset |
+
+The other 10 tests in the file pass on the round-1 head, as before.
+
+**Mutations.** For each, the anchor was found exactly once, the new text was on
+disk, and the checksum changed. Each file was restored by checksum, and all
+three files were re-verified with `shasum -c`.
+
+- **M9**, `renewsSession` returns true for every path: the asset, document and
+  dead-session tests fail.
+- **M10**, the `Cache-Control` line removed: the `/me` and dead-session tests
+  fail.
+
+### B2: comments narrowed
+
+- **`environment-posture.test.ts`.** I narrowed the comment rather than changing
+  the probe.
+  - `env.ts` derives the flag from the URL's own scheme, so no real
+    configuration has the flag and the URL disagree. A probe on any
+    production-shaped URL therefore stays green whether or not the flag is
+    read.
+  - Only a deliberately mismatched pair can tell. `session-lifetime.test.ts`
+    "is decided by the secureCookies flag" uses one, and round 0's M3 turned
+    it red.
+  - The test is renamed to what it asserts ("resolves the session cookie to its
+    plain name, without Secure, in this environment"). Its comment now says it
+    cannot tell whether the flag is read, and points at the test that can.
+  - The `DIFFERENCES` row and the probe comment are narrowed the same way.
+- **`auth.ts`.** Re-keying the block alone would have put `env.ts`'s wrong
+  `Secure` on the plain-http cookie. Fixing `env.ts` alone would have changed
+  nothing.
+
+### Non-blocking
+
+- **SPEC §13.1.** Renewal rides on `/api/` responses only, and those are
+  `private, no-store`. The cookie catches up on the SPA's on-load
+  `/api/v1/me` after a day away. Static files and the SPA document carry no
+  session cookie, not even an expiring one.
+- **`env.ts`.** It now says browsers accept a `Secure` cookie from
+  `http://localhost` but not from `http://<IP>`. The `auth.ts` option comment
+  is corrected the same way.
+
+### Real-path check, round 1
+
+Setup:
+
+- Port 3811; `lsof -ti tcp:3811` was empty beforehand.
+- `NODE_ENV=production`, `LAIKA_PUBLIC_URL=http://203.0.113.7:3811`.
+- A scratch DB, and a scratch build in `LAIKA_PUBLIC_DIR` (`index.html` and
+  `assets/index-DfSpNg7Z.js`).
+
+Results:
+
+1. Start: `uptime_ms` 1566, 2000 ms after launch. Setup `201`, sign-in `200`.
+2. Restart: `uptime_ms` 2157, 3000 ms after launch.
+3. Aged the sessions to +28 d.
+   - Asset `200`, `public, max-age=31536000, immutable`, no `Set-Cookie`.
+   - `/board` `200`, `no-cache`, no `Set-Cookie`.
+   - Its `304`: no `Set-Cookie`.
+   - The DB was still at +28.000 d.
+4. `/api/v1/me` `200`, `private, no-store`, `Set-Cookie … Max-Age=2592000`.
+   The DB moved to +30.000 d. The next `/me` sent no cookie and no
+   `Cache-Control`.
+5. Dead session:
+   - Asset `200`, immutable, no `Set-Cookie`.
+   - `/api/v1/me` `401`, `private, no-store`, three `Max-Age=0` cookies
+     (`session_token`, `session_data`, `dont_remember`).
+6. Cleanup: killed the LISTEN pid only, and the port was free afterwards. The
+   server logs had 0 error lines. The DB and the build were deleted.
+
+### Gate, round 1
+
+Run one at a time, each with its own exit code:
+
+- `tsc` (server) exit 0.
+- The server test files, all exit 0:
+
+  | file | tests |
+  | --- | --- |
+  | `session-lifetime` | 14/14 |
+  | `env` | 30/30 |
+  | `environment-posture` | 13/13 |
+  | `middleware/auth` | 35/35 |
+  | `auth/flow` | 15/15 |
+  | `auth/resolve-actor` | 7/7 |
+  | `auth/deactivated` | 9/9 |
+  | `http/spa-fallback` | 30/30 |
+  | `http/static-cache` | 15/15 |
+
+- Web `auth-states` 11/11, exit 0.
+- `pnpm lint` exit 0.
+- `pnpm format`: exit 1 on the first run (Prettier layout in
+  `session-lifetime.test.ts`). After `prettier --write` on that file alone:
+  exit 0, with `pnpm lint` exit 0 and `session-lifetime` 14/14 re-run after
+  it.
+- The root `pnpm test` was not run, per the dispatch: polly gates on `master`.
+  The Gate criterion stays unticked.
+- I missed `test/auth/resolve-actor.test.ts` in round 0's sweep, which grepped
+  for cookies. It has run now (7/7).
+
+### Seen, not changed
+
+`/api/v1/setup` and `/api/v1/auth/sign-in/email` answer with the route's own
+`Set-Cookie` and no `Cache-Control`. They are `POST` responses with no
+freshness information, and the cookie is not one this middleware appended, so
+they fall outside B1. Recorded in case the reviewer wants them marked
+`no-store` too.
