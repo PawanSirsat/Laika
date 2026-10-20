@@ -63,6 +63,14 @@
   outline-offset: -2px;
 }
 
+/* At 12px (LAI-828) the four ranges ended a pixel past a 390px phone's edge;
+   tighter sides on a phone keep the whole control on screen. */
+@media (max-width: 30rem) {
+  .dash-range {
+    padding: var(--space-2) var(--space-2);
+  }
+}
+
 /* --------------------------------------------------------------------- notes */
 
 .dash-note,
@@ -537,12 +545,16 @@ thead .dash-contrib-n {
 
 /* ------------------------------------------------- filters and tab buttons */
 
+/* They wrap rather than hold their width: at 14px (LAI-828) Needs attention's
+   three tabs are 369px, and on a phone they pushed the screen 20px sideways. */
 .dash-feed-filters,
 .dash-tabs {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .dash-filter,
