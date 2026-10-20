@@ -10,7 +10,6 @@ import {
   ALL_TASKS,
   blockedIdsOf,
   cardTasks,
-  INCLUDE_DONE,
   PEOPLE_KEYS,
   peopleCardActive,
   rangeApplies,
@@ -30,6 +29,8 @@ import { useTheme } from '../../../theme/use-theme.ts';
 import { withProjectParam } from '../../nav-url.ts';
 import { useRoute } from '../../use-route.ts';
 import { ActivityFeed } from './ActivityFeed.tsx';
+import { Contributors } from './Contributors.tsx';
+import { contributors } from './contributors-derive.ts';
 import {
   blockedTasks,
   DEFAULT_RANGE,
@@ -46,13 +47,14 @@ import {
   MAX_PEOPLE,
   completedIn,
   priorityBreakdown,
+  splitBlocked,
   staleTasks,
+  waitingForReview,
   windowCounts,
   workloadByPerson,
 } from './summary-derive.ts';
 import { Throughput } from './Throughput.tsx';
 import { useDashboard } from './use-dashboard.ts';
-import { WorkByPerson } from './WorkByPerson.tsx';
 import { clockTime } from '../../../api/time-label.ts';
 import './dashboard.css';
 
@@ -60,9 +62,10 @@ import './dashboard.css';
  * Dashboard (SPEC §11.4.2.1 — LAI-085, reshaped by LAI-711, D-072).
  *
  * **Jira's project Summary, for a board shared with agents.** Four figures
- * across the top — done, updated, created, due soon — then two donuts (status,
- * and open work by person), the activity feed beside what needs attention, and
- * priority beside throughput and cycle time.
+ * across the top — done, touched, created, due soon — then the status donut
+ * beside Contributors (who delivered in the range, and open work now), the
+ * activity feed beside what needs attention, and priority beside throughput
+ * and cycle time.
  *
  * ## Every number is derived from a response
  *
@@ -245,9 +248,11 @@ export function DashboardScreen() {
 
   const window = range.ms === null ? 'all time' : `in the ${range.label.toLowerCase()}`;
   /*
-   * **What the two cards count** (LAI-732): the dashboard's range — tasks
-   * updated within it, the "N updated" rule — and each card's own filter, from
-   * the URL. With no filter and All time, each is the whole set, as before.
+   * **What the two cards count** (LAI-732, LAI-817): Status overview, the
+   * tasks touched in the range — the "N touched" rule — and its own filter.
+   * Contributors never reads the range off tasks: Delivered counts the range's
+   * *activity*, and Open work now has no range at all (D-092). Each card's
+   * filter is in the URL; with no filter and All time, each is the whole set.
    */
   const sprintList = sprints?.slug === slug ? sprints.list : undefined;
   const known = {
@@ -265,17 +270,28 @@ export function DashboardScreen() {
   const statusActive = statusCardActive(statusFilter);
   const peopleActive = peopleCardActive(peopleFilter);
   const statusCard = statusBreakdown(statusTasks);
-  const peopleCard = workloadByPerson(peopleTasks, nameOf, MAX_PEOPLE, {
-    includeDone: peopleFilter.includeDone,
+  const openNow = workloadByPerson(peopleTasks, nameOf, MAX_PEOPLE, {
     blockedIds: blockedIdsOf(tasks),
   });
+  /*
+   * **Who delivered, from the range's activity** (D-092 item 1). The card's
+   * filter narrows the tasks counted; the assignee stands in for a delivery
+   * made before the range began. Which moves count is the events' business:
+   * a rule that sets bulk imports aside (LAI-823) filters `events` first.
+   */
+  const peopleTaskIds = peopleActive > 0 ? new Set(peopleTasks.map((t) => t.id)) : undefined;
+  const contributorList = contributors(events, nameOf, {
+    include: peopleTaskIds === undefined ? undefined : (id) => peopleTaskIds.has(id),
+    assigneeOf: (id) => tasksById.get(id)?.assignee_id,
+  });
+  const blocked = splitBlocked(blockedTasks(tasks));
 
-  /** "updated in the last 7 days", "· all time", "· 2 filters" — what a card covers. */
+  /** "touched in the last 7 days", "· all time", "· 2 filters" — what a card covers. */
   const scopeSuffix = (filter: { readonly allTasks: boolean }, active: number): string => {
     const narrowing = active - (filter.allTasks ? 1 : 0);
     return (
       (rangeApplies(filter, ctx)
-        ? ` updated ${window}`
+        ? ` touched ${window}`
         : filter.allTasks && since !== undefined
           ? ' · all time'
           : '') +
@@ -283,12 +299,6 @@ export function DashboardScreen() {
     );
   };
   const statusScope = `${String(statusCard.live)} ${statusCard.live === 1 ? 'task' : 'tasks'}${scopeSuffix(statusFilter, statusActive)}`;
-  const peopleCount = peopleCard.rows
-    .filter((row) => row.kind !== 'unassigned')
-    .reduce((sum, row) => sum + row.people.length, 0);
-  const peopleScope = `${String(peopleCount)} ${peopleCount === 1 ? 'person' : 'people'} · ${
-    peopleFilter.includeDone ? 'open and done work' : 'open work'
-  }${scopeSuffix(peopleFilter, peopleActive)}`;
 
   /** One URL key, or several, written at once; `undefined` deletes. */
   const setCard = (changes: Readonly<Record<string, string | undefined>>): void => {
@@ -400,7 +410,7 @@ export function DashboardScreen() {
 
   const peopleFilterControl = (
     <CardFilter
-      title="Work by person"
+      title="Contributors"
       active={peopleActive}
       onClear={() => {
         clearAll(PEOPLE_KEYS);
@@ -432,27 +442,6 @@ export function DashboardScreen() {
           options={labelOptions}
           onChange={(v) => {
             setCard({ [PEOPLE_KEYS.tag]: v });
-          }}
-        />
-      </CardField>
-      <CardField label="Statuses" set={peopleFilter.includeDone}>
-        <CardSelect
-          value={peopleFilter.includeDone ? INCLUDE_DONE : ''}
-          options={[
-            ['', 'Open only'],
-            [INCLUDE_DONE, 'Include done'],
-          ]}
-          onChange={(v) => {
-            setCard({ [PEOPLE_KEYS.status]: v });
-          }}
-        />
-      </CardField>
-      <CardField wide label="Range" set={peopleFilter.allTasks}>
-        <CardSelect
-          value={peopleFilter.allTasks ? ALL_TASKS : ''}
-          options={rangeOptions}
-          onChange={(v) => {
-            setCard({ [PEOPLE_KEYS.range]: v });
           }}
         />
       </CardField>
@@ -502,16 +491,18 @@ export function DashboardScreen() {
           slug={slug}
           scope={statusScope}
           narrowed={statusTasks !== tasks}
+          touchedOnly={rangeApplies(statusFilter, ctx)}
           filter={statusFilterControl}
         />
-        <WorkByPerson
-          workload={peopleCard}
+        <Contributors
+          contributors={contributorList}
+          workload={openNow}
           nameOf={nameOf}
           slug={slug}
           theme={theme}
-          scope={peopleScope}
-          narrowed={peopleTasks !== tasks}
-          includeDone={peopleFilter.includeDone}
+          window={window}
+          filters={peopleActive}
+          narrowed={peopleActive > 0}
           filter={peopleFilterControl}
         />
         <ActivityFeed
@@ -524,8 +515,11 @@ export function DashboardScreen() {
           theme={theme}
         />
         <NeedsAttention
-          blocked={blockedTasks(tasks)}
-          stale={staleTasks(tasks, clock)}
+          blocked={blocked.committed}
+          blockedApart={blocked.apart}
+          stale={staleTasks(tasks)}
+          review={waitingForReview(tasks, events, since, clock)}
+          nameOf={nameOf}
           slug={slug}
           now={clock}
         />

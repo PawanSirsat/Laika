@@ -59,6 +59,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
   );
   const {
     waiting: reviewWaiting,
+    capped: reviewCapped,
     queue: reviewQueue,
     refresh: refreshReview,
   } = useReviewCount(me !== undefined);
@@ -84,6 +85,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
       unlistedOpen,
       refreshUnlisted,
       reviewWaiting,
+      reviewCapped,
       reviewQueue,
       refreshReview,
       tokenAlerts,
@@ -108,6 +110,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
       unlistedOpen,
       refreshUnlisted,
       reviewWaiting,
+      reviewCapped,
       reviewQueue,
       refreshReview,
       tokenAlerts,

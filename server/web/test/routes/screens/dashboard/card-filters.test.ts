@@ -1,12 +1,17 @@
 /**
- * `routes/screens/dashboard/card-filters.ts` (LAI-732).
+ * `routes/screens/dashboard/card-filters.ts` (LAI-732, LAI-817).
  *
  * The owner: the range buttons changed the stat cards *"but not this section
- * in the status overview and the work by person section"*. Each card now
- * counts the tasks **updated** within the range — the "N updated" stat's rule —
- * and has filters of its own, read from the URL under its own prefix. These
- * pin the three things a wrong number would come from: the range, each filter
- * under it, and an invalid value being ignored rather than counted (LAI-487).
+ * in the status overview and the work by person section"*. Status overview now
+ * counts the tasks **touched** within the range — the "N touched" stat's rule
+ * — and both cards have filters of their own, read from the URL under their
+ * own prefix. These pin the three things a wrong number would come from: the
+ * range, each filter under it, and an invalid value being ignored rather than
+ * counted (LAI-487).
+ *
+ * **The people card no longer follows the range** (LAI-817, D-092 item 2):
+ * Work by person counted open work touched in the range, and became
+ * Contributors, whose Open work now is every open task, whatever the range.
  */
 
 import assert from 'node:assert/strict';
@@ -113,31 +118,36 @@ void describe('no card filter and "All time" is today’s card exactly', () => {
     assert.equal(statusCardActive(filter), 0);
   });
 
-  void test('Work by person: the same open work, the same Unassigned row', () => {
+  void test('Open work now: the same open work, the same Unassigned row', () => {
     const filter = readPeopleCard(q(''), KNOWN);
-    const load = workloadByPerson(cardTasks(SET, filter, ALL), (id) => id, 5, {
-      includeDone: filter.includeDone,
-    });
+    const load = workloadByPerson(cardTasks(SET, filter, ALL));
     assert.deepEqual(load, workloadByPerson(SET));
     assert.equal(load.rows.at(-1)?.kind, 'unassigned');
     assert.equal(peopleCardActive(filter), 0);
   });
 });
 
-void describe('the dashboard range applies to the cards', () => {
-  void test('a range counts only tasks updated within it', () => {
+void describe('the dashboard range applies to Status overview, never to Open work now', () => {
+  void test('a range counts only tasks touched within it', () => {
     assert.deepEqual(ids(cardTasks(SET, readStatusCard(q(''), KNOWN), SEVEN)), [
       'a',
       'b',
       'c',
       'd',
     ]);
-    assert.deepEqual(ids(cardTasks(SET, readPeopleCard(q(''), KNOWN), SEVEN)), [
-      'a',
-      'b',
-      'c',
-      'd',
-    ]);
+  });
+
+  /*
+   * **Open work now ignores the range** (LAI-817, D-092 item 2). Under the old
+   * card, 7 days dropped e and f — open, but untouched for forty days — and
+   * the donut read as a smaller workload than anyone held.
+   */
+  void test('Open work now counts the same tasks under 7 days as under All time', () => {
+    const filter = readPeopleCard(q(''), KNOWN);
+    assert.deepEqual(ids(cardTasks(SET, filter, SEVEN)), ids(SET));
+    const seven = workloadByPerson(cardTasks(SET, filter, SEVEN));
+    assert.equal(seven.open, 4, 'a, c, e and f are open, two of them untouched for 40 days');
+    assert.deepEqual(seven, workloadByPerson(SET));
   });
 
   /*
@@ -152,13 +162,10 @@ void describe('the dashboard range applies to the cards', () => {
     assert.deepEqual(ids(cardTasks([at, before], filter, SEVEN)), ['at']);
   });
 
-  void test('"All tasks" on a card overrides the range, and counts as a filter', () => {
+  void test('"All tasks" on Status overview overrides the range, and counts as a filter', () => {
     const so = readStatusCard(q('so_range=all'), KNOWN);
     assert.deepEqual(ids(cardTasks(SET, so, SEVEN)), ids(SET));
     assert.equal(statusCardActive(so), 1);
-    const wp = readPeopleCard(q('wp_range=all'), KNOWN);
-    assert.deepEqual(ids(cardTasks(SET, wp, SEVEN)), ids(SET));
-    assert.equal(peopleCardActive(wp), 1);
   });
 });
 
@@ -197,34 +204,30 @@ void describe('each Status overview filter, under "All time" and under 7 days', 
   });
 });
 
-void describe('each Work by person filter', () => {
-  void test('sprint, priority and label narrow the work; range too', () => {
-    const cases: readonly [string, string[], string[]][] = [
-      ['wp_sprint=s1', ['a', 'b', 'd', 'e'], ['a', 'b', 'd']],
-      ['wp_priority=p1', ['a', 'e'], ['a']],
-      ['wp_tag=web', ['c'], ['c']],
+void describe('each Contributors filter', () => {
+  void test('sprint, priority and label narrow the work; the range never does', () => {
+    const cases: readonly [string, string[]][] = [
+      ['wp_sprint=s1', ['a', 'b', 'd', 'e']],
+      ['wp_priority=p1', ['a', 'e']],
+      ['wp_tag=web', ['c']],
     ];
-    for (const [query, all, seven] of cases) {
+    for (const [query, all] of cases) {
       const filter = readPeopleCard(q(query), KNOWN);
       assert.equal(peopleCardActive(filter), 1, query);
       assert.deepEqual(ids(cardTasks(SET, filter, ALL)), all, `${query} all time`);
-      assert.deepEqual(ids(cardTasks(SET, filter, SEVEN)), seven, `${query} 7 days`);
+      assert.deepEqual(ids(cardTasks(SET, filter, SEVEN)), all, `${query} 7 days`);
     }
   });
 
-  void test('"Include done" counts finished work beside open work, and counts as a filter', () => {
-    const filter = readPeopleCard(q('wp_status=all'), KNOWN);
-    assert.equal(filter.includeDone, true);
-    assert.equal(peopleCardActive(filter), 1);
-    const load = workloadByPerson(cardTasks(SET, filter, ALL), (id) => id, 5, {
-      includeDone: true,
-    });
-    // Open: a, c, e, f. Done: b, g. Cancelled d never counts.
-    assert.equal(load.open, 6);
-    const ada = load.rows.find((r) => r.id === 'ada');
-    assert.equal(ada?.count, 2);
-    assert.equal(ada?.done, 1);
-    assert.equal(workloadByPerson(SET).open, 4, 'positive control: open only is four');
+  /*
+   * **The old card's Range and Statuses are not read** (LAI-817). Done work is
+   * what Delivered counts and never open work; Open work now has no range. A
+   * link saved with either still opens, unfiltered and not counted.
+   */
+  void test('"Include done" and "All tasks" are gone: an old link applies neither', () => {
+    const filter = readPeopleCard(q('wp_status=all&wp_range=all'), KNOWN);
+    assert.equal(peopleCardActive(filter), 0);
+    assert.equal(workloadByPerson(cardTasks(SET, filter, SEVEN)).open, 4, 'open only, all of it');
   });
 
   void test('blocked is judged from the whole project, not the filtered few', () => {

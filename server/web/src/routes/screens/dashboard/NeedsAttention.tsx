@@ -1,31 +1,71 @@
 import { useState } from 'react';
-import { updatedAge } from '../../../api/board-derive.ts';
+import { staleFor } from '../../../api/board-derive.ts';
 import type { TaskSummary } from '../../../api/tasks.ts';
 import type { BlockedTask } from './dashboard-derive.ts';
 import { DashLink, boardHref } from './DashLink.tsx';
-import { STALE_DAYS } from './summary-derive.ts';
+import { REVIEW_WAIT_DAYS, type ReviewWait } from './summary-derive.ts';
+
+type Tab = 'blocked' | 'stale' | 'review';
 
 /**
- * **Needs attention** (LAI-711): what cannot move, and what has stopped moving.
+ * **Needs attention** (LAI-711, reshaped by LAI-817 and D-092): what cannot
+ * move, what the server says has stopped, and what waits on a reviewer.
  *
- * Two lists the old page kept in two cards — "Needs a decision" across the top
- * and "Stale" in a narrow rail — as one card with tabs, each tab carrying its
- * true count. Every row opens the task. The list scrolls inside the card, so
- * nothing is cut to fit and nothing is counted after a cut.
+ * Each tab carries its true count, every row opens the task, and the list
+ * scrolls inside the card, so nothing is cut to fit and nothing is counted
+ * after a cut.
+ *
+ * - **Blocked** counts committed work — to do and in progress — waiting on
+ *   unfinished work. Backlog chains are listed apart, under the count, and
+ *   not in it (D-092 item 3).
+ * - **Stale** is the server's flag (`stale_flagged_at`, §11.6), not a rule of
+ *   this page's own (D-092 item 4).
+ * - **Waiting for review** is a long wait on a reviewer, which used to read as
+ *   "stale" against the person whose work was done.
  */
 export function NeedsAttention({
   blocked,
+  blockedApart,
   stale,
+  review,
+  nameOf,
   slug,
   now,
 }: {
+  /** Committed work waiting on unfinished work — the count. */
   readonly blocked: readonly BlockedTask[];
+  /** Backlog (and anything else not committed) waiting the same way — shown, not counted. */
+  readonly blockedApart: readonly BlockedTask[];
   readonly stale: readonly TaskSummary[];
+  readonly review: readonly ReviewWait[];
+  readonly nameOf: (id: string) => string;
   readonly slug: string;
   readonly now: number;
 }) {
-  const [tab, setTab] = useState<'blocked' | 'stale'>(
-    blocked.length === 0 && stale.length > 0 ? 'stale' : 'blocked',
+  const [tab, setTab] = useState<Tab>(
+    blocked.length > 0
+      ? 'blocked'
+      : stale.length > 0
+        ? 'stale'
+        : review.length > 0
+          ? 'review'
+          : 'blocked',
+  );
+
+  const blockedRow = (row: BlockedTask) => (
+    <li key={row.task.id}>
+      <DashLink href={boardHref(slug, { task: row.task.id })} className="dash-att-row">
+        <span className="dash-key">{row.task.key}</span>
+        <span className="dash-att-title">{row.task.title}</span>
+        <span className="dash-att-meta">
+          {row.task.status_name} · waiting on{' '}
+          {[
+            ...row.blockedBy.map((dep) => dep.key),
+            ...(row.unknown.length > 0 ? [`${String(row.unknown.length)} not on this board`] : []),
+          ].join(', ')}
+        </span>
+      </DashLink>
+    </li>
   );
 
   return (
@@ -39,6 +79,7 @@ export function NeedsAttention({
             [
               ['blocked', 'Blocked', blocked.length],
               ['stale', 'Stale', stale.length],
+              ['review', `Waiting for review > ${String(REVIEW_WAIT_DAYS)} days`, review.length],
             ] as const
           ).map(([id, name, count]) => (
             <button
@@ -66,41 +107,63 @@ export function NeedsAttention({
         aria-labelledby={`dash-tab-${tab}`}
       >
         {tab === 'blocked' ? (
-          blocked.length === 0 ? (
-            <p className="dash-empty">Nothing is waiting on unfinished work.</p>
+          <>
+            {blocked.length === 0 ? (
+              <p className="dash-empty">
+                Nothing to do or in progress is waiting on unfinished work.
+              </p>
+            ) : (
+              <ul className="dash-att-list">{blocked.map(blockedRow)}</ul>
+            )}
+            {blockedApart.length > 0 && (
+              <>
+                <h3 className="dash-att-apart">
+                  Not counted — {blockedApart.length} in backlog or review, waiting the same way
+                </h3>
+                <ul className="dash-att-list dash-att-list-apart">
+                  {blockedApart.map(blockedRow)}
+                </ul>
+              </>
+            )}
+          </>
+        ) : tab === 'stale' ? (
+          stale.length === 0 ? (
+            <p className="dash-empty">
+              Nothing is flagged stale — all work in progress has a recent heartbeat or commit.
+            </p>
           ) : (
             <ul className="dash-att-list">
-              {blocked.map((row) => (
-                <li key={row.task.id}>
-                  <DashLink href={boardHref(slug, { task: row.task.id })} className="dash-att-row">
-                    <span className="dash-key">{row.task.key}</span>
-                    <span className="dash-att-title">{row.task.title}</span>
+              {stale.map((task) => (
+                <li key={task.id}>
+                  <DashLink href={boardHref(slug, { task: task.id })} className="dash-att-row">
+                    <span className="dash-key">{task.key}</span>
+                    <span className="dash-att-title">{task.title}</span>
                     <span className="dash-att-meta">
-                      waiting on{' '}
-                      {[
-                        ...row.blockedBy.map((dep) => dep.key),
-                        ...(row.unknown.length > 0
-                          ? [`${String(row.unknown.length)} not on this board`]
-                          : []),
-                      ].join(', ')}
+                      <span className="dash-att-quiet">
+                        stale {staleFor(task.stale_flagged_at ?? now, now)}
+                      </span>{' '}
+                      · {task.status_name}
+                      {task.assignee_id !== null && <> · {nameOf(task.assignee_id)}</>}
                     </span>
                   </DashLink>
                 </li>
               ))}
             </ul>
           )
-        ) : stale.length === 0 ? (
-          <p className="dash-empty">Everything open has moved in the last {STALE_DAYS} days.</p>
+        ) : review.length === 0 ? (
+          <p className="dash-empty">
+            Nothing has waited for review more than {REVIEW_WAIT_DAYS} days.
+          </p>
         ) : (
           <ul className="dash-att-list">
-            {stale.map((task) => (
+            {review.map(({ task, since }) => (
               <li key={task.id}>
                 <DashLink href={boardHref(slug, { task: task.id })} className="dash-att-row">
                   <span className="dash-key">{task.key}</span>
                   <span className="dash-att-title">{task.title}</span>
                   <span className="dash-att-meta">
-                    <span className="dash-att-quiet">{updatedAge(task.updated_at, now)} quiet</span>{' '}
-                    · {task.status_name}
+                    <span className="dash-att-quiet">{staleFor(since, now)} in review</span>
+                    {task.assignee_id !== null && <> · {nameOf(task.assignee_id)}’s</>}
                   </span>
                 </DashLink>
               </li>

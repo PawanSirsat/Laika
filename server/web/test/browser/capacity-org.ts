@@ -98,14 +98,34 @@ export const TASKS = [
   task('t10', 'LAI-40', 'Members screen sorts by last seen', 'in_progress', LAIKA, 'u2'),
 ];
 
-const zero = { in_progress: 0, in_review: 0, todo: 0, overdue: 0, due_soon: 0, open: 0 };
+const zero = {
+  in_progress: 0,
+  todo: 0,
+  backlog: 0,
+  in_review: 0,
+  committed: 0,
+  overdue: 0,
+  due_soon: 0,
+  open: 0,
+};
 
-const space = (project: typeof LAIKA, counts: Partial<typeof zero>) => ({
+/** Counts as the server builds them (LAI-818): committed and open follow from the parts. */
+function counts(over: Partial<typeof zero>): typeof zero {
+  const w = { ...zero, ...over };
+  return {
+    ...w,
+    committed: w.in_progress + w.todo,
+    open: w.in_progress + w.todo + w.backlog + w.in_review,
+  };
+}
+
+/** One space, with its own load as the server decides it (D-092). */
+const space = (project: typeof LAIKA, load: string, over: Partial<typeof zero>) => ({
   project_id: project.id,
   slug: project.slug,
   name: project.name,
-  ...zero,
-  ...counts,
+  ...counts(over),
+  load,
 });
 
 type Reader = 'owner' | 'member';
@@ -116,7 +136,12 @@ type Served = { readonly user_id: string } & Record<string, unknown>;
 function person(
   reader: Reader,
   base: Served,
-  admin: { profile_kind: string; activity_14d: number[]; unlisted: string[] },
+  admin: {
+    profile_kind: string;
+    activity_14d: number[];
+    activity_14d_split: { by_self: number; by_agents: number; bookkeeping: number };
+    unlisted: string[];
+  },
   agents: { client: string; running: boolean; last_at: number | null }[],
 ): Served {
   const visible = reader === 'owner' ? agents : agents.filter((a) => a.running);
@@ -141,23 +166,34 @@ export function capacityFor(reader: Reader) {
           last_seen: NOW - 40_000,
           last_seen_via: 'agent',
           status: 'online',
-          workload: { in_progress: 7, in_review: 2, todo: 3, overdue: 1, due_soon: 2, open: 12 },
+          // Heavy across every space (7 in progress), Normal in Laika and
+          // Light in Onroute: the per-space badge has something to show.
+          workload: counts({
+            in_progress: 7,
+            todo: 3,
+            backlog: 12,
+            in_review: 2,
+            overdue: 1,
+            due_soon: 2,
+          }),
           load: 'heavy',
           spaces: [
-            space(LAIKA, {
+            space(LAIKA, 'normal', {
               in_progress: 5,
-              in_review: 1,
               todo: 3,
+              backlog: 12,
+              in_review: 1,
               overdue: 1,
               due_soon: 1,
-              open: 9,
             }),
-            space(ONROUTE, { in_progress: 2, in_review: 1, due_soon: 1, open: 3 }),
+            space(ONROUTE, 'light', { in_progress: 2, in_review: 1, due_soon: 1 }),
           ],
         },
         {
           profile_kind: 'builder',
           activity_14d: [3, 5, 0, 0, 8, 12, 6, 4, 9, 0, 0, 11, 14, 7],
+          // 79 in all: the three parts of the same fortnight.
+          activity_14d_split: { by_self: 21, by_agents: 40, bookkeeping: 18 },
           unlisted: ['n1'],
         },
         [
@@ -180,13 +216,14 @@ export function capacityFor(reader: Reader) {
           last_seen: NOW - 23 * MIN,
           last_seen_via: 'board',
           status: 'away',
-          workload: { in_progress: 1, in_review: 1, todo: 2, overdue: 0, due_soon: 1, open: 4 },
+          workload: counts({ in_progress: 1, in_review: 1, todo: 2, due_soon: 1 }),
           load: 'light',
-          spaces: [space(LAIKA, { in_progress: 1, in_review: 1, todo: 2, due_soon: 1, open: 4 })],
+          spaces: [space(LAIKA, 'light', { in_progress: 1, in_review: 1, todo: 2, due_soon: 1 })],
         },
         {
           profile_kind: 'manager',
           activity_14d: [0, 2, 1, 0, 0, 3, 0, 0, 1, 2, 0, 0, 4, 1],
+          activity_14d_split: { by_self: 14, by_agents: 0, bookkeeping: 0 },
           unlisted: [],
         },
         [{ client: 'claude-code', running: false, last_at: NOW - 2 * DAY }],
@@ -194,7 +231,7 @@ export function capacityFor(reader: Reader) {
       ...(
         [
           ['u3', 'Cal Mokoena', 'cal@kvelld.example', []],
-          ['u4', 'Dee Pillay', 'dee@kvelld.example', [space(ONROUTE, { todo: 2, open: 2 })]],
+          ['u4', 'Dee Pillay', 'dee@kvelld.example', [space(ONROUTE, 'light', { todo: 2 })]],
           ['u5', 'Eli van Wyk', 'eli@kvelld.example', []],
         ] as const
       ).map(([id, name, email, spaces]) =>
@@ -212,11 +249,16 @@ export function capacityFor(reader: Reader) {
             last_seen: null,
             last_seen_via: null,
             status: 'never',
-            workload: id === 'u4' ? { ...zero, todo: 2, open: 2 } : { ...zero },
+            workload: id === 'u4' ? counts({ todo: 2 }) : { ...zero },
             load: id === 'u4' ? 'light' : 'none',
             spaces,
           },
-          { profile_kind: 'builder', activity_14d: Array<number>(14).fill(0), unlisted: [] },
+          {
+            profile_kind: 'builder',
+            activity_14d: Array<number>(14).fill(0),
+            activity_14d_split: { by_self: 0, by_agents: 0, bookkeeping: 0 },
+            unlisted: [],
+          },
           [],
         ),
       ),

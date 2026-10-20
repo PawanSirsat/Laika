@@ -96,28 +96,50 @@ export type PersonStatus = 'online' | 'away' | 'offline' | 'never';
 /** Which kind of signal `last_seen` is: a sign-in, a board action, an agent. */
 export type SeenVia = 'web' | 'board' | 'agent';
 
-/** The server's fixed load rule (LAI-767, SPEC §9.3). */
+/** The server's fixed load rule (LAI-767, SPEC §9.3), on committed work (D-092). */
 export type LoadLevel = 'none' | 'light' | 'normal' | 'heavy';
 
 /**
  * Open assigned work, counted over the projects this reader may read.
- * `in_progress`, `in_review` and `todo` partition `open`; `overdue` and
- * `due_soon` cut across them.
+ * `in_progress`, `todo`, `backlog` and `in_review` partition `open`;
+ * `committed` is in progress plus to do — **the load** (D-092, LAI-818).
+ * Backlog is the pipeline and review waits on the reviewer, so neither is
+ * load. `overdue` and `due_soon` cut across all four.
  */
 export interface CapacityWorkload {
   readonly in_progress: number;
-  readonly in_review: number;
+  /** To do only — committed, not started. Backlog is its own count since LAI-818. */
   readonly todo: number;
+  readonly backlog: number;
+  /** Waiting on reviewers, not on the assignee. */
+  readonly in_review: number;
+  readonly committed: number;
   readonly overdue: number;
   readonly due_soon: number;
   readonly open: number;
 }
 
-/** One space a person has open work in, with the same counts. */
+/**
+ * One space a person has open work in, with the same counts and **that
+ * space's load** by the server's rule — what the badge shows while the space
+ * is selected (D-092, LAI-818).
+ */
 export interface CapacitySpace extends CapacityWorkload {
   readonly project_id: string;
   readonly slug: string;
   readonly name: string;
+  readonly load: LoadLevel;
+}
+
+/**
+ * The 14 days of board actions by who did them (LAI-818). `by_self` and
+ * `by_agents` leave out bookkeeping — sprint moves and card reorders — which
+ * is counted apart; the three sum to `activity_14d`.
+ */
+export interface ActivitySplit {
+  readonly by_self: number;
+  readonly by_agents: number;
+  readonly bookkeeping: number;
 }
 
 /**
@@ -172,6 +194,8 @@ export interface CapacityEntry {
   readonly profile_kind?: ProfileKind;
   /** Board actions on each of the last 14 UTC days, oldest first. Owners and admins only. */
   readonly activity_14d?: readonly number[];
+  /** The same days by who did them, bookkeeping apart. Gated with `activity_14d`. */
+  readonly activity_14d_split?: ActivitySplit;
 }
 
 export interface CapacityView {
