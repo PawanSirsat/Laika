@@ -349,6 +349,12 @@
   min-height: 1.25em;
 }
 
+/* `2 h 50 min` may break between `2 h` and `50 min` in a narrow cell, never
+   inside either (LAI-830). */
+.myday-week-figure > span {
+  white-space: nowrap;
+}
+
 .myday-week-state {
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
@@ -463,14 +469,17 @@
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
+/* Wide enough for `11:40 AM–12:10 PM` and `23 h 59 min` (LAI-830), so the
+   columns still line up from row to row. */
 .myday-block-time {
-  width: 7.25rem;
+  width: 8.75rem;
 }
 
 .myday-block-minutes {
-  width: 2.75rem;
+  width: 5.75rem;
   font-weight: var(--weight-bold);
   color: var(--text-primary);
 }
@@ -843,6 +852,7 @@
 .dayline-hours span {
   position: absolute;
   transform: translateX(-50%);
+  white-space: nowrap;
 }
 
 .dayline-hours span:first-child {
@@ -1087,7 +1097,8 @@
     row-gap: 0.125rem;
   }
 
-  .myday-block-time {
+  .myday-block-time,
+  .myday-block-minutes {
     width: auto;
   }
 
