@@ -4320,11 +4320,16 @@ constant-time comparison for tokens and HMACs; CSRF on cookie-auth mutations;
 or error responses.
 
 **Sessions last 30 days idle and renew once a day of use** (LAI-811). A
-remembered session's expiry is 30 days out, and the first request on a session
-older than a day slides it back to 30 days and re-sends the cookie with the full
-`Max-Age`. "Keep me signed in" starts ticked; unticked, the session is a fixed
-24 hours and the cookie lasts as long as the browser session does. Bearer tokens
-are unaffected and never receive a cookie.
+remembered session's expiry is 30 days out. The first `/api/` request on a
+session older than a day slides it back to 30 days and re-sends the cookie with
+the full `Max-Age`; in practice that is the `/api/v1/me` the SPA makes on load,
+so the cookie catches up on the first page load after a day away. **Renewal rides
+on API responses only, and they are `Cache-Control: private, no-store`.** Static
+files and the SPA document neither renew the session nor carry a session cookie,
+not even the expiring one for a dead session, because those are the responses a
+shared cache may keep. "Keep me signed in" starts ticked; unticked, the session
+is a fixed 24 hours and the cookie lasts as long as the browser session does.
+Bearer tokens are unaffected and never receive a cookie.
 
 **The trade-off, stated because it is the owner's to know:** the cookie is
 `Secure` only when `LAIKA_PUBLIC_URL` is `https://`. Until HTTPS lands, the
