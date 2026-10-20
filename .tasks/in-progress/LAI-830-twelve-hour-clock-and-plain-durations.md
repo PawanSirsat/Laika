@@ -66,3 +66,90 @@ Made on the owner's direct instruction.
 - LAI-827 (task panel editor) and LAI-828 (type scale) are in flight; touch
   their files only where a time or duration is printed, and merge master
   before finishing.
+
+## Census (LAI-830, taken 2026-10-21 on `622a26de`, before any change)
+
+Commands, run over `server/web/src` with no `head`, `*.test.*` excluded:
+
+```
+grep -rnE 'toLocaleTimeString|Intl\.DateTimeFormat|hour:|HH:mm|getHours|getUTCHours|hour12|hourCycle|toLocaleString\(|timeStyle|toLocaleDateString' src
+grep -rnE 'padStart\(2' src ;  grep -rnE '\}:\$\{' src ;  grep -rnE 'const (two|pad|pad2)\b' src
+grep -rnE '\bhm\(|agentMinutes\(' src
+grep -rnE '/ ?(60_?000|3_?600_?000|86_?400_?000|MINUTE|HOUR|DAY|…_MS)\b|/ ?60\)|% ?60\b' src
+grep -rnE '\$\{[^}]+\} ?(minutes?|hours?|days?|hrs?|mins?)\b' src   # plus the min/h/d literal sweep
+```
+
+Every hit was read; dates without a time (`toLocaleDateString` for a day,
+`Number#toLocaleString` for a count, `${a}:${b}` keys) are not clock times
+and are left out below.
+
+### Clock times — every one moves to `clockTime` / `clockRange` / `dateTime` (`src/api/time-label.ts`)
+
+| # | Site | Printed today | Where it shows |
+| --- | --- | --- | --- |
+| C1 | `my-day/my-day-derive.ts` `clockIn` / `rangeLabel` | `14:29–14:48` | My day rows, Split…'s label, bulk-confirm reports, row names |
+| C2 | `my-day/DayBar.tsx` hour ticks (`pad(hour)`) | `08 10 12` | My day's day bar |
+| C3 | `my-day/EntryRow.tsx:245` revision time (`toLocaleString('en-GB', hour '2-digit')`) | `20 Oct, 14:29` | My day › entry › History |
+| C4 | `api/time-label.ts:70,84` `timeLabel` text and `full` | `27 Sep, 14:05`, `Sat 27 Sep 2026, 14:05:31` | List CREATED/UPDATED, task panel, Capacity tooltips, profile, unlisted, evidence |
+| C5 | `api/plan-limit.ts:104` `clockLabel` (`en-GB`, `2-digit`) | `15:40`, `Mon 09:00` | Usage › plan limit forecast |
+| C6 | `api/plan-limit.ts:111` `minuteLabel` (hand-built `padStart`) | `09:00` | Usage › plan limit reset, and its input's initial value |
+| C7 | `BoardScreen.tsx:1356` board "as of" (`toLocaleTimeString([], 2-digit)`) | locale's | Board refresh-failed note |
+| C8 | `dashboard/DashboardScreen.tsx:490` dashboard "as of" | locale's | Dashboard refresh-failed note |
+| C9 | `board/TaskDetailPanel.tsx:473,1047` activity time (`toLocaleString()`) | locale's date+time | Task panel › Activity |
+| C10 | `profile/ProfileScreen.tsx:825-826` since (`toLocaleString()`) | locale's | Profile › work row tooltip |
+| C11 | `activity/ActivityPanels.tsx:49` `clock` (`hour12: false`) | `14:05:31` | Activity rail |
+| C12 | `activity/ActivityPanels.tsx:203` last seen (`toLocaleTimeString()`) | locale's | Activity rail › sessions |
+| C13 | `projects/ProjectContextPanel.tsx:202` last edited (`toLocaleString()`) | locale's | Space brief |
+| C14 | `demo/agent-runtime.ts:75` demo claim lock (hand-built) | `14:05` | demo only |
+
+Not a clock time, left alone: `my-day-derive.ts:37` `wallOf` (`hourCycle: 'h23'`
+is arithmetic for `dayIn`/`atClock`, never printed); `usage.ts:307` reads the
+zone name.
+
+### Durations — every one moves to `formatDuration` (`src/api/duration.ts`)
+
+| # | Site | Printed today | Where it shows |
+| --- | --- | --- | --- |
+| D1 | `my-day/my-day-derive.ts:116` `hm` → 19 callers in `EntryRow`, `DraftRow`, `MyDayScreen`, `DraftList`, `EntryList`, `draft-bulk`, `weekCell`, `day-timeline` | `0:19`, `1:09` | My day rows, totals, selection bar, Confirm day, week strip, day bar tooltips, reports, Minutes… prefill |
+| D2 | `my-day/my-day-derive.ts:126` `agentMinutes` | `142 min` | My day › Agent minutes — **stays minutes** (D-088 item 8: agent time "never as hours") |
+| D3 | `api/estimates.ts` `buildShown` / `roughShown` / `inDays` / `lowText` | `1.5 h`, `40 min–1.5 h`, `0.5 d` | Task panel › Effort, effort chip title, Review |
+| D4 | `api/review.ts:293` `waitingFor` | `3 h`, `2 d` | Review queue waits |
+| D5 | `api/usage.ts:429` `spentLabel` | `6.0 h` | Insights › Usage forecast |
+| D6 | `api/budgets.ts:162` `runawayLine` | `45 min`, `3 h` | Task panel › Tokens runaway banner |
+| D7 | `board/BoardInsights.tsx:13` `duration` | `3d 4h`, `40m` | Board › Insights cycle time |
+| D8 | `dashboard/Throughput.tsx:5` | `40m`, `5h`, `3d` | Dashboard cycle time |
+| D9 | `capacity/capacity-derive.ts:179` `statusText` away | `Away · 23 min` | Insights › Capacity |
+| D10 | `capacity/capacity-derive.ts:267` `oldestAge` | `4h`, `3d` | Insights › Capacity |
+| D11 | `profile/profile-derive.ts:32` `durationLabel` | `1.8 d`, `5 h` | Profile |
+| D12 | `activity/ActivityPanels.tsx:230` idle | `6d idle` | Activity rail › Stale |
+
+### Relative times — "when", not "how long": recorded, unchanged here
+
+`time-label.ts` `timeLabel` (`4 min ago`, `3 h ago`, owner-chosen, D-065);
+`board-derive.ts` `staleFor`/`updatedAge` (`2h`, kept compact for the card
+footer, D-065); `tokens.ts:167` (`Used 3m ago`); `ProjectStats.tsx:26` and
+`task/TaskMeta.tsx:77` (`3m ago`); `dashboard-derive.ts:291` (`3 minutes
+ago`); `InviteScreen.tsx:50` and `OrganisationScreen.tsx:72` (`expires in 6
+days`); `TimelineScreen.tsx:65` (`starts in 3d`); `ConnectScreen.tsx:1507`
+(a fixed polling window in copy). The `3m`/`3h` forms are filed as their
+own task rather than widened into this one.
+
+### Inputs
+
+| # | Input | Accepts today | Change |
+| --- | --- | --- | --- |
+| I1 | My day › Add time › How long | `90`, `1:30`, `1h30`, `45m`, `1.5h` | also `1h 30m`, `1 h 30 min`, `45 min`; shows what it understood |
+| I2 | My day › entry › Edit › How long | as I1 | as I1; prefilled in the new form |
+| I3 | My day › draft › Minutes… | as I1 | as I1; prefilled in the new form |
+| I4 | My day › draft › Split… | `10:15` (24-hour only) | also `2:35 PM`, `2:35pm`, and `2:35` read inside the block; shows what it understood |
+| I5 | Usage › plan limit › resets at | `09:30` | also `9:30 AM`; prefilled as `9:00 AM` |
+
+Stored and sent values do not change: `parseMinutes`, `atClock` and
+`parseMinute` still return minutes and instants.
+
+### Machine-readable copies — not changed
+
+The CLI already prints durations as `3 h 12 min` (`cli/src/activity.ts:1031`,
+`cli/src/time-solidtime.ts:244`). It prints clock times as 24-hour `HH:MM`
+(`cli/src/activity.ts:1021`, `cli/src/time-solidtime.ts:220`): filed, not
+changed. MCP text is the server's and is untouched.
