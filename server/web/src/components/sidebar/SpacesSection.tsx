@@ -171,7 +171,7 @@ export function SpacesSection({
       {popover && (
         <SpacesPopover
           spaces={unpinned}
-          left={collapsed ? 68 : 240}
+          left={collapsed ? 68 : 220}
           onPick={pick}
           onViewAll={() => {
             setPopover(false);

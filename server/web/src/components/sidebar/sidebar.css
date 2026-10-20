@@ -1,12 +1,17 @@
 /*
  * The sidebar (LAI-796, the owner's reference; LAI-249 before it). Every
- * colour is a token (LAI-018). Open, it is 232px of labelled entries; as the
+ * colour is a token (LAI-018). Open, it is 212px of labelled entries; as the
  * icon rail it is 60px of icons with the same counts, each saying its name in
  * a tooltip on hover and on keyboard focus.
  */
 
 .sidebar {
-  width: 14.5rem; /* 232px */
+  /*
+   * The prototype's 212px, not the reference's 232px (LAI-796): the board's
+   * toolbar is laid out against 212px with the sidebar open (LAI-727 keeps
+   * its search 120px wide at 1024 and 920), and 20px more squeezed it to 82px.
+   */
+  width: 13.25rem; /* 212px */
   flex: none;
   box-sizing: border-box;
   background: var(--bg-card);
@@ -891,7 +896,7 @@
 @media (max-width: 900px) {
   .sidebar,
   .sidebar-collapsed {
-    width: 14.5rem;
+    width: 13.25rem;
     position: fixed;
     inset: 0 auto 0 0;
     z-index: 5;

@@ -8,8 +8,8 @@
  * here, beside the rail it describes, rather than guessed at by the overlay.
  */
 .shell {
-  /* The sidebar, 232px (LAI-796). */
-  --rail-width: 14.5rem;
+  /* The sidebar, 212px — the prototype's (LAI-249, kept by LAI-796). */
+  --rail-width: 13.25rem;
   display: flex;
   /*
    * **`height`, not `min-height`** (LAI-601).

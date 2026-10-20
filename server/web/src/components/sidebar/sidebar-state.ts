@@ -9,7 +9,7 @@
  *
  * **A narrow window collapses it by itself.** Between the phone's off-canvas
  * sidebar (≤900px, `app-shell.css`) and a laptop's 1366px there is a band
- * where a 232px sidebar costs the board a column; there the rail is the
+ * where a 212px sidebar costs the board a column; there the rail is the
  * default, and the toggle opens the full sidebar *for now* without changing
  * what is remembered for a wide window.
  */

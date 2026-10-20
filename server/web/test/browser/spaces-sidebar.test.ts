@@ -538,7 +538,7 @@ void describe('the prototype geometry (LAI-249)', () => {
           { timeout: 5000 },
         );
 
-      assert.equal(await width(), 232, 'the open sidebar is 232px');
+      assert.equal(await width(), 212, 'the open sidebar is 212px');
       const toggle = h.page.locator('.sidebar-toggle');
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
       await toggle.click();
@@ -589,7 +589,7 @@ void describe('the prototype geometry (LAI-249)', () => {
       await settle(60);
 
       await h.page.locator('.sidebar-toggle').click();
-      await settle(232);
+      await settle(212);
       assert.equal(await h.page.evaluate(() => localStorage.getItem('laika.sidebar')), 'expanded');
     } finally {
       await h.close();
@@ -612,14 +612,14 @@ void describe('the prototype geometry (LAI-249)', () => {
       await h.page.setViewportSize({ width: 1100, height: 800 });
       await settle(60);
       await h.page.locator('.sidebar-toggle').click();
-      await settle(232);
+      await settle(212);
       assert.equal(
         await h.page.evaluate(() => localStorage.getItem('laika.sidebar')),
         null,
         'peeking on a narrow window changed what a wide one remembers',
       );
       await h.page.setViewportSize({ width: 1300, height: 800 });
-      await settle(232);
+      await settle(212);
     } finally {
       await h.close();
     }
