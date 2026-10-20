@@ -2,11 +2,12 @@
 id: LAI-831
 title: 'My day v2: build the owner''s "Laika App v2" design (week strip, lane timeline with gaps, inspector, To settle and Confirmed lists, Add time into a gap) plus CHIEF''s additions'
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-810
-status: backlog
+status: in-progress
+started: 2026-10-20T19:53:15Z
 ---
 
 ## Goal
