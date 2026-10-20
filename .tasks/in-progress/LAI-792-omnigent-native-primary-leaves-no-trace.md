@@ -2,11 +2,12 @@
 id: LAI-792
 title: 'An Omnigent-native primary session (polly) leaves no local signal, so the time a person types to it cannot be drafted'
 area: cli
-assignee: unclaimed
+assignee: owner-direct
 priority: p2
 depends-on: [LAI-787]
 discovered-from: LAI-787
-status: backlog
+status: in-progress
+started: 2026-10-20T05:17:26Z
 ---
 
 ## Goal
