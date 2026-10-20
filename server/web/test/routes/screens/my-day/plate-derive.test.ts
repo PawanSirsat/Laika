@@ -5,7 +5,14 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { blockerIds, plateOf } from '../../../../src/routes/screens/my-day/plate-derive.ts';
+import {
+  blockerIds,
+  capped,
+  moreHref,
+  plateOf,
+  PLATE_CAP,
+  type PlateItem,
+} from '../../../../src/routes/screens/my-day/plate-derive.ts';
 import type { TaskSummary } from '../../../../src/api/tasks.ts';
 import type { ReviewQueueItem } from '../../../../src/api/review.ts';
 
@@ -177,5 +184,38 @@ void describe('which blockers to look up', () => {
       ),
       ['9'],
     );
+  });
+});
+
+void describe('five of each, then +N more (LAI-810)', () => {
+  const item = (n: number, slug: string | undefined = 'atlas'): PlateItem => ({
+    id: `t${String(n)}`,
+    key: `LAI-${String(n)}`,
+    title: `Task ${String(n)}`,
+    slug,
+  });
+
+  void test('at most five shown; the rest counted, not dropped', () => {
+    assert.equal(PLATE_CAP, 5);
+    const all = Array.from({ length: 200 }, (_, i) => item(i));
+    const { shown, more } = capped(all);
+    assert.deepEqual(
+      shown.map((i) => i.key),
+      ['LAI-0', 'LAI-1', 'LAI-2', 'LAI-3', 'LAI-4'],
+    );
+    assert.equal(more, 195);
+    assert.equal(capped(all.slice(0, 5)).more, 0);
+    assert.equal(capped([]).more, 0);
+  });
+
+  void test('+N more leads where the rest live', () => {
+    assert.equal(moreHref('review', [item(6)], 'u1'), '/inbox?tab=review');
+    assert.equal(
+      moreHref('progress', [item(6, 'onroute'), item(7)], 'u1'),
+      '/list?project=onroute&assignee=u1&status=in_progress',
+    );
+    // No URL filter says "blocked": the reader's own open work in that space.
+    assert.equal(moreHref('blocked', [item(6)], 'u1'), '/list?project=atlas&assignee=u1');
+    assert.equal(moreHref('blocked', [{ ...item(6), slug: undefined }], undefined), '/list');
   });
 });
