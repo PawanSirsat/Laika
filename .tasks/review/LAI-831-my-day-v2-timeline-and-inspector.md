@@ -345,3 +345,48 @@ drafted, settled, nosignal, future, inspector-draft, inspector-entry and bulk,
 each light and dark at 1440 and 390 (56 files), plus `design-1440.png` (the
 owner's mockup). The *before* inspector shots show the old row menu — there
 was no inspector.
+
+## Review round 1 (the builder, fixes for CHIEF's BLOCK)
+
+Criteria unchanged. Commits `3c8c9306` (tests, red first), `6b1aca49`
+(server), `a0fec674`, `fcc04c0b`, `489aafb9` (web).
+
+1. **Undo takes the change it names.** Every recorded change answers
+   `X-Undo-Id`; `POST /me/time/undo` takes `{ id }` and refuses `409
+   newer_change` when a later change touched any draft or entry this one
+   wrote (`services/time-undo.ts`). The page keeps the id of each change
+   (`api/client.ts` `onHeaders`, `api/time.ts`), a toast's Undo sends exactly
+   those ids, and **any later write to the same block retires that Undo**
+   (`MyDayScreen.tsx` `retire`). A refused Undo is said in the toast.
+2. **Confirmed time is never counted twice.** Server: a draft's span or
+   length, a confirm (one or *Confirm day*), and a timed entry's create, edit
+   or revival must fit what live timed entries leave of the span, each entry's
+   minutes pro-rated over its own span — `409 overlaps_confirmed`
+   (`services/time-entries.ts` `assertNotCountedTwice`). Blocks of tasks
+   worked at once, sharing a stretch, still confirm. UI: drag, the edge keys
+   and + stop at the neighbouring confirmed blocks (`timeline-derive.ts`
+   `limitsOf`/`limitsIn`). One Solidtime test typed an hour over its own
+   import incidentally; it now types the hour after.
+3. **A typed length** beside −/+ in the inspector, for drafts and entries,
+   timed or not: LAI-830's `parseMinutes` and its *Reads as …* line; a timed
+   block's end moves with it, never into confirmed time. Typed split time stays
+   gone.
+4. −/+ and *Split in two* land on the five-minute grid of the clock.
+5. Gaps are only between blocks — nothing from the last block to now.
+6. Axis labels and hour lines sit at each hour's real instant (`dayLine`
+   `hours`); unit test on Europe/London's 25-hour day.
+7. `undoChange` asks `assertTimeOn` (`403 time_off`).
+8. The stale phone `.lane` rule is `.dayline`.
+
+**Failed first, on `87664a2c`:** `server/test/http/routes/time-my-day-v2.test.ts`
+15 of 24 (the shared-stretch test passed — it guards the new rule);
+`server/web/test/routes/screens/my-day/timeline-derive.test.ts` (missing
+exports); `server/web/test/browser/my-day-v2.test.ts` review-round and Undo
+tests 7 of 8 (the refused-Undo message test passed — the UI already said
+refusals; it stays as a guard).
+
+**Run after:** the 12 server route/service files touched — 167 passed, 2
+skipped; `node --test test/routes/screens/my-day/*.test.ts test/api/time.test.ts
+test/api.test.ts` — 135 passed; the three My day browser files — 52 passed;
+`pnpm lint` exit 0; `pnpm format` exit 0. The full root gate is CHIEF's after
+merge.
