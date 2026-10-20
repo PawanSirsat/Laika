@@ -11,6 +11,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import type { JSONContent } from '@tiptap/core';
 import { MARKDOWN_EXTENSIONS } from '../../../../../src/routes/screens/task/editor/extensions.ts';
 import {
   createBridge,
@@ -19,7 +20,9 @@ import {
   normaliseMarkdown,
   openDocument,
   parseMarkdown,
+  readsBackAs,
   toMarkdown,
+  UnwritableMarkdown,
 } from '../../../../../src/routes/screens/task/editor/markdown-bridge.ts';
 
 const bridge = createBridge(MARKDOWN_EXTENSIONS);
@@ -211,5 +214,151 @@ void describe('the faithful escaper', () => {
       ],
     });
     assert.equal(toMarkdown(bridge, doc), 'set next_cursor');
+  });
+});
+
+/*
+ * Review round 1 (LAI-827): a save from the rich view must leave every block
+ * nobody touched byte-identical to its source, whatever is typed elsewhere.
+ * The reviewer measured the opposite: one paragraph the faithful form could not
+ * write sent the whole document through the library's escaping, rewriting
+ * `next_cursor`, `p95 < 1 s` and `A -> B` — and `\# literal hash` came back a
+ * heading.
+ */
+const BASE = [
+  'Set next_cursor; see https://example.com/a_b.',
+  '',
+  'p95 < 1 s, A -> B.',
+  '',
+  '\\# literal hash',
+].join('\n');
+
+const text = (value: string, marks?: { type: string }[]) =>
+  marks === undefined ? { type: 'text', text: value } : { type: 'text', text: value, marks };
+
+/** Open `source`, add `added` paragraphs after it, and save. */
+function saveWith(source: string, ...added: JSONContent[][]): string {
+  const opening = openDocument(bridge, source);
+  assert.equal(opening.kind, 'rich', 'positive control: the document opens rich');
+  if (opening.kind !== 'rich') return '';
+  const doc = bridge.schema.nodeFromJSON({
+    type: 'doc',
+    content: [
+      ...(opening.content.content ?? []),
+      ...added.map((inline) => ({ type: 'paragraph', content: inline })),
+    ],
+  });
+  const written = toMarkdown(bridge, doc, opening);
+  // Whatever was written reads back as the document in the editor.
+  assert.ok(readsBackAs(bridge, written, doc), `does not read back: ${written}`);
+  return written;
+}
+
+void describe('untouched blocks are written byte-identical (review round 1)', () => {
+  const typed: readonly [string, JSONContent[], string][] = [
+    ['an HTML tag', [text('the <br> tag')], 'the \\<br> tag'],
+    ['a void element', [text('an <input> field')], 'an \\<input> field'],
+    ['an element name', [text('use <details> here')], 'use \\<details> here'],
+    ['a comment', [text('note <!-- this -->')], 'note \\<!-- this -->'],
+    ['an entity', [text('use &amp; here')], 'use \\&amp; here'],
+    ['a reference definition', [text('[a]: https://x')], '\\[a]: https\\://x'],
+    [
+      'a star beside a bold word',
+      [text('a *'), text('bold', [{ type: 'bold' }]), text(' word')],
+      'a \\***bold** word',
+    ],
+  ];
+  for (const [what, inline, expected] of typed) {
+    void test(`${what}: the new paragraph is escaped, and the rest is as it was`, () => {
+      assert.equal(saveWith(BASE, inline), `${BASE}\n\n${expected}`);
+    });
+  }
+
+  void test('a block keeps its own layout: a compact table is not re-padded', () => {
+    const compact = 'Before.\n\n|a|b|\n|-|-|\n|1|2|';
+    assert.equal(saveWith(compact, [text('After.')]), `${compact}\n\nAfter.`);
+  });
+
+  void test('removing a block leaves its neighbours as they were', () => {
+    const opening = openDocument(bridge, BASE);
+    assert.equal(opening.kind, 'rich');
+    if (opening.kind !== 'rich') return;
+    const [first, , third] = opening.content.content ?? [];
+    const doc = bridge.schema.nodeFromJSON({ type: 'doc', content: [first, third] });
+    assert.equal(
+      toMarkdown(bridge, doc, opening),
+      'Set next_cursor; see https://example.com/a_b.\n\n\\# literal hash',
+    );
+  });
+
+  void test('a block neither form can write back is not saved: the reason, and a draft that keeps the rest', () => {
+    const opening = openDocument(bridge, BASE);
+    assert.equal(opening.kind, 'rich');
+    if (opening.kind !== 'rich') return;
+    // Four leading spaces read back as a code block, written either way.
+    const doc = bridge.schema.nodeFromJSON({
+      type: 'doc',
+      content: [
+        ...(opening.content.content ?? []),
+        { type: 'paragraph', content: [text('    indented')] },
+      ],
+    });
+    assert.throws(
+      () => toMarkdown(bridge, doc, opening),
+      (error: unknown) =>
+        error instanceof UnwritableMarkdown &&
+        error.message.includes('indented') &&
+        error.draft.startsWith(`${BASE}\n\n`),
+    );
+  });
+});
+
+void describe('a fence inside code is code (review round 1)', () => {
+  void test('a ```js line inside a ``` block is not its close, and blank lines in code stay', () => {
+    const source = '```\na\n```js\n\n\nb\n```';
+    assert.equal(roundTrips(source), source);
+  });
+
+  void test('blank lines and trailing spaces inside code are not forgiven by the normalisation', () => {
+    assert.notEqual(normaliseMarkdown('```\na\n\n\nb\n```'), normaliseMarkdown('```\na\n\nb\n```'));
+    assert.notEqual(normaliseMarkdown('```\na  \n```'), normaliseMarkdown('```\na\n```'));
+  });
+});
+
+void describe('what markdown cannot hold does not count as a change (review round 1)', () => {
+  void test('a trailing space — a mention leaves one — is no reason to refuse, and no edit', () => {
+    assert.equal(
+      saveWith(BASE, [text('Ask @Mallory <b>Root</b> ')]),
+      `${BASE}\n\nAsk @Mallory \\<b>Root\\</b>`,
+    );
+  });
+
+  void test('a paragraph of spaces is empty, as Enter twice is', () => {
+    assert.equal(saveWith(BASE, [text('   ')]), BASE);
+  });
+});
+
+void describe('the whole is checked, not only each block (review round 1)', () => {
+  void test('two lists side by side read back as one: refused, not saved', () => {
+    const opening = openDocument(bridge, '- one\n- two');
+    assert.equal(opening.kind, 'rich');
+    if (opening.kind !== 'rich') return;
+    const item = (words: string) => ({
+      type: 'listItem',
+      content: [{ type: 'paragraph', content: [text(words)] }],
+    });
+    // Each list reads back alone; written one after the other they merge.
+    const doc = bridge.schema.nodeFromJSON({
+      type: 'doc',
+      content: [
+        ...(opening.content.content ?? []),
+        { type: 'bulletList', content: [item('three')] },
+      ],
+    });
+    assert.throws(
+      () => toMarkdown(bridge, doc, opening),
+      (error: unknown) =>
+        error instanceof UnwritableMarkdown && error.draft.startsWith('- one\n- two\n\n'),
+    );
   });
 });
