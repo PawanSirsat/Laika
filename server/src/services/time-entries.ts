@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
@@ -11,7 +11,7 @@ import { addDays, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
 import { canSeeProject, requireProjectBySlug } from './projects.ts';
 import { resolveTaskRef } from './tasks.ts';
 import { assertTimeOn } from './time-settings.ts';
-import { recordUndo } from './time-undo-log.ts';
+import { recordUndo, type OnUndo } from './time-undo-log.ts';
 
 /**
  * Confirmed time (D-088 items 2, 6, 11 and 12, SPEC §4.48–§4.49, LAI-787) —
@@ -179,6 +179,57 @@ export function assertSpanOnDay(day: string, tz: string, start: number, end: num
       reason: 'outside_day',
       field: 'started_at',
     });
+  }
+}
+
+/**
+ * **Confirmed time is never counted twice** (LAI-831 review round 1): `minutes`
+ * placed on `[start, end)` must fit in what the person's live timed entries
+ * leave of it. Each entry holds its minutes spread over its own span, so an
+ * overlap takes its share: two tasks worked at once — the collector's blocks
+ * that share a stretch, each half its minutes — still fit, and a block dragged
+ * over a confirmed hour does not. `409 overlaps_confirmed`; `except` is the
+ * entry being moved.
+ */
+export function assertNotCountedTwice(
+  tx: Tx | Db,
+  userId: string,
+  start: number,
+  end: number,
+  minutes: number,
+  except?: string,
+): void {
+  const overlapping = tx
+    .select({
+      startedAt: timeEntries.startedAt,
+      endedAt: timeEntries.endedAt,
+      minutes: timeEntries.minutes,
+    })
+    .from(timeEntries)
+    .where(
+      and(
+        eq(timeEntries.userId, userId),
+        isNull(timeEntries.deletedAt),
+        isNotNull(timeEntries.startedAt),
+        lt(timeEntries.startedAt, end),
+        gt(timeEntries.endedAt, start),
+        ...(except === undefined ? [] : [ne(timeEntries.id, except)]),
+      ),
+    )
+    .all();
+  let held = 0;
+  for (const e of overlapping) {
+    if (e.startedAt === null || e.endedAt === null) continue;
+    const shared = Math.min(e.endedAt, end) - Math.max(e.startedAt, start);
+    if (shared > 0) held += (e.minutes * shared) / (e.endedAt - e.startedAt);
+  }
+  const room = (end - start) / 60_000 - held;
+  if (minutes > Math.ceil(room - 1e-9)) {
+    throw new ApiError(
+      'conflict',
+      `That would count time already confirmed: ${String(Math.round(held))} of these ${String(Math.round((end - start) / 60_000))} minutes are confirmed`,
+      { reason: 'overlaps_confirmed', held: Math.round(held), room: Math.max(0, Math.floor(room)) },
+    );
   }
 }
 
@@ -409,6 +460,7 @@ export function createEntry(
   actor: ResolvedActor,
   input: NewEntryInput,
   now: number = Date.now(),
+  onUndo?: OnUndo,
 ): TimeEntryView {
   assertCan(actor, 'time_entries.write_own');
   assertTimeOn(db);
@@ -421,7 +473,10 @@ export function createEntry(
     });
   }
   const target = resolveTarget(db, actor, input);
-  const id = db.transaction((tx) => {
+  const { id, undoId } = db.transaction((tx) => {
+    if (startedAt !== null && endedAt !== null) {
+      assertNotCountedTwice(tx, actor.userId, startedAt, endedAt, input.minutes);
+    }
     const made = insertEntry(
       tx,
       actor.userId,
@@ -439,9 +494,12 @@ export function createEntry(
       now,
     );
     // Undo takes it back (LAI-831).
-    recordUndo(tx, actor.userId, made, { drafts: [], entriesMade: [made] }, now);
-    return made;
+    return {
+      id: made,
+      undoId: recordUndo(tx, actor.userId, made, { drafts: [], entriesMade: [made] }, now),
+    };
   });
+  onUndo?.(undoId);
   return entryById(db, actor.userId, id);
 }
 
@@ -547,6 +605,13 @@ export function updateEntry(
             : patch.note.trim(),
     };
     if (patch.day !== undefined) assertEntryDay(next.day, next.tz, now);
+    if (
+      next.startedAt !== null &&
+      next.endedAt !== null &&
+      (touchesSpan || patch.minutes !== undefined)
+    ) {
+      assertNotCountedTwice(tx, actor.userId, next.startedAt, next.endedAt, next.minutes, id);
+    }
     const same =
       next.target.taskId === row.taskId &&
       next.target.projectId === row.projectId &&
@@ -589,14 +654,16 @@ export function deleteEntry(
   actor: ResolvedActor,
   id: string,
   now: number = Date.now(),
+  onUndo?: OnUndo,
 ): void {
   assertCan(actor, 'time_entries.write_own');
-  db.transaction((tx) => {
+  const undoId = db.transaction((tx) => {
     currentFields(tx, actor.userId, id);
     retireEntry(tx, id, actor.userId, now);
     // Undo makes it live again (LAI-831).
-    recordUndo(tx, actor.userId, id, { drafts: [], entriesRetired: [id] }, now);
+    return recordUndo(tx, actor.userId, id, { drafts: [], entriesRetired: [id] }, now);
   });
+  onUndo?.(undoId);
 }
 
 /**
@@ -686,6 +753,9 @@ export function syncEntry(
 export function reviveEntry(tx: Tx, id: string, changedBy: string, now: number): number {
   const row = tx.select().from(timeEntries).where(eq(timeEntries.id, id)).get();
   if (row === undefined) throw ApiError.notFound(`No time entry "${id}"`);
+  if (row.startedAt !== null && row.endedAt !== null) {
+    assertNotCountedTwice(tx, row.userId, row.startedAt, row.endedAt, row.minutes, id);
+  }
   return syncEntry(
     tx,
     id,

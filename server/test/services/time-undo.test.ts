@@ -81,7 +81,15 @@ beforeEach(() => {
 
 afterEach(() => {
   t.close();
+  ids = [];
 });
+
+/** The id each change answers with, newest last. */
+let ids: string[] = [];
+const keep = (id: string): void => {
+  ids.push(id);
+};
+const last = (): string => ids.at(-1) ?? '';
 
 const only = () => {
   const [row] = rows();
@@ -92,9 +100,9 @@ const only = () => {
 describe('every column back', () => {
   it('a split block returns whole, under its id, with its collector and origin', () => {
     const before = rows();
-    splitDraft(t.db, owner, only().id, at(9, 30), NOW + 1_000);
+    splitDraft(t.db, owner, only().id, at(9, 30), NOW + 1_000, keep);
     expect(rows()).toHaveLength(2);
-    undoChange(t.db, owner, { draft: before[0]?.id ?? '' }, NOW + 2_000);
+    undoChange(t.db, owner, last(), NOW + 2_000);
     expect(rows()).toEqual(before);
   });
 
@@ -107,52 +115,57 @@ describe('every column back', () => {
       only().id,
       { general: true, started_at: at(9, 5), ended_at: at(10), minutes: 55 },
       NOW + 1_000,
+      keep,
     );
     expect(only().collectorId).toBe('');
-    undoChange(t.db, owner, { draft: only().id }, NOW + 2_000);
+    undoChange(t.db, owner, last(), NOW + 2_000);
     expect(rows()).toEqual(before);
   });
 });
 
 describe('only while it can be', () => {
   it('a change older than the window is not there to undo', () => {
-    confirmDraft(t.db, owner, only().id, NOW + 1_000);
-    expect(
-      reason(() => undoChange(t.db, owner, { draft: only().id }, NOW + 1_000 + UNDO_WINDOW_MS + 1)),
-    ).toBe('not_found:');
+    confirmDraft(t.db, owner, only().id, NOW + 1_000, keep);
+    expect(reason(() => undoChange(t.db, owner, last(), NOW + 1_000 + UNDO_WINDOW_MS + 1))).toBe(
+      'not_found:',
+    );
   });
 
   it('a change undone once is not undone twice', () => {
-    const id = only().id;
-    confirmDraft(t.db, owner, id, NOW + 1_000);
-    undoChange(t.db, owner, { draft: id }, NOW + 2_000);
-    expect(reason(() => undoChange(t.db, owner, { draft: id }, NOW + 3_000))).toBe('not_found:');
+    confirmDraft(t.db, owner, only().id, NOW + 1_000, keep);
+    undoChange(t.db, owner, last(), NOW + 2_000);
+    expect(reason(() => undoChange(t.db, owner, last(), NOW + 3_000))).toBe('not_found:');
     expect(t.db.select().from(timeUndo).all()).toEqual([]);
   });
 
-  it('undoes newest first, and each undo leaves the one before it exact', () => {
+  it('takes back the change it names, never a later one; newest first, each by its id', () => {
     const before = rows();
     const id = only().id;
-    updateDraft(t.db, owner, id, { general: true }, NOW + 1_000);
-    updateDraft(t.db, owner, id, { minutes: 50 }, NOW + 2_000);
-    undoChange(t.db, owner, { draft: id }, NOW + 3_000);
+    updateDraft(t.db, owner, id, { general: true }, NOW + 1_000, keep);
+    updateDraft(t.db, owner, id, { minutes: 50 }, NOW + 2_000, keep);
+    const [general, minutes] = ids;
+    // General's Undo, with the minutes change after it: refused, nothing moves.
+    expect(reason(() => undoChange(t.db, owner, general ?? '', NOW + 3_000))).toBe(
+      'conflict:newer_change',
+    );
+    expect(only()).toMatchObject({ general: 1, minutes: 50 });
+    undoChange(t.db, owner, minutes ?? '', NOW + 3_000);
     expect(only()).toMatchObject({ general: 1, minutes: 60 });
     // The block is again exactly as General left it, so General can go too.
-    undoChange(t.db, owner, { draft: id }, NOW + 4_000);
+    undoChange(t.db, owner, general ?? '', NOW + 4_000);
     expect(rows()).toEqual(before);
-    expect(reason(() => undoChange(t.db, owner, { draft: id }, NOW + 5_000))).toBe('not_found:');
   });
 
   it('refuses a change something else has moved on since', () => {
     const id = only().id;
-    updateDraft(t.db, owner, id, { general: true }, NOW + 1_000);
+    updateDraft(t.db, owner, id, { general: true }, NOW + 1_000, keep);
     // Not through a recorded change: the block is simply not as General left it.
     t.db
       .update(timeDrafts)
       .set({ updatedAt: NOW + 2_000 })
       .where(eq(timeDrafts.id, id))
       .run();
-    expect(reason(() => undoChange(t.db, owner, { draft: id }, NOW + 3_000))).toBe(
+    expect(reason(() => undoChange(t.db, owner, last(), NOW + 3_000))).toBe(
       'conflict:changed_since',
     );
     expect(only()).toMatchObject({ general: 1 });

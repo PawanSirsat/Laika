@@ -242,8 +242,9 @@ describe('an entry that came from Solidtime is read-only in Laika (review round 
         tz: 'UTC',
         minutes: 60,
         task: 'ONR-1',
-        started_at: at(DAY, 9),
-        ended_at: at(DAY, 10),
+        // The hour after the import's: confirmed time is never counted twice (LAI-831).
+        started_at: at(DAY, 10),
+        ended_at: at(DAY, 11),
       },
       NOW,
     );

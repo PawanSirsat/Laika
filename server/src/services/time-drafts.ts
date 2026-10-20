@@ -11,6 +11,7 @@ import { addDays, dayIn, isTimeZone } from './calendar-days.ts';
 import { assertReportDays, latestReportZone } from './local-activity.ts';
 import { resolveKeys } from './token-usage.ts';
 import {
+  assertNotCountedTwice,
   assertSpanOnDay,
   entryById,
   insertEntry,
@@ -25,7 +26,7 @@ import {
   type Tx,
 } from './time-entries.ts';
 import { assertDrafting, assertTimeOn } from './time-settings.ts';
-import { daySubject, recordUndo } from './time-undo-log.ts';
+import { daySubject, recordUndo, type OnUndo } from './time-undo-log.ts';
 
 /**
  * Drafted time (D-088 items 3, 4, 11 and 13, SPEC §4.47, LAI-787): blocks a
@@ -632,6 +633,7 @@ export function updateDraft(
   id: string,
   patch: DraftPatch,
   now: number = Date.now(),
+  onUndo?: OnUndo,
 ): TimeDraftView {
   assertCan(actor, 'time_drafts.manage_own');
   const general = patch.general === true;
@@ -641,9 +643,15 @@ export function updateDraft(
     : general
       ? { taskId: null, projectId: null }
       : resolveTarget(db, actor, { task: patch.task ?? null, project: patch.project ?? null });
-  db.transaction((tx) => {
+  const undoId = db.transaction((tx) => {
     const row = pendingRow(tx, actor.userId, id);
     const span = patchedSpan(row, patch);
+    // A longer or moved block must not lie over confirmed time (review round 1).
+    const start = span?.startedAt ?? row.startedAt;
+    const end = span?.endedAt ?? row.endedAt;
+    if (start !== null && end !== null && (span !== undefined || patch.minutes !== undefined)) {
+      assertNotCountedTwice(tx, actor.userId, start, end, patch.minutes ?? row.minutes);
+    }
     tx.update(timeDrafts)
       .set({
         ...(target === undefined
@@ -661,8 +669,9 @@ export function updateDraft(
       })
       .where(eq(timeDrafts.id, id))
       .run();
-    recordUndo(tx, actor.userId, id, { drafts: [row] }, now);
+    return recordUndo(tx, actor.userId, id, { drafts: [row] }, now);
   });
+  onUndo?.(undoId);
   return draftById(db, actor.userId, id);
 }
 
@@ -677,10 +686,11 @@ export function splitDraft(
   id: string,
   at: number,
   now: number = Date.now(),
+  onUndo?: OnUndo,
 ): [TimeDraftView, TimeDraftView] {
   assertCan(actor, 'time_drafts.manage_own');
   const cut = Math.round(at / MINUTE_MS) * MINUTE_MS;
-  const ids = db.transaction((tx) => {
+  const { ids, undoId } = db.transaction((tx) => {
     const row = pendingRow(tx, actor.userId, id);
     if (row.startedAt === null || row.endedAt === null) {
       throw new ApiError('unprocessable', 'Only a block with a start and an end can be split', {
@@ -707,9 +717,12 @@ export function splitDraft(
     tx.delete(timeDrafts).where(eq(timeDrafts.id, id)).run();
     tx.insert(timeDrafts).values([a, b]).run();
     // Undo removes the halves and puts the block back under its own id.
-    recordUndo(tx, actor.userId, id, { drafts: [row], made: [a.id, b.id] }, now);
-    return [a.id, b.id] as const;
+    return {
+      ids: [a.id, b.id] as const,
+      undoId: recordUndo(tx, actor.userId, id, { drafts: [row], made: [a.id, b.id] }, now),
+    };
   });
+  onUndo?.(undoId);
   return [draftById(db, actor.userId, ids[0]), draftById(db, actor.userId, ids[1])];
 }
 
@@ -723,16 +736,18 @@ export function dismissDraft(
   actor: ResolvedActor,
   id: string,
   now: number = Date.now(),
+  onUndo?: OnUndo,
 ): void {
   assertCan(actor, 'time_drafts.manage_own');
-  db.transaction((tx) => {
+  const undoId = db.transaction((tx) => {
     const row = pendingRow(tx, actor.userId, id);
     tx.update(timeDrafts)
       .set({ state: 'dismissed', updatedAt: now })
       .where(eq(timeDrafts.id, id))
       .run();
-    recordUndo(tx, actor.userId, id, { drafts: [row] }, now);
+    return recordUndo(tx, actor.userId, id, { drafts: [row] }, now);
   });
+  onUndo?.(undoId);
 }
 
 /**
@@ -747,6 +762,10 @@ function confirmRow(
   row: typeof timeDrafts.$inferSelect,
   now: number,
 ): string {
+  // Confirmed time is never counted twice (review round 1).
+  if (row.startedAt !== null && row.endedAt !== null) {
+    assertNotCountedTwice(tx, userId, row.startedAt, row.endedAt, row.minutes);
+  }
   const fields = {
     // An untied block is confirmed as General: the person confirmed it.
     target: { taskId: row.taskId, projectId: row.projectId },
@@ -788,16 +807,20 @@ export function confirmDraft(
   actor: ResolvedActor,
   id: string,
   now: number = Date.now(),
+  onUndo?: OnUndo,
 ): TimeEntryView {
   assertCan(actor, 'time_drafts.manage_own');
   assertCan(actor, 'time_entries.write_own');
   assertTimeOn(db);
-  const entryId = db.transaction((tx) => {
+  const { entryId, undoId } = db.transaction((tx) => {
     const row = pendingRow(tx, actor.userId, id);
     const made = confirmRow(tx, actor.userId, row, now);
-    recordUndo(tx, actor.userId, id, { drafts: [row], entriesMade: [made] }, now);
-    return made;
+    return {
+      entryId: made,
+      undoId: recordUndo(tx, actor.userId, id, { drafts: [row], entriesMade: [made] }, now),
+    };
   });
+  onUndo?.(undoId);
   return entryById(db, actor.userId, entryId);
 }
 
@@ -811,11 +834,12 @@ export function confirmDay(
   actor: ResolvedActor,
   day: string,
   now: number = Date.now(),
+  onUndo?: OnUndo,
 ): TimeEntryView[] {
   assertCan(actor, 'time_drafts.manage_own');
   assertCan(actor, 'time_entries.write_own');
   assertTimeOn(db);
-  const ids = db.transaction((tx) => {
+  const { ids, undoId } = db.transaction((tx) => {
     const rows = tx
       .select()
       .from(timeDrafts)
@@ -829,12 +853,16 @@ export function confirmDay(
       .orderBy(asc(sql`coalesce(${timeDrafts.startedAt}, ${timeDrafts.createdAt})`))
       .all();
     const made = rows.map((row) => confirmRow(tx, actor.userId, row, now));
-    // Undo, asked of the day, puts every block of it back pending (LAI-831).
-    if (rows.length > 0) {
-      recordUndo(tx, actor.userId, daySubject(day), { drafts: rows, entriesMade: made }, now);
-    }
-    return made;
+    // Undo puts every block of the day back pending (LAI-831).
+    return {
+      ids: made,
+      undoId:
+        rows.length === 0
+          ? undefined
+          : recordUndo(tx, actor.userId, daySubject(day), { drafts: rows, entriesMade: made }, now),
+    };
   });
+  if (undoId !== undefined) onUndo?.(undoId);
   return ids.map((id) => entryById(db, actor.userId, id));
 }
 

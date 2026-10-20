@@ -1,17 +1,18 @@
-import { and, desc, eq, gte, inArray } from 'drizzle-orm';
+import { and, eq, gte, inArray } from 'drizzle-orm';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { timeDrafts, timeEntries, timeUndo } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { retireEntry, reviveEntry, type Tx } from './time-entries.ts';
-import { daySubject, UNDO_WINDOW_MS, type UndoChange } from './time-undo-log.ts';
+import { assertTimeOn } from './time-settings.ts';
+import { touchedBy, UNDO_WINDOW_MS, type UndoChange } from './time-undo-log.ts';
 
 /**
- * Undo (LAI-831, CHIEF's addition B): `POST /me/time/undo` takes back the
- * person's newest change to one draft, one entry or one day, **exactly** —
- * from what the change recorded it replaced (`time-undo-log.ts`), never from
- * what the page says it saw.
+ * Undo (LAI-831, CHIEF's addition B): `POST /me/time/undo` takes back **the
+ * one change it names** — by the id that change answered with
+ * (`X-Undo-Id`, review round 1) — exactly, from what the change recorded it
+ * replaced (`time-undo-log.ts`), never from what the page says it saw.
  *
  * - A confirm or a *Confirm day*: the entries it made are taken back, and
  *   every block is pending again as it stood, its collector's or held.
@@ -31,27 +32,13 @@ import { daySubject, UNDO_WINDOW_MS, type UndoChange } from './time-undo-log.ts'
  * `UNDO_WINDOW_MS`, or anybody else's, is `404`: there is nothing of theirs to
  * take back.
  *
- * **Newest first, as a stack.** Undo restores a row exactly, its `updated_at`
- * included, so once the newest change to a block is undone the one before it
- * matches again and can be undone in turn — within the window, and never out
- * of order.
+ * **Never a later change.** A change recorded after this one, to any draft
+ * or entry this one wrote, is `409 newer_change`: Undo of *General* after a
+ * *+* would otherwise take back the *+* — the bug review round 1 found when
+ * Undo named a block rather than a change. Undo the later one first, by its
+ * own id; restoring a row exactly, its `updated_at` included, makes the one
+ * before it undoable again, so changes come off newest first, as a stack.
  */
-
-export interface UndoSubject {
-  readonly draft?: string | undefined;
-  readonly entry?: string | undefined;
-  readonly day?: string | undefined;
-}
-
-function subjectOf(input: UndoSubject): string {
-  const named = [input.draft, input.entry, input.day].filter((x) => x !== undefined);
-  if (named.length !== 1) {
-    throw new ApiError('unprocessable', 'Name one draft, one entry or one day to undo', {
-      reason: 'one_subject',
-    });
-  }
-  return input.draft ?? input.entry ?? daySubject(input.day ?? '');
-}
 
 function changedSince(): never {
   throw new ApiError(
@@ -77,35 +64,43 @@ function entryOf(tx: Tx, userId: string, id: string) {
     .get();
 }
 
-/** `POST /me/time/undo`: the caller's newest change to `input`'s subject, taken back. */
+/** `POST /me/time/undo`: the caller's change `id`, taken back. */
 export function undoChange(
   db: Db,
   actor: ResolvedActor,
-  input: UndoSubject,
+  id: string,
   now: number = Date.now(),
 ): void {
   assertCan(actor, 'time_drafts.manage_own');
   assertCan(actor, 'time_entries.write_own');
-  const subject = subjectOf(input);
+  assertTimeOn(db);
   const userId = actor.userId;
 
   db.transaction((tx) => {
-    const row = tx
+    const kept = tx
       .select()
       .from(timeUndo)
-      .where(
-        and(
-          eq(timeUndo.userId, userId),
-          eq(timeUndo.subject, subject),
-          gte(timeUndo.createdAt, now - UNDO_WINDOW_MS),
-        ),
-      )
-      .orderBy(desc(timeUndo.createdAt), desc(timeUndo.id))
-      .limit(1)
-      .get();
+      .where(and(eq(timeUndo.userId, userId), gte(timeUndo.createdAt, now - UNDO_WINDOW_MS)))
+      .all();
+    const row = kept.find((r) => r.id === id);
     if (row === undefined) throw ApiError.notFound('Nothing to undo there');
     const change = JSON.parse(row.change) as UndoChange;
     const when = row.createdAt;
+
+    // A later change to anything this one wrote: undoing this would take that back too.
+    const mine = touchedBy(change);
+    const later = kept.some(
+      (r) =>
+        (r.createdAt > when || (r.createdAt === when && r.id > row.id)) &&
+        [...touchedBy(JSON.parse(r.change) as UndoChange)].some((x) => mine.has(x)),
+    );
+    if (later) {
+      throw new ApiError(
+        'conflict',
+        'A later change to this block came after it, so this one can no longer be undone',
+        { reason: 'newer_change' },
+      );
+    }
     const made = change.made ?? [];
     const entriesMade = change.entriesMade ?? [];
     const entriesRetired = change.entriesRetired ?? [];

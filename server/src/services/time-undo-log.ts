@@ -19,6 +19,16 @@ import { type timeDrafts, timeUndo } from '../db/schema.ts';
 /** How long a change can be taken back. */
 export const UNDO_WINDOW_MS = 2 * 60_000;
 
+/**
+ * The response header every recorded change answers with (review round 1):
+ * the id **of that change**, which is what `POST /me/time/undo` takes — so an
+ * Undo offered for one change can never take back a later one.
+ */
+export const UNDO_HEADER = 'X-Undo-Id';
+
+/** Told the id of the change a write recorded, once its transaction has it. */
+export type OnUndo = (id: string) => void;
+
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 /** A draft row as it stood, column for column. */
@@ -40,7 +50,8 @@ export const daySubject = (day: string): string => `day:${day}`;
 
 /**
  * Record `change`, made at `now` to `subject` — a draft's id, an entry's id,
- * or {@link daySubject} — inside the change's own transaction.
+ * or {@link daySubject} — inside the change's own transaction. Returns the
+ * change's id, which the route answers with ({@link UNDO_HEADER}).
  */
 export function recordUndo(
   tx: Tx,
@@ -48,11 +59,23 @@ export function recordUndo(
   subject: string,
   change: UndoChange,
   now: number,
-): void {
+): string {
   tx.delete(timeUndo)
     .where(and(eq(timeUndo.userId, userId), lt(timeUndo.createdAt, now - UNDO_WINDOW_MS)))
     .run();
+  const id = newId();
   tx.insert(timeUndo)
-    .values({ id: newId(), userId, subject, change: JSON.stringify(change), createdAt: now })
+    .values({ id, userId, subject, change: JSON.stringify(change), createdAt: now })
     .run();
+  return id;
+}
+
+/** Every draft and entry a change wrote or put back — what "the same block" means. */
+export function touchedBy(change: UndoChange): ReadonlySet<string> {
+  return new Set([
+    ...change.drafts.map((d) => d.id),
+    ...(change.made ?? []),
+    ...(change.entriesMade ?? []),
+    ...(change.entriesRetired ?? []),
+  ]);
 }
