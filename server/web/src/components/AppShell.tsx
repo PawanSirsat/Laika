@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ScreenOutlet } from './shell/ScreenOutlet.tsx';
 import { ShellHeader } from './shell/ShellHeader.tsx';
 import { ShellSidebar } from './shell/ShellSidebar.tsx';
@@ -6,7 +6,78 @@ import { SessionGate } from './shell/SessionGate.tsx';
 import { ShellProvider } from './shell/ShellProvider.tsx';
 import { useShell } from './shell/shell-context.ts';
 import { showsAppNav } from './shell-chrome.ts';
+import {
+  NARROW_QUERY,
+  railCollapsed,
+  readSidebar,
+  toggleRail,
+  writeSidebar,
+  type SidebarPreference,
+} from './sidebar/sidebar-state.ts';
 import './app-shell.css';
+
+/** Below this the sidebar is off-canvas, and the rail has no meaning (app-shell.css). */
+const OFF_CANVAS_QUERY = '(max-width: 900px)';
+
+/** Local storage, or nothing — reading the property itself can throw. */
+function storage(): Storage | undefined {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether a media query matches, kept live. */
+function useMedia(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const list = window.matchMedia(query);
+    const onChange = (): void => {
+      setMatches(list.matches);
+    };
+    onChange();
+    list.addEventListener('change', onChange);
+    return () => {
+      list.removeEventListener('change', onChange);
+    };
+  }, [query]);
+  return matches;
+}
+
+/**
+ * The icon rail (LAI-796): remembered per browser, automatic on a narrow
+ * window, inert where the sidebar is off-canvas. The rules are
+ * `sidebar-state.ts`'s; this only holds the state and reads the window.
+ */
+function useRail(): { readonly collapsed: boolean; readonly toggle: () => void } {
+  const [preference, setPreference] = useState<SidebarPreference | undefined>(() => {
+    const store = storage();
+    return store === undefined ? undefined : readSidebar(store);
+  });
+  const narrow = useMedia(NARROW_QUERY);
+  const offCanvas = useMedia(OFF_CANVAS_QUERY);
+  const [openedWhileNarrow, setOpenedWhileNarrow] = useState(false);
+
+  // A change of width starts the automatic band afresh.
+  useEffect(() => {
+    setOpenedWhileNarrow(false);
+  }, [narrow]);
+
+  const state = { preference, narrow, openedWhileNarrow };
+  const toggle = useCallback(() => {
+    const next = toggleRail({ preference, narrow, openedWhileNarrow });
+    setPreference(next.preference);
+    setOpenedWhileNarrow(next.openedWhileNarrow);
+    const store = storage();
+    if (next.remember && next.preference !== undefined && store !== undefined) {
+      writeSidebar(store, next.preference);
+    }
+  }, [preference, narrow, openedWhileNarrow]);
+
+  // Off-canvas, the sidebar is always drawn whole: the phone's menu.
+  return { collapsed: !offCanvas && railCollapsed(state), toggle };
+}
 
 /**
  * The frame every screen mounts into (LAI-019, decomposed by LAI-250).
@@ -37,9 +108,9 @@ function AppFrame() {
   } = useShell();
 
   const [navOpen, setNavOpen] = useState(false);
-  // The 56px rail (LAI-249), toggled by the logo. Desktop-only — the CSS makes
-  // it inert below 900px, where the sidebar is off-canvas at full width.
-  const [navCollapsed, setNavCollapsed] = useState(false);
+  // The icon rail (LAI-796), toggled in the sidebar's head and remembered.
+  // Inert below 900px, where the sidebar is off-canvas at full width.
+  const { collapsed: navCollapsed, toggle: toggleRailState } = useRail();
 
   // Escape closes the off-canvas nav. Anything that traps focus on a narrow
   // screen needs a way out that is not a mouse.
@@ -92,9 +163,7 @@ function AppFrame() {
             setNavOpen(false);
           }}
           collapsed={navCollapsed}
-          onToggleCollapse={() => {
-            setNavCollapsed((v) => !v);
-          }}
+          onToggleCollapse={toggleRailState}
         />
       )}
 

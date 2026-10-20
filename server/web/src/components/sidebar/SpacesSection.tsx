@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { navHref } from '../../routes/nav-url.ts';
 import type { Space } from '../../routes/spaces.ts';
 import { SpacesPopover } from './SpacesPopover.tsx';
+import { SpaceBadge } from '../SpaceBadge.tsx';
+import { NavIcon } from './NavIcon.tsx';
 
 export interface SpacesSectionProps {
   /** The pinned rows — three most recent (LAI-248). */
@@ -29,7 +31,8 @@ export interface SpacesSectionProps {
  * until a create-space surface exists.
  *
  * Collapsed, the head gives way to a hairline rule (the prototype's
- * `miniRule`) and the rows keep only their two-letter keys.
+ * `miniRule`) and the rows keep only their coloured letters (LAI-796), with
+ * the name in a tooltip on hover and on focus.
  */
 export function SpacesSection({
   spaces,
@@ -126,31 +129,22 @@ export function SpacesSection({
                     active ? 'sidebar-link space-row sidebar-link-active' : 'sidebar-link space-row'
                   }
                   aria-current={active ? 'page' : undefined}
-                  title={`${space.slug} — ${space.meta}`}
                   onClick={(event) => {
                     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                     event.preventDefault();
                     pick(space.slug);
                   }}
                 >
-                  <span className="sidebar-dot" aria-hidden="true" />
+                  <span className="sidebar-link-bar" aria-hidden="true" />
                   {/*
-                    **A dot and a name** (LAI-262). The two-letter key is the
-                    design's `abbr` and belongs to the collapsed rail only —
-                    `.sidebar-mini` is the same mechanism a route row uses. The
-                    `N tasks · M members` line is `s.meta`, and the design puts
-                    it in the More-spaces popover, not here.
-                  */}
-                  <span className="sidebar-mini" aria-hidden="true">
-                    {space.key}
-                  </span>
-                  {/*
-                    **The display name** (owner, 2026-09-21 — reverses
+                    **A coloured letter and a name** (LAI-796, the owner's
+                    reference; LAI-262 had a dot). The letter is the rail's
+                    icon. **The display name** (owner, 2026-09-21 — reverses
                     LAI-271's slug): the lowercase slug read as a bug once real
-                    projects appeared. The slug still lives in the row's
-                    `title` alongside the meta line.
+                    projects appeared.
                   */}
-                  <span className="sidebar-label">{space.name}</span>
+                  <SpaceBadge slug={space.slug} name={space.name} />
+                  <span className="sidebar-label sidebar-tip">{space.name}</span>
                 </a>
               </li>
             );
@@ -165,23 +159,10 @@ export function SpacesSection({
                 setPopover((v) => !v);
               }}
             >
-              <span className="sidebar-dot" aria-hidden="true" />
-              <span className="sidebar-mini" aria-hidden="true">
-                MS
-              </span>
-              <span className="sidebar-label">More spaces</span>
-              <svg
-                className="sidebar-chevron"
-                width="11"
-                height="11"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.4"
-                aria-hidden="true"
-              >
-                <path d="m9 6 6 6-6 6" />
-              </svg>
+              <span className="sidebar-link-bar" aria-hidden="true" />
+              <NavIcon name="spaces-more" size={16} />
+              <span className="sidebar-label sidebar-tip">More spaces</span>
+              <NavIcon name="chevron" size={11} className="sidebar-chevron" />
             </button>
           </li>
         </ul>
@@ -190,7 +171,7 @@ export function SpacesSection({
       {popover && (
         <SpacesPopover
           spaces={unpinned}
-          left={collapsed ? 64 : 220}
+          left={collapsed ? 68 : 240}
           onPick={pick}
           onViewAll={() => {
             setPopover(false);

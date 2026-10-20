@@ -1,8 +1,15 @@
-import { NAV_GROUPS, routesInGroup, type NavGroup } from '../../routes/route-table.ts';
+import {
+  GROUP_TITLES,
+  NAV_GROUPS,
+  navSection,
+  routesInGroup,
+  type NavGroup,
+} from '../../routes/route-table.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import { navHref } from '../../routes/nav-url.ts';
 import { SpacesSection } from './SpacesSection.tsx';
 import { SidebarFooter } from './SidebarFooter.tsx';
+import { NavIcon } from './NavIcon.tsx';
 import type { Space } from '../../routes/spaces.ts';
 import type { MeProfile } from '../../api/me.ts';
 import './sidebar.css';
@@ -14,9 +21,8 @@ export interface SidebarProps {
   readonly open: boolean;
   readonly onClose: () => void;
   /**
-   * The prototype's `navMini` (LAI-249): 56px rail showing two-letter keys.
-   * Toggled by the logo; distinct from `open`, which is the narrow-viewport
-   * off-canvas state.
+   * The icon rail (LAI-796, from LAI-249's 56px rail): icons, tooltips and the
+   * same counts. Distinct from `open`, which is the phone's off-canvas state.
    */
   readonly collapsed: boolean;
   readonly onToggleCollapse: () => void;
@@ -35,16 +41,6 @@ export interface SidebarProps {
   readonly orgRole?: string | undefined;
   /** The organisation's name, under the wordmark (prototype line 50). */
   readonly orgName?: string | undefined;
-  /**
-   * The open project's name, from `GET /projects/:slug`.
-   *
-   * **Authoritative, because the list is not.** `useSpaces` asks for
-   * `listProjects({ limit: 20 })`, so a project past the twentieth — or one
-   * reached by URL alone — is simply not in it. Deriving the name only from
-   * that list is how "No space" appeared over a project that plainly existed
-   * (LAI-259); this keeps the by-slug answer that fixed it, moved here with
-   * the name itself.
-   */
   /** Accepted and currently unused: the rail's wordmark is always the
    * product (owner, 2026-09-21); callers still pass the open space's name. */
   readonly spaceName?: string | undefined;
@@ -56,10 +52,21 @@ export interface SidebarProps {
   readonly signingOut?: boolean | undefined;
 }
 
+/** A count as the rail's badge has room for it. */
+function badge(count: number): string {
+  return count > 99 ? '99+' : String(count);
+}
+
 /**
- * The rail, to the prototype's own geometry (LAI-249): 212px, collapsing to
- * 56px on the logo (`transition: width .16s ease`), head of logo + wordmark +
- * org line, SPACES above the route groups, footer of theme row + user chip.
+ * The sidebar, to the owner's reference (LAI-796): the reader's own places at
+ * the top — *My day*, *Inbox* — then the spaces, then the organisation's
+ * pages, and the person at the foot, whose menu holds their profile, the
+ * theme, Developer access and signing out.
+ *
+ * **It collapses to an icon rail** with a toggle in its head: each entry keeps
+ * its icon and its count, and says its name in a tooltip on hover and on
+ * keyboard focus. Remembered per browser, and automatic on a narrow window
+ * (`sidebar-state.ts`).
  *
  * A real `<a href>` per destination, not a div with a click handler:
  * middle-click, copy-link and the browser's focus handling come free, and the
@@ -84,154 +91,120 @@ export function Sidebar({
   signingOut,
 }: SidebarProps) {
   /**
-   * The reader's permissions, mirrored from `policy/can.ts` at one remove.
-   * `audit_log.export` is admin-up; the same predicate the unlisted screen
-   * uses — one mirror, not two.
+   * The reader's permissions, mirrored from `policy/can.ts` at one remove — the
+   * one predicate every gated entry and tab asks.
    */
   const holds = permissionHolder(orgRole);
+  // The Connect wizard lights Developer access, the page it is opened from.
+  const section = navSection(currentPath);
 
-  /*
-   * `allSpaces` first: `spaces` is the recent-and-current shortlist, and a
-   * project reached by URL alone need not be on it. Both are already props —
-   * this needs no new plumbing and no second request.
-   */
   const railClass = ['sidebar', open ? 'sidebar-open' : '', collapsed ? 'sidebar-collapsed' : '']
     .filter((c) => c !== '')
     .join(' ');
 
-  /*
-   * `ORG` above the spaces, `SETTINGS` at the foot (LAI-754): Capacity and
-   * Unlisted work read across every space, so they lead the rail rather than
-   * sitting under one space's list.
-   */
+  /* A group with nothing the reader may open is not drawn at all. */
   const shown = NAV_GROUPS.filter((group) => routesInGroup(group, holds).length > 0);
 
-  const renderGroup = (group: NavGroup) => (
-    <div
-      key={group}
-      // SETTINGS sits at the foot of the rail, above the user, the way
-      // most apps keep account settings out of the working list.
-      className={group === 'SETTINGS' ? 'sidebar-group sidebar-group-end' : 'sidebar-group'}
-    >
-      {collapsed ? (
-        <div className="sidebar-minirule" aria-hidden="true" />
-      ) : (
-        <h2 className="sidebar-group-title" id={`nav-${group}`}>
-          {group}
-        </h2>
-      )}
-      <ul className="sidebar-list" aria-label={group}>
-        {routesInGroup(group, holds).map((route) => {
-          const active = route.path === currentPath;
-          const count = counts?.[route.path];
-          // The project travels with the link, not beside it — a bare
-          // path drops `?project=` and the destination then falls back
-          // to a different project entirely (LAI-423).
-          const href = navHref(route.path, projectSlug);
+  const renderGroup = (group: NavGroup) => {
+    const title = GROUP_TITLES[group];
+    return (
+      <div key={group} className={`sidebar-group sidebar-group-${group.toLowerCase()}`}>
+        {title !== null &&
+          (collapsed ? (
+            <div className="sidebar-minirule" aria-hidden="true" />
+          ) : (
+            <h2 className="sidebar-group-title" id={`nav-${group}`}>
+              {title}
+            </h2>
+          ))}
+        <ul className="sidebar-list" aria-label={title ?? 'Yours'}>
+          {routesInGroup(group, holds).map((route) => {
+            const active = route.path === section;
+            const count = counts?.[route.path];
+            const counted = count !== undefined && count > 0;
+            // The project travels with the link, not beside it — a bare
+            // path drops `?project=` and the destination then falls back
+            // to a different project entirely (LAI-423).
+            const href = navHref(route.path, projectSlug);
 
-          return (
-            <li key={route.path}>
-              <a
-                href={href}
-                className={active ? 'sidebar-link sidebar-link-active' : 'sidebar-link'}
-                aria-current={active ? 'page' : undefined}
-                title={route.label}
-                onClick={(event) => {
-                  // Modified clicks stay the browser's — new tab, new
-                  // window, download.
-                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                  event.preventDefault();
-                  // The same URL the href advertises: copy-link and
-                  // left-click must agree.
-                  onNavigate(href);
-                  onClose();
-                }}
-              >
-                {/* Always present, transparent until active — selecting
-                    an item must not shift its label sideways. */}
-                <span className="sidebar-link-bar" aria-hidden="true" />
-                {/* The collapsed rail's two letters (prototype `n.abbr`). */}
-                <span className="sidebar-mini" aria-hidden="true">
-                  {route.mini ?? ''}
-                </span>
-                <span className="sidebar-link-label">{route.label}</span>
+            return (
+              <li key={route.path}>
+                <a
+                  href={href}
+                  className={active ? 'sidebar-link sidebar-link-active' : 'sidebar-link'}
+                  aria-current={active ? 'page' : undefined}
+                  onClick={(event) => {
+                    // Modified clicks stay the browser's — new tab, new
+                    // window, download.
+                    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                    event.preventDefault();
+                    // The same URL the href advertises: copy-link and
+                    // left-click must agree.
+                    onNavigate(href);
+                    onClose();
+                  }}
+                >
+                  {/* Always present, transparent until active — selecting
+                      an item must not shift its label sideways. */}
+                  <span className="sidebar-link-bar" aria-hidden="true" />
+                  {route.icon !== undefined && <NavIcon name={route.icon} />}
+                  {/* The name, and the rail's tooltip: in the rail it is
+                      drawn beside the icon on hover and focus, and it is
+                      what a screen reader reads either way. */}
+                  <span className="sidebar-link-label sidebar-tip">{route.label}</span>
 
-                {/* Only where a count is real and non-zero: a fixture
-                    badge or a zero badge is noise. */}
-                {count !== undefined && count > 0 && (
-                  <span className="sidebar-count">
-                    {count}
-                    <span className="visually-hidden"> {route.label.toLowerCase()}</span>
-                  </span>
-                )}
-              </a>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
+                  {/* Only where a count is real and non-zero: a fixture
+                      badge or a zero badge is noise. */}
+                  {counted && (
+                    <span className="sidebar-count">
+                      {badge(count)}
+                      <span className="visually-hidden"> waiting</span>
+                    </span>
+                  )}
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+  };
 
   return (
     <nav id="sidebar" className={railClass} aria-label="Primary">
       <div className="sidebar-head">
-        {/*
-          The logo is the collapse control, as the prototype has it (line 49):
-          a 28px radius-9 square on `--text-primary`, glyph stroked in `--bg-card`.
-        */}
-        <button
-          type="button"
-          className="sidebar-logo"
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          aria-expanded={!collapsed}
-          onClick={onToggleCollapse}
-        >
-          <span className="visually-hidden">
-            {collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          </span>
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            strokeWidth="2"
-            aria-hidden="true"
-          >
+        {/* The mark: a 28px radius-9 square on `--text-primary`, the glyph
+            stroked in `--bg-card` (prototype line 49). */}
+        <span className="sidebar-logo" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" strokeWidth="2">
             <circle cx="12" cy="12" r="4.5" />
             <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" />
           </svg>
-        </button>
+        </span>
         {!collapsed && (
           <div className="sidebar-identity">
-            {/*
-              **The open project, not the product** (LAI-293).
-
-              The owner asked for this slot to carry the project name, and for
-              the space bar to stop repeating it — the bar had `Laika Core`
-              beside `Laika` in the rail, which is the same word twice and a
-              line of bar width spent on it.
-
-              Falls back to the product name when no project is open: the rail
-              is global chrome and `/organisation`, `/members` and the unlisted
-              screens have no space to name. A blank wordmark there would read
-              as a loading state that never resolves.
-            */}
-            {/* Always the product, never the open project (owner, 2026-09-21
-                — reverses LAI-293): the space bar already names the project,
-                and the rail's identity is the app. */}
+            {/* Always the product, never the open project (owner,
+                2026-09-21): the space bar names the project. */}
             <span className="sidebar-wordmark">Laika</span>
-            {/*
-              The org's real name, from `GET /org` — "Kvelld Dynamics" in the
-              prototype is a fixture. `undefined` renders nothing rather than a
-              placeholder that looks like data.
-            */}
+            {/* The org's real name, from `GET /org`. `undefined` renders
+                nothing rather than a placeholder that looks like data. */}
             {orgName !== undefined && <span className="sidebar-orgline">{orgName}</span>}
           </div>
         )}
+        <button
+          type="button"
+          className="sidebar-toggle"
+          aria-expanded={!collapsed}
+          aria-controls="sidebar"
+          onClick={onToggleCollapse}
+        >
+          <NavIcon name={collapsed ? 'rail-open' : 'rail-close'} size={17} />
+          <span className="sidebar-tip">{collapsed ? 'Expand sidebar' : 'Collapse sidebar'}</span>
+        </button>
       </div>
 
       <div className="sidebar-nav">
-        {shown.filter((group) => group === 'ORG').map(renderGroup)}
+        {shown.filter((group) => group === 'HOME').map(renderGroup)}
 
         {spaces !== undefined && spaces.length > 0 && onOpenSpace !== undefined && (
           <SpacesSection
@@ -245,7 +218,7 @@ export function Sidebar({
           />
         )}
 
-        {shown.filter((group) => group !== 'ORG').map(renderGroup)}
+        {shown.filter((group) => group !== 'HOME').map(renderGroup)}
       </div>
 
       {user !== undefined && onSignOut !== undefined && (
@@ -254,7 +227,6 @@ export function Sidebar({
           collapsed={collapsed}
           onSignOut={onSignOut}
           signingOut={signingOut ?? false}
-          currentPath={currentPath}
           onNavigate={onNavigate}
           onClose={onClose}
         />

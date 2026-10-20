@@ -1,7 +1,10 @@
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { mayOpenProfiles } from '../../api/profiles.ts';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
 import { useTheme } from '../../theme/use-theme.ts';
-import { ThemeSwitch } from '../ThemeSwitch.tsx';
+import { NavIcon } from './NavIcon.tsx';
+import { menuStep } from './menu-keys.ts';
 import type { MeProfile } from '../../api/me.ts';
 
 export interface SidebarFooterProps {
@@ -9,32 +12,25 @@ export interface SidebarFooterProps {
   readonly collapsed: boolean;
   readonly onSignOut: () => void;
   readonly signingOut: boolean;
-  /** The path on screen, so the person's own links show where they are. */
-  readonly currentPath?: string | undefined;
   /** Follow an in-app link; absent renders the links as plain hrefs. */
   readonly onNavigate?: ((to: string) => void) | undefined;
   readonly onClose?: (() => void) | undefined;
 }
 
 /**
- * The person's own pages, under their name (LAI-787): **My day** — their day,
- * drafted on their machine and confirmed by them. About whoever is signed in,
- * so it sits with them rather than in a group of the organisation's pages.
- */
-export const PERSON_LINKS: readonly {
-  readonly path: string;
-  readonly label: string;
-  readonly mini: string;
-}[] = [{ path: '/my-day', label: 'My day', mini: 'MD' }];
-
-/**
- * The sidebar footer (prototype lines ~85–88): the theme row **above** the
- * user chip — that order is the design's — then a 26px avatar, name 11px/700
- * and the role 8.5px/800 in `--chip-pink`.
+ * The person at the foot of the sidebar, and their menu (LAI-796, the owner's
+ * reference): **My profile**, **Switch to dark / light**, **Developer access**
+ * and **Sign out**. The theme row and the sign-out button that sat here
+ * (LAI-064, LAI-249) moved into it, so the rail ends in one control.
  *
- * The prototype has no sign-out anywhere, and signing out is not a feature to
- * lose to a mockup's omission — a quiet button rides at the chip's end, wide
- * mode only (collapsed, expanding the rail is the way to it).
+ * *My profile* is drawn only for a reader who may open a profile — the server
+ * answers `profile.read` to owners and admins alone, their own included — and
+ * is absent, not disabled, for everyone else (LAI-082).
+ *
+ * The WAI-ARIA menu-button pattern: the button says it has a menu and whether
+ * it is open; the menu takes the focus on its first item, the arrows move,
+ * Escape closes it and hands the focus back, and a click anywhere else closes
+ * it.
  *
  * `useTheme()` is read here, not passed in, so the avatar palette follows a
  * theme flip live — the staleness trap `use-theme.ts` documents.
@@ -44,17 +40,152 @@ export function SidebarFooter({
   collapsed,
   onSignOut,
   signingOut,
-  currentPath,
   onNavigate,
   onClose,
 }: SidebarFooterProps) {
-  const { theme } = useTheme();
+  const { theme, setPreference } = useTheme();
   const colour = avatarColor(user.id, theme);
+  const next = theme === 'dark' ? 'light' : 'dark';
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const profile = mayOpenProfiles(user.org_role)
+    ? `/people?user=${encodeURIComponent(user.id)}`
+    : undefined;
+
+  const items = (): HTMLElement[] => [
+    ...(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []),
+  ];
+
+  const close = (refocus: boolean): void => {
+    setOpen(false);
+    if (refocus) triggerRef.current?.focus();
+  };
+
+  // The first item takes the focus as the menu opens.
+  useEffect(() => {
+    if (open) items()[0]?.focus();
+  }, [open]);
+
+  // A press anywhere outside closes it, as every menu in the app does.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: PointerEvent): void => {
+      if (rootRef.current?.contains(event.target as Node) === true) return;
+      setOpen(false);
+    };
+    addEventListener('pointerdown', onDown);
+    return () => {
+      removeEventListener('pointerdown', onDown);
+    };
+  }, [open]);
+
+  const onMenuKey = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      // The sidebar's own Escape closes the off-canvas nav; this one is the menu's.
+      event.stopPropagation();
+      close(true);
+      return;
+    }
+    if (event.key === 'Tab') {
+      setOpen(false);
+      return;
+    }
+    const list = items();
+    const to = menuStep(list.length, list.indexOf(document.activeElement as HTMLElement), event.key);
+    if (to === undefined) return;
+    event.preventDefault();
+    list[to]?.focus();
+  };
+
+  const follow = (to: string) => (event: MouseEvent) => {
+    if (onNavigate === undefined) return;
+    // Modified clicks stay the browser's — new tab, new window.
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    setOpen(false);
+    onNavigate(to);
+    onClose?.();
+  };
 
   return (
-    <div className="sidebar-footer">
-      <ThemeSwitch compact={collapsed} />
-      <div className="sidebar-user">
+    <div className="sidebar-footer" ref={rootRef}>
+      {open && (
+        <div
+          ref={menuRef}
+          className="user-menu"
+          role="menu"
+          id="user-menu"
+          aria-label={`${user.name}’s menu`}
+          onKeyDown={onMenuKey}
+        >
+          <div className="user-menu-who">
+            <span className="user-menu-name">{user.name}</span>
+            <span className="user-menu-email">{user.email}</span>
+          </div>
+          {profile !== undefined && (
+            <a role="menuitem" className="user-menu-item" href={profile} onClick={follow(profile)}>
+              My profile
+            </a>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            className="user-menu-item user-menu-theme"
+            onClick={() => {
+              setPreference(next);
+              close(true);
+            }}
+          >
+            Switch to {next}
+            <span className="user-menu-glyph" aria-hidden="true">
+              {next === 'dark' ? '☾' : '☀'}
+            </span>
+            <span className="visually-hidden"> theme — currently {theme}</span>
+          </button>
+          <a
+            role="menuitem"
+            className="user-menu-item"
+            href="/developer"
+            onClick={follow('/developer')}
+          >
+            Developer access
+          </a>
+          <div className="user-menu-rule" role="separator" />
+          <button
+            type="button"
+            role="menuitem"
+            className="user-menu-item user-menu-signout"
+            disabled={signingOut}
+            onClick={() => {
+              setOpen(false);
+              onSignOut();
+            }}
+          >
+            {signingOut ? 'Signing out…' : 'Sign out'}
+          </button>
+        </div>
+      )}
+
+      <button
+        ref={triggerRef}
+        type="button"
+        className={open ? 'user-menu-trigger user-menu-trigger-open' : 'user-menu-trigger'}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? 'user-menu' : undefined}
+        onClick={() => {
+          setOpen((v) => !v);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+      >
         <span
           className="sidebar-user-avatar t-avatar"
           style={{ background: colour.background, color: colour.foreground }}
@@ -62,52 +193,14 @@ export function SidebarFooter({
         >
           {initials(user.name)}
         </span>
+        <span className={collapsed ? 'sidebar-user-text sidebar-tip' : 'sidebar-user-text'}>
+          <span className="sidebar-user-name">{user.name}</span>
+          <span className="sidebar-user-role">{user.org_role}</span>
+        </span>
         {!collapsed && (
-          <>
-            <span className="sidebar-user-text">
-              <span className="sidebar-user-name">{user.name}</span>
-              <span className="sidebar-user-role">{user.org_role}</span>
-            </span>
-            <button
-              type="button"
-              className="sidebar-signout"
-              onClick={onSignOut}
-              disabled={signingOut}
-            >
-              {signingOut ? 'Signing out…' : 'Sign out'}
-            </button>
-          </>
+          <NavIcon name="chevron" size={12} className="user-menu-caret" />
         )}
-      </div>
-      <ul className="sidebar-list sidebar-person" aria-label="Yours">
-        {PERSON_LINKS.map((link) => {
-          const active = link.path === currentPath;
-          return (
-            <li key={link.path}>
-              <a
-                href={link.path}
-                className={active ? 'sidebar-link sidebar-link-active' : 'sidebar-link'}
-                aria-current={active ? 'page' : undefined}
-                title={link.label}
-                onClick={(event) => {
-                  if (onNavigate === undefined) return;
-                  // Modified clicks stay the browser's — new tab, new window.
-                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                  event.preventDefault();
-                  onNavigate(link.path);
-                  onClose?.();
-                }}
-              >
-                <span className="sidebar-link-bar" aria-hidden="true" />
-                <span className="sidebar-mini" aria-hidden="true">
-                  {link.mini}
-                </span>
-                <span className="sidebar-link-label">{link.label}</span>
-              </a>
-            </li>
-          );
-        })}
-      </ul>
+      </button>
     </div>
   );
 }
