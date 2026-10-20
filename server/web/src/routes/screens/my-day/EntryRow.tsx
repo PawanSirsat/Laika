@@ -13,6 +13,9 @@ import { canChange, entryTarget, hm, parseMinutes, rangeLabel } from './my-day-d
 
 export interface EntryRowProps {
   readonly entry: TimeEntry;
+  /** Its place in the day's confirmed list, 1-based, and how many there are. */
+  readonly position: number;
+  readonly count: number;
   /** The action in flight anywhere on the page, as `<verb>:<id>`. */
   readonly pending: string | undefined;
   readonly onSave: (patch: EntryPatch) => Promise<boolean>;
@@ -47,7 +50,15 @@ type History =
  * One line since LAI-810, its card a link to it, and Edit, Delete and History
  * in its "⋯" — only History for an entry Solidtime holds.
  */
-export function EntryRow({ entry, pending, onSave, onDelete, onNavigate }: EntryRowProps) {
+export function EntryRow({
+  entry,
+  position,
+  count,
+  pending,
+  onSave,
+  onDelete,
+  onNavigate,
+}: EntryRowProps) {
   const [editing, setEditing] = useState(false);
   const [minutes, setMinutes] = useState('');
   const [card, setCard] = useState('');
@@ -103,6 +114,11 @@ export function EntryRow({ entry, pending, onSave, onDelete, onNavigate }: Entry
   };
 
   const when = range === '' ? 'No set time' : range;
+  // Its accessible name: the time, or which entry of the day it is, and how long.
+  const name =
+    range === ''
+      ? `entry ${String(position)} of ${String(count)}, no set time, ${hm(entry.minutes)}`
+      : range;
   const changeable = canChange(entry);
   const menu = [
     ...(changeable
@@ -135,7 +151,7 @@ export function EntryRow({ entry, pending, onSave, onDelete, onNavigate }: Entry
               />
             )}
             <MoreMenu
-              label={`More for ${when}`}
+              label={`More for ${name}`}
               menuLabel="Change this entry"
               items={menu}
               disabled={busy}

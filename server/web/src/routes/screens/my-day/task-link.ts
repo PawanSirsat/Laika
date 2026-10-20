@@ -35,3 +35,23 @@ export interface ClickLike {
 export function plainClick(event: ClickLike): boolean {
   return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
 }
+
+/** A space the reader can read, as `GET /projects` lists it. */
+export interface Space {
+  readonly prefix: string;
+  readonly slug: string;
+  readonly name: string;
+}
+
+/**
+ * The space a card's key belongs to, **among the spaces the reader can read**
+ * — `GET /projects` lists only those, and a prefix is unique in an
+ * organisation. `undefined` for a key no readable space owns: a card the
+ * reader cannot read, which is never a link (LAI-810 review round 1).
+ */
+export function spaceOfKey(key: string, spaces: readonly Space[]): Space | undefined {
+  const dash = key.lastIndexOf('-');
+  if (dash <= 0) return undefined;
+  const prefix = key.slice(0, dash);
+  return spaces.find((space) => space.prefix === prefix);
+}

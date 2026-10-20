@@ -1,14 +1,14 @@
 import { useEffect, useState, type MouseEvent } from 'react';
 import { everyPage } from '../../../api/every-page.ts';
 import type { MeProfile } from '../../../api/me.ts';
-import { isProject, listProjects } from '../../../api/projects.ts';
+import type { Project } from '../../../api/projects.ts';
 import type { ReviewQueueItem } from '../../../api/review.ts';
 import { getTask, listTasks, type TaskStatus } from '../../../api/tasks.ts';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import {
   blockerIds,
   capped,
-  moreHref,
+  moreLinks,
   plateOf,
   type Blocker,
   type MineTask,
@@ -19,6 +19,11 @@ import { plainClick, taskHref } from './task-link.ts';
 
 export interface OnYourPlateProps {
   readonly me: MeProfile | undefined;
+  /**
+   * The spaces the reader can read, read once by the page: `undefined` while
+   * reading, `null` if the read failed.
+   */
+  readonly spaces: readonly Project[] | null | undefined;
   /** The review queue the shell already holds for the sidebar's badge. */
   readonly queue: readonly ReviewQueueItem[] | undefined;
   readonly onNavigate: (to: string) => void;
@@ -43,21 +48,23 @@ const BLOCKER_LIMIT = 20;
  * filtered read per space and kind (`assignee`, `status`), never the
  * space's whole list — and each outside blocker once, by id.
  */
-function usePlate(me: MeProfile | undefined): Load {
+function usePlate(
+  me: MeProfile | undefined,
+  readable: readonly Project[] | null | undefined,
+): Load {
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   useEffect(() => {
-    if (me === undefined) return;
+    if (me === undefined || readable === undefined) return;
+    if (readable === null) {
+      setLoad({ kind: 'error' });
+      return;
+    }
     const controller = new AbortController();
     const { signal } = controller;
     const member = new Set(me.memberships.map((m) => m.project_id));
 
     void (async () => {
-      const { items } = await everyPage((cursor) =>
-        listProjects(cursor === undefined ? { limit: 200 } : { limit: 200, cursor }, signal),
-      );
-      const spaces = items
-        .filter(isProject)
-        .filter((p) => p.archived_at === null && member.has(p.id));
+      const spaces = readable.filter((p) => p.archived_at === null && member.has(p.id));
       const pages = await Promise.all(
         spaces.flatMap((space) =>
           OPEN.map((status) =>
@@ -98,7 +105,7 @@ function usePlate(me: MeProfile | undefined): Load {
     return () => {
       controller.abort();
     };
-  }, [me]);
+  }, [me, readable]);
   return load;
 }
 
@@ -108,8 +115,9 @@ function usePlate(me: MeProfile | undefined): Load {
  * blocked — each opening in its own space. Everything here is something the
  * board already shows; this gathers the reader's own.
  */
-export function OnYourPlate({ me, queue, onNavigate }: OnYourPlateProps) {
-  const load = usePlate(me);
+export function OnYourPlate({ me, spaces, queue, onNavigate }: OnYourPlateProps) {
+  const load = usePlate(me, spaces);
+  const names = new Map((spaces ?? []).map((p) => [p.slug, p.name]));
 
   const follow = (to: string) => (event: MouseEvent) => {
     // Modified clicks stay the browser's — new tab, new window.
@@ -128,7 +136,7 @@ export function OnYourPlate({ me, queue, onNavigate }: OnYourPlateProps) {
     more?: { readonly href: string; readonly label: string },
   ) => {
     const { shown, more: hidden } = capped(items ?? []);
-    const rest = moreHref(id, (items ?? []).slice(shown.length), me?.id);
+    const rest = moreLinks(id, (items ?? []).slice(shown.length), me?.id, names);
     return (
       <div className="plate-group" data-plate={id}>
         <h3 className="plate-head">
@@ -164,11 +172,19 @@ export function OnYourPlate({ me, queue, onNavigate }: OnYourPlateProps) {
                 </li>
               );
             })}
-            {hidden > 0 && (
-              <li>
-                <a className="plate-rest" href={rest} onClick={follow(rest)} data-plate-more>
-                  +{hidden} more
-                </a>
+            {rest.length > 0 && (
+              <li className="plate-rests">
+                {rest.map((link) => (
+                  <a
+                    key={link.href}
+                    className="plate-rest"
+                    href={link.href}
+                    onClick={follow(link.href)}
+                    data-plate-more
+                  >
+                    {link.label}
+                  </a>
+                ))}
               </li>
             )}
           </ul>

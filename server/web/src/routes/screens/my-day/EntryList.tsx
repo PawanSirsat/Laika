@@ -68,10 +68,12 @@ export function EntryList({ entries, pending, onNavigate, onSave, onDelete }: En
             tabIndex={0}
           >
             <ol className="myday-blocks" aria-label="Confirmed entries">
-              {paged.items.map((entry) => (
+              {paged.items.map((entry, i) => (
                 <EntryRow
                   key={entry.id}
                   entry={entry}
+                  position={paged.page * PAGE_SIZE + i + 1}
+                  count={entries.length}
                   pending={pending}
                   onNavigate={onNavigate}
                   onSave={(patch) => onSave(entry, patch)}

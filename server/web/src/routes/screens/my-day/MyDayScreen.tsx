@@ -12,8 +12,9 @@ import {
   updateEntry,
   type MyDay,
   type NewEntry,
-  type TimeDraft,
 } from '../../../api/time.ts';
+import { everyPage } from '../../../api/every-page.ts';
+import { isProject, listProjects, type Project } from '../../../api/projects.ts';
 import { readerZone } from '../../../api/usage.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -30,7 +31,15 @@ import { OnYourPlate } from './OnYourPlate.tsx';
 import { dayLong } from './day-timeline.ts';
 import type { MeProfile } from '../../../api/me.ts';
 import type { ReviewQueueItem } from '../../../api/review.ts';
-import { confirmPlan, needCardLine, runBulk, type BulkApi, type BulkKind } from './draft-bulk.ts';
+import {
+  confirmPlan,
+  needCardLine,
+  runBulk,
+  runConfirmDay,
+  type BulkApi,
+  type BulkKind,
+  type BulkResult,
+} from './draft-bulk.ts';
 import { STATE_LABELS, canAddTime, dayIn, dayTotals, hm, isDay } from './my-day-derive.ts';
 import './my-day.css';
 
@@ -64,6 +73,36 @@ const RUNNING: Readonly<Record<BulkKind, string>> = {
   general: 'Moving to General',
   dismiss: 'Marking not work',
 };
+
+/** The keys a batch runs under: the bar's, and the header's *Confirm day*. */
+const BATCHES: ReadonlySet<string> = new Set(['bulk', 'confirm-day']);
+
+/**
+ * The spaces the reader can read, once for the page (LAI-810 review round
+ * 1): *On your plate* reads the reader's work in the ones they belong to, and
+ * *Agent minutes* links a card only when its space is one of them.
+ * `undefined` while reading, `null` if the read failed.
+ */
+function useSpaces(): readonly Project[] | null | undefined {
+  const [spaces, setSpaces] = useState<readonly Project[] | null | undefined>(undefined);
+  useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    everyPage((cursor) =>
+      listProjects(cursor === undefined ? { limit: 200 } : { limit: 200, cursor }, signal),
+    )
+      .then(({ items }) => {
+        if (!signal.aborted) setSpaces(items.filter(isProject));
+      })
+      .catch(() => {
+        if (!signal.aborted) setSpaces(null);
+      });
+    return () => {
+      controller.abort();
+    };
+  }, []);
+  return spaces;
+}
 
 /**
  * My day (LAI-787, D-088): the reader's own day, drafted on their own machine
@@ -99,6 +138,8 @@ export function MyDayScreen({
   const [actionError, setActionError] = useState<string | undefined>(undefined);
   const [batch, setBatch] = useState<Batch>({ kind: 'idle' });
   const [tick, setTick] = useState(0);
+  const spaces = useSpaces();
+  const batching = pending !== undefined && BATCHES.has(pending);
 
   const reload = useCallback(() => {
     setTick((n) => n + 1);
@@ -142,22 +183,25 @@ export function MyDayScreen({
   /**
    * One batch over many blocks: one request each, in order, the progress
    * said as it goes — and **the day re-read once at the end**, not once per
-   * block. Resolves to the blocks that stay selected.
+   * block. Its progress and its last word belong to the day it ran on, and
+   * the day cannot be changed, nor time added, while it runs. Resolves to the
+   * blocks that stay selected.
    */
-  const bulk = async (
+  const runBatch = async (
     key: string,
-    kind: BulkKind,
-    view: MyDay,
-    chosen: readonly TimeDraft[],
+    label: string,
+    day: string,
+    total: number,
+    work: (onProgress: (done: number, total: number) => void) => Promise<BulkResult>,
   ): Promise<readonly string[]> => {
     setPending(key);
     setActionError(undefined);
-    setBatch({ kind: 'running', label: RUNNING[kind], done: 0, total: chosen.length });
+    setBatch({ kind: 'running', day, label, done: 0, total });
     try {
-      const result = await runBulk(kind, chosen, view.drafts, view.day, BULK_API, (done, total) => {
-        setBatch({ kind: 'running', label: RUNNING[kind], done, total });
+      const result = await work((done, of) => {
+        setBatch({ kind: 'running', day, label, done, total: of });
       });
-      setBatch({ kind: 'said', text: result.text, ok: result.ok });
+      setBatch({ kind: 'said', day, text: result.text, ok: result.ok });
       return result.keep;
     } finally {
       setPending(undefined);
@@ -201,7 +245,9 @@ export function MyDayScreen({
   const addable = canAddTime(settings);
   const nothing = view.drafts.length === 0 && view.entries.length === 0;
   // *Confirm day* confirms what is ready; a block on nothing is left out and named.
-  const dayPlan = confirmPlan(view.drafts, view.drafts);
+  const dayPlan = confirmPlan(view.drafts);
+  // A batch's progress and last word are shown on its own day only.
+  const shown: Batch = batch.kind !== 'idle' && batch.day === view.day ? batch : { kind: 'idle' };
   const readyMinutes = dayPlan.ready.reduce((sum, d) => sum + d.minutes, 0);
 
   return (
@@ -210,7 +256,15 @@ export function MyDayScreen({
         variant="page"
         title="My day"
         description={`${dayLong(view.day)} · yours only`}
-        below={<WeekStrip week={view.week} selected={view.day} today={view.today} onPick={onDay} />}
+        below={
+          <WeekStrip
+            week={view.week}
+            selected={view.day}
+            today={view.today}
+            locked={batching}
+            onPick={onDay}
+          />
+        }
       >
         {view.drafts.length > 0 && (
           <button
@@ -223,7 +277,9 @@ export function MyDayScreen({
                 : undefined
             }
             onClick={() => {
-              void bulk('confirm-day', 'confirm', view, view.drafts);
+              void runBatch('confirm-day', 'Confirming', view.day, view.drafts.length, (progress) =>
+                runConfirmDay(view.drafts, view.day, BULK_API, progress),
+              );
             }}
           >
             {pending === 'confirm-day' && <Spinner size="sm" label="Confirming the day" />}
@@ -289,7 +345,7 @@ export function MyDayScreen({
                 key={`drafts-${view.day}`}
                 drafts={view.drafts}
                 pending={pending}
-                batch={batch}
+                batch={shown}
                 onNavigate={onNavigate}
                 onPatch={(draft, patch, verb) =>
                   run(`${verb}:${draft.id}`, () => updateDraft(draft.id, patch))
@@ -301,7 +357,11 @@ export function MyDayScreen({
                 onConfirm={(draft) => {
                   void run(`confirm:${draft.id}`, () => confirmDraft(draft.id));
                 }}
-                onBulk={(kind, chosen) => bulk('bulk', kind, view, chosen)}
+                onBulk={(kind, chosen) =>
+                  runBatch('bulk', RUNNING[kind], view.day, chosen.length, (progress) =>
+                    runBulk(kind, chosen, BULK_API, progress),
+                  )
+                }
               />
             )}
 
@@ -334,6 +394,7 @@ export function MyDayScreen({
                   day={view.day}
                   tz={view.tz}
                   busy={pending === 'add'}
+                  locked={batching}
                   onAdd={(entry: NewEntry) => run('add', () => addEntry(entry))}
                 />
               </section>
@@ -342,8 +403,8 @@ export function MyDayScreen({
 
           <aside className="myday-side" aria-label="Beside your day" data-myday-side>
             <DraftMyTime settings={settings} pending={pending} run={run} />
-            <OnYourPlate me={me} queue={queue} onNavigate={onNavigate} />
-            <AgentStrip agent={view.agent} onNavigate={onNavigate} />
+            <OnYourPlate me={me} spaces={spaces} queue={queue} onNavigate={onNavigate} />
+            <AgentStrip agent={view.agent} spaces={spaces} onNavigate={onNavigate} />
           </aside>
         </div>
       </div>

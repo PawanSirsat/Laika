@@ -14,6 +14,9 @@ import {
 
 export interface DraftRowProps {
   readonly draft: TimeDraft;
+  /** Its place in the day's drafted list, 1-based, and how many there are. */
+  readonly position: number;
+  readonly count: number;
   /** The action in flight anywhere on the page, as `<verb>:<id>`. */
   readonly pending: string | undefined;
   /** `verb` names the control that spins while it saves. */
@@ -48,6 +51,8 @@ type Editing = 'none' | 'assign' | 'minutes' | 'split';
  */
 export function DraftRow({
   draft,
+  position,
+  count,
   pending,
   onPatch,
   onSplit,
@@ -110,6 +115,12 @@ export function DraftRow({
   };
 
   const when = range === '' ? 'No set time' : range;
+  // Its accessible name: the time, or — with none to tell two apart — which
+  // block of the day it is, and how long.
+  const name =
+    range === ''
+      ? `block ${String(position)} of ${String(count)}, no set time, ${hm(draft.minutes)}`
+      : range;
   const menu = [
     { value: 'assign', label: 'Card…' },
     ...(draft.general ? [] : [{ value: 'general', label: 'General' }]),
@@ -145,7 +156,7 @@ export function DraftRow({
           className="myday-check"
           checked={selected}
           disabled={busy}
-          aria-label={`Select ${when}, ${target.label}`}
+          aria-label={`Select ${name}, ${target.label}`}
           onChange={(event) => {
             onSelect(event.target.checked, shifted(event));
           }}
@@ -171,7 +182,7 @@ export function DraftRow({
               Confirm
             </button>
             <MoreMenu
-              label={`More for ${when}`}
+              label={`More for ${name}`}
               menuLabel="Change this block"
               items={menu}
               disabled={busy}
