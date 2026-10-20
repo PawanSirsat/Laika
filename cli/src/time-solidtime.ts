@@ -330,6 +330,10 @@ function explain(r: { reason?: string; status?: number; message: string }): stri
  * never a flag (prompt.ts) — or `undefined` with the reason printed.
  */
 async function signInToBoard(io: TimeIo, store: Store): Promise<Board | undefined> {
+  if (acceptableUrl(store.board) === undefined) {
+    io.err(plainHttp(store.board));
+    return undefined;
+  }
   if (io.askSecret === undefined) {
     io.err('This needs your Laika password, and nothing here can ask for it.');
     return undefined;
@@ -401,6 +405,11 @@ function needStore(io: TimeIo): Store | undefined {
   return store;
 }
 
+/** Why a board on plain http to another machine gets no password. */
+function plainHttp(board: string): string {
+  return `The board is ${board}: signing in would send your Laika password over plain http, where it can be read on the way. Use the board's https address (or one on this machine).`;
+}
+
 /** http only to this machine: a key sent in the clear can be read on the way. */
 function acceptableUrl(raw: string): string | undefined {
   let url: URL;
@@ -447,6 +456,11 @@ async function connect(args: readonly string[], io: TimeIo): Promise<number> {
   const creds = findCredentials(io.home, io.env);
   if (creds === undefined) {
     io.err('This machine is not connected to a Laika board yet: laika connect (or laika init).');
+    return 1;
+  }
+  // Each push and pull signs in to it with the password: refused here, first.
+  if (acceptableUrl(creds.url) === undefined) {
+    io.err(plainHttp(creds.url));
     return 1;
   }
   const laika = await whoAmI(creds.url, creds.token);
@@ -803,6 +817,7 @@ async function push(args: readonly string[], io: TimeIo): Promise<number> {
           billable: isBillable,
           description,
           tags: [],
+          type: 'work',
         });
         if (!made.ok) {
           notes.push(
@@ -1025,8 +1040,14 @@ async function pull(args: readonly string[], io: TimeIo): Promise<number> {
   const window = read.value;
   let taskNames = new Map<string, string>();
   if (window.entries.some((e) => e.task_id !== null)) {
+    // A task's name is the key that wins (§4.2 of the research): without it a
+    // key would be read from the description alone, and a card guessed wrong.
     const list = await st.tasks(c);
-    if (list.ok) taskNames = new Map(list.value.map((t) => [t.id, t.name]));
+    if (!list.ok) {
+      io.err(`Solidtime's task list could not be read, so nothing was sent: ${list.message}`);
+      return 1;
+    }
+    taskNames = new Map(list.value.map((t) => [t.id, t.name]));
   }
   const running = window.entries.filter((e) => e.end === null).length;
   const byMember = new Map<string, ImportEntry[]>(covered.map((m) => [m, []]));
@@ -1432,6 +1453,7 @@ async function start(args: readonly string[], io: TimeIo): Promise<number> {
     billable: isBillable,
     description: `${card.key} ${card.title}`.slice(0, DESCRIPTION_MAX),
     tags: [],
+    type: 'work',
   });
   if (!made.ok) {
     io.err(made.message);

@@ -475,6 +475,34 @@ void describe('laika time push', () => {
     assert.equal(st.entries.length, 1);
   });
 
+  void test('never sends the Laika password over plain http to another machine (review 1)', async () => {
+    await connected();
+    const store = JSON.parse(readFileSync(storePath(home), 'utf8')) as Record<string, unknown>;
+    writeFileSync(
+      storePath(home),
+      JSON.stringify({ ...store, board: 'http://board.example.com' }),
+      {
+        mode: 0o600,
+      },
+    );
+    answers = [PASSWORD];
+    assert.equal(await run(['push']), 1);
+    assert.equal(asked.length, 0);
+    assert.match(err.join('\n'), /plain http/);
+  });
+
+  void test('will not connect for a board it would send the password to in the clear', async () => {
+    writeFileSync(
+      join(home, '.laika', 'env'),
+      `LAIKA_URL="http://board.example.com"\nLAIKA_TOKEN="${board.token}"\n`,
+      { mode: 0o600 },
+    );
+    answers = [st.url, st.token];
+    assert.equal(await run(['connect']), 1);
+    assert.match(err.join('\n'), /plain http/);
+    assert.equal(asked.length, 0);
+  });
+
   void test('asks for the password every run, and does nothing without it', async () => {
     await connected();
     answers = [''];
@@ -575,6 +603,74 @@ void describe('laika time pull', () => {
     assert.equal(part.complete, false);
     assert.equal(part.entries.length, 500);
     assert.match(out.join('\n'), /nothing was taken as deleted/);
+  });
+
+  void test('a row deleted between pages makes the window incomplete — no delete is inferred (review 1)', async () => {
+    await connected();
+    const at = (i: number) => solidtimeTime(NOW - (i + 1) * 61 * 60_000);
+    for (let i = 0; i < 501; i += 1) st.add({ start: at(i), end: at(i - 0.5) });
+    // Between the pages, the newest goes: the 501st slides onto page one.
+    st.beforeListing = (offset) => {
+      if (offset === 500) {
+        st.entries.sort((a, b) => Date.parse(b.start) - Date.parse(a.start));
+        st.entries.shift();
+        st.beforeListing = undefined;
+      }
+    };
+    answers = [PASSWORD];
+    assert.equal(await run(['pull', '--days', '30']), 0, err.join('\n'));
+    assert.equal((board.imports[0] as { complete: boolean }).complete, false);
+  });
+
+  void test('a row deleted and another added between pages, the count unchanged, is still incomplete', async () => {
+    await connected();
+    const at = (i: number) => solidtimeTime(NOW - (i + 1) * 61 * 60_000);
+    for (let i = 0; i < 501; i += 1) st.add({ start: at(i), end: at(i - 0.5) });
+    st.beforeListing = (offset) => {
+      if (offset === 500) {
+        st.entries.sort((a, b) => Date.parse(b.start) - Date.parse(a.start));
+        st.entries.shift();
+        st.add({ start: at(600), end: at(599.5) });
+        st.beforeListing = undefined;
+      }
+    };
+    answers = [PASSWORD];
+    assert.equal(await run(['pull', '--days', '30']), 0, err.join('\n'));
+    assert.equal((board.imports[0] as { complete: boolean }).complete, false);
+  });
+
+  void test('brings in work, never breaks (review 1)', async () => {
+    await connected();
+    const work = st.add({
+      start: '2026-10-20T06:00:00Z',
+      end: '2026-10-20T07:00:00Z',
+      description: 'ONR-1',
+    });
+    st.add({ start: '2026-10-20T10:00:00Z', end: '2026-10-20T10:30:00Z', type: 'break' });
+    answers = [PASSWORD];
+    assert.equal(await run(['pull']), 0, err.join('\n'));
+    const body = board.imports[0] as { entries: { id: string }[] };
+    assert.deepEqual(
+      body.entries.map((e) => e.id),
+      [work.id],
+    );
+  });
+
+  void test('stops, sending nothing, when Solidtime’s task list cannot be read (review 1)', async () => {
+    await connected();
+    st.tasks.push({ id: 't-1', name: 'ONR-7 · Billing', project_id: 'p-build', is_done: false });
+    st.add({
+      start: '2026-10-20T06:00:00Z',
+      end: '2026-10-20T07:00:00Z',
+      description: 'LAI-9',
+      task_id: 't-1',
+    });
+    st.failTasks = true;
+    answers = [PASSWORD];
+    assert.equal(await run(['pull']), 1);
+    assert.match(err.join('\n'), /task list/);
+    assert.equal(board.imports.length, 0);
+    assert.equal(board.signIns, 0);
   });
 
   void test('prints what the board flagged, and never asks for a password it cannot use', async () => {

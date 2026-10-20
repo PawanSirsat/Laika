@@ -78,6 +78,8 @@ export interface StEntry {
   readonly user_id: string;
   readonly billable: boolean;
   readonly tags: readonly string[];
+  /** `work` or `break`; absent from a Solidtime that has no breaks. */
+  readonly type?: string;
 }
 
 export type StResult<T> =
@@ -210,37 +212,74 @@ export interface EntryWindow {
   readonly stopped?: string;
 }
 
-/** The entries starting from `fromMs` to `toMs` — one member's, or everyone's the key may see. */
+/**
+ * The **work** entries starting from `fromMs` to `toMs` — one member's, or
+ * everyone's the key may see. Breaks are not time anybody bills, so they
+ * are neither read nor counted (review round 1).
+ *
+ * **Whole only if nothing moved under it** (review round 1). Offset paging
+ * over a list that changes between pages skips a row when one before it is
+ * deleted, and the last page's `meta.total` agrees with what was read — so a
+ * row that is there would read as deleted. Every page must report the first
+ * page's total, and a read of more than one page reads the first page again
+ * at the end: a different total or a different first page is not complete.
+ */
 export async function entries(
   c: Connection,
   window: { fromMs: number; toMs: number; memberId?: string },
 ): Promise<StResult<EntryWindow>> {
-  const seen = new Map<string, StEntry>();
-  let total = 0;
-  for (let page = 0; page < PAGES_MAX; page += 1) {
+  const page = (offset: number) => {
     const query = new URLSearchParams({
       start: stTime(window.fromMs),
       end: stTime(window.toMs),
+      type: 'work',
       limit: String(ENTRIES_PAGE),
-      offset: String(page * ENTRIES_PAGE),
+      offset: String(offset),
     });
     if (window.memberId !== undefined) query.set('member_id', window.memberId);
-    const r = await call<{ data?: StEntry[]; meta?: { total?: number } }>(
+    return call<{ data?: StEntry[]; meta?: { total?: number } }>(
       c,
       'GET',
       `${org(c)}/time-entries?${query.toString()}`,
     );
+  };
+  const ids = (data: readonly StEntry[]): string => data.map((e) => e.id).join(',');
+  const seen = new Map<string, StEntry>();
+  let first: { total: number; ids: string } | undefined;
+  let moved = false;
+  let pages = 0;
+  const done = (complete: boolean, stopped?: string): StResult<EntryWindow> =>
+    ok({
+      // An older Solidtime that ignores `type` still sends it on each entry.
+      entries: [...seen.values()].filter((e) => (e.type ?? 'work') === 'work'),
+      complete,
+      ...(stopped === undefined ? {} : { stopped }),
+    });
+  for (; pages < PAGES_MAX; pages += 1) {
+    const r = await page(pages * ENTRIES_PAGE);
     if (!r.ok) {
-      if (page === 0) return r;
-      return ok({ entries: [...seen.values()], complete: false, stopped: r.message });
+      if (pages === 0) return r;
+      return done(false, r.message);
     }
     const data = r.value.data;
     if (!Array.isArray(data)) return { ok: false, message: "Solidtime's time entries had no data" };
+    const total = r.value.meta?.total ?? data.length;
+    if (first === undefined) first = { total, ids: ids(data) };
+    else if (total !== first.total) moved = true;
     for (const e of data) seen.set(e.id, e);
-    total = r.value.meta?.total ?? seen.size;
-    if ((page + 1) * ENTRIES_PAGE >= total || data.length === 0) break;
+    if ((pages + 1) * ENTRIES_PAGE >= total || data.length === 0) break;
   }
-  return ok({ entries: [...seen.values()], complete: seen.size === total });
+  if (first === undefined) return done(false);
+  if (pages > 0 && !moved) {
+    const again = await page(0);
+    if (!again.ok) return done(false, again.message);
+    const data = again.value.data ?? [];
+    if ((again.value.meta?.total ?? data.length) !== first.total || ids(data) !== first.ids) {
+      moved = true;
+    }
+  }
+  if (moved) return done(false, 'Solidtime changed while it was being read');
+  return done(seen.size === first.total);
 }
 
 export interface EntryWrite {
@@ -252,6 +291,7 @@ export interface EntryWrite {
   readonly description: string | null;
   readonly task_id?: string | null;
   readonly tags?: readonly string[];
+  readonly type?: 'work';
 }
 
 export const createEntry = async (c: Connection, body: EntryWrite): Promise<StResult<StEntry>> =>

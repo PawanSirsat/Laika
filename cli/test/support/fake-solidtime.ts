@@ -63,6 +63,8 @@ export interface FakeEntry {
   user_id: string;
   billable: boolean;
   tags: string[];
+  /** `work`, or a `break` where the organisation allows them. */
+  type: 'work' | 'break';
 }
 
 export interface Recorded {
@@ -90,6 +92,10 @@ export interface FakeSolidtime {
   failAtOffset: number | undefined;
   /** Projects, tasks and members per page; Solidtime's default is 15. */
   pageSize: number;
+  /** Called as each time-entry page is asked for — to change the list between pages. */
+  beforeListing: ((offset: number) => void) | undefined;
+  /** The task list answers 500. */
+  failTasks: boolean;
   add(entry: Partial<FakeEntry> & { start: string }): FakeEntry;
   close(): Promise<void>;
 }
@@ -115,6 +121,7 @@ function resource(e: FakeEntry, orgId: string): Record<string, unknown> {
     user_id: e.user_id,
     tags: e.tags,
     billable: e.billable,
+    type: e.type,
   };
 }
 
@@ -146,6 +153,8 @@ export async function fakeSolidtime(
     preventOverlap: false,
     failAtOffset: undefined,
     pageSize: 15,
+    beforeListing: undefined,
+    failTasks: false,
     add(entry) {
       const full: FakeEntry = {
         id: randomUUID(),
@@ -156,6 +165,7 @@ export async function fakeSolidtime(
         user_id: me.user_id,
         billable: false,
         tags: [],
+        type: 'work',
         ...entry,
       };
       fake.entries.push(full);
@@ -282,6 +292,10 @@ export async function fakeSolidtime(
         );
         return;
       }
+      if (method === 'GET' && rest === '/tasks' && fake.failTasks) {
+        send(res, 500, { message: 'Server Error' });
+        return;
+      }
       if (method === 'GET' && rest === '/tasks') {
         paged(
           res,
@@ -300,6 +314,7 @@ export async function fakeSolidtime(
         }
         const limit = Math.min(500, Math.max(1, Number(q.get('limit') ?? '100')));
         const offset = Math.max(0, Number(q.get('offset') ?? '0'));
+        fake.beforeListing?.(offset);
         if (fake.failAtOffset !== undefined && offset >= fake.failAtOffset) {
           send(res, 500, { message: 'Server Error' });
           return;
@@ -312,6 +327,7 @@ export async function fakeSolidtime(
           .filter((e) => start === null || Date.parse(e.start) >= Date.parse(start))
           .filter((e) => end === null || Date.parse(e.start) <= Date.parse(end))
           .filter((e) => q.get('active') !== 'true' || e.end === null)
+          .filter((e) => q.get('type') === null || e.type === q.get('type'))
           .sort((a, b) => Date.parse(b.start) - Date.parse(a.start) || a.id.localeCompare(b.id));
         send(res, 200, {
           data: all.slice(offset, offset + limit).map((e) => resource(e, org.id)),
