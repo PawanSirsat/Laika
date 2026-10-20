@@ -132,7 +132,11 @@ void describe('the sidebar offers nothing that does not exist', () => {
       // LAI-758): everyone signed in has a queue of the projects they act on.
       // **Usage is ungated** (D-084, LAI-769): a member reads their spaces'
       // totals, an owner or admin the organisation's.
-      ['Capacity', 'Review', 'Usage', 'Connect', 'Tokens', 'Organisation'],
+      // **Five, since LAI-796.** The owner's reorganisation: My day and Inbox
+      // lead the rail; Insights holds Capacity and Usage, Inbox Review and
+      // Unlisted work, Developer access Connect and Tokens. None is gated —
+      // Unlisted work's gate is its tab's (`page-tabs.test.ts`).
+      ['My day', 'Inbox', 'Insights', 'Organisation', 'Developer access'],
     );
   });
 
@@ -164,14 +168,16 @@ void describe('the sidebar offers nothing that does not exist', () => {
     // permissions sees the heading with something under it.
     const empty = NAV_GROUPS.filter((g) => routesInGroup(g).length === 0);
     assert.deepEqual(empty, [], 'a group is empty');
+    // **Since LAI-796 every grouped entry is ungated**, so a reader with no
+    // permission at all is offered the same rail as an owner — the gates are
+    // inside the pages, on tabs and sections.
     assert.deepEqual(
+      routesInGroup('ORG').map((r) => r.path),
       routesInGroup('ORG', () => true).map((r) => r.path),
-      ['/capacity', '/review', '/usage', '/unlisted'],
     );
     assert.deepEqual(
       routesInGroup('ORG').map((r) => r.path),
-      ['/capacity', '/review', '/usage'],
-      'Unlisted work is offered to a reader who cannot open it',
+      ['/insights', '/organisation', '/developer'],
     );
   });
 
@@ -252,21 +258,22 @@ void describe('a gated nav entry is hidden unless the reader holds it', () => {
     // Projects is the SPACES section's *More spaces* row. Naming them now would
     // assert that gating does not hide things that were never offered.
     // **Capacity is a sidebar entry again since LAI-754**, and ungated.
-    for (const label of ['Capacity', 'Connect', 'Tokens', 'Organisation']) {
+    // **Since LAI-796** the entries are the pages that hold those screens.
+    for (const label of ['My day', 'Inbox', 'Insights', 'Organisation', 'Developer access']) {
       assert.ok(withNone.includes(label), `${label} was hidden by an unrelated permission check`);
     }
   });
 
-  void test('Unlisted work is offered to an admin and absent for anyone else (LAI-754)', () => {
-    // Back in the sidebar (LAI-484 hid it while Capacity carried the list),
-    // with the gate it always had.
-    const route = ROUTES.find((r) => r.path === '/unlisted');
-    assert.ok(route !== undefined, '/unlisted was deleted');
-    assert.equal(route.requires, 'audit_log.export', 'the gate went with the sidebar entry');
-    assert.ok(
-      navRoutes(holdsAll).some((r) => r.path === '/unlisted'),
-      'not offered to an admin',
+  void test('Unlisted work left the sidebar for Inbox’s tab, gate and all (LAI-796)', () => {
+    // It was a gated sidebar entry from LAI-754; since LAI-796 it is a tab of
+    // Inbox, and its old address redirects there. The gate it always had is
+    // the tab's now — asserted in `page-tabs.test.ts` through this same
+    // predicate — so nothing it showed reaches a reader it did not before.
+    assert.equal(
+      ROUTES.find((r) => r.path === '/unlisted'),
+      undefined,
+      '/unlisted is routed again',
     );
-    assert.ok(!navRoutes(holdsNone).some((r) => r.path === '/unlisted'), 'offered to a Member');
+    assert.ok(!navRoutes(holdsAll).some((r) => r.label === 'Unlisted work'));
   });
 });

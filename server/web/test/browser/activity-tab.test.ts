@@ -443,7 +443,7 @@ void describe('screens read every page, not the first (LAI-703)', () => {
       dismissed_at: null,
       created_at: Date.now() - 3_600_000,
     });
-    const h = await open('/unlisted', {
+    const h = await open('/inbox?tab=unlisted', {
       ...PAGED,
       '/api/v1/unlisted?limit=200': { data: [note('n1', 'A note on page one')], next_cursor: 'U2' },
       '/api/v1/unlisted?limit=200&cursor=U2': {

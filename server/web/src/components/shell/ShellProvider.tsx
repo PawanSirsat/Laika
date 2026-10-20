@@ -57,7 +57,11 @@ export function ShellProvider({ children }: ShellProviderProps) {
   const { open: unlistedOpen, refresh: refreshUnlisted } = useUnlistedCount(
     me !== undefined && mayTriageUnlisted(me.org_role),
   );
-  const { waiting: reviewWaiting, refresh: refreshReview } = useReviewCount(me !== undefined);
+  const {
+    waiting: reviewWaiting,
+    queue: reviewQueue,
+    refresh: refreshReview,
+  } = useReviewCount(me !== undefined);
   // Every signed-in person may read their own (a web session; LAI-773).
   const { alerts: tokenAlerts, refresh: refreshTokenAlerts } = useTokenAlerts(me !== undefined);
 
@@ -80,6 +84,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
       unlistedOpen,
       refreshUnlisted,
       reviewWaiting,
+      reviewQueue,
       refreshReview,
       tokenAlerts,
       refreshTokenAlerts,
@@ -103,6 +108,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
       unlistedOpen,
       refreshUnlisted,
       reviewWaiting,
+      reviewQueue,
       refreshReview,
       tokenAlerts,
       refreshTokenAlerts,

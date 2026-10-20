@@ -164,8 +164,14 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
   const ticks = useRef(0);
   const blockRef = useRef<HTMLPreElement | null>(null);
 
-  /* The wizard's own state (LAI-740). None of it holds the secret. */
-  const [step, setStep] = useState<WizardStep>(1);
+  /*
+   * The wizard's own state (LAI-740). None of it holds the secret.
+   *
+   * `?step=2` opens it on the token (LAI-796): Developer access's card has
+   * already shown the agent and the token's name, so its *Create token* lands
+   * where the token is made rather than on the agent the card just picked.
+   */
+  const [step, setStep] = useState<WizardStep>(() => (params?.get('step') === '2' ? 2 : 1));
   const [brought, setBrought] = useState(false);
   const [copied, setCopied] = useState(false);
   const [query, setQuery] = useState('');
@@ -1545,8 +1551,8 @@ function LiveCheck({
           {live.by === 'mcp' && (
             <>
               {' '}
-              <a href="/capacity">Capacity</a> shows the session beside everyone else’s while it
-              works.
+              <a href="/insights?tab=capacity">Capacity</a> shows the session beside everyone else’s
+              while it works.
             </>
           )}
         </p>
@@ -1565,7 +1571,7 @@ function LiveCheck({
         </p>
         <p className="conn-note">
           That is a session holding one of your tokens, checking in — not necessarily a new one.{' '}
-          <a href="/capacity">Capacity</a> shows it beside everyone else.
+          <a href="/insights?tab=capacity">Capacity</a> shows it beside everyone else.
         </p>
       </div>
     );

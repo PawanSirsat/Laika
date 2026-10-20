@@ -1280,7 +1280,7 @@ void describe('the ways in are links for owners and admins only', () => {
   };
 
   void test('Organisation: a member’s name opens their profile', async () => {
-    const h = await open('/organisation', {
+    const h = await open('/organisation?tab=people', {
       ...ORG_STUB,
       '/api/v1/me': me('u1', 'owner'),
       '/api/v1/users/u2/profile': BUILDER,
@@ -1303,7 +1303,7 @@ void describe('the ways in are links for owners and admins only', () => {
       ['u3', 'member'],
       ['u5', 'viewer'],
     ] as const) {
-      const h = await open('/organisation', { ...ORG_STUB, '/api/v1/me': me(id, role) });
+      const h = await open('/organisation?tab=people', { ...ORG_STUB, '/api/v1/me': me(id, role) });
       try {
         await h.page
           .locator('.org-people li', { hasText: 'Bea Builder' })
@@ -1339,7 +1339,10 @@ void describe('the ways in are links for owners and admins only', () => {
   };
 
   void test('Capacity: a card’s name opens the profile for an owner, and is plain for a member', async () => {
-    const owner = await open('/capacity', { ...CAP_STUB, '/api/v1/me': me('u1', 'owner') });
+    const owner = await open('/insights?tab=capacity', {
+      ...CAP_STUB,
+      '/api/v1/me': me('u1', 'owner'),
+    });
     try {
       // The loading skeleton's cards are `.cap-card` too, and hold no link, so
       // wait for the link itself rather than for the first card.
@@ -1350,7 +1353,10 @@ void describe('the ways in are links for owners and admins only', () => {
       await owner.close();
     }
 
-    const member = await open('/capacity', { ...CAP_STUB, '/api/v1/me': me('u3', 'member') });
+    const member = await open('/insights?tab=capacity', {
+      ...CAP_STUB,
+      '/api/v1/me': me('u3', 'member'),
+    });
     try {
       // The real card, found by its name: a skeleton has no name, and the
       // session gate draws no card before `/me`, so this is the member's view.

@@ -108,15 +108,24 @@ void describe('the SPACES section', () => {
         'the More spaces row is missing',
       );
 
-      // **A row is a dot and a name** (LAI-262): no counts, no member figure,
-      // no two-letter key while the rail is expanded.
-      const row = await h.page.locator('.space-row').first().innerText();
-      assert.equal(row.trim(), 'Laika Core', `the row carries more than its name: ${row}`);
+      // **A row is a coloured letter and a name** (LAI-796; a dot from
+      // LAI-262): no counts, no member figure, no two-letter key.
+      const first = h.page.locator('.space-row').first();
+      const row = (await first.innerText()).replace(/\s+/g, ' ').trim();
+      assert.equal(row, 'L Laika Core', `the row carries more than its letter and name: ${row}`);
+      const badge = first.locator('.space-badge');
+      assert.equal(await badge.innerText(), 'L');
+      assert.equal(await badge.getAttribute('aria-hidden'), 'true', 'the letter is read aloud');
+      // A colour of its own, from the palette — not the card's ground.
+      const [ground, card] = await Promise.all([
+        badge.evaluate((el: Element) => getComputedStyle(el).backgroundColor),
+        first.evaluate((el: Element) => getComputedStyle(el.closest('#sidebar')!).backgroundColor),
+      ]);
+      assert.notEqual(ground, card, 'the letter has no colour of its own');
 
       const sidebar = await h.page.locator('#sidebar').innerText();
-      // The design cases this one "Spaces", 11.5px/700 with a caret — not the
-      // uppercase micro-label the route groups use (LAI-249).
-      assert.match(sidebar, /Spaces/);
+      // The section head, uppercase as the owner's reference draws it.
+      assert.match(sidebar, /spaces/i);
       // **Real counts, not a fixture**: `34 tasks · 4 members` is the design's
       // sample, and ours must come from the project payload.
       // The counts belong to the More-spaces popover, which is where the
@@ -154,22 +163,42 @@ void describe('the SPACES section', () => {
       }
       // Positive control: the sidebar rendered its other sections, so the
       // absences above cannot be a blank rail.
-      assert.match(sidebar, /SETTINGS/, 'the sidebar did not render at all');
+      assert.match(sidebar, /organisation/i, 'the sidebar did not render at all');
       /*
-       * **`ORG` leads the rail since LAI-754**: Capacity, one page across every
-       * space, Review (D-082, LAI-758), and Unlisted work for this reader, an
-       * **owner**. Above SPACES, because none belongs to the space listed
-       * under it.
+       * **Since LAI-796** the reader's own places lead the rail and the
+       * organisation's pages follow the spaces — the owner's reference.
        */
+      const home = h.page.locator('.sidebar-group-home');
+      assert.deepEqual(
+        (await home.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim()),
+        ['My day', 'Inbox'],
+      );
       const org = h.page.locator('.sidebar-group', { has: h.page.locator('#nav-ORG') });
       assert.deepEqual(
         (await org.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim()),
-        // **Usage after Review** (D-084, LAI-769): tokens across every space.
-        ['Capacity', 'Review', 'Usage', 'Unlisted work'],
+        ['Insights', 'Organisation', 'Developer access'],
       );
-      const orgTop = (await org.boundingBox())?.y ?? Infinity;
-      const spacesTop = (await h.page.locator('.space-row').first().boundingBox())?.y ?? -Infinity;
-      assert.ok(orgTop < spacesTop, 'ORG is not above the spaces');
+      const homeBottom = await home.evaluate((el: Element) => el.getBoundingClientRect().bottom);
+      const rows = h.page.locator('.space-row');
+      const spacesTop = (await rows.first().boundingBox())?.y ?? -Infinity;
+      const spacesBottom = await rows
+        .last()
+        .evaluate((el: Element) => el.getBoundingClientRect().bottom);
+      const orgTop = (await org.boundingBox())?.y ?? -Infinity;
+      assert.ok(homeBottom <= spacesTop, 'My day and Inbox are not above the spaces');
+      assert.ok(orgTop >= spacesBottom, 'Organisation is not below the spaces');
+      // Nothing else is a top-level entry: the six pages LAI-796 folded away.
+      for (const gone of ['Capacity', 'Review', 'Usage', 'Unlisted work', 'Connect', 'Tokens']) {
+        assert.equal(
+          await h.page
+            .locator('#sidebar .sidebar-link-label', { hasText: new RegExp(`^${gone}$`) })
+            .count(),
+          0,
+          `${gone} is still a sidebar entry`,
+        );
+      }
+      // …and the theme is the user menu's, not a row of its own.
+      assert.equal(await h.page.locator('#sidebar .theme-switch').count(), 0);
       // Once — the tab strip no longer offers it as well.
       assert.equal(
         await h.page.locator('.view-tab', { hasText: 'Capacity' }).count(),
@@ -182,35 +211,27 @@ void describe('the SPACES section', () => {
   });
 });
 
-void describe('SETTINGS sits at the bottom of the sidebar', () => {
-  void test('the group ends at the foot of the nav, below every space', async () => {
+void describe('the rail ends in the person (LAI-796)', () => {
+  void test('the user block sits at the foot, below every entry', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
       await h.page.setViewportSize({ width: 1280, height: 900 });
       const m = await h.page.evaluate(() => {
-        const nav = document.querySelector('.sidebar-nav');
-        const settings = document.querySelector('.sidebar-group-end');
-        const rows = [...document.querySelectorAll('.space-row')];
-        if (nav === null || settings === null) return null;
-        const navBox = nav.getBoundingClientRect();
-        const box = settings.getBoundingClientRect();
+        const rail = document.querySelector('#sidebar');
+        const footer = document.querySelector('.sidebar-footer');
+        const links = [...document.querySelectorAll('#sidebar .sidebar-nav .sidebar-link')];
+        if (rail === null || footer === null || links.length === 0) return null;
         return {
-          title: settings.querySelector('.sidebar-group-title')?.textContent?.trim() ?? '',
-          gapBelow: navBox.bottom - box.bottom,
-          lastSpaceBottom: Math.max(...rows.map((r) => r.getBoundingClientRect().bottom)),
-          top: box.top,
-          padding: parseFloat(getComputedStyle(nav).paddingBottom),
+          railBottom: rail.getBoundingClientRect().bottom,
+          footerBottom: footer.getBoundingClientRect().bottom,
+          footerTop: footer.getBoundingClientRect().top,
+          lastLink: Math.max(...links.map((l) => l.getBoundingClientRect().bottom)),
         };
       });
-      assert.ok(m !== null, 'no SETTINGS group to measure');
-      assert.equal(m.title, 'SETTINGS');
-      // Flush with the nav's own bottom padding: pushed down, not floating mid-rail.
-      assert.ok(
-        Math.abs(m.gapBelow - m.padding) <= 1,
-        `SETTINGS ends ${String(m.gapBelow)}px above the nav's foot, padding is ${String(m.padding)}`,
-      );
-      assert.ok(m.top > m.lastSpaceBottom, 'SETTINGS overlaps the spaces');
+      assert.ok(m !== null, 'no footer to measure');
+      assert.ok(Math.abs(m.railBottom - m.footerBottom) <= 1, 'the person is not at the foot');
+      assert.ok(m.footerTop >= m.lastLink, 'the person overlaps the entries');
     } finally {
       await h.close();
     }
@@ -256,36 +277,67 @@ void describe('the view tabs', () => {
   });
 
   /**
-   * **Capacity is a sidebar entry, not a tab** (owner, 2026-10-15, LAI-754).
+   * **Insights is a sidebar entry, not a tab** (owner, 2026-10-15, LAI-754 for
+   * Capacity; LAI-796 for the page that holds it).
    *
-   * From a space, its link is bare `/capacity` — one page for every space —
-   * and the page it opens has no space bar and no tabs to claim otherwise.
+   * From a space, its link is bare `/insights` — one page for every space —
+   * and the page it opens has no space bar and no space tabs.
    */
-  void test('Capacity opens from the sidebar as one page, without the space frame', async () => {
+  void test('Insights opens from the sidebar as one page, without the space frame', async () => {
     const h = await open('/board?project=laika-core', {
       ...STUB,
       '/api/v1/capacity': { enabled: true, people: [] },
       '/api/v1/presence': { enabled: true, present: [] },
     });
     try {
-      const link = h.page.locator('#sidebar .sidebar-link', { hasText: 'Capacity' });
+      const link = h.page.locator('#sidebar .sidebar-link', { hasText: 'Insights' });
       await link.waitFor({ timeout: 20_000 });
-      assert.equal(await link.getAttribute('href'), '/capacity');
+      assert.equal(await link.getAttribute('href'), '/insights');
 
       await link.click();
-      await h.page.waitForURL((url) => url.pathname === '/capacity' && url.search === '', {
+      await h.page.waitForURL((url) => url.pathname === '/insights' && url.search === '', {
         timeout: 10_000,
       });
-      await h.page.locator('.screen-bar-title', { hasText: 'Capacity' }).waitFor({
+      await h.page.locator('.screen-page-title', { hasText: 'Insights' }).waitFor({
         timeout: 10_000,
       });
+      assert.match(await h.page.locator('.page-tab-active').innerText(), /Capacity/);
       assert.equal(await h.page.locator('.view-tab').count(), 0, 'the space tabs are still drawn');
       assert.equal(await h.page.locator('.space-name').count(), 0, 'the space bar is still drawn');
       assert.equal(
-        await h.page.locator('#sidebar .sidebar-link-active').innerText(),
-        'Capacity',
-        'the rail does not mark Capacity as the current page',
+        (await h.page.locator('#sidebar .sidebar-link-active').innerText()).trim(),
+        'Insights',
+        'the rail does not mark Insights as the current page',
       );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the tabs come in two groups, a hairline between (LAI-796)', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.locator('.view-tab').first().waitFor({ timeout: 20_000 });
+      const order = await h.page
+        .locator('.view-tabs li')
+        .evaluateAll((items: Element[]) =>
+          items.map((li) =>
+            li.classList.contains('view-tab-rule') ? '|' : (li.textContent ?? '').trim(),
+          ),
+        );
+      assert.deepEqual(order, [
+        'Board',
+        'List',
+        'Timeline',
+        'Calendar',
+        '|',
+        'Sprints',
+        'Dashboard',
+        'Activity',
+        'Meeting review',
+      ]);
+      // A hairline, not a tab: a screen reader counts eight.
+      assert.equal(await h.page.locator('.view-tab-rule').getAttribute('role'), 'presentation');
     } finally {
       await h.close();
     }
@@ -463,54 +515,126 @@ void describe('the new chrome fits', () => {
 });
 
 void describe('the prototype geometry (LAI-249)', () => {
-  void test('the logo collapses the rail to 56px and back, keys surviving', async () => {
-    const h = await open('/board?project=laika-core', STUB);
+  void test('the toggle collapses the sidebar to a 60px icon rail and back, remembered', async () => {
+    const h = await open('/board?project=laika-core', {
+      ...STUB,
+      // Two waiting for review: the Inbox count the rail must keep.
+      '/api/v1/review': { tasks: [{}, {}], truncated: false },
+    });
     try {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
-
       const width = async () =>
         h.page.evaluate(() => {
           const el = document.querySelector('#sidebar');
           return el === null ? 0 : Math.round(el.getBoundingClientRect().width);
         });
+      const settle = (px: number) =>
+        h.page.waitForFunction(
+          (want: number) => {
+            const el = document.querySelector('#sidebar');
+            return el !== null && Math.round(el.getBoundingClientRect().width) === want;
+          },
+          px,
+          { timeout: 5000 },
+        );
 
-      assert.equal(await width(), 212, 'expanded width is the prototype’s 212px');
+      assert.equal(await width(), 212, 'the open sidebar is 212px');
+      const toggle = h.page.locator('.sidebar-toggle');
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+      await toggle.click();
+      await settle(60);
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
 
-      await h.page.locator('.sidebar-logo').click();
+      // Icons stay, names give way to tooltips, counts stay on the icon.
+      const inbox = h.page.locator('#sidebar .sidebar-link', { hasText: 'Inbox' });
+      assert.ok(await inbox.locator('.nav-icon').isVisible(), 'the icon went with the label');
+      const opacity = (el: Element) => getComputedStyle(el).opacity;
+      assert.equal(await inbox.locator('.sidebar-tip').evaluate(opacity), '0');
+      assert.match(await inbox.locator('.sidebar-count').innerText(), /^2/);
+      assert.equal(await h.page.locator('.space-row .space-badge').first().innerText(), 'L');
+      // The name is still the link's — what a screen reader reads.
+      assert.match(await inbox.innerText(), /Inbox/);
+
+      // A tooltip on hover…
+      await inbox.hover();
+      await h.page.waitForFunction(
+        () =>
+          getComputedStyle(
+            [...document.querySelectorAll('#sidebar .sidebar-link')]
+              .find((a) => a.textContent?.includes('Inbox'))
+              ?.querySelector('.sidebar-tip') ?? document.body,
+          ).opacity === '1',
+        undefined,
+        { timeout: 5000 },
+      );
+      // …and on keyboard focus: the toggle, then Tab, is My day.
+      await h.page.mouse.move(900, 500);
+      await toggle.focus();
+      await h.page.keyboard.press('Tab');
+      const focused = await h.page.evaluate(() => document.activeElement?.textContent ?? '');
+      assert.match(focused, /My day/, 'Tab from the toggle does not reach the first entry');
       await h.page.waitForFunction(
         () => {
-          const el = document.querySelector('#sidebar');
-          return el !== null && Math.round(el.getBoundingClientRect().width) === 56;
+          const tip = document.activeElement?.querySelector('.sidebar-tip');
+          return tip !== null && tip !== undefined && getComputedStyle(tip).opacity === '1';
         },
         undefined,
         { timeout: 5000 },
       );
 
-      /*
-       * **The collapsed rail is where the two-letter keys live** (LAI-262).
-       * The design renders `abbr` under `sc-if navMini` and the name
-       * otherwise, so this is the one width at which a space says `LC` — and
-       * the name must be the thing that gave way to it.
-       */
-      const firstRow = h.page.locator('.space-row').first();
-      assert.ok(await firstRow.locator('.sidebar-mini').isVisible(), 'the key did not appear');
-      assert.equal(await firstRow.locator('.sidebar-mini').innerText(), 'LC');
-      assert.ok(
-        !(await firstRow.locator('.sidebar-label').isVisible()),
-        'the name is still showing in a 56px rail',
-      );
-      // Route rows use the same mechanism.
-      assert.ok(await h.page.locator('.sidebar-mini', { hasText: 'TK' }).isVisible());
+      // Remembered per browser: a reload keeps the rail.
+      assert.equal(await h.page.evaluate(() => localStorage.getItem('laika.sidebar')), 'collapsed');
+      await h.page.reload();
+      await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
+      await settle(60);
 
-      await h.page.locator('.sidebar-logo').click();
-      await h.page.waitForFunction(
-        () => {
-          const el = document.querySelector('#sidebar');
-          return el !== null && Math.round(el.getBoundingClientRect().width) === 212;
-        },
-        undefined,
-        { timeout: 5000 },
+      await h.page.locator('.sidebar-toggle').click();
+      await settle(212);
+      assert.equal(await h.page.evaluate(() => localStorage.getItem('laika.sidebar')), 'expanded');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a narrow window collapses it by itself; the toggle opens it for now only', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
+      const settle = (px: number) =>
+        h.page.waitForFunction(
+          (want: number) => {
+            const el = document.querySelector('#sidebar');
+            return el !== null && Math.round(el.getBoundingClientRect().width) === want;
+          },
+          px,
+          { timeout: 5000 },
+        );
+      await h.page.setViewportSize({ width: 1100, height: 800 });
+      await settle(60);
+      await h.page.locator('.sidebar-toggle').click();
+      await settle(212);
+      assert.equal(
+        await h.page.evaluate(() => localStorage.getItem('laika.sidebar')),
+        null,
+        'peeking on a narrow window changed what a wide one remembers',
       );
+      await h.page.setViewportSize({ width: 1300, height: 800 });
+      await settle(212);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('on a phone the sidebar is the whole menu, off-canvas, with no rail toggle', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.setViewportSize({ width: 390, height: 844 });
+      await h.page.locator('.shell-navtoggle').click();
+      await h.page.locator('.sidebar-open').waitFor({ timeout: 5000 });
+      assert.equal(await h.page.locator('.sidebar-toggle').isVisible(), false);
+      const label = h.page.locator('#sidebar .sidebar-link-label', { hasText: 'Inbox' });
+      assert.ok(await label.isVisible());
+      assert.equal(await label.evaluate((el: Element) => getComputedStyle(el).opacity), '1');
     } finally {
       await h.close();
     }
@@ -604,34 +728,106 @@ void describe('the prototype geometry (LAI-249)', () => {
     }
   });
 
-  void test('the footer: chip, role, sign-out, and the design’s theme row', async () => {
-    const h = await open('/board?project=laika-core', STUB);
+  void test('the user menu: profile, theme, Developer access, sign out — and its keys', async () => {
+    const h = await open('/board?project=laika-core', {
+      ...STUB,
+      '/api/v1/auth/sign-out': {},
+      '/api/v1/tokens': { data: [], next_cursor: null },
+    });
     try {
-      const footer = h.page.locator('.sidebar-footer');
-      await footer.waitFor({ timeout: 20_000 });
+      const trigger = h.page.locator('.user-menu-trigger');
+      await trigger.waitFor({ timeout: 20_000 });
+      assert.match(await trigger.innerText(), /Ada Lovelace/);
+      assert.match(await trigger.innerText(), /owner/i, 'the role renders under the name');
+      assert.equal(await trigger.getAttribute('aria-haspopup'), 'menu');
+      assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
 
-      assert.match(await footer.innerText(), /Ada Lovelace/);
-      assert.match(await footer.innerText(), /owner/i, 'the role renders under the name');
-      assert.ok(await footer.locator('.sidebar-signout').isVisible(), 'sign out stays reachable');
+      await trigger.click();
+      const menu = h.page.locator('[role="menu"]');
+      await menu.waitFor({ timeout: 5000 });
+      const items = menu.locator('[role="menuitem"]');
+      assert.deepEqual(
+        (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()),
+        ['My profile', 'Switch to dark', 'Developer access', 'Sign out'],
+      );
+      assert.equal(
+        await menu.locator('a', { hasText: 'My profile' }).getAttribute('href'),
+        '/people?user=u1',
+      );
+      // The first item takes the focus; the arrows move it; Escape closes and
+      // hands the focus back.
+      assert.equal(await h.page.evaluate(() => document.activeElement?.textContent), 'My profile');
+      await h.page.keyboard.press('ArrowDown');
+      assert.match(
+        (await h.page.evaluate(() => document.activeElement?.textContent)) ?? '',
+        /Switch to dark/,
+      );
+      await h.page.keyboard.press('ArrowUp');
+      await h.page.keyboard.press('ArrowUp');
+      assert.equal(await h.page.evaluate(() => document.activeElement?.textContent), 'Sign out');
+      await h.page.keyboard.press('Escape');
+      assert.equal(await menu.count(), 0, 'Escape must close the menu');
+      assert.equal(
+        await h.page.evaluate(() =>
+          document.activeElement?.classList.contains('user-menu-trigger'),
+        ),
+        true,
+        'the focus did not return to the person',
+      );
 
-      // The design's two-state row: `☾ Switch to dark` in light, then the
-      // flip — through the app's own storage key, pinning an explicit value.
-      const toggle = footer.locator('.theme-switch');
-      assert.match(await toggle.innerText(), /Switch to dark/);
-      await toggle.click();
-      // Dark is the bare `:root` since LAI-606 — the attribute leaving is the
-      // flip. The start state was light ('Switch to dark' above), so absence
-      // here is the transition, not a page that never themed.
+      // The theme, through the app's own storage key, pinning an explicit value.
+      await trigger.click();
+      await menu.locator('.user-menu-theme').click();
       await h.page.waitForFunction(
         () => document.documentElement.getAttribute('data-theme') !== 'light',
         undefined,
         { timeout: 5000 },
       );
-      assert.match(await toggle.innerText(), /Switch to light/);
       assert.equal(
         await h.page.evaluate(() => localStorage.getItem('laika.theme')),
         'dark',
         'the first click pins an explicit choice (D-058 contract)',
+      );
+      await trigger.click();
+      assert.match(await menu.locator('.user-menu-theme').innerText(), /Switch to light/);
+
+      // A press outside closes it.
+      await h.page.mouse.click(900, 400);
+      assert.equal(await menu.count(), 0, 'a click outside must close the menu');
+
+      // Developer access.
+      await trigger.click();
+      await menu.locator('a', { hasText: 'Developer access' }).click();
+      await h.page.waitForURL((url) => url.pathname === '/developer', { timeout: 10_000 });
+      assert.equal(await menu.count(), 0);
+
+      // Sign out, and the browser goes to sign-in.
+      await trigger.click();
+      await menu.locator('.user-menu-signout').click();
+      await h.page.waitForURL((url) => url.pathname === '/login', { timeout: 10_000 });
+      assert.ok(
+        h.calls.some((c) => c.method === 'POST' && c.path === '/api/v1/auth/sign-out'),
+        'signing out never asked the server',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a member’s menu has no My profile — absent, not disabled', async () => {
+    const h = await open('/board?project=laika-core', {
+      ...STUB,
+      '/api/v1/me': { ...(STUB['/api/v1/me'] as object), org_role: 'member' },
+    });
+    try {
+      const trigger = h.page.locator('.user-menu-trigger');
+      await trigger.waitFor({ timeout: 20_000 });
+      await trigger.click();
+      const items = h.page.locator('[role="menu"] [role="menuitem"]');
+      await items.first().waitFor({ timeout: 5000 });
+      assert.deepEqual(
+        (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()),
+        ['Switch to dark', 'Developer access', 'Sign out'],
       );
     } finally {
       await h.close();

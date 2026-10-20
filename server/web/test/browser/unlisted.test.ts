@@ -97,7 +97,7 @@ void after(async () => {
 
 void describe('the compact unlisted page', () => {
   void test('one line per note, newest first, the rest hidden until opened', async () => {
-    const h = await open('/unlisted', server(QUEUE).stub);
+    const h = await open('/inbox?tab=unlisted', server(QUEUE).stub);
     try {
       const lines = h.page.locator('.unl-line');
       await lines.first().waitFor({ timeout: 20_000 });
@@ -134,10 +134,15 @@ void describe('the compact unlisted page', () => {
       assert.equal(await h.page.locator('.unl-promote').count(), 1);
       assert.equal(await h.page.locator('.unl-dismiss').count(), 1);
 
-      // The header says how many wait; the sidebar says the same.
-      assert.match(await h.page.locator('.screen-bar-context').innerText(), /3 open/);
-      const entry = h.page.locator('#sidebar .sidebar-link', { hasText: 'Unlisted work' });
-      assert.match(await entry.innerText(), /Unlisted work\s*3/);
+      // The screen says how many wait, its tab says the same, and so does the
+      // sidebar's Inbox — the review queue is empty here, so the sum is this.
+      assert.match(await h.page.locator('.screen-embedded-context').innerText(), /3 open/);
+      assert.match(
+        await h.page.locator('.page-tab[data-tab="unlisted"]').innerText(),
+        /Unlisted work\s*3/,
+      );
+      const entry = h.page.locator('#sidebar .sidebar-link', { hasText: 'Inbox' });
+      assert.match(await entry.innerText(), /Inbox\s*3/);
       assert.equal(await entry.getAttribute('aria-current'), 'page');
     } finally {
       await h.close();
@@ -145,9 +150,9 @@ void describe('the compact unlisted page', () => {
   });
 
   void test('promote sends the note to a project, and the sidebar count follows', async () => {
-    const h = await open('/unlisted', server([...QUEUE]).stub);
+    const h = await open('/inbox?tab=unlisted', server([...QUEUE]).stub);
     try {
-      const entry = h.page.locator('#sidebar .sidebar-link', { hasText: 'Unlisted work' });
+      const entry = h.page.locator('#sidebar .sidebar-link', { hasText: 'Inbox' });
       await h.page.locator('.unl-line').first().waitFor({ timeout: 20_000 });
       await h.page.waitForFunction(
         () => (document.querySelector('#sidebar .sidebar-count')?.textContent ?? '').includes('3'),
@@ -180,14 +185,14 @@ void describe('the compact unlisted page', () => {
         undefined,
         { timeout: 10_000 },
       );
-      assert.match(await entry.innerText(), /Unlisted work\s*2/);
+      assert.match(await entry.innerText(), /Inbox\s*2/);
     } finally {
       await h.close();
     }
   });
 
   void test('dismiss asks first, then removes the note from the open queue', async () => {
-    const h = await open('/unlisted', server([...QUEUE]).stub);
+    const h = await open('/inbox?tab=unlisted', server([...QUEUE]).stub);
     try {
       await h.page.locator('.unl-line').first().waitFor({ timeout: 20_000 });
       h.page.once('dialog', (dialog) => {
@@ -215,14 +220,14 @@ void describe('the compact unlisted page', () => {
     const many = Array.from({ length: 30 }, (_, i) =>
       note(`m${String(i)}`, i + 1, `Note number ${String(i)}`),
     );
-    const h = await open('/unlisted', server(many).stub);
+    const h = await open('/inbox?tab=unlisted', server(many).stub);
     try {
       await h.page.locator('.unl-line').first().waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.unl-line').count(), 25);
       const more = h.page.locator('.unl-more');
       assert.match(await more.innerText(), /Show more\s*5 more/);
       // The count is the queue's, not the page's.
-      assert.match(await h.page.locator('.screen-bar-context').innerText(), /30 open/);
+      assert.match(await h.page.locator('.screen-embedded-context').innerText(), /30 open/);
 
       await more.click();
       assert.equal(await h.page.locator('.unl-line').count(), 30);
@@ -233,7 +238,7 @@ void describe('the compact unlisted page', () => {
   });
 
   void test('at 390px a line wraps to two short lines and nothing spills', async () => {
-    const h = await open('/unlisted', server(QUEUE).stub);
+    const h = await open('/inbox?tab=unlisted', server(QUEUE).stub);
     try {
       await h.page.setViewportSize({ width: 390, height: 900 });
       await h.page.locator('.unl-line').first().waitFor({ timeout: 20_000 });

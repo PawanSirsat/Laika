@@ -530,7 +530,8 @@ export async function closeBrowser(): Promise<void> {
  * The control became the design's two-state `ThemeSwitch`, so "select Dark"
  * is now "click if not already dark" — this helper keeps the property the old
  * radio clicks had: a JS-computed colour bug hides from a class-toggle
- * shortcut, and the theme is what these tests are about.
+ * shortcut, and the theme is what these tests are about. Signed in, the
+ * control is the user menu's *Switch to dark / light* (LAI-796).
  */
 export async function setTheme(page: Page, theme: string) {
   /*
@@ -546,7 +547,27 @@ export async function setTheme(page: Page, theme: string) {
   const reads = () => document.documentElement.getAttribute('data-theme') !== 'light';
 
   const isDark = await page.evaluate(reads);
-  if (wantDark !== isDark) await page.locator('.theme-switch').first().click();
+  if (wantDark !== isDark) {
+    /*
+     * **Two real controls since LAI-796.** Signed in, the theme is an item in
+     * the user menu at the foot of the sidebar; before a session there is no
+     * sidebar and the header carries `ThemeSwitch`. Both write the one store.
+     *
+     * The menu's clicks are dispatched rather than pointed: on a phone the
+     * sidebar is off-canvas, so its button is outside the viewport, and the
+     * question here is the theme, not whether the off-canvas menu is open.
+     */
+    const control = page.locator('.theme-switch, .user-menu-trigger').first();
+    await control.waitFor({ state: 'attached', timeout: 10_000 });
+    if ((await control.getAttribute('class'))?.includes('theme-switch') === true) {
+      await control.click();
+    } else {
+      await control.dispatchEvent('click');
+      const item = page.locator('.user-menu-theme');
+      await item.waitFor({ state: 'attached', timeout: 5_000 });
+      await item.dispatchEvent('click');
+    }
+  }
 
   await page.waitForFunction(
     (want: boolean) => (document.documentElement.getAttribute('data-theme') !== 'light') === want,

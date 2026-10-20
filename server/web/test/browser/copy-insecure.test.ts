@@ -172,7 +172,7 @@ async function mint(h: H): Promise<void> {
 
 void describe('Copy on the Connect screen, served over plain HTTP', () => {
   void test('the BOARD chip copies the board address', async () => {
-    const h = await open('/connect', CONNECT, { insecure: true });
+    const h = await open('/developer/connect', CONNECT, { insecure: true });
     const clip = await clipboardOf(h.page);
     try {
       await assertInsecure(h);
@@ -190,7 +190,7 @@ void describe('Copy on the Connect screen, served over plain HTTP', () => {
   });
 
   void test('the setup prompt copies the prompt, token included, inside the wizard card', async () => {
-    const h = await open('/connect', CONNECT, { insecure: true });
+    const h = await open('/developer/connect', CONNECT, { insecure: true });
     const clip = await clipboardOf(h.page);
     try {
       await assertInsecure(h);
@@ -233,7 +233,7 @@ void describe('Copy on the Connect screen, served over plain HTTP', () => {
   });
 
   void test('the Share local activity command block copies the command', async () => {
-    const h = await open('/connect', CONNECT, { insecure: true });
+    const h = await open('/developer/connect', CONNECT, { insecure: true });
     const clip = await clipboardOf(h.page);
     try {
       await assertInsecure(h);
@@ -255,7 +255,7 @@ void describe('Copy on the Connect screen, served over plain HTTP', () => {
   });
 
   void test('CONTROL: when both ways fail it says how to copy, selects the text, and never says Copied', async () => {
-    const h = await open('/connect', CONNECT, {
+    const h = await open('/developer/connect', CONNECT, {
       insecure: true,
       before: async (page) => {
         await page.addInitScript(() => {

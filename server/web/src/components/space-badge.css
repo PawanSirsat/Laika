@@ -1,0 +1,25 @@
+/* A space's coloured letter (LAI-796). Its colours arrive inline from the palette. */
+
+.space-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+}
+
+.space-badge-sm {
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: var(--radius-xs);
+  font-size: 0.6875rem;
+}
+
+.space-badge-md {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.4375rem;
+  font-size: var(--text-ui);
+}

@@ -89,6 +89,6 @@ void describe('an alert in words', () => {
 
   void test('links to the task it is about, else to Usage', () => {
     assert.equal(alertHref(base), '/board?project=laika&task=t1');
-    assert.equal(alertHref({ ...base, task: null }), '/usage');
+    assert.equal(alertHref({ ...base, task: null }), '/insights?tab=usage');
   });
 });

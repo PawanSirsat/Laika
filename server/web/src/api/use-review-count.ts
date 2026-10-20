@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getReviewQueue } from './review.ts';
+import { getReviewQueue, type ReviewQueueItem } from './review.ts';
 
 /** A minute is fresh enough for a badge; the Review page itself reads sooner. */
 const REFRESH_MS = 60_000;
@@ -7,6 +7,12 @@ const REFRESH_MS = 60_000;
 export interface ReviewCount {
   /** Tasks waiting for a person, or `undefined` — not asked yet, or the read failed. */
   readonly waiting: number | undefined;
+  /**
+   * The queue the count was read from (LAI-796): My day's *Waiting on your
+   * review* lists it, so that page asks for nothing the badge has not already
+   * fetched. `undefined` until read.
+   */
+  readonly queue: readonly ReviewQueueItem[] | undefined;
   /** Read again now — after an accept or a send-back changed the answer. */
   readonly refresh: () => void;
 }
@@ -20,19 +26,19 @@ export interface ReviewCount {
  * `0` would claim nothing is waiting.
  */
 export function useReviewCount(enabled: boolean): ReviewCount {
-  const [waiting, setWaiting] = useState<number | undefined>(undefined);
+  const [queue, setQueue] = useState<readonly ReviewQueueItem[] | undefined>(undefined);
   const [asked, setAsked] = useState(0);
 
   useEffect(() => {
     if (!enabled) {
-      setWaiting(undefined);
+      setQueue(undefined);
       return;
     }
     const controller = new AbortController();
     const read = (): void => {
       getReviewQueue(controller.signal)
         .then((queue) => {
-          if (!controller.signal.aborted) setWaiting(queue.tasks.length);
+          if (!controller.signal.aborted) setQueue(queue.tasks);
         })
         .catch(() => undefined);
     };
@@ -48,5 +54,5 @@ export function useReviewCount(enabled: boolean): ReviewCount {
     setAsked((n) => n + 1);
   }, []);
 
-  return { waiting, refresh };
+  return { waiting: queue?.length, queue, refresh };
 }

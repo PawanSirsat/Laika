@@ -164,12 +164,11 @@ export function TokensScreen({ me }: TokensScreenProps) {
         )}
       </ScreenHeader>
 
-      <p className="tokens-sub">
-        A token lets a tool act as you — point your coding agent at this board, or call the API. It
-        carries your permissions, so treat it like your password. <a href="/connect">Connect</a>{' '}
-        sets one up for your agent, step by step.
-      </p>
-
+      {/*
+        What a token is, and where Connect is, are said once by the page it
+        sits on — Developer access, whose card above this list is Connect
+        (LAI-796).
+      */}
       {/*
         Shown once, and only once. There is no way back to this string: it is not
         on the token row, not stored, and not re-fetchable (§4.9).

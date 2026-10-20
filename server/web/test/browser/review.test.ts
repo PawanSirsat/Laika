@@ -166,7 +166,7 @@ void after(async () => {
 void describe('the Review page', () => {
   void test('cues “check this one” on a finish far faster than forecast, and filters by it (LAI-772)', async () => {
     const h = await open(
-      '/review',
+      '/inbox?tab=review',
       server([
         { task: BARE, round: null, waiting_since: NOW - 26 * HOUR },
         {
@@ -197,7 +197,7 @@ void describe('the Review page', () => {
   });
 
   void test('lists what waits, oldest first, with the proof summary and the badge', async () => {
-    const h = await open('/review', server().stub);
+    const h = await open('/inbox?tab=review', server().stub);
     try {
       const rows = h.page.locator('.rev-row');
       await rows.first().waitFor({ timeout: 20_000 });
@@ -216,10 +216,10 @@ void describe('the Review page', () => {
       assert.match(await rows.first().innerText(), /no proof/);
       assert.match(await rows.first().innerText(), /1 d/);
 
-      // The sidebar's ORG group carries the count.
-      const badge = h.page
-        .locator('.sidebar-link', { hasText: 'Review' })
-        .locator('.sidebar-count');
+      // The tab carries the count, and the sidebar's Inbox the same (LAI-796):
+      // nothing is unlisted in this stub, so the sum is Review's alone.
+      assert.match(await h.page.locator('.page-tab[data-tab="review"]').innerText(), /Review\s*2/);
+      const badge = h.page.locator('.sidebar-link', { hasText: 'Inbox' }).locator('.sidebar-count');
       await badge.waitFor({ timeout: 10_000 });
       assert.match(await badge.innerText(), /^2/);
 
@@ -235,7 +235,7 @@ void describe('the Review page', () => {
   });
 
   void test('opening a row shows every item claimed, exit codes coloured, earlier rounds folded', async () => {
-    const h = await open('/review', server().stub);
+    const h = await open('/inbox?tab=review', server().stub);
     try {
       await h.page.locator('.rev-row').first().waitFor({ timeout: 20_000 });
       await h.page.locator('.rev-line', { hasText: 'LC-1' }).click();
@@ -259,7 +259,7 @@ void describe('the Review page', () => {
 
   void test('accept posts, and the queue re-reads without it', async () => {
     const s = server();
-    const h = await open('/review', s.stub);
+    const h = await open('/inbox?tab=review', s.stub);
     try {
       await h.page.locator('.rev-row').first().waitFor({ timeout: 20_000 });
       await h.page.locator('.rev-line', { hasText: 'LC-2' }).click();
@@ -278,7 +278,7 @@ void describe('the Review page', () => {
 
   void test('send back needs a reason, then posts it', async () => {
     const s = server();
-    const h = await open('/review', s.stub);
+    const h = await open('/inbox?tab=review', s.stub);
     try {
       await h.page.locator('.rev-row').first().waitFor({ timeout: 20_000 });
       await h.page.locator('.rev-line', { hasText: 'LC-1' }).click();
@@ -301,7 +301,7 @@ void describe('the Review page', () => {
   });
 
   void test('says so when nothing waits, in both themes', async () => {
-    const h = await open('/review', {
+    const h = await open('/inbox?tab=review', {
       '/api/v1/me': ME,
       '/api/v1/projects': { data: [], next_cursor: null },
       '/api/v1/review': { tasks: [], truncated: false },

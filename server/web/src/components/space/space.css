@@ -434,6 +434,16 @@
   outline-offset: -2px;
 }
 
+/* The hairline between the two groups of tabs (LAI-796). */
+.view-tab-rule {
+  flex: none;
+  align-self: center;
+  width: 1px;
+  height: 1rem;
+  margin: 0 0.5rem;
+  background: var(--border-default);
+}
+
 .view-tab-count {
   /* The file's tab count: plain mono figure, no pill. */
   font-family: var(--font-mono);

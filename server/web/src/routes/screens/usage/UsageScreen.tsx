@@ -152,42 +152,45 @@ export function UsageScreen({
 
   return (
     <div className="usage-page">
-      <ScreenHeader title="Usage" context={context} />
-      <div className="usage">
-        <div className="usage-toolbar">
-          {options.length > 0 && (
-            <span className="usage-select">
-              <span className="usage-select-label" aria-hidden="true">
-                Space
-              </span>
-              <Dropdown
-                className="usage-dropdown"
-                aria-label="Space"
-                value={scope ?? ''}
-                options={options}
-                onChange={(value) => {
-                  setScope(value);
-                }}
-              />
+      {/*
+        The space and the range are this screen's header controls (LAI-796),
+        so on Insights they sit in the page's header, where the period of a
+        page is chosen.
+      */}
+      <ScreenHeader title="Usage" context={context}>
+        {options.length > 0 && (
+          <span className="usage-select">
+            <span className="usage-select-label" aria-hidden="true">
+              Space
             </span>
-          )}
-          <div className="usage-chips" role="group" aria-label="Range">
-            {USAGE_RANGES.map((r) => (
-              <button
-                key={r.days}
-                type="button"
-                className="usage-chip"
-                aria-pressed={range === r.days}
-                onClick={() => {
-                  setRange(r.days);
-                }}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
+            <Dropdown
+              className="usage-dropdown"
+              aria-label="Space"
+              value={scope ?? ''}
+              options={options}
+              onChange={(value) => {
+                setScope(value);
+              }}
+            />
+          </span>
+        )}
+        <div className="usage-chips" role="group" aria-label="Range">
+          {USAGE_RANGES.map((r) => (
+            <button
+              key={r.days}
+              type="button"
+              className="usage-chip"
+              aria-pressed={range === r.days}
+              onClick={() => {
+                setRange(r.days);
+              }}
+            >
+              {r.label}
+            </button>
+          ))}
         </div>
-
+      </ScreenHeader>
+      <div className="usage">
         <p className="usage-floor">
           <strong>At least.</strong> Counted on developers’ machines from the agents’ own session
           files — Claude Code, Codex, Gemini CLI — which miss an agent’s background calls, and from

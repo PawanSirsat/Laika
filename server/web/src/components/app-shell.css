@@ -8,8 +8,8 @@
  * here, beside the rail it describes, rather than guessed at by the overlay.
  */
 .shell {
-  /* The addendum's 280px rail (LAI-606). */
-  --rail-width: 17.5rem;
+  /* The sidebar, 212px — the prototype's (LAI-249, kept by LAI-796). */
+  --rail-width: 13.25rem;
   display: flex;
   /*
    * **`height`, not `min-height`** (LAI-601).
@@ -30,9 +30,9 @@
   font-size: var(--text-base);
 }
 
-/* The 56px rail, and the pre-auth pages, which have none. */
+/* The 60px icon rail (LAI-796), and the pre-auth pages, which have none. */
 .shell-rail-mini {
-  --rail-width: 3.5rem;
+  --rail-width: 3.75rem;
 }
 
 .shell-preauth {

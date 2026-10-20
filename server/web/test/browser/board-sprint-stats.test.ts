@@ -651,6 +651,7 @@ void describe('the sidebar open, the row crowded (LAI-727 review)', () => {
             await h.page.locator('.bstats').waitFor({ timeout: 20_000 });
             await setTheme(h.page, theme);
             await h.page.setViewportSize({ width, height: 768 });
+            await openSidebar(h);
             await h.page.locator('.lane').first().waitFor({ timeout: 10_000 });
             await settled(h);
 
@@ -792,6 +793,14 @@ void describe('the pill (LAI-727 review)', () => {
         await reads(h, `S2 ${stripSummary('s2')}`);
         await setTheme(h.page, theme);
         await h.page.setViewportSize({ width: 920, height: 768 });
+        /*
+         * **The open sidebar, as this test was written against** (LAI-796).
+         * At 920px the sidebar is the icon rail by itself since LAI-796, which
+         * leaves the toolbar 860px — on the pill's boundary, where hovering it
+         * re-measures and flips the tier (LAI-804). The toggle opens it for
+         * now, and the toolbar is the narrow one this test is about.
+         */
+        await openSidebar(h);
         await h.page.locator('.bt-member').first().waitFor({ timeout: 10_000 });
         await settled(h);
 
@@ -872,6 +881,24 @@ void describe('the pill (LAI-727 review)', () => {
  * the toolbar, its chips, the figures, the faces and the lanes — read the same
  * across three animation frames running.
  */
+/**
+ * **Open the sidebar where a test means it open** (LAI-796). Between 901 and
+ * 1180px the sidebar is the icon rail by itself since LAI-796; these tests
+ * are about the toolbar beside the *open* sidebar, so they open it with its
+ * own toggle — for now, as a reader would — and wait for its 212px.
+ */
+async function openSidebar(h: Harness): Promise<void> {
+  const toggle = h.page.locator('.sidebar-toggle');
+  await toggle.waitFor({ timeout: 10_000 });
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
+  await h.page.waitForFunction(
+    () =>
+      Math.round(document.querySelector('#sidebar')?.getBoundingClientRect().width ?? 0) === 212,
+    undefined,
+    { timeout: 5000 },
+  );
+}
+
 async function settled(h: Harness): Promise<void> {
   await h.page.waitForFunction(
     () =>
@@ -952,6 +979,8 @@ void describe('the board does not move after it is drawn (LAI-727 review)', () =
       });
       try {
         await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+        await openSidebar(h);
+        await settled(h);
         const first = await rowGeometry(h);
         assert.equal(
           await h.page.locator('.bt-member').count(),

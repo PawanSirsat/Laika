@@ -1,6 +1,7 @@
 import { Sidebar } from '../sidebar/Sidebar.tsx';
 import { useShell } from './shell-context.ts';
 import { useSpaces } from '../../routes/use-spaces.ts';
+import { inboxCount } from '../../routes/page-tabs.ts';
 
 export interface ShellSidebarProps {
   readonly open: boolean;
@@ -27,7 +28,6 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
     me,
     signOut,
     signingOut,
-    sprintCount,
     orgName,
     unlistedOpen,
     reviewWaiting,
@@ -63,14 +63,13 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
       orgRole={me?.org_role}
       orgName={orgName}
       spaceName={spaceName}
-      // The open unlisted count is the shell's (LAI-754): one number for the
-      // badge and Capacity's link, `undefined` for a reader it is not for.
-      // A person's open token alerts on Usage (LAI-773): theirs alone.
+      // Inbox is what waits on its two tabs (LAI-796): the review queue
+      // (D-082) plus the open unlisted count (LAI-754), which is `undefined`
+      // for a reader it is not for — so they count Review alone. A person's
+      // open token alerts (LAI-773) are on Insights, where Usage now is.
       counts={{
-        '/sprints': sprintCount,
-        '/review': reviewWaiting,
-        '/unlisted': unlistedOpen,
-        '/usage': tokenAlerts?.length,
+        '/inbox': inboxCount(reviewWaiting, unlistedOpen),
+        '/insights': tokenAlerts?.length,
       }}
       user={me}
       onSignOut={signOut}

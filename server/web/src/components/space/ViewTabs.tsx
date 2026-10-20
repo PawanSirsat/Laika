@@ -1,5 +1,5 @@
 import { viewTabHref } from '../../routes/nav-url.ts';
-import { spaceTabs } from '../../routes/route-table.ts';
+import { spaceTabGroups } from '../../routes/route-table.ts';
 
 export interface ViewTabsProps {
   readonly currentPath: string;
@@ -24,6 +24,11 @@ export interface ViewTabsProps {
  * purpose (LAI-423), and none is a tab since Capacity moved to the sidebar
  * (LAI-754). `navHref` makes that decision from the route table, not from
  * here.
+ *
+ * **Two groups, with a hairline between** (LAI-796, the owner's reference):
+ * the ways of looking at the work, then how it is going. The hairline is a
+ * list item of its own, `role="presentation"`, so the tabs stay one list a
+ * screen reader counts as eight.
  */
 export function ViewTabs({
   currentPath,
@@ -33,43 +38,48 @@ export function ViewTabs({
   counts,
   params,
 }: ViewTabsProps) {
-  const tabs = spaceTabs(holds);
-  if (projectSlug === undefined || tabs.length === 0) return null;
+  const groups = spaceTabGroups(holds);
+  if (projectSlug === undefined || groups.length === 0) return null;
 
   return (
     <nav className="view-tabs" aria-label="Views in this space">
       <ul>
-        {tabs.map((route) => {
-          const active = route.path === currentPath;
-          const href = viewTabHref(
-            route.path,
-            projectSlug,
-            currentPath,
-            params ?? new URLSearchParams(),
-          );
-          const count = counts?.[route.path];
+        {groups.flatMap((tabs, index) => [
+          ...(index === 0
+            ? []
+            : [<li key={`rule-${String(index)}`} className="view-tab-rule" role="presentation" />]),
+          ...tabs.map((route) => {
+            const active = route.path === currentPath;
+            const href = viewTabHref(
+              route.path,
+              projectSlug,
+              currentPath,
+              params ?? new URLSearchParams(),
+            );
+            const count = counts?.[route.path];
 
-          return (
-            <li key={route.path}>
-              <a
-                href={href}
-                className={active ? 'view-tab view-tab-active' : 'view-tab'}
-                aria-current={active ? 'page' : undefined}
-                onClick={(event) => {
-                  // Modified clicks stay the browser's — new tab, new window.
-                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                  event.preventDefault();
-                  onNavigate(href);
-                }}
-              >
-                {route.label}
-                {count !== undefined && count > 0 && (
-                  <span className="view-tab-count">{count}</span>
-                )}
-              </a>
-            </li>
-          );
-        })}
+            return (
+              <li key={route.path}>
+                <a
+                  href={href}
+                  className={active ? 'view-tab view-tab-active' : 'view-tab'}
+                  aria-current={active ? 'page' : undefined}
+                  onClick={(event) => {
+                    // Modified clicks stay the browser's — new tab, new window.
+                    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                    event.preventDefault();
+                    onNavigate(href);
+                  }}
+                >
+                  {route.label}
+                  {count !== undefined && count > 0 && (
+                    <span className="view-tab-count">{count}</span>
+                  )}
+                </a>
+              </li>
+            );
+          }),
+        ])}
       </ul>
     </nav>
   );
