@@ -124,7 +124,50 @@ Full record in `logs/usage-by-space-2026-10-20.md`.
   merge). Instead every affected file was run alone, each exit 0 — the list
   and counts are in the log.
 
-**Seen, not filed.** `?project=` on `/insights` makes the shell treat that
-space as open, as on Members and Meeting review: the sidebar marks it current
-beside Insights, and the shell reads its name and sprint count and opens its
-event stream.
+**Filed: LAI-825** (round 1, from review). `?project=` on `/insights` makes the
+shell treat that space as open, as on Members and Meeting review: the sidebar
+marks it current beside Insights, and the shell reads its name and sprint count
+and opens its event stream.
+
+## Review round 1 (2026-10-20) — BLOCK, fixed
+
+**The blocker.** A By space row for an **archived** space did not open it. The
+server rightly counts archived spaces in `by_project` (so the rows add up), but
+`GET /projects` sends one as a tombstone (`http/routes/projects.ts:148`),
+`isProject` drops it from the screen's space list, and `scopeFor` fell back to
+All spaces: the row added `?project=old`, the page stayed on the organisation,
+the selector said All spaces and the sidebar marked the archived space open.
+
+**The fix (the reviewer's decision).** A row links **only** to a space the
+selector offers — `offeredSpaces()` and `spaceRow()` in `usage-derive.ts`. Any
+other is still counted, named in plain text with a small muted **archived**
+marker. With no space list (the read failed), no row links and none is marked,
+since nothing is known to be archived. Commit `fix(web): an archived space's By
+space row is named, not linked`.
+
+**Tests that fail on the round-1 code:** `browser/usage.test.ts` *an archived
+space is counted but not a link …* — run before the fix it failed `expected: 0,
+actual: 1` on the archived row's link count, the defect itself;
+`usage-derive.test.ts` *a By space row is a link only to a space the selector
+offers* — failed before the fix (no such export). Screenshots of the archived
+row: `/tmp/laika-usage-shots/usage-by-space-archived-{light,dark}-{1440,390}-card.png`.
+
+**(a) Outside the named files — for CHIEF to accept consciously.**
+`server/web/src/components/shell/ScreenOutlet.tsx` (`UsageRoute`) is not named
+by this task and is the shell's, not the Usage screen's. It now passes
+`?project=` to `UsageScreen` and writes the selector's choice back
+(`setParams`, replace). Without it the AC's *a row links to that space's own
+Usage view (`?project=`)* could not work: route params reach a screen only
+there, and the screen's space was React state. No other file outside the named
+ones and the `routes/screens/usage/` folder changed; `BySpaceCard.tsx` is new
+in that folder.
+
+**(c) *Tied to no task* has an edge.** `token_usage_days.task_id` and
+`project_id` are both `ON DELETE SET NULL`. A **hard-deleted task** leaves its
+rows with no task but still in their space: they stay in that space's
+`by_project` figure while the *Unattributed* tile counts them as tied to no
+task, so the tile and *Outside any space* can differ. A **hard-deleted space**
+takes its tasks with it (`tasks.project_id` cascades), so its rows keep neither
+and fall into *Outside any space*, whose note says *tied to no task* although
+they once were tied. No service hard-deletes a task or a space today —
+archiving is the only removal — so both need a manual or future delete.
