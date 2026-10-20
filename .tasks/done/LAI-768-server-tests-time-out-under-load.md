@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-765
-status: review
+status: done
 started: 2026-10-20T10:13:48Z
 finished: 2026-10-20T11:20:05Z
 ---
@@ -195,3 +195,21 @@ collected test cases: server 159 files passed and 2 skipped of 161 (the two
 opt-in `PERF` suites), 3279 cases passed and 10 skipped of 3289; server/web
 2324 of 2324 pass; cli 530 pass, 2 skipped, 0 fail of 532. This commit adds
 only this section and the log, both Markdown, after the gate.
+
+## Accepted (CHIEF, 2026-10-20)
+
+Review: APPROVE (review-load-timeouts).
+- No assertion was loosened, and the global timeout is unchanged.
+- The batched scan returns the same 6 names in the same order (3 of 3 side-by-side runs).
+- drizzle 0.45.2's migrator reads only `_journal.json` and the `.sql` files, so trimming the snapshots hides nothing.
+- A health-never-answers mutation failed in 40.1 s, with the port, the attempts and the server's log.
+
+The original three-runs-under-full-load criterion stays unticked, as replaced
+by CHIEF's narrowed proof. Non-blocking, for whoever next touches these files:
+- the `HEALTH_BUDGET_MS` docblock overclaims for a hung, not-exited server;
+- "28 packages" is stale (now 115);
+- the `SPAWN_BUDGET_MS` comment says its limit is not about load;
+- the LAI-493 and 0029 migrate cases leak their copied folder.
+
+LAI-801 was re-diagnosed as a `cli/src/activity-sync.ts` `fail()` bug, and
+the reviewer confirmed it in the code.
