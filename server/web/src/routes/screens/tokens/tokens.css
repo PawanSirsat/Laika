@@ -6,11 +6,6 @@
   gap: var(--space-3);
 }
 
-.tokens-sub {
-  margin: 0 var(--space-4);
-  font-size: var(--text-sm);
-  color: var(--text-secondary);
-}
 
 /* The one-time reveal. Deliberately the loudest thing on the screen: it is the
    only moment the secret exists, and a reader who scrolls past it has lost it. */

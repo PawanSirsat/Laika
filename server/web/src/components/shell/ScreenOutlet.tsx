@@ -22,10 +22,20 @@ import { ReviewScreen } from '../../routes/screens/review/ReviewScreen.tsx';
 import { SprintsScreen } from '../../routes/screens/sprints/SprintsScreen.tsx';
 import { TimelineScreen } from '../../routes/screens/timeline/TimelineScreen.tsx';
 import { ConnectScreen } from '../../routes/screens/connect/ConnectScreen.tsx';
-import { TokensScreen } from '../../routes/screens/tokens/TokensScreen.tsx';
+import { DeveloperScreen } from '../../routes/screens/developer/DeveloperScreen.tsx';
+import { InboxScreen } from '../../routes/screens/inbox/InboxScreen.tsx';
+import { InsightsScreen } from '../../routes/screens/insights/InsightsScreen.tsx';
 import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx';
 import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
 import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
+import { permissionHolder } from '../../routes/nav-permissions.ts';
+import {
+  INBOX_TABS,
+  INSIGHTS_TABS,
+  ORGANISATION_TABS,
+  currentTab,
+  visibleTabs,
+} from '../../routes/page-tabs.ts';
 import { StateGallery } from '../StateGallery.tsx';
 import { TokenReference } from '../../theme/TokenReference.tsx';
 
@@ -144,8 +154,9 @@ function ActivityRoute() {
 
 /**
  * One page for the organisation (LAI-754), so `?project=` means nothing here.
- * A link from when Capacity was a space tab — `/capacity?project=laika-core` —
- * is rewritten to `/capacity` in place, so the address says what is shown.
+ * A link that still carries one — from when Capacity was a space tab — has it
+ * rewritten away in place, so the address says what is shown. Since LAI-796
+ * it is the Capacity tab of Insights.
  */
 function CapacityRoute() {
   const {
@@ -203,10 +214,13 @@ function UsageRoute() {
  */
 function MyDayRoute() {
   const {
-    route: { params, setParams },
+    route: { params, setParams, navigate },
+    me,
   } = useShell();
   return (
     <MyDayScreen
+      me={me}
+      onNavigate={navigate}
       day={params.get('day') ?? undefined}
       onDay={(day) => {
         const next = new URLSearchParams(params);
@@ -238,17 +252,77 @@ function ConnectRoute() {
   );
 }
 
-function TokensRoute() {
-  const { me } = useShell();
-  return <TokensScreen me={me} />;
+/**
+ * Inbox (LAI-796): Review and Unlisted work as tabs. The counts are the
+ * shell's — the same two numbers the sidebar adds up for Inbox's badge.
+ */
+function InboxRoute() {
+  const {
+    route: { params, navigate },
+    me,
+    reviewWaiting,
+    unlistedOpen,
+  } = useShell();
+  const holds = permissionHolder(me?.org_role);
+  const tab = currentTab(INBOX_TABS, params, holds);
+  return (
+    <InboxScreen
+      tabs={visibleTabs(INBOX_TABS, holds)}
+      current={tab}
+      counts={{ review: reviewWaiting, unlisted: unlistedOpen }}
+      onNavigate={navigate}
+    >
+      {tab === 'unlisted' ? <UnlistedRoute /> : <ReviewRoute />}
+    </InboxScreen>
+  );
+}
+
+/** Insights (LAI-796): Capacity and Usage & cost as tabs. */
+function InsightsRoute() {
+  const {
+    route: { params, navigate },
+    me,
+  } = useShell();
+  const holds = permissionHolder(me?.org_role);
+  const tab = currentTab(INSIGHTS_TABS, params, holds);
+  return (
+    <InsightsScreen
+      tabs={visibleTabs(INSIGHTS_TABS, holds)}
+      current={tab}
+      onNavigate={navigate}
+    >
+      {tab === 'usage' ? <UsageRoute /> : <CapacityRoute />}
+    </InsightsScreen>
+  );
+}
+
+/** Developer access (LAI-796): Connect's card and the reader's tokens. */
+function DeveloperRoute() {
+  const {
+    me,
+    route: { navigate },
+  } = useShell();
+  return <DeveloperScreen me={me} origin={window.location.origin} onNavigate={navigate} />;
 }
 
 function OrganisationRoute() {
-  const { me } = useShell();
+  const {
+    me,
+    route: { params, navigate },
+  } = useShell();
   // The screen requires a user; the gate has already refused every other
   // session state on this protected route, so this is the frame before a
   // redirect lands rather than a state anyone sits in.
-  return me === undefined ? null : <OrganisationScreen me={me} />;
+  if (me === undefined) return null;
+  const holds = permissionHolder(me.org_role);
+  return (
+    <OrganisationScreen
+      me={me}
+      tabs={visibleTabs(ORGANISATION_TABS, holds)}
+      tab={currentTab(ORGANISATION_TABS, params, holds)}
+      onNavigate={navigate}
+    />
+  );
 }
 
 function MembersRoute() {
@@ -285,14 +359,12 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/activity': { Component: ActivityRoute, layout: 'space' },
   '/meeting-review': { Component: MeetingReviewRoute, layout: 'space' },
   '/projects': { Component: ProjectsRoute, layout: 'plain' },
-  '/capacity': { Component: CapacityRoute, layout: 'plain' },
-  '/review': { Component: ReviewRoute, layout: 'plain' },
-  '/unlisted': { Component: UnlistedRoute, layout: 'plain' },
-  '/usage': { Component: UsageRoute, layout: 'plain' },
   '/my-day': { Component: MyDayRoute, layout: 'plain' },
-  '/connect': { Component: ConnectRoute, layout: 'plain' },
-  '/tokens': { Component: TokensRoute, layout: 'plain' },
+  '/inbox': { Component: InboxRoute, layout: 'plain' },
+  '/insights': { Component: InsightsRoute, layout: 'plain' },
   '/organisation': { Component: OrganisationRoute, layout: 'plain' },
+  '/developer': { Component: DeveloperRoute, layout: 'plain' },
+  '/developer/connect': { Component: ConnectRoute, layout: 'plain' },
   '/members': { Component: MembersRoute, layout: 'plain' },
   '/people': { Component: ProfileRoute, layout: 'plain' },
   '/login': { Component: LoginRoute, layout: 'plain' },

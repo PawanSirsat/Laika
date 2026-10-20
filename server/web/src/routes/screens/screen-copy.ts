@@ -37,9 +37,13 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'No sprints yet',
     body: 'A sprint groups tasks into a window with a start and an end. Create one from a project.',
   },
-  '/capacity': {
+  /*
+   * Insights (LAI-796): Capacity and Usage & cost as tabs. Capacity opens
+   * first, so the copy is the one Capacity carried.
+   */
+  '/insights': {
     headline: 'Nothing assigned in progress',
-    body: 'Capacity shows who — human or agent — is on what right now, from heartbeats and in-progress tasks.',
+    body: 'Capacity shows who — human or agent — is on what right now, from heartbeats and in-progress tasks. Usage & cost shows what the agents spent.',
   },
   '/dashboard': {
     headline: 'No activity in this window',
@@ -54,24 +58,23 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     body: 'A transcript becomes proposed task changes here. Nothing applies until a human accepts it, line by line.',
   },
   /*
-   * The normal state until agents are running, which is why the copy says what
-   * the queue is *for* rather than only that it is empty (LAI-413).
+   * Inbox (LAI-796): Review and Unlisted work as tabs. Empty is the good
+   * state — nothing is waiting on this person.
    */
+  '/inbox': {
+    headline: 'Your inbox is clear',
+    body: 'Work an agent hands back lands on Review with its proof; work nobody filed lands on Unlisted work. Both are counted beside Inbox in the sidebar.',
+  },
   /*
+   * The Review tab's own empty state, read by ReviewScreen — kept under the
+   * address the screen had, which now redirects to the tab (LAI-796).
+   *
    * The good state: every finish has been decided. Says what arrives here,
    * because a person new to the board has not seen it fill yet (D-082).
    */
   '/review': {
     headline: 'Nothing waiting for review',
     body: 'When an agent finishes a task it lands here with its proof — commits, pull request, tests. Accept it into done, or send it back with a reason the agent reads first.',
-  },
-  /*
-   * Usage (D-084, LAI-769): empty until developers share local activity, so
-   * the copy says where tokens come from.
-   */
-  '/usage': {
-    headline: 'No token usage yet',
-    body: 'Tokens arrive from developers who share local activity: their agents’ own session files are counted on their machines and sent as totals per day.',
   },
   /*
    * My day (D-088, LAI-787): the reader's own, drafted on their machine and
@@ -81,17 +84,17 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'Nothing on this day yet',
     body: 'Your day is drafted on your own machine by the Laika collector when Draft my time is on, and only you see it until you confirm it. Add a meeting or a call by hand at any time.',
   },
-  '/unlisted': {
-    headline: 'Nothing unlisted',
-    body: 'Agents log work here when they notice something outside any project — a stale dependency, a broken script. Promote what matters into a task; dismiss the rest.',
+  /*
+   * Developer access (LAI-796): connecting an agent and your tokens, on one
+   * page. The wizard keeps the copy Connect had.
+   */
+  '/developer': {
+    headline: 'No tokens yet',
+    body: 'A personal access token lets an agent read and write this board as you. It is shown once when created; Connect an agent makes one for you, step by step.',
   },
-  '/connect': {
+  '/developer/connect': {
     headline: 'No project to mirror work into',
     body: 'Setup still works without one — a session can connect and report in. Create a project and this page fills in the block its lead commits.',
-  },
-  '/tokens': {
-    headline: 'No tokens yet',
-    body: 'A personal access token lets an agent read and write this board as you. It is shown once when created.',
   },
   /*
    * An empty state, not an "unbuilt" notice — the screen exists (LAI-086).

@@ -395,8 +395,8 @@ export function CapacityScreen({
             label="Waiting for review"
             value={reviewWaiting ?? '—'}
             sub="open Review"
-            href="/review"
-            onLink={link('/review')}
+            href="/inbox?tab=review"
+            onLink={link('/inbox?tab=review')}
           />
           <Tile
             label="Overdue"
@@ -413,8 +413,8 @@ export function CapacityScreen({
               label="Unlisted work"
               value={unlistedOpen}
               sub="to triage"
-              href="/unlisted"
-              onLink={link('/unlisted')}
+              href="/inbox?tab=unlisted"
+              onLink={link('/inbox?tab=unlisted')}
               tone="unlisted"
             />
           )}

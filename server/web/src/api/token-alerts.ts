@@ -47,7 +47,7 @@ export function dismissTokenAlert(id: string): Promise<void> {
 export function alertHref(alert: TokenAlert): string {
   const project = encodeURIComponent(alert.project.slug);
   return alert.task === null
-    ? `/usage`
+    ? `/insights?tab=usage`
     : `/board?project=${project}&task=${encodeURIComponent(alert.task.id)}`;
 }
 
