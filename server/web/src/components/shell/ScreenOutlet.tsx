@@ -25,6 +25,7 @@ import { ConnectScreen } from '../../routes/screens/connect/ConnectScreen.tsx';
 import { TokensScreen } from '../../routes/screens/tokens/TokensScreen.tsx';
 import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx';
 import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
+import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
 import { StateGallery } from '../StateGallery.tsx';
 import { TokenReference } from '../../theme/TokenReference.tsx';
 
@@ -196,6 +197,26 @@ function UsageRoute() {
   );
 }
 
+/**
+ * The reader's own day (LAI-787). `?day=` names which; absent is today. A
+ * day picked is a URL, so back and forward walk the days as they were seen.
+ */
+function MyDayRoute() {
+  const {
+    route: { params, setParams },
+  } = useShell();
+  return (
+    <MyDayScreen
+      day={params.get('day') ?? undefined}
+      onDay={(day) => {
+        const next = new URLSearchParams(params);
+        next.set('day', day);
+        setParams(next, { push: true });
+      }}
+    />
+  );
+}
+
 function ReviewRoute() {
   const {
     route: { navigate },
@@ -268,6 +289,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/review': { Component: ReviewRoute, layout: 'plain' },
   '/unlisted': { Component: UnlistedRoute, layout: 'plain' },
   '/usage': { Component: UsageRoute, layout: 'plain' },
+  '/my-day': { Component: MyDayRoute, layout: 'plain' },
   '/connect': { Component: ConnectRoute, layout: 'plain' },
   '/tokens': { Component: TokensRoute, layout: 'plain' },
   '/organisation': { Component: OrganisationRoute, layout: 'plain' },

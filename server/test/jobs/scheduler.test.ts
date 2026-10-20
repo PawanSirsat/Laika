@@ -78,7 +78,15 @@ describe('the jobs §11.6 names', () => {
       'local_activity.retention',
       'meeting_review.expiry',
       'task.stale',
+      'time.retention',
     ]);
+  });
+
+  it('runs time retention daily and once at boot (D-088 item 11, LAI-787)', () => {
+    const day = 24 * 60 * 60 * 1000;
+    const retention = buildJobs(deps()).find((j) => j.name === 'time.retention');
+    expect(retention?.everyMs).toBe(day);
+    expect(retention?.atStart).toBe(true);
   });
 
   it('refits sizes and forecasts daily and once at boot (D-085, LAI-771)', () => {

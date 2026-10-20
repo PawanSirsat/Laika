@@ -19,6 +19,7 @@ import { useTheme } from '../../../theme/use-theme.ts';
 import { useOrganisation } from './use-organisation.ts';
 import { GithubWebhookSection } from './GithubWebhookSection.tsx';
 import { ModelPricesSection } from './ModelPricesSection.tsx';
+import { TimeModeFact } from './TimeModeFact.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import type { OrgRole } from '../../../api/invites.ts';
 import './organisation.css';
@@ -275,6 +276,11 @@ export function OrganisationScreen({ me }: OrganisationScreenProps) {
                 )}
               </dd>
             </div>
+
+            {/* D-088 (LAI-787): the organisation's half of time — off, typed
+                entries only, or drafts too. Controls for an owner or admin, a
+                word for everyone else, as Developer insights above. */}
+            <TimeModeFact canManage={canManage} />
 
             {/* **Absent, not null**, for a reader without `org.settings.edit`
                 — so the question is whether the key is there, never whether it

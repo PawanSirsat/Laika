@@ -173,6 +173,7 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.meeting_review.expire',
   'system.local_activity.prune',
   'system.estimate.refit',
+  'system.time.prune',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',
@@ -429,6 +430,36 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // another's.
     case 'token_alerts.own':
     case 'plan_limit.own':
+      return true;
+
+    // | Set the organisation's Time setting | ✓ (session only) | ✓ (session only) | — | — |
+    //
+    // D-088 item 5's organisation switch (LAI-787): its own row, not
+    // `org.settings.edit` borrowed, for `org.developer_insights.set`'s reason
+    // — a token may hold that one, and an agent must not turn on the drafting
+    // of its own person's day.
+    case 'org.time.set':
+      return isAdminUp;
+
+    // | Read own time settings | ✓ | ✓ | ✓ | ✓ |
+    // | Set own Draft my time | ✓ (session only) | … | ✓ (session only) |
+    // | Send own time drafts | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
+    // | Read and manage own time drafts | ✓ (session only) | … | ✓ (session only) |
+    // | Read and write own time entries | ✓ (session only) | … | ✓ (session only) |
+    //
+    // Every role: **a person's time is their own** (D-088), and the services
+    // read and write the caller's own rows only — no row lets anybody read
+    // another's. What stops drafting is the two switches, which the services
+    // read; what stops an agent reading or confirming a draft, or reading
+    // anyone's hours, is `SESSION_ONLY_ACTIONS`. The Viewer's send cell is the
+    // credential's refusal, as for heartbeats and local activity.
+    case 'time_settings.read_own':
+    case 'time_settings.set_own':
+    case 'time_drafts.send_own':
+    case 'time_drafts.read_own':
+    case 'time_drafts.manage_own':
+    case 'time_entries.read_own':
+    case 'time_entries.write_own':
       return true;
 
     default:

@@ -51,6 +51,17 @@ export const ORG_ACTIONS = [
   'org.model_prices.set',
   'token_alerts.own',
   'plan_limit.own',
+  // LAI-787: time (D-088) — the organisation's Time setting, a person's own
+  // Draft my time, their collector's drafts and agents' proposals, and their
+  // own drafts and confirmed entries.
+  'org.time.set',
+  'time_settings.read_own',
+  'time_settings.set_own',
+  'time_drafts.send_own',
+  'time_drafts.read_own',
+  'time_drafts.manage_own',
+  'time_entries.read_own',
+  'time_entries.write_own',
 ] as const;
 
 /** SPEC §3.2 — gated by project role, with org owner/admin holding implicit lead. */
@@ -98,6 +109,9 @@ export const SYSTEM_ACTIONS = [
   'system.local_activity.prune',
   // §11.6: the nightly refit of sizes and forecasts (D-085, LAI-771).
   'system.estimate.refit',
+  // §11.6: time retention — drafts after 30 days, entries after three years
+  // (D-088 item 11, LAI-787).
+  'system.time.prune',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];
@@ -134,6 +148,9 @@ export const READ_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // agent may read about the work, like the rest of a project.
   'usage.read_org',
   'usage.read_project',
+  // A collector asks whether it may draft before it sends (LAI-787), as it
+  // asks whether it may share (above).
+  'time_settings.read_own',
 ]);
 
 export function isReadAction(action: Action): boolean {
@@ -189,4 +206,16 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // plan limit is never served to anybody else, an agent included.
   'token_alerts.own',
   'plan_limit.own',
+  // **Time is the person's** (D-088 items 3, 5 and 13, LAI-787). The
+  // organisation's switch and the person's own are a signed-in person's, as
+  // D-079's are; drafts are read and confirmed only by the person, signed in
+  // — an agent may propose one (`time_drafts.send_own`) and never read or
+  // confirm one; and confirmed time per person is never served to a token,
+  // not even its own person's, the rule `usage.read_own` follows.
+  'org.time.set',
+  'time_settings.set_own',
+  'time_drafts.read_own',
+  'time_drafts.manage_own',
+  'time_entries.read_own',
+  'time_entries.write_own',
 ]);

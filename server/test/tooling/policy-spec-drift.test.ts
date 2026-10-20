@@ -84,6 +84,13 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Set API-equivalent prices', ['org.model_prices.set']],
   ['Read and dismiss own token alerts', ['token_alerts.own']],
   ['Read and set own plan limit', ['plan_limit.own']],
+  // D-088's rows (LAI-787): time — the two switches, drafts and entries.
+  ["Set the organisation's Time setting", ['org.time.set']],
+  ['Read own time settings', ['time_settings.read_own']],
+  ['Set own Draft my time', ['time_settings.set_own']],
+  ['Send own time drafts', ['time_drafts.send_own']],
+  ['Read and manage own time drafts', ['time_drafts.read_own', 'time_drafts.manage_own']],
+  ['Read and write own time entries', ['time_entries.read_own', 'time_entries.write_own']],
 ]);
 
 const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([

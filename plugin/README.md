@@ -171,6 +171,14 @@ What it never does:
   prompt's — a `"session_id"` that is a plain id, appended to
   `~/.laika/activity/skip-sessions`, so `laika activity sync` leaves that
   session's tokens out. Never sent.
+- **Skip the session the person types to** (D-088 item 9, LAI-787). Omnigent
+  sets `OMNIGENT=1` on its primary session too. When
+  `OMNIGENT_TERMINAL_LAUNCH_SESSION_ID` equals `OMNIGENT_RUNNER_PRIMARY_SESSION_ID`
+  (both set), the session is the runner's primary — the conversation the
+  person types in — and counts as theirs in every respect; its id is kept,
+  0600 and never sent, in `~/.laika/activity/primary-sessions`. A dispatched
+  sub-agent's two ids differ, and it is skipped as above. `CI` and
+  `LAIKA_ACTIVITY_SKIP` still skip it.
 
 `~/.laika/activity` is 0700 and its files 0600. Repo paths, the event log and
 extra emails stay there; only per-day counts and one-way commit keys are sent.

@@ -299,3 +299,48 @@ export type PlanKind = (typeof PLAN_KINDS)[number];
 /** §4.41's `window` (LAI-773): the stretch the developer's limit applies to. */
 export const PLAN_WINDOWS = ['5h', 'day', 'week'] as const;
 export type PlanWindow = (typeof PLAN_WINDOWS)[number];
+
+/**
+ * §4.45's `mode` (D-088 item 5, LAI-787): the organisation's *Time* setting.
+ * `off` — no time is kept; `manual` — people type their own entries; `drafts`
+ * — their collectors may also draft their day, for those who turned on
+ * *Draft my time* themselves.
+ */
+export const TIME_MODES = ['off', 'manual', 'drafts'] as const;
+export type TimeMode = (typeof TIME_MODES)[number];
+
+/**
+ * §4.47's `source` (LAI-787): a block a person's own collector drafted, or an
+ * entry an agent proposed (D-088 item 13) — both private drafts until the
+ * person confirms them.
+ */
+export const TIME_DRAFT_SOURCES = ['collector', 'agent'] as const;
+export type TimeDraftSource = (typeof TIME_DRAFT_SOURCES)[number];
+
+/**
+ * §4.47's `state` (LAI-787): waiting for the person, confirmed into an entry,
+ * or put away. A confirmed or dismissed draft stays until retention as a
+ * tombstone, so the collector's next upload of that day cannot bring it back.
+ */
+export const TIME_DRAFT_STATES = ['pending', 'confirmed', 'dismissed'] as const;
+export type TimeDraftState = (typeof TIME_DRAFT_STATES)[number];
+
+/**
+ * §4.48's `source` (D-088 item 2, LAI-787): what a confirmed entry came
+ * from — a draft the person confirmed, one they typed, or one imported from
+ * the billing record (LAI-788).
+ */
+export const TIME_ENTRY_SOURCES = ['draft', 'manual', 'import'] as const;
+export type TimeEntrySource = (typeof TIME_ENTRY_SOURCES)[number];
+
+/** §4.49's `change` (LAI-787): what a revision of an entry recorded. */
+export const TIME_REVISION_CHANGES = ['created', 'edited', 'deleted'] as const;
+export type TimeRevisionChange = (typeof TIME_REVISION_CHANGES)[number];
+
+/**
+ * §4.50's `kind` (D-088 item 8, LAI-787): Claude Code's `active_time` split —
+ * `user` is time at the keyboard in Claude Code, `cli` the agent working.
+ * Shown as agent minutes, never as hours.
+ */
+export const AGENT_TIME_KINDS = ['user', 'cli'] as const;
+export type AgentTimeKind = (typeof AGENT_TIME_KINDS)[number];

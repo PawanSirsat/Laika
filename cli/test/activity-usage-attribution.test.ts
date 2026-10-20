@@ -786,6 +786,9 @@ void describe('through `laika activity sync`', () => {
             cache_read: 0,
           },
         ],
+        // …and its tokens on the task it marked (LAI-787): the key and the
+        // task's key, nothing more — what its agent minutes are split by.
+        session_tasks: [{ key: sessionKey(SECRET.session), task: 'LAI-3', tokens: 32 }],
       },
     ]);
     const sent = w.board.requests.map((r) => `${r.url} ${r.body}`).join('\n');

@@ -24,6 +24,7 @@ import { localActivityRoutes } from './http/routes/local-activity.ts';
 import { usageRoutes, userUsageRoutes } from './http/routes/usage.ts';
 import { meUsageRoutes } from './http/routes/me-usage.ts';
 import { otlpRoutes } from './http/routes/otlp.ts';
+import { meTimeRoutes, orgTimeRoutes } from './http/routes/time.ts';
 import {
   projectBudgetRoutes,
   sprintBudgetRoutes,
@@ -302,6 +303,9 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/me`, meUsageRoutes({ db }));
     // OpenTelemetry metrics from the developer's own agents (LAI-773).
     app.route(`${API_BASE}/otlp`, otlpRoutes({ db }));
+    // Time (D-088, LAI-787): the person's own on `/me`, the switch on `/org`.
+    app.route(`${API_BASE}/me`, meTimeRoutes({ db }));
+    app.route(`${API_BASE}/org`, orgTimeRoutes({ db }));
     app.route(
       `${API_BASE}/events`,
       eventRoutes({ db, feed: options.activityFeed ?? new ActivityFeed({ db }) }),

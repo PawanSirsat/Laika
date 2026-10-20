@@ -337,6 +337,14 @@ describe('the cases LAI-004 calls out by name', () => {
       const ownUsage = action === 'usage.read_own';
       // LAI-773: their own alerts and their own plan limit, session only.
       const ownTokenData = action === 'token_alerts.own' || action === 'plan_limit.own';
+      // D-088 (LAI-787): their own Draft my time, drafts and entries.
+      const ownTime =
+        action === 'time_settings.set_own' ||
+        action === 'time_drafts.send_own' ||
+        action === 'time_drafts.read_own' ||
+        action === 'time_drafts.manage_own' ||
+        action === 'time_entries.read_own' ||
+        action === 'time_entries.write_own';
 
       expect(allowed, `${action} allowed for viewer`).toBe(
         selfToken ||
@@ -346,7 +354,8 @@ describe('the cases LAI-004 calls out by name', () => {
           ownWatch ||
           ownLocalActivity ||
           ownUsage ||
-          ownTokenData,
+          ownTokenData ||
+          ownTime,
       );
     }
   });
@@ -400,5 +409,56 @@ describe('assertCan', () => {
       expect(details.action).toBe('org.delete');
       expect(JSON.stringify(details)).not.toContain('u1');
     }
+  });
+});
+
+/**
+ * D-088's rows (LAI-787): the organisation's switch, the person's own switch,
+ * reading drafts and confirming them, and confirmed time per person are a
+ * signed-in person's — every token is refused, an owner's full one included.
+ * Sending a draft and reading one's own settings are what a collector and an
+ * agent do, so a token may.
+ */
+describe('time refuses every token but where a collector or an agent acts (LAI-787)', () => {
+  const tokens: TokenContext[] = [
+    { id: 'tok_full', scope: 'full', projectIds: null },
+    { id: 'tok_ro', scope: 'read_only', projectIds: null },
+    { id: 'tok_pin', scope: 'full', projectIds: ['p1'] },
+  ];
+  const sessionOnly = [
+    ['org.time.set', 'owner'],
+    ['time_settings.set_own', 'member'],
+    ['time_drafts.read_own', 'owner'],
+    ['time_drafts.manage_own', 'admin'],
+    ['time_entries.read_own', 'owner'],
+    ['time_entries.write_own', 'member'],
+  ] as const;
+
+  it('allows each on a cookie session, so the refusals below are the token’s', () => {
+    for (const [action, role] of sessionOnly) {
+      expect(can(actor(role, null), action), action).toBe(true);
+    }
+  });
+
+  it('refuses each to any token', () => {
+    for (const [action, role] of sessionOnly) {
+      for (const token of tokens) {
+        expect(can(actor(role, null, token), action), `${action} / ${token.id}`).toBe(false);
+      }
+    }
+  });
+
+  it('lets a full token send a draft and any token read the switches', () => {
+    const full = actor('member', null, tokens[0]);
+    const readOnly = actor('member', null, tokens[1]);
+    expect(can(full, 'time_drafts.send_own')).toBe(true);
+    expect(can(readOnly, 'time_drafts.send_own')).toBe(false);
+    expect(can(full, 'time_settings.read_own')).toBe(true);
+    expect(can(readOnly, 'time_settings.read_own')).toBe(true);
+  });
+
+  it('gives a member no organisation switch', () => {
+    expect(can(actor('member', null), 'org.time.set')).toBe(false);
+    expect(can(actor('viewer', null), 'org.time.set')).toBe(false);
   });
 });

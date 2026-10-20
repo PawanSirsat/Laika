@@ -307,7 +307,10 @@ void describe('the board says no', () => {
     w.board.put = { kind: 'ok' };
     w.advance(1);
     assert.equal((await sync(w.ctx)).kind, 'sent');
-    const after24 = w.board.requests.slice(before);
+    // The time switches' own check (LAI-787) is not this test's: left out.
+    const after24 = w.board.requests
+      .slice(before)
+      .filter((r) => !r.url.startsWith('/api/v1/me/time-'));
     // The switch, the snapshot, and then (D-080, LAI-757) the look-back of the
     // repo, which this machine has never looked back over.
     assert.deepEqual(
@@ -356,8 +359,10 @@ void describe('the board says no', () => {
       await sync(w.ctx);
       w.advance(600);
     }
+    // The activity switch before every send. The time switches (LAI-787) are
+    // their own check — at most hourly while drafting is off — and not this one.
     assert.deepEqual(
-      w.board.requests.map((r) => r.method),
+      w.board.requests.filter((r) => !r.url.startsWith('/api/v1/me/time-')).map((r) => r.method),
       ['GET', 'PUT', 'GET', 'PUT', 'GET', 'PUT', 'GET', 'PUT', 'GET', 'PUT', 'GET', 'PUT'],
     );
   });

@@ -112,6 +112,21 @@ const ORG_MATRIX: OrgRow[] = [
   // | Read and set own plan limit | ✓ (session only) | … | ✓ (session only) |
   // D-087: the person only — no admin row exists for it at all.
   ['plan_limit.own', true, true, true, true],
+  // | Set the organisation's Time setting | ✓ (session only) | ✓ (session only) | — | — |
+  // D-088 item 5 (LAI-787): off, manual or drafts.
+  ['org.time.set', true, true, false, false],
+  // | Read own time settings | ✓ | ✓ | ✓ | ✓ |
+  ['time_settings.read_own', true, true, true, true],
+  // | Set own Draft my time | ✓ (session only) | … | ✓ (session only) |
+  ['time_settings.set_own', true, true, true, true],
+  // | Send own time drafts | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
+  ['time_drafts.send_own', true, true, true, true],
+  // | Read and manage own time drafts | ✓ (session only) | … | ✓ (session only) |
+  ['time_drafts.read_own', true, true, true, true],
+  ['time_drafts.manage_own', true, true, true, true],
+  // | Read and write own time entries | ✓ (session only) | … | ✓ (session only) |
+  ['time_entries.read_own', true, true, true, true],
+  ['time_entries.write_own', true, true, true, true],
 ];
 
 describe('SPEC §3.1 — org-level matrix', () => {
@@ -294,6 +309,7 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.meeting_review.expire', {}],
     ['system.local_activity.prune', {}],
     ['system.estimate.refit', {}],
+    ['system.time.prune', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
   ];

@@ -167,6 +167,66 @@ BEGIN
   SELECT RAISE(ABORT, 'task_claim_estimates is append-only: INSERT OR REPLACE is not permitted (SPEC 4.34)');
 END`,
   },
+  // §4.49's revisions are a time entry's history (D-088 item 6, LAI-787): the
+  // same three, except that a revision goes with its entry — the delete is
+  // refused only while the entry still exists, so retention's cascade passes.
+  {
+    name: 'time_entry_revisions_is_append_only_no_update',
+    table: 'time_entry_revisions',
+    create: `CREATE TRIGGER IF NOT EXISTS \`time_entry_revisions_is_append_only_no_update\`
+BEFORE UPDATE ON \`time_entry_revisions\`
+BEGIN
+  SELECT RAISE(ABORT, 'time_entry_revisions is append-only: UPDATE is not permitted (SPEC 4.49)');
+END`,
+  },
+  {
+    name: 'time_entry_revisions_is_append_only_no_delete',
+    table: 'time_entry_revisions',
+    create: `CREATE TRIGGER IF NOT EXISTS \`time_entry_revisions_is_append_only_no_delete\`
+BEFORE DELETE ON \`time_entry_revisions\`
+WHEN EXISTS (SELECT 1 FROM \`time_entries\` WHERE \`id\` = OLD.\`entry_id\`)
+BEGIN
+  SELECT RAISE(ABORT, 'time_entry_revisions is append-only: DELETE is not permitted while its entry exists (SPEC 4.49)');
+END`,
+  },
+  {
+    name: 'time_entry_revisions_is_append_only_no_replace',
+    table: 'time_entry_revisions',
+    create: `CREATE TRIGGER IF NOT EXISTS \`time_entry_revisions_is_append_only_no_replace\`
+BEFORE INSERT ON \`time_entry_revisions\`
+WHEN EXISTS (SELECT 1 FROM \`time_entry_revisions\` WHERE \`id\` = NEW.\`id\`)
+BEGIN
+  SELECT RAISE(ABORT, 'time_entry_revisions is append-only: INSERT OR REPLACE is not permitted (SPEC 4.49)');
+END`,
+  },
+  // §4.48's entries are kept three years (D-088 item 11, BCEA s31): nothing
+  // deletes one younger — a person's delete is `deleted_at` and a revision —
+  // and only §11.6's retention removes an older one, its revisions with it.
+  {
+    name: 'time_entries_kept_three_years',
+    table: 'time_entries',
+    create: `CREATE TRIGGER IF NOT EXISTS \`time_entries_kept_three_years\`
+BEFORE DELETE ON \`time_entries\`
+WHEN OLD.\`day\` >= date('now', '-3 years')
+BEGIN
+  SELECT RAISE(ABORT, 'time_entries are kept three years: DELETE is not permitted before then (SPEC 4.48)');
+END`,
+  },
+  // A delete trigger cannot see `INSERT OR REPLACE` (LAI-746's hole): with
+  // `recursive_triggers` off the row a replace removes fires none, and the
+  // cascade then takes its revisions. An entry is replaced by its id or by
+  // its unique `(user_id, source, source_ref)`, so both are refused (LAI-787
+  // review B2). Retention deletes; nothing replaces.
+  {
+    name: 'time_entries_no_replace',
+    table: 'time_entries',
+    create: `CREATE TRIGGER IF NOT EXISTS \`time_entries_no_replace\`
+BEFORE INSERT ON \`time_entries\`
+WHEN EXISTS (SELECT 1 FROM \`time_entries\` WHERE \`id\` = NEW.\`id\` OR (NEW.\`source_ref\` IS NOT NULL AND \`user_id\` = NEW.\`user_id\` AND \`source\` = NEW.\`source\` AND \`source_ref\` = NEW.\`source_ref\`))
+BEGIN
+  SELECT RAISE(ABORT, 'time_entries are kept three years: INSERT OR REPLACE is not permitted (SPEC 4.48)');
+END`,
+  },
 ] as const;
 
 /**
@@ -174,7 +234,8 @@ END`,
  * refuse to continue if what is there does not actually enforce anything.
  *
  * **§4.21's `member_ratings` too, since LAI-743, §4.32's `task_estimates`
- * since LAI-771 and §4.34's `task_claim_estimates` since LAI-772** — the name
+ * since LAI-771, §4.34's `task_claim_estimates` since LAI-772, and §4.48–§4.49's
+ * time entries and their revisions since LAI-787** — the name
  * stayed, because the mechanism is the same one and a rename would touch every
  * caller for no change in behaviour.
  *
@@ -230,7 +291,7 @@ export function ensureActivityTriggers(db: Db): void {
   const bodies = new Map(
     db
       .all<{ name: string; sql: string | null }>(
-        sql`SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name IN ('activity', 'member_ratings', 'task_estimates', 'task_claim_estimates')`,
+        sql`SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name IN ('activity', 'member_ratings', 'task_estimates', 'task_claim_estimates', 'time_entry_revisions', 'time_entries')`,
       )
       .map((row) => [row.name, row.sql ?? '']),
   );
@@ -248,7 +309,7 @@ export function ensureActivityTriggers(db: Db): void {
 
   if (broken.length > 0) {
     throw new Error(
-      `activity (SPEC §4.8), member_ratings (§4.21), task_estimates (§4.32) and task_claim_estimates (§4.34) are append-only and their triggers are not enforcing it: ${broken.join(', ')}. Refusing to start without the guarantee.`,
+      `activity (SPEC §4.8), member_ratings (§4.21), task_estimates (§4.32), task_claim_estimates (§4.34) and time_entry_revisions (§4.49) are append-only, and time_entries (§4.48) are kept three years and never replaced; their triggers are not enforcing it: ${broken.join(', ')}. Refusing to start without the guarantee.`,
     );
   }
 }

@@ -197,6 +197,12 @@ be obvious because someone will be asking for it.
 | Set API-equivalent prices | ✓ (session only) | ✓ (session only) | — | — |
 | Read and dismiss own token alerts | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Read and set own plan limit | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| Set the organisation's Time setting | ✓ (session only) | ✓ (session only) | — | — |
+| Read own time settings | ✓ | ✓ | ✓ | ✓ |
+| Set own Draft my time | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| Send own time drafts | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
+| Read and manage own time drafts | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| Read and write own time entries | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 
 **"View the organisation" is `org.read` and is a read action** (D-048) — a
 `read_only` token may do it. It does **not** cover the AI provider block:
@@ -295,6 +301,28 @@ project's totals and **never a per-person split**.
   the rows; the services read the caller's own rows only, and no row lets
   anybody read another's. The plan limit has no admin row at all.
 
+**The time rows are D-088's** (LAI-787): `org.time.set`,
+`time_settings.read_own`, `time_settings.set_own`, `time_drafts.send_own`,
+`time_drafts.read_own` with `time_drafts.manage_own`, and
+`time_entries.read_own` with `time_entries.write_own`, behind §6.4's
+`PUT /org/time`, `/me/time-settings`, `/me/time-drafts`, `/me/time` and
+`/me/time-entries`.
+
+- **Both switches are a web session's**, as D-079's are: the organisation's
+  *Time* (`off`, `manual`, `drafts`; §4.45) is its own row and not *Org
+  settings* borrowed, because a token may hold that one and an agent must not
+  turn on the drafting of its own person's day; the person's *Draft my time*
+  (§4.46) is theirs alone.
+- **Sending is a collector's and an agent's.** A collector uploads its blocks
+  and an agent proposes an entry (§7.1's `propose_time_entry`) under *Send
+  own time drafts*, with any `full` token of the person's; the services read
+  both switches on every send. The Viewer's cell is the credential's refusal.
+- **Drafts and per-person hours are the person's, signed in** (D-088 items 3,
+  7 and 13). No token reads or confirms a draft — not even the person's own —
+  and there is **no admin row** for drafts at all. Confirmed time per person is
+  never served to a token either, the rule *View own token usage* follows; who
+  else may see a person's hours is LAI-789's, behind rows of its own.
+
 ### 3.2 Project-level permission matrix
 
 Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
@@ -373,6 +401,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.meeting_review.expire` | §11.6 |
 | `system.local_activity.prune` | §11.6: local-activity retention (D-079) |
 | `system.estimate.refit` | §11.6: the nightly refit of sizes and forecasts (D-085) |
+| `system.time.prune` | §11.6: time retention — drafts after 30 days, entries after three years (D-088) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
 does for §3.1 and §3.2.
@@ -1688,6 +1717,182 @@ Written by every usage report, before its sessions are matched; read when
 telemetry arrives, to bin each point's day. Deleted with the person's history
 (`DELETE /me/local-activity`) and with the person.
 
+### 4.45 `org_time_settings`
+
+The organisation's *Time* (D-088 item 5, LAI-787). **No row is `off`.** Set
+by an owner or admin on a web session (`org.time.set`, §3.1).
+
+| field | notes |
+| --- | --- |
+| `org_id` | primary key, FK `orgs`, cascade |
+| `mode` | `off` \| `manual` \| `drafts` — `manual`: people type their own entries; `drafts`: their collectors may also draft their day |
+| `updated_at` | |
+
+Leaving `drafts` deletes every draft anybody has not confirmed (§4.47), in the
+same transaction; a confirmed one stays, its evidence blanked, so its block is
+not drafted again when drafting is turned back on. A table rather than an
+`orgs` column so the change is additive.
+
+### 4.46 `user_time_settings`
+
+A person's own *Draft my time* (D-088 item 5, LAI-787). **No row is off.** Set
+only by the person, on a web session (`time_settings.set_own`).
+
+| field | notes |
+| --- | --- |
+| `user_id` | primary key, FK `users`, cascade |
+| `draft_my_time` | 0 or 1 (CHECK) |
+| `updated_at` | |
+
+Turning it off deletes every draft the person has not confirmed, in the same
+transaction, and blanks a confirmed one's evidence — as §4.45 does. Drafting
+needs both this and §4.45's `drafts`.
+
+### 4.47 `time_drafts`
+
+A person's drafted time (D-088 items 3, 11 and 13, LAI-787): a block their own
+collector drafted on their machine, or an entry an agent proposed. **Read only
+by the person, on a web session** — no token reads one and there is no admin
+read. Counts of the signals behind a block and nothing else: no column can hold
+a prompt, a path, a repository, a branch or a window title.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `user_id` | FK `users`, cascade |
+| `source` | `collector` \| `agent` |
+| `collector_id` | the collector's random UUID; empty for an agent's proposal, or once the person edited the block |
+| `day` | `YYYY-MM-DD`, the person's local day in `tz` (D-088 item 12) |
+| `tz` | IANA zone |
+| `started_at` | nullable — unix ms; null for a proposal of minutes alone |
+| `ended_at` | nullable — set exactly when `started_at` is, and after it (CHECK) |
+| `minutes` | 1–1440 (CHECK) |
+| `task_key` | nullable — the key as sent, when it names no task the person can read |
+| `task_id` | nullable FK `tasks`, set null |
+| `project_id` | nullable FK `projects`, set null |
+| `general` | 0 or 1 — put on no card and no project by the person, on purpose |
+| `signals` | JSON `{ prompts, replies, sessions, commits, marks }` — counts only |
+| `note` | nullable — an agent's proposal may say what it was for, ≤ 200 characters |
+| `state` | `pending` \| `confirmed` \| `dismissed` |
+| `entry_id` | nullable FK `time_entries`, set null — what a confirmed draft became |
+| `origin_id` | nullable — a collector block's **origin**: the id of the row as first stored, shared by the halves of a split; null for an agent's proposal |
+| `origin_task` | nullable — the origin's key as the collector sent it; null for an untied block |
+| `origin_started_at`, `origin_ended_at` | nullable — the origin's span, set exactly when `origin_id` is, end after start (CHECK) |
+| `origin_minutes` | nullable — the origin's minutes, 1–1440 (CHECK) |
+| `created_at`, `updated_at` | |
+
+Indexes: `(user_id, day)` — My day and its week — and `(day)` for retention,
+with each FK's.
+
+**A re-sent day is measured by origin** (LAI-787 review B1). The collector
+sends one block per task per stretch, so the blocks of tasks worked in
+parallel overlap. An upload replaces **its own unheld pending** blocks for each
+day it carries; every other row of the day that came from a block — confirmed,
+dismissed, held after the person's edit or split, or another machine's — is
+measured against by its origin, which no edit changes. A new block loses what
+origins of the **same task** overlapping it hold, each in proportion to how
+much of its span lies in the block; and the blocks of a stretch (spans that
+touch or overlap) keep no more than the stretch's own minutes less what is
+settled across it, of any task. **Minutes are taken off, never span**: a
+settled block costs another task's block nothing; a confirmed draft is
+measured against for as long as it is kept, so deleting its entry or moving it
+to another day does not bring the block back; an edit is never overwritten;
+and two machines working the same hours draft them once, never twice. Entries
+are not consulted: a timeless manual entry overlaps nothing it could be
+compared with, and the day's 1440 minutes (§4.48) keep the two from being
+confirmed past a day. Kept 30 days (§11.6); the person may delete their
+unconfirmed drafts at any time (`DELETE /me/time-drafts`), and a confirmed one
+stays until retention.
+
+### 4.48 `time_entries`
+
+Confirmed time (D-088 items 2, 11 and 12, LAI-787): what a person confirmed
+from a draft, typed, or imported — **the only time anyone but the person will
+ever see.** On a task, a project, or neither (*General*). Writes no `activity`
+row.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `user_id` | FK `users` — no `ON DELETE`: people are deactivated, never deleted |
+| `task_id` | nullable FK `tasks`, set null |
+| `project_id` | nullable FK `projects`, set null — the task's project when there is a task |
+| `day` | `YYYY-MM-DD`, the person's local day in `tz` |
+| `tz` | IANA zone, stored per entry; the board stays UTC |
+| `started_at`, `ended_at` | nullable, together, end after start (CHECK) — a confirmed block keeps its span |
+| `minutes` | 1–1440 (CHECK); a person's live entries on one day sum to at most 1440 (`422 day_full`) |
+| `source` | `draft` \| `manual` \| `import` |
+| `source_ref` | nullable — the draft it came from, or an import's own id (LAI-788); unique per `(user_id, source)` where set |
+| `note` | nullable, ≤ 280 characters |
+| `revision` | integer ≥ 1, its newest revision's number |
+| `deleted_at` | nullable — a person's delete keeps the row |
+| `created_at`, `updated_at` | |
+
+Indexes: `(user_id, day)`, `(project_id, day)`, `(task_id)`, `(day)`. **Kept
+three years** (BCEA s31): a trigger refuses deleting a row whose `day` is not
+yet three years old, and another refuses `INSERT OR REPLACE` over any entry —
+by its `id` or its `(user_id, source, source_ref)` — which removes the row
+without firing a delete trigger and would take its revisions with it (LAI-787
+review B2). So only §11.6's retention removes one, its revisions with it;
+`runMigrations` re-checks both triggers at every boot.
+
+### 4.49 `time_entry_revisions`
+
+Every change to a time entry, as the entry stood after it (D-088 item 6,
+LAI-787). **Append-only**: triggers refuse `UPDATE`, an `INSERT OR REPLACE`
+over an existing id, and `DELETE` while its entry exists.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `entry_id` | FK `time_entries`, cascade |
+| `revision` | integer; `(entry_id, revision)` unique |
+| `change` | `created` \| `edited` \| `deleted` |
+| `changed_by` | FK `users` |
+| `task_id`, `project_id` | nullable — **copies, no FK**: history says what the entry said, and a deleted task must not rewrite it |
+| `day`, `tz`, `started_at`, `ended_at`, `minutes`, `note` | the entry after the change |
+| `created_at` | |
+
+### 4.50 `agent_time_days`
+
+Claude Code's own `active_time` per session and day (D-088 item 8, LAI-787):
+`user`, time at the keyboard in Claude Code, apart from `cli`, the agent
+working. From D-087's OTLP receiver, under its two switches. **Agent minutes,
+never hours**; nothing adds them to a time entry.
+
+| field | notes |
+| --- | --- |
+| `user_id` | FK `users`, cascade |
+| `day` | in the zone telemetry is read in (§4.44) |
+| `session_key` | as §4.38 — a one-way key, never the session id |
+| `kind` | `user` \| `cli` |
+| `seconds` | real, ≥ 0 |
+| `updated_at` | |
+
+Primary key `(user_id, day, session_key, kind)`. A session the collector left
+out (§4.40) has its rows dropped and none added. Kept 400 days with the token
+rollup, and deleted with the person's history (`DELETE /me/local-activity`).
+
+### 4.51 `token_session_tasks`
+
+How a Claude Code session's tokens of a day split between tasks, by one-way
+key (D-088 item 8, LAI-787): what ties its agent minutes to cards the way its
+tokens are tied (D-084 item 5).
+
+| field | notes |
+| --- | --- |
+| `user_id` | FK `users`, cascade |
+| `collector_id` | the reporting collector |
+| `day` | as the usage report's |
+| `session_key` | as §4.38 |
+| `task_id` | FK `tasks`, cascade — only a key the sender may read is kept |
+| `tokens` | headline tokens the session spent on it, ≥ 0 |
+| `updated_at` | |
+
+Primary key `(user_id, day, collector_id, session_key, task_id)`. Replaced per
+(person, collector, day) with each usage report, as its rows are; kept 400 days
+and deleted with the person's history.
+
 ## 5. Task lifecycle
 
 ```
@@ -1928,6 +2133,16 @@ GET    /api/v1/me/local-activity             ?days=1–14 — what is held for t
 GET    /api/v1/me/token-alerts               the caller's own budget and runaway alerts   POST .../:id/dismiss → 204   (session only; LAI-773)
 GET    /api/v1/me/plan-limit                 PUT .../plan-limit   DELETE → 204 — the developer's own forecast, an estimate   (session only; D-087)
 POST   /api/v1/otlp/v1/metrics               OpenTelemetry metrics, OTLP/HTTP JSON, from the developer's own agents (both switches on; LAI-773)
+GET    /api/v1/me/time-settings              PUT .../time-settings  body { draft_my_time } — the org's Time and the person's own switch   (PUT session only; LAI-787)
+PUT    /api/v1/me/time-drafts                a collector's blocks → { accepted_days, stored_blocks }   (both time switches on; 30/hour)
+POST   /api/v1/me/time-drafts                an agent's proposal → 201 { id, minutes, day } (both time switches on; twin of propose_time_entry)
+DELETE /api/v1/me/time-drafts                every draft the caller has not confirmed → 204   (session only)
+PATCH  /api/v1/me/time-drafts/:id            body { task?, project?, general?, minutes? }   POST .../split { at }   POST .../dismiss → 204   (session only)
+POST   /api/v1/me/time-drafts/:id/confirm    → 201, the entry   POST /api/v1/me/time/days/:day/confirm → { entries }   (session only)
+GET    /api/v1/me/time                       ?day=&tz= — My day: drafts, entries, agent minutes, the week   (session only)
+POST   /api/v1/me/time-entries               body { day, tz, minutes, task?, project?, note? } → 201   PATCH/DELETE .../:id   (session only)
+GET    /api/v1/me/time-entries/:id/revisions an entry's append-only history   (session only)
+PUT    /api/v1/org/time                      body { mode } — off | manual | drafts   (owner, admin; session only; LAI-787)
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only)
 POST   /api/v1/org/github-webhook            set or rotate the GitHub webhook secret; answers it once (session only)
 DELETE /api/v1/org/github-webhook            clear it (204; session only)
@@ -2209,6 +2424,13 @@ reaches SSE, an MCP tool or an export (§4.21).
   that machine's session rows (§4.38); a day sent without `sessions` leaves its
   Claude Code file tokens *unplaced*, which keeps the match safe (§4.38). A key
   in `excluded` drops that session's telemetry, before and after.
+- **Each session's split between tasks** (LAI-787, D-088 item 8). A day may
+  also carry `"session_tasks": [{ "key", "task", "tokens" }]`, at most 200: per
+  Claude Code session key and task key, the headline tokens it spent on that
+  task that day — the split its marks and branch made. Each (person, collector,
+  day) carried replaces that machine's split (§4.51); only a key the sender may
+  read is kept. It ties the session's agent minutes to cards the way its
+  tokens are tied.
 - Refusals, in §6.3's envelope with the contract's reason in `details.reason`:
   `403 local_activity_off` when either switch is off (asked before the body is
   judged); `422 day_out_of_range` when `days` is empty, longer than 14, repeats
@@ -2333,11 +2555,15 @@ developer's own Laika token as the bearer header. Who is sending and both of
 D-084's switches are asked in a middleware **before the body limit and before
 any byte of the body is read**: signed out is `401`, a switch off `403
 local_activity_off`, whatever the size of the body (review). A `read_only`
-token is refused as for any report. Of the body only two metrics are read:
+token is refused as for any report. Of the body only these metrics are read:
 `claude_code.token.usage` (attribute `type`: `input`, `output`, `cacheRead`,
-`cacheCreation`; `model`; `session.id`) and `claude_code.cost.usage` (USD);
-every other metric and attribute — `user.email`, `organization.id`, the
-account ids, the terminal — is read past and never stored, and `session.id`
+`cacheCreation`; `model`; `session.id`) and `claude_code.cost.usage` (USD) —
+and, since LAI-787, `claude_code.active_time.total` (seconds; attribute `type`:
+`user`, time at the keyboard in Claude Code, or `cli`, the agent working;
+`session.id`), kept per session key and day as agent minutes (§4.50) and never
+added to a token row or a time entry; every other metric and attribute —
+`user.email`, `organization.id`, the account ids, the terminal — is read past
+and never stored, and `session.id`
 is kept only as its one-way key (§4.38). A point without `session.id` cannot be
 matched, so it is refused rather than risk counting twice. **A point is taken
 only for the days a usage report may carry**: its interval must start no later
@@ -2472,6 +2698,61 @@ no rate, once reached, or past the window's reset. **No plan carries a token
 figure**: Anthropic states its plans' limits as a session that resets every
 five hours and a weekly limit at a fixed time (support.claude.com, *What is
 the Max plan?*), not in tokens, so the number is always the developer's.
+
+**Time (D-088, LAI-787).** Everything here is the caller's own and no
+parameter names anybody else.
+
+- **The switches.** `GET /me/time-settings` answers `{ org_mode, draft_my_time,
+  drafting, min_sync_interval_s }` to a session or any token of the person's —
+  a collector asks before it sends. `PUT /me/time-settings` takes
+  `{ draft_my_time }` from a web session only; off deletes every draft the
+  person has not confirmed. `PUT /org/time` takes `{ mode }` — `off`, `manual`
+  or `drafts` — from an owner or admin on a web session (`org.time.set`);
+  leaving `drafts` deletes everybody's unconfirmed drafts. A confirmed draft
+  stays, its evidence blanked (§4.45), and entries are never deleted by a
+  switch.
+- **A collector's upload.** `PUT /me/time-drafts` takes `{ v: 1, collector_id,
+  tz, days: [{ day, blocks: [{ start, end, minutes, task, signals }] }] }` —
+  `start` and `end` unix ms, `task` a key or `null`, `signals` the counts
+  `{ prompts?, replies?, sessions?, commits?, marks? }` — and nothing else:
+  any other field, here or in a block, is `422`. Days run from today − 14 to
+  today + 1 in `tz`, at most 15, each once (`day_out_of_range`); a day holds at
+  most 48 blocks, each starting on its own day, ending after it starts, with no
+  more minutes than its span, and 1440 minutes in all (`invalid_blocks`). It
+  replaces the caller's unheld pending blocks from that collector for each day
+  and measures each new block against what is settled, by origin (§4.47).
+  Refused `403
+  time_drafts_off` — before the body is read — unless both switches are on.
+  Body limit 16 KiB; its own bucket under §6.3's collector policy. Answers
+  `{ accepted_days, stored_blocks }`.
+- **An agent's proposal.** `POST /me/time-drafts` takes `{ minutes, task?,
+  day?, tz?, note? }`, stores a draft with `source: "agent"` — never an entry —
+  and answers `201` with `{ id, minutes, day }` and nothing more: a token reads
+  no draft, its own proposal included. The same rules and switches as §7.1's
+  `propose_time_entry`, its twin.
+- **My day.** `GET /me/time?day=&tz=` answers `{ day, tz, today, settings,
+  drafts, entries, agent, state, week }`: the pending drafts and live entries
+  of the day in the order they happened, each with its task `{ id, key,
+  title }` and project `{ id, slug, name }`; `agent` — `{ minutes,
+  keyboard_minutes, by_task: [{ task, minutes }], unattributed_minutes }`,
+  **agent minutes, never hours**; `state` — `drafted`, `confirmed`,
+  `no_signal` (nothing reached Laika: never shown as zero hours) or `future`;
+  and `week`, Monday to Sunday, each `{ day, confirmed_minutes,
+  drafted_minutes, state }`. Without `tz`, the zone of the person's drafts;
+  without `day`, today there. One indexed query per section.
+- **The person's hands.** `PATCH /me/time-drafts/:id` puts a block on a card
+  (`task`), a project (`project`) or *General* (`general: true`), or changes
+  its minutes, and holds it for them so no sync overwrites it; `…/split`
+  `{ at }` cuts one at a minute inside it into two, each with its share;
+  `…/dismiss` puts it away for good; `…/confirm` makes it an entry (`201`);
+  `POST /me/time/days/:day/confirm` confirms the day's pending drafts in one
+  transaction, an untied one as *General*, answering `{ entries }`.
+  `POST /me/time-entries` is time typed by hand — a meeting, a call — needing
+  only the organisation's *Time* not `off` (`403 time_off`). `PATCH` and
+  `DELETE /me/time-entries/:id` write the next revision; `GET …/revisions`
+  answers `{ revisions }`, oldest first. A day holds at most 1440 minutes of a
+  person's live entries (`422 day_full`). All of these are **session only**:
+  no token reads, confirms or writes a person's time.
 
 **API-equivalent prices.** `GET /org/model-prices` answers `{ as_of, can_set,
 entries }` under `org.read` — every price in force, the organisation's first:
@@ -2720,6 +3001,7 @@ matched.
 | `update_sprint` | `{ sprint, name?, goal?, start_date?, end_date?, status? }` | sprint. Completing one **does not move its tasks** (§4.15, D-013) |
 | `update_project_context` | `{ project, context_md, mode }` | the document's new length. `mode` is `replace` or `append` |
 | `log_unlisted_work` | `{ repo, note }` | records work or an idea outside any project, for triage |
+| `propose_time_entry` | `{ minutes, task?, day?, note? }` | a draft in the person's own drafts (`source: 'agent'`, §4.47) — **never an entry**: only the person confirms it, signed in to the web app (D-088 item 13). Refused `forbidden` with `details.reason: "time_drafts_off"` unless the organisation's *Time* is `drafts` and the person turned on *Draft my time*. `day` is their local day, by default today in their drafts' zone. It answers `{ id, minutes, day }` and nothing of the person's drafts. Its REST twin is `POST /me/time-drafts` (LAI-787) |
 
 `get_task_context` and `get_project_context` are deliberately **fat** — one call
 returns everything needed to start, because round-trips are expensive for an
@@ -2809,7 +3091,7 @@ and each disagreed:
   board would file a task instead — so there is no human write path to mirror.
   Humans read it (`GET /api/v1/unlisted`) and act on it
   (`POST /api/v1/unlisted/:id/promote`). The parity tests of §13.3 therefore
-  cover the seventeen tools that have twins; this one is exempt, and **the
+  cover the eighteen tools that have twins; this one is exempt, and **the
   exemption is named**, so the missing pair reads as intended rather than as a
   gap. *(This
   sentence deliberately carries **one** number and not two: it said "nine … a
@@ -3736,7 +4018,14 @@ One interval-driven scheduler in the same process:
   job (LAI-773): `token_session_days` dated before 40 days ago — the
   telemetry match is settled once the collector's 31-day window has passed it
   — telemetry series not touched for three days, excluded session keys older
-  than 45 days, and arrival buckets older than eight days
+  than 45 days, and arrival buckets older than eight days; and, kept 400 days
+  with the token rollup (LAI-787), `agent_time_days` and `token_session_tasks`
+- **time retention** (D-088 item 11, LAI-787) — `time_drafts` dated before 30
+  days ago, whatever their state, and `time_entries` dated before three years
+  ago with their revisions, daily **and once at boot**, under §3.4's
+  `system.time.prune`. Triggers refuse deleting a younger entry and replacing
+  any (§4.48), so nothing else removes one. No `activity` row, for the reason
+  local activity's has none
 - **stale-task flagging** — `in_progress` with no heartbeat or commit for 3 days
   sets `stale_flagged_at`
 - invite expiry, meeting-review expiry (7 days)
@@ -3847,11 +4136,17 @@ author emails or raw commit ids. No call to GitHub is added.
 
 **OpenTelemetry is inbound too, and metrics only** (LAI-773, D-087). A
 developer may point their own Claude Code's metrics at their own board, with
-their own token, under the same two switches; Laika keeps two metrics' counts
-and a one-way key of the session, drops every other attribute, and has no
-route for logs or traces. **Prices are a dated table in the code**, edited by
-an admin; nothing fetches one. The plan-limit forecast is computed from what
-the board already holds and shown to the developer alone.
+their own token, under the same two switches; Laika keeps the counts of the
+metrics §6.4 names and a one-way key of the session, drops every other
+attribute, and has no route for logs or traces. **Prices are a dated table in
+the code**, edited by an admin; nothing fetches one. The plan-limit forecast is
+computed from what the board already holds and shown to the developer alone.
+
+**Time drafts are inbound too, opt-in twice, and blocks with counts only**
+(D-088, LAI-787): a person's own collector drafts their day on their machine
+and sends only start, end, the local day and zone, a task key or none, and the
+counts of the signals behind each block — never prompt text, paths, repository
+or branch names, or window titles — to a store only they read, signed in.
 
 ---
 

@@ -9,6 +9,7 @@ import {
   flagStaleTasks,
   pruneHeartbeats,
   pruneLocalActivity,
+  pruneTime,
   vacuum,
   type JobResult,
 } from './jobs.ts';
@@ -84,6 +85,9 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
       run: (now) => pruneLocalActivity(db, now),
       atStart: true,
     },
+    // Drafts after 30 days, entries after three years (D-088), and once at
+    // boot for the reason local activity's runs then.
+    { name: 'time.retention', everyMs: DAY, run: (now) => pruneTime(db, now), atStart: true },
     { name: 'task.stale', everyMs: DAY, run: (now) => flagStaleTasks(db, now) },
     { name: 'invite.expiry', everyMs: HOUR, run: (now) => expireInvites(db, now) },
     { name: 'meeting_review.expiry', everyMs: HOUR, run: (now) => expireMeetingReviews(db, now) },

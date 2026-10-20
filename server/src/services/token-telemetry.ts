@@ -11,6 +11,7 @@ import {
   tokenUsageZones,
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
+import { type AgentSeconds, dropAgentTime, storeAgentTime } from './agent-time.ts';
 import { dayIn, isTimeZone } from './calendar-days.ts';
 import { assertMaySendLocalActivity, TELEMETRY_COLLECTOR } from './local-activity.ts';
 
@@ -67,6 +68,14 @@ import { assertMaySendLocalActivity, TELEMETRY_COLLECTOR } from './local-activit
  * starts before that is a repeat. Either way a point arriving out of order can
  * only be dropped, never counted twice.
  *
+ * ## Agent minutes (D-088 item 8, LAI-787)
+ *
+ * `claude_code.active_time.total` (seconds; attribute `type`: `user`, time at
+ * the keyboard in Claude Code, or `cli`, the agent working; `session.id`) is
+ * read the same way — the same series state, so a repeat adds nothing — and
+ * kept per session key and day in `agent_time_days` (`agent-time.ts`). It
+ * never touches a token row, and it is never hours.
+ *
  * ## Sessions nobody was typing in
  *
  * D-086 leaves an orchestrator's or CI's sessions out of the files; the
@@ -115,8 +124,16 @@ export function sessionKey(id: string): string {
   return createHash('sha256').update(`laika-session:${id}`).digest('hex').slice(0, 16);
 }
 
-/** One of the four counts, or Claude Code's own cost. */
-export type TelemetryKind = 'input' | 'output' | 'cache_write' | 'cache_read' | 'cost';
+/** One of the four counts, Claude Code's own cost, or its active time by type. */
+export type TelemetryKind =
+  'input' | 'output' | 'cache_write' | 'cache_read' | 'cost' | 'active_user' | 'active_cli';
+
+const ACTIVE_TIME = 'claude_code.active_time.total';
+
+const ACTIVE_KIND_OF_TYPE: Readonly<Record<string, TelemetryKind>> = {
+  user: 'active_user',
+  cli: 'active_cli',
+};
 
 const KIND_OF_TYPE: Readonly<Record<string, TelemetryKind>> = {
   input: 'input',
@@ -187,8 +204,8 @@ function modelOf(raw: string | undefined): string | undefined {
 }
 
 /**
- * Read an OTLP/HTTP JSON `ExportMetricsServiceRequest` for the two metrics
- * Laika takes. A body that is not one is refused (`422`); a point that cannot
+ * Read an OTLP/HTTP JSON `ExportMetricsServiceRequest` for the metrics Laika
+ * takes. A body that is not one is refused (`422`); a point that cannot
  * be used — no session id, no model, no value — is counted in `rejected` and
  * said once in `message`, which OTLP carries back as `partialSuccess`.
  */
@@ -211,7 +228,14 @@ export function readOtlpMetrics(body: unknown): OtlpRead {
       for (const metric of list(scope.metrics)) {
         if (!isRecord(metric)) continue;
         const name = metric.name;
-        if (name !== 'claude_code.token.usage' && name !== 'claude_code.cost.usage') continue;
+        if (
+          name !== 'claude_code.token.usage' &&
+          name !== 'claude_code.cost.usage' &&
+          name !== ACTIVE_TIME
+        ) {
+          continue;
+        }
+        const active = name === ACTIVE_TIME;
         const sum = metric.sum;
         if (!isRecord(sum)) {
           rejected += 1;
@@ -231,9 +255,13 @@ export function readOtlpMetrics(body: unknown): OtlpRead {
           }
           const attrs = stringAttributes(point.attributes);
           const session = attrs.get('session.id') ?? resourceAttrs.get('session.id');
-          const model = modelOf(attrs.get('model') ?? resourceAttrs.get('model'));
-          const kind =
-            name === 'claude_code.cost.usage' ? 'cost' : KIND_OF_TYPE[attrs.get('type') ?? ''];
+          // Active time carries no model: it is the session's, whatever ran.
+          const model = active ? '' : modelOf(attrs.get('model') ?? resourceAttrs.get('model'));
+          const kind = active
+            ? ACTIVE_KIND_OF_TYPE[attrs.get('type') ?? '']
+            : name === 'claude_code.cost.usage'
+              ? 'cost'
+              : KIND_OF_TYPE[attrs.get('type') ?? ''];
           const value = valueOf(point);
           const endMs = msOf(point.timeUnixNano);
           const startMs = msOf(point.startTimeUnixNano) ?? endMs;
@@ -432,6 +460,8 @@ export function storeExcluded(
       )
       .run();
   }
+  // Their agent minutes are not the developer's either (LAI-787).
+  dropAgentTime(tx, userId, unique);
   return days;
 }
 
@@ -777,6 +807,7 @@ export function recordTelemetry(
       string,
       Counts & { cost: number; day: string; key: string; model: string }
     >();
+    const activeAdded = new Map<string, AgentSeconds>();
     const touched = new Set<string>();
     for (const p of [...points].sort((a, b) => a.endMs - b.endMs)) {
       const key = seriesKeyOf(p);
@@ -802,6 +833,14 @@ export function recordTelemetry(
       touched.add(key);
       if (add <= 0) continue;
       const day = dayIn(tz, p.endMs);
+      if (p.kind === 'active_user' || p.kind === 'active_cli') {
+        const kind = p.kind === 'active_user' ? 'user' : 'cli';
+        const id = `${day}\u0000${p.sessionKey}\u0000${kind}`;
+        const held = activeAdded.get(id) ?? { day, sessionKey: p.sessionKey, kind, seconds: 0 };
+        held.seconds += add;
+        activeAdded.set(id, held);
+        continue;
+      }
       const id = `${day}\u0000${p.sessionKey}\u0000${p.model}`;
       const entry = added.get(id) ?? { ...zero(), cost: 0, day, key: p.sessionKey, model: p.model };
       if (p.kind === 'cost') entry.cost += add;
@@ -863,6 +902,7 @@ export function recordTelemetry(
         })
         .run();
     }
+    storeAgentTime(tx, userId, [...activeAdded.values()], now);
     const days = [...new Set([...added.values()].map((e) => e.day))];
     const arrived = recomputeGap(tx, userId, days, now);
     return { days, arrived };

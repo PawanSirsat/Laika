@@ -318,6 +318,22 @@ export const ROUTES: readonly Route[] = [
     phase: 'Phase 7',
   },
 
+  /*
+   * **My day** (D-088, LAI-787) — the reader's own day: drafted on their own
+   * machine, confirmed by them, private to them. **Under the person**, not in
+   * a group: it is about whoever is signed in, so its link sits beneath their
+   * name at the foot of the rail rather than beside the organisation's pages.
+   * Every signed-in person has one; nothing here is anybody else's.
+   */
+  {
+    orgLevel: true,
+    path: '/my-day',
+    label: 'My day',
+    group: null /* under the person, in the sidebar footer */,
+    status: 'ready',
+    phase: 'Phase 8',
+  },
+
   // Routed and reachable by URL, but not offered in the nav: no screen behind
   // them yet, so an entry would be a dead link. They come back the moment they
   // have a `status`.

@@ -254,6 +254,9 @@ export function Sidebar({
           collapsed={collapsed}
           onSignOut={onSignOut}
           signingOut={signingOut ?? false}
+          currentPath={currentPath}
+          onNavigate={onNavigate}
+          onClose={onClose}
         />
       )}
     </nav>

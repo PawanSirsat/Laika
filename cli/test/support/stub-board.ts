@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 
-import { contractViolation } from './local-activity-contract.ts';
+import { contractViolation, timeDraftViolation } from './local-activity-contract.ts';
 
 /**
  * A board that implements the two activity endpoints of the contract and
@@ -80,6 +80,13 @@ export interface StubBoard {
    * a test turns it on; `limited` counts the 429s it gave.
    */
   bucket: { on: boolean; tokens: number; at: number; limited: number };
+  /**
+   * Time drafts (LAI-787): the two switches `GET /me/time-settings` answers,
+   * or `undefined` for an older board that has neither endpoint (404).
+   */
+  time: { org_mode: 'off' | 'manual' | 'drafts'; draft_my_time: boolean } | undefined;
+  /** Each (collector, day)'s blocks, replaced by every report that carries the day. */
+  readonly drafts: Map<string, readonly unknown[]>;
   readonly close: () => void;
 }
 
@@ -116,6 +123,8 @@ export async function stubBoard(token: string): Promise<StubBoard> {
     prefixes: undefined,
     offForUsage: false,
     bucket: { on: false, tokens: 30, at: 0, limited: 0 },
+    time: undefined,
+    drafts: new Map(),
     close: () => undefined,
   };
 
@@ -167,6 +176,47 @@ export async function stubBoard(token: string): Promise<StubBoard> {
           ...board.sharing,
           usage_days_elsewhere: [...elsewhere].sort(),
           ...(board.prefixes === undefined ? {} : { task_prefixes: board.prefixes }),
+        });
+        return;
+      }
+      // LAI-787: the time switches, and the blocks they let through.
+      if (req.method === 'GET' && url.pathname === '/api/v1/me/time-settings') {
+        if (board.time === undefined) {
+          refuse(404, 'not_found');
+          return;
+        }
+        json(200, {
+          ...board.time,
+          drafting: board.time.org_mode === 'drafts' && board.time.draft_my_time,
+          min_sync_interval_s: board.sharing.min_sync_interval_s,
+        });
+        return;
+      }
+      if (req.method === 'PUT' && req.url === '/api/v1/me/time-drafts') {
+        if (board.time === undefined) {
+          refuse(404, 'not_found');
+          return;
+        }
+        if (!(board.time.org_mode === 'drafts' && board.time.draft_my_time)) {
+          refuse(403, 'forbidden', { reason: 'time_drafts_off' });
+          return;
+        }
+        const violation = timeDraftViolation(body, board.now());
+        if (violation !== undefined) {
+          board.violations.push(violation);
+          refuse(422, 'unprocessable', {
+            reason: violation === 'day_out_of_range' ? violation : 'invalid_blocks',
+          });
+          return;
+        }
+        const sent = JSON.parse(body) as {
+          collector_id: string;
+          days: { day: string; blocks: unknown[] }[];
+        };
+        for (const d of sent.days) board.drafts.set(`${sent.collector_id}|${d.day}`, d.blocks);
+        json(200, {
+          accepted_days: sent.days.length,
+          stored_blocks: sent.days.reduce((n, d) => n + d.blocks.length, 0),
         });
         return;
       }

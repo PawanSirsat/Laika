@@ -470,6 +470,50 @@ const PAIRS: readonly Pair[] = [
     client: 'ModelPrices',
     clientFile: 'model-prices.ts',
   },
+  // A person's own time (LAI-787, D-088), paired the moment the mirror existed.
+  {
+    server: 'TimeSettingsView',
+    serverFile: 'services/time-settings.ts',
+    client: 'TimeSettings',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'TimeDraftView',
+    serverFile: 'services/time-drafts.ts',
+    client: 'TimeDraft',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'TimeEntryView',
+    serverFile: 'services/time-entries.ts',
+    client: 'TimeEntry',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'TimeRevisionView',
+    serverFile: 'services/time-entries.ts',
+    client: 'TimeRevision',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'MyDayView',
+    serverFile: 'services/my-day.ts',
+    client: 'MyDay',
+    clientFile: 'time.ts',
+  },
+  // Its two nested shapes, which the server's census counts as served views.
+  {
+    server: 'AgentDayView',
+    serverFile: 'services/agent-time.ts',
+    client: 'MyDayAgent',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'WeekDayView',
+    serverFile: 'services/my-day.ts',
+    client: 'MyDayWeekDay',
+    clientFile: 'time.ts',
+  },
   // Nested, through a table for the reason given below the profile's.
   ...(
     [

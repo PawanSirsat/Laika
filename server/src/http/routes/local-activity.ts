@@ -29,6 +29,7 @@ import {
   SESSION_KEY_PATTERN,
   SESSIONS_PER_DAY_MAX,
 } from '../../services/token-telemetry.ts';
+import { SESSION_TASKS_PER_DAY_MAX } from '../../services/agent-time.ts';
 import { type AppEnv } from '../context.ts';
 import { parseBody, parseQuery, strictObject, z } from '../validation.ts';
 
@@ -152,6 +153,20 @@ const UsageBody = strictObject({
           }),
         )
         .max(SESSIONS_PER_DAY_MAX)
+        .optional(),
+      // How each session's tokens split between tasks that day (LAI-787):
+      // the key of the session, a task key, and a count — nothing else.
+      session_tasks: z
+        .array(
+          strictObject({
+            key: sessionKeyField,
+            task: z
+              .string()
+              .regex(TASK_KEY_PATTERN, 'a task is a Laika key or an outside id, PREFIX-n'),
+            tokens: tokenCount,
+          }),
+        )
+        .max(SESSION_TASKS_PER_DAY_MAX)
         .optional(),
       rows: z
         .array(

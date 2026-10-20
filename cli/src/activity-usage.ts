@@ -157,8 +157,11 @@ const DATA_V = 4;
 const SPLIT_FROM_V = 3;
 /** How near a day's edge a line is for the day beside it to be asked too: a reply streams for minutes. */
 const EDGE_S = 3600;
-/** Changes the meaning of a cached day: every day is counted again. */
-const CACHE_V = 1;
+/**
+ * Changes the meaning of a cached day: every day is counted again. 2: a day
+ * carries its sessions' tokens per task (`t`, LAI-787).
+ */
+const CACHE_V = 2;
 
 export type UsageAgent = 'claude-code' | 'codex' | 'gemini-cli';
 
@@ -276,14 +279,27 @@ export interface SessionRow {
 }
 
 /**
+ * One session's headline tokens on one task, of a day (LAI-787): what agent
+ * minutes are split by, as tokens are split between tasks — `key` the
+ * session's one-way key, `task` the key it was tied to.
+ */
+export interface SessionTaskRow {
+  key: string;
+  task: string;
+  tokens: number;
+}
+
+/**
  * A day's Claude Code part, as last computed: rows `[model, task, input,
- * output, cache_write, cache_read]`, sessions `[key, model, …the four]`, the
- * keys of sessions whose replies that day were left out of scope, and whether
- * it holds tokens from before counting began.
+ * output, cache_write, cache_read]`, sessions `[key, model, …the four]`, each
+ * session's headline tokens per task `[key, task, tokens]` (LAI-787), the keys
+ * of sessions whose replies that day were left out of scope, and whether it
+ * holds tokens from before counting began.
  */
 interface ClaudeDay {
   r: [string, string | null, number, number, number, number][];
   s: [string, string, number, number, number, number][];
+  t?: [string, string, number][];
   x: string[];
   o?: 1;
 }
@@ -835,6 +851,17 @@ function branchKeys(branch: unknown): string {
     }
   }
   return keys.join(' ');
+}
+
+/**
+ * The task keys a line of text carries, read as a branch name is (LAI-787: a
+ * commit's subject, for the time drafter). The text itself is never kept;
+ * which key counts is the board's prefixes' to say.
+ */
+export function textKeys(text: string): string[] {
+  return branchKeys(text.slice(0, 255))
+    .split(' ')
+    .filter((key) => key !== '');
 }
 
 /**
@@ -1807,7 +1834,7 @@ function prune(
 /* -------------------------------------------------------------------------- */
 
 /** The repository a working directory is in: the nearest parent holding `.git`. */
-function toplevelOf(cwd: string): string | undefined {
+export function toplevelOf(cwd: string): string | undefined {
   let dir = cwd;
   for (;;) {
     if (existsSync(join(dir, '.git'))) return dir;
@@ -1985,6 +2012,8 @@ interface Days {
   readonly rows: Map<string, UsageRow[]>;
   /** Per day, Claude Code's tokens per session and model (design.md §2, LAI-773). */
   readonly sessions: Map<string, SessionRow[]>;
+  /** Per day, each Claude Code session's headline tokens per task (LAI-787). */
+  readonly sessionTasks: Map<string, SessionTaskRow[]>;
   /** Days whose rows include tokens from before counting began — the backfill. */
   readonly older: ReadonlySet<string>;
   /**
@@ -2000,6 +2029,8 @@ interface Days {
 const EXCLUDED_MAX = 200;
 /** At most this many session rows in a day (design.md §2); more, and the day goes without them. */
 const SESSIONS_PER_DAY_MAX = 100;
+/** At most this many session-task rows in a day (LAI-787); more, and the day goes without them. */
+const SESSION_TASKS_PER_DAY_MAX = 200;
 
 /** What a day's Claude Code part is counted under. */
 interface DayRules {
@@ -2022,6 +2053,7 @@ interface DayRules {
 function claudeDay(recs: Readonly<Record<string, Rec>>, rules: DayRules): ClaudeDay | undefined {
   const rows = new Map<string, ClaudeDay['r'][number]>();
   const sessions = new Map<string, ClaudeDay['s'][number]>();
+  const tasks = new Map<string, [string, string, number]>();
   const excluded = new Set<string>();
   let older = false;
   for (const rec of Object.values(recs)) {
@@ -2063,11 +2095,23 @@ function claudeDay(recs: Readonly<Record<string, Rec>>, rules: DayRules): Claude
     split[3] += rec[3];
     split[4] += rec[4];
     split[5] += rec[5];
+    // The same session's tokens per task (LAI-787): agent minutes are split
+    // between tasks by these, as its tokens are.
+    if (task === null) continue;
+    const taskKey = `${key} ${task}`;
+    let onTask = tasks.get(taskKey);
+    if (onTask === undefined) {
+      onTask = [key, task, 0];
+      tasks.set(taskKey, onTask);
+    }
+    onTask[2] += rec[2] + rec[3] + rec[4];
   }
   if (rows.size === 0 && excluded.size === 0) return undefined;
+  const perTask = [...tasks.values()].filter((t) => t[2] > 0);
   return {
     r: [...rows.values()],
     s: [...sessions.values()],
+    ...(perTask.length > 0 ? { t: perTask } : {}),
     x: [...excluded].sort(),
     ...(older ? { o: 1 as const } : {}),
   };
@@ -2271,6 +2315,7 @@ async function daysOf(
     r.input + r.output + r.cache_write + r.cache_read > 0;
   const outRows = new Map<string, UsageRow[]>();
   const outSessions = new Map<string, SessionRow[]>();
+  const outTasks = new Map<string, SessionTaskRow[]>();
   const scopeOut: string[] = [];
   for (const day of [...new Set([...Object.keys(cache.days), ...others.keys()])].sort()) {
     const claude = cache.days[day];
@@ -2303,6 +2348,10 @@ async function daysOf(
       .filter(counts)
       .sort((a, b) => a.key.localeCompare(b.key) || a.model.localeCompare(b.model));
     if (sessions.length > 0 && rows.length > 0) outSessions.set(day, sessions);
+    const tasks = (claude?.t ?? [])
+      .map(([key, task, tokens]) => ({ key, task, tokens: Math.min(tokens, COUNT_MAX) }))
+      .sort((a, b) => a.key.localeCompare(b.key) || a.task.localeCompare(b.task));
+    if (tasks.length > 0 && rows.length > 0) outTasks.set(day, tasks);
     for (const key of claude?.x ?? []) scopeOut.push(`${day} ${key}`);
   }
   // Automated first, newest first; then the out-of-scope, newest day first —
@@ -2319,7 +2368,13 @@ async function daysOf(
               .map((entry) => entry.slice(11)),
           ]),
         ].slice(0, EXCLUDED_MAX);
-  return { rows: outRows, sessions: outSessions, older: olderDays, excluded };
+  return {
+    rows: outRows,
+    sessions: outSessions,
+    sessionTasks: outTasks,
+    older: olderDays,
+    excluded,
+  };
 }
 
 export interface UsageRead {
@@ -2372,6 +2427,79 @@ export async function readUsage(
 }
 
 /* -------------------------------------------------------------------------- */
+/* What the time drafter reads (LAI-787)                                      */
+/* -------------------------------------------------------------------------- */
+
+/** One Claude Code reply, as the time drafter reads it: when, whose session, where, which task. */
+export interface DraftReply {
+  readonly at: number;
+  /** The session id — local only, never sent; `''` for a reply whose file names none. */
+  readonly session: string;
+  /** The working directory — local only, never sent. */
+  readonly cwd: string | undefined;
+  /** The task the token reader ties it to (a mark, else a branch key), or `null`. */
+  readonly task: string | null;
+}
+
+/** A Laika mark that starts work on a task, in a counted session. */
+export interface DraftMark {
+  readonly at: number;
+  readonly session: string;
+}
+
+export interface DraftSources {
+  readonly replies: DraftReply[];
+  readonly marks: DraftMark[];
+  /** The board's prefixes as last answered — which keys may count — or `undefined`. */
+  readonly prefixes: readonly string[] | undefined;
+}
+
+/**
+ * The replies and marks of `days` the time drafter builds blocks from
+ * (LAI-787): the same records, the same task rule and the same exclusions as
+ * the token counts — automated sessions (`skip-sessions`, subagents included)
+ * and, under `laika-repos`, directories out of scope are left out. Reads what
+ * is new, as `status` does, and writes nothing.
+ */
+export async function draftSources(
+  options: UsageReadOptions & { readonly days: readonly string[] },
+): Promise<DraftSources> {
+  const scanned = await scan({ ...options, dryRun: true }, true);
+  const { data, store } =
+    scanned.data !== undefined && scanned.store !== undefined
+      ? { data: scanned.data, store: scanned.store }
+      : loadData(options.paths, options.tz);
+  if (data.tz !== options.tz) reday(data, store, options.tz);
+  const prefixes = options.prefixes ?? scanned.index.prefixes;
+  const taskOf = attributor(data, prefixes, sessionStarts(options.paths));
+  const skip = new Set(skippedSessions(options.paths));
+  const scope =
+    options.state.scope === 'laika-repos'
+      ? await scopeFilter(data, options.paths, options.nowS)
+      : undefined;
+  const replies: DraftReply[] = [];
+  for (const day of new Set(options.days)) {
+    for (const rec of Object.values(store.get(day))) {
+      const session = rec[8] ?? -1;
+      const id = session >= 0 ? data.sessions[session] : undefined;
+      if (id !== undefined && skip.has(id)) continue;
+      if (scope !== undefined && !scope.inScope(rec[7])) continue;
+      replies.push({ at: rec[6], session: id ?? '', cwd: data.cwds[rec[7]], task: taskOf(rec) });
+    }
+  }
+  const wanted = new Set(options.days);
+  const dayOf = dayFinder(options.tz);
+  const marks: DraftMark[] = [];
+  for (const m of Object.values(data.marks)) {
+    if ((m[5] ?? 0) !== 0 || m[4] !== 1 || m[0] < 0) continue;
+    const id = data.sessions[m[0]];
+    if (id === undefined || skip.has(id) || !wanted.has(dayOf(m[2]))) continue;
+    marks.push({ at: m[2], session: id });
+  }
+  return { replies, marks, prefixes };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Reports                                                                    */
 /* -------------------------------------------------------------------------- */
 
@@ -2403,6 +2531,8 @@ export function usageReports(options: {
     readonly backfill?: true | undefined;
     readonly rows: readonly UsageRow[];
     readonly sessions?: readonly SessionRow[] | undefined;
+    /** Each session's headline tokens per task (LAI-787): what agent minutes are split by. */
+    readonly sessionTasks?: readonly SessionTaskRow[] | undefined;
   }[];
   readonly excluded?: readonly string[] | undefined;
 }): UsageReport[] {
@@ -2430,18 +2560,32 @@ export function usageReports(options: {
   };
   const sorted = [...options.days].sort((a, b) => a.day.localeCompare(b.day));
   const room = MAX_BODY_BYTES - baseBytes;
-  for (const { day, backfill, rows, sessions } of sorted) {
+  for (const { day, backfill, rows, sessions, sessionTasks } of sorted) {
     const whole = {
       day,
       ...(backfill === true ? { backfill } : {}),
       rows: fitted(rows, room),
     };
-    const split =
+    const withSessions =
       sessions !== undefined && sessions.length > 0 && sessions.length <= SESSIONS_PER_DAY_MAX
-        ? JSON.stringify({ ...whole, sessions })
+        ? { ...whole, sessions }
         : undefined;
+    // The tasks ride with the sessions they split (LAI-787), and only when they
+    // fit: without them a day's agent minutes stay unattributed, never wrong.
+    const withTasks =
+      withSessions !== undefined &&
+      sessionTasks !== undefined &&
+      sessionTasks.length > 0 &&
+      sessionTasks.length <= SESSION_TASKS_PER_DAY_MAX
+        ? JSON.stringify({ ...withSessions, session_tasks: sessionTasks })
+        : undefined;
+    const split = withSessions === undefined ? undefined : JSON.stringify(withSessions);
     const entry =
-      split !== undefined && Buffer.byteLength(split) + 1 <= room ? split : JSON.stringify(whole);
+      withTasks !== undefined && Buffer.byteLength(withTasks) + 1 <= room
+        ? withTasks
+        : split !== undefined && Buffer.byteLength(split) + 1 <= room
+          ? split
+          : JSON.stringify(whole);
     const cost = Buffer.byteLength(entry) + (entries.length > 0 ? 1 : 0);
     if (bytes + cost > MAX_BODY_BYTES) flush();
     entries.push(entry);
@@ -2517,14 +2661,21 @@ export type UsageOutcome =
  * before sessions were sent (rows alone) never matches, so each day goes once
  * more, with them.
  */
-const signature = (rows: readonly UsageRow[], sessions: readonly SessionRow[] = []): string =>
-  JSON.stringify([rows, sessions]);
+const signature = (
+  rows: readonly UsageRow[],
+  sessions: readonly SessionRow[] = [],
+  tasks: readonly SessionTaskRow[] = [],
+): string =>
+  // A day with no session tasks keeps the signature it had before they were
+  // sent (LAI-787), so only the days that carry some go once more.
+  JSON.stringify(tasks.length === 0 ? [rows, sessions] : [rows, sessions, tasks]);
 
 interface DueDay {
   day: string;
   backfill?: true;
   rows: UsageRow[];
   sessions: SessionRow[];
+  sessionTasks: SessionTaskRow[];
 }
 
 /**
@@ -2546,10 +2697,15 @@ function dueDays(index: UsageIndex, days: Days): DueDay[] {
       ...(mark ? { backfill: true as const } : {}),
       rows: days.rows.get(day) ?? [],
       sessions: days.sessions.get(day) ?? [],
+      sessionTasks: days.sessionTasks.get(day) ?? [],
     };
   };
   for (const day of new Set([...days.rows.keys(), ...Object.keys(index.sent)])) {
-    const now = signature(days.rows.get(day) ?? [], days.sessions.get(day) ?? []);
+    const now = signature(
+      days.rows.get(day) ?? [],
+      days.sessions.get(day) ?? [],
+      days.sessionTasks.get(day) ?? [],
+    );
     if ((index.sent[day] ?? signature([])) === now) continue;
     due.push(entry(day));
   }
@@ -2732,7 +2888,7 @@ export async function usageStep(ctx: UsageContext): Promise<UsageOutcome> {
     index.excluded = excludedSignature(days);
     for (const day of report.days) {
       const d = dueOf.get(day);
-      index.sent[day] = signature(d?.rows ?? [], d?.sessions ?? []);
+      index.sent[day] = signature(d?.rows ?? [], d?.sessions ?? [], d?.sessionTasks ?? []);
       if (markedNow.has(day)) index.marked.push(day);
       sentDays += 1;
     }
