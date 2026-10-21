@@ -2,11 +2,12 @@
 id: LAI-823
 title: 'Imports and bulk sweeps (09-20, 10-07, 10-15) dominate throughput, cycle time, the forecast and contribution'
 area: server
-assignee: unclaimed
+assignee: strelka
 priority: p2
 depends-on: [LAI-822]
 discovered-from: LAI-796
-status: backlog
+started: 2026-10-21T16:28:03Z
+status: in-progress
 ---
 
 ## Goal
