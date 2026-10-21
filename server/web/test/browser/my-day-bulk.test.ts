@@ -207,7 +207,7 @@ void describe('the column beside the day', () => {
 });
 
 void describe('the drafted blocks', () => {
-  void test('page ten at a time in a scroll area of their own; the confirmed ones too', async () => {
+  void test('page ten at a time, with no scroll of their own; the confirmed ones too', async () => {
     const h = await busy();
     try {
       const card = h.page.locator('.myday-drafts');
@@ -239,12 +239,13 @@ void describe('the drafted blocks', () => {
       assert.equal(await label.innerText(), '41–42 of 42');
       assert.equal(await next.isDisabled(), true);
 
-      const area = await card.locator('.myday-scroll').evaluate((el) => {
-        const style = getComputedStyle(el);
-        return { overflow: style.overflowY, max: style.maxHeight };
-      });
-      assert.equal(area.overflow, 'auto');
-      assert.notEqual(area.max, 'none', 'the drafted list is not bounded');
+      // The page of ten is the bound; a scroll of its own kept the wheel from the page (LAI-311).
+      const area = await card.locator('.myday-scroll').evaluate((el) => ({
+        overflow: getComputedStyle(el).overflowY,
+        hidden: el.scrollHeight - el.clientHeight,
+      }));
+      assert.equal(area.overflow, 'visible', 'the drafted list scrolls on its own');
+      assert.ok(area.hidden <= 1, `the drafted list hides ${String(area.hidden)}px`);
 
       // Fourteen confirmed entries, a page of ten — the owner's design lists them.
       const entries = h.page.locator('.myday-entries');

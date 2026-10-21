@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { TimeEntry } from '../../../api/time.ts';
 import { EntryRow } from './EntryRow.tsx';
 import { PAGE_SIZE, pageOf } from './draft-bulk.ts';
@@ -16,13 +16,12 @@ export interface EntryListProps {
 
 /**
  * *Confirmed* (the owner's design, LAI-831; LAI-810): the day's confirmed
- * time — **the only time anyone else can see** — ten to a page in a scroll
- * area of its own, and *Add time* at its foot. Clicking a row puts it in the
- * inspector.
+ * time — **the only time anyone else can see** — ten to a page, with no
+ * scroll of its own so the wheel always moves the page (LAI-311), and *Add
+ * time* at its foot. Clicking a row puts it in the inspector.
  */
 export function EntryList({ entries, selected, onSelect, onNavigate, children }: EntryListProps) {
   const [page, setPage] = useState(0);
-  const scroller = useRef<HTMLDivElement | null>(null);
   const paged = pageOf(entries, page);
   const total = entries.reduce((sum, e) => sum + e.minutes, 0);
 
@@ -33,7 +32,6 @@ export function EntryList({ entries, selected, onSelect, onNavigate, children }:
 
   const go = (to: number): void => {
     setPage(to);
-    if (scroller.current !== null) scroller.current.scrollTop = 0;
   };
 
   return (
@@ -53,12 +51,10 @@ export function EntryList({ entries, selected, onSelect, onNavigate, children }:
         <p className="myday-quiet myday-pad">Nothing confirmed yet.</p>
       ) : (
         <div
-          ref={scroller}
           id="myday-entries-list"
           className="myday-scroll"
           role="region"
           aria-label={`Confirmed entries, ${paged.label}`}
-          tabIndex={0}
         >
           <ol className="myday-blocks" aria-label="Confirmed entries">
             {paged.items.map((entry, i) => (
