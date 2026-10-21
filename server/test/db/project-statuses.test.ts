@@ -1,8 +1,16 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq, sql } from 'drizzle-orm';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { openDb, type Db } from '../../src/db/client.ts';
 import { TASK_STATUSES, type TaskStatus } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
@@ -207,6 +215,18 @@ describe('the database holds a task’s status to its project and category', () 
 // ------------------------------------------------------------ the migration
 
 /**
+ * What a case below, and its setup, may take (LAI-848). LAI-841's loaded gate
+ * failed two of these at 10.5 and 13.3 s against vitest's 5 s test and 10 s
+ * hook defaults. Shrunk to 150 / 300 ms in a loaded run, both bounds were
+ * crossed: `Hook timed out` on the per-case setup (then: copy every migration,
+ * snapshots included, and migrate to 0027) and `Test timed out` on the body.
+ * The setup is now one template copied per case, and no per-case hook crossed
+ * 300 ms after; the body is 0028 onwards, which is the property, and still
+ * crossed 150 ms. 60 s is the bound LAI-768 gave migrate.test's upgrade cases.
+ */
+const MIGRATION_BUDGET = { timeout: 60_000 };
+
+/**
  * 0028 copies today's board into statuses and drops the board (LAI-738).
  *
  * The database is migrated to 0027, populated the way LAI-266's columns could
@@ -214,15 +234,18 @@ describe('the database holds a task’s status to its project and category', () 
  * forward. Raw SQL throughout, because the tables being read no longer exist
  * in `schema.ts`.
  */
-describe('migration 0028 turns board columns into project statuses', () => {
+describe('migration 0028 turns board columns into project statuses', MIGRATION_BUDGET, () => {
   let dir: string;
   let db: Db;
   let close: () => void;
   const now = 1_790_000_000_000;
 
-  function folderBefore0028(): string {
-    const cut = mkdtempSync(join(tmpdir(), 'laika-mig-'));
-    cpSync(MIGRATIONS_FOLDER, cut, { recursive: true });
+  /** The migrations up to 0027, without drizzle-kit's snapshots (as LAI-768). */
+  function folderBefore0028(cut: string): void {
+    cpSync(MIGRATIONS_FOLDER, cut, {
+      recursive: true,
+      filter: (source) => !source.endsWith('_snapshot.json'),
+    });
     const journalPath = join(cut, 'meta', '_journal.json');
     const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as { entries: { tag: string }[] };
     const at = journal.entries.findIndex((e) => e.tag.startsWith('0028_'));
@@ -230,11 +253,12 @@ describe('migration 0028 turns board columns into project statuses', () => {
     // The guard on the guard: the first entry cut must be this migration.
     expect(dropped[0]?.tag).toBe('0028_project_statuses');
     writeFileSync(journalPath, JSON.stringify(journal));
-    return cut;
   }
 
   let userId: string;
   let orgId: string;
+  let template: string;
+  let templateDir: string;
 
   function project(slug: string): string {
     const id = newId();
@@ -275,24 +299,48 @@ describe('migration 0028 turns board columns into project statuses', () => {
     return made;
   }
 
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'laika-db-'));
-    const opened = openDb({ path: join(dir, 'laika.db') });
-    db = opened.db;
-    close = () => opened.sqlite.close();
-    runMigrations(db, { migrationsFolder: folderBefore0028() });
+  // One seeded database at 0027, built once; each case starts from a copy of
+  // the file and migrates it forward itself (LAI-848).
+  beforeAll(() => {
+    templateDir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    const cut = join(templateDir, 'migrations');
+    folderBefore0028(cut);
+    template = join(templateDir, 'at-0027.db');
+    const opened = openDb({ path: template });
+    runMigrations(opened.db, { migrationsFolder: cut });
 
-    const s = seed(db, now);
+    const s = seed(opened.db, now);
     userId = s.userId;
     orgId = s.orgId;
     // `seed` made a project with no columns on this database (the helper
     // skips statuses when the table is absent) — the no-columns case below.
+    expect(
+      opened.db
+        .all<{ name: string }>(sql`SELECT name FROM sqlite_master WHERE type = 'table'`)
+        .map((r) => r.name),
+    ).toEqual(expect.arrayContaining(['board_columns', 'board_column_statuses']));
+    opened.sqlite.close();
+    // Closing the last connection checkpoints the WAL into the file; a copy of
+    // the file alone would otherwise miss whatever was still in it.
+    expect(existsSync(`${template}-wal`)).toBe(false);
+  }, MIGRATION_BUDGET.timeout);
+
+  afterAll(() => {
+    rmSync(templateDir, { recursive: true, force: true });
   });
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+    copyFileSync(template, join(dir, 'laika.db'));
+    const opened = openDb({ path: join(dir, 'laika.db') });
+    db = opened.db;
+    close = () => opened.sqlite.close();
+  }, MIGRATION_BUDGET.timeout);
 
   afterEach(() => {
     close();
     rmSync(dir, { recursive: true, force: true });
-  });
+  }, MIGRATION_BUDGET.timeout);
 
   /** Every task kept its category, and sits in the first status of it by position. */
   function expectTasksPlaced(projectId: string, made: Map<string, TaskStatus>): void {
