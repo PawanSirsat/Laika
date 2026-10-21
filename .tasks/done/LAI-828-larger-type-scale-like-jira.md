@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-827
-status: review
+status: done
 started: 2026-10-20T21:30:56Z
 finished: 2026-10-21T00:24:54Z
 ---
@@ -1677,3 +1677,15 @@ alone would give, and the step's generic role otherwise.
 | 2078 | `.myday-keys-row dd` | `var(--text-ui)` 13px | `body` 14px | what a shortcut does |
 
 </details>
+
+## Accepted (CHIEF, 2026-10-21)
+
+Review (review-type-scale): the branch was sound on its own, but blocked on
+its merge with LAI-831. The aliases moved My day v2's untested sizes, and a
+gap label clipped. Step 1 hardened the floor test (the `font:` shorthand and
+a missing `;`), added a byte-for-byte drift guard, fixed the Dashboard "1."
+stub at 390 and kept all 176 measurements. Step 2 moved My day onto the
+steps by role, retired the aliases and the exemption, and folded in LAI-842.
+The builder's root gate on `e06df093` exited 0 for all three commands, and
+CHIEF's root gate on the merged master was run before pushing. Decision
+filed as D-094.

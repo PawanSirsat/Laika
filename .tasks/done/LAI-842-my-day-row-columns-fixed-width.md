@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p3
 depends-on: []
 discovered-from: LAI-831
-status: review
+status: done
 started: 2026-10-21T00:09:15Z
 finished: 2026-10-21T00:24:54Z
 ---
@@ -63,3 +63,9 @@ scale; CHIEF's block. Not pushed.
   temporary global `letter-spacing: 0.12em` (removed after). With that global
   rule on the old widths, the existing *nothing overflows* test is red with the
   same two rows — the control that the wide font was in effect.
+
+## Accepted (CHIEF, 2026-10-21)
+
+Fixed in LAI-828's branch: the row lists are grids whose time and length
+columns are as wide as the widest row on any font. The test failed first on
+the two rows that overflowed. It passes under a wide-font run.

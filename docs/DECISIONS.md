@@ -5181,3 +5181,58 @@ D-092 left two questions to the owner. Asked on 2026-10-20, the owner answered:
   actually moved to done, or the day they were created.
 - OnRoute's throughput and Pawan's heatmap lose their three spike days; the
   contribution ranking reflects work done one task at a time.
+
+## D-094 — Laika's type is Atlassian's scale: body 14px, reading 16px, nothing under 12px but a named 11px list (LAI-828; supersedes LAI-605's prototype sizes and LAI-706's 10px floor in the app)
+
+**Date:** 2026-10-21 · **By:** CHIEF, on the owner's instruction
+
+The owner, 2026-10-21: *"the text size is very small, we need to increase it
+everywhere … I want the same as the Jira board."*
+
+The app's text uses the sizes that the Atlassian Design System publishes and
+Jira uses. There are seven steps:
+
+| Step | Size / line height |
+| --- | --- |
+| `tiny` | 11/16 |
+| `small` | 12/16 |
+| `body` | 14/20 |
+| `reading` | 16/24 |
+| `heading-sm` | 16/20 |
+| `heading-md` | 20/24 |
+| `heading-lg` | 24/28 |
+
+They are declared once in `server/web/src/theme/type-roles.ts` and generated
+into `server/web/src/styles/type.css` as `--text-<step>` and
+`--leading-<step>`. A drift test compares the generated file byte for byte.
+
+1. **Every `font-size` in a stylesheet is a step token.** A raw size is a
+   red test (`type-floor.test.ts`), including a size inside the `font`
+   shorthand. A screen that needs a size the scale does not have is a change
+   to the scale, not a local declaration.
+2. **The floor is 12px.** `tiny` (11px) is allowed only on the selectors the
+   test names, and each named selector must use it:
+   - avatar initials in a circle under 28px;
+   - the "+N" beside a space's member stack;
+   - the folded sidebar's count.
+
+   Avatar initials are no longer exempt from the floor (LAI-706's exemption
+   is retired). Circles under 22px grew to 22px.
+3. **Roles map by what the text is for, not by its old size.**
+   - `body`: form fields, buttons, table cells, names and messages, even
+     where they were 11px.
+   - `small`: keys, chips, meta, field labels and uppercase section labels.
+   - `heading-lg`: a page title.
+4. **Reading text** (description, acceptance, comments) is 16/24. A
+   description's headings follow Jira: h1 is 24px like the panel title, h2
+   is 20px, and h3 is 16px.
+5. **`docs/design/` is not changed** (D-020). The prototype remains the visual
+   reference for everything except size. The app departs from it on size on
+   the owner's instruction.
+6. **The pre-LAI-828 token names are gone** (`--text-xs` … `--text-xl`). A
+   stylesheet that uses one is a red test.
+
+35 declarations moved down by 1px or less to land on a step: chips, keys,
+meta, timestamps, the first-boot wordmark and headline, and the board's
+uppercase column heads (12.5px → 12px, Jira's own column-head size). None of
+them is a title, a description, a comment body or a form field.
