@@ -48,3 +48,32 @@ No server implementation or test was changed while fixing LAI-841.
 The section 3 union search found the completed LAI-028 idempotence fix,
 but no existing task for this bound; LAI-768 concerns the separate boot
 health budget.
+
+## Repeated during LAI-841 verification
+
+A later default root gate hit the same idempotence timeout again: case
+138733ms, file 366737ms, `Test timed out in 120000ms`. Root statuses were
+TEST 1, LINT 0, FMT 0; web passed all 2630 collected cases and CLI had no
+failures. Preserved log: `/tmp/lai841-fourth-gate.txt`. Shared load peaked
+above 60 with other builders compiling. The complete file then passed alone
+again: `pnpm --filter @laika/server exec vitest run
+test/tooling/build.test.ts`, exit 0, 16 collected cases, 22.12s
+(`/tmp/lai841-build-rerun-2.txt`). LAI-841 then bounds Vitest's worker pool
+for its root verification while keeping pnpm's workspaces parallel; no test
+or timeout is changed.
+
+**A third occurrence, missed by LAI-841's first record** (found at
+handover). The third root gate failed the same case too, at 194554ms (file
+458695ms). pnpm bailed on a web failure first, so no server summary
+printed, and only the case's line survives
+(`/tmp/lai841-third-gate.txt:18397`):
+
+```text
+server test:  ❯ test/tooling/build.test.ts (16 tests | 1 failed) 458695ms
+server test:      × produces an identical tree on a second run with no clean between 194554ms
+```
+
+So this case failed **three of the four** root gates that ran with Vitest's
+default worker pool. The fifth, with `VITEST_MAX_WORKERS=2` and a sampled
+1-minute load of 32 to 61, passed it with the rest of the server workspace:
+165 files passed, 2 skipped; 3375 tests passed, 10 skipped.

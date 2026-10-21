@@ -44,3 +44,18 @@ observed to fail. Its existing overflow checks can pass with extra space.
 
 The scope is this file's setup and specific state assertions. Do not widen
 this into a shared browser-harness or application refactor without evidence.
+
+## Additional observation during LAI-841 verification
+
+A later full root gate (no edits to My day) failed the wider-font case at
+`my-day-v2.test.ts:977`, at 1440px and `folded=false`. It reported one cut
+`dayline-block-sub`, text `1:00–2:50 PM · 1 h 50 min`. The complete file
+immediately passed alone: `pnpm --filter @laika/web exec node --test
+ test/browser/my-day-v2.test.ts`, exit 0, 31 collected cases.
+
+This failure is in one of the loops named above, but its cause has not
+been isolated. At 1440px it is not evidence of crossing the 1180px media
+boundary; investigate its style/resize observation timing rather than
+assuming the sidebar race explains it. Root log:
+`/tmp/lai841-third-gate.txt`; isolated rerun:
+`/tmp/lai841-my-day-rerun.txt`. No sibling was changed on LAI-841.
