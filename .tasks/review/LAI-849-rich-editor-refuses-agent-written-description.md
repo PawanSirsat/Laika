@@ -218,3 +218,46 @@ The file is byte-clean afterwards (`git diff --quiet`).
 - **LAI-854** (p3): `- a\n\n\n- b` opens as Markdown with "would not write it
   back exactly". The parser puts an empty paragraph in the item, and the
   behaviour is unchanged from `master`.
+
+### Review round 1
+
+The independent review raised two blocking items. Both are fixed in
+`7874d59f`. The acceptance criteria above are unchanged.
+
+1. **Unicode white space counted as a blank line.** `topLevelBlocks` tested
+   for blank with `trim()`, which also strips U+00A0, U+3000 and the rest.
+   Measured at `2f9120f4`:
+   - `A\n\n<U+00A0>\n\nB` opened rich. An edit to `A` saved `A edited\n\nB`,
+     dropping the U+00A0 paragraph.
+   - `Intro:\n- a\n<ws>\nB`, with U+00A0 or U+3000, opened rich. An edit to
+     the item saved `Intro:\n\n- a edited\n\n<ws>\nB`, which moves `B` out of
+     the item. micromark, the reading view's parser, reads `B` as a lazy
+     continuation of the item; the lexer reads it as a new paragraph.
+
+   Master refuses all of these. The fix uses CommonMark's blank
+   (`/^[ \t\n]*$/`) in `topLevelBlocks`, and `sameMarkdown` keeps the strict
+   result when either text has a line that `trim()` empties and CommonMark
+   does not. `A\n\n<U+3000>\n\nB` was already refused at `2f9120f4`, by the
+   unwritable-save path.
+2. **A lost block was named at a shifted line.** When the texts split into
+   different numbers of blocks, the whole-text diff counted a matched blank
+   line as much as a matched line of words. It now weighs a line of words 2
+   and a blank line 1. `Steps:\n1. a\n\n[ref]: /x\n\nMore.` now says "would
+   drop line 4: “[ref]: /x”" (before: line 2, `1. a`), and so do the two
+   `&nbsp;` shapes.
+
+**Tests** (`markdown-bridge.test.ts`): four still-refused cases, each with a
+plain-space positive control, and three notice tests. Six of the seven were
+red at `2f9120f4`; all seven are green after.
+
+**Mutations:**
+- guard off: both B cases go red;
+- guard off and `trim()` back: A with U+00A0 goes red too;
+- weights equal: the three notice tests go red;
+- `trim()` back with the guard on: nothing goes red. The guard alone covers
+  these tests, so the `BLANK` swap is defence in depth.
+
+**Known:** case B now opens as Markdown with the generic "would not write it
+back exactly". The notice is built from the lexer's blocks, which here
+differ from the editor's output only by blank lines: it is not wrong, but it
+is not specific either. The `hunks` limit past a million cells is unchanged.

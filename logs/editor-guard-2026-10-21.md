@@ -87,3 +87,60 @@ CHIEF's block (D-089).
 **State**
 In `.tasks/review/`. The gate, the PR and the card (LAIKA-640, to Review)
 follow in this sitting; their exit codes are in the PR and the card's finish.
+
+## 2026-10-21T08:38:49Z — LAI-849, review round 1
+
+**What changed**
+- `server/web/src/routes/screens/task/editor/markdown-bridge.ts`:
+  - `BLANK` (CommonMark's blank) replaces the three `trim()` tests in
+    `topLevelBlocks`;
+  - `hasUnicodeBlankLine` makes `sameMarkdown` keep the strict result;
+  - `hunks` weighs a line of words 2 and a blank line 1.
+- `server/web/test/routes/screens/task/editor/markdown-bridge.test.ts`:
+  - four still-refused cases (A and B, each with U+00A0 and U+3000), each
+    with a plain-space control;
+  - three notice tests pinning line 4: a definition and two `&nbsp;`
+    paragraphs;
+  - two comments reworded so they claim no more than they assert.
+- `.tasks/review/LAI-849-…`: a "Review round 1" note in the Result. The
+  criteria are unchanged.
+
+**Decisions**
+- **Both halves of the reviewer's fix for blocking 1, not one.** The guard in
+  `sameMarkdown` is what catches case B. There the lexer's own split is not
+  CommonMark's: it ends the item at the U+00A0 line, where micromark
+  continues it lazily, so no gap test in `topLevelBlocks` can see it.
+  Mutations agree: with the guard off, B goes red; with `trim()` back and the
+  guard on, nothing does. The swap stays as defence in depth, and only shows
+  with the guard off (A with U+00A0).
+- **The guard reads the CRLF-normalised texts**, so a `\r` left from a CRLF
+  blank line is not taken for Unicode white space.
+- **The walk in `hunks` needed no change of its own.** A weight depends only
+  on the line's text, so taking a match whenever two lines agree stays
+  optimal; the walk only had to read the weighted table.
+
+**Discovered**
+- Case A with U+3000 was already refused at the round-0 head, through the
+  unwritable-save path. Its new test was green before the fix as well as
+  after, and is reported that way.
+- Case B is now refused with the generic notice "would not write it back
+  exactly". `firstDifference` works from the lexer's blocks, which agree with
+  the editor's output except for blank lines. The notice is not wrong, but it
+  is not specific. It is a candidate for LAI-854's scope (a notice that names
+  nothing). I did not file it separately, because this round is limited to
+  `server/web/`, the task file and this log.
+- **Known limit, left alone as asked:** past a million cells, `hunks` reports
+  the whole middle as one hunk. On a very long description the notice then
+  names the first line of that span, not necessarily the line that changes.
+- **My first mutation harness this round ran 3 tests where 7 were meant.** An
+  escaped `U\+00A0` in the name pattern matched nothing, so its "green" meant
+  "did not run". Printing `# tests` per run caught it, and the harness now
+  fails loudly unless 7 ran.
+- `splitUnits` (LAI-827, unchanged from master) still tests for blank with
+  `trim()`. It plans a save; it does not decide whether a document opens. A
+  document with such a line reaches it only after the same strict check
+  master runs.
+
+**State**
+The fix is committed. The gate and the push to PR #4 follow, after the load
+drops below 20; their exit codes are in the round's report.
