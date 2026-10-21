@@ -154,8 +154,8 @@ describe('the work it does', () => {
     // for here, so not run), the org id and two switches, the day's drafts,
     // its entries and its breaks, its signal times (LAI-834: the same range
     // of the drafts, every state), the drafts held on every day (LAI-831: one
-    // grouped count, bounded by the drafts' 30 days), its agent seconds and
-    // their split, the week's drafts and its entries — and nothing that grows
+    // grouped count, bounded by the drafts' 30 days), its agent seconds,
+    // when the agent worked (LAI-833: one range of buckets) and their split, the week's drafts and its entries — and nothing that grows
     // with the history.
     const sections = {
       org: statements.filter((s) => s.includes('from "orgs"')).length,
@@ -163,11 +163,12 @@ describe('the work it does', () => {
       drafts: statements.filter((s) => s.includes('from "time_drafts"')).length,
       entries: statements.filter((s) => s.includes('from "time_entries"')).length,
       breaks: statements.filter((s) => s.includes('from "time_breaks"')).length,
-      agent: statements.filter((s) => /from "(agent_time_days|token_session_tasks)"/.test(s))
-        .length,
+      agent: statements.filter((s) =>
+        /from "(agent_time_days|agent_time_buckets|token_session_tasks)"/.test(s),
+      ).length,
     };
-    expect(sections).toEqual({ org: 1, switches: 2, drafts: 4, entries: 2, breaks: 1, agent: 2 });
-    expect(statements).toHaveLength(12);
+    expect(sections).toEqual({ org: 1, switches: 2, drafts: 4, entries: 2, breaks: 1, agent: 3 });
+    expect(statements).toHaveLength(13);
   });
 
   it('reads the same number of rows for a day whatever came before it', () => {

@@ -11,7 +11,14 @@ import {
   tokenUsageZones,
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { type AgentSeconds, dropAgentTime, storeAgentTime } from './agent-time.ts';
+import {
+  type AgentBucketSeconds,
+  type AgentSeconds,
+  dropAgentTime,
+  spreadActive,
+  storeAgentBuckets,
+  storeAgentTime,
+} from './agent-time.ts';
 import { dayIn, isTimeZone } from './calendar-days.ts';
 import { assertMaySendLocalActivity, TELEMETRY_COLLECTOR } from './local-activity.ts';
 
@@ -812,10 +819,15 @@ export function recordTelemetry(
       Counts & { cost: number; day: string; key: string; model: string }
     >();
     const activeAdded = new Map<string, AgentSeconds>();
+    // When the agent worked (LAI-833): its seconds where its interval fell.
+    const bucketsAdded: AgentBucketSeconds[] = [];
     const touched = new Set<string>();
     for (const p of [...points].sort((a, b) => a.endMs - b.endMs)) {
       const key = seriesKeyOf(p);
       const held = series.get(key) ?? { lastValue: 0, lastEndMs: 0 };
+      // What a point adds accrued over its own interval — a delta's, or a
+      // cumulative series' growth since its last point.
+      const since = p.cumulative ? Math.max(p.startMs, held.lastEndMs) : p.startMs;
       let add = 0;
       if (p.cumulative) {
         if (p.endMs <= held.lastEndMs && p.value <= held.lastValue) continue;
@@ -839,6 +851,7 @@ export function recordTelemetry(
       const day = dayIn(tz, p.endMs);
       if (p.kind === 'active_user' || p.kind === 'active_cli') {
         const kind = p.kind === 'active_user' ? 'user' : 'cli';
+        if (kind === 'cli') bucketsAdded.push(...spreadActive(p.sessionKey, since, p.endMs, add));
         const id = `${day}\u0000${p.sessionKey}\u0000${kind}`;
         const held = activeAdded.get(id) ?? { day, sessionKey: p.sessionKey, kind, seconds: 0 };
         held.seconds += add;
@@ -907,6 +920,7 @@ export function recordTelemetry(
         .run();
     }
     storeAgentTime(tx, userId, [...activeAdded.values()], now);
+    storeAgentBuckets(tx, userId, bucketsAdded, now);
     const days = [...new Set([...added.values()].map((e) => e.day))];
     const arrived = recomputeGap(tx, userId, days, now);
     return { days, arrived };

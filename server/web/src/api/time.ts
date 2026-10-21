@@ -127,6 +127,12 @@ export interface MyDayAgent {
   readonly keyboard_minutes: number;
   readonly by_task: readonly MyDayAgentTask[];
   readonly unattributed_minutes: number;
+  /**
+   * When the agent worked (LAI-833), for the AGENTS lane: per five minutes,
+   * `[bucket start in unix ms, seconds, seconds on a card]` in order. Absent
+   * from a board that predates it.
+   */
+  readonly lane?: readonly (readonly [number, number, number])[];
 }
 
 /**

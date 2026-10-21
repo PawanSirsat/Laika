@@ -2048,6 +2048,32 @@ time* turned off delete the person's with their drafts, and the organisation
 leaving `drafts` deletes everybody's (§4.45, §4.46), because a before-image
 holds a block's counts (§4.47). §11.6 sweeps everyone's.
 
+### 4.57 `agent_time_buckets`
+
+When the agent worked (LAI-833): the seconds of Claude Code's `active_time` of
+`type=cli` (the agent working, never the keyboard) per session and five
+minutes of unix time. They come from the same OTLP receiver as §4.50, from the
+times its points already carry. Each point's added seconds are spread over the
+buckets its interval covers, in proportion. Seconds past the interval's length
+are put in the stretch that long before its end, so a bucket never holds more
+than five minutes. They draw My day's AGENTS lane, `agent.lane` in `GET
+/me/time`: per bucket of the day in the requested zone, `[bucket start in unix
+ms, seconds, seconds on a card]`, where a bucket is on a card when its
+session's own split ties it (§4.51). **Agent minutes, never hours.**
+
+| field | notes |
+| --- | --- |
+| `user_id` | FK `users`, cascade |
+| `session_key` | as §4.38 — a one-way key, never the session id |
+| `bucket` | integer — `floor(unix ms / 300000)` |
+| `seconds` | real, 0–300 (CHECK); an upsert adds and stops at 300 |
+| `updated_at` | |
+
+Primary key `(user_id, session_key, bucket)`; index `(user_id, bucket)`, one
+range per day. A session the collector left out (§4.40) has its rows dropped,
+and none are added. Kept 40 days (§11.6), and deleted with the person's
+history (`DELETE /me/local-activity`).
+
 ## 5. Task lifecycle
 
 ```
@@ -4501,8 +4527,9 @@ One interval-driven scheduler in the same process:
   job (LAI-773): `token_session_days` dated before 40 days ago — the
   telemetry match is settled once the collector's 31-day window has passed it
   — telemetry series not touched for three days, excluded session keys older
-  than 45 days, and arrival buckets older than eight days; and, kept 400 days
-  with the token rollup (LAI-787), `agent_time_days` and `token_session_tasks`
+  than 45 days, and arrival buckets older than eight days; `agent_time_buckets`
+  from before 40 days ago, the AGENTS lane's detail (LAI-833); and, kept 400
+  days with the token rollup (LAI-787), `agent_time_days` and `token_session_tasks`
 - **time retention** (D-088 item 11, LAI-787) — `time_drafts` dated before 30
   days ago, whatever their state, and `time_entries` dated before three years
   ago with their revisions, daily **and once at boot**, under §3.4's
