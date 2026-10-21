@@ -230,7 +230,7 @@ export function dayLine(
       if (start < 0 || start >= length || !(seconds > 0)) continue;
       const onCard = onCardSeconds * 2 >= seconds;
       const last = agents.at(-1);
-      if (last !== undefined && last.end === start && last.onCard === onCard) {
+      if (last?.end === start && last.onCard === onCard) {
         agents[agents.length - 1] = {
           ...last,
           end: start + AGENT_MINUTES,
