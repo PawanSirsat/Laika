@@ -92,8 +92,10 @@ be the same cause. Each point below quotes its task file, or the code:
   `card-click.test.ts`, and `open` (`harness.ts:614`) calls `browser()`,
   whose first call is `chromium.launch` (`harness.ts:535`). So the ~17s
   spent before the 15000ms wait includes a Chromium launch, while up to 8
-  other test files run beside it. That fits LAI-715's account; it still has
-  to be measured, as the first criterion says.
+  other web test files run beside it, and in a root gate the server and CLI
+  suites as well: the root `test` is `pnpm -r --if-present run test`, which
+  starts all three together. That fits LAI-715's account; it still has to be
+  measured, as the first criterion says.
 
 Where it does **not** fit: LAI-715's sweep is for *"an immediate `count()` /
 `innerText()` after `waitFor()` on a different or less specific locator"*,
