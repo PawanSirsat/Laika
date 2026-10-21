@@ -1034,6 +1034,32 @@ describe('capacity per person (LAI-767)', () => {
       expect(entry(ada, outsider)).toMatchObject({ load: 'none', spaces: [] });
       expect(entry(ada, outsider).workload.open).toBe(0);
     });
+
+    // LAI-832: the case between "every space" and "none" — a reader who sees
+    // one of the two. Ada is Heavy in Secret and Light in Laika; to someone
+    // who can read only Laika, her overall load is Laika's.
+    it('leaves a space the reader cannot see out of the overall load', () => {
+      const ada = makeUser('member', 'Ada');
+      const reader = makeUser('member', 'Reader');
+      addMember(t.db, actor(adminId), 'laika', reader, 'member');
+      createProject(t.sqlite, t.db, actor(adminId), {
+        name: 'Secret',
+        slug: 'secret',
+        prefix: 'SEC',
+      });
+      const seen = assigned(ada, 'in_progress', null, 'laika');
+      for (let i = 0; i < 7; i += 1) assigned(ada, 'in_progress', null, 'secret');
+      for (let i = 0; i < 20; i += 1) assigned(ada, 'todo', null, 'secret');
+
+      // Control: whoever reads both sees the hidden space's weight.
+      expect(entry(ada)).toMatchObject({ load: 'heavy', workload: { committed: 28 } });
+
+      const partial = entry(ada, reader);
+      expect(partial.load).toBe('light');
+      expect(partial.workload).toMatchObject({ in_progress: 1, todo: 0, committed: 1, open: 1 });
+      expect(partial.spaces.map((s) => [s.slug, s.load])).toEqual([['laika', 'light']]);
+      expect(partial.in_progress_tasks).toEqual([seen]);
+    });
   });
 
   describe('the load rule', () => {

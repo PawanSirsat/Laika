@@ -358,7 +358,9 @@ void describe('the numbers are the fixture’s (LAI-711)', () => {
       await ready(h.page);
       await openNow(h.page);
       const openWork = w.tasks.filter(open7);
-      const held = openWork.filter((t) => t.status !== 'review');
+      // A person's number is their load: to do and in progress (LAI-832).
+      const held = openWork.filter((t) => t.status === 'todo' || t.status === 'in_progress');
+      const backlog = openWork.filter((t) => t.status === 'backlog');
       for (const id of ['u1', 'u2', 'u3', 'u9']) {
         assert.equal(
           await numberOf(h.page, `.dash-people [data-person="${id}"]`),
@@ -372,8 +374,13 @@ void describe('the numbers are the fixture’s (LAI-711)', () => {
       );
       assert.equal(
         await numberOf(h.page, '.dash-people [data-person="review"]'),
-        openWork.length - held.length,
+        openWork.length - held.length - backlog.length,
         'review is its own share, whoever holds it',
+      );
+      assert.equal(
+        await numberOf(h.page, '.dash-people [data-person="backlog"]'),
+        backlog.length,
+        'backlog is its own share, whoever holds it',
       );
       assert.equal(
         await numberOf(h.page, '.dash-people .donut-value'),
@@ -383,7 +390,7 @@ void describe('the numbers are the fixture’s (LAI-711)', () => {
       const names = await h.page.locator('.dash-people .dash-legend-name').allTextContents();
       assert.ok(names.includes('Pawan Owner'), `the owner is not named: ${JSON.stringify(names)}`);
       assert.ok(!names.some((n) => /^u\d$/.test(n)), `a raw id is shown: ${JSON.stringify(names)}`);
-      assert.deepEqual(names.slice(-2), ['Unassigned', 'Waiting for review']);
+      assert.deepEqual(names.slice(-3), ['Unassigned', 'Backlog', 'Waiting for review']);
       // The ring has a slice per row, each drawn in a real colour.
       const strokes = await h.page
         .locator('.dash-people .donut-slice')
@@ -492,15 +499,20 @@ void describe('the page never blanks (LAI-711)', () => {
       await openNow(h.page);
       const before = await numberOf(h.page, '.dash-people [data-person="u3"]');
       const card = await h.page.locator('.dash-people').elementHandle();
-      // An agent hands three unassigned tasks to Alan — not ones in review,
-      // which wait on a reviewer and are not in his count.
+      // An agent hands Alan the unassigned work in to do and in progress —
+      // not backlog or review, which are not in his count (LAI-832).
       let moved = 0;
       for (const t of w.tasks) {
-        if (moved < 3 && open7(t) && t.status !== 'review' && t.assignee_id === null) {
+        if (
+          moved < 3 &&
+          (t.status === 'todo' || t.status === 'in_progress') &&
+          t.assignee_id === null
+        ) {
           t.assignee_id = 'u3';
           moved += 1;
         }
       }
+      assert.ok(moved > 0, 'positive control: the fixture has unassigned work to hand over');
       await h.page.evaluate(() => {
         (
           window as unknown as {
@@ -527,7 +539,7 @@ void describe('the page never blanks (LAI-711)', () => {
         (want) =>
           Number(document.querySelector('.dash-people [data-person="u3"]')?.textContent?.trim()) ===
           want,
-        before + 3,
+        before + moved,
         { timeout: 5000 },
       );
       assert.equal(

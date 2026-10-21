@@ -2000,6 +2000,54 @@ conflict and kept in the entry's revisions — and a Laika change goes out only
 while Solidtime still holds what Laika last saw. A person's rows go with their
 entry; *people not on Laika* are kept three years by §11.6, as entries are.
 
+### 4.55 `time_breaks`
+
+A gap in a person's day that they waved away as a break (LAI-831, CHIEF's
+addition D): a span on their local day that My day stops counting under
+*Gaps* and stops offering to fill. **Never time** — no total, entry, report or
+export reads it, and adding or removing one touches no draft and no entry.
+**The person's own, on a web session**, as a draft is: read with their day
+under `time_drafts.read_own`, added and removed under `time_drafts.manage_own`
+(§6.4); anybody else's is not there for them.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `user_id` | FK `users`, cascade |
+| `day` | `YYYY-MM-DD`, the person's local day in `tz`, as a draft's |
+| `tz` | IANA zone |
+| `started_at`, `ended_at` | unix ms, end after start (CHECK); the service keeps both on `day` in `tz` |
+| `created_at` | |
+
+Indexes: `(user_id, day)` — My day — and `(day)` for retention. A day holds
+at most 48, none overlapping another (§6.4). Kept 30 days, as drafts are
+(§11.6), whatever happens to the drafts: neither switch nor
+`DELETE /me/time-drafts` removes one.
+
+### 4.56 `time_undo`
+
+What a change to a person's own time replaced (LAI-831, CHIEF's addition B),
+written in the change's own transaction so *Undo* puts back **exactly** what
+was there: a held block's collector, a split block whole under its own id, a
+confirmed draft pending. **Kept minutes, not days**, and the person's own —
+read only by their own `POST /me/time/undo` (§6.4).
+
+| field | notes |
+| --- | --- |
+| `id` | ULID — the change's id, which its write answers with in `X-Undo-Id` (§6.4) |
+| `user_id` | FK `users`, cascade |
+| `subject` | what the change was asked of: a draft's id, an entry's id, or `day:YYYY-MM-DD` for *Confirm day* |
+| `change` | JSON: `drafts`, each draft the change touched as it stood before, column for column; `made`, the drafts only the change made (a split's halves); `entriesMade`, the entries it made live (a confirm, an add); `entriesRetired`, the entries it took back (a delete) |
+| `created_at` | the instant of the change; every row it wrote carries it as `updated_at`, which is how Undo tells that nothing has changed since |
+
+Indexes: `(user_id, subject)` and `(created_at)` for retention. Kept for
+`UNDO_WINDOW_MS`, two minutes — My day offers Undo for ten seconds, and the
+rest is a slow network's. A new change sweeps the person's rows older than
+that, and an Undo deletes its own. `DELETE /me/time-drafts` and *Draft my
+time* turned off delete the person's with their drafts, and the organisation
+leaving `drafts` deletes everybody's (§4.45, §4.46), because a before-image
+holds a block's counts (§4.47). §11.6 sweeps everyone's.
+
 ### 4.57 `agent_time_buckets`
 
 When the agent worked (LAI-833): the seconds of Claude Code's `active_time` of
@@ -2270,9 +2318,11 @@ GET    /api/v1/me/time-settings              PUT .../time-settings  body { draft
 PUT    /api/v1/me/time-drafts                a collector's blocks → { accepted_days, stored_blocks }   (both time switches on; 30/hour)
 POST   /api/v1/me/time-drafts                an agent's proposal → 201 { id, minutes, day } (both time switches on; twin of propose_time_entry)
 DELETE /api/v1/me/time-drafts                every draft the caller has not confirmed → 204   (session only)
-PATCH  /api/v1/me/time-drafts/:id            body { task?, project?, general?, minutes? }   POST .../split { at }   POST .../dismiss → 204   (session only)
+PATCH  /api/v1/me/time-drafts/:id            body { task?, project?, general?, minutes?, started_at?, ended_at? }   POST .../split { at }   POST .../dismiss → 204   (session only)
 POST   /api/v1/me/time-drafts/:id/confirm    → 201, the entry   POST /api/v1/me/time/days/:day/confirm → { entries }   (session only)
-GET    /api/v1/me/time                       ?day=&tz= — My day: drafts, entries, agent minutes, the week   (session only)
+GET    /api/v1/me/time                       ?day=&tz= — My day: drafts, entries, breaks, agent minutes, drafts held, the week   (session only)
+POST   /api/v1/me/time/undo                  body { id } — the change an X-Undo-Id named, taken back → 204   (session only; LAI-831)
+POST   /api/v1/me/time-breaks                body { day, tz, started_at, ended_at } — a gap waved away → 201   DELETE .../:id → 204   (session only; LAI-831)
 POST   /api/v1/me/time-entries               body { day, tz, minutes, task?, project?, note? } → 201   PATCH/DELETE .../:id   (session only)
 GET    /api/v1/me/time-entries/:id/revisions an entry's append-only history   (session only)
 PUT    /api/v1/org/time                      body { mode } — off | manual | drafts   (owner, admin; session only; LAI-787)
@@ -2921,30 +2971,102 @@ parameter names anybody else.
   no draft, its own proposal included. The same rules and switches as §7.1's
   `propose_time_entry`, its twin.
 - **My day.** `GET /me/time?day=&tz=` answers `{ day, tz, today, settings,
-  drafts, entries, agent, state, week }`: the pending drafts and live entries
-  of the day in the order they happened, each with its task `{ id, key,
-  title }` and project `{ id, slug, name }`; `agent` — `{ minutes,
-  keyboard_minutes, by_task: [{ task, minutes }], unattributed_minutes }`,
-  **agent minutes, never hours**; `state` — `drafted`, `confirmed`,
-  `no_signal` (nothing reached Laika: never shown as zero hours) or `future`;
-  and `week`, Monday to Sunday, each `{ day, confirmed_minutes,
-  drafted_minutes, state }`. Without `tz`, the zone of the person's drafts;
-  without `day`, today there. One indexed query per section.
+  drafts, entries, breaks, drafts_held, agent, state, week }`: the pending
+  drafts and live entries of the day in the order they happened, each with
+  its task `{ id, key, title }` and project `{ id, slug, name }`; `breaks` —
+  the gaps the person waved away that day (§4.55), each `{ id, day, tz,
+  started_at, ended_at }`, in the order they happened, **never counted as
+  time**; `drafts_held` — `{ count, minutes }` of the person's pending drafts
+  on every day, so the page can say what turning *Draft my time* off deletes
+  before it asks (LAI-831, CHIEF's addition F; dismissed drafts go too and are
+  not counted); `agent` — `{ minutes, keyboard_minutes, by_task: [{ task,
+  minutes }], unattributed_minutes }`, **agent minutes, never hours**;
+  `state` — `drafted`, `confirmed`, `no_signal` (nothing reached Laika: never
+  shown as zero hours) or `future`; and `week`, Monday to Sunday, each
+  `{ day, confirmed_minutes, drafted_minutes, state }`. Without `tz`, the
+  zone of the person's drafts; without `day`, today there. One indexed query
+  per section.
 - **The person's hands.** `PATCH /me/time-drafts/:id` puts a block on a card
-  (`task`), a project (`project`) or *General* (`general: true`), or changes
-  its minutes, and holds it for them so no sync overwrites it; `…/split`
-  `{ at }` cuts one at a minute inside it into two, each with its share;
-  `…/dismiss` puts it away for good; `…/confirm` makes it an entry (`201`);
+  (`task`), a project (`project`) or *General* (`general: true`), changes its
+  minutes, or moves its edges — `started_at`, `ended_at`, unix ms, My day's
+  drag and −/+ (LAI-831) — and holds it for them so no sync overwrites it.
+  Refused `422` for an edge on a block with no span (`no_span`), a span that
+  does not end after it starts (`invalid_span`) or leaves the block's day in
+  its zone (`outside_day` — never moved to the next day), and a timed block
+  given more minutes than its span (`minutes_over_span`). `…/split` `{ at }`
+  cuts one at a minute inside it into two, each with its share; `…/dismiss`
+  puts it away for good, but for Undo; `…/confirm` makes it an entry (`201`);
   `POST /me/time/days/:day/confirm` confirms the day's pending drafts in one
-  transaction, an untied one as *General*, answering `{ entries }`.
+  transaction, an untied one as *General*, answering `{ entries }`. A block
+  has **one entry for as long as it is kept**: confirmed again after Undo
+  took its entry back, the same entry is live again as its next `edited`
+  revision, never a second (`source_ref`, §4.48).
   `POST /me/time-entries` is time typed by hand — a meeting, a call — needing
   only the organisation's *Time* not `off` (`403 time_off`). `PATCH` and
   `DELETE /me/time-entries/:id` write the next revision — except on an entry
   imported from Solidtime, which is changed there and refused here `403
   imported_entry` (LAI-788); `GET …/revisions`
-  answers `{ revisions }`, oldest first. A day holds at most 1440 minutes of a
-  person's live entries (`422 day_full`). All of these are **session only**:
-  no token reads, confirms or writes a person's time.
+  answers `{ revisions }`, oldest first. `PATCH` also takes `started_at` and
+  `ended_at` (LAI-831), moving an entry's edges on its own day as **one
+  revision**, however far a drag went: an entry with no set time takes both at
+  once (`422 no_span`), a new `day` and a new span are two edits
+  (`422 invalid_span`), and the span is held to its day and its minutes as a
+  draft's is (`invalid_span`, `outside_day`, `minutes_over_span`). A day holds
+  at most 1440 minutes of a person's live entries (`422 day_full`). All of
+  these are **session only**: no token reads, confirms or writes a person's
+  time.
+- **Confirmed time is never counted twice, by the clock** (LAI-831 review
+  round 2). A timed block, with every live timed entry of the person that
+  overlaps it — transitively, the whole stretch they join — holds no more
+  minutes than the stretch has of wall clock. It is judged on a draft's new
+  span or minutes, a confirm, *Confirm day*, a timed entry's create, an edit
+  of a timed entry's span or minutes, and an entry Undo brings back; an edit
+  that moves an entry's span is judged as well on every live timed entry its
+  old span met, as the edit leaves them. Refused `409 overlaps_confirmed`
+  with `started_at`, `ended_at`, `stretch_started_at`, `stretch_ended_at`,
+  `stretch_minutes` and `would_hold`, and `draft_id` when a draft is being
+  confirmed. Blocks of tasks worked at once may share a stretch, however
+  unevenly, as long as together they fit it. *Confirm day* is **all or
+  nothing**: every block of the day is written, then every block's stretch is
+  judged on the day as it would stand, so their order changes nothing, and
+  the first that does not fit refuses the whole day by its `draft_id`. A
+  timed entry's create is held to its span as well (`422 minutes_over_span`).
+- **Undo (LAI-831, CHIEF's addition B).** Every change My day can take back
+  answers with an `X-Undo-Id` header naming **that change**: `PATCH
+  /me/time-drafts/:id`, `…/split`, `…/dismiss`, `…/confirm`, `POST
+  /me/time/days/:day/confirm` when it confirmed anything, `POST
+  /me/time-entries` and `DELETE /me/time-entries/:id` — not `PATCH
+  /me/time-entries/:id`. `POST /me/time/undo` takes `{ id }`, that id, and
+  puts back exactly what the change replaced, from what it recorded (§4.56)
+  and never from what the page saw, answering `204`: a confirm or *Confirm
+  day* — its entries taken back, every block pending as it stood, its
+  collector's or held; *General*, a card, minutes or an edge — the block as
+  it stood; *Not work* — pending again; a split — the halves gone and the
+  block back under its own id; an add — the entry taken back; a delete — the
+  entry live again. **History stays append-only**: an entry taken back is a
+  `deleted` revision and one brought back an `edited` one (§4.49). Refused
+  `409 changed_since` when anything the change wrote has changed since, and
+  `409 newer_change` when a later change touched any draft or entry it wrote
+  — that one comes off first, by its own id, so changes come off newest
+  first, as a stack; `404` for a change older than two minutes
+  (`UNDO_WINDOW_MS`), already undone, or anybody else's. An entry brought back
+  is judged as any other (`409 overlaps_confirmed`, `422 day_full`). Nothing
+  is undone on a refusal. Needs `time_drafts.manage_own` and
+  `time_entries.write_own`, and the organisation's *Time* not `off` (`403
+  time_off`).
+- **Breaks (LAI-831, CHIEF's addition D).** `POST /me/time-breaks` takes
+  `{ day, tz, started_at, ended_at }` and nothing else — a gap on the
+  person's own day, waved away — and answers `201` with `{ id, day, tz,
+  started_at, ended_at }`. The day is one an entry could be on (`422
+  day_out_of_range`, today − 365 to today + 1 in `tz`; `422 invalid_tz`); the
+  span ends after it starts and stays on that day (`422 invalid_span`, `422
+  outside_day`), overlaps no break already there (`422 overlaps_break`), and
+  a day holds at most 48 (`422 too_many_breaks`); and it needs the
+  organisation's *Time* not `off` (`403 time_off`). `DELETE
+  /me/time-breaks/:id` removes one, `204`, and the gap counts again; anybody
+  else's is `404`. **A break is never time**: it touches no draft and no
+  entry, and no total reads it. Both under `time_drafts.manage_own`, session
+  only (§4.55).
 
 **The Solidtime bridge (D-088 items 6 and 10, LAI-788).** The board never
 calls Solidtime: the person's CLI does, with their own Solidtime key kept on
@@ -4382,7 +4504,10 @@ One interval-driven scheduler in the same process:
   `system.time.prune`. Triggers refuse deleting a younger entry and replacing
   any (§4.48), so nothing else removes one. Solidtime's rows (§4.54) follow: a
   person's with their entry, *people not on Laika* by the same three years
-  (LAI-788). No `activity` row, for the reason local activity's has none
+  (LAI-788). With them, by the same job (LAI-831): `time_breaks` dated before
+  30 days ago, as drafts are (§4.55), and `time_undo` rows older than
+  `UNDO_WINDOW_MS`, two minutes, whoever's they are (§4.56). No `activity`
+  row, for the reason local activity's has none
 - **stale-task flagging** — `in_progress` with no heartbeat or commit for 3 days
   sets `stale_flagged_at`
 - invite expiry, meeting-review expiry (7 days)

@@ -5351,3 +5351,31 @@ was **"yes do it"**.
 **What does not change:** D-088 item 4. No prompt or reply text, path,
 repository, branch name, commit message or window title leaves the machine.
 The upload stays a closed schema of numbers, a zone and a key-shaped string.
+
+## D-097 — Two machines, Belka and Strelka: the board carries the hand-off, Strelka files from LAI-300–399 and never pushes master
+
+**Date:** 2026-10-21 · **By:** CHIEF, on the owner's instruction
+
+The owner, 2026-10-21: *"i have another laptop with same setup … that heavy
+laptop like 36 gb of ram so we can utilize that power … give me some tasks to
+that laptop … update everything on Laika's board, you guys can also
+communicate on comments in task … give one name and also give another laptop
+name … mention in the task where you want to assign the task to another
+laptop."*
+
+1. **Names.** The MacBook the manager runs on is **Belka**; the 36 GB laptop is
+   **Strelka**. Belka plans, hands out, reviews and releases. Strelka takes the
+   heavy builds: work that runs the full gate or the browser tests many times.
+2. **The board is the channel.** A hand-off is a card comment addressed
+   `@strelka` or `@belka`, carrying the task id, base commit, branch, done
+   condition and reviewer. Every comment is prefixed `[belka]` or `[strelka]`,
+   because both machines act as the same person. A `host:` tag is added where
+   the board allows it, for filtering only.
+3. **Git across machines is visible only once pushed**, so §2's claim check
+   also reads `origin/*`, and a claim is pushed the moment it is made.
+4. **Ids.** D-017's spare block, `LAI-300` – `LAI-399`, is Strelka's. Only
+   Belka writes decisions.
+5. **Strelka never pushes `master` and never merges** (D-073: a push to
+   `master` is a release). It ends at a PR and a card in Review.
+
+The rules live in CLAUDE.md, *Two machines*.
