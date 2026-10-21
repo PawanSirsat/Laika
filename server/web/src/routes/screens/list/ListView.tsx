@@ -540,7 +540,14 @@ export function ListView({
                     </td>
 
                     <td className={`list-updated list-tone-${row.updatedTone}`}>
-                      <time dateTime={row.updated.iso} title={row.updated.full}>
+                      <time
+                        dateTime={row.updated.iso}
+                        title={
+                          row.updatedNote === ''
+                            ? row.updated.full
+                            : `${row.updated.full} · ${row.updatedNote}`
+                        }
+                      >
                         {row.updated.text}
                       </time>
                     </td>

@@ -6,6 +6,7 @@ import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { backfillTaskPositions, backfillTaskTimestamps } from './backfill.ts';
 import { type Db } from './client.ts';
+import { type Logger } from '../log.ts';
 
 /**
  * Generated migrations live beside this module and are resolved from
@@ -438,6 +439,7 @@ export function snapshotBeforeMigrations(
 }
 
 export interface RunMigrationsOptions {
+  logger?: Pick<Logger, 'info'>;
   migrationsFolder?: string;
   /**
    * Take a snapshot first. Absent in tests that do not care, and **present on
@@ -473,6 +475,23 @@ export function runMigrations(db: Db, options: RunMigrationsOptions = {}): void 
   const migrationsFolder = options.migrationsFolder ?? MIGRATIONS_FOLDER;
   const backup = options.backup;
 
+  // D-093 requires a count for the one-off UPDATE. Count around the migrator,
+  // before the older boot recovery runs; the SQL file itself stays UPDATE-only.
+  // A fresh database has no tasks table yet and therefore no rows to recover.
+  const completionMigration = '0045_done_completed_at';
+  const hasTasks = db.get(sql`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tasks'`);
+  const countMissingCompletions = () =>
+    db.get<{ n: number }>(
+      sql`SELECT count(*) AS n FROM tasks WHERE status = 'done' AND completed_at IS NULL`,
+    )?.n ?? 0;
+  const completionBefore =
+    options.logger !== undefined &&
+    pendingMigrations(db.$client, migrationsFolder).includes(completionMigration)
+      ? hasTasks === undefined
+        ? 0
+        : countMissingCompletions()
+      : null;
+
   let snapshotPath: string | null = null;
   if (backup !== undefined) {
     const pending = pendingMigrations(backup.sqlite, migrationsFolder);
@@ -506,6 +525,13 @@ export function runMigrations(db: Db, options: RunMigrationsOptions = {}): void 
       throw new Error(
         `Migrations left ${String(dangling.length)} dangling foreign key reference(s); refusing to boot on a database that cannot be trusted. First: ${JSON.stringify(dangling[0])}`,
       );
+    }
+
+    if (completionBefore !== null) {
+      options.logger?.info('db.completed_at_backfilled', {
+        migration: completionMigration,
+        count: completionBefore - countMissingCompletions(),
+      });
     }
 
     ensureActivityTriggers(db);

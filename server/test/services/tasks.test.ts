@@ -3,7 +3,15 @@ import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
 import { eq, inArray } from 'drizzle-orm';
-import { activity, orgs, taskEstimates, tasks, tokens, users } from '../../src/db/schema.ts';
+import {
+  activity,
+  orgs,
+  projectStatuses,
+  taskEstimates,
+  tasks,
+  tokens,
+  users,
+} from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { addMember, createProject } from '../../src/services/projects.ts';
 import {
@@ -78,6 +86,43 @@ describe('createTask and the display key (AC1, AC9)', () => {
     expect(task.status).toBe('backlog');
     expect(task.priority).toBe('p2');
   });
+
+  it('stamps a task created as done at its creation time (LAI-822)', () => {
+    const task = newTask('Already finished', { status: 'done', now: 12_345 });
+    expect(task).toMatchObject({ status: 'done', created_at: 12_345, completed_at: 12_345 });
+    expect(getTask(t.db, actor(adminId), task.id).completed_at).toBe(12_345);
+  });
+
+  it('stamps a task created straight into a custom Done status (LAI-822)', () => {
+    const projectId = newTask().project_id;
+    const statusId = newId();
+    t.db
+      .insert(projectStatuses)
+      .values({
+        id: statusId,
+        projectId,
+        name: 'Shipped',
+        category: 'done',
+        position: 10,
+        createdAt: 1000,
+      })
+      .run();
+    const task = newTask('Shipped already', { status_id: statusId, now: 23_456 });
+    expect(task).toMatchObject({
+      status: 'done',
+      status_id: statusId,
+      created_at: 23_456,
+      completed_at: 23_456,
+    });
+    expect(getTask(t.db, actor(adminId), task.id).completed_at).toBe(23_456);
+  });
+
+  it.each(['backlog', 'todo', 'in_progress', 'review', 'cancelled'])(
+    'leaves completed_at null when created as %s (LAI-822)',
+    (status) => {
+      expect(newTask('Unfinished', { status, now: 34_567 }).completed_at).toBeNull();
+    },
+  );
 
   it('writes exactly one task.created row', () => {
     newTask();

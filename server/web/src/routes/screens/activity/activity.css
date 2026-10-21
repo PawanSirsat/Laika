@@ -51,7 +51,7 @@
   scrollbar-color: var(--border-default) transparent;
 }
 
-/* The threshold note stays pinned under its list rather than scrolling away —
+/* The rule's note stays pinned under its list rather than scrolling away —
    it is the definition of the list above it. */
 .act-panels .rail-note {
   flex: none;
