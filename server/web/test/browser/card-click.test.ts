@@ -119,10 +119,32 @@ void after(async () => {
 
 void describe('the whole card opens the task', () => {
   void test('clicking the card body — not the key — opens the panel', async () => {
+    const started = Date.now();
     const h = await open('/board?project=laika-core', STUB);
+    const opened = Date.now() - started;
     try {
       const card = h.page.locator('article.card').first();
-      await card.waitFor({ timeout: 15_000 });
+      /*
+       * **If this wait gives up, say what the page showed** (LAI-857). It timed
+       * out once in a contended root gate and could not be reproduced, even at
+       * twice that load: a bare timeout cannot tell a slow `open` (build,
+       * browser launch) from a page that rendered something other than the
+       * board, and the next failure should answer that instead of the clock.
+       */
+      await card.waitFor({ timeout: 15_000 }).catch(async (cause: unknown) => {
+        const shown = await h.page
+          .evaluate(() =>
+            (document.querySelector('main') ?? document.body).innerText
+              .replace(/\s+/g, ' ')
+              .slice(0, 400),
+          )
+          .catch(() => '(page unreadable)');
+        const asked = h.calls.map((c) => `${c.method} ${c.path}`).join(', ');
+        throw new Error(
+          `no card after open took ${String(opened)}ms; ${h.page.url()} showed: ${shown}; api calls: ${asked}`,
+          { cause },
+        );
+      });
 
       // Prove the probe can see the thing before asserting about it: the title
       // must exist, or "the click did nothing" would be indistinguishable from
