@@ -16,7 +16,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { closeBrowser, fakeStream, open, setTheme, type ApiStub } from './harness.ts';
+import { closeBrowser, fakeStream, open, setTheme, until, type ApiStub } from './harness.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -217,25 +217,54 @@ void describe('the dashboard is aligned (LAI-711)', () => {
       try {
         await h.page.setViewportSize({ width, height: 900 });
         await ready(h.page);
-        await h.page.waitForTimeout(150);
-        const m = await h.page.evaluate(() => {
-          const main = document.querySelector('.shell-main') ?? document.scrollingElement!;
-          const bar = document.querySelector('.space-bar');
-          const barBox = bar?.getBoundingClientRect();
-          const barPad = bar === null ? 0 : parseFloat(getComputedStyle(bar).paddingLeft);
-          const box = (el: Element) => {
-            const r = el.getBoundingClientRect();
-            return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
-          };
-          return {
-            overflow: main.scrollWidth - main.clientWidth,
-            viewport: window.innerWidth,
-            barLeft: barBox === undefined ? null : barBox.left + barPad,
-            barRight: barBox === undefined ? null : barBox.right - barPad,
-            stats: [...document.querySelectorAll('.dash-stats > .dash-card')].map(box),
-            cards: [...document.querySelectorAll('.dash-grid > .dash-card')].map(box),
-          };
+        const measure = () =>
+          h.page.evaluate(() => {
+            const main = document.querySelector('.shell-main') ?? document.scrollingElement!;
+            const bar = document.querySelector('.space-bar');
+            const barBox = bar?.getBoundingClientRect();
+            const barPad = bar === null ? 0 : parseFloat(getComputedStyle(bar).paddingLeft);
+            const box = (el: Element) => {
+              const r = el.getBoundingClientRect();
+              return { top: r.top, bottom: r.bottom, left: r.left, right: r.right };
+            };
+            return {
+              overflow: main.scrollWidth - main.clientWidth,
+              viewport: window.innerWidth,
+              barLeft: barBox === undefined ? null : barBox.left + barPad,
+              barRight: barBox === undefined ? null : barBox.right - barPad,
+              stats: [...document.querySelectorAll('.dash-stats > .dash-card')].map(box),
+              cards: [...document.querySelectorAll('.dash-grid > .dash-card')].map(box),
+            };
+          });
+        // Wait for the settled layout it asserts, not a fixed 150ms (LAI-715).
+        await until(async () => {
+          const at = await measure();
+          const all = [...at.stats, ...at.cards];
+          const rows = new Map<number, number[]>();
+          for (const card of all) {
+            const key = Math.round(card.top);
+            rows.set(key, [...(rows.get(key) ?? []), card.bottom]);
+          }
+          const sorted = [...all].sort((a, b) => a.top - b.top);
+          return (
+            at.overflow <= 0 &&
+            at.stats.length === 4 &&
+            at.cards.length === 6 &&
+            all.every((card) => card.right <= at.viewport) &&
+            [...rows.values()].every((b) => Math.max(...b) - Math.min(...b) <= 1) &&
+            sorted.every(
+              (cur, i) =>
+                i === 0 ||
+                Math.round(cur.top) === Math.round(sorted[i - 1]!.top) ||
+                cur.top >= sorted[i - 1]!.bottom,
+            ) &&
+            at.barLeft !== null &&
+            at.barRight !== null &&
+            Math.abs((at.stats[0]?.left ?? 0) - at.barLeft) <= 1 &&
+            Math.abs((at.stats.at(-1)?.right ?? 0) - at.barRight) <= 1
+          );
         });
+        const m = await measure();
         assert.ok(m.overflow <= 0, `the page scrolls sideways by ${String(m.overflow)}px`);
         assert.equal(m.stats.length, 4, 'four stat cards');
         assert.equal(m.cards.length, 6, 'six cards in the grid');
@@ -307,6 +336,8 @@ void describe('the numbers are the fixture’s (LAI-711)', () => {
       ).length;
       assert.ok(expected.due > 0 && overdue > 0, 'the fixture must exercise both');
       for (const [kind, value] of Object.entries(expected)) {
+        // Each figure lands on its own read: wait for the one it asserts (LAI-715).
+        await until(async () => (await numberOf(h.page, `[data-stat="${kind}"]`)) === value);
         assert.equal(await numberOf(h.page, `[data-stat="${kind}"]`), value, kind);
       }
       assert.match(
@@ -479,8 +510,13 @@ void describe('the page never blanks (LAI-711)', () => {
       });
       assert.equal(mid.skeleton, false, 'a skeleton replaced the page');
       assert.equal(mid.same, true, 'the cards were torn down');
-      await h.page.waitForTimeout(700);
       const since = NOW - 30 * DAY;
+      // Wait for the number it asserts, not a fixed 700ms (LAI-715).
+      await until(
+        async () =>
+          (await numberOf(h.page, '[data-stat="created"]')) ===
+          w.tasks.filter((t) => t.created_at >= since).length,
+      );
       assert.equal(
         await numberOf(h.page, '[data-stat="created"]'),
         w.tasks.filter((t) => t.created_at >= since).length,

@@ -46,6 +46,8 @@ void describe('who is here', () => {
     const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await ready(h.page);
+      // Wait for every card it asserts, not the first (LAI-715).
+      await until(async () => (await cardNames(h.page)).join('|') === 'Pawan Sirsat|Bea Nkosi');
       assert.deepEqual(await cardNames(h.page), ['Pawan Sirsat', 'Bea Nkosi']);
 
       const pawan = card(h.page, 'Pawan Sirsat');
@@ -318,12 +320,20 @@ void describe('what an owner sees and a member does not', () => {
       // it before counting (LAI-765's rule: wait for what you read).
       await pawan.locator('a.cap-name-link').waitFor({ timeout: 10_000 });
       assert.equal(await pawan.locator('a.cap-name-link').count(), 1, 'no profile link');
+      const agents = async () =>
+        (await pawan.locator('.cap-agent').allInnerTexts())
+          .map((t) => t.replace(/\s+/g, ' ').trim())
+          .join('|');
+      await until(
+        async () => (await agents()) === 'Claude Code (running now)|Codex (running now)|Cursor',
+      );
       assert.deepEqual(
         (await pawan.locator('.cap-agent').allInnerTexts()).map((t) =>
           t.replace(/\s+/g, ' ').trim(),
         ),
         ['Claude Code (running now)', 'Codex (running now)', 'Cursor'],
       );
+      await until(async () => (await pawan.locator('.cap-agent-dot').count()) === 2);
       assert.equal(await pawan.locator('.cap-agent-dot').count(), 2, 'a running dot each');
       const unlisted = h.page.locator('.cap-tile-unlisted');
       assert.match(await unlisted.innerText(), /Unlisted work\s*1/);
@@ -422,6 +432,9 @@ void describe('states', () => {
     });
     try {
       await h.page.locator('.cap-card-skeleton').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.cap-card-skeleton').count()) === 3);
+      await until(async () => (await h.page.locator('.cap-tile-skeleton').count()) === 6);
+      await until(async () => (await h.page.locator('.cap[aria-busy="true"]').count()) === 1);
       assert.equal(await h.page.locator('.cap-card-skeleton').count(), 3);
       assert.equal(await h.page.locator('.cap-tile-skeleton').count(), 6);
       assert.equal(await h.page.locator('.cap[aria-busy="true"]').count(), 1);

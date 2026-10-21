@@ -22,7 +22,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, until, type ApiStub } from './harness.ts';
 
 const user = (id: string, name: string, is_active = true) => ({
   id,
@@ -61,6 +61,7 @@ void describe('a stub may be keyed on its query', () => {
     });
     try {
       await h.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.org-person').count()) === 2);
       assert.equal(await h.page.locator('.org-person').count(), 2);
       assert.deepEqual([...h.unmatched], [], 'a request went unmatched');
     } finally {
@@ -85,6 +86,8 @@ void describe('a stub may be keyed on its query', () => {
         timeout: 20_000,
       });
       await h.page.waitForTimeout(1200);
+      // The pause is for the rows that must not come; the report may be later (LAI-715).
+      await until(() => (h.unmatched[0] ?? '').includes('include_inactive=true'));
 
       assert.equal(
         await h.page.locator('.org-person').count(),
@@ -113,6 +116,7 @@ void describe('a stub may be keyed on its query', () => {
     });
     try {
       await h.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.org-person').count()) === 2);
       assert.equal(await h.page.locator('.org-person').count(), 2);
       assert.deepEqual([...h.unmatched], [], 'a path-only stub started caring about the query');
     } finally {
@@ -147,6 +151,7 @@ void describe('a stub may be keyed on its query', () => {
     try {
       await h.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(600);
+      await until(async () => served === 2 && (await h.page.locator('.org-person').count()) === 2);
 
       assert.equal(served, 2, `the cursor was not followed — ${String(served)} request(s)`);
       assert.equal(

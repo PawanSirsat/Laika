@@ -179,6 +179,8 @@ void describe('the List view', () => {
        * defect of LAI-251, which passed for exactly that reason. So: prove the
        * screen is really here before proving what is not.
        */
+      // Wait for the count it asserts, not the first row (LAI-715).
+      await until(async () => (await h.page.locator('.list-row').count()) === 2);
       assert.equal(await h.page.locator('.list-row').count(), 2, 'the rows must be present');
 
       /*
@@ -198,6 +200,7 @@ void describe('the List view', () => {
       assert.equal(await h.page.locator('.presence').count(), 0, 'WORKING NOW is back');
       // Not the sprint chips: this stub has no sprints, so their absence is the
       // fixture rather than the board. The lanes are the board's own chrome.
+      await until(async () => (await h.page.locator('.lane').count()) >= 4);
       assert.ok((await h.page.locator('.lane').count()) >= 4, 'the board lost its lanes');
     } finally {
       await h.close();
@@ -249,9 +252,10 @@ void describe('the List view', () => {
       for (const width of [1440, 1280, 900, 420]) {
         await h.page.setViewportSize({ width, height: 900 });
         await h.page.waitForTimeout(150);
-        const overflow = await h.page.evaluate(
-          () => document.documentElement.scrollWidth - window.innerWidth,
-        );
+        const sideways = () =>
+          h.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+        await until(async () => (await sideways()) === 0);
+        const overflow = await sideways();
         assert.equal(overflow, 0, `the page scrolls sideways at ${String(width)}px`);
       }
     } finally {
@@ -383,10 +387,13 @@ void describe('a board larger than one page', () => {
         })
         .catch(() => undefined);
       await h.page.waitForTimeout(200);
+      await until(async () => (await h.page.locator('.list tbody tr').count()) === 50);
 
       assert.equal(await h.page.locator('.list tbody tr').count(), 50, 'a page is not 50 rows');
 
       const pager = h.page.locator('.list-pager-count');
+      // The total counts the second page, which can land after the first is drawn.
+      await until(async () => /^1–50 of 65$/.test((await pager.innerText()).trim()));
       assert.match((await pager.innerText()).trim(), /^1–50 of 65$/);
 
       await h.page.locator('.list-page-button', { hasText: 'Next' }).click();
@@ -419,17 +426,23 @@ void describe('a board larger than one page', () => {
     try {
       await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
 
-      const seen = await h.page.evaluate(() => {
-        const scroller = document.querySelector('.list-scroll');
-        const head = document.querySelector('.list thead th');
-        if (scroller === null || head === null) return null;
-        return {
-          headPosition: getComputedStyle(head).position,
-          // The property that matters: there is more table than box, and the
-          // box is the thing that scrolls.
-          scrollable: scroller.scrollHeight > scroller.clientHeight,
-        };
+      const measure = () =>
+        h.page.evaluate(() => {
+          const scroller = document.querySelector('.list-scroll');
+          const head = document.querySelector('.list thead th');
+          if (scroller === null || head === null) return null;
+          return {
+            headPosition: getComputedStyle(head).position,
+            // The property that matters: there is more table than box, and the
+            // box is the thing that scrolls.
+            scrollable: scroller.scrollHeight > scroller.clientHeight,
+          };
+        });
+      await until(async () => {
+        const m = await measure();
+        return m !== null && m.headPosition === 'sticky' && m.scrollable;
       });
+      const seen = await measure();
 
       assert.ok(seen !== null, 'no list scroller on the page');
       assert.equal(seen.headPosition, 'sticky', 'the header scrolls away with the rows');
@@ -1212,6 +1225,9 @@ void describe('Board and List share one filter state (LAI-488)', () => {
     const h = await open('/board?project=laika-core&sprint=all', FILTERABLE);
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      await until(
+        async () => (await h.page.locator('.bt-button', { hasText: 'Group' }).count()) === 1,
+      );
       assert.equal(
         await h.page.locator('.bt-button', { hasText: 'Group' }).count(),
         1,
@@ -1303,12 +1319,15 @@ void describe('the date columns hold one line (LAI-491)', () => {
     const h = await open('/list?project=laika-core', OLD);
     try {
       await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
-      const lines = await h.page.evaluate(() =>
-        [...document.querySelectorAll('.list-created time, .list-updated time')].map((t) => ({
-          text: t.textContent ?? '',
-          lines: t.getClientRects().length,
-        })),
-      );
+      const measure = () =>
+        h.page.evaluate(() =>
+          [...document.querySelectorAll('.list-created time, .list-updated time')].map((t) => ({
+            text: t.textContent ?? '',
+            lines: t.getClientRects().length,
+          })),
+        );
+      await until(async () => (await measure()).some((l) => l.text.includes('2025')));
+      const lines = await measure();
       assert.ok(
         lines.some((l) => l.text.includes('2025')),
         'positive control: a dated-year label is on screen',

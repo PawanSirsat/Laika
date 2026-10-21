@@ -12,7 +12,15 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { asServed, closeBrowser, open, setTheme, type ApiStub, type Harness } from './harness.ts';
+import {
+  asServed,
+  closeBrowser,
+  open,
+  setTheme,
+  until,
+  type ApiStub,
+  type Harness,
+} from './harness.ts';
 import { offered, pick } from './dropdown.ts';
 
 const CORE = {
@@ -179,36 +187,52 @@ void describe('the List’s empty state (LAI-717)', () => {
        * centred on `.board-main` across and on the card's space above the
        * Create row down.
        */
-      const geometry = await h.page.evaluate(() => {
-        const main = document.querySelector('.board-main')!.getBoundingClientRect();
-        const paneEl = document.querySelector('.list-pane')!;
-        const pane = paneEl.getBoundingClientRect();
-        const pad = getComputedStyle(paneEl);
-        const paneContent = pane.width - parseFloat(pad.paddingLeft) - parseFloat(pad.paddingRight);
-        const card = document.querySelector('.list-scroll')!.getBoundingClientRect();
-        const state = document.querySelector('.state-empty')!;
-        const create = document.querySelector('.list-create');
-        const floor = create === null ? card.bottom : create.getBoundingClientRect().top;
-        const parts = [...state.children].map((el) => el.getBoundingClientRect());
-        const top = Math.min(...parts.map((r) => r.top));
-        const bottom = Math.max(...parts.map((r) => r.bottom));
-        const left = Math.min(...parts.map((r) => r.left));
-        const right = Math.max(...parts.map((r) => r.right));
-        return {
-          mainX: main.left + main.width / 2,
-          paneWidth: pane.width,
-          mainWidth: main.width,
-          paneContent,
-          cardWidth: card.width,
-          areaY: (card.top + floor) / 2,
-          areaHeight: floor - card.top,
-          x: (left + right) / 2,
-          y: (top + bottom) / 2,
-          bottom,
-          floor,
-          create: create !== null,
-        };
+      const measure = () =>
+        h.page.evaluate(() => {
+          const main = document.querySelector('.board-main')!.getBoundingClientRect();
+          const paneEl = document.querySelector('.list-pane')!;
+          const pane = paneEl.getBoundingClientRect();
+          const pad = getComputedStyle(paneEl);
+          const paneContent =
+            pane.width - parseFloat(pad.paddingLeft) - parseFloat(pad.paddingRight);
+          const card = document.querySelector('.list-scroll')!.getBoundingClientRect();
+          const state = document.querySelector('.state-empty')!;
+          const create = document.querySelector('.list-create');
+          const floor = create === null ? card.bottom : create.getBoundingClientRect().top;
+          const parts = [...state.children].map((el) => el.getBoundingClientRect());
+          const top = Math.min(...parts.map((r) => r.top));
+          const bottom = Math.max(...parts.map((r) => r.bottom));
+          const left = Math.min(...parts.map((r) => r.left));
+          const right = Math.max(...parts.map((r) => r.right));
+          return {
+            mainX: main.left + main.width / 2,
+            paneWidth: pane.width,
+            mainWidth: main.width,
+            paneContent,
+            cardWidth: card.width,
+            areaY: (card.top + floor) / 2,
+            areaHeight: floor - card.top,
+            x: (left + right) / 2,
+            y: (top + bottom) / 2,
+            bottom,
+            floor,
+            create: create !== null,
+          };
+        });
+      // Wait for the layout every assertion below checks, not the headline (LAI-715).
+      await until(async () => {
+        const g = await measure();
+        return (
+          g.areaHeight > 300 &&
+          Math.abs(g.paneWidth - g.mainWidth) <= 1 &&
+          Math.abs(g.cardWidth - g.paneContent) <= 1 &&
+          Math.abs(g.x - g.mainX) <= 4 &&
+          Math.abs(g.y - g.areaY) <= 6 &&
+          g.create &&
+          g.bottom <= g.floor
+        );
       });
+      const geometry = await measure();
 
       assert.ok(
         geometry.areaHeight > 300,
@@ -575,6 +599,11 @@ for (const screen of SCREENS) {
         await filterButton(h).focus();
         await h.page.keyboard.press('Enter');
         await h.page.locator('.bt-pop').waitFor({ timeout: 5_000 });
+        await until(() =>
+          h.page.evaluate(
+            () => document.querySelector('.bt-pop')?.contains(document.activeElement) === true,
+          ),
+        );
         assert.equal(
           await h.page.evaluate(() =>
             document.querySelector('.bt-pop')?.contains(document.activeElement),
@@ -793,8 +822,13 @@ void describe('the active-filter chips (LAI-717)', () => {
       await waitForRows(h, 1);
       const chips = h.page.getByRole('group', { name: 'Active filters' }).locator('.bt-chip');
       await chips.first().waitFor({ timeout: 10_000 });
-      const labels = (await chips.locator('.bt-chip-text').allInnerTexts()).map((t) => t.trim());
-      assert.deepEqual(labels, ['Status: In progress', 'Priority: P1', 'Assignee: Ada Lovelace']);
+      const expected = ['Status: In progress', 'Priority: P1', 'Assignee: Ada Lovelace'];
+      const chipLabels = async () =>
+        (await chips.locator('.bt-chip-text').allInnerTexts()).map((t) => t.trim());
+      // Wait for every chip, not the first (LAI-715).
+      await until(async () => (await chipLabels()).join('|') === expected.join('|'));
+      const labels = await chipLabels();
+      assert.deepEqual(labels, expected);
 
       await chips.filter({ hasText: 'Priority: P1' }).click();
       await h.page.waitForFunction(() => !location.search.includes('priority='), undefined, {

@@ -250,6 +250,8 @@ void describe('the columns are the project’s statuses', () => {
     const h = await open('/board?project=laika-core', world().stub);
     try {
       await board(h);
+      // Wait for every column it asserts, not the first title (LAI-715).
+      await until(() => sameList(h, ['To do', 'In progress', 'QA', 'Code review', 'Done']));
       assert.deepEqual(await titles(h), ['To do', 'In progress', 'QA', 'Code review', 'Done']);
       assert.equal(await lane(h, 'Code review').locator('.card').count(), 0);
       assert.match(await lane(h, 'Code review').innerText(), /Nothing waiting on review/);
@@ -291,6 +293,7 @@ void describe('renaming a column in place', () => {
       await h.page.locator('.lane-rename-input').fill('Shipped');
       await h.page.locator('.lane-rename-input').press('Escape');
       await h.page.waitForTimeout(150);
+      await until(async () => (await titles(h)).includes('Done'));
 
       assert.equal(sent(h, 'PATCH', '/statuses/s-done').length, 0);
       assert.ok((await titles(h)).includes('Done'));
@@ -695,7 +698,12 @@ void describe('hiding and deleting, said plainly (review round 1)', () => {
       await h.page.getByRole('button', { name: 'Hidden columns (2)' }).click();
       const dialog = h.page.getByRole('dialog', { name: /Hidden columns/ });
       await dialog.waitFor();
-      const rows = await dialog.locator('.cd-hidden-row .cd-kind-hint').allInnerTexts();
+      const hints = dialog.locator('.cd-hidden-row .cd-kind-hint');
+      await until(
+        async () =>
+          (await hints.allInnerTexts()).join('|') === ['In review · 1 task', '0 tasks'].join('|'),
+      );
+      const rows = await hints.allInnerTexts();
       // QA is a review column; Cancelled is called what it is.
       assert.deepEqual(rows, ['In review · 1 task', '0 tasks']);
     } finally {

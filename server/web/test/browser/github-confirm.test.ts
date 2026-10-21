@@ -389,14 +389,27 @@ void describe('the proof GitHub confirmed (D-083)', () => {
     try {
       await h.page.locator('.rev-row').first().waitFor({ timeout: 20_000 });
       const chips = h.page.locator('.rev-chip-ci');
+      // Wait for every chip it asserts, not the first row (LAI-715).
+      await until(
+        async () =>
+          (await chips.evaluateAll((els) => els.map((el) => el.getAttribute('data-ci')))).join(
+            '|',
+          ) === ['failed', 'confirmed'].join('|'),
+      );
       assert.deepEqual(
         await chips.evaluateAll((els) => els.map((el) => el.getAttribute('data-ci'))),
         ['failed', 'confirmed'],
       );
 
       await h.page.getByRole('button', { name: 'CI failed', exact: true }).click();
+      await until(
+        async () => (await h.page.locator('.rev-key').allInnerTexts()).join('|') === 'LC-1',
+      );
       assert.deepEqual(await h.page.locator('.rev-key').allInnerTexts(), ['LC-1']);
       await h.page.getByRole('button', { name: 'CI confirmed', exact: true }).click();
+      await until(
+        async () => (await h.page.locator('.rev-key').allInnerTexts()).join('|') === 'LC-2',
+      );
       assert.deepEqual(await h.page.locator('.rev-key').allInnerTexts(), ['LC-2']);
       assert.equal(
         await h.page
@@ -418,6 +431,12 @@ void describe('the proof GitHub confirmed (D-083)', () => {
       const proof = h.page.locator('.rev-detail [data-section="proof"]');
       await proof.locator('.ev-round').waitFor({ timeout: 10_000 });
 
+      await until(
+        async () =>
+          (await proof.locator('.ev-state-confirmed').count()) === 3 &&
+          (await proof.locator('.ev-state-failed').count()) === 2 &&
+          (await proof.locator('.ev-state-claimed').count()) === 1,
+      );
       assert.equal(await proof.locator('.ev-state-confirmed').count(), 3);
       assert.equal(await proof.locator('.ev-state-failed').count(), 2);
       assert.equal(await proof.locator('.ev-state-claimed').count(), 1);

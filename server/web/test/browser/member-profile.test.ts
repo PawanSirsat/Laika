@@ -454,6 +454,7 @@ void describe('a builder’s profile', () => {
       assert.equal(await stat(h.page, 'oldest_in_progress'), '3 d');
 
       await section(h.page, 'delivery');
+      await until(async () => (await bars(h.page, 'delivery')).length === 12);
       const weekly = await bars(h.page, 'delivery');
       assert.equal(weekly.length, 12, 'one bar per week of the window');
       assert.deepEqual(
@@ -862,6 +863,8 @@ void describe('a manager’s profile', () => {
       assert.equal(await stat(h.page, 'oldest_waiting'), '2 d');
 
       // Review load per week: accepted and sent back, stacked, one bar a week.
+      const stacked = JSON.stringify(REVIEWED.map((n, i) => [n, SENT_BACK[i]]));
+      await until(async () => JSON.stringify(await bars(h.page, 'review')) === stacked);
       assert.deepEqual(
         await bars(h.page, 'review'),
         REVIEWED.map((n, i) => [n, SENT_BACK[i]]),
@@ -1001,6 +1004,11 @@ void describe('rating a member', () => {
       assert.match(latest, /4 \/ 5/);
       assert.match(latest, /Owns the release checklist now\./);
       // The one it superseded moved into the history, newest first.
+      await until(async () =>
+        /5 \/ 5.*Clears review fast/s.test(
+          (await h.page.locator('.prof-rating-history li').allInnerTexts())[0] ?? '',
+        ),
+      );
       const history = await h.page.locator('.prof-rating-history li').allInnerTexts();
       assert.match(history[0] ?? '', /5 \/ 5.*Clears review fast/s);
 
@@ -1317,6 +1325,7 @@ void describe('the ways in are links for owners and admins only', () => {
       assert.match(await link.innerText(), /Bea Builder/);
       await link.click();
       await h.page.locator('.prof-head').waitFor();
+      await until(() => new URL(h.page.url()).pathname === '/people');
       assert.equal(new URL(h.page.url()).pathname, '/people');
       assert.ok(h.calls.some((c) => c.path === '/api/v1/users/u2/profile'));
     } finally {
@@ -1503,11 +1512,25 @@ void describe('the ways in are links for owners and admins only', () => {
         .locator('.dash-people .dash-legend-row')
         .first()
         .waitFor({ timeout: 20_000 });
-      const links = await owner.page
-        .locator('.dash-people a[href^="/people?user="]')
-        .evaluateAll((els) => els.map((el) => el.getAttribute('href')).sort());
+      const profileLinks = owner.page.locator('.dash-people a[href^="/people?user="]');
+      // Wait for the links it asserts, not the first row (LAI-715).
+      await until(
+        async () =>
+          (
+            await profileLinks.evaluateAll((els) => els.map((el) => el.getAttribute('href')).sort())
+          ).join('|') === ['/people?user=u2', '/people?user=u3'].join('|'),
+      );
+      const links = await profileLinks.evaluateAll((els) =>
+        els.map((el) => el.getAttribute('href')).sort(),
+      );
       assert.deepEqual(links, ['/people?user=u2', '/people?user=u3']);
       // The row itself still opens the board, as it did.
+      await until(
+        async () =>
+          (await owner.page
+            .locator('.dash-people a.dash-legend-row[href*="assignee=u2"]')
+            .count()) === 1,
+      );
       assert.ok(
         (await owner.page
           .locator('.dash-people a.dash-legend-row[href*="assignee=u2"]')
@@ -1825,6 +1848,7 @@ function columnsOf(cards: readonly CardBox[]): CardBox[][] {
 async function assertColumns(page: Page, want: number): Promise<CardBox[]> {
   await page.setViewportSize({ width: 1366, height: 900 });
   await page.waitForTimeout(200);
+  await until(async () => columnsOf((await cardBoxes(page)).cards).length === want);
   const { gap, cards } = await cardBoxes(page);
   assert.ok(gap > 0, 'the page has a gap between its blocks');
   assert.equal(
@@ -1867,6 +1891,9 @@ async function assertColumns(page: Page, want: number): Promise<CardBox[]> {
 async function assertOneColumn(page: Page, order: readonly string[]): Promise<void> {
   await page.setViewportSize({ width: 390, height: 900 });
   await page.waitForTimeout(200);
+  await until(
+    async () => new Set((await cardBoxes(page)).cards.map((card) => card.left)).size === 1,
+  );
   const { cards } = await cardBoxes(page);
   const lefts = new Set(cards.map((card) => card.left));
   assert.equal(lefts.size, 1, `at 390 the cards start at ${String(lefts.size)} different lefts`);
@@ -1898,6 +1925,14 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
       // rows which, each with its dot and when it was last active.
       const agents = await section(h.page, 'agents');
       assert.match(await agents.locator('.prof-card-head').innerText(), /2 online/);
+      await until(
+        async () =>
+          (
+            await agents
+              .locator('.prof-agent:has(.prof-live-dot)')
+              .evaluateAll((els) => els.map((el) => el.getAttribute('data-client')))
+          ).join('|') === ['claude-code', 'gemini-cli'].join('|'),
+      );
       const live = await agents
         .locator('.prof-agent:has(.prof-live-dot)')
         .evaluateAll((els) => els.map((el) => el.getAttribute('data-client')));
@@ -1931,6 +1966,7 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
 
       await h.page.setViewportSize({ width: 1024, height: 900 });
       await h.page.waitForTimeout(200);
+      await until(async () => columnsOf((await cardBoxes(h.page)).cards).length === 2);
       assert.equal(columnsOf((await cardBoxes(h.page)).cards).length, 2, 'two columns at 1024');
 
       await assertOneColumn(h.page, [
@@ -1958,6 +1994,7 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
       await section(h.page, 'rating');
       await h.page.locator('.prof-card[data-section="activity"][aria-busy="false"]').waitFor();
       await assertColumns(h.page, 3);
+      await until(async () => (await h.page.locator('.prof-columns .prof-card').count()) === 6);
       const cards = await h.page.locator('.prof-columns .prof-card').evaluateAll((els) =>
         els.map((el) => {
           const lines = el.querySelectorAll('.prof-empty');

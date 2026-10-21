@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, setTheme, type ApiStub } from './harness.ts';
+import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const MIDNIGHT = Date.parse(`${TODAY}T00:00:00Z`);
@@ -177,8 +177,15 @@ void describe('My day after the reference', () => {
         /Confirm day · 1 h 35 min/,
         'Confirm day does not say what it confirms',
       );
+      await until(
+        async () => (await head.getByRole('button', { name: 'Previous week' }).count()) === 1,
+      );
       assert.equal(await head.getByRole('button', { name: 'Previous week' }).count(), 1);
+      await until(
+        async () => (await head.getByRole('button', { name: 'Next week' }).count()) === 1,
+      );
       assert.equal(await head.getByRole('button', { name: 'Next week' }).count(), 1);
+      await until(async () => (await head.locator('.myday-week-day').count()) === 7);
       assert.equal(await head.locator('.myday-week-day').count(), 7);
     } finally {
       await h.close();
@@ -190,8 +197,16 @@ void describe('My day after the reference', () => {
     try {
       const track = h.page.locator('[data-dayline-track]');
       await track.waitFor({ timeout: 20_000 });
+      // Wait for each count it asserts, not the track (LAI-715).
+      await until(
+        async () => (await h.page.locator('.dayline-block.dayline-confirmed').count()) === 1,
+      );
       assert.equal(await h.page.locator('.dayline-block.dayline-confirmed').count(), 1);
+      await until(
+        async () => (await h.page.locator('.dayline-block.dayline-drafted').count()) === 1,
+      );
       assert.equal(await h.page.locator('.dayline-block.dayline-drafted').count(), 1);
+      await until(async () => (await h.page.locator('.dayline-now').count()) === 1);
       assert.equal(await h.page.locator('.dayline-now').count(), 1, 'today has no now line');
       // The untimed call is not placed somewhere invented; it is counted.
       assert.match(await h.page.locator('.dayline-untimed').innerText(), /1 block has no set time/);

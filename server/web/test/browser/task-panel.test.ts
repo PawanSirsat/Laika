@@ -15,7 +15,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, setTheme, type ApiStub } from './harness.ts';
+import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
 import { offered, pick } from './dropdown.ts';
 
 const CORE = {
@@ -215,7 +215,10 @@ void describe('the task panel', () => {
     try {
       await openSubject(h);
 
+      // The panel's tab draws before its sections do (LAI-715).
+      await until(async () => (await h.page.locator('.dep-chip').count()) === 1);
       assert.equal(await h.page.locator('.dep-chip').count(), 1, 'no dependency chip');
+      await until(async () => (await h.page.locator('.dep-link').count()) === 1);
       assert.equal(await h.page.locator('.dep-link').count(), 1, 'no way to link a task');
       /*
        * **By name, not by count** (LAI-619). This asserted `=== 6` and broke
@@ -300,6 +303,7 @@ void describe('the task panel', () => {
     try {
       await openSubject(h);
       await h.page.locator('.cmt').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.cmt').count()) === 2);
 
       const m = await h.page.evaluate(() => {
         const row = document.querySelector('.cmt');
@@ -400,7 +404,8 @@ void describe('the task panel', () => {
       await field.waitFor({ timeout: 10_000 });
       await field.fill('A better title');
       await field.press('Enter');
-      await h.page.waitForTimeout(400);
+      // Wait for the request it asserts, not a clock (LAI-715).
+      await until(() => h.calls.some((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3'));
 
       const patch = h.calls.find((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3');
       assert.ok(patch !== undefined, 'no PATCH went out');
@@ -423,7 +428,9 @@ void describe('the task panel', () => {
       await h.page.locator('.dep-link').click();
       await pick(h.page.locator('#dep-pick'), 't2');
       await h.page.locator('.dep-confirm').click();
-      await h.page.waitForTimeout(400);
+      await until(() =>
+        h.calls.some((c) => c.method === 'POST' && c.path === '/api/v1/tasks/t3/dependencies'),
+      );
 
       const post = h.calls.find(
         (c) => c.method === 'POST' && c.path === '/api/v1/tasks/t3/dependencies',
@@ -455,7 +462,7 @@ void describe('the task panel', () => {
       // The eye carries the count — two watchers in the fixture.
       assert.equal((await toggle.locator('.panel-head-count').innerText()).trim(), '2');
       await toggle.click();
-      await h.page.waitForTimeout(400);
+      await until(() => h.calls.some((c) => c.path === '/api/v1/tasks/t3/watch'));
 
       const call = h.calls.find((c) => c.path === '/api/v1/tasks/t3/watch');
       assert.ok(call !== undefined, 'no watch call went out');
@@ -554,7 +561,7 @@ void describe('the Jira-shaped task view (D-066)', () => {
       assert.match(await parentRow.innerText(), /LC-1/);
 
       await crumb.click();
-      await h.page.waitForTimeout(300);
+      await until(() => h.page.url().includes('task=t1'));
       assert.match(h.page.url(), /task=t1/, 'the breadcrumb did not open the parent');
     } finally {
       await h.close();
@@ -579,7 +586,7 @@ void describe('the Jira-shaped task view (D-066)', () => {
       assert.ok(!choices.some((o) => o.startsWith('LC-4')), 'a subtask is offered as a parent');
       await pick(parentPick, 't1');
       await h.page.locator('.meta-row-parent .dep-confirm').click();
-      await h.page.waitForTimeout(400);
+      await until(() => h.calls.some((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3'));
 
       const patch = h.calls.find((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3');
       assert.ok(patch !== undefined, 'no PATCH went out');
@@ -595,7 +602,7 @@ void describe('the Jira-shaped task view (D-066)', () => {
       await openById(h);
       await h.page.locator('.panel-head-action[aria-label="More actions"]').click();
       await h.page.locator('.panel-overflow button', { hasText: 'Detach from parent' }).click();
-      await h.page.waitForTimeout(400);
+      await until(() => h.calls.some((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t4'));
 
       const patch = h.calls.find((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t4');
       assert.ok(patch !== undefined, 'no PATCH went out');
@@ -612,7 +619,7 @@ void describe('the Jira-shaped task view (D-066)', () => {
       await h.page.locator('.meta-row-due .meta-add-link').click();
       await h.page.locator('#due-date').fill('2026-07-12');
       await h.page.locator('.meta-row-due .dep-confirm').click();
-      await h.page.waitForTimeout(400);
+      await until(() => h.calls.some((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3'));
 
       const set = h.calls.find((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3');
       assert.ok(set !== undefined, 'no PATCH went out');
@@ -627,7 +634,9 @@ void describe('the Jira-shaped task view (D-066)', () => {
       await openById(late);
       assert.match(await late.page.locator('.meta-row-due').innerText(), /12 Jul 2026/);
       await late.page.locator('.meta-row-due .dep-remove').click();
-      await late.page.waitForTimeout(400);
+      await until(() =>
+        late.calls.some((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t5'),
+      );
       const clear = late.calls.find((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t5');
       assert.ok(clear !== undefined, 'no PATCH went out');
       assert.deepEqual(clear.body, { due_on: null });

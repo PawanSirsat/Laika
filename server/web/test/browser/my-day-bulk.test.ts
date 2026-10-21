@@ -64,19 +64,23 @@ void describe('the column beside the day', () => {
     const h = await busy();
     try {
       await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
-      const order = await h.page
-        .locator('[data-myday-side] > section')
-        .evaluateAll((els: Element[]) => els.map((el) => el.className));
-      assert.deepEqual(
-        order.map((c) => c.split(' ').find((k: string) => k !== 'myday-card')),
-        ['myday-agent', 'myday-plate'],
-      );
+      const sides = async () =>
+        (
+          await h.page
+            .locator('[data-myday-side] > section')
+            .evaluateAll((els: Element[]) => els.map((el) => el.className))
+        ).map((c) => c.split(' ').find((k: string) => k !== 'myday-card'));
+      // Wait for both sections, not just the plate (LAI-715).
+      await until(async () => (await sides()).join('|') === 'myday-agent|myday-plate');
+      assert.deepEqual(await sides(), ['myday-agent', 'myday-plate']);
       // Draft my time sits in the header, as the owner's design has it (LAI-831).
-      assert.equal(
-        await h.page.locator('.screen-page').getByRole('switch', { name: 'Draft my time' }).count(),
-        1,
-      );
+      const draftSwitch = h.page
+        .locator('.screen-page')
+        .getByRole('switch', { name: 'Draft my time' });
+      await until(async () => (await draftSwitch.count()) === 1);
+      assert.equal(await draftSwitch.count(), 1);
       // One drafted card, one confirmed — never drawn twice.
+      await until(async () => (await h.page.locator('.myday-entries').count()) === 1);
       assert.equal(await h.page.locator('.myday-drafts').count(), 1);
       assert.equal(await h.page.locator('.myday-entries').count(), 1);
 
@@ -157,6 +161,7 @@ void describe('the column beside the day', () => {
       await plate.locator('.plate-groups').waitFor({ timeout: 20_000 });
       const group = (id: string) => plate.locator(`[data-plate="${id}"]`);
 
+      await until(async () => (await group('review').locator('a.plate-item').count()) === 5);
       assert.equal(await group('review').locator('a.plate-item').count(), 5);
       // The server cut the queue at 200 (`truncated`): a floor, said as one (LAI-820).
       assert.equal(await group('review').locator('.plate-count').innerText(), '200+');
@@ -164,10 +169,14 @@ void describe('the column beside the day', () => {
       assert.equal(await reviewMore.innerText(), '+195 more');
       assert.equal(await reviewMore.getAttribute('href'), '/inbox?tab=review');
 
+      await until(async () => (await group('progress').locator('a.plate-item').count()) === 5);
       assert.equal(await group('progress').locator('a.plate-item').count(), 5);
       assert.equal(await group('progress').locator('.plate-count').innerText(), '10');
       // The five hidden are in two spaces: one link each, naming it (review round 1).
       const progressMore = group('progress').locator('[data-plate-more]');
+      await until(
+        async () => (await progressMore.allInnerTexts()).join('|') === '+3 in Atlas|+2 in Onroute',
+      );
       assert.deepEqual(await progressMore.allInnerTexts(), ['+3 in Atlas', '+2 in Onroute']);
       assert.deepEqual(
         await progressMore.evaluateAll((els: Element[]) =>
@@ -609,13 +618,18 @@ void describe('names a screen reader can tell apart', () => {
     const h = await open('/my-day', busyStub(undefined, { ...BUSY_DAY, drafts }));
     try {
       await h.page.locator('li[data-draft]').first().waitFor({ timeout: 30_000 });
-      const names = await h.page
-        .locator('li[data-draft] input.myday-check')
-        .evaluateAll((els: Element[]) => els.map((el) => el.getAttribute('aria-label')));
-      assert.deepEqual(names, [
+      const expected = [
         'Select block 1 of 2, no set time, 15 min, LAI-1 Search matches keys',
         'Select block 2 of 2, no set time, 16 min, LAI-2 Webhook retries back off',
-      ]);
+      ];
+      const labels = () =>
+        h.page
+          .locator('li[data-draft] input.myday-check')
+          .evaluateAll((els: Element[]) => els.map((el) => el.getAttribute('aria-label')));
+      // Wait for both rows, not the first (LAI-715).
+      await until(async () => (await labels()).join('|') === expected.join('|'));
+      const names = await labels();
+      assert.deepEqual(names, expected);
       const rows = await h.page
         .locator('li[data-draft] [data-select]')
         .evaluateAll((els: Element[]) => els.map((el) => el.getAttribute('aria-label')));
@@ -661,6 +675,7 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
         await agent.locator('a.myday-cardlink').first().getAttribute('href'),
         '/board?project=atlas&task=t1',
       );
+      await until(async () => (await agent.locator('a.myday-cardlink').count()) === 6);
       assert.equal(await agent.locator('a.myday-cardlink').count(), 6);
       const secret = agent.locator('li', { hasText: 'SEC-9' });
       assert.equal(await secret.locator('a').count(), 0, 'a card the reader cannot read is a link');
@@ -698,6 +713,7 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
         'Longer by 5 minutes',
         'Split in two',
       ]) {
+        await until(async () => (await inspector.getByRole('button', { name }).count()) === 1);
         assert.equal(await inspector.getByRole('button', { name }).count(), 1, name);
       }
       // Other card… opens the field, and focus is in it.
@@ -719,6 +735,7 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
       await h.page.locator('[data-select="e01"]').click();
       const own = h.page.locator('[data-inspector-for="e01"]');
       await own.waitFor({ timeout: 5_000 });
+      await until(async () => (await own.getByRole('button', { name: 'Delete' }).count()) === 1);
       assert.equal(await own.getByRole('button', { name: 'Delete' }).count(), 1);
     } finally {
       await h.close();

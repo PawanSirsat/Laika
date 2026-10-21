@@ -22,7 +22,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { pick } from './dropdown.ts';
-import { closeBrowser, open, setTheme, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, open, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 
 const DAY = 86_400_000;
 const NOW = Date.now();
@@ -389,6 +389,7 @@ void describe('the figures come from the task set in the browser (LAI-727)', () 
     });
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.card').count()) === 3);
       assert.equal(
         await h.page.locator('.card').count(),
         3,
@@ -411,6 +412,7 @@ void describe('the figures come from the task set in the browser (LAI-727)', () 
     });
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.card').count()) === 3);
       assert.equal(
         await h.page.locator('.card').count(),
         3,
@@ -658,6 +660,7 @@ void describe('the sidebar open, the row crowded (LAI-727 review)', () => {
             // The crowding is real, or the width proves nothing.
             const m = await measureToolbar(h);
             assert.equal(m.railOpen, true, 'the sidebar is not open — the wrong state');
+            await until(async () => (await h.page.locator('.bt-member').count()) === 4);
             assert.equal(
               await h.page.locator('.bt-member').count(),
               4,
@@ -818,6 +821,7 @@ void describe('the pill (LAI-727 review)', () => {
           assert.ok(name.includes(said), `the pill's name lacks "${said}": ${name}`);
         }
         // One figure drawn: the scope and done-of-total; BLK and LEFT are not.
+        await until(() => h.page.locator('.bstats-scope').isVisible());
         assert.equal(await h.page.locator('.bstats-scope').isVisible(), true);
         assert.match(
           (await h.page.locator('.bstats-done').innerText()).replace(/\s+/g, ''),

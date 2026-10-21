@@ -170,6 +170,7 @@ void describe('Connect: Share local activity', () => {
       await panel.locator('.share-list').first().waitFor({ timeout: 20_000 });
       assert.match(await panel.innerText(), /Developer insights are off for this organisation/);
       assert.equal(await panel.getByRole('switch').count(), 0);
+      await until(async () => (await panel.locator('a[href="/organisation"]').count()) === 1);
       assert.equal(await panel.locator('a[href="/organisation"]').count(), 1);
     } finally {
       await h.close();
@@ -240,6 +241,7 @@ void describe('Connect: Share local activity', () => {
         'export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative',
         'export OTEL_LOGS_EXPORTER=none',
       ]);
+      await until(async () => (await block.getByRole('button', { name: /Copy/ }).count()) === 1);
       assert.equal(await block.getByRole('button', { name: /Copy/ }).count(), 1);
     } finally {
       await h.close();
@@ -290,6 +292,8 @@ void describe('Connect: Share local activity', () => {
       const panel = h.page.locator('.share-activity');
       const table = panel.locator('table.share-table');
       await table.waitFor({ timeout: 20_000 });
+      // Wait for the rows it counts, not the table (LAI-715).
+      await until(async () => (await table.locator('tbody tr').count()) === 2);
       const rows = await table.locator('tbody tr').allInnerTexts();
       assert.equal(rows.length, 2);
       assert.match(rows[0] ?? '', /Claude Code 18, Gemini CLI 2, Other agent 1\s+3\s+2\s+4/);

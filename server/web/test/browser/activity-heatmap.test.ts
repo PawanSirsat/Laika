@@ -169,6 +169,7 @@ void describe('the Activity card', () => {
       assert.equal(await activityCard.getAttribute('data-design'), 'stacked');
       assert.equal(await activityCard.getAttribute('data-range'), '52w');
       for (const kind of ['github', 'local', 'board']) {
+        await until(async () => (await cells(h.page, kind).count()) === 364);
         assert.equal(await cells(h.page, kind).count(), 364, kind);
       }
       // Today's squares carry today's levels; an empty day carries none.
@@ -286,14 +287,20 @@ void describe('the Activity card', () => {
       ]) {
         assert.match(text, part);
       }
-      const rings = await h.page
-        .locator('.hm-ring')
-        .evaluateAll((els) =>
-          els.map((el) => [
-            el.closest('.hm-grid')?.getAttribute('data-kind'),
-            el.getAttribute('data-twin'),
-          ]),
-        );
+      const ringsNow = () =>
+        h.page
+          .locator('.hm-ring')
+          .evaluateAll((els) =>
+            els.map((el) => [
+              el.closest('.hm-grid')?.getAttribute('data-kind'),
+              el.getAttribute('data-twin'),
+            ]),
+          );
+      // The rings follow the tip, not with it (LAI-715).
+      await until(
+        async () => (await ringsNow()).join('|') === 'github,false|local,true|board,true',
+      );
+      const rings = await ringsNow();
       assert.deepEqual(rings, [
         ['github', 'false'],
         ['local', 'true'],

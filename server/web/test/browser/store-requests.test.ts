@@ -15,7 +15,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { closeBrowser, fakeStream, open, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, fakeStream, open, until, type ApiStub, type Harness } from './harness.ts';
 import { capacityPerson } from './capacity-org.ts';
 
 const NOW = Date.now();
@@ -405,6 +405,8 @@ void describe('presence follows every burst', () => {
       // At once: the answer just read is under 2 s old.
       await emit(h.page, event(21, Date.now()), 21);
       await h.page.waitForTimeout(2_500);
+      // The sleep stays as the window for a third read; a slow second one still counts (LAI-715).
+      await until(() => presence() === start + 2);
       assert.equal(presence(), start + 2, 'the second burst was answered from the cache');
     } finally {
       await h.close();

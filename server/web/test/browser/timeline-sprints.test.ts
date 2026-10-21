@@ -19,6 +19,7 @@ import {
   open,
   refuse,
   setTheme,
+  until,
   type ApiStub,
   type Harness,
 } from './harness.ts';
@@ -390,6 +391,9 @@ void describe('the axis scrolls sideways (LAI-721)', () => {
       assert.equal((await box(h, '.tlx-head')).y, headBefore.y, 'the header scrolled away');
 
       // **One vertical scroller**: the chart, not the page around it.
+      await until(() =>
+        h.page.evaluate(() => (document.scrollingElement?.scrollHeight ?? 0) <= innerHeight + 1),
+      );
       assert.ok(
         await h.page.evaluate(
           () => (document.scrollingElement?.scrollHeight ?? 0) <= innerHeight + 1,
@@ -583,7 +587,14 @@ void describe('a sprint opens to list its tasks (LAI-721)', () => {
       await taskRows(h, 's2').first().waitFor({ timeout: 10_000 });
       assert.equal(await chevron.getAttribute('aria-expanded'), 'true');
 
-      const keys = await group(h, 's2').locator('.tlx-task .tlx-task-key').allInnerTexts();
+      const taskKeys = group(h, 's2').locator('.tlx-task .tlx-task-key');
+      // Wait for every row it asserts, not the first (LAI-715).
+      await until(
+        async () =>
+          (await taskKeys.allInnerTexts()).sort().join('|') ===
+          ['LC-1', 'LC-2', 'LC-5', 'LC-6', 'LC-9'].join('|'),
+      );
+      const keys = await taskKeys.allInnerTexts();
       assert.deepEqual(keys.sort(), ['LC-1', 'LC-2', 'LC-5', 'LC-6', 'LC-9']);
       assert.equal(
         await group(h, 's2').locator('.tlx-task .tlx-bar').count(),
@@ -931,6 +942,9 @@ void describe('the unscheduled tray and the empty project (LAI-721)', () => {
         'the tray’s tasks are outside the chart',
       );
       assert.ok((await height()) >= before - 1, `the chart shrank from ${String(before)}px`);
+      await until(() =>
+        h.page.evaluate(() => (document.scrollingElement?.scrollHeight ?? 0) <= innerHeight + 1),
+      );
       assert.ok(
         await h.page.evaluate(
           () => (document.scrollingElement?.scrollHeight ?? 0) <= innerHeight + 1,
@@ -951,6 +965,9 @@ void describe('the unscheduled tray and the empty project (LAI-721)', () => {
       await h.page
         .locator('.state-headline', { hasText: 'Nothing scheduled yet' })
         .waitFor({ timeout: 20_000 });
+      await until(
+        async () => (await h.page.getByRole('button', { name: /Unscheduled/ }).count()) === 1,
+      );
       assert.equal(await h.page.getByRole('button', { name: /Unscheduled/ }).count(), 1);
     } finally {
       await h.close();
@@ -975,6 +992,7 @@ void describe('the unscheduled tray and the empty project (LAI-721)', () => {
       failing = false;
       await retry.click();
       await h.page.locator('.tlx-sprint').first().waitFor({ timeout: 10_000 });
+      await until(async () => (await h.page.locator('.tlx-sprint').count()) === 3);
       assert.equal(await h.page.locator('.tlx-sprint').count(), 3);
     } finally {
       await h.close();
@@ -1197,7 +1215,13 @@ void describe('the Timeline reads the task set the Board already holds (LAI-724)
 
       await group(h, 's2').locator('.tlx-chevron').click();
       await taskRows(h, 's2').first().waitFor({ timeout: 10_000 });
-      const keys = await group(h, 's2').locator('.tlx-task .tlx-task-key').allInnerTexts();
+      const taskKeys = group(h, 's2').locator('.tlx-task .tlx-task-key');
+      await until(
+        async () =>
+          (await taskKeys.allInnerTexts()).sort().join('|') ===
+          ['LC-1', 'LC-2', 'LC-5', 'LC-6', 'LC-9'].join('|'),
+      );
+      const keys = await taskKeys.allInnerTexts();
       assert.deepEqual(keys.sort(), ['LC-1', 'LC-2', 'LC-5', 'LC-6', 'LC-9']);
 
       await h.page.getByRole('button', { name: /Unscheduled/ }).click();

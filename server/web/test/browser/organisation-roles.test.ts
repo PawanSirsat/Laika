@@ -26,7 +26,15 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, refuse, type ApiStub, type StubCall, setTheme } from './harness.ts';
+import {
+  closeBrowser,
+  open,
+  refuse,
+  type ApiStub,
+  type StubCall,
+  setTheme,
+  until,
+} from './harness.ts';
 import { capacityPerson } from './capacity-org.ts';
 import { offered, optionsOf, pick, valueOf } from './dropdown.ts';
 
@@ -222,6 +230,7 @@ void describe('role management', () => {
     const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u2', 'member') });
     try {
       await h.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.org-person').count()) === 4);
       assert.equal(await h.page.locator('.org-person').count(), 4);
 
       // The role control is the app's dropdown since LAI-726 (a combobox).
@@ -321,6 +330,9 @@ void describe('role management', () => {
       // Broad for the same reason: nothing on my own row, whatever it is.
       assert.equal(await mine.locator('button').count(), 0, 'offered a control on my own row');
       // …and the others still have theirs, or the assertion above is vacuous.
+      await until(
+        async () => (await h.page.locator('.org-person [role="combobox"]').count()) === 3,
+      );
       assert.equal(await h.page.locator('.org-person [role="combobox"]').count(), 3);
     } finally {
       await h.close();
@@ -339,7 +351,7 @@ void describe('role management', () => {
         undefined,
         { timeout: 20_000 },
       );
-      await h.page.waitForTimeout(500);
+      await until(() => h.calls.some((c: StubCall) => c.method === 'PATCH'));
 
       const patch = h.calls.find((c: StubCall) => c.method === 'PATCH');
       assert.ok(patch, `no PATCH was sent; saw ${h.calls.map((c) => c.method).join(', ')}`);
@@ -375,7 +387,7 @@ void describe('deactivation', () => {
 
       // Reactivation asks nothing — it takes nobody's access away.
       await inactive.click();
-      await h.page.waitForTimeout(500);
+      await until(() => h.calls.some((c: StubCall) => c.method === 'PATCH'));
       const patch = h.calls.find((c: StubCall) => c.method === 'PATCH');
       assert.ok(patch, 'reactivating sent no PATCH');
       assert.equal(patch.path, '/api/v1/users/u4');
@@ -400,7 +412,9 @@ void describe('deactivation', () => {
         .locator('.org-person', { hasText: 'Tomas Nel' })
         .locator('.org-deactivate')
         .click();
+      // The sleep is the quiet window for the PATCH that must not go out.
       await h.page.waitForTimeout(500);
+      await until(() => asked.includes('Tomas Nel') && /not deletion/i.test(asked));
 
       assert.match(asked, /Tomas Nel/, 'the confirmation does not name who');
       assert.match(asked, /not deletion/i, 'does not say the row and history are kept');
@@ -471,6 +485,7 @@ void describe('the directory includes people who left (LAI-240)', () => {
     let orgCount = 0;
     try {
       await org.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await org.page.locator('.org-person').count()) === PEOPLE.length);
       orgCount = await org.page.locator('.org-person').count();
     } finally {
       await org.close();
@@ -486,18 +501,21 @@ void describe('the directory includes people who left (LAI-240)', () => {
       // is `aria-busy`, and the loaded `.cap` holds every person in the same
       // render, as a card or in the never-seen line.
       await cap.page.locator('.cap:not([aria-busy="true"])').waitFor({ timeout: 20_000 });
-      capCount = await cap.page.evaluate(() => {
-        // The people list, however Capacity spells it — counted from the names
-        // it renders rather than from a class this test would have to chase.
-        const names = new Set<string>();
-        document.querySelectorAll('[class*="cap-"]').forEach((el) => {
-          const text = el.textContent ?? '';
-          for (const n of ['Ada Lovelace', 'Tomas Nel', 'Priya Raman', 'Sam Okafor']) {
-            if (text.includes(n)) names.add(n);
-          }
+      const named = (): Promise<number> =>
+        cap.page.evaluate(() => {
+          // The people list, however Capacity spells it — counted from the names
+          // it renders rather than from a class this test would have to chase.
+          const names = new Set<string>();
+          document.querySelectorAll('[class*="cap-"]').forEach((el) => {
+            const text = el.textContent ?? '';
+            for (const n of ['Ada Lovelace', 'Tomas Nel', 'Priya Raman', 'Sam Okafor']) {
+              if (text.includes(n)) names.add(n);
+            }
+          });
+          return names.size;
         });
-        return names.size;
-      });
+      await until(async () => (await named()) === orgCount);
+      capCount = await named();
     } finally {
       await cap.close();
     }
@@ -523,6 +541,7 @@ void describe('deactivation is not deletion', () => {
       await h.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
 
       const row = h.page.locator('.org-person', { hasText: 'Sam Okafor' });
+      await until(async () => (await row.count()) === 1);
       assert.equal(await row.count(), 1, 'the deactivated person was dropped from the list');
       assert.match(await row.innerText(), /Sam Okafor/);
       assert.match(await row.locator('.org-chip-off').innerText(), /DEACTIVATED/);
@@ -548,6 +567,10 @@ void describe('both themes', () => {
         const card = h.page.locator('.org-card').first();
         const box = await card.boundingBox();
         assert.ok(box !== null && box.height > 0, `${theme}: the people card has no box`);
+        await until(
+          async () =>
+            (await h.page.locator('.screen-page-title').innerText()) === 'Kvelld Dynamics',
+        );
         assert.equal(
           await h.page.locator('.screen-page-title').innerText(),
           'Kvelld Dynamics',

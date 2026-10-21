@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, until, type ApiStub } from './harness.ts';
 
 const STUB: ApiStub = {
   '/api/v1/me': {
@@ -66,6 +66,7 @@ void describe('a bookmark to an old page opens its new home', () => {
         // harness's blank one — rather than landing on the old address,
         // which would only bounce forward again.
         await h.page.goBack();
+        await until(() => h.page.url() === 'about:blank');
         assert.equal(h.page.url(), 'about:blank', `Back went to ${h.page.url()}`);
       } finally {
         await h.close();

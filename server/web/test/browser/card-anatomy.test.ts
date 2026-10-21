@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, until, type ApiStub } from './harness.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -323,28 +323,33 @@ void describe('the meta row at 218px', () => {
       });
       await h.page.waitForTimeout(300);
 
-      const squeezed = await h.page.evaluate(() => {
-        const cards = [...document.querySelectorAll('.card')];
-        const escaped: string[] = [];
-        let wrapped = 0;
-        for (const card of cards) {
-          const box = card.getBoundingClientRect();
-          const foot = card.querySelector('.card-foot');
-          if (foot === null) continue;
-          const kids = [...foot.children].filter(
-            (c) => !c.classList.contains('visually-hidden') && c.getBoundingClientRect().width > 0,
-          );
-          const tops = new Set(kids.map((c) => Math.round(c.getBoundingClientRect().top)));
-          if (tops.size > 1) wrapped += 1;
-          for (const c of kids) {
-            if (c.getBoundingClientRect().right > box.right + 0.5) escaped.push(c.className);
+      const squeeze = () =>
+        h.page.evaluate(() => {
+          const cards = [...document.querySelectorAll('.card')];
+          const escaped: string[] = [];
+          let wrapped = 0;
+          for (const card of cards) {
+            const box = card.getBoundingClientRect();
+            const foot = card.querySelector('.card-foot');
+            if (foot === null) continue;
+            const kids = [...foot.children].filter(
+              (c) =>
+                !c.classList.contains('visually-hidden') && c.getBoundingClientRect().width > 0,
+            );
+            const tops = new Set(kids.map((c) => Math.round(c.getBoundingClientRect().top)));
+            if (tops.size > 1) wrapped += 1;
+            for (const c of kids) {
+              if (c.getBoundingClientRect().right > box.right + 0.5) escaped.push(c.className);
+            }
           }
-        }
-        const truncated = [...document.querySelectorAll('.card-key')].filter(
-          (k) => k.scrollWidth > k.clientWidth + 1,
-        ).length;
-        return { escaped, wrapped, truncated };
-      });
+          const truncated = [...document.querySelectorAll('.card-key')].filter(
+            (k) => k.scrollWidth > k.clientWidth + 1,
+          ).length;
+          return { escaped, wrapped, truncated };
+        });
+      // Wait for a row to break, which is what the guard below needs (LAI-715).
+      await until(async () => (await squeeze()).wrapped > 0);
+      const squeezed = await squeeze();
       assert.deepEqual(squeezed.escaped, [], 'a footer item escaped its card at 120px');
       assert.equal(squeezed.truncated, 0, 'a key truncated at 120px');
       // The guard on the guard: at 120px some row must actually break, or the

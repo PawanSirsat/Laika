@@ -16,7 +16,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { pick } from './dropdown.ts';
-import { closeBrowser, open, setTheme, type ApiStub } from './harness.ts';
+import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
 import { setupBlocks } from '../../src/routes/screens/connect/connect-agents.ts';
 
 const SECRET = 'lai_ThisIsTheWholeSecretAndMustNotRenderTwice';
@@ -565,7 +565,9 @@ void describe('the agent picker (LAI-737)', () => {
       assert.equal(await first.getAttribute('value'), 'claude-code');
       assert.equal(await first.isChecked(), true);
       // The tile's accessible name is the product's name, not its monogram.
-      assert.equal(await h.page.getByRole('radio', { name: 'Codex', exact: true }).count(), 1);
+      const codex = h.page.getByRole('radio', { name: 'Codex', exact: true });
+      await until(async () => (await codex.count()) === 1);
+      assert.equal(await codex.count(), 1);
       assert.match(await h.page.locator('.conn-steps').innerText(), /Add Laika to Claude Code/);
     } finally {
       await h.close();
@@ -577,8 +579,10 @@ void describe('the agent picker (LAI-737)', () => {
     try {
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
       // No More button any more: all of them are there, under headings.
+      await until(async () => (await radios(h).count()) === 21);
       assert.equal(await radios(h).count(), 21);
       await h.page.getByRole('searchbox', { name: 'Search agents' }).fill('kiro');
+      await until(async () => (await radios(h).count()) === 1);
       assert.equal(await radios(h).count(), 1);
       await h.page.getByRole('radio', { name: 'Kiro', exact: true }).check();
       assert.match(await h.page.locator('.conn-steps').innerText(), /Add Laika to Kiro/);
@@ -751,11 +755,18 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
     try {
       await h.page.setViewportSize({ width: 1366, height: 900 });
       await h.page.locator('.conn-wizard-card').waitFor({ timeout: 20_000 });
-      const widths = await h.page.evaluate(() => ({
-        bar: document.querySelector('.connect .screen-bar')?.getBoundingClientRect().width ?? 0,
-        main: document.querySelector('.shell-main')?.clientWidth ?? -1,
-        page: document.querySelector('.conn-page')?.getBoundingClientRect().width ?? 0,
-      }));
+      const measure = () =>
+        h.page.evaluate(() => ({
+          bar: document.querySelector('.connect .screen-bar')?.getBoundingClientRect().width ?? 0,
+          main: document.querySelector('.shell-main')?.clientWidth ?? -1,
+          page: document.querySelector('.conn-page')?.getBoundingClientRect().width ?? 0,
+        }));
+      // Wait for the layout it asserts at the new size (LAI-715).
+      await until(async () => {
+        const w = await measure();
+        return Math.abs(w.bar - w.main) <= 1 && w.page < w.main;
+      });
+      const widths = await measure();
       assert.ok(Math.abs(widths.bar - widths.main) <= 1, `header ${String(widths.bar)}px wide`);
       assert.ok(
         widths.page < widths.main,
@@ -771,6 +782,7 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
     try {
       const steps = h.page.locator('.conn-steps > .conn-step');
       await h.page.locator('.conn-wizard-card').waitFor({ timeout: 20_000 });
+      await until(async () => (await steps.count()) === 4);
       assert.equal(await steps.count(), 4);
       assert.equal(await steps.nth(0).locator('button').getAttribute('aria-current'), 'step');
       assert.match(await steps.nth(1).locator('.conn-step-n').innerText(), /^2$/);
@@ -1066,6 +1078,7 @@ void describe('the wizard (LAI-740)', () => {
     try {
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
       const tiles = h.page.locator('.conn-agent');
+      await until(async () => (await tiles.count()) === 21);
       const count = await tiles.count();
       assert.equal(count, 21);
       const monograms: string[] = [];
@@ -1106,15 +1119,21 @@ void describe('the wizard (LAI-740)', () => {
       await h.page.setViewportSize({ width: 390, height: 900 });
       await mint(h);
       await goTo(h, 3);
-      await h.page.waitForTimeout(300);
-      const layout = await h.page.evaluate(() => ({
-        over: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-        rail: document.querySelector('.conn-rail')?.getBoundingClientRect().bottom ?? 0,
-        card: document.querySelector('.conn-wizard-card')?.getBoundingClientRect().top ?? 0,
-        pre: [...document.querySelectorAll('.conn-pre')].map(
-          (el) => el.scrollWidth - el.clientWidth,
-        ),
-      }));
+      const measure = () =>
+        h.page.evaluate(() => ({
+          over: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          rail: document.querySelector('.conn-rail')?.getBoundingClientRect().bottom ?? 0,
+          card: document.querySelector('.conn-wizard-card')?.getBoundingClientRect().top ?? 0,
+          pre: [...document.querySelectorAll('.conn-pre')].map(
+            (el) => el.scrollWidth - el.clientWidth,
+          ),
+        }));
+      // Wait for the settled layout it asserts, not a fixed 300ms (LAI-715).
+      await until(async () => {
+        const l = await measure();
+        return l.over === 0 && l.rail <= l.card && l.pre.every((d) => d <= 0);
+      });
+      const layout = await measure();
       assert.equal(layout.over, 0, `the page scrolls ${String(layout.over)}px sideways`);
       assert.ok(layout.rail <= layout.card, 'the rail is not above the card');
       assert.deepEqual(
@@ -1158,6 +1177,8 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
         await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
         await h.page.waitForTimeout(200);
         const size = `${String(width)}x${String(height)}`;
+        const sidebar = async () => (await h.page.locator('#sidebar').boundingBox())?.width ?? 0;
+        await until(async () => (await sidebar()) > 100);
         // The sidebar is open at this width: the shell's rail is on screen.
         assert.ok(
           ((await h.page.locator('#sidebar').boundingBox())?.width ?? 0) > 100,
@@ -1179,6 +1200,8 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
           assert.equal(after.rail, before.rail, 'the rail moved');
           assert.equal(after.bar, before.bar, 'the header moved');
           assert.equal(after.foot, before.foot, 'the footer moved');
+          const continueBtn = h.page.locator('.conn-card-foot .conn-continue');
+          await until(() => continueBtn.isVisible());
           assert.ok(
             await h.page.locator('.conn-card-foot .conn-continue').isVisible(),
             'Continue scrolled away',
@@ -1195,7 +1218,10 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
     try {
       await h.page.setViewportSize({ width: 390, height: 844 });
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
-      await h.page.waitForTimeout(200);
+      await until(async () => {
+        const at = await measure(h);
+        return at.mainOver > 0 && at.cardOver === 0;
+      });
       const m = await measure(h);
       assert.ok(m.mainOver > 0, 'the page does not scroll on a phone');
       assert.equal(m.cardOver, 0, 'the card is a scroller inside the scrolling page');
@@ -1297,12 +1323,12 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
       stub({ '/api/v1/me': { ...ME, org_role: 'member' } }),
     );
     try {
-      await h.page.locator('.conn-rail-extra').first().waitFor({ timeout: 20_000 });
-      assert.deepEqual(await h.page.locator('.conn-rail-extra').allInnerTexts(), [
-        'Share with your project',
-        'What agents can do',
-        'Share local activity',
-      ]);
+      const extras = h.page.locator('.conn-rail-extra');
+      await extras.first().waitFor({ timeout: 20_000 });
+      const want = ['Share with your project', 'What agents can do', 'Share local activity'];
+      // Wait for the list it asserts, not the first row (LAI-715).
+      await until(async () => (await extras.allInnerTexts()).join('|') === want.join('|'));
+      assert.deepEqual(await extras.allInnerTexts(), want);
     } finally {
       await h.close();
     }
@@ -1611,19 +1637,25 @@ void describe('the LAI-741 review notes (LAI-742)', () => {
       const scroller = h.page.locator('.conn-card-scroll');
       const toBottom = async (where: string): Promise<void> => {
         await scroller.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
-        await h.page.waitForTimeout(150);
+        await until(async () => (await scroller.evaluate((el) => el.scrollTop)) > 0);
         const top = await scroller.evaluate((el) => el.scrollTop);
         assert.ok(top > 0, `${where}: the card has nothing to scroll — the test proves nothing`);
       };
       const atTop = async (what: string): Promise<void> => {
         await h.page.waitForFunction(() => document.activeElement?.id === 'conn-step-title');
         await h.page.waitForTimeout(150);
-        const m = await scroller.evaluate((el) => ({
-          top: el.scrollTop,
-          eyebrow:
-            (el.querySelector('.conn-eyebrow')?.getBoundingClientRect().top ?? -1) -
-            el.getBoundingClientRect().top,
-        }));
+        const read = () =>
+          scroller.evaluate((el) => ({
+            top: el.scrollTop,
+            eyebrow:
+              (el.querySelector('.conn-eyebrow')?.getBoundingClientRect().top ?? -1) -
+              el.getBoundingClientRect().top,
+          }));
+        await until(async () => {
+          const r = await read();
+          return r.top === 0 && r.eyebrow >= 0;
+        });
+        const m = await read();
         assert.equal(m.top, 0, `${what}: the card kept the last card's scroll`);
         assert.ok(m.eyebrow >= 0, `${what}: the eyebrow is above the card's top`);
       };
@@ -1652,16 +1684,25 @@ void describe('the LAI-741 review notes (LAI-742)', () => {
       await h.page.setViewportSize({ width: 390, height: 844 });
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(200);
-      const at = await h.page.evaluate(() => {
-        const rect = (sel: string) => document.querySelector(sel)?.getBoundingClientRect();
-        return {
-          steps: rect('.conn-steps')?.bottom ?? -1,
-          card: rect('.conn-wizard-card')?.top ?? -1,
-          cardBottom: rect('.conn-wizard-card')?.bottom ?? -1,
-          optional: rect('.conn-optional')?.top ?? -1,
-          viewport: window.innerHeight,
-        };
+      const phone = () =>
+        h.page.evaluate(() => {
+          const rect = (sel: string) => document.querySelector(sel)?.getBoundingClientRect();
+          return {
+            steps: rect('.conn-steps')?.bottom ?? -1,
+            card: rect('.conn-wizard-card')?.top ?? -1,
+            cardBottom: rect('.conn-wizard-card')?.bottom ?? -1,
+            optional: rect('.conn-optional')?.top ?? -1,
+            viewport: window.innerHeight,
+          };
+        });
+      // Wait for the layout it asserts at the new size (LAI-715).
+      await until(async () => {
+        const p = await phone();
+        return (
+          p.steps > 0 && p.steps <= p.card && p.cardBottom <= p.optional && p.card <= p.viewport / 2
+        );
       });
+      const at = await phone();
       assert.ok(at.steps > 0 && at.steps <= at.card, 'the four steps are not above the card');
       assert.ok(at.cardBottom <= at.optional, 'Optional is not after the card');
       assert.ok(
@@ -1672,16 +1713,32 @@ void describe('the LAI-741 review notes (LAI-742)', () => {
       // The desktop is unchanged: Optional sits in the rail's column, under the steps.
       await h.page.setViewportSize({ width: 1366, height: 768 });
       await h.page.waitForTimeout(200);
-      const desk = await h.page.evaluate(() => {
-        const rect = (sel: string) => document.querySelector(sel)?.getBoundingClientRect();
-        return {
-          steps: rect('.conn-steps'),
-          step: rect('.conn-steps .conn-rail-step'),
-          optional: rect('.conn-optional'),
-          extra: rect('.conn-rail-extra'),
-          card: rect('.conn-wizard-card'),
-        };
+      const desktop = () =>
+        h.page.evaluate(() => {
+          const rect = (sel: string) => document.querySelector(sel)?.getBoundingClientRect();
+          return {
+            steps: rect('.conn-steps'),
+            step: rect('.conn-steps .conn-rail-step'),
+            optional: rect('.conn-optional'),
+            extra: rect('.conn-rail-extra'),
+            card: rect('.conn-wizard-card'),
+          };
+        });
+      await until(async () => {
+        const d = await desktop();
+        return (
+          d.steps !== undefined &&
+          d.step !== undefined &&
+          d.optional !== undefined &&
+          d.extra !== undefined &&
+          d.card !== undefined &&
+          d.optional.top >= d.steps.bottom &&
+          d.optional.right <= d.card.left &&
+          Math.round(d.optional.left) === Math.round(d.steps.left) &&
+          Math.round(d.extra.width) === Math.round(d.step.width)
+        );
       });
+      const desk = await desktop();
       const { steps, step, optional, extra, card } = desk;
       assert.ok(steps && step && optional && extra && card, 'a part of the wizard is missing');
       assert.ok(optional.top >= steps.bottom, 'Optional is not under the steps');
