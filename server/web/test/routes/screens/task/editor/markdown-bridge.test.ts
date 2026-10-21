@@ -609,3 +609,109 @@ void describe('the whole is checked, not only each block (review round 1)', () =
     );
   });
 });
+
+/*
+ * LAI-853: a list item written over two lines, the second indented under the
+ * first — how agents and this repo's task files hard-wrap — opened as
+ * Markdown. The editor writes the continuation flush left, which CommonMark
+ * reads as the same paragraph (a lazy continuation), and the round-trip check
+ * forgave no white space inside a block. An ordered item also came back with
+ * a space the reader never sees: the lexer left one of the three.
+ */
+void describe('a list item wrapped onto an indented second line opens rich (LAI-853)', () => {
+  const wrapped = [
+    '- a long item that\n  wraps onto a second line',
+    '1. a step that\n   wraps',
+    '- a\n- b that\n  wraps\n  twice\n- c',
+    '10. a step that\n    wraps',
+    'Steps:\n- a long item that\n  wraps onto a second line',
+  ];
+  for (const markdown of wrapped) {
+    void test(`opens rich, and an untouched save is the text as stored: ${JSON.stringify(markdown)}`, () => {
+      const opening = openDocument(bridge, markdown);
+      assert.equal(
+        opening.kind,
+        'rich',
+        `opened as Markdown: ${opening.kind === 'source' ? opening.reason : ''}`,
+      );
+      if (opening.kind !== 'rich') return;
+      const doc = bridge.schema.nodeFromJSON(opening.content);
+      assert.equal(toMarkdown(bridge, doc, opening), markdown);
+    });
+  }
+
+  void test('the wrapped line is one paragraph, as the reader shows it: no stray space', () => {
+    const opening = openDocument(bridge, '1. a step that\n   wraps');
+    assert.equal(opening.kind, 'rich');
+    if (opening.kind !== 'rich') return;
+    const item = opening.content.content?.[0]?.content?.[0];
+    assert.deepEqual(item?.content, [
+      { type: 'paragraph', content: [{ type: 'text', text: 'a step that\nwraps' }] },
+    ]);
+  });
+
+  for (const list of [
+    '- a long item that\n  wraps onto a second line',
+    '1. a step that\n   wraps',
+  ]) {
+    void test(`an edit to the paragraph above leaves the wrapped item as written: ${JSON.stringify(list)}`, () => {
+      const opening = openDocument(bridge, `Steps:\n\n${list}`);
+      assert.equal(opening.kind, 'rich', 'positive control: the document opens rich');
+      if (opening.kind !== 'rich') return;
+      const [, ...rest] = opening.content.content ?? [];
+      const doc = bridge.schema.nodeFromJSON({
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [text('Steps, edited:')] }, ...rest],
+      });
+      assert.equal(toMarkdown(bridge, doc, opening), `Steps, edited:\n\n${list}`);
+    });
+  }
+
+  /*
+   * TipTap's task-list tokenizer takes only an item's first line as its text
+   * and reads the lines under it as blocks of their own: a code block at six
+   * spaces, a second paragraph at two. CommonMark, and so the reading view,
+   * reads one paragraph. The editor would show something the board does not,
+   * so it stays Markdown (see LAI-853's Result).
+   */
+  void test('a wrapped task-list item stays Markdown', () => {
+    for (const markdown of [
+      '- [ ] a criterion that\n      wraps like a task file',
+      '- [ ] a criterion that\n  wraps',
+    ]) {
+      assert.equal(openDocument(bridge, markdown).kind, 'source', JSON.stringify(markdown));
+    }
+  });
+});
+
+void describe('only a wrapped line’s indentation is forgiven (LAI-853)', () => {
+  const same = (a: string, b: string): boolean => sameMarkdown(bridge, a, b);
+
+  void test('positive control: the continuation’s indentation, and no more', () => {
+    assert.equal(same('- a long item that\n  wraps', '- a long item that\nwraps'), true);
+    assert.equal(same('1. a step that\n   wraps', '1. a step that\nwraps'), true);
+  });
+
+  void test('a changed character on the wrapped line is still a change', () => {
+    assert.equal(same('- a long item that\n  wraps', '- a long item that\nwrapz'), false);
+    assert.equal(same('- a long item that\n  wraps', '- a long item that\n\\  wraps'), false);
+  });
+
+  void test('a rewrite on the wrapped line still opens as Markdown, and names it', () => {
+    const opening = openDocument(bridge, '- a long item that\n  wraps _here_');
+    assert.equal(opening.kind, 'source');
+    assert.match(opening.kind === 'source' ? opening.reason : '', /line 2/);
+  });
+
+  void test('a list marker’s indentation is structure, not a wrapped line', () => {
+    // CommonMark: under `1. ` two spaces are too few to nest, so `- b` starts
+    // a list of its own; TipTap nests it.
+    assert.equal(same('1. a\n  - b', '1. a\n   - b'), false);
+    assert.equal(openDocument(bridge, '1. a\n  - b').kind, 'source');
+  });
+
+  void test('after a blank line or a heading, indentation is not a wrapped line', () => {
+    assert.equal(same('- a\n\n para', '- a\n\npara'), false);
+    assert.equal(same('# Title\n  text', '# Title\ntext'), false);
+  });
+});
