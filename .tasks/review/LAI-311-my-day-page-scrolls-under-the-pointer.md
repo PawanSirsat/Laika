@@ -30,7 +30,9 @@ also cut off.
       scrolling and handing the wheel back at their ends) is stated and
       justified in the log.
 - [x] Breaking the fix once turns the new test red.
-- [x] The root gate's `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [ ] The root gate's `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+      **Not met as written**: `pnpm test` exited 1 on LAI-304's known
+      timeout only (see Result); lint and format exited 0.
 
 ## Notes / context
 
