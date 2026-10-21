@@ -126,7 +126,6 @@ void describe('what the editor would rewrite opens as Markdown, and says why', (
   const rewritten: readonly [string, RegExp][] = [
     ['* one\n* two', /line 1/],
     ['+ one\n+ two', /line 1/],
-    ['a _b_ c', /line 1/],
     ['__bold__', /line 1/],
     ['- one\n\n- two', /line/],
     ['Title\n=====', /line 1/],
@@ -420,7 +419,7 @@ void describe('a change to any non-blank text is still refused (LAI-849)', () =>
       'a star bullet',
       AGENT.replace('- A book', '* A book').replace('- The morning', '* The morning'),
     ],
-    ['an underscore emphasis', `${AGENT}\n\nThe _old_ way.`],
+    ['an underscore strong emphasis', `${AGENT}\n\nThe __old__ way.`],
     ['a setext heading', `${AGENT}\n\nTitle\n=====`],
     ['a loose list made tight', AGENT.replace('\n- The morning', '\n\n- The morning')],
   ];
@@ -464,8 +463,8 @@ void describe('the reason names the real difference, not a shifted line (LAI-849
 
   void test('a forgiven blank line above a list is not the line named', () => {
     assert.equal(
-      reason(`${AGENT}\n\nThe _old_ way.`),
-      'The rich editor would rewrite line 10: “The _old_ way.” as “The *old* way.”.',
+      reason(`${AGENT}\n\nThe __old__ way.`),
+      'The rich editor would rewrite line 10: “The __old__ way.” as “The **old** way.”.',
     );
   });
 
@@ -607,5 +606,175 @@ void describe('the whole is checked, not only each block (review round 1)', () =
       (error: unknown) =>
         error instanceof UnwritableMarkdown && error.draft.startsWith('- one\n- two\n\n'),
     );
+  });
+});
+
+/*
+ * LAI-312: the owner opened LAIKA-439 — a task imported from the repo's
+ * `.tasks/` folder — and the editor said "The rich editor could not read it".
+ * This is its body as stored, the repository's address generalised. Inline
+ * code inside italic and inside a link's words made the parsed document
+ * invalid for the schema; a heading opening `1.` and an `_italic_` line were
+ * rewritten underneath that.
+ */
+const IMPORTED = [
+  '**Repo task LAI-624** · area `docs` · priority p2 · discovered from LAI-623',
+  '',
+  'In the repo backlog (`.tasks/backlog/`). Source: [`.tasks/backlog/LAI-624-docs-still-describe-a-cli-that-does-not-work-that-way.md`](https://github.com/example/laika/blob/master/.tasks/backlog/LAI-624-docs-still-describe-a-cli-that-does-not-work-that-way.md)',
+  '',
+  "_Imported 15 Oct 2026 from the repo's `.tasks/` folder._",
+  '',
+  '---',
+  '',
+  '## What is wrong',
+  '',
+  'Three documents describe how a machine gets connected to a board, and each of',
+  'them is wrong in a different way. All three are in `docs/`, so SHELL filed',
+  'rather than edited (CLAUDE.md §1).',
+  '',
+  '### 1. `npx laika init` cannot work, and two documents still offer it',
+  '',
+  'The package is `private: true` and unpublished, so on a clean machine',
+  '`npx laika` resolves to an unrelated public package or fails. LAI-623 replaced',
+  'every live instance under `cli/`, `plugin/` and `server/web/src/` with `laika`,',
+  'installed on PATH by `plugin/scripts/install.sh`. These remain:',
+  '',
+  '- `docs/ROADMAP.md:105` — "`npx laika init` CLI: authenticate, mint a token…"',
+  '- `docs/ROADMAP.md:109`, `:121`',
+  '- `docs/FEATURES.md:105` — the row still reads `[planned phase 4]`, and the',
+  '  CLI shipped in LAI-422 on 2026-09-02.',
+  '',
+  '`docs/DECISIONS.md:2137` (D-046) also names it, and **should not be changed** —',
+  'decisions are append-only records of what was decided. A fresh decision or a',
+  'note elsewhere is the way to correct it.',
+  '',
+  '### 2. SPEC §8 says the env vars are written by something that writes nothing',
+  '',
+  '§8 says `LAIKA_URL` and `LAIKA_TOKEN` are *"written by `/laika:setup`"*. D-046',
+  'decided the opposite — the CLI owns configuration and `/laika:setup` is a front',
+  'door onto it — and `plugin/scripts/laika-setup.sh` writes no settings at all.',
+  '',
+  '### 3. SPEC §8 names a Skill that does not exist',
+  '',
+  'There is no such skill in `plugin/`. Either it is planned and the SPEC should',
+  'say so, or the sentence should go.',
+  '',
+  '## Why it matters now',
+  '',
+  'The Connect screen (LAI-622) makes `install.sh` the path every new joiner',
+  'takes. A developer who reads the SPEC or the ROADMAP to understand what just',
+  'happened to their machine is told a different story by each, and one of the',
+  'commands on offer fails on a clean machine. This is the first hour of somebody',
+  'new; it is the worst place to have three documents disagreeing.',
+  '',
+  '## Acceptance criteria',
+  '',
+  '- [ ] `docs/ROADMAP.md` and `docs/FEATURES.md` name `laika init` rather than',
+  "      `npx laika init`, and `FEATURES.md`'s row reflects that it shipped.",
+  '- [ ] SPEC §8 matches D-046 on who writes the environment variables.',
+  "- [ ] SPEC §8's Skill reference either names something that exists or is",
+  '      removed, and the criterion is checked **against §8 itself**, not against',
+  '      a description of it (CLAUDE.md §2).',
+  '- [ ] `DECISIONS.md` is not rewritten.',
+  '',
+  '## Notes / context',
+  '',
+  "- Found by LAI-623's census of `npx laika` across the repo — run without a",
+  '  `head`, which is the only reason `FEATURES.md:105` was in the list.',
+].join('\n');
+
+/** The same body with each wrapped list item on one line (LAI-853, LAI-302). */
+const UNWRAPPED = IMPORTED.replace(/\n {2,}(?=\S)/g, ' ');
+
+void describe('a task imported from the repo opens in the rich view (LAI-312)', () => {
+  void test('the body the owner hit is read: any notice names a wrapped list line', () => {
+    const opening = openDocument(bridge, IMPORTED);
+    if (opening.kind === 'rich') return;
+    const named = /^The rich editor would rewrite line (\d+):/.exec(opening.reason);
+    assert.ok(named !== null, `the notice names no line: ${opening.reason}`);
+    const line = IMPORTED.split('\n')[Number(named[1]) - 1] ?? '';
+    assert.match(line, /^ {2,}\S/, `line ${named[1]} is not a wrapped list line: ${line}`);
+  });
+
+  void test('with its wrapped list items on one line it opens rich, and an untouched save is the text as stored', () => {
+    const opening = openDocument(bridge, UNWRAPPED);
+    assert.equal(
+      opening.kind,
+      'rich',
+      `opened as Markdown: ${opening.kind === 'source' ? opening.reason : ''}`,
+    );
+    if (opening.kind !== 'rich') return;
+    assert.equal(opening.markdown, UNWRAPPED);
+    assert.equal(
+      toMarkdown(bridge, bridge.schema.nodeFromJSON(opening.content), opening),
+      UNWRAPPED,
+    );
+    // Written fresh, not copied from the source, it is the same text too.
+    assert.equal(toMarkdown(bridge, bridge.schema.nodeFromJSON(opening.content)), UNWRAPPED);
+  });
+
+  const exact = [
+    // Inline code inside another mark.
+    "_Imported 15 Oct 2026 from the repo's `.tasks/` folder._",
+    'a *b `c` d* e',
+    'a **b `c` d** e',
+    'a ~~b `c` d~~ e',
+    'Source: [`.tasks/backlog/a_b.md`](https://example.com/a_b.md)',
+    '§8 says it is *"written by `/laika:setup`"*. D-046',
+    '[**`x`** and y](https://example.com)',
+    // Each emphasis keeps the delimiter it was written with.
+    'a _b_ c',
+    'a *b* c',
+    '_one_ and *two*',
+    // A heading's words are not a line of their own.
+    '### 1. `npx laika init` cannot work',
+    '## - not a list',
+    '## > not a quote',
+    '## + not a list',
+    // A heading of nothing but hashes still needs its escape.
+    '## \\#',
+  ];
+  for (const markdown of exact) {
+    void test(JSON.stringify(markdown), () => {
+      assert.equal(roundTrips(markdown), markdown);
+    });
+  }
+
+  void test('italic made in the editor is written with stars', () => {
+    const doc = bridge.schema.nodeFromJSON({
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            text('a '),
+            { type: 'text', text: 'b', marks: [{ type: 'italic' }] },
+            text(' c'),
+          ],
+        },
+      ],
+    });
+    assert.equal(toMarkdown(bridge, doc), 'a *b* c');
+  });
+
+  void test('an edited underscore italic that can no longer be underscored is written with stars', () => {
+    const opening = openDocument(bridge, 'a _b_ c');
+    assert.equal(opening.kind, 'rich', 'positive control: the document opens rich');
+    if (opening.kind !== 'rich') return;
+    // `x_b_y` is no emphasis, so the edited block cannot keep the underscore.
+    const doc = bridge.schema.nodeFromJSON({
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [
+            text('x'),
+            { type: 'text', text: 'b', marks: [{ type: 'italic', attrs: { delimiter: '_' } }] },
+            text('y'),
+          ],
+        },
+      ],
+    });
+    assert.equal(toMarkdown(bridge, doc, opening), 'x*b*y');
   });
 });
