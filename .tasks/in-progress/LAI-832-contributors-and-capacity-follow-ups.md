@@ -2,11 +2,12 @@
 id: LAI-832
 title: 'Contributors and Capacity follow-ups: backlog shown apart at 390, one stale rule everywhere, exact Delivered wording, tab overflow, untested cases'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: [LAI-817, LAI-818]
 discovered-from: LAI-817
-status: backlog
+status: in-progress
+started: 2026-10-21T05:37:16Z
 ---
 
 ## Goal
