@@ -44,21 +44,21 @@
 }
 
 .md h1 {
-  font-size: 0.90625rem;
+  font-size: var(--text-heading-sm);
 }
 
 .md h2 {
-  font-size: 0.875rem;
+  font-size: var(--text-heading-sm);
 }
 
 .md h3 {
-  font-size: 0.84375rem;
+  font-size: var(--text-body);
 }
 
 .md h4,
 .md h5,
 .md h6 {
-  font-size: 0.8125rem;
+  font-size: var(--text-body);
   font-weight: var(--weight-bold);
   color: var(--text-secondary);
 }
@@ -102,7 +102,7 @@
 
 .md code {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--text-small);
   padding: 0.0625rem 0.3125rem;
   background: var(--bg-column);
   border: 1px solid var(--border-subtle);
@@ -122,7 +122,7 @@
   padding: 0;
   background: none;
   border: 0;
-  font-size: 0.78125rem;
+  font-size: var(--text-small);
   line-height: 1.5;
 }
 
@@ -144,7 +144,7 @@
 
 .md table {
   border-collapse: collapse;
-  font-size: 0.78125rem;
+  font-size: var(--text-body);
 }
 
 .md th,
@@ -169,11 +169,12 @@
 /*
  * Reading text (LAI-827): the description, acceptance and comments are read
  * like a document — Jira's issue view, which the owner set beside ONR-516 —
- * not scanned like a board. The size and leading are tokens (`--text-reading`,
- * `--leading-reading` in `styles/theme.css`) so LAI-828 raises them in one
- * place. Headings step up from the reading size and stay under the panel's
- * 24px title. The editor draws its document with these same rules, so reading
- * and editing look like one page.
+ * not scanned like a board. The size and leading are the scale's `reading`
+ * step, 16/24 (LAI-828, `styles/type.css`). Headings are Jira's description
+ * headings on the same scale — h1 24px, h2 20px, h3 16px, h4–h6 bold at the
+ * reading size — so a description's h1 matches the panel's title, as Jira's
+ * does; code and tables sit at the body step, 14px. The editor draws its
+ * document with these same rules, so reading and editing look like one page.
  */
 .md-reading {
   font-size: var(--text-reading);
@@ -182,15 +183,15 @@
 }
 
 .md-reading h1 {
-  font-size: var(--text-reading-h1);
+  font-size: var(--text-heading-lg);
 }
 
 .md-reading h2 {
-  font-size: var(--text-reading-h2);
+  font-size: var(--text-heading-md);
 }
 
 .md-reading h3 {
-  font-size: var(--text-reading-h3);
+  font-size: var(--text-heading-sm);
 }
 
 .md-reading h4,
@@ -202,7 +203,7 @@
 .md-reading code,
 .md-reading pre code,
 .md-reading table {
-  font-size: var(--text-reading-code);
+  font-size: var(--text-body);
 }
 
 .md-reading p,
@@ -257,7 +258,7 @@
 
 .md-comment h1,
 .md-comment h2 {
-  font-size: var(--text-reading-h3);
+  font-size: var(--text-heading-sm);
 }
 
 .md-comment li + li {
@@ -265,5 +266,5 @@
 }
 
 .md-comment code {
-  font-size: var(--text-reading-code);
+  font-size: var(--text-body);
 }

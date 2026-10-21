@@ -30,21 +30,21 @@
   width: 1.25rem;
   height: 1.25rem;
   /* The type floor (theme tests): nothing under 10px, decoration included. */
-  font-size: 0.625rem;
+  font-size: var(--text-small);
   letter-spacing: -0.04em;
 }
 
 .agent-mark-md {
   width: 1.5rem;
   height: 1.5rem;
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
 }
 
 .agent-mark-lg {
   width: 2rem;
   height: 2rem;
   border-radius: var(--radius-control);
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
 }
 
 .agent-mark-blue {
@@ -98,5 +98,5 @@
   width: 2.125rem;
   height: 2.125rem;
   border-radius: var(--radius-control);
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
 }

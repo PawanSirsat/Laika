@@ -31,13 +31,13 @@
 
 .panel-key {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   font-weight: var(--weight-bold);
   color: var(--text-secondary);
 }
 
 .panel-title {
-  font-size: var(--text-md);
+  font-size: var(--text-body);
   font-weight: var(--weight-bold);
   color: var(--text-primary);
   margin: var(--space-1) 0 0;
@@ -46,7 +46,7 @@
 
 .panel-close {
   font: inherit;
-  font-size: var(--text-lg);
+  font-size: var(--text-body);
   line-height: 1;
   color: var(--text-secondary);
   background: transparent;
@@ -75,7 +75,7 @@
 
 .panel-section-title {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   font-weight: var(--weight-bold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -97,7 +97,7 @@
 
 .panel-priority {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   font-weight: var(--weight-bold);
   border-radius: var(--radius-pill);
   padding: 0 var(--space-2);
@@ -120,13 +120,13 @@
 }
 
 .panel-assignee {
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
   color: var(--text-secondary);
   margin-left: auto;
 }
 
 .panel-alert {
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
   color: var(--overdue);
   background: var(--blocked-bg);
   border: 1px solid var(--overdue-border);
@@ -136,13 +136,13 @@
 }
 
 .panel-muted {
-  font-size: var(--text-sm);
+  font-size: var(--text-small);
   color: var(--text-secondary);
   margin: 0;
 }
 
 .panel-description {
-  font-size: var(--text-sm);
+  font-size: var(--text-reading);
   color: var(--text-primary);
   margin: 0;
   line-height: 1.6;
@@ -151,7 +151,7 @@
 
 .panel-facts {
   margin: 0;
-  font-size: var(--text-sm);
+  font-size: var(--text-small);
 }
 
 .panel-facts > div {
@@ -187,7 +187,7 @@
   gap: var(--space-2);
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border-subtle);
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
 }
 
 .panel-dep:last-child {
@@ -223,25 +223,25 @@
 }
 
 .panel-comment-author {
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
 }
 
 .panel-edited {
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
 }
 
 .panel-time {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   color: var(--text-muted);
   margin-left: auto;
   white-space: nowrap;
 }
 
 .panel-comment-body {
-  font-size: var(--text-sm);
+  font-size: var(--text-reading);
   color: var(--text-primary);
   margin: 0;
   line-height: 1.55;
@@ -270,7 +270,7 @@
 
 .panel-textarea {
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
   color: var(--text-primary);
   background: var(--bg-card);
   border: 1px solid var(--border-default);
@@ -287,7 +287,7 @@
   gap: var(--space-2);
   padding: var(--space-2) 0;
   border-bottom: 1px solid var(--border-subtle);
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
 }
 
 .panel-event:last-child {
@@ -330,7 +330,7 @@
   align-items: center;
   gap: 0.375rem;
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--text-body);
   font-weight: var(--weight-semibold);
   line-height: 1;
   color: var(--text-secondary);
@@ -356,7 +356,7 @@
 
 .panel-tab-count {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--text-small);
   font-weight: var(--weight-bold);
   color: var(--text-muted);
 }

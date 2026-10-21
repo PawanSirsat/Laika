@@ -8,7 +8,7 @@
 }
 
 .field-label {
-  font-size: var(--text-sm);
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
 }
@@ -19,7 +19,7 @@
 }
 
 .field-help {
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   color: var(--text-secondary);
   margin: 0;
 }
@@ -27,7 +27,7 @@
 /* Empty most of the time; it holds the live region open so an error announces
    when it appears rather than creating the region and the text together. */
 .field-error {
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   color: var(--overdue);
   margin: 0;
   min-height: 1em;
@@ -35,7 +35,7 @@
 
 .input {
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
   color: var(--text-primary);
   background: var(--bg-card);
   border: 1px solid var(--border-default);
@@ -97,7 +97,7 @@
 
 .input-affix-button {
   font: inherit;
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-secondary);
   background: var(--bg-column);
@@ -149,7 +149,7 @@
 }
 
 .strength-text {
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   color: var(--text-secondary);
   margin: var(--space-1) 0 0;
 }
@@ -196,7 +196,7 @@
 }
 
 .checkbox-label {
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
   color: var(--text-primary);
 }
 
@@ -204,7 +204,7 @@
 
 .button {
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
   font-weight: var(--weight-semibold);
   border-radius: var(--radius-card);
   padding: var(--space-2) var(--space-4);

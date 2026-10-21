@@ -14,12 +14,12 @@
   width: 1.125rem;
   height: 1.125rem;
   border-radius: var(--radius-xs);
-  font-size: 0.6875rem;
+  font-size: var(--text-small);
 }
 
 .space-badge-md {
   width: 1.75rem;
   height: 1.75rem;
   border-radius: 0.4375rem;
-  font-size: var(--text-ui);
+  font-size: var(--text-body);
 }

@@ -51,7 +51,7 @@
   background: var(--bg-column);
   border-right: 1px solid var(--border-subtle);
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   color: var(--text-secondary);
 }
@@ -61,28 +61,28 @@
 }
 
 .bstats-key {
-  font-size: 0.6875rem;
+  font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   letter-spacing: 0.06em;
   color: var(--text-muted);
 }
 
 .bstats b {
-  font-size: 0.84375rem;
+  font-size: var(--text-body);
   font-weight: var(--weight-heavy);
   color: var(--text-primary);
 }
 
 .bstats-of {
   margin-inline-start: -0.3125rem;
-  font-size: 0.75rem;
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
 }
 
 .bstats-partial {
   margin-inline-start: -0.25rem;
-  font-size: 0.75rem;
+  font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   color: var(--text-muted);
   cursor: help;
@@ -238,20 +238,20 @@
 
 .bstats-pop-key {
   min-width: 2.75rem;
-  font-size: 0.6875rem;
+  font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   letter-spacing: 0.06em;
   color: var(--text-muted);
 }
 
 .bstats-pop b {
-  font-size: 0.84375rem;
+  font-size: var(--text-body);
   font-weight: var(--weight-heavy);
   color: var(--text-primary);
 }
 
 .bstats-pop-of {
-  font-size: 0.75rem;
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
 }

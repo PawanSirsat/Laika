@@ -129,7 +129,13 @@ export function TokenReference() {
         <h3 className="tr-group-title">Type scale</h3>
         <div className="tr-type">
           {TYPE_TOKENS.map((token) => (
-            <p key={token} style={{ fontSize: `var(${token})` }}>
+            <p
+              key={token}
+              style={{
+                fontSize: `var(${token})`,
+                lineHeight: `var(${token.replace('--text-', '--leading-')})`,
+              }}
+            >
               <code>{token}</code> — Ready tasks, sorted p1 to p3
             </p>
           ))}

@@ -8,14 +8,14 @@
   padding: var(--space-2) 1.125rem;
   background: var(--chip-orange-bg);
   border-bottom: 1px solid var(--chip-orange-border);
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
   color: var(--text-secondary);
 }
 
 .demo-notice-tag {
   flex: none;
   font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   letter-spacing: 0.08em;
   color: var(--chip-orange);

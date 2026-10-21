@@ -49,7 +49,7 @@
 
 .cd-title {
   margin: 0;
-  font-size: 0.875rem;
+  font-size: var(--text-heading-sm);
   font-weight: var(--weight-bold);
   color: var(--text-primary);
 }
@@ -59,7 +59,7 @@
   border: 0;
   background: none;
   color: var(--text-muted);
-  font-size: 1.125rem;
+  font-size: var(--text-heading-md);
   line-height: 1;
   cursor: pointer;
   padding: 0 0.25rem;
@@ -73,7 +73,7 @@
 
 .cd-error {
   margin: 0 0 0.5rem;
-  font-size: 0.8125rem;
+  font-size: var(--text-body);
   color: var(--overdue);
   background: var(--blocked-bg);
   border: 1px solid var(--overdue-border);
@@ -99,7 +99,7 @@
 
 .cd-label {
   margin: 0 0 0.25rem;
-  font-size: 0.75rem;
+  font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -108,7 +108,7 @@
 
 .cd-hint {
   margin: 0.25rem 0 0;
-  font-size: 0.78125rem;
+  font-size: var(--text-small);
   line-height: 1.45;
   color: var(--text-muted);
 }
@@ -116,7 +116,7 @@
 .cd-input,
 .cd-select {
   font: inherit;
-  font-size: 0.84375rem;
+  font-size: var(--text-body);
   color: var(--text-primary);
   background: var(--bg-column);
   border: 1px solid var(--border-default);
@@ -136,7 +136,7 @@
 .cd-confirm,
 .cd-show {
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--text-body);
   font-weight: var(--weight-semibold);
   border-radius: var(--radius-card);
   padding: 0.3125rem 0.625rem;
@@ -244,19 +244,19 @@
 }
 
 .cd-kind-label {
-  font-size: 0.84375rem;
+  font-size: var(--text-body);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
 }
 
 .cd-kind-hint {
-  font-size: 0.75rem;
+  font-size: var(--text-small);
   color: var(--text-muted);
 }
 
 .cd-blocked {
   margin: 0;
-  font-size: 0.8125rem;
+  font-size: var(--text-body);
   line-height: 1.45;
   color: var(--text-secondary);
 }

@@ -26,7 +26,7 @@
 
 .cap-quiet {
   margin: 0;
-  font-size: var(--text-sm);
+  font-size: var(--text-small);
   color: var(--text-muted);
 }
 
@@ -36,8 +36,8 @@
   border: 1px solid var(--chip-orange-border);
   background: var(--chip-orange-bg);
   border-radius: var(--radius-card);
-  font-size: var(--text-sm);
-  line-height: var(--leading-body);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
   color: var(--text-secondary);
 }
 
@@ -94,14 +94,14 @@ a.cap-tile:hover {
 }
 
 .cap-tile-label {
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   font-weight: var(--weight-bold);
   color: var(--text-muted);
 }
 
 .cap-tile-value {
   font-family: var(--font-mono);
-  font-size: 1.5rem;
+  font-size: var(--text-heading-lg);
   font-weight: var(--weight-bold);
   letter-spacing: -0.03em;
   line-height: 1.15;
@@ -110,7 +110,7 @@ a.cap-tile:hover {
 }
 
 .cap-tile-sub {
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   color: var(--text-muted);
 }
 
@@ -173,7 +173,7 @@ a.cap-tile:hover {
   background: var(--bg-input);
   color: var(--text-primary);
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
 }
 
 .cap-search input::placeholder {
@@ -202,7 +202,7 @@ a.cap-tile:hover {
   background: var(--bg-card);
   color: var(--text-secondary);
   font: inherit;
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   cursor: pointer;
   transition: var(--transition);
@@ -236,7 +236,7 @@ a.cap-tile:hover {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  font-size: var(--text-xs);
+  font-size: var(--text-body);
   font-weight: var(--weight-bold);
   color: var(--text-muted);
 }
@@ -334,7 +334,7 @@ a.cap-tile:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--text-sm);
+  font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   letter-spacing: -0.02em;
 }
@@ -382,7 +382,7 @@ a.cap-tile:hover {
 }
 
 .cap-name {
-  font-size: var(--text-md);
+  font-size: var(--text-body);
   font-weight: var(--weight-heavy);
   color: var(--text-primary);
   overflow: hidden;
@@ -402,7 +402,7 @@ a.cap-tile:hover {
 }
 
 .cap-role {
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-secondary);
 }
@@ -412,7 +412,7 @@ a.cap-tile:hover {
 }
 
 .cap-status {
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   font-weight: var(--weight-bold);
   color: var(--text-muted);
 }
@@ -442,7 +442,7 @@ a.cap-tile:hover {
   border: 1px solid var(--chip-neutral-border);
   background: var(--chip-neutral-bg);
   color: var(--chip-neutral);
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   font-weight: var(--weight-bold);
   line-height: 1.5;
   white-space: nowrap;
@@ -472,7 +472,7 @@ a.cap-tile:hover {
   border: 1px dashed var(--overdue-border);
   border-radius: var(--radius-pill);
   color: var(--overdue);
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   line-height: 1.5;
   white-space: nowrap;
@@ -492,7 +492,7 @@ a.cap-tile:hover {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   font-weight: var(--weight-bold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -519,7 +519,7 @@ a.cap-tile:hover {
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  font-size: var(--text-sm);
+  font-size: var(--text-small);
   color: var(--text-muted);
 }
 
@@ -556,7 +556,7 @@ a.cap-tile:hover {
   border: 0;
   background: none;
   font: inherit;
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   color: var(--text-secondary);
   text-align: left;
   cursor: pointer;
@@ -599,14 +599,14 @@ a.cap-tile:hover {
   align-items: baseline;
   gap: 0.3125rem;
   white-space: nowrap;
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
 }
 
 .cap-count-n {
   font-family: var(--font-mono);
-  font-size: var(--text-md);
+  font-size: var(--text-body);
   font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -660,7 +660,7 @@ a.cap-tile:hover {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-pill);
   background: var(--chip-neutral-bg);
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-secondary);
   overflow: hidden;
@@ -711,13 +711,13 @@ a.cap-tile:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 0.125rem 0.875rem;
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
 }
 
 .cap-spark-split .cap-count-n {
-  font-size: var(--text-sm);
+  font-size: var(--text-small);
 }
 
 .cap-spark-tidy {
@@ -747,7 +747,7 @@ a.cap-tile:hover {
   border: 0;
   background: none;
   font: inherit;
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   font-weight: var(--weight-bold);
   color: var(--accent);
   cursor: pointer;
@@ -793,7 +793,7 @@ a.cap-tile:hover {
   border-radius: var(--radius-chip);
   background: none;
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
   text-align: left;
   color: var(--text-secondary);
   cursor: pointer;
@@ -825,7 +825,7 @@ button.cap-task:hover {
   padding: 0.625rem 0.875rem;
   border: 1px dashed var(--border-default);
   border-radius: var(--radius-card);
-  font-size: var(--text-sm);
+  font-size: var(--text-small);
   color: var(--text-secondary);
 }
 
@@ -844,7 +844,7 @@ button.cap-task:hover {
   border-radius: var(--radius-pill);
   background: var(--bg-card);
   font: inherit;
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   font-weight: var(--weight-bold);
   color: var(--accent);
   cursor: pointer;
@@ -895,7 +895,7 @@ button.cap-task:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--text-sm);
+  font-size: var(--text-body);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
 }
@@ -910,7 +910,7 @@ button.cap-task:hover {
   align-items: baseline;
   gap: 0.375rem;
   font-family: var(--font-mono);
-  font-size: var(--text-sm);
+  font-size: var(--text-small);
   font-weight: var(--weight-bold);
   color: var(--text-primary);
   white-space: nowrap;
@@ -918,7 +918,7 @@ button.cap-task:hover {
 
 .cap-team-overdue {
   font-family: var(--font-ui);
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   color: var(--overdue);
 }
 
@@ -926,7 +926,7 @@ button.cap-task:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 0.375rem 0.875rem;
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   color: var(--text-muted);
 }
 
@@ -963,13 +963,13 @@ button.cap-task:hover {
 }
 
 .cap-running-agent {
-  font-size: var(--text-sm);
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
 }
 
 .cap-running-person {
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -978,7 +978,7 @@ button.cap-task:hover {
 
 .cap-running-when {
   flex: none;
-  font-size: var(--text-xs);
+  font-size: var(--text-small);
   color: var(--chip-green);
   font-weight: var(--weight-semibold);
 }

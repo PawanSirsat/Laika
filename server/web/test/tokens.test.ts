@@ -26,7 +26,6 @@ import {
   FAMILY_TOKENS,
   RADIUS_TOKENS,
   SPACE_TOKENS,
-  TYPE_TOKENS,
   SHARED_MISC_TOKENS,
   WEIGHT_TOKENS,
 } from '../src/theme/token-list.ts';
@@ -125,7 +124,6 @@ void describe('every themed token exists in both themes', () => {
     // legitimately appear only on the dark side of this comparison. Everything
     // else appearing only in dark is a stranded theme value.
     const themeIndependent = new Set<string>([
-      ...TYPE_TOKENS,
       ...WEIGHT_TOKENS,
       ...SPACE_TOKENS,
       ...RADIUS_TOKENS,
@@ -145,7 +143,6 @@ void describe('token-list.ts matches tokens.css', () => {
     const listed = [
       ...ALL_COLOR_TOKENS,
       ...ELEVATION_TOKENS,
-      ...TYPE_TOKENS,
       ...WEIGHT_TOKENS,
       ...SPACE_TOKENS,
       ...RADIUS_TOKENS,
@@ -163,7 +160,6 @@ void describe('token-list.ts matches tokens.css', () => {
     const listed = new Set<string>([
       ...ALL_COLOR_TOKENS,
       ...ELEVATION_TOKENS,
-      ...TYPE_TOKENS,
       ...WEIGHT_TOKENS,
       ...SPACE_TOKENS,
       ...RADIUS_TOKENS,

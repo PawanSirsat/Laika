@@ -17,7 +17,7 @@
 
 .composer-title {
   font: inherit;
-  font-size: 0.84375rem;
+  font-size: var(--text-body);
   font-weight: var(--weight-semibold);
   line-height: 1.35;
   color: var(--text-primary);
@@ -39,7 +39,7 @@
 
 .composer-error {
   margin: 0;
-  font-size: 0.78125rem;
+  font-size: var(--text-body);
   color: var(--overdue);
 }
 
@@ -52,7 +52,7 @@
 .composer-prio .dd-trigger {
   font: inherit;
   font-family: var(--font-mono);
-  font-size: 0.71875rem;
+  font-size: var(--text-small);
   font-weight: var(--weight-bold);
   color: var(--text-secondary);
   background: var(--bg-column);
@@ -69,7 +69,7 @@
 }
 
 .composer-target {
-  font-size: 0.75rem;
+  font-size: var(--text-small);
   color: var(--text-muted);
   margin-left: auto;
 }
@@ -86,7 +86,7 @@
   background: var(--bg-column);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 0.8125rem;
+  font-size: var(--text-body);
   line-height: 1;
 }
 
