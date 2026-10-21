@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-830
-status: in-progress
+status: review
 started: 2026-10-21T05:37:45Z
+finished: 2026-10-21T07:27:32Z
 ---
 
 ## Goal
@@ -33,13 +34,13 @@ leaking between cases.
 
 ## Acceptance criteria
 
-- [ ] Find the cause and name it in this file, with the evidence. Do not
+- [x] Find the cause and name it in this file, with the evidence. Do not
       guess.
-- [ ] Fix the test setup, or the app if the app is wrong, so the case waits
+- [x] Fix the test setup, or the app if the app is wrong, so the case waits
       for the sidebar state it asserts on and the cases do not share state.
-- [ ] The suite passes 20 times in a row locally, and once under extra CPU
+- [x] The suite passes 20 times in a row locally, and once under extra CPU
       load.
-- [ ] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Investigation
 
