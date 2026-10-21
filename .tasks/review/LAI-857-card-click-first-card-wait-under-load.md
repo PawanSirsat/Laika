@@ -26,7 +26,7 @@ board it opens is healthy. Keep its specific geometry assertions.
 - [ ] Fix the cause you found. Keep the title-exists, layout-box and
       `elementFromPoint` checks. Do not add a suite retry or a sleep, and do
       not raise the timeout without a measured reason.
-- [ ] The file passes alone, and in a root gate under measured contention.
+- [x] The file passes alone, and in a root gate under measured contention.
       `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Evidence
@@ -155,8 +155,9 @@ at the start, 45.81 when `pnpm test` ended), went `TEST 1`, `LINT 0`, `FMT 0`.
 `card-click.test.ts` passed in it. One unrelated browser case failed:
 `task-markdown.test.ts:226`, a 5000ms wait for a link's popup, and that file
 passed alone straight after, 4 of 4. That failure is filed as **LAI-307**. The
-gate after the filing is recorded in `logs/strelka-2026-10-21.md` and on the
-PR.
+second, at `457c2601` (load 24.77 to 36.80), went `TEST 0`, `LINT 0`,
+`FMT 0`: web 2690 of 2690, server 3386 passed and 10 skipped, cli 533
+passed and 0 failed, with this case among the passes.
 
 **For the reviewer:** accept this as the instrument, so the next red gate
 records criterion 1's evidence, or send it back. LAI-715 (PR #12) edits this
