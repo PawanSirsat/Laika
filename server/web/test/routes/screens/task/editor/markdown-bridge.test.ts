@@ -388,8 +388,8 @@ void describe('a list directly under a paragraph opens in the rich view (LAI-849
     assert.equal(toMarkdown(bridge, doc, opening), ['Owner: Grace Hopper', ...after].join('\n\n'));
   });
 
-  // Every block that may follow a paragraph without a blank line, and a
-  // paragraph under a heading: the editor adds one blank line, nothing else.
+  // Blocks written directly under a paragraph, or a paragraph under a
+  // heading: each opens rich.
   const underParagraph = [
     'Steps:\n- one\n- two',
     'Steps:\n1. one\n2. two',
@@ -427,6 +427,30 @@ void describe('a change to any non-blank text is still refused (LAI-849)', () =>
   for (const [what, markdown] of refused) {
     void test(what, () => {
       assert.equal(openDocument(bridge, markdown).kind, 'source');
+    });
+  }
+
+  /*
+   * Review round 1: a line of U+00A0 or U+3000 alone is no blank line in
+   * CommonMark, which counts only spaces and tabs, and the reading view
+   * (micromark) shows it as text. Between two paragraphs it is a paragraph of
+   * its own, which an edit to `A` dropped; under a list item it continues the
+   * item lazily, as `B` does, and an edit to the item moved the untouched `B`
+   * out of the list. Master refuses both. The same text with a space instead
+   * opens rich, so the white space is what each test is about.
+   */
+  for (const [name, ws] of [
+    ['U+00A0', ' '],
+    ['U+3000', '　'],
+  ] as const) {
+    void test(`a ${name} line between two paragraphs`, () => {
+      assert.equal(openDocument(bridge, 'A\n\n \n\nB').kind, 'rich', 'positive control');
+      assert.equal(openDocument(bridge, `A\n\n${ws}\n\nB`).kind, 'source');
+    });
+
+    void test(`a ${name} line in a list item under a paragraph`, () => {
+      assert.equal(openDocument(bridge, 'Intro:\n- a\n \nB').kind, 'rich', 'positive control');
+      assert.equal(openDocument(bridge, `Intro:\n- a\n${ws}\nB`).kind, 'source');
     });
   }
 });
@@ -468,6 +492,31 @@ void describe('the reason names the real difference, not a shifted line (LAI-849
     assert.equal(reason('> para\n> - x'), 'The rich editor would add “>” before line 2: “> - x”.');
   });
 
+  /*
+   * Review round 1: when a block is lost the texts split into different
+   * numbers of blocks, and the notice diffs the whole text. A blank line
+   * matched as well as a line of words there, so the blank line the editor
+   * adds above a list was kept and the list item named as dropped. Each of
+   * these keeps line 2 and loses line 4.
+   */
+  void test('a lost definition is named, not the list item above it', () => {
+    assert.equal(
+      reason('Steps:\n1. a\n\n[ref]: /x\n\nMore.'),
+      'The rich editor would drop line 4: “[ref]: /x”.',
+    );
+  });
+
+  void test('a lost &nbsp; paragraph between a list and a paragraph is named', () => {
+    assert.equal(
+      reason('Intro:\n- a\n\n&nbsp;\n\nB'),
+      'The rich editor would drop line 4: “&nbsp;”.',
+    );
+  });
+
+  void test('a lost &nbsp; paragraph at the end is named', () => {
+    assert.equal(reason('A\n- b\n\n&nbsp;'), 'The rich editor would drop line 4: “&nbsp;”.');
+  });
+
   void test('a long line is shown where it changes, not cut off where it agrees', () => {
     const long =
       '- A book returned after closing stays on the trolley, its card reading &lt;branch&gt; until scanned.';
@@ -480,8 +529,8 @@ void describe('the reason names the real difference, not a shifted line (LAI-849
 
 /*
  * The owner's whole description, in shape: after the blank line above its
- * list, one list item spells `<` and `>` as `&lt;` and `&gt;` past its 57th
- * character. The editor writes `\<…>` there — the same text read, a different
+ * list, the list's first and last items spell `<` and `>` as `&lt;` and
+ * `&gt;`, the first past its 57th character. The editor writes `\<…>` there — the same text read, a different
  * text stored — which LAI-827 refuses (`a &amp; b`). On master the notice named
  * the shifted blank line; clipped at 57 characters, the real change was out of
  * sight either way.

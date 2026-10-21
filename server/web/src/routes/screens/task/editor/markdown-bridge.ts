@@ -729,6 +729,23 @@ function splitUnits(bridge: Bridge, source: string, doc: ProseNode): SourceUnit[
     : null;
 }
 
+/**
+ * White space between blocks, as CommonMark has it: spaces, tabs and the
+ * newlines between lines. Not what `trim()` removes, which is also U+00A0,
+ * U+3000, U+FEFF and the rest of Unicode's white space — a line of those is
+ * text in CommonMark, and forgiving it as a gap dropped it (review round 1).
+ */
+const BLANK = /^[ \t\n]*$/;
+
+/**
+ * Does `markdown` have a line that `trim()` empties and CommonMark does not —
+ * a lone U+00A0, say? The lexer reads one as a blank line and ends a list item
+ * there, where CommonMark continues the item lazily, so its blocks are not the
+ * reader's (review round 1).
+ */
+const hasUnicodeBlankLine = (markdown: string): boolean =>
+  markdown.split('\n').some((line) => line.trim() === '' && !/^[ \t]*$/.test(line));
+
 /** A top-level block of a markdown text, as the slice of it that it is. */
 interface TextBlock {
   readonly text: string;
@@ -761,16 +778,16 @@ function topLevelBlocks(bridge: Bridge, markdown: string): TextBlock[] | null {
     const raw = (typeof token.raw === 'string' ? token.raw : '')
       .replace(/^(?:[ \t]*\n)+/, '')
       .replace(/\n+$/, '');
-    if (token.type === 'space' || raw.trim() === '') continue;
+    if (token.type === 'space' || BLANK.test(raw)) continue;
     const start = markdown.indexOf(raw, offset);
-    if (start === -1 || markdown.slice(offset, start).trim() !== '') return null;
+    if (start === -1 || !BLANK.test(markdown.slice(offset, start))) return null;
     if (start > 0 && markdown.charAt(start - 1) !== '\n') return null;
     for (let at = offset; at < start; at++) if (markdown.charAt(at) === '\n') line += 1;
     blocks.push({ text: raw, line });
     for (let at = start; at < start + raw.length; at++) if (markdown.charAt(at) === '\n') line += 1;
     offset = start + raw.length;
   }
-  return markdown.slice(offset).trim() === '' ? blocks : null;
+  return BLANK.test(markdown.slice(offset)) ? blocks : null;
 }
 
 /**
@@ -789,8 +806,12 @@ function topLevelBlocks(bridge: Bridge, markdown: string): TextBlock[] | null {
  */
 export function sameMarkdown(bridge: Bridge, a: string, b: string): boolean {
   if (normaliseMarkdown(a) === normaliseMarkdown(b)) return true;
-  const was = topLevelBlocks(bridge, a.replace(/\r\n?/g, '\n'));
-  const would = topLevelBlocks(bridge, b.replace(/\r\n?/g, '\n'));
+  const left = a.replace(/\r\n?/g, '\n');
+  const right = b.replace(/\r\n?/g, '\n');
+  // The lexer's blocks are not CommonMark's here: only the strict check.
+  if (hasUnicodeBlankLine(left) || hasUnicodeBlankLine(right)) return false;
+  const was = topLevelBlocks(bridge, left);
+  const would = topLevelBlocks(bridge, right);
   return (
     was !== null &&
     would !== null &&
@@ -812,9 +833,10 @@ interface Hunk {
 
 /**
  * Where `would` differs from `was`, in order: a longest-common-subsequence
- * diff of their lines. **Not a comparison by position**, which is what LAI-849
- * found: one added blank line shifted every line after it, so the notice
- * compared line 7 with the blank line now in its place — "as ''".
+ * diff of their lines, a line of words weighing more than a blank one. **Not
+ * a comparison by position**, which is what LAI-849 found: one added blank
+ * line shifted every line after it, so the notice compared line 7 with the
+ * blank line now in its place — "as ''".
  */
 function hunks(was: readonly NumberedLine[], would: readonly string[]): Hunk[] {
   let head = 0;
@@ -837,15 +859,25 @@ function hunks(was: readonly NumberedLine[], would: readonly string[]): Hunk[] {
   // Past a million cells, what differs is most of the text: one hunk says so.
   if (a.length * b.length > 1_000_000) return [{ removed: a, added: b, ...around(0, a.length) }];
 
-  // common[i][j]: how many lines a[i…] and b[j…] have in common, in order.
+  /*
+   * common[i][j]: what a[i…] and b[j…] have in common, in order — a line of
+   * words 2, a blank line 1. Counted alike, keeping the blank line the editor
+   * adds above a list tied with keeping the list item, and the walk below
+   * named the item as dropped (review round 1). The walk reads this table, so
+   * it prefers the words too.
+   */
+  const weight = (text: string): number => (text === '' ? 1 : 2);
   const common = Array.from({ length: a.length + 1 }, () =>
     new Array<number>(b.length + 1).fill(0),
   );
   const at = (i: number, j: number): number => common[i]?.[j] ?? 0;
   for (let i = a.length - 1; i >= 0; i--) {
     for (let j = b.length - 1; j >= 0; j--) {
+      const line = b[j] ?? '';
       common[i]![j] =
-        a[i]?.text === b[j] ? 1 + at(i + 1, j + 1) : Math.max(at(i + 1, j), at(i, j + 1));
+        a[i]?.text === line
+          ? weight(line) + at(i + 1, j + 1)
+          : Math.max(at(i + 1, j), at(i, j + 1));
     }
   }
   const out: Hunk[] = [];
