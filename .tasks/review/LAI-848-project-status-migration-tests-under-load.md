@@ -130,7 +130,7 @@ loads 170.72–186.48.
 
 **Root gate. Not green; criterion 3 is left unticked for that reason.** The
 gate was serialised behind polly's `/tmp/laika-root-gate.lock`, with each
-command to its own file, on the tree of commit `0a8e57e9` (later commits
+command to its own file, on the tree of commit `3cf8146e` (later commits
 touch Markdown only).
 
 | run | `uptime` at start → end | TEST | LINT | FMT |
