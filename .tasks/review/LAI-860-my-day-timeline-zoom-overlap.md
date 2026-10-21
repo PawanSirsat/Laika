@@ -112,6 +112,10 @@ All in `server/web/src/routes/screens/my-day/`, no token or colour changes:
   nothing (`cutsOf`).
 - The ring is an inset shadow on `::after`, inside the block; the handles sit
   inside its edges at `min(0.5rem, 40%)`; the block is `overflow-x: clip`.
+- `--row` and `--rows` are declared on `.dayline-block` (`0` and `1`), and
+  the inline style overrides them. The first root gate caught them used and
+  never defined (`tokens.test.ts`, "every var(--token) a stylesheet uses is
+  actually defined"), which is the gate working.
 
 This is a layout rule inside the existing YOU row, not new lanes, so the
 "stop and file a design change" branch of the third criterion was not taken.
@@ -128,6 +132,15 @@ This is a layout rule inside the existing YOU row, not new lanes, so the
   three source files swapped in by name and restored by checksum.
 - `server/web/test/routes/screens/my-day/timeline-derive.test.ts`: four
   `stackOf` cases. Two mutations of `stackOf` turn it red (1 and 3 fail).
+- Root gate, run 1, after merging master `0e1f6d38`: `pnpm test` exit 1, on
+  two cases. One was `tokens.test.ts` (fixed above). The other was the
+  wider-font case at `my-day-v2.test.ts:950`, cutting `1:00–2:50 PM · 1 h 50
+  min` at 1440, folded=false. That is the failure LAI-846 records on master
+  with no My day edits. The file passed alone, 31/31, three runs of three.
+  The case adds letter-spacing at 1280 px, resizes to 1440 and measures at
+  once, so `FitLabel`'s ResizeObserver re-render has to land in between. This
+  fix adds a `FitLabel` per block label and chip, so it may lose that race
+  more often under load. The race is the test's, and LAI-846's to fix.
 - Screenshots: `/tmp/LAI-860/before-light-1440-{fit,1,2}.png`,
   `/tmp/LAI-860/after-light-1440-{fit,1,2}.png`,
   `/tmp/LAI-860/after-dark-1440-2.png`, `/tmp/LAI-860/after-light-390-2.png`.

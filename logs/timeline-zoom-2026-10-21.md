@@ -72,3 +72,28 @@ Moved to .tasks/review/. Verified: the new browser test, the four
 `timeline-derive` cases, web typecheck, and the trial merge with LAI-834
 (5 of 5 My day tests pass there). The repo-root gate runs after this commit;
 its three exit codes are in the PR body and on LAIKA-659.
+
+## 2026-10-21T11:50:00Z — LAI-860 (gate, run 1)
+
+**What changed**
+- server/web/src/routes/screens/my-day/my-day.css — `--row: 0; --rows: 1;`
+  declared on `.dayline-block`, so `tokens.test.ts` finds them defined; the
+  inline style still sets them per block.
+- .tasks/review/LAI-860-my-day-timeline-zoom-overlap.md — the fix and gate
+  run 1 recorded.
+
+**Decisions**
+- Declared the defaults rather than exempting the two names from the token
+  check: the check is right that a `var()` with nothing behind it in any
+  stylesheet is how a misspelt token hides.
+
+**Discovered**
+- Root gate run 1 (`pnpm test`, exit 1) also failed the wider-font case at
+  `my-day-v2.test.ts:950`, which is LAI-846's recorded flake. It passed alone
+  three times. This fix adds `FitLabel`s, so it may lose that resize race
+  more often under load. The race belongs to the test and to LAI-846; noted
+  there in the review notes, not filed again.
+
+**State**
+In review; root gate re-run after this commit, exit codes in the PR body and
+on LAIKA-659.

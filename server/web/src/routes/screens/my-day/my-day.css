@@ -867,9 +867,11 @@
  * across — its badge still sits on its top edge.
  */
 .dayline-block {
-  --lane: calc((100% - 0.625rem + 2px) / var(--rows, 1));
+  --row: 0;
+  --rows: 1;
+  --lane: calc((100% - 0.625rem + 2px) / var(--rows));
   position: absolute;
-  top: calc(0.3125rem + var(--row, 0) * var(--lane));
+  top: calc(0.3125rem + var(--row) * var(--lane));
   height: calc(var(--lane) - 2px);
   overflow-x: clip;
   min-width: 2px;
