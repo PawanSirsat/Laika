@@ -961,6 +961,83 @@
   pointer-events: auto;
 }
 
+/*
+ * The SIGNALS lane (LAI-834, D-096): above the blocks, the day's prompts as
+ * dots and its commits as ticks, each in the five minutes it fell in. Drawn
+ * only on a day that has them, when the label column widens to name it and
+ * "You" moves down with its row.
+ */
+.dayline-grid-lanes {
+  grid-template-columns: 4.75rem minmax(0, 1fr);
+}
+
+.dayline-labels {
+  display: flex;
+  flex-direction: column;
+}
+
+.dayline-label-signals {
+  display: flex;
+  align-items: center;
+  height: 1.75rem;
+  margin-top: 1.125rem;
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+/* The track's padding and the lane are above it now; the gap to its text is not. */
+.dayline-label-you {
+  padding-top: 1.25rem;
+}
+
+.dayline-signals-lane {
+  position: relative;
+  height: 1.75rem;
+}
+
+.dayline-prompt,
+.dayline-commit {
+  position: absolute;
+  transform: translateX(-50%);
+}
+
+.dayline-prompt,
+.dayline-key-prompt {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 50%;
+  background: var(--accent-border);
+}
+
+.dayline-prompt {
+  top: 0.5rem;
+}
+
+.dayline-commit,
+.dayline-key-commit {
+  width: 2px;
+  border-radius: 1px;
+  background: var(--text-primary);
+}
+
+.dayline-commit {
+  top: 0.25rem;
+  height: 1.25rem;
+}
+
+.dayline-key-commit {
+  height: 0.75rem;
+}
+
+.dayline-key-prompt,
+.dayline-key-commit {
+  display: inline-block;
+  flex: none;
+}
+
 /* C: the selected block's edges, to drag or to move by ← and →. */
 .dayline-edge {
   position: absolute;

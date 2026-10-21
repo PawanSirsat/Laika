@@ -31,6 +31,8 @@ export interface TimeSettings {
   /** `org_mode === 'drafts'` and `draft_my_time` — the collector's question. */
   readonly drafting: boolean;
   readonly min_sync_interval_s: number;
+  /** The board keeps when a block's prompts and commits happened (D-096) — the collector's cue. */
+  readonly signal_times?: boolean;
 }
 
 export interface TaskRef {
@@ -139,6 +141,16 @@ export interface TimeBreak {
   readonly ended_at: number;
 }
 
+/**
+ * When the day's prompts and commits happened, by five minutes (D-096,
+ * LAI-834): per kind, `[bucket start in unix ms, count]` in order. Mirrors
+ * `services/time-drafts.ts`' `SignalTimesView`.
+ */
+export interface SignalTimes {
+  readonly prompts: readonly (readonly [number, number])[];
+  readonly commits: readonly (readonly [number, number])[];
+}
+
 /** One day of the week strip. Mirrors `services/my-day.ts`' `WeekDayView`. */
 export interface MyDayWeekDay {
   readonly day: string;
@@ -157,6 +169,11 @@ export interface MyDay {
   readonly entries: readonly TimeEntry[];
   /** Gaps waved away (LAI-831), in the order they happened. */
   readonly breaks: readonly TimeBreak[];
+  /**
+   * The SIGNALS lane (LAI-834): absent from a board that predates it, empty
+   * for a day drafted without it — either way, no lane is drawn.
+   */
+  readonly signal_times?: SignalTimes;
   /** Every pending draft held, on every day — what *Draft my time* off deletes. */
   readonly drafts_held: { readonly count: number; readonly minutes: number };
   readonly agent: MyDayAgent;
