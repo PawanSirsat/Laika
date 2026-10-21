@@ -2,11 +2,12 @@
 id: LAI-859
 title: 'Time drafts: a person''s untied orchestrator minutes take the card of the builder they were running'
 area: cli
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-21T10:35:31Z
 ---
 
 ## Goal
