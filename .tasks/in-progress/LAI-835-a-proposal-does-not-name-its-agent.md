@@ -2,11 +2,12 @@
 id: LAI-835
 title: 'An agent''s proposed time does not say which agent proposed it'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p3
 depends-on: []
 discovered-from: LAI-831
-status: backlog
+status: in-progress
+started: 2026-10-21T11:52:24Z
 ---
 
 ## Goal
