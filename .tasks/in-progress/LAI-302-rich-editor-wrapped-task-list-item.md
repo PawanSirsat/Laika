@@ -2,11 +2,12 @@
 id: LAI-302
 title: 'A task-list item wrapped onto an indented line opens as Markdown, because TipTap reads its second line as a block'
 area: web
-assignee: unclaimed
+assignee: strelka
 priority: p3
 depends-on: []
 discovered-from: LAI-853
-status: backlog
+status: in-progress
+started: 2026-10-21T18:13:37Z
 ---
 
 ## Goal
