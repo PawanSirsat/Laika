@@ -1,15 +1,17 @@
 import type {
   AnyExtension,
   JSONContent,
+  MarkdownLexerConfiguration,
   MarkdownParseHelpers,
   MarkdownRendererHelpers,
   MarkdownToken,
 } from '@tiptap/core';
+import { renderNestedMarkdownContent } from '@tiptap/core';
 import { Link } from '@tiptap/extension-link';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
 import { StarterKit } from '@tiptap/starter-kit';
-import { writesFaithfully } from './markdown-bridge.ts';
+import { startsBlock, writesFaithfully } from './markdown-bridge.ts';
 
 /**
  * What the task panel's editor can hold (LAI-827): exactly what markdown can
@@ -110,6 +112,122 @@ const Kit = StarterKit.extend({
   },
 });
 
+/** A task item's first line: indentation, marker, box, and its text. */
+const TASK_ITEM = /^(\s*)([-+*])\s+\[([ xX])\]\s+(.*)$/;
+
+/**
+ * A task list read as CommonMark reads it (LAI-302): each item's paragraph is
+ * its first line **and every line under it that starts no block of its own**,
+ * however far indented — `- [ ] a criterion that\n      wraps` is one
+ * paragraph, as the reading view shows it, and so is a lazy `wraps` flush
+ * left. TipTap's own tokenizer took only the first line, and read the rest as
+ * blocks: a code block at six spaces, a second paragraph at two. Past the
+ * paragraph it is the library's: lines indented under the item are its nested
+ * blocks, a nested task list among them.
+ */
+function tokenizeTaskList(
+  src: string,
+  lexer: MarkdownLexerConfiguration,
+): { readonly tokens: MarkdownToken[]; readonly raw: string } | undefined {
+  const lines = src.split('\n');
+  const items: MarkdownToken[] = [];
+  let raw = '';
+  let i = 0;
+  const indentOf = (line: string): number => /^\s*/.exec(line)?.[0].length ?? 0;
+  while (i < lines.length) {
+    const line = lines[i] ?? '';
+    const match = TASK_ITEM.exec(line);
+    if (match === null) {
+      if (items.length > 0) break;
+      if (line.trim() !== '') return undefined;
+      raw += `${line}\n`;
+      i += 1;
+      continue;
+    }
+    const indent = match[1]?.length ?? 0;
+    const words = [match[4] ?? ''];
+    raw += `${line}\n`;
+    i += 1;
+    for (let next = lines[i]; next !== undefined; next = lines[i]) {
+      const text = next.trimStart();
+      if (text === '' || startsBlock(text)) break;
+      words.push(text);
+      raw += `${next}\n`;
+      i += 1;
+    }
+    const nested: string[] = [];
+    for (let next = lines[i]; next !== undefined; next = lines[i]) {
+      if (next.trim() === '') {
+        // A blank line stays in the item only if what follows is indented under it.
+        const after = lines.slice(i + 1).find((l) => l.trim() !== '');
+        if (after === undefined || indentOf(after) <= indent) break;
+      } else if (indentOf(next) <= indent) {
+        break;
+      }
+      nested.push(next);
+      raw += `${next}\n`;
+      i += 1;
+    }
+    const body = nested.map((l) => l.slice(indent + 2)).join('\n');
+    const text = words.join('\n');
+    items.push({
+      type: 'taskItem',
+      raw: '',
+      checked: match[3]?.toLowerCase() === 'x',
+      text,
+      tokens: lexer.inlineTokens(text),
+      nestedTokens: body.trim() === '' ? undefined : nestedBlocks(body, lexer),
+    });
+  }
+  return items.length === 0 ? undefined : { tokens: items, raw };
+}
+
+/** What sits under a task item: a task list and whatever follows, or other blocks. */
+function nestedBlocks(src: string, lexer: MarkdownLexerConfiguration): MarkdownToken[] {
+  const list = tokenizeTaskList(src, lexer);
+  if (list === undefined) return lexer.blockTokens(src);
+  const token: MarkdownToken = { type: 'taskList', raw: list.raw, items: list.tokens };
+  const rest = src.slice(list.raw.length);
+  return rest.trim() === '' ? [token] : [token, ...lexer.blockTokens(rest)];
+}
+
+const WrappingTaskList = TaskList.extend({
+  markdownTokenizer: {
+    name: 'taskList',
+    level: 'block',
+    start: (src: string) => /^\s*[-+*]\s+\[([ xX])\]\s+/.exec(src)?.index ?? -1,
+    tokenize: (src: string, _tokens: MarkdownToken[], lexer: MarkdownLexerConfiguration) => {
+      const list = tokenizeTaskList(src, lexer);
+      return list === undefined
+        ? undefined
+        : { type: 'taskList', raw: list.raw, items: list.tokens };
+    },
+  },
+});
+
+/**
+ * A task item written as the tokenizer above reads it: a wrapped line of its
+ * text indented under the text, past the box — how this repo's task files
+ * write a criterion (LAI-302). The library wrote it flush left, which reads
+ * back the same; this is what a person would have typed.
+ */
+const WrappingTaskItem = TaskItem.extend({
+  renderMarkdown(node: JSONContent, helpers: MarkdownRendererHelpers) {
+    const prefix = `- [${node.attrs?.checked === true ? 'x' : ' '}] `;
+    const written = renderNestedMarkdownContent(node, helpers, prefix);
+    const first = node.content?.[0];
+    if (first === undefined) return written;
+    const text = helpers.renderChildren([first]);
+    if (!written.startsWith(`${prefix}${text}`)) return written;
+    const under = ' '.repeat(prefix.length);
+    const wrapped = text
+      .split('\n')
+      .map((line, n) => (n === 0 || line === '' ? line : `${under}${line}`))
+      .join('\n');
+    return `${prefix}${wrapped}${written.slice(prefix.length + text.length)}`;
+  },
+});
+
 /** The schema and the markdown handlers: shared by the editor and the bridge. */
 export const MARKDOWN_EXTENSIONS: readonly AnyExtension[] = [
   Kit.configure({
@@ -119,7 +237,7 @@ export const MARKDOWN_EXTENSIONS: readonly AnyExtension[] = [
     heading: { levels: [1, 2, 3, 4, 5, 6] },
   }),
   FaithfulLink,
-  TaskList,
-  TaskItem.configure({ nested: true }),
+  WrappingTaskList,
+  WrappingTaskItem.configure({ nested: true }),
   TableKit.configure({ table: { resizable: false } }),
 ];

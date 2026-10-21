@@ -751,7 +751,11 @@ function splitUnits(bridge: Bridge, source: string, doc: ProseNode): SourceUnit[
   for (const token of tokens as TokenLike[]) {
     // Found in the source rather than summed: a TipTap tokenizer reports its
     // `raw` with a newline the source does not have (the task list, measured).
-    const raw = (typeof token.raw === 'string' ? token.raw : '').replace(/\n+$/, '');
+    // And with the blank line above it, which a copied unit must not carry:
+    // an edit above a task list added two (LAI-302, as topLevelBlocks does).
+    const raw = (typeof token.raw === 'string' ? token.raw : '')
+      .replace(/^(?:[ \t]*\n)+/, '')
+      .replace(/\n+$/, '');
     if (token.type === 'space' || raw.trim() === '') continue;
     const start = source.indexOf(raw, offset);
     if (start === -1 || source.slice(offset, start).trim() !== '') return null;
@@ -832,9 +836,14 @@ function topLevelBlocks(bridge: Bridge, markdown: string): TextBlock[] | null {
 /**
  * Does `line` start a block of its own, wherever it is indented — a heading,
  * a quote, a list item, a rule, a fence, a table row, HTML? Then its
- * indentation says where it belongs, and is never forgiven.
+ * indentation says where it belongs, and is never forgiven. `line` is given
+ * without its indentation.
+ *
+ * On the safe side of CommonMark: a few of these (`2.`, a table row, some
+ * HTML) would not interrupt a paragraph, and are still taken as blocks. The
+ * task list's tokenizer reads a wrapped item by it too (LAI-302).
  */
-const startsBlock = (line: string): boolean =>
+export const startsBlock = (line: string): boolean =>
   lineStartEscape(line) !== -1 || /^(?:`{3,}|~{3,}|\||<)/.test(line);
 
 /**
@@ -1009,8 +1018,12 @@ function firstDifference(bridge: Bridge, source: string, written: string): Hunk 
   const would = topLevelBlocks(bridge, written);
   if (was !== null && would !== null && was.length === would.length) {
     for (const [i, block] of was.entries()) {
-      const into = normalisedLines(would[i]?.text ?? '').map((entry) => entry.text);
-      const found = hunks(normalisedLines(block.text, block.line), into)[0];
+      // Each with the wrapped lines' indentation gone, as sameMarkdown forgives
+      // it: else the first forgiven wrap is named, not the change (LAI-313).
+      const into = normalisedLines(unindentContinuations(would[i]?.text ?? '')).map(
+        (entry) => entry.text,
+      );
+      const found = hunks(normalisedLines(unindentContinuations(block.text), block.line), into)[0];
       if (found !== undefined) return found;
     }
     // Every block reads as it was: only blank lines between them differ.
