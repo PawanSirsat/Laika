@@ -86,6 +86,8 @@ export interface Around {
   readonly after: Edge;
   /** Inside a link's words, where GFM makes no link of its own. */
   readonly inLink: boolean;
+  /** In a heading's words, which follow its `#`s on the same line (LAI-312). */
+  readonly inHeading?: boolean;
 }
 
 /** A whole paragraph of plain text. */
@@ -140,7 +142,10 @@ function couldPair(text: string, i: number, mark: string, around: Around): boole
  * `@tiptap/markdown`'s own escaper misses all of these — `# not a heading`
  * typed as text came back as a heading (LAI-827, measured).
  */
-function lineStartEscape(line: string): number {
+function lineStartEscape(line: string, inHeading = false): number {
+  // After `### ` a `1.`, `-` or `>` is words; only more `#`s can be read as
+  // the heading's closing sequence (LAI-312).
+  if (inHeading) return /^#{1,6}(?=[ \t]|$)/.test(line) ? 0 : -1;
   if (/^(?:[-*_](?:[ \t]*[-*_]){2,}|=+)[ \t]*$/.test(line)) return 0;
   const definition = /^( {0,3})\[(?:[^\]\\\n]|\\.)+\]:/.exec(line);
   if (definition !== null) return definition[1]?.length ?? 0;
@@ -217,7 +222,7 @@ export function escapeFaithfully(text: string, around: Around = ALONE): string {
     const next = text[i + 1];
     if (i === 0 ? around.before === 'line' : text[i - 1] === '\n') {
       const end = text.indexOf('\n', i);
-      const at = lineStartEscape(text.slice(i, end === -1 ? undefined : end));
+      const at = lineStartEscape(text.slice(i, end === -1 ? undefined : end), around.inHeading);
       escapeAt = at === -1 ? -1 : i + at;
     }
     if (i === escapeAt) {
@@ -264,6 +269,7 @@ function aroundOf(node: JSONContent, parent: JSONContent | undefined): Around {
     before: marked ? 'mark' : before,
     after: marked ? 'mark' : after,
     inLink: (node.marks ?? []).some((m) => m.type === 'link'),
+    inHeading: parent?.type === 'heading',
   };
 }
 
@@ -443,8 +449,23 @@ function trimInline(content: readonly JSONContent[]): JSONContent[] {
   return out;
 }
 
-/** A node's JSON with every text block's ends as markdown keeps them. */
+/**
+ * A mark without its `delimiter`: how an emphasis was spelled, `_a_` or `*a*`,
+ * is not what it says (LAI-312). The source keeps the spelling; a changed
+ * block may change it.
+ */
+function unspelled(mark: NonNullable<JSONContent['marks']>[number]): typeof mark {
+  if (mark.attrs?.delimiter === undefined) return mark;
+  const { delimiter: _spelling, ...attrs } = mark.attrs;
+  return { ...mark, attrs };
+}
+
+/**
+ * A node's JSON with every text block's ends as markdown keeps them, and its
+ * marks as {@link unspelled}.
+ */
 function canonical(json: JSONContent, schema: Schema): JSONContent {
+  if (json.marks !== undefined) json = { ...json, marks: json.marks.map(unspelled) };
   if (json.content === undefined) return json;
   const type = json.type === undefined ? undefined : schema.nodes[json.type];
   let content = json.content.map((child) => canonical(child, schema));
@@ -750,7 +771,11 @@ function splitUnits(bridge: Bridge, source: string, doc: ProseNode): SourceUnit[
   for (const token of tokens as TokenLike[]) {
     // Found in the source rather than summed: a TipTap tokenizer reports its
     // `raw` with a newline the source does not have (the task list, measured).
-    const raw = (typeof token.raw === 'string' ? token.raw : '').replace(/\n+$/, '');
+    // And with the blank line above it, which a copied unit must not carry:
+    // an edit above a task list added two (LAI-302, as topLevelBlocks does).
+    const raw = (typeof token.raw === 'string' ? token.raw : '')
+      .replace(/^(?:[ \t]*\n)+/, '')
+      .replace(/\n+$/, '');
     if (token.type === 'space' || raw.trim() === '') continue;
     const start = source.indexOf(raw, offset);
     if (start === -1 || source.slice(offset, start).trim() !== '') return null;
@@ -833,9 +858,14 @@ function topLevelBlocks(bridge: Bridge, markdown: string): TextBlock[] | null {
 /**
  * Does `line` start a block of its own, wherever it is indented — a heading,
  * a quote, a list item, a rule, a fence, a table row, HTML? Then its
- * indentation says where it belongs, and is never forgiven.
+ * indentation says where it belongs, and is never forgiven. `line` is given
+ * without its indentation.
+ *
+ * On the safe side of CommonMark: a few of these (`2.`, a table row, some
+ * HTML) would not interrupt a paragraph, and are still taken as blocks. The
+ * task list's tokenizer reads a wrapped item by it too (LAI-302).
  */
-const startsBlock = (line: string): boolean =>
+export const startsBlock = (line: string): boolean =>
   lineStartEscape(line) !== -1 || /^(?:`{3,}|~{3,}|\||<)/.test(line);
 
 /**
@@ -1010,8 +1040,12 @@ function firstDifference(bridge: Bridge, source: string, written: string): Hunk 
   const would = topLevelBlocks(bridge, written);
   if (was !== null && would !== null && was.length === would.length) {
     for (const [i, block] of was.entries()) {
-      const into = normalisedLines(would[i]?.text ?? '').map((entry) => entry.text);
-      const found = hunks(normalisedLines(block.text, block.line), into)[0];
+      // Each with the wrapped lines' indentation gone, as sameMarkdown forgives
+      // it: else the first forgiven wrap is named, not the change (LAI-313).
+      const into = normalisedLines(unindentContinuations(would[i]?.text ?? '')).map(
+        (entry) => entry.text,
+      );
+      const found = hunks(normalisedLines(unindentContinuations(block.text), block.line), into)[0];
       if (found !== undefined) return found;
     }
     // Every block reads as it was: only blank lines between them differ.
