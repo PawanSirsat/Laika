@@ -1091,7 +1091,8 @@ for (const shell of SHELLS) {
       assert.equal((statSync(DISPATCHED(h)).mode & 0o777).toString(8), '600');
       assert.ok(!existsSync(join(h, '.laika', 'activity', 'repos')), 'a repo was recorded');
       assert.deepEqual(events(h), []);
-      // Its end, and a second start, keep one line for it.
+      // Its end writes nothing more; a second start appends — the drafter
+      // reads it deduped, and the sync prunes it as it prunes `repos`.
       for (const mode of ['session-end', 'session-start']) {
         run(shell, [mode, 'claude-code'], {
           home: h,
@@ -1100,7 +1101,45 @@ for (const shell of SHELLS) {
           input: payload('9a1b2c3d-0000-4000-8000-000000000021'),
         });
       }
-      assert.equal(readFileSync(DISPATCHED(h), 'utf8').trim().split('\n').length, 1);
+      assert.deepEqual(
+        readFileSync(DISPATCHED(h), 'utf8')
+          .trim()
+          .split('\n')
+          .map((line) => line.split('\t')[1]),
+        [repo, repo],
+      );
+    });
+
+    void test('from a directory inside it, or CLAUDE_PROJECT_DIR, the top level; outside a repo, nothing', () => {
+      const h = home();
+      const repo = repoOn('LAI-314-y');
+      const inside = join(repo, 'a', 'b');
+      mkdirSync(inside, { recursive: true });
+      run(shell, ['session-start', 'claude-code'], {
+        home: h,
+        cwd: inside,
+        env: OMNI_SUBAGENT,
+        input: payload('9a1b2c3d-0000-4000-8000-000000000023'),
+      });
+      run(shell, ['session-start', 'claude-code'], {
+        home: h,
+        env: { ...OMNI_SUBAGENT, CLAUDE_PROJECT_DIR: inside },
+        input: payload('9a1b2c3d-0000-4000-8000-000000000024'),
+      });
+      assert.deepEqual(
+        readFileSync(DISPATCHED(h), 'utf8')
+          .trim()
+          .split('\n')
+          .map((line) => line.split('\t')[1]),
+        [repo, repo],
+      );
+      const outside = home();
+      run(shell, ['session-start', 'claude-code'], {
+        home: outside,
+        env: OMNI_SUBAGENT,
+        input: payload('9a1b2c3d-0000-4000-8000-000000000025'),
+      });
+      assert.ok(!existsSync(DISPATCHED(outside)), 'a repo was recorded outside one');
     });
 
     void test('a person’s, CI’s, LAIKA_ACTIVITY_SKIP’s or a prompt never writes it', () => {
@@ -1489,6 +1528,30 @@ void describe('cost of the prompt path', () => {
         textOf(SKIP_FILE(h)),
         /^\d{10} 9a1b2c3d-0000-4000-8000-000000000013 omnigent\n$/,
         'the skipped start forked before it wrote',
+      );
+    },
+  );
+
+  /** LAI-314: and so does finding and keeping its repository. */
+  void test(
+    'under zsh a dispatched sub-agent’s repository is kept with no fork',
+    { skip: ZSH === undefined },
+    () => {
+      const control = forkless([script('/usr/bin/true\nexit 0\n')], home());
+      assert.notEqual(control.code, 0, 'fork() was not refused here — this test proves nothing');
+      const h = home();
+      const repo = repoOn('LAI-314-z');
+      const r = forkless(
+        [HOOK, 'session-start', 'claude-code'],
+        h,
+        { ...OMNI_SUBAGENT, CLAUDE_PROJECT_DIR: repo },
+        payload('9a1b2c3d-0000-4000-8000-000000000026'),
+      );
+      assert.equal(r.code, 0, 'the dispatched start forked');
+      assert.match(
+        textOf(join(h, '.laika', 'activity', 'dispatched-repos')),
+        new RegExp(`^\\d{10}\t${repo}\n$`),
+        'the dispatched start forked before it kept its repository',
       );
     },
   );
