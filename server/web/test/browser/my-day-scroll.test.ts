@@ -14,6 +14,9 @@
  *   list on the screen.
  * - The rows line up with their header and pager, every *To settle* row is one
  *   height, and a source badge is as wide as its word, at the right.
+ * - The rest of the screen lines up: the column beside the day ends where the
+ *   page's other edges do, and on a phone the week's arrows, the timeline's
+ *   controls, the gaps' link and the subtitle wrap without coming apart.
  * - Nothing else loses its scroll: the timeline, the column beside the day,
  *   and the page anywhere else.
  *
@@ -525,6 +528,125 @@ void describe('the rows line up (the owner’s design)', () => {
       }
     });
   }
+});
+
+void describe('the rest of the screen lines up', () => {
+  // A classic scrollbar takes room; where scrollbars overlay, the column has
+  // no gutter and these hold as they are.
+  for (const [width, height] of [
+    [1440, 900],
+    [1024, 768],
+    [390, 844],
+  ] as const) {
+    void test(`${String(width)}: the column beside the day ends where the page's other edges do`, async () => {
+      const h = await openDay(OWNERS, width, height);
+      try {
+        await h.page.locator('[data-myday-side] .myday-plate').waitFor({ timeout: 20_000 });
+        const m = await h.page.evaluate(() => {
+          const right = (sel: string) => document.querySelector(sel)?.getBoundingClientRect().right;
+          return {
+            week: right('.myday-week-days'),
+            day: right('.myday-day'),
+            side: [...document.querySelectorAll('[data-myday-side] > .myday-card')].map(
+              (c) => c.getBoundingClientRect().right,
+            ),
+          };
+        });
+        // Beside the day on a laptop, the week's edge; below it, the day's.
+        const edge = width >= 1440 ? m.week : m.day;
+        assert.ok(
+          edge !== undefined && m.side.length === 2,
+          `nothing to measure: ${JSON.stringify(m)}`,
+        );
+        for (const right of m.side) {
+          assert.ok(
+            Math.abs(right - edge) <= 0.5,
+            `a card beside the day ends at ${String(right)}, the page's edge at ${String(edge)}`,
+          );
+        }
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  void test('390: the week, the timeline and the figures wrap without coming apart', async () => {
+    const h = await openDay(OWNERS, 390, 844);
+    try {
+      const m = await h.page.evaluate(() => {
+        const box = (el: Element | null | undefined) => {
+          if (el === null || el === undefined) return null;
+          const r = el.getBoundingClientRect();
+          return {
+            top: r.top,
+            bottom: r.bottom,
+            left: r.left,
+            right: r.right,
+            middle: (r.top + r.bottom) / 2,
+          };
+        };
+        const steps = [...document.querySelectorAll('.myday-week-bar .myday-week-step')];
+        const tools = [...document.querySelectorAll('.dayline-tools .dayline-tool, .dayline-zoom')];
+        // Each line of the gaps' link, where its text starts. A line can hold
+        // more than one text node, so rects are grouped by the line they sit on.
+        const link = document.querySelector('[data-stat="gaps"] .myday-linkish');
+        const starts = new Map<number, number>();
+        if (link?.firstChild) {
+          const range = document.createRange();
+          range.selectNodeContents(link);
+          for (const r of range.getClientRects()) {
+            const line = Math.round(r.top);
+            starts.set(line, Math.min(starts.get(line) ?? Infinity, r.left));
+          }
+        }
+        const lines = [...starts.values()];
+        const dot = document.querySelector('.myday-subtitle-dot');
+        return {
+          total: box(document.querySelector('.myday-week-total')),
+          steps: steps.map(box),
+          tools: tools.map(box),
+          gapsLabel: box(document.querySelector('[data-stat="gaps"] .myday-stat-label')),
+          lines,
+          dot: dot === null || getComputedStyle(dot).display === 'none' ? null : box(dot),
+          lock: box(document.querySelector('.myday-lock')),
+        };
+      });
+
+      // The week's arrows either side of its line, however it wraps.
+      assert.equal(m.steps.length, 2, 'the week has no arrows');
+      for (const step of m.steps) {
+        assert.ok(
+          step !== null &&
+            m.total !== null &&
+            step.middle > m.total.top &&
+            step.middle < m.total.bottom,
+          `a week arrow is not beside the week's line: ${JSON.stringify({ step, total: m.total })}`,
+        );
+      }
+      // The timeline's earlier, now, later and zoom on one line.
+      assert.ok(m.tools.length >= 4, 'no timeline controls');
+      const tops = m.tools.map((t) => Math.round(t?.middle ?? NaN));
+      assert.ok(
+        Math.max(...tops) - Math.min(...tops) <= 2,
+        `the timeline's controls came apart: ${JSON.stringify(tops)}`,
+      );
+      // The gaps' link starts each line where the label does, as the others do.
+      assert.ok(m.lines.length > 0 && m.gapsLabel !== null, 'no gaps link to measure');
+      for (const left of m.lines) {
+        assert.ok(
+          m.gapsLabel !== null && Math.abs(left - m.gapsLabel.left) <= 1,
+          `a line of the gaps' link starts at ${String(left)}, its label at ${String(m.gapsLabel?.left)}`,
+        );
+      }
+      // No separator left at the end of a line.
+      assert.ok(
+        m.dot === null || (m.lock !== null && Math.abs(m.dot.middle - m.lock.middle) <= 2),
+        `the subtitle's dot hangs at a line's end: ${JSON.stringify({ dot: m.dot, lock: m.lock })}`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
 });
 
 void describe('nothing else loses its scroll', () => {
