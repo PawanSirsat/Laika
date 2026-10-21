@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-21T10:35:31Z
+finished: 2026-10-21T11:00:56Z
 ---
 
 ## Goal
@@ -43,37 +44,37 @@ recorded as **D-095**.
 
 ## Acceptance criteria
 
-- [ ] **Measure first, and record it here.** Using the owner's local records
+- [x] **Measure first, and record it here.** Using the owner's local records
       (read-only, never sent), show which of today's untied blocks the rule
       would tie, and to what. Confirm the dispatched sessions' local records
       carry their keys (branch or mark) and their reply times. Record counts
       and keys only, never paths, branch names or text.
-- [ ] **The rule.** A minute in which the person was active, but no lane of
+- [x] **The rule.** A minute in which the person was active, but no lane of
       theirs carried a key, takes the keys of the dispatched sessions active
       in that minute. "Active" uses the same lane rules as today (`GAP_S`
       chaining, the `TAIL_S` tail). The minute is split equally between
       those keys, as parallel lanes already are.
-- [ ] A dispatched session never *makes* a minute. With no person lane
+- [x] A dispatched session never *makes* a minute. With no person lane
       active, nothing is drafted, as today. A minute the person's own lane
       already tied keeps its keys, and gains none from dispatched sessions.
-- [ ] **Only Omnigent-dispatched sessions lend a key**, not CI or
+- [x] **Only Omnigent-dispatched sessions lend a key**, not CI or
       `LAIKA_ACTIVITY_SKIP` sessions. If the local records cannot tell those
       apart, record the evidence here and implement the narrowest rule the
       records allow. Any change to the activity hook (for example, noting
       why a session was skipped) is named here, and is safe for people whose
       hook predates it.
-- [ ] **Nothing new leaves the machine.** A block still carries a start, an
+- [x] **Nothing new leaves the machine.** A block still carries a start, an
       end, minutes, one key or `null`, and counts. The sent body's schema is
       unchanged. `laika time draft` says, locally, which blocks took a
       dispatched builder's card.
-- [ ] `cli/README.md`'s *The rule* and `activity-time.ts`'s header say the
+- [x] `cli/README.md`'s *The rule* and `activity-time.ts`'s header say the
       new rule. **D-095** is appended to `docs/DECISIONS.md` and quotes the
       owner.
-- [ ] Tests fail on today's code: pure rule tests in `cli/test/` for a
+- [x] Tests fail on today's code: pure rule tests in `cli/test/` for a
       dispatched key lent, split between two dispatched keys, the person's
       own key winning, a dispatched session alone making nothing, and a
       skipped non-Omnigent session lending nothing.
-- [ ] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Notes
 
@@ -196,7 +197,7 @@ a unique anchor and a grep (`git status` clean after):
 | mutation | red |
 | --- | --- |
 | lend even when the person's lanes have a key | own-key test, reader test, command test |
-| every skipped session lends, word or not | reader test, two pre-existing fixture tests, command test |
+| every skipped session lends, word or not | reader test, and two pre-existing tests (the fixture’s blocks, the command’s printed blocks) |
 | the hook writes the word for every skipped session | the CI / `LAIKA_ACTIVITY_SKIP` test, under sh and zsh |
 | dispatched sessions make minutes | all four pure rule tests, reader test, command test |
 
