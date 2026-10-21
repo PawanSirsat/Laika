@@ -6,7 +6,8 @@ import { useLive } from '../../../components/space/SpaceLive.tsx';
 import { useEvents } from '../../../api/use-events.ts';
 import { listMembers, type Member, type TaskSummary } from '../../../api/tasks.ts';
 import { useProjectTasks } from '../../../api/use-project-tasks.ts';
-import { ActivityPanels, staleTasks, STALE_DAYS } from './ActivityPanels.tsx';
+import { staleTasks } from '../../../api/board-derive.ts';
+import { ActivityPanels } from './ActivityPanels.tsx';
 import './activity.css';
 
 export interface ActivityScreenProps {
@@ -23,8 +24,8 @@ export interface ActivityScreenProps {
  *
  * Every panel is fed by something real: the stream is `GET /events` — the first
  * consumer that endpoint has ever had — sessions are heartbeats sent on a token
- * (`is_agent`), and stale is computed from `updated_at`, which every task
- * carries.
+ * (`is_agent`), and stale is the server's flag, `stale_flagged_at` — the one
+ * rule every screen reads (D-092 item 4, LAI-832).
  */
 export function ActivityScreen({ slug }: ActivityScreenProps) {
   const stream = useEvents(slug);
@@ -80,7 +81,7 @@ export function ActivityScreen({ slug }: ActivityScreenProps) {
     );
   }
 
-  const stale = staleTasks(tasks, Date.now());
+  const stale = staleTasks(tasks);
   const agents = presence?.present.filter((entry) => entry.is_agent) ?? [];
   /*
    * The design's header line. Every figure is counted from what is on screen —
@@ -125,7 +126,6 @@ export function ActivityScreen({ slug }: ActivityScreenProps) {
         members={members}
         presence={presence}
         stale={stale}
-        staleDays={STALE_DAYS}
       />
     </div>
   );

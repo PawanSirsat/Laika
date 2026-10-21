@@ -106,23 +106,31 @@ export interface PersonLoad {
   /** Who the row stands for: the one person, or everyone folded into Others. */
   readonly people: readonly string[];
   /**
-   * Open work they hold that waits on **them** — backlog, to do, in progress.
-   * Work in review is not in it (D-092 item 2): it waits on the reviewer.
+   * Their **load**: to do and in progress, the work they have committed to —
+   * what Capacity counts too (D-092 item 3). Review is not in it (item 2): it
+   * waits on the reviewer. Nor is backlog (LAI-832): it is the pipeline.
    */
   readonly count: number;
   readonly byStatus: Readonly<Record<OpenStatus, number>>;
   /** Their work waiting for review — shown beside the row, never in {@link count}. */
   readonly review: number;
+  /** Their backlog — shown beside the row, never in {@link count}. */
+  readonly backlog: number;
   /** Of `count`, how many wait on unfinished work (the dashboard's blocked rule). */
   readonly blocked: number;
 }
 
 export interface Workload {
   readonly rows: readonly PersonLoad[];
-  /** Every open task — the donut's centre: the rows plus {@link waitingForReview}. */
+  /**
+   * Every open task — the donut's centre: the rows, plus {@link backlog}, plus
+   * {@link waitingForReview}.
+   */
   readonly open: number;
   /** Every open task in review, whoever holds it — the donut's own slice. */
   readonly waitingForReview: number;
+  /** Every open task in backlog, whoever holds it — the pipeline, its own slice. */
+  readonly backlog: number;
 }
 
 export interface WorkloadOptions {
@@ -150,9 +158,12 @@ function emptyStatus(): Record<OpenStatus, number> {
   return { backlog: 0, todo: 0, in_progress: 0, review: 0 };
 }
 
-/** What waits on the person: everything open but review. */
-const held = (byStatus: Readonly<Record<OpenStatus, number>>): number =>
-  byStatus.backlog + byStatus.todo + byStatus.in_progress;
+/** What they have committed to: to do and in progress (D-092 item 3). */
+const committed = (byStatus: Readonly<Record<OpenStatus, number>>): number =>
+  byStatus.todo + byStatus.in_progress;
+
+const isCommitted = (status: TaskSummary['status']): boolean =>
+  status === 'todo' || status === 'in_progress';
 
 /**
  * **Open work now** (LAI-817, D-092 item 2) — the owner's "person-wise divide",
@@ -164,9 +175,14 @@ const held = (byStatus: Readonly<Record<OpenStatus, number>>): number =>
  *
  * - **No range.** Open work is a fact about now; a sample of what was touched
  *   this week is not anyone's workload. The caller passes every task.
- * - **Review is split out.** A person's count is what waits on *them*; their
- *   work in review is shown beside it and drawn as one "waiting for review"
- *   share, because it waits on whoever reviews it.
+ * - **Review is split out.** Their work in review is shown beside the count
+ *   and drawn as one "waiting for review" share, because it waits on whoever
+ *   reviews it.
+ * - **Backlog is split out too** (LAI-832, D-092 item 3). A person's count is
+ *   their load — to do and in progress, Capacity's rule — and their backlog is
+ *   shown beside it and drawn as one "backlog" share: the pipeline. Counted
+ *   in, it made 78 read as load where 50 of it was backlog, and the detail
+ *   that said so was the first thing a phone cut off.
  *
  * Heaviest first, then most in review, then by name. Past {@link MAX_PEOPLE}
  * the rest fold into one **Others** row. **Unassigned** is always its own row
@@ -184,18 +200,20 @@ export function workloadByPerson(
   const unassigned: Slot = { byStatus: emptyStatus(), blocked: 0 };
   let open = 0;
   let waitingForReview = 0;
+  let backlog = 0;
 
   for (const task of tasks) {
     if (!isOpen(task)) continue;
     open += 1;
     if (task.status === 'review') waitingForReview += 1;
+    if (task.status === 'backlog') backlog += 1;
     let slot = unassigned;
     if (task.assignee_id !== null) {
       slot = byPerson.get(task.assignee_id) ?? { byStatus: emptyStatus(), blocked: 0 };
       byPerson.set(task.assignee_id, slot);
     }
     slot.byStatus[task.status as OpenStatus] += 1;
-    if (task.status !== 'review' && blocked.has(task.id)) slot.blocked += 1;
+    if (isCommitted(task.status) && blocked.has(task.id)) slot.blocked += 1;
   }
 
   const people: PersonLoad[] = [...byPerson]
@@ -203,9 +221,10 @@ export function workloadByPerson(
       kind: 'person' as const,
       id,
       people: [id],
-      count: held(slot.byStatus),
+      count: committed(slot.byStatus),
       byStatus: slot.byStatus,
       review: slot.byStatus.review,
+      backlog: slot.byStatus.backlog,
       blocked: slot.blocked,
     }))
     .sort(
@@ -222,24 +241,26 @@ export function workloadByPerson(
       kind: 'others',
       id: 'others',
       people: rest.map((row) => row.id),
-      count: held(byStatus),
+      count: committed(byStatus),
       byStatus,
       review: byStatus.review,
+      backlog: byStatus.backlog,
       blocked: rest.reduce((sum, row) => sum + row.blocked, 0),
     });
   }
-  if (held(unassigned.byStatus) + unassigned.byStatus.review > 0) {
+  if (OPEN_STATUSES.some((key) => unassigned.byStatus[key] > 0)) {
     rows.push({
       kind: 'unassigned',
       id: 'unassigned',
       people: [],
-      count: held(unassigned.byStatus),
+      count: committed(unassigned.byStatus),
       byStatus: unassigned.byStatus,
       review: unassigned.byStatus.review,
+      backlog: unassigned.byStatus.backlog,
       blocked: unassigned.blocked,
     });
   }
-  return { rows, open, waitingForReview };
+  return { rows, open, waitingForReview, backlog };
 }
 
 export interface PriorityCount {
@@ -255,36 +276,17 @@ export function priorityBreakdown(tasks: readonly TaskSummary[]): PriorityCount[
   }));
 }
 
-/**
- * **Stale is the server's word** (LAI-817, D-092 item 4): a task the nightly
- * job flagged — in progress with no heartbeat and no commit for its window
- * (§11.6) — and `stale_flagged_at` is the record. Longest-flagged first.
- *
- * The rule this replaced was the dashboard's own — any open task five days
- * untouched — and on OnRoute it said 266 where the server said 7: most of the
- * 266 were backlog nobody had reason to touch, and 37 were waiting on a
- * reviewer, which {@link waitingForReview} now names for what it is.
- *
- * **Open work only.** The job clears the flag on its next run, so a task
- * finished at noon can carry it until midnight; a done task is not one that
- * needs attention.
- */
-export function staleTasks(tasks: readonly TaskSummary[]): TaskSummary[] {
-  return tasks
-    .filter((t) => isOpen(t) && t.stale_flagged_at !== null)
-    .sort((a, b) => (a.stale_flagged_at ?? 0) - (b.stale_flagged_at ?? 0));
-}
-
 /** Days in review before the wait is worth a line in Needs attention (D-092 item 4). */
 export const REVIEW_WAIT_DAYS = 5;
 
 export interface ReviewWait {
   readonly task: TaskSummary;
   /**
-   * When it went into review — **at the latest**. The move itself when the
-   * range's activity holds it; otherwise the earlier of the range's start and
-   * the task's last touch, since the move was before both. So a wait is never
-   * overstated, only, for a move before the range, understated.
+   * When it went into review. The move itself, from whichever of two places
+   * holds it — the review queue's `waiting_since`, or the range's own
+   * activity — the later of the two when both do. With neither, **at the
+   * latest**: the earlier of the range's start and the task's last touch,
+   * since the move was before both. So a wait is never overstated.
    */
   readonly since: number;
 }
@@ -295,12 +297,20 @@ export interface ReviewWait {
  *
  * A long wait in review is the reviewer's, not the builder's: it used to
  * surface as "stale" against the person whose work was done.
+ *
+ * **It does not move with the range** (LAI-832). `queued` is `GET /review`'s
+ * answer — when each task last moved into review, at any age — so a task ten
+ * days in review and touched this morning stays on "Last 24 hours", where the
+ * range's activity alone could see back only a day. The queue covers the
+ * spaces where the reader may act (§6.4), and its oldest 200: anything else
+ * falls back as above.
  */
 export function waitingForReview(
   tasks: readonly TaskSummary[],
   events: readonly ActivityEvent[],
   rangeStart: number | undefined,
   now: number,
+  queued: ReadonlyMap<string, number> = new Map(),
 ): ReviewWait[] {
   /** The latest move into review the range holds, per task. */
   const entered = new Map<string, number>();
@@ -310,11 +320,17 @@ export function waitingForReview(
     if (move?.to !== 'review' || move.from === 'review') continue;
     entered.set(event.task_id, Math.max(entered.get(event.task_id) ?? 0, event.created_at));
   }
+  /** The later of the two exact times, when both are known. */
+  const moved = (id: string): number | undefined => {
+    const a = entered.get(id);
+    const b = queued.get(id);
+    return a === undefined ? b : b === undefined ? a : Math.max(a, b);
+  };
   return tasks
     .filter((t) => t.status === 'review')
     .map((task) => ({
       task,
-      since: entered.get(task.id) ?? Math.min(task.updated_at, rangeStart ?? task.updated_at),
+      since: moved(task.id) ?? Math.min(task.updated_at, rangeStart ?? task.updated_at),
     }))
     .filter((row) => now - row.since > REVIEW_WAIT_DAYS * DAY_MS)
     .sort((a, b) => a.since - b.since);

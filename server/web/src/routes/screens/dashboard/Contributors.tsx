@@ -28,6 +28,12 @@ const OTHERS_COLOR = 'var(--chip-neutral)';
 const UNASSIGNED_COLOR = 'var(--text-muted)';
 const REVIEW_COLOR = 'var(--chip-orange)';
 const REVIEW_KEY = 'review';
+/**
+ * **Backlog is drawn faint** (LAI-832): it is the pipeline, nobody's load
+ * yet, so it reads as the ring's ground rather than as one more person.
+ */
+const BACKLOG_COLOR = 'var(--border-default)';
+const BACKLOG_KEY = 'backlog';
 
 function colorOf(row: PersonLoad, rank: number): string {
   if (row.kind === 'others') return OTHERS_COLOR;
@@ -35,12 +41,14 @@ function colorOf(row: PersonLoad, rank: number): string {
   return RANK_COLORS[rank % RANK_COLORS.length] ?? OTHERS_COLOR;
 }
 
-/** "2 in progress · 3 to do · 5 backlog · 1 blocked" — only what is not zero. */
+/**
+ * "2 in progress · 3 to do · 1 blocked" — only what is not zero, and only
+ * what is in the count. Backlog and review have lines of their own.
+ */
 function detail(row: PersonLoad): string {
   const parts: string[] = [];
   if (row.byStatus.in_progress > 0) parts.push(`${String(row.byStatus.in_progress)} in progress`);
   if (row.byStatus.todo > 0) parts.push(`${String(row.byStatus.todo)} to do`);
-  if (row.byStatus.backlog > 0) parts.push(`${String(row.byStatus.backlog)} backlog`);
   if (row.blocked > 0) parts.push(`${String(row.blocked)} blocked`);
   return parts.join(' · ');
 }
@@ -73,8 +81,9 @@ type Tab = 'delivered' | 'open';
  *   reviewed beside it and self-closes footnoted. An agent's moves are its
  *   owner's.
  * - **Open work now** is every open task **as of now**, whatever the range,
- *   divided by who holds it — with work waiting for review drawn as its own
- *   share, because it waits on the reviewer, not the assignee.
+ *   divided by who holds it. A person's number is their load — to do and in
+ *   progress (D-092 item 3) — and two shares are drawn apart: work waiting
+ *   for review, which waits on the reviewer, and backlog, the pipeline.
  *
  * Each person on Open work now opens the board filtered to them; for an owner
  * or admin each person also carries a link to their profile (LAI-743).
@@ -86,6 +95,7 @@ export function Contributors({
   slug,
   theme,
   window,
+  allTime = false,
   filters,
   narrowed = false,
   filter,
@@ -97,6 +107,8 @@ export function Contributors({
   readonly theme: Theme;
   /** "in the last 7 days", "all time" — the range Delivered covers. */
   readonly window: string;
+  /** No range: sentences say "yet" rather than "… all time" (LAI-832). */
+  readonly allTime?: boolean;
   /** How many of the card's own filters are set — the subtitle says so. */
   readonly filters: number;
   /** The card's filter narrows the tasks, so an empty card is not an empty space. */
@@ -162,6 +174,7 @@ export function Contributors({
             nameOf={nameOf}
             theme={theme}
             window={window}
+            allTime={allTime}
             narrowed={narrowed}
           />
         ) : (
@@ -178,26 +191,38 @@ export function Contributors({
   );
 }
 
+/**
+ * **What Delivered counts, in the words D-092 uses** (LAI-832): into review,
+ * or *straight* into done — a move into done from review is a review, not a
+ * delivery, and "into review, or into done" let it read as both.
+ */
+const DELIVERED_RULE = 'moved into review, or straight into done';
+
 function Delivered({
   contributors,
   nameOf,
   theme,
   window,
+  allTime,
   narrowed,
 }: {
   readonly contributors: ContributorList;
   readonly nameOf: (id: string) => string;
   readonly theme: Theme;
   readonly window: string;
+  readonly allTime: boolean;
   readonly narrowed: boolean;
 }) {
   if (contributors.rows.length === 0) {
     return (
       <p className="dash-empty">
         {narrowed
-          ? 'Nothing in this card’s scope was delivered or reviewed '
-          : 'Nobody moved work into review or done '}
-        {window}.
+          ? allTime
+            ? 'Nothing in this card’s scope has been delivered or reviewed yet.'
+            : `Nothing in this card’s scope was delivered or reviewed ${window}.`
+          : allTime
+            ? 'Nobody has moved work into review, or straight into done, yet.'
+            : `Nobody moved work into review, or straight into done, ${window}.`}
       </p>
     );
   }
@@ -209,7 +234,11 @@ function Delivered({
             <th scope="col" className="dash-contrib-who">
               <span className="visually-hidden">Person</span>
             </th>
-            <th scope="col" className="dash-contrib-n" title="Moved into review, or into done">
+            <th
+              scope="col"
+              className="dash-contrib-n"
+              title="Moved into review, or straight into done"
+            >
               Delivered
             </th>
             <th
@@ -261,8 +290,8 @@ function Delivered({
         </tbody>
       </table>
       <p className="dash-card-foot">
-        Delivered: tasks moved into review, or into done, {window} — each task once, and an agent’s
-        moves count for its owner.
+        Delivered: tasks {DELIVERED_RULE}
+        {allTime ? '' : `, ${window}`} — each task once, and an agent’s moves count for its owner.
         {contributors.selfClosed > 0 && (
           <>
             {' '}
@@ -303,7 +332,11 @@ function OpenWorkNow({
     if (row.kind === 'person') rank += 1;
     return { row, color };
   });
-  const values = [...workload.rows.map((row) => row.count), workload.waitingForReview];
+  const values = [
+    ...workload.rows.map((row) => row.count),
+    workload.backlog,
+    workload.waitingForReview,
+  ];
   const percents = roundedPercents(values);
   const label = (row: PersonLoad): string =>
     row.kind === 'person'
@@ -340,6 +373,12 @@ function OpenWorkNow({
             color,
           })),
           {
+            key: BACKLOG_KEY,
+            label: 'Backlog',
+            value: workload.backlog,
+            color: BACKLOG_COLOR,
+          },
+          {
             key: REVIEW_KEY,
             label: 'Waiting for review',
             value: workload.waitingForReview,
@@ -364,8 +403,14 @@ function OpenWorkNow({
               <span className="dash-legend-who">
                 <span className="dash-legend-name">{label(row)}</span>
                 <span className="dash-legend-detail">{detail(row)}</span>
-                {/* Its own line: at the end of the detail it was the first
-                    thing an ellipsis cut, and it is the split D-092 asks for. */}
+                {/* Their own lines: at the end of the detail each was the
+                    first thing an ellipsis cut, and each is a split D-092
+                    asks for — backlog since LAI-832, cut at 390 px before. */}
+                {row.backlog > 0 && (
+                  <span className="dash-legend-detail dash-legend-backlog">
+                    +{row.backlog} in backlog
+                  </span>
+                )}
                 {row.review > 0 && (
                   <span className="dash-legend-detail dash-legend-review">
                     +{row.review} waiting for review
@@ -413,6 +458,32 @@ function OpenWorkNow({
             </li>
           );
         })}
+        {workload.backlog > 0 && (
+          <li className="dash-legend-item">
+            <DashLink
+              href={listHref(slug, { status: 'backlog' })}
+              className="dash-legend-row"
+              title="Open the backlog in the List"
+              {...hover(BACKLOG_KEY)}
+            >
+              <span
+                className="dash-swatch"
+                style={{ background: BACKLOG_COLOR }}
+                aria-hidden="true"
+              />
+              <span className="dash-legend-who">
+                <span className="dash-legend-name">Backlog</span>
+                <span className="dash-legend-detail">the pipeline, not anyone’s load yet</span>
+              </span>
+              <span className="dash-legend-n" data-person={BACKLOG_KEY}>
+                {workload.backlog}
+              </span>
+              <span className="dash-legend-pct">
+                {percentLabel(percents.at(-2) ?? 0, workload.backlog)}
+              </span>
+            </DashLink>
+          </li>
+        )}
         {workload.waitingForReview > 0 && (
           <li className="dash-legend-item">
             <DashLink

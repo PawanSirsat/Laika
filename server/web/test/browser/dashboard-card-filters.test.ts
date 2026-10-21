@@ -267,9 +267,11 @@ void describe('the range reaches Status overview, and never Open work now', () =
       );
       assert.equal(await caption(h.page, STATUS), 'done', 'the whole space is not a sample');
       assert.equal(await centre(h.page, PEOPLE), '4');
-      // LC-3 and LC-6; LC-5, in review, is drawn as review's share instead.
-      assert.equal(await h.page.locator(`${PEOPLE} [data-person="unassigned"]`).textContent(), '2');
+      // LC-3; LC-5, in review, and LC-6, in backlog, are drawn as their own
+      // shares instead (LAI-832).
+      assert.equal(await h.page.locator(`${PEOPLE} [data-person="unassigned"]`).textContent(), '1');
       assert.equal(await h.page.locator(`${PEOPLE} [data-person="review"]`).textContent(), '1');
+      assert.equal(await h.page.locator(`${PEOPLE} [data-person="backlog"]`).textContent(), '1');
     } finally {
       await h.close();
     }

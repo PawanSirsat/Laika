@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { staleTasks } from '../../../api/board-derive.ts';
 import { everyPage } from '../../../api/every-page.ts';
 import { listProjects } from '../../../api/projects.ts';
 import { listSprints, type Sprint } from '../../../api/sprints.ts';
@@ -23,6 +24,7 @@ import { pickProject } from '../../../api/pick-project.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
+import { useShell } from '../../../components/shell/shell-context.ts';
 import { SpaceSlot, useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
 import { useDelayed } from '../../../components/use-delayed.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
@@ -48,7 +50,6 @@ import {
   completedIn,
   priorityBreakdown,
   splitBlocked,
-  staleTasks,
   waitingForReview,
   windowCounts,
   workloadByPerson,
@@ -82,6 +83,17 @@ import './dashboard.css';
 export function DashboardScreen() {
   const { params, setParams } = useRoute();
   const { theme } = useTheme();
+  /*
+   * **When each task moved into review, at any age** (LAI-832): the shell's
+   * one read of `GET /review`, for the sidebar's badge — asked for nothing
+   * more here. The range's activity sees back only as far as the range, so a
+   * wait read from it alone moved with the range picker.
+   */
+  const { reviewQueue } = useShell();
+  const reviewEntered = useMemo(
+    () => new Map((reviewQueue ?? []).map((item) => [item.task.id, item.waiting_since] as const)),
+    [reviewQueue],
+  );
   /*
    * **The bar's task filters do nothing here** (LAI-711): Priority, Assignee,
    * Ready and Search narrow a list of cards, and the dashboard summarises the
@@ -501,6 +513,7 @@ export function DashboardScreen() {
           slug={slug}
           theme={theme}
           window={window}
+          allTime={range.ms === null}
           filters={peopleActive}
           narrowed={peopleActive > 0}
           filter={peopleFilterControl}
@@ -518,7 +531,7 @@ export function DashboardScreen() {
           blocked={blocked.committed}
           blockedApart={blocked.apart}
           stale={staleTasks(tasks)}
-          review={waitingForReview(tasks, events, since, clock)}
+          review={waitingForReview(tasks, events, since, clock, reviewEntered)}
           nameOf={nameOf}
           slug={slug}
           now={clock}

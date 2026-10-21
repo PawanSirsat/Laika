@@ -87,6 +87,39 @@ void describe('delivered', () => {
     assert.equal(row(result, 'ada')?.delivered, 2, 'two tasks, three moves');
   });
 
+  /*
+   * **Two people, one task** (LAI-832; worked under LAI-817 and was never
+   * held). Ada delivers, it is sent back, Bob picks it up and delivers it
+   * again. Each of them delivered it once; the reviewer of the second round
+   * reviewed Bob's work, so Ada closing it is a review and Bob closing it is
+   * not.
+   */
+  void test('two people moving one task into review each delivered it once', () => {
+    const rounds = [
+      move('t1', 'ada', 'in_progress', 'review'),
+      move('t1', 'cat', 'review', 'in_progress'),
+      move('t1', 'bob', 'in_progress', 'review'),
+    ];
+    const byCat = contributors(feed(...rounds, move('t1', 'cat', 'review', 'done')));
+    assert.deepEqual(
+      byCat.rows.map((r) => [r.id, r.delivered, r.reviewed]),
+      [
+        ['ada', 1, 0],
+        ['bob', 1, 0],
+        ['cat', 0, 1],
+      ],
+      'a send-back and an accept on one task is one task reviewed',
+    );
+
+    const byAda = contributors(feed(...rounds, move('t1', 'ada', 'review', 'done')));
+    assert.equal(row(byAda, 'ada')?.reviewed, 1, 'the last delivery was Bob’s');
+    assert.equal(row(byAda, 'ada')?.delivered, 1);
+
+    const byBob = contributors(feed(...rounds, move('t1', 'bob', 'review', 'done')));
+    assert.equal(row(byBob, 'bob')?.reviewed, 0, 'closing your own delivery is not a review');
+    assert.equal(row(byBob, 'bob')?.delivered, 1);
+  });
+
   void test('a move between two review columns is not a second delivery', () => {
     // QA → Code review: both are the review category (LAI-738).
     const result = contributors(

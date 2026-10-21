@@ -15,11 +15,13 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { closeBrowser, open, type Harness } from './harness.ts';
+import { closeBrowser, open, type ApiStub, type Harness } from './harness.ts';
 import {
   ASH,
+  EVENTS,
   EXPECTED,
   NAMES,
+  NOW,
   onrouteStub,
   PAW,
   routeRanged,
@@ -29,14 +31,27 @@ import {
 
 const PEOPLE = '.dash-people';
 
-async function openDashboard(range?: string): Promise<Harness> {
+async function openDashboard(
+  range?: string,
+  stub: ApiStub = onrouteStub(),
+  ready = `${PEOPLE} .dash-contrib-row`,
+): Promise<Harness> {
   const h = await open(
     `/dashboard?project=onroute${range === undefined ? '' : `&range=${range}`}`,
-    onrouteStub(),
+    stub,
     { before: routeRanged },
   );
-  await h.page.locator(`${PEOPLE} .dash-contrib-row`).first().waitFor({ timeout: 20_000 });
+  await h.page.locator(ready).first().waitFor({ timeout: 20_000 });
   return h;
+}
+
+/**
+ * **A font wider than this machine's** (LAI-831, LAI-842): CI's Linux fonts
+ * set the same words wider than macOS's, and a row that fits here was cut
+ * there. Letter-spacing stands in for the wider face.
+ */
+async function wideFont(page: Page): Promise<void> {
+  await page.addStyleTag({ content: '.dash * { letter-spacing: 0.12em !important; }' });
 }
 
 async function close(h: Harness): Promise<void> {
@@ -123,12 +138,77 @@ void describe('Contributors ranks who delivered (D-092 item 1)', () => {
   }
 });
 
-void describe('Open work now has no range (D-092 item 2)', () => {
+/*
+ * **Delivered says what it counts** (LAI-832). A move into done from review is
+ * a review, not a delivery; "into review, or into done" let it read as both.
+ * And All time is not a phrase to end a sentence on.
+ */
+void describe('Delivered says exactly what it counts', () => {
+  void test('the footnote and the column say "straight into done", with the range', async () => {
+    const h = await openDashboard();
+    try {
+      assert.match(
+        await text(h.page, `${PEOPLE} .dash-card-foot`),
+        /^Delivered: tasks moved into review, or straight into done, in the last 7 days — each task once/,
+      );
+      assert.equal(
+        await h.page
+          .locator(`${PEOPLE} th[scope="col"]`, { hasText: 'Delivered' })
+          .getAttribute('title'),
+        'Moved into review, or straight into done',
+      );
+    } finally {
+      await close(h);
+    }
+  });
+
+  void test('All time leaves the range out of the sentence', async () => {
+    const h = await openDashboard('all');
+    try {
+      assert.match(
+        await text(h.page, `${PEOPLE} .dash-card-foot`),
+        /^Delivered: tasks moved into review, or straight into done — each task once/,
+      );
+    } finally {
+      await close(h);
+    }
+  });
+
+  for (const [range, said] of [
+    ['all', 'Nobody has moved work into review, or straight into done, yet.'],
+    ['7d', 'Nobody moved work into review, or straight into done, in the last 7 days.'],
+  ] as const) {
+    void test(`an empty ${range} reads as a sentence`, async () => {
+      // Nothing moved: the range's activity has no status changes in it.
+      const h = await open(`/dashboard?project=onroute&range=${range}`, onrouteStub(), {
+        before: async (page) => {
+          await routeRanged(page);
+          await page.route('**/api/v1/projects/onroute/activity**', async (route) => {
+            await route.fulfill({ json: { data: [], next_cursor: null } });
+          });
+        },
+      });
+      try {
+        const empty = h.page.locator(`${PEOPLE} .dash-empty`);
+        await empty.waitFor({ timeout: 20_000 });
+        assert.equal(((await empty.textContent()) ?? '').trim(), said);
+      } finally {
+        await close(h);
+      }
+    });
+  }
+});
+
+void describe('Open work now has no range (D-092 items 2 and 3)', () => {
   const open7 = TASKS.filter((t) => t.status !== 'done' && t.status !== 'cancelled');
+  /** Their load: to do and in progress — Capacity's rule (LAI-832). */
   const held = (id: string | null): number =>
-    open7.filter((t) => t.assignee_id === id && t.status !== 'review').length;
+    open7.filter((t) => t.assignee_id === id && (t.status === 'todo' || t.status === 'in_progress'))
+      .length;
   const inReview = (id: string): number =>
     open7.filter((t) => t.assignee_id === id && t.status === 'review').length;
+  const inBacklog = (id: string): number =>
+    open7.filter((t) => t.assignee_id === id && t.status === 'backlog').length;
 
   void test('the same figures under 24 hours, 7 days and all time', async () => {
     assert.equal(open7.length, EXPECTED.open, 'positive control: the fixture’s 301');
@@ -142,6 +222,7 @@ void describe('Open work now has no range (D-092 item 2)', () => {
           ash: await text(h.page, `${PEOPLE} [data-person="${ASH}"]`),
           paw: await text(h.page, `${PEOPLE} [data-person="${PAW}"]`),
           unassigned: await text(h.page, `${PEOPLE} [data-person="unassigned"]`),
+          backlog: await text(h.page, `${PEOPLE} [data-person="backlog"]`),
           review: await text(h.page, `${PEOPLE} [data-person="review"]`),
         };
         assert.deepEqual(
@@ -151,6 +232,7 @@ void describe('Open work now has no range (D-092 item 2)', () => {
             ash: String(held(ASH)),
             paw: String(held(PAW)),
             unassigned: String(held(null)),
+            backlog: String(open7.filter((t) => t.status === 'backlog').length),
             review: String(open7.filter((t) => t.status === 'review').length),
           },
           range,
@@ -161,6 +243,60 @@ void describe('Open work now has no range (D-092 item 2)', () => {
       }
     }
     assert.equal(new Set(seen).size, 1, 'a range changed open work now');
+  });
+
+  /*
+   * **Backlog is shown apart** (LAI-832, D-092 item 3). Pawan held 70 open
+   * tasks here and 42 of them were backlog; the number read as load, and at
+   * 390 px the detail that said so was cut off.
+   */
+  void test('a person’s backlog is beside their count, never in it — and seen on a phone', async () => {
+    const h = await openDashboard();
+    try {
+      await openNow(h.page);
+      const paw = h.page.locator(`${PEOPLE} .dash-legend-row`, { hasText: NAMES[PAW]! });
+      assert.ok(inBacklog(PAW) > held(PAW), 'positive control: most of Pawan’s is backlog');
+      assert.equal(await text(h.page, `${PEOPLE} [data-person="${PAW}"]`), String(held(PAW)));
+      assert.equal(
+        ((await paw.locator('.dash-legend-backlog').textContent()) ?? '').trim(),
+        `+${String(inBacklog(PAW))} in backlog`,
+      );
+      assert.doesNotMatch(
+        (await paw.locator('.dash-legend-detail').first().textContent()) ?? '',
+        /backlog/,
+        'backlog is not in the count’s own detail',
+      );
+      for (const font of ['ours', 'wider']) {
+        if (font === 'wider') await wideFont(h.page);
+        for (const width of [1440, 390]) {
+          await h.page.setViewportSize({ width, height: 900 });
+          // Every line under every name: the count's detail ("… · 11
+          // blocked") and the backlog beside it.
+          const clipped = await h.page
+            .locator(`${PEOPLE} .dash-legend-row .dash-legend-detail`)
+            .evaluateAll((els) =>
+              els.map((el) => {
+                const edge = el.closest('.dash-legend-who')?.getBoundingClientRect().right ?? 0;
+                return [
+                  el.textContent ?? '',
+                  Math.max(
+                    el.getBoundingClientRect().right - edge,
+                    el.scrollWidth - el.clientWidth,
+                  ),
+                ] as const;
+              }),
+            );
+          assert.ok(
+            clipped.some(([line]) => line === `+${String(inBacklog(PAW))} in backlog`),
+            'positive control: Pawan’s backlog line was measured',
+          );
+          const cut = clipped.filter(([, by]) => by > 0.5);
+          assert.deepEqual(cut, [], `${font} font, ${String(width)}px: lines cut`);
+        }
+      }
+    } finally {
+      await close(h);
+    }
   });
 
   void test('a person’s work in review is beside their count, never in it', async () => {
@@ -178,16 +314,22 @@ void describe('Open work now has no range (D-092 item 2)', () => {
       // cut it off while its text still matched (LAI-817's own screenshots).
       // Measured against the column's edge — an inline span's clientWidth is
       // 0, so its own scroll width cannot say it was clipped.
-      for (const width of [1440, 390]) {
-        await h.page.setViewportSize({ width, height: 900 });
-        const clipped = await ash.locator('.dash-legend-review').evaluate((el) => {
-          const edge = el.closest('.dash-legend-who')?.getBoundingClientRect().right ?? 0;
-          return Math.max(el.getBoundingClientRect().right - edge, el.scrollWidth - el.clientWidth);
-        });
-        assert.ok(
-          clipped <= 0.5,
-          `${String(width)}px: the review line is cut by ${String(clipped)}px`,
-        );
+      for (const font of ['ours', 'wider']) {
+        if (font === 'wider') await wideFont(h.page);
+        for (const width of [1440, 390]) {
+          await h.page.setViewportSize({ width, height: 900 });
+          const clipped = await ash.locator('.dash-legend-review').evaluate((el) => {
+            const edge = el.closest('.dash-legend-who')?.getBoundingClientRect().right ?? 0;
+            return Math.max(
+              el.getBoundingClientRect().right - edge,
+              el.scrollWidth - el.clientWidth,
+            );
+          });
+          assert.ok(
+            clipped <= 0.5,
+            `${font} font, ${String(width)}px: the review line is cut by ${String(clipped)}px`,
+          );
+        }
       }
     } finally {
       await close(h);
@@ -229,6 +371,127 @@ void describe('Needs attention says what it counts (D-092 items 3 and 4)', () =>
         await h.page.locator('.dash-attention .dash-att-row').count(),
         EXPECTED.staleFlagged,
       );
+    } finally {
+      await close(h);
+    }
+  });
+});
+
+/*
+ * **The wait does not move with the range** (LAI-832). The 37 waiting more
+ * than five days were touched an hour ago — a sprint move — so the range's
+ * activity on "Last 24 hours" cannot see when they went into review. The
+ * review queue can: `GET /review` says, at any age.
+ */
+void describe('Waiting for review > 5 days holds under any range', () => {
+  /** When each task last moved into review, from another category — the fixture's own log. */
+  const entered = new Map<string, number>();
+  for (const e of EVENTS) {
+    const move = e.payload as { from?: string; to?: string };
+    if (e.type !== 'task.status_changed' || move.to !== 'review' || move.from === 'review')
+      continue;
+    entered.set(e.task_id, Math.max(entered.get(e.task_id) ?? 0, e.created_at));
+  }
+  const touched = TASKS.map((t) =>
+    t.status === 'review' ? { ...t, updated_at: NOW - 3_600_000 } : t,
+  );
+  const stub = (queue: boolean): ApiStub => ({
+    ...onrouteStub(),
+    '/api/v1/projects/onroute/tasks': () => ({
+      data: touched.map((t) => ({ ...t })),
+      next_cursor: null,
+    }),
+    ...(queue
+      ? {
+          '/api/v1/review': {
+            tasks: touched
+              .filter((t) => t.status === 'review')
+              .map((t) => ({
+                task: { id: t.id },
+                waiting_since: entered.get(t.id) ?? t.updated_at,
+              })),
+            truncated: false,
+          },
+        }
+      : {}),
+  });
+  const reviewCount = async (page: Page): Promise<number> =>
+    Number(
+      await page
+        .getByRole('tab', { name: /^Waiting for review > 5 days/ })
+        .locator('.dash-tab-count')
+        .textContent(),
+    );
+
+  void test('Last 24 hours still lists the 37, from the review queue', async () => {
+    for (const range of ['24h', '7d', 'all']) {
+      const h = await openDashboard(range, stub(true), '.dash-attention [role="tab"]');
+      try {
+        await h.page.waitForFunction(
+          (n) =>
+            document.querySelector('#dash-tab-review .dash-tab-count')?.textContent?.trim() ===
+            String(n),
+          EXPECTED.reviewOver5d,
+          { timeout: 10_000 },
+        );
+        assert.equal(await reviewCount(h.page), EXPECTED.reviewOver5d, range);
+      } finally {
+        await close(h);
+      }
+    }
+  });
+
+  void test('CONTROL: without the queue, the range alone cannot see them', async () => {
+    // What the screen did before: the touch an hour ago hides the move.
+    const h = await openDashboard('24h', stub(false), '.dash-attention [role="tab"]');
+    try {
+      assert.equal(await reviewCount(h.page), 0);
+    } finally {
+      await close(h);
+    }
+  });
+});
+
+/*
+ * **The tabs fit a phone** (LAI-832). The third tab's count ran into the card
+ * edge at 390 px. Every tab and every count stays inside the card's content
+ * box, on this machine's font and on a wider one.
+ */
+void describe('Needs attention’s tabs fit a phone', () => {
+  void test('no tab or count runs past the card edge at 390 px, on any font', async () => {
+    const h = await openDashboard();
+    try {
+      await h.page.setViewportSize({ width: 390, height: 900 });
+      const card = h.page.locator('.dash-attention');
+      for (const font of ['ours', 'wider']) {
+        if (font === 'wider') await wideFont(h.page);
+        const tabs = card.getByRole('tab');
+        assert.equal(await tabs.count(), 3);
+        // Named whole, whatever is drawn: the name is what a reader hears.
+        for (const name of [/^Blocked \d+$/, /^Stale \d+$/, /^Waiting for review > 5 days \d+$/]) {
+          assert.equal(
+            await card.getByRole('tab', { name }).count(),
+            1,
+            `${font}: ${String(name)}`,
+          );
+        }
+        // How far the furthest tab or count runs past the card's content box.
+        const worst = await card.evaluate((el) => {
+          const edge =
+            el.getBoundingClientRect().right -
+            (Number.parseFloat(getComputedStyle(el).paddingRight) || 0);
+          return Math.max(
+            ...[...el.querySelectorAll('[role="tab"], [role="tab"] .dash-tab-count')].map(
+              (t) => t.getBoundingClientRect().right - edge,
+            ),
+          );
+        });
+        assert.ok(worst <= 0.5, `${font} font: a tab runs ${String(worst)}px past the card edge`);
+        const sideways = await h.page.evaluate(
+          () => document.documentElement.scrollWidth - window.innerWidth,
+        );
+        assert.equal(sideways, 0, `${font} font: the page scrolls sideways`);
+      }
     } finally {
       await close(h);
     }
