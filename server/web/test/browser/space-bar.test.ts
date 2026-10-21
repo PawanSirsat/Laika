@@ -12,6 +12,7 @@ import {
   closeBrowser,
   open,
   setTheme,
+  until,
   type ApiStub,
   type Harness,
   type StubCall,
@@ -192,6 +193,7 @@ void describe('the space bar', () => {
       const t = await open('/timeline?project=laika-core', STUB);
       try {
         await t.page.locator('.space-member').first().waitFor({ timeout: 20_000 });
+        await until(async () => (await t.page.locator('.space-member').count()) === 4);
         assert.equal(await t.page.locator('.space-member').count(), 4);
         assert.equal(await t.page.locator('.space-member-more').innerText(), '+2');
       } finally {
@@ -435,6 +437,9 @@ void describe('the bar does not draw filters a view already owns', () => {
         0,
         'the bar is still drawing its own filters while the board owns them',
       );
+      await until(
+        async () => (await h.page.locator('.bt-button', { hasText: 'Filter' }).count()) === 1,
+      );
       assert.equal(
         await h.page.locator('.bt-button', { hasText: 'Filter' }).count(),
         1,
@@ -459,6 +464,7 @@ void describe('the bar does not draw filters a view already owns', () => {
         0,
         'the timeline has a board toolbar — this test is no longer measuring anything',
       );
+      await until(async () => (await h.page.locator('.space-select').count()) >= 2);
       assert.ok(
         (await h.page.locator('.space-select').count()) >= 2,
         'the timeline lost its filters — the bar is its only place for them',
@@ -545,6 +551,10 @@ void describe('the project is named in the bar, wherever the rail is', () => {
       await h.page.setViewportSize({ width: 880, height: 900 });
       await h.page.locator('.space-name').waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(500);
+      await until(async () => {
+        const now = await naming(h);
+        return now.rail === null && now.bar === 'Laika Core';
+      });
 
       const m = await naming(h);
       assert.equal(m.rail, null, 'the rail is on screen — this test is measuring the wrong state');

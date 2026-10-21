@@ -13,7 +13,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, reply, type ApiStub, type StubCall } from './harness.ts';
+import { closeBrowser, open, reply, until, type ApiStub, type StubCall } from './harness.ts';
 
 const now = Date.now();
 const HOUR = 3_600_000;
@@ -101,9 +101,16 @@ void describe('the compact unlisted page', () => {
     try {
       const lines = h.page.locator('.unl-line');
       await lines.first().waitFor({ timeout: 20_000 });
+      // Wait for the count it asserts, not the first row (LAI-715).
+      await until(async () => (await lines.count()) === 3);
       assert.equal(await lines.count(), 3);
 
       // Newest first, by when the note was logged.
+      await until(
+        async () =>
+          (await h.page.locator('.unl-first').allInnerTexts()).join('|') ===
+          ['The newest note, first line.', 'A note to dismiss.', 'The oldest note.'].join('|'),
+      );
       const firsts = await h.page.locator('.unl-first').allInnerTexts();
       assert.deepEqual(firsts, [
         'The newest note, first line.',
@@ -131,6 +138,11 @@ void describe('the compact unlisted page', () => {
       await h.page
         .locator('.unl-note', { hasText: 'A second line only an open row shows.' })
         .waitFor({ timeout: 5_000 });
+      await until(
+        async () =>
+          (await h.page.locator('.unl-promote').count()) === 1 &&
+          (await h.page.locator('.unl-dismiss').count()) === 1,
+      );
       assert.equal(await h.page.locator('.unl-promote').count(), 1);
       assert.equal(await h.page.locator('.unl-dismiss').count(), 1);
 
@@ -223,6 +235,7 @@ void describe('the compact unlisted page', () => {
     const h = await open('/inbox?tab=unlisted', server(many).stub);
     try {
       await h.page.locator('.unl-line').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.unl-line').count()) === 25);
       assert.equal(await h.page.locator('.unl-line').count(), 25);
       const more = h.page.locator('.unl-more');
       assert.match(await more.innerText(), /Show more\s*5 more/);
@@ -243,9 +256,10 @@ void describe('the compact unlisted page', () => {
       await h.page.setViewportSize({ width: 390, height: 900 });
       await h.page.locator('.unl-line').first().waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(200);
-      const spills = await h.page.evaluate(
-        () => document.documentElement.scrollWidth > window.innerWidth,
-      );
+      const spilling = () =>
+        h.page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+      await until(async () => !(await spilling()));
+      const spills = await spilling();
       assert.equal(spills, false, 'the page scrolls sideways');
       const box = await h.page.locator('.unl-line').first().boundingBox();
       assert.ok(box !== null && box.height <= 64, `a line is ${String(box?.height)}px tall`);

@@ -129,6 +129,7 @@ void describe('toggling a card field', () => {
 
       // The priority icon, not the age: LAI-701 removed the age from the card.
       // It was the priority dot until LAI-705 drew Jira's icon in its place.
+      await until(async () => (await h.page.locator('.card .priority-icon').count()) === 1);
       assert.equal(
         await h.page.locator('.card .priority-icon').count(),
         1,
@@ -242,7 +243,12 @@ void describe('grouping', () => {
     try {
       await h.page.waitForSelector('.card-title');
 
+      await until(async () => (await h.page.locator('.swim').count()) >= 1);
       assert.ok((await h.page.locator('.swim').count()) >= 1, 'no swimlane rendered');
+      await until(
+        async () =>
+          (await h.page.locator('.swim').first().locator('.lane').count()) === COLUMNS.length,
+      );
       assert.equal(
         await h.page.locator('.swim').first().locator('.lane').count(),
         COLUMNS.length,
@@ -258,6 +264,7 @@ void describe('grouping', () => {
       // Drawn once, not once per row — columns are project-level. The grip
       // icon is gone (LAI-605); the draggable header is the control now, and
       // only the first row's headers may carry it.
+      await until(async () => (await h.page.locator('.lane-head-drag').count()) === COLUMNS.length);
       assert.equal(
         await h.page.locator('.lane-head-drag').count(),
         COLUMNS.length,

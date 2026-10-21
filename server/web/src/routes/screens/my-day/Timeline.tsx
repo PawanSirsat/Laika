@@ -9,6 +9,7 @@ import {
 import type { MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
 import { FitLabel } from './FitLabel.tsx';
 import { clock, duration, hourName, span as spanOf } from './format.ts';
+import { plural } from './my-day-derive.ts';
 import {
   along,
   axisMarks,
@@ -16,6 +17,7 @@ import {
   instantOf,
   limitsIn,
   PX_PER_HOUR,
+  SIGNAL_MINUTES,
   STEP,
   type DayLine,
   type Edit,
@@ -75,11 +77,13 @@ function labelOf(
  * card dashed amber — the **gaps** of twenty minutes or more between them,
  * dashed and clickable, the breaks they waved away, and a red line at now.
  *
- * **Only what the server has is drawn.** The design's SIGNALS lane (prompts
- * and commits along the hours) and AGENTS lane (when the agent worked) have
- * no times to draw from — a block carries counts and agent time is minutes
- * per day — so they are left out (LAI-834, LAI-833) and each block shows its
- * counts as a badge instead, nothing spread along it (CHIEF's addition G).
+ * **Only what the server has is drawn.** The SIGNALS lane puts the day's
+ * prompts and commits in the five minutes each fell in, as the server keeps
+ * them (LAI-834, D-096); a day drafted without them has no lane, and every
+ * block still shows its counts as a badge (CHIEF's addition G). The AGENTS
+ * lane, under the blocks, puts when the agent worked in its five minutes
+ * (LAI-833): blue where its session's split ties it to a card, grey where
+ * nothing did — agent minutes beside the day, never hours in it.
  *
  * Zoom fits the day or gives it 110 or 220 px an hour; Earlier, Now and
  * Later scroll it; it opens on the first block, and follows the selection.
@@ -213,6 +217,16 @@ export function Timeline({
     selection?.kind === kind && 'id' in selection && selection.id === id;
   const pickedGap = selection?.kind === 'gap' ? selection : undefined;
   const nothing = line.blocks.length === 0;
+  const hasSignals = line.signals.length > 0;
+  const hasAgents = line.agents.length > 0;
+  const lanes = hasSignals || hasAgents;
+  const agentMinutes = (seconds: number): number => Math.max(1, Math.round(seconds / 60));
+  const agentSeconds = line.agents.reduce((n, a) => n + a.seconds, 0);
+  const onCardSeconds = line.agents.reduce((n, a) => (a.onCard ? n + a.seconds : n), 0);
+  const countOf = (kind: 'prompt' | 'commit'): number =>
+    line.signals.reduce((n, m) => (m.kind === kind ? n + m.count : n), 0);
+  const promptCount = countOf('prompt');
+  const commitCount = countOf('commit');
 
   return (
     <div className="dayline">
@@ -285,10 +299,20 @@ export function Timeline({
         </div>
       </div>
 
-      <div className="dayline-grid">
-        <span className="dayline-label" aria-hidden="true">
-          You
-        </span>
+      <div className={lanes ? 'dayline-grid dayline-grid-lanes' : 'dayline-grid'}>
+        {lanes ? (
+          <div className="dayline-labels" aria-hidden="true">
+            {hasSignals && (
+              <span className="dayline-lane-label dayline-label-signals">Signals</span>
+            )}
+            <span className="dayline-lane-label dayline-label-you">You</span>
+            {hasAgents && <span className="dayline-lane-label dayline-label-agents">Agents</span>}
+          </div>
+        ) : (
+          <span className="dayline-label" aria-hidden="true">
+            You
+          </span>
+        )}
         <div className="dayline-scroller" ref={scroller} data-dayline-scroller>
           <div
             ref={track}
@@ -317,6 +341,25 @@ export function Timeline({
                   ]
                 : []),
             ])}
+            {hasSignals && (
+              <div
+                className="dayline-signals-lane"
+                data-signals-lane
+                role="img"
+                aria-label={`Signals: ${plural(promptCount, 'prompt', 'prompts')} and ${plural(commitCount, 'commit', 'commits')}, each in the five minutes it fell in`}
+              >
+                {line.signals.map((mark) => (
+                  <span
+                    key={`${mark.kind}-${String(mark.start)}`}
+                    className={mark.kind === 'prompt' ? 'dayline-prompt' : 'dayline-commit'}
+                    data-signal={mark.kind}
+                    data-signal-start={mark.start}
+                    style={{ left: left(mark.start + SIGNAL_MINUTES / 2) }}
+                    title={`${mark.kind === 'prompt' ? plural(mark.count, 'prompt', 'prompts') : plural(mark.count, 'commit', 'commits')}, ${rangeOf({ start: mark.start, end: mark.start + SIGNAL_MINUTES })}`}
+                  />
+                ))}
+              </div>
+            )}
             <div className="dayline-row">
               {view.state === 'no_signal' && nothing && (
                 <div className="dayline-nosignal" data-no-signal>
@@ -449,6 +492,27 @@ export function Timeline({
                 );
               })}
             </div>
+            {hasAgents && (
+              <div
+                className="dayline-agents-lane"
+                data-agents-lane
+                role="img"
+                aria-label={`Agents: worked ${duration(agentMinutes(agentSeconds))}, ${duration(onCardSeconds === 0 ? 0 : agentMinutes(onCardSeconds))} of it on a card`}
+              >
+                {line.agents.map((run) => (
+                  <span
+                    key={`agent-${String(run.start)}`}
+                    className={
+                      run.onCard ? 'dayline-agent' : 'dayline-agent dayline-agent-off-card'
+                    }
+                    data-agent-run={run.onCard ? 'card' : 'none'}
+                    data-agent-start={run.start}
+                    style={{ left: left(run.start), width: wide(run.start, run.end) }}
+                    title={`Agent working ${rangeOf(run)} · ${duration(agentMinutes(run.seconds))}${run.onCard ? '' : ' · on no card'}`}
+                  />
+                ))}
+              </div>
+            )}
             <div className="dayline-axis" aria-hidden="true">
               {axisMarks(line, zoom).map(({ hour, minute }) => (
                 <span
@@ -492,6 +556,30 @@ export function Timeline({
           <span className="dayline-key dayline-key-break" aria-hidden="true" />
           Break
         </li>
+        {hasSignals && (
+          <>
+            <li>
+              <span className="dayline-key-prompt" aria-hidden="true" />
+              Prompt
+            </li>
+            <li>
+              <span className="dayline-key-commit" aria-hidden="true" />
+              Commit
+            </li>
+          </>
+        )}
+        {hasAgents && (
+          <li>
+            <span className="dayline-key-agent" aria-hidden="true" />
+            Agent working
+          </li>
+        )}
+        {line.agents.some((a) => !a.onCard) && (
+          <li>
+            <span className="dayline-key-agent dayline-key-agent-off-card" aria-hidden="true" />
+            Agent, no card
+          </li>
+        )}
         <li>
           <span className="dayline-key-text" aria-hidden="true">
             9p 2c

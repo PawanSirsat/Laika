@@ -26,6 +26,7 @@ import {
   fakeStream,
   open,
   refuse,
+  until,
   type ApiStub,
   type Harness,
 } from './harness.ts';
@@ -519,7 +520,9 @@ void describe('cards glide between lanes (LAI-708)', () => {
       await h.page.waitForTimeout(300);
 
       assert.equal((await transitions(h)).length, start, 'a transition ran under reduced motion');
-      const flash = await h.page.locator('article.card[data-task-id="t2"]').evaluate((el) => ({
+      const t2 = h.page.locator('article.card[data-task-id="t2"]');
+      await until(() => t2.evaluate((el) => el.hasAttribute('data-flash')));
+      const flash = await t2.evaluate((el) => ({
         on: el.hasAttribute('data-flash'),
         timing: getComputedStyle(el).animationTimingFunction,
       }));

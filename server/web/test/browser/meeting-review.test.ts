@@ -15,7 +15,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub, setTheme } from './harness.ts';
+import { closeBrowser, open, type ApiStub, setTheme, until } from './harness.ts';
 
 const PROJECT = {
   id: 'p1',
@@ -159,9 +159,12 @@ void describe('nothing is accepted by default', () => {
     const h = await open('/meeting-review?project=laika-core', stub());
     try {
       await h.page.locator('.mr-proposal').first().waitFor({ timeout: 20_000 });
+      // Wait for the count it asserts, not the first proposal (LAI-715).
+      await until(async () => (await h.page.locator('.mr-proposal').count()) === 4);
       assert.equal(await h.page.locator('.mr-proposal').count(), 4, 'all four tags must render');
 
       const boxes = h.page.locator('.mr-accept input');
+      await until(async () => (await boxes.count()) === 4);
       assert.equal(await boxes.count(), 4);
       for (let i = 0; i < 4; i += 1) {
         assert.equal(await boxes.nth(i).isChecked(), false, `proposal ${String(i)} pre-accepted`);
@@ -196,6 +199,11 @@ void describe('the four tags are distinguishable, in both themes', () => {
     const h = await open('/meeting-review?project=laika-core', stub());
     try {
       await h.page.locator('.mr-tag').first().waitFor({ timeout: 20_000 });
+      await until(
+        async () =>
+          (await h.page.locator('.mr-tag').allInnerTexts()).join('|') ===
+          'NEW|CHANGED|DEAD|DECISION',
+      );
       assert.deepEqual(await h.page.locator('.mr-tag').allInnerTexts(), [
         'NEW',
         'CHANGED',
@@ -207,9 +215,15 @@ void describe('the four tags are distinguishable, in both themes', () => {
         await setTheme(h.page, theme);
         await h.page.waitForTimeout(300);
 
-        const colours = await h.page
-          .locator('.mr-tag')
-          .evaluateAll((els) => els.map((el) => getComputedStyle(el).color));
+        const read = () =>
+          h.page
+            .locator('.mr-tag')
+            .evaluateAll((els) => els.map((el) => getComputedStyle(el).color));
+        await until(async () => {
+          const now = await read();
+          return new Set(now).size === 4 && !now.includes('rgba(0, 0, 0, 0)');
+        });
+        const colours = await read();
         assert.equal(new Set(colours).size, 4, `${theme}: tags share a colour`);
         for (const c of colours) {
           assert.notEqual(c, 'rgba(0, 0, 0, 0)', `${theme}: a tag has no colour`);
@@ -232,6 +246,10 @@ void describe('a CHANGED proposal shows what it would set', () => {
     try {
       const changed = h.page.locator('.mr-proposal', { hasText: 'CHANGED' }).first();
       await changed.waitFor({ timeout: 20_000 });
+      // The before is read off the board's tasks, which can land after the
+      // proposal is drawn (LAI-715).
+      await until(async () => (await changed.locator('.mr-change').count()) === 2);
+      await until(async () => (await changed.locator('.mr-change-from').count()) === 2);
       const text = await changed.innerText();
       assert.match(text, /status/);
       assert.match(text, /done/);
@@ -257,6 +275,7 @@ void describe('a CHANGED proposal shows what it would set', () => {
     const h = await open('/meeting-review?project=laika-core', stub());
     try {
       await h.page.locator('.mr-quote').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.mr-quote').count()) === 4);
       const quotes = await h.page.locator('.mr-quote').allInnerTexts();
       assert.equal(quotes.length, 4);
       for (const quote of quotes) assert.ok(quote.trim().length > 10, `thin quote: ${quote}`);
@@ -292,6 +311,9 @@ void describe('a selection does not survive changing review', () => {
 
       await h.page.locator('.mr-item', { hasText: 'retro.txt' }).click();
       await h.page.locator('.mr-proposal').first().waitFor({ timeout: 20_000 });
+      // The first review's proposals answer that wait too: wait for the second
+      // review's one, then hold the window for a carried tick (LAI-715).
+      await until(async () => (await h.page.locator('.mr-proposal').count()) === 1);
       await h.page.waitForTimeout(300);
 
       assert.equal(
@@ -318,6 +340,7 @@ void describe('a before the board does not hold is omitted, not invented', () =>
       const changed = h.page.locator('.mr-proposal', { hasText: 'CHANGED' }).first();
       await changed.waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(400);
+      await until(async () => (await changed.locator('.mr-change').count()) === 2);
       assert.equal(await changed.locator('.mr-change').count(), 2, 'the changes vanished too');
       assert.equal(await changed.locator('.mr-change-from').count(), 0, 'a before was invented');
     } finally {
@@ -363,6 +386,7 @@ void describe('what landed is read from the response', () => {
 
       // And the refusal is not dressed as an error: accepting a lead-only
       // decision is the ordinary case (LAI-451), not a fault.
+      await until(async () => (await h.page.locator('.mr-landed-refused').count()) === 1);
       assert.equal(await h.page.locator('.mr-landed-refused').count(), 1);
     } finally {
       await h.close();
@@ -387,6 +411,7 @@ void describe('an expired review is read-only with the reason', () => {
       assert.match(why, /seven days/, 'it does not say why it expired');
 
       // Not an error state and not an empty one: the proposals are still there.
+      await until(async () => (await h.page.locator('.mr-proposal').count()) === 4);
       assert.equal(await h.page.locator('.mr-proposal').count(), 4);
       assert.equal(
         await h.page.locator('.mr-apply').count(),
@@ -421,7 +446,7 @@ void describe('discard is separated from apply', () => {
         void d.dismiss();
       });
       await h.page.locator('.mr-discard').click();
-      await h.page.waitForTimeout(300);
+      await until(() => asked);
       assert.ok(asked, 'discard threw the set away without asking');
     } finally {
       await h.close();

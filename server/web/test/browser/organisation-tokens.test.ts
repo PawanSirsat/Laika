@@ -20,7 +20,15 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, refuse, type ApiStub, type StubCall, setTheme } from './harness.ts';
+import {
+  closeBrowser,
+  open,
+  refuse,
+  until,
+  type ApiStub,
+  type StubCall,
+  setTheme,
+} from './harness.ts';
 
 /**
  * **The real clock, not a pinned constant.**
@@ -135,6 +143,7 @@ void describe('who is offered it', () => {
     });
     try {
       await h.page.locator('.org-tokens-toggle').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.org-tokens-toggle').count()) === 2);
       assert.equal(
         await h.page.locator('.org-tokens-toggle').count(),
         2,
@@ -221,6 +230,7 @@ void describe('what the panel shows', () => {
     try {
       const row = await openPanel(h, 'Tomas Nel');
       await row.locator('.tok-row').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await row.locator('.tok-row').count()) === 3);
 
       assert.equal(await row.locator('.tok-row').count(), 3, 'a token was dropped from the list');
 
@@ -229,6 +239,7 @@ void describe('what the panel shows', () => {
       assert.match(await revoked.innerText(), /Revoked/, 'does not say it is revoked');
 
       // The live ones still do, or the assertion above is vacuous.
+      await until(async () => (await row.locator('.tok-revoke').count()) === 2);
       assert.equal(await row.locator('.tok-revoke').count(), 2);
     } finally {
       await h.close();
@@ -300,6 +311,14 @@ void describe('revoking', () => {
         .locator('.tok-revoke')
         .click();
       await h.page.waitForTimeout(500);
+      // The sleep is the window for the DELETE that must not come; the message
+      // may still be on its way (LAI-715).
+      await until(
+        () =>
+          asked.includes('Laptop — Claude Code') &&
+          asked.includes('Tomas Nel') &&
+          /stops working/i.test(asked),
+      );
 
       assert.match(asked, /Laptop — Claude Code/, 'does not name the token');
       assert.match(asked, /Tomas Nel/, 'does not name whose it is');
@@ -335,6 +354,15 @@ void describe('revoking', () => {
         .locator('.tok-revoke')
         .click();
       await h.page.waitForTimeout(700);
+      const reads = () =>
+        h.calls.filter((c: StubCall) => c.method === 'GET' && c.path === '/api/v1/users/u2/tokens')
+          .length;
+      await until(
+        () =>
+          h.calls.some(
+            (c: StubCall) => c.method === 'DELETE' && c.path === '/api/v1/users/u2/tokens/t1',
+          ) && reads() === 2,
+      );
 
       const deleted = h.calls.find((c: StubCall) => c.method === 'DELETE');
       assert.ok(deleted, `no DELETE was sent; saw ${h.calls.map((c) => c.method).join(', ')}`);
@@ -408,9 +436,18 @@ void describe('both themes', () => {
         for (const width of [1280, 760, 420]) {
           await h.page.setViewportSize({ width, height: 1000 });
           await h.page.waitForTimeout(250);
-          const over = await h.page.evaluate(
-            () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-          );
+          const spill = () =>
+            h.page.evaluate(
+              () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            );
+          const below = async () => {
+            const p = await row.locator('.org-tokens').boundingBox();
+            const w = await row.locator('.org-person-who').boundingBox();
+            return p !== null && w !== null && p.y >= w.y + w.height;
+          };
+          // Wait for the layout it asserts, not a fixed pause (LAI-715).
+          await until(async () => (await spill()) === 0 && (await below()));
+          const over = await spill();
           assert.equal(over, 0, `${theme} at ${String(width)}px: the page scrolls sideways`);
 
           // Overflow zero is necessary and not sufficient: content can be

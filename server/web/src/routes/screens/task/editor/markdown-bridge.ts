@@ -86,6 +86,8 @@ export interface Around {
   readonly after: Edge;
   /** Inside a link's words, where GFM makes no link of its own. */
   readonly inLink: boolean;
+  /** In a heading's words, which follow its `#`s on the same line (LAI-312). */
+  readonly inHeading?: boolean;
 }
 
 /** A whole paragraph of plain text. */
@@ -140,7 +142,10 @@ function couldPair(text: string, i: number, mark: string, around: Around): boole
  * `@tiptap/markdown`'s own escaper misses all of these — `# not a heading`
  * typed as text came back as a heading (LAI-827, measured).
  */
-function lineStartEscape(line: string): number {
+function lineStartEscape(line: string, inHeading = false): number {
+  // After `### ` a `1.`, `-` or `>` is words; only more `#`s can be read as
+  // the heading's closing sequence (LAI-312).
+  if (inHeading) return /^#{1,6}(?=[ \t]|$)/.test(line) ? 0 : -1;
   if (/^(?:[-*_](?:[ \t]*[-*_]){2,}|=+)[ \t]*$/.test(line)) return 0;
   const definition = /^( {0,3})\[(?:[^\]\\\n]|\\.)+\]:/.exec(line);
   if (definition !== null) return definition[1]?.length ?? 0;
@@ -217,7 +222,7 @@ export function escapeFaithfully(text: string, around: Around = ALONE): string {
     const next = text[i + 1];
     if (i === 0 ? around.before === 'line' : text[i - 1] === '\n') {
       const end = text.indexOf('\n', i);
-      const at = lineStartEscape(text.slice(i, end === -1 ? undefined : end));
+      const at = lineStartEscape(text.slice(i, end === -1 ? undefined : end), around.inHeading);
       escapeAt = at === -1 ? -1 : i + at;
     }
     if (i === escapeAt) {
@@ -264,6 +269,7 @@ function aroundOf(node: JSONContent, parent: JSONContent | undefined): Around {
     before: marked ? 'mark' : before,
     after: marked ? 'mark' : after,
     inLink: (node.marks ?? []).some((m) => m.type === 'link'),
+    inHeading: parent?.type === 'heading',
   };
 }
 
@@ -368,11 +374,49 @@ function serializeAs(bridge: Bridge, doc: ProseNode, asFaithful: boolean): strin
   }
 }
 
+/**
+ * A parsed document's text as CommonMark reads it: a paragraph's lines lose
+ * their leading spaces and tabs (LAI-853). The lexer keeps some — one of the
+ * three under `1. a step that` — so the editor held a space the reading view
+ * never shows, and wrote it back as something else. Code keeps its own.
+ */
+function withoutLineIndents(json: JSONContent, schema: Schema): JSONContent {
+  if (json.content === undefined) return json;
+  const type = json.type === undefined ? undefined : schema.nodes[json.type];
+  if (type?.spec.code === true) return json;
+  const content = json.content.map((child) =>
+    type?.isTextblock === true && child.type === 'text' && child.text !== undefined
+      ? { ...child, text: child.text.replace(/\n[ \t]+/g, '\n') }
+      : withoutLineIndents(child, schema),
+  );
+  return { ...json, content };
+}
+
+/**
+ * A parsed document without the empty paragraphs the lexer makes inside a
+ * block (LAI-854): two blank lines between list items come back as an empty
+ * paragraph in the first item. Markdown has no empty paragraph — the reading
+ * view shows none — and nothing can write one, so it is not the document. One
+ * that is its parent's only child stays: a list item needs a paragraph.
+ */
+function withoutEmptyParagraphs(json: JSONContent, top = true): JSONContent {
+  if (json.content === undefined) return json;
+  const empty = (child: JSONContent): boolean =>
+    child.type === 'paragraph' && (child.content ?? []).length === 0;
+  const kept = top ? json.content : json.content.filter((child) => !empty(child));
+  const content = (kept.length > 0 ? kept : json.content).map((child) =>
+    withoutEmptyParagraphs(child, false),
+  );
+  return { ...json, content };
+}
+
 /** Parse markdown into a document of `schema`, or `null` if it will not fit it. */
 export function parseMarkdown(bridge: Bridge, markdown: string, schema: Schema): ProseNode | null {
   if (markdown.trim() === '') return schema.topNodeType.createAndFill();
   try {
-    const doc = schema.nodeFromJSON(bridge.manager.parse(markdown));
+    const doc = schema.nodeFromJSON(
+      withoutLineIndents(withoutEmptyParagraphs(bridge.manager.parse(markdown)), schema),
+    );
     doc.check();
     return doc;
   } catch {
@@ -405,8 +449,23 @@ function trimInline(content: readonly JSONContent[]): JSONContent[] {
   return out;
 }
 
-/** A node's JSON with every text block's ends as markdown keeps them. */
+/**
+ * A mark without its `delimiter`: how an emphasis was spelled, `_a_` or `*a*`,
+ * is not what it says (LAI-312). The source keeps the spelling; a changed
+ * block may change it.
+ */
+function unspelled(mark: NonNullable<JSONContent['marks']>[number]): typeof mark {
+  if (mark.attrs?.delimiter === undefined) return mark;
+  const { delimiter: _spelling, ...attrs } = mark.attrs;
+  return { ...mark, attrs };
+}
+
+/**
+ * A node's JSON with every text block's ends as markdown keeps them, and its
+ * marks as {@link unspelled}.
+ */
 function canonical(json: JSONContent, schema: Schema): JSONContent {
+  if (json.marks !== undefined) json = { ...json, marks: json.marks.map(unspelled) };
   if (json.content === undefined) return json;
   const type = json.type === undefined ? undefined : schema.nodes[json.type];
   let content = json.content.map((child) => canonical(child, schema));
@@ -712,7 +771,11 @@ function splitUnits(bridge: Bridge, source: string, doc: ProseNode): SourceUnit[
   for (const token of tokens as TokenLike[]) {
     // Found in the source rather than summed: a TipTap tokenizer reports its
     // `raw` with a newline the source does not have (the task list, measured).
-    const raw = (typeof token.raw === 'string' ? token.raw : '').replace(/\n+$/, '');
+    // And with the blank line above it, which a copied unit must not carry:
+    // an edit above a task list added two (LAI-302, as topLevelBlocks does).
+    const raw = (typeof token.raw === 'string' ? token.raw : '')
+      .replace(/^(?:[ \t]*\n)+/, '')
+      .replace(/\n+$/, '');
     if (token.type === 'space' || raw.trim() === '') continue;
     const start = source.indexOf(raw, offset);
     if (start === -1 || source.slice(offset, start).trim() !== '') return null;
@@ -751,6 +814,8 @@ interface TextBlock {
   readonly text: string;
   /** The line it starts on. */
   readonly line: number;
+  /** The lexer's token type: `paragraph`, `list` and so on. */
+  readonly type: unknown;
 }
 
 /**
@@ -783,7 +848,7 @@ function topLevelBlocks(bridge: Bridge, markdown: string): TextBlock[] | null {
     if (start === -1 || !BLANK.test(markdown.slice(offset, start))) return null;
     if (start > 0 && markdown.charAt(start - 1) !== '\n') return null;
     for (let at = offset; at < start; at++) if (markdown.charAt(at) === '\n') line += 1;
-    blocks.push({ text: raw, line });
+    blocks.push({ text: raw, line, type: token.type });
     for (let at = start; at < start + raw.length; at++) if (markdown.charAt(at) === '\n') line += 1;
     offset = start + raw.length;
   }
@@ -791,9 +856,60 @@ function topLevelBlocks(bridge: Bridge, markdown: string): TextBlock[] | null {
 }
 
 /**
+ * Does `line` start a block of its own, wherever it is indented — a heading,
+ * a quote, a list item, a rule, a fence, a table row, HTML? Then its
+ * indentation says where it belongs, and is never forgiven. `line` is given
+ * without its indentation.
+ *
+ * On the safe side of CommonMark: a few of these (`2.`, a table row, some
+ * HTML) would not interrupt a paragraph, and are still taken as blocks. The
+ * task list's tokenizer reads a wrapped item by it too (LAI-302).
+ */
+export const startsBlock = (line: string): boolean =>
+  lineStartEscape(line) !== -1 || /^(?:`{3,}|~{3,}|\||<)/.test(line);
+
+/**
+ * A line's text past the containers that open it: `>` and list markers,
+ * a task box included.
+ */
+const pastContainers = (line: string): string =>
+  line.replace(
+    /^(?:[ \t]*(?:>|[-+*](?=[ \t])|\d{1,9}[.)](?=[ \t]))(?:[ \t]+\[[ xX]\](?=[ \t]))?)*[ \t]*/,
+    '',
+  );
+
+/**
+ * `markdown` with the indentation of every paragraph continuation gone: a
+ * line under a line of paragraph text that starts no block of its own
+ * (LAI-853). CommonMark reads it as the same paragraph however far it is
+ * indented — `- a long item that\n  wraps` and `- a long item that\nwraps`
+ * are one item of one paragraph — and the editor writes it flush left. After
+ * a blank line, a heading or a fence, or where the line is a list item,
+ * indentation is structure, and stays. Never inside code.
+ */
+function unindentContinuations(markdown: string): string {
+  const entries = linesWithCode(markdown);
+  return entries
+    .map((entry, i) => {
+      const previous = entries[i - 1];
+      const line = entry.line.replace(/^[ \t]+/, '');
+      if (entry.code || line === entry.line || line === '') return entry.line;
+      if (previous === undefined || previous.code) return entry.line;
+      const above = pastContainers(previous.line);
+      return above !== '' && !startsBlock(above) && !startsBlock(line) ? line : entry.line;
+    })
+    .join('\n');
+}
+
+/** {@link normaliseMarkdown}, and a wrapped line's indentation ({@link unindentContinuations}). */
+const layoutOf = (markdown: string): string =>
+  normaliseMarkdown(unindentContinuations(markdown.replace(/\r\n?/g, '\n')));
+
+/**
  * Do two markdown texts count as the same for the round-trip check? The
- * stated normalisation ({@link normaliseMarkdown}), and one thing more: **the
- * blank lines between top-level blocks** (LAI-849).
+ * stated normalisation ({@link normaliseMarkdown}), and two things more:
+ * **the indentation of a wrapped line** ({@link unindentContinuations},
+ * LAI-853), and **the blank lines between top-level blocks** (LAI-849).
  *
  * A list directly under a paragraph is legal CommonMark, and agents write it
  * so; the editor writes a blank line before every block. That line changes no
@@ -805,7 +921,7 @@ function topLevelBlocks(bridge: Bridge, markdown: string): TextBlock[] | null {
  * one of them is edited.
  */
 export function sameMarkdown(bridge: Bridge, a: string, b: string): boolean {
-  if (normaliseMarkdown(a) === normaliseMarkdown(b)) return true;
+  if (layoutOf(a) === layoutOf(b)) return true;
   const left = a.replace(/\r\n?/g, '\n');
   const right = b.replace(/\r\n?/g, '\n');
   // The lexer's blocks are not CommonMark's here: only the strict check.
@@ -816,9 +932,7 @@ export function sameMarkdown(bridge: Bridge, a: string, b: string): boolean {
     was !== null &&
     would !== null &&
     was.length === would.length &&
-    was.every(
-      (block, i) => normaliseMarkdown(block.text) === normaliseMarkdown(would[i]?.text ?? ''),
-    )
+    was.every((block, i) => layoutOf(block.text) === layoutOf(would[i]?.text ?? ''))
   );
 }
 
@@ -926,8 +1040,12 @@ function firstDifference(bridge: Bridge, source: string, written: string): Hunk 
   const would = topLevelBlocks(bridge, written);
   if (was !== null && would !== null && was.length === would.length) {
     for (const [i, block] of was.entries()) {
-      const into = normalisedLines(would[i]?.text ?? '').map((entry) => entry.text);
-      const found = hunks(normalisedLines(block.text, block.line), into)[0];
+      // Each with the wrapped lines' indentation gone, as sameMarkdown forgives
+      // it: else the first forgiven wrap is named, not the change (LAI-313).
+      const into = normalisedLines(unindentContinuations(would[i]?.text ?? '')).map(
+        (entry) => entry.text,
+      );
+      const found = hunks(normalisedLines(unindentContinuations(block.text), block.line), into)[0];
       if (found !== undefined) return found;
     }
     // Every block reads as it was: only blank lines between them differ.
@@ -989,8 +1107,14 @@ function inWords(hunk: Hunk): string {
         ? `after line ${String(hunk.before.line)}: “${clip(hunk.before.text)}”`
         : 'at the start';
   if (added !== undefined) return `The rich editor would add “${clip(added)}” ${where}.`;
-  return hunk.added.length > 0
-    ? `The rich editor would add a blank line ${where}.`
+  if (hunk.added.length > 0) return `The rich editor would add a blank line ${where}.`;
+  // The normalisation keeps one of a run; the source's line numbers count them all.
+  const run =
+    hunk.before !== undefined && hunk.after !== undefined
+      ? hunk.after.line - hunk.before.line - 1
+      : 1;
+  return run > 1
+    ? `The rich editor would remove the ${String(run)} blank lines ${where}.`
     : `The rich editor would remove the blank line ${where}.`;
 }
 
@@ -1011,9 +1135,35 @@ function explain(bridge: Bridge, source: string, written: string | null): string
   }
   if (written === null) return 'The rich editor could not read it.';
   const difference = firstDifference(bridge, source, written);
-  return difference === undefined
-    ? 'The rich editor would not write it back exactly.'
-    : inWords(difference);
+  if (difference !== undefined) return inWords(difference);
+  return leftContainer(bridge, source) ?? 'The rich editor would not write it back exactly.';
+}
+
+/**
+ * A paragraph the editor would take out of the list item or quote above it,
+ * in words — or `undefined`. A line of U+00A0 or U+3000 directly under the
+ * item is text to CommonMark, which continues the item lazily through it and
+ * the lines after; the lexer reads it as a blank line and starts a paragraph
+ * there, so the blocks it diffs differ only by blank lines (LAI-854).
+ */
+function leftContainer(bridge: Bridge, source: string): string | undefined {
+  if (!hasUnicodeBlankLine(source)) return undefined;
+  const blocks = topLevelBlocks(bridge, source);
+  if (blocks === null) return undefined;
+  for (const [i, block] of blocks.entries()) {
+    const above = blocks[i - 1];
+    if (block.type !== 'paragraph' || above === undefined) continue;
+    const container =
+      above.type === 'list' ? 'the list item' : above.type === 'blockquote' ? 'the quote' : null;
+    if (container === null || block.line !== above.line + above.text.split('\n').length) continue;
+    const lines = block.text.split('\n');
+    const first = lines[0] ?? '';
+    if (first.trim() !== '' || /^[ \t]*$/.test(first)) continue;
+    const at = lines.findIndex((line) => line.trim() !== '');
+    if (at === -1) continue;
+    return `The rich editor would make line ${String(block.line + at)}, “${clip(lines[at] ?? '')}”, a paragraph of its own instead of part of ${container} above it.`;
+  }
+  return undefined;
 }
 
 /**

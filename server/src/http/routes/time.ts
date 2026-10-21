@@ -11,6 +11,7 @@ import {
   dismissDraft,
   proposeTimeDraft,
   recordTimeDrafts,
+  SIGNAL_BUCKETS_MAX,
   SIGNAL_MAX,
   splitDraft,
   TIME_DRAFTS_BODY_MAX,
@@ -69,6 +70,14 @@ const minutes = z.number().int().min(1).max(1440);
 const ref = z.string().trim().min(1).max(120);
 const slug = z.string().trim().min(1).max(120);
 const signal = z.number().int().min(0).max(SIGNAL_MAX);
+/**
+ * When a block's prompts or commits happened (D-096): `[bucket, count]` pairs,
+ * a bucket being five minutes of unix time — two numbers, nothing that could
+ * hold text.
+ */
+const buckets = z
+  .array(z.tuple([z.number().int().min(0), z.number().int().min(1).max(SIGNAL_MAX)]))
+  .max(SIGNAL_BUCKETS_MAX);
 
 const SettingsBody = strictObject({ draft_my_time: z.boolean() });
 const OrgTimeBody = strictObject({ mode: z.enum(TIME_MODES) });
@@ -107,6 +116,10 @@ const DraftsBody = strictObject({
             commits: signal.optional(),
             marks: signal.optional(),
           }),
+          at: strictObject({
+            prompts: buckets.optional(),
+            commits: buckets.optional(),
+          }).optional(),
         }),
       ),
     }),

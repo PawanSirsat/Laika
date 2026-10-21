@@ -53,6 +53,30 @@ export interface BreakSpan extends Span {
   readonly id: string;
 }
 
+/** A signal's time is known to this many minutes and no finer (D-096). */
+export const SIGNAL_MINUTES = 5;
+
+/** One mark on the SIGNALS lane: prompts or commits in one five minutes. */
+export interface SignalMark {
+  readonly kind: 'prompt' | 'commit';
+  /** The five minutes' start, in minutes after midnight. */
+  readonly start: number;
+  readonly count: number;
+}
+
+/** The agent's work is known to this many minutes and no finer (LAI-833). */
+export const AGENT_MINUTES = 5;
+
+/** One bar on the AGENTS lane: buckets back to back, all on a card or all off one. */
+export interface AgentRun {
+  /** Minutes after midnight. */
+  readonly start: number;
+  readonly end: number;
+  readonly seconds: number;
+  /** Most of each bucket's time was on a card its session was split to. */
+  readonly onCard: boolean;
+}
+
 export interface DayLine {
   /** The day's midnight, unix ms, or `undefined` for a day that is not one. */
   readonly midnight: number | undefined;
@@ -63,6 +87,13 @@ export interface DayLine {
   readonly untimed: number;
   readonly gaps: readonly Span[];
   readonly breaks: readonly BreakSpan[];
+  /**
+   * The SIGNALS lane (LAI-834): the day's prompts, then its commits, each in
+   * the five minutes it fell in — only what the server sent (D-096).
+   */
+  readonly signals: readonly SignalMark[];
+  /** The AGENTS lane (LAI-833): when the agent worked, on a card or grey. */
+  readonly agents: readonly AgentRun[];
   /** Minutes after midnight, on today only. */
   readonly now: number | undefined;
   /** The first and last hour on the axis, counted from midnight. */
@@ -127,7 +158,9 @@ export function gapsOf(blocks: readonly Span[], breaks: readonly Span[]): Span[]
 }
 
 export function dayLine(
-  view: Pick<MyDay, 'day' | 'tz' | 'today' | 'drafts' | 'entries' | 'breaks'>,
+  view: Pick<MyDay, 'day' | 'tz' | 'today' | 'drafts' | 'entries' | 'breaks' | 'signal_times'> & {
+    readonly agent?: Pick<MyDay['agent'], 'lane'>;
+  },
   nowMs: number,
 ): DayLine {
   const midnight = atClock(view.day, '00:00', view.tz);
@@ -174,8 +207,46 @@ export function dayLine(
   const now = view.day === view.today ? minute(nowMs) : undefined;
   const gaps = gapsOf(blocks, breaks);
 
-  const starts = [...blocks, ...breaks].map((s) => s.start);
-  const ends = [...blocks, ...breaks].map((s) => s.end);
+  // Placed as sent, never clamped onto the day: one that is not on it is left out.
+  const signals: SignalMark[] = [];
+  const times = view.signal_times;
+  if (midnight !== undefined && times !== undefined) {
+    for (const [kind, list] of [
+      ['prompt', times.prompts],
+      ['commit', times.commits],
+    ] as const) {
+      for (const [ms, count] of list) {
+        const start = Math.round((ms - midnight) / 60_000);
+        if (start >= 0 && start < length) signals.push({ kind, start, count });
+      }
+    }
+  }
+
+  // The agent's buckets, as sent; back to back and alike, one bar.
+  const agents: AgentRun[] = [];
+  if (midnight !== undefined) {
+    for (const [ms, seconds, onCardSeconds] of view.agent?.lane ?? []) {
+      const start = Math.round((ms - midnight) / 60_000);
+      if (start < 0 || start >= length || !(seconds > 0)) continue;
+      const onCard = onCardSeconds * 2 >= seconds;
+      const last = agents.at(-1);
+      if (last?.end === start && last.onCard === onCard) {
+        agents[agents.length - 1] = {
+          ...last,
+          end: start + AGENT_MINUTES,
+          seconds: last.seconds + seconds,
+        };
+      } else {
+        agents.push({ start, end: start + AGENT_MINUTES, seconds, onCard });
+      }
+    }
+  }
+
+  const starts = [...blocks, ...breaks, ...signals, ...agents].map((s) => s.start);
+  const ends = [
+    ...[...blocks, ...breaks, ...agents].map((s) => s.end),
+    ...signals.map((s) => s.start + SIGNAL_MINUTES),
+  ];
   if (now !== undefined) {
     starts.push(now);
     ends.push(now);
@@ -195,7 +266,7 @@ export function dayLine(
     // A wall hour the clock skips names the same instant as the next one: once.
     if (hours.at(-1)?.minute !== m) hours.push({ hour, minute: m });
   }
-  return { midnight, length, blocks, untimed, gaps, breaks, now, from, to, hours };
+  return { midnight, length, blocks, untimed, gaps, breaks, signals, agents, now, from, to, hours };
 }
 
 /** Where `minute` sits along an axis from hour `from` to hour `to`, as a percentage. */

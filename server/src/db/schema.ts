@@ -2466,6 +2466,34 @@ export const agentTimeDays = sqliteTable(
   ],
 );
 
+// -------------------------------------------------- §4.57 agent_time_buckets
+
+/**
+ * When the agent worked (§4.57, LAI-833): the seconds of Claude Code's
+ * `active_time` of `type=cli` — the agent working, never the keyboard — per
+ * session and **five minutes of unix time** (`bucket` = `floor(ms / 300000)`).
+ * Read by the same receiver as `agent_time_days`, from the times its points
+ * already carry; it draws My day's AGENTS lane. Kept 40 days (§11.6).
+ */
+export const agentTimeBuckets = sqliteTable(
+  'agent_time_buckets',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    sessionKey: text('session_key').notNull(),
+    bucket: integer('bucket').notNull(),
+    seconds: real('seconds').notNull().default(0),
+    updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.sessionKey, t.bucket] }),
+    // One person's day is one range of buckets.
+    index('agent_time_buckets_user_bucket_idx').on(t.userId, t.bucket),
+    check('agent_time_buckets_seconds_check', sql.raw('seconds >= 0 AND seconds <= 300')),
+  ],
+);
+
 // ------------------------------------------------- §4.51 token_session_tasks
 
 /**

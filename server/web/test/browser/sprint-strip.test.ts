@@ -17,7 +17,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, open, until, type ApiStub, type Harness } from './harness.ts';
 
 const DAY = 86_400_000;
 const NOW = Date.now();
@@ -159,9 +159,19 @@ void describe('the board matches the reference (LAI-270)', () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.view-tab').first().waitFor({ timeout: 20_000 });
-      const labels = (await h.page.locator('.view-tab').allInnerTexts()).map(
-        (t) => t.split('\n')[0],
-      );
+      const read = async () =>
+        (await h.page.locator('.view-tab').allInnerTexts()).map((t) => t.split('\n')[0]);
+      // Wait for the tabs it asserts, not the first one (LAI-715).
+      await until(async () => {
+        const now = await read();
+        return (
+          now.includes('List') &&
+          now[0] === 'Board' &&
+          now[1] === 'List' &&
+          now.includes('Calendar')
+        );
+      });
+      const labels = await read();
       assert.ok(labels.includes('List'), `List is not a tab — saw ${labels.join(', ')}`);
       assert.equal(labels[0], 'Board');
       assert.equal(labels[1], 'List', 'List sits beside Board, as the reference has it');
@@ -221,11 +231,14 @@ void describe('the board matches the reference (LAI-270)', () => {
       await h.page.setViewportSize({ width: 1600, height: 900 });
       await h.page.locator('.lane').first().waitFor({ timeout: 20_000 });
 
-      const heights = await h.page
-        .locator('.lane')
-        .evaluateAll((els: Element[]) =>
-          els.map((e) => Math.round(e.getBoundingClientRect().height)),
-        );
+      const measure = () =>
+        h.page
+          .locator('.lane')
+          .evaluateAll((els: Element[]) =>
+            els.map((e) => Math.round(e.getBoundingClientRect().height)),
+          );
+      await until(async () => new Set(await measure()).size === 1);
+      const heights = await measure();
       assert.equal(
         new Set(heights).size,
         1,

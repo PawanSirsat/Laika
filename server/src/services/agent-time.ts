@@ -1,7 +1,14 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, between, eq, inArray, sql } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
 import { type AgentTimeKind } from '../db/enums.ts';
-import { agentTimeDays, projects, tasks, tokenSessionTasks } from '../db/schema.ts';
+import {
+  agentTimeBuckets,
+  agentTimeDays,
+  projects,
+  tasks,
+  tokenSessionTasks,
+} from '../db/schema.ts';
+import { dayIn } from './calendar-days.ts';
 import { type TaskRef, taskRefOf, type Tx } from './time-entries.ts';
 import { type ResolvedTask } from './token-usage.ts';
 
@@ -61,11 +68,91 @@ export function storeAgentTime(
   }
 }
 
+/**
+ * When the agent worked is kept to five minutes of unix time (LAI-833) — the
+ * resolution of My day's lanes, and nothing about what it worked on.
+ */
+export const AGENT_BUCKET_MS = 5 * 60_000;
+
+/** One session's agent-working seconds in one bucket, as telemetry just added them. */
+export interface AgentBucketSeconds {
+  sessionKey: string;
+  /** `floor(unix ms / AGENT_BUCKET_MS)`. */
+  bucket: number;
+  seconds: number;
+}
+
+/**
+ * `seconds` of work reported for `[startMs, endMs]`, spread over the buckets
+ * the interval covers in proportion to how much of each it covers. More
+ * seconds than the interval spans — active time past wall time, which only a
+ * bad point can say — are put in the stretch that long before `endMs`, so no
+ * bucket ever holds more than five minutes.
+ */
+export function spreadActive(
+  sessionKey: string,
+  startMs: number,
+  endMs: number,
+  seconds: number,
+): AgentBucketSeconds[] {
+  if (!(seconds > 0)) return [];
+  const from = Math.min(startMs, endMs - seconds * 1000);
+  const span = endMs - from;
+  const out: AgentBucketSeconds[] = [];
+  const first = Math.floor(from / AGENT_BUCKET_MS);
+  const last = Math.floor((endMs - 1) / AGENT_BUCKET_MS);
+  for (let bucket = first; bucket <= last; bucket += 1) {
+    const overlap =
+      Math.min(endMs, (bucket + 1) * AGENT_BUCKET_MS) - Math.max(from, bucket * AGENT_BUCKET_MS);
+    if (overlap > 0) out.push({ sessionKey, bucket, seconds: (seconds * overlap) / span });
+  }
+  return out;
+}
+
+/**
+ * Add what telemetry placed, inside the receiver's transaction. A bucket
+ * holds five minutes at most: two series of one session saying the same
+ * minutes (a restarted process) cannot make it more, nor refuse the upload.
+ */
+export function storeAgentBuckets(
+  tx: Tx,
+  userId: string,
+  added: readonly AgentBucketSeconds[],
+  now: number,
+): void {
+  const sums = new Map<string, AgentBucketSeconds>();
+  for (const a of added) {
+    if (!(a.seconds > 0)) continue;
+    const id = `${a.sessionKey}\u0000${String(a.bucket)}`;
+    const held = sums.get(id) ?? { ...a, seconds: 0 };
+    held.seconds += a.seconds;
+    sums.set(id, held);
+  }
+  for (const a of sums.values()) {
+    const seconds = Math.min(AGENT_BUCKET_MS / 1000, a.seconds);
+    tx.insert(agentTimeBuckets)
+      .values({ userId, sessionKey: a.sessionKey, bucket: a.bucket, seconds, updatedAt: now })
+      .onConflictDoUpdate({
+        target: [agentTimeBuckets.userId, agentTimeBuckets.sessionKey, agentTimeBuckets.bucket],
+        set: {
+          seconds: sql`min(${AGENT_BUCKET_MS / 1000}, ${agentTimeBuckets.seconds} + ${seconds})`,
+          updatedAt: now,
+        },
+      })
+      .run();
+  }
+}
+
 /** A session the collector left out (automated, or out of scope): its agent time goes too. */
 export function dropAgentTime(tx: Tx, userId: string, keys: readonly string[]): void {
   if (keys.length === 0) return;
   tx.delete(agentTimeDays)
     .where(and(eq(agentTimeDays.userId, userId), inArray(agentTimeDays.sessionKey, [...keys])))
+    .run();
+  tx.delete(agentTimeBuckets)
+    .where(
+      and(eq(agentTimeBuckets.userId, userId), inArray(agentTimeBuckets.sessionKey, [...keys])),
+    )
     .run();
 }
 
@@ -144,13 +231,54 @@ export interface AgentDayView {
   by_task: { task: TaskRef; minutes: number }[];
   /** The agent minutes no split placed. */
   unattributed_minutes: number;
+  /**
+   * When the agent worked that day (LAI-833), for My day's AGENTS lane: per
+   * five minutes, `[bucket start in unix ms, seconds, seconds on a card]` in
+   * order — on a card where the session's own split ties it, as above.
+   */
+  lane: [number, number, number][];
+}
+
+/**
+ * The buckets of `day` in `tz`, by session: one range of
+ * `agent_time_buckets_user_bucket_idx` wide enough for any zone (the UTC day,
+ * fourteen hours either side), each bucket kept where its start falls.
+ */
+function bucketsOn(
+  db: Db,
+  userId: string,
+  day: string,
+  tz: string,
+): { sessionKey: string; bucket: number; seconds: number }[] {
+  const utc = Date.parse(`${day}T00:00:00Z`);
+  const wide = 14 * 60 * 60_000;
+  return db
+    .select({
+      sessionKey: agentTimeBuckets.sessionKey,
+      bucket: agentTimeBuckets.bucket,
+      seconds: agentTimeBuckets.seconds,
+    })
+    .from(agentTimeBuckets)
+    .where(
+      and(
+        eq(agentTimeBuckets.userId, userId),
+        between(
+          agentTimeBuckets.bucket,
+          Math.floor((utc - wide) / AGENT_BUCKET_MS),
+          Math.floor((utc + 24 * 60 * 60_000 + wide) / AGENT_BUCKET_MS),
+        ),
+      ),
+    )
+    .all()
+    .filter((r) => dayIn(tz, r.bucket * AGENT_BUCKET_MS) === day);
 }
 
 /**
  * One day's agent minutes for one person: two reads, each one range of a
- * primary key that leads with (person, day).
+ * primary key that leads with (person, day), and the lane's one range of
+ * buckets — in `tz`, the zone My day reads the day in.
  */
-export function agentDay(db: Db, userId: string, day: string): AgentDayView {
+export function agentDay(db: Db, userId: string, day: string, tz = 'UTC'): AgentDayView {
   const seconds = db
     .select({
       sessionKey: agentTimeDays.sessionKey,
@@ -160,8 +288,9 @@ export function agentDay(db: Db, userId: string, day: string): AgentDayView {
     .from(agentTimeDays)
     .where(and(eq(agentTimeDays.userId, userId), eq(agentTimeDays.day, day)))
     .all();
-  if (seconds.length === 0) {
-    return { minutes: 0, keyboard_minutes: 0, by_task: [], unattributed_minutes: 0 };
+  const buckets = bucketsOn(db, userId, day, tz);
+  if (seconds.length === 0 && buckets.length === 0) {
+    return { minutes: 0, keyboard_minutes: 0, by_task: [], unattributed_minutes: 0, lane: [] };
   }
 
   const splits = db
@@ -184,6 +313,8 @@ export function agentDay(db: Db, userId: string, day: string): AgentDayView {
     list.push(s);
     bySession.set(s.sessionKey, list);
   }
+  const tied = (key: string): boolean =>
+    (bySession.get(key) ?? []).reduce((n, s) => n + s.tokens, 0) > 0;
 
   let cli = 0;
   let user = 0;
@@ -211,10 +342,29 @@ export function agentDay(db: Db, userId: string, day: string): AgentDayView {
     .filter((t) => t.minutes > 0)
     .sort((a, b) => b.minutes - a.minutes || a.task.key.localeCompare(b.task.key));
   const placed = byTask.reduce((n, t) => n + t.minutes, 0);
+
+  // The lane: each bucket's sessions together, on a card where a split ties them.
+  const perBucket = new Map<number, { seconds: number; onCard: number }>();
+  for (const b of buckets) {
+    const held = perBucket.get(b.bucket) ?? { seconds: 0, onCard: 0 };
+    held.seconds += b.seconds;
+    if (tied(b.sessionKey)) held.onCard += b.seconds;
+    perBucket.set(b.bucket, held);
+  }
+  const round = (n: number): number => Math.round(n * 100) / 100;
+  const lane = [...perBucket.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([bucket, b]): [number, number, number] => [
+      bucket * AGENT_BUCKET_MS,
+      round(b.seconds),
+      round(b.onCard),
+    ]);
+
   return {
     minutes,
     keyboard_minutes: Math.round(user / 60),
     by_task: byTask,
     unattributed_minutes: Math.max(0, minutes - placed),
+    lane,
   };
 }

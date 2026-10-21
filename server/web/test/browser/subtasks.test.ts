@@ -194,6 +194,7 @@ void describe('the Subtasks section', () => {
       const section = h.page.locator('.sub-section');
       // The section asks the server (`?parent=t1`) and lists all three.
       await section.locator('.sub-row', { hasText: 'LC-5' }).waitFor({ timeout: 10_000 });
+      await until(async () => (await section.locator('.sub-row').count()) === 3);
       assert.equal(await section.locator('.sub-row').count(), 3);
       assert.match(await section.locator('.sub-count').innerText(), /1\/3 done/);
       const bar = section.locator('.sub-progress');
@@ -277,6 +278,7 @@ void describe('subtasks and due dates on the cards', () => {
       assert.doesNotMatch(await due.innerText(), /2026/);
       assert.ok(await due.evaluate((el) => el.classList.contains('card-due-overdue')));
       // LAI-701: a date that is neither today nor past is not drawn at all.
+      await until(async () => (await byKey(h, 'LC-4').count()) === 1);
       assert.equal(await byKey(h, 'LC-4').count(), 1, 'positive control: the card is there');
       assert.equal(await byKey(h, 'LC-4').locator('.card-due').count(), 0);
     } finally {
@@ -290,6 +292,7 @@ void describe('subtasks and due dates on the cards', () => {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
       assert.equal(await byKey(h, 'LC-2').count(), 0);
       assert.equal(await byKey(h, 'LC-3').count(), 0);
+      await until(async () => (await byKey(h, 'LC-1').count()) === 1);
       assert.equal(await byKey(h, 'LC-1').count(), 1);
       assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '↳ 1/3');
     } finally {
@@ -308,6 +311,7 @@ void describe('subtasks and due dates on the cards', () => {
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
       assert.equal(await byKey(h, 'LC-2').count(), 0, 'positive control: the filter hides LC-2');
+      await until(async () => (await byKey(h, 'LC-5').count()) === 1);
       assert.equal(await byKey(h, 'LC-5').count(), 1, 'positive control: LC-5 is shown');
       assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '↳ 1/3');
     } finally {
@@ -319,8 +323,10 @@ void describe('subtasks and due dates on the cards', () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.card-subtasks').count()) === 1);
       assert.equal(await h.page.locator('.card-subtasks').count(), 1, 'nothing to hide');
       // One overdue card (LC-1); LC-4's date is next year, so it draws nothing (LAI-701).
+      await until(async () => (await h.page.locator('.card-due').count()) === 1);
       assert.equal(await h.page.locator('.card-due').count(), 1, 'nothing to hide');
 
       await h.page.locator('.bt-icon[title="View settings"]').click();
@@ -342,6 +348,7 @@ void describe('subtasks and due dates on the cards', () => {
     const h = await open('/board?project=laika-core&overdue=true', STUB);
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await byKey(h, 'LC-1').count()) === 1);
       assert.equal(await byKey(h, 'LC-1').count(), 1);
       assert.equal(await byKey(h, 'LC-2').count(), 0, 'a done task is never overdue');
       assert.equal(await byKey(h, 'LC-3').count(), 0, 'no date, not overdue');
@@ -470,6 +477,10 @@ void describe('a subtask row changes status and assignee in place (LAI-700)', ()
     try {
       await drawer(h);
       await h.page.getByRole('combobox', { name: 'Status of LC-3' }).waitFor({ timeout: 10_000 });
+      await until(
+        async () =>
+          (await h.page.getByRole('combobox', { name: 'Assignee of LC-3' }).count()) === 1,
+      );
       assert.equal(await h.page.getByRole('combobox', { name: 'Assignee of LC-3' }).count(), 1);
     } finally {
       await h.close();
@@ -493,6 +504,8 @@ void describe('a subtask row changes status and assignee in place (LAI-700)', ()
       await drawer(h);
       // Positive control: the rows are here before their absences prove anything.
       await row(h, 'LC-3').waitFor({ timeout: 10_000 });
+      await until(async () => (await row(h, 'LC-3').locator('.dep-status').count()) === 1);
+      await until(async () => (await row(h, 'LC-3').locator('.dep-avatar').count()) === 1);
       assert.equal(await row(h, 'LC-3').locator('.dep-status').count(), 1);
       assert.equal(await row(h, 'LC-3').locator('.dep-avatar').count(), 1);
       assert.equal(await h.page.locator('.sub-row [role="combobox"]').count(), 0);

@@ -190,7 +190,7 @@ export function splitUnderstood(
   return at === undefined ? undefined : `Splits at ${clockTime(at, { timeZone: item.tz })}`;
 }
 
-const plural = (n: number, one: string, many: string): string =>
+export const plural = (n: number, one: string, many: string): string =>
   `${String(n)} ${n === 1 ? one : many}`;
 
 /**

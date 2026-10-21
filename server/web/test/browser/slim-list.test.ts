@@ -442,15 +442,18 @@ void describe('a stale description is never edited (LAI-795 review B1)', () => {
   /**
    * Click the description and say whether an editor opened — the editor
    * itself, or its chunk on the way (LAI-827: it loads on the first edit).
+   * `opens` is what the caller asserts: an editor that will open is waited for.
    */
-  async function tryToEdit(h: Harness): Promise<boolean> {
+  async function tryToEdit(h: Harness, opens = false): Promise<boolean> {
     await description(h)
       .locator('.doc-field')
       .first()
       .click({ position: { x: 4, y: 4 } });
     // A fixed window: what is asserted may be that something does *not* happen.
     await h.page.waitForTimeout(300);
-    return (await description(h).locator('.rich-editor, .rich-editor-loading').count()) > 0;
+    const editor = description(h).locator('.rich-editor, .rich-editor-loading');
+    if (opens) await until(async () => (await editor.count()) > 0);
+    return (await editor.count()) > 0;
   }
 
   void test('a failed re-read locks the old text, says so with Try again, and reads again on the next refresh', async () => {
@@ -590,7 +593,7 @@ void describe('a stale description is never edited (LAI-795 review B1)', () => {
     });
     try {
       await h.page.locator('.panel-main strong', { hasText: 'whole' }).waitFor({ timeout: 20_000 });
-      assert.equal(await tryToEdit(h), true, 'positive control: the editor opens');
+      assert.equal(await tryToEdit(h, true), true, 'positive control: the editor opens');
       // The rich editor (LAI-827): this description round-trips, so it opens rich.
       const field = description(h).locator('.rich-editor .ProseMirror');
       await field.waitFor({ timeout: 10_000 });

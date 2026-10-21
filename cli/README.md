@@ -276,7 +276,11 @@ nothing — no event, no repo, no sync — when `OMNIGENT=1` (Omnigent sets it i
 every process it launches), `CI` is set, or `LAIKA_ACTIVITY_SKIP` is set; it
 only keeps that session's id, from its start and end payloads (never a
 prompt's), so its tokens go marked `automated` (LAI-775, D-091): the team's,
-never yours. `on` and `status` say so.
+never yours. `on` and `status` say so. For a sub-agent an Omnigent runner
+dispatched — `OMNIGENT=1` under a runner's primary id, and not the primary
+itself — the id is followed by the word `omnigent`, so its card can label
+your untied minutes (D-095, below); `CI` and `LAIKA_ACTIVITY_SKIP` sessions
+get no word.
 
 **The orchestrator's primary session is yours** (D-088 item 9, LAI-787).
 Omnigent sets `OMNIGENT=1` on the session you type to as well as on the
@@ -315,8 +319,10 @@ beyond `laika activity on`, **if** polly runs under the Omnigent app or host
 terminal carries no launch stamp and is never counted. The sub-agents it
 dispatches run in terminals of their own, or are other agents, and are
 skipped as before; `CI` and `LAIKA_ACTIVITY_SKIP` skip it all the same. It
-writes no transcript, so it has no tokens here, and its minutes are tied to
-no task until you assign them in *My day*. Known limits: a notice delivered
+writes no transcript, so it has no tokens here, and no key of its own: its
+minutes take the card of a builder it dispatched while that builder runs
+(D-095, *The rule* below), and are otherwise yours to assign in *My day*.
+Known limits: a notice delivered
 joined to your words, notice first, drops your turn (the safe direction); a
 renamed marker in a later Omnigent would count its turns again — a test
 quotes 0.17.0's templates so that shows up red; and a child session the
@@ -378,9 +384,10 @@ branch), the prompts you typed (`events.log`, Claude Code's for now — Codex
 and Gemini CLI are LAI-790), the turns you started in an Omnigent
 orchestrator's session (`events.log` too, LAI-792 — a lane of their own, each
 end a reply, never a typed prompt; the ones Omnigent started itself are left
-out, D-090), the Laika marks that start work on a task, and
+out, D-090), the Laika marks that start work on a task,
 your own commits in the repos sessions started in (author time, and a task key
-from the subject, which is read and dropped at once).
+from the subject, which is read and dropped at once), and the reply times and
+task of each builder an Omnigent runner dispatched (D-095 — for its key alone).
 
 **The rule** (measured over 14 days on the owner's machine):
 
@@ -393,18 +400,32 @@ from the subject, which is read and dropped at once).
 - A session's untied minute takes the key of a commit in its repository with
   exactly one key the board serves, authored within 15 minutes after it.
   Commits never make time.
+- **A minute you were active in, with no key from any lane of yours, takes
+  the card of each builder Omnigent dispatched that is active in it** (D-095):
+  its key by the same task rule — its own Laika mark, else a key in its
+  branch — and active by the same lane rules. Several builders at once split
+  the minute equally between their keys. A minute your own lanes tied keeps
+  its keys and gains none. A builder never makes a minute and adds no count:
+  with you not active, nothing is drafted, and its own time is never yours.
+  Only a session the hook marked as an Omnigent runner's sub-agent lends a
+  key; `CI` and `LAIKA_ACTIVITY_SKIP` sessions lend none, and nor do sessions
+  skipped before the hook could say which they were.
 - A run of active minutes, cut at local midnight, is one block per task in it;
   the blocks of a run add up to its wall-clock minutes. At most 48 a day: the
   shortest is merged into the nearest block of the same task, or dropped.
 
 **What leaves**, on `PUT /api/v1/me/time-drafts`, for the last 7 days whose
 blocks changed: per local day and zone, each block's start, end, minutes, task
-key or `null`, and counts — prompts, replies, sessions, commits, marks. Never
-prompt or reply text, paths, repository or branch names, session ids, commit
-messages or window titles. `laika time draft [--days N]` prints the blocks for
+key or `null`, and counts — prompts, replies, sessions, commits, marks — and,
+to a board that says it takes them (`signal_times` in its time settings), which
+five minutes the block's prompts and commits fell in: `at`, `[bucket, count]`
+pairs, so My day can draw its SIGNALS lane (D-096). A day whose report would
+pass 16 KB with them goes without them. Never prompt or reply text, paths,
+repository or branch names, session ids, commit messages or window titles. `laika time draft [--days N]` prints the blocks for
 your last days, and what they were built from — Omnigent orchestrator turns
-included, since a block carries counts only; `--json` prints the exact body.
-Neither writes or sends anything.
+included, since a block carries counts only — and which blocks took a
+dispatched builder's card, which the body does not say; `--json` prints the
+exact body. Neither writes or sends anything.
 
 **Agent minutes are not your hours.** With Claude Code's OpenTelemetry on
 (`laika activity otel`), each usage report also carries every session's tokens

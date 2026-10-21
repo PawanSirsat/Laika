@@ -38,6 +38,7 @@ import {
   open,
   refuse,
   setTheme,
+  until,
   type ApiStub,
   type Harness,
 } from './harness.ts';
@@ -371,6 +372,8 @@ void describe('dropping a card between two others (LAI-473)', () => {
       await drop(h);
       await h.page.waitForTimeout(200);
       assert.equal(writes(h).length, 0, 'the request was not held — this proves nothing');
+      // The request is still held, so this cannot wait past the answer (LAI-715).
+      await until(async () => (await order(h, LANE.todo)).join() === 't1,t3,t2');
       assert.deepEqual(
         await order(h, LANE.todo),
         ['t1', 't3', 't2'],
@@ -490,7 +493,11 @@ void describe('a cross-lane drop (LAI-473, D-060.3)', () => {
         { path: '/api/v1/tasks/t1/status', body: { status_id: 'st-todo' } },
       ]);
       assert.equal(w.tasks.find((t) => t.id === 't1')?.status, 'todo', 'the server kept the move');
-      await h.page.waitForTimeout(300);
+      await until(
+        async () =>
+          (await order(h, LANE.todo)).join() === 't1,t2,t3' &&
+          (await order(h, LANE.doing)).join() === 't4,t5',
+      );
       assert.deepEqual(await order(h, LANE.todo), ['t1', 't2', 't3'], 'the card did not come back');
       assert.deepEqual(await order(h, LANE.doing), ['t4', 't5']);
     } finally {

@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub, setTheme } from './harness.ts';
+import { closeBrowser, open, type ApiStub, setTheme, until } from './harness.ts';
 
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
 
@@ -119,10 +119,32 @@ void after(async () => {
 
 void describe('the whole card opens the task', () => {
   void test('clicking the card body — not the key — opens the panel', async () => {
+    const started = Date.now();
     const h = await open('/board?project=laika-core', STUB);
+    const opened = Date.now() - started;
     try {
       const card = h.page.locator('article.card').first();
-      await card.waitFor({ timeout: 15_000 });
+      /*
+       * **If this wait gives up, say what the page showed** (LAI-857). It timed
+       * out once in a contended root gate and could not be reproduced, even at
+       * twice that load: a bare timeout cannot tell a slow `open` (build,
+       * browser launch) from a page that rendered something other than the
+       * board, and the next failure should answer that instead of the clock.
+       */
+      await card.waitFor({ timeout: 15_000 }).catch(async (cause: unknown) => {
+        const shown = await h.page
+          .evaluate(() =>
+            (document.querySelector('main') ?? document.body).innerText
+              .replace(/\s+/g, ' ')
+              .slice(0, 400),
+          )
+          .catch(() => '(page unreadable)');
+        const asked = h.calls.map((c) => `${c.method} ${c.path}`).join(', ');
+        throw new Error(
+          `no card after open took ${String(opened)}ms; ${h.page.url()} showed: ${shown}; api calls: ${asked}`,
+          { cause },
+        );
+      });
 
       // Prove the probe can see the thing before asserting about it: the title
       // must exist, or "the click did nothing" would be indistinguishable from
@@ -136,11 +158,14 @@ void describe('the whole card opens the task', () => {
       const box = await title.boundingBox();
       assert.ok(box !== null && box.width > 0, 'the title has no layout box');
       const point: readonly [number, number] = [box.x + box.width / 2, box.y + box.height / 2];
-      const opensCard = await h.page.evaluate(
-        ([x, y]: readonly [number, number]) =>
-          document.elementFromPoint(x, y)?.closest('.card-open') != null,
-        point,
-      );
+      const hit = () =>
+        h.page.evaluate(
+          ([x, y]: readonly [number, number]) =>
+            document.elementFromPoint(x, y)?.closest('.card-open') != null,
+          point,
+        );
+      await until(hit);
+      const opensCard = await hit();
       assert.ok(opensCard, 'the pixels over the card title do not belong to the open control');
 
       // And the click itself.
@@ -171,6 +196,7 @@ void describe('a blocked task still shows as blocked after the rename', () => {
       for (const theme of ['Dark', 'Light']) {
         await setTheme(h.page, theme);
         await h.page.waitForTimeout(300);
+        await until(async () => (await h.page.locator('.card-blocked').count()) === 1);
         assert.equal(
           await h.page.locator('.card-blocked').count(),
           1,

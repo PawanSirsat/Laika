@@ -279,6 +279,7 @@ const settle = async (h: Awaited<ReturnType<typeof open>>, width: number) => {
 const boardReady = async (h: Awaited<ReturnType<typeof open>>) => {
   await h.page.locator('.lane').first().waitFor({ timeout: 20_000 });
   // Five lanes, or every measurement below is about a board that did not render.
+  await until(async () => (await h.page.locator('.lane').count()) === 5);
   assert.equal(await h.page.locator('.lane').count(), 5, 'the board did not render five lanes');
 };
 
@@ -438,18 +439,26 @@ void describe('what the owner actually complained about', () => {
         await setTheme(h.page, theme);
         await h.page.waitForTimeout(300);
 
-        const clearance = await h.page.evaluate(() => {
-          // The scroller's own box, whichever it is — the scrollbar paints at
-          // the bottom of that, not of `.kanban`.
-          const row = document.querySelector('.board-main') ?? document.querySelector('.kanban');
-          if (row === null) return null;
-          const box = row.getBoundingClientRect();
-          const lowest = Math.max(
-            ...[...document.querySelectorAll('.lane')].map((l) => l.getBoundingClientRect().bottom),
-          );
-          // What the scrollbar has to itself, below the tallest lane.
-          return box.bottom - lowest;
+        const measure = () =>
+          h.page.evaluate(() => {
+            // The scroller's own box, whichever it is — the scrollbar paints at
+            // the bottom of that, not of `.kanban`.
+            const row = document.querySelector('.board-main') ?? document.querySelector('.kanban');
+            if (row === null) return null;
+            const box = row.getBoundingClientRect();
+            const lowest = Math.max(
+              ...[...document.querySelectorAll('.lane')].map(
+                (l) => l.getBoundingClientRect().bottom,
+              ),
+            );
+            // What the scrollbar has to itself, below the tallest lane.
+            return box.bottom - lowest;
+          });
+        await until(async () => {
+          const c = await measure();
+          return c !== null && c >= 6;
         });
+        const clearance = await measure();
 
         assert.ok(clearance !== null, `${theme}: no board`);
         assert.ok(
@@ -487,12 +496,19 @@ void describe('the lanes fill the window (LAI-283)', () => {
         await h.page.setViewportSize({ width: 1440, height });
         await h.page.waitForTimeout(250);
 
-        const m = await h.page.evaluate(() => {
-          const lane = document.querySelector('.lane');
-          if (lane === null) return null;
-          const r = lane.getBoundingClientRect();
-          return { bottom: r.bottom, height: r.height, viewport: window.innerHeight };
+        const measure = () =>
+          h.page.evaluate(() => {
+            const lane = document.querySelector('.lane');
+            if (lane === null) return null;
+            const r = lane.getBoundingClientRect();
+            return { bottom: r.bottom, height: r.height, viewport: window.innerHeight };
+          });
+        // Wait for the lanes to reach the new bottom, not a fixed time (LAI-715).
+        await until(async () => {
+          const r = await measure();
+          return r !== null && r.viewport - r.bottom >= 0 && r.viewport - r.bottom <= 56;
         });
+        const m = await measure();
         assert.ok(m !== null, 'no lane rendered');
 
         // The pane's own bottom padding is the only thing that may be left.
@@ -897,10 +913,13 @@ void describe('a grouped board can reach its last row (LAI-296)', () => {
       await h.page.locator('.swim').first().waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(400);
 
-      const room = await h.page.evaluate(() => {
-        const pane = document.querySelector('.board-main');
-        return pane === null ? 0 : pane.scrollHeight - pane.clientHeight;
-      });
+      const roomOf = () =>
+        h.page.evaluate(() => {
+          const pane = document.querySelector('.board-main');
+          return pane === null ? 0 : pane.scrollHeight - pane.clientHeight;
+        });
+      await until(async () => (await roomOf()) > 0);
+      const room = await roomOf();
       assert.ok(room > 0, 'the grouped board is not tall enough to prove anything');
 
       /*
@@ -913,10 +932,13 @@ void describe('a grouped board can reach its last row (LAI-296)', () => {
        * The computed style is asserted too: the gesture proves a person can
        * reach the lower rows, the property says why.
        */
-      const overflowY = await h.page.evaluate(() => {
-        const pane = document.querySelector('.board-main');
-        return pane === null ? '' : getComputedStyle(pane).overflowY;
-      });
+      const overflowOf = () =>
+        h.page.evaluate(() => {
+          const pane = document.querySelector('.board-main');
+          return pane === null ? '' : getComputedStyle(pane).overflowY;
+        });
+      await until(async () => ['auto', 'scroll'].includes(await overflowOf()));
+      const overflowY = await overflowOf();
       assert.ok(
         overflowY === 'auto' || overflowY === 'scroll',
         `a grouped board cannot be scrolled by hand (overflow-y: ${overflowY})`,

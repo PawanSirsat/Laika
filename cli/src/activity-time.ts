@@ -31,12 +31,16 @@ import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-
  * times of the prompts the person typed (`events.log`), the times an
  * Omnigent-native orchestrator's turns started and ended in the person's
  * primary session (`events.log` too, LAI-792), the Laika marks that
- * start work on a task, and the person's own commits in the repos the hook has
+ * start work on a task, the person's own commits in the repos the hook has
  * seen sessions start in (author time, and a key from the subject, which is
- * read and dropped at once). **Only blocks leave**: a start, an end, minutes,
- * a task key or `null`, and how many of each signal fell in it. Never prompt
- * or reply text, paths, repository or branch names, session ids or a commit
- * message — none of them reaches {@link Block}.
+ * read and dropped at once), and the reply times and task of each session the
+ * hook marked Omnigent-dispatched (D-095). **Only blocks leave**: a start, an
+ * end, minutes, a task key or `null`, how many of each signal fell in it, and
+ * — to a board that takes them — which five minutes its prompts and commits
+ * fell in (D-096, {@link blocksToSend}). Never prompt or reply text, paths,
+ * repository or branch names, session ids or a commit message — none of them
+ * reaches {@link Block}. Which blocks took
+ * a dispatched session's key is said on this machine only ({@link Draft}).
  *
  * ## The rule (design REPORT.md §2.1, measured on the owner's machine)
  *
@@ -56,8 +60,13 @@ import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-
  *   with exactly one key the board serves, authored within
  *   {@link COMMIT_REACH_S} after it. The minute is split equally between its
  *   tasks; with none, it is untied (`task: null`).
- * - **Commits never make time**: they add a count and a key to minutes some
- *   lane already made.
+ * - **A minute none of the person's lanes tied takes the keys of the
+ *   sessions Omnigent dispatched that are active in it** (D-095): each such
+ *   session is a lane by the same rules, and the minute is split equally
+ *   between their distinct keys. A minute the person's lanes tied keeps its
+ *   keys and gains none.
+ * - **Commits and dispatched sessions never make time**: they add a key —
+ *   a commit a count too — to minutes the person's lanes already made.
  * - A **stretch** is a run of active minutes, cut at local midnight; it gives
  *   one block per task in it, its minutes by largest remainder so a stretch's
  *   blocks add up to its wall-clock minutes.
@@ -95,6 +104,19 @@ export interface Signals {
   marks: number;
 }
 
+/** Which five minutes a prompt or commit fell in is sent, and nothing finer (D-096). */
+export const SIGNAL_BUCKET_S = 5 * 60;
+
+/**
+ * When a block's prompts and commits happened (D-096, LAI-834): per kind,
+ * `[bucket, count]` pairs in order, a bucket being `floor(epoch s / 300)` —
+ * the board's `floor(unix ms / 300000)`. Numbers, and nothing else.
+ */
+export interface SignalTimes {
+  readonly prompts?: readonly (readonly [number, number])[];
+  readonly commits?: readonly (readonly [number, number])[];
+}
+
 /** One block, as `PUT /me/time-drafts` carries it (SPEC §6.4). */
 export interface Block {
   /** Unix ms, on a minute. */
@@ -103,6 +125,8 @@ export interface Block {
   readonly minutes: number;
   readonly task: string | null;
   readonly signals: Signals;
+  /** Absent for a block with no prompt and no commit, and when not sent (`blocksToSend`). */
+  readonly at?: SignalTimes;
 }
 
 export interface ReplyEvent {
@@ -159,6 +183,14 @@ export function personTurns(turns: readonly TurnEvent[]): TurnEvent[] {
   return kept;
 }
 
+/** A reply of a session Omnigent dispatched (D-095): its time and its key, for lending. */
+export interface DispatchedEvent {
+  readonly at: number;
+  /** Local only: which lane it is in. */
+  readonly session: string;
+  readonly task: string | null;
+}
+
 export interface DraftInputs {
   readonly replies: readonly ReplyEvent[];
   /** Epoch seconds of the prompts the person typed. */
@@ -166,6 +198,8 @@ export interface DraftInputs {
   readonly commits: readonly CommitEvent[];
   readonly marks: readonly MarkEvent[];
   readonly turns: readonly TurnEvent[];
+  /** The replies of sessions Omnigent dispatched: they lend keys, and make no minute. */
+  readonly dispatched?: readonly DispatchedEvent[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -184,6 +218,8 @@ interface MinuteInfo {
   keys: (string | null)[];
   /** Each active lane's own key in it (a session's commit key applied). */
   lanes: Map<string, string | null>;
+  /** Its keys are ones dispatched sessions lent (D-095). */
+  lent: boolean;
 }
 
 interface Building {
@@ -194,6 +230,31 @@ interface Building {
   signals: Signals;
   sessions: Set<string>;
   minutes: number;
+  /** Some minute of it took a key a dispatched session lent: said locally, never sent. */
+  lent: boolean;
+  /** Per bucket, how many prompts and commits it counts there (D-096). */
+  at: { prompts: Map<number, number>; commits: Map<number, number> };
+}
+
+/**
+ * Count `count` of `kind` in the bucket of `minute` (epoch minutes), held to
+ * the block's own minutes: the board looks for them nowhere else. A commit
+ * counted in another task's block of its stretch, or evidence a block too
+ * short to keep gave its stretch's largest, lands at that block's nearer edge.
+ */
+function timeIn(b: Building, kind: 'prompts' | 'commits', minute: number, count = 1): void {
+  const held = Math.min(Math.max(minute, b.first), b.last);
+  const bucket = Math.floor((held * 60) / SIGNAL_BUCKET_S);
+  b.at[kind].set(bucket, (b.at[kind].get(bucket) ?? 0) + count);
+}
+
+/** `from`'s times, into `into` — after `into`'s span has taken whatever it grows to. */
+function mergeTimes(into: Building, from: Building): void {
+  for (const kind of ['prompts', 'commits'] as const) {
+    for (const [bucket, count] of from.at[kind]) {
+      timeIn(into, kind, (bucket * SIGNAL_BUCKET_S) / 60, count);
+    }
+  }
 }
 
 const zero = (): Signals => ({ prompts: 0, replies: 0, sessions: 0, commits: 0, marks: 0 });
@@ -213,6 +274,27 @@ function dayFinder(tz: string): (epochS: number) => string {
 }
 
 /**
+ * Each minute one lane's events keep it active, with the event that does:
+ * events no more than {@link GAP_S} apart chain, and the last before a longer
+ * gap holds on for {@link TAIL_S}.
+ */
+function eachActiveMinute<E extends { readonly at: number }>(
+  events: E[],
+  visit: (minute: number, event: E) => void,
+): void {
+  events.sort((a, b) => a.at - b.at);
+  for (let i = 0; i < events.length; i += 1) {
+    const e = events[i];
+    if (e === undefined) continue;
+    const next = events[i + 1];
+    const end = next !== undefined && next.at - e.at <= GAP_S ? next.at : e.at + TAIL_S;
+    const m0 = Math.floor(e.at / 60);
+    const m1 = Math.max(m0 + 1, Math.floor(end / 60));
+    for (let m = m0; m < m1; m += 1) visit(m, e);
+  }
+}
+
+/**
  * The blocks of `days` (local, in `tz`), every one of them in the answer —
  * a day with nothing in it as `[]`.
  */
@@ -221,6 +303,18 @@ export function draftBlocks(
   tz: string,
   days: readonly string[],
 ): Map<string, Block[]> {
+  return draftDays(inputs, tz, days).days;
+}
+
+/**
+ * {@link draftBlocks}, and which of the blocks took a key a dispatched session
+ * lent (D-095) — for this machine to say so; it is never sent.
+ */
+export function draftDays(
+  inputs: DraftInputs,
+  tz: string,
+  days: readonly string[],
+): { days: Map<string, Block[]>; lent: Set<Block> } {
   const dayOf = dayFinder(tz);
 
   // --- lanes -----------------------------------------------------------------
@@ -238,23 +332,33 @@ export function draftBlocks(
   // --- each lane's active minutes ---------------------------------------------
   const active = new Map<number, Map<string, LaneMinute>>();
   for (const [lane, events] of lanes) {
-    events.sort((a, b) => a.at - b.at);
-    for (let i = 0; i < events.length; i += 1) {
-      const e = events[i];
-      if (e === undefined) continue;
-      const next = events[i + 1];
-      const end = next !== undefined && next.at - e.at <= GAP_S ? next.at : e.at + TAIL_S;
-      const m0 = Math.floor(e.at / 60);
-      const m1 = Math.max(m0 + 1, Math.floor(end / 60));
-      for (let m = m0; m < m1; m += 1) {
-        let at = active.get(m);
-        if (at === undefined) {
-          at = new Map();
-          active.set(m, at);
-        }
-        at.set(lane, { task: e.task, repo: e.repo, session: lane !== 'p' });
+    eachActiveMinute(events, (m, e) => {
+      let at = active.get(m);
+      if (at === undefined) {
+        at = new Map();
+        active.set(m, at);
       }
-    }
+      at.set(lane, { task: e.task, repo: e.repo, session: lane !== 'p' });
+    });
+  }
+
+  // --- the keys dispatched sessions lend, by minute (D-095) -------------------
+  // Their lanes follow the same rules and make no minute: only a minute the
+  // person's lanes made, and left untied, ever asks for these.
+  const dispatched = new Map<string, DispatchedEvent[]>();
+  for (const d of inputs.dispatched ?? []) {
+    const list = dispatched.get(d.session) ?? [];
+    list.push(d);
+    dispatched.set(d.session, list);
+  }
+  const lending = new Map<number, Set<string>>();
+  for (const events of dispatched.values()) {
+    eachActiveMinute(events, (m, e) => {
+      if (e.task === null) return;
+      const keys = lending.get(m) ?? new Set<string>();
+      keys.add(e.task);
+      lending.set(m, keys);
+    });
   }
 
   // --- a commit's key, for a session's untied minutes in its repo -------------
@@ -294,6 +398,9 @@ export function draftBlocks(
       laneKeys.set(lane, key);
       if (key !== null) keys.add(key);
     }
+    // None of the person's own: the keys of the dispatched sessions active in it.
+    const lent = keys.size === 0 ? lending.get(minute) : undefined;
+    for (const key of lent ?? []) keys.add(key);
     const day = dayOf(minute * 60);
     if (previous === undefined || minute !== previous + 1 || day !== previousDay) {
       stretches.push({ day, minutes: [] });
@@ -303,6 +410,7 @@ export function draftBlocks(
       stretch: stretches.length - 1,
       keys: keys.size === 0 ? [null] : [...keys].sort(),
       lanes: laneKeys,
+      lent: lent !== undefined,
     });
     previous = minute;
     previousDay = day;
@@ -315,7 +423,8 @@ export function draftBlocks(
     if (!wanted.has(stretch.day)) return;
     const blocks = building[s] ?? new Map<string | null, Building>();
     for (const minute of stretch.minutes) {
-      const keys = info.get(minute)?.keys ?? [null];
+      const at = info.get(minute);
+      const keys = at?.keys ?? [null];
       for (const key of keys) {
         let b = blocks.get(key);
         if (b === undefined) {
@@ -327,11 +436,14 @@ export function draftBlocks(
             signals: zero(),
             sessions: new Set(),
             minutes: 0,
+            lent: false,
+            at: { prompts: new Map(), commits: new Map() },
           };
           blocks.set(key, b);
         }
         b.last = minute;
         b.share += 1 / keys.length;
+        if (at?.lent === true) b.lent = true;
       }
     }
     // Largest remainder: whole minutes that add up to the stretch's own.
@@ -386,7 +498,9 @@ export function draftBlocks(
     const minute = Math.floor(at / 60);
     for (const key of info.get(minute)?.keys ?? []) {
       const b = blockAt(minute, key);
-      if (b !== undefined) b.signals.prompts += 1;
+      if (b === undefined) continue;
+      b.signals.prompts += 1;
+      timeIn(b, 'prompts', minute);
     }
   }
   // A commit lands in the stretch it closes: its own minute, or the active one
@@ -400,11 +514,14 @@ export function draftBlocks(
     const blocks = building[at.stretch];
     const b =
       (c.task !== null ? blocks?.get(c.task) : undefined) ?? blocks?.get(at.keys[0] ?? null);
-    if (b !== undefined) b.signals.commits += 1;
+    if (b === undefined) continue;
+    b.signals.commits += 1;
+    timeIn(b, 'commits', minute);
   }
 
   // --- per day, capped -------------------------------------------------------
   const out = new Map<string, Block[]>(days.map((day) => [day, []]));
+  const lent = new Set<Block>();
   const perDay = new Map<string, Building[]>();
   stretches.forEach((stretch, s) => {
     if (!wanted.has(stretch.day)) return;
@@ -421,6 +538,7 @@ export function draftBlocks(
       for (const k of ['prompts', 'replies', 'commits', 'marks'] as const) {
         largest.signals[k] += b.signals[k];
       }
+      mergeTimes(largest, b);
       for (const session of b.sessions) largest.sessions.add(session);
       largest.signals.sessions = largest.sessions.size;
     }
@@ -428,9 +546,16 @@ export function draftBlocks(
     perDay.set(stretch.day, [...(perDay.get(stretch.day) ?? []), ...kept]);
   });
   for (const [day, blocks] of perDay) {
-    out.set(day, withinADay(capped(blocks)).map(toBlock));
+    out.set(
+      day,
+      withinADay(capped(blocks)).map((b) => {
+        const block = toBlock(b);
+        if (b.lent) lent.add(block);
+        return block;
+      }),
+    );
   }
-  return out;
+  return { days: out, lent };
 }
 
 /** The most minutes the board takes for one day (§6.4's `invalid_blocks`). */
@@ -490,9 +615,11 @@ function capped(blocks: Building[]): Building[] {
     partner.first = Math.min(partner.first, shortest.first);
     partner.last = Math.max(partner.last, shortest.last);
     partner.minutes += shortest.minutes;
+    partner.lent ||= shortest.lent;
     for (const k of ['prompts', 'replies', 'commits', 'marks'] as const) {
       partner.signals[k] += shortest.signals[k];
     }
+    mergeTimes(partner, shortest);
     for (const session of shortest.sessions) partner.sessions.add(session);
     partner.signals.sessions = partner.sessions.size;
   }
@@ -501,18 +628,28 @@ function capped(blocks: Building[]): Building[] {
 
 function toBlock(b: Building): Block {
   const cap = (n: number): number => Math.min(n, SIGNAL_MAX);
+  const signals = {
+    prompts: cap(b.signals.prompts),
+    replies: cap(b.signals.replies),
+    sessions: cap(b.signals.sessions),
+    commits: cap(b.signals.commits),
+    marks: cap(b.signals.marks),
+  };
+  // In order, and never more than the block counts: a count the cap cut short
+  // keeps its count and loses its times rather than overstate them.
+  const at: { prompts?: [number, number][]; commits?: [number, number][] } = {};
+  for (const kind of ['prompts', 'commits'] as const) {
+    const pairs = [...b.at[kind]].sort((x, y) => x[0] - y[0]);
+    const total = pairs.reduce((n, [, count]) => n + count, 0);
+    if (pairs.length > 0 && total <= signals[kind]) at[kind] = pairs;
+  }
   return {
     start: b.first * 60_000,
     end: (b.last + 1) * 60_000,
     minutes: b.minutes,
     task: b.task,
-    signals: {
-      prompts: cap(b.signals.prompts),
-      replies: cap(b.signals.replies),
-      sessions: cap(b.signals.sessions),
-      commits: cap(b.signals.commits),
-      marks: cap(b.signals.marks),
-    },
+    signals,
+    ...(Object.keys(at).length > 0 ? { at } : {}),
   };
 }
 
@@ -539,6 +676,8 @@ export interface DraftOptions {
 export interface Draft {
   /** Oldest day first; every day of the window, empty ones as `[]`. */
   readonly days: Map<string, Block[]>;
+  /** Local only, never sent: the blocks that took a key a dispatched session lent (D-095). */
+  readonly lent: ReadonlySet<Block>;
   /** What the blocks were built from, counted — for `laika time draft`. */
   readonly read: {
     readonly replies: number;
@@ -549,6 +688,8 @@ export interface Draft {
     readonly turns: number;
     /** Omnigent orchestrator turns Omnigent began itself, left out (D-090). */
     readonly runtimeTurns: number;
+    /** Replies of sessions Omnigent dispatched, read for their keys alone (D-095). */
+    readonly dispatched: number;
   };
 }
 
@@ -723,8 +864,19 @@ export async function buildDraft(options: DraftOptions): Promise<Draft> {
   const lines = eventLines(options.paths);
   const prompts = promptTimes(lines, fromS);
   const turns = turnTimes(lines, fromS);
+  const dispatched: DispatchedEvent[] = sources.dispatched.map((r) => ({
+    at: r.at,
+    session: r.session,
+    task: r.task,
+  }));
+  const drafted = draftDays(
+    { replies, prompts, commits, marks: sources.marks, turns, dispatched },
+    tz,
+    days,
+  );
   return {
-    days: draftBlocks({ replies, prompts, commits, marks: sources.marks, turns }, tz, days),
+    days: drafted.days,
+    lent: drafted.lent,
     read: {
       replies: replies.length,
       prompts: prompts.length,
@@ -732,6 +884,7 @@ export async function buildDraft(options: DraftOptions): Promise<Draft> {
       marks: sources.marks.length,
       turns: turns.filter((t) => t.kind === 'start').length,
       runtimeTurns: turns.filter((t) => t.kind === 'wake').length,
+      dispatched: dispatched.length,
     },
   };
 }
@@ -745,6 +898,8 @@ export interface TimeSettings {
   readonly org_mode: string;
   readonly draft_my_time: boolean;
   readonly drafting: boolean;
+  /** The board takes a block's `at` (D-096); a board that predates it does not say so. */
+  readonly signal_times?: boolean;
 }
 
 /** A call's answer — `activity-sync.ts`'s `Call`, by shape. */
@@ -836,6 +991,29 @@ export function timeDraftBody(
   return JSON.stringify({ v: 1, collector_id: collectorId, tz, days });
 }
 
+/** A block as it goes without its signal times: everything else as it was. */
+function withoutTimes(b: Block): Block {
+  return { start: b.start, end: b.end, minutes: b.minutes, task: b.task, signals: b.signals };
+}
+
+/**
+ * A day's blocks as they go (D-096): with when their prompts and commits fell
+ * only to a board that says it takes it, and only while the day's report stays
+ * within {@link MAX_BODY_BYTES} — else without, their counts and everything
+ * else as they were, so no day is ever refused over its times.
+ */
+export function blocksToSend(
+  collectorId: string,
+  tz: string,
+  day: string,
+  blocks: readonly Block[],
+  accepts: boolean,
+): Block[] {
+  if (!accepts) return blocks.map(withoutTimes);
+  const size = Buffer.byteLength(timeDraftBody(collectorId, tz, [{ day, blocks }]));
+  return size > MAX_BODY_BYTES ? blocks.map(withoutTimes) : [...blocks];
+}
+
 /** Days as reports of at most 16 KB, oldest first; a day is never split. */
 export function timeDraftReports(
   collectorId: string,
@@ -898,7 +1076,11 @@ export async function timeStep(ctx: TimeContext): Promise<TimeOutcome> {
     const first = [...draft.days.keys()][0] ?? '';
     for (const day of Object.keys(memory.sent)) if (day < first) delete memory.sent[day];
     const due: { day: string; blocks: Block[]; signature: string }[] = [];
-    for (const [day, blocks] of draft.days) {
+    const accepts = settings.value.signal_times === true;
+    for (const [day, drafted] of draft.days) {
+      // Measured as they go: a board that starts taking the times gets each
+      // day again, with them.
+      const blocks = blocksToSend(ctx.collectorId, ctx.tz, day, drafted, accepts);
       const signature = JSON.stringify(blocks);
       const held = memory.sent[day];
       // An empty day goes only to empty what the board was given for it.

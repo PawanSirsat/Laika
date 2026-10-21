@@ -22,7 +22,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { pick } from './dropdown.ts';
-import { closeBrowser, open, setTheme, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, open, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 
 const DAY = 86_400_000;
 const NOW = Date.now();
@@ -389,6 +389,7 @@ void describe('the figures come from the task set in the browser (LAI-727)', () 
     });
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.card').count()) === 3);
       assert.equal(
         await h.page.locator('.card').count(),
         3,
@@ -411,6 +412,7 @@ void describe('the figures come from the task set in the browser (LAI-727)', () 
     });
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.card').count()) === 3);
       assert.equal(
         await h.page.locator('.card').count(),
         3,
@@ -658,6 +660,7 @@ void describe('the sidebar open, the row crowded (LAI-727 review)', () => {
             // The crowding is real, or the width proves nothing.
             const m = await measureToolbar(h);
             assert.equal(m.railOpen, true, 'the sidebar is not open — the wrong state');
+            await until(async () => (await h.page.locator('.bt-member').count()) === 4);
             assert.equal(
               await h.page.locator('.bt-member').count(),
               4,
@@ -794,14 +797,8 @@ void describe('the pill (LAI-727 review)', () => {
       try {
         await reads(h, `S2 ${stripSummary('s2')}`);
         await setTheme(h.page, theme);
-        /*
-         * **The open sidebar, as this test was written against** (LAI-796).
-         * At 920px the sidebar is the icon rail by itself since LAI-796, which
-         * leaves the toolbar 860px — on the pill's boundary, where hovering it
-         * re-measures and flips the tier (LAI-804). The toggle opens it for
-         * now, and the toolbar is the narrow one this test is about.
-         */
-        await openSidebar(h);
+        // The icon rail, as 920px draws it since LAI-796: the sidebar is not
+        // opened (LAI-804). The boundary itself has its own test below.
         await h.page.locator('.bt-member').first().waitFor({ timeout: 10_000 });
         await settled(h);
 
@@ -818,6 +815,7 @@ void describe('the pill (LAI-727 review)', () => {
           assert.ok(name.includes(said), `the pill's name lacks "${said}": ${name}`);
         }
         // One figure drawn: the scope and done-of-total; BLK and LEFT are not.
+        await until(() => h.page.locator('.bstats-scope').isVisible());
         assert.equal(await h.page.locator('.bstats-scope').isVisible(), true);
         assert.match(
           (await h.page.locator('.bstats-done').innerText()).replace(/\s+/g, ''),
@@ -869,6 +867,135 @@ void describe('the pill (LAI-727 review)', () => {
       }
     });
   }
+});
+
+/**
+ * **The pill on its boundary with compact** (LAI-804).
+ *
+ * LAI-796 saw the pill flip to compact when hovered at its boundary, so the
+ * popover never opened. The boundary is wherever the row puts it — the
+ * sidebar, the faces and the type scale all move it, and LAI-828 moved it
+ * off the 860px column LAI-804 was filed at — so it is **found here, not
+ * written down**: down from 1180px (the icon rail's widest) in 8px steps to
+ * the first pill, then up in 1px steps to the first compact. The width below
+ * that, approached from the pill, is the widest pill: the most room the pill
+ * ever has, and the least it would take for a re-measure to step it up.
+ *
+ * Each action is watched frame by frame for 1.5s, the window LAI-796
+ * measured the flip in. A frame sampler sees only what is painted, so the
+ * tier measurement's own synchronous class writes — restored before paint —
+ * are not mistaken for a tier change.
+ */
+void describe('the pill on its boundary with compact (LAI-804)', () => {
+  void test('the widest pill keeps its tier when hovered, focused or clicked, and opens on the first hover', async (t) => {
+    const h = await open('/board?project=laika-core&sprint=s2&group=assignee', SIX_MEMBERS, {
+      before: async (page) => page.setViewportSize({ width: 1180, height: 768 }),
+    });
+    try {
+      await reads(h, `S2 ${stripSummary('s2')}`);
+      await h.page.locator('.bt-member').first().waitFor({ timeout: 10_000 });
+
+      const tierAt = async (width: number): Promise<string> => {
+        await h.page.setViewportSize({ width, height: 768 });
+        await settled(h);
+        return (await measureToolbar(h)).tier;
+      };
+
+      let width = 1180;
+      assert.notEqual(
+        await tierAt(width),
+        'pill',
+        'positive control: 1180px is wider than the pill',
+      );
+      while ((await tierAt(width)) !== 'pill') {
+        width -= 8;
+        assert.ok(width > 820, 'the pill was never reached on the way down');
+      }
+      const firstPill = width;
+      while ((await tierAt(width)) === 'pill') {
+        width += 1;
+        assert.ok(width < firstPill + 64, 'the pill never stepped back up to compact');
+      }
+      const firstCompact = width;
+      const widest = firstCompact - 1;
+
+      // Back to the pill, then up to the widest one without crossing.
+      assert.equal(await tierAt(firstPill), 'pill', `${String(firstPill)}px is not the pill again`);
+      for (let w = firstPill + 1; w <= widest; w += 1) {
+        assert.equal(await tierAt(w), 'pill', `${String(w)}px left the pill on the way up`);
+      }
+      const at = await measureToolbar(h);
+      t.diagnostic(
+        `boundary: first pill ${String(firstPill)}px, first compact ${String(firstCompact)}px, ` +
+          `widest pill ${String(widest)}px (search ${String(at.search)}px)`,
+      );
+      assert.equal(
+        at.railOpen,
+        false,
+        'the sidebar is open — the icon rail is the state under test',
+      );
+
+      /** Every tier painted over the next 1.5s, collapsed to its changes. */
+      const painted = (): Promise<string[]> =>
+        h.page.evaluate(
+          () =>
+            new Promise<string[]>((resolve) => {
+              const seen: string[] = [];
+              const start = performance.now();
+              const frame = (): void => {
+                const cls = document.querySelector('.bstats')?.className ?? '';
+                const tier = /\bbstats-(full|compact|pill)\b/.exec(cls)?.[1] ?? 'none';
+                if (seen.at(-1) !== tier) seen.push(tier);
+                if (performance.now() - start < 1500) requestAnimationFrame(frame);
+                else resolve(seen);
+              };
+              requestAnimationFrame(frame);
+            }),
+        );
+
+      const pill = h.page.locator('.bstats');
+      const tip = h.page.locator('[role="tooltip"].bstats-pop');
+
+      // Hovered once; the pointer stays where it landed.
+      let watching = painted();
+      await pill.hover();
+      assert.deepEqual(
+        await watching,
+        ['pill'],
+        `hovered at ${String(widest)}px, the tier changed`,
+      );
+      assert.equal(await tip.isVisible(), true, 'the first hover did not open the tooltip');
+      assert.equal(await pill.getAttribute('aria-expanded'), 'true');
+      assert.match((await tip.innerText()).replace(/\s+/g, ' '), /BLK 4/);
+
+      await h.page.mouse.move(5, 760);
+      await tip.waitFor({ state: 'hidden', timeout: 3000 });
+
+      watching = painted();
+      await pill.focus();
+      assert.deepEqual(
+        await watching,
+        ['pill'],
+        `focused at ${String(widest)}px, the tier changed`,
+      );
+      assert.equal(await tip.isVisible(), true, 'focus did not open the tooltip');
+      await h.page.keyboard.press('Escape');
+      await tip.waitFor({ state: 'hidden', timeout: 3000 });
+      await h.page.locator('.bt-search input').focus();
+
+      watching = painted();
+      await pill.click();
+      assert.deepEqual(
+        await watching,
+        ['pill'],
+        `clicked at ${String(widest)}px, the tier changed`,
+      );
+      assert.equal(await tip.isVisible(), true, 'a click did not open the tooltip');
+      assert.equal(await pill.getAttribute('aria-expanded'), 'true');
+    } finally {
+      await h.close();
+    }
+  });
 });
 
 /**

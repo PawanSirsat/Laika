@@ -1789,8 +1789,9 @@ needs both this and §4.45's `drafts`.
 A person's drafted time (D-088 items 3, 11 and 13, LAI-787): a block their own
 collector drafted on their machine, or an entry an agent proposed. **Read only
 by the person, on a web session** — no token reads one and there is no admin
-read. Counts of the signals behind a block and nothing else: no column can hold
-a prompt, a path, a repository, a branch or a window title.
+read. Counts of the signals behind a block, and which five minutes its prompts
+and commits fell in (D-096), and nothing else: no column can hold a prompt, a
+path, a repository, a branch or a window title.
 
 | field | notes |
 | --- | --- |
@@ -1807,7 +1808,7 @@ a prompt, a path, a repository, a branch or a window title.
 | `task_id` | nullable FK `tasks`, set null |
 | `project_id` | nullable FK `projects`, set null |
 | `general` | 0 or 1 — put on no card and no project by the person, on purpose |
-| `signals` | JSON `{ prompts, replies, sessions, commits, marks }` — counts only |
+| `signals` | JSON `{ prompts, replies, sessions, commits, marks, at? }` — counts, and `at` `{ prompts?, commits? }`: `[bucket, count]` pairs, a bucket being five minutes of unix time, `floor(ms / 300000)` (D-096, LAI-834). Numbers only |
 | `note` | nullable — an agent's proposal may say what it was for, ≤ 200 characters |
 | `state` | `pending` \| `confirmed` \| `dismissed` |
 | `entry_id` | nullable FK `time_entries`, set null — what a confirmed draft became |
@@ -2046,6 +2047,32 @@ that, and an Undo deletes its own. `DELETE /me/time-drafts` and *Draft my
 time* turned off delete the person's with their drafts, and the organisation
 leaving `drafts` deletes everybody's (§4.45, §4.46), because a before-image
 holds a block's counts (§4.47). §11.6 sweeps everyone's.
+
+### 4.57 `agent_time_buckets`
+
+When the agent worked (LAI-833): the seconds of Claude Code's `active_time` of
+`type=cli` (the agent working, never the keyboard) per session and five
+minutes of unix time. They come from the same OTLP receiver as §4.50, from the
+times its points already carry. Each point's added seconds are spread over the
+buckets its interval covers, in proportion. Seconds past the interval's length
+are put in the stretch that long before its end, so a bucket never holds more
+than five minutes. They draw My day's AGENTS lane, `agent.lane` in `GET
+/me/time`: per bucket of the day in the requested zone, `[bucket start in unix
+ms, seconds, seconds on a card]`, where a bucket is on a card when its
+session's own split ties it (§4.51). **Agent minutes, never hours.**
+
+| field | notes |
+| --- | --- |
+| `user_id` | FK `users`, cascade |
+| `session_key` | as §4.38 — a one-way key, never the session id |
+| `bucket` | integer — `floor(unix ms / 300000)` |
+| `seconds` | real, 0–300 (CHECK); an upsert adds and stops at 300 |
+| `updated_at` | |
+
+Primary key `(user_id, session_key, bucket)`; index `(user_id, bucket)`, one
+range per day. A session the collector left out (§4.40) has its rows dropped,
+and none are added. Kept 40 days (§11.6), and deleted with the person's
+history (`DELETE /me/local-activity`).
 
 ## 5. Task lifecycle
 
@@ -2905,8 +2932,10 @@ the Max plan?*), not in tokens, so the number is always the developer's.
 parameter names anybody else.
 
 - **The switches.** `GET /me/time-settings` answers `{ org_mode, draft_my_time,
-  drafting, min_sync_interval_s }` to a session or any token of the person's —
-  a collector asks before it sends. `PUT /me/time-settings` takes
+  drafting, min_sync_interval_s, signal_times }` to a session or any token of
+  the person's — a collector asks before it sends. `signal_times: true` says
+  the board takes a block's `at` (D-096); a collector sends it only then, so a
+  board that predates it is never refused an upload over it. `PUT /me/time-settings` takes
   `{ draft_my_time }` from a web session only; off deletes every draft the
   person has not confirmed. `PUT /org/time` takes `{ mode }` — `off`, `manual`
   or `drafts` — from an owner or admin on a web session (`org.time.set`);
@@ -2914,10 +2943,19 @@ parameter names anybody else.
   stays, its evidence blanked (§4.45), and entries are never deleted by a
   switch.
 - **A collector's upload.** `PUT /me/time-drafts` takes `{ v: 1, collector_id,
-  tz, days: [{ day, blocks: [{ start, end, minutes, task, signals }] }] }` —
+  tz, days: [{ day, blocks: [{ start, end, minutes, task, signals, at? }] }] }` —
   `start` and `end` unix ms, `task` a key or `null`, `signals` the counts
-  `{ prompts?, replies?, sessions?, commits?, marks? }` — and nothing else:
-  any other field, here or in a block, is `422`. Days run from today − 14 to
+  `{ prompts?, replies?, sessions?, commits?, marks? }`, and `at` which five
+  minutes the block's prompts and commits fell in, `{ prompts?, commits? }`,
+  each a list of `[bucket, count]` pairs, a bucket `floor(unix ms / 300000)`,
+  a count at least 1 (D-096, LAI-834) — and nothing else: any other field,
+  here or in a block, is `422`. A kind's buckets are in order, each once, inside
+  the block — its last minute included — and count no more than the block's
+  count of that kind (`invalid_blocks`). My day serves them back as
+  `signal_times`, `{ prompts, commits }`, each `[bucket start in unix ms,
+  count]` in order: every block of the day, whatever became of it, a bucket two
+  blocks share counted once at its largest — the SIGNALS lane, to the person
+  alone, signed in. Days run from today − 14 to
   today + 1 in `tz`, at most 15, each once (`day_out_of_range`); a day holds at
   most 48 blocks, each starting on its own day, ending after it starts, with no
   more minutes than its span, and 1440 minutes in all (`invalid_blocks`). It
@@ -4489,8 +4527,9 @@ One interval-driven scheduler in the same process:
   job (LAI-773): `token_session_days` dated before 40 days ago — the
   telemetry match is settled once the collector's 31-day window has passed it
   — telemetry series not touched for three days, excluded session keys older
-  than 45 days, and arrival buckets older than eight days; and, kept 400 days
-  with the token rollup (LAI-787), `agent_time_days` and `token_session_tasks`
+  than 45 days, and arrival buckets older than eight days; `agent_time_buckets`
+  from before 40 days ago, the AGENTS lane's detail (LAI-833); and, kept 400
+  days with the token rollup (LAI-787), `agent_time_days` and `token_session_tasks`
 - **time retention** (D-088 item 11, LAI-787) — `time_drafts` dated before 30
   days ago, whatever their state, and `time_entries` dated before three years
   ago with their revisions, daily **and once at boot**, under §3.4's
@@ -4644,9 +4683,10 @@ computed from what the board already holds and shown to the developer alone.
 
 **Time drafts are inbound too, opt-in twice, and blocks with counts only**
 (D-088, LAI-787): a person's own collector drafts their day on their machine
-and sends only start, end, the local day and zone, a task key or none, and the
-counts of the signals behind each block — never prompt text, paths, repository
-or branch names, or window titles — to a store only they read, signed in.
+and sends only start, end, the local day and zone, a task key or none, the
+counts of the signals behind each block, and which five minutes its prompts and
+commits fell in (D-096) — never prompt text, paths, repository or branch names,
+commit messages or window titles — to a store only they read, signed in.
 
 **Solidtime is reached by the person's CLI, never by the board** (D-088 item
 10, LAI-788). The developer's own Solidtime URL and key stay in a `0600` file
