@@ -38,6 +38,7 @@ import {
   type Break,
   type DayData,
 } from './my-day-week.ts';
+import { NARROW_QUERY } from '../../src/components/sidebar/sidebar-state.ts';
 
 /** A duration as LAI-830 prints one: `19 min`, `1 h 35 min`, `2 h`. */
 function dur(minutes: number): string {
@@ -158,6 +159,93 @@ async function centre(locator: Locator): Promise<{ x: number; y: number }> {
   const box = await locator.boundingBox();
   assert.ok(box !== null);
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+/** The sidebar's two widths (`sidebar.css`): 212px open, the 60px icon rail. */
+const RAIL_PX = { open: 212, folded: 60 } as const;
+
+/**
+ * **The page at `width`, with the sidebar as named and nothing still moving**
+ * (LAI-846). A resize across `NARROW_QUERY` folds the sidebar by itself, from
+ * a media listener that runs in a frame after `setViewportSize` returns. Read
+ * the toggle before then and the old width's state is what is read: a click
+ * opens it, the listener folds it again, and the case measures a state it did
+ * not name. So: first the page has heard the width — a media change reaches
+ * every listener, the shell's too, before that frame's animation callbacks,
+ * where this polls; then click if the state is wrong; then the named state at
+ * its final width with its transition over, asserted.
+ */
+async function layOut(h: Harness, width: number, folded: boolean): Promise<void> {
+  type Heard = Window & { __mydayNarrow?: { heard: boolean } };
+  await h.page.evaluate((query) => {
+    const w = window as Heard;
+    if (w.__mydayNarrow !== undefined) return;
+    const list = matchMedia(query);
+    const said = { heard: list.matches };
+    list.addEventListener('change', () => {
+      said.heard = list.matches;
+    });
+    w.__mydayNarrow = said;
+  }, NARROW_QUERY);
+  await h.page.setViewportSize({ width, height: 900 });
+  await h.page.waitForFunction(
+    ([query, px]) =>
+      window.innerWidth === px &&
+      (window as Heard).__mydayNarrow?.heard === matchMedia(query).matches,
+    [NARROW_QUERY, width] as const,
+    { timeout: 10_000 },
+  );
+  const fold = h.page.locator('.sidebar-toggle');
+  if ((await fold.getAttribute('aria-expanded')) === String(folded)) await fold.click();
+  const state = () =>
+    h.page.evaluate(() => {
+      const rail = document.querySelector('#sidebar');
+      return {
+        expanded: document.querySelector('.sidebar-toggle')?.getAttribute('aria-expanded') ?? null,
+        px: rail?.getBoundingClientRect().width ?? -1,
+        moving: rail?.getAnimations().length ?? -1,
+      };
+    });
+  const named = {
+    expanded: String(!folded),
+    px: folded ? RAIL_PX.folded : RAIL_PX.open,
+    moving: 0,
+  };
+  await until(async () => JSON.stringify(await state()) === JSON.stringify(named));
+  assert.deepEqual(
+    await state(),
+    named,
+    `${String(width)} folded=${String(folded)}: the sidebar is not as named`,
+  );
+  await relabelled(h);
+}
+
+/**
+ * **Every label has re-chosen its form** (LAI-846). `FitLabel` picks the
+ * longest form that fits as drawn, and starts again from a `ResizeObserver`
+ * when its box changes width. The observer runs late in a frame, and the
+ * re-pick is a React update in a task posted after it. So: two frames, which
+ * puts the last change's observer behind us, then a task of our own, posted
+ * after React's. Held at that re-pick, the 1440px wider-font case reads the
+ * old form of a block's second line, `1:00–2:50 PM · 1 h 50 min`, cut — the
+ * failure LAI-841's root gates saw.
+ */
+async function relabelled(h: Harness): Promise<void> {
+  await h.page.evaluate(
+    () =>
+      new Promise<void>((done) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const channel = new MessageChannel();
+            channel.port1.onmessage = () => {
+              channel.port1.close();
+              done();
+            };
+            channel.port2.postMessage(undefined);
+          });
+        });
+      }),
+  );
 }
 
 void after(async () => {
@@ -904,21 +992,10 @@ void describe('a phone, and both themes (I)', () => {
     const h = await openDay(TODAY);
     try {
       for (const width of [1440, 1024]) {
-        await h.page.setViewportSize({ width, height: 900 });
         for (const theme of ['light', 'dark']) {
           await setTheme(h.page, theme);
           for (const folded of [false, true]) {
-            const fold = h.page.locator('.sidebar-toggle');
-            if ((await fold.count()) > 0) {
-              const open = (await fold.first().getAttribute('aria-expanded')) === 'true';
-              if (folded === open) {
-                await fold.first().click();
-                await until(
-                  async () =>
-                    ((await fold.first().getAttribute('aria-expanded')) === 'true') !== open,
-                );
-              }
-            }
+            await layOut(h, width, folded);
             const sideways = await h.page.evaluate(() => {
               const main = document.querySelector('.shell-main') ?? document.scrollingElement;
               return main === null ? 0 : main.scrollWidth - main.clientWidth;
@@ -952,19 +1029,8 @@ void describe('a phone, and both themes (I)', () => {
     try {
       await h.page.addStyleTag({ content: '.myday-page * { letter-spacing: 0.12em !important; }' });
       for (const width of [1440, 1024]) {
-        await h.page.setViewportSize({ width, height: 900 });
         for (const folded of [false, true]) {
-          const fold = h.page.locator('.sidebar-toggle');
-          if ((await fold.count()) > 0) {
-            const open = (await fold.first().getAttribute('aria-expanded')) === 'true';
-            if (folded === open) {
-              await fold.first().click();
-              await until(
-                async () =>
-                  ((await fold.first().getAttribute('aria-expanded')) === 'true') !== open,
-              );
-            }
-          }
+          await layOut(h, width, folded);
           const cut = await h.page.evaluate(() =>
             [
               ...document.querySelectorAll(
@@ -1022,19 +1088,8 @@ void describe('a phone, and both themes (I)', () => {
     try {
       await h.page.addStyleTag({ content: '.myday-page * { letter-spacing: 0.12em !important; }' });
       for (const width of [1440, 1024]) {
-        await h.page.setViewportSize({ width, height: 900 });
         for (const folded of [false, true]) {
-          const fold = h.page.locator('.sidebar-toggle');
-          if ((await fold.count()) > 0) {
-            const open = (await fold.first().getAttribute('aria-expanded')) === 'true';
-            if (folded === open) {
-              await fold.first().click();
-              await until(
-                async () =>
-                  ((await fold.first().getAttribute('aria-expanded')) === 'true') !== open,
-              );
-            }
-          }
+          await layOut(h, width, folded);
           const lists = await h.page.evaluate(() =>
             [...document.querySelectorAll('.myday-blocks')].map((list) => {
               const rows = [...list.querySelectorAll(':scope > li')];
