@@ -100,6 +100,7 @@ describe('the switches start off', () => {
       draft_my_time: false,
       drafting: false,
       min_sync_interval_s: 600,
+      signal_times: true,
     });
   });
 
