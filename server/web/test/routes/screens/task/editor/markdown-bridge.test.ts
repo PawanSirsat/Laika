@@ -341,8 +341,8 @@ void describe('what markdown cannot hold does not count as a change (review roun
 
 /*
  * LAI-849: an agent-written description that rendered correctly opened as
- * Markdown, saying the editor "would rewrite line 7: '- When …' as ''". Line 7
- * was the first item of a list written directly under a paragraph — legal
+ * Markdown, saying the editor "would rewrite line 7: '- …' as ''". Line 7 was
+ * the first item of a list written directly under a paragraph — legal
  * CommonMark — and the editor writes a blank line before every block. The
  * check compared the texts line by line by position, so that one added blank
  * line shifted every line after it. The text below is made up (the repo is
@@ -466,6 +466,49 @@ void describe('the reason names the real difference, not a shifted line (LAI-849
 
   void test('a line it would add is named, with where', () => {
     assert.equal(reason('> para\n> - x'), 'The rich editor would add “>” before line 2: “> - x”.');
+  });
+
+  void test('a long line is shown where it changes, not cut off where it agrees', () => {
+    const long =
+      '- A book returned after closing stays on the trolley, its card reading &lt;branch&gt; until scanned.';
+    assert.equal(
+      reason(`Steps:\n${long}`),
+      'The rich editor would rewrite line 2: “…trolley, its card reading &lt;branch&gt; until scanned.” as “…trolley, its card reading \\<branch> until scanned.”.',
+    );
+  });
+});
+
+/*
+ * The owner's whole description, in shape: after the blank line above its
+ * list, one list item spells `<` and `>` as `&lt;` and `&gt;` past its 57th
+ * character. The editor writes `\<…>` there — the same text read, a different
+ * text stored — which LAI-827 refuses (`a &amp; b`). On master the notice named
+ * the shifted blank line; clipped at 57 characters, the real change was out of
+ * sight either way.
+ */
+const ENTITIES = [
+  'Owner: Ada Lovelace',
+  'Source: a question at the desk on Monday: "can a late book skip the queue?"',
+  '',
+  '**Found (desk log):** the loan closes at `checkout.close` when the reader leaves, and `returns.scan` never runs.',
+  '',
+  'What should happen:',
+  '- A book returned after closing stays on the trolley overnight, its card reading "Shelve at &lt;branch&gt;" until a `scan` clears it.',
+  '- The morning scan shelves it and closes the loan.',
+  '- A reader who asks for it that night is told it is on the trolley.',
+  '- The desk log records who scanned it.',
+  '- Nothing is fined while it waits.',
+  '- A book still on the trolley at noon is flagged at &lt;branch&gt;.',
+].join('\n');
+
+void describe('what the editor cannot keep is still refused, and named (LAI-849)', () => {
+  void test('an entity in a list under a paragraph: refused, and the notice shows the entity', () => {
+    const opening = openDocument(bridge, ENTITIES);
+    assert.equal(opening.kind, 'source');
+    assert.equal(
+      opening.kind === 'source' ? opening.reason : '',
+      'The rich editor would rewrite line 7: “…reading "Shelve at &lt;branch&gt;" until a `scan` clears…” as “…reading "Shelve at \\<branch>" until a `scan` clears…”.',
+    );
   });
 });
 

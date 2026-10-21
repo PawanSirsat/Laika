@@ -908,12 +908,44 @@ function firstDifference(bridge: Bridge, source: string, written: string): Hunk 
   return all.find((hunk) => !isBlank(hunk)) ?? all[0];
 }
 
+/**
+ * Two versions of a line as a person can compare them: whole when both are
+ * short, else each cut to the same window on where they differ, from a word's
+ * start. Clipped from the start, two long lines that differ late read the same
+ * (LAI-849: `&lt;` written as `\<`, past the 57th character).
+ */
+function excerpts(was: string, would: string): readonly [string, string] {
+  if (was.length <= 60 && would.length <= 60) return [was, would];
+  let head = 0;
+  while (head < was.length && head < would.length && was[head] === would[head]) head += 1;
+  let tail = 0;
+  while (
+    tail < was.length - head &&
+    tail < would.length - head &&
+    was[was.length - 1 - tail] === would[would.length - 1 - tail]
+  ) {
+    tail += 1;
+  }
+  const near = Math.max(0, head - 20);
+  // Back to the start of that word, unless the word is long (a URL, say).
+  const from = near === 0 ? 0 : Math.max(near - 10, was.lastIndexOf(' ', near) + 1);
+  const window = (line: string): string => {
+    const end = line.indexOf(' ', Math.min(line.length, line.length - tail + 20));
+    const to = end === -1 ? line.length : end;
+    const shown = clip(line.slice(from, to));
+    const cut = to < line.length && !shown.endsWith('…');
+    return `${from > 0 ? '…' : ''}${shown}${cut ? '…' : ''}`;
+  };
+  return [window(was), window(would)];
+}
+
 /** A difference as a sentence: the line, and what it would become. */
 function inWords(hunk: Hunk): string {
   const removed = hunk.removed.find((line) => line.text !== '');
   const added = hunk.added.find((text) => text !== '');
   if (removed !== undefined && added !== undefined) {
-    return `The rich editor would rewrite line ${String(removed.line)}: “${clip(removed.text)}” as “${clip(added)}”.`;
+    const [was, would] = excerpts(removed.text, added);
+    return `The rich editor would rewrite line ${String(removed.line)}: “${was}” as “${would}”.`;
   }
   if (removed !== undefined) {
     return `The rich editor would drop line ${String(removed.line)}: “${clip(removed.text)}”.`;

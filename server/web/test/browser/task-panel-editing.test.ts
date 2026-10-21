@@ -849,6 +849,28 @@ void describe('a list written right under a paragraph opens rich (LAI-849)', () 
       await h.close();
     }
   });
+
+  void test('one that also spells < as &lt; stays Markdown, and the notice shows that change', async () => {
+    // The owner's description did this, late in the list's first item: the
+    // editor would write `\<`, which LAI-827 refuses.
+    const spelled = UNDER.replace(
+      'waits on the returns trolley.',
+      'waits on the returns trolley, its card reading &lt;branch&gt; until scanned.',
+    );
+    const server: Server = { t3: subject({ description_md: spelled }) };
+    const h = await open(URL, stub(server), { before: fakeStream });
+    try {
+      await description(h).locator('.md ul').waitFor({ timeout: 20_000 });
+      const editor = await openEditor(h);
+      await editor.locator('textarea.rich-editor-source').waitFor({ timeout: 5_000 });
+      const notice = await editor.locator('.rich-editor-notice').innerText();
+      assert.match(notice, /line 7: “…trolley, its card reading &lt;branch&gt; until scanned\.”/);
+      assert.match(notice, /as “…trolley, its card reading \\<branch> until scanned\.”/);
+      assert.equal(patches(h).length, 0);
+    } finally {
+      await h.close();
+    }
+  });
 });
 
 void describe('the stale-text protection of LAI-795 holds in the editor', () => {
