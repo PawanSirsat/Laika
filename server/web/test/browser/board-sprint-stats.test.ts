@@ -646,11 +646,11 @@ void describe('the sidebar open, the row crowded (LAI-727 review)', () => {
           const h = await open(
             `/board?project=laika-core&sprint=${scope}&group=assignee`,
             SIX_MEMBERS,
+            { before: async (page) => page.setViewportSize({ width, height: 768 }) },
           );
           try {
             await h.page.locator('.bstats').waitFor({ timeout: 20_000 });
             await setTheme(h.page, theme);
-            await h.page.setViewportSize({ width, height: 768 });
             await openSidebar(h);
             await h.page.locator('.lane').first().waitFor({ timeout: 10_000 });
             await settled(h);
@@ -788,11 +788,12 @@ void describe('the group is in the toolbar row in every tier (LAI-727 review)', 
 void describe('the pill (LAI-727 review)', () => {
   for (const theme of ['Light', 'Dark']) {
     void test(`${theme}: one figure in the row; BLK and LEFT on hover, focus and click`, async () => {
-      const h = await open('/board?project=laika-core&sprint=s2&group=assignee', SIX_MEMBERS);
+      const h = await open('/board?project=laika-core&sprint=s2&group=assignee', SIX_MEMBERS, {
+        before: async (page) => page.setViewportSize({ width: 920, height: 768 }),
+      });
       try {
         await reads(h, `S2 ${stripSummary('s2')}`);
         await setTheme(h.page, theme);
-        await h.page.setViewportSize({ width: 920, height: 768 });
         /*
          * **The open sidebar, as this test was written against** (LAI-796).
          * At 920px the sidebar is the icon rail by itself since LAI-796, which
@@ -871,6 +872,51 @@ void describe('the pill (LAI-727 review)', () => {
 });
 
 /**
+ * **Open the sidebar where a test means it open** (LAI-796, LAI-841).
+ * Callers set their narrow viewport before navigation in a fresh context
+ * (`open` uses `browser.newPage`). Resizing afterwards and accepting an
+ * already-open toggle can accept the old 212px layout before the media-query
+ * change collapses it. Require the initial 60px rail, click, then wait for
+ * both the expanded state and its finished width; neither an old layout nor
+ * a transition alone establishes the setup.
+ */
+async function openSidebar(h: Harness): Promise<void> {
+  const toggle = h.page.locator('.sidebar-toggle');
+  await h.page.waitForFunction(
+    () => {
+      const rail = document.querySelector('#sidebar')?.getBoundingClientRect();
+      return (
+        document.querySelector('.sidebar-toggle')?.getAttribute('aria-expanded') === 'false' &&
+        rail !== undefined &&
+        rail.left >= 0 &&
+        Math.round(rail.width) === 60
+      );
+    },
+    undefined,
+    { timeout: 10_000 },
+  );
+  assert.equal(
+    await h.page.evaluate(() => localStorage.getItem('laika.sidebar')),
+    null,
+    'a fresh case inherited a sidebar preference',
+  );
+  await toggle.click();
+  await h.page.waitForFunction(
+    () => {
+      const rail = document.querySelector('#sidebar')?.getBoundingClientRect();
+      return (
+        document.querySelector('.sidebar-toggle')?.getAttribute('aria-expanded') === 'true' &&
+        rail !== undefined &&
+        rail.left >= 0 &&
+        Math.round(rail.width) === 212
+      );
+    },
+    undefined,
+    { timeout: 5000 },
+  );
+}
+
+/**
  * **Wait for the layout to stop moving, not for a length of time** (LAI-715).
  *
  * These measurements used to follow a fixed 200–600ms sleep, which is a guess
@@ -881,24 +927,6 @@ void describe('the pill (LAI-727 review)', () => {
  * the toolbar, its chips, the figures, the faces and the lanes — read the same
  * across three animation frames running.
  */
-/**
- * **Open the sidebar where a test means it open** (LAI-796). Between 901 and
- * 1180px the sidebar is the icon rail by itself since LAI-796; these tests
- * are about the toolbar beside the *open* sidebar, so they open it with its
- * own toggle — for now, as a reader would — and wait for its 212px.
- */
-async function openSidebar(h: Harness): Promise<void> {
-  const toggle = h.page.locator('.sidebar-toggle');
-  await toggle.waitFor({ timeout: 10_000 });
-  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
-  await h.page.waitForFunction(
-    () =>
-      Math.round(document.querySelector('#sidebar')?.getBoundingClientRect().width ?? 0) === 212,
-    undefined,
-    { timeout: 5000 },
-  );
-}
-
 async function settled(h: Harness): Promise<void> {
   await h.page.waitForFunction(
     () =>
