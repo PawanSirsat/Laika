@@ -2,11 +2,12 @@
 id: LAI-846
 title: "Wait for the intended sidebar state in My day's browser layout tests"
 area: web
-assignee: unclaimed
+assignee: strelka
 priority: p2
 depends-on: []
 discovered-from: LAI-841
-status: backlog
+status: in-progress
+started: 2026-10-21T16:22:04Z
 ---
 
 ## Goal
