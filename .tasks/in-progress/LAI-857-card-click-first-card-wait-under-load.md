@@ -2,11 +2,12 @@
 id: LAI-857
 title: 'card-click "clicking the card body opens the panel" times out waiting for the first card in a contended root gate'
 area: web
-assignee: unclaimed
+assignee: strelka
 priority: p2
 depends-on: []
 discovered-from: LAI-841
-status: backlog
+status: in-progress
+started: 2026-10-21T16:22:45Z
 ---
 
 ## Goal
