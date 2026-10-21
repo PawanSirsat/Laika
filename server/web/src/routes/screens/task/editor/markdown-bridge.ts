@@ -368,11 +368,29 @@ function serializeAs(bridge: Bridge, doc: ProseNode, asFaithful: boolean): strin
   }
 }
 
+/**
+ * A parsed document's text as CommonMark reads it: a paragraph's lines lose
+ * their leading spaces and tabs (LAI-853). The lexer keeps some — one of the
+ * three under `1. a step that` — so the editor held a space the reading view
+ * never shows, and wrote it back as something else. Code keeps its own.
+ */
+function withoutLineIndents(json: JSONContent, schema: Schema): JSONContent {
+  if (json.content === undefined) return json;
+  const type = json.type === undefined ? undefined : schema.nodes[json.type];
+  if (type?.spec.code === true) return json;
+  const content = json.content.map((child) =>
+    type?.isTextblock === true && child.type === 'text' && child.text !== undefined
+      ? { ...child, text: child.text.replace(/\n[ \t]+/g, '\n') }
+      : withoutLineIndents(child, schema),
+  );
+  return { ...json, content };
+}
+
 /** Parse markdown into a document of `schema`, or `null` if it will not fit it. */
 export function parseMarkdown(bridge: Bridge, markdown: string, schema: Schema): ProseNode | null {
   if (markdown.trim() === '') return schema.topNodeType.createAndFill();
   try {
-    const doc = schema.nodeFromJSON(bridge.manager.parse(markdown));
+    const doc = schema.nodeFromJSON(withoutLineIndents(bridge.manager.parse(markdown), schema));
     doc.check();
     return doc;
   } catch {
@@ -791,9 +809,55 @@ function topLevelBlocks(bridge: Bridge, markdown: string): TextBlock[] | null {
 }
 
 /**
+ * Does `line` start a block of its own, wherever it is indented — a heading,
+ * a quote, a list item, a rule, a fence, a table row, HTML? Then its
+ * indentation says where it belongs, and is never forgiven.
+ */
+const startsBlock = (line: string): boolean =>
+  lineStartEscape(line) !== -1 || /^(?:`{3,}|~{3,}|\||<)/.test(line);
+
+/**
+ * A line's text past the containers that open it: `>` and list markers,
+ * a task box included.
+ */
+const pastContainers = (line: string): string =>
+  line.replace(
+    /^(?:[ \t]*(?:>|[-+*](?=[ \t])|\d{1,9}[.)](?=[ \t]))(?:[ \t]+\[[ xX]\](?=[ \t]))?)*[ \t]*/,
+    '',
+  );
+
+/**
+ * `markdown` with the indentation of every paragraph continuation gone: a
+ * line under a line of paragraph text that starts no block of its own
+ * (LAI-853). CommonMark reads it as the same paragraph however far it is
+ * indented — `- a long item that\n  wraps` and `- a long item that\nwraps`
+ * are one item of one paragraph — and the editor writes it flush left. After
+ * a blank line, a heading or a fence, or where the line is a list item,
+ * indentation is structure, and stays. Never inside code.
+ */
+function unindentContinuations(markdown: string): string {
+  const entries = linesWithCode(markdown);
+  return entries
+    .map((entry, i) => {
+      const previous = entries[i - 1];
+      const line = entry.line.replace(/^[ \t]+/, '');
+      if (entry.code || line === entry.line || line === '') return entry.line;
+      if (previous === undefined || previous.code) return entry.line;
+      const above = pastContainers(previous.line);
+      return above !== '' && !startsBlock(above) && !startsBlock(line) ? line : entry.line;
+    })
+    .join('\n');
+}
+
+/** {@link normaliseMarkdown}, and a wrapped line's indentation ({@link unindentContinuations}). */
+const layoutOf = (markdown: string): string =>
+  normaliseMarkdown(unindentContinuations(markdown.replace(/\r\n?/g, '\n')));
+
+/**
  * Do two markdown texts count as the same for the round-trip check? The
- * stated normalisation ({@link normaliseMarkdown}), and one thing more: **the
- * blank lines between top-level blocks** (LAI-849).
+ * stated normalisation ({@link normaliseMarkdown}), and two things more:
+ * **the indentation of a wrapped line** ({@link unindentContinuations},
+ * LAI-853), and **the blank lines between top-level blocks** (LAI-849).
  *
  * A list directly under a paragraph is legal CommonMark, and agents write it
  * so; the editor writes a blank line before every block. That line changes no
@@ -805,7 +869,7 @@ function topLevelBlocks(bridge: Bridge, markdown: string): TextBlock[] | null {
  * one of them is edited.
  */
 export function sameMarkdown(bridge: Bridge, a: string, b: string): boolean {
-  if (normaliseMarkdown(a) === normaliseMarkdown(b)) return true;
+  if (layoutOf(a) === layoutOf(b)) return true;
   const left = a.replace(/\r\n?/g, '\n');
   const right = b.replace(/\r\n?/g, '\n');
   // The lexer's blocks are not CommonMark's here: only the strict check.
@@ -816,9 +880,7 @@ export function sameMarkdown(bridge: Bridge, a: string, b: string): boolean {
     was !== null &&
     would !== null &&
     was.length === would.length &&
-    was.every(
-      (block, i) => normaliseMarkdown(block.text) === normaliseMarkdown(would[i]?.text ?? ''),
-    )
+    was.every((block, i) => layoutOf(block.text) === layoutOf(would[i]?.text ?? ''))
   );
 }
 
