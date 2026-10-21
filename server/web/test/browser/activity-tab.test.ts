@@ -398,17 +398,70 @@ void describe('the Activity tab', () => {
   });
 });
 
+/*
+ * **One stale rule, the server's** (D-092 item 4, LAI-832). This panel kept a
+ * rule of its own — five days without a change — so every quiet task in the
+ * fixture (touched at the epoch) read as stale, where the server flagged none.
+ */
+void describe('the Stale panel is the server’s flag', () => {
+  void test('quiet work the job never flagged is not listed, and flagged work is, with how long', async () => {
+    const quiet = await open('/activity?project=laika-core', STUB);
+    try {
+      const panel = quiet.page.locator('.rail-card-stale');
+      await panel.waitFor({ timeout: 20_000 });
+      // Positive control: both tasks are open and have not changed since 1970.
+      assert.equal(await panel.locator('.rail-count').innerText(), '0');
+      assert.match(await panel.innerText(), /Nothing is flagged stale/);
+      assert.match(
+        await quiet.page.locator('.space-context').innerText(),
+        /0 stale tasks/,
+        'the header counts what the panel lists',
+      );
+    } finally {
+      await quiet.close();
+    }
+
+    const DAY = 86_400_000;
+    const flagged = await open('/activity?project=laika-core', {
+      ...STUB,
+      '/api/v1/projects/laika-core/tasks': {
+        data: [
+          {
+            ...T('t1', 'LAI-9', 'Parity tests', 'in_progress', 'u1'),
+            stale_flagged_at: Date.now() - 4 * DAY,
+          },
+          T('t9', 'LAI-20', 'Something to do', 'todo', null),
+          // Flagged, then finished before the job's next run: not stale.
+          { ...T('t5', 'LAI-5', 'Already done', 'done', 'u1'), stale_flagged_at: Date.now() - DAY },
+        ],
+        next_cursor: null,
+      },
+    });
+    try {
+      const rows = flagged.page.locator('.rail-card-stale .rail-stale li');
+      await rows.first().waitFor({ timeout: 20_000 });
+      assert.equal(await rows.count(), 1);
+      assert.match(await rows.first().innerText(), /LAI-9[\s\S]*stale 4d/);
+      assert.match(await flagged.page.locator('.space-context').innerText(), /1 stale task\b/);
+    } finally {
+      await flagged.close();
+    }
+  });
+});
+
 /**
  * LAI-703: these screens read one page of their list and showed it as the
  * whole. Each is served two pages here, and what is only on page two must
  * reach the screen.
  */
 void describe('screens read every page, not the first (LAI-703)', () => {
+  // Flagged by the server's job — the one stale rule (D-092 item 4, LAI-832).
+  const flagged = <X extends object>(t: X) => ({ ...t, stale_flagged_at: now - 86_400_000 });
   const PAGE_ONE = [
-    T('t1', 'LAI-9', 'Parity tests', 'in_progress', 'u1'),
+    flagged(T('t1', 'LAI-9', 'Parity tests', 'in_progress', 'u1')),
     T('t9', 'LAI-20', 'Something to do', 'todo', null),
   ];
-  const PAGE_TWO = [T('t33', 'LAI-33', 'Only on the second page', 'todo', null)];
+  const PAGE_TWO = [flagged(T('t33', 'LAI-33', 'Only on the second page', 'in_progress', null))];
   const PAGED: ApiStub = {
     ...STUB,
     '/api/v1/projects/laika-core/tasks?limit=200': { data: PAGE_ONE, next_cursor: 'P2' },

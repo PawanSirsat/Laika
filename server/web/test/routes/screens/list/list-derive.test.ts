@@ -158,19 +158,58 @@ void describe('the List row', () => {
     assert.equal(rows[2]?.updatedTone, 'flat');
   });
 
-  void test('amber is for open work gone quiet — never for finished work (LAI-486)', () => {
+  /*
+   * **Amber is the server's stale flag** (D-092 item 4, LAI-832) — the one
+   * rule the Dashboard and the Activity tab read. It was this screen's own
+   * "five days without a change", which on OnRoute called 266 tasks stale
+   * where the server's job flagged 7.
+   */
+  void test('amber is open work the server flagged stale — never quiet alone, never finished', () => {
     const { rows } = rowsFor([
-      task({ id: 'a', key: 'LC-1', status: 'in_progress', updated_at: NOW - 9 * DAY }),
-      task({ id: 'b', key: 'LC-2', status: 'done', updated_at: NOW - 9 * DAY }),
-      task({ id: 'c', key: 'LC-3', status: 'cancelled', updated_at: NOW - 9 * DAY }),
-      task({ id: 'd', key: 'LC-4', status: 'todo', updated_at: NOW - 5 * DAY }),
-      task({ id: 'e', key: 'LC-5', status: 'todo', updated_at: NOW - 5 * DAY + 60_000 }),
+      task({ id: 'a', key: 'LC-1', status: 'in_progress', stale_flagged_at: NOW - DAY }),
+      // A flagged task touched an hour ago — a sprint move — is still stale.
+      task({
+        id: 'b',
+        key: 'LC-2',
+        status: 'in_progress',
+        stale_flagged_at: NOW - DAY,
+        updated_at: NOW - 2 * 3_600_000,
+      }),
+      task({ id: 'c', key: 'LC-3', status: 'todo', updated_at: NOW - 9 * DAY }),
+      // Flagged, then finished before the job's next run cleared it.
+      task({
+        id: 'd',
+        key: 'LC-4',
+        status: 'done',
+        stale_flagged_at: NOW - DAY,
+        updated_at: NOW - 9 * DAY,
+      }),
+      task({
+        id: 'e',
+        key: 'LC-5',
+        status: 'cancelled',
+        stale_flagged_at: NOW - DAY,
+        updated_at: NOW - 9 * DAY,
+      }),
     ]);
-    assert.equal(rows[0]?.updatedTone, 'warn', 'nine quiet days on open work is stale');
-    assert.equal(rows[1]?.updatedTone, 'flat', 'a finished task is not neglected');
-    assert.equal(rows[2]?.updatedTone, 'flat', 'a cancelled task is not neglected');
-    assert.equal(rows[3]?.updatedTone, 'warn', 'five days is stale — the rail’s own >=');
-    assert.equal(rows[4]?.updatedTone, 'flat', 'a minute short of five days is not');
+    assert.equal(rows[0]?.updatedTone, 'warn', 'flagged open work is stale');
+    assert.equal(rows[1]?.updatedTone, 'warn', 'a touch does not clear the server’s flag');
+    assert.equal(rows[2]?.updatedTone, 'flat', 'nine quiet days, never flagged, is not stale');
+    assert.equal(rows[3]?.updatedTone, 'flat', 'a finished task is not neglected');
+    assert.equal(rows[4]?.updatedTone, 'flat', 'a cancelled task is not neglected');
+    assert.equal(rows[0]?.updatedNote, 'flagged stale 1d ago');
+    assert.equal(rows[2]?.updatedNote, '', 'nothing to say about work the job did not flag');
+  });
+
+  void test('the flag outranks the accent: a minute-old touch does not make stale work fresh', () => {
+    // `updated_at` a minute ago is the fixture's default. Before the server's
+    // rule the two could not meet — five quiet days is never under an hour.
+    const { rows } = rowsFor([
+      task({ id: 'a', key: 'LC-1', status: 'in_progress', stale_flagged_at: NOW - DAY }),
+      task({ id: 'b', key: 'LC-2', status: 'in_progress' }),
+    ]);
+    assert.equal(rows[0]?.updatedTone, 'warn');
+    assert.equal(rows[1]?.updatedTone, 'accent', 'positive control: unflagged, it is fresh');
   });
 
   void test('CREATED is never amber: old is not the same as quiet (LAI-486)', () => {
