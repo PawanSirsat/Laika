@@ -6,8 +6,9 @@ assignee: chief
 priority: p3
 depends-on: []
 discovered-from: LAI-831
-status: in-progress
+status: review
 started: 2026-10-21T11:26:58Z
+finished: 2026-10-21T12:20:30Z
 ---
 
 ## Goal
@@ -26,13 +27,13 @@ day. Drawing them anywhere would be inventing a time (§5.1, D-032).
 
 ## Acceptance criteria
 
-- [ ] The server keeps when agent time happened, at a resolution that tells
+- [x] The server keeps when agent time happened, at a resolution that tells
       nothing about content (for example, minutes active per 15-minute bucket
       per session), from what the OpenTelemetry receiver already receives.
-- [ ] `GET /me/time` serves it for the day, the person's own, session only,
+- [x] `GET /me/time` serves it for the day, the person's own, session only,
       tied to a card the way agent minutes are.
-- [ ] My day draws the AGENTS lane from it, grey for time on no card.
-- [ ] Tests fail on today's code; the gate exits 0.
+- [x] My day draws the AGENTS lane from it, grey for time on no card.
+- [x] Tests fail on today's code; the gate exits 0.
 
 ## Notes
 
@@ -131,3 +132,32 @@ Three guards moved with the change, each to name it, not to loosen it:
 (`prefer-optional-chain`, `timeline-derive.ts:233`). The command that ran
 ESLint went on to commit whatever it said. `86f2358b` fixes it, and ESLint
 on the five files exits 0. The root gate below runs after it.
+
+### Root gate
+
+The gate script ran each time with a clean tree, Vitest capped at two
+workers, and each command to its own file and `$?`.
+
+1. **`ca0a00de`, 11:39Z, load 6.73: red, `TEST 1`, `LINT 0`, `FMT 0`.** The one
+   failure was this change's:
+   `server/test/db/schema.test.ts > migrations > creates every table in SPEC
+   §4` keeps its own list of tables (`EXPECTED_TABLES`), and
+   `agent_time_buckets` was not on it. CLI 551 passed, web 2648 passed, and
+   the server had 1 failed, 3406 passed. `bfdb43f6` adds the table to the list.
+   The file alone, `vitest run test/db/`, exits 0 (10 files, 173 passed). A
+   sweep of `server/test` for another list naming `agent_time_days` found
+   none.
+2. **`bfdb43f6`, 12:11Z, load 15.66: `TEST 0`, `LINT 0`, `FMT 0`.**
+
+   ```text
+   cli test: # pass 551 / # fail 0 / # skipped 2
+   server/web test: # pass 2648 / # fail 0
+   server test:  Test Files  168 passed | 2 skipped (170)
+   server test:       Tests  3407 passed | 10 skipped (3417)
+   ```
+
+   The grep matched only the passing `completeSetup and fieldErrors`.
+
+After it, only Markdown changed: this file's move and the log. The root gate
+runs once more on the final tree before the push; its exit codes are on the
+PR and the card (LAIKA-635).
