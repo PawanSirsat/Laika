@@ -6,9 +6,10 @@ assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-827
-status: review
+status: done
 started: 2026-10-21T06:52:18Z
 finished: 2026-10-21T07:27:41Z
+accepted: 2026-10-21T11:17:41Z
 ---
 
 ## Goal
