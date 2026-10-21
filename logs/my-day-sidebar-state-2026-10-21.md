@@ -28,11 +28,12 @@
   changing the width (1280→1440). Started at 1440, the style tag would never
   re-pick and the case would fail every time. Noted, not filed: this is test
   setup, not a product path.
-- `git push` from Strelka asks for a password: gh's active account is
-  `PawanSirsat21`. Not touched (§4.1); owner action.
+- The first `git push` (claim) failed `could not read Password`. It was the
+  network drop that interrupted this session, not auth: the same push,
+  credentials untouched, succeeded once the network was back. Not a finding.
 - The hand-off comment named branch `LAI-846-my-day-sidebar-state`; the
   worktree was created as `LAI-846-my-day-browser-sidebar-state`, which is
   the one used.
 
 **State**
-In review. The PR waits on push auth if the retry fails.
+In review; branch pushed, PR open against master.
