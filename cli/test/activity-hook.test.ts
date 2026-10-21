@@ -991,6 +991,81 @@ for (const shell of SHELLS) {
   });
 }
 
+/**
+ * D-095: a minute the person was active with no key of their own takes the
+ * card of a builder Omnigent dispatched. The drafter can only tell such a
+ * builder from a CI or `LAIKA_ACTIVITY_SKIP` session if the hook says so: a
+ * sub-agent under an Omnigent runner — `OMNIGENT=1` and a runner primary id,
+ * and neither the primary nor the orchestrator — gets `omnigent` after its id.
+ * Every other skipped session's line is as it always was.
+ */
+const skipLines = (h: string): string[] =>
+  existsSync(SKIP_FILE(h))
+    ? readFileSync(SKIP_FILE(h), 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => line.split(' ').slice(1).join(' '))
+    : [];
+
+for (const shell of SHELLS) {
+  void describe(`a sub-agent Omnigent dispatched is marked so, under ${shell.join(' ')} (D-095)`, () => {
+    void test('its start and end lines say `omnigent` after the id: in a terminal, or a teammate under the SDK runner', () => {
+      for (const env of [OMNI_SUBAGENT, { ...OMNI_ORCHESTRATOR, CLAUDE_CODE_ENTRYPOINT: 'cli' }]) {
+        const h = home();
+        for (const mode of ['session-start', 'session-end']) {
+          const r = run(shell, [mode, 'claude-code'], {
+            home: h,
+            env,
+            input: payload('9a1b2c3d-0000-4000-8000-000000000011'),
+          });
+          assert.equal(r.code, 0);
+          assert.equal(r.stdout + r.stderr, '');
+        }
+        assert.deepEqual(
+          skipLines(h),
+          [
+            '9a1b2c3d-0000-4000-8000-000000000011 omnigent',
+            '9a1b2c3d-0000-4000-8000-000000000011 omnigent',
+          ],
+          JSON.stringify(env),
+        );
+        assert.match(
+          readFileSync(SKIP_FILE(h), 'utf8'),
+          /^\d{10} 9a1b2c3d-0000-4000-8000-000000000011 omnigent\n/,
+        );
+        // The word is all: no event, no start, no primary, as before.
+        assert.deepEqual(events(h), []);
+        assert.deepEqual(started(h), []);
+        assert.deepEqual(primaries(h), []);
+      }
+    });
+
+    void test('CI, LAIKA_ACTIVITY_SKIP and an Omnigent process under no runner keep the line they always had', () => {
+      for (const env of [
+        { CI: 'true' },
+        { LAIKA_ACTIVITY_SKIP: '1' },
+        { ...OMNI_SUBAGENT, CI: 'true' },
+        { ...OMNI_SUBAGENT, LAIKA_ACTIVITY_SKIP: '1' },
+        { OMNIGENT: '1' },
+        { OMNIGENT: '1', OMNIGENT_TERMINAL_LAUNCH_SESSION_ID: 'abc' },
+        { ...OMNI_SUBAGENT, OMNIGENT_RUNNER_PRIMARY_SESSION_ID: '' },
+      ]) {
+        const h = home();
+        run(shell, ['session-start', 'claude-code'], {
+          home: h,
+          env,
+          input: payload('9a1b2c3d-0000-4000-8000-000000000012'),
+        });
+        assert.deepEqual(
+          skipLines(h),
+          ['9a1b2c3d-0000-4000-8000-000000000012'],
+          JSON.stringify(env),
+        );
+      }
+    });
+  });
+}
+
 void describe('starting the sync', () => {
   function layout(): { script: string; calls: string } {
     const root = dir('laika-actlayout-');
@@ -1335,6 +1410,29 @@ void describe('cost of the prompt path', () => {
         events(h).map((line) => line.split(' ')[0]),
         ['t', 'r'],
         'a turn forked before it wrote',
+      );
+    },
+  );
+
+  /** D-095: the word after a dispatched sub-agent's id costs no fork either. */
+  void test(
+    'under zsh a dispatched sub-agent’s start forks nothing: with fork() refused its line still records, word and all',
+    { skip: ZSH === undefined },
+    () => {
+      const control = forkless([script('/usr/bin/true\nexit 0\n')], home());
+      assert.notEqual(control.code, 0, 'fork() was not refused here — this test proves nothing');
+      const h = home();
+      const r = forkless(
+        [HOOK, 'session-start', 'claude-code'],
+        h,
+        OMNI_SUBAGENT,
+        payload('9a1b2c3d-0000-4000-8000-000000000013'),
+      );
+      assert.equal(r.code, 0, 'the skipped start forked');
+      assert.match(
+        textOf(SKIP_FILE(h)),
+        /^\d{10} 9a1b2c3d-0000-4000-8000-000000000013 omnigent\n$/,
+        'the skipped start forked before it wrote',
       );
     },
   );
