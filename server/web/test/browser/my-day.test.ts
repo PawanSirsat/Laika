@@ -72,6 +72,9 @@ const DAY = {
       updated_at: 1,
     },
   ],
+  // LAI-831: no gap waved away; the one draft held is today's.
+  breaks: [],
+  drafts_held: { count: 1, minutes: 95 },
   agent: { minutes: 54, keyboard_minutes: 12, by_task: [], unattributed_minutes: 0 },
   state: 'drafted',
   week: Array.from({ length: 7 }, (_, i) => {
@@ -168,7 +171,7 @@ void describe('My day after the reference', () => {
       const head = h.page.locator('.screen-page');
       await head.locator('.myday-week').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.screen-page-title').innerText(), 'My day');
-      assert.match(await head.innerText(), /yours only/);
+      assert.match(await head.innerText(), /Only you see drafts/);
       assert.match(
         await head.locator('.myday-chip-primary').innerText(),
         /Confirm day · 1 h 35 min/,
@@ -182,21 +185,21 @@ void describe('My day after the reference', () => {
     }
   });
 
-  void test('the day is a bar of confirmed and drafted blocks, with a line at now', async () => {
+  void test('the day is a lane of confirmed and drafted blocks, with a line at now', async () => {
     const h = await open('/my-day', STUB);
     try {
-      const track = h.page.locator('.dayline-track');
+      const track = h.page.locator('[data-dayline-track]');
       await track.waitFor({ timeout: 20_000 });
-      assert.equal(await h.page.locator('.dayline-confirmed').count(), 1);
-      assert.equal(await h.page.locator('.dayline-drafted').count(), 1);
+      assert.equal(await h.page.locator('.dayline-block.dayline-confirmed').count(), 1);
+      assert.equal(await h.page.locator('.dayline-block.dayline-drafted').count(), 1);
       assert.equal(await h.page.locator('.dayline-now').count(), 1, 'today has no now line');
       // The untimed call is not placed somewhere invented; it is counted.
       assert.match(await h.page.locator('.dayline-untimed').innerText(), /1 block has no set time/);
 
       // Inside the track, in the order of the day.
       const box = await track.boundingBox();
-      const drafted = await h.page.locator('.dayline-drafted').boundingBox();
-      const confirmed = await h.page.locator('.dayline-confirmed').boundingBox();
+      const drafted = await h.page.locator('.dayline-block.dayline-drafted').boundingBox();
+      const confirmed = await h.page.locator('.dayline-block.dayline-confirmed').boundingBox();
       assert.ok(box && drafted && confirmed);
       for (const b of [drafted, confirmed]) {
         assert.ok(b.x >= box.x - 1 && b.x + b.width <= box.x + box.width + 1, 'a block escapes');
@@ -204,13 +207,13 @@ void describe('My day after the reference', () => {
       }
       assert.ok(drafted.x < confirmed.x, '08:40 is drawn after 11:30');
 
-      // Drafted, then confirmed, then Add time — the lists the bar pictures.
+      // To settle, then Confirmed, then Add time — the lists the lane pictures.
       const order = await h.page
         .locator('.myday-main')
         .evaluate((el: Element) => el.textContent ?? '');
-      const drafts = order.indexOf('Drafted — not yet confirmed');
+      const drafts = order.indexOf('To settle');
       const confirmedAt = order.indexOf('Confirmed', drafts + 1);
-      const add = order.indexOf('Add time');
+      const add = order.indexOf('Add time', confirmedAt + 1);
       assert.ok(
         drafts > -1 && confirmedAt > drafts && add > confirmedAt,
         'the lists are out of order',
@@ -340,12 +343,12 @@ void describe('times and durations say their units (LAI-830)', () => {
       const row = (id: string) => confirmed.locator(`[data-entry="${id}"]`);
 
       // The owner's row: was `14:29–14:48` and `0:19`.
-      assert.equal(await row('o1').locator('.myday-block-time').innerText(), '2:29–2:48 PM');
-      assert.equal(await row('o1').locator('.myday-block-minutes').innerText(), '19 min');
+      assert.equal(await row('o1').locator('.myday-row-time').innerText(), '2:29–2:48 PM');
+      assert.equal(await row('o1').locator('.myday-row-minutes').innerText(), '19 min');
       // Each end says its own AM/PM across noon.
-      assert.equal(await row('o2').locator('.myday-block-time').innerText(), '11:40 AM–12:10 PM');
-      assert.equal(await row('o3').locator('.myday-block-minutes').innerText(), '15 min');
-      assert.equal(await row('o4').locator('.myday-block-minutes').innerText(), '8 min');
+      assert.equal(await row('o2').locator('.myday-row-time').innerText(), '11:40 AM–12:10 PM');
+      assert.equal(await row('o3').locator('.myday-row-minutes').innerText(), '15 min');
+      assert.equal(await row('o4').locator('.myday-row-minutes').innerText(), '8 min');
       // The header total: was `entries · 1:09`.
       assert.equal(
         await confirmed.locator('[data-confirmed-caption]').innerText(),
@@ -354,18 +357,18 @@ void describe('times and durations say their units (LAI-830)', () => {
 
       // The drafted list, Confirm day, the week strip and the bar say the same.
       const drafted = h.page.locator('[data-draft="d1"]');
-      assert.equal(await drafted.locator('.myday-block-time').innerText(), '8:40–10:15 AM');
-      assert.equal(await drafted.locator('.myday-block-minutes').innerText(), '1 h 35 min');
+      assert.equal(await drafted.locator('.myday-row-time').innerText(), '8:40–10:15 AM');
+      assert.equal(await drafted.locator('.myday-row-minutes').innerText(), '1 h 35 min');
       assert.match(
         await h.page.locator('.screen-page .myday-chip-primary').innerText(),
         /Confirm day · 1 h 35 min/,
       );
       // Today's cell: 75 confirmed and 95 drafted, was `2:50`.
       assert.equal(
-        await h.page.locator('.myday-week-today .myday-week-figure').innerText(),
+        await h.page.locator(`.myday-week-day[data-day="${TODAY}"] .myday-week-figure`).innerText(),
         '2 h 50 min',
       );
-      const ticks = await h.page.locator('.dayline-hours span').allInnerTexts();
+      const ticks = await h.page.locator('.dayline-axis-hour').allInnerTexts();
       assert.ok(ticks.includes('8 AM') && ticks.includes('12 PM'), `ticks: ${ticks.join(', ')}`);
 
       // Nothing on the page is a duration or a clock in the old form.
@@ -381,12 +384,14 @@ void describe('times and durations say their units (LAI-830)', () => {
     }
   });
 
-  void test('the inputs say what they understood before anything is saved', async () => {
+  void test('a typed length says what it understood before anything is saved', async () => {
     const h = await open('/my-day', { ...STUB, '/api/v1/me/time': OWNER_DAY });
     try {
       const add = h.page.locator('form[aria-label="Add time"]');
       await add.waitFor({ timeout: 20_000 });
-      const howLong = add.getByLabel('How long');
+      // The chips are one click; any other length is typed, and read back.
+      await add.getByRole('button', { name: 'Other…' }).click();
+      const howLong = add.getByLabel('How long, typed');
       for (const [typed, read] of [
         ['45', '45 min'],
         ['45m', '45 min'],
@@ -400,17 +405,13 @@ void describe('times and durations say their units (LAI-830)', () => {
           `"${typed}" is not shown as understood`,
         );
       }
-
-      // Split… on the 8:40–10:15 AM block: `9:30` can only be the morning.
-      const drafted = h.page.locator('[data-draft="d1"]');
-      await drafted.getByRole('button', { name: /^More for / }).click();
-      await h.page.getByRole('menuitem', { name: 'Split…' }).click();
-      const form = drafted.locator('.myday-block-form');
-      assert.match(await form.innerText(), /Split at \(inside 8:40–10:15 AM\)/);
-      await form.locator('input').fill('9:30');
-      assert.equal(await form.locator('[data-understood]').innerText(), 'Splits at 9:30 AM');
-      await form.locator('input').fill('9:30 PM');
-      assert.equal(await form.locator('[data-understood]').count(), 0, '9:30 PM is outside');
+      // The inspector names the block on the 12-hour clock (LAI-831: Split in
+      // two cuts at the middle, so no time is typed for it).
+      await h.page.locator('[data-select="d1"]').click();
+      assert.match(
+        await h.page.locator('[data-inspector-for="d1"] .inspector-range').innerText(),
+        /^8:40–10:15 AM$/,
+      );
       // Nothing was sent while typing.
       assert.equal(h.calls.filter((c) => c.method !== 'GET').length, 0, 'typing saved something');
     } finally {

@@ -119,10 +119,14 @@ describe('migrations', () => {
     'task_tags',
     'task_watchers',
     'tasks',
+    // LAI-831: a gap a person waved away; SPEC §4 is LAI-836.
+    'time_breaks',
     // LAI-787, D-088: drafts, confirmed entries and their history.
     'time_drafts',
     'time_entries',
     'time_entry_revisions',
+    // LAI-831: what Undo puts back, for minutes; SPEC §4 is LAI-836.
+    'time_undo',
     // LAI-773: budgets and their alerts, the telemetry match, the arrival rate.
     'token_alert_dismissals',
     'token_alerts',

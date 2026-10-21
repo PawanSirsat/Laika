@@ -24,12 +24,16 @@ export interface OnYourPlateProps {
    * reading, `null` if the read failed.
    */
   readonly spaces: readonly Project[] | null | undefined;
+  /** The reader's own open work, read once by the page ({@link usePlate}). */
+  readonly load: PlateLoad;
   /** The review queue the shell already holds for the sidebar's badge. */
   readonly queue: readonly ReviewQueueItem[] | undefined;
+  /** The server cut the queue at its limit (LAI-820): the count is a floor. */
+  readonly reviewCapped?: boolean | undefined;
   readonly onNavigate: (to: string) => void;
 }
 
-type Load =
+export type PlateLoad =
   | { readonly kind: 'loading' }
   | {
       readonly kind: 'ready';
@@ -46,13 +50,15 @@ const BLOCKER_LIMIT = 20;
 /**
  * The reader's own open tasks, in the spaces they belong to: one slim,
  * filtered read per space and kind (`assignee`, `status`), never the
- * space's whole list — and each outside blocker once, by id.
+ * space's whole list — and each outside blocker once, by id. Read once by
+ * the page (LAI-831): *On your plate* lists it, and the inspector offers the
+ * cards in progress as chips.
  */
-function usePlate(
+export function usePlate(
   me: MeProfile | undefined,
   readable: readonly Project[] | null | undefined,
-): Load {
-  const [load, setLoad] = useState<Load>({ kind: 'loading' });
+): PlateLoad {
+  const [load, setLoad] = useState<PlateLoad>({ kind: 'loading' });
   useEffect(() => {
     if (me === undefined || readable === undefined) return;
     if (readable === null) {
@@ -115,8 +121,14 @@ function usePlate(
  * blocked — each opening in its own space. Everything here is something the
  * board already shows; this gathers the reader's own.
  */
-export function OnYourPlate({ me, spaces, queue, onNavigate }: OnYourPlateProps) {
-  const load = usePlate(me, spaces);
+export function OnYourPlate({
+  me,
+  spaces,
+  load,
+  queue,
+  reviewCapped = false,
+  onNavigate,
+}: OnYourPlateProps) {
   const names = new Map((spaces ?? []).map((p) => [p.slug, p.name]));
 
   const follow = (to: string) => (event: MouseEvent) => {
@@ -134,6 +146,7 @@ export function OnYourPlate({ me, spaces, queue, onNavigate }: OnYourPlateProps)
     items: readonly PlateItem[] | undefined,
     empty: string,
     more?: { readonly href: string; readonly label: string },
+    floor = false,
   ) => {
     const { shown, more: hidden } = capped(items ?? []);
     const rest = moreLinks(id, (items ?? []).slice(shown.length), me?.id, names);
@@ -142,7 +155,12 @@ export function OnYourPlate({ me, spaces, queue, onNavigate }: OnYourPlateProps)
         <h3 className="plate-head">
           <span className={`plate-dot plate-dot-${id}`} aria-hidden="true" />
           {title}
-          {items !== undefined && <span className="plate-count">{items.length}</span>}
+          {items !== undefined && (
+            <span className="plate-count">
+              {items.length}
+              {floor ? '+' : ''}
+            </span>
+          )}
           {/* Once *+N more* leads to the same place, the header need not. */}
           {more !== undefined && hidden === 0 && (
             <a className="plate-more" href={more.href} onClick={follow(more.href)}>
@@ -208,13 +226,17 @@ export function OnYourPlate({ me, spaces, queue, onNavigate }: OnYourPlateProps)
       )}
       {plate !== undefined && (
         <div className="plate-groups">
-          {group('progress', 'In progress', plate.inProgress, 'Nothing in progress.')}
+          {group('progress', 'In progress', plate.inProgress, 'Nothing in progress.', {
+            href: '/board',
+            label: 'Board',
+          })}
           {group(
             'review',
             'Waiting on your review',
             plate.review,
             'Nothing waiting for you to decide.',
             { href: '/inbox?tab=review', label: 'Inbox' },
+            reviewCapped,
           )}
           {group('blocked', 'Blocked', plate.blocked, 'Nothing of yours is blocked.')}
         </div>

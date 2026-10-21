@@ -6,7 +6,8 @@ import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { agentDay, type AgentDayView } from './agent-time.ts';
 import { addDays, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
-import { draftsOn, draftZone, type TimeDraftView } from './time-drafts.ts';
+import { breaksOn, type TimeBreakView } from './time-breaks.ts';
+import { draftsOn, draftZone, heldDrafts, type TimeDraftView } from './time-drafts.ts';
 import { entriesOn, type TimeEntryView } from './time-entries.ts';
 import { getTimeSettings, type TimeSettingsView } from './time-settings.ts';
 
@@ -19,8 +20,9 @@ import { getTimeSettings, type TimeSettingsView } from './time-settings.ts';
  *
  * ## One indexed query per section
  *
- * The drafts and the entries are one range of `(user_id, day)` each, joined
- * to their task and project by primary key; the week is one grouped range of
+ * The drafts, the entries and the breaks are one range of `(user_id, day)`
+ * each, the first two joined to their task and project by primary key; the
+ * drafts held on every day one range of `(user_id)`; the week is one grouped range of
  * each of the same two indexes; the agent minutes are two ranges of primary
  * keys that lead with `(user_id, day)`; the switches are two primary-key
  * reads. `my-day.test.ts` holds that with the work it counts.
@@ -54,6 +56,13 @@ export interface MyDayView {
   drafts: TimeDraftView[];
   /** Live confirmed entries, in the order they happened. */
   entries: TimeEntryView[];
+  /** Gaps the person waved away (LAI-831) — never time, never counted. */
+  breaks: TimeBreakView[];
+  /**
+   * Every pending draft the person holds, on every day (LAI-831): what turning
+   * *Draft my time* off would delete, said before it is asked.
+   */
+  drafts_held: { count: number; minutes: number };
   /** Agent minutes — the agent's, never the person's hours (D-088 item 8). */
   agent: AgentDayView;
   state: DayState;
@@ -101,6 +110,8 @@ export function getMyDay(
   const settings = getTimeSettings(db, actor);
   const drafts = draftsOn(db, actor.userId, day);
   const entries = entriesOn(db, actor.userId, day);
+  const breaks = breaksOn(db, actor.userId, day);
+  const held = heldDrafts(db, actor.userId);
   const agent = agentDay(db, actor.userId, day);
 
   const monday = mondayOf(day);
@@ -158,6 +169,8 @@ export function getMyDay(
     settings,
     drafts,
     entries,
+    breaks,
+    drafts_held: held,
     agent,
     state: stateOf(
       day,

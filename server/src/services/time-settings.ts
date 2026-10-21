@@ -3,7 +3,7 @@ import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { TIME_MODES, type TimeMode } from '../db/enums.ts';
 import { requireOrgId } from '../db/orgs.ts';
-import { orgTimeSettings, timeDrafts, userTimeSettings } from '../db/schema.ts';
+import { orgTimeSettings, timeDrafts, timeUndo, userTimeSettings } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { MIN_SYNC_INTERVAL_S } from './local-activity.ts';
@@ -91,6 +91,10 @@ function forgetDrafts(tx: Tx, userId?: string): void {
   tx.update(timeDrafts)
     .set({ signals: '{}' })
     .where(and(whose, eq(timeDrafts.state, 'confirmed')))
+    .run();
+  // What Undo would put back holds a block's counts too (LAI-831).
+  tx.delete(timeUndo)
+    .where(userId === undefined ? undefined : eq(timeUndo.userId, userId))
     .run();
 }
 

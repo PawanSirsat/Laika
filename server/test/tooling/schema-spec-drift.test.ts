@@ -473,6 +473,10 @@ const TABLES_NOT_IN_SPEC = new Map<string, string>([
     'idempotency_keys',
     'transport bookkeeping for the `Idempotency-Key` header (§6.3, LAI-006), not product data — no endpoint reads it and a cron sweep empties it',
   ],
+  // LAI-831 (owner-direct) added both; `docs/` is CHIEF's, so their §4 sections
+  // are LAI-836. Each entry goes stale the moment §4 describes its table.
+  ['time_breaks', 'LAI-831: a gap a person waved away as a break; §4 section is LAI-836'],
+  ['time_undo', 'LAI-831: what Undo puts back, kept minutes; §4 section is LAI-836'],
 ]);
 
 /**

@@ -3,8 +3,9 @@
  * like the owner's production screenshots: 42 drafted blocks and 200 tasks
  * waiting on the reader's review.
  *
- * - The column beside the day is bounded: *Draft my time* first, five of each
+ * - The column beside the day is bounded: *Agent minutes*, then five of each
  *   kind of work, and a scroll of its own — the page is as long as the day.
+ *   *Draft my time* is in the header since LAI-831.
  * - The drafted blocks page ten at a time, are selected a page, every page or
  *   a Shift-run at a time, and confirmed in bulk through the endpoints that
  *   exist — **never a block on nothing**, which is left out and named.
@@ -42,6 +43,9 @@ const pageBox = (h: Harness) =>
   h.page.getByRole('checkbox', { name: 'Select every block on this page' });
 const count = (h: Harness) => h.page.locator('[data-bulk-count]');
 const said = (h: Harness) => h.page.locator('[data-bulk-said]');
+/** The selection bar's Confirm (LAI-831: *Confirm*, as the owner's design names it). */
+const confirmSelected = (h: Harness) =>
+  h.page.locator('.myday-bulk').getByRole('button', { name: 'Confirm', exact: true });
 
 async function busy(writes?: (call: StubCall) => unknown): Promise<Harness> {
   const h = await open('/my-day', busyStub(writes));
@@ -56,7 +60,7 @@ const dayReads = (h: Harness) =>
   h.calls.filter((c) => c.method === 'GET' && c.path === '/api/v1/me/time').length;
 
 void describe('the column beside the day', () => {
-  void test('Draft my time first, then On your plate, then Agent minutes — bounded, scrolling on its own', async () => {
+  void test('Agent minutes, then On your plate — bounded, scrolling on its own; the switch in the header', async () => {
     const h = await busy();
     try {
       await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
@@ -65,7 +69,12 @@ void describe('the column beside the day', () => {
         .evaluateAll((els: Element[]) => els.map((el) => el.className));
       assert.deepEqual(
         order.map((c) => c.split(' ').find((k: string) => k !== 'myday-card')),
-        ['myday-settings', 'myday-plate', 'myday-agent'],
+        ['myday-agent', 'myday-plate'],
+      );
+      // Draft my time sits in the header, as the owner's design has it (LAI-831).
+      assert.equal(
+        await h.page.locator('.screen-page').getByRole('switch', { name: 'Draft my time' }).count(),
+        1,
       );
       // One drafted card, one confirmed — never drawn twice.
       assert.equal(await h.page.locator('.myday-drafts').count(), 1);
@@ -93,14 +102,16 @@ void describe('the column beside the day', () => {
           scrolledTop: scrolled.top,
           scrolledBottom: scrolled.bottom,
           position: getComputedStyle(side).position,
+          overflowY: getComputedStyle(side).overflowY,
         };
       });
       assert.ok(laptop !== null);
       assert.ok(laptop.height <= 900 - 32 + 1, `the column is ${String(laptop.height)}px tall`);
-      assert.ok(
-        laptop.scrollHeight > laptop.clientHeight + 50 && laptop.ownScroll > 0,
-        'the column does not scroll on its own',
-      );
+      // A scroll of its own whenever it is taller than that: overflow, not the page.
+      assert.equal(laptop.overflowY, 'auto', 'the column does not scroll on its own');
+      if (laptop.scrollHeight > laptop.clientHeight + 1) {
+        assert.ok(laptop.ownScroll > 0, 'the column is taller than it shows, and does not scroll');
+      }
       assert.ok(
         laptop.gridHeight - laptop.mainHeight < 2,
         `the column runs the page on: ${String(laptop.gridHeight)} > ${String(laptop.mainHeight)}`,
@@ -122,7 +133,7 @@ void describe('the column beside the day', () => {
           top: box.top,
           height: box.height,
           mainBottom: main.bottom,
-          scrolls: side.scrollHeight > side.clientHeight,
+          overflowY: getComputedStyle(side).overflowY,
           sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         };
       });
@@ -132,7 +143,7 @@ void describe('the column beside the day', () => {
         phone.height <= 844 * 0.8 + 1,
         `on a phone the column is ${String(phone.height)}px`,
       );
-      assert.ok(phone.scrolls, 'on a phone the column is not bounded');
+      assert.equal(phone.overflowY, 'auto', 'on a phone the column is not bounded');
       assert.equal(phone.sideways, 0, 'the page scrolls sideways on a phone');
     } finally {
       await h.close();
@@ -147,7 +158,8 @@ void describe('the column beside the day', () => {
       const group = (id: string) => plate.locator(`[data-plate="${id}"]`);
 
       assert.equal(await group('review').locator('a.plate-item').count(), 5);
-      assert.equal(await group('review').locator('.plate-count').innerText(), '200');
+      // The server cut the queue at 200 (`truncated`): a floor, said as one (LAI-820).
+      assert.equal(await group('review').locator('.plate-count').innerText(), '200+');
       const reviewMore = group('review').locator('[data-plate-more]');
       assert.equal(await reviewMore.innerText(), '+195 more');
       assert.equal(await reviewMore.getAttribute('href'), '/inbox?tab=review');
@@ -186,7 +198,7 @@ void describe('the column beside the day', () => {
 });
 
 void describe('the drafted blocks', () => {
-  void test('page ten at a time in a scroll area of their own; the confirmed ones fold to a line', async () => {
+  void test('page ten at a time in a scroll area of their own; the confirmed ones too', async () => {
     const h = await busy();
     try {
       const card = h.page.locator('.myday-drafts');
@@ -225,17 +237,12 @@ void describe('the drafted blocks', () => {
       assert.equal(area.overflow, 'auto');
       assert.notEqual(area.max, 'none', 'the drafted list is not bounded');
 
-      // Fourteen confirmed entries: one line until asked, then a page of ten.
+      // Fourteen confirmed entries, a page of ten — the owner's design lists them.
       const entries = h.page.locator('.myday-entries');
       assert.equal(
         await entries.locator('[data-confirmed-caption]').innerText(),
         '14 entries · 1 h 52 min',
       );
-      assert.equal(await entries.locator('li[data-entry]').count(), 0);
-      const show = entries.getByRole('button', { name: 'Show them' });
-      assert.equal(await show.getAttribute('aria-expanded'), 'false');
-      await show.click();
-      await entries.locator('li[data-entry]').first().waitFor({ timeout: 5_000 });
       assert.equal(await entries.locator('li[data-entry]').count(), 10);
       assert.equal(await entries.locator('.myday-pager-label').innerText(), '1–10 of 14');
     } finally {
@@ -300,7 +307,7 @@ void describe('confirming in bulk', () => {
       );
       const reads = dayReads(h);
 
-      await h.page.getByRole('button', { name: 'Confirm selected' }).click();
+      await confirmSelected(h).click();
       await said(h).waitFor({ timeout: 20_000 });
 
       const page1 = DRAFTS.slice(0, 10).map((d) => d.id);
@@ -338,7 +345,7 @@ void describe('confirming in bulk', () => {
     );
     try {
       await pageBox(h).click();
-      await h.page.getByRole('button', { name: 'Confirm selected' }).click();
+      await confirmSelected(h).click();
       await said(h).waitFor({ timeout: 20_000 });
       assert.equal(await said(h).getAttribute('role'), 'alert');
       assert.equal(
@@ -370,7 +377,7 @@ void describe('confirming in bulk', () => {
       await pageBox(h).click();
       await h.page.getByRole('button', { name: 'Select all 36 drafted' }).click();
       await until(async () => (await count(h).innerText()).startsWith('36 '));
-      await h.page.getByRole('button', { name: 'Confirm selected' }).click();
+      await confirmSelected(h).click();
       await said(h).waitFor({ timeout: 60_000 });
 
       const sent = posts(h, '/confirm');
@@ -394,7 +401,7 @@ void describe('confirming in bulk', () => {
     );
     try {
       await pageBox(h).click();
-      await h.page.getByRole('button', { name: 'Confirm selected' }).click();
+      await confirmSelected(h).click();
       await said(h).waitFor({ timeout: 20_000 });
       assert.equal(
         await said(h).innerText(),
@@ -494,66 +501,56 @@ void describe('confirming in bulk', () => {
   });
 });
 
-void describe('the bar asks before what is hard to take back', () => {
-  void test('Not work asks first, and Keep them sends nothing', async () => {
+void describe('the bar acts at once, and Undo takes it back (LAI-831)', () => {
+  void test('Not work goes at once, says so, and Undo asks the server for each block, newest first', async () => {
     const h = await busy();
     try {
       await tick(h, 'd01').click();
       await tick(h, 'd02').click();
-      const dismissals = () => posts(h, '/dismiss');
-      await h.page.getByRole('button', { name: 'Not work' }).click();
-      const ask = h.page.locator('[data-bulk-ask]');
-      await ask.waitFor({ timeout: 5_000 });
-      assert.equal(await ask.innerText(), 'Mark 2 as not work? They stay dismissed.');
-      assert.deepEqual(dismissals(), [], 'Not work sent before it asked');
-
-      await h.page.getByRole('button', { name: 'Keep them' }).click();
-      await until(async () => (await ask.count()) === 0);
-      assert.equal(await ask.count(), 0);
-      assert.deepEqual(dismissals(), []);
-      assert.match(await count(h).innerText(), /^2 selected/);
-
-      await h.page.getByRole('button', { name: 'Not work' }).click();
-      await h.page.getByRole('button', { name: 'Mark not work' }).click();
+      await h.page.locator('.myday-bulk').getByRole('button', { name: 'Not work' }).click();
       await said(h).waitFor({ timeout: 20_000 });
-      assert.deepEqual(dismissals(), [
+      assert.deepEqual(posts(h, '/dismiss'), [
         '/api/v1/me/time-drafts/d01/dismiss',
         '/api/v1/me/time-drafts/d02/dismiss',
       ]);
       assert.equal(await said(h).innerText(), 'Marked 2 blocks as not work.');
+      await h.page.locator('[data-toast]').getByRole('button', { name: 'Undo' }).click();
+      await until(() => posts(h, '/time/undo').length === 2);
+      assert.deepEqual(
+        h.calls.filter((c) => c.path === '/api/v1/me/time/undo').map((c) => c.body),
+        [
+          { id: 'u:POST:/api/v1/me/time-drafts/d02/dismiss' },
+          { id: 'u:POST:/api/v1/me/time-drafts/d01/dismiss' },
+        ],
+      );
     } finally {
       await h.close();
     }
   });
 
-  void test('General asks before taking blocks off their card; blocks on nothing move at once', async () => {
+  void test('General moves every ticked block — on a card or not — and Undo puts each back', async () => {
     const h = await busy();
     try {
       const patches = () =>
         h.calls.filter((c) => c.method === 'PATCH').map((c) => c.path.split('/').pop());
       await tick(h, 'd01').click();
       await tick(h, 'd04').click();
-      await h.page.getByRole('button', { name: 'General', exact: true }).click();
-      const ask = h.page.locator('[data-bulk-ask]');
-      await ask.waitFor({ timeout: 5_000 });
-      assert.equal(
-        await ask.innerText(),
-        '1 of these is on a card or a space — move it to General too?',
-      );
-      assert.deepEqual(patches(), [], 'General moved a block off its card before asking');
-      await h.page.getByRole('button', { name: 'Only the 1 on nothing' }).click();
+      await h.page
+        .locator('.myday-bulk')
+        .getByRole('button', { name: 'General', exact: true })
+        .click();
       await said(h).waitFor({ timeout: 20_000 });
-      assert.deepEqual(patches(), ['d04']);
-      // The one left on its card was not part of it, and is still ticked.
-      assert.equal(await tick(h, 'd01').isChecked(), true);
-
-      // Only blocks on nothing: no question.
-      await h.page.getByRole('button', { name: 'Clear' }).click();
-      await h.page.locator('.myday-drafts').getByRole('button', { name: 'Next ›' }).click();
-      await tick(h, 'd11').click();
-      await h.page.getByRole('button', { name: 'General', exact: true }).click();
-      await until(() => patches().length === 2);
-      assert.deepEqual(patches(), ['d04', 'd11']);
+      assert.deepEqual(patches(), ['d01', 'd04']);
+      assert.equal(await said(h).innerText(), 'Moved 2 blocks to General.');
+      await h.page.locator('[data-toast]').getByRole('button', { name: 'Undo' }).click();
+      await until(() => posts(h, '/time/undo').length === 2);
+      assert.deepEqual(
+        h.calls.filter((c) => c.path === '/api/v1/me/time/undo').map((c) => c.body),
+        [
+          { id: 'u:PATCH:/api/v1/me/time-drafts/d04' },
+          { id: 'u:PATCH:/api/v1/me/time-drafts/d01' },
+        ],
+      );
     } finally {
       await h.close();
     }
@@ -574,11 +571,11 @@ void describe('while a batch runs', () => {
       });
       await tick(h, 'd01').click();
       await tick(h, 'd02').click();
-      await h.page.getByRole('button', { name: 'Confirm selected' }).click();
+      await confirmSelected(h).click();
       const progress = h.page.locator('.myday-bulk-progress');
       await progress.waitFor({ timeout: 10_000 });
 
-      const add = h.page.getByRole('button', { name: 'Add time' });
+      const add = h.page.locator('[data-add-submit]');
       const previous = h.page.getByRole('button', { name: 'Previous week' });
       // An earlier day of this week, when there is one (there is none on a Monday).
       const earlier = h.page.locator('.myday-week-day.myday-week-confirmed');
@@ -619,10 +616,10 @@ void describe('names a screen reader can tell apart', () => {
         'Select block 1 of 2, no set time, 15 min, LAI-1 Search matches keys',
         'Select block 2 of 2, no set time, 16 min, LAI-2 Webhook retries back off',
       ]);
-      const menus = await h.page
-        .locator('li[data-draft] .myday-more')
+      const rows = await h.page
+        .locator('li[data-draft] [data-select]')
         .evaluateAll((els: Element[]) => els.map((el) => el.getAttribute('aria-label')));
-      assert.equal(new Set(menus).size, 2, `menus share a name: ${JSON.stringify(menus)}`);
+      assert.equal(new Set(rows).size, 2, `rows share a name: ${JSON.stringify(rows)}`);
     } finally {
       await h.close();
     }
@@ -633,20 +630,19 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
   void test('a known card is a link to it in its own space; one the reader cannot see is not', async () => {
     const h = await busy();
     try {
-      const link = row(h, 'd01').locator('.myday-block-target a.myday-cardlink');
+      const link = row(h, 'd01').locator('.myday-row-target a.myday-cardlink');
       assert.equal(await link.getAttribute('href'), '/board?project=atlas&task=t1');
       assert.equal(await link.innerText(), 'LAI-1 Search matches keys');
       // On nothing: words, never a dead link.
-      assert.equal(await row(h, 'd04').locator('.myday-block-target a').count(), 0);
+      assert.equal(await row(h, 'd04').locator('.myday-row-target a').count(), 0);
 
       await h.page.locator('.myday-drafts').getByRole('button', { name: 'Next ›' }).click();
-      const hidden = row(h, 'd11').locator('.myday-block-target');
+      const hidden = row(h, 'd11').locator('.myday-row-target');
       await hidden.waitFor({ timeout: 5_000 });
       assert.equal(await hidden.locator('a').count(), 0, 'a card the reader cannot see is a link');
-      assert.match(await hidden.innerText(), /LAI-758 is not a card you can see/);
+      assert.match(await hidden.innerText(), /LAI-758 was named — a card you can’t read/);
 
       // Confirmed entries — imported from Solidtime too — and agent minutes.
-      await h.page.getByRole('button', { name: 'Show them' }).click();
       const entry = (id: string) => h.page.locator(`li[data-entry="${id}"]`);
       await entry('e01').waitFor({ timeout: 5_000 });
       assert.equal(
@@ -657,7 +653,7 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
         await entry('e02').locator('a.myday-cardlink').getAttribute('href'),
         '/board?project=atlas&task=t4',
       );
-      assert.match(await entry('e02').innerText(), /from Solidtime · Change it in Solidtime/);
+      assert.match(await entry('e02').innerText(), /Solidtime/);
       assert.equal(await entry('e03').locator('a').count(), 0, 'General is a link');
       // Agent minutes: a link only to a card the reader can read, in its space.
       const agent = h.page.locator('.myday-agent');
@@ -687,56 +683,43 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
     }
   });
 
-  void test('the row menu holds the rest, by keyboard, and closes on Escape', async () => {
+  void test('the inspector holds the rest, by keyboard; an import has nothing to change here', async () => {
     const h = await busy();
     try {
-      const trigger = row(h, 'd01').getByRole('button', { name: 'More for 6:00–6:15 AM' });
-      await trigger.focus();
+      // A row is picked by keyboard, and its block opens in the inspector.
+      await h.page.locator('[data-select="d01"]').focus();
       await h.page.keyboard.press('Enter');
-      const menu = h.page.getByRole('menu', { name: 'Change this block' });
-      await menu.waitFor({ timeout: 5_000 });
-      assert.deepEqual(await menu.getByRole('menuitem').allInnerTexts(), [
-        'Card…',
-        'General',
-        'Minutes…',
-        'Split…',
+      const inspector = h.page.locator('[data-inspector-for="d01"]');
+      await inspector.waitFor({ timeout: 5_000 });
+      assert.match(await inspector.innerText(), /6:00–6:15 AM/);
+      for (const name of [
         'Not work',
-      ]);
-      const focused = () => h.page.evaluate(() => document.activeElement?.textContent ?? '');
-      assert.equal(await focused(), 'Card…');
-      await h.page.keyboard.press('ArrowDown');
-      assert.equal(await focused(), 'General');
-      await h.page.keyboard.press('Escape');
-      await until(async () => (await menu.count()) === 0);
-      assert.equal(await menu.count(), 0);
-      assert.equal(
-        await h.page.evaluate(() => document.activeElement?.getAttribute('aria-label')),
-        'More for 6:00–6:15 AM',
-      );
-
-      // Card… opens the field, and focus is in it.
-      await h.page.keyboard.press('Enter');
-      await menu.waitFor({ timeout: 5_000 });
+        'Shorter by 5 minutes',
+        'Longer by 5 minutes',
+        'Split in two',
+      ]) {
+        assert.equal(await inspector.getByRole('button', { name }).count(), 1, name);
+      }
+      // Other card… opens the field, and focus is in it.
+      await inspector.getByRole('button', { name: 'Other card…' }).focus();
       await h.page.keyboard.press('Enter');
       await until(() => h.page.evaluate(() => document.activeElement?.tagName === 'INPUT'));
       assert.equal(
-        await h.page.evaluate(() => (document.activeElement as HTMLInputElement | null)?.value),
-        'LAI-1',
+        await h.page.evaluate(() => document.activeElement?.getAttribute('aria-label')),
+        'Another card’s key',
       );
 
-      // LAI-788: an entry from Solidtime has History and nothing to change.
-      await h.page.getByRole('button', { name: 'Show them' }).click();
-      const entryMenu = async (id: string): Promise<string[]> => {
-        await h.page.locator(`li[data-entry="${id}"] .myday-more`).click();
-        const m = h.page.getByRole('menu', { name: 'Change this entry' });
-        await m.waitFor({ timeout: 5_000 });
-        const items = await m.getByRole('menuitem').allInnerTexts();
-        await h.page.keyboard.press('Escape');
-        await until(async () => (await m.count()) === 0);
-        return items;
-      };
-      assert.deepEqual(await entryMenu('e02'), ['History']);
-      assert.deepEqual(await entryMenu('e01'), ['Edit', 'Delete', 'History']);
+      // LAI-788: an entry from Solidtime is read here and changed there.
+      await h.page.locator('[data-select="e02"]').click();
+      const imported = h.page.locator('[data-inspector-for="e02"]');
+      await imported.waitFor({ timeout: 5_000 });
+      assert.match(await imported.innerText(), /change it in Solidtime/);
+      assert.equal(await imported.getByRole('button', { name: 'Delete' }).count(), 0);
+      assert.equal(await imported.getByRole('button', { name: 'Longer by 5 minutes' }).count(), 0);
+      await h.page.locator('[data-select="e01"]').click();
+      const own = h.page.locator('[data-inspector-for="e01"]');
+      await own.waitFor({ timeout: 5_000 });
+      assert.equal(await own.getByRole('button', { name: 'Delete' }).count(), 1);
     } finally {
       await h.close();
     }
