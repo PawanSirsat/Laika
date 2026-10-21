@@ -3858,7 +3858,8 @@ the lead names. An empty status is still a column.
   with a dot when a person set it and the level in words on hover; no hours on
   the card.
 - Cards **do not** show a stale marker, a comment count or an age (D-069).
-  Staleness is still flagged by the server (§11.6) and listed in Activity;
+  Staleness is still flagged by the server, one rule for every screen (§11.6),
+  and listed in Activity;
   comments are counted in the drawer's tabs; the List keeps its Updated column.
 - Agent-authored recent activity is badged on the card (`actor_kind: 'agent'`).
 - The `ready` marker is **derived** — never stored, never cached client-side
@@ -3886,7 +3887,9 @@ priority / ready / blocked. This is the view
 for triage and for boards too large to drag. It opens **newest-updated first**,
 and its sort is URL state like the filters (D-065). Created and updated read
 `just now` / `N min ago` / `N h ago` for a day, then a date and time, with the
-full timestamp on hover.
+full timestamp on hover. Updated is **amber when the server flagged the task
+stale** (§11.6's one rule, LAI-832), its hover then saying *flagged stale 1d
+ago*.
 
 Rows **select** (D-067): a checkbox on every row and one in the header for the
 page, with *Select all* over every row the filter left. Once anything is
@@ -3976,7 +3979,7 @@ call MCP; agents do.
 | **Unlisted work** *(Inbox's tab, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
 | **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage` | — | ✅ D-078, D-079, D-084 |
 | **Usage** *(Insights' *Usage & cost* tab, global; not in the prototype)* | 7 | `GET /usage` (with `rework` per project, LAI-772; cost, cache, accepted, budgets, runaway, LAI-773), `GET /projects`, `GET /users/:id/usage` (the reader's own), `GET /projects/:slug/budgets`, `PUT /projects/:slug/budget`, `PUT /sprints/:id/budget`, `GET /me/token-alerts`, `POST /me/token-alerts/:id/dismiss`, `GET/PUT/DELETE /me/plan-limit` | — | ✅ D-084, D-087 |
-| **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` | all, indirectly via `activity` | ✅ |
+| **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects`, and the review queue the sidebar's badge already read (`GET /review`, each task's `waiting_since` for the review wait, LAI-832) | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
 | **Laika Assistant** | 6 | *undefined — three questions first (§14, q9)* | — | ⏸ scheduled, unspecified |
 | **Calendar** | ? | *none defined* | — | ⛔ **no decision — §14, q10** |
@@ -4144,7 +4147,13 @@ anything missing sends the task back.
   when `GET /review` is `truncated`, LAI-818), *Overdue*, and for owners and admins
   *Unlisted work* (links to `/unlisted`). A **toolbar**: a search by name or
   email, instant and in the browser; filter chips *All*, *Online now*,
-  *Agents running*, *Heavy load*, *Overdue*, *No work*, *Never seen*; a space
+  *Agents running*, *Heavy load*, *Overdue*, *No load*, *Never seen*.
+  ***No load* is the load badge's word and the badge's rule** (LAI-832): people
+  with nothing committed, `{ id: 'none', label: 'No load' }` passing when
+  `loadIn(person, space) === 'none'` (`capacity-derive.ts`), the selected
+  space's load when one is selected, as *Heavy load* reads it. Backlog and work
+  waiting on reviewers do not count against it. It was *No work*, no open work
+  at all; the id stays `none`, so a saved address still opens it; a space
   selector (all spaces, or one, which narrows every count to it); a sort
   (*Online first*, the default, *Heaviest load*, *Name*, *Last seen*); an (i)
   with the definitions. **One card a person** in a grid of three columns on a
@@ -4195,11 +4204,32 @@ anything missing sends the task back.
   on the tab and in the sidebar's Inbox count.
 - **Dashboard** — shaped like Jira's project Summary (D-072): **done, updated,
   created and due soon** for the chosen range; a **status donut** with the share
-  done at its centre; a **donut of open work by person**, Unassigned as its own
-  share, each person opening the board filtered to them; activity feed with an
-  **agent/human filter**; **needs attention** (blocked and stale, true counts);
-  priority breakdown; throughput and cycle time; updates in place on a live
-  change; read-only for Viewer.
+  done at its centre; a **donut of open work by person** (*Open work now*, as of
+  now whatever the range, D-092 item 2), Unassigned as its own share, each
+  person opening the board filtered to them; activity feed with an
+  **agent/human filter**; **needs attention**, true counts, in three tabs —
+  *Blocked*, *Stale* (the server's flag, §11.6) and *Waiting for review > 5
+  days* (`REVIEW_WAIT_DAYS = 5`); priority breakdown; throughput and cycle
+  time; updates in place on a live change; read-only for Viewer.
+
+  **A person's open work is their load: to do and in progress** (D-092 item 3,
+  LAI-832), Capacity's rule — `count: committed(slot.byStatus)`, where
+  `committed` is `byStatus.todo + byStatus.in_progress` (`summary-derive.ts`
+  `workloadByPerson`). **Backlog shows separately**: a line of its own under
+  the name, `+{row.backlog} in backlog`, beside `+{row.review} waiting for
+  review`, and neither is in the count. Backlog and *Waiting for review* are
+  each one share of the ring, and its centre is every open task.
+
+  **The review wait reads the review queue, not the picked range** (LAI-832).
+  A task's wait starts at `GET /review`'s `waiting_since`, taken from the
+  shell's existing read (the sidebar badge's, so no request of its own), or at
+  the range's own move into review — the later of the two when both hold one
+  — so a task ten days in review stays listed on *Last 24 hours*. With neither
+  it falls back to `Math.min(task.updated_at, rangeStart ?? task.updated_at)`,
+  which does move with the range. **Limit:** `GET /review` answers only the
+  projects where the reader holds `task.write`, and only its oldest 200, so for
+  a project viewer, and for a task beyond the oldest 200 in review, the wait
+  still depends on the range (LAI-850).
 - **Meeting review** — the proposals, tagged **NEW / CHANGED / DEAD /
   DECISION**, each shown **with the transcript quote it was reacting to**;
   per-line accept and reject; apply acts only on accepted items; discard the set.
@@ -4470,7 +4500,11 @@ One interval-driven scheduler in the same process:
   `UNDO_WINDOW_MS`, two minutes, whoever's they are (§4.56). No `activity`
   row, for the reason local activity's has none
 - **stale-task flagging** — `in_progress` with no heartbeat or commit for 3 days
-  sets `stale_flagged_at`
+  sets `stale_flagged_at`. **It is the one stale rule, on every screen**
+  (D-092 item 4, LAI-832): the Dashboard's *Stale* tab, the Activity tab's
+  Stale panel and the List's amber Updated cell all ask `isStale`
+  (`board-derive.ts`) — `task.status !== 'done' && task.status !== 'cancelled'
+  && task.stale_flagged_at !== null` — and no screen keeps a rule of its own
 - invite expiry, meeting-review expiry (7 days)
 - **estimate refit** (D-085) — every live project's size model fitted again
   from its history and every open task recomputed against it, daily **and once
