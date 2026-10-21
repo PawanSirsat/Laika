@@ -7,7 +7,7 @@ priority: p1
 depends-on: [LAI-737]
 finished: 2026-10-12T11:30:00Z
 started: 2026-10-12T10:20:00Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -161,3 +161,13 @@ Screenshots: `/tmp/laika-connect-wizard-shots/step{1..4}-{light,dark}-{1366,390}
 the step-3 lock one render early under load: `forget()` drops the blanked
 token on a `setTimeout`, so the lock returns a tick later. The product settles
 correctly; the test now waits for the lock instead of sampling it.
+
+## Accepted (ops bookkeeping, 2026-10-21)
+
+Accepted as shipped, on the owner's approval of this bookkeeping pass. The
+build is on master's first-parent line: `88b1ecf7` (the wizard and the logos),
+`98616c51` (the step-lock wait), `3a35bd85` (to review), all 2026-10-12. Every
+file this task names is present on master at `d36d2ee5`. LAI-741 and LAI-742
+build on it. Nothing was re-run for this acceptance: it records work already
+released, it is not a fresh review. The board card stays in Review for Pawan
+to move to Done.
