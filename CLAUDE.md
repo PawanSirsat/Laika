@@ -1053,8 +1053,8 @@ one: a branch on one machine is invisible to the other until it is pushed.
    gets a comment that starts `@strelka` or `@belka` and gives the task file
    id, the base commit, the branch name (`LAI-NNN-short-name`), what done
    means (the task file's criteria), and who reviews. The card also gets the
-   tag `host:strelka` or `host:belka` where the board lets a tag be set; that
-   is for filtering. A machine works only cards handed to it. A card with no
+   tag `host-strelka` or `host-belka`; that is for filtering. (Not
+   `host:…`: a board tag is lowercase letters, digits and hyphens only.) A machine works only cards handed to it. A card with no
    hand-off is Belka's to hand out.
 2. **Every comment starts with its writer**: `[belka]` or `[strelka]`. Both
    machines act as Pawan, so the prefix is the only way to tell them apart.

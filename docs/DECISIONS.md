@@ -5264,3 +5264,8 @@ laptop."*
    `master` is a release). It ends at a PR and a card in Review.
 
 The rules live in CLAUDE.md, *Two machines*.
+
+**Amended the same day:** the tag is `host-strelka` / `host-belka`. The board
+refused `host:strelka`, because a tag is *"lowercase letters, digits and
+hyphens, starting with a letter or digit, up to 24 characters"*. Nothing else
+changes.
