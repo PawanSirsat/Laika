@@ -12,7 +12,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { closeBrowser, fakeStream, open, refuse, type ApiStub } from './harness.ts';
+import { closeBrowser, fakeStream, open, refuse, until, type ApiStub } from './harness.ts';
 import { pick } from './dropdown.ts';
 
 const CORE = {
@@ -286,6 +286,7 @@ void describe('a refresh leaves the board on screen (LAI-707)', () => {
       });
       assert.equal(same.lc1, true, 'LC-1 did not change and was rebuilt anyway');
       assert.equal(same.lc4, true, 'LC-4 did not change and was rebuilt anyway');
+      await until(async () => /done/i.test(await laneOf(h.page, 'LC-3')));
       assert.match(await laneOf(h.page, 'LC-3'), /done/i, 'LC-3 should have moved to Done');
     } finally {
       await h.close();

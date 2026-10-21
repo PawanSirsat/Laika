@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { pick, valueOf } from './dropdown.ts';
-import { closeBrowser, open, setTheme, type ApiStub } from './harness.ts';
+import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
 
 const NOW = Date.now();
 const HOUR = 3_600_000;
@@ -429,12 +429,13 @@ void describe('focus in the popover', () => {
       await ready(h.page);
       assert.equal(await badge(h.page, STATUS), '1', 'positive control: a filter is set');
       await openPop(h.page, STATUS);
-      await h.page.waitForTimeout(100);
+      // Wait for focus to land, not a fixed time (LAI-715).
+      await until(async () => (await focusedField(h.page, STATUS)) === 'Sprint');
       assert.equal(await focusedField(h.page, STATUS), 'Sprint');
 
       await h.page.locator(`${STATUS} .dcf-clear`).click();
       await h.page.waitForFunction(() => !new URL(location.href).search.includes('so_'));
-      await h.page.waitForTimeout(100);
+      await until(async () => (await focusedField(h.page, STATUS)) === 'Sprint');
       assert.equal(await focusedField(h.page, STATUS), 'Sprint', 'Clear left focus on nothing');
     } finally {
       await h.close();
