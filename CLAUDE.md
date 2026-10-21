@@ -384,8 +384,9 @@ one:
 | CORE | `LAI-100` – `LAI-199` | `LAI-500` – `LAI-599` | — (given to CHIEF, D-089) |
 | SHELL | `LAI-200` – `LAI-299` | `LAI-600` – `LAI-699` | `LAI-900` – `LAI-999` |
 
-`LAI-300` – `LAI-399` is reserved for a fourth session (D-017) and is not
-anyone's to take. Move to your second block only when your first has no free
+`LAI-300` – `LAI-399` was reserved for a fourth session (D-017). **D-097 gives
+it to Strelka**, the second machine (see *Two machines* at the end of this
+file); nobody else takes from it. Move to your second block only when your first has no free
 number left, and to the third when the second has none (D-068). CHIEF's
 first three are full, so CHIEF files from `LAI-800` (D-089). A builder CHIEF
 dispatches files from CHIEF's block.
@@ -1032,3 +1033,49 @@ Every session working in this repo:
 
 No Laika tools in this session? Say so once in your report and keep working
 under §2.
+
+## Two machines: Belka and Strelka (D-097)
+
+The owner works from two laptops with the same repo, the same GitHub account
+and the same Laika board. Each has a name, and every hand-off and comment uses
+it. (Belka and Strelka flew after Laika, and came home.)
+
+| Machine | What it is | Its job |
+| --- | --- | --- |
+| **Belka** | the MacBook the manager (CHIEF / polly) runs on | plans, hands out, reviews, merges and releases; light builds |
+| **Strelka** | the 36 GB laptop | heavy builds: anything that runs the full gate or the browser tests many times |
+
+**The board is what the two machines share. Git is shared only once pushed.**
+§2 and §3's checks rely on one object database, and two laptops do not have
+one: a branch on one machine is invisible to the other until it is pushed.
+
+1. **The hand-off comment is the assignment.** A card for the other machine
+   gets a comment that starts `@strelka` or `@belka` and gives the task file
+   id, the base commit, the branch name (`LAI-NNN-short-name`), what done
+   means (the task file's criteria), and who reviews. The card also gets the
+   tag `host:strelka` or `host:belka` where the board lets a tag be set; that
+   is for filtering. A machine works only cards handed to it. A card with no
+   hand-off is Belka's to hand out.
+2. **Every comment starts with its writer**: `[belka]` or `[strelka]`. Both
+   machines act as Pawan, so the prefix is the only way to tell them apart.
+3. **Claim across machines.** `git fetch origin` first, and run §2 step 3's
+   check over `refs/remotes/origin/*` as well as local branches. Claim, then
+   push the branch at once (`git push -u origin <branch>`) and set the card
+   In progress. An unpushed claim does not exist for the other machine.
+4. **Ids.** Strelka files tasks from `LAI-300` – `LAI-399`; Belka keeps
+   CHIEF's block. Only Belka writes `docs/DECISIONS.md`. Strelka proposes a
+   decision in a comment.
+5. **Strelka never pushes `master` and never merges.** It ends at a pushed
+   branch, an open PR and `finish_task` into Review, plus a `[strelka] done`
+   comment carrying the PR, the gate's three exit codes and any task it
+   filed. Belka reviews in a separate session and releases on Pawan's word.
+6. **Questions and blocks go on the card**, addressed `@belka` or
+   `@strelka`. A blocked task stays In progress with a `[strelka] blocked:`
+   comment naming what it waits on. Anything that is not about one task goes
+   on the coordination card, titled `Belka ↔ Strelka`.
+7. **One task in progress per machine**, as §2. Take the next card handed to
+   you only when the last one is in Review.
+
+To start Strelka, Pawan opens Claude Code in the Laika repo on that laptop and
+says: *"You are Strelka. `git pull`, read CLAUDE.md, then take the first card
+handed to @strelka on the Laika board."*
