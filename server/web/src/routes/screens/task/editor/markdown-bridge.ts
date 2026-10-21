@@ -86,6 +86,8 @@ export interface Around {
   readonly after: Edge;
   /** Inside a link's words, where GFM makes no link of its own. */
   readonly inLink: boolean;
+  /** In a heading's words, which follow its `#`s on the same line (LAI-312). */
+  readonly inHeading?: boolean;
 }
 
 /** A whole paragraph of plain text. */
@@ -140,7 +142,10 @@ function couldPair(text: string, i: number, mark: string, around: Around): boole
  * `@tiptap/markdown`'s own escaper misses all of these — `# not a heading`
  * typed as text came back as a heading (LAI-827, measured).
  */
-function lineStartEscape(line: string): number {
+function lineStartEscape(line: string, inHeading = false): number {
+  // After `### ` a `1.`, `-` or `>` is words; only more `#`s can be read as
+  // the heading's closing sequence (LAI-312).
+  if (inHeading) return /^#{1,6}(?=[ \t]|$)/.test(line) ? 0 : -1;
   if (/^(?:[-*_](?:[ \t]*[-*_]){2,}|=+)[ \t]*$/.test(line)) return 0;
   const definition = /^( {0,3})\[(?:[^\]\\\n]|\\.)+\]:/.exec(line);
   if (definition !== null) return definition[1]?.length ?? 0;
@@ -217,7 +222,7 @@ export function escapeFaithfully(text: string, around: Around = ALONE): string {
     const next = text[i + 1];
     if (i === 0 ? around.before === 'line' : text[i - 1] === '\n') {
       const end = text.indexOf('\n', i);
-      const at = lineStartEscape(text.slice(i, end === -1 ? undefined : end));
+      const at = lineStartEscape(text.slice(i, end === -1 ? undefined : end), around.inHeading);
       escapeAt = at === -1 ? -1 : i + at;
     }
     if (i === escapeAt) {
@@ -264,6 +269,7 @@ function aroundOf(node: JSONContent, parent: JSONContent | undefined): Around {
     before: marked ? 'mark' : before,
     after: marked ? 'mark' : after,
     inLink: (node.marks ?? []).some((m) => m.type === 'link'),
+    inHeading: parent?.type === 'heading',
   };
 }
 
@@ -423,8 +429,23 @@ function trimInline(content: readonly JSONContent[]): JSONContent[] {
   return out;
 }
 
-/** A node's JSON with every text block's ends as markdown keeps them. */
+/**
+ * A mark without its `delimiter`: how an emphasis was spelled, `_a_` or `*a*`,
+ * is not what it says (LAI-312). The source keeps the spelling; a changed
+ * block may change it.
+ */
+function unspelled(mark: NonNullable<JSONContent['marks']>[number]): typeof mark {
+  if (mark.attrs?.delimiter === undefined) return mark;
+  const { delimiter: _spelling, ...attrs } = mark.attrs;
+  return { ...mark, attrs };
+}
+
+/**
+ * A node's JSON with every text block's ends as markdown keeps them, and its
+ * marks as {@link unspelled}.
+ */
 function canonical(json: JSONContent, schema: Schema): JSONContent {
+  if (json.marks !== undefined) json = { ...json, marks: json.marks.map(unspelled) };
   if (json.content === undefined) return json;
   const type = json.type === undefined ? undefined : schema.nodes[json.type];
   let content = json.content.map((child) => canonical(child, schema));
