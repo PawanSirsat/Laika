@@ -65,30 +65,42 @@ only task naming the file is the done LAI-241.
 ## Note: LAI-715 may explain this (CHIEF, 2026-10-21)
 
 Read **LAI-715** (`.tasks/backlog/`, p1, unclaimed) before starting. It may
-be the same cause, for three reasons, all read from the files rather than
-inferred from durations:
+be the same cause. Each point below quotes its task file, or the code:
 
-- **Same shape.** LAI-715 records browser tests that fail in a full run, a
-  different one each time, and pass alone. Its *"a row opens the task
-  drawer"* timed out on `waitForURL` locally at a load of 39, then passed
-  8 of 8 alone under an 8× CPU throttle. Its conclusion: **"The suite, not
-  the app"** — the difference is concurrency, not a slow machine. This case
-  likewise timed out in a root gate (load 17 to 77) and passed alone in 2.9s.
-- **The concurrency it names is still there.** `server/web/package.json`'s
-  `test` is `node --test "test/**/*.test.ts"`, with no
-  `--test-concurrency`, so every browser file runs at once, and each
-  launches its own Chromium (`harness.ts:533`, *"One browser for the whole
-  file"*).
+- **Same shape.** LAI-715's gate went red *"each time on a **different**
+  browser test that passed in the runs either side"* (its Goal). Only one of
+  them is recorded passing **alone**: *"a row opens the task drawer"*,
+  which *"failed on CI attempt 2 of run 37769873902, yet passed 8 of 8
+  locally alone under an 8× CPU throttle"*. Its conclusion: **"The
+  suite, not the app"**, *"The difference is concurrency"*. This case also
+  timed out in a root gate (load 17 to 77) and passed alone in 2.9s.
+- **Mostly GitHub, once locally.** LAI-715's failures were on GitHub runners,
+  except one row of its table: *"local, load 39 | list-view › a row opens the
+  task drawer | `waitForURL(/task=/)` timed out; passed on rerun"*. That row
+  says only *passed on rerun*, not alone. This case was on the 10-core Mac.
+- **The concurrency it names is still there, bounded.**
+  `server/web/package.json`'s `test` is
+  `pnpm run typecheck && node --test "test/**/*.test.ts"`, with no
+  `--test-concurrency`. Node 22.18 then runs at most 9 test files at once:
+  `os.availableParallelism()` is 10 on this Mac, minus 1. There are 223
+  `*.test.ts` files under `server/web/test/`, 65 of them in `test/browser/`,
+  and each browser file launches its own Chromium (`harness.ts:533`, *"One
+  browser for the whole file"*). So up to 9 Chromium launches can overlap.
+  LAI-715's line *"`node --test` runs every browser test file at once"* is
+  wider than that; it is quoted here, not repeated.
 - **This case pays its file's launch.** It is the first test in
   `card-click.test.ts`, and `open` (`harness.ts:614`) calls `browser()`,
   whose first call is `chromium.launch` (`harness.ts:535`). So the ~17s
-  spent before the 15000ms wait includes a Chromium launch competing with
-  every other browser file's. That fits LAI-715's account; it still has to
-  be measured, as the first criterion says.
+  spent before the 15000ms wait includes a Chromium launch, while up to 8
+  other test files run beside it. That fits LAI-715's account; it still has
+  to be measured, as the first criterion says.
 
-Where it does **not** fit: LAI-715's sweep is for a read straight after a
-`waitFor()` on a different locator. Here the `waitFor` itself, on the
-locator the test then reads, gives up, so that sweep would not find this
-site. And LAI-715 was seen on GitHub's 4-vCPU runners, this on the 10-core
-Mac. If LAI-715's lever, `--test-concurrency` for `test/browser/`, turns
-out to be the fix, take it under LAI-715, or with it, rather than twice.
+Where it does **not** fit: LAI-715's sweep is for *"an immediate `count()` /
+`innerText()` after `waitFor()` on a different or less specific locator"*,
+and its fix is to *"wait for the state it then asserts"*. The sweep **would**
+find this site: `card-click.test.ts:124-125` waits on `article.card`, then
+`:130-131` calls `title.count()` on `.card-title`. But that is not what
+failed here. This failure is the `waitFor` at `:125` itself timing out, and
+the sweep's fix would not change that wait. If LAI-715's other lever,
+`--test-concurrency` for `test/browser/`, turns out to be the fix, take it
+under LAI-715, or with it, rather than twice.
