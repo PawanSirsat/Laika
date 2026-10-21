@@ -36,7 +36,7 @@ function main(): void {
 
   // **A copy before the schema changes** (LAI-468). Only when something is
   // pending, so an unchanged schema on a restart writes nothing.
-  runMigrations(db, { backup: { sqlite, dir: backupDir } });
+  runMigrations(db, { logger: log, backup: { sqlite, dir: backupDir } });
   log.info('db.ready', { path: env.dbPath });
 
   const auth = createAuth({

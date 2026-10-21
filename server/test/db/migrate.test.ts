@@ -9,7 +9,8 @@ import { ensureActivityTriggers, MIGRATIONS_FOLDER, runMigrations } from '../../
 import { expectSqliteError, freshDb, seed, type TestDb } from '../helpers/db.ts';
 import { eq } from 'drizzle-orm';
 import { newId } from '../../src/db/ids.ts';
-import { tasks } from '../../src/db/schema.ts';
+import { activity, comments, taskDependencies, tasks } from '../../src/db/schema.ts';
+import { createLogger } from '../../src/log.ts';
 import { statusForCategory } from '../../src/db/project-statuses.ts';
 
 /**
@@ -1458,4 +1459,252 @@ describe('0044 adds breaks and undo on a populated database (LAI-831)', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+describe('D-093 completed_at migration (LAI-822)', () => {
+  const TAG = '0045_done_completed_at';
+  // Building and upgrading real files needs an I/O budget under shared-machine load.
+  const UPGRADE_TIMEOUT_MS = 30_000;
+  const migrationSql = () => readFileSync(join(MIGRATIONS_FOLDER, `${TAG}.sql`), 'utf8');
+
+  /** A file at the immediately preceding version, with production's foreign keys. */
+  function fixture() {
+    const dir = mkdtempSync(join(tmpdir(), 'lai822-fixture-'));
+    const folder = join(dir, 'migrations');
+    cpSync(MIGRATIONS_FOLDER, folder, { recursive: true });
+    const journalPath = join(folder, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const at = journal.entries.findIndex((entry) => entry.tag === TAG);
+    expect(at, 'the completion migration is registered').toBeGreaterThan(0);
+    journal.entries.splice(at);
+    writeFileSync(journalPath, JSON.stringify(journal));
+    const handle = openDb({ path: join(dir, 'original.sqlite') });
+    runMigrations(handle.db, { migrationsFolder: folder });
+    const seeded = seed(handle.db, 1000);
+    let number = 0;
+    const task = (status: 'done' | 'review', completedAt: number | null = null) => {
+      number += 1;
+      const id = newId();
+      handle.db
+        .insert(tasks)
+        .values({
+          id,
+          projectId: seeded.projectId,
+          number,
+          title: 'Snapshot fixture',
+          status,
+          statusId: statusForCategory(handle.db, seeded.projectId, status).id,
+          createdBy: seeded.userId,
+          createdVia: 'api',
+          position: `k${String(number)}`,
+          createdAt: 1000,
+          updatedAt: 2000,
+          completedAt,
+        })
+        .run();
+      return id;
+    };
+    const moved = (
+      taskId: string,
+      from: string,
+      to: string,
+      now: number,
+      type: 'task.status_changed' | 'task.updated' = 'task.status_changed',
+    ) => {
+      appendActivity(handle.db, {
+        orgId: seeded.orgId,
+        projectId: seeded.projectId,
+        taskId,
+        actorId: seeded.userId,
+        actorKind: 'user',
+        type,
+        payload: { from, to },
+        now,
+      });
+    };
+    const createdDone = task('done');
+    // The old boot recovery ignores unreadable payloads too: no date to recover.
+    handle.db
+      .insert(activity)
+      .values({
+        id: newId(),
+        orgId: seeded.orgId,
+        projectId: seeded.projectId,
+        taskId: createdDone,
+        actorKind: 'system',
+        type: 'task.status_changed',
+        payloadJson: '{invalid',
+        createdAt: 16_000,
+      })
+      .run();
+    const historical = task('done');
+    // Deliberately out of insertion order: latest means timestamp, not rowid.
+    moved(historical, 'review', 'done', 9000);
+    moved(historical, 'review', 'done', 5000);
+    moved(historical, 'done', 'review', 6000);
+    moved(historical, 'done', 'done', 11_000);
+    moved(historical, 'review', 'done', 12_000, 'task.updated');
+    const sameCategoryOnly = task('done');
+    moved(sameCategoryOnly, 'done', 'done', 13_000);
+    const stamped = task('done', 3000);
+    moved(stamped, 'review', 'done', 14_000);
+    const reopened = task('review');
+    moved(reopened, 'review', 'done', 4000);
+    moved(reopened, 'done', 'review', 5000);
+    const reopenedStamped = task('review', 4000);
+    const unrelated = task('done');
+    // References that a tasks table rebuild could cascade away or set null.
+    handle.db
+      .insert(comments)
+      .values({
+        id: newId(),
+        taskId: historical,
+        authorId: seeded.userId,
+        bodyMd: 'Keep this reference',
+        createdVia: 'web',
+        createdAt: 2000,
+        updatedAt: 2000,
+      })
+      .run();
+    handle.db
+      .insert(taskDependencies)
+      .values({
+        taskId: createdDone,
+        dependsOnTaskId: historical,
+        createdAt: 2000,
+      })
+      .run();
+    handle.db
+      .update(tasks)
+      .set({ parentTaskId: historical, discoveredFrom: historical })
+      .where(eq(tasks.id, createdDone))
+      .run();
+    // No qualifying event on this task: another task's events must not leak in.
+    moved(unrelated, 'todo', 'review', 15_000);
+    return {
+      ...handle,
+      dir,
+      createdDone,
+      historical,
+      sameCategoryOnly,
+      stamped,
+      reopened,
+      reopenedStamped,
+      unrelated,
+    };
+  }
+
+  it('logs zero rows when applying to a fresh database', () => {
+    const empty = openDb({ path: ':memory:' });
+    try {
+      const lines: string[] = [];
+      runMigrations(empty.db, { logger: createLogger((line) => lines.push(line)) });
+      expect(lines.map((line) => JSON.parse(line) as Record<string, unknown>)).toMatchObject([
+        { event: 'db.completed_at_backfilled', migration: TAG, count: 0 },
+      ]);
+    } finally {
+      empty.sqlite.close();
+    }
+  });
+
+  it(
+    'runs on an upgrade copy, snapshots first, and logs the rows it set once',
+    () => {
+      const f = fixture();
+      const path = join(f.dir, 'copy.sqlite');
+      f.sqlite.exec(`VACUUM INTO '${path.replace(/'/g, "''")}'`);
+      const copy = openDb({ path });
+      try {
+        const lines: string[] = [];
+        const logger = createLogger((line) => lines.push(line));
+        const backupDir = join(f.dir, 'backups');
+        runMigrations(copy.db, {
+          logger,
+          backup: { sqlite: copy.sqlite, dir: backupDir, now: 20_000 },
+        });
+        const messages = () => lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+        expect(messages()).toMatchObject([
+          { event: 'db.completed_at_backfilled', migration: TAG, count: 4 },
+        ]);
+        const count = (db: typeof copy.db) =>
+          db
+            .select()
+            .from(tasks)
+            .all()
+            .filter((r) => r.status === 'done' && r.completedAt === null).length;
+        expect(count(f.db)).toBe(4);
+        expect(count(copy.db)).toBe(0);
+        const snapshot = openDb({
+          path: join(backupDir, 'pre-migration-1970-01-01T00-00-20-000Z.sqlite'),
+        });
+        try {
+          expect(count(snapshot.db)).toBe(4);
+        } finally {
+          snapshot.sqlite.close();
+        }
+        const after = copy.db.select().from(tasks).all();
+        runMigrations(copy.db, {
+          logger,
+          backup: { sqlite: copy.sqlite, dir: backupDir, now: 30_000 },
+        });
+        expect(messages()).toHaveLength(1);
+        expect(copy.db.select().from(tasks).all()).toEqual(after);
+        expect(copy.sqlite.prepare(migrationSql()).run().changes).toBe(0);
+      } finally {
+        copy.sqlite.close();
+        f.sqlite.close();
+        rmSync(f.dir, { recursive: true, force: true });
+      }
+    },
+    UPGRADE_TIMEOUT_MS,
+  );
+
+  it(
+    'fills only unstamped done tasks, preserves references, and changes zero rows on replay',
+    () => {
+      const f = fixture();
+      try {
+        const before = f.db.select().from(tasks).all();
+        const history = f.db.select().from(activity).all();
+        const refs = f.db.select().from(taskDependencies).all();
+        const notes = f.db.select().from(comments).all();
+        const missing = () =>
+          f.db
+            .select()
+            .from(tasks)
+            .all()
+            .filter((r) => r.status === 'done' && r.completedAt === null).length;
+        expect(missing()).toBe(4);
+        expect(f.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
+        const schemaVersionBefore = f.sqlite.pragma('schema_version', { simple: true });
+        const applied = f.sqlite.prepare(migrationSql()).run();
+        expect(applied.changes).toBe(4);
+        expect(missing()).toBe(0);
+        expect(f.sqlite.pragma('schema_version', { simple: true })).toBe(schemaVersionBefore);
+        const after = f.db.select().from(tasks).all();
+        const expected = new Map([
+          [f.createdDone, 1000],
+          [f.historical, 9000],
+          [f.sameCategoryOnly, 1000],
+          [f.stamped, 3000],
+          [f.reopened, null],
+          [f.reopenedStamped, 4000],
+          [f.unrelated, 1000],
+        ]);
+        expect(after).toEqual(before.map((r) => ({ ...r, completedAt: expected.get(r.id) })));
+        expect(f.db.select().from(activity).all()).toEqual(history);
+        expect(f.db.select().from(taskDependencies).all()).toEqual(refs);
+        expect(f.db.select().from(comments).all()).toEqual(notes);
+        expect(f.sqlite.pragma('foreign_key_check')).toEqual([]);
+        expect(f.sqlite.prepare(migrationSql()).run().changes).toBe(0);
+        expect(f.db.select().from(tasks).all()).toEqual(after);
+      } finally {
+        f.sqlite.close();
+        rmSync(f.dir, { recursive: true, force: true });
+      }
+    },
+    UPGRADE_TIMEOUT_MS,
+  );
 });

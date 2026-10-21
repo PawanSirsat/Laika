@@ -798,6 +798,8 @@ export function createTask(
         dueOn: input.due_on ?? null,
         plannedStart: input.planned_start ?? null,
         externalRef,
+        // Creation is an arrival at Done too (SPEC §4.5, D-093).
+        completedAt: initial.category === 'done' ? now : null,
         createdAt: now,
         updatedAt: now,
       })
