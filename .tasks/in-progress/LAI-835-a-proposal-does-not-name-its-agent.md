@@ -35,8 +35,9 @@ the person cannot tell one agent's proposal from another's.
 
 On the owner's direct instruction (*"do it what is needs to do"*), the last of
 the three pieces LAI-831 left out of the owner's My day design. Branch
-`LAI-835-proposal-names-its-agent`, **built on LAI-833** (`LAI-833-agents-lane`).
-That branch adds migration `0046`, and this one's is `0047`, chained after it.
+`LAI-835-proposal-names-its-agent`, **built on LAI-833**
+(`LAI-833-agents-lane`). That branch adds migration `0046`, and this one's is
+`0047`, chained after it.
 The merge order is LAI-822 (#5), LAI-859 (#7), LAI-834 (#8), LAI-833, then
 this.
 
