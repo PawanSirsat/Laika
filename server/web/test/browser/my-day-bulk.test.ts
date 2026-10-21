@@ -632,7 +632,9 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
     try {
       const link = row(h, 'd01').locator('.myday-row-target a.myday-cardlink');
       assert.equal(await link.getAttribute('href'), '/board?project=atlas&task=t1');
-      assert.equal(await link.innerText(), 'LAI-1 Search matches keys');
+      // Its key, its title on the line under it (LAI-858), and both in its name.
+      assert.equal(await link.innerText(), 'LAI-1\nSearch matches keys');
+      assert.equal(await link.textContent(), 'LAI-1 Search matches keys');
       // On nothing: words, never a dead link.
       assert.equal(await row(h, 'd04').locator('.myday-row-target a').count(), 0);
 
