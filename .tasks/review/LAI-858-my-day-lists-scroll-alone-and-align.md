@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-21T10:35:31Z
+finished: 2026-10-21T12:40:38Z
 ---
 
 ## Goal
@@ -30,34 +31,34 @@ to do".
 
 ## Acceptance criteria
 
-- [ ] **Reproduce first, and record it here.** In a real browser against the
+- [x] **Reproduce first, and record it here.** In a real browser against the
       built app, record exactly when the page scrolls instead of the list. Try
       the pointer over the list, the header and the pager; the list at its
       top, middle and end; a full 10-row page and a shorter one; at 1440,
       1024 and 390px. Name the cause with evidence. `.myday-scroll` already
       has `overscroll-behavior: contain` (`my-day.css:1369-1374`), so say why
       that is not enough.
-- [ ] With the pointer anywhere over the To settle card or the Confirmed card,
+- [x] With the pointer anywhere over the To settle card or the Confirmed card,
       a wheel or trackpad scroll moves only that card's list whenever it has
       more rows than it shows. Reaching either end does not carry on into the
       page, and the page's scroll position does not change.
-- [ ] No row is left partly hidden under a card's header with a stray line of
+- [x] No row is left partly hidden under a card's header with a stray line of
       its text showing, as in the owner's screenshot. Opening a day, changing
       page and selecting a row (click, J or K) show the rows they bring into
       view whole. Selecting a row never moves the page.
-- [ ] Nothing else loses its scroll. The timeline still scrolls sideways on
+- [x] Nothing else loses its scroll. The timeline still scrolls sideways on
       its own, the right column still scrolls, and the page still scrolls
       when the pointer is anywhere else.
-- [ ] **Alignment.** Compare the live My day with the owner's design
+- [x] **Alignment.** Compare the live My day with the owner's design
       (`docs/design/`, the "Laika App v2" My day) at 1440, 1024 and 390px,
       light and dark, sidebar open and folded. Fix every misalignment found in
       My day's own files, and list each one here with before and after
       screenshots. Anything outside My day's files is listed, not fixed. The
       SIGNALS and AGENTS lanes and the agent's name are LAI-834, LAI-833 and
       LAI-835, not this task.
-- [ ] Browser tests fail on today's code for the scroll and row-edge
+- [x] Browser tests fail on today's code for the scroll and row-edge
       behaviour above, at 1440 and 390, and pass after.
-- [ ] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Notes
 
