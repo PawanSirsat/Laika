@@ -5236,3 +5236,78 @@ into `server/web/src/styles/type.css` as `--text-<step>` and
 meta, timestamps, the first-boot wordmark and headline, and the board's
 uppercase column heads (12.5px → 12px, Jira's own column-head size). None of
 them is a title, a description, a comment body or a form field.
+
+## D-095 — While a builder Omnigent dispatched runs, its card labels the person's untied minutes; its time is still not theirs (LAI-859; amends D-088 item 9)
+
+**Date:** 2026-10-21 · **By:** CHIEF, on the owner's instruction
+
+The owner, 2026-10-21, looking at `laika time draft --days 1` (2 h 11 min in
+16 blocks, 19 minutes tied to a task): *"its showing me needs a card why its
+not auto recognised that ? fix that"*.
+
+The owner works by typing to an Omnigent orchestrator (polly). Those turns are
+a lane of their own with no key and no repository (LAI-792). The sessions that
+do carry a key are the builders polly dispatches — a `LAI-NNN-…` branch, or a
+`start_working` mark — and they are skipped as automated (D-080, D-088 item 9)
+and left out of the draft whole. A commit's key ties only a session lane that
+has a repository, never the orchestrator's. So nothing ever tied the owner's
+own minutes to a card.
+
+Asked *"while a builder you dispatched is running, its card labels your polly
+minutes; its time is still not counted as yours; if several builders run at
+once, the minutes split equally, the way parallel sessions already split —
+OK?"*, the owner answered **"yes"**.
+
+1. **A minute the person was active in, with no key from any lane of theirs,
+   takes the keys of the dispatched sessions active in it.** A dispatched
+   session's key is found by the token reader's task rule — its own Laika
+   mark, else a key in its branch — and it is active by the drafter's lane
+   rules: events no more than 15 minutes apart chain, and the last before a
+   longer gap holds for 5 more. The minute is split equally between the
+   distinct keys, as parallel lanes already split.
+2. **The person's own key wins.** A minute that any lane of the person's tied
+   — a session's mark or branch, or a commit's key — keeps its keys and gains
+   none from a dispatched session.
+3. **A dispatched session never makes a minute and adds no count.** With none
+   of the person's lanes active, nothing is drafted, as before. Its replies
+   are not evidence in any block's counts. D-088 item 9 stands for time: the
+   agents the orchestrator dispatches are not the person's work. They now lend
+   their card, and nothing else.
+4. **Only Omnigent-dispatched sessions lend.** The activity hook writes the
+   word `omnigent` after the session id of a sub-agent that an Omnigent runner
+   dispatched: `OMNIGENT=1` under a runner primary id, and neither the primary
+   nor the orchestrator. `CI` and `LAIKA_ACTIVITY_SKIP` sessions get no word,
+   and lend nothing. Lines written before this hook cannot be told apart —
+   measured on the owner's machine that day, none of 206 carried a reason —
+   so they lend nothing either.
+5. **Said on the machine only.** `laika time draft` marks each block that took
+   a dispatched builder's card. The body a sync sends does not.
+
+### What does not change
+
+- **Privacy** (D-080, D-088 items 3–4, D-090, D-091). Nothing new leaves the
+  machine. A block is still a start, an end, minutes, one key or `null`, and
+  counts, and the body's schema is unchanged. The lending happens on the
+  machine. The only new local record is one word on a line of
+  `~/.laika/activity/skip-sessions`, which is 0600 and never sent.
+- **Tokens** (D-091). A dispatched session's tokens are still sent marked
+  automated, never as the person's.
+- **Activity counts** (D-080). A dispatched session still adds no prompt,
+  session or heatmap minute.
+
+### Known limits
+
+- Lending is by time, not by who dispatched whom: any Omnigent sub-agent
+  active in the minute lends, whichever orchestrator started it. On a
+  one-person machine that is the same thing.
+- A builder with no mark and no key in its branch lends nothing.
+- The hook's command line is unchanged, so a machine gets the new word when
+  the checkout its hooks run from is updated; `laika activity on` need not
+  run again. Days drafted from sessions skipped before then keep those
+  minutes untied.
+
+### Revisit when
+
+Omnigent tells a hook which session dispatched which, so that a card is lent
+only to the orchestrator that dispatched the builder. Or a second person runs
+builders on a shared machine.
