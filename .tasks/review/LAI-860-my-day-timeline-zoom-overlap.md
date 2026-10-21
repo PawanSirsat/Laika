@@ -169,3 +169,84 @@ This is a layout rule inside the existing YOU row, not new lanes, so the
   adjacent slots overlap by about 3 px, and at 390 px (1.7 px a slot) the
   2 px commit ticks touch as well. A prompt dot and a commit tick in the same slot share a
   centre by design. Filed as a follow-up rather than changed here.
+
+## Review round 1 (CHANGES REQUIRED on PR #9) — unfinished, handed to Strelka
+
+Belka stopped mid-round on the owner's word (out of usage). The work so far
+is commit `375f5a35` (`wip(web): …`), **with the browser test red** and **no
+gate run**. The file stays in `.tasks/review/` and PR #9 picks up the push.
+
+**Done in `375f5a35` (not yet gated):**
+- **Chips clear their neighbours.** `timeline-derive.ts` `placeChips` puts a
+  badge inside its block's end where it fits, or centred over a narrower
+  block. It draws the badge only if that box clears every other block, every
+  badge already placed and both ends of the track; longer blocks go first.
+  `Timeline.tsx` measures after every render (and on `loadingdone`) and sets
+  `data-chip-place` (`end`/`centre`/`none`). The CSS hides `none` with
+  `visibility`. The badge is outside the new `.dayline-block-clip` wrapper,
+  so it can be wider than its block. It is `pointer-events: none`, so a click
+  on it selects its block. The `row === 0` special case is gone.
+- **Labels by height.** `FitLabel` now also checks `scrollHeight` and retries
+  on a height change. The top label is `<FitLabel key={rows}>`. The key and
+  the figures are `flex-shrink: 0`. The card title gives way first: it is a
+  `FitLabel` with `ellipsis`, which tries height only. Three 18px lines never
+  fit a 46px body, so the title is now hidden on every single-row block; on
+  master it was drawn and clipped.
+- **Handles usable or not drawn.** The block is `container: dayline-block /
+  size`. Below 1.25rem tall or 0.625rem wide, the edges get `opacity: 0;
+  pointer-events: none`, stay focusable for ← and →, and show on
+  `:focus-visible`.
+- **Stacks from the drag preview** (the optional item).
+- **The track is `overflow-x: clip`.** The last hour line (`left: 100%`, 1px)
+  made Fit scroll by 1px.
+- **Comments.** The `Timeline` doc comment now says the badge shows where it
+  clears its neighbours. The test header lists what it measures. `ringReach`
+  now also counts a positioned pseudo-element set outside the block, and its
+  comment says that inset shadows add nothing.
+- **Browser test fixture and checks.** Hour-long blocks at three (k), five (f)
+  and eight (g) at once; t1–t3 back to back; h1 with a title; zl standing
+  alone; 33 blocks in all. Added: a vertical label-cut check (`scrollHeight`,
+  plus outside a clipping ancestor), chips clear the track, handles usable or
+  hidden and focusable, a 10px floor for every block except g*, and positive
+  controls (zl's chip everywhere; z7, z10 and f1 chips at 2×; h1 and k1
+  labels at 1× and 2×).
+
+**Not done:**
+1. **The test is red** on one thing: k1's label is missing at 1× and 2×
+   (three at once, 18px rows, label `line-height: 1`). Find out why: the
+   body's border and rounding against `scrollHeight`, the `key={rows}`
+   remount, or `flex-shrink`. Measure; do not guess.
+2. **B2 is not started.** Add `stackOf` cases [8:00–8:10, 8:05–8:10,
+   8:10–8:15] (the third is `{row 0, rows 1}`) and [10:00–11:00,
+   10:05–10:10, 10:10–10:15] (rows 2). Prove they go red under
+   `start >= reach` → `>` and `end <= block.start` → `<`, check each edit
+   landed, and restore. Add unit tests for `placeChips`.
+3. **Where the rule stops, to write up and file** (CHIEF's 800–899 block,
+   section 3 sweep re-run just before filing):
+   - Down: rows are 60/n − 2 px, so 10px at five at once, 8px at six and
+     5.5px at eight. From six at once each block keeps its own row and can
+     still be clicked, but labels, chips and handles are not drawn.
+   - Across: Chrome hit-tests up to about 0.9px off the boxes it reports at
+     390 px (measured on isolated zl too, with or without the clip). So two
+     back-to-back five-minute blocks at Fit on a phone, 1.7px each, cannot be
+     told apart by a pointer. The browser test skips the centre check only
+     for a centre within 1px of a neighbour's box. Get the reviewer to agree
+     to that.
+   - File the design follow-up: a cap with "+N", a taller row, real lanes, or
+     a minimum width at Fit. It should also cover the hidden card title.
+4. **The task file's Notes** still say LAI-834 draws its lane "in place of the
+   count chip". It keeps the badge: correct that. Record in these notes that
+   `375f5a35` now edits the doc paragraph LAI-834 rewrites, so a merge
+   conflicts there. Before this change it silently carried "every block
+   still shows its counts as a badge" (merged `Timeline.tsx:100-101`).
+   Re-run `git merge-tree --write-tree` against `LAI-834-signals-lane`.
+5. **Before/after evidence, re-measured on the final fixture.** On the
+   pre-rework fixture, the new test failed on `e262f6be` with 48 problems
+   (g8's edges drawn too small, zl and z7 lost their chips, h1's label cut,
+   t1/t2 covered at 390 Fit) and on master with 3698. The hour-long stacks
+   were added after that run, so re-run both, swapping the four source files
+   in by name and restoring by checksum.
+6. Merge local `master` (`e192c997`, docs only). Run the full gate as in
+   CLAUDE.md §5: load under 20, each exit code on its own line. Update
+   Cause/Fix here, verify from `git show`, push, `finish_task` with
+   `[strelka]`, and report.
