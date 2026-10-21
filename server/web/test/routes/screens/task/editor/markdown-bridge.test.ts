@@ -338,6 +338,122 @@ void describe('what markdown cannot hold does not count as a change (review roun
   });
 });
 
+/*
+ * LAI-849: an agent-written description that rendered correctly opened as
+ * Markdown, saying the editor "would rewrite line 7: '- When …' as ''". Line 7
+ * was the first item of a list written directly under a paragraph — legal
+ * CommonMark — and the editor writes a blank line before every block. The
+ * check compared the texts line by line by position, so that one added blank
+ * line shifted every line after it. The text below is made up (the repo is
+ * public); its shape is the owner's: lines of `Key: value`, then a paragraph
+ * opening in bold, with code in it, and a list right under its last line.
+ */
+const AGENT = [
+  'Owner: Ada Lovelace',
+  'Source: a question at the desk on Monday: "can a late book skip the queue?"',
+  'Decision: "Shelve on return + scan".',
+  '',
+  '**Found (desk log):** the loan closes at `checkout.close` when the reader leaves, and `returns.scan` never runs.',
+  'What should happen:',
+  '- A book handed in after hours waits on the returns trolley.',
+  '- The morning scan shelves it and closes the loan.',
+].join('\n');
+
+void describe('a list directly under a paragraph opens in the rich view (LAI-849)', () => {
+  void test('the shape the owner hit opens rich, and an untouched save is the text as stored', () => {
+    const opening = openDocument(bridge, AGENT);
+    assert.equal(
+      opening.kind,
+      'rich',
+      `opened as Markdown: ${opening.kind === 'source' ? opening.reason : ''}`,
+    );
+    if (opening.kind !== 'rich') return;
+    const doc = bridge.schema.nodeFromJSON(opening.content);
+    // Untouched, every block is copied from the source: byte for byte, no
+    // blank line added above the list.
+    assert.equal(toMarkdown(bridge, doc, opening), AGENT);
+  });
+
+  void test('an edit elsewhere leaves the paragraph and its list as they were', () => {
+    const opening = openDocument(bridge, AGENT);
+    assert.equal(opening.kind, 'rich', 'positive control: the document opens rich');
+    if (opening.kind !== 'rich') return;
+    const [, ...rest] = opening.content.content ?? [];
+    const doc = bridge.schema.nodeFromJSON({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [text('Owner: Grace Hopper')] }, ...rest],
+    });
+    const [, ...after] = AGENT.split('\n\n');
+    assert.equal(toMarkdown(bridge, doc, opening), ['Owner: Grace Hopper', ...after].join('\n\n'));
+  });
+
+  // Every block that may follow a paragraph without a blank line, and a
+  // paragraph under a heading: the editor adds one blank line, nothing else.
+  const underParagraph = [
+    'Steps:\n- one\n- two',
+    'Steps:\n1. one\n2. two',
+    'Steps:\n- [ ] one\n- [x] two',
+    'Said:\n> a quote',
+    'Then:\n## A heading',
+    'Run:\n```sh\npnpm test\n```',
+    'Numbers:\n| A | B |\n| --- | --- |\n| 1 | 2 |',
+    '## A heading\nText right under it.',
+    '> a quote\n- then a list',
+  ];
+  for (const markdown of underParagraph) {
+    void test(`only a blank line between blocks differs: ${JSON.stringify(markdown)}`, () => {
+      const opening = openDocument(bridge, markdown);
+      assert.equal(
+        opening.kind,
+        'rich',
+        `opened as Markdown: ${opening.kind === 'source' ? opening.reason : ''}`,
+      );
+    });
+  }
+});
+
+void describe('a change to any non-blank text is still refused (LAI-849)', () => {
+  // The same shape, each with one thing the editor would rewrite.
+  const refused: readonly [string, string][] = [
+    ['a star bullet', AGENT.replace('- A book', '* A book').replace('- The morning', '* The morning')],
+    ['an underscore emphasis', `${AGENT}\n\nThe _old_ way.`],
+    ['a setext heading', `${AGENT}\n\nTitle\n=====`],
+    ['a loose list made tight', AGENT.replace('\n- The morning', '\n\n- The morning')],
+  ];
+  for (const [what, markdown] of refused) {
+    void test(what, () => {
+      assert.equal(openDocument(bridge, markdown).kind, 'source');
+    });
+  }
+});
+
+void describe('the reason names the real difference, not a shifted line (LAI-849)', () => {
+  const reason = (markdown: string): string => {
+    const opening = openDocument(bridge, markdown);
+    assert.equal(opening.kind, 'source', 'positive control: the document opens as Markdown');
+    return opening.kind === 'source' ? opening.reason : '';
+  };
+
+  void test('a forgiven blank line above a list is not the line named', () => {
+    assert.equal(
+      reason(`${AGENT}\n\nThe _old_ way.`),
+      'The rich editor would rewrite line 10: “The _old_ way.” as “The *old* way.”.',
+    );
+  });
+
+  void test('a blank line it would remove is named as that, with the line after it', () => {
+    assert.equal(
+      reason('- one\n\n- two'),
+      'The rich editor would remove the blank line before line 3: “- two”.',
+    );
+  });
+
+  void test('line numbers are the source’s, as the Markdown view shows it', () => {
+    // Three blank lines, which the normalisation counts as one.
+    assert.match(reason('Intro.\n\n\n\n* one\n* two'), /^The rich editor would rewrite line 5: /);
+  });
+});
+
 void describe('the whole is checked, not only each block (review round 1)', () => {
   void test('two lists side by side read back as one: refused, not saved', () => {
     const opening = openDocument(bridge, '- one\n- two');
