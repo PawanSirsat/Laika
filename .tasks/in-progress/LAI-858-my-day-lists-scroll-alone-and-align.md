@@ -2,11 +2,12 @@
 id: LAI-858
 title: 'My day: To settle and Confirmed scroll on their own, never the page, and the screen lines up with the design'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-21T10:35:31Z
 ---
 
 ## Goal
