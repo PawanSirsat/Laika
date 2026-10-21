@@ -1014,4 +1014,73 @@ void describe('a phone, and both themes (I)', () => {
       await h.close();
     }
   });
+  // LAI-842: the rows gave their time 9.5rem and their length 5.5rem, a guess
+  // about one machine's font, and a wider font ran `1 h 35 min` out of its
+  // column. Columns sized to the widest row fit any font and still line up.
+  void test('a font wider than ours: a row’s time and length fit, and the columns line up', async () => {
+    const h = await openDay(TODAY);
+    try {
+      await h.page.addStyleTag({ content: '.myday-page * { letter-spacing: 0.12em !important; }' });
+      for (const width of [1440, 1024]) {
+        await h.page.setViewportSize({ width, height: 900 });
+        for (const folded of [false, true]) {
+          const fold = h.page.locator('.sidebar-toggle');
+          if ((await fold.count()) > 0) {
+            const open = (await fold.first().getAttribute('aria-expanded')) === 'true';
+            if (folded === open) {
+              await fold.first().click();
+              await until(
+                async () =>
+                  ((await fold.first().getAttribute('aria-expanded')) === 'true') !== open,
+              );
+            }
+          }
+          const lists = await h.page.evaluate(() =>
+            [...document.querySelectorAll('.myday-blocks')].map((list) => {
+              const rows = [...list.querySelectorAll(':scope > li')];
+              const edge = (row: Element, sel: string): number =>
+                Math.round(row.querySelector(sel)?.getBoundingClientRect().left ?? -1);
+              return {
+                label: list.getAttribute('aria-label') ?? '',
+                rows: rows.length,
+                cut: [
+                  ...list.querySelectorAll(
+                    '.myday-row-select, .myday-row-time, .myday-row-minutes',
+                  ),
+                ]
+                  .filter((el) => el.scrollWidth > el.clientWidth + 1)
+                  .map((el) => `${el.className}: ${(el.textContent ?? '').trim()}`),
+                lengths: [...new Set(rows.map((row) => edge(row, '.myday-row-minutes')))],
+                cards: [...new Set(rows.map((row) => edge(row, '.myday-row-target')))],
+              };
+            }),
+          );
+          const at = `${String(width)} folded=${String(folded)}`;
+          assert.deepEqual(
+            lists.map((l) => [l.label, l.rows > 1]),
+            [
+              ['Drafted blocks', true],
+              ['Confirmed entries', true],
+            ],
+            `${at}: the two lists, each with rows to line up`,
+          );
+          for (const list of lists) {
+            assert.deepEqual(list.cut, [], `${at} ${list.label}: cut`);
+            assert.equal(
+              list.lengths.length,
+              1,
+              `${at} ${list.label}: lengths at ${list.lengths.join(', ')}`,
+            );
+            assert.equal(
+              list.cards.length,
+              1,
+              `${at} ${list.label}: cards at ${list.cards.join(', ')}`,
+            );
+          }
+        }
+      }
+    } finally {
+      await h.close();
+    }
+  });
 });
