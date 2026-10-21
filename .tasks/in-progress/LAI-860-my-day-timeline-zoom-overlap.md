@@ -2,11 +2,12 @@
 id: LAI-860
 title: 'My day Timeline at 1x and 2x: blocks, count chips and labels overlap each other'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-21T11:15:58Z
 ---
 
 ## Goal
