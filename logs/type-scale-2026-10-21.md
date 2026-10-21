@@ -32,3 +32,27 @@
 
 **State**
 In review on branch LAI-828-type-scale, not pushed. Gate: `pnpm test` 0, `pnpm lint` 0, `pnpm format` 0 on 97fc95e2 (server 3327 passed / 10 skipped, web 2571/2571, cli 533 passed / 0 failed).
+
+## 2026-10-21T00:25:27Z — LAI-828 (round 2) and LAI-842
+
+**What changed**
+- server/web/test/theme/type-floor.test.ts — reads the size in a `font` shorthand and a last declaration without `;`; the My day exemption, its 10px floor, the legacy-name test and the expiry test removed
+- server/web/scripts/type-css.ts (new), scripts/generate-type-css.ts — rendering split from writing; server/web/test/theme/type-css-drift.test.ts (new) compares `type.css` with it byte for byte
+- server/web/src/theme/type-roles.ts, scripts/type-css.ts, src/styles/type.css, test/theme/type-roles.test.ts — `LEGACY_TEXT_ALIASES` retired; the stale "hand-written" comment fixed
+- server/web/src/components/space/space.css — the space bar's slot wraps; no "1." stub beside the Dashboard's ranges at 390
+- server/web/src/routes/screens/my-day/my-day.css — My day v2's 81 sizes onto the steps by role; the two row lists as grids with subgrid rows (LAI-842)
+- server/web/test/browser/my-day-v2.test.ts — wide-font test for the row columns, failing first
+- .tasks/review/LAI-828-…md — round 2 section, census now 990 with My day; .tasks/review/LAI-842-…md — claimed, finished, closed here
+
+**Decisions**
+- Rows as one grid per list with subgrid rows, not `min-width` — `min-width` fits a wide font but lets a wider row push its card out of line; the new test is red on that variant ("cards at 557, 544").
+- Stat figures in My day are `heading-md` (20), as profile's compact stats, not `heading-lg` like the Dashboard's big tiles — the strip is compact and was 19px.
+- The aliases were deleted only when the floor test's expiry assertion went red on its own after My day's sweep, rather than up front.
+
+**Discovered**
+- The first stub check flagged the board's keyboard-only position selects (clipped to 1px until focused) — they draw nothing; the check now skips anything inside a `clip-path`, and still flags the Dashboard's 7px stub with the old layout re-injected.
+- My day v2 arrived using the old token names exclusively (81 of 81), so the aliases were holding its whole type up until the sweep.
+- nothing else
+
+**State**
+LAI-828 back in review and LAI-842 in review, both on LAI-828-type-scale, not pushed. Gate runs after this commit; exit codes go on the LAIKA-626 card.

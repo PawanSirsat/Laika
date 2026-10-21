@@ -8,7 +8,7 @@ depends-on: []
 discovered-from: LAI-827
 status: review
 started: 2026-10-20T21:30:56Z
-finished: 2026-10-20T22:53:13Z
+finished: 2026-10-21T00:24:54Z
 ---
 
 ## Goal
@@ -99,22 +99,24 @@ Seven steps, declared once in `TYPE_SCALE`
 - **Density** keeps every size: the dense board only tightens the card title's
   leading to 1.3. Its old 10.5px meta and labels were under the floor and would
   now equal the default.
-- **`type-floor.test.ts` is the guard**, rewritten for this scale: every
-  `font-size` is `var(--text-<step>)` or `0`; nothing resolves under 12px but
-  `--text-tiny` on the named list; the named list and the selectors using
-  `--text-tiny` are equal, both directions; the rem anchor (`index.css`
-  `:root { font-size: 16px }`) is the one raw size. LAI-706's avatar exemption
-  is retired — avatar initials are on the tiny list instead.
-- **Legacy names, for My day only.** `--text-xs` … `--text-xl` survive as
-  aliases of a step (`LEGACY_TEXT_ALIASES`), because LAI-831 is rebuilding My day
-  in parallel and its stylesheet was not touched here. The floor test fails if
-  anything outside `routes/screens/my-day/` uses them, holds My day to LAI-706's
-  10px floor meanwhile, and **fails once My day needs neither aliases nor raw
-  sizes** — the signal to delete the aliases and the exemption.
-- **LAI-831 must use the tokens**: `var(--text-<step>)` from `styles/type.css`,
-  no raw sizes and no legacy names. Until then My day reaches the scale through
-  the aliases — 38 of its 39 sizes are alias tokens, now 12px and 14px; one raw
-  `1.125rem` remains.
+- **`type-floor.test.ts` is the guard**, rewritten for this scale: every size —
+  `font-size`, or the size in a `font` shorthand, with or without the `;` a
+  block's last declaration may omit (round 2) — is `var(--text-<step>)` or `0`;
+  nothing resolves under 12px but `--text-tiny` on the named list; the named
+  list and the selectors using `--text-tiny` are equal, both directions; the rem
+  anchor (`index.css` `:root { font-size: 16px }`) is the one raw size and the
+  one exemption. LAI-706's avatar exemption is retired — avatar initials are on
+  the tiny list instead.
+- **`type-css-drift.test.ts`** (round 2) renders `type.css` with the generator's
+  own code (`scripts/type-css.ts`) and compares it byte for byte, which covers
+  the density block and comments `type-roles.test.ts` does not read.
+- **No legacy names, no My day exemption** (round 2). Until My day v2 (LAI-831)
+  landed, `--text-xs` … `--text-xl` survived as aliases for My day only, held by
+  an exemption whose last test was written to fail once My day needed neither.
+  After the merge and My day's sweep it did — *"My day is on the scale: retire
+  its exemption"* — and the aliases, the exemption, its 10px floor and the
+  legacy-name test were deleted. A retired name put back in `my-day.css` is red
+  in the floor test and in `tokens.test.ts`.
 
 ### The tiny list (11px)
 
@@ -169,11 +171,15 @@ Measured on a private instance (my own port and database, seeded with 14 tasks,
 two sprints, comments, a dependency and two tokens) in Chromium, for Board,
 List, Timeline, Dashboard, Capacity, Usage, Organisation, Developer access,
 Connect, the task panel and My day, at 1440, 1024, 920 and 390, light and dark,
-sidebar open and folded: **176 measurements after, none failing.** Each checks
-the document's scroll width *and* `.shell-main`'s — the element that actually
-scrolls; the document's never moves, which the first version of this check
-missed — every element's right edge against `.shell-main`'s outside any inner
-scroller, and every leaf that overflows its own box without an ellipsis.
+sidebar open and folded: **176 measurements after, none failing** — all of them
+in `after/measure.json`. Each checks the document's scroll width *and*
+`.shell-main`'s — the element that actually scrolls; the document's never moves,
+which the first version of this check missed — every element's right edge
+against `.shell-main`'s outside any inner scroller, every leaf that overflows
+its own box without an ellipsis, and (round 2) every ellipsised text squeezed
+below three characters, skipping controls clipped until focused. My day was
+re-measured after its sweep on a day with time switched on: three drafts
+(including `1 h 35 min` and `1 h 50 min`) and two confirmed entries.
 
 Four screens needed a fix at 390px; three of them already scrolled sideways
 before this task:
@@ -181,7 +187,7 @@ before this task:
 | Screen | Before (base) | At 14px, unfixed | Fix |
 |---|---|---|---|
 | Organisation | 8px sideways | 17px | `.org` grid column `minmax(0, 1fr)`, not the implicit `auto` that grew to the tabs' min-content |
-| Dashboard | fits | 20px (Needs attention's tabs), 6px (feed filters), 1px (ranges) | tab and filter groups wrap and may shrink; ranges take tighter sides under 30rem |
+| Dashboard | fits | 20px (Needs attention's tabs), 6px (feed filters), 1px (ranges) | tab and filter groups wrap and may shrink; ranges take tighter sides under 30rem; then (round 2) the space bar's context, squeezed to a 7px "1." stub beside the ranges, wraps onto its own line |
 | Timeline | 18px | 46px | the toolbar wraps |
 | Developer access | 73px | 73px | the token table's fixed-width column heads hide under 40rem, where `token-row.css` already stacks each row |
 
@@ -218,10 +224,11 @@ as before.
 screen); `before-lai827/` is the task panel on `master` after LAI-827 merged,
 the fair "before" for that screen; `after/` is this branch. Each folder holds
 `<screen>-<1440|390>-<light|dark>-<open|folded>.png` and `measure.json` with
-all four widths; `after-mid/` adds the Board at 1024 and 920. At 390 the
-sidebar is a drawer, so "open" and "folded" render the same page there.
+all four widths; `after-mid/` adds the Board at 1024 and 920, and `after/` has
+My day at all four widths plus `myday-rows-*` crops of its two row lists. At
+390 the sidebar is a drawer, so "open" and "folded" render the same page there.
 
-### Gate
+### Gate (round 1)
 
 Run from the repo root on `97fc95e2` (the last code commit; only this file and
 the log changed after it), each to its own file with its own exit code:
@@ -236,6 +243,50 @@ server: 161 test files passed, 2 skipped; 3327 tests passed, 10 skipped.
 server/web: 2571 tests, 2571 pass, 0 fail. cli: 535 tests, 533 pass, 0 fail.
 `grep -E "Unhandled|Errors|Failed|not ok|✗"` on the test output matched only a
 test named `completeSetup and fieldErrors`.
+
+### Round 2 (CHIEF's review: BLOCK on the LAI-831 merge)
+
+The branch on its own was accepted as sound; the block was My day v2 landing
+on `master` after the base. In two steps:
+
+**Step 1, before the merge**
+- `type-floor.test.ts` read only `font-size: …;`. It now reads the size in a
+  `font` shorthand and a block's last declaration without its `;`, and names a
+  shorthand with no readable size (`font: caption`). Each of the three, appended
+  to `list.css`, is red under the new test and green under the previous one;
+  `font: inherit` stays green (`958eeffb`).
+- `type-css-drift.test.ts`: `type.css` against the generator, byte for byte.
+  Changing the dense leading 1.3 → 1.2 by hand is red there and green in
+  `type-roles.test.ts`, which does not read the density block (`698af7d2`).
+  `type-roles.test.ts`'s comment no longer says the classes are hand-written.
+- Dashboard at 390: the space bar's "14 tasks · 1 member" was squeezed to 7px
+  — a "1." stub — beside the range buttons once they took tighter sides. The
+  slot wraps and the context keeps a 10rem basis (`bec4011d`).
+- `after/measure.json` holds all 176 measurements (it had been overwritten
+  with the task panel's 16).
+
+**Step 2, after `git merge master`** (`fdd031ee`, no conflicts)
+- My day's 81 sizes onto the steps by role (`94da44b8`) — table in the census
+  below; none went down. `.inspector-note`'s leading follows its size.
+- The aliases and My day's exemption retired (`4921541d`) — on the floor test's
+  own signal, as described under *The scale, as built*.
+- **LAI-842 folded in** (claimed and finished in this branch): My day's To settle
+  and Confirmed lists are one grid each, rows and their select buttons as
+  subgrids, so the time and length columns are as wide as the widest row on any
+  font and still line up; the revision lost its 3rem too. A new test in
+  `my-day-v2.test.ts` (letter-spacing 0.12em, 1440 and 1024, sidebar both ways)
+  failed first with LAI-842's two rows cut, and fails on a `min-width` variant
+  because a wider row then pushes its card out of line ("cards at 557, 544")
+  (`ca94ffac`, `299f54a0`).
+- The three My day browser files: 54 test cases pass; and pass again under a
+  temporary global `* { letter-spacing: 0.12em !important }` in `index.css`
+  (removed after, checksum matched). Positive control: the same global rule on
+  the old row widths turns the existing *nothing overflows* test red with
+  `8:40–10:15 AM1 h 35 min` and `1:00–2:50 PM1 h 50 min`.
+- `FitLabel` and the wide-font gap test are unchanged and green.
+
+**Gate (round 2):** the full root gate runs once after this file and the log
+are committed; its exit codes are on the LAIKA-626 card's finish proof.
 
 ### Decision draft (for CHIEF to file in `docs/DECISIONS.md`; not filed here)
 
@@ -266,9 +317,9 @@ test named `completeSetup and fieldErrors`.
 > 4. **`docs/design/` is not changed** (D-020). The prototype's sizes remain the
 >    visual reference for everything but size; the app departs from them on the
 >    owner's instruction.
-> 5. The pre-LAI-828 names (`--text-xs` … `--text-xl`) survive as aliases of a
->    step **for My day only**, which LAI-831 is rebuilding; the floor test fails
->    once My day no longer needs them, and that is when they are deleted.
+> 5. The pre-LAI-828 names (`--text-xs` … `--text-xl`) are gone. They survived
+>    as aliases for My day while LAI-831 rebuilt it, and were deleted once My day
+>    v2 was on the steps — a stylesheet using one is a red test.
 >
 > 6. **Reading text** is 16/24 and a description's headings are Jira's: h1
 >    24px like the panel's title, h2 20px, h3 16px.
@@ -283,23 +334,25 @@ test named `completeSetup and fieldErrors`.
 Every `font-size` in `server/web/src`, read by a script rather than a grep —
 it strips comments, keeps each declaration's selector, and resolves a token to
 pixels — with no `head` anywhere in the pipeline. Cross-checked against
-`grep -rhoE "font-size:\s*[^;]+;" server/web/src | wc -l`: **937 in both**.
-Line numbers are the base commit's, `2b94b48c`, except the task panel's, which
-are after LAI-827 merged (it rewrote those files). Four TypeScript mentions are
+`grep -rhoE "font-size:\s*[^;]+;" server/web/src | wc -l`: **937 in both** at
+the base, **990 in both** now. Line numbers are the base commit's, `2b94b48c`,
+except the task panel's, which are after LAI-827 merged (it rewrote those
+files), and My day's, which are after LAI-831 merged (`fdd031ee`). Four TypeScript mentions are
 not sizes: `Dropdown.tsx:95` and `BulkBar.tsx:84` read the root font size to
 convert rem, `TokenReference.tsx:132` renders each token, and `type-roles.ts:7`
 is a comment.
 
 | | Before | After |
 |---|---|---|
-| `font-size` declarations | 937 at `2b94b48c`; 948 once LAI-827's panel merged | 948 |
-| on a step token | — | 907 |
+| `font-size` declarations | 937 at `2b94b48c`; 948 with LAI-827's panel; 990 with LAI-831's My day v2 | 990 |
+| on a step token | — | 988 |
 | under 12px | 536 at `2b94b48c` | 13, all `--text-tiny` on the named list |
 | 9.5–10.5px | 23 at `2b94b48c` | 0 |
 | raw sizes (not a token) | 388 at `2b94b48c` | 1, the 16px rem anchor — plus one `0`, the hide-the-label trick |
-| My day, not swept (LAI-831) | 39 | 39 — 38 alias tokens, now 12px or 14px; one raw 18px |
+| My day | 39 at `2b94b48c`; 81 in v2, all old token names | 81 on steps — `body` 29, `small` 47, `heading-sm` 3, `heading-md` 2; none went down |
+| `font` shorthands with a size | — | 0 (only `font: inherit`) |
 
-Steps after: `small` 518 · `body` 301 · `heading-sm` 38 · `heading-md` 15 ·
+Steps after: `small` 565 · `body` 330 · `heading-sm` 41 · `heading-md` 17 ·
 `heading-lg` 13 · `tiny` 13 · `reading` 9.
 
 "Role" is the reason for a row's step where it differs from what its old size
@@ -1535,51 +1588,92 @@ alone would give, and the step's generic role otherwise.
 </details>
 
 <details>
-<summary>My day (not swept; LAI-831)</summary>
+<summary>My day v2 (LAI-831), swept in round 2</summary>
 
-**`routes/screens/my-day/my-day.css`** — 39 declarations
+**`routes/screens/my-day/my-day.css`** — My day v2 (LAI-831), 81 declarations, line numbers at `fdd031ee` (the merge)
 
-| Line | Selector | Was | Now (source unchanged) |
-|---:|---|---|---|
-| 104 | `.myday-card-title` | `var(--text-md)` 13.5px | 14px through the `--text-md` alias |
-| 110 | `.myday-card-caption` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 118 | `.myday-quiet` | `var(--text-sm)` 11.5px | 12px through the `--text-sm` alias |
-| 125 | `.myday-quiet code` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 134 | `.myday-error` | `var(--text-sm)` 11.5px | 12px through the `--text-sm` alias |
-| 144 | `.myday-understood` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 163 | `.myday-settings-note` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 170 | `.myday-settings-more` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 202 | `.myday-chip` | `var(--text-sm)` 11.5px | 12px through the `--text-sm` alias |
-| 263 | `.myday-week-step` | `1.125rem` 18px | 18px, raw — LAI-831 |
-| 336 | `.myday-week-name` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 347 | `.myday-week-figure` | `var(--text-md)` 13.5px | 14px through the `--text-md` alias |
-| 359 | `.myday-week-state` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 380 | `.myday-state` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 470 | `.myday-block-time, .myday-block-minutes` | `var(--text-sm)` 11.5px | 12px through the `--text-sm` alias |
-| 493 | `.myday-block-target` | `var(--text-ui)` 13px | 14px through the `--text-ui` alias |
-| 509 | `.myday-block-evidence` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 535 | `.myday-block-main .myday-chip` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 570 | `.myday-cardlink-key` | `var(--text-sm)` 11.5px | 12px through the `--text-sm` alias |
-| 613 | `.myday-pager-label` | `var(--text-sm)` 11.5px | 12px through the `--text-sm` alias |
-| 624 | `.myday-linkish` | `var(--text-sm)` 11.5px | 12px through the `--text-sm` alias |
-| 659 | `.myday-bulk-count` | `var(--text-sm)` 11.5px | 12px through the `--text-sm` alias |
-| 668 | `.myday-bulk-warn` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 687 | `.myday-bulk-progress, .myday-bulk-said` | `var(--text-sm)` 11.5px | 12px through the `--text-sm` alias |
-| 722 | `.myday-field-label` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 734 | `.myday-history` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 749 | `.myday-agent-figures` | `var(--text-sm)` 11.5px | 12px through the `--text-sm` alias |
-| 755 | `.myday-agent-total` | `var(--text-lg)` 13.5px | 14px through the `--text-lg` alias |
-| 773 | `.myday-agent-tasks li` | `var(--text-sm)` 11.5px | 12px through the `--text-sm` alias |
-| 796 | `.myday-today` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 848 | `.dayline-hours` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 872 | `.dayline-legend` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 928 | `.plate-head` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 964 | `.plate-more` | `var(--text-ui)` 13px | 14px through the `--text-ui` alias |
-| 999 | `.plate-item` | `var(--text-ui)` 13px | 14px through the `--text-ui` alias |
-| 1017 | `.plate-key` | `var(--text-base)` 12px | 12px through the `--text-base` alias |
-| 1031 | `.plate-note` | `var(--text-xs)` 11px | 12px through the `--text-xs` alias |
-| 1043 | `.plate-rest` | `var(--text-ui)` 13px | 14px through the `--text-ui` alias |
-| 1087 | `.myday-week-figure` | `var(--text-sm)` 11.5px | 12px through the `--text-sm` alias |
-
+| Line | Selector | Was | Now | Role |
+|---:|---|---|---|---|
+| 112 | `.myday-switch-label` | `var(--text-ui)` 13px | `body` 14px | switch label |
+| 119 | `.myday-mode-note` | `var(--text-sm)` 11.5px | `small` 12px | note beside the switch |
+| 156 | `.myday-card-title` | `var(--text-md)` 13.5px | `heading-sm` 16px | card heading |
+| 163 | `.myday-card-figure` | `var(--text-sm)` 11.5px | `small` 12px | a card's caption figure, beside its heading |
+| 168 | `.myday-card-caption` | `var(--text-xs)` 11px | `small` 12px | caption |
+| 176 | `.myday-quiet` | `var(--text-sm)` 11.5px | `body` 14px | empty and status sentences |
+| 187 | `.myday-error` | `var(--text-sm)` 11.5px | `body` 14px | error message text |
+| 204 | `.myday-chip` | `var(--text-sm)` 11.5px | `small` 12px | chip |
+| 273 | `.myday-cardchip` | `var(--text-base)` 12px | `small` 12px | chip |
+| 304 | `.myday-linkish` | `var(--text-sm)` 11.5px | `small` 12px | inline link in small text |
+| 332 | `.myday-kbd` | `var(--text-xs)` 11px | `small` 12px | key cap |
+| 365 | `.myday-cardlink-key` | `var(--text-sm)` 11.5px | `small` 12px | key |
+| 389 | `.myday-understood` | `var(--text-xs)` 11px | `small` 12px | note |
+| 423 | `.myday-week-step` | `var(--text-md)` 13.5px | `body` 14px | week arrows |
+| 439 | `.myday-week-total` | `var(--text-sm)` 11.5px | `small` 12px | week total |
+| 444 | `.myday-week-total-label` | `var(--text-xs)` 11px | `small` 12px | uppercase label |
+| 507 | `.myday-week-name` | `var(--text-base)` 12px | `body` 14px | a day's name in the week strip |
+| 534 | `.myday-week-figure` | `var(--text-md)` 13.5px | `body` 14px | a day's figure in the week strip |
+| 576 | `.myday-week-state` | `var(--text-xs)` 11px | `small` 12px | a day's state line |
+| 621 | `.myday-stat-label` | `var(--text-xs)` 11px | `small` 12px | uppercase stat label |
+| 631 | `.myday-stat-figure` | `var(--text-xl)` 19px | `heading-md` 20px | stat figure, compact strip (as profile's compact stats) |
+| 652 | `.myday-stat-sub` | `var(--text-sm)` 11.5px | `small` 12px | stat sub-line |
+| 657 | `.myday-stat-sub .myday-linkish` | `var(--text-sm)` 11.5px | `small` 12px | inline link in the stat sub-line |
+| 664 | `.myday-future` | `var(--text-ui)` 13px | `body` 14px | message text |
+| 687 | `.dayline-title` | `var(--text-ui)` 13px | `heading-sm` 16px | the timeline card's heading |
+| 693 | `.dayline-hint` | `var(--text-sm)` 11.5px | `small` 12px | hint |
+| 709 | `.dayline-tool` | `var(--text-sm)` 11.5px | `body` 14px | toolbar button |
+| 733 | `.dayline-zoom-option` | `var(--text-base)` 12px | `body` 14px | zoom button |
+| 754 | `.dayline-label` | `var(--text-xs)` 11px | `small` 12px | uppercase lane label |
+| 817 | `.dayline-nosignal-text` | `var(--text-sm)` 11.5px | `body` 14px | message on an empty lane |
+| 835 | `.dayline-gap, .dayline-break` | `var(--text-xs)` 11px | `small` 12px | gap and break labels, chosen by FitLabel |
+| 932 | `.dayline-block-top` | `var(--text-sm)` 11.5px | `small` 12px | block time, inside the block |
+| 937 | `.dayline-block-title` | `var(--text-sm)` 11.5px | `small` 12px | block label, inside the block |
+| 943 | `.dayline-block-sub` | `var(--text-xs)` 11px | `small` 12px | block figures, inside the block |
+| 957 | `.dayline-signals` | `var(--text-xs)` 11px | `small` 12px | signal counts |
+| 997 | `.dayline-axis-hour` | `var(--text-xs)` 11px | `small` 12px | axis |
+| 1033 | `.dayline-now-label` | `var(--text-xs)` 11px | `small` 12px | now marker |
+| 1047 | `.dayline-legend` | `var(--text-sm)` 11.5px | `small` 12px | legend |
+| 1089 | `.dayline-key-text` | `var(--text-xs)` 11px | `small` 12px | legend key |
+| 1120 | `.inspector-kind` | `var(--text-xs)` 11px | `small` 12px | uppercase kind |
+| 1141 | `.inspector-range` | `var(--text-md)` 13.5px | `heading-sm` 16px | the inspector's heading: the block's time |
+| 1147 | `.inspector-source` | `var(--text-sm)` 11.5px | `small` 12px | source line |
+| 1170 | `.inspector-label` | `var(--text-xs)` 11px | `small` 12px | uppercase field label |
+| 1183 | `.inspector-warn` | `var(--text-sm)` 11.5px | `body` 14px | warning message |
+| 1190 | `.inspector-card` | `var(--text-ui)` 13px | `body` 14px | field value |
+| 1235 | `.inspector-stepper button` | `var(--text-md)` 13.5px | `body` 14px | stepper buttons |
+| 1259 | `.inspector-length` | `var(--text-ui)` 13px | `body` 14px | length value |
+| 1288 | `.inspector-note` | `var(--text-sm)` 11.5px | `small` 12px | note |
+| 1317 | `.inspector-count dd` | `var(--text-md)` 13.5px | `body` 14px | count figure |
+| 1324 | `.inspector-count dt` | `var(--text-xs)` 11px | `small` 12px | count label |
+| 1337 | `.inspector-keys` | `var(--text-sm)` 11.5px | `small` 12px | keyboard hint |
+| 1344 | `.inspector-empty` | `var(--text-ui)` 13px | `body` 14px | empty-state text |
+| 1355 | `.myday-history` | `var(--text-sm)` 11.5px | `small` 12px | history line |
+| 1453 | `.myday-row-time` | `var(--text-base)` 12px | `small` 12px | a row's time range, mono meta |
+| 1461 | `.myday-row-minutes` | `var(--text-ui)` 13px | `body` 14px | a row's length |
+| 1478 | `.myday-row-key` | `var(--text-ui)` 13px | `body` 14px | a row's card or label |
+| 1486 | `.myday-row-needs` | `var(--text-sm)` 11.5px | `small` 12px | needs-a-card tag |
+| 1494 | `.myday-row-line, .myday-row-note` | `var(--text-sm)` 11.5px | `small` 12px | a row's second line and note |
+| 1505 | `.myday-source` | `var(--text-xs)` 11px | `small` 12px | source tag |
+| 1520 | `.myday-rev` | `var(--text-xs)` 11px | `small` 12px | revision tag |
+| 1544 | `.myday-pager-label` | `var(--text-sm)` 11.5px | `small` 12px | pager label |
+| 1563 | `.myday-bulk-count` | `var(--text-sm)` 11.5px | `body` 14px | bulk bar sentence |
+| 1572 | `.myday-bulk-warn` | `var(--text-sm)` 11.5px | `body` 14px | warning message |
+| 1589 | `.myday-bulk-progress` | `var(--text-sm)` 11.5px | `body` 14px | progress sentence |
+| 1617 | `.myday-add-title` | `var(--text-xs)` 11px | `small` 12px | uppercase form label |
+| 1632 | `.myday-slot` | `var(--text-sm)` 11.5px | `small` 12px | time slot chip |
+| 1686 | `.myday-segment` | `var(--text-base)` 12px | `body` 14px | segmented control |
+| 1733 | `.myday-agent-line` | `var(--text-sm)` 11.5px | `small` 12px | agent strip line |
+| 1748 | `.myday-agent-min` | `var(--text-sm)` 11.5px | `small` 12px | agent minutes |
+| 1776 | `.myday-agent-keyboard` | `var(--text-sm)` 11.5px | `small` 12px | keyboard hint |
+| 1799 | `.plate-head` | `var(--text-xs)` 11px | `small` 12px | uppercase group head |
+| 1835 | `.plate-more` | `var(--text-ui)` 13px | `body` 14px | link |
+| 1871 | `.plate-item` | `var(--text-ui)` 13px | `body` 14px | a task in the list |
+| 1889 | `.plate-key` | `var(--text-base)` 12px | `small` 12px | key |
+| 1903 | `.plate-note` | `var(--text-xs)` 11px | `small` 12px | note |
+| 1914 | `.plate-rest` | `var(--text-ui)` 13px | `body` 14px | link |
+| 1957 | `.myday-toast` | `var(--text-ui)` 13px | `body` 14px | toast message |
+| 2004 | `.myday-toast-close` | `var(--text-md)` 13.5px | `body` 14px | close glyph |
+| 2043 | `.myday-dialog-title` | `var(--text-md)` 13.5px | `heading-md` 20px | dialog title (the shortcut sheet) |
+| 2050 | `.myday-dialog-text` | `var(--text-ui)` 13px | `body` 14px | dialog text |
+| 2078 | `.myday-keys-row dd` | `var(--text-ui)` 13px | `body` 14px | what a shortcut does |
 
 </details>
