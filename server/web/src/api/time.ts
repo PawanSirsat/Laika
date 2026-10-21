@@ -74,6 +74,12 @@ export interface TimeDraft {
   readonly general: boolean;
   readonly signals: TimeSignals;
   readonly note: string | null;
+  /**
+   * Which agent proposed it (LAI-835): the proposing token's client, as the
+   * board knew it then. Null for a collector's block; absent from a board that
+   * predates it.
+   */
+  readonly client?: string | null;
 }
 
 export type EntrySource = 'draft' | 'manual' | 'import';

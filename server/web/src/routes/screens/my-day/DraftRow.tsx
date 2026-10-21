@@ -125,7 +125,7 @@ export function DraftRow({
         {draft.task === null && <span className="myday-row-line">{on.line}</span>}
       </span>
       <span className={`myday-source myday-source-${draft.source}`}>
-        {draft.source === 'agent' ? 'agent' : 'collector'}
+        {draft.source === 'agent' ? (draft.client ?? 'agent') : 'collector'}
       </span>
     </li>
   );

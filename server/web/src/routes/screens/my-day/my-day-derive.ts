@@ -196,9 +196,13 @@ export const plural = (n: number, one: string, many: string): string =>
 /**
  * A block's evidence in one line — `12 prompts · 34 replies · 2 sessions ·
  * 1 commit · 1 task claimed`. Counts only, zeros left out, and said plainly
- * when there are none.
+ * when there are none — for a proposal, by which agent (LAI-835) when known.
  */
-export function evidenceLine(signals: TimeSignals, source: TimeDraft['source']): string {
+export function evidenceLine(
+  signals: TimeSignals,
+  source: TimeDraft['source'],
+  client?: string | null,
+): string {
   const parts = [
     signals.prompts > 0 ? plural(signals.prompts, 'prompt', 'prompts') : '',
     signals.replies > 0 ? plural(signals.replies, 'reply', 'replies') : '',
@@ -207,7 +211,10 @@ export function evidenceLine(signals: TimeSignals, source: TimeDraft['source']):
     signals.marks > 0 ? plural(signals.marks, 'task claimed', 'tasks claimed') : '',
   ].filter((p) => p !== '');
   if (parts.length > 0) return parts.join(' · ');
-  return source === 'agent' ? 'Proposed by one of your agents' : 'No signals counted';
+  if (source !== 'agent') return 'No signals counted';
+  return client === undefined || client === null
+    ? 'Proposed by one of your agents'
+    : `Proposed by ${client}`;
 }
 
 /** `9:40–11:05 AM` in the block's own zone, or `''` when it has no times. */

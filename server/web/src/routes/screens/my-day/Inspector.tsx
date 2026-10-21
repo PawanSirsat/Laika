@@ -329,7 +329,9 @@ export function Inspector({
             <span className="inspector-kind inspector-kind-drafted">Drafted</span>
             <span className="inspector-range">{whenOf(draft)}</span>
             <span className="inspector-source">
-              {draft.source === 'agent' ? 'Proposed by an agent' : 'From your collector'}
+              {draft.source === 'agent'
+                ? `Proposed by ${draft.client ?? 'an agent'}`
+                : 'From your collector'}
               {draft.note !== null && ` · “${draft.note}”`}
             </span>
             <span className="inspector-head-gap" />
