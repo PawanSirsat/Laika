@@ -132,3 +132,35 @@ LAI-848. LAI-847 is the most likely to redden a busy gate.
 
 **State**
 Unchanged: in review, pending a green final-tree gate before push.
+
+## 2026-10-21T08:40:43Z — LAI-841 (third final-tree attempt; LAI-857 filed)
+
+**What changed**
+- .tasks/backlog/LAI-857-card-click-first-card-wait-under-load.md — filed.
+- .tasks/review/LAI-841-board-sprint-stats-sidebar-flake.md — records the
+  third final-tree attempt and names each attempt's HEAD.
+- logs/sprint-stats-flake-2026-10-21.md — this entry.
+
+**Decisions**
+- Started the gate from a detached script that polls load every 60 seconds
+  and starts the gate the moment the load is under 20. That removes the
+  drift between the check and the start: the 08:22Z run was checked at
+  19.07 and started at 20.22.
+- Kept `VITEST_MAX_WORKERS=2`, as authorised. Did not lower it further.
+  That would be a new deviation nobody authorised.
+
+**Discovered**
+- `card-click.test.ts:121` timed out after 15 seconds waiting for the
+  first card at a load near 77, then passed alone (2 cases, exit 0) →
+  LAI-857 filed (discovered-from: LAI-841). The union sweep found 850 to
+  856 newly taken by other sessions, so LAI-857 was the lowest free id.
+- The machine's own load, with no builder's tests running, was 17 to 30:
+  Spotlight `mds_stores` about 190% CPU, Microsoft Defender
+  `wdavdaemon_unprivileged` about 150%. A gate pushes the load to 60 to 77.
+  So a load under 20 at the start does not mean a quiet run.
+- The earlier entry's note about `Laika-editor-guard` is out of date. Its
+  branch has since been renamed `LAI-849-editor-round-trip-guard`, which
+  matches its task.
+
+**State**
+Unchanged: in review, pending a green final-tree gate before push.

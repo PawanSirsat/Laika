@@ -551,25 +551,25 @@ What was checked, and how:
 
 ### Final-tree gate attempts (after the review move)
 
-Run on HEAD `11649cea` with a clean tree and `VITEST_MAX_WORKERS=2`, each
+Each run had a clean tree and `VITEST_MAX_WORKERS=2`, with each
 command redirected to its own file in the handover session's scratchpad,
 each `$?` captured on its own.
 
-1. **07:46Z, interrupted, no result.** It started at a 1-minute load of
-   22.52. The poll that cleared it read 17.70 at 07:46:24Z, and the load
-   rose in the 14 seconds before the script took its own sample. The
-   session's runner was interrupted at about 07:53Z, which killed the
-   shell (exit 144) mid-`pnpm test`. CLI had finished (533 passed,
-   0 failed) and web had finished (2630 passed, 0 failed). The server
-   workspace had printed no file result, so pnpm's closing
-   `ELIFECYCLE Test failed` reports the killed child. Lint and format
-   never ran, so this run counts for nothing either way.
-2. **08:22Z, red: `TEST 1`, `LINT 0`, `FMT 0`.** The pre-start check read
-   19.07, and the script's own sample at start read 20.22. The load rose
-   to 63 while web ran. The run was detached with `nohup` this time, so a
-   runner interruption could not end it. The only failure was the My day
-   wider-font case already recorded on LAI-846, which failed identically in
-   the third gate:
+1. **07:46Z on `11649cea`, interrupted, no result.** It started at a 1-minute
+   load of 22.52. The poll that cleared it read 17.70 at 07:46:24Z, and the
+   load rose in the 14 seconds before the script took its own sample. The
+   session's runner was interrupted at about 07:53Z, which killed the shell
+   (exit 144) mid-`pnpm test`. CLI had finished (533 passed, 0 failed) and
+   web had finished (2630 passed, 0 failed). The server workspace had printed
+   no file result, so pnpm's closing `ELIFECYCLE Test failed` reports the
+   killed child. Lint and format never ran, so this run counts for nothing
+   either way.
+2. **08:22Z on `11649cea`, red: `TEST 1`, `LINT 0`, `FMT 0`.** The pre-start
+   check read 19.07, and the script's own sample at start read 20.22. The
+   load rose to 63 while web ran. The run was detached with `nohup` this
+   time, so a runner interruption could not end it. The only failure was the
+   My day wider-font case already recorded on LAI-846, which failed
+   identically in the third gate:
 
    ```text
    server/web test:     not ok 3 - a font wider than ours: a gap, a break, a block’s figures and the week’s are never cut
@@ -591,6 +591,29 @@ each `$?` captured on its own.
 
    It exited 0, with 31 collected cases, 31 passed and the wider-font case
    `ok`. The second occurrence and a labelled lead are appended to LAI-846.
+3. **08:33Z on `7cc8a924`, red: `TEST 1`, `LINT 0`, `FMT 0`.** It started
+   the moment a 60-second poll read 17.26, and its own sample at start
+   read the same. The load reached 77.62 by the end of `pnpm test`. The
+   only failure was a different case outside this change:
+
+   ```text
+   server/web test:     not ok 1 - clicking the card body — not the key — opens the panel
+   server/web test:         locator.waitFor: Timeout 15000ms exceeded.
+   server/web test:         - waiting for locator('article.card').first() to be visible
+   server/web test: # tests 2630
+   server/web test: # pass 2629
+   server/web test: # fail 1
+   ```
+
+   pnpm bailed on web again, so the server suite did not run. CLI passed
+   533 with 0 failed. All twelve board-sprint-stats `openSidebar` cases read
+   `ok`. Alone straight after, at load 35:
+   `pnpm --filter @laika/web exec node --test test/browser/card-click.test.ts`,
+   exit 0, 2 collected cases passed. Filed as **LAI-857**. With no other
+   builder's tests running, this machine sat at a load of 17 to 30, with
+   Spotlight and Microsoft Defender using about 340% CPU between them.
+   During each gate the load reached 60 to 77, so a load under 20 at the
+   start does not mean low load during the run.
 
 ## Result
 
@@ -614,8 +637,8 @@ cases, 38 passed, and exited 0.
 `VITEST_MAX_WORKERS=2`, on code identical to this branch's final code.
 Only Markdown changed after it. The four default-pool runs before it
 exited `TEST 1`, each failing only in files this change does not touch.
-Of the two final-tree attempts above, one was interrupted and one was red
-only in the My day case (LAI-846). Every failing file passed alone. The
-root gate is run again on the final tree before push. Its exit codes are
-on the PR and the card (LAIKA-632) rather than here, because writing them
-here would be an edit after the gate.
+Of the final-tree attempts above, one was interrupted, one was red only
+in the My day case (LAI-846) and one only in card-click (LAI-857). Every
+failing file passed alone. The root gate is run again on the final tree
+before push. Its exit codes are on the PR and the card (LAIKA-632) rather
+than here, because writing them here would be an edit after the gate.
