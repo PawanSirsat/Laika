@@ -11,6 +11,8 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   barSegments,
+  FILTERS,
+  LOAD_LABEL,
   loadIn,
   matchesQuery,
   oldestAge,
@@ -130,7 +132,7 @@ void describe('passesFilter — each chip', () => {
   const pass = (filter: Parameters<typeof passesFilter>[1]) =>
     [online, away, never].filter((p) => passesFilter(p, filter, null)).map((p) => p.user_id);
 
-  void test('All, Online now, Agents running, Heavy, Overdue, No work, Never seen', () => {
+  void test('All, Online now, Agents running, Heavy, Overdue, No load, Never seen', () => {
     assert.deepEqual(pass('all'), ['on', 'away', 'never']);
     assert.deepEqual(pass('online'), ['on']);
     // An agent they use and are not running is not "running".
@@ -141,7 +143,7 @@ void describe('passesFilter — each chip', () => {
     assert.deepEqual(pass('never'), ['never']);
   });
 
-  void test('Overdue and No work read the chosen space', () => {
+  void test('Overdue and No load read the chosen space', () => {
     const split = person({
       user_id: 'split',
       workload: work({ todo: 2, overdue: 1 }),
@@ -151,6 +153,36 @@ void describe('passesFilter — each chip', () => {
     assert.equal(passesFilter(split, 'overdue', 'p2'), false);
     assert.equal(passesFilter(split, 'none', 'p3'), true);
     assert.deepEqual(workloadIn(split, 'p3'), ZERO);
+  });
+
+  /*
+   * **No load is the badge's rule, not "nothing open"** (LAI-832). The chip
+   * was *No work* and kept people with any open work out — backlog, or work
+   * waiting on a reviewer — while their badge beside it said *No load*: two
+   * near-synonyms on one card, meaning different things.
+   */
+  void test('No load is nothing committed — backlog and review do not count against it', () => {
+    const pipeline = person({ user_id: 'pipe', workload: work({ backlog: 50 }) });
+    const reviewed = person({ user_id: 'rev', workload: work({ in_review: 12 }) });
+    const committed = person({ user_id: 'busy', load: 'light', workload: work({ todo: 1 }) });
+    assert.equal(passesFilter(pipeline, 'none', null), true, 'backlog is the pipeline, not load');
+    assert.equal(passesFilter(reviewed, 'none', null), true, 'review waits on the reviewer');
+    assert.equal(passesFilter(committed, 'none', null), false, 'one to do is load');
+    // The chip, the badge and the filter say one thing in one word.
+    assert.equal(FILTERS.find((f) => f.id === 'none')?.label, LOAD_LABEL.none);
+    assert.equal(LOAD_LABEL.none, 'No load');
+  });
+
+  void test('No load in a space is that space’s load, as the server sends it', () => {
+    const split = person({
+      user_id: 'split',
+      load: 'light',
+      workload: work({ todo: 1, backlog: 30 }),
+      spaces: [space('p1', 'light', { todo: 1 }), space('p2', 'none', { backlog: 30 })],
+    });
+    assert.equal(passesFilter(split, 'none', null), false);
+    assert.equal(passesFilter(split, 'none', 'p1'), false);
+    assert.equal(passesFilter(split, 'none', 'p2'), true, 'thirty backlog there is no load there');
   });
 
   // D-092 item 3: a badge shown while a space is selected is that space's load
