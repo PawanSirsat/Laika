@@ -127,10 +127,33 @@ changed, though: every workspace runs, and a failing run now ends
 A green `--no-bail` run prints no `Summary:` line; pnpm prints it only when
 something fails.
 
-**Gate** (repo root, after the last code edit, each to its own file, unpiped):
-`pnpm test` → `TEST 0` (server `Tests 3389 passed | 10 skipped (3399)`,
-server/web `# pass 2690 # fail 0`, cli `# pass 533 # fail 0`), `pnpm lint` →
-`LINT 0`, `pnpm format` → `FMT  0`. Every
-`grep -E "Unhandled|Errors|Failed|not ok|✗"` hit was a test *name* (`ok …`
-subtest lines), not a failure. Re-run after this task-file edit; the result is
-in the log entry.
+**Gate: the last run is red, on one known load flake, and is reported that
+way.** All runs were at the repo root, each command to its own file, unpiped,
+with exit codes on their own lines. The code and test files are byte-identical
+across all four runs; only `.tasks/` and `logs/` changed in between. From run 3
+on, root gates were serialised machine-wide with polly's
+`/tmp/laika-root-gate.lock`, because six builders share this laptop.
+
+| run | load (1/5/15) | TEST | LINT | FMT | what failed |
+| --- | --- | --- | --- | --- | --- |
+| 1, before the task-file edit | 22 → 70 | **0** | 0 | 0 | nothing: server `3389 passed`, web `# pass 2690`, cli `# pass 533` |
+| 2 | 15 / 57 / 62 → 59 | 1 | 0 | 0 | `sprints.test.ts` page-size test, `timed out in 5000ms` |
+| 3, locked | 102 → 270 | 1 | 0 | 0 | `restore-drill.test.ts` (timeout), `cli/test/activity-sync.test.ts` ×2, `server/web/test/browser/my-day-v2.test.ts` ×2 |
+| 4, locked, the last | 142 → 219 | 1 | 0 | 0 | `sprints.test.ts` page-size test again, the **only** failure: `Tests 1 failed \| 3388 passed`, web `# fail 0`, cli `# fail 0` |
+
+Every failing file run **alone**, under the same load: `sprints.test.ts`
+timed out once at load 59, then passed `43 passed (43)`. `restore-drill`
+passed `3 passed (3)`, `activity-sync` `# pass 43 # fail 0`, and `my-day-v2`
+`# pass 31 # fail 0`. None of them is touched by this diff: one script line
+and a new test file.
+
+Filed as **LAI-304** (`area: server`, p2), with the full table and run 3's
+other failures listed so they are not lost. Re-gate on a quieter machine
+before landing; on Strelka today the 1-minute load never fell below 100
+during a gate.
+
+The red runs are themselves evidence for criteria 1–2 on the real repo. Run 4
+ended `Summary: 1 fails, 2 passes` and exited 1, with a full result from all
+three workspaces. The three run concurrently, so this run does not by itself
+show that a later workspace would have been cut off. The task's 2026-09-20
+measurement shows that, and so does `root-gate.test.ts`, by construction.
