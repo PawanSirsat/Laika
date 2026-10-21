@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, until, type ApiStub } from './harness.ts';
 
 const now = 1788272050095;
 const P = {
@@ -255,6 +255,9 @@ void describe('the agent-sessions panel', () => {
     try {
       const chip = h.page.locator('.rail-sessions .pp-chip').first();
       await chip.waitFor({ timeout: 20_000 });
+      await until(async () =>
+        (await chip.locator('.visually-hidden').allTextContents()).some((t) => t.includes('Codex')),
+      );
       const hidden = await chip.locator('.visually-hidden').allTextContents();
       assert.ok(
         hidden.some((t) => t.includes('Codex')),
@@ -305,6 +308,10 @@ void describe('the agent-sessions panel', () => {
       await h.page.locator('.rail-card').first().waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(600);
       assert.equal(await h.page.locator('.rail-sessions li').count(), 0);
+      // The pause is for the rows that must not come; the message may be later (LAI-715).
+      await until(async () =>
+        /no agent has a session/i.test(await h.page.locator('body').innerText()),
+      );
       assert.match(
         await h.page.locator('body').innerText(),
         /no agent has a session/i,
@@ -327,6 +334,7 @@ void describe('the Activity tab', () => {
        * board that failed to render would satisfy them — the blank-login defect
        * of LAI-251 passed for exactly that reason.
        */
+      await until(async () => (await h.page.locator('.lane').count()) >= 4);
       assert.ok((await h.page.locator('.lane').count()) >= 4, 'the board did not render');
       assert.equal(await h.page.locator('.rail').count(), 0, 'the board still has a rail');
 
@@ -347,11 +355,18 @@ void describe('the Activity tab', () => {
     try {
       await h.page.locator('.act-panels .rail-card').first().waitFor({ timeout: 20_000 });
 
-      const heights = await h.page
-        .locator('.act-panels .rail-card')
-        .evaluateAll((els: Element[]) =>
-          els.map((e) => Math.round(e.getBoundingClientRect().height)),
-        );
+      const measure = () =>
+        h.page
+          .locator('.act-panels .rail-card')
+          .evaluateAll((els: Element[]) =>
+            els.map((e) => Math.round(e.getBoundingClientRect().height)),
+          );
+      // Wait for the three level panels it asserts, not the first card (LAI-715).
+      await until(async () => {
+        const hs = await measure();
+        return hs.length === 3 && new Set(hs).size === 1;
+      });
+      const heights = await measure();
       assert.equal(heights.length, 3, 'the design has three panels');
       // Three cards of different lengths side by side read as three unrelated
       // things rather than one screen.
@@ -367,6 +382,7 @@ void describe('the Activity tab', () => {
       await h.page.locator('.act-panels').waitFor({ timeout: 20_000 });
 
       const pill = h.page.locator('.act-pill');
+      await until(async () => (await pill.count()) === 1);
       assert.equal(await pill.count(), 1);
       assert.match(await pill.innerText(), /SSE/, 'the pill must name what "live" means here');
 
@@ -387,9 +403,10 @@ void describe('the Activity tab', () => {
       for (const width of [1600, 1440, 1280, 900, 420]) {
         await h.page.setViewportSize({ width, height: 900 });
         await h.page.waitForTimeout(150);
-        const overflow = await h.page.evaluate(
-          () => document.documentElement.scrollWidth - window.innerWidth,
-        );
+        const spill = () =>
+          h.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+        await until(async () => (await spill()) === 0);
+        const overflow = await spill();
         assert.equal(overflow, 0, `the page scrolls sideways at ${String(width)}px`);
       }
     } finally {

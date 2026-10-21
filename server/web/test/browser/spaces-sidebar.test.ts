@@ -16,7 +16,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, refuse, type ApiStub, type StubCall } from './harness.ts';
+import { closeBrowser, open, refuse, until, type ApiStub, type StubCall } from './harness.ts';
 
 /**
  * `id` is a **ULID** in the real server — monotonic, so sorting by it is
@@ -91,6 +91,15 @@ void describe('the SPACES section', () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
+      // Wait for the rows it asserts, not the first one (LAI-715).
+      await until(
+        async () =>
+          (await h.page.locator('.space-row .sidebar-label').allInnerTexts()).join('|') ===
+          ['Laika Core', 'Laika Web', 'Laika Infra'].join('|'),
+      );
+      await until(() =>
+        h.page.locator('.sidebar-link-button', { hasText: 'More spaces' }).isVisible(),
+      );
 
       const names = await h.page.locator('.space-row .sidebar-label').allInnerTexts();
       // Three spaces plus the More spaces row — the design's number. **Drawn
@@ -142,6 +151,7 @@ void describe('the SPACES section', () => {
     try {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
       const active = h.page.locator('.sidebar-link-active');
+      await until(async () => (await active.count()) === 1);
       assert.equal(await active.count(), 1, 'more than one row is marked current');
       assert.match(await active.innerText(), /Laika Core/);
     } finally {
@@ -169,11 +179,17 @@ void describe('the SPACES section', () => {
        * organisation's pages follow the spaces — the owner's reference.
        */
       const home = h.page.locator('.sidebar-group-home');
+      const org = h.page.locator('.sidebar-group', { has: h.page.locator('#nav-ORG') });
+      const trimmed = async (group: typeof home) =>
+        (await group.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim());
+      await until(async () => (await trimmed(home)).join('|') === 'My day|Inbox');
+      await until(
+        async () => (await trimmed(org)).join('|') === 'Insights|Organisation|Developer access',
+      );
       assert.deepEqual(
         (await home.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim()),
         ['My day', 'Inbox'],
       );
-      const org = h.page.locator('.sidebar-group', { has: h.page.locator('#nav-ORG') });
       assert.deepEqual(
         (await org.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim()),
         ['Insights', 'Organisation', 'Developer access'],
@@ -243,6 +259,13 @@ void describe('the view tabs', () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.view-tab').first().waitFor({ timeout: 20_000 });
+      const tabNames = async () =>
+        (await h.page.locator('.view-tab').allInnerTexts()).map((s) => s.split('\n')[0]);
+      await until(
+        async () =>
+          (await tabNames()).join('|') ===
+          'Board|List|Timeline|Calendar|Sprints|Dashboard|Activity|Meeting review',
+      );
 
       const labels = (await h.page.locator('.view-tab').allInnerTexts()).map(
         (s) => s.split('\n')[0],
@@ -318,13 +341,20 @@ void describe('the view tabs', () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.view-tab').first().waitFor({ timeout: 20_000 });
-      const order = await h.page
-        .locator('.view-tabs li')
-        .evaluateAll((items: Element[]) =>
-          items.map((li) =>
-            li.classList.contains('view-tab-rule') ? '|' : (li.textContent ?? '').trim(),
-          ),
-        );
+      const tabOrder = () =>
+        h.page
+          .locator('.view-tabs li')
+          .evaluateAll((items: Element[]) =>
+            items.map((li) =>
+              li.classList.contains('view-tab-rule') ? '|' : (li.textContent ?? '').trim(),
+            ),
+          );
+      await until(
+        async () =>
+          (await tabOrder()).join(',') ===
+          'Board,List,Timeline,Calendar,|,Sprints,Dashboard,Activity,Meeting review',
+      );
+      const order = await tabOrder();
       assert.deepEqual(order, [
         'Board',
         'List',
@@ -375,6 +405,7 @@ void describe('a space row is active for any view of it', () => {
     try {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
       const active = h.page.locator('.sidebar-link-active');
+      await until(async () => (await active.count()) === 1);
       assert.equal(await active.count(), 1, 'exactly one row must be current');
       assert.match(await active.innerText(), /Laika Core/);
     } finally {
@@ -393,6 +424,8 @@ void describe('the list does not move under the pointer (LAI-260)', () => {
     const h = await open('/board?project=laika-core', WEB_STUB);
     try {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
+      // The baseline is all three rows, not however many are drawn yet (LAI-715).
+      await until(async () => (await h.page.locator('.space-row .sidebar-label').count()) === 3);
       const before = await h.page.locator('.space-row .sidebar-label').allInnerTexts();
 
       // Click a space that is *not* the current one — the case that reordered.
@@ -439,6 +472,11 @@ void describe('what was opened survives a reload', () => {
 
       await h.page.reload();
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
+      await until(
+        async () =>
+          (await h.page.locator('.space-row .sidebar-label').allInnerTexts()).join('|') ===
+          ['Laika Core', 'Laika Web', 'Laika Infra'].join('|'),
+      );
 
       const keys = await h.page.locator('.space-row .sidebar-label').allInnerTexts();
       assert.deepEqual(
@@ -493,9 +531,13 @@ void describe('the new chrome fits', () => {
             width,
             { timeout: 5000 },
           );
-          const overflow = await h.page.evaluate(
-            () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-          );
+          const spill = () =>
+            h.page.evaluate(
+              () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            );
+          // The width lands before the reflow does (LAI-715).
+          await until(async () => (await spill()) === 0);
+          const overflow = await spill();
           assert.equal(
             overflow,
             0,
@@ -538,6 +580,7 @@ void describe('the prototype geometry (LAI-249)', () => {
           { timeout: 5000 },
         );
 
+      await until(async () => (await width()) === 212);
       assert.equal(await width(), 212, 'the open sidebar is 212px');
       const toggle = h.page.locator('.sidebar-toggle');
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
@@ -633,6 +676,8 @@ void describe('the prototype geometry (LAI-249)', () => {
       await h.page.locator('.sidebar-open').waitFor({ timeout: 5000 });
       assert.equal(await h.page.locator('.sidebar-toggle').isVisible(), false);
       const label = h.page.locator('#sidebar .sidebar-link-label', { hasText: 'Inbox' });
+      const opacityOf = () => label.evaluate((el: Element) => getComputedStyle(el).opacity);
+      await until(async () => (await label.isVisible()) && (await opacityOf()) === '1');
       assert.ok(await label.isVisible());
       assert.equal(await label.evaluate((el: Element) => getComputedStyle(el).opacity), '1');
     } finally {
@@ -646,6 +691,7 @@ void describe('the prototype geometry (LAI-249)', () => {
       const head = h.page.locator('.spaces-head-toggle');
       await head.waitFor({ timeout: 20_000 });
       assert.equal(await head.getAttribute('aria-expanded'), 'true');
+      await until(async () => (await h.page.locator('.space-row').count()) >= 3);
       assert.ok((await h.page.locator('.space-row').count()) >= 3);
 
       await head.click();
@@ -687,6 +733,10 @@ void describe('the prototype geometry (LAI-249)', () => {
       await pop.waitFor({ timeout: 5000 });
 
       // Only the space NOT pinned above — the prototype's `popSpaces`.
+      await until(
+        async () =>
+          (await pop.locator('.spaces-pop-name').allInnerTexts()).join('|') === 'Laika Docs',
+      );
       const names = await pop.locator('.spaces-pop-name').allInnerTexts();
       // The **popover** still shows display names and meta: it is the one
       // place a reader compares spaces, and the design puts both there.
@@ -746,6 +796,11 @@ void describe('the prototype geometry (LAI-249)', () => {
       const menu = h.page.locator('[role="menu"]');
       await menu.waitFor({ timeout: 5000 });
       const items = menu.locator('[role="menuitem"]');
+      const firstLines = async () =>
+        (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()).join('|');
+      await until(
+        async () => (await firstLines()) === 'My profile|Switch to dark|Developer access|Sign out',
+      );
       assert.deepEqual(
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()),
         ['My profile', 'Switch to dark', 'Developer access', 'Sign out'],
@@ -756,6 +811,10 @@ void describe('the prototype geometry (LAI-249)', () => {
       );
       // The first item takes the focus; the arrows move it; Escape closes and
       // hands the focus back.
+      await until(
+        async () =>
+          (await h.page.evaluate(() => document.activeElement?.textContent)) === 'My profile',
+      );
       assert.equal(await h.page.evaluate(() => document.activeElement?.textContent), 'My profile');
       await h.page.keyboard.press('ArrowDown');
       assert.match(
@@ -825,6 +884,11 @@ void describe('the prototype geometry (LAI-249)', () => {
       await trigger.click();
       const items = h.page.locator('[role="menu"] [role="menuitem"]');
       await items.first().waitFor({ timeout: 5000 });
+      await until(
+        async () =>
+          (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()).join('|') ===
+          'Switch to dark|Developer access|Sign out',
+      );
       assert.deepEqual(
         (await items.allInnerTexts()).map((t) => t.split('\n')[0]?.trim()),
         ['Switch to dark', 'Developer access', 'Sign out'],
