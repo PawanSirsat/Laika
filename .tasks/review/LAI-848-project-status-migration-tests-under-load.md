@@ -24,7 +24,7 @@ specific assertions intact.
       the actual error. Do not infer a timeout solely from the durations.
 - [x] Fix the evidenced cause, preserving the migration/data checks and
       parallel root gate. No suite retries, sleeps or global timeout bump.
-- [x] The file passes repeatedly under measured contention and the root
+- [ ] The file passes repeatedly under measured contention and the root
       test/lint/format commands each exit 0.
 
 ## Evidence
@@ -127,3 +127,29 @@ be made cheaper.
 `pnpm exec vitest run test/db/project-statuses.test.ts` in `server/`, 8
 runs, each `exit 0`, 22 collected cases passed, 6.3–14.3 s, at 1-minute
 loads 170.72–186.48.
+
+**Root gate. Not green; criterion 3 is left unticked for that reason.** The
+gate was serialised behind polly's `/tmp/laika-root-gate.lock`, with each
+command to its own file, on the tree of commit `0a8e57e9` (later commits
+touch Markdown only).
+
+| run | `uptime` at start → end | TEST | LINT | FMT |
+| --- | --- | --- | --- | --- |
+| 1 (20:05–20:14 IST) | 126.04 → 193.31 | **1** | 0 | 0 |
+| 2 (20:24–21:49 IST) | 203.02 → 183.52 | **1** | 0 | 0 |
+
+- **Run 1:** server `1 failed | 164 passed | 2 skipped (167)` files. The one
+  failure was `test/services/sprints.test.ts:623` *"is exact past the page
+  size…"*, `Test timed out in 5000ms`. That file is unrelated, and
+  `project-statuses.test.ts` passed. web `# fail 0` (2690 passed), cli
+  `# fail 0` (533 passed).
+- **The same file alone** (`server/`: `pnpm exec vitest run
+  test/services/sprints.test.ts`) at load 151.84→161.74: exit 0, 43/43.
+- **Run 2:** the machine was saturated (load ~200, the server run took 80
+  min). Server `40 failed | 114 passed | 2 skipped (156)` files, with 11
+  never reported. The errors were 34 `Hook timed out in 10000ms`, 10
+  `Test timed out in 5000ms`, five over 60 / 120 s budgets, and six
+  `[vitest-pool]: Failed to start forks worker`. Web browser cases failed
+  too, and `pnpm -r` bailed. `project-statuses.test.ts` was not among the
+  failures, but the reporter cannot show it ran, so no claim is made for it.
+  No failure in either run touched a file this task changed.
