@@ -6,7 +6,7 @@ import { agentDay } from '../../src/services/agent-time.ts';
 import { getMyDay } from '../../src/services/my-day.ts';
 import { createTask } from '../../src/services/tasks.ts';
 import { recordTelemetry, sessionKey } from '../../src/services/token-telemetry.ts';
-import { recordTokenUsage, type TokenUsageReport } from '../../src/services/token-usage.ts';
+import { recordTokenUsage } from '../../src/services/token-usage.ts';
 import { freshDb, seed, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -56,7 +56,7 @@ function report(dispatched: Dispatched[]) {
           dispatched,
         },
       ],
-    } as TokenUsageReport,
+    },
     NOW,
   );
 }
@@ -82,7 +82,9 @@ afterEach(() => {
 
 describe('a dispatched builder on the AGENTS lane', () => {
   it('draws its buckets, on its card', () => {
-    report([{ key: sessionKey(BUILDER), task: 'LAI-1', from: BUCKET(AT(9, 0)), seconds: [300, 0, 120] }]);
+    report([
+      { key: sessionKey(BUILDER), task: 'LAI-1', from: BUCKET(AT(9, 0)), seconds: [300, 0, 120] },
+    ]);
     expect(lane()).toEqual([
       [AT(9, 0), 300, 300],
       [AT(9, 10), 120, 120],
@@ -104,7 +106,9 @@ describe('a dispatched builder on the AGENTS lane', () => {
   });
 
   it('is in no agent minutes, no card’s split and no hours', () => {
-    report([{ key: sessionKey(BUILDER), task: 'LAI-1', from: BUCKET(AT(9, 0)), seconds: [300, 300] }]);
+    report([
+      { key: sessionKey(BUILDER), task: 'LAI-1', from: BUCKET(AT(9, 0)), seconds: [300, 300] },
+    ]);
     const day = getMyDay(t.db, owner, { day: DAY, tz: 'UTC' }, NOW);
     expect(day.agent.lane).toEqual([
       [AT(9, 0), 300, 300],

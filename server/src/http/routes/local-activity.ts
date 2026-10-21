@@ -29,7 +29,11 @@ import {
   SESSION_KEY_PATTERN,
   SESSIONS_PER_DAY_MAX,
 } from '../../services/token-telemetry.ts';
-import { SESSION_TASKS_PER_DAY_MAX } from '../../services/agent-time.ts';
+import {
+  DISPATCHED_BUCKETS_MAX,
+  DISPATCHED_PER_DAY_MAX,
+  SESSION_TASKS_PER_DAY_MAX,
+} from '../../services/agent-time.ts';
 import { type AppEnv } from '../context.ts';
 import { parseBody, parseQuery, strictObject, z } from '../validation.ts';
 
@@ -169,6 +173,23 @@ const UsageBody = strictObject({
           }),
         )
         .max(SESSION_TASKS_PER_DAY_MAX)
+        .optional(),
+      // The builders the owner dispatched through Omnigent (LAI-315): a
+      // session key, the card it is tied to, and its seconds per five minutes
+      // from bucket `from` on — times and counts, nothing else.
+      dispatched: z
+        .array(
+          strictObject({
+            key: sessionKeyField,
+            task: z
+              .string()
+              .regex(TASK_KEY_PATTERN, 'a task is a Laika key or an outside id, PREFIX-n')
+              .optional(),
+            from: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+            seconds: z.array(z.number().int().min(0).max(300)).min(1).max(DISPATCHED_BUCKETS_MAX),
+          }),
+        )
+        .max(DISPATCHED_PER_DAY_MAX)
         .optional(),
       rows: z
         .array(
