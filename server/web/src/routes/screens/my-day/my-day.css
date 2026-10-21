@@ -653,8 +653,10 @@
   color: var(--text-secondary);
 }
 
+/* A link here is a button: its lines start where the other figures' do. */
 .myday-stat-sub .myday-linkish {
   font-size: var(--text-small);
+  text-align: start;
 }
 
 .myday-future {
@@ -2151,6 +2153,26 @@ p.inspector-length {
 @container myday (max-width: 34rem) {
   .myday {
     padding: 1rem;
+  }
+
+  /* The lock takes a line of its own, and the dot that parted it from the date goes. */
+  .myday-subtitle-dot {
+    display: none;
+  }
+
+  .myday-lock {
+    flex-basis: 100%;
+  }
+
+  /* The week's line wraps between its arrows, never past them. */
+  .myday-week-total {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  /* The timeline's controls wrap together, onto a line under its title. */
+  .dayline-tools-gap {
+    flex-basis: 100%;
   }
 
   /* The week scrolls sideways rather than squeezing seven days into a phone. */

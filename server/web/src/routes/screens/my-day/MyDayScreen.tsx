@@ -106,6 +106,16 @@ const SAID_MS = 6_000;
 const messageOf = (cause: unknown): string =>
   cause instanceof ApiError ? cause.message : 'That change did not save.';
 
+/**
+ * The column beside the day keeps a gutter for its own scrollbar
+ * (`scrollbar-gutter`), and that gutter goes in the page's margin, so its
+ * cards end where the week and the header do (LAI-858). It is as wide as the
+ * scrollbar takes: none where scrollbars overlay.
+ */
+const gutterOutside = (side: HTMLElement | null): void => {
+  if (side !== null) side.style.marginRight = `${String(side.clientWidth - side.offsetWidth)}px`;
+};
+
 /** A change the page made: the undo id the server answered with, and what it touched. */
 interface Made {
   readonly undoId: string;
@@ -914,7 +924,12 @@ export function MyDayScreen({
             )}
           </div>
 
-          <aside className="myday-side" aria-label="Beside your day" data-myday-side>
+          <aside
+            ref={gutterOutside}
+            className="myday-side"
+            aria-label="Beside your day"
+            data-myday-side
+          >
             <AgentStrip agent={view.agent} spaces={spaces} onNavigate={onNavigate} />
             <OnYourPlate
               me={me}
