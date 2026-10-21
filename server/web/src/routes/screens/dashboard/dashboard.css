@@ -414,6 +414,15 @@ a.dash-legend-row:focus-visible {
   font-weight: var(--weight-semibold);
 }
 
+/* Their backlog, the same way (LAI-832): inside the detail it was cut at
+   390 px, so 78 read as load where 50 of it was backlog. Muted, not orange —
+   it waits on nobody. And the count's own detail wraps too: at 390 px it cut
+   "11 blocked" off the end, and a cut count is a wrong count. */
+.dash-legend-backlog,
+.dash-legend-people .dash-legend-detail {
+  white-space: normal;
+}
+
 /* "done of touched" sits inside the ring's hole, so it wraps there (LAI-817). */
 .dash-status .donut-caption {
   max-width: 5.5rem;
