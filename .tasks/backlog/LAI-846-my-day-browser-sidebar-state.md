@@ -59,3 +59,22 @@ boundary; investigate its style/resize observation timing rather than
 assuming the sidebar race explains it. Root log:
 `/tmp/lai841-third-gate.txt`; isolated rerun:
 `/tmp/lai841-my-day-rerun.txt`. No sibling was changed on LAI-841.
+
+## Second occurrence (LAI-841 final-tree gate, 2026-10-21 08:22Z)
+
+The same case failed again, identically: `1440 folded=false: cut`, with
+`'dayline-block-sub: 1:00–2:50 PM · 1 h 50 min'` at `my-day-v2.test.ts:977`,
+in a root `pnpm test` (`VITEST_MAX_WORKERS=2`) whose 1-minute load rose from
+20 to 63 while web ran. Then, alone:
+`pnpm --filter @laika/web exec node --test test/browser/my-day-v2.test.ts`,
+exit 0, 31 collected cases passed.
+
+**A lead, not a finding.** At 1440 nothing has been resized across a band
+yet, so this is not the sidebar race this task names. The case adds a
+letter-spacing style tag, sets the viewport, and measures
+`scrollWidth > clientWidth` at once, with no wait for the layout to choose
+its label form. Per the comment at `:947-949`, that form is chosen "by what
+fits as drawn". If that choice lands a frame or more after the style tag
+under load, the measurement sees the old, wider form. That is unproven. It
+wants the same treatment LAI-841 got: hold the step that re-chooses the
+form, and show whether the cut appears.

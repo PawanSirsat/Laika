@@ -549,6 +549,49 @@ What was checked, and how:
   above. The third did not, and is corrected above. No gate log contains
   a failure in `board-sprint-stats.test.ts`.
 
+### Final-tree gate attempts (after the review move)
+
+Run on HEAD `11649cea` with a clean tree and `VITEST_MAX_WORKERS=2`, each
+command redirected to its own file in the handover session's scratchpad,
+each `$?` captured on its own.
+
+1. **07:46Z, interrupted, no result.** It started at a 1-minute load of
+   22.52. The poll that cleared it read 17.70 at 07:46:24Z, and the load
+   rose in the 14 seconds before the script took its own sample. The
+   session's runner was interrupted at about 07:53Z, which killed the
+   shell (exit 144) mid-`pnpm test`. CLI had finished (533 passed,
+   0 failed) and web had finished (2630 passed, 0 failed). The server
+   workspace had printed no file result, so pnpm's closing
+   `ELIFECYCLE Test failed` reports the killed child. Lint and format
+   never ran, so this run counts for nothing either way.
+2. **08:22Z, red: `TEST 1`, `LINT 0`, `FMT 0`.** The pre-start check read
+   19.07, and the script's own sample at start read 20.22. The load rose
+   to 63 while web ran. The run was detached with `nohup` this time, so a
+   runner interruption could not end it. The only failure was the My day
+   wider-font case already recorded on LAI-846, which failed identically in
+   the third gate:
+
+   ```text
+   server/web test:     not ok 3 - a font wider than ours: a gap, a break, a block’s figures and the week’s are never cut
+   server/web test:         1440 folded=false: cut
+   server/web test:         +   'dayline-block-sub: 1:00–2:50 PM · 1 h 50 min'
+   server/web test: # tests 2630
+   server/web test: # pass 2629
+   server/web test: # fail 1
+   ```
+
+   pnpm bailed on web, so **the server suite did not run** (five
+   `server test:` lines, typecheck and the vitest banner only). CLI passed
+   533 with 0 failed. All twelve board-sprint-stats `openSidebar` cases
+   read `ok`. The file alone straight after, at load 23:
+
+   ```sh
+   pnpm --filter @laika/web exec node --test test/browser/my-day-v2.test.ts
+   ```
+
+   It exited 0, with 31 collected cases, 31 passed and the wider-font case
+   `ok`. The second occurrence and a labelled lead are appended to LAI-846.
+
 ## Result
 
 **Cause:** the old setup resized after navigation and accepted the
@@ -568,10 +611,11 @@ workers (Codex), then 5/5 more (handover). Every run had 38 collected
 cases, 38 passed, and exited 0.
 
 **Gate:** the fifth root gate above, `TEST 0`, `LINT 0`, `FMT 0`, with
-`VITEST_MAX_WORKERS=2`. The four default-pool runs before it exited
-`TEST 1`, each failing only in files this change does not touch. Every
-one of those files then passed alone. The task's own Markdown changes
-after that gate, so the root gate is run once more on the final tree
-before push. Its exit codes are on the PR and the card (LAIKA-632)
-rather than here, because writing them here would be an edit after the
-gate.
+`VITEST_MAX_WORKERS=2`, on code identical to this branch's final code.
+Only Markdown changed after it. The four default-pool runs before it
+exited `TEST 1`, each failing only in files this change does not touch.
+Of the two final-tree attempts above, one was interrupted and one was red
+only in the My day case (LAI-846). Every failing file passed alone. The
+root gate is run again on the final tree before push. Its exit codes are
+on the PR and the card (LAIKA-632) rather than here, because writing them
+here would be an edit after the gate.

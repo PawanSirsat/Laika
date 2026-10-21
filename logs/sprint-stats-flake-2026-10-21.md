@@ -100,3 +100,35 @@ and the follow-ups.
 Session ending clean once the final-tree gate is green and the branch is
 pushed. Next for CHIEF: review LAI-841, then triage LAI-846, LAI-847 and
 LAI-848. LAI-847 is the most likely to redden a busy gate.
+
+## 2026-10-21T08:31:40Z — LAI-841 (final-tree gate attempts)
+
+**What changed**
+- .tasks/review/LAI-841-board-sprint-stats-sidebar-flake.md — records two
+  final-tree gate attempts and rewords the Result's gate paragraph to match.
+- .tasks/backlog/LAI-846-my-day-browser-sidebar-state.md — the second
+  occurrence of the My day wider-font failure, and a lead labelled as one.
+- logs/sprint-stats-flake-2026-10-21.md — this entry.
+
+**Decisions**
+- Counted the 07:46Z gate as no result. The session's runner was
+  interrupted mid-`pnpm test` and killed it (exit 144). Lint and format
+  never ran. Its closing `ELIFECYCLE Test failed` is the killed server
+  workspace, which had printed no file result.
+- Ran the next gate detached with `nohup`, writing its own exit file, so
+  a runner interruption cannot end it.
+- Did not touch the My day test. It is outside LAI-841, it is LAI-846's,
+  and it passed alone.
+
+**Discovered**
+- The My day wider-font case (`my-day-v2.test.ts:950`, assertion `:977`)
+  failed a root gate for the second time, identically, at 1440px, where no
+  band has been crossed. So it is probably not the sidebar race. The case
+  measures overflow straight after a style tag and a resize, with no wait
+  for the label to re-choose its form. That is a lead, recorded on LAI-846,
+  not a finding.
+- A bail on web stops the server workspace before it runs, so a red web
+  run says nothing about server. The 08:22Z gate's server suite never ran.
+
+**State**
+Unchanged: in review, pending a green final-tree gate before push.
