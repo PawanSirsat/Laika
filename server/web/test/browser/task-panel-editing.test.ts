@@ -782,6 +782,97 @@ void describe('nothing an agent wrote is silently rewritten (LAI-827)', () => {
   });
 });
 
+void describe('a list written right under a paragraph opens rich (LAI-849)', () => {
+  /**
+   * Made up — the repo is public — in the shape of the agent's description the
+   * owner could not edit: `Key: value` lines, a paragraph opening in bold, and
+   * a list directly under its last line, with no blank line between them.
+   * Before LAI-849 it opened as Markdown, toolbar greyed out, saying line 7
+   * would become ''.
+   */
+  const UNDER = [
+    'Owner: Ada Lovelace',
+    'Source: a question at the desk on Monday: "can a late book skip the queue?"',
+    'Decision: "Shelve on return + scan".',
+    '',
+    '**Found (desk log):** the loan closes at `checkout.close` when the reader leaves, and `returns.scan` never runs.',
+    'What should happen:',
+    '- A book handed in after hours waits on the returns trolley.',
+    '- The morning scan shelves it and closes the loan.',
+  ].join('\n');
+
+  void test('it opens in the rich view, toolbar on, and leaving without an edit sends nothing', async () => {
+    const server: Server = { t3: subject({ description_md: UNDER }) };
+    const h = await open(URL, stub(server), { before: fakeStream });
+    try {
+      await description(h).locator('.md ul').waitFor({ timeout: 20_000 });
+      const editor = await openEditor(h);
+      assert.equal(await content(editor).isVisible(), true, 'it opened as Markdown');
+      assert.equal(await editor.locator('.rich-editor-notice').count(), 0, 'a notice is shown');
+      assert.equal(
+        await editor.getByRole('button', { name: 'Bold' }).isEnabled(),
+        true,
+        'the toolbar is greyed out',
+      );
+      assert.equal(await content(editor).locator('ul li').count(), 2);
+
+      // Save untouched, then open again and leave by Escape: nothing goes out.
+      await editor.getByRole('button', { name: 'Save' }).click();
+      await editor.waitFor({ state: 'detached', timeout: 5_000 });
+      const again = await openEditor(h);
+      await h.page.keyboard.press('Escape');
+      await again.waitFor({ state: 'detached', timeout: 5_000 });
+      await h.page.waitForTimeout(300);
+      assert.equal(patches(h).length, 0, 'leaving without an edit sent a PATCH');
+      assert.equal(server.t3.description_md, UNDER, 'the stored text changed');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Markdown and back, the owner’s click, stays rich; the source is the text as stored', async () => {
+    const server: Server = { t3: subject({ description_md: UNDER }) };
+    const h = await open(URL, stub(server), { before: fakeStream });
+    try {
+      await description(h).locator('.md ul').waitFor({ timeout: 20_000 });
+      const editor = await openEditor(h);
+      const toggle = editor.getByRole('button', { name: 'Markdown' });
+      await toggle.click();
+      const source = editor.locator('textarea.rich-editor-source');
+      await source.waitFor({ timeout: 5_000 });
+      assert.equal(await source.inputValue(), UNDER);
+      await toggle.click();
+      await content(editor).waitFor({ timeout: 5_000 });
+      assert.equal(await editor.locator('.rich-editor-notice').count(), 0, 'a notice is shown');
+      assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('one that also spells < as &lt; stays Markdown, and the notice shows that change', async () => {
+    // The owner's description did this, late in the list's first item: the
+    // editor would write `\<`, which LAI-827 refuses.
+    const spelled = UNDER.replace(
+      'waits on the returns trolley.',
+      'waits on the returns trolley, its card reading &lt;branch&gt; until scanned.',
+    );
+    const server: Server = { t3: subject({ description_md: spelled }) };
+    const h = await open(URL, stub(server), { before: fakeStream });
+    try {
+      await description(h).locator('.md ul').waitFor({ timeout: 20_000 });
+      const editor = await openEditor(h);
+      await editor.locator('textarea.rich-editor-source').waitFor({ timeout: 5_000 });
+      const notice = await editor.locator('.rich-editor-notice').innerText();
+      assert.match(notice, /line 7: “…trolley, its card reading &lt;branch&gt; until scanned\.”/);
+      assert.match(notice, /as “…trolley, its card reading \\<branch> until scanned\.”/);
+      assert.equal(patches(h).length, 0);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('the stale-text protection of LAI-795 holds in the editor', () => {
   void test('a save begun on a version someone has since replaced is refused, and the draft kept', async () => {
     const server: Server = { t3: subject({ description_md: 'The **first** version.' }) };
