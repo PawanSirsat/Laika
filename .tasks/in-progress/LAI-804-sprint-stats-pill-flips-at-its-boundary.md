@@ -2,11 +2,12 @@
 id: LAI-804
 title: 'The board toolbar''s sprint figures flip between pill and compact when hovered at their boundary width, and the pill never opens'
 area: web
-assignee: unclaimed
+assignee: strelka
 priority: p1
 depends-on: []
 discovered-from: LAI-796
-status: backlog
+status: in-progress
+started: 2026-10-21T13:32:36Z
 ---
 
 ## Goal
