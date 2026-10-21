@@ -528,6 +528,64 @@ void describe('the reason names the real difference, not a shifted line (LAI-849
 });
 
 /*
+ * LAI-854: two layouts whose notice was "The rich editor would not write it
+ * back exactly", naming no line.
+ *
+ * Two blank lines between list items: the parser read them as an empty
+ * paragraph inside the first item, which nothing can write, and the draft it
+ * fell back to equalled the source once blank lines were collapsed.
+ *
+ * A list item under a paragraph, then a line of U+00A0 or U+3000 and a
+ * paragraph: CommonMark, and so the reading view, continues the item lazily
+ * through `B`; the lexer ends the list at that line, so the editor would write
+ * `B` as a paragraph of its own. The blocks it diffs differ only by blank lines.
+ */
+void describe('a notice that named nothing names the line (LAI-854)', () => {
+  const reason = (markdown: string): string => {
+    const opening = openDocument(bridge, markdown);
+    assert.equal(opening.kind, 'source', `opened rich: ${JSON.stringify(markdown)}`);
+    return opening.kind === 'source' ? opening.reason : '';
+  };
+
+  void test('two blank lines between list items are read as no paragraph at all', () => {
+    const doc = parseMarkdown(bridge, '- a\n\n\n- b', bridge.schema);
+    const json = doc?.toJSON() as JSONContent | undefined;
+    assert.deepEqual(json?.content?.[0]?.content?.[0]?.content, [
+      { type: 'paragraph', content: [{ type: 'text', text: 'a' }] },
+    ]);
+  });
+
+  void test('two blank lines between list items: the notice names them and the item after', () => {
+    assert.equal(
+      reason('- a\n\n\n- b'),
+      'The rich editor would remove the 2 blank lines before line 4: “- b”.',
+    );
+    assert.equal(
+      reason('- a\n\n\n- b\n- c'),
+      'The rich editor would remove the 2 blank lines before line 4: “- b”.',
+    );
+  });
+
+  for (const [name, ws] of [
+    ['U+00A0', ' '],
+    ['U+3000', '　'],
+  ] as const) {
+    void test(`a ${name} line under a list item: the notice says what happens to “B”`, () => {
+      assert.equal(openDocument(bridge, 'Intro:\n- a\n \nB').kind, 'rich', 'positive control');
+      assert.equal(
+        reason(`Intro:\n- a\n${ws}\nB`),
+        'The rich editor would make line 4, “B”, a paragraph of its own instead of part of the list item above it.',
+      );
+    });
+
+    void test(`after a blank line, a ${name} line does not continue the item, and is not said to`, () => {
+      // CommonMark ends the item at the blank line: `B` is a paragraph already.
+      assert.doesNotMatch(reason(`Intro:\n- a\n\n${ws}\nB`), /instead of part of/);
+    });
+  }
+});
+
+/*
  * The owner's whole description, in shape: after the blank line above its
  * list, the list's first and last items spell `<` and `>` as `&lt;` and
  * `&gt;`, the first past its 57th character. The editor writes `\<…>` there — the same text read, a different
