@@ -14,8 +14,7 @@
 /*
  * The scale (LAI-828): every font-size in a stylesheet is one of these.
  * `--text-*` is the size and `--leading-*` its line-height, as Atlassian
- * pairs them. The aliases after it are the pre-LAI-828 names, for My day only
- * until LAI-831 moves it onto the steps; `type-floor.test.ts` holds both rules.
+ * pairs them. `type-floor.test.ts` fails on a size that is not one of them.
  */
 
 :root {
@@ -33,15 +32,6 @@
   --leading-heading-md: 1.5rem;
   --text-heading-lg: 1.5rem;
   --leading-heading-lg: 1.75rem;
-
-  --text-xs: var(--text-small);
-  --text-sm: var(--text-small);
-  --text-base: var(--text-small);
-  --text-mono: var(--text-small);
-  --text-ui: var(--text-body);
-  --text-md: var(--text-body);
-  --text-lg: var(--text-body);
-  --text-xl: var(--text-heading-lg);
 }
 
 .t-display {

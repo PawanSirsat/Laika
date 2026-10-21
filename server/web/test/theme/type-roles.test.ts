@@ -21,7 +21,6 @@ import { LEADING_TOKENS, TYPE_TOKENS } from '../../src/theme/token-list.ts';
 import {
   DENSITY,
   leadingCss,
-  LEGACY_TEXT_ALIASES,
   rem,
   ROLE_NAMES,
   ROLES,
@@ -85,17 +84,17 @@ void describe('the scale in CSS is TYPE_SCALE', () => {
     }
   });
 
-  void test('the root block declares the scale, the legacy aliases, and nothing else', () => {
+  void test('the root block declares the scale and nothing else', () => {
+    // The pre-LAI-828 names (`--text-xs` … `--text-xl`) were aliases here
+    // while My day still used them; LAI-828 moved My day onto the steps and
+    // retired them, so a stylesheet reaching for one is a token that does not
+    // exist (`tokens.test.ts`).
     assert.deepEqual(
       rootVars()
         .map(([name]) => name)
         .sort(),
-      [...TYPE_TOKENS, ...LEADING_TOKENS, ...Object.keys(LEGACY_TEXT_ALIASES)].sort(),
+      [...TYPE_TOKENS, ...LEADING_TOKENS].sort(),
     );
-    const vars = new Map(rootVars());
-    for (const [alias, step] of Object.entries(LEGACY_TEXT_ALIASES)) {
-      assert.equal(vars.get(alias), `var(--text-${step})`, alias);
-    }
   });
 });
 

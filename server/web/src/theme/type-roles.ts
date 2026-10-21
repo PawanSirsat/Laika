@@ -66,25 +66,6 @@ export type StepName = keyof typeof TYPE_SCALE;
 
 export const STEP_NAMES = Object.keys(TYPE_SCALE) as StepName[];
 
-/**
- * The names the scale had before LAI-828, kept as aliases of a step.
- *
- * **Only `routes/screens/my-day/` may use them**, and only because LAI-831 is
- * rebuilding that screen in parallel and its stylesheet cannot be swept here.
- * `type-floor.test.ts` fails on a use anywhere else, and fails when My day no
- * longer needs them — which is the signal to delete this object.
- */
-export const LEGACY_TEXT_ALIASES = {
-  '--text-xs': 'small',
-  '--text-sm': 'small',
-  '--text-base': 'small',
-  '--text-mono': 'small',
-  '--text-ui': 'body',
-  '--text-md': 'body',
-  '--text-lg': 'body',
-  '--text-xl': 'heading-lg',
-} as const satisfies Record<string, StepName>;
-
 /** The semantic colour tokens a role may point at. */
 export type RoleColor = 'text-primary' | 'text-secondary' | 'text-muted' | 'inherit';
 

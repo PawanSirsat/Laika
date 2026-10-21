@@ -16,7 +16,6 @@
 import {
   DENSITY,
   leadingCss,
-  LEGACY_TEXT_ALIASES,
   rem,
   ROLE_NAMES,
   ROLES,
@@ -43,8 +42,7 @@ const header = `/*
 const scaleNote = `/*
  * The scale (LAI-828): every font-size in a stylesheet is one of these.
  * \`--text-*\` is the size and \`--leading-*\` its line-height, as Atlassian
- * pairs them. The aliases after it are the pre-LAI-828 names, for My day only
- * until LAI-831 moves it onto the steps; \`type-floor.test.ts\` holds both rules.
+ * pairs them. \`type-floor.test.ts\` fails on a size that is not one of them.
  */`;
 
 const scale = [
@@ -53,8 +51,6 @@ const scale = [
     `  --text-${step}: ${rem(TYPE_SCALE[step].size)};`,
     `  --leading-${step}: ${rem(TYPE_SCALE[step].leading)};`,
   ]),
-  '',
-  ...Object.entries(LEGACY_TEXT_ALIASES).map(([alias, step]) => `  ${alias}: var(--text-${step});`),
   '}',
 ].join('\n');
 

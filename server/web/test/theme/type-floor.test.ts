@@ -18,15 +18,11 @@
  *  - **`TINY` is exact**: each selector on it uses the tiny step, and no other
  *    selector does. Named, not counted.
  *
- * Two exemptions, both named with the file they cover:
- *
- *  - `index.css`'s `:root { font-size: 16px }` is the rem anchor every token is
- *    measured from, not a piece of text.
- *  - **My day** (`routes/screens/my-day/`) is being rebuilt by LAI-831 while
- *    this lands, so its stylesheet was not swept. It may still use raw sizes and
- *    the pre-LAI-828 token names, and is held to LAI-706's 10px floor instead.
- *    The last test here fails once My day needs neither — that is the signal to
- *    delete `MY_DAY`, its two filters and `LEGACY_TEXT_ALIASES`.
+ * One exemption, named with the file it covers: `index.css`'s
+ * `:root { font-size: 16px }` is the rem anchor every token is measured from,
+ * not a piece of text. My day was exempt while LAI-831 rebuilt it; LAI-828 set
+ * it on the scale and the exemption, its 10px floor and the pre-LAI-828 token
+ * names went with it.
  */
 
 import assert from 'node:assert/strict';
@@ -35,7 +31,6 @@ import { join, relative } from 'node:path';
 import { describe, test } from 'node:test';
 import {
   DENSITY,
-  LEGACY_TEXT_ALIASES,
   ROLE_NAMES,
   ROLES,
   STEP_NAMES,
@@ -44,11 +39,7 @@ import {
 } from '../../src/theme/type-roles.ts';
 
 const FLOOR_PX = 12;
-const LEGACY_FLOOR_PX = 10;
 const SRC = new URL('../../src', import.meta.url).pathname;
-
-/** LAI-831's screen, exempt until it is rebuilt on the scale. */
-const MY_DAY = 'routes/screens/my-day/';
 
 /**
  * The selectors allowed `--text-tiny` (11px), and the reason each needs it.
@@ -88,7 +79,6 @@ function walk(dir: string): string[] {
 const CSS_FILES = walk(SRC).filter((path) => path.endsWith('.css'));
 
 const STEPS = new Set<string>(STEP_NAMES);
-const LEGACY: Readonly<Record<string, StepName>> = LEGACY_TEXT_ALIASES;
 
 /** A `font-size` value in px, or `null` for one this test cannot read. */
 function px(value: string): number | null {
@@ -101,9 +91,7 @@ function px(value: string): number | null {
   const token = /^var\((--text-[a-z0-9-]+)\)$/.exec(v)?.[1];
   if (token === undefined) return null;
   const step = token.slice('--text-'.length);
-  if (STEPS.has(step)) return TYPE_SCALE[step as StepName].size;
-  const legacy = LEGACY[token];
-  return legacy === undefined ? null : TYPE_SCALE[legacy].size;
+  return STEPS.has(step) ? TYPE_SCALE[step as StepName].size : null;
 }
 
 /** The step a value names, or `null` when it is not `var(--text-<step>)`. */
@@ -178,7 +166,6 @@ const DECLARATIONS: Declaration[] = CSS_FILES.flatMap((file) =>
   }),
 );
 
-const isMyDay = (d: Declaration) => d.where.startsWith(MY_DAY);
 const isRootAnchor = (d: Declaration) =>
   d.where === 'index.css' && d.selector === ':root' && d.value === '16px';
 const label = (d: Declaration) => `${d.where} ${d.selector} ${d.property}: ${d.value}`;
@@ -194,6 +181,7 @@ void describe('the type floor', () => {
       'routes/screens/list/list.css',
       'routes/screens/timeline/timeline.css',
       'routes/screens/organisation/organisation.css',
+      'routes/screens/my-day/my-day.css',
     ]) {
       assert.ok(files.has(expected), `no font-size found in ${expected}`);
     }
@@ -211,7 +199,7 @@ void describe('the type floor', () => {
 
   void test('every font-size is a step of the scale', () => {
     const raw = DECLARATIONS.filter(
-      (d) => !isMyDay(d) && !isRootAnchor(d) && d.value !== '0' && stepOf(d.value) === null,
+      (d) => !isRootAnchor(d) && d.value !== '0' && stepOf(d.value) === null,
     ).map(label);
     assert.deepEqual(raw, [], 'set these with var(--text-<step>) from styles/type.css');
   });
@@ -219,7 +207,6 @@ void describe('the type floor', () => {
   void test(`no stylesheet sets text under ${String(FLOOR_PX)}px, but for the tiny list`, () => {
     const small = DECLARATIONS.filter(
       (d) =>
-        !isMyDay(d) &&
         d.px !== null &&
         d.px !== 0 &&
         d.px < FLOOR_PX &&
@@ -233,30 +220,6 @@ void describe('the type floor', () => {
       ...new Set(DECLARATIONS.filter((d) => stepOf(d.value) === 'tiny').map((d) => d.selector)),
     ].sort();
     assert.deepEqual(usingTiny, TINY);
-  });
-
-  void test(`My day stays at LAI-706's ${String(LEGACY_FLOOR_PX)}px floor until LAI-831`, () => {
-    const small = DECLARATIONS.filter(
-      (d) => isMyDay(d) && d.px !== null && d.px !== 0 && d.px < LEGACY_FLOOR_PX,
-    ).map((d) => `${label(d)} (${String(d.px)}px)`);
-    assert.deepEqual(small, []);
-  });
-
-  void test('the pre-LAI-828 token names are used by My day and nothing else', () => {
-    const legacy = DECLARATIONS.filter((d) => !isMyDay(d) && d.value.startsWith('var(--text-'))
-      .filter((d) => stepOf(d.value) === null)
-      .map(label);
-    assert.deepEqual(legacy, []);
-  });
-
-  void test('My day still needs its exemption — delete it when this fails', () => {
-    // The exemption expires by itself: once LAI-831 sets My day on the scale,
-    // nothing in it is off the steps and this goes red. Then delete MY_DAY and
-    // the filters that use it here, and LEGACY_TEXT_ALIASES in type-roles.ts.
-    const offScale = DECLARATIONS.filter(
-      (d) => isMyDay(d) && d.value !== '0' && stepOf(d.value) === null,
-    );
-    assert.notEqual(offScale.length, 0, 'My day is on the scale: retire its exemption');
   });
 
   void test(`no type role or density override is under ${String(FLOOR_PX)}px`, () => {
