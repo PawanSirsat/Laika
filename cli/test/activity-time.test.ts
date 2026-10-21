@@ -237,6 +237,11 @@ void describe('the rule (pure)', () => {
         minutes: 8,
         task: 'LAI-1',
         signals: { prompts: 1, replies: 3, sessions: 2, commits: 1, marks: 1 },
+        // Which five minutes the prompt and the commit fell in (D-096): both 9:00–9:05.
+        at: {
+          prompts: [[Math.floor((T0 + MIN) / 300), 1]],
+          commits: [[Math.floor((T0 + 4 * MIN) / 300), 1]],
+        },
       },
     ]);
   });
@@ -709,15 +714,37 @@ void describe('from the machine’s own files', () => {
     });
     assert.equal(draft.read.replies, 7, 'the person’s and the primary’s replies');
     assert.equal(draft.read.dispatched, 4, 'the robot’s four replies were read for its card');
-    // What would leave: the same five fields a block always had, no session.
+    // What would leave: the same five fields a block always had, no session —
+    // and, beside them, `at`'s numbers for a block with a prompt or a commit
+    // (D-096). Nothing the lending knew is among them.
     const body = timeDraftReports('6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a', TZ, [
       { day: UTC_DAY, blocks: draft.days.get(UTC_DAY) ?? [] },
     ])
       .map((r) => r.body)
       .join('\n');
     assert.equal(body.includes(ROBOT), false, 'the robot’s session id left the machine');
-    for (const b of (JSON.parse(body) as { days: { blocks: object[] }[] }).days[0]?.blocks ?? []) {
-      assert.deepEqual(Object.keys(b).sort(), ['end', 'minutes', 'signals', 'start', 'task']);
+    for (const b of (JSON.parse(body) as { days: { blocks: Record<string, unknown>[] }[] }).days[0]
+      ?.blocks ?? []) {
+      assert.deepEqual(
+        Object.keys(b)
+          .filter((k) => k !== 'at')
+          .sort(),
+        ['end', 'minutes', 'signals', 'start', 'task'],
+      );
+      if ('at' in b) {
+        const at = b.at as Record<string, unknown>;
+        assert.deepEqual(
+          Object.keys(at).filter((k) => k !== 'prompts' && k !== 'commits'),
+          [],
+          'at carries something other than prompts and commits',
+        );
+        assert.ok(
+          Object.values(at)
+            .flat(2)
+            .every((n) => typeof n === 'number'),
+          'at carries something other than numbers',
+        );
+      }
     }
   });
 

@@ -35,9 +35,11 @@ import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-
  * seen sessions start in (author time, and a key from the subject, which is
  * read and dropped at once), and the reply times and task of each session the
  * hook marked Omnigent-dispatched (D-095). **Only blocks leave**: a start, an
- * end, minutes, a task key or `null`, and how many of each signal fell in it.
- * Never prompt or reply text, paths, repository or branch names, session ids
- * or a commit message — none of them reaches {@link Block}. Which blocks took
+ * end, minutes, a task key or `null`, how many of each signal fell in it, and
+ * — to a board that takes them — which five minutes its prompts and commits
+ * fell in (D-096, {@link blocksToSend}). Never prompt or reply text, paths,
+ * repository or branch names, session ids or a commit message — none of them
+ * reaches {@link Block}. Which blocks took
  * a dispatched session's key is said on this machine only ({@link Draft}).
  *
  * ## The rule (design REPORT.md §2.1, measured on the owner's machine)
@@ -102,6 +104,19 @@ export interface Signals {
   marks: number;
 }
 
+/** Which five minutes a prompt or commit fell in is sent, and nothing finer (D-096). */
+export const SIGNAL_BUCKET_S = 5 * 60;
+
+/**
+ * When a block's prompts and commits happened (D-096, LAI-834): per kind,
+ * `[bucket, count]` pairs in order, a bucket being `floor(epoch s / 300)` —
+ * the board's `floor(unix ms / 300000)`. Numbers, and nothing else.
+ */
+export interface SignalTimes {
+  readonly prompts?: readonly (readonly [number, number])[];
+  readonly commits?: readonly (readonly [number, number])[];
+}
+
 /** One block, as `PUT /me/time-drafts` carries it (SPEC §6.4). */
 export interface Block {
   /** Unix ms, on a minute. */
@@ -110,6 +125,8 @@ export interface Block {
   readonly minutes: number;
   readonly task: string | null;
   readonly signals: Signals;
+  /** Absent for a block with no prompt and no commit, and when not sent (`blocksToSend`). */
+  readonly at?: SignalTimes;
 }
 
 export interface ReplyEvent {
@@ -215,6 +232,29 @@ interface Building {
   minutes: number;
   /** Some minute of it took a key a dispatched session lent: said locally, never sent. */
   lent: boolean;
+  /** Per bucket, how many prompts and commits it counts there (D-096). */
+  at: { prompts: Map<number, number>; commits: Map<number, number> };
+}
+
+/**
+ * Count `count` of `kind` in the bucket of `minute` (epoch minutes), held to
+ * the block's own minutes: the board looks for them nowhere else. A commit
+ * counted in another task's block of its stretch, or evidence a block too
+ * short to keep gave its stretch's largest, lands at that block's nearer edge.
+ */
+function timeIn(b: Building, kind: 'prompts' | 'commits', minute: number, count = 1): void {
+  const held = Math.min(Math.max(minute, b.first), b.last);
+  const bucket = Math.floor((held * 60) / SIGNAL_BUCKET_S);
+  b.at[kind].set(bucket, (b.at[kind].get(bucket) ?? 0) + count);
+}
+
+/** `from`'s times, into `into` — after `into`'s span has taken whatever it grows to. */
+function mergeTimes(into: Building, from: Building): void {
+  for (const kind of ['prompts', 'commits'] as const) {
+    for (const [bucket, count] of from.at[kind]) {
+      timeIn(into, kind, (bucket * SIGNAL_BUCKET_S) / 60, count);
+    }
+  }
 }
 
 const zero = (): Signals => ({ prompts: 0, replies: 0, sessions: 0, commits: 0, marks: 0 });
@@ -397,6 +437,7 @@ export function draftDays(
             sessions: new Set(),
             minutes: 0,
             lent: false,
+            at: { prompts: new Map(), commits: new Map() },
           };
           blocks.set(key, b);
         }
@@ -457,7 +498,9 @@ export function draftDays(
     const minute = Math.floor(at / 60);
     for (const key of info.get(minute)?.keys ?? []) {
       const b = blockAt(minute, key);
-      if (b !== undefined) b.signals.prompts += 1;
+      if (b === undefined) continue;
+      b.signals.prompts += 1;
+      timeIn(b, 'prompts', minute);
     }
   }
   // A commit lands in the stretch it closes: its own minute, or the active one
@@ -471,7 +514,9 @@ export function draftDays(
     const blocks = building[at.stretch];
     const b =
       (c.task !== null ? blocks?.get(c.task) : undefined) ?? blocks?.get(at.keys[0] ?? null);
-    if (b !== undefined) b.signals.commits += 1;
+    if (b === undefined) continue;
+    b.signals.commits += 1;
+    timeIn(b, 'commits', minute);
   }
 
   // --- per day, capped -------------------------------------------------------
@@ -493,6 +538,7 @@ export function draftDays(
       for (const k of ['prompts', 'replies', 'commits', 'marks'] as const) {
         largest.signals[k] += b.signals[k];
       }
+      mergeTimes(largest, b);
       for (const session of b.sessions) largest.sessions.add(session);
       largest.signals.sessions = largest.sessions.size;
     }
@@ -573,6 +619,7 @@ function capped(blocks: Building[]): Building[] {
     for (const k of ['prompts', 'replies', 'commits', 'marks'] as const) {
       partner.signals[k] += shortest.signals[k];
     }
+    mergeTimes(partner, shortest);
     for (const session of shortest.sessions) partner.sessions.add(session);
     partner.signals.sessions = partner.sessions.size;
   }
@@ -581,18 +628,28 @@ function capped(blocks: Building[]): Building[] {
 
 function toBlock(b: Building): Block {
   const cap = (n: number): number => Math.min(n, SIGNAL_MAX);
+  const signals = {
+    prompts: cap(b.signals.prompts),
+    replies: cap(b.signals.replies),
+    sessions: cap(b.signals.sessions),
+    commits: cap(b.signals.commits),
+    marks: cap(b.signals.marks),
+  };
+  // In order, and never more than the block counts: a count the cap cut short
+  // keeps its count and loses its times rather than overstate them.
+  const at: { prompts?: [number, number][]; commits?: [number, number][] } = {};
+  for (const kind of ['prompts', 'commits'] as const) {
+    const pairs = [...b.at[kind]].sort((x, y) => x[0] - y[0]);
+    const total = pairs.reduce((n, [, count]) => n + count, 0);
+    if (pairs.length > 0 && total <= signals[kind]) at[kind] = pairs;
+  }
   return {
     start: b.first * 60_000,
     end: (b.last + 1) * 60_000,
     minutes: b.minutes,
     task: b.task,
-    signals: {
-      prompts: cap(b.signals.prompts),
-      replies: cap(b.signals.replies),
-      sessions: cap(b.signals.sessions),
-      commits: cap(b.signals.commits),
-      marks: cap(b.signals.marks),
-    },
+    signals,
+    ...(Object.keys(at).length > 0 ? { at } : {}),
   };
 }
 
@@ -841,6 +898,8 @@ export interface TimeSettings {
   readonly org_mode: string;
   readonly draft_my_time: boolean;
   readonly drafting: boolean;
+  /** The board takes a block's `at` (D-096); a board that predates it does not say so. */
+  readonly signal_times?: boolean;
 }
 
 /** A call's answer — `activity-sync.ts`'s `Call`, by shape. */
@@ -932,6 +991,29 @@ export function timeDraftBody(
   return JSON.stringify({ v: 1, collector_id: collectorId, tz, days });
 }
 
+/** A block as it goes without its signal times: everything else as it was. */
+function withoutTimes(b: Block): Block {
+  return { start: b.start, end: b.end, minutes: b.minutes, task: b.task, signals: b.signals };
+}
+
+/**
+ * A day's blocks as they go (D-096): with when their prompts and commits fell
+ * only to a board that says it takes it, and only while the day's report stays
+ * within {@link MAX_BODY_BYTES} — else without, their counts and everything
+ * else as they were, so no day is ever refused over its times.
+ */
+export function blocksToSend(
+  collectorId: string,
+  tz: string,
+  day: string,
+  blocks: readonly Block[],
+  accepts: boolean,
+): Block[] {
+  if (!accepts) return blocks.map(withoutTimes);
+  const size = Buffer.byteLength(timeDraftBody(collectorId, tz, [{ day, blocks }]));
+  return size > MAX_BODY_BYTES ? blocks.map(withoutTimes) : [...blocks];
+}
+
 /** Days as reports of at most 16 KB, oldest first; a day is never split. */
 export function timeDraftReports(
   collectorId: string,
@@ -994,7 +1076,11 @@ export async function timeStep(ctx: TimeContext): Promise<TimeOutcome> {
     const first = [...draft.days.keys()][0] ?? '';
     for (const day of Object.keys(memory.sent)) if (day < first) delete memory.sent[day];
     const due: { day: string; blocks: Block[]; signature: string }[] = [];
-    for (const [day, blocks] of draft.days) {
+    const accepts = settings.value.signal_times === true;
+    for (const [day, drafted] of draft.days) {
+      // Measured as they go: a board that starts taking the times gets each
+      // day again, with them.
+      const blocks = blocksToSend(ctx.collectorId, ctx.tz, day, drafted, accepts);
       const signature = JSON.stringify(blocks);
       const held = memory.sent[day];
       // An empty day goes only to empty what the board was given for it.

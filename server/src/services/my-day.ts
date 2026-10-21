@@ -7,7 +7,14 @@ import { assertCan } from '../policy/can.ts';
 import { agentDay, type AgentDayView } from './agent-time.ts';
 import { addDays, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
 import { breaksOn, type TimeBreakView } from './time-breaks.ts';
-import { draftsOn, draftZone, heldDrafts, type TimeDraftView } from './time-drafts.ts';
+import {
+  draftsOn,
+  draftZone,
+  heldDrafts,
+  signalTimesOn,
+  type SignalTimesView,
+  type TimeDraftView,
+} from './time-drafts.ts';
 import { entriesOn, type TimeEntryView } from './time-entries.ts';
 import { getTimeSettings, type TimeSettingsView } from './time-settings.ts';
 
@@ -22,6 +29,7 @@ import { getTimeSettings, type TimeSettingsView } from './time-settings.ts';
  *
  * The drafts, the entries and the breaks are one range of `(user_id, day)`
  * each, the first two joined to their task and project by primary key; the
+ * signal times one more range of the drafts' `(user_id, day)`, every state; the
  * drafts held on every day one range of `(user_id)`; the week is one grouped range of
  * each of the same two indexes; the agent minutes are two ranges of primary
  * keys that lead with `(user_id, day)`; the switches are two primary-key
@@ -58,6 +66,11 @@ export interface MyDayView {
   entries: TimeEntryView[];
   /** Gaps the person waved away (LAI-831) — never time, never counted. */
   breaks: TimeBreakView[];
+  /**
+   * When the day's prompts and commits happened, by five minutes (D-096,
+   * LAI-834): the SIGNALS lane. Empty for a day drafted without them.
+   */
+  signal_times: SignalTimesView;
   /**
    * Every pending draft the person holds, on every day (LAI-831): what turning
    * *Draft my time* off would delete, said before it is asked.
@@ -111,6 +124,7 @@ export function getMyDay(
   const drafts = draftsOn(db, actor.userId, day);
   const entries = entriesOn(db, actor.userId, day);
   const breaks = breaksOn(db, actor.userId, day);
+  const signalTimes = signalTimesOn(db, actor.userId, day);
   const held = heldDrafts(db, actor.userId);
   const agent = agentDay(db, actor.userId, day);
 
@@ -170,6 +184,7 @@ export function getMyDay(
     drafts,
     entries,
     breaks,
+    signal_times: signalTimes,
     drafts_held: held,
     agent,
     state: stateOf(

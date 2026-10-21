@@ -42,9 +42,11 @@ import { daySubject, recordUndo, type OnUndo } from './time-undo-log.ts';
  *
  * Start, end, the local day and zone, the minutes, a task key or none, and
  * the **counts** of the signals behind it — prompts, replies, sessions,
- * commits, task claims. Nothing else can be sent: the body is a closed schema
- * of numbers, a zone and a key-shaped string, and the table has no column that
- * could hold a prompt, a path, a repository or a branch.
+ * commits, task claims — with, since D-096, **which five minutes** its prompts
+ * and commits fell in, as counts per bucket (`at`). Nothing else can be sent:
+ * the body is a closed schema of numbers, a zone and a key-shaped string, and
+ * the table has no column that could hold a prompt, a path, a repository or a
+ * branch.
  *
  * ## An upload replaces its own blocks, and is measured by origin
  *
@@ -95,6 +97,33 @@ export const SIGNAL_KINDS = ['prompts', 'replies', 'sessions', 'commits', 'marks
 export type SignalKind = (typeof SIGNAL_KINDS)[number];
 export type Signals = Record<SignalKind, number>;
 
+/**
+ * When a block's prompts and commits happened is kept to five minutes and no
+ * finer (D-096, LAI-834): enough to draw them along the day, too coarse to
+ * replay anybody's typing.
+ */
+export const SIGNAL_BUCKET_MS = 5 * MINUTE_MS;
+/** The signals whose time is kept: prompts typed and commits made. */
+export const TIMED_SIGNALS = ['prompts', 'commits'] as const;
+export type TimedSignal = (typeof TIMED_SIGNALS)[number];
+/** At most this many buckets of one kind in a block: a day of 25 hours. */
+export const SIGNAL_BUCKETS_MAX = (25 * 60) / 5;
+/**
+ * Per kind, `[bucket, count]` pairs in order, a bucket being
+ * `floor(unix ms / SIGNAL_BUCKET_MS)` — numbers, and nothing else.
+ */
+export type SignalBuckets = Partial<Record<TimedSignal, [number, number][] | undefined>>;
+
+/**
+ * The day's SIGNALS lane (§6.4's My day): per kind, `[bucket start in unix
+ * ms, count]` in order — every block of the day, whatever became of it, a
+ * bucket two blocks share drawn once.
+ */
+export interface SignalTimesView {
+  prompts: [number, number][];
+  commits: [number, number][];
+}
+
 /** One draft, as its person sees it (§6.4). */
 export interface TimeDraftView {
   id: string;
@@ -120,6 +149,8 @@ export interface DraftBlockInput {
   minutes: number;
   task: string | null;
   signals: Partial<Record<SignalKind, number | undefined>>;
+  /** When its prompts and commits happened, by bucket (D-096); a collector may leave it out. */
+  at?: SignalBuckets | undefined;
 }
 
 export interface TimeDraftsReport {
@@ -146,6 +177,62 @@ function readSignals(json: string): Signals {
   return out;
 }
 
+/** The buckets stored beside a block's counts, `{}` for a block sent without them. */
+function readSignalBuckets(json: string): SignalBuckets {
+  const out: SignalBuckets = {};
+  try {
+    const parsed: unknown = JSON.parse(json);
+    if (typeof parsed !== 'object' || parsed === null) return out;
+    const at = (parsed as Record<string, unknown>).at;
+    if (typeof at !== 'object' || at === null) return out;
+    for (const kind of TIMED_SIGNALS) {
+      const list = (at as Record<string, unknown>)[kind];
+      if (!Array.isArray(list)) continue;
+      out[kind] = list.filter(
+        (p): p is [number, number] =>
+          Array.isArray(p) &&
+          p.length === 2 &&
+          Number.isInteger(p[0]) &&
+          Number.isInteger(p[1]) &&
+          (p[1] as number) > 0,
+      );
+    }
+  } catch {
+    // As for the counts: a bad one is a bug, shown as nothing on the lane.
+  }
+  return out;
+}
+
+/**
+ * A block's buckets, checked against the block (D-096): each kind in order,
+ * each bucket once and inside the block's span — its last minute included —
+ * and no more of a kind than the block counts.
+ */
+function assertBuckets(b: DraftBlockInput, day: string, index: number): void {
+  if (b.at === undefined) return;
+  const first = Math.floor(b.start / SIGNAL_BUCKET_MS);
+  const last = Math.floor((b.end - 1) / SIGNAL_BUCKET_MS);
+  for (const kind of TIMED_SIGNALS) {
+    const pairs = b.at[kind];
+    if (pairs === undefined) continue;
+    let previous = -Infinity;
+    let total = 0;
+    for (const [bucket, count] of pairs) {
+      if (bucket <= previous) {
+        invalid(`a block's ${kind} times are in order, each once`, { day, index });
+      }
+      if (bucket < first || bucket > last) {
+        invalid(`a block's ${kind} times fall inside it`, { day, index });
+      }
+      previous = bucket;
+      total += count;
+    }
+    if (total > (b.signals[kind] ?? 0)) {
+      invalid(`a block times no more ${kind} than it counts`, { day, index });
+    }
+  }
+}
+
 function invalid(message: string, extra: Record<string, unknown>): never {
   throw new ApiError('unprocessable', message, { reason: 'invalid_blocks', ...extra });
 }
@@ -166,6 +253,7 @@ function assertBlocks(report: TimeDraftsReport): void {
       if (b.minutes > span) {
         invalid('a block holds no more minutes than its span', { day, index });
       }
+      assertBuckets(b, day, index);
       total += b.minutes;
     });
     if (total > 1440) invalid('a day holds at most 1440 minutes', { day });
@@ -361,8 +449,14 @@ export function recordTimeDrafts(
       for (const r of remainders(blocks, originsOn(tx, actor.userId, day))) {
         const b = r.block;
         const task = b.task === null ? undefined : resolved.get(b.task);
-        const signals = zeroSignals();
+        const signals: Signals & { at?: SignalBuckets } = zeroSignals();
         for (const kind of SIGNAL_KINDS) signals[kind] = b.signals[kind] ?? 0;
+        const at: SignalBuckets = {};
+        for (const kind of TIMED_SIGNALS) {
+          const pairs = b.at?.[kind];
+          if (pairs !== undefined && pairs.length > 0) at[kind] = pairs;
+        }
+        if (Object.keys(at).length > 0) signals.at = at;
         const id = newId();
         rows.push({
           id,
@@ -552,6 +646,36 @@ export function draftsOn(db: Db, userId: string, day: string): TimeDraftView[] {
     )
     .all()
     .map(draftView);
+}
+
+/**
+ * The day's SIGNALS lane (D-096, LAI-834): when the prompts and commits
+ * behind every block of the day happened — pending, confirmed or dismissed,
+ * since the lane shows what happened, not what is left to settle. Blocks
+ * worked in parallel carry their stretch's prompts each, so a bucket keeps
+ * the largest count any block gave it rather than their sum. **One range of
+ * `time_drafts_user_day_idx`**; a helper of My day, which asks
+ * `time_drafts.read_own` first.
+ */
+export function signalTimesOn(db: Db, userId: string, day: string): SignalTimesView {
+  const most: Record<TimedSignal, Map<number, number>> = { prompts: new Map(), commits: new Map() };
+  for (const row of db
+    .select({ signals: timeDrafts.signals })
+    .from(timeDrafts)
+    .where(and(eq(timeDrafts.userId, userId), eq(timeDrafts.day, day)))
+    .all()) {
+    const at = readSignalBuckets(row.signals);
+    for (const kind of TIMED_SIGNALS) {
+      for (const [bucket, count] of at[kind] ?? []) {
+        most[kind].set(bucket, Math.max(most[kind].get(bucket) ?? 0, count));
+      }
+    }
+  }
+  const lane = (kind: TimedSignal): [number, number][] =>
+    [...most[kind].entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([bucket, count]) => [bucket * SIGNAL_BUCKET_MS, count]);
+  return { prompts: lane('prompts'), commits: lane('commits') };
 }
 
 function draftById(db: Db | Tx, userId: string, id: string): TimeDraftView {

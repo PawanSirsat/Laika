@@ -43,6 +43,12 @@ export interface TimeSettingsView {
   drafting: boolean;
   /** How often a collector may send, as `/me/activity-sharing` says it. */
   min_sync_interval_s: number;
+  /**
+   * The board keeps when a block's prompts and commits happened (D-096,
+   * LAI-834): a collector sends a block's `at` only when this says so, so a
+   * board that predates it never refuses an upload over it.
+   */
+  signal_times: boolean;
 }
 
 /** The organisation's *Time*; `off` when nobody has set it. */
@@ -73,6 +79,7 @@ function viewFor(db: Db, userId: string): TimeSettingsView {
     draft_my_time: mine,
     drafting: mode === 'drafts' && mine,
     min_sync_interval_s: MIN_SYNC_INTERVAL_S,
+    signal_times: true,
   };
 }
 

@@ -511,6 +511,12 @@ const PAIRS: readonly Pair[] = [
     client: 'MyDay',
     clientFile: 'time.ts',
   },
+  {
+    server: 'SignalTimesView',
+    serverFile: 'services/time-drafts.ts',
+    client: 'SignalTimes',
+    clientFile: 'time.ts',
+  },
   // Its two nested shapes, which the server's census counts as served views.
   {
     server: 'AgentDayView',
