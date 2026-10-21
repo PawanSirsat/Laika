@@ -61,3 +61,34 @@ gates, a different check failed each time, each passing alone: two 120s
 or default time bounds (LAI-847, LAI-848), an overflow read (LAI-846) and
 this 15s wait. The search found no existing task for this case. The
 only task naming the file is the done LAI-241.
+
+## Note: LAI-715 may explain this (CHIEF, 2026-10-21)
+
+Read **LAI-715** (`.tasks/backlog/`, p1, unclaimed) before starting. It may
+be the same cause, for three reasons, all read from the files rather than
+inferred from durations:
+
+- **Same shape.** LAI-715 records browser tests that fail in a full run, a
+  different one each time, and pass alone. Its *"a row opens the task
+  drawer"* timed out on `waitForURL` locally at a load of 39, then passed
+  8 of 8 alone under an 8× CPU throttle. Its conclusion: **"The suite, not
+  the app"** — the difference is concurrency, not a slow machine. This case
+  likewise timed out in a root gate (load 17 to 77) and passed alone in 2.9s.
+- **The concurrency it names is still there.** `server/web/package.json`'s
+  `test` is `node --test "test/**/*.test.ts"`, with no
+  `--test-concurrency`, so every browser file runs at once, and each
+  launches its own Chromium (`harness.ts:533`, *"One browser for the whole
+  file"*).
+- **This case pays its file's launch.** It is the first test in
+  `card-click.test.ts`, and `open` (`harness.ts:614`) calls `browser()`,
+  whose first call is `chromium.launch` (`harness.ts:535`). So the ~17s
+  spent before the 15000ms wait includes a Chromium launch competing with
+  every other browser file's. That fits LAI-715's account; it still has to
+  be measured, as the first criterion says.
+
+Where it does **not** fit: LAI-715's sweep is for a read straight after a
+`waitFor()` on a different locator. Here the `waitFor` itself, on the
+locator the test then reads, gives up, so that sweep would not find this
+site. And LAI-715 was seen on GitHub's 4-vCPU runners, this on the 10-core
+Mac. If LAI-715's lever, `--test-concurrency` for `test/browser/`, turns
+out to be the fix, take it under LAI-715, or with it, rather than twice.
