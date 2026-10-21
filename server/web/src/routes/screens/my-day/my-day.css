@@ -1392,21 +1392,36 @@ p.inspector-length {
   padding: 0 1.125rem 0.75rem;
 }
 
+/*
+ * The rows line up as one grid (LAI-842). The list sets the columns and each
+ * row, and its select button, takes them as a subgrid, so the time and the
+ * length are exactly as wide as the widest row's text, on any font. They were
+ * 9.5rem and 5.5rem — a guess about one machine's font that a wider one ran
+ * `1 h 35 min` out of.
+ *
+ * A draft row: box · time · length · card · source.
+ * An entry row: mark · time · length · card · source · revision.
+ */
 .myday-blocks {
   margin: 0;
   padding: 0;
   list-style: none;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: auto max-content max-content minmax(0, 1fr) auto auto;
+  column-gap: 0.75rem;
+}
+
+.myday-blocks:has(> .myday-settle-row) {
+  grid-template-columns: auto max-content max-content minmax(0, 1fr) auto;
 }
 
 .myday-settle-row,
 .myday-ledger-row {
+  grid-column: 1 / -1;
   min-width: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: subgrid;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 0.25rem 0.75rem;
   padding: 0.5625rem 1.125rem;
   border-bottom: 1px solid var(--border-subtle);
   border-left: 3px solid transparent;
@@ -1432,10 +1447,10 @@ p.inspector-length {
 }
 
 .myday-row-select {
-  flex: none;
-  display: inline-flex;
+  grid-column: span 2;
+  display: grid;
+  grid-template-columns: subgrid;
   align-items: baseline;
-  gap: 0.75rem;
   margin: 0;
   padding: 0;
   border: none;
@@ -1448,7 +1463,6 @@ p.inspector-length {
 }
 
 .myday-row-time {
-  width: 9.5rem;
   font-family: var(--font-mono);
   font-size: var(--text-small);
   color: var(--text-secondary);
@@ -1456,7 +1470,6 @@ p.inspector-length {
 }
 
 .myday-row-minutes {
-  width: 5.5rem;
   font-family: var(--font-mono);
   font-size: var(--text-body);
   font-weight: var(--weight-semibold);
@@ -1465,7 +1478,6 @@ p.inspector-length {
 }
 
 .myday-row-target {
-  flex: 1 1 12rem;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -1515,7 +1527,6 @@ p.inspector-length {
 
 .myday-rev {
   flex: none;
-  width: 3rem;
   font-family: var(--font-mono);
   font-size: var(--text-small);
   text-align: right;
@@ -2145,12 +2156,22 @@ p.inspector-length {
     padding-right: 0.875rem;
   }
 
-  .myday-row-time {
-    width: auto;
+  /* A phone keeps the rows as wrapping lines, the card below the time. */
+  .myday-blocks {
+    display: flex;
+    flex-direction: column;
   }
 
-  .myday-row-minutes {
-    width: auto;
+  .myday-settle-row,
+  .myday-ledger-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+  }
+
+  .myday-row-select {
+    display: inline-flex;
+    gap: 0.75rem;
   }
 
   .myday-row-target {
