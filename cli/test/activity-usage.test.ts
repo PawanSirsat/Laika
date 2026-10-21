@@ -39,7 +39,7 @@ import {
   USAGE_WINDOW_DAYS,
   type UsageRow,
 } from '../src/activity-usage.ts';
-import { MAX_BODY_BYTES } from './support/local-activity-contract.ts';
+import { contractViolation, MAX_BODY_BYTES } from './support/local-activity-contract.ts';
 import { closeAll, stubBoard } from './support/stub-board.ts';
 
 const TZ = 'Africa/Johannesburg';
@@ -2179,7 +2179,10 @@ void describe('a dispatched builder’s agent time in a usage report (LAI-315)',
 
   type Body = {
     excluded?: string[];
-    days: { day: string; dispatched?: { key: string; task?: string; from: number; seconds: number[] }[] }[];
+    days: {
+      day: string;
+      dispatched?: { key: string; task?: string; from: number; seconds: number[] }[];
+    }[];
   };
 
   async function report(telemetry: boolean): Promise<Body> {
@@ -2230,6 +2233,7 @@ void describe('a dispatched builder’s agent time in a usage report (LAI-315)',
     });
     assert.equal(outcome.kind, 'sent');
     assert.equal(bodies.length, 1);
+    assert.equal(contractViolation(bodies[0] ?? '', new Date(NOW_MS)), undefined);
     return JSON.parse(bodies[0] ?? '{}') as Body;
   }
 
