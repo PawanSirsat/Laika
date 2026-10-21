@@ -2,11 +2,12 @@
 id: LAI-847
 title: 'The build idempotence test exceeds its 120-second bound under concurrent gates'
 area: server
-assignee: unclaimed
+assignee: strelka
 priority: p2
 depends-on: []
 discovered-from: LAI-841
-status: backlog
+status: in-progress
+started: 2026-10-21T14:24:43Z
 ---
 
 ## Goal
