@@ -768,9 +768,15 @@
   border-radius: var(--radius-card);
 }
 
+/*
+ * Clipped across: the hour line at the axis's end is 1px wide at `left: 100%`,
+ * which made the track a pixel wider than the box at Fit, so Fit scrolled by
+ * that pixel and a click landed most of a pixel off the blocks (LAI-860).
+ */
 .dayline-track {
   position: relative;
   min-width: 100%;
+  overflow-x: clip;
   padding-top: 1.125rem;
 }
 
@@ -861,10 +867,8 @@
 
 /*
  * A block fills the lane's height, or its share of it when blocks are at the
- * same time: row `--row` of `--rows`, 2px apart (LAI-860, `stackOf`). It is
- * clipped to its own width: a five-minute block at Fit is narrower than its
- * body's padding and border, which otherwise drew over the next block. Only
- * across — its badge still sits on its top edge.
+ * same time: row `--row` of `--rows`, 2px apart (LAI-860, `stackOf`). It is a
+ * size container, so its edges can ask how big it is.
  */
 .dayline-block {
   --row: 0;
@@ -873,10 +877,22 @@
   position: absolute;
   top: calc(0.3125rem + var(--row) * var(--lane));
   height: calc(var(--lane) - 2px);
-  overflow-x: clip;
   min-width: 2px;
   border-radius: var(--radius-card);
   box-sizing: border-box;
+  container: dayline-block / size;
+}
+
+/*
+ * The body, clipped to its block: a five-minute block at Fit is narrower than
+ * the body's padding and border, which otherwise drew over the next block.
+ * The badge is outside the clip, so it can be wider than its block.
+ */
+.dayline-block-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
 }
 
 .dayline-block-body {
@@ -936,6 +952,7 @@
 }
 
 .dayline-stacked .dayline-block-top {
+  flex-shrink: 1;
   line-height: 1;
 }
 
@@ -954,6 +971,15 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/*
+ * The key and the figures keep their lines; where three do not fit the row,
+ * the title is the one that gives way, and FitLabel leaves it out (LAI-860).
+ */
+.dayline-block-top,
+.dayline-block-sub {
+  flex-shrink: 0;
 }
 
 /* A figure is never cut short: FitLabel picks the form that fits, or none. */
@@ -981,32 +1007,29 @@
 
 /*
  * G: a block's counts, as a badge — never dots spread where nothing says.
- * The badge is FitLabel's, in a box kept inside its own block's width
- * (LAI-860): whole where it fits, not drawn where it does not, so never over
- * the next block's.
+ * `placeChips` puts it inside its block's end, or centred over a block too
+ * narrow for it, and only where it clears every other block and badge; it
+ * is not drawn anywhere else (LAI-860). A click on it is a click on its block.
  */
-.dayline-signals > span {
-  display: inline-block;
-  vertical-align: top;
-  padding: 0 0.25rem;
-  border: 1px solid var(--border-card);
-  border-radius: var(--radius-chip);
-  background: var(--bg-card);
-  pointer-events: auto;
+.dayline-signals[data-chip-place='none'] {
+  visibility: hidden;
 }
 
-.dayline-signals > span:empty {
-  display: none;
+.dayline-signals[data-chip-place='centre'] {
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .dayline-signals {
   position: absolute;
   top: -0.5rem;
-  left: 0.25rem;
   right: 0.25rem;
   z-index: 1;
-  overflow: hidden;
-  text-align: right;
+  padding: 0 0.25rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-chip);
+  background: var(--bg-card);
   font-family: var(--font-mono);
   font-size: var(--text-small);
   line-height: 1.4;
@@ -1038,6 +1061,22 @@
 
 .dayline-edge-end {
   right: 0;
+}
+
+/*
+ * A handle is drawn only where a pointer can take it, 8px tall and 4px wide
+ * at least. On a smaller block it is not drawn, and ← and → still move the
+ * edge from the keyboard (LAI-860).
+ */
+@container dayline-block (height < 1.25rem) or (width < 0.625rem) {
+  .dayline-edge {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .dayline-edge:focus-visible {
+    opacity: 1;
+  }
 }
 
 .dayline-axis {

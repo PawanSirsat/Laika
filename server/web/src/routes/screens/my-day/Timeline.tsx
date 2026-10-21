@@ -16,9 +16,12 @@ import {
   dragEdge,
   instantOf,
   limitsIn,
+  placeChips,
   stackOf,
   PX_PER_HOUR,
   STEP,
+  type Box,
+  type ChipPlace,
   type DayLine,
   type Edit,
   type LaneBlock,
@@ -96,8 +99,9 @@ function cutsOf(label: string): string[] {
  * **Only what the server has is drawn.** The design's SIGNALS lane (prompts
  * and commits along the hours) and AGENTS lane (when the agent worked) have
  * no times to draw from — a block carries counts and agent time is minutes
- * per day — so they are left out (LAI-834, LAI-833) and each block shows its
- * counts as a badge instead, nothing spread along it (CHIEF's addition G).
+ * per day — so they are left out (LAI-834, LAI-833) and a block shows its
+ * counts as a badge instead, nothing spread along it (CHIEF's addition G),
+ * wherever the badge clears its neighbours (LAI-860).
  *
  * Zoom fits the day or gives it 110 or 220 px an hour; Earlier, Now and
  * Later scroll it; it opens on the first block, and follows the selection.
@@ -136,7 +140,47 @@ export function Timeline({
   const entries = new Map(view.entries.map((e) => [e.id, e]));
   const at = (m: number): number => (line.midnight === undefined ? 0 : instantOf(line.midnight, m));
   const rangeOf = (s: Span): string => spanOf(at(s.start), at(s.end), view.tz);
-  const stacks = stackOf(line.blocks);
+  // From the blocks as drawn, a dragged edge included: it never lies over a neighbour.
+  const stacks = stackOf(
+    line.blocks.map((b) => (preview?.id === b.id ? { ...b, ...preview.edit } : b)),
+  );
+  const [chips, setChips] = useState<ReadonlyMap<string, ChipPlace>>(() => new Map());
+  const [, setFonts] = useState(0);
+
+  // A font that finishes loading changes how wide each badge is drawn.
+  useEffect(() => {
+    const again = (): void => {
+      setFonts((n) => n + 1);
+    };
+    document.fonts.addEventListener('loadingdone', again);
+    return () => {
+      document.fonts.removeEventListener('loadingdone', again);
+    };
+  }, []);
+
+  // After every render, each badge's place from the boxes as drawn (`placeChips`).
+  useLayoutEffect(() => {
+    const root = track.current;
+    if (root === null) return;
+    const boxOf = (el: Element): Box => {
+      const r = el.getBoundingClientRect();
+      return { l: r.left, r: r.right, t: r.top, b: r.bottom };
+    };
+    const blocks = new Map(
+      [...root.querySelectorAll<HTMLElement>('[data-block-key]')].map((el) => [
+        el.dataset.blockKey ?? '',
+        boxOf(el),
+      ]),
+    );
+    const sizes = [...root.querySelectorAll<HTMLElement>('[data-chip-for]')].map((el) => {
+      const r = el.getBoundingClientRect();
+      return { id: el.dataset.chipFor ?? '', width: r.width, top: r.top, bottom: r.bottom };
+    });
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const next = placeChips(sizes, blocks, boxOf(root), rem * 0.25);
+    const same = next.size === chips.size && [...next].every(([id, p]) => chips.get(id) === p);
+    if (!same) setChips(next);
+  });
 
   useLayoutEffect(() => {
     const box = scroller.current;
@@ -389,6 +433,7 @@ export function Timeline({
               ))}
               {line.blocks.map((block, i) => {
                 const { row, rows } = stacks[i] ?? { row: 0, rows: 1 };
+                const key = `${block.kind}-${block.id}`;
                 const shape = preview?.id === block.id ? { ...block, ...preview.edit } : block;
                 const kind = block.kind === 'drafted' ? 'draft' : 'entry';
                 const selected = isSelected(kind, block.id);
@@ -401,7 +446,7 @@ export function Timeline({
                 const editable = selected && !block.locked && !busy;
                 return (
                   <div
-                    key={`${block.kind}-${block.id}`}
+                    key={key}
                     className={[
                       'dayline-block',
                       `dayline-${block.kind}`,
@@ -413,6 +458,7 @@ export function Timeline({
                       .filter((c) => c !== '')
                       .join(' ')}
                     data-block-id={block.id}
+                    data-block-key={key}
                     data-kind={block.kind}
                     style={
                       {
@@ -423,39 +469,47 @@ export function Timeline({
                       } as CSSProperties
                     }
                   >
-                    <button
-                      type="button"
-                      className="dayline-block-body"
-                      data-block-select={block.id}
-                      aria-pressed={selected}
-                      aria-label={`${range}, ${top}, ${duration(shape.minutes)}`}
-                      title={`${range} · ${top}${title === '' ? '' : ` ${title}`}`}
-                      onClick={() => {
-                        onSelect({ kind, id: block.id });
-                      }}
-                    >
-                      <span className="dayline-block-top">
-                        <FitLabel options={cutsOf(top)} />
-                      </span>
-                      {px > 120 && title !== '' && (
-                        <span className="dayline-block-title">{title}</span>
-                      )}
-                      <span className="dayline-block-sub">
-                        <FitLabel
-                          options={[
-                            `${range} · ${duration(shape.minutes)}`,
-                            duration(shape.minutes),
-                          ]}
-                        />
-                      </span>
-                    </button>
-                    {/* A lower row's badge would lie over the block above it: only the top row has one. */}
-                    {prompts + commits > 0 && row === 0 && (
+                    {/* Clipped to the block: at Fit a short block is narrower than its body. */}
+                    <div className="dayline-block-clip">
+                      <button
+                        type="button"
+                        className="dayline-block-body"
+                        data-block-select={block.id}
+                        aria-pressed={selected}
+                        aria-label={`${range}, ${top}, ${duration(shape.minutes)}`}
+                        title={`${range} · ${top}${title === '' ? '' : ` ${title}`}`}
+                        onClick={() => {
+                          onSelect({ kind, id: block.id });
+                        }}
+                      >
+                        <span className="dayline-block-top">
+                          {/* A row's height changes with how many share it: try again. */}
+                          <FitLabel key={rows} options={cutsOf(top)} />
+                        </span>
+                        {px > 120 && title !== '' && (
+                          <span className="dayline-block-title">
+                            <FitLabel key={rows} options={[title]} ellipsis />
+                          </span>
+                        )}
+                        <span className="dayline-block-sub">
+                          <FitLabel
+                            options={[
+                              `${range} · ${duration(shape.minutes)}`,
+                              duration(shape.minutes),
+                            ]}
+                          />
+                        </span>
+                      </button>
+                    </div>
+                    {/* Drawn only where it clears every other block and badge (`placeChips`). */}
+                    {prompts + commits > 0 && (
                       <span
                         className="dayline-signals"
+                        data-chip-for={key}
+                        data-chip-place={chips.get(key) ?? 'none'}
                         title={`${String(prompts)} prompts, ${String(commits)} commits — counted for the block; when in it is not known`}
                       >
-                        <FitLabel options={[`${String(prompts)}p ${String(commits)}c`]} />
+                        {String(prompts)}p {String(commits)}c
                       </span>
                     )}
                     {editable && (

@@ -267,6 +267,69 @@ export function stackOf(blocks: readonly Span[]): Stack[] {
   return stacks;
 }
 
+/** A box on the screen, in px. */
+export interface Box {
+  readonly l: number;
+  readonly r: number;
+  readonly t: number;
+  readonly b: number;
+}
+
+/** A count badge inside its block's end, or centred over a block too narrow for it. */
+export type ChipPlace = 'end' | 'centre';
+
+/** A badge as drawn: the key of its block, its width, and its top and bottom. */
+export interface ChipSize {
+  readonly id: string;
+  readonly width: number;
+  readonly top: number;
+  readonly bottom: number;
+}
+
+/** Two boxes share more than half a pixel each way: one would be drawn over the other. */
+const crosses = (a: Box, b: Box): boolean =>
+  Math.min(a.r, b.r) - Math.max(a.l, b.l) > 0.5 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > 0.5;
+
+/**
+ * Where each block's count badge goes, from the boxes as drawn (LAI-860):
+ * inside the block's end, `inset` from it, where it fits; centred over the
+ * block where it does not. A badge is drawn only when that box clears every
+ * other block, every badge already placed and both ends of the track, so a
+ * short block with room around it keeps its badge and one among neighbours
+ * goes without. Longer blocks are placed first. `blocks` is keyed as the
+ * badges are; a badge whose block is not there is left out.
+ */
+export function placeChips(
+  chips: readonly ChipSize[],
+  blocks: ReadonlyMap<string, Box>,
+  track: Pick<Box, 'l' | 'r'>,
+  inset: number,
+): Map<string, ChipPlace> {
+  const across = (id: string): number => {
+    const b = blocks.get(id);
+    return b === undefined ? 0 : b.r - b.l;
+  };
+  const order = [...chips].sort(
+    (a, b) =>
+      across(b.id) - across(a.id) || (blocks.get(a.id)?.l ?? 0) - (blocks.get(b.id)?.l ?? 0),
+  );
+  const places = new Map<string, ChipPlace>();
+  const drawn: Box[] = [];
+  for (const chip of order) {
+    const own = blocks.get(chip.id);
+    if (own === undefined) continue;
+    const place: ChipPlace = chip.width <= own.r - own.l - 2 * inset ? 'end' : 'centre';
+    const l = place === 'end' ? own.r - inset - chip.width : (own.l + own.r - chip.width) / 2;
+    const box = { l, r: l + chip.width, t: chip.top, b: chip.bottom };
+    if (box.l < track.l - 0.5 || box.r > track.r + 0.5) continue;
+    if ([...blocks].some(([id, b]) => id !== chip.id && crosses(box, b))) continue;
+    if (drawn.some((d) => crosses(box, d))) continue;
+    places.set(chip.id, place);
+    drawn.push(box);
+  }
+  return places;
+}
+
 /** The nearest step on the clock: 8:42 → 8:40, 8:43 → 8:45. */
 export const snap = (minute: number): number => Math.round(minute / STEP) * STEP;
 
