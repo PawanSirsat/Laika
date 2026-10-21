@@ -1366,11 +1366,21 @@ p.inspector-length {
 
 /* --------------------------------------------------------- the two lists */
 
+/*
+ * A list scrolls on its own (LAI-858, `ListScroller.tsx`). It is sized to
+ * whole rows within this height, comes to rest on a row's top, and keeps the
+ * wheel only while it has more rows than it shows — one that shows them all
+ * is no scroller, so over it the page scrolls.
+ */
 .myday-scroll {
   max-height: min(34rem, 62dvh);
   overflow-y: auto;
-  overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
   border-top: 1px solid var(--border-subtle);
+}
+
+.myday-scroll[data-overflows] {
+  overscroll-behavior: contain;
 }
 
 .myday-scroll:focus-visible {
@@ -1426,6 +1436,7 @@ p.inspector-length {
   border-bottom: 1px solid var(--border-subtle);
   border-left: 3px solid transparent;
   cursor: pointer;
+  scroll-snap-align: start;
 }
 
 .myday-blocks > li:last-child {

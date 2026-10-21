@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { TimeEntry } from '../../../api/time.ts';
 import { EntryRow } from './EntryRow.tsx';
+import { ListScroller } from './ListScroller.tsx';
 import { PAGE_SIZE, pageOf } from './draft-bulk.ts';
 import { duration } from './format.ts';
 
@@ -22,7 +23,7 @@ export interface EntryListProps {
  */
 export function EntryList({ entries, selected, onSelect, onNavigate, children }: EntryListProps) {
   const [page, setPage] = useState(0);
-  const scroller = useRef<HTMLDivElement | null>(null);
+  const card = useRef<HTMLElement | null>(null);
   const paged = pageOf(entries, page);
   const total = entries.reduce((sum, e) => sum + e.minutes, 0);
 
@@ -31,13 +32,8 @@ export function EntryList({ entries, selected, onSelect, onNavigate, children }:
     if (selectedAt >= 0) setPage(Math.floor(selectedAt / PAGE_SIZE));
   }, [selectedAt]);
 
-  const go = (to: number): void => {
-    setPage(to);
-    if (scroller.current !== null) scroller.current.scrollTop = 0;
-  };
-
   return (
-    <section className="myday-card myday-entries" aria-labelledby="myday-entries-title">
+    <section ref={card} className="myday-card myday-entries" aria-labelledby="myday-entries-title">
       <header className="myday-card-head">
         <h2 className="myday-card-title" id="myday-entries-title">
           Confirmed
@@ -52,13 +48,12 @@ export function EntryList({ entries, selected, onSelect, onNavigate, children }:
       {entries.length === 0 ? (
         <p className="myday-quiet myday-pad">Nothing confirmed yet.</p>
       ) : (
-        <div
-          ref={scroller}
+        <ListScroller
+          card={card}
           id="myday-entries-list"
-          className="myday-scroll"
-          role="region"
-          aria-label={`Confirmed entries, ${paged.label}`}
-          tabIndex={0}
+          label={`Confirmed entries, ${paged.label}`}
+          page={paged.page}
+          selected={selected}
         >
           <ol className="myday-blocks" aria-label="Confirmed entries">
             {paged.items.map((entry, i) => (
@@ -75,7 +70,7 @@ export function EntryList({ entries, selected, onSelect, onNavigate, children }:
               />
             ))}
           </ol>
-        </div>
+        </ListScroller>
       )}
       {paged.pages > 1 && (
         <nav className="myday-pager" aria-label="Confirmed pages">
@@ -84,7 +79,7 @@ export function EntryList({ entries, selected, onSelect, onNavigate, children }:
             className="myday-chip"
             disabled={paged.page === 0}
             onClick={() => {
-              go(paged.page - 1);
+              setPage(paged.page - 1);
             }}
           >
             ‹ Prev
@@ -97,7 +92,7 @@ export function EntryList({ entries, selected, onSelect, onNavigate, children }:
             className="myday-chip"
             disabled={paged.page >= paged.pages - 1}
             onClick={() => {
-              go(paged.page + 1);
+              setPage(paged.page + 1);
             }}
           >
             Next ›

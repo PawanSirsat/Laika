@@ -9,6 +9,7 @@ import {
   NO_SELECTION,
 } from '../list/list-select.ts';
 import { DraftRow } from './DraftRow.tsx';
+import { ListScroller } from './ListScroller.tsx';
 import {
   PAGE_SIZE,
   minutesOf,
@@ -72,7 +73,7 @@ export function DraftList({
   const [anchor, setAnchor] = useState<string | undefined>(undefined);
   const [page, setPage] = useState(0);
   const head = useRef<HTMLInputElement | null>(null);
-  const scroller = useRef<HTMLDivElement | null>(null);
+  const card = useRef<HTMLElement | null>(null);
 
   const live = effectiveSelection(checked, drafts);
   const paged = pageOf(drafts, page);
@@ -94,11 +95,6 @@ export function DraftList({
     if (selectedAt >= 0) setPage(Math.floor(selectedAt / PAGE_SIZE));
   }, [selectedAt]);
 
-  const go = (to: number): void => {
-    setPage(to);
-    if (scroller.current !== null) scroller.current.scrollTop = 0;
-  };
-
   const act = (kind: BulkKind): void => {
     void onBulk(kind, chosen).then((keep) => {
       setChecked(new Set(keep));
@@ -107,7 +103,11 @@ export function DraftList({
   };
 
   return (
-    <section className="myday-card myday-drafts myday-settle" aria-labelledby="myday-drafts-title">
+    <section
+      ref={card}
+      className="myday-card myday-drafts myday-settle"
+      aria-labelledby="myday-drafts-title"
+    >
       <header className="myday-card-head">
         <input
           ref={head}
@@ -211,13 +211,11 @@ export function DraftList({
         </p>
       )}
 
-      <div
-        ref={scroller}
-        className="myday-scroll"
-        role="region"
-        aria-label={`Drafted blocks, ${paged.label}`}
-        // A region that scrolls is reachable by keyboard, so it can be scrolled.
-        tabIndex={0}
+      <ListScroller
+        card={card}
+        label={`Drafted blocks, ${paged.label}`}
+        page={paged.page}
+        selected={selected}
       >
         <ol className="myday-blocks" aria-label="Drafted blocks">
           {paged.items.map((draft, i) => (
@@ -250,7 +248,7 @@ export function DraftList({
             />
           ))}
         </ol>
-      </div>
+      </ListScroller>
 
       {paged.pages > 1 && (
         <nav className="myday-pager" aria-label="Drafted pages">
@@ -259,7 +257,7 @@ export function DraftList({
             className="myday-chip"
             disabled={paged.page === 0}
             onClick={() => {
-              go(paged.page - 1);
+              setPage(paged.page - 1);
             }}
           >
             ‹ Prev
@@ -272,7 +270,7 @@ export function DraftList({
             className="myday-chip"
             disabled={paged.page >= paged.pages - 1}
             onClick={() => {
-              go(paged.page + 1);
+              setPage(paged.page + 1);
             }}
           >
             Next ›
