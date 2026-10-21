@@ -4153,8 +4153,9 @@ anything missing sends the task back.
   `loadIn(person, space) === 'none'` (`capacity-derive.ts`), the selected
   space's load when one is selected, as *Heavy load* reads it. Backlog and work
   waiting on reviewers do not count against it. It was *No work*, no open work
-  at all; the id stays `none`, so a saved address still opens it; a space
-  selector (all spaces, or one, which narrows every count to it); a sort
+  at all; the id stays `none`, so a saved address still opens it. The toolbar
+  goes on with a space selector (all spaces, or one, which narrows every count
+  to it); a sort
   (*Online first*, the default, *Heaviest load*, *Name*, *Last seen*); an (i)
   with the definitions. **One card a person** in a grid of three columns on a
   laptop, two on a tablet and one on a phone: the avatar with a status ring
@@ -4216,8 +4217,9 @@ anything missing sends the task back.
   LAI-832), Capacity's rule — `count: committed(slot.byStatus)`, where
   `committed` is `byStatus.todo + byStatus.in_progress` (`summary-derive.ts`
   `workloadByPerson`). **Backlog shows separately**: a line of its own under
-  the name, `+{row.backlog} in backlog`, beside `+{row.review} waiting for
-  review`, and neither is in the count. Backlog and *Waiting for review* are
+  the name, `+{row.backlog} in backlog`, with `+{row.review} waiting for
+  review` on the line below it, and neither is in the count. Backlog and
+  *Waiting for review* are
   each one share of the ring, and its centre is every open task.
 
   **The review wait reads the review queue, not the picked range** (LAI-832).
@@ -4501,10 +4503,12 @@ One interval-driven scheduler in the same process:
   row, for the reason local activity's has none
 - **stale-task flagging** — `in_progress` with no heartbeat or commit for 3 days
   sets `stale_flagged_at`. **It is the one stale rule, on every screen**
-  (D-092 item 4, LAI-832): the Dashboard's *Stale* tab, the Activity tab's
-  Stale panel and the List's amber Updated cell all ask `isStale`
-  (`board-derive.ts`) — `task.status !== 'done' && task.status !== 'cancelled'
-  && task.stale_flagged_at !== null` — and no screen keeps a rule of its own
+  (D-092 item 4, LAI-832): every screen asks `isStale` (`board-derive.ts`) —
+  `task.status !== 'done' && task.status !== 'cancelled' &&
+  task.stale_flagged_at !== null` — and no screen keeps a rule of its own. The
+  Dashboard's *Stale* tab and the Activity tab's Stale panel call
+  `staleTasks()`, which filters by `isStale`, longest-flagged first; the List's
+  amber Updated cell calls `isStale` itself
 - invite expiry, meeting-review expiry (7 days)
 - **estimate refit** (D-085) — every live project's size model fitted again
   from its history and every open task recomputed against it, daily **and once
