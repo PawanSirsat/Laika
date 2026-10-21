@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-21T11:15:58Z
+finished: 2026-10-21T11:41:11Z
 ---
 
 ## Goal
@@ -33,24 +34,24 @@ Fit was not reported as broken. Check it anyway.
 
 ## Acceptance criteria
 
-- [ ] The cause is named in this file: which measurement or layout rule
+- [x] The cause is named in this file: which measurement or layout rule
       lets chips, blocks or outlines overlap at 1x and 2x.
-- [ ] At Fit, 1x and 2x, no block's count chip overlaps another block's chip.
+- [x] At Fit, 1x and 2x, no block's count chip overlaps another block's chip.
       A chip that does not fit is hidden, shortened or moved, never drawn
       over a neighbour.
-- [ ] Blocks that overlap in time can each still be seen and selected, at
+- [x] Blocks that overlap in time can each still be seen and selected, at
       every zoom. If doing that properly needs a design change (for example
       lanes), stop, file it, and fix only the overlap here.
-- [ ] The selected outline stays within its own block's space.
-- [ ] A label that does not fit is hidden or cut cleanly. A lone letter does
+- [x] The selected outline stays within its own block's space.
+- [x] A label that does not fit is hidden or cut cleanly. A lone letter does
       not count as a label.
-- [ ] Both themes, and a narrow window (390 px wide).
-- [ ] A browser test measures the bounding boxes of neighbouring chips and
+- [x] Both themes, and a narrow window (390 px wide).
+- [x] A browser test measures the bounding boxes of neighbouring chips and
       blocks at 1x and 2x and fails on today's code. It asserts boxes, not a
       count, and it is aimed at a seeded day shaped like the screenshot: short
       5-minute blocks, some close together, some overlapping.
-- [ ] No design token or colour changes (D-020).
-- [ ] The repo-root gate exits 0: `pnpm test`, `pnpm lint`, `pnpm format`,
+- [x] No design token or colour changes (D-020).
+- [x] The repo-root gate exits 0: `pnpm test`, `pnpm lint`, `pnpm format`,
       each exit code captured on its own line.
 
 ## Notes
