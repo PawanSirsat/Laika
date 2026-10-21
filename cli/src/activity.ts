@@ -1138,8 +1138,12 @@ export async function time(argv: readonly string[], io: ActivityIo = CONSOLE): P
         : `${day}  ${span(minutes)} in ${String(blocks.length)} ${blocks.length === 1 ? 'block' : 'blocks'}, ${span(tied)} tied to a task`,
     );
     for (const b of blocks) {
+      // D-095: a block whose key a dispatched builder lent says so here only.
+      const why = [evidence(b), draft.lent.has(b) ? 'a dispatched builder’s card' : '']
+        .filter((part) => part !== '')
+        .join(' · ');
       io.out(
-        `  ${clock(b.start, tz)}–${clock(b.end, tz)}  ${span(b.minutes).padStart(10)}  ${(b.task ?? 'no task').padEnd(12)}  ${evidence(b)}`,
+        `  ${clock(b.start, tz)}–${clock(b.end, tz)}  ${span(b.minutes).padStart(10)}  ${(b.task ?? 'no task').padEnd(12)}  ${why}`,
       );
     }
   }
@@ -1156,6 +1160,21 @@ export async function time(argv: readonly string[], io: ActivityIo = CONSOLE): P
   if (read.runtimeTurns > 0) {
     io.out(
       `${n(read.runtimeTurns, 'turn Omnigent started itself', 'turns Omnigent started itself')} left out — a sub-agent finishing, a timer or an idle terminal, not you.`,
+    );
+  }
+  // D-095: where a card came from, which the body does not carry.
+  const lent = entries.reduce(
+    (sum, e) => sum + e.blocks.filter((b) => draft.lent.has(b)).length,
+    0,
+  );
+  if (lent > 0) {
+    io.out(
+      `${n(lent, 'block', 'blocks')} took the card of a builder Omnigent dispatched: minutes you were active with no card of your own, while it worked on one (D-095).`,
+    );
+  }
+  if (read.dispatched > 0) {
+    io.out(
+      `${n(read.dispatched, 'reply of builders Omnigent dispatched was', 'replies of builders Omnigent dispatched were')} read for their cards alone — none counts as yours.`,
     );
   }
   return 0;

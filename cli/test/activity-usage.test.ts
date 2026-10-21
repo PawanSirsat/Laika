@@ -735,6 +735,26 @@ void describe('automated sessions’ tokens go marked automated, never as the de
     );
     // A person's row carries no flag at all, as before D-091.
     assert.ok(!('automated' in (rows[0] ?? {})), 'a person’s row is marked');
+    // D-095: the word the hook now writes after a dispatched sub-agent's id
+    // leaves it as automated as before.
+    writeFileSync(
+      join(paths.dir, 'skip-sessions'),
+      `${String(NOW_S - 950)} ${robot}\n${String(NOW_S - 900)} ${robot} omnigent\n`,
+      { mode: 0o600 },
+    );
+    assert.deepEqual(
+      ((await read(root)).days.get(TODAY) ?? []).map((r) => [
+        r.agent,
+        r.automated ?? false,
+        r.output,
+      ]),
+      [
+        ['claude-code', false, 7],
+        ['claude-code', true, 1_000 + 2_000],
+        ['codex', true, 300],
+        ['gemini-cli', true, 400],
+      ],
+    );
   });
 
   void test('a session marked after its tokens were sent moves into an automated row at the next sync', async () => {
