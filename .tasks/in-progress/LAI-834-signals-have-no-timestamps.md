@@ -2,11 +2,12 @@
 id: LAI-834
 title: 'A drafted block''s signals are counts with no time: My day cannot draw its SIGNALS lane'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p3
 depends-on: []
 discovered-from: LAI-831
-status: backlog
+status: in-progress
+started: 2026-10-21T10:39:06Z
 ---
 
 ## Goal
