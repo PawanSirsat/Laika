@@ -2,11 +2,12 @@
 id: LAI-853
 title: 'The rich editor refuses a list item wrapped onto an indented second line'
 area: web
-assignee: unclaimed
+assignee: strelka
 priority: p2
 depends-on: []
 discovered-from: LAI-849
-status: backlog
+status: in-progress
+started: 2026-10-21T13:32:36Z
 ---
 
 ## Goal
