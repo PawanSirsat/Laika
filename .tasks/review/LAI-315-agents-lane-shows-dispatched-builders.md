@@ -7,7 +7,8 @@ priority: p1
 depends-on: []
 discovered-from: LAI-833
 started: 2026-10-21T19:16:32Z
-status: in-progress
+status: review
+finished: 2026-10-21T19:32:14Z
 ---
 
 ## Owner decision (2026-10-22, amends D-091 / LAI-787 for the lane only)
@@ -57,18 +58,18 @@ Two halves, one PR (Strelka handover), files kept apart:
 
 ## Acceptance criteria
 
-- [ ] A dispatched session's replies become `dispatched` buckets on their day,
+- [x] A dispatched session's replies become `dispatched` buckets on their day,
       tied to its card; a person's session and a non-Omnigent automated session
       send none (cli test).
-- [ ] With telemetry on, a dispatched session's key is not in `excluded`; a
+- [x] With telemetry on, a dispatched session's key is not in `excluded`; a
       `CI` / `LAIKA_ACTIVITY_SKIP` session's still is (cli test).
-- [ ] A usage report's `dispatched` puts the buckets on My day's lane, on a
+- [x] A usage report's `dispatched` puts the buckets on My day's lane, on a
       card when the session is tied, and a resend replaces rather than adds
       (server test).
-- [ ] The dispatched minutes are in no `agent.minutes`, `by_task`, or
+- [x] The dispatched minutes are in no `agent.minutes`, `by_task`, or
       person's hours (server test).
-- [ ] Telemetry for a dispatched key is still dropped at receipt (server test).
-- [ ] Root gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
+- [x] Telemetry for a dispatched key is still dropped at receipt (server test).
+- [x] Root gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
 
 ## Notes
 
