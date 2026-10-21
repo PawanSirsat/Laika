@@ -2,11 +2,12 @@
 id: LAI-841
 title: 'Flaky in CI: board-sprint-stats "920px, S2, Dark: search keeps 120px" finds the sidebar closed'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-830
-status: backlog
+status: in-progress
+started: 2026-10-21T05:37:45Z
 ---
 
 ## Goal
