@@ -209,6 +209,7 @@ void describe('the week strip (2, E)', () => {
       await h.page.getByRole('button', { name: 'Previous week' }).click();
       const previous = addDays(monday, -7);
       await h.page.locator(`.myday-week-day[data-day="${previous}"]`).waitFor({ timeout: 5_000 });
+      await until(() => new RegExp(`day=${previous}`).test(h.page.url()));
       assert.match(h.page.url(), new RegExp(`day=${previous}`));
       await h.page.getByRole('button', { name: 'Next week' }).click();
       await h.page.locator(`.myday-week-day[data-day="${monday}"]`).waitFor({ timeout: 5_000 });
@@ -965,15 +966,20 @@ void describe('a phone, and both themes (I)', () => {
               );
             }
           }
-          const cut = await h.page.evaluate(() =>
-            [
-              ...document.querySelectorAll(
-                '.dayline-gap, .dayline-break, .dayline-block-sub, .myday-week-figure, .myday-stat',
-              ),
-            ]
-              .filter((el) => el.scrollWidth > el.clientWidth + 1)
-              .map((el) => `${el.className}: ${(el.textContent ?? '').trim().slice(0, 40)}`),
-          );
+          const measure = () =>
+            h.page.evaluate(() =>
+              [
+                ...document.querySelectorAll(
+                  '.dayline-gap, .dayline-break, .dayline-block-sub, .myday-week-figure, .myday-stat',
+                ),
+              ]
+                .filter((el) => el.scrollWidth > el.clientWidth + 1)
+                .map((el) => `${el.className}: ${(el.textContent ?? '').trim().slice(0, 40)}`),
+            );
+          // A label is re-chosen after the wider letters and the new width are
+          // laid out, a frame or more later on a loaded runner (LAI-715).
+          await until(async () => (await measure()).length === 0);
+          const cut = await measure();
           assert.deepEqual(cut, [], `${String(width)} folded=${String(folded)}: cut`);
           // Whatever form fits, the name keeps which and how long.
           const drawn = await h.page.evaluate(() => ({
