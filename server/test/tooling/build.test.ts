@@ -74,6 +74,29 @@ let dataDir: string;
  */
 let buildError: string | null = null;
 
+/**
+ * **No wall-clock ceiling on a real build** (LAI-847, D-055).
+ *
+ * Every `pnpm run build` here is synchronous `execFileSync`, and vitest's timer
+ * cannot fire while the worker is blocked: it compares the elapsed time *after*
+ * the function returns. So a ceiling on these calls can never stop a hung
+ * build. All it can do is fail a run whose builds already finished, before the
+ * assertions read their output. With the idempotence case's bound set to
+ * 5000ms, it ran 9063ms and then failed `Test timed out in 5000ms`.
+ *
+ * The work is roughly constant and the wall time is not. On a 10-core Mac on
+ * 2026-10-21, one build was 9.8 to 11.5 s of user CPU, and 5.4 to 32.6 s wall
+ * at a load average of 100 to 125. Under parallel root gates the two-build
+ * idempotence case took 130757, 138733 and 194554ms (LAI-841), each against a
+ * 120000ms bound. That bound was never the limit of the work; it was a guess
+ * at the machine.
+ *
+ * A build that never returns still blocks this file, as it always did. The
+ * root gate then never exits, which nobody reads as a pass, and CI's gate job
+ * stops at its `timeout-minutes`.
+ */
+const REAL_BUILD = { timeout: 0 };
+
 beforeAll(() => {
   try {
     execFileSync('pnpm', ['run', 'build'], { cwd: SERVER_ROOT, stdio: 'pipe' });
@@ -93,7 +116,7 @@ beforeAll(() => {
   }
 
   dataDir = mkdtempSync(join(tmpdir(), 'laika-built-'));
-}, 120_000);
+}, REAL_BUILD.timeout);
 
 /**
  * Every test after the first calls this.
@@ -178,7 +201,7 @@ describe('the build is idempotent (LAI-028)', () => {
     return (readdirSync(DIST, { recursive: true }) as string[]).sort();
   }
 
-  it('produces an identical tree on a second run with no clean between', (ctx) => {
+  it('produces an identical tree on a second run with no clean between', REAL_BUILD, (ctx) => {
     skipIfBuildFailed(ctx);
     const first = tree();
 
@@ -190,7 +213,7 @@ describe('the build is idempotent (LAI-028)', () => {
 
     expect(second).toEqual(first);
     expect(third).toEqual(first);
-  }, 120_000);
+  });
 
   it('never nests the copied asset directories', (ctx) => {
     skipIfBuildFailed(ctx);
@@ -210,7 +233,7 @@ describe('the build is idempotent (LAI-028)', () => {
     expect(journals).toHaveLength(1);
   });
 
-  it('drops output that a later build no longer produces', (ctx) => {
+  it('drops output that a later build no longer produces', REAL_BUILD, (ctx) => {
     skipIfBuildFailed(ctx);
     // The other half of `clean`: stale files from a previous build must not
     // survive into the next one.
@@ -220,7 +243,7 @@ describe('the build is idempotent (LAI-028)', () => {
     execFileSync('pnpm', ['run', 'build'], { cwd: SERVER_ROOT, stdio: 'pipe' });
 
     expect(existsSync(stray)).toBe(false);
-  }, 120_000);
+  });
 });
 
 /**
