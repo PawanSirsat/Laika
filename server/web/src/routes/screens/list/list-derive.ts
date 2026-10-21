@@ -1,4 +1,4 @@
-import { ageDays, blockedState, STALE_DAYS } from '../../../api/board-derive.ts';
+import { blockedState, isStale, staleFor } from '../../../api/board-derive.ts';
 import { statusNameOf } from '../../../api/status-derive.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
 import { timeLabel, type TimeLabel } from '../../../api/time-label.ts';
@@ -63,6 +63,12 @@ export interface ListRow {
   readonly createdTone: Tone;
   readonly updated: TimeLabel;
   readonly updatedTone: Tone;
+  /**
+   * `flagged stale 9d ago` when the server flagged it, else empty — what the
+   * amber means, in words, for the cell's hover (LAI-832). Amber on "2 h ago"
+   * needs saying: the flag is about heartbeats and commits, not this date.
+   */
+  readonly updatedNote: string;
 }
 
 /** `Mira Kellner` → `MK`; a single word gives one letter. */
@@ -91,24 +97,27 @@ function priorityTone(priority: TaskSummary['priority']): Tone {
 /**
  * How an age is coloured (LAI-486, D-065).
  *
+ * - **Amber: the server flagged it stale** — {@link isStale}, the one rule the
+ *   Dashboard and the Activity tab read too (D-092 item 4, LAI-832). It was
+ *   this screen's own, five days without a change, which on OnRoute called
+ *   266 tasks stale where the server's job flagged 7. Finished work never is.
+ *   It comes first: a sprint move an hour ago does not clear the flag, and
+ *   the two could never meet under the old rule.
  * - **Under an hour: the accent** — the owner asked for very recent work to
  *   stand out, and an hour is the edge of "just touched".
- * - **Amber: open work quiet for `STALE_DAYS`** — the rail's own threshold and
- *   comparison. A `done` or `cancelled` task is finished, not neglected; it
- *   used to go amber after five days like everything else, which is why every
- *   Done row in the owner's screenshot looked like a problem.
  * - Otherwise muted.
  */
-function ageTone(
-  at: number,
-  now: number,
-  status: TaskSummary['status'],
-  staleCounts: boolean,
-): Tone {
+function ageTone(at: number, now: number, stale: boolean): Tone {
+  if (stale) return 'warn';
   if (timeLabel(at, now).fresh) return 'accent';
-  const finished = status === 'done' || status === 'cancelled';
-  if (staleCounts && !finished && ageDays(at, now) >= STALE_DAYS) return 'warn';
   return 'flat';
+}
+
+/** What the amber means, for the cell's hover; empty when it is not amber. */
+function staleNote(task: TaskSummary, now: number): string {
+  if (!isStale(task) || task.stale_flagged_at === null) return '';
+  const age = staleFor(task.stale_flagged_at, now);
+  return age === 'now' ? 'flagged stale just now' : `flagged stale ${age} ago`;
 }
 
 export interface ListRowInput {
@@ -184,11 +193,12 @@ export function listRows({
       due: task.due_on === null ? '' : dateLabel(task.due_on),
       dueTone: isOverdue(task, now) ? 'bad' : 'flat',
       created: timeLabel(task.created_at, now),
-      // Staleness is about going quiet, so only UPDATED can be amber; an old
-      // CREATED is just old.
-      createdTone: ageTone(task.created_at, now, task.status, false),
+      // Staleness is about work going quiet, so only UPDATED can be amber; an
+      // old CREATED is just old.
+      createdTone: ageTone(task.created_at, now, false),
       updated: timeLabel(task.updated_at, now),
-      updatedTone: ageTone(task.updated_at, now, task.status, true),
+      updatedTone: ageTone(task.updated_at, now, isStale(task)),
+      updatedNote: staleNote(task, now),
     };
   });
 }

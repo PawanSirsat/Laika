@@ -8,7 +8,7 @@ depends-on: [LAI-741]
 discovered-from: LAI-741
 finished: 2026-10-12T14:02:23Z
 started: 2026-10-12T13:35:33Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -92,3 +92,12 @@ never defined — fixed by defining it on `.conn-line`) and on
 alone passed 29/29, and the rerun of the whole gate was green.
 
 Screenshots: `/tmp/laika-connect-wizard-3-shots/`.
+
+## Accepted (ops bookkeeping, 2026-10-21)
+
+Accepted as shipped, on the owner's approval of this bookkeeping pass. The
+build is on master's first-parent line: `e1de1a0c` (the six review notes) and
+`e45a2f93` (to review), both 2026-10-12. The named files are present on
+master at `d36d2ee5`, and `commandLines` and `conn-card-scroll` are there.
+Nothing was re-run for this acceptance: it records work already released, it
+is not a fresh review. The board card stays in Review for Pawan to move to Done.

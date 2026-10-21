@@ -8,7 +8,7 @@ depends-on: [LAI-740]
 discovered-from: LAI-740
 finished: 2026-10-12T12:18:52Z
 started: 2026-10-12T12:10:04Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -90,3 +90,14 @@ only.
 button's own `data-outcome` with a `MutationObserver` rather than adding an
 `onCopied` prop to the shared `CopyButton` — the prop would be cleaner, but
 `components/` was not in this task's scope.
+
+## Accepted (ops bookkeeping, 2026-10-21)
+
+Accepted as shipped, on the owner's approval of this bookkeeping pass. The
+build is on master's first-parent line: `1f7f1ec4` (the fixed rail and the
+Optional group), `79af2070` (lint), `947c07fc` (to review), all 2026-10-12.
+The three named files under `server/web/src/routes/screens/connect/` and their
+tests are present on master at `d36d2ee5`, and `conn-optional` is in
+`ConnectScreen.tsx` and `connect.css` there. LAI-742 took its review notes.
+Nothing was re-run for this acceptance: it records work already released, it
+is not a fresh review. The board card stays in Review for Pawan to move to Done.

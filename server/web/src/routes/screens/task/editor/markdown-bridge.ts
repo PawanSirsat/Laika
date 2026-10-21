@@ -11,7 +11,8 @@ import type { Node as ProseNode, Schema } from '@tiptap/pm/model';
  * them back through MCP. So the rich editor is a view over the markdown, never
  * a second format: a document is parsed into the editor and written back by
  * `@tiptap/markdown`, and **it is only shown in the rich view when writing it
- * straight back gives the same markdown** (after {@link normaliseMarkdown}).
+ * straight back gives the same markdown** (after {@link normaliseMarkdown},
+ * and blank lines between blocks aside: {@link sameMarkdown}).
  * Anything else — HTML an agent wrote, `* bullets`, an image — opens as
  * Markdown source with the reason, so a Save there sends the person's own text.
  *
@@ -607,26 +608,47 @@ export function toMarkdown(bridge: Bridge, doc: ProseNode, from?: Opening): stri
  *
  * Nothing else is forgiven: `*` for `-`, `_` for `*`, a loose list made tight
  * — each is a different text, so that document opens as Markdown. Inside code
- * a blank line or a trailing space is code, and differs.
+ * a blank line or a trailing space is code, and differs. The round-trip check
+ * adds one thing on top, the blank lines between top-level blocks
+ * ({@link sameMarkdown}).
  */
 export function normaliseMarkdown(markdown: string): string {
-  const kept: { line: string; code: boolean }[] = [];
-  for (const entry of linesWithCode(markdown.replace(/\r\n?/g, '\n'))) {
+  return normalisedLines(markdown)
+    .map((entry) => entry.text)
+    .join('\n');
+}
+
+/** A line of the stated normalisation, and where it was. */
+interface NumberedLine {
+  readonly text: string;
+  /** Its line number in the text it came from, as the Markdown view shows it. */
+  readonly line: number;
+}
+
+/**
+ * {@link normaliseMarkdown} line by line, each kept line with its number in
+ * `markdown`, the first counted as `first` — so a notice names the line a
+ * person sees, not its place after blank lines were collapsed (LAI-849).
+ */
+function normalisedLines(markdown: string, first = 1): NumberedLine[] {
+  const kept: (NumberedLine & { readonly code: boolean })[] = [];
+  linesWithCode(markdown.replace(/\r\n?/g, '\n')).forEach((entry, i) => {
     if (entry.code) {
-      kept.push(entry);
-      continue;
+      kept.push({ text: entry.line, line: first + i, code: true });
+      return;
     }
     const trimmed = entry.line.replace(/[ \t]+$/, '');
-    const line = /^\s*\|.*\|$/.test(trimmed) ? normaliseTableRow(trimmed) : trimmed;
+    const text = /^\s*\|.*\|$/.test(trimmed) ? normaliseTableRow(trimmed) : trimmed;
     const previous = kept.at(-1);
-    if (line === '' && previous !== undefined && !previous.code && previous.line === '') continue;
-    kept.push({ line, code: false });
-  }
-  return kept
-    .map((entry) => entry.line)
-    .join('\n')
-    .replace(/^\n+/, '')
-    .replace(/\n+$/, '');
+    // Blank lines at the start go, and a run of them outside code is one.
+    if (text === '' && (previous === undefined || (!previous.code && previous.text === ''))) {
+      return;
+    }
+    kept.push({ text, line: first + i, code: false });
+  });
+  // And blank lines at the end.
+  while (kept.at(-1)?.text === '') kept.pop();
+  return kept;
 }
 
 function normaliseTableRow(line: string): string {
@@ -707,6 +729,271 @@ function splitUnits(bridge: Bridge, source: string, doc: ProseNode): SourceUnit[
     : null;
 }
 
+/**
+ * White space between blocks, as CommonMark has it: spaces, tabs and the
+ * newlines between lines. Not what `trim()` removes, which is also U+00A0,
+ * U+3000, U+FEFF and the rest of Unicode's white space — a line of those is
+ * text in CommonMark, and forgiving it as a gap dropped it (review round 1).
+ */
+const BLANK = /^[ \t\n]*$/;
+
+/**
+ * Does `markdown` have a line that `trim()` empties and CommonMark does not —
+ * a lone U+00A0, say? The lexer reads one as a blank line and ends a list item
+ * there, where CommonMark continues the item lazily, so its blocks are not the
+ * reader's (review round 1).
+ */
+const hasUnicodeBlankLine = (markdown: string): boolean =>
+  markdown.split('\n').some((line) => line.trim() === '' && !/^[ \t]*$/.test(line));
+
+/** A top-level block of a markdown text, as the slice of it that it is. */
+interface TextBlock {
+  readonly text: string;
+  /** The line it starts on. */
+  readonly line: number;
+}
+
+/**
+ * `markdown`'s top-level blocks, each the exact slice of `markdown` the lexer
+ * read it from — or `null` when they do not account for every character
+ * outside blank lines: a token whose `raw` is not where it should be, a block
+ * that starts partway into a line, anything but whitespace between two blocks.
+ * So two texts whose blocks match differ by blank lines between blocks, and by
+ * nothing else.
+ */
+function topLevelBlocks(bridge: Bridge, markdown: string): TextBlock[] | null {
+  let tokens: unknown;
+  try {
+    tokens = bridge.manager.instance.lexer(markdown);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(tokens)) return null;
+  const blocks: TextBlock[] = [];
+  let offset = 0;
+  let line = 1;
+  for (const token of tokens as TokenLike[]) {
+    // The newlines at either end are the gap's: a TipTap tokenizer reports
+    // the task list's `raw` with one in front (measured, LAI-849).
+    const raw = (typeof token.raw === 'string' ? token.raw : '')
+      .replace(/^(?:[ \t]*\n)+/, '')
+      .replace(/\n+$/, '');
+    if (token.type === 'space' || BLANK.test(raw)) continue;
+    const start = markdown.indexOf(raw, offset);
+    if (start === -1 || !BLANK.test(markdown.slice(offset, start))) return null;
+    if (start > 0 && markdown.charAt(start - 1) !== '\n') return null;
+    for (let at = offset; at < start; at++) if (markdown.charAt(at) === '\n') line += 1;
+    blocks.push({ text: raw, line });
+    for (let at = start; at < start + raw.length; at++) if (markdown.charAt(at) === '\n') line += 1;
+    offset = start + raw.length;
+  }
+  return BLANK.test(markdown.slice(offset)) ? blocks : null;
+}
+
+/**
+ * Do two markdown texts count as the same for the round-trip check? The
+ * stated normalisation ({@link normaliseMarkdown}), and one thing more: **the
+ * blank lines between top-level blocks** (LAI-849).
+ *
+ * A list directly under a paragraph is legal CommonMark, and agents write it
+ * so; the editor writes a blank line before every block. That line changes no
+ * character of any block, and the text still reads back as the same document
+ * ({@link toMarkdown} checks), yet refusing it kept an agent's whole
+ * description out of the rich editor. Inside a block a blank line still counts:
+ * it is what makes `- one\n\n- two` a loose list. A save copies an untouched
+ * block as it was, so a paragraph and the list under it stay as written until
+ * one of them is edited.
+ */
+export function sameMarkdown(bridge: Bridge, a: string, b: string): boolean {
+  if (normaliseMarkdown(a) === normaliseMarkdown(b)) return true;
+  const left = a.replace(/\r\n?/g, '\n');
+  const right = b.replace(/\r\n?/g, '\n');
+  // The lexer's blocks are not CommonMark's here: only the strict check.
+  if (hasUnicodeBlankLine(left) || hasUnicodeBlankLine(right)) return false;
+  const was = topLevelBlocks(bridge, left);
+  const would = topLevelBlocks(bridge, right);
+  return (
+    was !== null &&
+    would !== null &&
+    was.length === would.length &&
+    was.every(
+      (block, i) => normaliseMarkdown(block.text) === normaliseMarkdown(would[i]?.text ?? ''),
+    )
+  );
+}
+
+/** One place two texts differ: lines of the first removed, lines added in their place. */
+interface Hunk {
+  readonly removed: readonly NumberedLine[];
+  readonly added: readonly string[];
+  /** The first text's lines on either side of it. */
+  readonly before: NumberedLine | undefined;
+  readonly after: NumberedLine | undefined;
+}
+
+/**
+ * Where `would` differs from `was`, in order: a longest-common-subsequence
+ * diff of their lines, a line of words weighing more than a blank one. **Not
+ * a comparison by position**, which is what LAI-849 found: one added blank
+ * line shifted every line after it, so the notice compared line 7 with the
+ * blank line now in its place — "as ''".
+ */
+function hunks(was: readonly NumberedLine[], would: readonly string[]): Hunk[] {
+  let head = 0;
+  while (head < was.length && head < would.length && was[head]?.text === would[head]) head += 1;
+  let tail = 0;
+  while (
+    tail < was.length - head &&
+    tail < would.length - head &&
+    was[was.length - 1 - tail]?.text === would[would.length - 1 - tail]
+  ) {
+    tail += 1;
+  }
+  const a = was.slice(head, was.length - tail);
+  const b = would.slice(head, would.length - tail);
+  const around = (from: number, to: number) => ({
+    before: was[head + from - 1],
+    after: was[head + to],
+  });
+  if (a.length === 0 && b.length === 0) return [];
+  // Past a million cells, what differs is most of the text: one hunk says so.
+  if (a.length * b.length > 1_000_000) return [{ removed: a, added: b, ...around(0, a.length) }];
+
+  /*
+   * common[i][j]: what a[i…] and b[j…] have in common, in order — a line of
+   * words 2, a blank line 1. Counted alike, keeping the blank line the editor
+   * adds above a list tied with keeping the list item, and the walk below
+   * named the item as dropped (review round 1). The walk reads this table, so
+   * it prefers the words too.
+   */
+  const weight = (text: string): number => (text === '' ? 1 : 2);
+  const common = Array.from({ length: a.length + 1 }, () =>
+    new Array<number>(b.length + 1).fill(0),
+  );
+  const at = (i: number, j: number): number => common[i]?.[j] ?? 0;
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      const line = b[j] ?? '';
+      common[i]![j] =
+        a[i]?.text === line
+          ? weight(line) + at(i + 1, j + 1)
+          : Math.max(at(i + 1, j), at(i, j + 1));
+    }
+  }
+  const out: Hunk[] = [];
+  let removed: NumberedLine[] = [];
+  let added: string[] = [];
+  let start = 0;
+  let i = 0;
+  let j = 0;
+  const flush = (): void => {
+    if (removed.length > 0 || added.length > 0) out.push({ removed, added, ...around(start, i) });
+    removed = [];
+    added = [];
+  };
+  while (i < a.length || j < b.length) {
+    const left = a[i];
+    if (left !== undefined && j < b.length && left.text === b[j]) {
+      flush();
+      i += 1;
+      j += 1;
+      continue;
+    }
+    if (removed.length === 0 && added.length === 0) start = i;
+    if (left !== undefined && (j >= b.length || at(i + 1, j) >= at(i, j + 1))) {
+      removed.push(left);
+      i += 1;
+    } else {
+      added.push(b[j] ?? '');
+      j += 1;
+    }
+  }
+  flush();
+  return out;
+}
+
+const isBlank = (hunk: Hunk): boolean =>
+  hunk.removed.every((line) => line.text === '') && hunk.added.every((text) => text === '');
+
+/**
+ * The first difference worth naming. Block by block when both texts split into
+ * as many top-level blocks, so a blank line added between two blocks — which
+ * {@link sameMarkdown} forgives — is never the one named; else over the whole
+ * text, a change of words before a change of blank lines.
+ */
+function firstDifference(bridge: Bridge, source: string, written: string): Hunk | undefined {
+  const was = topLevelBlocks(bridge, source);
+  const would = topLevelBlocks(bridge, written);
+  if (was !== null && would !== null && was.length === would.length) {
+    for (const [i, block] of was.entries()) {
+      const into = normalisedLines(would[i]?.text ?? '').map((entry) => entry.text);
+      const found = hunks(normalisedLines(block.text, block.line), into)[0];
+      if (found !== undefined) return found;
+    }
+    // Every block reads as it was: only blank lines between them differ.
+    return undefined;
+  }
+  const all = hunks(
+    normalisedLines(source),
+    normalisedLines(written).map((entry) => entry.text),
+  );
+  return all.find((hunk) => !isBlank(hunk)) ?? all[0];
+}
+
+/**
+ * Two versions of a line as a person can compare them: whole when both are
+ * short, else each cut to the same window on where they differ, from a word's
+ * start. Clipped from the start, two long lines that differ late read the same
+ * (LAI-849: `&lt;` written as `\<`, past the 57th character).
+ */
+function excerpts(was: string, would: string): readonly [string, string] {
+  if (was.length <= 60 && would.length <= 60) return [was, would];
+  let head = 0;
+  while (head < was.length && head < would.length && was[head] === would[head]) head += 1;
+  let tail = 0;
+  while (
+    tail < was.length - head &&
+    tail < would.length - head &&
+    was[was.length - 1 - tail] === would[would.length - 1 - tail]
+  ) {
+    tail += 1;
+  }
+  const near = Math.max(0, head - 20);
+  // Back to the start of that word, unless the word is long (a URL, say).
+  const from = near === 0 ? 0 : Math.max(near - 10, was.lastIndexOf(' ', near) + 1);
+  const window = (line: string): string => {
+    const end = line.indexOf(' ', Math.min(line.length, line.length - tail + 20));
+    const to = end === -1 ? line.length : end;
+    const shown = clip(line.slice(from, to));
+    const cut = to < line.length && !shown.endsWith('…');
+    return `${from > 0 ? '…' : ''}${shown}${cut ? '…' : ''}`;
+  };
+  return [window(was), window(would)];
+}
+
+/** A difference as a sentence: the line, and what it would become. */
+function inWords(hunk: Hunk): string {
+  const removed = hunk.removed.find((line) => line.text !== '');
+  const added = hunk.added.find((text) => text !== '');
+  if (removed !== undefined && added !== undefined) {
+    const [was, would] = excerpts(removed.text, added);
+    return `The rich editor would rewrite line ${String(removed.line)}: “${was}” as “${would}”.`;
+  }
+  if (removed !== undefined) {
+    return `The rich editor would drop line ${String(removed.line)}: “${clip(removed.text)}”.`;
+  }
+  const where =
+    hunk.after !== undefined
+      ? `before line ${String(hunk.after.line)}: “${clip(hunk.after.text)}”`
+      : hunk.before !== undefined
+        ? `after line ${String(hunk.before.line)}: “${clip(hunk.before.text)}”`
+        : 'at the start';
+  if (added !== undefined) return `The rich editor would add “${clip(added)}” ${where}.`;
+  return hunk.added.length > 0
+    ? `The rich editor would add a blank line ${where}.`
+    : `The rich editor would remove the blank line ${where}.`;
+}
+
 /** Why a document opens as Markdown, in a sentence a person can act on. */
 function explain(bridge: Bridge, source: string, written: string | null): string {
   try {
@@ -723,14 +1010,10 @@ function explain(bridge: Bridge, source: string, written: string | null): string
     // The diff below still says what would change.
   }
   if (written === null) return 'The rich editor could not read it.';
-  const was = normaliseMarkdown(source).split('\n');
-  const would = normaliseMarkdown(written).split('\n');
-  for (let i = 0; i < Math.max(was.length, would.length); i++) {
-    if (was[i] !== would[i]) {
-      return `The rich editor would rewrite line ${String(i + 1)}: “${clip(was[i] ?? '')}” as “${clip(would[i] ?? '')}”.`;
-    }
-  }
-  return 'The rich editor would not write it back exactly.';
+  const difference = firstDifference(bridge, source, written);
+  return difference === undefined
+    ? 'The rich editor would not write it back exactly.'
+    : inWords(difference);
 }
 
 /**
@@ -750,7 +1033,7 @@ export function openDocument(bridge: Bridge, source: string): Opening {
       reason: explain(bridge, text, error instanceof UnwritableMarkdown ? error.draft : null),
     };
   }
-  if (normaliseMarkdown(written) !== normaliseMarkdown(text)) {
+  if (!sameMarkdown(bridge, written, text)) {
     return { kind: 'source', reason: explain(bridge, text, written) };
   }
   const units = splitUnits(bridge, text, doc);

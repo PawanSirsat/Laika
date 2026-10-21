@@ -59,6 +59,21 @@ function shapeOf(source: string, name: string): ReadonlyMap<string, boolean> {
   return out;
 }
 
+/**
+ * What `name` extends, in order — `[]` when it extends nothing.
+ *
+ * `shapeOf` reads only the braces, so an interface's **own** fields. Whatever
+ * it inherits is in the heading, which `[^{]*` passes over: a client that
+ * dropped `extends CapacityWorkload` would lose eight fields and still compare
+ * equal there (LAI-832). This reads the heading.
+ */
+function heritageOf(source: string, name: string): readonly string[] {
+  const heading = new RegExp(`(?:export )?interface ${name}\\b([^{]*)\\{`).exec(source);
+  assert.ok(heading !== null, `interface ${name} not found — this test would prove nothing`);
+  const clause = /^\s*extends\s+([\s\S]+?)\s*$/.exec(heading[1] ?? '');
+  return clause === null ? [] : (clause[1] ?? '').split(',').map((part) => part.trim());
+}
+
 const server = readFileSync(SERVER, 'utf8');
 const client = readFileSync(CLIENT, 'utf8');
 
@@ -163,8 +178,37 @@ for (const name of ['CapacityWorkload', 'CapacitySpace', 'ActivitySplit']) {
       assert.deepEqual([...here.values()].filter(Boolean), []);
       assert.deepEqual([...there.values()].filter(Boolean), []);
     });
+
+    void test('the same inherited fields: it extends what the server’s extends', () => {
+      assert.deepEqual(heritageOf(client, name), heritageOf(server, name));
+    });
   });
 }
+
+void describe('the heading check reads the heading', () => {
+  void test('CapacitySpace extends CapacityWorkload, on both sides', () => {
+    // Positive control: two empty lists compare equal, and the comparison
+    // above would pass while reading nothing.
+    assert.deepEqual(heritageOf(server, 'CapacitySpace'), ['CapacityWorkload']);
+    assert.deepEqual(heritageOf(client, 'CapacitySpace'), ['CapacityWorkload']);
+    assert.deepEqual(heritageOf(server, 'CapacityWorkload'), []);
+  });
+
+  void test('a client that stops extending is caught, and its own fields still match', () => {
+    // The defect this is for, on a copy: `shapeOf` cannot see it, this can.
+    const dropped = client.replace(
+      /interface CapacitySpace extends CapacityWorkload \{/,
+      'interface CapacitySpace {',
+    );
+    assert.notEqual(dropped, client, 'the client no longer declares it the way this expects');
+    assert.deepEqual(
+      [...shapeOf(dropped, 'CapacitySpace').keys()].sort(),
+      [...shapeOf(server, 'CapacitySpace').keys()].sort(),
+      'the own-field check is blind to it',
+    );
+    assert.notDeepEqual(heritageOf(dropped, 'CapacitySpace'), heritageOf(server, 'CapacitySpace'));
+  });
+});
 
 void describe('the workload says what D-092 counts', () => {
   const fields = [...shapeOf(client, 'CapacityWorkload').keys()];
