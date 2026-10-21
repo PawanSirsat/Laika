@@ -2,11 +2,12 @@
 id: LAI-480
 title: The root gate bails on the first failing workspace and hides the others
 area: server
-assignee: unclaimed
+assignee: strelka
 priority: p1
 depends-on: []
 discovered-from: LAI-611
-status: backlog
+status: in-progress
+started: 2026-10-21T13:32:36Z
 ---
 
 ## Goal
