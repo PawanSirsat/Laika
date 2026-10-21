@@ -46,8 +46,9 @@ export interface DraftListProps {
 
 /**
  * *To settle* (the owner's design, LAI-831; LAI-810): the day's drafted
- * blocks — only the reader sees them — ten to a page in a scroll area of
- * their own, a box on every row and a bar that acts on what is ticked.
+ * blocks — only the reader sees them — ten to a page, a box on every row
+ * and a bar that acts on what is ticked. The page of ten is the bound: the
+ * list has no scroll of its own, so the wheel always moves the page (LAI-311).
  * Clicking a row puts it in the inspector.
  *
  * The box in the header selects **this page**, as every mail client's does,
@@ -72,7 +73,6 @@ export function DraftList({
   const [anchor, setAnchor] = useState<string | undefined>(undefined);
   const [page, setPage] = useState(0);
   const head = useRef<HTMLInputElement | null>(null);
-  const scroller = useRef<HTMLDivElement | null>(null);
 
   const live = effectiveSelection(checked, drafts);
   const paged = pageOf(drafts, page);
@@ -96,7 +96,6 @@ export function DraftList({
 
   const go = (to: number): void => {
     setPage(to);
-    if (scroller.current !== null) scroller.current.scrollTop = 0;
   };
 
   const act = (kind: BulkKind): void => {
@@ -211,14 +210,7 @@ export function DraftList({
         </p>
       )}
 
-      <div
-        ref={scroller}
-        className="myday-scroll"
-        role="region"
-        aria-label={`Drafted blocks, ${paged.label}`}
-        // A region that scrolls is reachable by keyboard, so it can be scrolled.
-        tabIndex={0}
-      >
+      <div className="myday-scroll" role="region" aria-label={`Drafted blocks, ${paged.label}`}>
         <ol className="myday-blocks" aria-label="Drafted blocks">
           {paged.items.map((draft, i) => (
             <DraftRow
