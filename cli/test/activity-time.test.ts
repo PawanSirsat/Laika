@@ -80,6 +80,8 @@ const turn = (at: number, session: string, kind: 'start' | 'wake' | 'end') => ({
   session,
   kind,
 });
+/** A reply of a builder Omnigent dispatched (D-095): when, which session, its card. */
+const lend = (at: number, session: string, task: string | null) => ({ at, session, task });
 const total = (blocks: readonly Block[]): number => blocks.reduce((n, b) => n + b.minutes, 0);
 const day = (inputs: Partial<DraftInputs>, tz = 'UTC', on = UTC_DAY): Block[] =>
   draftBlocks({ ...none, ...inputs }, tz, [on]).get(on) ?? [];
@@ -332,6 +334,86 @@ void describe('the rule (pure)', () => {
     );
   });
 
+  void test('a builder Omnigent dispatched lends its card to the person’s untied minutes, and adds no count (D-095)', () => {
+    // The builder runs 08:50–09:25 on LAI-5; the person directs it 09:00–09:08.
+    const blocks = day({
+      turns: [turn(T0, 'o1', 'start'), turn(T0 + 3 * MIN, 'o1', 'end')],
+      dispatched: [-10, 0, 10, 20].map((m) => lend(T0 + m * MIN, 'd1', 'LAI-5')),
+    });
+    assert.deepEqual(blocks, [
+      {
+        start: T0 * 1000,
+        end: (T0 + 8 * MIN) * 1000,
+        minutes: 8,
+        task: 'LAI-5',
+        // The person's turn and its reply; none of the builder's four replies.
+        signals: { prompts: 0, replies: 1, sessions: 1, commits: 0, marks: 0 },
+      },
+    ]);
+  });
+
+  void test('two builders at once split the person’s minute equally; two on one card are one key (D-095)', () => {
+    const builders = (session: string, task: string) =>
+      [-1, 9].map((m) => lend(T0 + m * MIN, session, task));
+    const blocks = day({
+      // The person types at 09:00 and 09:05: active 09:00–09:10.
+      prompts: [T0, T0 + 5 * MIN],
+      dispatched: [
+        ...builders('d1', 'LAI-5'),
+        ...builders('d2', 'LAI-6'),
+        ...builders('d3', 'LAI-5'),
+      ],
+    });
+    assert.deepEqual(
+      blocks.map((b) => [b.task, b.minutes]),
+      [
+        ['LAI-5', 5],
+        ['LAI-6', 5],
+      ],
+    );
+    assert.equal(total(blocks), 10, 'the builders added minutes');
+  });
+
+  void test('the person’s own key wins: their keyed minute takes no builder’s card; their untied ones beside it do (D-095)', () => {
+    const blocks = day({
+      // The person's own session on LAI-1, 09:00–09:10.
+      replies: [reply(T0, 'a', 'LAI-1'), reply(T0 + 5 * MIN, 'a', 'LAI-1')],
+      // Their orchestrator, 09:08–09:17.
+      turns: [turn(T0 + 8 * MIN, 'o1', 'start'), turn(T0 + 12 * MIN, 'o1', 'end')],
+      // A builder on LAI-2, 09:00–09:15.
+      dispatched: [lend(T0, 'd1', 'LAI-2'), lend(T0 + 10 * MIN, 'd1', 'LAI-2')],
+    });
+    assert.deepEqual(
+      blocks.map((b) => [b.task, b.minutes]),
+      [
+        // 09:00–09:10: the person's own key, unsplit.
+        ['LAI-1', 10],
+        // 09:10–09:15: no key of theirs; the builder's.
+        ['LAI-2', 5],
+        // 09:15–09:17: the builder has stopped; untied, as before.
+        [null, 2],
+      ],
+    );
+  });
+
+  void test('a builder alone makes no minute; beside the person it labels only theirs (D-095)', () => {
+    // A builder busy 05:00–12:55 on LAI-5, nobody typing.
+    const builder = Array.from({ length: 48 }, (_, i) =>
+      lend(T0 - 4 * 3600 + i * 10 * MIN, 'd1', 'LAI-5'),
+    );
+    assert.deepEqual(day({ dispatched: builder }), [], 'a builder alone drafted the person’s time');
+    // The person types once, at 09:00: five minutes, the builder's card.
+    assert.deepEqual(
+      day({ dispatched: builder, prompts: [T0] }).map((b) => [b.start, b.minutes, b.task]),
+      [[T0 * 1000, 5, 'LAI-5']],
+    );
+    // A builder with no card lends nothing.
+    assert.deepEqual(
+      day({ dispatched: [lend(T0, 'd2', null)], prompts: [T0] }).map((b) => [b.minutes, b.task]),
+      [[5, null]],
+    );
+  });
+
   void test(`at most ${String(BLOCKS_PER_DAY_MAX)} a day: same-task blocks merged, never moved to another task`, () => {
     // 60 stretches, 20 minutes apart, alternating two tasks.
     const replies = Array.from({ length: 60 }, (_, i) =>
@@ -575,6 +657,67 @@ void describe('from the machine’s own files', () => {
     assert.match(body, /"task":"ACME-77"/);
     for (const report of JSON.parse(`[${body.replace(/\n/g, ',')}]`) as Record<string, unknown>[]) {
       assert.deepEqual(Object.keys(report).sort(), ['collector_id', 'days', 'tz', 'v']);
+    }
+  });
+
+  void test('only a session the hook marked Omnigent-dispatched lends its card: not CI, LAIKA_ACTIVITY_SKIP or an older line (D-095)', async () => {
+    const m = machine();
+    const skip = join(m.paths.dir, 'skip-sessions');
+    const rows = (draft: Awaited<ReturnType<typeof buildDraft>>) =>
+      (draft.days.get(UTC_DAY) ?? []).map((b) => [
+        new Date(b.start).toISOString().slice(11, 16),
+        b.minutes,
+        b.task,
+        draft.lent?.has(b) === true,
+      ]);
+    // The robot's replies at 09:00, 10:00, 11:00 and 12:00 carry ACME-77 (its
+    // branch). A line with no word is what the hook writes for CI and
+    // LAIKA_ACTIVITY_SKIP, and wrote for everyone before D-095; any other word
+    // is not the hook's.
+    for (const line of [`${String(T0)} ${ROBOT}`, `${String(T0)} ${ROBOT} ci`]) {
+      writeFileSync(skip, `${line}\n`, { mode: 0o600 });
+      assert.deepEqual(
+        rows(await buildDraft(m.options)),
+        [
+          ['09:00', 40, 'ACME-77', false],
+          ['09:40', 10, 'ACME-80', false],
+          ['11:00', 5, null, false],
+          ['12:00', 9, null, false],
+        ],
+        line,
+      );
+    }
+    writeFileSync(skip, `${String(T0)} ${ROBOT} omnigent\n`, { mode: 0o600 });
+    const draft = await buildDraft(m.options);
+    assert.deepEqual(rows(draft), [
+      // The person's own ACME-77 is theirs, not lent — the same key, told apart.
+      ['09:00', 40, 'ACME-77', false],
+      ['09:40', 10, 'ACME-80', false],
+      // The primary's untied 11:00–11:05, while the robot ran.
+      ['11:00', 5, 'ACME-77', true],
+      // The orchestrator's 12:00–12:09: lent while the robot ran, to 12:05.
+      ['12:00', 5, 'ACME-77', true],
+      ['12:05', 4, null, false],
+    ]);
+    // The robot's replies are counted nowhere: the primary's block holds its one.
+    assert.deepEqual(draft.days.get(UTC_DAY)?.[2]?.signals, {
+      prompts: 0,
+      replies: 1,
+      sessions: 1,
+      commits: 0,
+      marks: 0,
+    });
+    assert.equal(draft.read.replies, 7, 'the person’s and the primary’s replies');
+    assert.equal(draft.read.dispatched, 4, 'the robot’s four replies were read for its card');
+    // What would leave: the same five fields a block always had, no session.
+    const body = timeDraftReports('6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a', TZ, [
+      { day: UTC_DAY, blocks: draft.days.get(UTC_DAY) ?? [] },
+    ])
+      .map((r) => r.body)
+      .join('\n');
+    assert.equal(body.includes(ROBOT), false, 'the robot’s session id left the machine');
+    for (const b of (JSON.parse(body) as { days: { blocks: object[] }[] }).days[0]?.blocks ?? []) {
+      assert.deepEqual(Object.keys(b).sort(), ['end', 'minutes', 'signals', 'start', 'task']);
     }
   });
 
@@ -901,6 +1044,38 @@ void describe('`laika time draft`', () => {
       assert.equal(text.includes(secret), false, `${secret} printed`);
     }
     assert.throws(() => statSync(join(m.paths.dir, 'usage-data.json')), 'it wrote');
+  });
+
+  void test('it says, here only, which blocks took the card of a builder Omnigent dispatched (D-095)', async () => {
+    const m = machine();
+    writeFileSync(
+      join(m.paths.dir, 'usage-index.json'),
+      `${JSON.stringify({ v: 1, dirs: {}, files: {}, sent: {}, dirty: false, marked: [], skip: '', next_at: 0, prefixes: ['ACME'] })}\n`,
+    );
+    writeFileSync(join(m.paths.dir, 'skip-sessions'), `${String(T0)} ${ROBOT} omnigent\n`, {
+      mode: 0o600,
+    });
+    const { value, out, err } = io(m.home);
+    assert.equal(await time(['draft'], value), 0, err.join('\n'));
+    const text = out.join('\n');
+    assert.match(
+      text,
+      /11:00–11:05 +5 min {2}ACME-77 +1 reply · 1 session · a dispatched builder’s card$/m,
+    );
+    assert.match(
+      text,
+      /12:00–12:05 +5 min {2}ACME-77 +1 reply · 1 session · a dispatched builder’s card$/m,
+    );
+    assert.match(text, /09:00–09:40 +40 min {2}ACME-77 +1 prompt · 4 replies · 1 session$/m);
+    assert.match(text, /^2 blocks took the card of a builder Omnigent dispatched/m);
+    for (const secret of [...Object.values(SECRET), m.top, PERSON, PRIMARY, ROBOT, ORCHESTRATOR]) {
+      assert.equal(text.includes(secret), false, `${secret} printed`);
+    }
+    // The body a sync sends says nothing of it.
+    const json = io(m.home);
+    assert.equal(await time(['draft', '--json'], json.value), 0);
+    assert.doesNotMatch(json.out.join('\n'), /dispatch|lent|omnigent/i);
+    assert.match(json.out.join('\n'), /"task": "ACME-77"/);
   });
 
   void test('--json is the body a sync would send', async () => {

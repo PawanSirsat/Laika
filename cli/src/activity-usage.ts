@@ -51,7 +51,8 @@ import {
  * `automated`: the board counts them for the organisation, the space and the
  * task and never for the person. It is in no session row and no session's
  * split between tasks, and is named in `excluded`, so its telemetry is
- * dropped; the time drafter still leaves it out whole (`draftSources`).
+ * dropped; the time drafter still drafts none of its time (`draftSources`),
+ * and takes only the key of one the hook marked Omnigent-dispatched (D-095).
  *
  * ## Which task (D-084 items 5–6, LAI-770)
  *
@@ -670,11 +671,19 @@ const SKIP_KEEP_S = 45 * DAY_S;
 const SKIP_COMPACT_BYTES = 64 * 1024;
 
 /**
- * The ids of sessions nobody was typing in, from the file and its
- * half-compacted copy, newest last.
+ * The word the hook writes after the id of a sub-agent Omnigent's runner
+ * dispatched (D-095). A `CI` or `LAIKA_ACTIVITY_SKIP` session's line carries
+ * none, and nor does any line a hook from before D-095 wrote.
  */
-function skippedSessions(paths: ActivityPaths): string[] {
-  const ids = new Map<string, number>();
+const DISPATCHED = 'omnigent';
+
+/**
+ * The sessions nobody was typing in, from the file and its half-compacted
+ * copy, newest last — each with whether its newest line says Omnigent
+ * dispatched it.
+ */
+function skipLines(paths: ActivityPaths): Map<string, boolean> {
+  const ids = new Map<string, boolean>();
   for (const path of [`${skipSessionsFile(paths)}.compacting`, skipSessionsFile(paths)]) {
     let text = '';
     try {
@@ -683,14 +692,19 @@ function skippedSessions(paths: ActivityPaths): string[] {
       continue;
     }
     for (const line of text.split('\n')) {
-      const [at, id] = line.split(' ');
+      const [, id, why] = line.split(' ');
       if (id !== undefined && SESSION_ID.test(id)) {
         ids.delete(id);
-        ids.set(id, Number(at) || 0);
+        ids.set(id, why === DISPATCHED);
       }
     }
   }
-  return [...ids.keys()];
+  return ids;
+}
+
+/** The ids of sessions nobody was typing in, newest last. */
+function skippedSessions(paths: ActivityPaths): string[] {
+  return [...skipLines(paths).keys()];
 }
 
 /**
@@ -2492,6 +2506,12 @@ export interface DraftMark {
 export interface DraftSources {
   readonly replies: DraftReply[];
   readonly marks: DraftMark[];
+  /**
+   * The replies of the sessions Omnigent dispatched (D-095), by the same
+   * task rule: they lend their keys to the person's untied minutes, and
+   * draft none of their own.
+   */
+  readonly dispatched: DraftReply[];
   /** The board's prefixes as last answered — which keys may count — or `undefined`. */
   readonly prefixes: readonly string[] | undefined;
 }
@@ -2502,7 +2522,9 @@ export interface DraftSources {
  * Automated sessions (`skip-sessions`, subagents included) are left out
  * whole — the token counts send theirs marked automated (D-091), but an
  * automated session never drafts the person's time (D-088 item 9) — and so,
- * under `laika-repos`, are directories out of scope. Reads what is new, as
+ * under `laika-repos`, are directories out of scope. The one exception is a
+ * sub-agent the hook marked Omnigent-dispatched: its replies come back apart,
+ * as `dispatched`, for their keys alone (D-095). Reads what is new, as
  * `status` does, and writes nothing.
  */
 export async function draftSources(
@@ -2516,19 +2538,26 @@ export async function draftSources(
   if (data.tz !== options.tz) reday(data, store, options.tz);
   const prefixes = options.prefixes ?? scanned.index.prefixes;
   const taskOf = attributor(data, prefixes, sessionStarts(options.paths));
-  const skip = new Set(skippedSessions(options.paths));
+  const skip = skipLines(options.paths);
   const scope =
     options.state.scope === 'laika-repos'
       ? await scopeFilter(data, options.paths, options.nowS)
       : undefined;
   const replies: DraftReply[] = [];
+  const dispatched: DraftReply[] = [];
   for (const day of new Set(options.days)) {
     for (const rec of Object.values(store.get(day))) {
       const session = rec[8] ?? -1;
       const id = session >= 0 ? data.sessions[session] : undefined;
-      if (id !== undefined && skip.has(id)) continue;
+      const lends = id !== undefined && skip.get(id) === true;
+      if (id !== undefined && skip.has(id) && !lends) continue;
       if (scope !== undefined && !scope.inScope(rec[7])) continue;
-      replies.push({ at: rec[6], session: id ?? '', cwd: data.cwds[rec[7]], task: taskOf(rec) });
+      (lends ? dispatched : replies).push({
+        at: rec[6],
+        session: id ?? '',
+        cwd: data.cwds[rec[7]],
+        task: taskOf(rec),
+      });
     }
   }
   const wanted = new Set(options.days);
@@ -2540,7 +2569,7 @@ export async function draftSources(
     if (id === undefined || skip.has(id) || !wanted.has(dayOf(m[2]))) continue;
     marks.push({ at: m[2], session: id });
   }
-  return { replies, marks, prefixes };
+  return { replies, marks, dispatched, prefixes };
 }
 
 /* -------------------------------------------------------------------------- */
