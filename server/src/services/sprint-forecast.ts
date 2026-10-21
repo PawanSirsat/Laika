@@ -1,10 +1,11 @@
-import { and, eq, gte, lte, ne } from 'drizzle-orm';
+import { and, eq, gte, isNull, lte, ne } from 'drizzle-orm';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type TaskStatus } from '../db/enums.ts';
 import { projects, sprints, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import { bulkCompletions } from './bulk-moves.ts';
 import { LEVEL_WEIGHTS } from './estimate-model.ts';
 import { sizeViews } from './estimates.ts';
 import { simulateSprint } from './sprint-forecast-model.ts';
@@ -24,6 +25,19 @@ import { simulateSprint } from './sprint-forecast-model.ts';
  *   its first finish in that window;
  * - **the days left**, today included, to the end of `ends_on` (inclusive,
  *   §4.15).
+ *
+ * **Top-level tasks only** (LAI-823): a parent and its subtasks are one piece
+ * of work, and counting both made a sprint of four tasks read as twelve. The
+ * history is top-level too, so the two halves count the same thing.
+ *
+ * **Bulk moves teach it nothing** (D-093): a sweep into done or an import
+ * straight into done is left out of the history, and `basis.bulk_excluded`
+ * says how many were.
+ *
+ * **A whole-range answer is not a forecast.** When the range the draws leave
+ * runs from what is already done to every task in the sprint — *"100% likely
+ * 0–12 of 12"* — it says nothing anybody did not know, so the answer is
+ * `null` with `reason: 'too_uncertain'`.
  *
  * **Still not story points** (§1.1 as D-085 amends it): nothing here is a
  * number anybody types. It is computed from sizes Laika computed and finishes
@@ -71,6 +85,8 @@ export interface SprintForecastBasis {
   days: number;
   tasks_done: number;
   weight_done: number;
+  /** Top-level tasks finished in the window and left out as bulk moves. */
+  bulk_excluded: number;
 }
 
 /** `GET /api/v1/sprints/:id/forecast` (§6.4). */
@@ -81,7 +97,7 @@ export interface SprintForecastView {
   done: number;
   /** Null when there is nothing to forecast; `reason` says why. */
   forecast: SprintForecastFigures | null;
-  reason: 'completed' | 'no_tasks' | 'not_enough_history' | null;
+  reason: 'completed' | 'no_tasks' | 'not_enough_history' | 'too_uncertain' | null;
   basis: SprintForecastBasis;
 }
 
@@ -133,7 +149,7 @@ export function getSprintForecast(
   const sprint = db.select().from(sprints).where(eq(sprints.id, sprintId)).get();
   if (sprint === undefined) throw ApiError.notFound(`No sprint with id "${sprintId}"`);
   const project = db
-    .select({ id: projects.id })
+    .select({ id: projects.id, orgId: projects.orgId })
     .from(projects)
     .where(eq(projects.id, sprint.projectId))
     .get();
@@ -151,21 +167,26 @@ export function getSprintForecast(
   const inSprint = db
     .select(COLUMNS)
     .from(tasks)
-    .where(and(eq(tasks.sprintId, sprint.id), ne(tasks.status, 'cancelled')))
+    .where(
+      and(eq(tasks.sprintId, sprint.id), ne(tasks.status, 'cancelled'), isNull(tasks.parentTaskId)),
+    )
     .all();
   const since = now - THROUGHPUT_DAYS * DAY;
-  const finished = db
+  const history = db
     .select({ ...COLUMNS, completedAt: tasks.completedAt })
     .from(tasks)
     .where(
       and(
         eq(tasks.projectId, project.id),
         eq(tasks.status, 'done'),
+        isNull(tasks.parentTaskId),
         gte(tasks.completedAt, since),
         lte(tasks.completedAt, now),
       ),
     )
     .all();
+  const bulk = bulkCompletions(db, project.orgId, history);
+  const finished = history.filter((r) => !bulk.has(r.id));
   const weights = weightsOf(db, [...inSprint, ...finished]);
 
   const done = inSprint.filter((r) => r.status === 'done').length;
@@ -196,6 +217,7 @@ export function getSprintForecast(
     days,
     tasks_done: finished.length,
     weight_done: Math.round(weightDone * 100) / 100,
+    bulk_excluded: bulk.size,
   };
 
   const base = { sprint_id: sprint.id, total: inSprint.length, done, basis };
@@ -233,17 +255,21 @@ export function getSprintForecast(
     days: daysLeft,
     seed: seedOf(sprint.id),
   });
-  const view: SprintForecastView = {
-    ...base,
-    forecast: {
-      probability: r.probability,
-      low: r.low,
-      high: r.high,
-      median: r.median,
-      days_left: daysLeft,
-    },
-    reason: null,
-  };
+  // Every outcome from what is done to all of it: no forecast at all.
+  const view: SprintForecastView =
+    r.low <= done && r.high >= inSprint.length
+      ? { ...base, forecast: null, reason: 'too_uncertain' }
+      : {
+          ...base,
+          forecast: {
+            probability: r.probability,
+            low: r.low,
+            high: r.high,
+            median: r.median,
+            days_left: daysLeft,
+          },
+          reason: null,
+        };
   byId.delete(sprint.id);
   byId.set(sprint.id, { key, view });
   if (byId.size > CACHE_LIMIT) byId.delete(byId.keys().next().value!);

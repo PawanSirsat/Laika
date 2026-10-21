@@ -103,7 +103,17 @@ describe('GET /people/:id/activity', () => {
         series: Record<string, unknown[] | null>;
       };
       expect(Object.keys(body).sort()).toEqual(
-        ['agents', 'end', 'prompts_by_agent', 'range', 'series', 'sharing', 'start', 'tz'].sort(),
+        [
+          'agents',
+          'bulk_excluded',
+          'end',
+          'prompts_by_agent',
+          'range',
+          'series',
+          'sharing',
+          'start',
+          'tz',
+        ].sort(),
       );
       expect(body).toMatchObject({
         range: '12w',
