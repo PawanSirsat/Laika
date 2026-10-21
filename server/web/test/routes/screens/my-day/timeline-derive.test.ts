@@ -12,6 +12,7 @@ import {
   setLength,
   snap,
   splitPoint,
+  stackOf,
   stepEnd,
   stepMinutes,
 } from '../../../../src/routes/screens/my-day/timeline-derive.ts';
@@ -321,5 +322,65 @@ void describe('moving an edge, five minutes at a time (C)', () => {
     });
     assert.equal(setLength(block, 45, min(12, 40)), undefined, 'past a confirmed block');
     assert.equal(setLength({ start: min(23), end: min(23, 30), minutes: 30 }, 90), undefined);
+  });
+});
+
+void describe('stackOf — blocks at the same time share the lane (LAI-860)', () => {
+  void test('a block nothing overlaps keeps the whole lane; touching is not overlapping', () => {
+    const blocks = [
+      { start: min(9), end: min(9, 5) },
+      { start: min(9, 5), end: min(9, 10) },
+      { start: min(9, 12), end: min(9, 17) },
+    ];
+    assert.deepEqual(stackOf(blocks), [
+      { row: 0, rows: 1 },
+      { row: 0, rows: 1 },
+      { row: 0, rows: 1 },
+    ]);
+  });
+
+  void test('blocks at the same time take a row each, and the stretch knows how many', () => {
+    // The owner's day: two at once, then three at once, then one alone.
+    const blocks = [
+      { start: min(8, 7), end: min(8, 12) },
+      { start: min(8, 9), end: min(8, 14) },
+      { start: min(8, 15), end: min(8, 20) },
+      { start: min(8, 16), end: min(8, 21) },
+      { start: min(8, 18), end: min(8, 23) },
+      { start: min(9, 10), end: min(9, 15) },
+    ];
+    assert.deepEqual(stackOf(blocks), [
+      { row: 0, rows: 2 },
+      { row: 1, rows: 2 },
+      { row: 0, rows: 3 },
+      { row: 1, rows: 3 },
+      { row: 2, rows: 3 },
+      { row: 0, rows: 1 },
+    ]);
+  });
+
+  void test('a row is used again once it is free, so a long block and a run of short ones need two', () => {
+    const blocks = [
+      { start: min(10), end: min(11) },
+      { start: min(10, 5), end: min(10, 10) },
+      { start: min(10, 20), end: min(10, 25) },
+      { start: min(10, 40), end: min(10, 45) },
+    ];
+    assert.deepEqual(stackOf(blocks), [
+      { row: 0, rows: 2 },
+      { row: 1, rows: 2 },
+      { row: 1, rows: 2 },
+      { row: 1, rows: 2 },
+    ]);
+  });
+
+  void test('index for index with the blocks, in whatever order they come', () => {
+    const late = { start: min(14), end: min(14, 30) };
+    const early = { start: min(13, 50), end: min(14, 10) };
+    assert.deepEqual(stackOf([late, early]), [
+      { row: 1, rows: 2 },
+      { row: 0, rows: 2 },
+    ]);
+    assert.deepEqual(stackOf([]), []);
   });
 });

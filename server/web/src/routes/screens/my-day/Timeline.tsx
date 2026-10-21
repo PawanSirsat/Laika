@@ -3,6 +3,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
 } from 'react';
@@ -15,6 +16,7 @@ import {
   dragEdge,
   instantOf,
   limitsIn,
+  stackOf,
   PX_PER_HOUR,
   STEP,
   type DayLine,
@@ -70,6 +72,22 @@ function labelOf(
 }
 
 /**
+ * A label whole, then cut after each word with an ellipsis, longest first
+ * (LAI-860): `Needs a card`, `Needs a…`, `Needs…`. FitLabel shows the first
+ * that fits, or nothing — never a lone letter. A cut never ends on the `·`
+ * between two parts.
+ */
+function cutsOf(label: string): string[] {
+  const words = label.split(' ');
+  const cuts = [label];
+  for (let n = words.length - 1; n >= 1; n -= 1) {
+    const head = words.slice(0, n).join(' ');
+    if (head.length >= 2 && /[\p{L}\p{N}]$/u.test(head)) cuts.push(`${head}…`);
+  }
+  return cuts;
+}
+
+/**
  * My day as lanes (LAI-831, the owner's "Laika App v2" design): the reader's
  * day along the hours — confirmed solid, drafted dashed, a block that needs a
  * card dashed amber — the **gaps** of twenty minutes or more between them,
@@ -118,6 +136,7 @@ export function Timeline({
   const entries = new Map(view.entries.map((e) => [e.id, e]));
   const at = (m: number): number => (line.midnight === undefined ? 0 : instantOf(line.midnight, m));
   const rangeOf = (s: Span): string => spanOf(at(s.start), at(s.end), view.tz);
+  const stacks = stackOf(line.blocks);
 
   useLayoutEffect(() => {
     const box = scroller.current;
@@ -368,7 +387,8 @@ export function Timeline({
                   <FitLabel options={['Break']} />
                 </button>
               ))}
-              {line.blocks.map((block) => {
+              {line.blocks.map((block, i) => {
+                const { row, rows } = stacks[i] ?? { row: 0, rows: 1 };
                 const shape = preview?.id === block.id ? { ...block, ...preview.edit } : block;
                 const kind = block.kind === 'drafted' ? 'draft' : 'entry';
                 const selected = isSelected(kind, block.id);
@@ -386,6 +406,7 @@ export function Timeline({
                       'dayline-block',
                       `dayline-${block.kind}`,
                       block.needsCard ? 'dayline-needs-card' : '',
+                      rows > 1 ? 'dayline-stacked' : '',
                       selected ? 'dayline-selected' : '',
                       preview?.id === block.id ? 'dayline-dragging' : '',
                     ]
@@ -393,7 +414,14 @@ export function Timeline({
                       .join(' ')}
                     data-block-id={block.id}
                     data-kind={block.kind}
-                    style={{ left: left(shape.start), width: wide(shape.start, shape.end) }}
+                    style={
+                      {
+                        left: left(shape.start),
+                        width: wide(shape.start, shape.end),
+                        '--row': String(row),
+                        '--rows': String(rows),
+                      } as CSSProperties
+                    }
                   >
                     <button
                       type="button"
@@ -406,7 +434,9 @@ export function Timeline({
                         onSelect({ kind, id: block.id });
                       }}
                     >
-                      <span className="dayline-block-top">{top}</span>
+                      <span className="dayline-block-top">
+                        <FitLabel options={cutsOf(top)} />
+                      </span>
                       {px > 120 && title !== '' && (
                         <span className="dayline-block-title">{title}</span>
                       )}
@@ -419,12 +449,13 @@ export function Timeline({
                         />
                       </span>
                     </button>
-                    {prompts + commits > 0 && (
+                    {/* A lower row's badge would lie over the block above it: only the top row has one. */}
+                    {prompts + commits > 0 && row === 0 && (
                       <span
                         className="dayline-signals"
                         title={`${String(prompts)} prompts, ${String(commits)} commits — counted for the block; when in it is not known`}
                       >
-                        {String(prompts)}p {String(commits)}c
+                        <FitLabel options={[`${String(prompts)}p ${String(commits)}c`]} />
                       </span>
                     )}
                     {editable && (

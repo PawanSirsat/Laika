@@ -223,6 +223,50 @@ export function axisMarks(line: Pick<DayLine, 'hours' | 'from' | 'to'>, zoom: Zo
   );
 }
 
+/** Which row of the lane a block takes, out of how many its stretch needs. */
+export interface Stack {
+  readonly row: number;
+  readonly rows: number;
+}
+
+/**
+ * Blocks at the same time share the lane's height, a row each, rather than
+ * being drawn over one another (LAI-860): two sessions on two cards make two
+ * blocks over the same minutes. A stretch is blocks whose spans overlap; each
+ * takes the first row free at its start, and every block in the stretch
+ * learns how many rows it needed. A block nothing overlaps is one row of one.
+ * Index for index with `blocks`.
+ */
+export function stackOf(blocks: readonly Span[]): Stack[] {
+  const stacks: Stack[] = blocks.map(() => ({ row: 0, rows: 1 }));
+  const order = blocks
+    .map((_, i) => i)
+    .sort((a, b) => (blocks[a]?.start ?? 0) - (blocks[b]?.start ?? 0));
+  let stretch: number[] = [];
+  let ends: number[] = [];
+  let reach = -Infinity;
+  const close = (): void => {
+    for (const i of stretch) stacks[i] = { row: stacks[i]?.row ?? 0, rows: ends.length };
+  };
+  for (const i of order) {
+    const block = blocks[i];
+    if (block === undefined) continue;
+    if (block.start >= reach) {
+      close();
+      stretch = [];
+      ends = [];
+    }
+    const free = ends.findIndex((end) => end <= block.start);
+    const row = free === -1 ? ends.length : free;
+    ends[row] = block.end;
+    stacks[i] = { row, rows: 1 };
+    stretch.push(i);
+    reach = Math.max(reach, block.end);
+  }
+  close();
+  return stacks;
+}
+
 /** The nearest step on the clock: 8:42 → 8:40, 8:43 → 8:45. */
 export const snap = (minute: number): number => Math.round(minute / STEP) * STEP;
 
