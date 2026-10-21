@@ -72,6 +72,8 @@ describe('migrations', () => {
   const EXPECTED_TABLES = [
     'accounts',
     'activity',
+    // LAI-833: when the agent worked, by session and five minutes.
+    'agent_time_buckets',
     // LAI-787, D-088: Claude Code's active time, agent minutes.
     'agent_time_days',
     'board_activity_days',
