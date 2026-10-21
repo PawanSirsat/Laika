@@ -45,3 +45,16 @@ Close the non-blocking findings from the LAI-817 and LAI-818 reviews
       whether the chip becomes "No load". Write the decision and its reason
       in this file.
 - [ ] **Gate.** `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+
+## Named cross-area edits (D-033)
+
+The task's area is `web`. One criterion needs a test outside it, and nothing
+else crosses:
+
+- **`server/test/services/presence.test.ts`** — one new test case, *"leaves a
+  space the reader cannot see out of the overall load"*, in `describe('capacity
+  per person (LAI-767)') > describe('workload')`. It asserts what
+  `capacityNow` already does; **no `server/src/` file is changed.**
+
+Not crossed: `docs/`. The SPEC wording this task makes stale is listed for
+CHIEF in the Result, not edited.
