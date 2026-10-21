@@ -1,4 +1,10 @@
-import type { AnyExtension } from '@tiptap/core';
+import type {
+  AnyExtension,
+  JSONContent,
+  MarkdownParseHelpers,
+  MarkdownRendererHelpers,
+  MarkdownToken,
+} from '@tiptap/core';
 import { Link } from '@tiptap/extension-link';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
 import { TableKit } from '@tiptap/extension-table';
@@ -62,9 +68,51 @@ const FaithfulLink = Link.extend({
   HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer nofollow' },
 });
 
+/**
+ * StarterKit with two of its marks as markdown holds them (LAI-312).
+ *
+ * - **Code sits inside other marks.** TipTap's `code` excludes every mark, so
+ *   `` _from the `.tasks/` folder_ `` or `` [`path`](url) `` — every task
+ *   imported from the repo has both — parsed into a document the schema
+ *   refused, and the whole description opened as Markdown. CommonMark nests a
+ *   code span in emphasis, strikethrough and a link's words.
+ * - **Italic remembers its delimiter.** `_a_` and `*a*` are the same emphasis,
+ *   and the library writes `*` for both, so `_a_` came back `*a*`. The
+ *   `delimiter` is how it was written; the faithful form writes it back, and
+ *   anything made in the editor, or a block the underscore would no longer
+ *   read back in, is written with `*`. It is spelling, not content: the bridge
+ *   ignores it when it compares documents.
+ *
+ * Both are reached through the kit, so neither mark is a dependency of its own.
+ */
+const Kit = StarterKit.extend({
+  addExtensions() {
+    return (this.parent?.() ?? []).map((extension) => {
+      if (extension.name === 'code') return extension.extend({ excludes: '' });
+      if (extension.name !== 'italic') return extension;
+      return extension.extend({
+        // Italic has no attributes of its own in the pinned 3.32.0.
+        addAttributes() {
+          return { delimiter: { default: '*', rendered: false, keepOnSplit: true } };
+        },
+        parseMarkdown(token: MarkdownToken, helpers: MarkdownParseHelpers) {
+          const delimiter = token.raw?.startsWith('_') === true ? '_' : '*';
+          return helpers.applyMark('italic', helpers.parseInline(token.tokens ?? []), {
+            delimiter,
+          });
+        },
+        renderMarkdown(node: JSONContent, helpers: MarkdownRendererHelpers) {
+          const delimiter = writesFaithfully() && node.attrs?.delimiter === '_' ? '_' : '*';
+          return `${delimiter}${helpers.renderChildren(node)}${delimiter}`;
+        },
+      });
+    });
+  },
+});
+
 /** The schema and the markdown handlers: shared by the editor and the bridge. */
 export const MARKDOWN_EXTENSIONS: readonly AnyExtension[] = [
-  StarterKit.configure({
+  Kit.configure({
     link: false,
     underline: false,
     trailingNode: false,
