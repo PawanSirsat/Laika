@@ -2,11 +2,12 @@
 id: LAI-849
 title: 'The rich editor refuses an agent-written description, saying it would rewrite line 7 as an empty line'
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: []
 discovered-from: LAI-827
-status: backlog
+status: in-progress
+started: 2026-10-21T06:52:18Z
 ---
 
 ## Goal
