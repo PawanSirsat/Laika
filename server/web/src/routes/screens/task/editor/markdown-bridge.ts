@@ -368,11 +368,29 @@ function serializeAs(bridge: Bridge, doc: ProseNode, asFaithful: boolean): strin
   }
 }
 
+/**
+ * A parsed document without the empty paragraphs the lexer makes inside a
+ * block (LAI-854): two blank lines between list items come back as an empty
+ * paragraph in the first item. Markdown has no empty paragraph — the reading
+ * view shows none — and nothing can write one, so it is not the document. One
+ * that is its parent's only child stays: a list item needs a paragraph.
+ */
+function withoutEmptyParagraphs(json: JSONContent, top = true): JSONContent {
+  if (json.content === undefined) return json;
+  const empty = (child: JSONContent): boolean =>
+    child.type === 'paragraph' && (child.content ?? []).length === 0;
+  const kept = top ? json.content : json.content.filter((child) => !empty(child));
+  const content = (kept.length > 0 ? kept : json.content).map((child) =>
+    withoutEmptyParagraphs(child, false),
+  );
+  return { ...json, content };
+}
+
 /** Parse markdown into a document of `schema`, or `null` if it will not fit it. */
 export function parseMarkdown(bridge: Bridge, markdown: string, schema: Schema): ProseNode | null {
   if (markdown.trim() === '') return schema.topNodeType.createAndFill();
   try {
-    const doc = schema.nodeFromJSON(bridge.manager.parse(markdown));
+    const doc = schema.nodeFromJSON(withoutEmptyParagraphs(bridge.manager.parse(markdown)));
     doc.check();
     return doc;
   } catch {
@@ -751,6 +769,8 @@ interface TextBlock {
   readonly text: string;
   /** The line it starts on. */
   readonly line: number;
+  /** The lexer's token type: `paragraph`, `list` and so on. */
+  readonly type: unknown;
 }
 
 /**
@@ -783,7 +803,7 @@ function topLevelBlocks(bridge: Bridge, markdown: string): TextBlock[] | null {
     if (start === -1 || !BLANK.test(markdown.slice(offset, start))) return null;
     if (start > 0 && markdown.charAt(start - 1) !== '\n') return null;
     for (let at = offset; at < start; at++) if (markdown.charAt(at) === '\n') line += 1;
-    blocks.push({ text: raw, line });
+    blocks.push({ text: raw, line, type: token.type });
     for (let at = start; at < start + raw.length; at++) if (markdown.charAt(at) === '\n') line += 1;
     offset = start + raw.length;
   }
@@ -989,8 +1009,14 @@ function inWords(hunk: Hunk): string {
         ? `after line ${String(hunk.before.line)}: “${clip(hunk.before.text)}”`
         : 'at the start';
   if (added !== undefined) return `The rich editor would add “${clip(added)}” ${where}.`;
-  return hunk.added.length > 0
-    ? `The rich editor would add a blank line ${where}.`
+  if (hunk.added.length > 0) return `The rich editor would add a blank line ${where}.`;
+  // The normalisation keeps one of a run; the source's line numbers count them all.
+  const run =
+    hunk.before !== undefined && hunk.after !== undefined
+      ? hunk.after.line - hunk.before.line - 1
+      : 1;
+  return run > 1
+    ? `The rich editor would remove the ${String(run)} blank lines ${where}.`
     : `The rich editor would remove the blank line ${where}.`;
 }
 
@@ -1011,9 +1037,35 @@ function explain(bridge: Bridge, source: string, written: string | null): string
   }
   if (written === null) return 'The rich editor could not read it.';
   const difference = firstDifference(bridge, source, written);
-  return difference === undefined
-    ? 'The rich editor would not write it back exactly.'
-    : inWords(difference);
+  if (difference !== undefined) return inWords(difference);
+  return leftContainer(bridge, source) ?? 'The rich editor would not write it back exactly.';
+}
+
+/**
+ * A paragraph the editor would take out of the list item or quote above it,
+ * in words — or `undefined`. A line of U+00A0 or U+3000 directly under the
+ * item is text to CommonMark, which continues the item lazily through it and
+ * the lines after; the lexer reads it as a blank line and starts a paragraph
+ * there, so the blocks it diffs differ only by blank lines (LAI-854).
+ */
+function leftContainer(bridge: Bridge, source: string): string | undefined {
+  if (!hasUnicodeBlankLine(source)) return undefined;
+  const blocks = topLevelBlocks(bridge, source);
+  if (blocks === null) return undefined;
+  for (const [i, block] of blocks.entries()) {
+    const above = blocks[i - 1];
+    if (block.type !== 'paragraph' || above === undefined) continue;
+    const container =
+      above.type === 'list' ? 'the list item' : above.type === 'blockquote' ? 'the quote' : null;
+    if (container === null || block.line !== above.line + above.text.split('\n').length) continue;
+    const lines = block.text.split('\n');
+    const first = lines[0] ?? '';
+    if (first.trim() !== '' || /^[ \t]*$/.test(first)) continue;
+    const at = lines.findIndex((line) => line.trim() !== '');
+    if (at === -1) continue;
+    return `The rich editor would make line ${String(block.line + at)}, “${clip(lines[at] ?? '')}”, a paragraph of its own instead of part of ${container} above it.`;
+  }
+  return undefined;
 }
 
 /**

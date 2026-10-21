@@ -576,6 +576,11 @@ void describe('a notice that named nothing names the line (LAI-854)', () => {
         'The rich editor would make line 4, “B”, a paragraph of its own instead of part of the list item above it.',
       );
     });
+
+    void test(`after a blank line, a ${name} line does not continue the item, and is not said to`, () => {
+      // CommonMark ends the item at the blank line: `B` is a paragraph already.
+      assert.doesNotMatch(reason(`Intro:\n- a\n\n${ws}\nB`), /instead of part of/);
+    });
   }
 });
 
