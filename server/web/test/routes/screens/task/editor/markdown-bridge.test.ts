@@ -549,7 +549,8 @@ void describe('a notice that named nothing names the line (LAI-854)', () => {
 
   void test('two blank lines between list items are read as no paragraph at all', () => {
     const doc = parseMarkdown(bridge, '- a\n\n\n- b', bridge.schema);
-    assert.deepEqual(doc?.toJSON().content?.[0]?.content?.[0]?.content, [
+    const json = doc?.toJSON() as JSONContent | undefined;
+    assert.deepEqual(json?.content?.[0]?.content?.[0]?.content, [
       { type: 'paragraph', content: [{ type: 'text', text: 'a' }] },
     ]);
   });
