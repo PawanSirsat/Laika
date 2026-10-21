@@ -6,8 +6,9 @@ assignee: chief
 priority: p3
 depends-on: []
 discovered-from: LAI-831
-status: in-progress
+status: review
 started: 2026-10-21T10:39:06Z
+finished: 2026-10-21T11:15:51Z
 ---
 
 ## Goal
@@ -25,14 +26,14 @@ marks }` — **counts for the whole block** (`PUT /me/time-drafts`,
 
 ## Acceptance criteria
 
-- [ ] The collector sends, per block, when its prompts and commits happened
+- [x] The collector sends, per block, when its prompts and commits happened
       at a coarse resolution (for example, counts per 5-minute bucket) — never
       what was typed, a file name, a branch or a commit message. The closed
       schema keeps refusing anything that could hold text.
-- [ ] `GET /me/time` serves it to the person alone, on a web session.
-- [ ] My day draws the SIGNALS lane only where those marks exist, and keeps
+- [x] `GET /me/time` serves it to the person alone, on a web session.
+- [x] My day draws the SIGNALS lane only where those marks exist, and keeps
       the count badge for a block without them.
-- [ ] Tests fail on today's code; the gate exits 0.
+- [x] Tests fail on today's code; the gate exits 0.
 
 ## Notes
 
@@ -145,6 +146,28 @@ Omnigent-dispatched lends its card"* still pins the five fields a block always
 had. It now allows `at` beside them only if `at` holds nothing but `prompts`
 and `commits`, and only numbers. The root gate's exit codes are on the PR and
 the card (LAIKA-636).
+
+### Root gate
+
+The gate script was run at the finished code, `4dff1a2e` (clean tree, Vitest
+capped at two workers, each command to its own file and `$?`), from 11:08:43Z,
+at a 1-minute load of 10.62:
+
+```text
+TEST 0
+LINT 0
+FMT  0
+cli test: # pass 551 / # fail 0 / # skipped 2
+server/web test: # pass 2639 / # fail 0
+server test:  Test Files  167 passed | 2 skipped (169)
+server test:       Tests  3387 passed | 10 skipped (3397)
+```
+
+The grep matched only the passing test named `completeSetup and
+fieldErrors`. After it, only Markdown changed: LAI-859's records merged in,
+this file's move to review, and the log. The root gate runs once more on the
+final tree before the push; its exit codes are on the PR and the card
+(LAIKA-636).
 
 ## Not done here
 
