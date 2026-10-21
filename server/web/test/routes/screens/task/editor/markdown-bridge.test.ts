@@ -21,6 +21,7 @@ import {
   openDocument,
   parseMarkdown,
   readsBackAs,
+  sameMarkdown,
   toMarkdown,
   UnwritableMarkdown,
 } from '../../../../../src/routes/screens/task/editor/markdown-bridge.ts';
@@ -415,7 +416,10 @@ void describe('a list directly under a paragraph opens in the rich view (LAI-849
 void describe('a change to any non-blank text is still refused (LAI-849)', () => {
   // The same shape, each with one thing the editor would rewrite.
   const refused: readonly [string, string][] = [
-    ['a star bullet', AGENT.replace('- A book', '* A book').replace('- The morning', '* The morning')],
+    [
+      'a star bullet',
+      AGENT.replace('- A book', '* A book').replace('- The morning', '* The morning'),
+    ],
     ['an underscore emphasis', `${AGENT}\n\nThe _old_ way.`],
     ['a setext heading', `${AGENT}\n\nTitle\n=====`],
     ['a loose list made tight', AGENT.replace('\n- The morning', '\n\n- The morning')],
@@ -451,6 +455,41 @@ void describe('the reason names the real difference, not a shifted line (LAI-849
   void test('line numbers are the source’s, as the Markdown view shows it', () => {
     // Three blank lines, which the normalisation counts as one.
     assert.match(reason('Intro.\n\n\n\n* one\n* two'), /^The rich editor would rewrite line 5: /);
+  });
+
+  void test('text that would be lost is named as lost', () => {
+    assert.equal(
+      reason('Text.\n\n[a]: https://example.com'),
+      'The rich editor would drop line 3: “[a]: https://example.com”.',
+    );
+  });
+
+  void test('a line it would add is named, with where', () => {
+    assert.equal(reason('> para\n> - x'), 'The rich editor would add “>” before line 2: “> - x”.');
+  });
+});
+
+void describe('the round-trip check forgives blank lines between blocks and nothing else (LAI-849)', () => {
+  const same = (a: string, b: string): boolean => sameMarkdown(bridge, a, b);
+
+  void test('a blank line between two blocks, added or taken away', () => {
+    assert.equal(same('Steps:\n- one', 'Steps:\n\n- one'), true);
+    assert.equal(same('Steps:\n\n- one', 'Steps:\n- one'), true);
+    assert.equal(same(AGENT, AGENT.replace('happen:\n-', 'happen:\n\n-')), true);
+  });
+
+  void test('a word changed, a line dropped, a marker changed, two blocks swapped', () => {
+    assert.equal(same('Steps:\n- one', 'Steps:\n\n- two'), false);
+    assert.equal(same('Steps:\n- one\n- two', 'Steps:\n\n- one'), false);
+    assert.equal(same('Steps:\n- one', 'Steps:\n\n* one'), false);
+    assert.equal(same('First.\n\nSecond.', 'Second.\n\nFirst.'), false);
+  });
+
+  void test('a blank line inside a block still counts', () => {
+    // A loose list against a tight one, code, and one paragraph against two.
+    assert.equal(same('- one\n\n- two', '- one\n- two'), false);
+    assert.equal(same('```\na\n\nb\n```', '```\na\nb\n```'), false);
+    assert.equal(same('a\nb', 'a\n\nb'), false);
   });
 });
 
