@@ -619,7 +619,8 @@ void describe('from the machine’s own files', () => {
     assert.equal(blocks[0]?.signals.prompts, 1, 'the Claude Code prompt; the Codex one is LAI-790');
     assert.equal(blocks[1]?.signals.commits, 1);
     assert.deepEqual(blocks[3]?.signals, {
-      prompts: 0,
+      // The turn the person started is a prompt on the lane (LAI-314).
+      prompts: 1,
       replies: 1,
       sessions: 1,
       commits: 0,
@@ -745,6 +746,75 @@ void describe('from the machine’s own files', () => {
           'at carries something other than numbers',
         );
       }
+    }
+  });
+
+  void test('a dispatched builder’s commits are commits on the lane: no minute, no task, no path (LAI-314)', async () => {
+    const m = machine();
+    // A builder's own repository, and a worktree of the person's: the hook
+    // writes both to `dispatched-repos` at a dispatched session's start.
+    const builder = join(m.home, 'work', 'builder');
+    mkdirSync(builder, { recursive: true });
+    execFileSync('git', ['init', '-q', '-b', 'main', builder]);
+    git(builder, ['config', 'user.email', EMAIL]);
+    // 12:02, inside the orchestrator's 12:00–12:09: counted.
+    git(builder, ['commit', '-q', '--allow-empty', '-m', `${SECRET.subject} ACME-80`], T0 + 182 * MIN);
+    // 12:03, somebody else's: not counted.
+    execFileSync('git', ['-C', builder, 'commit', '-q', '--allow-empty', '-m', 'theirs'], {
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Other',
+        GIT_AUTHOR_EMAIL: 'other@example.test',
+        GIT_COMMITTER_NAME: 'Other',
+        GIT_COMMITTER_EMAIL: 'other@example.test',
+        GIT_AUTHOR_DATE: `@${String(T0 + 183 * MIN)} +0000`,
+        GIT_COMMITTER_DATE: `@${String(T0 + 183 * MIN)} +0000`,
+      },
+    });
+    // 13:30, in no stretch of the person's: not counted.
+    git(builder, ['commit', '-q', '--allow-empty', '-m', 'late'], T0 + 270 * MIN);
+    const worktree = join(m.home, 'work', 'acme-wt');
+    git(m.top, ['worktree', 'add', '-q', '-b', 'wt', worktree]);
+    const top = git(builder, ['rev-parse', '--show-toplevel']).trim();
+    const wtTop = git(worktree, ['rev-parse', '--show-toplevel']).trim();
+    writeFileSync(
+      join(m.paths.dir, 'dispatched-repos'),
+      `${String(NOW_S - 600)}\t${top}\n${String(NOW_S - 600)}\t${wtTop}\n`,
+      { mode: 0o600 },
+    );
+
+    const before = (await buildDraft(m.options)).days;
+    rmSync(join(m.paths.dir, 'dispatched-repos'));
+    const without = (await buildDraft(m.options)).days.get(UTC_DAY) ?? [];
+    const blocks = before.get(UTC_DAY) ?? [];
+    // The same minutes and tasks: a builder's commit makes no time and names no task.
+    assert.deepEqual(
+      blocks.map((b) => [b.start, b.minutes, b.task]),
+      without.map((b) => [b.start, b.minutes, b.task]),
+    );
+    assert.deepEqual(
+      blocks.map((b) => b.signals.commits),
+      // The person's 09:50 once — the worktree adds nothing — and the builder's 12:02.
+      [0, 1, 0, 1],
+    );
+    assert.deepEqual(blocks[3]?.at?.commits, [[Math.floor((T0 + 182 * MIN) / 300), 1]]);
+
+    writeFileSync(
+      join(m.paths.dir, 'dispatched-repos'),
+      `${String(NOW_S - 600)}\t${top}\n${String(NOW_S - 600)}\t${wtTop}\n`,
+      { mode: 0o600 },
+    );
+    const draft = await buildDraft(m.options);
+    assert.equal(draft.read.laneCommits, 2, 'the builder’s two of its own; not the other’s');
+    const body = timeDraftReports(
+      '6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a',
+      TZ,
+      [...draft.days].map(([d, b]) => ({ day: d, blocks: b })),
+    )
+      .map((r) => r.body)
+      .join('\n');
+    for (const secret of [top, wtTop, 'builder', 'acme-wt', SECRET.subject, 'other@example.test']) {
+      assert.equal(body.includes(secret), false, `${secret} left the machine`);
     }
   });
 

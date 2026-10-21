@@ -1066,6 +1066,62 @@ for (const shell of SHELLS) {
   });
 }
 
+/**
+ * LAI-314: the commits of a builder the owner dispatched are ticks on My day's
+ * SIGNALS lane. At such a builder's start the hook keeps its repository — in
+ * `dispatched-repos`, 0600, never sent, and never in `repos`, which the
+ * heatmap counts commits in. Nobody else's start writes it.
+ */
+const DISPATCHED = (h: string): string => join(h, '.laika', 'activity', 'dispatched-repos');
+
+for (const shell of SHELLS) {
+  void describe(`a dispatched builder’s repository is kept apart, under ${shell.join(' ')} (LAI-314)`, () => {
+    void test('its start writes the top level to dispatched-repos, 0600, and nothing to repos', () => {
+      const h = home();
+      const repo = repoOn('LAI-314-x');
+      const r = run(shell, ['session-start', 'claude-code'], {
+        home: h,
+        cwd: repo,
+        env: OMNI_SUBAGENT,
+        input: payload('9a1b2c3d-0000-4000-8000-000000000021'),
+      });
+      assert.equal(r.code, 0);
+      assert.equal(r.stdout + r.stderr, '');
+      assert.match(readFileSync(DISPATCHED(h), 'utf8'), new RegExp(`^\\d{10}\t${repo}\n$`));
+      assert.equal((statSync(DISPATCHED(h)).mode & 0o777).toString(8), '600');
+      assert.ok(!existsSync(join(h, '.laika', 'activity', 'repos')), 'a repo was recorded');
+      assert.deepEqual(events(h), []);
+      // Its end, and a second start, keep one line for it.
+      for (const mode of ['session-end', 'session-start']) {
+        run(shell, [mode, 'claude-code'], {
+          home: h,
+          cwd: repo,
+          env: OMNI_SUBAGENT,
+          input: payload('9a1b2c3d-0000-4000-8000-000000000021'),
+        });
+      }
+      assert.equal(readFileSync(DISPATCHED(h), 'utf8').trim().split('\n').length, 1);
+    });
+
+    void test('a person’s, CI’s, LAIKA_ACTIVITY_SKIP’s or a prompt never writes it', () => {
+      for (const env of [{}, { CI: 'true' }, { LAIKA_ACTIVITY_SKIP: '1' }, OMNI_PRIMARY]) {
+        const h = home();
+        const repo = repoOn('main-x');
+        run(shell, ['session-start', 'claude-code'], {
+          home: h,
+          cwd: repo,
+          env,
+          input: payload('9a1b2c3d-0000-4000-8000-000000000022'),
+        });
+        assert.ok(!existsSync(DISPATCHED(h)), JSON.stringify(env));
+      }
+      const h = home();
+      run(shell, ['prompt', 'claude-code'], { home: h, cwd: repoOn('main-y'), env: OMNI_SUBAGENT });
+      assert.ok(!existsSync(DISPATCHED(h)), 'a prompt wrote it');
+    });
+  });
+}
+
 void describe('starting the sync', () => {
   function layout(): { script: string; calls: string } {
     const root = dir('laika-actlayout-');

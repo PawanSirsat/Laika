@@ -145,6 +145,70 @@ void describe('a block’s signal times (LAI-834)', () => {
   });
 });
 
+/**
+ * The owner types only into Omnigent's polly (2026-10-22, amending D-096 item
+ * 2; LAI-314): a turn the person started there is a prompt on the lane, and a
+ * commit a builder they dispatched made is a commit on it — counts and
+ * buckets only, never a minute or a task.
+ */
+void describe('polly’s turns and dispatched builders’ commits on the lane (LAI-314)', () => {
+  const turn = (at: number, kind: 'start' | 'wake' | 'end') => ({ at, session: 'polly', kind });
+
+  void test('a turn the person started is a prompt; one Omnigent started is not', () => {
+    const blocks = blocksOf({
+      turns: [
+        turn(T0, 'start'),
+        turn(T0 + 3 * MIN, 'end'),
+        turn(T0 + 6 * MIN, 'wake'),
+        turn(T0 + 7 * MIN, 'end'),
+        turn(T0 + 12 * MIN, 'start'),
+        turn(T0 + 14 * MIN, 'end'),
+      ],
+    });
+    assert.equal(blocks.length, 1);
+    assert.equal(blocks[0]?.signals.prompts, 2);
+    assert.deepEqual(blocks[0]?.at?.prompts, [
+      [B(T0), 1],
+      [B(T0 + 12 * MIN), 1],
+    ]);
+    assertFits(blocks);
+  });
+
+  void test('a dispatched builder’s commit is a commit on the lane: no minute, no task', () => {
+    const turns = [turn(T0, 'start'), turn(T0 + 10 * MIN, 'end')];
+    const without = blocksOf({ turns });
+    const blocks = blocksOf({
+      turns,
+      laneCommits: [T0 + 4 * MIN, T0 + 12 * MIN, T0 + 3 * 60 * MIN],
+    });
+    // The same minutes and tasks as without them.
+    assert.deepEqual(
+      blocks.map((b) => [b.start, b.end, b.minutes, b.task]),
+      without.map((b) => [b.start, b.end, b.minutes, b.task]),
+    );
+    assert.equal(blocks.length, 1);
+    // 09:04 and 09:12, inside the stretch; 12:00 closes none and is not counted.
+    assert.equal(blocks[0]?.signals.commits, 2);
+    assert.deepEqual(blocks[0]?.at?.commits, [
+      [B(T0 + 4 * MIN), 1],
+      [B(T0 + 12 * MIN), 1],
+    ]);
+    assertFits(blocks);
+  });
+
+  void test('a dispatched builder’s commit lends no key to the person’s untied minutes', () => {
+    const blocks = blocksOf({
+      replies: [0, 5, 10].map((m) => reply(T0 + m * MIN, 's1')),
+      laneCommits: [T0 + 6 * MIN],
+    });
+    assert.deepEqual(
+      blocks.map((b) => b.task),
+      [null],
+    );
+    assert.equal(blocks[0]?.signals.commits, 1);
+  });
+});
+
 void describe('what is sent of them', () => {
   const timed: Block = {
     start: T0 * 1000,
