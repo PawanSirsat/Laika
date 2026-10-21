@@ -6,8 +6,9 @@ assignee: chief
 priority: p3
 depends-on: []
 discovered-from: LAI-831
-status: in-progress
+status: review
 started: 2026-10-21T11:52:24Z
+finished: 2026-10-21T12:57:24Z
 ---
 
 ## Goal
@@ -24,12 +25,12 @@ the person cannot tell one agent's proposal from another's.
 
 ## Acceptance criteria
 
-- [ ] A proposal keeps the proposing token's client name, as tokens already
+- [x] A proposal keeps the proposing token's client name, as tokens already
       record a client (`created_by_client`-style), never free text from the
       agent.
-- [ ] `GET /me/time` serves it on the draft, to the person alone.
-- [ ] My day shows it in the inspector and on the row's badge.
-- [ ] Tests fail on today's code; the gate exits 0.
+- [x] `GET /me/time` serves it on the draft, to the person alone.
+- [x] My day shows it in the inspector and on the row's badge.
+- [x] Tests fail on today's code; the gate exits 0.
 
 ## Built (the builder, 2026-10-21)
 
@@ -89,4 +90,25 @@ cases.
 | `npx tsc --noEmit` in `server/` and `server/web/` | 0, 0 | — |
 | `pnpm exec eslint` on the nine changed files | 0 | — |
 
-The root gate's exit codes are recorded below once it has run.
+### Root gate
+
+Before the gate, master (after the 21 Oct release) came in through LAI-833
+(`fd58d2e1`, a clean merge). The SPEC's §4.55–§4.57 are in number order, and
+D-094 to D-097 are too.
+
+The gate script ran on `fd58d2e1` (clean tree, Vitest capped at two workers,
+each command to its own file and `$?`), from 12:45:26Z, at a load of 11.60:
+
+```text
+TEST 0
+LINT 0
+FMT  0
+cli test: # pass 551 / # fail 0 / # skipped 2
+server/web test: # pass 2713 / # fail 0
+server test:  Test Files  169 passed | 2 skipped (171)
+server test:       Tests  3413 passed | 10 skipped (3423)
+```
+
+The grep printed only the passing `completeSetup and fieldErrors`. After it,
+only Markdown changed: this file's move and the log. The final-tree gate's
+exit codes are on the PR and the card (LAIKA-637).
