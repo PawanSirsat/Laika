@@ -2,11 +2,12 @@
 id: LAI-848
 title: 'Investigate project-status migration cases failing only in a contended root gate'
 area: server
-assignee: unclaimed
+assignee: strelka
 priority: p2
 depends-on: []
 discovered-from: LAI-841
-status: backlog
+status: in-progress
+started: 2026-10-21T13:32:36Z
 ---
 
 ## Goal
