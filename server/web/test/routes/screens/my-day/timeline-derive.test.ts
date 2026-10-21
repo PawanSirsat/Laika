@@ -9,12 +9,14 @@ import {
   dragEdge,
   gapsOf,
   limitsOf,
+  placeChips,
   setLength,
   snap,
   splitPoint,
   stackOf,
   stepEnd,
   stepMinutes,
+  type Box,
 } from '../../../../src/routes/screens/my-day/timeline-derive.ts';
 
 /**
@@ -374,6 +376,36 @@ void describe('stackOf — blocks at the same time share the lane (LAI-860)', ()
     ]);
   });
 
+  void test('a block that starts as a stretch ends begins a new one (review round 1)', () => {
+    // The first case's touching blocks are one row either way, so this is the
+    // one that tells `start >= reach` from `start > reach`.
+    const blocks = [
+      { start: min(8), end: min(8, 10) },
+      { start: min(8, 5), end: min(8, 10) },
+      { start: min(8, 10), end: min(8, 15) },
+    ];
+    assert.deepEqual(stackOf(blocks), [
+      { row: 0, rows: 2 },
+      { row: 1, rows: 2 },
+      { row: 0, rows: 1 },
+    ]);
+  });
+
+  void test('a row is free from the minute its block ends (review round 1)', () => {
+    // Inside a long block's stretch: `end <= start` takes row 1 again, and
+    // `end < start` would open a third row.
+    const blocks = [
+      { start: min(10), end: min(11) },
+      { start: min(10, 5), end: min(10, 10) },
+      { start: min(10, 10), end: min(10, 15) },
+    ];
+    assert.deepEqual(stackOf(blocks), [
+      { row: 0, rows: 2 },
+      { row: 1, rows: 2 },
+      { row: 1, rows: 2 },
+    ]);
+  });
+
   void test('index for index with the blocks, in whatever order they come', () => {
     const late = { start: min(14), end: min(14, 30) };
     const early = { start: min(13, 50), end: min(14, 10) };
@@ -382,5 +414,85 @@ void describe('stackOf — blocks at the same time share the lane (LAI-860)', ()
       { row: 0, rows: 2 },
     ]);
     assert.deepEqual(stackOf([]), []);
+  });
+});
+
+void describe('placeChips — a badge only where it clears everything (LAI-860)', () => {
+  const box = (l: number, r: number, t = 10, b = 60): Box => ({ l, r, t, b });
+  const TRACK = { l: 0, r: 1000 };
+  // A badge as drawn: 50 px wide, from 8 px above its block to 11 px into it.
+  const chip = (id: string, top = 2, bottom = 21) => ({ id, width: 50, top, bottom });
+
+  void test('inside its block’s end where it fits, the inset from that end', () => {
+    const places = placeChips([chip('a')], new Map([['a', box(0, 200)]]), TRACK, 4);
+    assert.deepEqual([...places], [['a', 'end']]);
+    // 50 px and 4 px either side need 58: one pixel less is centred over it.
+    const tight = placeChips([chip('a')], new Map([['a', box(0, 57)]]), TRACK, 4);
+    assert.deepEqual([...tight], [['a', 'centre']]);
+  });
+
+  void test('a short block standing alone keeps its badge, centred over it', () => {
+    const places = placeChips([chip('a')], new Map([['a', box(100, 110)]]), TRACK, 4);
+    assert.deepEqual([...places], [['a', 'centre']]);
+  });
+
+  void test('not drawn where it would lie over another block; touching is not lying over', () => {
+    // Centred over a: 80–130.
+    const near = new Map([
+      ['a', box(100, 110)],
+      ['b', box(120, 140)],
+    ]);
+    assert.deepEqual([...placeChips([chip('a')], near, TRACK, 4)], []);
+    const touching = new Map([
+      ['a', box(100, 110)],
+      ['b', box(130, 140)],
+    ]);
+    assert.deepEqual([...placeChips([chip('a')], touching, TRACK, 4)], [['a', 'centre']]);
+  });
+
+  void test('of two badges that would meet, the longer block’s is drawn', () => {
+    // Badges above the blocks, so only they can meet: a's 80–130, b's 120–170.
+    const blocks = new Map([
+      ['a', box(100, 110)],
+      ['b', box(135, 155)],
+    ]);
+    const above = (id: string) => chip(id, 0, 9);
+    assert.deepEqual(
+      [...placeChips([above('a'), above('b')], blocks, TRACK, 4)],
+      [['b', 'centre']],
+    );
+    // As long as each other: the one further left.
+    const even = new Map([
+      ['a', box(100, 110)],
+      ['b', box(140, 150)],
+    ]);
+    assert.deepEqual([...placeChips([above('b'), above('a')], even, TRACK, 4)], [['a', 'centre']]);
+  });
+
+  void test('not drawn past either end of the track', () => {
+    const first = placeChips([chip('a')], new Map([['a', box(0, 10)]]), TRACK, 4);
+    const last = placeChips([chip('a')], new Map([['a', box(990, 1000)]]), TRACK, 4);
+    assert.deepEqual([...first, ...last], []);
+  });
+
+  void test('in a stack, a lower row’s badge lies over the row above and is not drawn', () => {
+    // Rows of 10 px, 2 px apart: the top row's badge ends above the next row.
+    const two = new Map([
+      ['a', box(0, 200, 10, 20)],
+      ['b', box(0, 200, 22, 32)],
+    ]);
+    const chips = [chip('a', 2, 21), chip('b', 14, 33)];
+    assert.deepEqual([...placeChips(chips, two, TRACK, 4)], [['a', 'end']]);
+    // Rows of 8 px: it reaches 1 px into the next, so neither is drawn.
+    const deep = new Map([
+      ['a', box(0, 200, 10, 18)],
+      ['b', box(0, 200, 20, 28)],
+    ]);
+    const deepChips = [chip('a', 2, 21), chip('b', 12, 31)];
+    assert.deepEqual([...placeChips(deepChips, deep, TRACK, 4)], []);
+  });
+
+  void test('a badge whose block is not drawn is left out', () => {
+    assert.deepEqual([...placeChips([chip('gone')], new Map(), TRACK, 4)], []);
   });
 });

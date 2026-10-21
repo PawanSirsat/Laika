@@ -951,9 +951,14 @@
   padding-bottom: 0;
 }
 
+/*
+ * The font's own line, not `1`: at `1` the line box is 12px and the glyphs
+ * 16px, so every stacked label read as cut down and FitLabel left it out
+ * however tall the row was (measured, LAI-860).
+ */
 .dayline-stacked .dayline-block-top {
   flex-shrink: 1;
-  line-height: 1;
+  line-height: normal;
 }
 
 .dayline-stacked .dayline-block-title,

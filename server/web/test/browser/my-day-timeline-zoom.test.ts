@@ -299,7 +299,11 @@ async function onTopAtCentre(page: Page, id: string): Promise<string | undefined
   return el.evaluate((node) => {
     const r = node.getBoundingClientRect();
     const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-    return (hit?.closest('[data-block-id]') as HTMLElement | null)?.dataset.blockId;
+    const owner = hit?.closest<HTMLElement>('[data-block-id]');
+    // What else is there, so a failure names it.
+    return (
+      owner?.dataset.blockId ?? `no block: ${hit?.tagName ?? 'nothing'}.${hit?.className ?? ''}`
+    );
   });
 }
 
@@ -311,6 +315,21 @@ async function clickCentre(page: Page, id: string): Promise<boolean> {
   assert.ok(box !== null, `${id} has no box`);
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   return (await el.locator('[data-block-select]').getAttribute('aria-pressed')) === 'true';
+}
+
+/**
+ * Until every transition a resize started has finished. Below 900 px the
+ * sidebar slides out over 160 ms (`sidebar.css`), and measured inside that it
+ * was the element on top at k1's centre, the leftmost block.
+ */
+async function settle(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+    const ending = document
+      .getAnimations()
+      .filter((a) => a.effect?.getComputedTiming().endTime !== Infinity);
+    await Promise.all(ending.map((a) => a.finished));
+  });
 }
 
 void after(async () => {
@@ -329,6 +348,7 @@ void describe('the Timeline at Fit, 1× and 2× (LAI-860)', () => {
     try {
       for (const width of [1440, 390]) {
         await h.page.setViewportSize({ width, height: 900 });
+        await settle(h.page);
         for (const theme of ['light', 'dark']) {
           await setTheme(h.page, theme);
           for (const zoom of ['fit', '1', '2']) {
@@ -439,6 +459,16 @@ void describe('the Timeline at Fit, 1× and 2× (LAI-860)', () => {
               check(named('z7')?.chipText === '3p 0c', `${where}: z7, with room, lost its chip`);
               check(named('f1')?.chipText === '1p 5c', `${where}: f1, with room, lost its chip`);
             }
+            // Past the floor, only the block is drawn: its own row, clicked above.
+            for (const id of PAST_THE_FLOOR) {
+              const g = named(id);
+              check(g?.label === '', `${where}: ${id}, past the floor, draws a label`);
+              check(g?.chip === null, `${where}: ${id}, past the floor, draws a chip`);
+            }
+            check(
+              named('g8')?.edges.every((e) => !e.drawn) === true,
+              `${where}: g8, past the floor, draws its edges`,
+            );
             check(await clickCentre(h.page, 'z10'), `${where}: a click on z10 did not select it`);
             const roomy = (await measure(h.page)).blocks.find((b) => b.id === 'z10');
             if (roomy !== undefined) selection(roomy, true);
