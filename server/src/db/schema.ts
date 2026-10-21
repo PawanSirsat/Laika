@@ -2222,6 +2222,13 @@ export const timeDrafts = sqliteTable(
     signals: text('signals').notNull().default('{}'),
     /** An agent's proposal may say what it was for, briefly. */
     note: text('note'),
+    /**
+     * Which agent proposed it (LAI-835): a **copy** of the proposing token's
+     * D-076 client name — or, for an agent that never sent `initialize`, the
+     * token's own name — at the moment it proposed, as `task_rounds` keeps
+     * one. Null for a collector's block.
+     */
+    clientName: text('client_name'),
     state: text('state', { enum: TIME_DRAFT_STATES }).notNull().default('pending'),
     /** The entry a confirmed draft became. */
     entryId: text('entry_id').references((): AnySQLiteColumn => timeEntries.id, {

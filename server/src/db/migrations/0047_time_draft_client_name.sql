@@ -1,0 +1,1 @@
+ALTER TABLE `time_drafts` ADD `client_name` text;

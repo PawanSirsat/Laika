@@ -4,7 +4,7 @@ import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type TimeDraftSource } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
-import { projects, tasks, timeDrafts, timeEntries, timeUndo } from '../db/schema.ts';
+import { projects, tasks, timeDrafts, timeEntries, timeUndo, tokens } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { addDays, dayIn, isTimeZone } from './calendar-days.ts';
@@ -141,6 +141,8 @@ export interface TimeDraftView {
   general: boolean;
   signals: Signals;
   note: string | null;
+  /** Which agent proposed it (LAI-835); null for a collector's block. */
+  client: string | null;
 }
 
 export interface DraftBlockInput {
@@ -552,12 +554,26 @@ export function proposeTimeDraft(
   const day = input.day ?? dayIn(tz, now);
   assertReportDays({ tz, days: [{ day }] }, now, REPORT_WINDOW);
   const target = resolveTarget(db, actor, { task: input.task });
+  // Which agent proposed it (LAI-835), as a finished round keeps it: D-076's
+  // name for the token's client, else the token's own name — what the
+  // Connect screen set it to, for an agent that never sends `initialize`.
+  // Never anything the proposal itself says.
+  const tokenId = actor.token?.id;
+  const token =
+    tokenId === undefined
+      ? undefined
+      : db
+          .select({ client: tokens.lastClientName, name: tokens.name })
+          .from(tokens)
+          .where(eq(tokens.id, tokenId))
+          .get();
   const id = newId();
   db.insert(timeDrafts)
     .values({
       id,
       userId: actor.userId,
       source: 'agent',
+      clientName: token === undefined ? null : (token.client ?? token.name),
       collectorId: '',
       day,
       tz,
@@ -595,6 +611,7 @@ function draftQuery(db: Db | Tx) {
       general: timeDrafts.general,
       signals: timeDrafts.signals,
       note: timeDrafts.note,
+      clientName: timeDrafts.clientName,
       state: timeDrafts.state,
       taskId: tasks.id,
       taskNumber: tasks.number,
@@ -627,6 +644,7 @@ function draftView(r: DraftRow): TimeDraftView {
     general: r.general === 1,
     signals: readSignals(r.signals),
     note: r.note,
+    client: r.clientName,
   };
 }
 

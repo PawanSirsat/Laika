@@ -1810,6 +1810,7 @@ path, a repository, a branch or a window title.
 | `general` | 0 or 1 — put on no card and no project by the person, on purpose |
 | `signals` | JSON `{ prompts, replies, sessions, commits, marks, at? }` — counts, and `at` `{ prompts?, commits? }`: `[bucket, count]` pairs, a bucket being five minutes of unix time, `floor(ms / 300000)` (D-096, LAI-834). Numbers only |
 | `note` | nullable — an agent's proposal may say what it was for, ≤ 200 characters |
+| `client_name` | nullable — which agent proposed it (LAI-835): a **copy** of the proposing token's D-076 client name, else the token's own name, at the moment it proposed, as `task_rounds` keeps one (§4.25). Never taken from the proposal; null for a collector's block. Served on the draft as `client` |
 | `state` | `pending` \| `confirmed` \| `dismissed` |
 | `entry_id` | nullable FK `time_entries`, set null — what a confirmed draft became |
 | `origin_id` | nullable — a collector block's **origin**: the id of the row as first stored, shared by the halves of a split; null for an agent's proposal |
@@ -3249,7 +3250,7 @@ matched.
 | `update_sprint` | `{ sprint, name?, goal?, start_date?, end_date?, status? }` | sprint. Completing one **does not move its tasks** (§4.15, D-013) |
 | `update_project_context` | `{ project, context_md, mode }` | the document's new length. `mode` is `replace` or `append` |
 | `log_unlisted_work` | `{ repo, note }` | records work or an idea outside any project, for triage |
-| `propose_time_entry` | `{ minutes, task?, day?, note? }` | a draft in the person's own drafts (`source: 'agent'`, §4.47) — **never an entry**: only the person confirms it, signed in to the web app (D-088 item 13). Refused `forbidden` with `details.reason: "time_drafts_off"` unless the organisation's *Time* is `drafts` and the person turned on *Draft my time*. `day` is their local day, by default today in their drafts' zone. It answers `{ id, minutes, day }` and nothing of the person's drafts. Its REST twin is `POST /me/time-drafts` (LAI-787) |
+| `propose_time_entry` | `{ minutes, task?, day?, note? }` | a draft in the person's own drafts (`source: 'agent'`, §4.47), naming the agent by its token's client (`client_name`, LAI-835) — **never an entry**: only the person confirms it, signed in to the web app (D-088 item 13). Refused `forbidden` with `details.reason: "time_drafts_off"` unless the organisation's *Time* is `drafts` and the person turned on *Draft my time*. `day` is their local day, by default today in their drafts' zone. It answers `{ id, minutes, day }` and nothing of the person's drafts. Its REST twin is `POST /me/time-drafts` (LAI-787) |
 
 `get_task_context` and `get_project_context` are deliberately **fat** — one call
 returns everything needed to start, because round-trips are expensive for an
