@@ -126,7 +126,7 @@ export function getMyDay(
   const breaks = breaksOn(db, actor.userId, day);
   const signalTimes = signalTimesOn(db, actor.userId, day);
   const held = heldDrafts(db, actor.userId);
-  const agent = agentDay(db, actor.userId, day);
+  const agent = agentDay(db, actor.userId, day, tz);
 
   const monday = mondayOf(day);
   const sunday = addDays(monday, 6);

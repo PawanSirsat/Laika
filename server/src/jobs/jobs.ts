@@ -2,7 +2,9 @@ import { and, eq, gt, isNotNull, isNull, lt, lte, sql } from 'drizzle-orm';
 import { appendActivity } from '../db/activity.ts';
 import { assertCan, systemPrincipal } from '../policy/can.ts';
 import { type Db } from '../db/client.ts';
+import { AGENT_BUCKET_MS } from '../services/agent-time.ts';
 import {
+  agentTimeBuckets,
   agentTimeDays,
   heartbeats,
   invites,
@@ -172,6 +174,17 @@ export function pruneLocalActivity(db: Db, now: number): JobResult {
       .delete(tokenSessionDays)
       .where(lt(tokenSessionDays.day, sessionCutoff))
       .run();
+    // When the agent worked (LAI-833) is detail for My day's lane, kept as
+    // long: the totals above keep the minutes for 400 days.
+    const buckets = tx
+      .delete(agentTimeBuckets)
+      .where(
+        lt(
+          agentTimeBuckets.bucket,
+          Math.floor((now - SESSION_DAYS_KEPT * DAY_MS) / AGENT_BUCKET_MS),
+        ),
+      )
+      .run();
     const series = tx
       .delete(tokenTelemetrySeries)
       .where(lt(tokenTelemetrySeries.updatedAt, now - SERIES_KEPT_MS))
@@ -191,6 +204,7 @@ export function pruneLocalActivity(db: Db, now: number): JobResult {
       agentTime.changes +
       splits.changes +
       sessions.changes +
+      buckets.changes +
       series.changes +
       skips.changes +
       arrivals.changes
