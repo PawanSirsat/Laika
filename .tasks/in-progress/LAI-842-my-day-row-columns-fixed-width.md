@@ -2,11 +2,12 @@
 id: LAI-842
 title: "My day's To settle and Confirmed rows give the time and length fixed widths, which a wider font overflows"
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p3
 depends-on: []
 discovered-from: LAI-831
-status: backlog
+status: in-progress
+started: 2026-10-21T00:09:15Z
 ---
 
 ## Goal
