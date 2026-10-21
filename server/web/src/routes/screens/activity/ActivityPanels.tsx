@@ -1,5 +1,5 @@
 import { Spinner } from '../../../components/Spinner.tsx';
-import { ageDays, STALE_DAYS } from '../../../api/board-derive.ts';
+import { staleFor } from '../../../api/board-derive.ts';
 import { describeEvent } from '../../../api/activity.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -11,7 +11,6 @@ import type { Member, TaskSummary } from '../../../api/tasks.ts';
 import { PresencePerson } from '../../../components/PresencePerson.tsx';
 import type { PresenceView } from '../../../api/presence.ts';
 import type { StreamStatus } from '../../../api/use-events.ts';
-import { formatDuration } from '../../../api/duration.ts';
 import { clockTime } from '../../../api/time-label.ts';
 import '../board/board-rail.css';
 
@@ -22,29 +21,11 @@ export interface ActivityPanelsProps {
   readonly members: ReadonlyMap<string, Member>;
   /** `undefined` while the first read is in flight (LAI-440). */
   readonly presence: PresenceView | undefined;
-  /** Decided by the screen, so its header count and this panel cannot disagree. */
+  /**
+   * What the server flagged stale (`staleTasks`, `board-derive.ts`), decided
+   * by the screen, so its header count and this panel cannot disagree.
+   */
   readonly stale: readonly TaskSummary[];
-  readonly staleDays: number;
-}
-
-/*
- * The design's threshold — five days without a status change or comment —
- * lives in `board-derive.ts` since LAI-486, shared with the List's amber.
- * Re-exported so `ActivityScreen` keeps its import.
- */
-export { STALE_DAYS };
-
-/**
- * What has stopped moving, oldest first.
- *
- * Exported so the screen's header count and this panel's list come from **one**
- * computation. Two callers of one rule cannot drift; two copies of it can.
- */
-export function staleTasks(tasks: readonly TaskSummary[], now: number): readonly TaskSummary[] {
-  return tasks
-    .filter((t) => t.status !== 'done' && ageDays(t.updated_at, now) >= STALE_DAYS)
-    .sort((a, b) => a.updated_at - b.updated_at)
-    .slice(0, 6);
 }
 
 function clock(at: number): string {
@@ -60,9 +41,9 @@ function clock(at: number): string {
  * of its width. The board is plain now and these are three panels across.
  *
  * **Live stream and Stale are real.** The stream is the SSE feed — the first
- * consumer the endpoint has ever had — and stale tasks are computed from
- * `updated_at`, which every task carries. **Agent sessions is sample data**:
- * nothing stores a session, and `heartbeats` is an empty table with no route.
+ * consumer the endpoint has ever had — and Stale is the server's flag,
+ * `stale_flagged_at` (§11.6, D-092 item 4): the rule the Dashboard and the List
+ * read. It was this panel's own, five days without a change (LAI-832).
  */
 export function ActivityPanels({
   status,
@@ -71,7 +52,6 @@ export function ActivityPanels({
   members,
   presence,
   stale,
-  staleDays,
 }: ActivityPanelsProps) {
   const now = Date.now();
   // **Real agent sessions** (LAI-440): a heartbeat sent on a token is an agent,
@@ -217,11 +197,13 @@ export function ActivityPanels({
             <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.2" />
             <path d="M12 8v4l3 2" stroke="currentColor" strokeWidth="2.2" />
           </svg>
-          <h2>Stale · no movement</h2>
+          <h2>Stale</h2>
           <span className="rail-count">{stale.length}</span>
         </header>
         {stale.length === 0 ? (
-          <p className="rail-empty">Everything has moved in the last {staleDays} days.</p>
+          <p className="rail-empty">
+            Nothing is flagged stale — all work in progress has a recent heartbeat or commit.
+          </p>
         ) : (
           <ul className="rail-stale">
             {stale.map((task) => (
@@ -229,7 +211,7 @@ export function ActivityPanels({
                 <span className="rail-stale-title">{task.title}</span>
                 <span className="rail-stale-meta">
                   <code>{task.key}</code>
-                  {formatDuration(ageDays(task.updated_at, now) * 24 * 60)} idle
+                  stale {staleFor(task.stale_flagged_at ?? now, now)}
                   {task.assignee_id !== null && members.has(task.assignee_id) && (
                     <em>{members.get(task.assignee_id)?.name}</em>
                   )}
@@ -238,7 +220,9 @@ export function ActivityPanels({
             ))}
           </ul>
         )}
-        <p className="rail-note">Threshold: {staleDays} days without a status change or comment.</p>
+        <p className="rail-note">
+          Flagged by the server: work in progress with no heartbeat or commit lately.
+        </p>
       </section>
     </div>
   );

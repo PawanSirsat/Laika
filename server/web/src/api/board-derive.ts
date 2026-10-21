@@ -159,6 +159,30 @@ export function staleFor(flaggedAt: number, now: number): string {
 }
 
 /**
+ * **Is this task stale? The server's flag, and nothing else** (D-092 item 4,
+ * LAI-832): open work the nightly job flagged — in progress with no heartbeat
+ * and no commit for its window (§11.6) — and `stale_flagged_at` is the record.
+ *
+ * The Dashboard, the Activity tab's Stale panel and the List's amber all ask
+ * this. The last two used to keep a rule of their own, five days without a
+ * change, and on OnRoute that called 266 tasks stale where the server flagged
+ * 7: backlog nobody had reason to touch, and work waiting on a reviewer.
+ *
+ * **Open work only.** The job clears the flag on its next run, so a task
+ * finished at noon can carry it until midnight; finished work is not neglected.
+ */
+export function isStale(task: Pick<TaskSummary, 'status' | 'stale_flagged_at'>): boolean {
+  return task.status !== 'done' && task.status !== 'cancelled' && task.stale_flagged_at !== null;
+}
+
+/** Every stale task ({@link isStale}), longest-flagged first — uncapped, so a count is the count. */
+export function staleTasks<T extends TaskSummary>(tasks: readonly T[]): T[] {
+  return tasks
+    .filter(isStale)
+    .sort((a, b) => (a.stale_flagged_at ?? 0) - (b.stale_flagged_at ?? 0));
+}
+
+/**
  * How long ago a task last changed, for the card footer (LAI-263).
  *
  * **Delegates to {@link staleFor}** rather than repeating its units. The two
@@ -170,19 +194,6 @@ export function staleFor(flaggedAt: number, now: number): string {
  * The one difference is wording. `staleFor` says `now` because it completes
  * "flagged stale …"; a footer stands alone and the design writes "just now".
  */
-/**
- * Days without a change before open work reads as stale — the design's
- * threshold, **one number** for the Activity rail's Stale panel and the List's
- * amber (LAI-486). They used to be two constants with two comparisons (`>=`
- * against `>`), and so disagreed at exactly five days.
- */
-export const STALE_DAYS = 5;
-
-/** Whole days since `at`, floored — the unit `STALE_DAYS` is counted in. */
-export function ageDays(at: number, now: number): number {
-  return Math.floor((now - at) / 86_400_000);
-}
-
 export function updatedAge(updatedAt: number, now: number): string {
   const compact = staleFor(updatedAt, now);
   return compact === 'now' ? 'just now' : compact;
