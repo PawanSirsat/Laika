@@ -2163,3 +2163,93 @@ void describe('session tasks in a usage report (LAI-787)', () => {
     );
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* LAI-315: the builders the owner dispatched, on My day's AGENTS lane         */
+/* -------------------------------------------------------------------------- */
+
+void describe('a dispatched builder’s agent time in a usage report (LAI-315)', () => {
+  const COLLECTOR = '6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a';
+  const PERSON = 'aaaaaaaa-1111-4222-8333-444444444444';
+  const BUILDER = 'dddddddd-1111-4222-8333-444444444444';
+  const ROBOT = 'cccccccc-1111-4222-8333-444444444444';
+  // 09:00 UTC, on a five-minute bucket: 11:00 in Johannesburg, today.
+  const NINE = NOW_S - 3_600;
+  const bucket = (s: number) => Math.floor((s * 1000) / 300_000);
+
+  type Body = {
+    excluded?: string[];
+    days: { day: string; dispatched?: { key: string; task?: string; from: number; seconds: number[] }[] }[];
+  };
+
+  async function report(telemetry: boolean): Promise<Body> {
+    const root = home();
+    const paths = activityPaths(root);
+    mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
+    const line = (id: string, atS: number, session: string, branch: string) =>
+      claudeLine(id, atS, { input: 1, output: 10, cw: 0, cr: 0 }, { session }).replace(
+        JSON.stringify(SECRET.branch),
+        JSON.stringify(branch),
+      );
+    // The builder works 09:00–09:06 on its card's branch, then once more at
+    // 09:40 — past the idle gap, so no minutes run between 09:06 and 09:40.
+    writeClaude(root, 'p/builder.jsonl', [
+      line('msg_b1', NINE, BUILDER, 'LAI-1-the-builders-branch'),
+      line('msg_b2', NINE + 120, BUILDER, 'LAI-1-the-builders-branch'),
+      line('msg_b3', NINE + 360, BUILDER, 'LAI-1-the-builders-branch'),
+      line('msg_b4', NINE + 2_400, BUILDER, 'LAI-1-the-builders-branch'),
+    ]);
+    writeClaude(root, 'p/person.jsonl', [
+      line('msg_p1', NINE, PERSON, 'main'),
+      line('msg_p2', NINE + 60, PERSON, 'main'),
+    ]);
+    writeClaude(root, 'p/robot.jsonl', [
+      line('msg_r1', NINE, ROBOT, 'main'),
+      line('msg_r2', NINE + 60, ROBOT, 'main'),
+    ]);
+    writeFileSync(
+      join(paths.dir, 'skip-sessions'),
+      `${String(NINE - 10)} ${ROBOT}\n${String(NINE - 5)} ${BUILDER} omnigent\n`,
+      { mode: 0o600 },
+    );
+    const bodies: string[] = [];
+    const outcome = await usageStep({
+      paths,
+      roots: usageRoots(root, {}),
+      state: state(NOW_S - 40 * DAY),
+      telemetry,
+      prefixes: ['LAI'],
+      collectorId: COLLECTOR,
+      tz: TZ,
+      nowS: NOW_S,
+      heldElsewhere: [],
+      send: (body) => {
+        bodies.push(body);
+        return Promise.resolve({ ok: true as const });
+      },
+    });
+    assert.equal(outcome.kind, 'sent');
+    assert.equal(bodies.length, 1);
+    return JSON.parse(bodies[0] ?? '{}') as Body;
+  }
+
+  void test('its replies become five-minute buckets on its card; a person’s and a CI session’s send none', async () => {
+    const body = await report(false);
+    assert.deepEqual(
+      body.days.map((d) => [d.day, d.dispatched]),
+      [
+        [
+          TODAY,
+          // 09:00–09:02 and 09:02–09:06: 300 s in the 09:00 bucket, 60 s in 09:05's.
+          [{ key: sessionKey(BUILDER), task: 'LAI-1', from: bucket(NINE), seconds: [300, 60] }],
+        ],
+      ],
+    );
+  });
+
+  void test('with telemetry on, its key is not excluded — a CI session’s still is', async () => {
+    const body = await report(true);
+    assert.deepEqual(body.excluded, [sessionKey(ROBOT)]);
+    assert.equal(body.days[0]?.dispatched?.[0]?.key, sessionKey(BUILDER));
+  });
+});
