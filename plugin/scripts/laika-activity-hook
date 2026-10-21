@@ -90,7 +90,9 @@
 # `r omnigent <epoch> <session>` its end appends can be dropped, since `Stop`
 # cannot tell the two apart. The session is the runner's primary id.
 # `laika activity sync` drafts only the turns the person started, as the
-# activity of their primary session; none is a typed prompt. At its start
+# activity of their primary session; none is a typed prompt on the heatmap,
+# though a time draft counts each as a prompt on its signals lane (LAI-314,
+# the owner's 2026-10-22 decision: they type only there). At its start
 # that id is kept in primary-sessions; nothing else is: no session-start
 # payload is read, no session start or repo is recorded, nothing is skipped.
 # Omnigent runs it with `--no-session-persistence`, so it writes no transcript

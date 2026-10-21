@@ -176,7 +176,12 @@ What it never does:
   prompt's — a `"session_id"` that is a plain id, appended to
   `~/.laika/activity/skip-sessions`, so `laika activity sync` sends that
   session's tokens marked automated — the team's, never the person's (D-091).
-  Never sent.
+  Never sent. For a sub-agent an Omnigent runner dispatched it keeps one
+  thing more (LAI-314): at its start, its repository's top level, appended to
+  `~/.laika/activity/dispatched-repos`, 0600, never sent — found with shell
+  builtins alone, and never written to `repos`. The time drafter counts your
+  commits there as ticks on My day's signals lane: no minute, no card, and
+  never on the heatmap.
 - **Skip the session the person types to** (D-088 item 9, LAI-787). Omnigent
   sets `OMNIGENT=1` on its primary session too. When
   `OMNIGENT_TERMINAL_LAUNCH_SESSION_ID` equals `OMNIGENT_RUNNER_PRIMARY_SESSION_ID`
