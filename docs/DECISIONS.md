@@ -5236,3 +5236,43 @@ into `server/web/src/styles/type.css` as `--text-<step>` and
 meta, timestamps, the first-boot wordmark and headline, and the board's
 uppercase column heads (12.5px → 12px, Jira's own column-head size). None of
 them is a title, a description, a comment body or a form field.
+
+## D-096 — A drafted block says which five minutes its prompts and commits fell in, so My day can draw its SIGNALS lane (LAI-834; amends D-088 item 3)
+
+**Date:** 2026-10-21 · **By:** CHIEF, on the owner's instruction
+
+D-088 item 3 said that *"only blocks leave the machine, each with the counts
+of the signals behind it"*. So the owner's My day design could not draw its
+SIGNALS lane, prompts as dots and commits as ticks where they happened, and
+LAI-831 left it out (LAI-834).
+
+The owner was asked, 2026-10-21: *"OK to send prompt and commit timing as
+5-minute counts (never text) so the SIGNALS lane can be drawn?"* The answer
+was **"yes do it"**.
+
+1. **A block may also say when, to five minutes.** Beside its counts, a
+   collector's block may carry `at`: for prompts and for commits, a list of
+   `[bucket, count]` pairs, where a bucket is `floor(unix ms / 300000)`.
+   Nothing finer than five minutes leaves the machine.
+2. **Only prompts and commits are timed.** Replies, sessions and task marks
+   stay counts.
+3. **The board checks them against the block.** Each kind's buckets are in
+   order, each once, inside the block (its last minute included), and they
+   count no more than the block's count of that kind. Anything else is `422
+   invalid_blocks`, and any field that is not a number is `422`, as before.
+4. **They go where the counts go.** They are kept beside the block's counts,
+   replaced with the collector's blocks, and deleted with the drafts. They
+   are blanked with a confirmed draft's evidence when a switch is turned
+   off, and kept no longer than drafts.
+5. **Shown to the person alone.** My day serves the day's union as
+   `signal_times`, every block of the day whatever became of it, a bucket two
+   blocks share counted once at its largest. It is served on the person's web
+   session only, like every draft: no token reads it and no admin view exists.
+6. **Old boards are never refused.** `GET /me/time-settings` says
+   `signal_times: true`, and a collector sends `at` only then. A day whose
+   report would pass 16 KiB with them is sent without them, and its blocks keep
+   their count badge.
+
+**What does not change:** D-088 item 4. No prompt or reply text, path,
+repository, branch name, commit message or window title leaves the machine.
+The upload stays a closed schema of numbers, a zone and a key-shaped string.
