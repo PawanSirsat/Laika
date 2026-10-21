@@ -16,8 +16,10 @@ import {
   dropNeighbours,
   groupByColumn,
   hideOldDone,
+  isStale,
   matchesSearch,
   staleFor,
+  staleTasks,
 } from '../../src/api/board-derive.ts';
 import type { ProjectStatus } from '../../src/api/statuses.ts';
 import type { Task, TaskStatus } from '../../src/api/tasks.ts';
@@ -425,6 +427,51 @@ void describe('staleFor — how long, in the fewest characters (LAI-157)', () =>
     // says which one it can actually see.
     assert.equal(staleFor(10_000, 0), 'now');
     assert.equal(staleFor(9 * DAY, 0), 'now');
+  });
+});
+
+/*
+ * **One stale rule, the server's** (D-092 item 4, LAI-832). The Dashboard read
+ * `stale_flagged_at` while the Activity tab and the List each kept a rule of
+ * their own — five days with no change — and on OnRoute that said 266 where the
+ * server said 7. Every screen asks this one predicate now.
+ */
+void describe('isStale and staleTasks — the server’s flag, and nothing else', () => {
+  const DAY = 86_400_000;
+  const NOW = 1_800_000_000_000;
+
+  void test('flagged open work is stale; quiet work the job never flagged is not', () => {
+    assert.equal(isStale(task({ id: '1', status: 'in_progress', stale_flagged_at: NOW })), true);
+    // Fifty days without a change, and never flagged: quiet is not stale.
+    assert.equal(isStale(task({ id: '2', status: 'todo', updated_at: NOW - 50 * DAY })), false);
+    assert.equal(isStale(task({ id: '3', status: 'backlog', updated_at: NOW - 50 * DAY })), false);
+  });
+
+  void test('finished or dropped work is never stale, flag or not', () => {
+    // The job clears the flag on its next run, so a task finished at noon can
+    // carry it until midnight.
+    assert.equal(isStale(task({ id: '1', status: 'done', stale_flagged_at: NOW })), false);
+    assert.equal(isStale(task({ id: '2', status: 'cancelled', stale_flagged_at: NOW })), false);
+  });
+
+  void test('every flagged task, longest-flagged first, uncapped', () => {
+    const flagged = Array.from({ length: 9 }, (_, i) =>
+      task({
+        id: `f${String(i)}`,
+        status: 'in_progress',
+        stale_flagged_at: NOW - (1 + i) * DAY,
+        updated_at: NOW - DAY,
+      }),
+    );
+    const stale = staleTasks([
+      ...flagged,
+      task({ id: 'quiet', updated_at: NOW - 50 * DAY }),
+      task({ id: 'quiet-review', status: 'review', updated_at: NOW - 50 * DAY }),
+      task({ id: 'done', status: 'done', stale_flagged_at: NOW - DAY }),
+    ]);
+    assert.equal(stale.length, 9, 'the count must not be capped');
+    assert.equal(stale[0]?.id, 'f8', 'longest-flagged first');
+    assert.ok(!stale.some((t) => t.id.startsWith('quiet')), 'quiet is not stale');
   });
 });
 

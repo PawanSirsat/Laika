@@ -142,7 +142,7 @@ void describe('finding people', () => {
         ['Agents running', ['Pawan Sirsat'], 0],
         ['Heavy load', ['Pawan Sirsat'], 0],
         ['Overdue', ['Pawan Sirsat'], 0],
-        ['No work', [], 2],
+        ['No load', [], 2],
         ['Never seen', ['Dee Pillay', 'Cal Mokoena', 'Eli van Wyk'], 0],
         ['All', ['Pawan Sirsat', 'Bea Nkosi'], 3],
       ];

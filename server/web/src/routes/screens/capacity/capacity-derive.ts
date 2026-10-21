@@ -20,14 +20,23 @@ import { timeLabel } from '../../../api/time-label.ts';
  * is testable.
  */
 
-/** The filter chips, in the order they are drawn. */
+/**
+ * The filter chips, in the order they are drawn.
+ *
+ * **`none` is *No load*, the badge's word and the badge's rule** (LAI-832).
+ * It was *No work* — no open work at all — beside a badge that says *No load*
+ * for nothing committed, so a person with fifty in backlog read *No load* and
+ * was left out of *No work*. Backlog is the pipeline and review waits on the
+ * reviewer (D-092); who has room is who has nothing committed. The id stays
+ * `none`, so a saved address still opens it.
+ */
 export const FILTERS = [
   { id: 'all', label: 'All' },
   { id: 'online', label: 'Online now' },
   { id: 'agents', label: 'Agents running' },
   { id: 'heavy', label: 'Heavy load' },
   { id: 'overdue', label: 'Overdue' },
-  { id: 'none', label: 'No work' },
+  { id: 'none', label: 'No load' },
   { id: 'never', label: 'Never seen' },
 ] as const;
 export type CapacityFilter = (typeof FILTERS)[number]['id'];
@@ -112,7 +121,7 @@ export function passesFilter(
     case 'overdue':
       return workloadIn(person, space).overdue > 0;
     case 'none':
-      return workloadIn(person, space).open === 0;
+      return loadIn(person, space) === 'none';
     case 'never':
       return person.status === 'never';
   }
@@ -201,6 +210,7 @@ export function statusText(person: CapacityEntry, now: number): StatusText {
 export const LOAD_LABEL: Readonly<Record<LoadLevel, string>> = {
   // Nothing committed — they may still have backlog or work waiting on a
   // reviewer, so "No work" would say something the counts beside it deny.
+  // The filter chip says the same word (`FILTERS`, LAI-832).
   none: 'No load',
   light: 'Light',
   normal: 'Normal',

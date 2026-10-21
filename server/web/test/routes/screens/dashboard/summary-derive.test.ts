@@ -20,7 +20,6 @@ import {
   priorityBreakdown,
   REVIEW_WAIT_DAYS,
   splitBlocked,
-  staleTasks,
   waitingForReview,
   windowCounts,
   workloadByPerson,
@@ -150,8 +149,8 @@ void describe('completedIn', () => {
   });
 });
 
-void describe('workloadByPerson — open work now (LAI-817, D-092 item 2)', () => {
-  void test('open work only; review split out of each person and drawn as its own share', () => {
+void describe('workloadByPerson — open work now (LAI-817, D-092 items 2 and 3)', () => {
+  void test('open work only; review and backlog split out of each person, each its own share', () => {
     const load = workloadByPerson([
       task({ id: '1', assignee_id: 'u1', status: 'todo' }),
       task({ id: '2', assignee_id: 'u1', status: 'in_progress' }),
@@ -164,18 +163,61 @@ void describe('workloadByPerson — open work now (LAI-817, D-092 item 2)', () =
     ]);
     assert.equal(load.open, 6);
     assert.equal(load.waitingForReview, 2, 'u1’s and the unassigned one');
+    assert.equal(load.backlog, 1, 'u2’s');
     assert.deepEqual(
-      load.rows.map((r) => [r.id, r.count, r.review]),
+      load.rows.map((r) => [r.id, r.count, r.review, r.backlog]),
       [
-        ['u1', 2, 1],
-        ['u2', 1, 0],
-        ['unassigned', 1, 1],
+        ['u1', 2, 1, 0],
+        ['u2', 0, 0, 1],
+        ['unassigned', 1, 1, 0],
       ],
     );
     assert.equal(
-      load.rows.reduce((sum, r) => sum + r.count, 0) + load.waitingForReview,
+      load.rows.reduce((sum, r) => sum + r.count, 0) + load.backlog + load.waitingForReview,
       load.open,
-      'the rows and the review share must add up to the centre',
+      'the rows and the two shares must add up to the centre',
+    );
+  });
+
+  /*
+   * **D-092 item 3: load is committed work, and backlog is a pipeline** —
+   * LAI-832. A person's number was backlog, to do and in progress, so 78 read
+   * as load when 50 of it was backlog; at 390 px the detail that said so was
+   * cut off. The count is now what Capacity calls load.
+   */
+  void test('a person’s count is to do and in progress; their backlog is beside it, never in it', () => {
+    const load = workloadByPerson([
+      ...Array.from({ length: 50 }, (_, i) =>
+        task({ id: `b${String(i)}`, assignee_id: 'u1', status: 'backlog' }),
+      ),
+      ...Array.from({ length: 20 }, (_, i) =>
+        task({ id: `t${String(i)}`, assignee_id: 'u1', status: 'todo' }),
+      ),
+      ...Array.from({ length: 8 }, (_, i) =>
+        task({ id: `p${String(i)}`, assignee_id: 'u1', status: 'in_progress' }),
+      ),
+    ]);
+    const u1 = load.rows.find((r) => r.id === 'u1');
+    assert.equal(u1?.count, 28, 'seventy-eight is not their load');
+    assert.equal(u1?.backlog, 50);
+    assert.equal(load.backlog, 50, 'the donut’s backlog share');
+    assert.equal(load.open, 78);
+  });
+
+  void test('blocked counts only what is in the count — committed work', () => {
+    const load = workloadByPerson([
+      task({ id: 'dep', assignee_id: 'u2', status: 'backlog' }),
+      task({ id: 'later', assignee_id: 'u1', status: 'backlog', blocked_by: ['dep'] }),
+      task({ id: 'next', assignee_id: 'u1', status: 'todo', blocked_by: ['dep'] }),
+    ]);
+    assert.equal(load.rows.find((r) => r.id === 'u1')?.blocked, 1, 'the backlog chain is apart');
+  });
+
+  void test('someone whose only open work is backlog keeps a row, at zero', () => {
+    const load = workloadByPerson([task({ id: '1', assignee_id: 'u1', status: 'backlog' })]);
+    assert.deepEqual(
+      load.rows.map((r) => [r.id, r.count, r.backlog]),
+      [['u1', 0, 1]],
     );
   });
 
@@ -250,34 +292,6 @@ void describe('priorityBreakdown', () => {
   });
 });
 
-/*
- * **Stale is the server's flag** (LAI-817, D-092 item 4). The old rule — open
- * and five days untouched — said 266 on OnRoute where the server said 7.
- */
-void describe('staleTasks', () => {
-  void test('every open task the server flagged, longest-flagged first, uncapped', () => {
-    const flagged = Array.from({ length: 9 }, (_, i) =>
-      task({
-        id: `f${String(i)}`,
-        status: 'in_progress',
-        stale_flagged_at: NOW - (1 + i) * DAY_MS,
-        updated_at: NOW - DAY_MS,
-      }),
-    );
-    const stale = staleTasks([
-      ...flagged,
-      // Near misses: quiet for fifty days and never flagged is not stale.
-      task({ id: 'quiet', updated_at: NOW - 50 * DAY_MS }),
-      task({ id: 'quiet-review', status: 'review', updated_at: NOW - 50 * DAY_MS }),
-      // Flagged, then finished before the job's next run cleared it.
-      task({ id: 'done', status: 'done', stale_flagged_at: NOW - DAY_MS }),
-    ]);
-    assert.equal(stale.length, 9, 'the count must not be capped');
-    assert.equal(stale[0]?.id, 'f8', 'longest-flagged first');
-    assert.ok(!stale.some((t) => t.id.startsWith('quiet')), 'quiet is not stale');
-  });
-});
-
 void describe('waitingForReview', () => {
   const into = (taskId: string, at: number): ActivityEvent => ({
     id: `e-${taskId}-${String(at)}`,
@@ -336,7 +350,36 @@ void describe('waitingForReview', () => {
       NOW - DAY_MS,
       NOW,
     );
-    assert.deepEqual(day, [], 'a 24-hour range cannot show a five-day wait it cannot see');
+    assert.deepEqual(day, [], 'with nothing but the range to go on, it cannot see the wait');
+  });
+
+  /*
+   * **The wait does not move with the range** (LAI-832). `GET /review` says
+   * when each task last moved into review, whatever the range — so a task ten
+   * days in review, touched an hour ago, stays on "Last 24 hours".
+   */
+  void test('the review queue’s time of the move decides the wait, whatever the range', () => {
+    const tasks = [task({ id: 'long', status: 'review', updated_at: NOW - 3_600_000 })];
+    const queued = new Map([['long', NOW - 10 * DAY_MS]]);
+    for (const rangeStart of [NOW - DAY_MS, NOW - 7 * DAY_MS, undefined]) {
+      assert.deepEqual(
+        waitingForReview(tasks, [], rangeStart, NOW, queued).map((r) => [r.task.id, r.since]),
+        [['long', NOW - 10 * DAY_MS]],
+        `range from ${String(rangeStart)}`,
+      );
+    }
+  });
+
+  void test('the later of the queue and the range’s own move wins: the queue may be a minute old', () => {
+    // Sent back and delivered again two days ago; the queue was read before.
+    const rows = waitingForReview(
+      [task({ id: 'again', status: 'review', updated_at: NOW - 2 * DAY_MS })],
+      [into('again', NOW - 2 * DAY_MS)],
+      NOW - 7 * DAY_MS,
+      NOW,
+      new Map([['again', NOW - 10 * DAY_MS]]),
+    );
+    assert.deepEqual(rows, [], 'two days is not a five-day wait');
   });
 });
 
