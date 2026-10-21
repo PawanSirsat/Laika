@@ -2,11 +2,12 @@
 id: LAI-836
 title: 'SPEC §4 and §6.4 for LAI-831''s server additions: breaks, undo, a block''s span, drafts held'
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: [LAI-831]
 discovered-from: LAI-831
-status: backlog
+status: in-progress
+started: 2026-10-21T05:37:43Z
 ---
 
 ## Goal
