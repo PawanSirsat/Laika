@@ -113,6 +113,15 @@
 # `LAIKA_ACTIVITY_SKIP` session's line has no word, as every line before it
 # had, and lends nothing.
 #
+# At such a dispatched sub-agent's start, one line more (LAI-314):
+# `<epoch><TAB><top level>` appended to ~/.laika/activity/dispatched-repos,
+# 0600, never sent — and never to `repos`, which the heatmap counts commits
+# in. The time drafter counts the person's commits there as ticks on My
+# day's SIGNALS lane, and nothing else. The top level is the nearest
+# directory above `CLAUDE_PROJECT_DIR` (else the working directory) that
+# holds a `.git`, found with `[` alone: this path forks nothing under zsh, as
+# before. The drafter reads it deduped; the sync prunes it as it does `repos`.
+#
 # ## A person's session start (LAI-770, D-084 item 5)
 #
 # For a counted session of an agent whose tokens `laika activity sync` reads —
@@ -136,7 +145,7 @@
 # no fork. It never prints (Claude Code parses `Stop` output) and always
 # exits 0 (exit 2 there keeps Claude from stopping).
 #
-# Owned by SHELL (plugin/). LAI-752, LAI-757, LAI-787, LAI-792, LAI-859.
+# Owned by SHELL (plugin/). LAI-752, LAI-757, LAI-787, LAI-792, LAI-859, LAI-314.
 
 exec >/dev/null 2>&1
 unset USER_PROMPT
@@ -293,6 +302,17 @@ if [ "$AUTOMATED" = yes ]; then
       # One printf, one O_APPEND write; umask 077 makes the file 0600.
       if [ -n "$WHY" ]; then
         printf '%s %s %s\n' "$NOW" "$SID" "$WHY" >>"$HOME/.laika/activity/skip-sessions"
+        # A dispatched builder's repository, for the SIGNALS lane (LAI-314).
+        if [ "$MODE" = session-start ]; then
+          TOP="${CLAUDE_PROJECT_DIR:-$PWD}"
+          case "$TOP" in /*) ;; *) TOP='' ;; esac
+          while [ -n "$TOP" ] && [ ! -e "$TOP/.git" ]; do TOP="${TOP%/*}"; done
+          case "$TOP" in
+            '' | *'	'* | *'
+'*) ;;
+            *) printf '%s\t%s\n' "$NOW" "$TOP" >>"$HOME/.laika/activity/dispatched-repos" ;;
+          esac
+        fi
       else
         printf '%s %s\n' "$NOW" "$SID" >>"$HOME/.laika/activity/skip-sessions"
       fi

@@ -7,6 +7,8 @@ import {
   gitRunner,
   ianaTimeZone,
   machineTimeZone,
+  prunedReposFile,
+  rememberedRepos,
   type GitRunner,
   type PendingKey,
   type Snapshot,
@@ -31,7 +33,13 @@ import {
   type Scope,
 } from './activity-store.ts';
 import { lookbackStep, type LookbackOutcome } from './activity-lookback.ts';
-import { DRAFT_DAYS, timeStep, type TimeOutcome, type TimeSettings } from './activity-time.ts';
+import {
+  DRAFT_DAYS,
+  dispatchedReposFile,
+  timeStep,
+  type TimeOutcome,
+  type TimeSettings,
+} from './activity-time.ts';
 import { usageRoots, usageStep, type UsageOutcome } from './activity-usage.ts';
 import { readSettings } from './config.ts';
 import { readEnvFile } from './whoami.ts';
@@ -677,6 +685,11 @@ async function syncLocked(
     });
     if (signal.aborted) throw new Abandoned();
     writeFile600(paths.repos, snapshot.prunedRepos);
+    // The hook only appends to this one (LAI-314): expired and gone entries go here.
+    const dispatched = dispatchedReposFile(paths);
+    if (existsSync(dispatched)) {
+      writeFile600(dispatched, await prunedReposFile(rememberedRepos(paths, nowS, dispatched)));
+    }
 
     const answer = await putActivity(creds, JSON.stringify(snapshot.body), ctx.nowMs(), signal);
     if (answer.ok) {
@@ -872,6 +885,12 @@ export function startCollecting(
     checked_at: nowS,
     failures: 0,
     board,
+    // The board's last answer on time drafting, kept with what it was sent
+    // (time-drafts.json): dropped, `status` said "not asked yet" (LAI-314).
+    ...(previous?.drafting === undefined ? {} : { drafting: previous.drafting }),
+    ...(previous?.drafting_checked_at === undefined
+      ? {}
+      : { drafting_checked_at: previous.drafting_checked_at }),
     ...(previous?.last_result === undefined ? {} : { last_result: previous.last_result }),
   });
 }

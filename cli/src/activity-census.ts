@@ -182,10 +182,17 @@ export interface RememberedRepo {
   readonly lastUsed: number;
 }
 
-/** `repos` as written by the session-start hook: deduped, unexpired, existing. */
-export function rememberedRepos(paths: ActivityPaths, nowS: number): RememberedRepo[] {
+/**
+ * `repos` as written by the session-start hook: deduped, unexpired, existing.
+ * `file` reads another list of the same shape (`dispatched-repos`, LAI-314).
+ */
+export function rememberedRepos(
+  paths: ActivityPaths,
+  nowS: number,
+  file: string = paths.repos,
+): RememberedRepo[] {
   const latest = new Map<string, number>();
-  for (const line of (readText(paths.repos) ?? '').split('\n')) {
+  for (const line of (readText(file) ?? '').split('\n')) {
     const tab = line.indexOf('\t');
     if (tab <= 0) continue;
     const at = Number(line.slice(0, tab));
