@@ -416,9 +416,12 @@ task of each builder an Omnigent runner dispatched (D-095 — for its key alone)
 
 **What leaves**, on `PUT /api/v1/me/time-drafts`, for the last 7 days whose
 blocks changed: per local day and zone, each block's start, end, minutes, task
-key or `null`, and counts — prompts, replies, sessions, commits, marks. Never
-prompt or reply text, paths, repository or branch names, session ids, commit
-messages or window titles. `laika time draft [--days N]` prints the blocks for
+key or `null`, and counts — prompts, replies, sessions, commits, marks — and,
+to a board that says it takes them (`signal_times` in its time settings), which
+five minutes the block's prompts and commits fell in: `at`, `[bucket, count]`
+pairs, so My day can draw its SIGNALS lane (D-096). A day whose report would
+pass 16 KB with them goes without them. Never prompt or reply text, paths,
+repository or branch names, session ids, commit messages or window titles. `laika time draft [--days N]` prints the blocks for
 your last days, and what they were built from — Omnigent orchestrator turns
 included, since a block carries counts only — and which blocks took a
 dispatched builder's card, which the body does not say; `--json` prints the
