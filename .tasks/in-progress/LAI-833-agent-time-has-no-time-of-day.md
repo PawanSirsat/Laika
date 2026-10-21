@@ -2,11 +2,12 @@
 id: LAI-833
 title: 'Agent working time has no time of day: My day cannot draw its AGENTS lane'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p3
 depends-on: []
 discovered-from: LAI-831
-status: backlog
+status: in-progress
+started: 2026-10-21T11:26:58Z
 ---
 
 ## Goal
