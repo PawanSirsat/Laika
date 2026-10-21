@@ -962,10 +962,11 @@
 }
 
 /*
- * The SIGNALS lane (LAI-834, D-096): above the blocks, the day's prompts as
- * dots and its commits as ticks, each in the five minutes it fell in. Drawn
- * only on a day that has them, when the label column widens to name it and
- * "You" moves down with its row.
+ * The lanes (LAI-834, LAI-833): SIGNALS above the blocks — the day's prompts
+ * as dots and commits as ticks, each in the five minutes it fell in — and
+ * AGENTS under them — when the agent worked, blue on a card, grey on none.
+ * Each is drawn only on a day that has it; then the label column widens to
+ * name the rows, each label as tall as its row.
  */
 .dayline-grid-lanes {
   grid-template-columns: 4.75rem minmax(0, 1fr);
@@ -974,13 +975,12 @@
 .dayline-labels {
   display: flex;
   flex-direction: column;
+  padding-top: 1.125rem;
 }
 
-.dayline-label-signals {
+.dayline-lane-label {
   display: flex;
   align-items: center;
-  height: 1.75rem;
-  margin-top: 1.125rem;
   font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   letter-spacing: 0.08em;
@@ -988,9 +988,13 @@
   color: var(--text-primary);
 }
 
-/* The track's padding and the lane are above it now; the gap to its text is not. */
+.dayline-label-signals,
+.dayline-label-agents {
+  height: 1.75rem;
+}
+
 .dayline-label-you {
-  padding-top: 1.25rem;
+  height: 4.25rem;
 }
 
 .dayline-signals-lane {
@@ -1036,6 +1040,39 @@
 .dayline-key-commit {
   display: inline-block;
   flex: none;
+}
+
+.dayline-agents-lane {
+  position: relative;
+  height: 1.75rem;
+}
+
+.dayline-agent,
+.dayline-key-agent {
+  box-sizing: border-box;
+  border: 1px solid var(--chip-blue-border);
+  border-radius: var(--radius-chip);
+  background: var(--chip-blue-bg);
+}
+
+.dayline-agent {
+  position: absolute;
+  top: 0.375rem;
+  height: 1rem;
+  min-width: 2px;
+}
+
+.dayline-key-agent {
+  display: inline-block;
+  flex: none;
+  width: 0.875rem;
+  height: 0.5625rem;
+}
+
+.dayline-agent-off-card,
+.dayline-key-agent-off-card {
+  border-color: var(--chip-neutral-border);
+  background: var(--chip-neutral-bg);
 }
 
 /* C: the selected block's edges, to drag or to move by ← and →. */
