@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub, setTheme } from './harness.ts';
+import { closeBrowser, open, type ApiStub, setTheme, until } from './harness.ts';
 
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
 
@@ -136,11 +136,14 @@ void describe('the whole card opens the task', () => {
       const box = await title.boundingBox();
       assert.ok(box !== null && box.width > 0, 'the title has no layout box');
       const point: readonly [number, number] = [box.x + box.width / 2, box.y + box.height / 2];
-      const opensCard = await h.page.evaluate(
-        ([x, y]: readonly [number, number]) =>
-          document.elementFromPoint(x, y)?.closest('.card-open') != null,
-        point,
-      );
+      const hit = () =>
+        h.page.evaluate(
+          ([x, y]: readonly [number, number]) =>
+            document.elementFromPoint(x, y)?.closest('.card-open') != null,
+          point,
+        );
+      await until(hit);
+      const opensCard = await hit();
       assert.ok(opensCard, 'the pixels over the card title do not belong to the open control');
 
       // And the click itself.
@@ -171,6 +174,7 @@ void describe('a blocked task still shows as blocked after the rename', () => {
       for (const theme of ['Dark', 'Light']) {
         await setTheme(h.page, theme);
         await h.page.waitForTimeout(300);
+        await until(async () => (await h.page.locator('.card-blocked').count()) === 1);
         assert.equal(
           await h.page.locator('.card-blocked').count(),
           1,
