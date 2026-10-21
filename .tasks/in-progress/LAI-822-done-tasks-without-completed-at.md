@@ -2,11 +2,12 @@
 id: LAI-822
 title: 'Tasks created already done get no completed_at, so Laika''s 358 done tasks vanish from every ranged figure'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-796
-status: backlog
+status: in-progress
+started: 2026-10-21T05:37:19Z
 ---
 
 ## Goal
