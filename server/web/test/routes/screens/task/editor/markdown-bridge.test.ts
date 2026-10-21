@@ -667,18 +667,27 @@ void describe('a list item wrapped onto an indented second line opens rich (LAI-
   }
 
   /*
-   * TipTap's task-list tokenizer takes only an item's first line as its text
-   * and reads the lines under it as blocks of their own: a code block at six
-   * spaces, a second paragraph at two. CommonMark, and so the reading view,
-   * reads one paragraph. The editor would show something the board does not,
-   * so it stays Markdown (see LAI-853's Result).
+   * A task-list item wraps the same way, under its text rather than its box —
+   * how this repo's task files write their criteria. TipTap's tokenizer read
+   * the line under it as a block of its own: a code block at six spaces, a
+   * second paragraph at two (LAI-302).
    */
-  void test('a wrapped task-list item stays Markdown', () => {
+  void test('a wrapped task-list item opens rich, as one paragraph', () => {
     for (const markdown of [
       '- [ ] a criterion that\n      wraps like a task file',
       '- [ ] a criterion that\n  wraps',
     ]) {
-      assert.equal(openDocument(bridge, markdown).kind, 'source', JSON.stringify(markdown));
+      const opening = openDocument(bridge, markdown);
+      assert.equal(opening.kind, 'rich', JSON.stringify(markdown));
+      if (opening.kind !== 'rich') continue;
+      assert.deepEqual(opening.content.content?.[0]?.content?.[0]?.content, [
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: `a criterion that\n${markdown.split('\n')[1]!.trim()}` }],
+        },
+      ]);
+      const doc = bridge.schema.nodeFromJSON(opening.content);
+      assert.equal(toMarkdown(bridge, doc, opening), markdown);
     }
   });
 });
@@ -793,13 +802,18 @@ const IMPORTED = [
 const UNWRAPPED = IMPORTED.replace(/\n {2,}(?=\S)/g, ' ');
 
 void describe('a task imported from the repo opens in the rich view (LAI-312)', () => {
-  void test('the body the owner hit is read: any notice names a wrapped list line', () => {
+  void test('the body the owner hit opens rich, and an untouched save is the text as stored (LAI-302)', () => {
     const opening = openDocument(bridge, IMPORTED);
-    if (opening.kind === 'rich') return;
-    const named = /^The rich editor would rewrite line (\d+):/.exec(opening.reason);
-    assert.ok(named !== null, `the notice names no line: ${opening.reason}`);
-    const line = IMPORTED.split('\n')[Number(named[1]) - 1] ?? '';
-    assert.match(line, /^ {2,}\S/, `line ${named[1]} is not a wrapped list line: ${line}`);
+    assert.equal(
+      opening.kind,
+      'rich',
+      `opened as Markdown: ${opening.kind === 'source' ? opening.reason : ''}`,
+    );
+    if (opening.kind !== 'rich') return;
+    assert.equal(
+      toMarkdown(bridge, bridge.schema.nodeFromJSON(opening.content), opening),
+      IMPORTED,
+    );
   });
 
   void test('with its wrapped list items on one line it opens rich, and an untouched save is the text as stored', () => {
@@ -882,5 +896,163 @@ void describe('a task imported from the repo opens in the rich view (LAI-312)', 
       ],
     });
     assert.equal(toMarkdown(bridge, doc, opening), 'x*b*y');
+  });
+});
+
+/*
+ * LAI-302: a task-list item wrapped onto a line of its own, as this repo's
+ * task files write every criterion. CommonMark reads the line under the item's
+ * text as more of the same paragraph — indented or not, since a paragraph
+ * continues lazily — unless that line starts a block of its own.
+ */
+void describe('a task-list item wrapped onto a second line opens rich (LAI-302)', () => {
+  const wrapped = [
+    '- [ ] a criterion that\n      wraps like a task file',
+    '- [x] a criterion that\n      wraps',
+    '- [ ] one\n- [ ] a criterion that\n      wraps\n      twice\n- [x] three',
+    '- [ ] a criterion that\n      wraps\n  - [ ] and a nested one',
+    '- [ ] a\n  - [ ] nested that\n        wraps\n- [ ] b',
+    '- [ ] a criterion that\nwraps lazily',
+    'Criteria:\n\n- [ ] a criterion that\n      wraps with `code` and **bold**',
+  ];
+  for (const markdown of wrapped) {
+    void test(`opens rich, and an untouched save is the text as stored: ${JSON.stringify(markdown)}`, () => {
+      const opening = openDocument(bridge, markdown);
+      assert.equal(
+        opening.kind,
+        'rich',
+        `opened as Markdown: ${opening.kind === 'source' ? opening.reason : ''}`,
+      );
+      if (opening.kind !== 'rich') return;
+      const doc = bridge.schema.nodeFromJSON(opening.content);
+      assert.equal(toMarkdown(bridge, doc, opening), markdown);
+    });
+  }
+
+  void test('the wrapped line is the item’s own paragraph, not a block under it', () => {
+    const opening = openDocument(bridge, '- [ ] a criterion that\n      wraps\n  - [ ] nested');
+    assert.equal(opening.kind, 'rich');
+    if (opening.kind !== 'rich') return;
+    const item = opening.content.content?.[0]?.content?.[0];
+    assert.deepEqual(
+      item?.content?.map((node) => node.type),
+      ['paragraph', 'taskList'],
+    );
+    assert.deepEqual(item?.content?.[0]?.content, [
+      { type: 'text', text: 'a criterion that\nwraps' },
+    ]);
+  });
+
+  void test('a line under it that is not indented is still its words: a lazy continuation', () => {
+    const doc = parseMarkdown(bridge, '- [ ] a criterion that\nwraps lazily', bridge.schema);
+    assert.ok(doc !== null);
+    const json = doc.toJSON() as JSONContent;
+    assert.deepEqual(
+      json.content?.map((node) => node.type),
+      ['taskList'],
+    );
+    assert.deepEqual(json.content?.[0]?.content?.[0]?.content?.[0]?.content, [
+      { type: 'text', text: 'a criterion that\nwraps lazily' },
+    ]);
+  });
+
+  void test('an edited wrapped item is written wrapped under its text, and reads back', () => {
+    const opening = openDocument(bridge, '- [ ] a criterion that\n      wraps');
+    assert.equal(opening.kind, 'rich', 'positive control: the document opens rich');
+    if (opening.kind !== 'rich') return;
+    const doc = bridge.schema.nodeFromJSON({
+      type: 'doc',
+      content: [
+        {
+          type: 'taskList',
+          content: [
+            {
+              type: 'taskItem',
+              attrs: { checked: true },
+              content: [{ type: 'paragraph', content: [text('a criterion that\nwrapped')] }],
+            },
+          ],
+        },
+      ],
+    });
+    assert.equal(toMarkdown(bridge, doc, opening), '- [x] a criterion that\n      wrapped');
+  });
+
+  void test('an edit beside a wrapped item leaves it as written', () => {
+    const list = '- [ ] a criterion that\n      wraps like a task file';
+    const opening = openDocument(bridge, `Criteria:\n\n${list}`);
+    assert.equal(opening.kind, 'rich', 'positive control: the document opens rich');
+    if (opening.kind !== 'rich') return;
+    const [, ...rest] = opening.content.content ?? [];
+    const doc = bridge.schema.nodeFromJSON({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [text('Criteria, edited:')] }, ...rest],
+    });
+    assert.equal(toMarkdown(bridge, doc, opening), `Criteria, edited:\n\n${list}`);
+  });
+
+  void test('a line that starts a block of its own is not the item’s text', () => {
+    // A nested task list, a bullet, a quote and a heading interrupt the
+    // paragraph in CommonMark; none of them is read as more of its words.
+    for (const [markdown, second] of [
+      ['- [ ] a\n  - [ ] b', 'taskList'],
+      ['- [ ] a\n  - b', 'bulletList'],
+    ] as const) {
+      const opening = openDocument(bridge, markdown);
+      assert.equal(opening.kind, 'rich', JSON.stringify(markdown));
+      if (opening.kind !== 'rich') continue;
+      const item = opening.content.content?.[0]?.content?.[0];
+      assert.deepEqual(
+        item?.content?.map((node) => node.type),
+        ['paragraph', second],
+      );
+      assert.deepEqual(item?.content?.[0]?.content, [{ type: 'text', text: 'a' }]);
+    }
+    for (const markdown of ['- [ ] a\n> quoted', '- [ ] a\n# Heading']) {
+      const doc = parseMarkdown(bridge, markdown, bridge.schema);
+      assert.ok(doc !== null, JSON.stringify(markdown));
+      assert.deepEqual(
+        (doc.toJSON() as JSONContent).content?.map((node) => node.type),
+        ['taskList', markdown.includes('>') ? 'blockquote' : 'heading'],
+      );
+    }
+  });
+
+  void test('a changed character on the wrapped line is still a change', () => {
+    const same = (a: string, b: string): boolean => sameMarkdown(bridge, a, b);
+    assert.equal(
+      same('- [ ] a criterion that\n      wraps', '- [ ] a criterion that\nwraps'),
+      true,
+    );
+    assert.equal(
+      same('- [ ] a criterion that\n      wraps', '- [ ] a criterion that\nwrapz'),
+      false,
+    );
+    assert.equal(
+      same('- [ ] a criterion that\n      wraps', '- [ ] a criterion that\n      wraps!'),
+      false,
+    );
+    const opening = openDocument(bridge, '- [ ] a criterion that\n      wraps __here__');
+    assert.equal(opening.kind, 'source');
+    assert.match(opening.kind === 'source' ? opening.reason : '', /line 2/);
+  });
+});
+
+/*
+ * LAI-313: a refused body named the first wrapped line the check forgives,
+ * not the line that refused it — the notice compared texts without the
+ * indentation `sameMarkdown` forgives.
+ */
+void describe('a notice names the line that refuses, not a forgiven wrap (LAI-313)', () => {
+  void test('a wrapped bullet above the rewrite is not the line named', () => {
+    const opening = openDocument(
+      bridge,
+      '- a long item that\n  wraps\n- and __this__ is rewritten',
+    );
+    assert.equal(opening.kind, 'source');
+    assert.match(
+      opening.kind === 'source' ? opening.reason : '',
+      /^The rich editor would rewrite line 3:/,
+    );
   });
 });
