@@ -588,6 +588,8 @@ void describe('an owner', () => {
       await ready(h.page);
       const card = h.page.locator('.usage-card[data-section="spaces"]');
       await card.locator('.usage-row').first().waitFor();
+      // Wait for the count it asserts, not the first row (LAI-715).
+      await until(async () => (await card.locator('.usage-row').count()) === 4);
       // Still a row, so the rows add up…
       assert.equal(await card.locator('.usage-row').count(), 4);
       const row = card.locator('.usage-row', { hasText: 'Old site' });
@@ -678,6 +680,7 @@ void describe('an owner', () => {
       const card = h.page.locator('.prof-card[data-section="tokens"]');
       // The first weeks are empty, so their bars have no height: wait on a figure.
       await card.locator('[data-stat="tokens"]').waitFor({ timeout: 20_000 });
+      await until(async () => (await card.locator('.usage-week').count()) === 12);
       assert.equal(await card.locator('.usage-week').count(), 12);
       const text = await card.innerText();
       assert.match(text, /at least/i);

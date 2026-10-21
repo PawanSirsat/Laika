@@ -18,6 +18,7 @@ import {
   refuse,
   type ApiStub,
   type StubCall,
+  until,
 } from './harness.ts';
 
 const CORE = {
@@ -219,7 +220,13 @@ void describe('selecting rows in the List', () => {
         (await text(summary)).replace(' Dismiss', ''),
         '1 updated, 1 refused, 1 already there',
       );
-      assert.deepEqual(await h.page.locator('.list-bulk-refusal').allInnerTexts(), [
+      const refusals = h.page.locator('.list-bulk-refusal');
+      await until(
+        async () =>
+          (await refusals.allInnerTexts()).join('|') ===
+          'LC-2 — Cannot move a task from done to in_progress',
+      );
+      assert.deepEqual(await refusals.allInnerTexts(), [
         'LC-2 — Cannot move a task from done to in_progress',
       ]);
 
@@ -285,7 +292,10 @@ void describe('selecting rows in the List', () => {
       await h.page.locator('.list-row').first().waitFor({ timeout: 20_000 });
 
       // Positive control: the rows are really here before the absences count.
+      // Wait for the count it asserts, not the first row (LAI-715).
+      await until(async () => (await h.page.locator('.list-row').count()) === 50);
       assert.equal(await h.page.locator('.list-row').count(), 50);
+      await until(async () => (await h.page.locator('.list-status').count()) >= 50);
       assert.ok((await h.page.locator('.list-status').count()) >= 50, 'no status pills');
 
       assert.equal(

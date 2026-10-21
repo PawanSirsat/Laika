@@ -20,7 +20,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Locator, Page } from 'playwright';
-import { closeBrowser, open, setTheme, type ApiStub } from './harness.ts';
+import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
 import { valueOf } from './dropdown.ts';
 
 const NOW = Date.now();
@@ -231,6 +231,7 @@ void describe('the board card draws Jira’s priority icon (LAI-705)', () => {
       await h.page.locator('article.card').first().waitFor({ timeout: 20_000 });
       // Positive control: every card is on the page, so the absence below is
       // about the card and not about an empty board.
+      await until(async () => (await h.page.locator('article.card').count()) === 3);
       assert.equal(await h.page.locator('article.card').count(), 3, 'all three cards must render');
 
       const card = (key: string) =>
@@ -283,6 +284,7 @@ void describe('the List draws the icon before P1 (LAI-705)', () => {
     const h = await open('/list?project=laika-core', STUB);
     try {
       await h.page.locator('.list-row').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.list-row').count()) === 3);
       assert.equal(await h.page.locator('.list-row').count(), 3, 'all three rows must render');
 
       const row = (key: string) =>

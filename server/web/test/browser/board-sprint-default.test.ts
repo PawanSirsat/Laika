@@ -19,7 +19,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { pick } from './dropdown.ts';
-import { closeBrowser, open, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, open, until, type ApiStub, type Harness } from './harness.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -302,7 +302,9 @@ void describe('the board opens on the active sprint (LAI-713)', () => {
     const h = await open('/list?project=laika-core', stub(WITH_ACTIVE));
     try {
       await h.page.locator('tr.list-row').first().waitFor({ timeout: 15_000 });
+      // The window is for a sprint written late; the rows are waited for (LAI-715).
       await h.page.waitForTimeout(400);
+      await until(async () => (await h.page.locator('tr.list-row').count()) === EVERY.length);
       assert.equal(await h.page.locator('tr.list-row').count(), EVERY.length);
       assert.equal(sprintInUrl(h), null);
     } finally {
