@@ -2,11 +2,12 @@
 id: LAI-715
 title: 'Browser-test flakes on GitHub runners now block automatic deploys'
 area: web
-assignee: unclaimed
+assignee: strelka
 priority: p1
 depends-on: []
 discovered-from: LAI-714
-status: backlog
+started: 2026-10-21T12:41:11Z
+status: in-progress
 ---
 
 ## Goal
