@@ -2177,13 +2177,13 @@ void describe('a dispatched builder’s agent time in a usage report (LAI-315)',
   const NINE = NOW_S - 3_600;
   const bucket = (s: number) => Math.floor((s * 1000) / 300_000);
 
-  type Body = {
+  interface Body {
     excluded?: string[];
     days: {
       day: string;
       dispatched?: { key: string; task?: string; from: number; seconds: number[] }[];
     }[];
-  };
+  }
 
   async function report(telemetry: boolean): Promise<Body> {
     const root = home();

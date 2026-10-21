@@ -27,7 +27,12 @@ const BUILDER = '3f9c1d2e-8a7b-4c6d-9e0f-1a2b3c4d5e6f';
 let t: TestDb;
 let owner: ResolvedActor;
 
-type Dispatched = { key: string; task?: string; from: number; seconds: number[] };
+interface Dispatched {
+  key: string;
+  task?: string;
+  from: number;
+  seconds: number[];
+}
 
 function report(dispatched: Dispatched[]) {
   recordTokenUsage(
