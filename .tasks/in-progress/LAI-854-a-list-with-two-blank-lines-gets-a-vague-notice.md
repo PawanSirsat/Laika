@@ -2,11 +2,12 @@
 id: LAI-854
 title: 'A list with two blank lines between items opens as Markdown with a notice that names nothing'
 area: web
-assignee: unclaimed
+assignee: strelka
 priority: p3
 depends-on: []
 discovered-from: LAI-849
-status: backlog
+status: in-progress
+started: 2026-10-21T21:52+05:30
 ---
 
 ## Goal
