@@ -2435,7 +2435,7 @@ PUT    /api/v1/me/time/solidtime/import      body { v, member_id, tz, from, to, 
 GET    /api/v1/org/time/solidtime            the map, the people confirmed, and people not on Laika   (owner, admin; session only)
 PUT    /api/v1/org/time/solidtime/projects   body { projects } → { projects }   PUT .../people body { people } → { people }   (owner, admin; session only)
 PUT    /api/v1/org/time/solidtime/import     body { v, members, tz, from, to, complete, entries } → what changed, and not_on_laika   (owner, admin; session only)
-GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only)
+GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only; name 1–80 chars, trimmed — Change organisation settings, LAI-984)
 POST   /api/v1/org/github-webhook            set or rotate the GitHub webhook secret; answers it once (session only)
 DELETE /api/v1/org/github-webhook            clear it (204; session only)
 GET    /api/v1/org/model-prices              PUT/DELETE .../model-prices/:model — API-equivalent prices (set: owner, admin; session only; LAI-773)
@@ -2453,8 +2453,10 @@ GET    /api/v1/me/analytics-views            ?limit=&cursor= — who looked at t
 GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner / a role granted *See everyone's analytics*; session only; logged, D-102)
 GET    /api/v1/usage                         ?days=1–92&project=&tz= — the Usage page   (owner/admin; a member with ?project=)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
+                                             POST takes optional expires_in_days: 1 | 7 | 30, default 7 (LAI-984)
 GET    /api/v1/invites/:token                unauthenticated preview — org name, inviter, role, expiry
 DELETE /api/v1/invites/:id                   revoke a pending invite (admin+)
+POST   /api/v1/invites/:id/reissue           body { expires_in_days? } — revoke a pending or expired invite and issue a new link for the same address, role and project, in one step → 201, POST /invites' answer; 409 if accepted   (as creating it: Invite people, and only the owner for an admin invite; LAI-984)
 GET    /api/v1/projects                      POST /api/v1/projects   (admin+)
        └ each entry adds five fields §4.3 does not store — see below
 GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
@@ -2510,6 +2512,7 @@ GET    /api/v1/tasks/:id/comments            POST /api/v1/tasks/:id/comments
 PATCH  /api/v1/comments/:id                  DELETE /api/v1/comments/:id
 GET    /api/v1/projects/:slug/activity       GET /api/v1/activity    (org-wide, viewer+)
 GET    /api/v1/activity/history              ?actor=&project=&type=&since=&until= — every row, newest first   (owner, admin)
+                                             ?format=csv — the same filters and gate, every row as one streamed text/csv file (no limit or cursor; LAI-984)
 GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id
 GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)
 POST   /api/v1/heartbeats                    202, token auth only
@@ -3428,6 +3431,21 @@ refused from that moment. `DELETE /org/github-webhook` clears it and answers
 `204`; every delivery is then refused `401`. Both refuse a token `403` with
 `details.reason: "session_required"`: whoever holds the secret can sign
 deliveries that confirm an agent's proof (D-083).
+
+**The history export (LAI-984).** `GET /activity/history?format=csv` is the
+JSON answer's rows — same gate, same filters, same validation, newest first —
+as one `text/csv; charset=utf-8` attachment named `laika-history-<date>.csv`,
+streamed rather than paged, so `limit` and `cursor` beside it are `400`. A
+refusal or a bad filter is the ordinary JSON error, before the file starts.
+Columns, in order: `created_at` (ISO 8601, UTC), `created_at_ms`, `seq`, `id`,
+`type`, `actor_kind`, `actor_id`, `actor_name`, `actor_token_id`,
+`project_id`, `project_slug`, `task_id`, `payload` (the row's payload as
+JSON). RFC 4180: a field with a comma, quote, CR or LF is quoted and its
+quotes doubled; lines end CRLF; a text field starting `=`, `+`, `-`, `@`, tab
+or CR is prefixed `'`, so a spreadsheet does not run it. `member.added`,
+`member.role_changed` and `member.removed` rows name their subject:
+`payload.user_name` beside `user_id`, with `from`/`to` (a role change) or
+`role` / `org_role` as before.
 
 `GET /review` answers `{ tasks, truncated }`: every task in a `review`
 status on every project where the caller holds `task.write`, **oldest waiting
