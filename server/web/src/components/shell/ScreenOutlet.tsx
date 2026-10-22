@@ -29,6 +29,8 @@ import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx
 import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
 import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
 import { WorkScreen } from '../../routes/screens/work/WorkScreen.tsx';
+import { SpaceSettingsScreen } from '../../routes/screens/space-settings/SpaceSettingsScreen.tsx';
+import { routeParams } from '../../routes/route-table.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import {
   INBOX_TABS,
@@ -71,12 +73,20 @@ export interface ScreenEntry {
 
 function BoardRoute() {
   const {
-    route: { params, setParams, path },
+    route: { params, setParams, path, navigate },
     me,
   } = useShell();
   // `/board` and `/list` are the same screen in two modes — the design makes
   // them sibling tabs, so the route is what chooses (LAI-270).
-  return <BoardScreen params={params} onParamsChange={setParams} me={me} path={path} />;
+  return (
+    <BoardScreen
+      params={params}
+      onParamsChange={setParams}
+      me={me}
+      path={path}
+      onNavigate={navigate}
+    />
+  );
 }
 
 function ProjectsRoute() {
@@ -387,6 +397,29 @@ function MembersRoute() {
   return <MembersScreen slug={params.get('project') ?? undefined} me={me} />;
 }
 
+/**
+ * A space's settings (D-103, LAI-977). The slug is in the path; `?tab=` is
+ * the tab, pushed so Back walks the tabs as they were seen.
+ */
+function SpaceSettingsRoute() {
+  const {
+    route: { path, route, params, navigate },
+    me,
+    orgName,
+  } = useShell();
+  const slug = route === undefined ? undefined : routeParams(route.path, path)?.slug;
+  if (slug === undefined || me === undefined) return null;
+  return (
+    <SpaceSettingsScreen
+      slug={slug}
+      me={me}
+      orgName={orgName}
+      tab={params.get('tab') ?? undefined}
+      onNavigate={navigate}
+    />
+  );
+}
+
 function ProfileRoute() {
   const {
     route: { params, setParams, navigate },
@@ -442,6 +475,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/developer': { Component: DeveloperRoute, layout: 'plain' },
   '/developer/connect': { Component: ConnectRoute, layout: 'plain' },
   '/members': { Component: MembersRoute, layout: 'plain' },
+  '/spaces/:slug/settings': { Component: SpaceSettingsRoute, layout: 'plain' },
   '/people': { Component: ProfileRoute, layout: 'plain' },
   '/login': { Component: LoginRoute, layout: 'plain' },
   '/invite': { Component: InviteRoute, layout: 'plain' },
@@ -465,7 +499,9 @@ export function ScreenOutlet() {
 
   if (route === undefined) return <NotFoundRoute />;
 
-  const entry = SCREENS[path];
+  // By the route's own path, so a parameterised one (`/spaces/:slug/settings`)
+  // finds its entry; for every other route the two are the same string.
+  const entry = SCREENS[route.path] ?? SCREENS[path];
   // A routed path with no registry entry cannot happen — the bijection test
   // fails the build first — but rendering 404 beats rendering nothing if it
   // ever does.

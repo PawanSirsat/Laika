@@ -330,17 +330,23 @@ void describe('column width', () => {
   });
 });
 
-void describe('project visibility permission', () => {
+/*
+ * **The `project.settings.edit` gate, read through Hide done** (LAI-977).
+ * These two cases were written against Visibility, which D-103 moved to the
+ * space's settings page; Hide done is the panel's other space-wide setting
+ * and sits behind the same live grant, so the property is unchanged.
+ */
+void describe('project settings permission', () => {
   for (const [role, granted] of [
     ['admin', false],
     ['member', true],
     ['owner', true],
   ] as const) {
-    void test(`${role} ${granted ? 'can' : 'cannot'} edit visibility from the live project grant`, async () => {
+    void test(`${role} ${granted ? 'can' : 'cannot'} edit Hide done from the live project grant`, async () => {
       const h = await open('/board?project=laika-core', withProjectSettings(role, granted));
       try {
         await openPanel(h);
-        assert.equal(await h.page.locator('input[name="vs-visibility"]').count(), granted ? 2 : 0);
+        assert.equal(await h.page.locator('input[name="vs-hide-done"]').count(), granted ? 6 : 0);
       } finally {
         await h.close();
       }
@@ -349,7 +355,7 @@ void describe('project visibility permission', () => {
 });
 
 void describe('an implicit viewer is not a lead (LAI-970)', () => {
-  void test('an org viewer granted Open every project is never offered Visibility', async () => {
+  void test('an org viewer granted Open every project is never offered Hide done', async () => {
     // `implicit_project_role: viewer` and no membership: the server answers
     // `project.settings.edit` no, as `effectiveProjectRole` makes them a viewer.
     const h = await open(
@@ -371,13 +377,13 @@ void describe('an implicit viewer is not a lead (LAI-970)', () => {
           },
         },
       },
-      { before: (page) => watchFor(page, ['input[name="vs-visibility"]', '.lane-add']) },
+      { before: (page) => watchFor(page, ['input[name="vs-hide-done"]', '.lane-add']) },
     );
     try {
       await openPanel(h);
       await until(() => h.calls.some((c) => c.path === '/api/v1/permissions'));
       await new Promise((resolve) => setTimeout(resolve, 600));
-      assert.equal(await everSeen(h.page, 'input[name="vs-visibility"]'), false);
+      assert.equal(await everSeen(h.page, 'input[name="vs-hide-done"]'), false);
       // Nor any write: `task.write` is a member's, and a viewer is not one.
       assert.equal(await everSeen(h.page, '.lane-add'), false, 'offered Add task');
     } finally {

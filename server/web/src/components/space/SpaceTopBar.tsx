@@ -10,6 +10,7 @@ import { PRIORITIES, type Member, type TaskPriority } from '../../api/tasks.ts';
 import { useSpaceFiltersClaimed } from './SpaceSlot.tsx';
 import { useShell } from '../shell/shell-context.ts';
 import { Dropdown } from '../Dropdown.tsx';
+import { SpaceMenu } from './SpaceMenu.tsx';
 
 export interface SpaceTopBarProps {
   readonly members: readonly Member[];
@@ -38,9 +39,9 @@ export interface SpaceTopBarProps {
  * paste — the rule `use-route.ts` states and the reason filters are query
  * params rather than component state.
  *
- * The prototype's `⋯` space-settings button is **not** rendered: it opens
- * nothing in the design either, and a control that does nothing is what §5.1
- * forbids. Space settings arrive with a screen to put behind them.
+ * The prototype's `⋯` is `SpaceMenu`, now that Space settings is a page to
+ * put behind it (LAI-977). Until then it was not rendered: a control that
+ * does nothing is what §5.1 forbids.
  */
 export function SpaceTopBar({
   members,
@@ -428,6 +429,7 @@ export function SpaceTopBar({
           </svg>
           Create
         </button>
+        {slug !== undefined && <SpaceMenu slug={slug} />}
       </div>
     </>
   );

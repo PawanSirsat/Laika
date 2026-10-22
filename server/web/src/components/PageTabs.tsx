@@ -14,6 +14,8 @@ export interface PageTabsProps {
    * on a tab it is the answer to *"how many are waiting here"*.
    */
   readonly counts?: Readonly<Record<string, number | undefined>> | undefined;
+  /** What a count counts, for a screen reader: `waiting` (the default), `people`. */
+  readonly countNoun?: string | undefined;
   readonly onNavigate: (to: string) => void;
 }
 
@@ -25,7 +27,15 @@ export interface PageTabsProps {
  * **Links, not buttons**: a tab is an address (`?tab=`), so middle-click,
  * copy-link and Back all work, and the click only suppresses the reload.
  */
-export function PageTabs({ label, path, tabs, current, counts, onNavigate }: PageTabsProps) {
+export function PageTabs({
+  label,
+  path,
+  tabs,
+  current,
+  counts,
+  countNoun = 'waiting',
+  onNavigate,
+}: PageTabsProps) {
   return (
     <nav className="page-tabs" aria-label={label}>
       <ul>
@@ -51,7 +61,7 @@ export function PageTabs({ label, path, tabs, current, counts, onNavigate }: Pag
                 {count !== undefined && (
                   <span className="page-tab-count">
                     {count}
-                    <span className="visually-hidden"> waiting</span>
+                    <span className="visually-hidden"> {countNoun}</span>
                   </span>
                 )}
               </a>

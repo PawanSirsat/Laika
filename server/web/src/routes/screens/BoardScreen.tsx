@@ -59,7 +59,8 @@ import {
 } from '../../api/board-derive.ts';
 import { useProjectStatuses, useStatusEditor } from '../../api/use-statuses.ts';
 import type { ProjectStatus } from '../../api/statuses.ts';
-import { setHideDoneAfter, setProjectVisibility } from '../../api/projects.ts';
+import { setHideDoneAfter } from '../../api/projects.ts';
+import { spaceSettingsHref } from '../space-settings-url.ts';
 import { BoardInsights } from './board/BoardInsights.tsx';
 import { BoardToolbar } from './board/BoardToolbar.tsx';
 import { DeleteColumnDialog } from './board/DeleteColumnDialog.tsx';
@@ -96,6 +97,8 @@ export interface BoardScreenProps {
   readonly onParamsChange: (next: URLSearchParams, options?: { readonly push?: boolean }) => void;
   /** The route being rendered — `/board` or `/list` (LAI-270). */
   readonly path?: string;
+  /** In-app navigation, for View settings' link to Space settings (LAI-977). */
+  readonly onNavigate?: ((to: string) => void) | undefined;
 }
 
 /**
@@ -109,7 +112,13 @@ export interface BoardScreenProps {
 /** How long after a drop a `settled` card counts as carried there by hand. */
 const CARRIED_MS = 1000;
 
-export function BoardScreen({ params, onParamsChange, me, path = '/board' }: BoardScreenProps) {
+export function BoardScreen({
+  params,
+  onParamsChange,
+  me,
+  path = '/board',
+  onNavigate,
+}: BoardScreenProps) {
   // What the server says the reader may do here — denied until it answers (LAI-970).
   const gates = useGates(me !== undefined);
   const { theme } = useTheme();
@@ -1099,18 +1108,19 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                 },
               }
             : {})}
-          visibility={project?.visibility}
-          {...(mayConfigure && slug !== undefined
-            ? {
-                onVisibilityChange: (next: Project['visibility']) => {
-                  // The server's project back, as Hide done does: the panel
-                  // shows what was stored, not what was asked for.
-                  void setProjectVisibility(slug, next).then((updated) => {
-                    setProject(updated);
-                  });
-                },
-              }
-            : {})}
+          {...(slug === undefined
+            ? {}
+            : {
+                spaceSettingsHref: spaceSettingsHref(slug),
+                ...(onNavigate === undefined
+                  ? {}
+                  : {
+                      onOpenSpaceSettings: (href: string) => {
+                        setSettingsAt(undefined);
+                        onNavigate(href);
+                      },
+                    }),
+              })}
           forList={view === 'list'}
           group={group}
           onGroupChange={(next) => {
