@@ -182,6 +182,7 @@ the feed but not export it — that is the moment to split them, and the split w
 be obvious because someone will be asking for it.
 | Configure webhooks | ✓ (session only) | ✓ (session only) | — | — |
 | View the organisation | ✓ | ✓ | ✓ | ✓ |
+| Presence and capacity | ✓ | ✓ | ✓ | ✓ |
 | View a member's profile | ✓ (session only) | ✓ (session only) | — | — |
 | Set a member's profile kind | ✓ (session only) | ✓ (session only) | — | — |
 | Rate a member | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |

@@ -66,6 +66,8 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Export audit log', ['audit_log.export']],
   ['Configure webhooks', ['webhook.configure']],
   ['View the organisation', ['org.read']],
+  // LAI-953: the row LAI-432 waited on, landed after it was done.
+  ['Presence and capacity', ['presence.read', 'capacity.read']],
   ["View a member's profile", ['profile.read']],
   ["Set a member's profile kind", ['profile.set_kind']],
   ['Rate a member', ['profile.rate']],
@@ -121,24 +123,19 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
 /**
  * Actions `can()` has that no §3 row grants.
  *
- * **This list should be empty and is not.** Each entry is a real gap between the
- * code and the document, not a design decision, and the staleness test below
+ * **This list should be empty, and is.** Each entry would be a real gap between
+ * the code and the document, not a design decision, and the staleness test below
  * removes an entry the moment §3 grows a row for it.
  */
 const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map([
-  // In flight. §3.1 gains a "Presence and capacity" row (✓ ✓ ✓ ✓), written by
-  // CHIEF and applied at merge; the staleness test below drops both the moment
-  // it lands. Re-checked after every merge of `master`, which is when they
-  // expire (LAI-219).
-  ['presence.read', 'LAI-432, in flight: awaiting §3.1\'s "Presence and capacity" row.'],
-  ['capacity.read', 'LAI-432, in flight: awaiting §3.1\'s "Presence and capacity" row.'],
   // Empty, and it should stay that way: an action `can()` allows and §3 never
   // grants is a permission with no written source.
   //
-  // Emptied twice now — LAI-408's `unlisted.log_own` and LAI-417's
-  // `heartbeat.send_own` — both by the staleness test below, on the merge each
-  // entry named as its retirement. The map is the mechanism for a two-owner
-  // change in flight, not a place to park one.
+  // Emptied three times now — LAI-408's `unlisted.log_own`, LAI-417's
+  // `heartbeat.send_own`, and LAI-953's `presence.read` / `capacity.read` (the
+  // row LAI-432 waited on, landed after LAI-432 was done) — each by the
+  // staleness test below. The map is the mechanism for a two-owner change in
+  // flight, not a place to park one.
 ]);
 
 /**
