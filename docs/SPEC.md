@@ -4395,22 +4395,25 @@ anything missing sends the task back.
   *in progress · to do · backlog*, a thin stacked bar of committed work (in
   progress, to do), and apart from it *N waiting on reviewers* and *due in 7
   days*; *Agents · N running*, their agents with a green dot on each one
-  running, or *No agents running*; *Spaces · N*, the spaces they have open work in as chips
+  running, or *No agents running*; for owners and admins *Activity · 14 days
+  · total*, the fortnight as three figures, *by hand · by agents ·
+  bookkeeping* from `activity_14d_split`, each with what it counts on hover
+  and **no bar chart** (LAI-996); *Spaces · N*, the spaces they have open work in as chips
   carrying the space's colour (the sidebar badge's, keyed by slug) and its
   committed count, with backlog and review on hover, or *No spaces*; the name
   linking to the profile for owners and admins. **No task is read and no
   task is listed** (LAI-992, the owner): the *Show tasks* footer and the
   *working on LAI-9* line LAI-767 drew each cost a `GET /tasks/:id`, and the
-  workload counts already say how many are in progress. **Nor the fortnight's
-  board activity** (LAI-992): the sparkline and *by hand · by agents ·
-  bookkeeping* are the profile's, not this screen's. **Every figure with a rule
+  workload counts already say how many are in progress. **Nor the sparkline**
+  (LAI-992): the 14-day bar chart is the profile's; the three figures stay
+  (LAI-996). **Every figure with a rule
   behind it says the rule on hover** — the load badge, overdue, each count,
-  each space and agent chip, the status line — the same
+  each activity figure, each space and agent chip, the status line — the same
   words on a card and in the list. People never seen
   fold into one line at the bottom, unless searched for or filtered to.
   **List** draws the same people, filtered and sorted the same way, as a
   table: person, load, a workload bar, in progress, to do, review, agents
-  running, and spaces.
+  running, for owners and admins *hand · agents · bookkeeping*, and spaces.
   **Every row's bar is drawn to one scale, the heaviest committed count on
   the page, so the table is the team-load chart** — it replaced the *Team
   load* and *Agents running now* panels that LAI-767 put under the grid
