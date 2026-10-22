@@ -115,7 +115,7 @@ void describe('My day: the organisation’s breaks on the Timeline', () => {
       const pill = band.locator('[data-scheduled-pill]');
       await until(async () => (await pill.locator('[data-scheduled-worked]').count()) === 1);
       assert.equal(await pill.getAttribute('data-worked'), '30');
-      assert.equal(await pill.locator('[data-scheduled-worked]').innerText(), '30 min worked');
+      assert.equal(await pill.locator('[data-scheduled-worked]').innerText(), '30m worked');
       assert.equal(await pill.locator('[data-break-kind="meal"]').count(), 1, 'Lunch has no fork');
       assert.match((await pill.getAttribute('title')) ?? '', /30 min off, 30 min worked/);
       // Its bar: worked first, then off, half each.

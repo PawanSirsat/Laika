@@ -132,11 +132,19 @@ function labelOf(
   return { top: e.note === null ? general : `${general} · ${e.note}`, title: '', card: undefined };
 }
 
-/** `30 min worked`, `worked through`, or `offline` — the window's own word (LAI-894). */
+/** `1h 20m`, `45m` — the pill's compact clock, the design's own (LAI-894). */
+function compact(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${String(m)}m`;
+  return m === 0 ? `${String(h)}h` : `${String(h)}h ${String(m)}m`;
+}
+
+/** `30m worked`, `worked through`, or `offline` — the window's own word (LAI-894). */
 function workedLabel(w: { readonly worked: number; readonly rest: number }): string {
   if (w.worked === 0) return 'offline';
   if (w.rest === 0) return 'worked through';
-  return `${duration(w.worked)} worked`;
+  return `${compact(w.worked)} worked`;
 }
 
 /**
@@ -1144,12 +1152,13 @@ export function Timeline({
                   const range = rangeOf(s);
                   const bandW = Math.max(1, x(s.end) - x(s.start));
                   const pillW = Math.max(18, bandW - 6);
-                  // The design's own arithmetic: ~6.5px a character, the glyph
-                  // and the padding first. The worked figure goes before the
-                  // range; the glyph and the name stay whatever the room.
-                  const room = pillW - 14 - 17 - s.label.length * 6.5;
-                  const showWorked = room >= worked.length * 6.5 + 6;
-                  const showRange = showWorked && room >= (worked.length + range.length) * 6.5 + 16;
+                  // The design's own arithmetic at the 12px step: ~7px a
+                  // character, the glyph and the padding first. The worked
+                  // figure goes before the range; the glyph and the name stay
+                  // whatever the room.
+                  const room = pillW - 14 - 17 - s.label.length * 7;
+                  const showWorked = room >= worked.length * 7 + 6;
+                  const showRange = showWorked && room >= (worked.length + range.length) * 7 + 16;
                   const cards = [
                     ...new Set(
                       line.blocks

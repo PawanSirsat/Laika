@@ -1376,7 +1376,7 @@
   border-radius: 7px;
   background: color-mix(in srgb, var(--chip-green) 12%, var(--bg-card));
   color: var(--chip-green);
-  font-size: var(--text-tiny);
+  font-size: var(--text-small);
   line-height: 1;
   pointer-events: auto;
 }
