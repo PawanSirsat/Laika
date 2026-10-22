@@ -6,7 +6,8 @@ assignee: strelka
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T07:06:44Z
 ---
 
 ## Goal
@@ -148,6 +149,13 @@ or commit messages.
       - **§13.4**, the paragraph *Time drafts are inbound too*
         (`:4684-4689`).
 - [ ] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+
+## Deviation (claim)
+
+Claimed on Strelka on a branch based on Belka's PR #32
+(`origin/chief-ops-tasks-1022`, which files this task and D-098) rather than on
+`master`, because the owner told Strelka to start now, in parallel, before #32
+merges. The PR for this task must merge after #32.
 
 ## Notes
 
