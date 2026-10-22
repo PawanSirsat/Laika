@@ -244,18 +244,21 @@ function orgRoleName(role: string): string {
  * someone acting on them.
  */
 function describeMembership(event: Pick<ActivityEvent, 'type' | 'payload'>): string | undefined {
-  const payload = event.payload as {
-    user_name?: unknown;
-    role?: unknown;
-    org_role?: unknown;
-    from?: unknown;
-    to?: unknown;
-    via?: unknown;
-    scope?: unknown;
-  } | null;
-  if (payload === null || typeof payload.user_name !== 'string' || payload.user_name === '') {
-    return undefined;
-  }
+  const payload = event.payload as
+    | {
+        user_name?: unknown;
+        role?: unknown;
+        org_role?: unknown;
+        from?: unknown;
+        to?: unknown;
+        via?: unknown;
+        scope?: unknown;
+      }
+    | null
+    | undefined;
+  // Absent as well as null: a row built without a payload has none at all.
+  if (payload === null || payload === undefined) return undefined;
+  if (typeof payload.user_name !== 'string' || payload.user_name === '') return undefined;
   const who = payload.user_name;
   const org = payload.scope === 'org';
   const name = (role: unknown): string | undefined =>

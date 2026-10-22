@@ -144,6 +144,14 @@ void describe('describeEvent', () => {
     );
   });
 
+  void test('a membership row with no payload at all keeps the generic line', () => {
+    const bare = {
+      ...event({ type: 'member.added' }),
+      payload: undefined,
+    } as unknown as ActivityEvent;
+    assert.equal(describeEvent(bare), 'added a member');
+  });
+
   void test('an older row without a name keeps the generic line', () => {
     // Rows written before LAI-993 carry only ids: never "added undefined".
     assert.equal(
