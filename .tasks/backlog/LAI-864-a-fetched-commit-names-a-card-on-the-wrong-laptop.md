@@ -141,3 +141,77 @@ Those are Strelka's tasks; Belka never worked on them.
   reach, or whose commits feed drafts. The rule lives only in the code header
   and the README. If the fix changes what SPEC says about drafts (§4.47,
   §13.4), stop and ask CHIEF; no SPEC edit is granted here.
+
+## Review notes (PR #32, round 1; CHIEF, 2026-10-22)
+
+These notes were appended after the task was claimed, so the criteria above
+were not edited (§2). **Where a note and the text above disagree, the note
+wins.**
+
+**B2. Which reflog entries count as "made here".** This was measured on
+2026-10-22 with git 2.50.1, in a scratch repo with a bare remote and two
+clones under one email.
+
+- **Made here:**
+  - `commit:` and `commit (initial):`;
+  - `commit (amend):`. The commit is edited on this laptop, and it keeps its
+    author time;
+  - every rebase pick: `rebase (pick):`, `rebase -i (pick):` and the
+    `reword`, `squash`, `fixup` and `edit` entries;
+  - **the `(pick)` entry `git pull --rebase` writes.** On a quiet run it reads
+    `pull -q --rebase (pick): <subject>`.
+
+  **Why the pull entry matters:** after a `pull --rebase`, the person's own
+  commit lives on only under that entry. Its `commit:` hash
+  (`3448c5b`, `commit: LAI-7 mine on A`) is on no branch any more.
+  `git log --branches` lists only the replayed `3b0c0a8`, whose sole entry is
+  `pull -q --rebase (pick): LAI-7 mine on A`. A rebase replays the branch's
+  own commits that upstream lacks, so its picks are this laptop's work, at
+  their original author time.
+- **Not made here:**
+  - `cherry-pick:`. It copies the source's author and author time; the copy
+    and the source had the same `%ae` and `%at`. If the source is another
+    laptop's commit, counting the copy is this bug again, at that laptop's
+    time. If the source was made here, it already counts by its own entry,
+    and the copy would count it twice. **This reverses the `cherry-pick`
+    clause in *The signal* above.**
+  - `pull` (fast-forward), `merge`, `reset`, `checkout`, `branch`, and
+    `rebase (start)` / `(finish)`. None of these is a commit made here.
+- **An edge, to record rather than fix:** a rebase that flattens a local
+  merge of someone else's branch picks their commits too, and they would
+  count.
+
+**Add these tests** to the real-git ones in the third criterion:
+- **The positive pull case.** A commits `LAI-7 …`, B pushes, and A runs
+  `git pull --rebase`. A's block still ties to LAI-7 and counts 1. In the
+  same test, B's commit, which the pull brought in, neither ties nor counts.
+  This test passes today; it is the guard that stops the filter from being
+  too strict.
+- **Amend.** A amends its `LAI-7 …` commit. The block ties to LAI-7 and
+  counts 1, not 2.
+- **Cherry-pick.**
+  - A cherry-picks B's `LAI-9 …`. It neither ties nor counts.
+  - A cherry-picks its own commit onto a second branch. It counts once.
+- **Mutation.** Treat `(pick)` entries as not made here. The pull test goes
+  red.
+
+**B3. No escape hatch.** In *The signal*, replace the clean-up bullet's last
+sentence ("If no workable signal survives it, the test below shows what is
+lost, and that is written here before review."). In the third test bullet,
+replace "or the test records the loss the signal criterion allows". Both
+become:
+
+> Reflog entries do not survive `git worktree remove` + `git branch -d`. If
+> no signal survives the clean-up, stop and ask the owner on the card before
+> building. A loss ships only with their word, recorded here.
+
+Measured: a commit made in a temporary worktree, then merged, had 2 reflog
+entries before `git worktree remove` and `git branch -d`, and 0 after. It was
+still in history.
+
+**Non-blocking: the consumer is `draftDays`, not `buildDraft`.** In *The
+fix*, read "dropped before `draftDays` sees it" for "dropped before
+`buildDraft` sees it". `buildDraft` (`cli/src/activity-time.ts:806`) is
+itself what calls `draftCommits` (`:831`), and it passes the commits to
+`draftDays` (`:313`) at `:872`. The filter belongs in `draftCommits`, or
+between `:831` and `:872`.

@@ -168,3 +168,41 @@ or commit messages.
   question.
 - LAI-865 (on Belka) adds a title to the same To settle row and Inspector.
   Whichever lands second merges the other.
+
+## Review notes (PR #32, round 1; CHIEF, 2026-10-22)
+
+These notes were appended after the task was claimed, so the criteria above
+were not edited (§2). **Where a note and the text above disagree, the note
+wins.**
+
+**B1. Project matching stays, because the owner approved it.**
+
+- On 2026-10-22 Belka proposed: *"You name a work folder once ... Every
+  block from that folder then carries the name ... if a Laika project
+  matches the name, the block goes under that project as well."*
+- It replaces the earlier option of linking a folder to a project, because
+  it *"does the same job, plus it works for projects that aren't on
+  Laika"*.
+- The owner replied **"go ahead"** the same day.
+- D-098 now quotes this too.
+
+**The consequence the reviewer raised. Add it as a criterion:**
+
+> A block under a matched project is confirmed under that project, not as
+> *General*. That changes where it can go in Solidtime. A *General* entry
+> goes there with no project. A space's entry goes to the Solidtime project
+> that `laika time map` set for the space, or is held as `space_not_mapped`
+> (SPEC §6.4, the outbox, `docs/SPEC.md:3076-3092`).
+>
+> So **before confirming, the person sees which project a matched block
+> will be confirmed under**, in the To settle row and in the Inspector. They
+> can change it or clear it there.
+>
+> A browser test asserts the project is shown on a matched block before
+> confirm. A server test asserts the block confirms under that project.
+> Both fail today.
+
+The Notes line *"Solidtime is unchanged"* now means only that Solidtime's
+code and `describe()` (`cli/src/time-solidtime.ts:638-642`) are unchanged.
+The chosen name is not sent to Solidtime. A matched block's time does reach
+it, as its space's time.

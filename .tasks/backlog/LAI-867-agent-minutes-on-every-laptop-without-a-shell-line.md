@@ -185,3 +185,32 @@ read when it is needed and is never written into settings.json.
     (`cli/src/config.ts:81-86`, `cli/src/init.ts:100`). This task must not
     add to that, and must not remove it either. If it matters, it gets its
     own task.
+
+## Review notes (PR #32, round 1; CHIEF, 2026-10-22)
+
+These notes were appended after the task was claimed, so the criteria above
+were not edited (§2). **Where a note and the text above disagree, the note
+wins.**
+
+**The D-091 item 3 question is answered before building, not before
+review.** In Notes, the line *"Ask the owner before review whether that
+stands."* now reads:
+
+> Ask the owner on the card **before building**, and record their answer
+> here. Nothing is built until they answer.
+
+The question: once settings.json carries the telemetry, the manager's own
+tokens and agent minutes reach the board as the person's, though D-091 item
+3 says they are *"left out for now"*.
+
+**The token check counts, rather than looks for absence.** In the first
+criterion's tests, the line *"a fake token from `~/.laika/env` appears in
+neither file"* now reads:
+
+> `laika activity on` adds no occurrence of the token: settings.json and the
+> helper script hold the same number of occurrences of the fake token after
+> `on` as before it.
+
+The reason is that `laika init` may already have written `LAIKA_TOKEN` into
+settings.json's `env` (`cli/src/config.ts:84`), so absence cannot be the
+test. Run the check once with such an `env` already in place.
