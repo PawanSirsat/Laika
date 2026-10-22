@@ -9,6 +9,7 @@ import {
 } from 'react';
 import type { MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
 import { FitLabel } from './FitLabel.tsx';
+import { needsACard } from './folder.ts';
 import { clock, duration, hourName, span as spanOf } from './format.ts';
 import { plural } from './my-day-derive.ts';
 import {
@@ -66,14 +67,15 @@ function labelOf(
     const d = drafts.get(block.id);
     if (d === undefined) return { top: '', title: '' };
     if (d.task !== null) return { top: d.task.key, title: d.task.title };
-    if (d.project !== null) return { top: d.project.name, title: '' };
-    return { top: d.general ? 'General' : 'Needs a card', title: '' };
+    if (d.project !== null) return { top: d.project.name, title: d.folder ?? '' };
+    return { top: d.general ? 'General' : needsACard(d), title: '' };
   }
   const e = entries.get(block.id);
   if (e === undefined) return { top: '', title: '' };
   if (e.task !== null) return { top: e.task.key, title: e.task.title };
-  if (e.project !== null) return { top: e.project.name, title: e.note ?? '' };
-  return { top: e.note === null ? 'General' : `General · ${e.note}`, title: '' };
+  if (e.project !== null) return { top: e.project.name, title: e.note ?? e.folder ?? '' };
+  const general = e.folder === undefined || e.folder === null ? 'General' : `General · ${e.folder}`;
+  return { top: e.note === null ? general : `${general} · ${e.note}`, title: '' };
 }
 
 /**

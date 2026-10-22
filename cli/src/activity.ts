@@ -72,6 +72,7 @@ import {
 } from './activity-usage.ts';
 import { buildDraft, primarySessions, timeDraftBody, type Block } from './activity-time.ts';
 import { ask as askConsole, askSecret as askSecretConsole, closePrompt } from './prompt.ts';
+import { folderCommand, TIME_FOLDER_USAGE } from './time-folders.ts';
 import { solidtimeCommand, TIME_SOLIDTIME_USAGE } from './time-solidtime.ts';
 
 /**
@@ -1042,6 +1043,7 @@ const TIME_USAGE = [
   '  laika time draft [--days N] [--json]',
   '                                 the blocks of your last N days (1–14, default 1) as',
   '                                 this machine drafts them — what a sync would send',
+  ...TIME_FOLDER_USAGE,
   ...TIME_SOLIDTIME_USAGE,
 ];
 
@@ -1089,6 +1091,8 @@ function evidence(b: Block): string {
  */
 export async function time(argv: readonly string[], io: ActivityIo = CONSOLE): Promise<number> {
   const [command, ...rest] = argv;
+  // A work folder's chosen name (LAI-866, D-098).
+  if (command === 'folder') return folderCommand(rest, { ...io, cwd: process.cwd() });
   if (command !== 'draft') {
     // The Solidtime bridge (LAI-788): the rest of `laika time`.
     const bridged = command === undefined ? undefined : await solidtimeCommand(command, rest, io);
@@ -1153,8 +1157,11 @@ export async function time(argv: readonly string[], io: ActivityIo = CONSOLE): P
   io.out(
     `Time drafts for the last ${String(days)} ${days === 1 ? 'day' : 'days'}, built on this machine (${tz}).`,
   );
-  io.out('Only these blocks would leave it — times, minutes, a task key and counts; never what');
-  io.out('was said, paths, repo or branch names or commit messages. Nothing is sent from here.');
+  io.out('Only these blocks would leave it — times, minutes, a task key, counts, and the name');
+  io.out('you gave a work folder (laika time folder) with its branch if you turned that on; never');
+  io.out(
+    'what was said, paths, a folder’s own name or commit messages. Nothing is sent from here.',
+  );
   for (const { day, blocks } of entries) {
     const minutes = blocks.reduce((n, b) => n + b.minutes, 0);
     const tied = blocks.filter((b) => b.task !== null).reduce((n, b) => n + b.minutes, 0);
@@ -1166,7 +1173,8 @@ export async function time(argv: readonly string[], io: ActivityIo = CONSOLE): P
     );
     for (const b of blocks) {
       // D-095: a block whose key a dispatched builder lent says so here only.
-      const why = [evidence(b), draft.lent.has(b) ? 'a dispatched builder’s card' : '']
+      const named = b.folder === undefined ? '' : [b.folder, b.branch].filter(Boolean).join(' · ');
+      const why = [named, evidence(b), draft.lent.has(b) ? 'a dispatched builder’s card' : '']
         .filter((part) => part !== '')
         .join(' · ');
       io.out(

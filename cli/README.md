@@ -443,8 +443,9 @@ key or `null`, and counts — prompts, replies, sessions, commits, marks — and
 to a board that says it takes them (`signal_times` in its time settings), which
 five minutes the block's prompts and commits fell in: `at`, `[bucket, count]`
 pairs, so My day can draw its SIGNALS lane (D-096). A day whose report would
-pass 16 KB with them goes without them. Never prompt or reply text, paths,
-repository or branch names, session ids, commit messages or window titles. `laika time draft [--days N]` prints the blocks for
+pass 16 KB with them goes without them. Never prompt or reply text, paths, a
+folder's own name, repository names, a branch you did not turn on (below),
+session ids, commit messages or window titles. `laika time draft [--days N]` prints the blocks for
 your last days, and what they were built from — Omnigent orchestrator turns
 included, since a block carries counts only — and which blocks took a
 dispatched builder's card, which the body does not say; `--json` prints the
@@ -455,6 +456,56 @@ exact body. Neither writes or sends anything.
 per task (`session_tasks`: a session's one-way key, a task key, a count), so
 the board can split Claude Code's own `active_time` the way tokens are split.
 The board shows it as agent minutes, never as hours.
+
+### `laika time folder` — a name you chose for a work folder (LAI-866, D-098)
+
+```
+laika time folder name NAME [DIR]     name a folder (default: the one you are in)
+laika time folder rename NAME [DIR]
+laika time folder forget [DIR]
+laika time folder list                the names on this machine, and the branch switch
+laika time folder branch on|off       send a named folder's branch too (off by default)
+```
+
+Name a folder once — *this folder is "Acme"* — and every block drafted from it
+carries **Acme**: a Claude Code session by its working directory, an Omnigent
+chat by its working folder. In *To settle* an untied block then reads
+**Needs a card · Acme**, and when a project you can read matches the name the
+board puts the block under it.
+
+- **The name is yours.** You type it; it is never filled in from the
+  folder's own name. 1 to 60 characters, no `/` or `\`, no control character,
+  no space at either end — the board refuses anything else.
+- **Only the name leaves.** The folder's real name and path are read on this
+  machine, to look the name up, and go no further; nor do file names, prompts,
+  replies or commit messages. The branch goes only after
+  `laika time folder branch on`: for a Claude Code session the branch it
+  started on (the hook's `sessions` file), for an Omnigent chat the branch its
+  folder was on when the chat started.
+- **A folder inside a named folder takes the nearest name.** `~/work/acme`
+  named *Acme* and `~/work/acme/web` named *Acme Web*: a session in
+  `~/work/acme/web/src` is *Acme Web*, one in `~/work/acme/docs` is *Acme*.
+- **A block whose lanes come from two differently named folders** takes the
+  name with the most lane-minutes behind it — each minute of the block, each
+  of your lanes active in it that went to the block counts one for its
+  folder's name. A lane in an unnamed folder, and the prompts you typed, count
+  for no name. **Two names tied for the most, and the block carries no name**,
+  rather than one picked. The branch is chosen the same way among that name's
+  lane-minutes.
+- **Kept in `~/.laika/work-folders.json`**, 0600 — beside `solidtime.json`,
+  not in `~/.laika/activity`, so **`laika activity off` keeps your names**:
+  they are your settings, not something counted. Delete the file to forget
+  them all.
+- **An older board is never refused.** The name and branch go only to a board
+  whose time settings say `folder_names: true`; to any other the blocks go
+  without them.
+
+The Omnigent chat's folder and branch come from the hook: at the chat's start
+it appends `<epoch> <session> <branch|-> <folder>` to
+`~/.laika/activity/primary-sessions` (0600, never sent), reading the branch
+from the repository's `.git/HEAD` with shell builtins — no `git`, no fork. A
+line from before LAI-866 has two fields, names no folder, and is read as it
+always was.
 
 ## `laika time push` and `pull` — the Solidtime bridge (LAI-788, D-088)
 

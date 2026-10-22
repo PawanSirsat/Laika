@@ -461,7 +461,7 @@ void describe('the inspector (5)', () => {
     }
   });
 
-  void test('a card the reader cannot read is said by its key; evidence is counts only', async () => {
+  void test('a card the reader cannot read is said by its key; evidence from a folder with no name is counts only (LAI-866: a named one says so, my-day-folders.test.ts)', async () => {
     const h = await openDay(TODAY);
     try {
       await select(h, 'd4');

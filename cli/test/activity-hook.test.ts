@@ -19,6 +19,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -907,6 +908,64 @@ for (const shell of SHELLS) {
       assert.deepEqual(started(h), []);
       assert.deepEqual(skipped(h), []);
       assert.ok(!existsSync(join(h, '.laika', 'activity', 'repos')), 'a repo was recorded');
+    });
+
+    void test('its start keeps the chat’s working folder and branch beside its id, read with builtins, for its blocks’ chosen name (LAI-866)', () => {
+      const lines = (h: string): string[] =>
+        readFileSync(PRIMARY_FILE(h), 'utf8')
+          .trim()
+          .split('\n')
+          .map((l) => l.replace(/^\d+ /, ''));
+      const start = (h: string, cwd: string, env: Record<string, string> = {}) => {
+        const r = run(shell, ['session-start', 'claude-code'], {
+          home: h,
+          cwd,
+          env: { ...OMNI_ORCHESTRATOR, ...env },
+          input: payload('9a1b2c3d-0000-4000-8000-000000000006'),
+        });
+        assert.equal(r.code, 0);
+        assert.equal(r.stdout + r.stderr, '');
+      };
+      // A folder inside a repository on `main`: the branch from its `.git/HEAD`.
+      const repoDir = gitRepo();
+      const inside = join(repoDir, 'apps', 'web');
+      mkdirSync(inside, { recursive: true });
+      // A worktree, whose `.git` is a file naming its own git dir.
+      execFileSync('git', ['-C', repoDir, 'commit', '-q', '--allow-empty', '-m', 'x'], {
+        stdio: 'pipe',
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: 'D',
+          GIT_AUTHOR_EMAIL: 'd@e.test',
+          GIT_COMMITTER_NAME: 'D',
+          GIT_COMMITTER_EMAIL: 'd@e.test',
+        },
+      });
+      const tree = join(dir('laika-actwt-'), 'tree');
+      execFileSync('git', ['-C', repoDir, 'worktree', 'add', '-q', '-b', 'feature/LAI-9-x', tree], {
+        stdio: 'pipe',
+      });
+      const plain = dir('laika-actplain-');
+      const h = home();
+      start(h, inside);
+      start(h, realpathSync(tree));
+      start(h, plain);
+      start(h, plain, { CLAUDE_PROJECT_DIR: inside });
+      assert.deepEqual(lines(h), [
+        `${FAKE_ORCHESTRATOR} main ${inside}`,
+        `${FAKE_ORCHESTRATOR} feature/LAI-9-x ${realpathSync(tree)}`,
+        `${FAKE_ORCHESTRATOR} - ${realpathSync(plain)}`,
+        `${FAKE_ORCHESTRATOR} main ${inside}`,
+      ]);
+      // A reader of the older line still finds the id where it always was.
+      assert.deepEqual(primaries(h), Array(4).fill(FAKE_ORCHESTRATOR));
+      assert.deepEqual(events(h), []);
+      if (ZSH !== undefined && shell[0] === ZSH) {
+        // Under zsh it forks nothing for it: with an empty PATH it is all still there.
+        const bare = home();
+        start(bare, inside, { PATH: '' });
+        assert.deepEqual(lines(bare), [`${FAKE_ORCHESTRATOR} main ${inside}`]);
+      }
     });
 
     void test('a dispatched sub-agent stays skipped: in a terminal, from the CLI, another agent, another runner', () => {

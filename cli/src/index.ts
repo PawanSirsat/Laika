@@ -26,6 +26,7 @@ const USAGE = [
   '  laika activity status    what the next activity sync would send',
   '  laika activity backfill  send a year of your pushed commits once (asks first)',
   '  laika time draft         the blocks of your day this machine drafts (D-088)',
+  '  laika time folder        name a work folder; its blocks carry the name, never the path',
   '  laika time connect       keep your Solidtime key on this machine (never sent to Laika)',
   '  laika time push|pull     confirmed time to Solidtime, and what was logged there back',
   '',

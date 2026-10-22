@@ -1,5 +1,5 @@
 import { rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import {
   addDays,
@@ -18,6 +18,7 @@ import {
   type ActivityState,
 } from './activity-store.ts';
 import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-usage.ts';
+import { chatFolders, folderNamer, readWorkFolders, sessionBranches } from './time-folders.ts';
 
 /**
  * Time drafts, built on the developer's own machine (LAI-787, D-088 items 3,
@@ -41,9 +42,12 @@ import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-
  * (LAI-314). **Only blocks leave**: a start, an
  * end, minutes, a task key or `null`, how many of each signal fell in it, and
  * — to a board that takes them — which five minutes its prompts and commits
- * fell in (D-096, {@link blocksToSend}). Never prompt or reply text, paths,
- * repository or branch names, session ids or a commit message — none of them
- * reaches {@link Block}. Which blocks took
+ * fell in (D-096, {@link blocksToSend}) — and, to a board that takes it, the
+ * **name the person gave the work folder** it was drafted in, with its branch
+ * when they turned that on (D-098, {@link nameOf}). Never prompt or reply
+ * text, paths, a folder's own name, repository names, a branch the person did
+ * not turn on, session ids or a commit message — none of them reaches
+ * {@link Block}. Which blocks took
  * a dispatched session's key is said on this machine only ({@link Draft}).
  *
  * ## The rule (design REPORT.md §2.1, measured on the owner's machine)
@@ -134,6 +138,10 @@ export interface Block {
   readonly signals: Signals;
   /** Absent for a block with no prompt and no commit, and when not sent (`blocksToSend`). */
   readonly at?: SignalTimes;
+  /** The name the person gave the work folder it was drafted in (D-098); absent with none. */
+  readonly folder?: string;
+  /** That folder's branch, only when the person turned it on, and only with a name. */
+  readonly branch?: string;
 }
 
 export interface ReplyEvent {
@@ -143,6 +151,10 @@ export interface ReplyEvent {
   /** Local only: an opaque identity of the repository it was in, or `null`. */
   readonly repo: string | null;
   readonly task: string | null;
+  /** The name the person gave its folder (D-098) — never the folder's path — or `null`. */
+  readonly folder?: string | null;
+  /** Its session's branch, only when the person turned that on. */
+  readonly branch?: string | null;
 }
 
 export interface CommitEvent {
@@ -167,6 +179,10 @@ export interface TurnEvent {
    * (D-090). `end`: a turn's end, whichever started it.
    */
   readonly kind: 'start' | 'wake' | 'end';
+  /** The name the person gave the chat's working folder (D-098), or `null`. */
+  readonly folder?: string | null;
+  /** That folder's branch, only when the person turned that on. */
+  readonly branch?: string | null;
 }
 
 /**
@@ -222,6 +238,9 @@ interface LaneMinute {
   readonly task: string | null;
   readonly repo: string | null;
   readonly session: boolean;
+  /** Its folder's chosen name and branch (D-098). */
+  readonly folder: string | null;
+  readonly branch: string | null;
 }
 
 interface MinuteInfo {
@@ -246,6 +265,59 @@ interface Building {
   lent: boolean;
   /** Per bucket, how many prompts and commits it counts there (D-096). */
   at: { prompts: Map<number, number>; commits: Map<number, number> };
+  /** Per chosen name, the lane-minutes behind it, and per branch of it (D-098, {@link nameOf}). */
+  names: Map<string, { minutes: number; branches: Map<string, number> }>;
+}
+
+/** `minutes` lane-minutes of the folder named `name`, on `branch`, into `b`. */
+function voteFor(b: Building, name: string, branch: string | null, minutes = 1): void {
+  const held = b.names.get(name) ?? { minutes: 0, branches: new Map<string, number>() };
+  held.minutes += minutes;
+  if (branch !== null) held.branches.set(branch, (held.branches.get(branch) ?? 0) + minutes);
+  b.names.set(name, held);
+}
+
+/** `from`'s names, into `into`. */
+function mergeNames(into: Building, from: Building): void {
+  for (const [name, held] of from.names) {
+    voteFor(into, name, null, held.minutes);
+    const target = into.names.get(name);
+    for (const [branch, minutes] of held.branches) {
+      target?.branches.set(branch, (target.branches.get(branch) ?? 0) + minutes);
+    }
+  }
+}
+
+/** Of `counts`, the one key with the most, or `undefined` when none or two tie for it. */
+function most(counts: ReadonlyMap<string, number>): string | undefined {
+  let best: string | undefined;
+  let top = 0;
+  let tied = false;
+  for (const [key, n] of counts) {
+    if (n > top) {
+      best = key;
+      top = n;
+      tied = false;
+    } else if (n === top) tied = true;
+  }
+  return tied ? undefined : best;
+}
+
+/**
+ * A block's work folder name (D-098, `cli/README.md`): each minute of it, each
+ * lane active in that minute that went to it votes for its folder's name — a
+ * lane in an unnamed folder, or the typed-prompt lane, votes for none. The
+ * name with the most lane-minutes is the block's; **two names tied** for the
+ * most, and the block carries no name, rather than one picked. Its branch is,
+ * the same way, the one that name's lane-minutes were on most.
+ */
+export function nameOf(
+  names: ReadonlyMap<string, { minutes: number; branches: ReadonlyMap<string, number> }>,
+): { folder?: string; branch?: string } {
+  const folder = most(new Map([...names].map(([name, held]) => [name, held.minutes])));
+  if (folder === undefined) return {};
+  const branch = most(names.get(folder)?.branches ?? new Map<string, number>());
+  return branch === undefined ? { folder } : { folder, branch };
 }
 
 /**
@@ -330,8 +402,9 @@ export function draftDays(
   const dayOf = dayFinder(tz);
 
   // --- lanes -----------------------------------------------------------------
-  const lanes = new Map<string, { at: number; task: string | null; repo: string | null }[]>();
-  const push = (lane: string, event: { at: number; task: string | null; repo: string | null }) => {
+  type LaneEvent = Pick<ReplyEvent, 'at' | 'task' | 'repo' | 'folder' | 'branch'>;
+  const lanes = new Map<string, LaneEvent[]>();
+  const push = (lane: string, event: LaneEvent) => {
     const list = lanes.get(lane) ?? [];
     list.push(event);
     lanes.set(lane, list);
@@ -339,7 +412,15 @@ export function draftDays(
   for (const r of inputs.replies) push(`s:${r.session}`, r);
   for (const at of inputs.prompts) push('p', { at, task: null, repo: null });
   const turns = personTurns(inputs.turns);
-  for (const t of turns) push(`o:${t.session}`, { at: t.at, task: null, repo: null });
+  for (const t of turns) {
+    push(`o:${t.session}`, {
+      at: t.at,
+      task: null,
+      repo: null,
+      folder: t.folder ?? null,
+      branch: t.branch ?? null,
+    });
+  }
 
   // --- each lane's active minutes ---------------------------------------------
   const active = new Map<number, Map<string, LaneMinute>>();
@@ -350,7 +431,13 @@ export function draftDays(
         at = new Map();
         active.set(m, at);
       }
-      at.set(lane, { task: e.task, repo: e.repo, session: lane !== 'p' });
+      at.set(lane, {
+        task: e.task,
+        repo: e.repo,
+        session: lane !== 'p',
+        folder: e.folder ?? null,
+        branch: e.branch ?? null,
+      });
     });
   }
 
@@ -450,12 +537,19 @@ export function draftDays(
             minutes: 0,
             lent: false,
             at: { prompts: new Map(), commits: new Map() },
+            names: new Map(),
           };
           blocks.set(key, b);
         }
         b.last = minute;
         b.share += 1 / keys.length;
         if (at?.lent === true) b.lent = true;
+        // A lane votes for its own key's block; an untied lane, for every
+        // block its minute went to (D-098, nameOf).
+        for (const [lane, on] of active.get(minute) ?? []) {
+          const own = at?.lanes.get(lane) ?? null;
+          if (on.folder !== null && (own === null || own === key)) voteFor(b, on.folder, on.branch);
+        }
       }
     }
     // Largest remainder: whole minutes that add up to the stretch's own.
@@ -559,6 +653,7 @@ export function draftDays(
         largest.signals[k] += b.signals[k];
       }
       mergeTimes(largest, b);
+      mergeNames(largest, b);
       for (const session of b.sessions) largest.sessions.add(session);
       largest.signals.sessions = largest.sessions.size;
     }
@@ -640,6 +735,7 @@ function capped(blocks: Building[]): Building[] {
       partner.signals[k] += shortest.signals[k];
     }
     mergeTimes(partner, shortest);
+    mergeNames(partner, shortest);
     for (const session of shortest.sessions) partner.sessions.add(session);
     partner.signals.sessions = partner.sessions.size;
   }
@@ -670,6 +766,7 @@ function toBlock(b: Building): Block {
     task: b.task,
     signals,
     ...(Object.keys(at).length > 0 ? { at } : {}),
+    ...nameOf(b.names),
   };
 }
 
@@ -961,15 +1058,35 @@ export async function buildDraft(options: DraftOptions): Promise<Draft> {
       repoOf.set(cwd, byTop.get(top) ?? null);
     }
   }
-  const replies: ReplyEvent[] = sources.replies.map((r) => ({
-    at: r.at,
-    session: r.session,
-    repo: r.cwd === undefined ? null : (repoOf.get(r.cwd) ?? null),
-    task: r.task,
-  }));
+  // The name the person gave each folder (D-098): the folder is read here,
+  // for the lookup, and only the name goes on. The branch only when they
+  // turned it on, and only for a named folder.
+  const work = readWorkFolders(dirname(dirname(options.paths.dir)));
+  const nameOfFolder = folderNamer(work.folders);
+  const branchOf = work.branch ? sessionBranches(options.paths) : undefined;
+  const chatOf = chatFolders(options.paths);
+  const replies: ReplyEvent[] = sources.replies.map((r) => {
+    const folder = nameOfFolder(r.cwd);
+    return {
+      at: r.at,
+      session: r.session,
+      repo: r.cwd === undefined ? null : (repoOf.get(r.cwd) ?? null),
+      task: r.task,
+      folder,
+      branch: folder === null ? null : (branchOf?.(r.session, r.at) ?? null),
+    };
+  });
   const lines = eventLines(options.paths);
   const prompts = promptTimes(lines, fromS);
-  const turns = turnTimes(lines, fromS);
+  const turns = turnTimes(lines, fromS).map((t): TurnEvent => {
+    const chat = chatOf(t.session, t.at);
+    const folder = nameOfFolder(chat?.folder);
+    return {
+      ...t,
+      folder,
+      branch: folder === null || !work.branch ? null : (chat?.branch ?? null),
+    };
+  });
   const dispatched: DispatchedEvent[] = sources.dispatched.map((r) => ({
     at: r.at,
     session: r.session,
@@ -1008,6 +1125,8 @@ export interface TimeSettings {
   readonly drafting: boolean;
   /** The board takes a block's `at` (D-096); a board that predates it does not say so. */
   readonly signal_times?: boolean;
+  /** The board takes a block's folder name and branch (D-098); an older board does not say so. */
+  readonly folder_names?: boolean;
 }
 
 /** A call's answer — `activity-sync.ts`'s `Call`, by shape. */
@@ -1111,7 +1230,26 @@ export function timeDraftBody(
 
 /** A block as it goes without its signal times: everything else as it was. */
 function withoutTimes(b: Block): Block {
-  return { start: b.start, end: b.end, minutes: b.minutes, task: b.task, signals: b.signals };
+  return {
+    start: b.start,
+    end: b.end,
+    minutes: b.minutes,
+    task: b.task,
+    signals: b.signals,
+    ...(b.folder === undefined ? {} : { folder: b.folder }),
+    ...(b.branch === undefined ? {} : { branch: b.branch }),
+  };
+}
+
+/**
+ * A block as it goes to a board that does not say it takes a folder's name
+ * (D-098 item 6): without the name and the branch, everything else as it was
+ * — so an older board never refuses an upload over them.
+ */
+export function withoutNames(b: Block): Block {
+  if (b.folder === undefined && b.branch === undefined) return b;
+  const { folder: _folder, branch: _branch, ...rest } = b;
+  return rest;
 }
 
 /**
@@ -1196,10 +1334,17 @@ export async function timeStep(ctx: TimeContext): Promise<TimeOutcome> {
     for (const day of Object.keys(memory.sent)) if (day < first) delete memory.sent[day];
     const due: { day: string; blocks: Block[]; signature: string }[] = [];
     const accepts = settings.value.signal_times === true;
+    const named = settings.value.folder_names === true;
     for (const [day, drafted] of draft.days) {
       // Measured as they go: a board that starts taking the times gets each
-      // day again, with them.
-      const blocks = blocksToSend(ctx.collectorId, ctx.tz, day, drafted, accepts);
+      // day again, with them — and the same for folder names (D-098).
+      const blocks = blocksToSend(
+        ctx.collectorId,
+        ctx.tz,
+        day,
+        named ? drafted : drafted.map(withoutNames),
+        accepts,
+      );
       const signature = JSON.stringify(blocks);
       const held = memory.sent[day];
       // An empty day goes only to empty what the board was given for it.

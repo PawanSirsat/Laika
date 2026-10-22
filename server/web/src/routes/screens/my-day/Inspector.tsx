@@ -10,6 +10,7 @@ import {
 } from '../../../api/time.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { CardLink } from './CardLink.tsx';
+import { folderOf, needsACard } from './folder.ts';
 import { clock, duration, span } from './format.ts';
 import { canChange, dayIn, dayLabel, minutesUnderstood, parseMinutes } from './my-day-derive.ts';
 import type { Selection } from './Timeline.tsx';
@@ -361,9 +362,11 @@ export function Inspector({
               <h3 className="inspector-label">Card</h3>
               {!ready && (
                 <p className="inspector-warn" data-card-warning>
-                  {draft.task_key === null
-                    ? 'Nothing named a card. Pick one, or General if it was general work.'
-                    : `${draft.task_key} was named, but it is a card you can’t read. Pick one of yours, or General.`}
+                  {draft.task_key !== null
+                    ? `${draft.task_key} was named, but it is a card you can’t read. Pick one of yours, or General.`
+                    : draft.folder !== undefined && draft.folder !== null
+                      ? `${needsACard(draft)}. Pick one, or General if it was general work.`
+                      : 'Nothing named a card. Pick one, or General if it was general work.'}
                 </p>
               )}
               {draft.task !== null && (
@@ -372,7 +375,10 @@ export function Inspector({
                 </p>
               )}
               {draft.task === null && draft.project !== null && (
-                <p className="inspector-card">{draft.project.name}</p>
+                <p className="inspector-card">
+                  {draft.project.name}
+                  {draft.folder !== undefined && draft.folder !== null && ` · ${draft.folder}`}
+                </p>
               )}
               <CardPicker
                 current={draft.task?.key}
@@ -437,8 +443,17 @@ export function Inspector({
                   </div>
                 ))}
               </dl>
+              {folderOf(draft) !== undefined && (
+                <p className="inspector-card" data-drafted-folder>
+                  {folderOf(draft)}
+                </p>
+              )}
               <p className="inspector-note">
-                Counts only — never what you typed, file names or commit messages.
+                {folderOf(draft) === undefined
+                  ? 'Counts only — never what you typed, file names or commit messages.'
+                  : draft.branch !== undefined && draft.branch !== null
+                    ? 'Counts, the name you gave this folder and its branch — never what you typed, file names or commit messages.'
+                    : 'Counts and the name you gave this folder — never what you typed, file names or commit messages.'}
               </p>
             </div>
           </div>
@@ -515,6 +530,9 @@ export function Inspector({
                   <CardLink task={entry.task} slug={entry.project?.slug} onNavigate={onNavigate} />
                 ) : (
                   (entry.project?.name ?? 'General')
+                )}
+                {folderOf(entry) !== undefined && (
+                  <span data-entry-folder>{` · ${folderOf(entry) ?? ''}`}</span>
                 )}
               </p>
               {changeable && (
