@@ -99,8 +99,12 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
         signals.y + signals.height <= row.y + 0.5,
         'the signals lane is not above the blocks',
       );
+      // No one hour but 9 AM by name: the now pill hides the hour it sits on.
       const hours = await h.page.locator('.dayline-axis-hour').allInnerTexts();
-      assert.ok(hours.includes('9 AM') && hours.includes('1 PM'), `hours: ${hours.join(', ')}`);
+      assert.ok(
+        hours.includes('9 AM') && hours.some((t) => t.endsWith(' PM')),
+        `hours: ${hours.join(', ')}`,
+      );
 
       assert.equal((await h.page.locator('[data-you-work]').innerText()).trim(), dur(370));
       assert.equal((await h.page.locator('[data-prompt-total]').innerText()).trim(), '3');
@@ -183,6 +187,186 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
       const to = Number(await track.getAttribute('data-to-hour'));
       const width = await track.evaluate((el) => el.getBoundingClientRect().width);
       assert.equal(Math.round(width), (to - from) * 160);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('− and + step the scale from 0.5× to 5×, keeping the middle of the view (LAI-890)', async () => {
+    const h = await openToday();
+    try {
+      const track = h.page.locator('[data-dayline-track]');
+      const hours =
+        Number(await track.getAttribute('data-to-hour')) -
+        Number(await track.getAttribute('data-from-hour'));
+      const widthOf = () => track.evaluate((el) => el.getBoundingClientRect().width);
+      const level = () => h.page.locator('[data-zoom-level]').getAttribute('data-zoom-level');
+      const middle = () =>
+        h.page.locator('[data-dayline-scroller]').evaluate((el) => {
+          const box = el.getBoundingClientRect();
+          const rail = el.querySelector('[data-dayline-track]')?.getBoundingClientRect();
+          return rail === undefined ? 0 : (box.left + box.width / 2 - rail.left) / rail.width;
+        });
+      assert.equal(await level(), '1');
+      const before = await middle();
+      await h.page.locator('[data-zoom-step="in"]').click();
+      await until(async () => (await level()) === '1.5');
+      assert.equal(Math.round(await widthOf()), hours * 240);
+      // The minute at the middle stayed: the same share of the day, within a minute or two.
+      assert.ok(Math.abs((await middle()) - before) * hours * 60 <= 2, 'the middle moved');
+      // 2× lights the preset; past 5× there is no further in.
+      await h.page.locator('[data-zoom-step="in"]').click();
+      await until(async () => (await level()) === '2');
+      assert.equal(await h.page.locator('[data-zoom="2"]').getAttribute('aria-pressed'), 'true');
+      for (let i = 0; i < 3; i += 1) await h.page.locator('[data-zoom-step="in"]').click();
+      await until(async () => (await level()) === '5');
+      assert.equal(await h.page.locator('[data-zoom-step="in"]').isDisabled(), true);
+      assert.equal(Math.round(await widthOf()), hours * 800);
+      // Out, all the way: 0.5× and no further.
+      for (let i = 0; i < 7; i += 1) await h.page.locator('[data-zoom-step="out"]').click();
+      await until(async () => (await level()) === '0.5');
+      assert.equal(await h.page.locator('[data-zoom-step="out"]').isDisabled(), true);
+      assert.equal(Math.round(await widthOf()), hours * 80);
+      // From Fit, + is 1× and − does nothing.
+      await h.page.locator('[data-zoom="fit"]').click();
+      await until(async () => (await level()) === 'fit');
+      assert.equal(await h.page.locator('[data-zoom-step="out"]').isDisabled(), true);
+      await h.page.locator('[data-zoom-step="in"]').click();
+      await until(async () => (await level()) === '1');
+      assert.equal(await h.page.locator('[data-zoom="1"]').getAttribute('aria-pressed'), 'true');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the slider sets the scale, and the grip drags the rows taller up to a limit (LAI-891)', async () => {
+    const h = await openToday();
+    try {
+      const level = () => h.page.locator('[data-zoom-level]').getAttribute('data-zoom-level');
+      const slider = h.page.locator('[data-zoom-slider]');
+      await slider.focus();
+      await h.page.keyboard.press('ArrowRight');
+      await until(async () => (await level()) === '1.5');
+      await h.page.keyboard.press('ArrowRight');
+      await until(async () => (await level()) === '2');
+      assert.equal(await slider.inputValue(), String(['0.5', '0.75', '1', '1.5', '2'].length - 1));
+      await h.page.locator('[data-zoom="1"]').click();
+      await until(async () => (await slider.inputValue()) === '2');
+
+      // Box heights: the row is 28 above the blocks, the blocks, and 8 under, its rule inside.
+      const rowH = () =>
+        h.page.locator('.dayline-row').evaluate((el) => el.getBoundingClientRect().height);
+      const blockH = (id: string) =>
+        h.page
+          .locator(`[data-block-id="${id}"]`)
+          .evaluate((el) => el.getBoundingClientRect().height);
+      assert.equal(Math.round(await rowH()), 122);
+      assert.equal(Math.round(await blockH('d1')), 80);
+
+      // Every drag stays inside the viewport: a pointer let go outside it never
+      // reaches the grip, and the grip then holds its last height.
+      await h.page.setViewportSize({ width: 1280, height: 1000 });
+      const grip = h.page.locator('[data-row-grip]');
+      await grip.scrollIntoViewIfNeeded();
+      const box = await grip.boundingBox();
+      assert.ok(box !== null);
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      // Dragged 60px down: the row, its label in the column and every block grow by 60.
+      await h.page.mouse.move(x, y);
+      await h.page.mouse.down();
+      await h.page.mouse.move(x, y + 30);
+      await h.page.mouse.move(x, y + 60);
+      await h.page.mouse.up();
+      await until(async () => Math.round(await rowH()) === 182);
+      // The column's label is exactly as tall as the row, rule for rule.
+      const rowBox = await h.page
+        .locator('.dayline-row')
+        .evaluate((el) => el.getBoundingClientRect().height);
+      const labelBox = await h.page
+        .locator('.dayline-label-you')
+        .evaluate((el) => el.getBoundingClientRect().height);
+      assert.ok(
+        Math.abs(rowBox - labelBox) <= 0.5,
+        `the column did not follow: ${String(labelBox)} vs ${String(rowBox)}`,
+      );
+      assert.equal(Math.round(await blockH('d1')), 140);
+      assert.equal(Math.round(await blockH('e2')), 140, 'a confirmed block did not follow');
+      // The label is still there, whole.
+      assert.equal(
+        (await h.page.locator('[data-block-id="d1"] .dayline-block-top').innerText()).trim(),
+        'LAI-11',
+      );
+      // Far past the limit: 240 and no further; far back up: 80 and no less.
+      const after = await grip.boundingBox();
+      assert.ok(after !== null);
+      await h.page.mouse.move(x, after.y + after.height / 2);
+      await h.page.mouse.down();
+      await h.page.mouse.move(x, Math.min(after.y + 180, 980));
+      await h.page.mouse.up();
+      await until(async () => Math.round(await rowH()) === 282);
+      assert.equal(await grip.getAttribute('aria-valuenow'), '240');
+      const top = await grip.boundingBox();
+      assert.ok(top !== null);
+      await h.page.mouse.move(x, top.y + top.height / 2);
+      await h.page.mouse.down();
+      await h.page.mouse.move(x, Math.max(1, top.y - 300));
+      await h.page.mouse.up();
+      await until(async () => Math.round(await rowH()) === 122);
+      // ↓ on the grip is 8px.
+      await grip.focus();
+      await h.page.keyboard.press('ArrowDown');
+      await until(async () => Math.round(await rowH()) === 130);
+      // The band and its handle are drawn without hovering, and the column's
+      // slider reads the same height and sets it (LAI-892).
+      const band = await grip.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const bar = el.querySelector('.dayline-grip-bar')?.getBoundingClientRect();
+        const s = getComputedStyle(el);
+        return {
+          height: r.height,
+          cursor: s.cursor,
+          barWidth: bar?.width ?? 0,
+          barOpacity:
+            bar === undefined
+              ? 0
+              : parseFloat(getComputedStyle(el.querySelector('.dayline-grip-bar')!).opacity),
+        };
+      });
+      assert.ok(band.height >= 8, `the band is ${String(band.height)}px tall`);
+      assert.equal(band.cursor, 'ns-resize');
+      assert.ok(band.barWidth >= 48 && band.barOpacity > 0, 'the handle is not drawn');
+      const rowSlider = h.page.locator('[data-row-slider]');
+      const seen = await h.page.evaluate(() =>
+        [...document.querySelectorAll<HTMLInputElement>('[data-row-slider]')].map((el) => ({
+          value: el.value,
+          attr: el.getAttribute('value'),
+          min: el.min,
+          max: el.max,
+          step: el.step,
+          now: document.querySelector('[data-row-grip]')?.getAttribute('aria-valuenow'),
+        })),
+      );
+      assert.equal(await rowSlider.inputValue(), '88', JSON.stringify(seen));
+      await rowSlider.focus();
+      await h.page.keyboard.press('ArrowRight');
+      await until(async () => Math.round(await rowH()) === 138);
+      assert.equal(await grip.getAttribute('aria-valuenow'), '96');
+      // Nothing overflowed the card and no block lies over another.
+      const boxes = await h.page.locator('[data-block-id]').evaluateAll((els) =>
+        els.map((el) => {
+          const r = el.getBoundingClientRect();
+          return { l: r.left, r: r.right, t: r.top, b: r.bottom };
+        }),
+      );
+      for (const [i, a] of boxes.entries()) {
+        for (const b of boxes.slice(i + 1)) {
+          const over =
+            Math.min(a.r, b.r) - Math.max(a.l, b.l) > 0.5 &&
+            Math.min(a.b, b.b) - Math.max(a.t, b.t) > 0.5;
+          assert.equal(over, false, 'two blocks overlap after the drag');
+        }
+      }
     } finally {
       await h.close();
     }

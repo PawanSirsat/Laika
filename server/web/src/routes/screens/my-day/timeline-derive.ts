@@ -24,16 +24,48 @@ export const STEP = 5;
 export const AXIS_FROM = 6;
 export const AXIS_TO = 22;
 
-export type Zoom = 'fit' | '1' | '2';
+/** The scales − and + walk, in order (LAI-890): times the design's 160px an hour. */
+export const ZOOM_STEPS = ['0.5', '0.75', '1', '1.5', '2', '3', '4', '5'] as const;
+export type ZoomLevel = (typeof ZOOM_STEPS)[number];
+export type Zoom = 'fit' | ZoomLevel;
+/** The design's 1×: 160 px an hour (the owner's "Laika App v3" Timeline). */
+export const BASE_PX_PER_HOUR = 160;
 /**
- * Pixels an hour at 1× and 2× (the owner's "Laika App v3" Timeline: 160 and
- * 320); `fit` is the whole axis in the width there is, idle hours folded.
+ * Pixels an hour at each level; `fit` is the whole axis in the width there
+ * is, idle hours folded.
  */
 export const PX_PER_HOUR: Readonly<Record<Zoom, number | undefined>> = {
   fit: undefined,
-  '1': 160,
-  '2': 320,
+  '0.5': BASE_PX_PER_HOUR * 0.5,
+  '0.75': BASE_PX_PER_HOUR * 0.75,
+  '1': BASE_PX_PER_HOUR,
+  '1.5': BASE_PX_PER_HOUR * 1.5,
+  '2': BASE_PX_PER_HOUR * 2,
+  '3': BASE_PX_PER_HOUR * 3,
+  '4': BASE_PX_PER_HOUR * 4,
+  '5': BASE_PX_PER_HOUR * 5,
 };
+
+/**
+ * The next level in or out of `zoom` (LAI-890): from Fit, in is 1× and out is
+ * nothing; past either end, nothing.
+ */
+export function zoomStep(zoom: Zoom, by: 1 | -1): Zoom | undefined {
+  if (zoom === 'fit') return by > 0 ? '1' : undefined;
+  const at = ZOOM_STEPS.indexOf(zoom);
+  return ZOOM_STEPS[at + by];
+}
+
+/** The YOU row's block height, dragged by its grip (LAI-891): the design's 80px, up to three times it. */
+export const BLOCK_MIN_PX = 80;
+export const BLOCK_MAX_PX = 240;
+/** ↑ and ↓ on the grip move the height by this much. */
+export const BLOCK_STEP_PX = 8;
+export const clampBlockHeight = (px: number): number =>
+  Math.round(Math.max(BLOCK_MIN_PX, Math.min(BLOCK_MAX_PX, px)));
+
+/** `1.5×`, `1×` — or `Fit`. */
+export const zoomLabel = (zoom: Zoom): string => (zoom === 'fit' ? 'Fit' : `${zoom}×`);
 /** An idle stretch at either end of the day this long or longer folds at Fit (LAI-888). */
 export const FOLD_MIN = 45;
 /** How wide a folded stretch is drawn, in px. */
