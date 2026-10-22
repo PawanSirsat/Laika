@@ -283,9 +283,10 @@ reads it, and no row of §3.1 or §3.2 depends on it.
   rows. Today the two answer alike.
 - **The rest are the developer's own record about their own work**, the
   heartbeat's argument, so every role holds them. What stops collection is
-  not the matrix: it is the two switches — the organisation's
-  `developer_insights` (§4.2, its own row above) and the developer's
-  `share_local_activity` (§4.1) — which the service reads on every report.
+  not the matrix: it is the organisation's `developer_insights` (§4.2, its
+  own row above), which the service reads on every report. Since D-102
+  (amended, LAI-963) the developer's `share_local_activity` (§4.1) stops
+  nothing.
 - **Both switches are a web session's.** `developer_insights` on `PATCH
   /org` is its own action, `org.developer_insights.set`, not *Org settings*
   borrowed: a token may hold `org.settings.edit`, and an owner's token must
@@ -317,10 +318,10 @@ project's totals and **never a per-person split**.
   not even its own person's**. `GET /usage` answers a reader without
   `usage.read_people` with `by_developer: null` rather than refusing the page.
 - **Sending tokens is not a new row.** A usage report is the collector's, on
-  `PUT /me/local-activity` under *Send own local activity* and the same two
-  switches (D-084 item 4). So is OpenTelemetry (LAI-773): Claude Code's
+  `PUT /me/local-activity` under *Send own local activity* and the
+  organisation's switch (D-084 item 4; D-102 amended). So is OpenTelemetry (LAI-773): Claude Code's
   metrics on `POST /otlp/v1/metrics` are the developer's own usage sent
-  another way, under the same row and the same two switches.
+  another way, under the same row and the same switch.
 
 **LAI-773's rows** — `org.model_prices.set`, `token_alerts.own` and
 `plan_limit.own`, with §3.2's `budget.set` — are all **session only**:
@@ -535,7 +536,7 @@ tables** (§11.3). Do not hand-write password or session columns.
 | `owner_user_id` | |
 | `invite_only` | integer, default **1** (D-004) |
 | `presence_enabled` | integer, default **1** — org-wide off switch for heartbeats. When 0, `POST /heartbeats` returns `202` and discards, and Presence/Capacity show a disabled state rather than an empty one. D-005 makes the product's privacy claim; this makes it enforceable by the org, not just promised by us. |
-| `developer_insights` | integer, default **0** — the organisation's half of D-079's two switches, set by owners and admins from a web session (*Turn Developer insights on or off*, §3.1). Off: no developer's local activity is accepted, whatever they chose, and the heatmap shows board actions only. Readable by everyone, for `presence_enabled`'s reason. |
+| `developer_insights` | integer, default **0** — the switch that alone decides local-activity collection since D-102 (amended, LAI-963; was the organisation's half of D-079's two switches), set from a web session by the owner or a role granted *Change organisation settings, Time and breaks* (*Turn Developer insights on or off*, §3.1). Off: no developer's local activity is accepted and the heatmap shows board actions only. On: every connected machine's is. Readable by everyone, for `presence_enabled`'s reason. |
 | `ai_provider` | `anthropic` \| `openai_compatible` \| `null` |
 | `ai_base_url` | **nullable** — for Ollama / vLLM; null means the provider's own default endpoint |
 | `ai_api_key_enc` | **nullable** — AES-256-GCM, key derived from `LAIKA_SECRET` (§12). **Null is how "no provider configured" is recorded**; there is no separate flag, so §10.2 and the Assistant both read this column to decide whether they can run at all |
@@ -1190,7 +1191,7 @@ D-079, LAI-751) — the heatmap's *Local* colour.
 | `prompts` | integer — prompts sent to agents that day, the sum of `prompts_by_agent` |
 | `prompts_by_agent` | JSON `{ "<agent kind>": n }`, kinds folded onto §9.3's agent slugs; anything else is `other` |
 | `sessions` | integer — agent sessions started |
-| `commits_local` | integer — their commits that day on no remote yet; merge commits and commits authored before they turned sharing on are not counted (§6.4) |
+| `commits_local` | integer — their commits that day on no remote yet; merge commits and commits authored before their machine was connected are not counted (§6.4) |
 | `tz` | the IANA zone the machine reported its days in |
 | `updated_at` | integer — when this snapshot arrived |
 
@@ -1205,7 +1206,7 @@ leaves `commits_local` on the next report. Machines sum. Kept 400 days (§11.6).
 ### 4.24 `pushed_commit_keys`
 
 One key per commit a developer has on a remote — the heatmap's *GitHub* colour
-(§6.4, D-079, LAI-751). Commits authored after they turned sharing on, and once
+(§6.4, D-079, LAI-751). Commits authored after their machine was connected (`laika activity on`), and once
 per repository a look-back of up to a year before that (D-080, LAI-757); never
 a merge commit — the collector's rules (§6.4).
 
@@ -1952,7 +1953,7 @@ over an existing id, and `DELETE` while its entry exists.
 
 Claude Code's own `active_time` per session and day (D-088 item 8, LAI-787):
 `user`, time at the keyboard in Claude Code, apart from `cli`, the agent
-working. From D-087's OTLP receiver, under its two switches. **Agent minutes,
+working. From D-087's OTLP receiver, under the organisation's switch. **Agent minutes,
 never hours**; nothing adds them to a time entry.
 
 | field | notes |
@@ -2410,11 +2411,11 @@ GET    /api/v1/setup/status                  POST /api/v1/setup      (disabled o
        └ { setup_required, system: { database, migrations_applied, smtp_configured } }
 GET    /api/v1/me
 GET    /api/v1/me/activity-sharing           PUT .../activity-sharing  body { scope? }   (PUT session only; `enabled` → 403 organisation_controlled)
-PUT    /api/v1/me/local-activity             a collector's report, look-back or usage report → { accepted_days }   (both switches on; 30/hour)
+PUT    /api/v1/me/local-activity             a collector's report, look-back or usage report → { accepted_days }   (organisation's Developer insights on; 30/hour)
 GET    /api/v1/me/local-activity             ?days=1–14 — what is held for the caller   DELETE → 204   (session only)
 GET    /api/v1/me/token-alerts               the caller's own budget and runaway alerts   POST .../:id/dismiss → 204   (session only; LAI-773)
 GET    /api/v1/me/plan-limit                 PUT .../plan-limit   DELETE → 204 — the developer's own forecast, an estimate   (session only; D-087)
-POST   /api/v1/otlp/v1/metrics               OpenTelemetry metrics, OTLP/HTTP JSON, from the developer's own agents (both switches on; LAI-773)
+POST   /api/v1/otlp/v1/metrics               OpenTelemetry metrics, OTLP/HTTP JSON, from the developer's own agents (organisation's Developer insights on; LAI-773)
 GET    /api/v1/me/time-settings              PUT .../time-settings  body { draft_my_time } — the org's Time and the person's own switch   (PUT session only; LAI-787)
 PUT    /api/v1/me/time-drafts                a collector's blocks, each with a work folder's chosen name and branch if sent → { accepted_days, stored_blocks }   (both time switches on; 30/hour)
 POST   /api/v1/me/time-drafts                an agent's proposal → 201 { id, minutes, day } (both time switches on; twin of propose_time_entry)
@@ -2445,11 +2446,11 @@ GET    /api/v1/users                         ?limit=&cursor=&updated_since=&incl
 PATCH  /api/v1/users/:id                     (role: owner only; deactivate: owner, and admin by default — LAI-958)
 GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind }   (owner, admin; session only)
 POST   /api/v1/users/:id/ratings             body { score, note } → 201   (owner, admin; session only; not yourself)
-GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, admin; session only)
+GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, or a role granted *See everyone's analytics*; session only; logged, D-102)
 GET    /api/v1/people/:id/time               ?day=&tz= — that person's GET /me/time answer, drafts included; logged   (owner, admin by default; session only; not yourself; LAI-957)
 GET    /api/v1/people/:id/local-activity     ?days=1–14 — that person's GET /me/local-activity answer; logged   (owner, admin by default; session only; not yourself)
 GET    /api/v1/me/analytics-views            ?limit=&cursor= — who looked at the caller → { data: [{ id, viewer: { id, name }, kind, day, viewed_at }], next_cursor }, newest first   (session only)
-GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner/admin; session only)
+GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner / a role granted *See everyone's analytics*; session only; logged, D-102)
 GET    /api/v1/usage                         ?days=1–92&project=&tz= — the Usage page   (owner/admin; a member with ?project=)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
 GET    /api/v1/invites/:token                unauthenticated preview — org name, inviter, role, expiry
@@ -2601,7 +2602,7 @@ on a Monday, 00:00 UTC:
 | `projects` | a membership, a task assigned to them, or a review decision in the window; each with their role, open tasks, accepted and reviewed |
 | `review` | their moves of a task that is not theirs — someone else's, or nobody's (LAI-751) — into a Done status (`accepted`) or from Review to an earlier status (`sent_back`), and the most recent of them, `assignee` null for an unassigned task; `per_week` (both, per week of the window), `last_30_days` (decisions in the thirty days to now) and `time_to_decide` — the median from the task's latest entry into Review to the decision (LAI-750). **The entry** is the latest move into a Review status from another category — a move between two Review statuses is not one — or, when every logged move before it stays inside Review, the task's creation, because it was created there (LAI-751). A decision made from outside Review, or one whose entry the log cannot place, is counted as `unmeasured` |
 | `ratings` | §4.21, newest first; the first is the current one. At most 50, with `ratings_total` beside it (LAI-746) |
-| `activity_sharing` | D-079's two switches for this person, `{ org_enabled, enabled }` — the organisation's Developer insights and their own sharing — whatever their kind, so the Activity card is drawn in its final shape before `GET /people/:id/activity` answers (LAI-751). Whether their pushed and local work may be shown, never a count of it |
+| `activity_sharing` | `{ org_enabled, enabled }` — since D-102 (amended) both are the organisation's Developer insights (`enabled` kept for older clients) — whatever their kind, so the Activity card is drawn in its final shape before `GET /people/:id/activity` answers (LAI-751). Whether their pushed and local work may be shown, never a count of it |
 | `current_work` | their tasks in progress, oldest start first, and in review, longest waiting first — each review task with `review_since`, its entry into Review by `review`'s rule, null when the log cannot say (LAI-751); each list at most 50, with `in_progress_total` and `in_review_total` |
 | `delivery` | `accepted_per_week` and `accepted`: moves of their tasks into a Done status (D-077) by someone else; `sent_back`: Review to an earlier status by someone else; `reopened`: Done back into work; `cycle_time`: p50/p75 of `completed_at − started_at` for their tasks done in the window, the unstarted ones counted as `unmeasured` |
 | `agents` | their usable tokens with the agent each last connected as (D-076), most recently used first, at most 50 with `tokens_total`; which agents are online now (§9.3) — never where; and `writes`: their `activity` rows made through a token in the window, grouped by the agent that token last connected as, most first, with `writes_total` — revoked tokens' writes included (LAI-750) |
@@ -2630,7 +2631,7 @@ reaches SSE, an MCP tool or an export (§4.21).
   a web session and their agents' with their tokens, by **UTC day**. Always
   there: they are what the board already records (D-078 item 4).
 - **`github`, `local_commits`, `prompts` and `sessions` are `null`** — not
-  zeros — **unless both switches are on for that person now** (§4.1, §4.2); then
+  zeros — **unless the organisation's Developer insights is on now** (§4.2; D-102 amended); then
   they sum every machine of theirs (§4.23), and `github` counts distinct pushed
   keys by the day first reported (§4.24). Local days are the reporting
   machine's own dates, aligned with the board's by date.
@@ -2767,7 +2768,7 @@ reaches SSE, an MCP tool or an export (§4.21).
   read is kept. It ties the session's agent minutes to cards the way its
   tokens are tied.
 - Refusals, in §6.3's envelope with the contract's reason in `details.reason`:
-  `403 local_activity_off` when either switch is off (asked before the body is
+  `403 local_activity_off` when the organisation's switch is off (asked before the body is
   judged); `422 day_out_of_range` when `days` is empty, longer than 14, repeats
   a day, or holds a day that is not a date within *today − 14* to *today + 1*
   in `tz` — for a look-back, *today − 400* to *today + 1*, for a usage report
@@ -2779,8 +2780,8 @@ reaches SSE, an MCP tool or an export (§4.21).
   token (per user for a session; §6.3). A collector that
   is refused `local_activity_off` stops and asks again after 24 hours.
 - **Which commits count** (settled with the collector, LAI-752; D-080):
-  `commits_local` covers only commits the developer authored **after they
-  turned sharing on**, and **merge commits are counted in neither** it nor the
+  `commits_local` covers only commits the developer authored **after their
+  machine was connected**, and **merge commits are counted in neither** it nor the
   keys. A snapshot's `pushed_keys` follow the same start; **once per
   repository a look-back** adds keys for the developer's pushed commits of up
   to the last 365 days before it — only those no snapshot can count, so a
@@ -4554,13 +4555,13 @@ anything missing sends the task back.
   actions by them and by their agents; arrow keys move between days and each
   day reads as text; stats — active days, current and longest streak, busiest
   weekday, pushed vs local — computed on the client. It says plainly when the
-  organisation's switch is off (with a link to Organisation), when the person
-  has not turned on sharing, and when nothing has arrived yet. Context only:
+  organisation's switch is off (with a link to Organisation) and when nothing
+  has arrived yet. Context only:
   nothing on it feeds the rating. A **Tokens** card follows it, full width
   (D-084, LAI-769): tokens over 12 weeks, **at least**, with cache reads and
   the share tied to a task beside it; a bar per week; their top agents and
-  models; agents with *no token data* named; and plainly when either switch is
-  off or nothing has arrived. Reached from a person's name on Organisation, a Capacity card or a
+  models; agents with *no token data* named; and plainly when the
+  organisation's switch is off or nothing has arrived. Reached from a person's name on Organisation, a Capacity card or a
   Dashboard *Contributors* row (LAI-817) — links for owners and admins, plain text for everyone
   else.
 
@@ -4850,16 +4851,17 @@ absent. The only outbound calls Laika ever makes are to the org's configured LLM
 provider (§12), configured SMTP, and a webhook source it was configured to talk
 to. Any task proposing otherwise is rejected at review.
 
-**Local activity counts are inbound, opt-in twice, and counts only** (D-079).
-A developer's own machine sends per-day counts to their own board — only while
-the organisation's *Developer insights* and their own *Share local activity*
-are both on — and nothing leaves the deployment. Never prompt text, file
+**Local activity counts are inbound, the organisation's choice, and counts
+only** (D-079; D-102 amended). A developer's connected machine sends per-day
+counts to their own board — only while the organisation's *Developer insights*
+is on, and the developer is told so wherever they look (Developer access,
+Connect, the CLI) — and nothing leaves the deployment. Never prompt text, file
 names, repository names or paths, remote URLs, branch names, commit messages,
 author emails or raw commit ids. No call to GitHub is added.
 
 **OpenTelemetry is inbound too, and metrics only** (LAI-773, D-087). A
 developer may point their own Claude Code's metrics at their own board, with
-their own token, under the same two switches; Laika keeps the counts of the
+their own token, under the same switch; Laika keeps the counts of the
 metrics §6.4 names and a one-way key of the session, drops every other
 attribute, and has no route for logs or traces. **Prices are a dated table in
 the code**, edited by an admin; nothing fetches one. The plan-limit forecast is

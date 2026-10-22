@@ -2,11 +2,13 @@
 id: LAI-965
 title: 'SPEC still says "both switches" for local activity outside the lines LAI-963 was allowed to touch'
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: [LAI-963]
 discovered-from: LAI-963
-status: backlog
+status: review
+started: 2026-10-22T16:19:35Z
+finished: 2026-10-22T16:19:35Z
 ---
 
 ## Goal
@@ -21,7 +23,7 @@ Measured on LAI-963's branch with
 
 ## Acceptance criteria
 
-- [ ] Each line below either follows D-102 (amended) or is confirmed to be
+- [x] Each line below either follows D-102 (amended) or is confirmed to be
       about a different pair of switches (time drafts, D-089), and says so:
   - §3.1 prose, ~257–259 — "it is the two switches … `share_local_activity`
     (§4.1) — which the service reads on every report".
@@ -44,3 +46,17 @@ Measured on LAI-963's branch with
   - §11 screens ~4444 and ~4448 — "when the person has not turned on sharing",
     "when either switch is off" (SHELL's screens follow in LAI-964).
   - ~4748 — OTLP "under the same two switches".
+
+## Done (2026-10-22T16:19:35Z, CHIEF, on the integration branch)
+
+Every line above now follows D-102 (amended); plus Codex's integration-review
+finds (§11 profile Activity/Tokens wording, the "opt-in twice" privacy
+paragraph and OTLP's "same two switches") and LAI-957's stale §6.4 lines
+(`/people/:id/activity`, `/users/:id/usage` now name the grant and the view
+log). Left deliberately: §3.1 ~353, ~2083, ~3134 and the "Time drafts … opt-in
+twice" paragraph — those are D-089's time-draft switches, not local activity;
+§4.1 `share_local_activity` and ~2656 describe history correctly.
+Checked: `server` `vitest run test/tooling` 475/475 exit 0; web
+`endpoint-coverage` + `view-type-drift` 11/11 exit 0. Full gate runs on the
+integration tree before the PR to master.
+
