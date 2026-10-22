@@ -2457,12 +2457,14 @@ GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai
 POST   /api/v1/org/github-webhook            set or rotate the GitHub webhook secret; answers it once (session only)
 DELETE /api/v1/org/github-webhook            clear it (204; session only)
 GET    /api/v1/org/model-prices              PUT/DELETE .../model-prices/:model — API-equivalent prices (set: owner, admin; session only; LAI-773)
+GET    /api/v1/org/overview                  people seen this week and open / in review / blocked / overdue counts over the spaces the caller can read → { people, tasks }   (viewer+; LAI-986)
 GET    /api/v1/org/permissions               what each org role is granted → { roles, capabilities, grants, owner_locked, updated_at, updated_by }   (viewer+; LAI-958)
 PUT    /api/v1/org/permissions               body { grants: { admin|member|viewer: { <capability>: bool } } } — the whole matrix, every role and capability; same answer   (owner only; session only)
 GET    /api/v1/users                         ?limit=&cursor=&updated_since=&include_inactive=
                                              cursor is (name, id) — a directory reads alphabetically
                                              each user carries last_seen_at: their latest session activity, or null (LAI-981)
 PATCH  /api/v1/users/:id                     (role: owner only; deactivate: owner, and admin by default — LAI-958)
+                                             deactivating takes open_tasks: "unassign" | { reassign_to } — 409 without it while they hold open tasks (LAI-986)
                                              deactivating revokes every token and ends every session; reactivating restores neither (D-104 item 3)
 POST   /api/v1/users/:id/sign-out            end every session, not tokens → { user_id, sessions_ended }   (themselves; anyone else: owner, and admin by default; logged — LAI-981)
 GET    /api/v1/users/:id/memberships         → { data: [{ project_id, slug, name, prefix, role, archived, joined_at }] } — membership rows only, narrowed to spaces the caller can read   (viewer+; LAI-981)
@@ -2482,6 +2484,7 @@ GET    /api/v1/projects                      POST /api/v1/projects   (admin+)
 GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
 POST   /api/v1/projects/:slug/join           (public projects)
 GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
+                                             DELETE takes an optional body { open_tasks } as deactivation does (LAI-986)
 GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
 GET    /api/v1/projects/:slug/budgets        PUT /api/v1/projects/:slug/budget  body { tokens | null }   (set: lead, session only; LAI-773)
 GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=&fields=
@@ -3438,6 +3441,31 @@ capacity lasts. `null` with `reason` `completed`, `no_tasks`, or
 `{ days, tasks_done, weight_done }`. Cached per sprint against every input, so
 a re-read with nothing changed draws nothing. Not story points: nothing in it
 is typed by anybody.
+
+**Offboarding asks (D-104 item 5, LAI-986).** Removing someone from a space
+(`DELETE /projects/:slug/members/:userId`) and deactivating them (`PATCH
+/users/:id { is_active: false }`) take `open_tasks`: `"unassign"`, or
+`{ "reassign_to": "<user id>" }`. "Open" is not `done` and not `cancelled`;
+the scope is that space for a removal and every space for a deactivation.
+Without `open_tasks`, while they hold any, the answer is `409` with `details:
+{ reason: "open_tasks", count, keys, hidden }` — `count` is every open task,
+`keys` only those in spaces the caller can read, `hidden` the rest. A
+reassignment must land on an active person, not the one leaving, who can hold
+**every** task (LAI-962's rule); otherwise `422` with `details: { field:
+"open_tasks.reassign_to", reason: "cannot_hold", tasks: [{ key, reason }] }`
+(or `reason: "self"` / `"inactive"` / `"no_such_user"`), and nothing changes.
+Each moved task writes `task.assigned` with `payload.via: "offboarding"`.
+Deactivation also removes every space membership, one `member.removed` per
+space with `payload.via: "deactivation"`; reactivating restores none. All of
+it is one transaction with the removal or deactivation itself.
+
+**The organisation's pulse (LAI-986).** `GET /org/overview` answers `{ people:
+{ active, seen_this_week, since }, tasks: { open, in_review, blocked, overdue }
+}`. `seen_this_week` counts active people whose `last_seen_at` (§6.4's
+`UserView`) is at or after `since`, seven days before now. The task figures
+are `GET /tasks/summary`'s, unfiltered, for the same caller (LAI-974): only
+spaces the caller can read, `open` being every category but `done` and
+`cancelled`.
 
 **The GitHub webhook secret (LAI-753).** `GET /org` carries `github_webhook:
 { configured, payload_url }` for a caller who may *Configure webhooks* (§3.1,
