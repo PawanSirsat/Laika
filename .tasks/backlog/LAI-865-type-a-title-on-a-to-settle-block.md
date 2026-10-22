@@ -71,15 +71,31 @@ mouse, and in both themes.
       the entry's Note field holds the title, and **Save note** changes it
       (`PATCH /me/time-entries/:id`). A browser test asserts both requests,
       confirm then note, and the shown text after each.
-- [ ] **From the keyboard.** The browser test runs this with no clicks:
+- [ ] **From the keyboard: T reaches the field.** **T** moves the focus
+      into the selected block's title field. It is a new `'title'` shortcut
+      in `shortcuts.ts` (`LETTERS`, `:41-46`), and like every other key it
+      does not fire while typing. T is free: My day uses ↵, G, X (not work,
+      `MyDayScreen.tsx:722`), J, K, ? and Esc, and the app's `/` belongs to
+      the space top bar. In the field:
+      - ↵ saves the title, does **not** confirm, and takes the focus out of
+        the field, so My day's keys work again;
+      - Esc leaves the field without saving.
+
+      The browser test runs this with no clicks:
       1. J selects a block.
-      2. The person types a title.
-      3. ↵ in the field saves the title and does **not** confirm.
-      4. The next ↵ confirms the block with the title.
+      2. T puts the focus in its title field.
+      3. The person types a title.
+      4. ↵ saves it.
+      5. The next ↵ confirms the block with the title.
 
       A second case presses G after saving: the block goes on General and
-      keeps its title. While the focus is in the field, J, K, G, X and ? type
-      letters and fire nothing (`typingIn`).
+      keeps its title. While the focus is in the field, J, K, G, X, T and ?
+      type letters and fire nothing (`typingIn`). `shortcuts.test.ts` covers
+      T, and the case where T is typed in a field.
+- [ ] **The key is listed.** `SHORTCUT_SHEET` (`shortcuts.ts:61-69`) gains
+      `['T', 'Type a title for the selected draft']`, and the Inspector's
+      hint row (`Inspector.tsx:445-450`) shows T beside the others. A test
+      asserts the sheet's row.
 - [ ] **Both themes.** The field and the row's title are checked in light and
       dark with `setTheme` (`server/web/test/browser/harness.ts:556`). Text and
       placeholder use existing tokens only (D-020), and the title does not
@@ -101,7 +117,8 @@ mouse, and in both themes.
 - Files: `server/src/http/routes/time.ts` (`DraftPatchBody`),
   `server/src/services/time-drafts.ts` (`DraftPatch`, `updateDraft`),
   `server/web/src/api/time.ts`, `server/web/src/routes/screens/my-day/`
-  (`Inspector.tsx`, `DraftRow.tsx`, `MyDayScreen.tsx`, its CSS),
+  (`Inspector.tsx`, `DraftRow.tsx`, `MyDayScreen.tsx`, `shortcuts.ts`, its
+  CSS), `server/web/test/routes/screens/my-day/shortcuts.test.ts`,
   `server/web/test/browser/my-day-v2.test.ts` or a new
   `my-day-title.test.ts`, `server/web/test/api/time.test.ts`,
   `server/test/services/time-drafts.test.ts`,
