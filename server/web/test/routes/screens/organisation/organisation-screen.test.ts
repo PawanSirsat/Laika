@@ -29,7 +29,9 @@ let dialog = '';
 const source = async (name: string): Promise<string> =>
   code(
     await readFile(
-      fileURLToPath(new URL(`../../../../src/routes/screens/organisation/${name}`, import.meta.url)),
+      fileURLToPath(
+        new URL(`../../../../src/routes/screens/organisation/${name}`, import.meta.url),
+      ),
       'utf8',
     ),
   );
