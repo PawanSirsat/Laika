@@ -2,11 +2,12 @@
 id: LAI-964
 title: 'The web and CLI still offer a personal opt-out for local activity; after D-102 (amended) they must say the organisation collects it'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-963]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T14:00:51Z
 ---
 
 ## Goal
