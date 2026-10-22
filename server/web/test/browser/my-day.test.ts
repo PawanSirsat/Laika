@@ -399,8 +399,17 @@ void describe('times and durations say their units (LAI-830)', () => {
         await h.page.locator(`.myday-week-day[data-day="${TODAY}"] .myday-week-figure`).innerText(),
         '2 h 50 min',
       );
+      // Every hour on the 12-hour clock — but not the one under the now pill,
+      // which hides it (LAI-888), so no one hour is asked for by name but 8 AM.
       const ticks = await h.page.locator('.dayline-axis-hour').allInnerTexts();
-      assert.ok(ticks.includes('8 AM') && ticks.includes('12 PM'), `ticks: ${ticks.join(', ')}`);
+      assert.ok(
+        ticks.includes('8 AM') && ticks.some((t) => t.endsWith(' PM')),
+        `ticks: ${ticks.join(', ')}`,
+      );
+      assert.ok(
+        ticks.every((t) => /^\d{1,2} [AP]M$/.test(t)),
+        `a tick is not on the 12-hour clock: ${ticks.join(', ')}`,
+      );
 
       // Nothing on the page is a duration or a clock in the old form.
       const text = await h.page.locator('.myday-main').innerText();
