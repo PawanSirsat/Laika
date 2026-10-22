@@ -6,7 +6,8 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T07:09:08Z
 ---
 
 ## Goal
@@ -156,6 +157,11 @@ and the editor's round-trip guard (LAI-827, LAI-849) is unaffected.
 
 - Builds on **Belka** (D-097; board tag `host-belka`). It goes first, before
   LAI-865 (owner's order, 2026-10-22).
+- **Claimed before its filing merged.** CHIEF (Belka) directed this claim
+  against PR #32 (`chief-ops-tasks-1022`, head `6027586d`) before that PR
+  reached `master`, so `depends-on` is empty but the file itself was not yet
+  on `master` at claim time (§2 step 1's deviation, recorded here). The
+  branch merges `origin/master` once PR #32 lands.
 - **Area:** `server/web` only. Files:
   - `server/web/src/routes/screens/task/TaskMarkdown.tsx` and its CSS;
   - a new mention helper beside it (for example
