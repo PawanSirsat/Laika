@@ -201,7 +201,7 @@ describe('board actions — always there, from the rollup of the log', () => {
   });
 });
 
-describe('local work and pushed commits — only with both switches on', () => {
+describe('local work and pushed commits — only with the organisation\'s switch on', () => {
   beforeEach(() => {
     share({ org: true, user: true });
     send([
@@ -245,26 +245,31 @@ describe('local work and pushed commits — only with both switches on', () => {
     expect(view.agents).toEqual(['codex', 'claude-code']);
   });
 
-  for (const [name, on] of [
-    ['the organisation turned it off', { org: false, user: true }],
-    ['the developer turned it off', { org: true, user: false }],
-  ] as const) {
-    it(`is null — not zeros — once ${name}, though the rows are still held`, () => {
-      share(on);
-      const view = getPeopleActivity(t.db, actor(owner), bea, '52w', NOW);
+  it('is null — not zeros — once the organisation turned it off, though the rows are still held', () => {
+    share({ org: false, user: true });
+    const view = getPeopleActivity(t.db, actor(owner), bea, '52w', NOW);
 
-      expect(view.sharing).toEqual({ org_enabled: on.org, enabled: on.user });
-      expect(view.series).toMatchObject({
-        github: null,
-        local_commits: null,
-        prompts: null,
-        sessions: null,
-      });
-      expect(view.prompts_by_agent).toEqual({});
-      expect(view.agents).toEqual([]);
-      expect(view.tz).toBe('UTC');
+    expect(view.sharing).toEqual({ org_enabled: false, enabled: false });
+    expect(view.series).toMatchObject({
+      github: null,
+      local_commits: null,
+      prompts: null,
+      sessions: null,
     });
-  }
+    expect(view.prompts_by_agent).toEqual({});
+    expect(view.agents).toEqual([]);
+    expect(view.tz).toBe('UTC');
+  });
+
+  it('is shown whatever the person\'s old switch says — the organisation\'s alone decides (D-102 amended)', () => {
+    share({ org: true, user: false });
+    const view = getPeopleActivity(t.db, actor(owner), bea, '12w', NOW);
+
+    expect(view.sharing).toEqual({ org_enabled: true, enabled: true });
+    expect(view.series.github?.at(-1)).toBe(2);
+    expect(view.series.prompts?.at(-1)).toBe(25);
+    expect(view.agents).toEqual(['codex', 'claude-code']);
+  });
 
   it('ends on today in the zone of their latest report', () => {
     // 20:00 UTC on the 14th is already the 15th in Kolkata.

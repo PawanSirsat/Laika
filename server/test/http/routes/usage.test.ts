@@ -171,8 +171,8 @@ describe('PUT /me/local-activity with "usage": true', () => {
     expect(rows[0]).toMatchObject({ userId: bea.id, output: 2_094_668, cacheRead: 648_995_995 });
   });
 
-  it('is refused 403 local_activity_off with either switch off, before the body is read', async () => {
-    switchOn(true, false);
+  it('is refused 403 local_activity_off with the organisation\'s switch off, before the body is read', async () => {
+    switchOn(false, true);
     const res = await put('{not json', await mint(bea.cookie));
     expect(res.status).toBe(403);
     expect((await errorOf(res)).details.reason).toBe('local_activity_off');

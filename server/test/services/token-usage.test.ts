@@ -270,12 +270,9 @@ describe('a usage report (PUT /me/local-activity, "usage": true)', () => {
     });
   });
 
-  it('is refused local_activity_off, storing nothing, when either switch is off', () => {
-    for (const [org, user] of [
-      [false, true],
-      [true, false],
-    ] as const) {
-      share(bea, user, org);
+  it('is refused local_activity_off, storing nothing, when the organisation\'s switch is off', () => {
+    for (const user of [true, false]) {
+      share(bea, user, false);
       const refused = refusal(() =>
         recordTokenUsage(t.db, actor(bea), report([{ day: YESTERDAY, rows: [row()] }]), NOW),
       );
@@ -285,6 +282,14 @@ describe('a usage report (PUT /me/local-activity, "usage": true)', () => {
       });
     }
     expect(stored()).toHaveLength(0);
+  });
+
+  it('is stored with the organisation\'s switch on and the person\'s off (D-102 amended)', () => {
+    share(bea, false, true);
+    expect(
+      recordTokenUsage(t.db, actor(bea), report([{ day: YESTERDAY, rows: [row()] }]), NOW),
+    ).toEqual({ accepted_days: 1 });
+    expect(stored()).toHaveLength(1);
   });
 
   it('keeps a task key only for a task the sender can see; any other is unattributed', () => {
@@ -1008,6 +1013,20 @@ describe('GET /users/:id/usage — the profile card', () => {
     expect(getPersonUsage(t.db, actor(bea), bea, NOW).totals.tokens).toBe(66);
     expect(refusal(() => getPersonUsage(t.db, actor(bea), cal, NOW))).toMatchObject({
       code: 'forbidden',
+    });
+  });
+
+  it('says collection follows the organisation’s switch alone (D-102 amended)', () => {
+    seedUsage();
+    share(bea, false, true);
+    expect(getPersonUsage(t.db, actor(owner), bea, NOW).sharing).toEqual({
+      org_enabled: true,
+      enabled: true,
+    });
+    share(bea, true, false);
+    expect(getPersonUsage(t.db, actor(owner), bea, NOW).sharing).toEqual({
+      org_enabled: false,
+      enabled: false,
     });
   });
 

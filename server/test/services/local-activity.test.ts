@@ -121,91 +121,125 @@ afterEach(() => {
   t.close();
 });
 
-describe('the sharing setting', () => {
-  it('is off on both sides by default, and says how often to sync', () => {
+describe('the sharing setting — the organisation\'s alone (D-102 amended, LAI-963)', () => {
+  it('is off while the organisation\'s is, says the person cannot opt out, and how often to sync', () => {
     expect(getActivitySharing(t.db, actor(bea))).toEqual({
       org_enabled: false,
       enabled: false,
+      person_can_opt_out: false,
       scope: 'agent-repos',
       min_sync_interval_s: MIN_SYNC_INTERVAL_S,
     });
   });
 
-  it('is the developer’s to set, from a session, and only their own row changes', () => {
-    switches(true, cal, false);
-    expect(setActivitySharing(t.db, actor(bea), { enabled: true, scope: 'laika-repos' })).toEqual({
+  it('is on for everyone the moment the organisation\'s is, whatever their old switch says', () => {
+    switches(true, bea, false);
+    switches(true, cal, true);
+    for (const who of [bea, cal]) {
+      expect(getActivitySharing(t.db, actor(who))).toEqual({
+        org_enabled: true,
+        enabled: true,
+        person_can_opt_out: false,
+        scope: 'agent-repos',
+        min_sync_interval_s: MIN_SYNC_INTERVAL_S,
+      });
+    }
+  });
+
+  it('refuses the person a switch they no longer hold — 403 organisation_controlled, nothing written', () => {
+    for (const org of [true, false]) {
+      switches(org, bea, true);
+      for (const enabled of [true, false]) {
+        expect(
+          refusal(() => setActivitySharing(t.db, actor(bea), { enabled, scope: 'laika-repos' })),
+        ).toEqual({
+          code: 'forbidden',
+          details: { reason: 'organisation_controlled', org_enabled: org },
+        });
+      }
+    }
+    // Neither the stored switch nor the scope sent beside it was written.
+    const row = t.db.select().from(users).where(eq(users.id, bea)).get();
+    expect(row?.shareLocalActivity).toBe(1);
+    expect(row?.localActivityScope).toBe('agent-repos');
+  });
+
+  it('still takes the scope, from a session, and only their own row changes', () => {
+    switches(true, bea, false);
+    expect(setActivitySharing(t.db, actor(bea), { scope: 'laika-repos' })).toEqual({
       org_enabled: true,
       enabled: true,
+      person_can_opt_out: false,
       scope: 'laika-repos',
       min_sync_interval_s: MIN_SYNC_INTERVAL_S,
     });
-    expect(getActivitySharing(t.db, actor(cal)).enabled).toBe(false);
-
-    // Off again, scope kept.
-    expect(setActivitySharing(t.db, actor(bea), { enabled: false })).toMatchObject({
-      enabled: false,
-      scope: 'laika-repos',
-    });
+    expect(getActivitySharing(t.db, actor(cal)).scope).toBe('agent-repos');
   });
 
-  it('refuses every token the switch — an agent must not consent for its person', () => {
+  it('refuses every token the write — an agent must not change it for its person', () => {
     for (const scope of ['full', 'read_only'] as const) {
-      expect(
-        refusal(() => setActivitySharing(t.db, withToken(bea, scope), { enabled: true })),
-      ).toEqual({
-        code: 'forbidden',
-        details: { action: 'activity_sharing.set_own', reason: 'session_required' },
-      });
+      for (const input of [{ enabled: true }, { scope: 'laika-repos' as const }]) {
+        expect(refusal(() => setActivitySharing(t.db, withToken(bea, scope), input))).toEqual({
+          code: 'forbidden',
+          details: { action: 'activity_sharing.set_own', reason: 'session_required' },
+        });
+      }
     }
-    // Nothing changed.
-    expect(getActivitySharing(t.db, actor(bea)).enabled).toBe(false);
+    expect(getActivitySharing(t.db, actor(bea)).scope).toBe('agent-repos');
   });
 
   it('may be read with a token — a read-only one included — so a collector can ask first', () => {
-    switches(true, bea, true);
+    switches(true, bea, false);
     expect(getActivitySharing(t.db, withToken(bea, 'read_only'))).toMatchObject({
       org_enabled: true,
       enabled: true,
+      person_can_opt_out: false,
     });
   });
 
   it('writes no activity row', () => {
     const before = activityRows();
-    setActivitySharing(t.db, actor(bea), { enabled: true });
+    setActivitySharing(t.db, actor(bea), { scope: 'laika-repos' });
     expect(activityRows()).toBe(before);
   });
 });
 
-describe('a report is refused while either switch is off', () => {
-  for (const [org, user] of [
-    [false, true],
-    [true, false],
-    [false, false],
-  ] as const) {
-    it(`org ${org ? 'on' : 'off'}, developer ${user ? 'on' : 'off'}: local_activity_off, nothing kept`, () => {
-      switches(org, bea, user);
+describe('a report follows the organisation\'s switch alone (D-102 amended)', () => {
+  for (const user of [true, false]) {
+    it(`org off, old personal switch ${user ? 'on' : 'off'}: local_activity_off, nothing kept`, () => {
+      switches(false, bea, user);
       const sent = report([
         day(TODAY, { prompts: { 'claude-code': 3 }, pushed_keys: ['a1b2c3d4e5f6a7b8'] }),
       ]);
 
       expect(refusal(() => recordLocalActivity(t.db, actor(bea), sent, NOW))).toEqual({
         code: 'forbidden',
-        details: { reason: 'local_activity_off', org_enabled: org, enabled: user },
+        details: { reason: 'local_activity_off', org_enabled: false, enabled: false },
       });
       expect(t.db.select().from(localActivityDays).all()).toEqual([]);
       expect(t.db.select().from(pushedCommitKeys).all()).toEqual([]);
     });
   }
 
-  it('is accepted the moment both are on, and refused again the moment one goes off', () => {
-    switches(true, bea, true);
-    const sent = report([day(TODAY, { sessions: 1 })]);
+  it('is accepted with the organisation\'s on even though the person never switched theirs on', () => {
+    switches(true, bea, false);
+    const sent = report([day(TODAY, { sessions: 1, pushed_keys: ['a1b2c3d4e5f6a7b8'] })]);
     expect(recordLocalActivity(t.db, actor(bea), sent, NOW)).toEqual({ accepted_days: 1 });
+    expect(t.db.select().from(localActivityDays).all()).toHaveLength(1);
+    expect(t.db.select().from(pushedCommitKeys).all()).toHaveLength(1);
+  });
 
-    setActivitySharing(t.db, actor(bea), { enabled: false });
+  it('is refused again the moment the organisation\'s goes off, and what was kept stays', () => {
+    switches(true, bea, false);
+    const sent = report([day(TODAY, { sessions: 1 })]);
+    recordLocalActivity(t.db, actor(bea), sent, NOW);
+
+    switches(false, bea, false);
     expect(refusal(() => recordLocalActivity(t.db, actor(bea), sent, NOW))).toMatchObject({
+      code: 'forbidden',
       details: { reason: 'local_activity_off' },
     });
+    expect(t.db.select().from(localActivityDays).all()).toHaveLength(1);
   });
 
   it('refuses a read-only token: sending is a write', () => {
@@ -540,8 +574,8 @@ describe('a look-back report (D-080)', () => {
     }
   });
 
-  it('refuses while either switch is off, before the days are judged', () => {
-    switches(true, bea, false);
+  it('refuses while the organisation\'s switch is off, before the days are judged', () => {
+    switches(false, bea, true);
     expect(refusal(() => recordLookback(t.db, actor(bea), lookback([]), NOW))).toMatchObject({
       code: 'forbidden',
       details: { reason: 'local_activity_off' },
@@ -734,8 +768,8 @@ describe('what the server holds, for the person it is about', () => {
     expect(getOwnLocalActivity(t.db, actor(cal), 14, NOW).oldest_day).toBe('2026-09-20');
   });
 
-  it('still shows what is held after sharing is turned off — it is theirs to see and delete', () => {
-    setActivitySharing(t.db, actor(bea), { enabled: false });
+  it('still shows what is held after collection is turned off — it is theirs to see and delete', () => {
+    switches(false, bea, false);
     expect(getOwnLocalActivity(t.db, actor(bea), 14, NOW).days).toHaveLength(2);
   });
 

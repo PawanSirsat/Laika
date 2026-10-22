@@ -130,6 +130,13 @@ describe('POST /api/v1/otlp/v1/metrics', () => {
     expect(rows.map((r) => [r.collectorId, r.output])).toEqual([[TELEMETRY_COLLECTOR, 420]]);
   });
 
+  it('takes it with the organisation\'s switch on and the person\'s off (D-102 amended)', async () => {
+    h.db.update(users).set({ shareLocalActivity: 0 }).where(eq(users.id, userId)).run();
+    const res = await post('/api/v1/otlp/v1/metrics', metrics(7), await mint());
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(h.db.select().from(tokenUsageDays).all().map((r) => r.output)).toEqual([7]);
+  });
+
   it('is not presence: an open session exporting all day keeps nobody online', async () => {
     const token = await mint();
     await post('/api/v1/otlp/v1/metrics', metrics(1), token);
