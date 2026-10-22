@@ -1,8 +1,10 @@
 /**
  * The Capacity screen (LAI-439), one global page since LAI-754, redesigned by
  * LAI-767: a search and filter chips, tiles that count, one card a person with
- * a status ring and a load badge, never-seen people folded into a line, and a
- * *Team load* chart.
+ * a status ring and a load badge, never-seen people folded into a line. LAI-991
+ * compacted the cards to one shape — every block drawn, zeros included — and
+ * added a List view whose bars share one scale, replacing the *Team load*
+ * chart.
  *
  * The fixture is shaped like the owner's org (`capacity-org.ts`): five people,
  * three never seen, an owner with seven tasks in progress and two agents
@@ -811,6 +813,305 @@ void describe('the space bar’s Agents chip (LAI-737)', () => {
       const text = (await chip.textContent()) ?? '';
       assert.match(text, /2 people with agent sessions/, text);
       assert.match(text, /Claude Code, Codex, Cursor/, text);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('one shape a card, and a list of the same people (LAI-991)', () => {
+  void test('every card draws every block, with a 0 where there is nothing', async () => {
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
+    try {
+      await ready(h.page);
+      await h.page.locator('.cap-never').getByRole('button', { name: 'Show' }).click();
+      await until(async () => (await h.page.locator('.cap-grid > .cap-card').count()) === 5);
+      // Cal has no agents, no spaces, no tasks and no activity — and still
+      // every block, each saying so with a figure.
+      const cal = card(h.page, 'Cal Mokoena');
+      // Labels are drawn in capitals by CSS, and innerText reports them so.
+      const labels = (await cal.locator('.cap-label').allInnerTexts()).map((t) =>
+        t.replace(/\s+/g, ' ').trim().toLowerCase(),
+      );
+      assert.deepEqual(labels, [
+        'workload nothing in progress',
+        'agents 0 running',
+        'activity 14 days · 0',
+        'spaces 0 spaces',
+      ]);
+      assert.equal(
+        (await cal.locator('.cap-counts').innerText()).replace(/\s+/g, ' ').trim(),
+        '0 in progress 0 to do 0 backlog',
+      );
+      assert.equal(
+        (await cal.locator('.cap-waits').innerText()).replace(/\s+/g, ' ').trim(),
+        '0 waiting on reviewers 0 due in 7 days',
+      );
+      assert.equal(
+        (await cal.locator('.cap-agents-block .cap-quiet').innerText()).trim(),
+        'No agents running',
+      );
+      assert.equal(
+        (await cal.locator('.cap-spark-split').innerText()).replace(/\s+/g, ' ').trim(),
+        '0 by hand 0 by agents 0 bookkeeping',
+      );
+      assert.equal(
+        (await cal.locator('.cap-spaces-block .cap-quiet').innerText()).trim(),
+        'No spaces',
+      );
+      assert.equal(
+        (await cal.locator('.cap-tasks').innerText()).replace(/\s+/g, ' ').trim(),
+        '0 in progress',
+      );
+      // Every card has the same blocks in the same order; only the figures differ.
+      for (const name of ['Pawan Sirsat', 'Bea Nkosi', 'Dee Pillay', 'Eli van Wyk']) {
+        const got = (await card(h.page, name).locator('.cap-label').allInnerTexts()).map((t) =>
+          t.replace(/\s+/g, ' ').trim().split(' ')[0]?.toLowerCase(),
+        );
+        assert.deepEqual(got, ['workload', 'agents', 'activity', 'spaces'], name);
+        assert.equal(
+          await card(h.page, name).locator('.cap-tasks').count(),
+          1,
+          `${name}: no footer`,
+        );
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a member sees the same blocks less Activity, and never a hole', async () => {
+    const h = await open('/insights?tab=capacity', orgStub('member'));
+    try {
+      await ready(h.page);
+      await h.page.locator('.cap-never').getByRole('button', { name: 'Show' }).click();
+      await until(async () => (await h.page.locator('.cap-grid > .cap-card').count()) === 5);
+      for (const name of ['Pawan Sirsat', 'Cal Mokoena']) {
+        const got = (await card(h.page, name).locator('.cap-label').allInnerTexts()).map((t) =>
+          t.replace(/\s+/g, ' ').trim().split(' ')[0]?.toLowerCase(),
+        );
+        assert.deepEqual(got, ['workload', 'agents', 'spaces'], name);
+      }
+      assert.equal(await h.page.locator('.cap-spark-block').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('cards in a row are one height, the footer at the bottom of each', async () => {
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 1000 });
+      await ready(h.page);
+      await h.page.locator('.cap-never').getByRole('button', { name: 'Show' }).click();
+      await until(async () => (await h.page.locator('.cap-grid > .cap-card').count()) === 5);
+      await h.page.locator('.cap-working').waitFor({ timeout: 10_000 });
+      await h.page.evaluate(() => document.fonts.ready.then(() => undefined));
+      // Three across at this width: the first row is Pawan, Bea, Dee — the
+      // fullest card and an empty one side by side.
+      const boxes = await h.page.evaluate(() =>
+        [...document.querySelectorAll('.cap-grid > .cap-card')].map((el) => {
+          const card = el.getBoundingClientRect();
+          const footer = el.querySelector('.cap-tasks')?.getBoundingClientRect();
+          return {
+            top: card.top,
+            height: card.height,
+            bottom: card.bottom,
+            footerBottom: footer?.bottom ?? NaN,
+          };
+        }),
+      );
+      const firstRow = boxes.filter((b) => Math.abs(b.top - boxes[0]!.top) < 1);
+      assert.equal(firstRow.length, 3, 'three cards in the first row');
+      for (const b of firstRow) {
+        assert.ok(
+          Math.abs(b.height - firstRow[0]!.height) <= 1,
+          `a card is ${String(b.height)}px beside ${String(firstRow[0]!.height)}px`,
+        );
+        // The footer hugs the bottom edge (its padding apart), on the full card and the empty one alike.
+        assert.ok(
+          b.bottom - b.footerBottom < 16,
+          `footer sits ${String(b.bottom - b.footerBottom)}px above the edge`,
+        );
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('every figure says its rule on hover, the same words on a card and in the list', async () => {
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
+    try {
+      await ready(h.page);
+      const pawan = card(h.page, 'Pawan Sirsat');
+      const titleOf = async (sel: string) =>
+        (await pawan.locator(sel).first().getAttribute('title')) ?? '';
+      assert.match(await titleOf('.cap-load'), /^Load is committed work/);
+      assert.match(await titleOf('.cap-overdue'), /past their due date/);
+      assert.match(await titleOf('.cap-status'), /an agent session/);
+      const counts = await pawan
+        .locator('.cap-counts .cap-count, .cap-waits .cap-count')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''));
+      assert.equal(counts.length, 5);
+      assert.ok(
+        counts.every((t) => t.length > 20),
+        `a count has no rule: ${counts.join(' | ')}`,
+      );
+      const figs = await pawan
+        .locator('.cap-fig')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''));
+      assert.deepEqual(
+        figs.map((t) => t.split(' ').slice(0, 3).join(' ')),
+        ['Board actions they', 'Board actions made', 'Sprint moves and'],
+      );
+      assert.match(await titleOf('.cap-agent'), /^Running now · last signal/);
+      assert.match(await titleOf('.cap-agents-block .cap-label-note'), /live session/);
+
+      // The list says the same things in the same words.
+      await h.page.getByRole('button', { name: 'List', exact: true }).click();
+      const row = h.page.locator('.cap-list tbody tr', { hasText: 'Pawan Sirsat' });
+      await row.waitFor();
+      assert.match(
+        (await row.locator('.cap-load').getAttribute('title')) ?? '',
+        /^Load is committed work/,
+      );
+      assert.match(
+        (await row.locator('.cap-overdue').getAttribute('title')) ?? '',
+        /past their due date/,
+      );
+      const cells = await row
+        .locator('td.cap-list-num')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''));
+      assert.ok(
+        cells.every((t) => t.length > 20),
+        `a column has no rule: ${cells.join(' | ')}`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('List: the same people as rows, every column drawn, bars to one scale, remembered', async () => {
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
+    try {
+      await ready(h.page);
+      const cardsButton = h.page.getByRole('button', { name: 'Cards', exact: true });
+      const listButton = h.page.getByRole('button', { name: 'List', exact: true });
+      assert.equal(await cardsButton.getAttribute('aria-pressed'), 'true');
+      await listButton.click();
+      assert.equal(await listButton.getAttribute('aria-pressed'), 'true');
+      const rows = h.page.locator('.cap-list tbody tr');
+      await until(async () => (await rows.count()) === 2);
+      // The never-seen fold applies to rows as it does to cards.
+      assert.equal(await h.page.locator('.cap-grid').count(), 0);
+      assert.match(await h.page.locator('.cap-never').innerText(), /3 people never seen/);
+      await h.page.locator('.cap-never').getByRole('button', { name: 'Show' }).click();
+      await until(async () => (await rows.count()) === 5);
+
+      const heads = (await h.page.locator('.cap-list thead th').allInnerTexts()).map((t) =>
+        t.replace(/\s+/g, ' ').trim().toLowerCase(),
+      );
+      assert.deepEqual(heads, [
+        'person',
+        'load',
+        'workload',
+        'in progress',
+        'to do',
+        'review',
+        'agents',
+        'hand · agents · bookkeeping',
+        'spaces',
+      ]);
+
+      const cellsOf = async (name: string) =>
+        (
+          await h.page
+            .locator('.cap-list tbody tr', { hasText: name })
+            .locator('td')
+            .allInnerTexts()
+        ).map((t) => t.replace(/\s+/g, ' ').trim());
+      const pawan = await cellsOf('Pawan Sirsat');
+      assert.equal(pawan.length, 9);
+      assert.deepEqual(pawan.slice(1), [
+        'Load: Heavy 1 overdue',
+        '',
+        '7',
+        '3',
+        '2',
+        '2',
+        '21 40 18',
+        '2 Laika 8 committed, 12 in backlog, 1 waiting on reviewers Onroute 2 committed, 0 in backlog, 1 waiting on reviewers',
+      ]);
+      const cal = await cellsOf('Cal Mokoena');
+      assert.deepEqual(cal.slice(1), [
+        'Load: No load',
+        '',
+        '0',
+        '0',
+        '0',
+        '0',
+        '0 0 0',
+        '0 No spaces',
+      ]);
+
+      // One scale: Pawan's 10 committed fill the bar; Bea's 3 are three tenths of it.
+      const widths = await h.page.locator('.cap-list tbody tr .cap-bar').evaluateAll((bars) =>
+        bars.map((bar) => {
+          const parts = [...bar.querySelectorAll('.cap-bar-part')] as HTMLElement[];
+          return parts.reduce((sum, p) => sum + parseFloat(p.style.width), 0);
+        }),
+      );
+      assert.equal(Math.round(widths[0]!), 100);
+      assert.equal(Math.round(widths[1]!), 30);
+
+      // Remembered for next time, in this browser.
+      assert.equal(
+        await h.page.evaluate(() => localStorage.getItem('laika.capacity.view')),
+        'list',
+      );
+      await cardsButton.click();
+      await h.page.locator('.cap-grid').waitFor();
+      assert.equal(
+        await h.page.evaluate(() => localStorage.getItem('laika.capacity.view')),
+        'cards',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('List for a member: no Activity column, nothing else missing', async () => {
+    const h = await open('/insights?tab=capacity', orgStub('member'));
+    try {
+      await ready(h.page);
+      await h.page.getByRole('button', { name: 'List', exact: true }).click();
+      await h.page.locator('.cap-list tbody tr').first().waitFor();
+      const heads = (await h.page.locator('.cap-list thead th').allInnerTexts()).map((t) =>
+        t.replace(/\s+/g, ' ').trim().toLowerCase(),
+      );
+      assert.deepEqual(heads, [
+        'person',
+        'load',
+        'workload',
+        'in progress',
+        'to do',
+        'review',
+        'agents',
+        'spaces',
+      ]);
+      const pawan = (
+        await h.page
+          .locator('.cap-list tbody tr', { hasText: 'Pawan Sirsat' })
+          .locator('td')
+          .allInnerTexts()
+      ).map((t) => t.replace(/\s+/g, ' ').trim());
+      assert.equal(pawan.length, 8);
+      assert.deepEqual(pawan.slice(3, 7), ['7', '3', '2', '2']);
+      assert.equal(
+        await h.page.locator('.cap-list a.cap-name-link').count(),
+        0,
+        'a member got profile links',
+      );
     } finally {
       await h.close();
     }
