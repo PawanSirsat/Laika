@@ -2,11 +2,12 @@
 id: LAI-985
 title: 'The owner cannot grant space creation, token management, or invite without deactivate; capabilities have no descriptions'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-981]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T18:10:23Z
 ---
 
 ## Acceptance criteria (D-104 item 6)
