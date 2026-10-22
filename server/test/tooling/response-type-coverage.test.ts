@@ -210,9 +210,6 @@ const UNPAIRED = new Map<string, string>([
   ['MetricsView', 'no client type exists'],
   // LAI-885's catalogue; the web Roles & Permissions screen brings the mirror.
   ['PermissionsView', 'no client type exists'],
-  // LAI-957's who-looked list; the person's "who looked" view is LAI-959,
-  // which brings the mirror.
-  ['WhoLookedView', 'no client type exists'],
   // The Solidtime bridge (LAI-788) is the CLI's, not the web app's: `laika
   // time push` and `pull` read these, and no screen does. They leave this
   // group the way the rest do, when a screen shows them.
