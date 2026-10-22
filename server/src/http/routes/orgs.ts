@@ -9,6 +9,11 @@ import {
   updateOrg,
 } from '../../services/orgs.ts';
 import {
+  getOrgPermissions,
+  type OrgPermissionsView,
+  setOrgPermissions,
+} from '../../services/org-permissions.ts';
+import {
   deleteModelPrice,
   getModelPrices,
   setModelPrice,
@@ -35,6 +40,16 @@ const ModelPriceBody = strictObject({
   output: price,
   cache_write: price,
   cache_read: price,
+});
+
+/**
+ * `PUT /org/permissions` (LAI-958): the whole matrix, role → capability →
+ * on. Which roles and capabilities are valid — and that an owner-locked
+ * action is refused by name — is the service's, so the screen is told the
+ * same thing whichever cell was wrong.
+ */
+const OrgPermissionsBody = strictObject({
+  grants: z.record(z.string(), z.record(z.string(), z.boolean())),
 });
 
 const OrgPatchBody = strictObject({
@@ -111,6 +126,23 @@ export function orgRoutes(options: OrgRouteOptions): Hono<AppEnv> {
     const actor = c.get('actor');
     if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
     return c.json(deleteModelPrice(db, actor, c.req.param('model')));
+  });
+
+  /**
+   * Who may do what (D-102 rule 6, LAI-958): read by anyone signed in,
+   * replaced whole by the owner on a web session (`org.permissions.manage`).
+   */
+  app.get('/permissions', (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+    return c.json<OrgPermissionsView>(getOrgPermissions(db, actor));
+  });
+
+  app.put('/permissions', async (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+    const body = parseBody(OrgPermissionsBody, await c.req.json().catch(() => null));
+    return c.json<OrgPermissionsView>(setOrgPermissions(db, actor, body.grants));
   });
 
   /**

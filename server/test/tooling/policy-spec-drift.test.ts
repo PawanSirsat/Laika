@@ -13,6 +13,12 @@ import {
 } from '../../src/policy/actions.ts';
 import { type Actor, can, forcedTokenScope, projectRoleOnJoin } from '../../src/policy/can.ts';
 import { parseMatrix, type Cell } from '../helpers/policy-matrix.ts';
+import { CAPABILITIES } from '../../src/db/enums.ts';
+import {
+  CAPABILITY_ACTIONS,
+  CAPABILITY_LABELS,
+  OWNER_LOCKED_ACTIONS,
+} from '../../src/policy/grants.ts';
 
 /**
  * SPEC §3 against `can()` (LAI-100).
@@ -52,7 +58,11 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Delete org data / transfer ownership', ['org.delete', 'org.transfer_ownership']],
   ['Org settings (AI provider, SMTP, signup mode)', ['org.settings.edit']],
   ['Create / archive project', ['project.create', 'project.archive']],
-  ['Invite users / change org roles', ['user.invite', 'user.set_role']],
+  // D-102 rule 5 (LAI-958) split the row: inviting stays a grant, roles and
+  // grants are the owner's.
+  ['Invite users', ['user.invite']],
+  ['Change org roles', ['user.set_role']],
+  ['Set what each role may do', ['org.permissions.manage']],
   ['Deactivate user', ['user.deactivate']],
   ['View member list', ['member_list.read']],
   ['Join a public project', ['project.join_public']],
@@ -204,24 +214,17 @@ function projectActor(role: ProjectRole): Actor {
 
 const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
   [
-    'not to Owner',
+    'as member or viewer',
     {
-      why: 'An Admin may grant any role except Owner — otherwise an Admin promotes themselves and the distinction is decorative.',
+      why: 'An Admin invites, and only as Member or Viewer: an invite is a role grant with a delay on it, and only the Owner grants Admin or Owner (D-102 rule 5, LAI-958).',
       verify: (action: Action) => {
         const admin = orgActor('admin');
-
-        if (action === 'user.set_role') {
-          expect(can(admin, 'user.set_role', { targetOrgRole: 'owner' })).toBe(false);
-          for (const role of ['admin', 'member', 'viewer'] as const) {
-            expect(can(admin, 'user.set_role', { targetOrgRole: role })).toBe(true);
-          }
-          return;
+        for (const role of ['member', 'viewer'] as const) {
+          expect(can(admin, action, { targetOrgRole: role }), role).toBe(true);
         }
-
-        // The other half of the row. Inviting is plain `✓` for an Admin; the
-        // "(not to Owner)" constraint is carried by `user.set_role`, which
-        // `services/invites.ts` also asserts when an invite names a role.
-        expect(can(admin, action, {})).toBe(true);
+        for (const role of ['admin', 'owner'] as const) {
+          expect(can(admin, action, { targetOrgRole: role }), role).toBe(false);
+        }
       },
     },
   ],
@@ -439,7 +442,7 @@ describe('the parser reads §3, prose and all', () => {
 
   it('keeps qualifiers instead of flattening them to a tick', () => {
     const invite = org.rows.find((row) => row.label.startsWith('Invite users'));
-    expect(invite?.cells.get('Admin')?.qualifier).toBe('not to Owner');
+    expect(invite?.cells.get('Admin')?.qualifier).toBe('as member or viewer');
 
     const comment = project.rows.find((row) => row.label === 'Edit / delete comment');
     expect(comment?.cells.get('Lead')?.qualifier).toBe('own + any');
@@ -649,5 +652,51 @@ describe('the prose rules in §3 are accounted for', () => {
     // And a plain member with no membership gets nothing.
     const outsider: Actor = { userId: 'me', orgRole: 'member', isActive: true, projectRole: null };
     expect(can(outsider, 'project.read', { projectId: 'p' })).toBe(false);
+  });
+});
+
+/**
+ * §3's grants table against `policy/grants.ts` (LAI-958): the capabilities by
+ * name, each one's actions by name, and the owner-locked list — from both
+ * sides, never a count. Read from the text between `## 3.` and `### 3.1`.
+ */
+describe('§3’s grants agree with policy/grants.ts', () => {
+  const spec = readFileSync(join(SERVER_ROOT, '..', 'docs', 'SPEC.md'), 'utf8');
+  const start = spec.indexOf('## 3. Roles and permissions');
+  const end = spec.indexOf('### 3.1', start);
+  const intro = spec.slice(start, end);
+  const known = new Set<string>(ALL_ACTIONS);
+
+  /** `| *Label* | carries |` rows, label → the action names the cell gives. */
+  const rows = new Map(
+    [...intro.matchAll(/^\| \*([^*]+)\* \| (.+) \|$/gm)].map((m) => [
+      m[1]!,
+      [...m[2]!.matchAll(/`([a-z_.]+)`/g)].map((n) => n[1]!).filter((n) => known.has(n)),
+    ]),
+  );
+
+  it('finds the table', () => {
+    expect(start).toBeGreaterThan(-1);
+    expect(rows.size, 'no grants table in §3 — has its format changed?').toBeGreaterThan(0);
+  });
+
+  it('names every capability by its label, and nothing else', () => {
+    expect([...rows.keys()].sort()).toEqual(CAPABILITIES.map((c) => CAPABILITY_LABELS[c]).sort());
+  });
+
+  it('gives each capability exactly the actions policy grants it', () => {
+    for (const capability of CAPABILITIES) {
+      expect([...(rows.get(CAPABILITY_LABELS[capability]) ?? [])].sort(), capability).toEqual(
+        [...CAPABILITY_ACTIONS[capability]].sort(),
+      );
+    }
+  });
+
+  it('lists the owner-locked actions, each by name', () => {
+    const paragraph = intro.slice(intro.indexOf('**Never grantable'));
+    const named = [...paragraph.matchAll(/`([a-z_.]+)`/g)]
+      .map((m) => m[1]!)
+      .filter((n) => known.has(n));
+    expect([...new Set(named)].sort()).toEqual([...OWNER_LOCKED_ACTIONS].sort());
   });
 });

@@ -91,6 +91,8 @@ describe('migrations', () => {
     'member_ratings',
     // LAI-773: an organisation's own API-equivalent prices.
     'org_model_prices',
+    // LAI-958, D-102: what the owner granted each org role.
+    'org_role_grants',
     // LAI-787, D-088: the organisation's Time.
     'org_time_settings',
     'orgs',

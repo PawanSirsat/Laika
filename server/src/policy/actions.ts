@@ -18,6 +18,8 @@ export const ORG_ACTIONS = [
   'project.archive',
   'user.invite',
   'user.set_role',
+  // D-102 rule 5 (LAI-958): what each org role may do — the owner's alone.
+  'org.permissions.manage',
   'user.deactivate',
   'org.read',
   'presence.read',
@@ -232,4 +234,8 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'time_sync.own',
   'time_sync.map',
   'time_sync.import_all',
+  // **Who may do what is the owner's, signed in** (D-102, LAI-958): an
+  // agent's token that could grant its own role a capability would hand its
+  // person whatever it was refused.
+  'org.permissions.manage',
 ]);

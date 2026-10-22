@@ -203,22 +203,31 @@ describe('creating (AC1)', () => {
     }
   });
 
-  it('lets an Admin invite at every role except Owner', () => {
+  it('lets an Admin invite as Member or Viewer and nothing above (D-102 rule 5)', () => {
     const adminId = makeUser('admin');
     const admin = actorFor(adminId, 'admin');
 
-    for (const role of ['admin', 'member', 'viewer'] as const) {
+    for (const role of ['member', 'viewer'] as const) {
       expect(
         createInvite(db, admin, { email: `${role}@example.test`, orgRole: role }).invite.org_role,
       ).toBe(role);
     }
 
-    // §3.1's "(not to Owner)" caveat. Without it an Admin mints themselves a
-    // fresh Owner account and the caveat on the direct role change is decorative.
-    expectApiError(
-      () => createInvite(db, admin, { email: 'escalate@example.test', orgRole: 'owner' }),
-      'forbidden',
-    );
+    // An invite is a role grant with a delay on it: only the owner changes
+    // roles, so only the owner invites an Admin or an Owner (LAI-958).
+    for (const role of ['admin', 'owner'] as const) {
+      expectApiError(
+        () => createInvite(db, admin, { email: `escalate-${role}@example.test`, orgRole: role }),
+        'forbidden',
+      );
+    }
+  });
+
+  it('lets an Owner invite an Admin', () => {
+    expect(
+      createInvite(db, owner(), { email: 'new-admin@example.test', orgRole: 'admin' }).invite
+        .org_role,
+    ).toBe('admin');
   });
 
   it('lets an Owner invite an Owner', () => {

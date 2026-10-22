@@ -32,6 +32,7 @@ import {
   ACTOR_KINDS,
   AI_PROVIDERS,
   BUDGET_SCOPES,
+  CAPABILITIES,
   CLAIM_CONFIDENCES,
   CREATED_VIA,
   CHECK_OUTCOMES,
@@ -39,6 +40,7 @@ import {
   EVIDENCE_KINDS,
   EVIDENCE_STATES,
   GITHUB_CHECK_KINDS,
+  GRANTABLE_ROLES,
   LOCAL_ACTIVITY_SCOPES,
   MEETING_REVIEW_STATUSES,
   ORG_ROLES,
@@ -2510,6 +2512,38 @@ export const agentTimeBuckets = sqliteTable(
   ],
 );
 
+// --------------------------------------------------- §4.58 org_role_grants
+
+/**
+ * What the owner has granted each org role (§4.58, D-102 rule 6, LAI-958):
+ * one row per org × grantable role × capability. **No row is the default** —
+ * admin on, member and viewer off — so an organisation whose owner never
+ * opened the screen has no rows and behaves as it always did. Written whole
+ * by `PUT /org/permissions`; read onto every actor by `loadActor`.
+ */
+export const orgRoleGrants = sqliteTable(
+  'org_role_grants',
+  {
+    orgId: text('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    orgRole: text('org_role', { enum: GRANTABLE_ROLES }).notNull(),
+    capability: text('capability', { enum: CAPABILITIES }).notNull(),
+    granted: integer('granted').notNull(),
+    setBy: text('set_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.orgRole, t.capability] }),
+    index('org_role_grants_set_by_idx').on(t.setBy),
+    check('org_role_grants_org_role_check', oneOf('org_role', GRANTABLE_ROLES)),
+    check('org_role_grants_capability_check', oneOf('capability', CAPABILITIES)),
+    check('org_role_grants_granted_check', sql.raw('granted IN (0, 1)')),
+  ],
+);
+
 // ------------------------------------------------- §4.51 token_session_tasks
 
 /**
@@ -2702,3 +2736,4 @@ export type TimeDraft = typeof timeDrafts.$inferSelect;
 export type TimeEntry = typeof timeEntries.$inferSelect;
 export type TimeEntryRevision = typeof timeEntryRevisions.$inferSelect;
 export type TimeBreak = typeof timeBreaks.$inferSelect;
+export type OrgRoleGrant = typeof orgRoleGrants.$inferSelect;

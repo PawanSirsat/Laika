@@ -24,7 +24,7 @@ import { keyAfter, keyBetween } from '../db/order-key.ts';
 import { CATEGORY_LABELS, statusForCategory, type StatusRef } from '../db/project-statuses.ts';
 import { projects, projectStatuses, taskDependencies, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan } from '../policy/can.ts';
+import { assertCan, effectiveProjectRole } from '../policy/can.ts';
 import { addComment, commentCounts } from './comments.ts';
 import {
   freezeEstimateAtStart,
@@ -438,8 +438,9 @@ export function assertMayCloseReview(
   if (isSystemPrincipal(actor)) return;
   const scoped = withProject(actor, task.projectId);
   const isAssignee = task.assigneeId === actor.userId;
-  const isLeadOrAbove =
-    scoped.projectRole === 'lead' || actor.orgRole === 'owner' || actor.orgRole === 'admin';
+  // The effective role: a lead by membership, or by *Open every project*
+  // (§3, LAI-958) — which is what an owner and, by default, an admin hold.
+  const isLeadOrAbove = effectiveProjectRole(scoped) === 'lead';
 
   if (!isAssignee && !isLeadOrAbove) {
     throw new ApiError(

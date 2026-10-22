@@ -594,6 +594,7 @@ describe('the parser itself', () => {
       'github_pull_requests',
       'local_activity_days',
       'org_model_prices',
+      'org_role_grants',
       'org_time_settings',
       'plan_limits',
       'pushed_commit_keys',
