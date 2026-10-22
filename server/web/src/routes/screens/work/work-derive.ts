@@ -1,10 +1,4 @@
-import type {
-  AllTasksFilter,
-  TaskStatus,
-  TasksSummary,
-  TasksSummaryAssignee,
-  TaskSummary,
-} from '../../../api/tasks.ts';
+import type { AllTasksFilter, TaskStatus, TasksSummary, TaskSummary } from '../../../api/tasks.ts';
 
 /**
  * The Work page (LAI-952): everyone's work across every space, read from
@@ -145,12 +139,16 @@ export function pageTotal(
   return status === undefined ? summary.total : summary.by_status[status];
 }
 
-/** The people with the most work, as served — sorted, never re-counted. */
-export function topPeople(
-  people: readonly TasksSummaryAssignee[],
-  limit: number,
-): TasksSummaryAssignee[] {
-  return [...people].sort((a, b) => b.count - a.count).slice(0, limit);
+/** The `by_assignee` entry that folds everyone past the server's top ten. */
+export const OTHERS = 'others';
+
+/**
+ * The person filter a `by_assignee` entry stands for: their id, `none` for
+ * unassigned work — and nothing for `others`, which is many people.
+ */
+export function personFilterOf(userId: string | null): string | undefined {
+  if (userId === OTHERS) return undefined;
+  return userId ?? 'none';
 }
 
 /** `1–25 of 142`, or `51–100` while the total is not known. */

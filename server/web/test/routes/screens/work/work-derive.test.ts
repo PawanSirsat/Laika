@@ -14,13 +14,13 @@ import {
   DEFAULT_PAGE_SIZE,
   pageRange,
   pageTotal,
+  personFilterOf,
   personMode,
   readPageSize,
   readWorkFilter,
   STATUS_FILTERS,
   STATUS_TILES,
   summaryFilter,
-  topPeople,
   withPageSize,
   withWorkFilter,
   workRows,
@@ -213,13 +213,10 @@ void describe('the summary strip (LAI-975)', () => {
     assert.equal(pageTotal(undefined, 'review'), undefined);
   });
 
-  void test('top people are the served figures, largest first, no more than asked', () => {
-    assert.deepEqual(
-      topPeople(SUMMARY.by_assignee, 2).map((p) => p.name),
-      ['Pawan', 'Unassigned'],
-    );
-    // The served array is not reordered in place.
-    assert.equal(SUMMARY.by_assignee[0]?.name, 'Bea');
+  void test('a name is its person filter; unassigned is none; Others is no filter', () => {
+    assert.equal(personFilterOf('u1'), 'u1');
+    assert.equal(personFilterOf(null), 'none');
+    assert.equal(personFilterOf('others'), undefined);
   });
 });
 

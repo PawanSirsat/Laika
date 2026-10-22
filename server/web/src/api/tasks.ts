@@ -337,7 +337,10 @@ function setAllTasksFilters(params: URLSearchParams, filter: AllTasksFilter): vo
   if (filter.sprint !== undefined) params.set('sprint', filter.sprint);
 }
 
-/** One person's share of the counted work; `user_id` null is nobody's. */
+/**
+ * One share of the counted work, ranked by the server: `user_id` null is
+ * nobody's, and a final `others` entry holds everyone past the top ten.
+ */
 export interface TasksSummaryAssignee {
   readonly user_id: string | null;
   readonly name: string;

@@ -341,7 +341,7 @@ button.work-tile:hover {
   transition: var(--transition);
 }
 
-.work-person-chip:hover {
+button.work-person-chip:hover {
   border-color: var(--accent-border);
   color: var(--text-primary);
 }
@@ -350,6 +350,10 @@ button.work-tile:hover {
   border-color: var(--accent);
   background: var(--accent-bg);
   color: var(--text-primary);
+}
+
+.work-person-others {
+  cursor: default;
 }
 
 .work-person-name {

@@ -643,6 +643,11 @@ void describe('Work: the header, the figures and the pages (LAI-975)', () => {
   void test('an owner sees who holds the work, and a name filters to them', async () => {
     const h = await openWork('/work', {
       ...OWNER_STUB,
+      // The server's ranking, with everyone past its top ten folded (LAI-974).
+      '/api/v1/tasks/summary': {
+        ...SUMMARY,
+        by_assignee: [...SUMMARY.by_assignee, { user_id: 'others', name: 'Others', count: 4 }],
+      },
       '/api/v1/tasks?fields=slim&assignee=u2': { data: [PAGE_ONE[1]], next_cursor: null },
     });
     try {
@@ -652,8 +657,14 @@ void describe('Work: the header, the figures and the pages (LAI-975)', () => {
       const names = await row.locator('.work-person-chip').allInnerTexts();
       assert.deepEqual(
         names.map((n) => n.replace(/\s+/g, ' ').trim()),
-        ['Pawan Sirsat 83', 'Unassigned 50', 'Bea Nkosi 9'],
+        ['Pawan Sirsat 83', 'Unassigned 50', 'Bea Nkosi 9', 'Others 4'],
       );
+      // Others is many people: a figure, not a filter.
+      assert.equal(await row.locator('button').filter({ hasText: 'Others' }).count(), 0);
+      await row.locator('.work-person-chip').filter({ hasText: 'Others' }).click();
+      await h.page.waitForTimeout(200);
+      assert.equal(new URL(h.page.url()).searchParams.get('person'), null);
+
       await row.locator('.work-person-chip').filter({ hasText: 'Bea Nkosi' }).click();
       await until(() => new URL(h.page.url()).searchParams.get('person') === 'u2');
       await until(async () => (await keys(h.page)).join() === 'LAI-12');

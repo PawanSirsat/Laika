@@ -24,13 +24,13 @@ import {
   PAGE_SIZES,
   pageRange,
   pageTotal,
+  personFilterOf,
   personMode,
   readPageSize,
   readWorkFilter,
   STATUS_FILTERS,
   STATUS_TILES,
   summaryFilter,
-  topPeople,
   withPageSize,
   withWorkFilter,
   workRows,
@@ -69,9 +69,6 @@ type Count =
   | { readonly status: 'loading' }
   | { readonly status: 'error' }
   | { readonly status: 'ready'; readonly summary: TasksSummary };
-
-/** How many people the owner's "by person" row names. */
-const TOP_PEOPLE = 6;
 
 /**
  * Work (LAI-952): everyone's work across every space, from `GET /tasks`
@@ -528,7 +525,8 @@ function WorkSummary({ count, filter, seesPeople, onFilter }: WorkSummaryProps) 
     );
   }
 
-  const people = seesPeople ? topPeople(summary.by_assignee, TOP_PEOPLE) : [];
+  // As ranked and folded by the server — its top ten, then `others`.
+  const people = seesPeople ? summary.by_assignee : [];
   return (
     <>
       <div className="work-summary" role="group" aria-label="Figures">
@@ -578,7 +576,16 @@ function WorkSummary({ count, filter, seesPeople, onFilter }: WorkSummaryProps) 
         <div className="work-people" role="group" aria-label="By person">
           <span className="work-people-label">By person</span>
           {people.map((person) => {
-            const value = person.user_id ?? 'none';
+            const value = personFilterOf(person.user_id);
+            // Others is many people, and no one filter: a figure, not a button.
+            if (value === undefined) {
+              return (
+                <span key="others" className="work-person-chip work-person-others">
+                  <span className="work-person-name">{person.name}</span>
+                  <span className="work-person-count">{person.count}</span>
+                </span>
+              );
+            }
             const on = filter.person === value;
             return (
               <button
