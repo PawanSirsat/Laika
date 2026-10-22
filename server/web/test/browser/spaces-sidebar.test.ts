@@ -228,6 +228,71 @@ void describe('the SPACES section', () => {
   });
 });
 
+void describe('pinned spaces (LAI-989)', () => {
+  const railNames = async (h: Awaited<ReturnType<typeof open>>) =>
+    h.page.locator('.space-row .sidebar-label').allInnerTexts();
+
+  void test('a space pinned from More spaces sits above the recent ones, and survives a reload', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await until(
+        async () => (await railNames(h)).join('|') === 'Laika Core|Laika Web|Laika Infra',
+      );
+      // Laika Docs is not on the rail: pin it from the popover.
+      await h.page.locator('.sidebar-link-button', { hasText: 'More spaces' }).click();
+      await h.page.getByRole('button', { name: 'Pin Laika Docs' }).click();
+      await until(async () => (await railNames(h))[0] === 'Laika Docs');
+      assert.deepEqual(await railNames(h), [
+        'Laika Docs',
+        'Laika Core',
+        'Laika Web',
+        'Laika Infra',
+      ]);
+      const pinned = h.page.locator('.space-item-pinned');
+      assert.equal(await pinned.count(), 1);
+      assert.equal(
+        await pinned.getByRole('button', { name: 'Unpin Laika Docs' }).getAttribute('aria-pressed'),
+        'true',
+      );
+      // The row is still its letter and name: the pin is beside the link.
+      assert.equal(
+        (await pinned.locator('.space-row').innerText()).replace(/\s+/g, ' ').trim(),
+        'L Laika Docs',
+      );
+
+      // Stored per browser: a reload keeps it.
+      await h.page.reload();
+      await until(async () => (await railNames(h))[0] === 'Laika Docs');
+      assert.equal(await h.page.locator('.space-item-pinned').count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('unpinning puts it back among the recent', async () => {
+    const h = await open('/board?project=laika-core', STUB, {
+      before: async (page) => {
+        await page.addInitScript(() => {
+          localStorage.setItem('laika.pinned-spaces', JSON.stringify(['laika-infra']));
+        });
+      },
+    });
+    try {
+      await until(async () => (await railNames(h))[0] === 'Laika Infra');
+      const row = h.page.locator('.space-item-pinned');
+      await row.hover();
+      await row.getByRole('button', { name: 'Unpin Laika Infra' }).click();
+      await until(async () => (await h.page.locator('.space-item-pinned').count()) === 0);
+      // Recent again, in creation order with the others.
+      assert.deepEqual(await railNames(h), ['Laika Core', 'Laika Web', 'Laika Infra']);
+      const stored = await h.page.evaluate(() => localStorage.getItem('laika.pinned-spaces'));
+      assert.equal(stored, '[]');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('the rail ends in the person (LAI-796)', () => {
   void test('the user block sits at the foot, below every entry', async () => {
     const h = await open('/board?project=laika-core', STUB);

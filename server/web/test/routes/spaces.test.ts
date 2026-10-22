@@ -9,11 +9,15 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   promote,
+  readPins,
   readRecent,
   recentSpaces,
   RECENT_LIMIT,
+  sidebarSpaces,
   spaceKey,
   spaceMeta,
+  togglePin,
+  writePins,
 } from '../../src/routes/spaces.ts';
 import type { Project } from '../../src/api/projects.ts';
 
@@ -245,6 +249,84 @@ void describe('which spaces are shown', () => {
     assert.deepEqual(
       spaces.map((s) => s.slug),
       ['laika-core'],
+    );
+  });
+});
+
+void describe('pinned spaces (LAI-989)', () => {
+  /** A `Storage` with nothing behind it but a map. */
+  const memory = (): Pick<Storage, 'getItem' | 'setItem'> => {
+    const map = new Map<string, string>();
+    return {
+      getItem: (key) => map.get(key) ?? null,
+      setItem: (key, value) => {
+        map.set(key, value);
+      },
+    };
+  };
+
+  void test('a pin is stored per browser and read back', () => {
+    const storage = memory();
+    assert.deepEqual(readPins(storage), []);
+    writePins(storage, ['laika-docs']);
+    assert.deepEqual(readPins(storage), ['laika-docs']);
+  });
+
+  void test('a pin is kept apart from the recent list', () => {
+    // One key each: pinning must not cost a recent slot, nor a visit a pin.
+    const storage = memory();
+    writePins(storage, ['laika-docs']);
+    assert.deepEqual(readRecent(storage), []);
+  });
+
+  void test('unreadable pins answer empty rather than throwing', () => {
+    const broken = { getItem: () => '{not json' };
+    assert.deepEqual(readPins(broken), []);
+    const throwing = {
+      getItem: () => {
+        throw new Error('denied');
+      },
+    };
+    assert.deepEqual(readPins(throwing), []);
+  });
+
+  void test('toggling pins and unpins', () => {
+    assert.deepEqual(togglePin([], 'laika-docs'), ['laika-docs']);
+    assert.deepEqual(togglePin(['laika-docs', 'laika-web'], 'laika-docs'), ['laika-web']);
+  });
+
+  void test('pinned spaces are drawn above the recent ones, and marked', () => {
+    const rows = sidebarSpaces(
+      [CORE, WEB, INFRA, DOCS],
+      ['laika-core', 'laika-web'],
+      ['laika-docs'],
+    );
+    assert.deepEqual(
+      rows.map((r) => [r.slug, r.pinned]),
+      [
+        ['laika-docs', true],
+        // This file's ids are the slugs, so creation order is the alphabet.
+        ['laika-core', false],
+        ['laika-infra', false],
+        ['laika-web', false],
+      ],
+    );
+  });
+
+  void test('a pinned space is not also listed among the recent', () => {
+    const rows = sidebarSpaces([CORE, WEB, INFRA, DOCS], ['laika-core'], ['laika-core']);
+    assert.equal(rows.filter((r) => r.slug === 'laika-core').length, 1);
+    assert.equal(rows[0]?.slug, 'laika-core');
+    assert.equal(rows[0]?.pinned, true);
+    // Recent still fills its own three from the rest.
+    assert.equal(rows.filter((r) => !r.pinned).length, RECENT_LIMIT);
+  });
+
+  void test('a pin for a space that no longer exists is dropped, not drawn', () => {
+    const rows = sidebarSpaces([CORE, WEB], [], ['gone']);
+    assert.deepEqual(
+      rows.map((r) => r.slug),
+      ['laika-core', 'laika-web'],
     );
   });
 });

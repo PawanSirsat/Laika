@@ -1,19 +1,22 @@
 import { useState } from 'react';
 import { navHref } from '../../routes/nav-url.ts';
-import type { Space } from '../../routes/spaces.ts';
+import type { SidebarSpace, Space } from '../../routes/spaces.ts';
 import { SpacesPopover } from './SpacesPopover.tsx';
 import { SpaceBadge } from '../SpaceBadge.tsx';
 import { NavIcon } from './NavIcon.tsx';
+import { PinButton } from './PinButton.tsx';
 
 export interface SpacesSectionProps {
-  /** The pinned rows — three most recent (LAI-248). */
-  readonly spaces: readonly Space[];
+  /** The rail's rows: the pinned, then the three most recent (LAI-248, LAI-989). */
+  readonly spaces: readonly SidebarSpace[];
   /** Every fetched space, for the popover. */
   readonly all: readonly Space[];
   readonly projectSlug?: string | undefined;
   readonly collapsed: boolean;
   readonly onNavigate: (to: string) => void;
   readonly onOpenSpace: (slug: string) => void;
+  /** Pin or unpin a row. Absent, no row offers it. */
+  readonly onTogglePin?: ((slug: string) => void) | undefined;
   /** Close the off-canvas rail after a pick, exactly as every nav link does. */
   readonly onClose: () => void;
 }
@@ -41,13 +44,15 @@ export function SpacesSection({
   collapsed,
   onNavigate,
   onOpenSpace,
+  onTogglePin,
   onClose,
 }: SpacesSectionProps) {
   const [open, setOpen] = useState(true);
   const [popover, setPopover] = useState(false);
 
-  const pinned = new Set(spaces.map((s) => s.slug));
-  const unpinned = all.filter((s) => !pinned.has(s.slug));
+  // What the rail already shows, pinned or recent, is not offered again.
+  const shown = new Set(spaces.map((s) => s.slug));
+  const unpinned = all.filter((s) => !shown.has(s.slug));
 
   const pick = (slug: string): void => {
     const href = navHref('/board', slug);
@@ -122,7 +127,10 @@ export function SpacesSection({
             const href = navHref('/board', space.slug);
 
             return (
-              <li key={space.slug}>
+              <li
+                key={space.slug}
+                className={space.pinned ? 'space-item space-item-pinned' : 'space-item'}
+              >
                 <a
                   href={href}
                   className={
@@ -146,6 +154,20 @@ export function SpacesSection({
                   <SpaceBadge slug={space.slug} name={space.name} />
                   <span className="sidebar-label sidebar-tip">{space.name}</span>
                 </a>
+                {/*
+                  Pin (LAI-989): beside the link, never inside it, so it is a
+                  control of its own and the row still reads as its letter and
+                  name. Not drawn on the collapsed rail, where a row is a letter.
+                */}
+                {!collapsed && onTogglePin !== undefined && (
+                  <PinButton
+                    name={space.name}
+                    pinned={space.pinned}
+                    onToggle={() => {
+                      onTogglePin(space.slug);
+                    }}
+                  />
+                )}
               </li>
             );
           })}
@@ -171,6 +193,7 @@ export function SpacesSection({
       {popover && (
         <SpacesPopover
           spaces={unpinned}
+          onPin={onTogglePin}
           left={collapsed ? 68 : 220}
           onPick={pick}
           onViewAll={() => {
