@@ -188,3 +188,128 @@ and the editor's round-trip guard (LAI-827, LAI-849) is unaffected.
   server should stop is not this task.
 - A mention by name, `@Ada Lovelace`, is read by the server as `@Ada`, so
   only `@Ada` can become a pill. That is the grammar, said honestly.
+
+## Build notes (Belka's builder, 2026-10-22)
+
+**PR #32's review notes, folded in.** CHIEF sent two notes from the PR #32
+review after this was claimed. They make two criteria stricter and add
+none.
+
+1. **The mutation must change the parsed document.** Recorded under
+   *Mutation runs* below. It also added a property test.
+2. **The styles are ordered, not only different.** And an org Owner offered
+   by `/mentionable` with no member row (`handle: null`) must, as the reader,
+   still see their own pill. Both browser fixtures use that Owner as the
+   reader.
+
+**Files outside the Notes' list, each named:**
+
+- `server/web/src/routes/screens/BoardScreen.tsx`: one line,
+  `meEmail={me?.email}`. Without it the panel has no email for an Owner with
+  no member row, so that Owner's own `@handle` could not resolve to them
+  (review note 2).
+- `server/web/src/routes/screens/task/LazyRichEditor.tsx`: `meId` on
+  `RichEditorProps`, a type only, so the editor draws the reader's pill.
+- `server/web/src/routes/screens/task/CommentComposer.tsx`: passes `meId` on
+  to the editor.
+- `server/web/src/routes/screens/task/editor/mention-pills.ts`, and its
+  mirror `test/routes/screens/task/editor/mention-pills.test.ts` (CONVENTIONS
+  §4): the decoration plugin. It is its own module, so Node can test which
+  ranges it covers.
+- `server/web/src/routes/screens/task/mentions.ts`, and its mirror
+  `test/routes/screens/task/mentions.test.ts`: the helper the Notes named.
+- `editor/rich-editor.css` is **not** changed. The decorations wear the
+  `.md-mention*` classes from `task-markdown.css`, which the editor's
+  document already uses as `.md`.
+
+**One side effect, said plainly.** The panel builds one people list for the
+`@` picker and for the pills. Now that it knows the reader's handle, an Owner
+reader who picks themselves inserts `@handle` where it used to insert
+`@Full Name`. The server resolves `@handle`. It did not resolve `@Full`.
+
+**`task-markdown-props.test.ts`, the one change.** The plugin assertion
+(`:53`) now reads
+`rehypePlugins={singleHardBreaks ? MENTIONS_AND_SINGLE_HARD_BREAKS : MENTIONS}`,
+because the mention step is always on. Nothing else in that file changed.
+
+**The `@` picker keeps its own pattern** (`RichEditor.tsx`, `findMention`).
+It reads a query half-typed after `@`, which can be letters in any script or
+a name. It does not decide what a mention is. Only the pills use the
+server's grammar.
+
+**The three looks**, all existing tokens:
+
+| Kind | Fill | Ink |
+| --- | --- | --- |
+| Reader | `--accent` | `--on-accent` |
+| Person | `--accent-bg`, `--accent-border` edge | `--accent` |
+| Machine | none, `--border-default` outline | `--text-secondary` |
+
+How the browser test reads "stronger" and "softer": each fill is painted over
+the surface it sits on.
+
+- **Stronger**: the reader's fill has a higher contrast ratio against the
+  surface than a person's, and more chroma (`max − min` of the sRGB channels).
+- **Softer**: a machine's fill has less contrast and less chroma than a
+  person's, and so does its ink.
+
+Measured in dark, from a mutation's failure message:
+
+| Kind | Contrast against the surface | Chroma |
+| --- | --- | --- |
+| Reader | 6.30 | 111 |
+| Person | 1.25 | 19.8 |
+| Machine | 1.00 | 5 |
+
+The machine's ink has chroma 10 and the person's has 111.
+
+**Before and after.** The run against today's code: the `server/web/src`
+files restored by name from `6027586d`, with a grep anchor proving the old
+code was on disk, then put back from `HEAD`. Results:
+
+- 7 of the 8 new browser tests fail. Each one either times out waiting for
+  `.md-mention` or gets an empty pill list.
+- The untouched-description guard passes. It is a guard that passes before
+  and after, as the criterion says.
+- The new bridge round-trip case passes.
+- `mentions.test.ts` and `mention-pills.test.ts` cannot import the modules,
+  which do not exist yet.
+
+### Mutation runs
+
+Each mutant was written by an anchored replace that refuses if the anchor
+does not match. A `grep` proved it landed. A trap restored the file from
+`HEAD`, and a `shasum` proved the restore.
+
+- **The pill as a mark in `MARKDOWN_EXTENSIONS`** (the criterion's
+  mutation, as review note 1 asks): a `MentionMark` with a tokenizer that
+  takes `@handle` and **no Markdown writer**. A probe confirmed that marks
+  really appear in the parsed document both times.
+  - **`@` consumed as the mark's syntax**, as a tokenizer consumes `**`: the
+    parsed marks were `["ada","grace"]`.
+    - `markdown-bridge.test.ts` *a description full of mentions comes back
+      byte for byte* went **red**, with "did not open rich" (`'source' !==
+      'rich'`), exit 1.
+    - `mention-pills.test.ts` *the bridge parses a mention as plain text* went
+      **red** too.
+  - **`@` kept in the mark's text**: the parsed marks were
+    `["@ada","@grace"]`.
+    - The round-trip case stayed **green**, exit 0. A mark that writes every
+      byte back changes no stored text, so the byte-identity guard is right
+      to pass it. That guard cannot see this mutant.
+    - The property test added for exactly this case went **red**:
+      `'@ada|mention'` where it expected plain text, exit 1.
+- **Style ordering.** The first try replaced the reader's or the machine's
+  colours with `--chip-purple*`. In dark those equal the accent tokens, so
+  the pairwise check went red first ("look the same"). That is the dark-mode
+  trap the task names, caught. Two mutants that change the order and keep
+  the pairs distinct:
+  - The reader's pill tinted (`--accent-bg`, `--text-primary` ink): **red**,
+    "the reader's pill is not stronger". Exit 1.
+  - The machine's pill in `--chip-blue` / `--chip-blue-bg`: **red**, "a
+    machine's fill has more colour". Exit 1.
+- **Grammar drift.** Dropping `%` from the web pattern's lookbehind turned
+  `mentions.test.ts` *the web pattern is parseMentionHandles's* **red**,
+  exit 1.
+
+After every run, `git status --porcelain` showed no source file changed.
