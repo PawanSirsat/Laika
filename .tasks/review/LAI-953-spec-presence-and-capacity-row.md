@@ -30,7 +30,7 @@ Found by the LAI-885 builder.
 - [x] LAI-885's permissions endpoint now returns a SPEC label for both (its
       label-less set follows `ACTIONS_WITHOUT_A_ROW`, so this should need no
       code change — confirm by test).
-- [x] Gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0 — on a branch
+- [ ] Gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0 — on a branch
       with LAI-885 merged in.
 
 ## Builder notes (CORE, 2026-10-22)
