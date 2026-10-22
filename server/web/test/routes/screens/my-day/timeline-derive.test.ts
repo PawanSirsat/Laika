@@ -23,6 +23,9 @@ import {
   stepMinutes,
   FOLD_PX,
   PX_PER_HOUR,
+  ZOOM_STEPS,
+  zoomLabel,
+  zoomStep,
   type AgentRun,
   type Box,
   type SignalMark,
@@ -669,5 +672,29 @@ void describe('dayFigures — the Timeline header (LAI-888)', () => {
       ]),
       { confirmed: 45, drafted: 85, needsCard: 40, gaps: 90 },
     );
+  });
+});
+
+void describe('zoomStep — the scale in steps (LAI-890)', () => {
+  void test('walks the eight levels in order, and stops at either end', () => {
+    assert.deepEqual(ZOOM_STEPS, ['0.5', '0.75', '1', '1.5', '2', '3', '4', '5']);
+    assert.equal(zoomStep('1', 1), '1.5');
+    assert.equal(zoomStep('1', -1), '0.75');
+    assert.equal(zoomStep('5', 1), undefined);
+    assert.equal(zoomStep('0.5', -1), undefined);
+  });
+
+  void test('from Fit, in is 1× and out is nothing', () => {
+    assert.equal(zoomStep('fit', 1), '1');
+    assert.equal(zoomStep('fit', -1), undefined);
+  });
+
+  void test('each level is its multiple of 160 px an hour, and says so', () => {
+    for (const level of ZOOM_STEPS) {
+      assert.equal(PX_PER_HOUR[level], 160 * Number(level), level);
+      assert.equal(zoomLabel(level), `${level}×`);
+    }
+    assert.equal(zoomLabel('fit'), 'Fit');
+    assert.equal(buildScale(6, 22, '1.5', 500).pos(min(7)), 240);
   });
 });
