@@ -1385,7 +1385,11 @@
   flex: none;
 }
 
+/* A name longer than its band ends in an ellipsis, never mid-word. */
 .dayline-scheduled-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: var(--weight-bold);
 }
 
