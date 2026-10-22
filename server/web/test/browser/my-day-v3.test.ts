@@ -98,8 +98,12 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
         signals.y + signals.height <= row.y + 0.5,
         'the signals lane is not above the blocks',
       );
+      // No one hour but 9 AM by name: the now pill hides the hour it sits on.
       const hours = await h.page.locator('.dayline-axis-hour').allInnerTexts();
-      assert.ok(hours.includes('9 AM') && hours.includes('1 PM'), `hours: ${hours.join(', ')}`);
+      assert.ok(
+        hours.includes('9 AM') && hours.some((t) => t.endsWith(' PM')),
+        `hours: ${hours.join(', ')}`,
+      );
 
       assert.equal((await h.page.locator('[data-you-work]').innerText()).trim(), dur(370));
       assert.equal((await h.page.locator('[data-prompt-total]').innerText()).trim(), '3');
@@ -182,6 +186,53 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
       const to = Number(await track.getAttribute('data-to-hour'));
       const width = await track.evaluate((el) => el.getBoundingClientRect().width);
       assert.equal(Math.round(width), (to - from) * 160);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('− and + step the scale from 0.5× to 5×, keeping the middle of the view (LAI-890)', async () => {
+    const h = await openToday();
+    try {
+      const track = h.page.locator('[data-dayline-track]');
+      const hours =
+        Number(await track.getAttribute('data-to-hour')) -
+        Number(await track.getAttribute('data-from-hour'));
+      const widthOf = () => track.evaluate((el) => el.getBoundingClientRect().width);
+      const level = () => h.page.locator('[data-zoom-level]').getAttribute('data-zoom-level');
+      const middle = () =>
+        h.page.locator('[data-dayline-scroller]').evaluate((el) => {
+          const box = el.getBoundingClientRect();
+          const rail = el.querySelector('[data-dayline-track]')?.getBoundingClientRect();
+          return rail === undefined ? 0 : (box.left + box.width / 2 - rail.left) / rail.width;
+        });
+      assert.equal(await level(), '1');
+      const before = await middle();
+      await h.page.locator('[data-zoom-step="in"]').click();
+      await until(async () => (await level()) === '1.5');
+      assert.equal(Math.round(await widthOf()), hours * 240);
+      // The minute at the middle stayed: the same share of the day, within a minute or two.
+      assert.ok(Math.abs((await middle()) - before) * hours * 60 <= 2, 'the middle moved');
+      // 2× lights the preset; past 5× there is no further in.
+      await h.page.locator('[data-zoom-step="in"]').click();
+      await until(async () => (await level()) === '2');
+      assert.equal(await h.page.locator('[data-zoom="2"]').getAttribute('aria-pressed'), 'true');
+      for (let i = 0; i < 3; i += 1) await h.page.locator('[data-zoom-step="in"]').click();
+      await until(async () => (await level()) === '5');
+      assert.equal(await h.page.locator('[data-zoom-step="in"]').isDisabled(), true);
+      assert.equal(Math.round(await widthOf()), hours * 800);
+      // Out, all the way: 0.5× and no further.
+      for (let i = 0; i < 7; i += 1) await h.page.locator('[data-zoom-step="out"]').click();
+      await until(async () => (await level()) === '0.5');
+      assert.equal(await h.page.locator('[data-zoom-step="out"]').isDisabled(), true);
+      assert.equal(Math.round(await widthOf()), hours * 80);
+      // From Fit, + is 1× and − does nothing.
+      await h.page.locator('[data-zoom="fit"]').click();
+      await until(async () => (await level()) === 'fit');
+      assert.equal(await h.page.locator('[data-zoom-step="out"]').isDisabled(), true);
+      await h.page.locator('[data-zoom-step="in"]').click();
+      await until(async () => (await level()) === '1');
+      assert.equal(await h.page.locator('[data-zoom="1"]').getAttribute('aria-pressed'), 'true');
     } finally {
       await h.close();
     }

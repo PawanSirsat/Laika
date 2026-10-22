@@ -30,6 +30,8 @@ import {
   PX_PER_HOUR,
   SIGNAL_MINUTES,
   STEP,
+  zoomLabel,
+  zoomStep,
   type Box,
   type ChipPlace,
   type DayLine,
@@ -63,6 +65,10 @@ const ZOOMS: readonly (readonly [Zoom, string, string])[] = [
   ['1', '1×', '160 px an hour'],
   ['2', '2×', '320 px an hour'],
 ];
+
+/** What a stepped level is, for its tooltip. */
+const pxAnHour = (zoom: Zoom): string =>
+  zoom === 'fit' ? 'The whole day in view' : `${String(PX_PER_HOUR[zoom] ?? 0)} px an hour`;
 
 /** The keys the footer lists, in the design's order. */
 const KEYS: readonly (readonly [string, string])[] = [
@@ -206,6 +212,8 @@ export function Timeline({
   );
   const [preview, setPreview] = useState<{ id: string; edit: Edit } | undefined>(undefined);
   const [hover, setHover] = useState<Hover | undefined>(undefined);
+  /** The minute at the middle of the view when the scale last changed — kept there (LAI-890). */
+  const keep = useRef<number | undefined>(undefined);
   const [chips, setChips] = useState<ReadonlyMap<string, ChipPlace>>(() => new Map());
   const [, setFonts] = useState(0);
 
@@ -285,12 +293,29 @@ export function Timeline({
     };
   }, []);
 
+  /** A new scale, with the minute at the middle of the view remembered (LAI-890). */
+  const changeZoom = (next: Zoom): void => {
+    const box = scroller.current;
+    keep.current =
+      box === null || pph === undefined
+        ? undefined
+        : scale.at(box.scrollLeft + box.clientWidth / 2);
+    onZoom(next);
+  };
+
   // Open at now on today (LAI-889), else on the day's first block — at every
-  // zoom but the one that fits it all.
+  // zoom but the one that fits it all. A change of scale keeps the middle of
+  // the view where it was (LAI-890).
   const first = line.blocks[0]?.start;
   useEffect(() => {
     const box = scroller.current;
+    const kept = keep.current;
+    keep.current = undefined;
     if (box === null || pph === undefined) return;
+    if (kept !== undefined) {
+      box.scrollLeft = Math.max(0, x(kept) - box.clientWidth / 2);
+      return;
+    }
     box.scrollLeft =
       line.now === undefined
         ? Math.max(0, x((first ?? from * 60 + 120) - 30))
@@ -758,6 +783,47 @@ export function Timeline({
               <span aria-hidden="true">›</span>
             </button>
           </div>
+          <div className="dayline-steps dayline-zoom-steps" role="group" aria-label="Zoom in steps">
+            <button
+              type="button"
+              className="dayline-tool"
+              data-zoom-step="out"
+              aria-label="Zoom out"
+              title={
+                zoomStep(zoom, -1) === undefined
+                  ? 'As far out as it goes'
+                  : pxAnHour(zoomStep(zoom, -1) ?? zoom)
+              }
+              disabled={zoomStep(zoom, -1) === undefined}
+              onClick={() => {
+                const next = zoomStep(zoom, -1);
+                if (next !== undefined) changeZoom(next);
+              }}
+            >
+              <span aria-hidden="true">−</span>
+            </button>
+            <span className="dayline-zoom-level" data-zoom-level={zoom} title={pxAnHour(zoom)}>
+              {zoomLabel(zoom)}
+            </span>
+            <button
+              type="button"
+              className="dayline-tool"
+              data-zoom-step="in"
+              aria-label="Zoom in"
+              title={
+                zoomStep(zoom, 1) === undefined
+                  ? 'As far in as it goes'
+                  : pxAnHour(zoomStep(zoom, 1) ?? zoom)
+              }
+              disabled={zoomStep(zoom, 1) === undefined}
+              onClick={() => {
+                const next = zoomStep(zoom, 1);
+                if (next !== undefined) changeZoom(next);
+              }}
+            >
+              <span aria-hidden="true">+</span>
+            </button>
+          </div>
           <div className="dayline-zoom" role="group" aria-label="Zoom">
             {ZOOMS.map(([key, label, title]) => (
               <button
@@ -768,7 +834,7 @@ export function Timeline({
                 aria-pressed={zoom === key}
                 title={title}
                 onClick={() => {
-                  onZoom(key);
+                  changeZoom(key);
                 }}
               >
                 {label}
