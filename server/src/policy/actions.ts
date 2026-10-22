@@ -81,6 +81,9 @@ export const PROJECT_ACTIONS = [
   'project.settings.edit',
   'sprint.manage',
   'task.assign_sprint',
+  // D-103 item 6 (LAI-976): creating is `task.write`'s, narrowed by the
+  // space's own minimum role — so it is its own action.
+  'task.create',
   'task.write',
   'task.claim',
   'task.assign_other',
@@ -95,6 +98,8 @@ export const PROJECT_ACTIONS = [
   'usage.read_project',
   // LAI-773: soft token budgets on a task, a sprint or the project.
   'budget.set',
+  // D-103 item 5 (LAI-976): any member may leave a space.
+  'project.leave',
 ] as const;
 
 /**

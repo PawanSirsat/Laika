@@ -490,10 +490,6 @@ const COLUMNS_NOT_IN_SPEC = new Map<string, string>([
     'users.image',
     'required by better-auth’s user model; unused — §4.1 says avatars are derived, no uploads in v1',
   ],
-  [
-    'projects.board_hide_done_days',
-    'LAI-266: how long finished work stays on the board. §4.3 gains the row in LAI-264, CHIEF’s half, in flight. A project setting rather than a per-viewer one because it removes work from the board rather than restyling it.',
-  ],
 ]);
 
 /**

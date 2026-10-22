@@ -24,7 +24,7 @@ import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { addDays, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
 import { outsideIdPrefixes } from './outside-ids.ts';
-import { canSeeProject } from './projects.ts';
+import { canSeeProject, keyPrefixesOf } from './projects.ts';
 
 /**
  * Local activity counts from a developer's own machine (SPEC §6.4, §4.23,
@@ -271,12 +271,14 @@ export function getActivitySharing(
   // Filtered in code, as `listProjects` does: `can()` is the only authority.
   // Beside the projects' own, the prefixes of the outside ids their cards
   // carry (LAI-780), so a branch named for `LAI-780` counts too.
+  // And every prefix a project carried before (D-103): a branch cut under the
+  // old key is still that project's work.
   const prefixes = db
-    .select({ id: projects.id, prefix: projects.prefix })
+    .select({ id: projects.id, prefix: projects.prefix, formerPrefixes: projects.formerPrefixes })
     .from(projects)
     .all()
     .filter((p) => canSeeProject(actor, p.id))
-    .map((p) => p.prefix)
+    .flatMap((p) => keyPrefixesOf(p))
     .concat(outsideIdPrefixes(db, actor))
     .sort();
   return { ...view, usage_days_elsewhere: days, task_prefixes: [...new Set(prefixes)] };

@@ -92,17 +92,25 @@ export function seed(db: Db, now = Date.now()): Seed {
     `);
   }
 
-  db.insert(projects)
-    .values({
-      id: projectId,
-      orgId,
-      name: 'Laika',
-      slug: 'laika',
-      prefix: 'LAI',
-      createdAt: now,
-      updatedAt: now,
-    })
-    .run();
+  // The same for `projects` and 0051's space settings (LAI-976).
+  if (hasColumn(db, 'projects', 'former_prefixes')) {
+    db.insert(projects)
+      .values({
+        id: projectId,
+        orgId,
+        name: 'Laika',
+        slug: 'laika',
+        prefix: 'LAI',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+  } else {
+    db.run(sql`
+      INSERT INTO projects (id, org_id, name, slug, prefix, created_at, updated_at)
+      VALUES (${projectId}, ${orgId}, 'Laika', 'laika', 'LAI', ${now}, ${now})
+    `);
+  }
 
   // This helper inserts the project row directly rather than going through
   // `createProject`, so it has to seed the statuses itself (LAI-738). Without

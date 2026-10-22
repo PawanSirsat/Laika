@@ -347,6 +347,9 @@ describe('the cases LAI-004 calls out by name', () => {
         action === 'time_entries.write_own' ||
         // LAI-788: syncing their own time with Solidtime, signed in.
         action === 'time_sync.own';
+      // D-103 item 5 (LAI-976): leaving a space removes their own membership
+      // and writes nothing about the space's work.
+      const ownMembership = action === 'project.leave';
 
       expect(allowed, `${action} allowed for viewer`).toBe(
         selfToken ||
@@ -357,7 +360,8 @@ describe('the cases LAI-004 calls out by name', () => {
           ownLocalActivity ||
           ownUsage ||
           ownTokenData ||
-          ownTime,
+          ownTime ||
+          ownMembership,
       );
     }
   });

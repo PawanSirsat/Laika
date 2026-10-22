@@ -48,7 +48,9 @@ import {
   PLAN_WINDOWS,
   PROFILE_KINDS,
   PROJECT_ROLES,
+  PROJECT_COLORS,
   PROJECT_VISIBILITIES,
+  TASK_CREATE_MIN_ROLES,
   REVIEW_DECISIONS,
   SIZE_LEVELS,
   SPRINT_STATUSES,
@@ -282,6 +284,29 @@ export const projects = sqliteTable(
      */
     boardHideDoneDays: integer('board_hide_done_days'),
     archivedAt: integer('archived_at'),
+    /** The design's palette (D-103 item 4); `null` until somebody picks one. */
+    color: text('color', { enum: PROJECT_COLORS }),
+    /** Who may create tasks here (D-103 item 6): `member` (default) or `lead`. */
+    taskCreateMinRole: text('task_create_min_role', { enum: TASK_CREATE_MIN_ROLES })
+      .notNull()
+      .default('member'),
+    /** Whether agent tokens may write here (D-103 item 7). Reads are never refused. */
+    agentsAllowed: integer('agents_allowed', { mode: 'boolean' }).notNull().default(true),
+    /**
+     * Every prefix this project has carried before its current one, as a JSON
+     * array of upper-case strings (D-103 item 3, LAI-976).
+     *
+     * A task stores its `number`, never its key: `LAI-42` is `prefix` and
+     * `number` joined at read time. So a new prefix re-keys every task, and
+     * this list is what keeps `LAI-42` naming the same task afterwards — a key
+     * is resolved against the current prefix first and these second. Unique
+     * across the org with `prefix` (in code: a CHECK cannot see another row),
+     * so an old key can never come to name another project's task.
+     */
+    formerPrefixes: text('former_prefixes', { mode: 'json' })
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'`),
     createdAt,
     updatedAt,
   },
@@ -289,7 +314,16 @@ export const projects = sqliteTable(
     uniqueIndex('projects_slug_unique').on(t.slug),
     uniqueIndex('projects_org_prefix_unique').on(t.orgId, t.prefix),
     index('projects_org_id_idx').on(t.orgId),
+    // `loadActor` reads the spaces whose rules are not the defaults on every
+    // request (D-103, LAI-976); this keeps that two searches, never a scan.
+    index('projects_rules_idx').on(t.taskCreateMinRole, t.agentsAllowed),
     check('projects_visibility_check', oneOf('visibility', PROJECT_VISIBILITIES)),
+    check('projects_color_check', oneOfOrNull('color', PROJECT_COLORS)),
+    check(
+      'projects_task_create_min_role_check',
+      oneOf('task_create_min_role', TASK_CREATE_MIN_ROLES),
+    ),
+    check('projects_agents_allowed_check', sql.raw('agents_allowed IN (0, 1)')),
   ],
 );
 

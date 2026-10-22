@@ -1,14 +1,21 @@
-import { and, asc, eq, gt, gte, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, inArray, isNotNull, ne, or, sql } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
 import { apiFieldNames, appendActivity, latestFieldEdit } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
-import { type ProjectRole, TASK_STATUSES, type TaskStatus } from '../db/enums.ts';
+import {
+  type ProjectColor,
+  type ProjectRole,
+  type TaskCreateMinRole,
+  TASK_STATUSES,
+  type TaskStatus,
+} from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { activity, projectMemberships, projects, tasks, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-actor.ts';
 import { assertCan, can, projectRoleOnJoin } from '../policy/can.ts';
+import { CAPABILITY_LABELS, implicitProjectRole } from '../policy/grants.ts';
 // From `db/`, not `services/project-statuses.ts`: that module reads projects
 // through this one, and the seed is all this needs.
 import { createDefaultProjectStatuses } from '../db/project-statuses.ts';
@@ -23,7 +30,12 @@ import { createDefaultProjectStatuses } from '../db/project-statuses.ts';
  * **four** retyped literals across two vocabularies — more than LAI-119 listed,
  * and found by the structural check rather than by reading the task.
  */
-export { PROJECT_ROLES, PROJECT_VISIBILITIES } from '../db/enums.ts';
+export {
+  PROJECT_COLORS,
+  PROJECT_ROLES,
+  PROJECT_VISIBILITIES,
+  TASK_CREATE_MIN_ROLES,
+} from '../db/enums.ts';
 
 /**
  * Projects and their memberships (SPEC §4.3, §4.4, §6.4).
@@ -46,6 +58,17 @@ export interface ProjectView {
   context_md: string;
   /** LAI-266. `null` means done work stays on the board for ever. */
   board_hide_done_days: number | null;
+  /** The design's palette entry (D-103 item 4); `null` until one is picked. */
+  color: ProjectColor | null;
+  /** Who may create tasks here (D-103 item 6). */
+  task_create_min_role: TaskCreateMinRole;
+  /** Whether agent tokens may write here (D-103 item 7). */
+  agents_allowed: boolean;
+  /**
+   * Prefixes this space carried before `prefix`, oldest first. Every key
+   * under one of them still resolves to the same task (D-103 item 3).
+   */
+  former_prefixes: string[];
   archived_at: number | null;
   created_at: number;
   updated_at: number;
@@ -114,6 +137,10 @@ export function projectView(row: typeof projects.$inferSelect): ProjectView {
     visibility: row.visibility,
     context_md: row.contextMd,
     board_hide_done_days: row.boardHideDoneDays,
+    color: row.color,
+    task_create_min_role: row.taskCreateMinRole,
+    agents_allowed: row.agentsAllowed,
+    former_prefixes: row.formerPrefixes,
     archived_at: row.archivedAt,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
@@ -172,7 +199,15 @@ export interface ListProjectsOptions {
   /** Keyset cursor from LAI-006: `(updated_at, id)`. */
   cursor: { sortKey: string | number; id: string } | null;
   updatedSince: number | null;
+  /**
+   * D-103 item 10. Absent is today's list, where an archived project is a
+   * tombstone; `include` and `only` hand archived projects back whole.
+   */
+  archived?: ArchivedFilter | undefined;
 }
+
+export const ARCHIVED_FILTERS = ['include', 'only'] as const;
+export type ArchivedFilter = (typeof ARCHIVED_FILTERS)[number];
 
 /**
  * Projects this actor may see, ordered by `(updated_at, id)` so the LAI-006
@@ -189,6 +224,8 @@ export function listProjects(
   if (options.updatedSince !== null) {
     conditions.push(gte(projects.updatedAt, options.updatedSince));
   }
+
+  if (options.archived === 'only') conditions.push(isNotNull(projects.archivedAt));
 
   if (options.cursor !== null) {
     const key = Number(options.cursor.sortKey);
@@ -209,7 +246,13 @@ export function listProjects(
 
   // Filtered in code rather than SQL: `can()` is the only authority (§3.3), and
   // duplicating its rules into a WHERE clause is how the two drift apart.
-  return rows.filter((row) => canSeeProject(actor, row.id)).slice(0, options.limit + 1);
+  //
+  // Asking for archived spaces widens nothing but this: whoever may restore
+  // one (`project.archive`) sees it, member or not (D-103 item 10).
+  const restorer = options.archived !== undefined && can(actor, 'project.archive');
+  return rows
+    .filter((row) => canSeeProject(actor, row.id) || (restorer && row.archivedAt !== null))
+    .slice(0, options.limit + 1);
 }
 
 /**
@@ -336,6 +379,8 @@ export interface CreateProjectInput {
   prefix: string;
   description?: string | undefined;
   visibility?: 'public' | 'private' | undefined;
+  /** LAI-266. Taken on create since LAI-976 — it was accepted and dropped. */
+  board_hide_done_days?: number | null | undefined;
   now?: number;
 }
 
@@ -370,6 +415,7 @@ export function createProject(
         prefix,
         description: input.description ?? null,
         visibility: input.visibility ?? 'private',
+        boardHideDoneDays: input.board_hide_done_days ?? null,
         createdAt: now,
         updatedAt: now,
       })
@@ -407,11 +453,23 @@ function assertSlugFree(db: Db, slug: string): void {
   }
 }
 
-function assertPrefixFree(db: Db, orgId: string, prefix: string): void {
+/**
+ * `prefix` free in the org — held by no other project now, **and none before**
+ * (D-103 item 3). An old prefix still resolves to its project's tasks, so a
+ * second project taking it would make `LAI-42` name two tasks. `exceptId` is
+ * the project being re-keyed, which may go back to a prefix it held itself.
+ */
+function assertPrefixFree(db: Db, orgId: string, prefix: string, exceptId?: string): void {
   const clash = db
     .select({ id: projects.id })
     .from(projects)
-    .where(and(eq(projects.orgId, orgId), eq(projects.prefix, prefix)))
+    .where(
+      and(
+        eq(projects.orgId, orgId),
+        eq(projects.prefix, prefix),
+        exceptId === undefined ? undefined : ne(projects.id, exceptId),
+      ),
+    )
     .get();
 
   if (clash !== undefined) {
@@ -419,6 +477,55 @@ function assertPrefixFree(db: Db, orgId: string, prefix: string): void {
       field: 'prefix',
     });
   }
+
+  const former = db
+    .select({ id: projects.id, formerPrefixes: projects.formerPrefixes })
+    .from(projects)
+    .where(eq(projects.orgId, orgId))
+    .all()
+    .find((row) => row.id !== exceptId && row.formerPrefixes.includes(prefix));
+
+  if (former !== undefined) {
+    throw new ApiError(
+      'conflict',
+      `"${prefix}" was another space's prefix, and its old keys still lead there — pick another`,
+      { field: 'prefix', reason: 'former' },
+    );
+  }
+}
+
+/**
+ * The project a key's prefix names — its current prefix first, then any it
+ * carried before (D-103 item 3). Every place that turns `LAI-42` into a task
+ * asks this, so a re-keyed project's old keys resolve wherever new ones do.
+ * Case-insensitive, as keys are typed. `orgId` narrows to one organisation
+ * where the caller has it.
+ */
+export function projectIdByKeyPrefix(db: Db, prefix: string, orgId?: string): string | undefined {
+  const wanted = prefix.toUpperCase();
+  const inOrg = orgId === undefined ? undefined : eq(projects.orgId, orgId);
+
+  const current = db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.prefix, wanted), inOrg))
+    .get();
+  if (current !== undefined) return current.id;
+
+  return db
+    .select({ id: projects.id, formerPrefixes: projects.formerPrefixes })
+    .from(projects)
+    .where(inOrg)
+    .all()
+    .find((row) => row.formerPrefixes.includes(wanted))?.id;
+}
+
+/** Every prefix a project's keys resolve under: its own, then its former ones. */
+export function keyPrefixesOf(row: {
+  prefix: string;
+  formerPrefixes: readonly string[];
+}): string[] {
+  return [row.prefix, ...row.formerPrefixes];
 }
 
 export function getProject(db: Db, actor: ResolvedActor, slug: string): ProjectView {
@@ -509,6 +616,12 @@ export interface UpdateProjectInput {
   archived?: boolean | undefined;
   /** Days after which finished work leaves the board; `null` never (LAI-266). */
   board_hide_done_days?: number | null | undefined;
+  /** A palette entry, or `null` to clear it (D-103 item 4). */
+  color?: ProjectColor | null | undefined;
+  /** A new key prefix; every old key keeps resolving (D-103 item 3). */
+  prefix?: string | undefined;
+  task_create_min_role?: TaskCreateMinRole | undefined;
+  agents_allowed?: boolean | undefined;
   now?: number;
 }
 
@@ -541,6 +654,25 @@ export function updateProject(
     changes.boardHideDoneDays = input.board_hide_done_days;
   }
   if (input.visibility !== undefined) changes.visibility = input.visibility;
+  if (input.color !== undefined) changes.color = input.color;
+  if (input.task_create_min_role !== undefined) {
+    changes.taskCreateMinRole = input.task_create_min_role;
+  }
+  if (input.agents_allowed !== undefined) changes.agentsAllowed = input.agents_allowed;
+
+  if (input.prefix !== undefined) {
+    const prefix = input.prefix.toUpperCase();
+    if (prefix !== row.prefix) {
+      assertPrefixFree(db, row.orgId, prefix, row.id);
+      // The old prefix joins the list and the new one leaves it, so a space
+      // going back to a prefix it held does not list it twice.
+      changes.prefix = prefix;
+      changes.formerPrefixes = [
+        ...row.formerPrefixes.filter((held) => held !== prefix),
+        row.prefix,
+      ];
+    }
+  }
 
   const archiving = input.archived === true && row.archivedAt === null;
   const restoring = input.archived === false && row.archivedAt !== null;
@@ -852,6 +984,76 @@ export function removeMember(
   return listMembers(db, actor, slug);
 }
 
+/** What leaving answers (D-103 item 5). */
+export interface LeaveProjectView {
+  slug: string;
+  /**
+   * `true` when the caller can still open the space after leaving — an org
+   * role holding *Open every project* — so a screen does not tell an owner
+   * they have lost something they have not.
+   */
+  implicit_access: boolean;
+  /** Says so in words when `implicit_access`; `null` otherwise. */
+  notice: string | null;
+}
+
+/**
+ * Leave a space you are a member of (§6.4, D-103 item 5). Anyone may; the
+ * last space admin is refused `409 last_lead` and told to hand over first —
+ * the same rule `removeMember` keeps, said for the person it stops.
+ */
+export function leaveProject(
+  db: Db,
+  actor: ResolvedActor,
+  slug: string,
+  now: number = Date.now(),
+): LeaveProjectView {
+  const row = requireProjectBySlug(db, slug);
+
+  // Before `can()`: an org owner with no row would pass it on implicit lead
+  // and then have nothing to leave.
+  const existing = db
+    .select()
+    .from(projectMemberships)
+    .where(
+      and(eq(projectMemberships.projectId, row.id), eq(projectMemberships.userId, actor.userId)),
+    )
+    .get();
+  if (existing === undefined) throw ApiError.notFound('You are not a member of this space');
+
+  assertCan(withProject(actor, row.id), 'project.leave', { projectId: row.id });
+
+  if (existing.role === 'lead') {
+    assertNotLastLead(
+      db,
+      row.id,
+      actor.userId,
+      'You are the last space admin here — make someone else a space admin, then leave',
+    );
+  }
+
+  db.delete(projectMemberships).where(eq(projectMemberships.id, existing.id)).run();
+
+  appendActivity(db, {
+    orgId: row.orgId,
+    projectId: row.id,
+    ...activityActor(actor),
+    type: 'member.removed',
+    payload: { user_id: actor.userId, role: existing.role, via: 'leave' },
+    now,
+  });
+
+  const implicit = implicitProjectRole(actor.orgRole, actor.orgGrants) !== null;
+
+  return {
+    slug: row.slug,
+    implicit_access: implicit,
+    notice: implicit
+      ? `You left ${row.name}, and can still open it: your organisation role holds “${CAPABILITY_LABELS.open_all_projects}”.`
+      : null,
+  };
+}
+
 function requireMembership(
   db: Db,
   projectId: string,
@@ -875,7 +1077,12 @@ function requireMembership(
  * the last one means the project's leadership depends on somebody's org role,
  * which is exactly the silent coupling §4.4 memberships exist to avoid.
  */
-function assertNotLastLead(db: Db, projectId: string, excludingUserId: string): void {
+function assertNotLastLead(
+  db: Db,
+  projectId: string,
+  excludingUserId: string,
+  message = 'A project must keep at least one lead',
+): void {
   const remaining = db
     .select({ n: sql<number>`COUNT(*)` })
     .from(projectMemberships)
@@ -889,9 +1096,7 @@ function assertNotLastLead(db: Db, projectId: string, excludingUserId: string): 
     .get();
 
   if ((remaining?.n ?? 0) === 0) {
-    throw new ApiError('conflict', 'A project must keep at least one lead', {
-      field: 'role',
-    });
+    throw new ApiError('conflict', message, { field: 'role', reason: 'last_lead' });
   }
 }
 

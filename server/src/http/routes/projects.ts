@@ -4,19 +4,24 @@ import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import {
   addMember,
+  ARCHIVED_FILTERS,
   archivedTombstones,
   changeMemberRole,
   createProject,
   getProject,
   getProjectContext,
   joinPublicProject,
+  leaveProject,
+  type LeaveProjectView,
   listMembers,
   listProjects,
+  PROJECT_COLORS,
   PROJECT_ROLES,
   PROJECT_VISIBILITIES,
   projectSummaries,
   projectSummaryView,
   removeMember,
+  TASK_CREATE_MIN_ROLES,
   updateProject,
   updateProjectContext,
   type ProjectSummary,
@@ -70,6 +75,16 @@ const UpdateBody = strictObject({
   // look like rather than how long it may be.
   repo: z.string().trim().min(1).nullable().optional(),
   visibility: z.enum(PROJECT_VISIBILITIES).optional(),
+  // LAI-266's setting, which `CreateBody` took and this refused until LAI-976:
+  // the board's own control had no way to save it.
+  board_hide_done_days: z.number().int().min(0).nullable().optional(),
+  // D-103 (LAI-976): the settings page. `null` clears the colour.
+  color: z.enum(PROJECT_COLORS).nullable().optional(),
+  // A new key prefix. Old keys keep resolving; the service refuses one any
+  // other space holds or held (D-103 item 3).
+  prefix: Prefix.optional(),
+  task_create_min_role: z.enum(TASK_CREATE_MIN_ROLES).optional(),
+  agents_allowed: z.boolean().optional(),
   // `context_md` is **not** here since LAI-404. It has its own pair below, so
   // there is one writer of the column, one place enforcing the size bound, and
   // one shape of audit row. `.strict()` means a client still sending it here
@@ -122,6 +137,19 @@ function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) 
   return actor;
 }
 
+/**
+ * `?archived=include|only` (D-103 item 10). Absent or empty is today's list;
+ * anything else is a `400` naming the value, as `?fields=` does.
+ */
+function parseArchived(raw: string | undefined): (typeof ARCHIVED_FILTERS)[number] | undefined {
+  if (raw === undefined || raw === '') return undefined;
+  const known = ARCHIVED_FILTERS.find((value) => value === raw);
+  if (known === undefined) {
+    throw new ApiError('bad_request', 'archived is include or only', { archived: raw });
+  }
+  return known;
+}
+
 export interface ProjectRouteOptions {
   db: Db;
   sqlite: Database.Database;
@@ -135,8 +163,9 @@ export function projectRoutes(options: ProjectRouteOptions): Hono<AppEnv> {
     const actor = requireActor(c);
     const { limit, cursor } = parsePageQuery(c.req.query());
     const updatedSince = parseUpdatedSince(c.req.query('updated_since'));
+    const archived = parseArchived(c.req.query('archived'));
 
-    const rows = listProjects(db, actor, { limit, cursor, updatedSince });
+    const rows = listProjects(db, actor, { limit, cursor, updatedSince, archived });
 
     // Paginate the raw rows first: the cursor is `(updated_at, id)` and a
     // tombstone carries neither, so mapping before paging would lose the key.
@@ -145,21 +174,24 @@ export function projectRoutes(options: ProjectRouteOptions): Hono<AppEnv> {
     // §6.3 tombstones. An archived project is this resource's soft-delete: it
     // stays reachable by slug but must disappear from a catching-up client's
     // list, and a client that only saw changed rows would keep showing it.
-    const archived = new Set(archivedTombstones(paged.data));
+    //
+    // Unless the caller asked for archived projects (D-103 item 10): then they
+    // are what was asked for, and come back whole.
+    const tombstones = new Set(archived === undefined ? archivedTombstones(paged.data) : []);
 
     // One set of aggregates for the whole page (LAI-053). Computed after paging
     // so it covers exactly the rows being returned, and skipping tombstones —
     // an archived project's counts are not something a catching-up client wants.
     const summaries = projectSummaries(
       db,
-      paged.data.filter((row) => !archived.has(row.id)).map((row) => row.id),
+      paged.data.filter((row) => !tombstones.has(row.id)).map((row) => row.id),
     );
 
     const page: Page<WithTombstones<ProjectSummary>> = {
       // `projectSummaryView` from the service, not a copy of it: this mapping used
       // to be written out here and was missing §4.3's `repo` the moment it landed.
       data: paged.data.map((row) =>
-        archived.has(row.id) ? tombstone(row.id) : projectSummaryView(row, summaries.get(row.id)),
+        tombstones.has(row.id) ? tombstone(row.id) : projectSummaryView(row, summaries.get(row.id)),
       ),
       next_cursor: paged.next_cursor,
     };
@@ -199,6 +231,11 @@ export function projectRoutes(options: ProjectRouteOptions): Hono<AppEnv> {
       }),
     );
   });
+
+  // D-103 item 5: any member leaves; the last space admin is refused 409.
+  app.post('/:slug/leave', (c) =>
+    c.json<LeaveProjectView>(leaveProject(db, requireActor(c), c.req.param('slug'))),
+  );
 
   app.post('/:slug/join', (c) =>
     c.json({ members: joinPublicProject(db, requireActor(c), c.req.param('slug')) }, 201),
