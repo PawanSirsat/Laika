@@ -1,8 +1,10 @@
-import { and, eq, gte, isNotNull } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNotNull } from 'drizzle-orm';
 import { withProject, type ResolvedActor } from '../auth/resolve-actor.ts';
+import { readPayload } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
-import { tasks } from '../db/schema.ts';
+import { activity, tasks } from '../db/schema.ts';
 import { assertCan } from '../policy/can.ts';
+import { bulkCompletions } from './bulk-moves.ts';
 import { requireProjectBySlug } from './projects.ts';
 
 /**
@@ -46,12 +48,35 @@ import { requireProjectBySlug } from './projects.ts';
  * reported separately rather than dropped, because a board where most work never
  * passes through `in_progress` is a fact about the board and not a gap in the
  * data.
+ *
+ * ## Bulk moves are left out, and counted as left out (D-093, LAI-823)
+ *
+ * A task whose completion was a bulk move — a sweep into done, or an import
+ * straight into done (`bulk-moves.ts`) — is in neither figure, and
+ * `bulk_excluded` says how many there were, so a chart can say so rather than
+ * look like a quiet week.
+ *
+ * ## Building, and waiting for review
+ *
+ * The cycle splits at the task's **latest** entry into review before its
+ * completion: `building` is start to that entry, `waiting_for_review` that
+ * entry to done. Latest, so a round sent back and rebuilt is building time,
+ * not waiting. A task that reached done without review is all building and has
+ * no wait, so it is in `building` and not in `waiting_for_review`.
  */
 
 /** A day of completions, `YYYY-MM-DD` in UTC. */
 export interface ThroughputBucket {
   day: string;
   completed: number;
+}
+
+/** Percentiles over the tasks a part of the cycle could be measured on. */
+export interface CycleSpan {
+  measured: number;
+  p50_ms: number;
+  p75_ms: number;
+  p90_ms: number;
 }
 
 export interface CycleTime {
@@ -62,6 +87,10 @@ export interface CycleTime {
   p50_ms: number;
   p75_ms: number;
   p90_ms: number;
+  /** Start to the latest entry into review — or to done, without review. */
+  building: CycleSpan | null;
+  /** The latest entry into review to done; `null` when nothing passed review. */
+  waiting_for_review: CycleSpan | null;
 }
 
 export interface MetricsView {
@@ -70,6 +99,8 @@ export interface MetricsView {
   throughput: ThroughputBucket[];
   /** `null` when nothing completed in the window — not a zeroed shape. */
   cycle_time: CycleTime | null;
+  /** Completions in the window left out of both as bulk moves (D-093). */
+  bulk_excluded: number;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -93,6 +124,46 @@ export function percentile(sorted: readonly number[], p: number): number {
   return sorted[Math.min(sorted.length - 1, Math.max(0, rank - 1))]!;
 }
 
+function span(sorted: readonly number[]): CycleSpan | null {
+  if (sorted.length === 0) return null;
+  return {
+    measured: sorted.length,
+    p50_ms: percentile(sorted, 50),
+    p75_ms: percentile(sorted, 75),
+    p90_ms: percentile(sorted, 90),
+  };
+}
+
+/** SQLite's bound-parameter limit is far above this; it keeps one query sane. */
+const CHUNK = 500;
+
+/**
+ * Each task's latest entry into review from another category, from its start
+ * to its completion — the point the cycle splits at.
+ */
+function reviewEntries(
+  db: Db,
+  measured: readonly { id: string; startedAt: number; completedAt: number }[],
+): Map<string, number> {
+  const bounds = new Map(measured.map((m) => [m.id, m]));
+  const entries = new Map<string, number>();
+  for (let i = 0; i < measured.length; i += CHUNK) {
+    const ids = measured.slice(i, i + CHUNK).map((m) => m.id);
+    for (const row of db
+      .select()
+      .from(activity)
+      .where(and(inArray(activity.taskId, ids), eq(activity.type, 'task.status_changed')))
+      .all()) {
+      const task = bounds.get(row.taskId!)!;
+      if (row.createdAt < task.startedAt || row.createdAt > task.completedAt) continue;
+      const payload = readPayload(row) as { from?: unknown; to?: unknown } | null;
+      if (payload?.to !== 'review' || payload.from === 'review') continue;
+      entries.set(task.id, Math.max(entries.get(task.id) ?? 0, row.createdAt));
+    }
+  }
+  return entries;
+}
+
 export function projectMetrics(
   db: Db,
   actor: ResolvedActor,
@@ -103,8 +174,8 @@ export function projectMetrics(
   const project = requireProjectBySlug(db, slug);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
 
-  const completed = db
-    .select({ startedAt: tasks.startedAt, completedAt: tasks.completedAt })
+  const all = db
+    .select({ id: tasks.id, startedAt: tasks.startedAt, completedAt: tasks.completedAt })
     .from(tasks)
     .where(
       and(
@@ -116,11 +187,15 @@ export function projectMetrics(
     )
     .all();
 
+  const bulk = bulkCompletions(db, project.orgId, all);
+  const completed = all.filter((task) => !bulk.has(task.id));
+
   const perDay = new Map<string, number>();
   for (let at = since; at <= now; at += DAY_MS) perDay.set(utcDay(at), 0);
   perDay.set(utcDay(now), perDay.get(utcDay(now)) ?? 0);
 
   const durations: number[] = [];
+  const measured: { id: string; startedAt: number; completedAt: number }[] = [];
   let unmeasured = 0;
 
   for (const task of completed) {
@@ -129,10 +204,28 @@ export function projectMetrics(
     perDay.set(day, (perDay.get(day) ?? 0) + 1);
 
     if (task.startedAt === null) unmeasured += 1;
-    else durations.push(at - task.startedAt);
+    else {
+      durations.push(at - task.startedAt);
+      measured.push({ id: task.id, startedAt: task.startedAt, completedAt: at });
+    }
   }
 
-  durations.sort((a, b) => a - b);
+  const entries = reviewEntries(db, measured);
+  const building: number[] = [];
+  const waiting: number[] = [];
+  for (const task of measured) {
+    const entry = entries.get(task.id);
+    if (entry === undefined) building.push(task.completedAt - task.startedAt);
+    else {
+      building.push(entry - task.startedAt);
+      waiting.push(task.completedAt - entry);
+    }
+  }
+
+  const ascending = (a: number, b: number) => a - b;
+  durations.sort(ascending);
+  building.sort(ascending);
+  waiting.sort(ascending);
 
   return {
     since,
@@ -148,6 +241,9 @@ export function projectMetrics(
             p50_ms: percentile(durations, 50),
             p75_ms: percentile(durations, 75),
             p90_ms: percentile(durations, 90),
+            building: span(building),
+            waiting_for_review: span(waiting),
           },
+    bulk_excluded: bulk.size,
   };
 }

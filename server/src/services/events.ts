@@ -9,6 +9,7 @@ import { type Db } from '../db/client.ts';
 import { type ActivityType, type ActorKind } from '../db/enums.ts';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { can } from '../policy/can.ts';
+import { bulkAmong } from './bulk-moves.ts';
 
 /**
  * What a client is allowed to see on the live stream, and where a reconnect
@@ -36,8 +37,20 @@ export interface EventView {
   actor_token_id: string | null;
   payload: unknown;
   created_at: number;
+  /**
+   * Part of a bulk move — a sweep or an import (D-093, LAI-823): shown, and
+   * left out of every delivery figure. Decided from the rows a minute either
+   * side, so a row streamed live while its sweep is still arriving can read
+   * `false` and a later read `true`.
+   */
+  bulk: boolean;
 }
 
+/**
+ * One row, with `bulk: false` — {@link eventViews} is what decides it, since
+ * the answer needs the rows around this one. One argument, so `.map(eventView)`
+ * cannot pass an index where a flag belongs.
+ */
 export function eventView(row: ActivityEvent): EventView {
   return {
     id: row.id,
@@ -52,7 +65,14 @@ export function eventView(row: ActivityEvent): EventView {
     // properties, and this is the one boundary every client passes through.
     payload: apiPayload(row),
     created_at: row.createdAt,
+    bulk: false,
   };
+}
+
+/** Feed rows as the wire carries them, each marked bulk or not (`bulk-moves.ts`). */
+export function eventViews(db: Db, rows: readonly ActivityEvent[]): EventView[] {
+  const bulk = bulkAmong(db, rows);
+  return rows.map((row) => ({ ...eventView(row), bulk: bulk.has(row.id) }));
 }
 
 /**

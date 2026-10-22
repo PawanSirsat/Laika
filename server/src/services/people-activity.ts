@@ -1,10 +1,13 @@
 import { and, eq, gte, lte } from 'drizzle-orm';
 import { AGENT_CLIENTS, type AgentClient } from '../auth/agent-clients.ts';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
+import { boardDayOf } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
+import { requireOrgId } from '../db/orgs.ts';
 import { boardActivityDays, localActivityDays, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import { bulkRowsBetween } from './bulk-moves.ts';
 import { addDays, daysBetween, dayIn } from './calendar-days.ts';
 import {
   agentKindOf,
@@ -38,7 +41,16 @@ import {
  *
  * Every query is a range of one person's days on a key that leads with the
  * person: at most a year of rows per source, whatever the size of the log, the
- * board or the organisation. Nothing here reads `activity`.
+ * board or the organisation. The one read of `activity` is the bulk moves
+ * below, and it is bounded the same way: one person's moves and creations in
+ * the range, through the actor's index.
+ *
+ * ## Bulk moves are not activity (D-093, LAI-823)
+ *
+ * A sweep or an import is bookkeeping, and three such days were 54% of one
+ * person's twelve weeks. Their rows stay in the rollup — it is a count of the
+ * log, and the log is untouched — and are taken off each board day here, by
+ * the rule in `bulk-moves.ts`, with `bulk_excluded` saying how many.
  *
  * ## The days
  *
@@ -79,6 +91,8 @@ export interface PeopleActivityView {
   prompts_by_agent: Record<string, Partial<Record<AgentClient, number>>>;
   /** Every agent with prompts in the range, most first. */
   agents: AgentClient[];
+  /** Bulk moves left off the board days in the range (D-093). */
+  bulk_excluded: number;
 }
 
 export function getPeopleActivity(
@@ -121,6 +135,20 @@ export function getPeopleActivity(
     boardAgent[i] = row.byAgents;
   }
 
+  // The range's board days run from start to end in UTC (§4.22); a day either
+  // side covers any zone the range was drawn in.
+  let bulkExcluded = 0;
+  const from = Date.parse(`${addDays(start, -1)}T00:00:00Z`);
+  const to = Date.parse(`${addDays(end, 2)}T00:00:00Z`) - 1;
+  for (const row of bulkRowsBetween(db, requireOrgId(db), from, to, userId)) {
+    const i = index(boardDayOf(row.createdAt));
+    if (i < 0 || i >= length) continue;
+    const series = row.actorKind === 'user' ? boardSelf : boardAgent;
+    if (series[i]! <= 0) continue;
+    series[i]! -= 1;
+    bulkExcluded += 1;
+  }
+
   const view: PeopleActivityView = {
     range,
     start,
@@ -137,6 +165,7 @@ export function getPeopleActivity(
     },
     prompts_by_agent: {},
     agents: [],
+    bulk_excluded: bulkExcluded,
   };
   if (!shown) return view;
 
