@@ -6,7 +6,8 @@ assignee: strelka
 priority: p2
 depends-on: []
 discovered-from: LAI-480
-status: in-progress
+status: review
+finished: 2026-10-22T06:31:47Z
 started: 2026-10-22T06:24:05Z
 ---
 
@@ -46,9 +47,25 @@ phone, and both themes (I)").
 
 ## Acceptance criteria
 
-- [ ] The page-size test carries a named budget for its setup work, as
+- [x] The page-size test carries a named budget for its setup work, as
       `SPAWN_BUDGET_MS` does in `format-fix.test.ts`, with a comment saying
       nothing it asserts is about time.
-- [ ] It still asserts `total` is exactly 205 and the page is 201 rows; the
+- [x] It still asserts `total` is exactly 205 and the page is 201 rows; the
       budget changes nothing about what is checked.
-- [ ] Repo-root gate green, with exit codes.
+- [x] Repo-root gate green, with exit codes.
+
+## Builder notes (strelka, 2026-10-22)
+
+- Measured quiet (load ~7), the test alone: ~500ms — 328ms for 205
+  `createTask` calls (one WAL commit each), 116ms `addTasksToSprint`, 5ms
+  counting and listing. 10x under the 5s default; it fails only under the
+  57–219 loads above.
+- Reproduced without load: `npx vitest run test/services/sprints.test.ts -t
+  "is exact past the page size" --testTimeout=300` → `Test timed out in
+  300ms` before the change, passes after (the test's own budget wins).
+- Broken once each, then restored (cmp-verified): `SETUP_BUDGET_MS = 300` →
+  `Test timed out in 300ms`; `{ length: 204 }` → `expected 204 to be 205`.
+- Gate (behind `/tmp/laika-root-gate.lock`, load 19–21): TEST 0, LINT 0,
+  FMT 0.
+- No board card mirrored this file; created LAIKA-674 with
+  `external_ref: LAI-304`.
