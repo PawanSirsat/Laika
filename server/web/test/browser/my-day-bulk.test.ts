@@ -63,9 +63,10 @@ void describe('the column beside the day', () => {
             .locator('[data-myday-side] > section')
             .evaluateAll((els: Element[]) => els.map((el) => el.className))
         ).map((c) => c.split(' ').find((k: string) => k !== 'myday-card'));
-      // Wait for both sections, not just the plate (LAI-715).
-      await until(async () => (await sides()).join('|') === 'myday-agent|myday-plate');
-      assert.deepEqual(await sides(), ['myday-agent', 'myday-plate']);
+      // Wait for every section, not just the plate (LAI-715) — *Who looked at
+      // my time* last, under the plate (LAI-959).
+      await until(async () => (await sides()).join('|') === 'myday-agent|myday-plate|myday-looked');
+      assert.deepEqual(await sides(), ['myday-agent', 'myday-plate', 'myday-looked']);
       // Draft my time sits in the header, as the owner's design has it (LAI-831).
       const draftSwitch = h.page
         .locator('.screen-page')

@@ -12,6 +12,8 @@ export interface DraftRowProps {
   readonly busy: boolean;
   /** Ticked for a bulk action (LAI-810). */
   readonly checked: boolean;
+  /** False on a day read rather than kept (LAI-959): no box to tick. */
+  readonly checkable?: boolean;
   /** `range`: the click held Shift, so every row since the last one follows. */
   readonly onCheck: (on: boolean, range: boolean) => void;
   /** The one in the inspector. */
@@ -68,6 +70,7 @@ export function DraftRow({
   position,
   count,
   busy,
+  checkable = true,
   checked,
   onCheck,
   selected,
@@ -105,16 +108,18 @@ export function DraftRow({
         if (from.closest('a, input, button') === null) onSelect();
       }}
     >
-      <input
-        type="checkbox"
-        className="myday-check"
-        checked={checked}
-        disabled={busy}
-        aria-label={`Select ${name}, ${draft.task === null ? on.label : `${draft.task.key} ${draft.task.title}`}`}
-        onChange={(event) => {
-          onCheck(event.target.checked, shifted(event));
-        }}
-      />
+      {checkable && (
+        <input
+          type="checkbox"
+          className="myday-check"
+          checked={checked}
+          disabled={busy}
+          aria-label={`Select ${name}, ${draft.task === null ? on.label : `${draft.task.key} ${draft.task.title}`}`}
+          onChange={(event) => {
+            onCheck(event.target.checked, shifted(event));
+          }}
+        />
+      )}
       <span
         className={on.ready ? 'myday-swatch' : 'myday-swatch myday-swatch-needs'}
         aria-hidden="true"

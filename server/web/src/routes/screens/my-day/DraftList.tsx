@@ -42,6 +42,8 @@ export interface DraftListProps {
   readonly onNavigate: (to: string) => void;
   /** Run one batch over `chosen`; resolves to the ids that stay selected. */
   readonly onBulk: (kind: BulkKind, chosen: readonly TimeDraft[]) => Promise<readonly string[]>;
+  /** Somebody else's day, read (LAI-959): no boxes to tick and nothing to run. */
+  readonly readOnly?: boolean;
 }
 
 /**
@@ -68,6 +70,7 @@ export function DraftList({
   onSelect,
   onNavigate,
   onBulk,
+  readOnly = false,
 }: DraftListProps) {
   const [checked, setChecked] = useState<ReadonlySet<string>>(NO_SELECTION);
   const [anchor, setAnchor] = useState<string | undefined>(undefined);
@@ -108,18 +111,20 @@ export function DraftList({
   return (
     <section className="myday-card myday-drafts myday-settle" aria-labelledby="myday-drafts-title">
       <header className="myday-card-head">
-        <input
-          ref={head}
-          type="checkbox"
-          className="myday-check"
-          checked={headState === 'all'}
-          disabled={busy}
-          aria-label="Select every block on this page"
-          onChange={() => {
-            setChecked(togglePage(live, pageIds));
-            setAnchor(undefined);
-          }}
-        />
+        {!readOnly && (
+          <input
+            ref={head}
+            type="checkbox"
+            className="myday-check"
+            checked={headState === 'all'}
+            disabled={busy}
+            aria-label="Select every block on this page"
+            onChange={() => {
+              setChecked(togglePage(live, pageIds));
+              setAnchor(undefined);
+            }}
+          />
+        )}
         <h2 className="myday-card-title" id="myday-drafts-title">
           To settle
         </h2>
@@ -144,7 +149,7 @@ export function DraftList({
             {dayNeedCard > 0 ? needCardLine(dayNeedCard) : 'all ready to confirm'}
           </span>
         )}
-        {live.size > 0 && (
+        {!readOnly && live.size > 0 && (
           <div className="myday-bulk" role="group" aria-label="Selected blocks">
             <span className="myday-bulk-count" data-bulk-count>
               <strong>{live.size} selected</strong> · {duration(minutesOf(drafts, live))}
@@ -210,7 +215,10 @@ export function DraftList({
       )}
 
       <div className="myday-scroll" role="region" aria-label={`Drafted blocks, ${paged.label}`}>
-        <ol className="myday-blocks" aria-label="Drafted blocks">
+        <ol
+          className={readOnly ? 'myday-blocks myday-blocks-read' : 'myday-blocks'}
+          aria-label="Drafted blocks"
+        >
           {paged.items.map((draft, i) => (
             <DraftRow
               key={draft.id}
@@ -218,6 +226,7 @@ export function DraftList({
               position={paged.page * PAGE_SIZE + i + 1}
               count={drafts.length}
               busy={busy}
+              checkable={!readOnly}
               checked={live.has(draft.id)}
               selected={draft.id === selected}
               onSelect={() => {

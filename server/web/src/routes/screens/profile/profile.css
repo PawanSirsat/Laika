@@ -1328,3 +1328,134 @@
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
+
+/* ------------------------------------------- Day and Hours (LAI-959) */
+
+.prof-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.prof-tab {
+  display: flex;
+  align-items: center;
+  height: 2.5rem;
+  padding: 0 0.75rem;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.prof-tab:hover {
+  color: var(--text-primary);
+}
+
+.prof-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-chip);
+}
+
+.prof-tab-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: var(--weight-bold);
+}
+
+.prof-hours-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.prof-hours-nav {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.prof-hours-step {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-pill);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.prof-hours-step:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.prof-hours-step:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.prof-hours-step:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.prof-hours-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+.prof-hours-table th,
+.prof-hours-table td {
+  text-align: left;
+  padding: 0.4375rem 0.5rem 0.4375rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.prof-hours-table thead th {
+  font-weight: var(--weight-bold);
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.prof-hours-table tbody th,
+.prof-hours-table tfoot th {
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.prof-hours-table td {
+  font-family: var(--font-mono);
+}
+
+.prof-hours-table tr[aria-current='date'] th {
+  color: var(--accent);
+}
+
+.prof-hours-table tfoot td,
+.prof-hours-table tfoot th {
+  border-bottom: 0;
+  color: var(--text-primary);
+  font-weight: var(--weight-bold);
+}
+
+.prof-hours-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  line-height: var(--leading-body);
+}
+
+.prof-held {
+  gap: 0.75rem;
+  overflow-x: auto;
+}
