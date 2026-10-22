@@ -16,6 +16,7 @@ import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import {
   closeBrowser,
+  everSeen,
   open,
   refuse,
   reply,
@@ -23,6 +24,7 @@ import {
   until,
   type ApiStub,
   type StubCall,
+  watchFor,
 } from './harness.ts';
 import { capacityPerson } from './capacity-org.ts';
 import { pick } from './dropdown.ts';
@@ -333,6 +335,127 @@ void describe('transfer ownership (D-104 item 2)', () => {
       await h.close();
     }
   });
+});
+
+/** Two pre-D-104 owner invites, as `GET /org` serves them to the owner (LAI-181). */
+const OWNER_INVITES = [
+  { id: 'oi1', email: 'old-owner@example.com', expires_at: Date.now() + 5.5 * 86_400_000 },
+  { id: 'oi2', email: null, expires_at: Date.now() + 3_600_000 },
+];
+
+void describe('pending owner invites from before D-104 (LAI-181)', () => {
+  void test('the owner sees each with its expiry, and Revoke asks first, then deletes it', async () => {
+    const h = await open('/organisation?tab=people', {
+      ...OWNER(),
+      '/api/v1/org': { ...ORG, owner_invites_pending: OWNER_INVITES },
+      '/api/v1/invites/oi1': (call: StubCall) =>
+        call.method === 'DELETE' ? reply(204, null) : refuse(405, 'method', 'no'),
+    });
+    try {
+      const card = h.page.locator('.org-owner-invites');
+      await card.waitFor({ timeout: 20_000 });
+      const first = card.locator('[data-owner-invite="oi1"]');
+      assert.match(await first.innerText(), /old-owner@example\.com/);
+      assert.match(await first.innerText(), /expires in 5 days/);
+      assert.match(
+        await card.locator('[data-owner-invite="oi2"]').innerText(),
+        /A link with no address[\s\S]*expires today/,
+      );
+
+      await first.getByRole('button', { name: 'Revoke' }).click();
+      const dialog = h.page.locator('[data-confirm-dialog]');
+      await dialog.waitFor();
+      assert.match(await dialog.innerText(), /old-owner@example\.com/);
+      assert.equal(
+        h.calls.filter((c) => c.method === 'DELETE').length,
+        0,
+        'revoked without asking',
+      );
+      await dialog.locator('[data-confirm-ok] button').click();
+      await until(() => h.calls.some((c) => c.method === 'DELETE'));
+      assert.deepEqual(
+        h.calls.filter((c) => c.method === 'DELETE').map((c) => c.path),
+        ['/api/v1/invites/oi1'],
+      );
+      await first.waitFor({ state: 'detached', timeout: 10_000 });
+      await dialog.waitFor({ state: 'detached', timeout: 10_000 });
+      assert.equal(await card.locator('[data-owner-invite]').count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a refused revoke says why inside the dialog, and the invite stays', async () => {
+    const h = await open('/organisation?tab=people', {
+      ...OWNER(),
+      '/api/v1/org': { ...ORG, owner_invites_pending: OWNER_INVITES },
+      '/api/v1/invites/oi1': refuse(409, 'conflict', 'That invite was already accepted.'),
+    });
+    try {
+      const card = h.page.locator('.org-owner-invites');
+      await card.waitFor({ timeout: 20_000 });
+      await card
+        .locator('[data-owner-invite="oi1"]')
+        .getByRole('button', { name: 'Revoke' })
+        .click();
+      const dialog = h.page.locator('[data-confirm-dialog]');
+      await dialog.locator('[data-confirm-ok] button').click();
+      await until(async () => /already accepted/.test(await dialog.innerText()));
+      assert.match(await dialog.innerText(), /That invite was already accepted\./);
+      assert.equal(await card.locator('[data-owner-invite]').count(), 2);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an admin, whose GET /org has no such field, is never shown the card', async () => {
+    const h = await open(
+      '/organisation?tab=people',
+      base('u3', 'admin', ['user.invite', 'user.deactivate']),
+      { before: (page) => watchFor(page, ['.org-owner-invites']) },
+    );
+    try {
+      await ready(h.page);
+      await until(() => h.calls.some((c) => c.path === '/api/v1/org'));
+      await h.page.waitForTimeout(400);
+      assert.equal(await everSeen(h.page, '.org-owner-invites'), false);
+    } finally {
+      await h.close();
+    }
+  });
+
+  for (const theme of ['light', 'dark']) {
+    for (const width of [1440, 390]) {
+      void test(`${theme} at ${String(width)}: the card stays inside the viewport`, async () => {
+        const h = await open('/organisation?tab=people', {
+          ...OWNER(),
+          '/api/v1/org': { ...ORG, owner_invites_pending: OWNER_INVITES },
+        });
+        try {
+          await h.page.setViewportSize({ width, height: 1000 });
+          const card = h.page.locator('.org-owner-invites');
+          await card.waitFor({ timeout: 20_000 });
+          await setTheme(h.page, theme);
+          await h.page.waitForTimeout(200);
+          const sideways = await h.page.evaluate(
+            () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          );
+          assert.equal(sideways, 0, `the page scrolls sideways by ${String(sideways)}px`);
+          const box = await card.boundingBox();
+          assert.ok(box !== null && box.x + box.width <= width + 1, 'the card runs off the page');
+          await card.scrollIntoViewIfNeeded();
+          if (SHOTS !== undefined) {
+            mkdirSync(SHOTS, { recursive: true });
+            await card.screenshot({
+              path: join(SHOTS, `owner-invites-${theme}-${String(width)}.png`),
+            });
+          }
+        } finally {
+          await h.close();
+        }
+      });
+    }
+  }
 });
 
 void describe('invites', () => {

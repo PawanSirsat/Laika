@@ -83,6 +83,20 @@ export interface Org {
    * owner, and normally empty for them — reported, never demoted silently.
    */
   readonly extra_owners?: readonly OrgOwnerRef[];
+  /**
+   * Owner invites from before D-104, unaccepted and unexpired (LAI-982's
+   * review response): accepting one is refused `use_transfer`, so the owner
+   * sees them here to revoke. **Absent** for anyone but the owner, as
+   * `extra_owners` is.
+   */
+  readonly owner_invites_pending?: readonly OrgOwnerInvite[];
+}
+
+/** One pending pre-D-104 owner invite. `email` is `null` for a link made without one. */
+export interface OrgOwnerInvite {
+  readonly id: string;
+  readonly email: string | null;
+  readonly expires_at: number;
 }
 
 export interface OrgOwnerRef {

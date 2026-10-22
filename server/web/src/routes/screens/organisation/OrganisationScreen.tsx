@@ -6,6 +6,7 @@ import type { PageTab } from '../../page-tabs.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { invitableRoles } from '../invite-roles.ts';
+import { revokeInvite } from '../../../api/invites.ts';
 import { getOrg, updateOrg, type Org } from '../../../api/org.ts';
 import { revokeUserToken, type TokenView } from '../../../api/tokens.ts';
 import { Switch } from '../../../components/Switch.tsx';
@@ -22,6 +23,7 @@ import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
 import { PeopleTab } from './PeopleTab.tsx';
 import { ExtraOwners } from './ExtraOwners.tsx';
+import { OwnerInvites } from './OwnerInvites.tsx';
 import { TransferOwnership } from './TransferOwnership.tsx';
 import { OrgNameFact } from './OrgNameFact.tsx';
 import type { OpenTasksChoice } from '../../../api/offboarding.ts';
@@ -481,6 +483,27 @@ export function OrganisationScreen({
               <ExtraOwners
                 owners={org?.extra_owners ?? []}
                 onMakeAdmin={(id) => change(id, { org_role: 'admin' })}
+              />
+            )}
+            {/* Served to the owner alone, so its presence is the gate (LAI-181). */}
+            {(org?.owner_invites_pending ?? []).length > 0 && (
+              <OwnerInvites
+                invites={org?.owner_invites_pending ?? []}
+                onRevoke={(id) =>
+                  revokeInvite(id).then(() => {
+                    setOrg((current) =>
+                      current?.owner_invites_pending === undefined
+                        ? current
+                        : {
+                            ...current,
+                            owner_invites_pending: current.owner_invites_pending.filter(
+                              (invite) => invite.id !== id,
+                            ),
+                          },
+                    );
+                    reload();
+                  })
+                }
               />
             )}
 
