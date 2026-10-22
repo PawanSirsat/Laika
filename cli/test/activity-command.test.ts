@@ -213,7 +213,10 @@ void describe('the organisation collects (D-102 amended, LAI-964)', () => {
     const h = await harness();
     assert.equal(await h.run('on'), 0);
     h.board.sharing = { ...h.board.sharing, org_enabled: false, enabled: false };
-    assert.equal((await sync({ home: h.home, env: h.io.env, nowMs: () => Date.now(), tz: TZ })).kind, 'off');
+    assert.equal(
+      (await sync({ home: h.home, env: h.io.env, nowMs: () => Date.now(), tz: TZ })).kind,
+      'off',
+    );
     h.out.length = 0;
     assert.equal(await h.run('status'), 0);
     const text = h.out.join('\n');
