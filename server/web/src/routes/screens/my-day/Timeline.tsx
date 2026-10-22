@@ -535,6 +535,11 @@ export function Timeline({
   const place = placeOf(view.settings.place ?? view.tz);
   const sun = place === undefined ? undefined : sunTimes(view.day, place.lat, place.lng, view.tz);
   const sky = sun === undefined ? [] : skyPhases(sun, from * 60, to * 60);
+  // Where each break pill sits on the axis row, so an hour label under it gives way.
+  const pills = line.scheduled.map((s) => {
+    const bandW = Math.max(1, x(s.end) - x(s.start));
+    return { px: x(s.start) + 3, pw: Math.max(18, bandW - 6) };
+  });
   const ticks: {
     minute: number;
     x: number;
@@ -550,7 +555,8 @@ export function Timeline({
     const glyph = sun === undefined ? undefined : glyphAt(sun, mark.minute);
     const width = label.length * 6.7 + (glyph === undefined ? 0 : 14);
     const nearNow = nowX !== undefined && px > nowX - 80 && px < nowX + 36;
-    const show = px - lastLabel >= 56 && px + 5 + width <= scale.total && !nearNow;
+    const underPill = pills.some((p) => px + 5 + width > p.px - 4 && px < p.px + p.pw);
+    const show = px - lastLabel >= 56 && px + 5 + width <= scale.total && !nearNow && !underPill;
     ticks.push({ minute: mark.minute, x: px, label, show, glyph });
     if (show) lastLabel = px;
   }
@@ -1056,6 +1062,84 @@ export function Timeline({
                   <span className="dayline-sky-body" />
                 </div>
               ))}
+              {/* The organisation's breaks (D-101, LAI-896): a band from the axis
+                  down through every lane, as the design draws it, and its pill
+                  on the axis row. Never pressed: a click goes to what is on it. */}
+              {line.scheduled.map((s) => {
+                // The window set against the day (LAI-894, D-105): the pill
+                // says what was worked in it, and its bar shows where.
+                const w = workedIn(line.blocks, s);
+                const worked = workedLabel(w);
+                const range = rangeOf(s);
+                const bandW = Math.max(1, x(s.end) - x(s.start));
+                const pillW = Math.max(18, bandW - 6);
+                // The design's own arithmetic at the 12px step: ~7px a
+                // character, the glyph and the padding first. The worked
+                // figure goes before the range; the glyph and the name stay
+                // whatever the room.
+                const room = pillW - 14 - 17 - s.label.length * 7;
+                const showWorked = room >= worked.length * 7 + 6;
+                const showRange = showWorked && room >= (worked.length + range.length) * 7 + 16;
+                const cards = [
+                  ...new Set(
+                    line.blocks
+                      .filter((b) => b.start < s.end && b.end > s.start)
+                      .map((b) => labelOf(b, drafts, entries).top)
+                      .filter((t) => t !== ''),
+                  ),
+                ];
+                const tip = `${s.label} ${range} · ${duration(w.rest)} off, ${duration(w.worked)} worked${cards.length > 0 ? ` · on ${cards.join(' · ')}` : ''}`;
+                return (
+                  <div
+                    key={`scheduled-${String(s.start)}`}
+                    className="dayline-scheduled"
+                    data-scheduled-break={s.start}
+                    style={{ left: x(s.start), width: bandW }}
+                    role="note"
+                    aria-label={`${s.label}, ${range} — the organisation’s break`}
+                    title={`${s.label}, ${range} — the organisation’s break`}
+                  >
+                    <span
+                      className="dayline-scheduled-pill"
+                      data-scheduled-pill
+                      data-worked={w.worked}
+                      style={{ width: pillW }}
+                      title={tip}
+                    >
+                      <BreakGlyph kind={breakKind(s.label)} />
+                      <span className="dayline-scheduled-name">{s.label}</span>
+                      {showRange && <span className="dayline-scheduled-range">{range}</span>}
+                      {showWorked && (
+                        <span
+                          className={
+                            w.worked > 0
+                              ? 'dayline-scheduled-worked dayline-scheduled-worked-on'
+                              : 'dayline-scheduled-worked'
+                          }
+                          data-scheduled-worked
+                        >
+                          {worked}
+                        </span>
+                      )}
+                      <span className="dayline-scheduled-bar" aria-hidden="true">
+                        {w.runs.map((r) => (
+                          <span
+                            key={r.start}
+                            className={
+                              r.worked
+                                ? 'dayline-scheduled-seg dayline-scheduled-seg-work'
+                                : 'dayline-scheduled-seg'
+                            }
+                            style={{
+                              width: `${String(((r.end - r.start) / Math.max(1, s.end - s.start)) * 100)}%`,
+                            }}
+                          />
+                        ))}
+                      </span>
+                    </span>
+                  </div>
+                );
+              })}
               {folds.map((fold) => (
                 <div
                   key={`fold-${String(fold.start)}`}
@@ -1205,84 +1289,6 @@ export function Timeline({
               )}
 
               <div className="dayline-row">
-                {/* The organisation's breaks (D-101): a shaded band behind
-                    everything, named and timed, and nothing more — never time,
-                    never pressed, never set against what was worked in it. */}
-                {line.scheduled.map((s) => {
-                  // The window set against the day (LAI-894, D-105): the pill
-                  // says what was worked in it, and its bar shows where.
-                  const w = workedIn(line.blocks, s);
-                  const worked = workedLabel(w);
-                  const range = rangeOf(s);
-                  const bandW = Math.max(1, x(s.end) - x(s.start));
-                  const pillW = Math.max(18, bandW - 6);
-                  // The design's own arithmetic at the 12px step: ~7px a
-                  // character, the glyph and the padding first. The worked
-                  // figure goes before the range; the glyph and the name stay
-                  // whatever the room.
-                  const room = pillW - 14 - 17 - s.label.length * 7;
-                  const showWorked = room >= worked.length * 7 + 6;
-                  const showRange = showWorked && room >= (worked.length + range.length) * 7 + 16;
-                  const cards = [
-                    ...new Set(
-                      line.blocks
-                        .filter((b) => b.start < s.end && b.end > s.start)
-                        .map((b) => labelOf(b, drafts, entries).top)
-                        .filter((t) => t !== ''),
-                    ),
-                  ];
-                  const tip = `${s.label} ${range} · ${duration(w.rest)} off, ${duration(w.worked)} worked${cards.length > 0 ? ` · on ${cards.join(' · ')}` : ''}`;
-                  return (
-                    <div
-                      key={`scheduled-${String(s.start)}`}
-                      className="dayline-scheduled"
-                      data-scheduled-break={s.start}
-                      style={{ left: x(s.start), width: bandW }}
-                      role="note"
-                      aria-label={`${s.label}, ${range} — the organisation’s break`}
-                      title={`${s.label}, ${range} — the organisation’s break`}
-                    >
-                      <span
-                        className="dayline-scheduled-pill"
-                        data-scheduled-pill
-                        data-worked={w.worked}
-                        style={{ width: pillW }}
-                        title={tip}
-                      >
-                        <BreakGlyph kind={breakKind(s.label)} />
-                        <span className="dayline-scheduled-name">{s.label}</span>
-                        {showRange && <span className="dayline-scheduled-range">{range}</span>}
-                        {showWorked && (
-                          <span
-                            className={
-                              w.worked > 0
-                                ? 'dayline-scheduled-worked dayline-scheduled-worked-on'
-                                : 'dayline-scheduled-worked'
-                            }
-                            data-scheduled-worked
-                          >
-                            {worked}
-                          </span>
-                        )}
-                        <span className="dayline-scheduled-bar" aria-hidden="true">
-                          {w.runs.map((r) => (
-                            <span
-                              key={r.start}
-                              className={
-                                r.worked
-                                  ? 'dayline-scheduled-seg dayline-scheduled-seg-work'
-                                  : 'dayline-scheduled-seg'
-                              }
-                              style={{
-                                width: `${String(((r.end - r.start) / Math.max(1, s.end - s.start)) * 100)}%`,
-                              }}
-                            />
-                          ))}
-                        </span>
-                      </span>
-                    </div>
-                  );
-                })}
                 {view.state === 'no_signal' && nothing && (
                   <div className="dayline-nosignal" data-no-signal>
                     <p className="dayline-nosignal-text">
