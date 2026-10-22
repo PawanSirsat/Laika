@@ -533,7 +533,7 @@ export function Timeline({
                 ? 'Work happened, nothing names a card'
                 : block.kind === 'confirmed'
                   ? 'Others can see it'
-                  : 'Only you see it',
+                  : 'Not confirmed — owners and admins can read it',
           rows,
           above: false,
         };

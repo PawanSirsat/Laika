@@ -16,7 +16,8 @@ export interface EntryListProps {
 
 /**
  * *Confirmed* (the owner's design, LAI-831; LAI-810): the day's confirmed
- * time — **the only time anyone else can see** — ten to a page, with no
+ * time — **the time the organisation sees**; drafts only owners and admins
+ * read (D-102, LAI-968) — ten to a page, with no
  * scroll of its own so the wheel always moves the page (LAI-311), and *Add
  * time* at its foot. Clicking a row puts it in the inspector.
  */
@@ -44,7 +45,7 @@ export function EntryList({ entries, selected, onSelect, onNavigate, children }:
           {entries.length} {entries.length === 1 ? 'entry' : 'entries'} · {duration(total)}
         </span>
         <span className="myday-card-head-gap" />
-        <span className="myday-card-caption">the only time anyone else can see</span>
+        <span className="myday-card-caption">the time your organisation sees</span>
       </header>
 
       {entries.length === 0 ? (

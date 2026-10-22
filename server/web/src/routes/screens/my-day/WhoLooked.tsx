@@ -7,7 +7,7 @@ import {
 } from '../../../api/people-analytics.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { clock } from './format.ts';
-import { dayIn } from './my-day-derive.ts';
+import { dayIn, DRAFT_READERS } from './my-day-derive.ts';
 import { dayLong } from './week-derive.ts';
 
 const PAGE = 10;
@@ -82,6 +82,7 @@ export function WhoLooked({ tz, today }: WhoLookedProps) {
 
   return (
     <section
+      id="myday-looked"
       className="myday-card myday-looked"
       aria-labelledby="myday-looked-title"
       data-who-looked
@@ -92,8 +93,7 @@ export function WhoLooked({ tz, today }: WhoLookedProps) {
         </h2>
       </header>
       <p className="myday-quiet myday-pad">
-        Owners — and anyone the owner lets — can read your day, drafts included. Every look is
-        listed here.
+        Your day, drafts included, can be read by {DRAFT_READERS}. Every look is listed here.
       </p>
       {load.kind === 'loading' && (
         <p className="myday-pad">
