@@ -6,7 +6,8 @@ assignee: strelka
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T07:06:29Z
 ---
 
 ## Goal
@@ -185,3 +186,10 @@ read when it is needed and is never written into settings.json.
     (`cli/src/config.ts:81-86`, `cli/src/init.ts:100`). This task must not
     add to that, and must not remove it either. If it matters, it gets its
     own task.
+
+## Deviation: claimed before PR #32 merged
+
+The owner (Pawan) told Strelka to start now, in parallel, before Belka's PR
+#32 (`chief-ops-tasks-1022`, which files this task) merges. So the claim is
+made on `LAI-867-agent-minutes-every-laptop`, a branch based on #32 rather than
+on `master`. This PR must merge after #32.
