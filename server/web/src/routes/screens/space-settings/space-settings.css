@@ -571,7 +571,8 @@
   gap: var(--space-2);
 }
 
-.ss-danger-title {
+/* Under `.ss-card-head h2`, which would otherwise win and paint it ink. */
+.ss-card-head .ss-danger-title {
   color: var(--overdue);
 }
 
