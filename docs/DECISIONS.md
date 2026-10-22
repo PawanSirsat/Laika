@@ -5553,3 +5553,31 @@ second half (three screens and one SPEC row) and had none:
 **Why not take `LAI-890` – `LAI-899`:** the board's rule gives it to the other
 laptop, and this session has already collided twice today by reading a range
 as free when it was not. A block nobody has touched is the only safe answer.
+
+## D-101 — The owner sets the organisation's breaks; they are drawn on My day and are never time (LAI-955, LAI-956)
+
+**Date:** 2026-10-22 · **By:** CHIEF (Belka), on the owner's instruction
+
+The owner, 2026-10-22: *"I want to set the timing for the lunch break or other
+breaks so that it reflects in the timeline … a small feature the owner can
+do."*
+
+1. **An organisation-wide break schedule.** A list of windows —
+   `{ label, start: "HH:MM", end: "HH:MM", days: [1..7] }` — kept on
+   `org_time_settings` (§4.45). At most eight; a label of 1–40 characters;
+   start before end; no window crosses midnight; windows do not overlap.
+2. **Wall-clock, no zone.** 13:00 means 13:00 on each person's own day, in
+   that day's zone (D-088 item 12), so one schedule serves people in every
+   zone and on clock-change days.
+3. **Who sets it: whoever may set the organisation's Time** — `org.time.set`,
+   owners and admins, web session only. No new action and no new §3.1 row: it
+   is the same switchboard, and an agent must not set it for the same reason
+   it must not turn drafting on.
+4. **Display only. A scheduled break is never time** (D-088 items 1, 2, 4).
+   It creates, clips and removes no draft and no entry; drafting does not read
+   it; and **nothing anywhere compares a person's actual day against it** — no
+   "long lunch", no "worked through lunch". Work done in the window stays
+   visible and countable like any other.
+5. **The person's own breaks are unchanged.** `time_breaks` (§4.55) stays
+   per person, per day. A per-person opt-out of the schedule is not in this
+   decision.
