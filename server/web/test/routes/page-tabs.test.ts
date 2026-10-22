@@ -11,6 +11,7 @@ import {
   ORGANISATION_TABS,
   currentTab,
   inboxCount,
+  refusedTab,
   tabHref,
   visibleTabs,
 } from '../../src/routes/page-tabs.ts';
@@ -34,10 +35,10 @@ void describe('the tabs are the owner’s grouping', () => {
     );
   });
 
-  void test('Organisation is Overview, People, Integrations, Security', () => {
+  void test('Organisation is Overview, People, Integrations, Security, Activity', () => {
     assert.deepEqual(
       ORGANISATION_TABS.map((t) => t.label),
-      ['Overview', 'People', 'Integrations', 'Security'],
+      ['Overview', 'People', 'Integrations', 'Security', 'Activity'],
     );
   });
 
@@ -72,6 +73,23 @@ void describe('a gated tab is absent, not disabled', () => {
     );
   });
 
+  void test('Activity — the organisation history — is an owner’s or an admin’s (LAI-951)', () => {
+    // The gate `GET /activity/history` uses: §3.1 `audit_log.export`.
+    assert.equal(ORGANISATION_TABS.find((t) => t.id === 'activity')?.requires, 'audit_log.export');
+    for (const role of ['owner', 'admin']) {
+      assert.ok(
+        visibleTabs(ORGANISATION_TABS, permissionHolder(role)).some((t) => t.id === 'activity'),
+        role,
+      );
+    }
+    for (const role of ['member', 'viewer']) {
+      assert.ok(
+        !visibleTabs(ORGANISATION_TABS, permissionHolder(role)).some((t) => t.id === 'activity'),
+        role,
+      );
+    }
+  });
+
   void test('no predicate hides every gated tab rather than revealing it', () => {
     assert.deepEqual(
       visibleTabs(INBOX_TABS).map((t) => t.id),
@@ -100,6 +118,29 @@ void describe('which tab an address opens', () => {
 
   void test('the first, when it names one this reader is not offered', () => {
     assert.equal(currentTab(INBOX_TABS, new URLSearchParams('tab=unlisted'), member), 'review');
+  });
+});
+
+void describe('an address naming a tab the reader may not open', () => {
+  void test('Activity says so, rather than landing somewhere else (LAI-951)', () => {
+    const params = new URLSearchParams('tab=activity');
+    assert.equal(refusedTab(ORGANISATION_TABS, params, member)?.id, 'activity');
+    // No predicate holds nothing, so it is refused too — never revealed.
+    assert.equal(refusedTab(ORGANISATION_TABS, params)?.id, 'activity');
+    assert.equal(refusedTab(ORGANISATION_TABS, params, admin), undefined);
+  });
+
+  void test('Security and Unlisted work keep landing on the first tab, as they did', () => {
+    assert.equal(
+      refusedTab(ORGANISATION_TABS, new URLSearchParams('tab=security'), member),
+      undefined,
+    );
+    assert.equal(refusedTab(INBOX_TABS, new URLSearchParams('tab=unlisted'), member), undefined);
+  });
+
+  void test('nothing is refused for a tab that does not exist, or none named', () => {
+    assert.equal(refusedTab(ORGANISATION_TABS, new URLSearchParams('tab=nope'), member), undefined);
+    assert.equal(refusedTab(ORGANISATION_TABS, new URLSearchParams(''), member), undefined);
   });
 });
 
