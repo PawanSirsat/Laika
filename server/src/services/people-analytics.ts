@@ -31,8 +31,9 @@ import { dayOf, type MyDayView } from './my-day.ts';
  *
  * ## Every read is logged, in the read's transaction
  *
- * `readLogged` (`analytics-views.ts`). Consent governs collection, not
- * reading (D-102, amended), so nothing here reads a sharing switch.
+ * `readLogged` (`analytics-views.ts`). Collection is the organisation's
+ * Developer insights alone and reading needs no further check (D-102
+ * amended), so nothing here reads a personal sharing switch.
  *
  * ## Read-only
  *

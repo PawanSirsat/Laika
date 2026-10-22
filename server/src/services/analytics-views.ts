@@ -69,8 +69,9 @@ export function readLogged<T>(
  * `GET /me/analytics-views` — who looked at the caller's analytics, newest
  * first, one row over the limit so `buildPage` can tell there is more.
  *
- * The consent row's action, `local_activity.read_own` (§3.1): the person
- * seeing what is held about them, and who has seen it, on a web session.
+ * *Read and delete own local activity*'s action, `local_activity.read_own`
+ * (§3.1): the person seeing what is held about them, and who has seen it, on
+ * a web session.
  */
 export function listAnalyticsViews(
   db: Db,

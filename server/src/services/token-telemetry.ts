@@ -70,10 +70,10 @@ import { assertMaySendLocalActivity, TELEMETRY_COLLECTOR } from './local-activit
  * cumulative`, which Connect prints) keeps its largest value and adds only the
  * growth, so a retried or re-exported point adds nothing. One first seen more
  * than {@link FIRST_SIGHT_MS} after it began is a baseline: its first value
- * may hold tokens from before sharing was on, so only its growth counts. A **delta** series —
- * Claude Code's default — keeps where its last interval ended, and a point that
- * starts before that is a repeat. Either way a point arriving out of order can
- * only be dropped, never counted twice.
+ * may hold tokens from before Developer insights was on, so only its growth
+ * counts. A **delta** series — Claude Code's default — keeps where its last
+ * interval ended, and a point that starts before that is a repeat. Either way
+ * a point arriving out of order can only be dropped, never counted twice.
  *
  * ## Agent minutes (D-088 item 8, LAI-787)
  *
@@ -107,8 +107,9 @@ const POINTS_MAX = 5000;
 /**
  * A cumulative series first seen this long after it began is a **baseline**,
  * not news: its first value holds everything since its process started —
- * possibly before the developer turned sharing on, or while Laika could not be
- * reached — and none of that can be told apart. Five export intervals.
+ * possibly before the organisation turned Developer insights on, or while
+ * Laika could not be reached — and none of that can be told apart. Five
+ * export intervals.
  */
 export const FIRST_SIGHT_MS = 5 * 60_000;
 
