@@ -2,11 +2,12 @@
 id: LAI-952
 title: 'There is no single view of everyone''s work across every space'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-887]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T12:06:18Z
 ---
 
 ## Goal
