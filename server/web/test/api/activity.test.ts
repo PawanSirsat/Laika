@@ -47,6 +47,23 @@ void describe('describeEvent', () => {
     assert.equal(describeEvent(event({ type: 'task.teleported' })), 'task.teleported');
   });
 
+  void test("the owner's who-can-do-what change reads as that, not as a member's role (LAI-960)", () => {
+    // LAI-958 reuses `member.role_changed` with `scope: "org_permissions"`.
+    const grants = event({
+      type: 'member.role_changed',
+      project_id: null,
+      task_id: null,
+      payload: { scope: 'org_permissions', from: {}, to: {} },
+    });
+    assert.equal(describeEvent(grants), 'changed who can do what');
+    assert.equal(
+      describeEvent(
+        event({ type: 'member.role_changed', payload: { from: 'member', to: 'admin' } }),
+      ),
+      'changed a member’s role',
+    );
+  });
+
   void test('never returns an empty string', () => {
     for (const type of ['task.created', 'nonsense', '']) {
       assert.equal(typeof describeEvent(event({ type })), 'string');

@@ -8,7 +8,7 @@ import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { canManageOrg, createInvite, revokeInvite, ORG_ROLES } from '../../../api/invites.ts';
-import { orgRoleLabel } from '../invite-roles.ts';
+import { invitableRoles, orgRoleLabel } from '../invite-roles.ts';
 import { getOrg, updateOrg, type Org } from '../../../api/org.ts';
 import { revokeUserToken, type TokenView } from '../../../api/tokens.ts';
 import { Switch } from '../../../components/Switch.tsx';
@@ -58,23 +58,6 @@ function createdLabel(ms: number): string {
 }
 
 const DAY = 86_400_000;
-
-/**
- * The roles this actor may **grant**, from §3.1's *"(not to Owner)"* caveat.
- *
- * An Admin may set any role except Owner — `can()` reads `targetOrgRole` for
- * exactly this, and without the caveat an Admin promotes themselves and the
- * Owner/Admin distinction is decorative. So Owner is **absent** from an Admin's
- * dropdown rather than present and answering `403`.
- *
- * **This is a mirror of a rule the server states, not a rule invented here.**
- * The last-owner invariant is the other kind — it depends on how many active
- * Owners exist, which this screen cannot know — and that one is left to the
- * server and shown verbatim when it fires.
- */
-function grantableRoles(actorRole: string): readonly OrgRole[] {
-  return actorRole === 'owner' ? ORG_ROLES : ORG_ROLES.filter((r) => r !== 'owner');
-}
 
 /** `in 6 days`, `today`, or `expired` — the invite's own clock. */
 function expiryLabel(expiresAt: number, now: number): string {
@@ -133,6 +116,12 @@ export function OrganisationScreen({
   onNavigate,
 }: OrganisationScreenProps) {
   const canManage = canManageOrg(me.org_role);
+  /**
+   * Only the owner changes an org role (D-102 rule 5, LAI-958: `user.set_role`
+   * is owner-locked). An admin keeps deactivating and inviting, and sees each
+   * role as text. A mirror of the server's rule, not one invented here.
+   */
+  const canChangeRoles = me.org_role === 'owner';
   const { state, reload } = useOrganisation(canManage);
   const projects = useProjects();
   /** *Invite people* opens People with the address field focused. */
@@ -310,7 +299,6 @@ export function OrganisationScreen({
 
   const now = Date.now();
   const active = state.people.filter((p) => p.is_active).length;
-  const grantable = grantableRoles(me.org_role);
 
   const people = `${String(state.people.length)}${state.truncated ? '+' : ''} ${
     state.people.length === 1 && !state.truncated ? 'person' : 'people'
@@ -501,28 +489,32 @@ export function OrganisationScreen({
                            and a greyed control still says "this exists and is yours",
                            which is the thing that is not true. */
                         <span className="org-person-controls">
-                          <label className="visually-hidden" htmlFor={`role-${person.id}`}>
-                            Org role for {person.name}
-                          </label>
-                          {/* Their current role is always an option even when this
-                              actor could not grant it — an Admin looking at an Owner
-                              must see what that person *is*, and a control whose
-                              value is not among its options shows nothing. */}
-                          <Dropdown
-                            id={`role-${person.id}`}
-                            variant="bare"
-                            className="org-role-select"
-                            noun="roles"
-                            value={person.org_role}
-                            disabled={changing === person.id}
-                            onChange={(value) => {
-                              change(person.id, { org_role: value });
-                            }}
-                            options={(grantable.includes(person.org_role as OrgRole)
-                              ? grantable
-                              : [person.org_role as OrgRole, ...grantable]
-                            ).map((r) => ({ value: r, label: orgRoleLabel(r) }))}
-                          />
+                          {canChangeRoles ? (
+                            <>
+                              <label className="visually-hidden" htmlFor={`role-${person.id}`}>
+                                Org role for {person.name}
+                              </label>
+                              <Dropdown
+                                id={`role-${person.id}`}
+                                variant="bare"
+                                className="org-role-select"
+                                noun="roles"
+                                value={person.org_role}
+                                disabled={changing === person.id}
+                                onChange={(value) => {
+                                  change(person.id, { org_role: value });
+                                }}
+                                options={ORG_ROLES.map((r) => ({
+                                  value: r,
+                                  label: orgRoleLabel(r),
+                                }))}
+                              />
+                            </>
+                          ) : (
+                            <span className="org-person-role">
+                              {orgRoleLabel(person.org_role as OrgRole)}
+                            </span>
+                          )}
 
                           {/* **Two verbs, and the copy says which** (D-048).
                               `user.deactivated` and `user.reactivated` answer different
@@ -568,9 +560,9 @@ export function OrganisationScreen({
               )}
 
               <p className="org-note">
-                {canManage
+                {canChangeRoles
                   ? 'Your own row has no controls — changing your own role or locking yourself out is not something this screen offers. Project roles are managed on each project’s members screen.'
-                  : 'Roles are shown here and changed by an admin. Project roles are managed on each project’s members screen.'}
+                  : 'Roles are shown here and changed by the owner. Project roles are managed on each project’s members screen.'}
               </p>
             </section>
 
@@ -642,7 +634,7 @@ export function OrganisationScreen({
                       onChange={(value) => {
                         setRole(value);
                       }}
-                      options={ORG_ROLES.filter((r) => r !== 'owner').map((r) => ({
+                      options={invitableRoles(me.org_role).map((r) => ({
                         value: r,
                         label: orgRoleLabel(r),
                       }))}
@@ -720,7 +712,7 @@ export function OrganisationScreen({
 
         {tab === 'roles' && (
           <RolesPermissionsSection
-            canManage={canManage}
+            canChangeRoles={canChangeRoles}
             projects={projects.projects}
             onNavigate={onNavigate}
           />

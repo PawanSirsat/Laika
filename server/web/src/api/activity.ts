@@ -196,7 +196,20 @@ const LABELS: Readonly<Record<string, string>> = {
  */
 export const ACTIVITY_LABELS = LABELS;
 
+/**
+ * The owner changing who can do what (LAI-958) writes `member.role_changed`
+ * with `scope: "org_permissions"` rather than a new verb, so the row is told
+ * apart by its payload. Without this it would read as *changed a member's
+ * role* when no member's role changed.
+ */
+export function isGrantsChange(event: Pick<ActivityEvent, 'type' | 'payload'>): boolean {
+  if (event.type !== 'member.role_changed') return false;
+  const payload = event.payload as { scope?: unknown } | null;
+  return payload?.scope === 'org_permissions';
+}
+
 export function describeEvent(event: ActivityEvent): string {
+  if (isGrantsChange(event)) return 'changed who can do what';
   /*
    * The fallback stays. A type added on the server before a line is added here
    * still renders — as itself, which is legible and obviously incomplete — and

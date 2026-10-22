@@ -63,3 +63,52 @@ export interface Permissions {
 export function getPermissions(signal?: AbortSignal): Promise<Permissions> {
   return request<Permissions>('/permissions', signal === undefined ? {} : { signal });
 }
+
+/**
+ * Who can do what — what the owner has granted each org role (SPEC §6.4,
+ * D-102 rule 6, LAI-958; the grid is LAI-960).
+ *
+ * Mirrors `server/src/services/org-permissions.ts`; the three shapes are
+ * paired in `test/api/view-type-drift.test.ts`. Roles and capabilities are
+ * typed open, as above: the grid draws whatever the response names.
+ */
+
+/** One grantable capability, as the grid lists it. */
+export interface Capability {
+  readonly id: string;
+  readonly label: string;
+  /** The §3.1 actions it carries. Empty for one that is a project role. */
+  readonly actions: readonly string[];
+}
+
+/** An action no grant reaches: the owner's alone. */
+export interface OwnerLocked {
+  readonly action: string;
+  /** Its §3.1 row, or `null` for an action no row names yet. */
+  readonly label: string | null;
+}
+
+/** Role → capability → on. */
+export type Grants = Readonly<Record<string, Readonly<Record<string, boolean>>>>;
+
+/** The wire shape of `GET` and `PUT /api/v1/org/permissions`. */
+export interface OrgPermissions {
+  /** The roles a grant can be given to. The owner is not one: they hold everything. */
+  readonly roles: readonly string[];
+  readonly capabilities: readonly Capability[];
+  /** Every role and every capability, always — `PUT` takes it back whole. */
+  readonly grants: Grants;
+  readonly owner_locked: readonly OwnerLocked[];
+  /** The last change, or `null` while every cell is still its default. */
+  readonly updated_at: number | null;
+  readonly updated_by: string | null;
+}
+
+export function getOrgPermissions(signal?: AbortSignal): Promise<OrgPermissions> {
+  return request<OrgPermissions>('/org/permissions', signal === undefined ? {} : { signal });
+}
+
+/** Replace the whole matrix (the owner, signed in). Answers the matrix as stored. */
+export function setOrgPermissions(grants: Grants): Promise<OrgPermissions> {
+  return request<OrgPermissions>('/org/permissions', { method: 'PUT', body: { grants } });
+}

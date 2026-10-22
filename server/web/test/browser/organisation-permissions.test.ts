@@ -109,6 +109,15 @@ const stub = (org_role: string, catalogue: unknown = CATALOGUE): ApiStub => ({
     updated_at: 2,
   },
   '/api/v1/permissions': catalogue,
+  // LAI-960's grid shares the tab; this file is about the tables below it.
+  '/api/v1/org/permissions': {
+    roles: ['admin', 'member', 'viewer'],
+    capabilities: [{ id: 'fly', label: 'Fly kites', actions: ['kite.fly'] }],
+    grants: { admin: { fly: true }, member: { fly: false }, viewer: { fly: false } },
+    owner_locked: [],
+    updated_at: null,
+    updated_by: null,
+  },
 });
 
 const ready = async (h: Awaited<ReturnType<typeof open>>) => {

@@ -12,8 +12,12 @@ import {
   actionName,
   cellFor,
   heldNames,
+  lockedRoles,
+  mayEditGrants,
   projectLabel,
   rowsFor,
+  sameGrants,
+  withGrant,
 } from '../../../../src/routes/screens/organisation/permissions-view.ts';
 
 const row = (extra: Partial<PermissionRow> & Pick<PermissionRow, 'action'>): PermissionRow => ({
@@ -105,5 +109,34 @@ void describe('a cell says what the server said', () => {
   void test('an answer this client does not know is shown as sent', () => {
     const odd = row({ action: 'kite.x', roles: { guest: 'on_tuesdays' } });
     assert.deepEqual(cellFor(odd, 'guest'), { kind: 'on_tuesdays', text: 'on_tuesdays' });
+  });
+});
+
+void describe("the owner's grid (LAI-960)", () => {
+  const grants = {
+    steward: { 'kite.fly': true, 'kite.mend': false },
+    guest: { 'kite.fly': false, 'kite.mend': false },
+  };
+
+  void test("the locked columns are the roles no grant reaches, in the server's order", () => {
+    assert.deepEqual(
+      lockedRoles(['captain', 'steward', 'guest', 'stowaway'], ['steward', 'guest']),
+      ['captain', 'stowaway'],
+    );
+  });
+
+  void test('flipping one cell changes that cell and copies the rest', () => {
+    const next = withGrant(grants, 'guest', 'kite.mend', true);
+    assert.equal(next.guest?.['kite.mend'], true);
+    assert.equal(next.steward?.['kite.fly'], true);
+    // The input is left as it was: the saved matrix is what Discard returns to.
+    assert.equal(grants.guest['kite.mend'], false);
+    assert.equal(sameGrants(grants, next), false);
+    assert.equal(sameGrants(grants, withGrant(next, 'guest', 'kite.mend', false)), true);
+  });
+
+  void test('only a reader the server lets manage permissions may edit', () => {
+    assert.equal(mayEditGrants(['org.read', 'org.permissions.manage']), true);
+    assert.equal(mayEditGrants(['org.read', 'user.invite']), false);
   });
 });
