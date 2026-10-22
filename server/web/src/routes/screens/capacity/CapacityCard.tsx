@@ -1,5 +1,5 @@
 import { agentClientName, asAgentClient } from '../../../api/agent-clients.ts';
-import type { CapacityEntry, CapacitySpace } from '../../../api/presence.ts';
+import type { ActivitySplit, CapacityEntry, CapacitySpace } from '../../../api/presence.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { PersonLink } from '../../../components/PersonLink.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
@@ -44,6 +44,11 @@ export const HOVER = {
   in_review: 'Their work in review. It waits on a reviewer, not on them, so it is not their load.',
   due_soon: 'Open tasks of theirs due within the next 7 days.',
   running: 'Agents with a live session on their token right now.',
+  by_self: 'Board actions they made themselves in the browser, signed in.',
+  by_agents:
+    'Board actions made with one of their personal access tokens: anything Claude Code, Omnigent, the CLI or another tool did as them over MCP or the API.',
+  bookkeeping:
+    'Sprint moves and card reorders, by them or their agents. Tidying, not work: counted in neither figure before it.',
   never: 'No sign-in, board action or agent signal has ever been recorded for them.',
   presence_off: 'Presence is off for this organisation, so nobody’s status or last seen is kept.',
 } as const;
@@ -66,15 +71,16 @@ export interface CapacityCardProps {
 
 /**
  * One person (LAI-767; compacted by LAI-991): who they are and whether they
- * are here, what is on their plate and how heavy it is, their agents and
- * their spaces.
+ * are here, what is on their plate and how heavy it is, their agents, their
+ * fortnight on the board as three figures (owners and admins), and their
+ * spaces.
  *
  * **No task is read or listed** (LAI-992, the owner). LAI-767 drew *Show
  * tasks* and *Claude Code · working on LAI-9*, each a `GET /tasks/:id`; the
  * workload counts already say how many are in progress, and the owner did
- * not want the reads or the footer. **Nor the fortnight's activity**: the
- * sparkline and *by hand · by agents · bookkeeping* LAI-767 and LAI-818 drew
- * for owners and admins are gone from here (LAI-992); the profile keeps them.
+ * not want the reads or the footer. **Nor the sparkline** (LAI-992): the
+ * fortnight is three figures, *by hand · by agents · bookkeeping* (LAI-818,
+ * back by LAI-996), and the bar chart is the profile's.
  *
  * **Every card draws every block, in the same order, whoever the person is.**
  * A block with nothing to say draws a `0`, *No agents running* or *No spaces*
@@ -253,6 +259,10 @@ export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
         )}
       </div>
 
+      {person.activity_14d_split !== undefined && (
+        <ActivityFigures split={person.activity_14d_split} />
+      )}
+
       <div className="cap-block cap-spaces-block">
         <span className="cap-label">
           Spaces
@@ -301,5 +311,38 @@ export function SpaceChip({
       <span className="cap-space-n">{count(space.committed)}</span>
       <span className="visually-hidden"> committed, {aside}</span>
     </li>
+  );
+}
+
+/**
+ * The fortnight's board actions by who did them (LAI-818), owners and admins
+ * only — the server sends the split to nobody else: by hand, by their
+ * agents, and bookkeeping — sprint moves and reorders — **shown apart and in
+ * neither of the other two**. Three figures of one shape, each with its rule
+ * on hover; the total is their sum. No bar chart (LAI-992, LAI-996).
+ */
+function ActivityFigures({ split }: { readonly split: ActivitySplit }) {
+  const total = split.by_self + split.by_agents + split.bookkeeping;
+  return (
+    <div className="cap-block cap-activity-block">
+      <span className="cap-label">
+        Activity
+        <span className="cap-label-note">14 days · {count(total)}</span>
+      </span>
+      <ul className="cap-figs">
+        {(
+          [
+            ['by hand', split.by_self, HOVER.by_self],
+            ['by agents', split.by_agents, HOVER.by_agents],
+            ['bookkeeping', split.bookkeeping, HOVER.bookkeeping],
+          ] as const
+        ).map(([label, n, title]) => (
+          <li key={label} className={n === 0 ? 'cap-fig cap-fig-zero' : 'cap-fig'} title={title}>
+            <span className="cap-count-n">{count(n)}</span>
+            <span className="cap-fig-label">{label}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

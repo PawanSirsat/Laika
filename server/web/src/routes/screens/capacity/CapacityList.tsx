@@ -34,8 +34,11 @@ export interface CapacityListProps {
  * the table is also the team-load chart: the longest bar is the heaviest
  * person, and an imbalance is one glance down the Workload column.
  *
+ * The activity column exists only when the server sent a split — owners and
+ * admins — so a member's table has no empty column (LAI-996).
  */
 export function CapacityList({ people, now, theme, space, scale }: CapacityListProps) {
+  const withActivity = people.some((p) => p.activity_14d_split !== undefined);
   return (
     <div className="cap-list-wrap">
       <table className="cap-list">
@@ -56,6 +59,15 @@ export function CapacityList({ people, now, theme, space, scale }: CapacityListP
             <th scope="col" className="cap-list-num" title={HOVER.running}>
               Agents
             </th>
+            {withActivity && (
+              <th scope="col" className="cap-list-act">
+                <span title={HOVER.by_self}>Hand</span>
+                {' · '}
+                <span title={HOVER.by_agents}>Agents</span>
+                {' · '}
+                <span title={HOVER.bookkeeping}>Bookkeeping</span>
+              </th>
+            )}
             <th scope="col">Spaces</th>
           </tr>
         </thead>
@@ -70,6 +82,7 @@ export function CapacityList({ people, now, theme, space, scale }: CapacityListP
             const running = runningAgents(person).filter(
               (a) => asAgentClient(a.client) !== null,
             ).length;
+            const split = person.activity_14d_split;
             const statusTitle =
               status.title ??
               (person.status === null
@@ -182,6 +195,34 @@ export function CapacityList({ people, now, theme, space, scale }: CapacityListP
                     {count(running)}
                   </span>
                 </td>
+                {withActivity && (
+                  <td className="cap-list-act">
+                    {split === undefined ? (
+                      <span className="cap-quiet">—</span>
+                    ) : (
+                      <span className="cap-list-split">
+                        <span
+                          className={split.by_self === 0 ? 'cap-list-zero' : undefined}
+                          title={`${count(split.by_self)} by hand. ${HOVER.by_self}`}
+                        >
+                          {count(split.by_self)}
+                        </span>
+                        <span
+                          className={split.by_agents === 0 ? 'cap-list-zero' : undefined}
+                          title={`${count(split.by_agents)} by agents. ${HOVER.by_agents}`}
+                        >
+                          {count(split.by_agents)}
+                        </span>
+                        <span
+                          className={split.bookkeeping === 0 ? 'cap-list-zero' : undefined}
+                          title={`${count(split.bookkeeping)} bookkeeping. ${HOVER.bookkeeping}`}
+                        >
+                          {count(split.bookkeeping)}
+                        </span>
+                      </span>
+                    )}
+                  </td>
+                )}
                 <td className="cap-list-spaces">
                   <span className="cap-list-spaces-in">
                     <span className="cap-list-spaces-n">{count(person.spaces.length)}</span>
