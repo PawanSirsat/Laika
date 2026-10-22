@@ -2,11 +2,12 @@
 id: LAI-969
 title: 'The owner-visibility integration cannot take LAI-958: two branches each made migration 0048, and three UNPAIRED entries go stale'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-955, LAI-957, LAI-958, LAI-960]
 discovered-from:
-status: backlog
+started: 2026-10-22T14:45:54Z
+status: in-progress
 ---
 
 ## Goal
