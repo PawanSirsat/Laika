@@ -2,11 +2,12 @@
 id: LAI-819
 title: 'Board BLK counts every assigned task as blocked; Calendar shows no tasks; sprint LEFT, lock count, progress and List "blocked by" mislead'
 area: web
-assignee: unclaimed
+assignee: belka
 priority: p2
 depends-on: []
 discovered-from: LAI-796
-status: backlog
+started: 2026-10-22T09:25:20Z
+status: in-progress
 ---
 
 ## Goal
