@@ -14,8 +14,9 @@ import { endEverySession } from './users.ts';
  * LAI-983).
  *
  * Laika sends no email, so before this a person who forgot their password was
- * locked out for good. Now whoever holds *Manage people* issues a link — shown
- * once, single use, at most 24 hours — and hands it over themselves.
+ * locked out for good. Now whoever holds *Deactivate people and reset access*
+ * (LAI-985) issues a link — shown once, single use, at most 24 hours — and
+ * hands it over themselves.
  *
  * ## What is reused, and what is not
  *

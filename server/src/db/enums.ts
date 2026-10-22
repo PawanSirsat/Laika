@@ -26,7 +26,12 @@ export const CAPABILITIES = [
   'see_people_analytics',
   'see_org_activity',
   'open_all_projects',
-  'manage_people',
+  // *Manage people* split in two by D-104 item 6 (LAI-985); migration 0052
+  // maps a stored `manage_people` onto both.
+  'invite_people',
+  'deactivate_people',
+  'create_archive_projects',
+  'manage_any_tokens',
   'change_org_settings',
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];

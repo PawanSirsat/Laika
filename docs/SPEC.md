@@ -128,8 +128,18 @@ organisation's grants for exactly these actions and no others.
 | *See everyone's analytics* | `profile.read`, `profile.activity.read`, `usage.read_people` (and LAI-957's `people.analytics.read`) |
 | *See the organisation's activity history* | `audit_log.export` |
 | *Open every project* | the implicit project role above: `lead` on every project, `viewer` for an org viewer, who stays capped |
-| *Manage people and invites* | `user.invite` (as member or viewer only), `user.deactivate`, `user.sign_out` (somebody else; anyone signs themselves out — LAI-981), `user.reset_password` (not for the owner — LAI-983; LAI-985 moves both) |
+| *Invite people* | `user.invite` (as member or viewer only) |
+| *Deactivate people and reset access* | `user.deactivate`, `user.sign_out` (somebody else; anyone signs themselves out — LAI-981), `user.reset_password` (not for the owner — LAI-983) |
+| *Create and archive spaces* | `project.create`, `project.archive` |
+| *Manage anyone's tokens* | `token.list_any`, `token.revoke_any` |
 | *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set` |
+
+*Invite people* and *Deactivate people and reset access* were one
+capability, *Manage people and invites*, until D-104 item 6 (LAI-985); an
+organisation that had stored a choice for it holds that choice for both. Each
+capability carries a one-line `description` from the server (§6.4's
+`GET /org/permissions`), so a screen explains a switch without inventing the
+words.
 
 **Never grantable, owner only:** delete the organisation, transfer ownership
 (`org.delete`, `org.transfer_ownership`), change org roles (`user.set_role`)
@@ -2211,8 +2221,9 @@ Indexes `(subject_id, viewed_at, id)` for the person's list, `(viewer_id)`,
 ### 4.60 `password_resets`
 
 One-time password-reset links an admin issued for somebody (D-104 item 4,
-LAI-983). Laika sends no email, so whoever holds *Manage people* issues a link
-(§3.1 *Issue a password-reset link*), shown once, and hands it over. **The rows
+LAI-983). Laika sends no email, so whoever holds *Deactivate people and reset
+access* issues a link (§3.1 *Issue a password-reset link*), shown once, and
+hands it over. **The rows
 are the log** of who issued a link for whom and whether it was used, as
 `analytics_views` is for reads: §4.8 gains no verb. Issuing a link revokes the
 person's earlier unused ones.
