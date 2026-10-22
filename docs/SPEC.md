@@ -4374,9 +4374,13 @@ anything missing sends the task back.
   at all; the id stays `none`, so a saved address still opens it. The toolbar
   goes on with a space selector (all spaces, or one, which narrows every count
   to it); a sort
-  (*Online first*, the default, *Heaviest load*, *Name*, *Last seen*); an (i)
+  (*Online first*, the default, *Heaviest load*, *Name*, *Last seen*); a
+  **Cards / List** toggle, remembered per browser (LAI-991); an (i)
   with the definitions. **One card a person** in a grid of three columns on a
-  laptop, two on a tablet and one on a phone: the avatar with a status ring
+  laptop, two on a tablet and one on a phone — **every card draws every block
+  in the same order, and a block with nothing to say draws a `0`, *No agents
+  running* or *No spaces* rather than disappearing, so the cards in a row are
+  one shape and one height** (LAI-991, the owner's design): the avatar with a status ring
   and dot (green online, amber away, grey offline, dashed never seen) and the
   same in words — *Online now*, *Away · 23 min*, *Last seen 2 h ago* with the
   date and time and the kind of signal on hover, *Never seen*; name, org role,
@@ -4387,15 +4391,28 @@ anything missing sends the task back.
   working on LAI-9* where presence knows the matched task; the workload counts
   *in progress · to do · backlog*, a thin stacked bar of committed work (in
   progress, to do), and apart from it *N waiting on reviewers* and *due in 7
-  days*; the spaces they have open work in, each showing its committed count
-  with backlog and review on hover; for owners and admins a 14-day
-  board-activity sparkline with its total and, under it, *by hand · by agents
-  · bookkeeping* from `activity_14d_split`, and
-  the name linking to the profile; and *Show tasks*, collapsed, listing their
-  in-progress tasks, each opening in its own space (LAI-755). People never seen
+  days*; *Agents · N running*, their agents with a green dot on each one
+  running, or *No agents running*; for owners and admins *Activity · 14 days ·
+  total*, a board-activity sparkline and, under it, *by hand · by agents ·
+  bookkeeping* from `activity_14d_split` as three figures, each with what it
+  counts on hover; *Spaces · N*, the spaces they have open work in as chips
+  carrying the space's colour (the sidebar badge's, keyed by slug) and its
+  committed count, with backlog and review on hover, or *No spaces*; the name
+  linking to the profile for owners and admins; and a footer, *Show tasks · N
+  in progress*, collapsed, listing their in-progress tasks, each opening in
+  its own space (LAI-755), or *0 in progress*. **Every figure with a rule
+  behind it says the rule on hover** — the load badge, overdue, each count,
+  each activity figure, each space and agent chip, the status line — the same
+  words on a card and in the list. People never seen
   fold into one line at the bottom, unless searched for or filtered to.
-  Under the grid, **Team load** — one bar a person with committed work,
-  heaviest first, and a count of those with nothing committed — and **Agents running now** (person, agent, when last active). It
+  **List** draws the same people, filtered and sorted the same way, as a
+  table: person, load, a workload bar, in progress, to do, review, agents
+  running, for owners and admins *hand · agents · bookkeeping*, and spaces.
+  **Every row's bar is drawn to one scale, the heaviest committed count on
+  the page, so the table is the team-load chart** — it replaced the *Team
+  load* and *Agents running now* panels that LAI-767 put under the grid
+  (LAI-991); the *Agents running* tile and each card's agents carry what the
+  second panel said. A legend under either view names the bar's two parts. It
   re-reads every 20 s while the tab is visible and when it comes back; the
   loading skeleton is the final layout; no matches has its own state. With
   `presence_enabled = 0` it says so, keeps the workload and draws no status.

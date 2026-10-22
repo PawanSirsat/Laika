@@ -7,6 +7,10 @@
  * The grid is a container query on `.cap`, not the viewport: three cards
  * across a laptop's content area, two on a tablet, one on a phone, whatever
  * the sidebar takes.
+ *
+ * LAI-991: the cards are compact and **one height per row** — the grid
+ * stretches them and the tasks footer sits at the bottom — and a List view
+ * draws the same people as a table whose bars share one scale.
  */
 
 .cap-page {
@@ -256,8 +260,9 @@ a.cap-tile:hover {
   padding: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 0.75rem;
-  align-items: start;
+  gap: 0.625rem;
+  /* Stretch: every card in a row is the row's height (LAI-991). */
+  align-items: stretch;
 }
 
 @container cap (min-width: 38rem) {
@@ -278,10 +283,10 @@ a.cap-tile:hover {
   border: 1px solid var(--border-card);
   border-radius: var(--radius-column);
   box-shadow: var(--shadow-card);
-  padding: 0.9375rem 1rem 0.875rem;
+  padding: 0.75rem 0.875rem 0.625rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.625rem;
 }
 
 .cap-card[data-status='online'] {
@@ -328,8 +333,8 @@ a.cap-tile:hover {
 }
 
 .cap-avatar {
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.25rem;
+  height: 2.25rem;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -401,6 +406,20 @@ a.cap-tile:hover {
   border-bottom-color: var(--accent-border);
 }
 
+.cap-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.125rem;
+  min-width: 0;
+  font-size: var(--text-small);
+}
+
+.cap-meta-sep {
+  color: var(--text-muted);
+  white-space: pre;
+}
+
 .cap-role {
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
@@ -433,6 +452,14 @@ a.cap-tile:hover {
   flex-direction: column;
   align-items: flex-end;
   gap: 0.25rem;
+}
+
+/* In a table row the two badges sit side by side. */
+.cap-badges-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
 }
 
 .cap-load {
@@ -504,6 +531,20 @@ a.cap-tile:hover {
   font-weight: var(--weight-semibold);
   letter-spacing: normal;
   text-transform: none;
+  white-space: nowrap;
+}
+
+/* "2 running": lit when any agent is live. */
+.cap-label-note-on {
+  color: var(--chip-green);
+}
+
+/* The hover line's words carry the rule; the cursor says there is one. */
+.cap-count[title],
+.cap-fig[title],
+.cap-label-note[title],
+.cap-status[title]:not([title='']) {
+  cursor: help;
 }
 
 .cap-agents {
@@ -606,7 +647,7 @@ a.cap-tile:hover {
 
 .cap-count-n {
   font-family: var(--font-mono);
-  font-size: var(--text-body);
+  font-size: var(--text-small);
   font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
@@ -674,6 +715,14 @@ a.cap-tile:hover {
   color: var(--accent);
 }
 
+/* The space's colour — the sidebar badge's, keyed by slug — as a small square. */
+.cap-space-swatch {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 2px;
+}
+
 .cap-space-n {
   font-family: var(--font-mono);
   padding: 0 0.3125rem;
@@ -705,37 +754,67 @@ a.cap-tile:hover {
   opacity: 1;
 }
 
-/* Who did it: by hand, by agents, and bookkeeping apart (LAI-818). */
+/* Who did it: by hand, by agents, and bookkeeping apart (LAI-818) — three
+   figures of one shape, each with its rule on hover (LAI-991). */
 .cap-spark-split {
+  list-style: none;
   margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.375rem;
+}
+
+.cap-fig {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.125rem 0.875rem;
+  flex-direction: column;
+  gap: 0.0625rem;
+  min-width: 0;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  background: var(--bg-column);
+}
+
+.cap-fig:hover {
+  border-color: var(--accent-border);
+}
+
+.cap-fig .cap-count-n {
+  font-size: var(--text-body);
+}
+
+.cap-fig-zero .cap-count-n {
+  color: var(--text-muted);
+  font-weight: var(--weight-semibold);
+}
+
+.cap-fig-label {
   font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.cap-spark-split .cap-count-n {
-  font-size: var(--text-small);
-}
-
-.cap-spark-tidy {
-  cursor: help;
-}
-
-.cap-spark-tidy .cap-count-n {
-  color: var(--text-muted);
-}
-
-/* --- show tasks --- */
+/* --- show tasks: the footer, pinned to the bottom of a stretched card --- */
 
 .cap-tasks {
   display: flex;
   flex-direction: column;
   gap: 0.375rem;
+  margin-top: auto;
   padding-top: 0.5rem;
   border-top: 1px solid var(--border-subtle);
+}
+
+.cap-tasks-none {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  color: var(--text-muted);
 }
 
 .cap-tasks-toggle {
@@ -854,75 +933,209 @@ button.cap-task:hover {
   align-self: flex-start;
 }
 
-/* ----------------------------------------------- team load, agents running */
+/* ------------------------------------------------------------ view toggle */
 
-.cap-lower {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+.cap-view {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+}
+
+.cap-view-button {
+  height: 1.75rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 2px);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.cap-view-button:hover {
+  color: var(--text-primary);
+}
+
+.cap-view-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.cap-view-button[aria-pressed='true'] {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ list */
+
+.cap-list-wrap {
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+}
+
+.cap-list {
+  width: 100%;
+  min-width: 56rem;
+  border-collapse: collapse;
+  font-size: var(--text-small);
+}
+
+.cap-list th,
+.cap-list td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.cap-list thead th {
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.cap-list thead th[title],
+.cap-list thead th span[title],
+.cap-list td[title],
+.cap-list-split span[title] {
+  cursor: help;
+}
+
+.cap-list tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.cap-row:hover {
+  background: var(--bg-card-hover);
+}
+
+.cap-row[data-status='online'] {
+  background-image: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--chip-green) 7%, transparent),
+    transparent 14rem
+  );
+}
+
+.cap-list-person {
+  min-width: 13rem;
+}
+
+.cap-list-person > .cap-avatar-wrap,
+.cap-list-person > .cap-who {
+  vertical-align: middle;
+}
+
+.cap-list-person .cap-avatar-wrap {
+  margin-right: 0.5rem;
+}
+
+.cap-list-person .cap-who {
+  display: inline-flex;
+  max-width: calc(100% - 3rem);
+}
+
+.cap-avatar-sm {
+  width: 1.875rem;
+  height: 1.875rem;
+  font-size: var(--text-small);
+}
+
+.cap-list-bar {
+  min-width: 9rem;
+}
+
+.cap-list-bar .cap-bar {
+  display: flex;
+  width: 100%;
+}
+
+.cap-list-num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.cap-list thead .cap-list-num {
+  font-family: var(--font-ui);
+}
+
+.cap-list-zero {
+  color: var(--text-muted);
+  font-weight: var(--weight-semibold);
+}
+
+.cap-list-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.cap-run-dot {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: 50%;
+  background: var(--border-default);
+}
+
+.cap-run-dot-on {
+  background: var(--chip-green);
+}
+
+.cap-list-act {
+  white-space: nowrap;
+}
+
+.cap-list-split {
+  display: inline-flex;
   gap: 0.75rem;
-  align-items: start;
+  font-family: var(--font-mono);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
 }
 
-@container cap (min-width: 50rem) {
-  .cap-lower {
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-  }
+.cap-list-spaces {
+  min-width: 14rem;
 }
 
-.cap-team-rows,
-.cap-running-rows,
+/* The count, then the chips, wrapping as a row rather than dropping a line. */
+.cap-list-spaces-in {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+}
+
+.cap-list-spaces-n {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+/* ---------------------------------------------------------------- legend */
+
 .cap-legend {
   list-style: none;
   margin: 0;
   padding: 0;
-}
-
-.cap-team-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.cap-team-row {
-  display: grid;
-  grid-template-columns: minmax(0, 9rem) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.625rem;
-}
-
-.cap-team-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-body);
-  font-weight: var(--weight-semibold);
-  color: var(--text-primary);
-}
-
-.cap-team-bar {
-  height: 0.75rem;
-  background: transparent;
-}
-
-.cap-team-n {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.375rem;
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  font-weight: var(--weight-bold);
-  color: var(--text-primary);
-  white-space: nowrap;
-}
-
-.cap-team-overdue {
-  font-family: var(--font-ui);
-  font-size: var(--text-small);
-  color: var(--overdue);
-}
-
-.cap-legend {
   display: flex;
   flex-wrap: wrap;
   gap: 0.375rem 0.875rem;
@@ -936,51 +1149,14 @@ button.cap-task:hover {
   gap: 0.375rem;
 }
 
+.cap-legend-note {
+  color: var(--text-muted);
+}
+
 .cap-swatch {
   width: 0.625rem;
   height: 0.625rem;
   border-radius: 2px;
-}
-
-.cap-running-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.cap-running-row {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  min-width: 0;
-}
-
-.cap-running-who {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.cap-running-agent {
-  font-size: var(--text-small);
-  font-weight: var(--weight-semibold);
-  color: var(--text-primary);
-}
-
-.cap-running-person {
-  font-size: var(--text-small);
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cap-running-when {
-  flex: none;
-  font-size: var(--text-small);
-  color: var(--chip-green);
-  font-weight: var(--weight-semibold);
 }
 
 /* -------------------------------------------------------------- skeleton */
@@ -1012,7 +1188,7 @@ button.cap-task:hover {
 }
 
 .cap-card-skeleton {
-  min-height: 15rem;
+  min-height: 17rem;
 }
 
 /* ----------------------------------------------------------------- phone */
@@ -1026,7 +1202,7 @@ button.cap-task:hover {
       'chips';
   }
 
-  .cap-team-row {
-    grid-template-columns: minmax(0, 6rem) minmax(0, 1fr) auto;
+  .cap-view {
+    align-self: flex-start;
   }
 }
