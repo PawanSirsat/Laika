@@ -74,7 +74,8 @@ export const CAPABILITY_DESCRIPTIONS: Readonly<Record<Capability, string>> = {
   see_org_activity: "Read and export the organisation's whole activity history.",
   open_all_projects: 'Work in every space without being added to it.',
   invite_people: 'Create, list and revoke invite links for new members and viewers.',
-  deactivate_people: 'Deactivate or reactivate a person, and sign them out everywhere.',
+  deactivate_people:
+    'Deactivate or reactivate a person, sign them out everywhere, and issue them a password-reset link.',
   create_archive_projects: 'Create new spaces, and archive or restore them.',
   manage_any_tokens: "See and revoke anyone's agent and API tokens.",
   change_org_settings:
