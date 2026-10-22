@@ -6,73 +6,40 @@
  * tab bar needed the same answer, because `/dashboard` requires
  * `audit_log.export`. Copying it would have made that comment false the moment
  * it was written.
+ *
+ * Since LAI-970 it mirrors nothing: it answers from `GET /permissions`'
+ * `me.actions`, which carries the owner's grants, and from no role.
  */
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { permissionHolder } from '../../src/routes/nav-permissions.ts';
-import { ORG_ROLES, canManageOrg } from '../../src/api/invites.ts';
-import { mayOpenProfiles } from '../../src/api/profiles.ts';
-import { mayTriageUnlisted } from '../../src/api/unlisted.ts';
 
 void describe('who holds a nav permission', () => {
-  /**
-   * The point of the module: it must agree with the predicate the unlisted
-   * screen itself uses, **for every role**, not for the two somebody thought of.
-   */
-  void test('it defers to `mayTriageUnlisted` for every org role', () => {
-    for (const role of ORG_ROLES) {
-      assert.equal(
-        permissionHolder(role)('audit_log.export'),
-        mayTriageUnlisted(role),
-        `${role} disagrees with the screen's own predicate`,
-      );
-    }
-    // …and the roles are not all the same answer, or this proves nothing.
-    const answers = new Set(ORG_ROLES.map((r) => permissionHolder(r)('audit_log.export')));
-    assert.equal(answers.size, 2, 'every role gets the same answer — the check is vacuous');
+  void test('it is exactly the server’s list of actions', () => {
+    const holds = permissionHolder(['audit_log.export', 'profile.read']);
+    assert.equal(holds('audit_log.export'), true);
+    assert.equal(holds('profile.read'), true);
+    assert.equal(holds('token.list_any'), false);
   });
 
-  void test('`profile.read` defers to `mayOpenProfiles` for every org role (LAI-743)', () => {
-    for (const role of ORG_ROLES) {
-      assert.equal(
-        permissionHolder(role)('profile.read'),
-        mayOpenProfiles(role),
-        `${role} disagrees with the links' own predicate`,
-      );
-    }
-    const answers = new Set(ORG_ROLES.map((r) => permissionHolder(r)('profile.read')));
-    assert.equal(answers.size, 2, 'every role gets the same answer — the check is vacuous');
-    assert.equal(permissionHolder(undefined)('profile.read'), false);
-  });
-
-  void test('`token.list_any` defers to `canManageOrg` for every org role (LAI-796)', () => {
-    // The Organisation page's Security tab is everyone's tokens; its controls
-    // were drawn on `canManageOrg`, so the tab's gate must answer alike.
-    for (const role of ORG_ROLES) {
-      assert.equal(
-        permissionHolder(role)('token.list_any'),
-        canManageOrg(role),
-        `${role} disagrees with the Organisation screen's own predicate`,
-      );
-    }
-    const answers = new Set(ORG_ROLES.map((r) => permissionHolder(r)('token.list_any')));
-    assert.equal(answers.size, 2, 'every role gets the same answer — the check is vacuous');
-    assert.equal(permissionHolder(undefined)('token.list_any'), false);
+  void test('an admin the owner withdrew the history from is not offered it', () => {
+    // The default grants would have said yes to an admin; the server's answer
+    // is what decides, and it no longer lists the action.
+    assert.equal(permissionHolder(['token.list_any'])('audit_log.export'), false);
   });
 
   void test('an unknown permission is never granted', () => {
-    // Fail closed: a new `requires` string that nobody taught this about must
-    // hide the entry, not offer it.
-    for (const role of [...ORG_ROLES, undefined]) {
-      assert.equal(permissionHolder(role)('something.invented'), false);
-    }
+    // Fail closed: a new `requires` string nobody taught this about hides the
+    // entry rather than offering it.
+    assert.equal(permissionHolder(['audit_log.export'])('something.invented'), false);
   });
 
-  void test('no role at all grants nothing', () => {
-    // The pre-auth render and the tests pass no role. Gated entries stay hidden
-    // rather than leaking on the frame before the session lands.
+  void test('no answer grants nothing', () => {
+    // Pre-auth, while `/permissions` is in flight, and when it failed. Gated
+    // entries stay hidden rather than leaking on that frame.
     assert.equal(permissionHolder(undefined)('audit_log.export'), false);
-    assert.equal(permissionHolder('')('audit_log.export'), false);
+    assert.equal(permissionHolder()('profile.read'), false);
+    assert.equal(permissionHolder([])('token.list_any'), false);
   });
 });

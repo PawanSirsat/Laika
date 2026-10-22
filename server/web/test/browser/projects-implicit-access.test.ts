@@ -134,10 +134,13 @@ void describe('Projects effective access', () => {
     ] as const) {
       const h = await open('/projects', stub(role, implicit));
       try {
-        await h.page
-          .locator('.project-card-name')
-          .getByText('Member Workshop', { exact: true })
-          .waitFor({ timeout: 20_000 });
+        // The end state, not the first frame: Join is offered only once the
+        // server has said which spaces this reader leads, so its presence (or
+        // Private Observatory's) is the answer having landed.
+        const settled = seesPrivate
+          ? h.page.locator('.project-card-name').getByText('Private Observatory', { exact: true })
+          : h.page.getByRole('button', { name: 'Join', exact: true });
+        await settled.waitFor({ timeout: 20_000 });
         const page = await h.page.locator('.projects').innerText();
         assert.equal(
           page.includes('Private Observatory'),
@@ -151,6 +154,54 @@ void describe('Projects effective access', () => {
       } finally {
         await h.close();
       }
+    }
+  });
+
+  void test('an explicit lead edits the project context without any implicit role', async () => {
+    // A member who leads Member Workshop by membership: no implicit role at
+    // all, so a gate that asked `implicitlyLeads` would offer read-only.
+    const lead = stub('member', null);
+    const h = await open('/projects', {
+      ...lead,
+      '/api/v1/me': {
+        ...(lead['/api/v1/me'] as object),
+        memberships: [{ project_id: MEMBER_SPACE.id, role: 'lead' }],
+      },
+      '/api/v1/permissions': {
+        org_roles: [],
+        project_roles: [],
+        permissions: [],
+        me: {
+          org_role: 'member',
+          credential: 'session',
+          project_scope: 'all',
+          implicit_project_role: null,
+          actions: [],
+          projects: [
+            {
+              project_id: MEMBER_SPACE.id,
+              role: 'lead',
+              actions: ['project.settings.edit', 'project.members.manage'],
+            },
+          ],
+        },
+      },
+      [`/api/v1/projects/${MEMBER_SPACE.slug}/context`]: {
+        context_md: '',
+        length: 0,
+        limit: 20_000,
+        updated_at: null,
+        updated_by: null,
+      },
+    });
+    try {
+      const card = h.page.locator('.project-card', { hasText: 'Member Workshop' });
+      await card.getByRole('button', { name: 'Context' }).click();
+      await h.page.locator('.ctx-save').waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.ctx-editor').getAttribute('readonly'), null);
+      assert.equal(await h.page.locator('.ctx-readonly').count(), 0);
+    } finally {
+      await h.close();
     }
   });
 });

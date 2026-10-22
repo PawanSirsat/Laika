@@ -17,8 +17,10 @@ import { after, describe, test } from 'node:test';
 import {
   closeBrowser,
   DEFAULT_STATUSES,
+  everSeen,
   open,
   until,
+  watchFor,
   type ApiStub,
   type Harness,
 } from './harness.ts';
@@ -344,4 +346,42 @@ void describe('project visibility permission', () => {
       }
     });
   }
+});
+
+void describe('an implicit viewer is not a lead (LAI-970)', () => {
+  void test('an org viewer granted Open every project is never offered Visibility', async () => {
+    // `implicit_project_role: viewer` and no membership: the server answers
+    // `project.settings.edit` no, as `effectiveProjectRole` makes them a viewer.
+    const h = await open(
+      '/board?project=laika-core',
+      {
+        ...STUB,
+        '/api/v1/me': { ...(STUB['/api/v1/me'] as object), org_role: 'viewer', memberships: [] },
+        '/api/v1/permissions': {
+          org_roles: [],
+          project_roles: [],
+          permissions: [],
+          me: {
+            org_role: 'viewer',
+            credential: 'session',
+            project_scope: 'all',
+            implicit_project_role: 'viewer',
+            actions: [],
+            projects: [],
+          },
+        },
+      },
+      { before: (page) => watchFor(page, ['input[name="vs-visibility"]', '.lane-add']) },
+    );
+    try {
+      await openPanel(h);
+      await until(() => h.calls.some((c) => c.path === '/api/v1/permissions'));
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      assert.equal(await everSeen(h.page, 'input[name="vs-visibility"]'), false);
+      // Nor any write: `task.write` is a member's, and a viewer is not one.
+      assert.equal(await everSeen(h.page, '.lane-add'), false, 'offered Add task');
+    } finally {
+      await h.close();
+    }
+  });
 });

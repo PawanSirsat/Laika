@@ -15,7 +15,6 @@ import {
   ANALYTICS_VIEW_KINDS,
   getPersonDay,
   getPersonLocalActivity,
-  holdsPeopleAnalytics,
   listAnalyticsViews,
   PEOPLE_ANALYTICS,
   viewKindLabel,
@@ -69,21 +68,6 @@ void describe('reading somebody else’s analytics (§6.4)', () => {
 });
 
 void describe('who holds it (D-102 rule 6)', () => {
-  void test('the server’s answer decides once it has one, whatever the role', () => {
-    // A member the owner granted it, and an admin the owner took it from.
-    assert.equal(holdsPeopleAnalytics([PEOPLE_ANALYTICS], 'member'), true);
-    assert.equal(holdsPeopleAnalytics(['profile.read'], 'admin'), false);
-    assert.equal(holdsPeopleAnalytics([], 'owner'), false);
-  });
-
-  void test('until it answers, the default grants: owner and admin, nobody else', () => {
-    assert.equal(holdsPeopleAnalytics(undefined, 'owner'), true);
-    assert.equal(holdsPeopleAnalytics(undefined, 'admin'), true);
-    assert.equal(holdsPeopleAnalytics(undefined, 'member'), false);
-    assert.equal(holdsPeopleAnalytics(undefined, 'viewer'), false);
-    assert.equal(holdsPeopleAnalytics(undefined, undefined), false);
-  });
-
   void test('the action is §3.1’s name for it', () => {
     assert.equal(PEOPLE_ANALYTICS, 'people.analytics.read');
   });

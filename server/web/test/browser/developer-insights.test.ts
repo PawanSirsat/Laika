@@ -14,10 +14,12 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import {
   closeBrowser,
+  everSeen,
   open,
   reply,
   setTheme,
   until,
+  watchFor,
   type ApiStub,
   type StubCall,
 } from './harness.ts';
@@ -660,4 +662,60 @@ void describe('Connect: Share local activity', () => {
       await h.close();
     }
   });
+});
+
+/**
+ * Connect and Developer access draw the same Share local activity, and must
+ * ask it the same question (LAI-970): Connect passed `user.invite` where
+ * Developer access asked `org.developer_insights.set`, so an admin who kept
+ * people and lost settings was offered the Organisation link on one page and
+ * not the other.
+ */
+void describe('Connect and Developer access agree on who may turn insights on', () => {
+  const LINK = 'a[href="/organisation?tab=overview"]';
+  for (const [who, role, actions, linked] of [
+    [
+      'an admin who keeps people and loses settings',
+      'admin',
+      ['user.invite', 'user.deactivate'],
+      false,
+    ],
+    [
+      'a member granted settings only',
+      'member',
+      ['org.developer_insights.set', 'org.time.set'],
+      true,
+    ],
+  ] as const) {
+    void test(who, async () => {
+      const state = { org: false, enabled: false, scope: 'agent-repos' };
+      const counts: number[] = [];
+      for (const path of ['/developer', '/developer/connect']) {
+        const h = await open(
+          path,
+          connect(state, { value: NOTHING }, role, DEFAULT_GRANTS, { admin: true }, actions),
+          { before: (page) => watchFor(page, [`.share-activity ${LINK}`]) },
+        );
+        try {
+          if (path === '/developer/connect') {
+            await h.page.locator('.conn-rail-extra', { hasText: 'Share local activity' }).click();
+          }
+          const panel = h.page.locator('.share-activity');
+          await panel.locator('[data-state="org-off"]').waitFor({ timeout: 20_000 });
+          await until(() => h.calls.some((c) => c.path === '/api/v1/permissions'));
+          if (linked) await panel.locator(LINK).waitFor({ timeout: 10_000 });
+          else await new Promise((resolve) => setTimeout(resolve, 600));
+          counts.push(await panel.locator(LINK).count());
+          assert.equal(
+            await everSeen(h.page, `.share-activity ${LINK}`),
+            linked,
+            `${path} ${linked ? 'never offered' : 'offered'} the Organisation link`,
+          );
+        } finally {
+          await h.close();
+        }
+      }
+      assert.deepEqual(counts, linked ? [1, 1] : [0, 0], 'the two pages disagree');
+    });
+  }
 });
