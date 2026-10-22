@@ -37,7 +37,7 @@ D-103 item 12: the owner's Spaces design (grid and list screenshots).
 - [x] Every number from the server; design tokens only; light/dark; browser
       tests for search, chips, toggle, card height consistency with a long
       description, archived.
-- [x] Gate exit 0 with LAI-976 merged.
+- [ ] Gate exit 0 with LAI-976 merged. *(Exit 1 on the one LAI-977 assertion quoted below, §4.4; green otherwise.)*
 
 ## Builder notes (SHELL, 2026-10-22)
 
