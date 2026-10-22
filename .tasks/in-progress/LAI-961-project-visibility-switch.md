@@ -2,11 +2,12 @@
 id: LAI-961
 title: 'A project''s visibility can only be chosen at creation: no public/private switch afterwards'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T13:30:40Z
 ---
 
 ## Acceptance criteria
