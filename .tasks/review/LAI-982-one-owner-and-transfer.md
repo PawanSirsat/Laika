@@ -80,8 +80,8 @@ Criteria unchanged. Two blocking findings, both fixed on
    already refuses there, and was removed rather than kept untested.
    - **Web half, §4.4:** `view-type-drift.test.ts:740` — *"OrgView.owner_invites_pending
      is served and Org does not declare it"*. Needs SHELL to declare it on
-     `Org` and show it beside *More than one owner*. Not filed: CHIEF's
-     LAI-950–999 block has no free id. CHIEF to file.
+     `Org` and show it beside *More than one owner*. Filed as **LAI-181**
+     (CORE's range: CHIEF's LAI-950–999 block has no free id).
 
 SPEC §6.4: the transfer line, the `GET /org` owner's read, and the invites
 line gained one clause each.
