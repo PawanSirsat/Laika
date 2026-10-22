@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ResetPasswordScreen } from './ResetPasswordScreen.tsx';
 import { useShell } from '../../components/shell/shell-context.ts';
 import { ApiError } from '../../api/errors.ts';
@@ -12,14 +12,25 @@ type Refused = Exclude<ReturnType<typeof resetRefusal>, 'throttled' | undefined>
  *
  * **The token is read from the address and posted in a body, once.** It is
  * never logged, stored, or put anywhere else: the server built the link so no
- * access log line holds it, and this page keeps that.
+ * access log line holds it, and this page keeps that. It is taken out of the
+ * address the moment it is read — `replaceState`, so neither the bar nor
+ * Back holds it — and dropped from state once the link is spent: a set
+ * password, or a refusal no retry can change.
  */
 export function ResetPasswordRoute() {
   const {
     host,
-    route: { params, navigate },
+    route: { params, setParams, navigate },
   } = useShell();
-  const token = params.get('token') ?? '';
+  const [token, setToken] = useState(() => params.get('token') ?? '');
+  const [missingToken] = useState(() => token === '');
+
+  useEffect(() => {
+    if (!params.has('token')) return;
+    const next = new URLSearchParams(params);
+    next.delete('token');
+    setParams(next);
+  }, [params, setParams]);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -32,12 +43,14 @@ export function ResetPasswordRoute() {
       setError(undefined);
       try {
         const view = await consumeResetLink(token, password);
+        setToken('');
         setDone({ sessionsEnded: view.sessions_ended });
       } catch (cause) {
         const why = resetRefusal(cause);
         if (why === 'throttled') {
           setError(RESET_REFUSAL_COPY.throttled.body);
         } else if (why !== undefined) {
+          setToken('');
           setRefused(why);
         } else {
           setError(
@@ -56,7 +69,7 @@ export function ResetPasswordRoute() {
   return (
     <ResetPasswordScreen
       host={host}
-      missingToken={token === ''}
+      missingToken={missingToken}
       refused={refused}
       done={done}
       submitting={submitting}
