@@ -127,6 +127,13 @@
   --heat-all-3: #9494a1;
   --heat-all-4: #c2c3d1;
 
+  /* ---- the sky behind the hours (LAI-895, D-106): the design's own ---- */
+  --sky-day: rgba(251, 191, 36, 0.08);
+  --sky-night: rgba(129, 140, 248, 0.16);
+  --sky-night-body: rgba(129, 140, 248, 0.06);
+  --sun: #fbbf24;
+  --moon: #a5b4fc;
+
   /* ---- overlays ---- */
   --scrim: rgba(0, 0, 0, 0.55);
   --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.5);
@@ -206,6 +213,13 @@
   --heat-all-2: #9ea5b2;
   --heat-all-3: #747a87;
   --heat-all-4: #484d58;
+
+  /* ---- the sky behind the hours (LAI-895, D-106): the design's own ---- */
+  --sky-day: #fff6df;
+  --sky-night: #e6e9fa;
+  --sky-night-body: rgba(79, 91, 184, 0.05);
+  --sun: #c27a0a;
+  --moon: #4f5bb8;
 
   --scrim: rgba(24, 24, 27, 0.4);
   --shadow-modal: 0 24px 60px rgba(24, 24, 27, 0.22);

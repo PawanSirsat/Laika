@@ -12,6 +12,8 @@ import {
 import type { MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
 import { BreakGlyph } from '../../../components/BreakGlyph.tsx';
 import { breakKind } from '../break-kinds.ts';
+import { placeOf } from '../places.ts';
+import { glyphAt, skyPhases, sunTimes } from './daylight.ts';
 import { FitLabel } from './FitLabel.tsx';
 import { needsACard } from './folder.ts';
 import { agentDuration, clock, duration, hourName, span as spanOf } from './format.ts';
@@ -104,6 +106,36 @@ const ICONS = {
   gap: '+',
   break: '‖',
 } as const;
+
+/** The design's sun before a daytime hour (LAI-895). */
+function SunGlyph() {
+  return (
+    <svg className="dayline-axis-sun" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+      <circle cx="5" cy="5" r="2.2" fill="currentColor" />
+      <path
+        d="M5 .6v1.2M5 8.2v1.2M.6 5h1.2M8.2 5h1.2M1.9 1.9l.8.8M7.3 7.3l.8.8M1.9 8.1l.8-.8M7.3 2.7l.8-.8"
+        stroke="currentColor"
+        strokeWidth="1"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/** The design's moon before a night hour (LAI-895). */
+function MoonGlyph() {
+  return (
+    <svg
+      className="dayline-axis-moon"
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      aria-hidden="true"
+    >
+      <path d="M8.2 6.4A3.8 3.8 0 0 1 3.6 1.8a3.8 3.8 0 1 0 4.6 4.6z" fill="currentColor" />
+    </svg>
+  );
+}
 
 /** The design's px: the axis row, the signals lane's rows, the YOU row, the agents lane. */
 const AXIS_H = 28;
@@ -497,15 +529,29 @@ export function Timeline({
 
   // The hours along the top: each where it really falls, labelled where there is room.
   const nowX = line.now === undefined ? undefined : x(line.now);
-  const ticks: { minute: number; x: number; label: string; show: boolean }[] = [];
+  // The sky (LAI-895, D-106): the day's sun at the person's place — set by
+  // them, else the day's own zone when the list knows it — and nothing where
+  // neither names a place.
+  const place = placeOf(view.settings.place ?? view.tz);
+  const sun = place === undefined ? undefined : sunTimes(view.day, place.lat, place.lng, view.tz);
+  const sky = sun === undefined ? [] : skyPhases(sun, from * 60, to * 60);
+  const ticks: {
+    minute: number;
+    x: number;
+    label: string;
+    show: boolean;
+    glyph: 'sun' | 'moon' | undefined;
+  }[] = [];
   let lastLabel = -Infinity;
   for (const mark of axisMarks(line, '1')) {
     if (scale.folded(mark.minute)) continue;
     const px = x(mark.minute);
     const label = hourName(mark.hour);
+    const glyph = sun === undefined ? undefined : glyphAt(sun, mark.minute);
+    const width = label.length * 6.7 + (glyph === undefined ? 0 : 14);
     const nearNow = nowX !== undefined && px > nowX - 80 && px < nowX + 36;
-    const show = px - lastLabel >= 56 && px + 5 + label.length * 6.7 <= scale.total && !nearNow;
-    ticks.push({ minute: mark.minute, x: px, label, show });
+    const show = px - lastLabel >= 56 && px + 5 + width <= scale.total && !nearNow;
+    ticks.push({ minute: mark.minute, x: px, label, show, glyph });
     if (show) lastLabel = px;
   }
   const minors: { minute: number; x: number; half: boolean }[] = [];
@@ -994,7 +1040,22 @@ export function Timeline({
               data-folds={folds.length}
               style={{ width: `${String(Math.max(scale.total, width))}px` }}
             >
-              {/* Behind everything: the folded stretches, the future, the selected card's bands, the hour lines. */}
+              {/* Behind everything: the sky, the folded stretches, the future, the selected card's bands, the hour lines. */}
+              {sky.map((phase) => (
+                <div
+                  key={`sky-${String(phase.start)}`}
+                  className={`dayline-sky dayline-sky-${phase.kind}`}
+                  data-sky={phase.kind}
+                  aria-hidden="true"
+                  style={{
+                    left: x(phase.start),
+                    width: Math.max(0, x(phase.end) - x(phase.start)),
+                  }}
+                >
+                  <span className="dayline-sky-strip" />
+                  <span className="dayline-sky-body" />
+                </div>
+              ))}
               {folds.map((fold) => (
                 <div
                   key={`fold-${String(fold.start)}`}
@@ -1049,7 +1110,10 @@ export function Timeline({
                           : 'dayline-axis-hour'
                       }
                       style={{ left: tick.x + 5 }}
+                      data-glyph={tick.glyph}
                     >
+                      {tick.glyph === 'sun' && <SunGlyph />}
+                      {tick.glyph === 'moon' && <MoonGlyph />}
                       {tick.label}
                     </span>
                   ))}

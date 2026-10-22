@@ -109,6 +109,18 @@
   background: var(--bg-card);
 }
 
+/* Where you are (LAI-895): the picker keeps to a width that fits a phone beside its label. */
+.myday-place {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.myday-place-pick {
+  min-width: 0;
+  width: auto;
+  max-width: 12rem;
+}
+
 .myday-switch-label {
   font-size: var(--text-body);
   font-weight: var(--weight-semibold);
@@ -1217,11 +1229,81 @@
 .dayline-axis-hour {
   position: absolute;
   top: 0.4375rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-family: var(--font-mono);
   font-size: var(--text-small);
   line-height: 0.875rem;
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+.dayline-axis-sun {
+  flex: none;
+  color: var(--sun);
+}
+
+.dayline-axis-moon {
+  flex: none;
+  color: var(--moon);
+}
+
+/*
+ * The sky (LAI-895, D-106): the axis strip tinted by day and by night and
+ * blending across dawn and dusk, the lanes beneath faintly tinted by night.
+ * Paint only, under everything, catching nothing.
+ */
+.dayline-sky {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.dayline-sky-strip,
+.dayline-sky-body {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+.dayline-sky-strip {
+  top: 0;
+  height: var(--axis-h);
+}
+
+.dayline-sky-body {
+  top: var(--axis-h);
+  bottom: 0;
+}
+
+.dayline-sky-day .dayline-sky-strip {
+  background: var(--sky-day);
+}
+
+.dayline-sky-night .dayline-sky-strip {
+  background: var(--sky-night);
+}
+
+.dayline-sky-night .dayline-sky-body {
+  background: var(--sky-night-body);
+}
+
+.dayline-sky-dawn .dayline-sky-strip {
+  background: linear-gradient(90deg, var(--sky-night), var(--sky-day));
+}
+
+.dayline-sky-dawn .dayline-sky-body {
+  background: linear-gradient(90deg, var(--sky-night-body), transparent);
+}
+
+.dayline-sky-dusk .dayline-sky-strip {
+  background: linear-gradient(90deg, var(--sky-day), var(--sky-night));
+}
+
+.dayline-sky-dusk .dayline-sky-body {
+  background: linear-gradient(90deg, transparent, var(--sky-night-body));
 }
 
 .dayline-axis-noon {
