@@ -21,6 +21,10 @@ import { BreakScheduleFact } from './BreakScheduleFact.tsx';
 import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
 import { PeopleTab } from './PeopleTab.tsx';
+import { ExtraOwners } from './ExtraOwners.tsx';
+import { TransferOwnership } from './TransferOwnership.tsx';
+import { OrgNameFact } from './OrgNameFact.tsx';
+import type { OpenTasksChoice } from '../../../api/offboarding.ts';
 import { InviteDialog } from './InviteDialog.tsx';
 import { RolesPermissionsSection } from './RolesPermissionsSection.tsx';
 import { OrgActivity } from './OrgActivity.tsx';
@@ -110,6 +114,8 @@ export function OrganisationScreen({
   const canSetInsights = gates.org('org.developer_insights.set');
   const canSetTime = gates.org('org.time.set');
   const canListTokens = gates.org('token.list_any');
+  /** D-104 item 7: the name is *Change organisation settings*'. */
+  const canEditOrg = gates.org('org.settings.edit');
   /**
    * Only the owner changes an org role (D-102 rule 5, LAI-958: `user.set_role`
    * is owner-locked). An admin keeps deactivating and inviting, and sees each
@@ -198,15 +204,21 @@ export function OrganisationScreen({
       });
   };
 
-  const change = (id: string, patch: { org_role?: string; is_active?: boolean }): Promise<void> => {
+  /** `true` when the server took it — People offers Undo only then (LAI-999). */
+  const change = (
+    id: string,
+    patch: { org_role?: string; is_active?: boolean; open_tasks?: OpenTasksChoice },
+  ): Promise<boolean> => {
     setChanging(id);
     setRoleError(undefined);
     return updateUser(id, patch)
       .then(() => {
         reload();
+        return true;
       })
       .catch((cause: unknown) => {
         setRoleError(cause instanceof Error ? cause.message : 'That change was refused.');
+        return false;
       })
       .finally(() => {
         setChanging(undefined);
@@ -368,6 +380,9 @@ export function OrganisationScreen({
                 </header>
 
                 <dl className="org-facts">
+                  {/* D-104 item 7 (LAI-999, from LAI-987). */}
+                  <OrgNameFact org={org} canEdit={canEditOrg} onSaved={setOrg} />
+
                   <div className="org-fact">
                     <dt>Presence</dt>
                     <dd>
@@ -446,6 +461,7 @@ export function OrganisationScreen({
               canDeactivate={canDeactivate}
               canListTokens={canListTokens}
               canChangeRoles={canChangeRoles}
+              projects={projects.projects}
               changing={changing}
               roleError={roleError}
               onChange={change}
@@ -459,10 +475,21 @@ export function OrganisationScreen({
               }}
               onReload={reload}
             />
+            {canChangeRoles && (org?.extra_owners ?? []).length > 0 && (
+              <ExtraOwners
+                owners={org?.extra_owners ?? []}
+                onMakeAdmin={(id) => change(id, { org_role: 'admin' })}
+              />
+            )}
+
+            {/* D-104 item 2: the owner's, by role, not a grant. */}
+            {canChangeRoles && <TransferOwnership me={me} people={state.people} />}
+
             {invite !== undefined && (
               <InviteDialog
                 orgName={org?.name ?? 'this organisation'}
                 roles={invitableRoles(me.org_role)}
+                projects={projects.projects.filter((p) => p.archived_at === null)}
                 initialText={invite.text}
                 onClose={() => {
                   setInvite(undefined);
