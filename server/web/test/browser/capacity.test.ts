@@ -5,7 +5,8 @@
  * compacted the cards to one shape — every block drawn, zeros included — and
  * added a List view whose bars share one scale, replacing the *Team load*
  * chart. LAI-992 took the *Show tasks* footer, the matched-task line and the
- * 14-day activity off the cards: Capacity reads no task.
+ * 14-day sparkline off the cards: Capacity reads no task. LAI-996 brought
+ * the fortnight's three figures back, without the chart.
  *
  * The fixture is shaped like the owner's org (`capacity-org.ts`): five people,
  * three never seen, an owner with seven tasks in progress and two agents
@@ -306,16 +307,20 @@ void describe('finding people', () => {
 });
 
 void describe('what an owner sees and a member does not', () => {
-  void test('an owner: profile kind, a profile link, every agent, Unlisted — and no activity', async () => {
+  void test('an owner: profile kind, the three activity figures, a profile link, every agent, Unlisted', async () => {
     const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await ready(h.page);
       const pawan = card(h.page, 'Pawan Sirsat');
       assert.match(await pawan.locator('.cap-role').innerText(), /Owner · Builder/);
-      // The fortnight's activity is the profile's, not this card's (LAI-992),
-      // though the owner's answer still carries it.
-      assert.equal(await h.page.locator('.cap-spark').count(), 0, 'activity is drawn');
-      assert.equal(await h.page.locator('.cap-spark-split').count(), 0, 'the split is drawn');
+      // Who did the fortnight's 79 (LAI-818): bookkeeping apart from both —
+      // three figures and no bar chart (LAI-992, LAI-996).
+      assert.match(await pawan.locator('.cap-activity-block .cap-label-note').innerText(), /· 79$/);
+      assert.equal(
+        (await pawan.locator('.cap-figs').innerText()).replace(/\s+/g, ' ').trim(),
+        '21 by hand 40 by agents 18 bookkeeping',
+      );
+      assert.equal(await h.page.locator('.cap-spark').count(), 0, 'a sparkline is drawn');
       // The link waits on the shell's `/me` as well as the cards, so wait for
       // it before counting (LAI-765's rule: wait for what you read).
       await pawan.locator('a.cap-name-link').waitFor({ timeout: 10_000 });
@@ -355,8 +360,8 @@ void describe('what an owner sees and a member does not', () => {
       assert.equal(await pawan.locator('.cap-agent-dot').count(), 2);
 
       assert.equal(await h.page.locator('.cap-kind').count(), 0, 'a profile kind is drawn');
-      assert.equal(await h.page.locator('.cap-spark').count(), 0, 'activity is drawn');
-      assert.equal(await h.page.locator('.cap-spark-split').count(), 0, 'the split is drawn');
+      assert.equal(await h.page.locator('.cap-figs').count(), 0, 'activity is drawn');
+      assert.equal(await h.page.locator('.cap-spark').count(), 0, 'a sparkline is drawn');
       assert.equal(await h.page.locator('a.cap-name-link').count(), 0, 'a profile link is drawn');
       assert.equal(await pawan.locator('.cap-agent', { hasText: 'Cursor' }).count(), 0);
       assert.equal(await h.page.locator('.cap-tile-unlisted').count(), 0);
@@ -676,8 +681,13 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
       assert.deepEqual(labels, [
         'workload nothing in progress',
         'agents 0 running',
+        'activity 14 days · 0',
         'spaces 0 spaces',
       ]);
+      assert.equal(
+        (await cal.locator('.cap-figs').innerText()).replace(/\s+/g, ' ').trim(),
+        '0 by hand 0 by agents 0 bookkeeping',
+      );
       assert.equal(
         (await cal.locator('.cap-counts').innerText()).replace(/\s+/g, ' ').trim(),
         '0 in progress 0 to do 0 backlog',
@@ -699,7 +709,7 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
         const got = (await card(h.page, name).locator('.cap-label').allInnerTexts()).map((t) =>
           t.replace(/\s+/g, ' ').trim().split(' ')[0]?.toLowerCase(),
         );
-        assert.deepEqual(got, ['workload', 'agents', 'spaces'], name);
+        assert.deepEqual(got, ['workload', 'agents', 'activity', 'spaces'], name);
         assert.equal(await card(h.page, name).locator('.cap-tasks').count(), 0, `${name}: footer`);
       }
     } finally {
@@ -707,7 +717,7 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
     }
   });
 
-  void test('a member sees the same blocks, and never a hole', async () => {
+  void test('a member sees the same blocks less Activity, and never a hole', async () => {
     const h = await open('/insights?tab=capacity', orgStub('member'));
     try {
       await ready(h.page);
@@ -719,7 +729,7 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
         );
         assert.deepEqual(got, ['workload', 'agents', 'spaces'], name);
       }
-      assert.equal(await h.page.locator('.cap-spark-block').count(), 0);
+      assert.equal(await h.page.locator('.cap-activity-block').count(), 0);
       assert.equal(await h.page.locator('.cap-tasks').count(), 0);
     } finally {
       await h.close();
@@ -772,6 +782,13 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
       assert.ok(
         counts.every((t) => t.length > 20),
         `a count has no rule: ${counts.join(' | ')}`,
+      );
+      const figs = await pawan
+        .locator('.cap-fig')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''));
+      assert.deepEqual(
+        figs.map((t) => t.split(' ').slice(0, 3).join(' ')),
+        ['Board actions they', 'Board actions made', 'Sprint moves and'],
       );
       assert.match(await titleOf('.cap-agent'), /^Running now · last signal/);
       assert.match(await titleOf('.cap-agents-block .cap-label-note'), /live session/);
@@ -828,6 +845,7 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
         'to do',
         'review',
         'agents',
+        'hand · agents · bookkeeping',
         'spaces',
       ]);
 
@@ -839,7 +857,7 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
             .allInnerTexts()
         ).map((t) => t.replace(/\s+/g, ' ').trim());
       const pawan = await cellsOf('Pawan Sirsat');
-      assert.equal(pawan.length, 8);
+      assert.equal(pawan.length, 9);
       assert.deepEqual(pawan.slice(1), [
         'Load: Heavy 1 overdue',
         '',
@@ -847,10 +865,20 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
         '3',
         '2',
         '2',
+        '21 40 18',
         '2 Laika 8 committed, 12 in backlog, 1 waiting on reviewers Onroute 2 committed, 0 in backlog, 1 waiting on reviewers',
       ]);
       const cal = await cellsOf('Cal Mokoena');
-      assert.deepEqual(cal.slice(1), ['Load: No load', '', '0', '0', '0', '0', '0 No spaces']);
+      assert.deepEqual(cal.slice(1), [
+        'Load: No load',
+        '',
+        '0',
+        '0',
+        '0',
+        '0',
+        '0 0 0',
+        '0 No spaces',
+      ]);
 
       // One scale: Pawan's 10 committed fill the bar; Bea's 3 are three tenths of it.
       const widths = await h.page.locator('.cap-list tbody tr .cap-bar').evaluateAll((bars) =>
@@ -878,7 +906,7 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
     }
   });
 
-  void test('List for a member: the same columns, no profile links', async () => {
+  void test('List for a member: no activity column, no profile links', async () => {
     const h = await open('/insights?tab=capacity', orgStub('member'));
     try {
       await ready(h.page);
