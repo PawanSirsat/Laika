@@ -2514,7 +2514,7 @@ PUT    /api/v1/org/time/solidtime/projects   body { projects } → { projects } 
 PUT    /api/v1/org/time/solidtime/import     body { v, members, tz, from, to, complete, entries } → what changed, and not_on_laika   (owner, admin; session only)
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only; name 1–80 chars, trimmed — Change organisation settings, LAI-984)
                                              the owner's read adds extra_owners: [{ id, name, email }] — active owners besides orgs.owner_user_id, reported, never demoted silently (D-104 item 2)
-POST   /api/v1/org/transfer-ownership        body { user_id, confirm } — confirm is the target's email; target an active admin or member → { owner, previous_owner }; target becomes owner, caller admin, orgs.owner_user_id moves, one transaction; logged   (owner only; session only; LAI-982)
+POST   /api/v1/org/transfer-ownership        body { user_id, confirm } — confirm is the target's email; target an active admin or member → { owner, previous_owner }; target becomes owner, caller admin, orgs.owner_user_id moves, one transaction; logged; only the owner orgs.owner_user_id names may — another owner from before D-104 is 403 reason not_recorded_owner   (owner only; session only; LAI-982)
 POST   /api/v1/org/github-webhook            set or rotate the GitHub webhook secret; answers it once (session only)
 DELETE /api/v1/org/github-webhook            clear it (204; session only)
 GET    /api/v1/org/model-prices              PUT/DELETE .../model-prices/:model — API-equivalent prices (set: owner, admin; session only; LAI-773)
