@@ -168,3 +168,42 @@ or commit messages.
   question.
 - LAI-865 (on Belka) adds a title to the same To settle row and Inspector.
   Whichever lands second merges the other.
+
+## Review notes (PR #32, round 1; CHIEF, 2026-10-22)
+
+These notes were appended after the task was claimed, so the criteria above
+were not edited (§2). **Where a note and the text above disagree, the note
+wins.** Each requirement added here is a box. Tick it at finish like any
+criterion.
+
+**B1. Project matching stays, because the owner approved it.**
+
+- On 2026-10-22 Belka proposed: *"You name a work folder once ... Every
+  block from that folder then carries the name ... if a Laika project
+  matches the name, the block goes under that project as well."*
+- It replaces the earlier option of linking a folder to a project, because
+  it *"does the same job, plus it works for projects that aren't on
+  Laika"*.
+- The owner replied **"go ahead"** the same day.
+- D-098 now quotes this too.
+
+**The consequence the reviewer raised.** A block under a matched project is
+confirmed under that project, not as *General*, and that changes where it can
+go in Solidtime:
+- a *General* entry goes there with no project;
+- a space's entry goes to the Solidtime project that `laika time map` set
+  for the space, or is held as `space_not_mapped` (SPEC §6.4, the outbox,
+  `docs/SPEC.md:3076-3092`).
+
+- [ ] **The person sees the project before confirming.** For a matched
+      block, the To settle row and the Inspector show which project it will
+      be confirmed under, and the person can change it or clear it there.
+- [ ] **Test (browser):** a matched block shows its project before confirm.
+      This fails today.
+- [ ] **Test (server):** a matched block confirms under that project, not as
+      General. This fails today.
+
+The Notes line *"Solidtime is unchanged"* now means only that Solidtime's
+code and `describe()` (`cli/src/time-solidtime.ts:638-642`) are unchanged.
+The chosen name is not sent to Solidtime. A matched block's time does reach
+it, as its space's time.

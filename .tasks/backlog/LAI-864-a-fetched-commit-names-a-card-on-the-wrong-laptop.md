@@ -141,3 +141,105 @@ Those are Strelka's tasks; Belka never worked on them.
   reach, or whose commits feed drafts. The rule lives only in the code header
   and the README. If the fix changes what SPEC says about drafts (§4.47,
   §13.4), stop and ask CHIEF; no SPEC edit is granted here.
+
+## Review notes (PR #32, round 1; CHIEF, 2026-10-22)
+
+These notes were appended after the task was claimed, so the criteria above
+were not edited (§2). **Where a note and the text above disagree, the note
+wins.** Each requirement added here is a box. Tick it at finish like any
+criterion.
+
+**B2. Which reflog entries count as "made here".** This was measured on
+2026-10-22 with git 2.50.1, in a scratch repo with a bare remote and two
+clones under one email.
+
+**Read the step in brackets, not the command.** The same step is written
+under different command names:
+- `rebase (pick):`, `rebase -i (pick):`;
+- `pull --rebase (pick):`, `pull -q --rebase (pick):`;
+- and, under `pull.rebase=true`, `pull (pick):` or `pull -q (pick):`, with no
+  `--rebase` at all.
+
+What counts:
+
+- **Made here:**
+  - `commit:` and `commit (initial):`;
+  - `commit (amend):`. The commit is edited on this laptop, and it keeps its
+    author time;
+  - the rebase steps `(pick)`, `(reword)`, `(squash)`, `(fixup)` and
+    `(edit)`, whatever command wrote them;
+  - **`(continue)`.** A pick that hit a conflict and was resolved is
+    recorded only as `rebase (continue): <subject>`. That was measured
+    after a `pull` conflict, then `git rebase --continue`.
+
+  **Why `(pick)` matters:** after a pull that rebases, the person's own
+  commit lives on only under its `(pick)` entry. Its `commit:` hash
+  (`3448c5b`, `commit: LAI-7 mine on A`) is on no branch any more.
+  `git log --branches` lists only the replayed `3b0c0a8`, whose sole entry is
+  `pull -q --rebase (pick): LAI-7 mine on A`. A rebase replays the branch's
+  own commits that upstream lacks, so its steps are this laptop's work, at
+  their original author time.
+- **Not made here:**
+  - `cherry-pick:`. It copies the source's author and author time; the copy
+    and the source had the same `%ae` and `%at`. If the source is another
+    laptop's commit, counting the copy is this bug again, at that laptop's
+    time. If the source was made here, it already counts by its own entry,
+    and the copy would count it twice. **This reverses the `cherry-pick`
+    clause in *The signal* above.**
+  - `(start)` and `(finish)`, plus `pull` (fast-forward), `merge`, `reset`,
+    `checkout` and `branch`. None of these is a commit made here.
+- **An edge, to record rather than fix:** a rebase that flattens a local
+  merge of someone else's branch picks their commits too, and they would
+  count.
+
+- [ ] **The rule.** Entries are classified by the step in brackets, as
+      listed above. A unit test feeds the step parser these strings and
+      asserts each answer:
+      - `pull -q (pick): x`, `pull (pick): x` and `pull --rebase (pick): x`;
+      - `rebase -i (reword): x` and `rebase (continue): x`;
+      - `commit (amend): x` and `cherry-pick: x`;
+      - `pull -q (finish): …`.
+- [ ] **Test: a pull that rebases.** A commits `LAI-7 …`, B pushes, and A
+      runs `git pull --rebase`, then the same again under
+      `pull.rebase=true` with a plain `git pull`. Assert both halves:
+      - A's block still ties to LAI-7 and counts 1. This half is the guard
+        against a filter that is too strict.
+      - B's commit, which the pull brought in, neither ties nor counts. This
+        half **fails today**, because B's commit ties the block today and
+        counts in it.
+- [ ] **Test: a pick that conflicted.** A's commit conflicts with B's during
+      the pull, and is resolved with `git rebase --continue`. It ties and
+      counts 1.
+- [ ] **Test: amend.** A amends its `LAI-7 …` commit. The block ties to
+      LAI-7 and counts 1, not 2.
+- [ ] **Test: cherry-pick.**
+      - A cherry-picks B's `LAI-9 …`. It neither ties nor counts.
+      - A cherry-picks its own commit onto a second branch. It counts once.
+- [ ] **Mutation.** Treat `(pick)` entries as not made here. The pull test's
+      first half goes red. Prove the mutation landed with a `grep`, and
+      restore the file.
+
+**B3. No escape hatch.**
+
+- [ ] In *The signal*, the clean-up bullet's last sentence ("If no workable
+      signal survives it, the test below shows what is lost, and that is
+      written here before review.") is replaced. So is the third test
+      bullet's "or the test records the loss the signal criterion allows".
+      Both now read:
+
+      > Reflog entries do not survive `git worktree remove` + `git branch
+      > -d`. If no signal survives the clean-up, stop and ask the owner on
+      > the card before building. A loss ships only with their word,
+      > recorded here.
+
+      Measured: a commit made in a temporary worktree, then merged, had 2
+      reflog entries before `git worktree remove` and `git branch -d`, and 0
+      after. It was still in history.
+
+**Non-blocking: the consumer is `draftDays`, not `buildDraft`.**
+
+- [ ] *The fix* reads "dropped before `draftDays` sees it", not "dropped
+      before `buildDraft` sees it". `buildDraft`
+      (`cli/src/activity-time.ts:806`) is itself what calls `draftCommits`
+      (`:831`), and it passes the commits to `draftDays` (`:313`) at `:872`.
+      The filter belongs in `draftCommits`, or between `:831` and `:872`.
