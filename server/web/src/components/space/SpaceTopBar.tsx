@@ -29,7 +29,13 @@ export interface SpaceTopBarProps {
   readonly onQuery: (value: string) => void;
   readonly onPriority: (value: TaskPriority | undefined) => void;
   readonly onAgentOnly: (value: boolean) => void;
-  readonly onCreate: () => void;
+  /**
+   * Opens the board's create form. Absent unless the server says the reader
+   * may create a task in this space — `task.create`, which a space set to
+   * *Space admins only* withholds from members (LAI-992) — so Create is not
+   * drawn rather than drawn to answer `403`.
+   */
+  readonly onCreate?: (() => void) | undefined;
 }
 
 /**
@@ -418,20 +424,22 @@ export function SpaceTopBar({
         {/* Before Create, so Create stays flush with the bar's end (LAI-293). */}
         {slug !== undefined && <SpaceMenu slug={slug} />}
 
-        <button type="button" className="space-create" onClick={onCreate}>
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.6"
-            aria-hidden="true"
-          >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          Create
-        </button>
+        {onCreate !== undefined && (
+          <button type="button" className="space-create" onClick={onCreate}>
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.6"
+              aria-hidden="true"
+            >
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            Create
+          </button>
+        )}
       </div>
     </>
   );
