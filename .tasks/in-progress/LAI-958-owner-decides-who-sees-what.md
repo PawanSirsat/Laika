@@ -2,11 +2,12 @@
 id: LAI-958
 title: 'Admins can change everyone''s role and nobody can decide who sees what: roles and permissions are not the owner''s alone'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-885]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T13:30:29Z
 ---
 
 ## Goal
