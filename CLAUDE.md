@@ -476,8 +476,11 @@ LAI-015 had to clean up.
   fifteen minutes. A deploy that comes up unhealthy rolls back by itself, and
   the run goes red. So the local gate before `git push` (§5) is not optional,
   and a red **CI / Deploy** run on master is the next thing to fix — nothing
-  after it deploys until it is green. Branches other than `master` run the
-  gate and deploy nothing.
+  after it deploys until it is green. Pull requests into `master` or an
+  `integration-*` branch, and pushes to `integration-*`, run the gate and deploy
+  nothing; a push to any other branch runs nothing (LAI-990), so the local gate
+  is the only check a work branch gets until its PR opens. A manual run
+  (`workflow_dispatch`) runs the gate only, on any branch, and never deploys.
 
 ### 4.1 GitHub account — personal only
 
