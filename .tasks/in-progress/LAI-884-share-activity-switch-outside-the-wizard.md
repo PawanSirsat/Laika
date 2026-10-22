@@ -2,11 +2,12 @@
 id: LAI-884
 title: 'A developer cannot find the switch that shares their local activity — it lives only in the Connect wizard''s Optional step'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T16:22:02+05:30
 ---
 
 ## Goal
