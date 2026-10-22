@@ -1,4 +1,4 @@
-import { blockedState, isStale, staleFor } from '../../../api/board-derive.ts';
+import { blockedState, blockers, isStale, staleFor } from '../../../api/board-derive.ts';
 import { statusNameOf } from '../../../api/status-derive.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
 import { timeLabel, type TimeLabel } from '../../../api/time-label.ts';
@@ -157,10 +157,12 @@ export function listRows({
      * `blocked_by` holds ULIDs, and printing one gives the `p1 · t1` defect
      * LAI-271 fixed on the presence chip. A blocker outside the loaded page is
      * simply not named — the count still says there is one.
+     *
+     * **Only the ones still holding it** (LAI-819): `blockers`, the card's
+     * list, by the rule the row's `blocked` reads. A finished blocker was named
+     * too, so a row read "blocked by LC-1" a week after LC-1 was done.
      */
-    const blockerKeys = task.blocked_by
-      .map((id) => byId.get(id)?.key)
-      .filter((k): k is string => k !== undefined);
+    const blockerKeys = blockers(task, byId).map((b) => b.key);
 
     return {
       id: task.id,
