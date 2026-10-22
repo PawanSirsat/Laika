@@ -2,11 +2,12 @@
 id: LAI-992
 title: 'The board offers Add task on task.write, so "Space admins only" still shows members a create that answers 403'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-976, LAI-970]
 discovered-from: LAI-977
-status: backlog
+status: in-progress
+started: 2026-10-22T18:59:02Z
 ---
 
 ## Goal
