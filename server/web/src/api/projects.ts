@@ -32,11 +32,16 @@ export interface Project {
   readonly repo: string | null;
   readonly visibility: 'public' | 'private';
   /**
-   * The palette entry the space is painted (D-103 item 4, LAI-976). Optional
-   * because a space stored before it existed may send none; `spaceColor()`
-   * then derives one from the slug.
+   * The palette entry the space is painted (D-103 item 4, LAI-976), or `null`
+   * until one is picked — `spaceColor()` then derives one from the slug.
    */
-  readonly color?: SpaceColor | null;
+  readonly color: SpaceColor | null;
+  /** Who may create tasks here (D-103 item 6): `member` or `lead`. */
+  readonly task_create_min_role: 'member' | 'lead';
+  /** Whether agent tokens may write here (D-103 item 7). */
+  readonly agents_allowed: boolean;
+  /** Prefixes the space carried before `prefix`, oldest first; old keys still resolve (D-103 item 3). */
+  readonly former_prefixes: readonly string[];
   readonly context_md: string;
   /** Days after which finished work leaves the board; `null` never (LAI-266). */
   readonly board_hide_done_days: number | null;
