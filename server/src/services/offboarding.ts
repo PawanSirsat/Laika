@@ -4,7 +4,7 @@ import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { projects, tasks, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { can } from '../policy/can.ts';
+import { assertAgentsMay, can } from '../policy/can.ts';
 import { canBeMentioned } from './mentions.ts';
 import { OPEN_STATUSES } from './tasks.ts';
 
@@ -156,6 +156,14 @@ export function applyOffboardingChoice(
 ): void {
   if (open.length === 0 || choice === undefined) return;
   const to = choice === 'unassign' ? null : choice.reassign_to;
+
+  // The caller's org authority decides whether these tasks move, but not
+  // through which credential (LAI-976 review): an agent token may not change
+  // a task in a space whose agents are off, so one such task refuses the
+  // whole move — asked of every task before the first is written.
+  for (const t of open) {
+    assertAgentsMay(withProject(actor, t.projectId), 'task.write', { projectId: t.projectId });
+  }
 
   for (const t of open) {
     db.update(tasks).set({ assigneeId: to, updatedAt: now }).where(eq(tasks.id, t.id)).run();
