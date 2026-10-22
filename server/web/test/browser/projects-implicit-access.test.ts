@@ -85,7 +85,9 @@ void describe('Projects effective access', () => {
         await yours.getByText('Private Observatory', { exact: true }).waitFor({ timeout: 20_000 });
         assert.match(await yours.innerText(), /Private Observatory/);
         assert.match(await yours.innerText(), /Public Commons/);
-        assert.match(await yours.innerText(), /Archived Workshop/);
+        // An archived space is listed under the *Archived* chip, not here
+        // (D-103 item 10, LAI-978).
+        assert.doesNotMatch(await yours.innerText(), /Archived Workshop/);
         assert.equal(
           await yours.getByText('Public Commons', { exact: true }).count(),
           1,
@@ -117,7 +119,7 @@ void describe('Projects effective access', () => {
           .waitFor({ timeout: 20_000 });
         const page = await h.page.locator('.projects').innerText();
         assert.match(page, /Member Workshop/);
-        assert.match(page, /Archived Workshop/);
+        assert.doesNotMatch(page, /Archived Workshop/, 'an archived space is under Archived');
         assert.match(page, /Public Commons/);
         assert.doesNotMatch(page, /Private Observatory/);
       } finally {

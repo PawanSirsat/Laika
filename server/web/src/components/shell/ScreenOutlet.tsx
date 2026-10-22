@@ -89,12 +89,17 @@ function BoardRoute() {
 
 function ProjectsRoute() {
   const {
-    route: { navigate },
+    route: { navigate, params, setParams },
     me,
   } = useShell();
   return (
     <ProjectsScreen
       me={me}
+      params={params}
+      onParamsChange={setParams}
+      onOpenSettings={(slug) => {
+        navigate(`/spaces/${encodeURIComponent(slug)}/settings`);
+      }}
       onOpen={(slug) => {
         navigate(`/board?project=${encodeURIComponent(slug)}`);
       }}

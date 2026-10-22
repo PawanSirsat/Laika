@@ -327,9 +327,9 @@ void describe('role management', () => {
       try {
         await h.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
         await until(
-          async () => (await h.page.locator('.org-invite-form').count()) === (invited ? 1 : 0),
+          async () => (await h.page.locator('[data-invite-open]').count()) === (invited ? 1 : 0),
         );
-        assert.equal(await h.page.locator('.org-invite-form').count(), invited ? 1 : 0);
+        assert.equal(await h.page.locator('[data-invite-open]').count(), invited ? 1 : 0);
         assert.equal((await h.page.locator('.org-deactivate').count()) > 0, deactivates);
         assert.equal(
           (await h.page.locator('.org-person [role="combobox"]').count()) > 0,

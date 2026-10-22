@@ -94,7 +94,7 @@ const BASE: ApiStub = {
 
 /** Every control an admin loses with their grants, on Overview and People. */
 const GRANTED_CONTROLS = [
-  '.org-invite-form',
+  '[data-invite-open]',
   '.org-deactivate',
   '[data-fact="developer-insights"] [role="switch"]',
   '[data-fact="time"] .org-mode',
@@ -190,7 +190,7 @@ void describe('a withdrawn admin is never shown a withdrawn control', () => {
       // Retry asks again; the answer reaches the gates already on screen.
       fail = false;
       await banner.getByRole('button', { name: 'Retry' }).click();
-      await h.page.locator('.org-invite-form').waitFor({ timeout: 10_000 });
+      await h.page.locator('[data-invite-open]').waitFor({ timeout: 10_000 });
       assert.equal(await banner.count(), 0, 'the failure notice outlived the answer');
       assert.ok((await h.page.locator('.org-deactivate').count()) > 0);
     } finally {
@@ -219,7 +219,7 @@ void describe('the store follows the user and every publish', () => {
       },
     });
     try {
-      await h.page.locator('.org-invite-form').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-invite-open]').waitFor({ timeout: 20_000 });
 
       await h.page.locator('.user-menu-trigger').dispatchEvent('click');
       await h.page.locator('.user-menu-signout').dispatchEvent('click');
