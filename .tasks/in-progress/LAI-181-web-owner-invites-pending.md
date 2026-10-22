@@ -2,11 +2,12 @@
 id: LAI-181
 title: 'The client does not declare GET /org owner_invites_pending, and the owner cannot see old owner invites'
 area: shell
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-982
-status: backlog
+status: in-progress
+started: 2026-10-22T21:41:46Z
 ---
 
 ## What is wrong
