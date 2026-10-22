@@ -3,6 +3,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
 } from 'react';
@@ -16,9 +17,13 @@ import {
   dragEdge,
   instantOf,
   limitsIn,
+  placeChips,
+  stackOf,
   PX_PER_HOUR,
   SIGNAL_MINUTES,
   STEP,
+  type Box,
+  type ChipPlace,
   type DayLine,
   type Edit,
   type LaneBlock,
@@ -72,6 +77,22 @@ function labelOf(
 }
 
 /**
+ * A label whole, then cut after each word with an ellipsis, longest first
+ * (LAI-860): `Needs a card`, `Needs a…`, `Needs…`. FitLabel shows the first
+ * that fits, or nothing — never a lone letter. A cut never ends on the `·`
+ * between two parts.
+ */
+function cutsOf(label: string): string[] {
+  const words = label.split(' ');
+  const cuts = [label];
+  for (let n = words.length - 1; n >= 1; n -= 1) {
+    const head = words.slice(0, n).join(' ');
+    if (head.length >= 2 && /[\p{L}\p{N}]$/u.test(head)) cuts.push(`${head}…`);
+  }
+  return cuts;
+}
+
+/**
  * My day as lanes (LAI-831, the owner's "Laika App v2" design): the reader's
  * day along the hours — confirmed solid, drafted dashed, a block that needs a
  * card dashed amber — the **gaps** of twenty minutes or more between them,
@@ -80,10 +101,11 @@ function labelOf(
  * **Only what the server has is drawn.** The SIGNALS lane puts the day's
  * prompts and commits in the five minutes each fell in, as the server keeps
  * them (LAI-834, D-096); a day drafted without them has no lane, and every
- * block still shows its counts as a badge (CHIEF's addition G). The AGENTS
- * lane, under the blocks, puts when the agent worked in its five minutes
- * (LAI-833): blue where its session's split ties it to a card, grey where
- * nothing did — agent minutes beside the day, never hours in it.
+ * block still shows its counts as a badge wherever it clears its neighbours
+ * (CHIEF's addition G, LAI-860). The AGENTS lane, under the blocks, puts
+ * when the agent worked in its five minutes (LAI-833): blue where its
+ * session's split ties it to a card, grey where nothing did — agent minutes
+ * beside the day, never hours in it.
  *
  * Zoom fits the day or gives it 110 or 220 px an hour; Earlier, Now and
  * Later scroll it; it opens on the first block, and follows the selection.
@@ -122,6 +144,47 @@ export function Timeline({
   const entries = new Map(view.entries.map((e) => [e.id, e]));
   const at = (m: number): number => (line.midnight === undefined ? 0 : instantOf(line.midnight, m));
   const rangeOf = (s: Span): string => spanOf(at(s.start), at(s.end), view.tz);
+  // From the blocks as drawn, a dragged edge included: it never lies over a neighbour.
+  const stacks = stackOf(
+    line.blocks.map((b) => (preview?.id === b.id ? { ...b, ...preview.edit } : b)),
+  );
+  const [chips, setChips] = useState<ReadonlyMap<string, ChipPlace>>(() => new Map());
+  const [, setFonts] = useState(0);
+
+  // A font that finishes loading changes how wide each badge is drawn.
+  useEffect(() => {
+    const again = (): void => {
+      setFonts((n) => n + 1);
+    };
+    document.fonts.addEventListener('loadingdone', again);
+    return () => {
+      document.fonts.removeEventListener('loadingdone', again);
+    };
+  }, []);
+
+  // After every render, each badge's place from the boxes as drawn (`placeChips`).
+  useLayoutEffect(() => {
+    const root = track.current;
+    if (root === null) return;
+    const boxOf = (el: Element): Box => {
+      const r = el.getBoundingClientRect();
+      return { l: r.left, r: r.right, t: r.top, b: r.bottom };
+    };
+    const blocks = new Map(
+      [...root.querySelectorAll<HTMLElement>('[data-block-key]')].map((el) => [
+        el.dataset.blockKey ?? '',
+        boxOf(el),
+      ]),
+    );
+    const sizes = [...root.querySelectorAll<HTMLElement>('[data-chip-for]')].map((el) => {
+      const r = el.getBoundingClientRect();
+      return { id: el.dataset.chipFor ?? '', width: r.width, top: r.top, bottom: r.bottom };
+    });
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const next = placeChips(sizes, blocks, boxOf(root), rem * 0.25);
+    const same = next.size === chips.size && [...next].every(([id, p]) => chips.get(id) === p);
+    if (!same) setChips(next);
+  });
 
   useLayoutEffect(() => {
     const box = scroller.current;
@@ -411,7 +474,9 @@ export function Timeline({
                   <FitLabel options={['Break']} />
                 </button>
               ))}
-              {line.blocks.map((block) => {
+              {line.blocks.map((block, i) => {
+                const { row, rows } = stacks[i] ?? { row: 0, rows: 1 };
+                const key = `${block.kind}-${block.id}`;
                 const shape = preview?.id === block.id ? { ...block, ...preview.edit } : block;
                 const kind = block.kind === 'drafted' ? 'draft' : 'entry';
                 const selected = isSelected(kind, block.id);
@@ -424,47 +489,67 @@ export function Timeline({
                 const editable = selected && !block.locked && !busy;
                 return (
                   <div
-                    key={`${block.kind}-${block.id}`}
+                    key={key}
                     className={[
                       'dayline-block',
                       `dayline-${block.kind}`,
                       block.needsCard ? 'dayline-needs-card' : '',
+                      rows > 1 ? 'dayline-stacked' : '',
                       selected ? 'dayline-selected' : '',
                       preview?.id === block.id ? 'dayline-dragging' : '',
                     ]
                       .filter((c) => c !== '')
                       .join(' ')}
                     data-block-id={block.id}
+                    data-block-key={key}
                     data-kind={block.kind}
-                    style={{ left: left(shape.start), width: wide(shape.start, shape.end) }}
+                    style={
+                      {
+                        left: left(shape.start),
+                        width: wide(shape.start, shape.end),
+                        '--row': String(row),
+                        '--rows': String(rows),
+                      } as CSSProperties
+                    }
                   >
-                    <button
-                      type="button"
-                      className="dayline-block-body"
-                      data-block-select={block.id}
-                      aria-pressed={selected}
-                      aria-label={`${range}, ${top}, ${duration(shape.minutes)}`}
-                      title={`${range} · ${top}${title === '' ? '' : ` ${title}`}`}
-                      onClick={() => {
-                        onSelect({ kind, id: block.id });
-                      }}
-                    >
-                      <span className="dayline-block-top">{top}</span>
-                      {px > 120 && title !== '' && (
-                        <span className="dayline-block-title">{title}</span>
-                      )}
-                      <span className="dayline-block-sub">
-                        <FitLabel
-                          options={[
-                            `${range} · ${duration(shape.minutes)}`,
-                            duration(shape.minutes),
-                          ]}
-                        />
-                      </span>
-                    </button>
+                    {/* Clipped to the block: at Fit a short block is narrower than its body. */}
+                    <div className="dayline-block-clip">
+                      <button
+                        type="button"
+                        className="dayline-block-body"
+                        data-block-select={block.id}
+                        aria-pressed={selected}
+                        aria-label={`${range}, ${top}, ${duration(shape.minutes)}`}
+                        title={`${range} · ${top}${title === '' ? '' : ` ${title}`}`}
+                        onClick={() => {
+                          onSelect({ kind, id: block.id });
+                        }}
+                      >
+                        <span className="dayline-block-top">
+                          {/* A row's height changes with how many share it: try again. */}
+                          <FitLabel key={rows} options={cutsOf(top)} />
+                        </span>
+                        {px > 120 && title !== '' && (
+                          <span className="dayline-block-title">
+                            <FitLabel key={rows} options={[title]} ellipsis />
+                          </span>
+                        )}
+                        <span className="dayline-block-sub">
+                          <FitLabel
+                            options={[
+                              `${range} · ${duration(shape.minutes)}`,
+                              duration(shape.minutes),
+                            ]}
+                          />
+                        </span>
+                      </button>
+                    </div>
+                    {/* Drawn only where it clears every other block and badge (`placeChips`). */}
                     {prompts + commits > 0 && (
                       <span
                         className="dayline-signals"
+                        data-chip-for={key}
+                        data-chip-place={chips.get(key) ?? 'none'}
                         title={`${String(prompts)} prompts, ${String(commits)} commits — counted for the block; when in it is not known`}
                       >
                         {String(prompts)}p {String(commits)}c
