@@ -14,7 +14,8 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, setTheme, until, type Harness } from './harness.ts';
+import { closeBrowser, setTheme, until, type Harness } from './harness.ts';
+import { open } from './my-day-clock.ts';
 import { busyStub } from './my-day-busy.ts';
 
 void after(async () => {

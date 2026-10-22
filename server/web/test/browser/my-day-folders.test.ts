@@ -9,7 +9,8 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Locator } from 'playwright';
-import { closeBrowser, open, setTheme, type Harness } from './harness.ts';
+import { closeBrowser, setTheme, type Harness } from './harness.ts';
+import { open } from './my-day-clock.ts';
 import { TODAY, weekData, weekStub, type DayData } from './my-day-week.ts';
 
 const ACME = { id: 'p9', slug: 'acme', name: 'Acme Billing' };
