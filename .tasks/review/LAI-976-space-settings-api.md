@@ -105,8 +105,8 @@ A person on a session, and a token where agents are on, are unchanged.
 
 **Census: every write to `tasks` and its child tables in `server/src`.**
 These are the writes to `tasks`, `task_dependencies`, `comments`, `task_tags`
-and `time_entries`, by `.update/.insert/.delete`, plus raw SQL. The grep was
-untruncated and found 31 sites:
+and `time_entries`, by `.update/.insert/.delete` (32) plus raw SQL (1, migration
+0045). The grep was untruncated: 33 sites.
 - **Asks `assertCan` with the task's `projectId`**:
   - `createTask`, `updateTask`, `claimTask`, `changeStatus`,
     `reorderTask` and `removeTaskDependency` in `services/tasks.ts`.
