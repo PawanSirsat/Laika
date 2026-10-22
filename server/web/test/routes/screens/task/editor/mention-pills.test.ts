@@ -85,6 +85,27 @@ void describe('a pill covers the mention and nothing else', () => {
   });
 });
 
+void describe('a pill is not in the document', () => {
+  /*
+   * The decoration's whole point: the bridge's schema, and so a save, has no
+   * idea a mention is special. The byte-for-byte case in
+   * `markdown-bridge.test.ts` catches a mention mark that loses characters on
+   * the way out; this catches one that writes them back exactly, which that
+   * case cannot see.
+   */
+  void test('the bridge parses a mention as plain text, with only the marks around it', () => {
+    const doc = parseMarkdown(bridge, 'Ask @ada, then **@grace**.', bridge.schema);
+    assert.ok(doc !== null);
+    const runs: string[] = [];
+    doc.descendants((node) => {
+      if (node.isText)
+        runs.push(`${node.text ?? ''}|${node.marks.map((m) => m.type.name).join('+')}`);
+      return true;
+    });
+    assert.deepEqual(runs, ['Ask @ada, then |', '@grace|bold', '.|']);
+  });
+});
+
 void describe('a redraw changes nothing in the document', () => {
   void test('it is marked for the plugin, kept out of undo, and has no steps', () => {
     const doc = parseMarkdown(bridge, 'for @ada', bridge.schema);
