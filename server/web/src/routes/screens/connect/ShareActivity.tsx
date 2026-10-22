@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
-import { Switch } from '../../../components/Switch.tsx';
 import { ApiError } from '../../../api/errors.ts';
 import {
   deleteOwnLocalActivity,
@@ -18,8 +17,16 @@ import type { AgentClient } from '../../../api/agent-clients.ts';
 import { compactTokens, exactTokens } from '../../../api/usage.ts';
 import { agentLabel } from '../profile/activity-derive.ts';
 
-/** The collector's command (LAI-752): it checks sharing first, then installs. */
+/** The collector's command (LAI-752): it checks collection is on first, then installs. */
 export const ACTIVITY_COMMAND = 'laika activity on';
+
+/**
+ * What the organisation collects, in the notice (D-102 amended, LAI-964) —
+ * word for word what `laika activity on` / `status` / `sync` print, which
+ * `cli/test/activity-command.test.ts` holds.
+ */
+export const COLLECTED =
+  'per-day counts of your prompts, agent sessions and commits, and your agents’ token counts';
 
 const SCOPES: Readonly<Record<LocalActivityScope, { label: string; hint: string }>> = {
   'agent-repos': {
@@ -59,14 +66,16 @@ function dayLabel(day: string): string {
 }
 
 /**
- * Connect's *Share local activity* (D-079, LAI-751): the signed-in
- * developer's own consent to send daily counts from their machine, and a look
- * at what the server holds for them.
+ * Connect's *Share local activity* (D-079, LAI-751): what the developer's
+ * machine sends, and a look at what the server holds for them.
  *
- * Everything here is the developer's alone: the switch, the scope and the
- * delete are web-session-only on the server, so no agent can do any of them
- * for its person. With the organisation's switch off there is nothing to turn
- * on, and this says so instead of offering a control that would do nothing.
+ * **Collection is the organisation's** since D-102 (amended, LAI-964): with
+ * *Developer insights* on, every connected machine is collected, so there is
+ * no switch of the person's here — a plain notice instead, saying what is
+ * collected and who can see it, never silence. The scope and the delete stay
+ * the developer's, web-session-only on the server, so no agent can do either
+ * for its person. With the organisation's switch off nothing is collected, and
+ * this says so.
  */
 export function ShareActivity({
   canManageOrg,
@@ -125,7 +134,7 @@ export function ShareActivity({
 
   const { sharing, held } = state;
 
-  const change = (next: { enabled?: boolean; scope?: LocalActivityScope }): void => {
+  const change = (next: { scope: LocalActivityScope }): void => {
     setBusy(true);
     setError(undefined);
     setActivitySharing(next)
@@ -144,8 +153,8 @@ export function ShareActivity({
     if (
       !window.confirm(
         'Delete every daily count and commit key the board holds for you? Your profile’s ' +
-          'activity loses its GitHub and Local history. This cannot be undone. Sharing stays as ' +
-          'it is.',
+          'activity loses its GitHub and Local history. This cannot be undone. Collection carries ' +
+          'on while your organisation has Developer insights on.',
       )
     ) {
       return;
@@ -190,7 +199,8 @@ export function ShareActivity({
             </li>
           </ul>
           <p className="conn-note">
-            Commits count from the day you turn sharing on, and merge commits never count.
+            Commits count from the day collection starts on your machine, and merge commits never
+            count.
           </p>
         </div>
         <div>
@@ -218,27 +228,23 @@ export function ShareActivity({
         </p>
       ) : (
         <>
-          <div className="share-row">
-            <Switch
-              checked={sharing.enabled}
-              describedBy="share-switch-note"
-              disabled={busy}
-              onChange={(enabled) => {
-                change({ enabled });
-              }}
-            >
-              Share my local activity
-            </Switch>
-            {busy && <Spinner size="sm" />}
-          </div>
-          <p className="conn-note" id="share-switch-note">
-            {sharing.enabled
-              ? 'On. Turning it off stops every machine of yours at once; what is already held stays until you delete it.'
-              : 'Off. Nothing leaves your machine until you turn this on.'}
+          <p className="conn-note share-collects" data-state="org-collects">
+            <strong>Your organisation collects your local activity:</strong> {COLLECTED}. Owners and
+            admins can see it, and you can see who looked.{' '}
+            <a href="#share-held">See what the board holds for you</a>, and your own time on{' '}
+            <a href="/my-day">My day</a>.{' '}
+            {canManageOrg ? (
+              <>
+                You can turn Developer insights off in{' '}
+                <a href="/organisation?tab=overview">Organisation</a>.
+              </>
+            ) : (
+              'Only an owner or admin can turn it off.'
+            )}
           </p>
 
           <fieldset className="share-scope" disabled={busy}>
-            <legend className="share-h">Count work in</legend>
+            <legend className="share-h">Count work in {busy && <Spinner size="sm" />}</legend>
             {LOCAL_ACTIVITY_SCOPES.map((scope) => (
               <label key={scope} className="share-scope-option">
                 <input
@@ -315,7 +321,7 @@ export function ShareActivity({
         </>
       )}
 
-      <section className="share-held" aria-labelledby="share-held-title">
+      <section className="share-held" id="share-held" aria-labelledby="share-held-title">
         <h3 className="share-h" id="share-held-title">
           What the board holds for you · last 14 days
         </h3>
