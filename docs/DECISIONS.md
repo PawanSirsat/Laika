@@ -5619,3 +5619,25 @@ that."*
    not in this decision.
 7. **Not a score.** D-078 / D-088 item 1 stand: nothing ranks or rates a
    person from this data.
+
+**Amended the same day (the owner's answers to CHIEF's four questions):**
+*"he can see everything"*; grants by role first; the person sees who looked —
+yes; admins keep today's powers by default — yes.
+
+- **Rule 2 is replaced. Collection follows the organisation's switch alone.**
+  When Developer insights is on, every connected machine's activity is
+  collected and synced; the person's *Share local activity* switch no longer
+  stops it, and the server no longer refuses a sync for want of it. When the
+  organisation's switch is off, nothing is collected, as before. The owner and
+  admin therefore see everything rule 1 lists, drafts and local activity
+  included, for every person. **Amends D-079 and D-084 item 7 for collection
+  as well as reading.**
+- **Never silent.** Wherever the personal switch used to be (Developer access,
+  the Connect wizard) and in the CLI (`laika activity on` / `status`), the
+  person is told plainly that their organisation collects their local
+  activity, what it collects, and who can see it; the person can still see
+  and download their own data and see who looked (rule 3). The person can
+  still delete their own local activity only if the organisation allows it —
+  not in this amendment: deletion stays as it is today.
+- Collection still needs the person's machine to be connected (the hook and
+  `laika activity on`); nothing installs itself.
