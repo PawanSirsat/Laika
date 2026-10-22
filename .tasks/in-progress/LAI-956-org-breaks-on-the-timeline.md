@@ -2,11 +2,12 @@
 id: LAI-956
 title: 'My day''s Timeline does not show the organisation''s lunch and other breaks, and an owner has nowhere to set them'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-955]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T13:58:59Z
 ---
 
 ## Goal
