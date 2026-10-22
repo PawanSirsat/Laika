@@ -346,6 +346,7 @@ export function createTask(slug: string, input: CreateTaskInput): Promise<Task> 
  * `project.settings.edit` is **lead-only** (SPEC §3.2, *"Edit project settings
  * and `context_md`"*), with org owner/admin holding implicit lead — a strictly
  * narrower rule than `canCreateTask`, which admits members.
+ * Projects and My day also use it as their implicit-lead visibility rule.
  *
  * The same display-only caveat applies as above, and the same consequence: the
  * grip, the `⋯` and the `+ Add column` tile are **absent** for anyone this
