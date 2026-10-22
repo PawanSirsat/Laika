@@ -4119,6 +4119,10 @@ anything missing sends the task back.
   **`@` autocomplete in the comment box fed by `GET /projects/:slug/mentionable`
   — never by the member list**, because who may be mentioned is the server's
   answer and not a filter the client reapplies.
+  A mention that names someone — a handle exactly one person on that list
+  holds — shows as a pill wherever the panel reads or edits the task's text,
+  the reader's own stronger and `@strelka` / `@belka` softer, and the stored
+  text does not change (LAI-868).
 - **Sprints** — sprint list with dates, goal and status; active-sprint emphasis;
   task assignment in and out; counts by status; the one-active and no-overlap
   rules surfaced as errors, not silent failures.
