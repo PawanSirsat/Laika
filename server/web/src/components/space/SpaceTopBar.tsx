@@ -415,6 +415,9 @@ export function SpaceTopBar({
           ))}
         </button>
 
+        {/* Before Create, so Create stays flush with the bar's end (LAI-293). */}
+        {slug !== undefined && <SpaceMenu slug={slug} />}
+
         <button type="button" className="space-create" onClick={onCreate}>
           <svg
             width="13"
@@ -429,7 +432,6 @@ export function SpaceTopBar({
           </svg>
           Create
         </button>
-        {slug !== undefined && <SpaceMenu slug={slug} />}
       </div>
     </>
   );
