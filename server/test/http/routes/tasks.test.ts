@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { tasks, users } from '../../../src/db/schema.ts';
 import { flagStaleTasks, STALE_AFTER_MS } from '../../../src/jobs/jobs.ts';
@@ -8,6 +8,7 @@ import {
   authHarness,
   cookieFrom,
   jsonHeaders,
+  seedInvite,
   signUp,
 } from '../../helpers/auth.ts';
 
@@ -900,5 +901,198 @@ describe('a slim list: ?fields=slim (LAI-795)', () => {
     await newTask('Plain', { description_md: 'text' });
     const page = (await (await req('/api/v1/projects/laika/tasks?fields=')).json()) as ListPage;
     expect(page.data[0]?.description_md).toBe('text');
+  });
+});
+
+describe("GET /api/v1/tasks — everyone's work across projects (LAI-887)", () => {
+  interface Listed {
+    id: string;
+    key: string;
+    project_id: string;
+    status: string;
+    assignee_id: string | null;
+    sprint_id: string | null;
+  }
+  interface ListPage {
+    data: Listed[];
+    next_cursor: string | null;
+  }
+
+  /** A setup write that must land — a broken setup must not satisfy a test. */
+  async function must(res: Response | Promise<Response>, expected: number): Promise<Response> {
+    const answered = await res;
+    expect(answered.status, await answered.clone().text()).toBe(expected);
+    return answered;
+  }
+
+  async function project(slug: string, prefix: string, visibility: 'private' | 'public') {
+    await must(post('/api/v1/projects', { name: slug, slug, prefix, visibility }), 201);
+  }
+
+  async function taskIn(slug: string, title: string, extra: Record<string, unknown> = {}) {
+    const res = await must(post(`/api/v1/projects/${slug}/tasks`, { title, ...extra }), 201);
+    return (await res.json()) as Listed;
+  }
+
+  async function page(path: string, as = cookie): Promise<ListPage> {
+    const res = await must(h.app.request(path, { headers: jsonHeaders({ Cookie: as }) }), 200);
+    return (await res.json()) as ListPage;
+  }
+
+  const keys = (p: ListPage) => p.data.map((t) => t.key).sort();
+
+  /** A member of `laika` only, signed in; returns their cookie and id. */
+  async function member(): Promise<{ cookie: string; id: string }> {
+    const orgId = h.db.all<{ id: string }>(sql`SELECT id FROM orgs`)[0]!.id;
+    const email = 'member@example.test';
+    const token = seedInvite(h.db, { orgId, createdBy: ownerUserId(), email, orgRole: 'member' });
+    const joined = await must(
+      signUp(h.app, { email, password: PASSWORD, inviteToken: token }),
+      200,
+    );
+    const id = h.db.select().from(users).where(eq(users.email, email)).get()!.id;
+    await must(post('/api/v1/projects/laika/members', { user_id: id, role: 'member' }), 201);
+    return { cookie: cookieFrom(joined), id };
+  }
+
+  it('answers tasks from every project the owner can read, in one request', async () => {
+    await project('core', 'COR', 'private');
+    await taskIn('laika', 'Here');
+    await taskIn('core', 'There');
+
+    expect(keys(await page('/api/v1/tasks'))).toEqual(['COR-1', 'LAI-1']);
+  });
+
+  it('answers each task in the per-project list’s shape, field for field', async () => {
+    await taskIn('laika', 'Same shape', { description_md: 'body', tags: ['ui'] });
+
+    const everyone = (await page('/api/v1/tasks')).data.find((t) => t.key === 'LAI-1');
+    const perProject = (await page('/api/v1/projects/laika/tasks')).data.find(
+      (t) => t.key === 'LAI-1',
+    );
+    expect(everyone).toBeDefined();
+    expect(everyone).toEqual(perProject);
+
+    const slim = (await page('/api/v1/tasks?fields=slim')).data.find((t) => t.key === 'LAI-1');
+    const perProjectSlim = (await page('/api/v1/projects/laika/tasks?fields=slim')).data.find(
+      (t) => t.key === 'LAI-1',
+    );
+    expect(slim).toEqual(perProjectSlim);
+    expect(Object.keys(slim!)).not.toContain('description_md');
+  });
+
+  it('leaves out a private project the member is not in, by key', async () => {
+    await project('secret', 'SEC', 'private');
+    await taskIn('laika', 'Shared');
+    await taskIn('secret', 'Hidden');
+    const m = await member();
+
+    const seen = keys(await page('/api/v1/tasks', m.cookie));
+    expect(seen).toContain('LAI-1');
+    expect(seen).not.toContain('SEC-1');
+
+    // And the owner, who reads every project, sees it — so the absence above
+    // is the policy and not a task that never existed.
+    expect(keys(await page('/api/v1/tasks'))).toContain('SEC-1');
+  });
+
+  it('refuses ?project= naming a project the caller cannot read, as the per-project list does', async () => {
+    await project('secret', 'SEC', 'private');
+    await taskIn('secret', 'Hidden');
+    const m = await member();
+
+    const crossed = await h.app.request('/api/v1/tasks?project=secret', {
+      headers: jsonHeaders({ Cookie: m.cookie }),
+    });
+    const direct = await h.app.request('/api/v1/projects/secret/tasks', {
+      headers: jsonHeaders({ Cookie: m.cookie }),
+    });
+    expect(crossed.status).toBe(403);
+    expect(crossed.status).toBe(direct.status);
+    const body = (await crossed.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('forbidden');
+    expect(body.error.code).toBe(((await direct.json()) as { error: { code: string } }).error.code);
+  });
+
+  it('404s ?project= naming no project', async () => {
+    const res = await req('/api/v1/tasks?project=nowhere');
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('not_found');
+    // The project's refusal, not "No route for GET /api/v1/tasks".
+    expect(body.error.message).toBe('No project with slug "nowhere"');
+  });
+
+  it('filters by project, assignee (an id or none), status and sprint', async () => {
+    await project('core', 'COR', 'private');
+    const me = ownerUserId();
+    await taskIn('laika', 'Mine here', { assignee_id: me });
+    await taskIn('laika', 'Nobody here');
+    await taskIn('core', 'Mine there', { assignee_id: me, status: 'in_progress' });
+    await taskIn('core', 'Nobody there');
+
+    const sprint = (await (
+      await must(
+        post('/api/v1/projects/core/sprints', {
+          name: 'One',
+          starts_on: Date.UTC(2026, 9, 1),
+          ends_on: Date.UTC(2026, 9, 14),
+        }),
+        201,
+      )
+    ).json()) as { id: string };
+    const nobodyThere = (await page('/api/v1/projects/core/tasks')).data.find(
+      (t) => t.key === 'COR-2',
+    )!;
+    await must(post(`/api/v1/sprints/${sprint.id}/tasks`, { task_ids: [nobodyThere.id] }), 200);
+
+    expect(keys(await page('/api/v1/tasks?project=core'))).toEqual(['COR-1', 'COR-2']);
+    expect(keys(await page(`/api/v1/tasks?assignee=${me}`))).toEqual(['COR-1', 'LAI-1']);
+    expect(keys(await page('/api/v1/tasks?assignee=none'))).toEqual(['COR-2', 'LAI-2']);
+    expect(keys(await page('/api/v1/tasks?status=in_progress'))).toEqual(['COR-1']);
+    expect(keys(await page(`/api/v1/tasks?sprint=${sprint.id}`))).toEqual(['COR-2']);
+    expect(keys(await page('/api/v1/tasks?sprint=none'))).toEqual(['COR-1', 'LAI-1', 'LAI-2']);
+    expect(keys(await page(`/api/v1/tasks?project=laika&assignee=${me}`))).toEqual(['LAI-1']);
+  });
+
+  it('pages with the §6.3 cursor across projects, every task once', async () => {
+    await project('core', 'COR', 'private');
+    for (let i = 0; i < 3; i++) {
+      await taskIn('laika', `L${String(i)}`);
+      await taskIn('core', `C${String(i)}`);
+    }
+
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const query: string =
+        cursor === null ? '?limit=2' : `?limit=2&cursor=${encodeURIComponent(cursor)}`;
+      const p = await page(`/api/v1/tasks${query}`);
+      expect(p.data.length).toBeLessThanOrEqual(2);
+      seen.push(...p.data.map((t) => t.key));
+      cursor = p.next_cursor;
+      pages++;
+    } while (cursor !== null && pages < 10);
+
+    expect(seen.sort()).toEqual(['COR-1', 'COR-2', 'COR-3', 'LAI-1', 'LAI-2', 'LAI-3']);
+    expect(pages).toBe(3);
+  });
+
+  it('refuses a bad status 400 and an unknown filter 422, rather than ignoring it', async () => {
+    const status = await req('/api/v1/tasks?status=nonsense');
+    expect(status.status).toBe(400);
+    expect(((await status.json()) as { error: { code: string } }).error.code).toBe('bad_request');
+
+    const unknown = await req('/api/v1/tasks?priority=p1');
+    expect(unknown.status).toBe(422);
+    expect(((await unknown.json()) as { error: { code: string } }).error.code).toBe(
+      'unprocessable',
+    );
+  });
+
+  it('401s an anonymous caller', async () => {
+    const res = await h.app.request('/api/v1/tasks');
+    expect(res.status).toBe(401);
   });
 });

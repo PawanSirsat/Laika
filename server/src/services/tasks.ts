@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, ne, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, ne, or, type SQL } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
 import {
   activityActor,
@@ -43,7 +43,7 @@ import {
   normaliseOutsideId,
   readableByOutsideId,
 } from './outside-ids.ts';
-import { requireProjectBySlug } from './projects.ts';
+import { canSeeProject, requireProjectBySlug } from './projects.ts';
 import {
   activeSendBacks,
   evidenceItems,
@@ -873,11 +873,33 @@ export function listTasks(
   const project = requireProjectBySlug(db, slug);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
 
-  const conditions = [eq(tasks.projectId, project.id)];
+  const conditions = [eq(tasks.projectId, project.id), ...sharedConditions(filter)];
 
-  if (filter.status !== undefined) conditions.push(eq(tasks.status, filter.status));
   if (filter.status_id !== undefined) conditions.push(eq(tasks.statusId, filter.status_id));
   if (filter.priority !== undefined) conditions.push(eq(tasks.priority, filter.priority));
+  if (filter.parent !== undefined) {
+    // One more `AND` before the cursor predicate, so paging is unchanged;
+    // §4.13's `tasks(parent_task_id)` index serves it.
+    conditions.push(eq(tasks.parentTaskId, filter.parent));
+  }
+  if (filter.tag !== undefined) {
+    // Resolved to ids first so the filter is an indexed `IN` over the tag side —
+    // §4.13's `task_tags(tag_id)` index exists for exactly this. An unknown tag
+    // yields an empty list, which `inArray` renders as `WHERE false`.
+    conditions.push(inArray(tasks.id, taskIdsWithTag(db, project.id, filter.tag)));
+  }
+
+  return readTaskPage(db, conditions, () => project.prefix, filter);
+}
+
+/**
+ * The filters both task lists take: `status`, `assignee`, `sprint` and
+ * `updated_since`, each the same predicate whichever list asks.
+ */
+function sharedConditions(filter: ListTasksFilter | ListAllTasksFilter): SQL[] {
+  const conditions: SQL[] = [];
+
+  if (filter.status !== undefined) conditions.push(eq(tasks.status, filter.status));
   if (filter.assignee !== undefined) {
     // `assignee=none` is the only way to ask for unassigned work over a query
     // string, where every value is a string and "" is indistinguishable from
@@ -893,22 +915,25 @@ export function listTasks(
       filter.sprint === 'none' ? isNull(tasks.sprintId) : eq(tasks.sprintId, filter.sprint),
     );
   }
-  if (filter.parent !== undefined) {
-    // One more `AND` before the cursor predicate, so paging is unchanged;
-    // §4.13's `tasks(parent_task_id)` index serves it.
-    conditions.push(eq(tasks.parentTaskId, filter.parent));
-  }
-  if (filter.tag !== undefined) {
-    // Resolved to ids first so the filter is an indexed `IN` over the tag side —
-    // §4.13's `task_tags(tag_id)` index exists for exactly this. An unknown tag
-    // yields an empty list, which `inArray` renders as `WHERE false`.
-    conditions.push(inArray(tasks.id, taskIdsWithTag(db, project.id, filter.tag)));
-  }
-
   if (filter.updatedSince !== null && filter.updatedSince !== undefined) {
     conditions.push(gte(tasks.updatedAt, filter.updatedSince));
   }
 
+  return conditions;
+}
+
+/**
+ * One page of tasks matching `conditions`, ordered by `(updated_at, id)` and
+ * one row over the limit so the route can tell whether another page exists.
+ * Shared by the per-project list and the cross-project one (LAI-887), so the
+ * two page, batch and filter `ready` identically.
+ */
+function readTaskPage(
+  db: Db,
+  conditions: readonly SQL[],
+  prefixOf: (projectId: string) => string,
+  filter: Pick<ListTasksFilter, 'ready' | 'limit' | 'cursor'>,
+): TaskView[] {
   // One over the limit, so the route can tell whether another page exists.
   const wanted = filter.limit + 1;
 
@@ -941,7 +966,7 @@ export function listTasks(
       .all();
 
     const context = loadViewContext(db, rows);
-    return rows.map((row) => toView(row, project.prefix, context));
+    return rows.map((row) => toView(row, prefixOf(row.projectId), context));
   };
 
   if (filter.ready === undefined) return read(filter.cursor, wanted);
@@ -965,6 +990,63 @@ export function listTasks(
   }
 
   return matched.slice(0, wanted);
+}
+
+export interface ListAllTasksFilter {
+  /** A project slug: only that project's tasks. */
+  project?: string | undefined;
+  /** A category — every status of it (LAI-738). */
+  status?: TaskStatus | undefined;
+  /** A user id, or `none` for unassigned work. */
+  assignee?: string | undefined;
+  /** A sprint id, or `none` for tasks in no sprint. */
+  sprint?: string | undefined;
+  updatedSince?: number | null;
+  limit: number;
+  cursor: { sortKey: string | number; id: string } | null;
+}
+
+/**
+ * Everyone's work: tasks from **every project this actor may read**, in the
+ * per-project list's shape and order (`GET /api/v1/tasks`, LAI-887).
+ *
+ * Readable projects are chosen by asking `can()` once per project
+ * (`canSeeProject`, as `listProjects` does) — rather than by a membership join,
+ * because `can()` is the only authority (§3.3): org owners and admins read
+ * every project without a membership row, and a token's project scope narrows
+ * it. `?project=` names one project and is answered exactly as
+ * `GET /projects/:slug/tasks` would be: `404` for no such slug, `403` for one
+ * the caller cannot read.
+ */
+export function listAllTasks(db: Db, actor: ResolvedActor, filter: ListAllTasksFilter): TaskView[] {
+  let readable: { id: string; prefix: string }[];
+
+  if (filter.project !== undefined) {
+    const project = requireProjectBySlug(db, filter.project);
+    assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
+    readable = [project];
+  } else {
+    readable = db
+      .select({ id: projects.id, prefix: projects.prefix })
+      .from(projects)
+      .all()
+      .filter((p) => canSeeProject(actor, p.id));
+  }
+  if (readable.length === 0) return [];
+
+  const prefixes = new Map(readable.map((p) => [p.id, p.prefix]));
+  const conditions = [
+    inArray(
+      tasks.projectId,
+      readable.map((p) => p.id),
+    ),
+    ...sharedConditions(filter),
+  ];
+
+  return readTaskPage(db, conditions, (id) => prefixes.get(id) ?? '', {
+    limit: filter.limit,
+    cursor: filter.cursor,
+  });
 }
 
 /**
