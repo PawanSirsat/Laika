@@ -1,5 +1,6 @@
 import type { TimeEntry } from '../../../api/time.ts';
 import { CardLink } from './CardLink.tsx';
+import { folderOf } from './folder.ts';
 import { duration, span } from './format.ts';
 
 export interface EntryRowProps {
@@ -73,6 +74,11 @@ export function EntryRow({
           )}
           {entry.note !== null && <span className="myday-row-note"> · {entry.note}</span>}
         </span>
+        {folderOf(entry) !== undefined && (
+          <span className="myday-row-line" data-entry-folder>
+            {folderOf(entry)}
+          </span>
+        )}
       </span>
       <span className="myday-source">{SOURCES[entry.source]}</span>
       <span className="myday-rev">rev {String(entry.revision)}</span>
