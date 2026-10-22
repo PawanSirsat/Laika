@@ -400,7 +400,7 @@ void describe('pending owner invites from before D-104 (LAI-181)', () => {
         .click();
       const dialog = h.page.locator('[data-confirm-dialog]');
       await dialog.locator('[data-confirm-ok] button').click();
-      await until(async () => /already accepted/.test(await dialog.innerText()));
+      await until(async () => (await dialog.innerText()).includes('already accepted'));
       assert.match(await dialog.innerText(), /That invite was already accepted\./);
       assert.equal(await card.locator('[data-owner-invite]').count(), 2);
     } finally {
