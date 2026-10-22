@@ -47,10 +47,10 @@ type CatalogueAction = OrgAction | ProjectAction;
  * also covers renaming a tag) the label is the row that names the action's
  * main use.
  *
- * `null` where §3 has **no** row yet — today `presence.read` and
- * `capacity.read`, the gap `policy-spec-drift.test.ts` parks as
- * `ACTIONS_WITHOUT_A_ROW`. The test holds the `null`s to exactly that list, so
- * the day the row lands this map must take its text from the document.
+ * `null` where §3 has **no** row yet — the gap `policy-spec-drift.test.ts`
+ * parks as `ACTIONS_WITHOUT_A_ROW`, empty today. The test holds the `null`s to
+ * exactly that list, so the day a row lands this map must take its text from
+ * the document, as `presence.read` and `capacity.read` did (LAI-953).
  */
 export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'org.delete': 'Delete org data / transfer ownership',
@@ -62,8 +62,8 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'user.set_role': 'Invite users / change org roles',
   'user.deactivate': 'Deactivate user',
   'org.read': 'View the organisation',
-  'presence.read': null,
-  'capacity.read': null,
+  'presence.read': 'Presence and capacity',
+  'capacity.read': 'Presence and capacity',
   'member_list.read': 'View member list',
   'project.join_public': 'Join a public project',
   'token.create_own': 'Generate, read and revoke own tokens',

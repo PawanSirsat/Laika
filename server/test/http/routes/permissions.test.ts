@@ -73,6 +73,15 @@ describe('GET /api/v1/permissions', () => {
       condition: 'Any role except Owner',
       roles: { owner: 'yes', admin: 'conditional', member: 'no', viewer: 'no' },
     });
+
+    // Every action has a §3 row now (LAI-953), so nothing comes back label-less;
+    // presence and capacity were the last two.
+    expect(body.permissions.filter((p) => p.label === null).map((p) => p.action)).toEqual([]);
+    for (const action of ['presence.read', 'capacity.read']) {
+      expect(body.permissions.find((p) => p.action === action)?.label, action).toBe(
+        'Presence and capacity',
+      );
+    }
   });
 
   it('is reachable on a read-only token, and narrows me to it', async () => {
