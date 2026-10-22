@@ -2,11 +2,12 @@
 id: LAI-960
 title: 'Roles & permissions is read-only for everyone: the owner cannot switch capabilities on or off per role'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-958, LAI-950]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T14:08:41Z
 ---
 
 ## Acceptance criteria
