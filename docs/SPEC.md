@@ -4187,7 +4187,7 @@ call MCP; agents do.
 | **Tokens** *(on Developer access)* | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
 | **Organisation** *(four tabs, LAI-796)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
 | **Connect** *(Developer access's card, and the wizard at `/developer/connect`; not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` | — | ✅ D-079, D-084, D-087 |
-| **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects`, `GET /tasks/:id` (only a matched task and an opened *Show tasks*), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
+| **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
 | **Unlisted work** *(Inbox's tab, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
 | **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage` | — | ✅ D-078, D-079, D-084 |
@@ -4387,27 +4387,26 @@ anything missing sends the task back.
   and for owners and admins the profile kind; the load badge with its rule on
   hover — **the selected space's load** when one is selected, and the *Heavy
   load* chip reads the same — and beside it an *N overdue* badge of its own
-  (D-092, LAI-818); their agents with a green dot on each one running, and *Claude Code ·
-  working on LAI-9* where presence knows the matched task; the workload counts
+  (D-092, LAI-818); the workload counts
   *in progress · to do · backlog*, a thin stacked bar of committed work (in
   progress, to do), and apart from it *N waiting on reviewers* and *due in 7
   days*; *Agents · N running*, their agents with a green dot on each one
-  running, or *No agents running*; for owners and admins *Activity · 14 days ·
-  total*, a board-activity sparkline and, under it, *by hand · by agents ·
-  bookkeeping* from `activity_14d_split` as three figures, each with what it
-  counts on hover; *Spaces · N*, the spaces they have open work in as chips
+  running, or *No agents running*; *Spaces · N*, the spaces they have open work in as chips
   carrying the space's colour (the sidebar badge's, keyed by slug) and its
   committed count, with backlog and review on hover, or *No spaces*; the name
-  linking to the profile for owners and admins; and a footer, *Show tasks · N
-  in progress*, collapsed, listing their in-progress tasks, each opening in
-  its own space (LAI-755), or *0 in progress*. **Every figure with a rule
+  linking to the profile for owners and admins. **No task is read and no
+  task is listed** (LAI-992, the owner): the *Show tasks* footer and the
+  *working on LAI-9* line LAI-767 drew each cost a `GET /tasks/:id`, and the
+  workload counts already say how many are in progress. **Nor the fortnight's
+  board activity** (LAI-992): the sparkline and *by hand · by agents ·
+  bookkeeping* are the profile's, not this screen's. **Every figure with a rule
   behind it says the rule on hover** — the load badge, overdue, each count,
-  each activity figure, each space and agent chip, the status line — the same
+  each space and agent chip, the status line — the same
   words on a card and in the list. People never seen
   fold into one line at the bottom, unless searched for or filtered to.
   **List** draws the same people, filtered and sorted the same way, as a
   table: person, load, a workload bar, in progress, to do, review, agents
-  running, for owners and admins *hand · agents · bookkeeping*, and spaces.
+  running, and spaces.
   **Every row's bar is drawn to one scale, the heaviest committed count on
   the page, so the table is the team-load chart** — it replaced the *Team
   load* and *Agents running now* panels that LAI-767 put under the grid
