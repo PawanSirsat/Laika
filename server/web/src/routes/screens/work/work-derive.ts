@@ -1,4 +1,4 @@
-import type { AllTasksFilter, TaskStatus, TaskSummary } from '../../../api/tasks.ts';
+import type { AllTasksFilter, TaskStatus, TasksSummary, TaskSummary } from '../../../api/tasks.ts';
 
 /**
  * The Work page (LAI-952): everyone's work across every space, read from
@@ -10,8 +10,23 @@ import type { AllTasksFilter, TaskStatus, TaskSummary } from '../../../api/tasks
  * into names and nothing added or dropped.
  */
 
-/** One page at a time; "Load more" asks for the next. */
-export const ALL_TASKS_PAGE = 50;
+/** One page at a time (LAI-975): the reader picks how many, and the URL keeps it. */
+export const PAGE_SIZES = [25, 50, 100] as const;
+export type PageSize = (typeof PAGE_SIZES)[number];
+export const DEFAULT_PAGE_SIZE: PageSize = 25;
+
+export function readPageSize(params: URLSearchParams): PageSize {
+  const value = Number(params.get('size'));
+  return PAGE_SIZES.find((size) => size === value) ?? DEFAULT_PAGE_SIZE;
+}
+
+/** `params` with the page size set — the default is no param at all. */
+export function withPageSize(params: URLSearchParams, size: PageSize): URLSearchParams {
+  const next = new URLSearchParams(params);
+  if (size === DEFAULT_PAGE_SIZE) next.delete('size');
+  else next.set('size', String(size));
+  return next;
+}
 
 /** The filters, as they live in the URL. Absent is "any". */
 export interface WorkFilter {
@@ -82,14 +97,71 @@ export function withWorkFilter(
 }
 
 /** What the server is asked for: the person is the assignee, the space the project. */
-export function allTasksFilter(filter: WorkFilter): AllTasksFilter {
+export function allTasksFilter(
+  filter: WorkFilter,
+  size: PageSize = DEFAULT_PAGE_SIZE,
+): AllTasksFilter {
   return {
     ...(filter.person === undefined ? {} : { assignee: filter.person }),
     ...(filter.status === undefined ? {} : { status: filter.status }),
     ...(filter.space === undefined ? {} : { project: filter.space }),
     ...(filter.sprint === undefined ? {} : { sprint: filter.sprint }),
-    limit: ALL_TASKS_PAGE,
+    limit: size,
   };
+}
+
+/**
+ * What the summary is asked for (LAI-975): every filter **but the status**.
+ * The tiles are the status breakdown, so filtering them by one status would
+ * zero the rest and leave nothing to switch to; the chosen tile is pressed
+ * instead, and the pager reads its count from `by_status`.
+ */
+export function summaryFilter(filter: WorkFilter): Omit<AllTasksFilter, 'limit' | 'cursor'> {
+  const { status: _status, limit: _limit, ...rest } = allTasksFilter(filter);
+  return rest;
+}
+
+/** The status tiles, in the order the strip shows them. Cancelled has none. */
+export const STATUS_TILES: readonly { readonly value: TaskStatus; readonly label: string }[] = [
+  { value: 'in_progress', label: 'In progress' },
+  { value: 'review', label: 'Review' },
+  { value: 'todo', label: 'To do' },
+  { value: 'backlog', label: 'Backlog' },
+  { value: 'done', label: 'Done' },
+];
+
+/** How many tasks the list pages through: the server's figure, never a sum of rows. */
+export function pageTotal(
+  summary: TasksSummary | undefined,
+  status: TaskStatus | undefined,
+): number | undefined {
+  if (summary === undefined) return undefined;
+  return status === undefined ? summary.total : summary.by_status[status];
+}
+
+/** The `by_assignee` entry that folds everyone past the server's top ten. */
+export const OTHERS = 'others';
+
+/**
+ * The person filter a `by_assignee` entry stands for: their id, `none` for
+ * unassigned work — and nothing for `others`, which is many people.
+ */
+export function personFilterOf(userId: string | null): string | undefined {
+  if (userId === OTHERS) return undefined;
+  return userId ?? 'none';
+}
+
+/** `1–25 of 142`, or `51–100` while the total is not known. */
+export function pageRange(
+  index: number,
+  size: number,
+  shown: number,
+  total: number | undefined,
+): string {
+  const of = total === undefined ? '' : ` of ${String(total)}`;
+  if (shown === 0) return `0${of}`;
+  const first = index * size + 1;
+  return `${String(first)}–${String(first + shown - 1)}${of}`;
 }
 
 /** Which side of the Me / Everyone toggle is on — or neither, for another person. */

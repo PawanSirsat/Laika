@@ -3,7 +3,12 @@ import type { MeProfile } from '../../../api/me.ts';
 import { everyPage } from '../../../api/every-page.ts';
 import { isProject, listProjects, type Project } from '../../../api/projects.ts';
 import { listSprints, type Sprint } from '../../../api/sprints.ts';
-import { listAllTasks, type TaskSummary } from '../../../api/tasks.ts';
+import {
+  getTasksSummary,
+  listAllTasks,
+  type TasksSummary,
+  type TaskSummary,
+} from '../../../api/tasks.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { listAllUsers, type OrgUser } from '../../../api/users.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
@@ -13,15 +18,23 @@ import { LoadingState } from '../../../components/LoadingState.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { SpaceBadge } from '../../../components/SpaceBadge.tsx';
-import { Spinner } from '../../../components/Spinner.tsx';
 import { SCREEN_COPY } from '../screen-copy.ts';
 import {
   allTasksFilter,
+  PAGE_SIZES,
+  pageRange,
+  pageTotal,
+  personFilterOf,
   personMode,
+  readPageSize,
   readWorkFilter,
   STATUS_FILTERS,
+  STATUS_TILES,
+  summaryFilter,
+  withPageSize,
   withWorkFilter,
   workRows,
+  type WorkFilter,
 } from './work-derive.ts';
 import './work.css';
 
@@ -52,9 +65,15 @@ type Load =
       readonly next: string | null;
     };
 
+type Count =
+  | { readonly status: 'loading' }
+  | { readonly status: 'error' }
+  | { readonly status: 'ready'; readonly summary: TasksSummary };
+
 /**
  * Work (LAI-952): everyone's work across every space, from `GET /tasks`
- * (LAI-887) — one page at a time, newest pages on "Load more".
+ * (LAI-887) — one page at a time, Previous and Next (LAI-975), with the
+ * figures for the same filters from `GET /tasks/summary` (LAI-974) above it.
  *
  * **The server decides whose work is here.** An owner or admin is sent every
  * space; anyone else the spaces they may read. The rows are that answer, in
@@ -66,20 +85,30 @@ type Load =
  */
 export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProps) {
   const filter = useMemo(() => readWorkFilter(params), [params]);
-  const query = useMemo(() => allTasksFilter(filter), [filter]);
+  const size = readPageSize(params);
+  const query = useMemo(() => allTasksFilter(filter, size), [filter, size]);
   const queryKey = JSON.stringify(query);
 
+  /*
+   * The pages walked so far, as the cursor each was read with — page one's is
+   * null. The server only knows "next", so Previous pops this stack. It
+   * belongs to one query: a different filter or size starts again at page one.
+   */
+  const [paging, setPaging] = useState<{
+    readonly key: string;
+    readonly stack: readonly (string | null)[];
+  }>({ key: queryKey, stack: [null] });
+  const stack = paging.key === queryKey ? paging.stack : [null];
+  const cursor = stack[stack.length - 1] ?? null;
+  const pageIndex = stack.length - 1;
+
   const [load, setLoad] = useState<Load>({ status: 'loading' });
-  const [more, setMore] = useState<'idle' | 'loading' | 'error'>('idle');
   const [attempt, setAttempt] = useState(0);
-  const generation = useRef(0);
 
   useEffect(() => {
     const controller = new AbortController();
-    generation.current += 1;
     setLoad({ status: 'loading' });
-    setMore('idle');
-    listAllTasks(query, controller.signal)
+    listAllTasks(cursor === null ? query : { ...query, cursor }, controller.signal)
       .then((page) => {
         setLoad({ status: 'ready', tasks: page.data, next: page.next_cursor });
       })
@@ -90,26 +119,40 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
     return () => {
       controller.abort();
     };
-    // `queryKey` is `query`, by value: a new object for the same filter must
-    // not re-read the first page and lose what Load more added.
-  }, [queryKey, attempt]);
+    // `queryKey` is `query`, by value: a new object for the same filter is
+    // not a new list.
+  }, [queryKey, cursor, attempt]);
 
-  const loadMore = useCallback(() => {
-    if (load.status !== 'ready' || load.next === null) return;
-    const mine = generation.current;
-    setMore('loading');
-    listAllTasks({ ...query, cursor: load.next })
-      .then((page) => {
-        // A filter changed while this page was on its way: it belongs to a
-        // list that is no longer shown.
-        if (mine !== generation.current) return;
-        setLoad({ status: 'ready', tasks: [...load.tasks, ...page.data], next: page.next_cursor });
-        setMore('idle');
+  const turn = useCallback(
+    (next: readonly (string | null)[]) => {
+      setPaging({ key: queryKey, stack: next });
+    },
+    [queryKey],
+  );
+
+  /*
+   * The figures, for every filter but the status — see `summaryFilter`. A
+   * failure here is the strip's own: the list does not depend on it.
+   */
+  const counted = useMemo(() => summaryFilter(filter), [filter]);
+  const countedKey = JSON.stringify(counted);
+  const [count, setCount] = useState<Count>({ status: 'loading' });
+  useEffect(() => {
+    const controller = new AbortController();
+    setCount({ status: 'loading' });
+    getTasksSummary(counted, controller.signal)
+      .then((summary) => {
+        setCount({ status: 'ready', summary });
       })
-      .catch(() => {
-        if (mine === generation.current) setMore('error');
+      .catch((cause: unknown) => {
+        if (aborted(cause)) return;
+        setCount({ status: 'error' });
       });
-  }, [load, query]);
+    return () => {
+      controller.abort();
+    };
+  }, [countedKey, attempt]);
+  const summary = count.status === 'ready' ? count.summary : undefined;
 
   const [spaces, setSpaces] = useState<readonly Project[]>([]);
   const [people, setPeople] = useState<readonly OrgUser[]>([]);
@@ -202,23 +245,19 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
     ...spaceSprints.map((s) => ({ value: s.id, label: s.name })),
   ];
   const filtered = Object.keys(filter).length > 0;
-
-  const header = (
-    <ScreenHeader
-      title="Work"
-      context={
-        load.status === 'ready'
-          ? `${String(rows.length)}${load.next === null ? '' : '+'} task${rows.length === 1 ? '' : 's'} · oldest change first`
-          : 'Everyone’s work, across every space you can read'
-      }
-    />
-  );
+  const seesPeople = me?.org_role === 'owner' || me?.org_role === 'admin';
 
   const copy = SCREEN_COPY['/work'];
 
   return (
     <div className="work">
-      {header}
+      <ScreenHeader
+        variant="page"
+        title="Work"
+        description="Everyone’s work, across every space you can read — oldest change first."
+      />
+
+      <WorkSummary count={count} filter={filter} seesPeople={seesPeople} onFilter={set} />
 
       <div className="work-filters" role="group" aria-label="Filter the work">
         <div className="work-toggle" role="group" aria-label="Whose work">
@@ -395,26 +434,176 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
               );
             })}
           </ul>
-          {load.next !== null && (
-            <div className="work-more">
-              <button
-                type="button"
-                className="bar-control"
-                disabled={more === 'loading'}
-                onClick={loadMore}
-              >
-                {more === 'loading' ? <Spinner /> : null}
-                Load more
-              </button>
-              {more === 'error' && (
-                <span className="work-more-error" role="alert">
-                  The next page did not load. Try again.
-                </span>
-              )}
-            </div>
-          )}
         </>
       )}
+
+      {load.status === 'ready' && (rows.length > 0 || pageIndex > 0) && (
+        <nav className="work-pager" aria-label="Pages">
+          <span className="work-range" aria-live="polite">
+            {pageRange(pageIndex, size, rows.length, pageTotal(summary, filter.status))}
+          </span>
+          <Dropdown
+            className="work-size"
+            aria-label="Per page"
+            value={String(size)}
+            options={PAGE_SIZES.map((n) => ({ value: String(n), label: String(n) }))}
+            onChange={(value) => {
+              const next = PAGE_SIZES.find((n) => String(n) === value);
+              if (next !== undefined) setParams(withPageSize(params, next));
+            }}
+          />
+          <button
+            type="button"
+            className="bar-control"
+            aria-label="Previous page"
+            disabled={pageIndex === 0}
+            onClick={() => {
+              turn(stack.slice(0, -1));
+            }}
+          >
+            ‹ Previous
+          </button>
+          <button
+            type="button"
+            className="bar-control"
+            aria-label="Next page"
+            disabled={load.next === null}
+            onClick={() => {
+              if (load.next !== null) turn([...stack, load.next]);
+            }}
+          >
+            Next ›
+          </button>
+        </nav>
+      )}
     </div>
+  );
+}
+
+interface WorkSummaryProps {
+  readonly count: Count;
+  readonly filter: WorkFilter;
+  readonly seesPeople: boolean;
+  readonly onFilter: (change: Parameters<typeof withWorkFilter>[1]) => void;
+}
+
+/**
+ * The strip under the header (LAI-975): the server's figures for the page's
+ * filters, as small tiles. A status tile is that status filter — pressed while
+ * it is on, and pressing it again clears it. An owner or admin also sees who
+ * holds the work, and a name is that person filter.
+ */
+function WorkSummary({ count, filter, seesPeople, onFilter }: WorkSummaryProps) {
+  if (count.status === 'loading') {
+    return (
+      <div className="work-summary" role="status" aria-busy="true" aria-label="Loading the figures">
+        {Array.from({ length: 6 }, (_, i) => (
+          <span key={i} className="work-tile work-tile-skeleton" aria-hidden="true">
+            <span className="skeleton work-skeleton-text" />
+            <span className="skeleton work-skeleton-figure" />
+          </span>
+        ))}
+      </div>
+    );
+  }
+  if (count.status === 'error') {
+    return (
+      <div className="work-summary">
+        <p className="work-summary-error" role="note">
+          The figures did not load. The list below is unaffected.
+        </p>
+      </div>
+    );
+  }
+
+  const { summary } = count;
+  if (summary.total === 0) {
+    return (
+      <div className="work-summary">
+        <p className="work-summary-empty">Nothing to count here yet.</p>
+      </div>
+    );
+  }
+
+  // As ranked and folded by the server — its top ten, then `others`.
+  const people = seesPeople ? summary.by_assignee : [];
+  return (
+    <>
+      <div className="work-summary" role="group" aria-label="Figures">
+        <button
+          type="button"
+          className="work-tile work-tile-total"
+          aria-pressed={filter.status === undefined}
+          onClick={() => {
+            onFilter({ status: '' });
+          }}
+        >
+          <span className="work-tile-label">Total</span>
+          <span className="work-tile-value">{summary.total}</span>
+        </button>
+        {STATUS_TILES.map((tile) => {
+          const on = filter.status === tile.value;
+          return (
+            <button
+              key={tile.value}
+              type="button"
+              className="work-tile"
+              data-status={tile.value}
+              aria-pressed={on}
+              onClick={() => {
+                onFilter({ status: on ? '' : tile.value });
+              }}
+            >
+              <span className="work-tile-label">{tile.label}</span>
+              <span className="work-tile-value">{summary.by_status[tile.value]}</span>
+            </button>
+          );
+        })}
+        {summary.overdue > 0 && (
+          <span className="work-tile work-tile-alert">
+            <span className="work-tile-label">Overdue</span>
+            <span className="work-tile-value">{summary.overdue}</span>
+          </span>
+        )}
+        {summary.blocked > 0 && (
+          <span className="work-tile work-tile-alert">
+            <span className="work-tile-label">Blocked</span>
+            <span className="work-tile-value">{summary.blocked}</span>
+          </span>
+        )}
+      </div>
+      {people.length > 0 && (
+        <div className="work-people" role="group" aria-label="By person">
+          <span className="work-people-label">By person</span>
+          {people.map((person) => {
+            const value = personFilterOf(person.user_id);
+            // Others is many people, and no one filter: a figure, not a button.
+            if (value === undefined) {
+              return (
+                <span key="others" className="work-person-chip work-person-others">
+                  <span className="work-person-name">{person.name}</span>
+                  <span className="work-person-count">{person.count}</span>
+                </span>
+              );
+            }
+            const on = filter.person === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                className="work-person-chip"
+                aria-pressed={on}
+                onClick={() => {
+                  onFilter({ person: on ? '' : value });
+                }}
+              >
+                <span className="work-person-name">{person.name}</span>
+                <span className="work-person-count">{person.count}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </>
   );
 }

@@ -243,6 +243,14 @@ const PAIRS: readonly Pair[] = [
     client: 'TaskSummary',
     clientFile: 'tasks.ts',
   },
+  // LAI-975: `GET /tasks/summary`'s figures (LAI-974), which the Work page's
+  // strip draws.
+  {
+    server: 'TaskCountsView',
+    serverFile: 'services/tasks.ts',
+    client: 'TasksSummary',
+    clientFile: 'tasks.ts',
+  },
   // D-085, LAI-771: sizes and forecasts — the size on every task, the task
   // panel's estimate, and the project's accuracy.
   {
