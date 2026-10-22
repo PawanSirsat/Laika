@@ -1049,9 +1049,9 @@ button.cap-task:hover {
 }
 
 .cap-avatar-sm {
-  width: 1.75rem;
-  height: 1.75rem;
-  font-size: 0.6875rem;
+  width: 1.875rem;
+  height: 1.875rem;
+  font-size: var(--text-small);
 }
 
 .cap-list-bar {
