@@ -2,11 +2,12 @@
 id: LAI-951
 title: 'An owner has nowhere to read everything that happened across the organisation'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-886]
 discovered-from:
-status: backlog
+started: 2026-10-22T12:06:28Z
+status: in-progress
 ---
 
 ## Goal
