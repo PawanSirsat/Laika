@@ -229,10 +229,19 @@ void describe('the description renders as markdown', () => {
       await openSubject(h);
       const section = h.page.locator('.panel-section', { hasText: 'Description' }).first();
 
-      // A link is followed, not edited.
-      const popup = h.page.context().waitForEvent('page', { timeout: 5_000 });
+      // A link is followed, not edited. The popup's `page` event fires only
+      // once its first navigation has a response (LAI-307), so the link's
+      // address is answered here: left to the internet, the wait was on
+      // example.com, and a slow round trip timed it out.
+      const context = h.page.context();
+      await context.route('https://example.com/**', (route) =>
+        route.fulfill({ status: 200, contentType: 'text/html', body: '<p>the repo</p>' }),
+      );
+      const popup = context.waitForEvent('page', { timeout: 5_000 });
       await section.locator('.md a', { hasText: 'the repo' }).click();
-      await (await popup).close();
+      const opened = await popup;
+      assert.equal(opened.url(), 'https://example.com/repo');
+      await opened.close();
       assert.equal(
         await section.locator('.rich-editor, .rich-editor-loading').count(),
         0,
