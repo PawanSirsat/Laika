@@ -27,7 +27,7 @@ stopped at 84rem, and other screens stop the same way.
       about three fifths of the way across; on another day it opens on the
       first block as before. Fit is unchanged.
 - [ ] My day has no fixed maximum width; nor does any other screen whose
-      wrapper capped itself in rem (Developer access, Organisation, Connect).
+      wrapper capped itself in rem (Developer access, Organisation, Members).
       Screens that are a narrow form or a notice by design keep their width.
 - [ ] Every My day browser and unit test is green; the ones that measured the
       Timeline inside the main column are re-aimed.

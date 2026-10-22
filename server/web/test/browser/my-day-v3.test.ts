@@ -103,6 +103,34 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
     }
   });
 
+  void test('the card spans the page above the editor, and today opens with now in view (LAI-889)', async () => {
+    const h = await openToday();
+    try {
+      const card = await h.page.locator('[data-dayline]').boundingBox();
+      const grid = await h.page.locator('.myday-grid').boundingBox();
+      const side = await h.page.locator('[data-myday-side]').boundingBox();
+      assert.ok(card !== null && grid !== null && side !== null);
+      assert.ok(card.y + card.height <= grid.y + 0.5, 'the Timeline is not above the grid');
+      assert.ok(card.width >= grid.width - 1, 'the Timeline is narrower than the page');
+      assert.ok(side.y >= card.y + card.height - 0.5, 'the side column is not below the Timeline');
+      // At 1×, now sits about three fifths of the way across the scroller.
+      const seen = await h.page.locator('[data-dayline-scroller]').evaluate((el) => ({
+        left: el.scrollLeft,
+        width: el.clientWidth,
+      }));
+      const now = await h.page
+        .locator('[data-now]')
+        .evaluate((el) => (el as HTMLElement).offsetLeft);
+      assert.ok(seen.left > 0, 'the scroller did not move');
+      assert.ok(
+        Math.abs(now - seen.left - seen.width * 0.6) <= 2,
+        `now at ${String(now - seen.left)} of ${String(seen.width)}`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('Fit folds the idle hours before the first block and after now, and says so', async () => {
     const h = await openToday();
     try {
