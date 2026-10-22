@@ -6,7 +6,15 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { asServed, closeBrowser, open, setTheme, type ApiStub, type StubCall } from './harness.ts';
+import {
+  asServed,
+  closeBrowser,
+  open,
+  setTheme,
+  until,
+  type ApiStub,
+  type StubCall,
+} from './harness.ts';
 
 const NOW = Date.now();
 const HOUR = 3_600_000;
@@ -180,6 +188,7 @@ void describe('the Review page', () => {
     try {
       await h.page.locator('.rev-row').first().waitFor({ timeout: 20_000 });
       const chip = h.page.locator('.rev-chip-check');
+      await until(async () => (await chip.count()) === 1);
       assert.equal(await chip.count(), 1);
       assert.equal(await chip.innerText(), 'check this one');
       assert.match(
@@ -201,6 +210,10 @@ void describe('the Review page', () => {
     try {
       const rows = h.page.locator('.rev-row');
       await rows.first().waitFor({ timeout: 20_000 });
+      // Wait for both rows, not the first (LAI-715).
+      await until(
+        async () => (await h.page.locator('.rev-key').allInnerTexts()).join('|') === 'LC-2|LC-1',
+      );
       assert.deepEqual(
         await h.page.locator('.rev-key').allInnerTexts(),
         ['LC-2', 'LC-1'],
@@ -241,6 +254,13 @@ void describe('the Review page', () => {
       await h.page.locator('.rev-line', { hasText: 'LC-1' }).click();
       const detail = h.page.locator('.rev-detail');
       await detail.locator('.ev-round').first().waitFor({ timeout: 10_000 });
+      const round2 = (cls: string) => detail.locator(`.ev-round[data-round="2"] ${cls}`);
+      await until(
+        async () =>
+          (await round2('.ev-state-claimed').count()) === 5 &&
+          (await round2('.ev-exit-pass').count()) === 1 &&
+          (await round2('.ev-exit-fail').count()) === 1,
+      );
 
       assert.equal(await detail.locator('.ev-round[data-round="2"] .ev-state-claimed').count(), 5);
       assert.equal(await detail.locator('.ev-round[data-round="2"] .ev-exit-pass').count(), 1);
@@ -389,6 +409,11 @@ void describe('the task panel and the card (D-082)', () => {
       await panel.locator('[data-section="proof"] .ev-round').waitFor({ timeout: 10_000 });
       const proof = panel.locator('[data-section="proof"]');
       assert.match(await proof.locator('.ev-sendback').innerText(), /The lint run exits 1\./);
+      await until(
+        async () =>
+          (await proof.locator('.ev-exit-fail').count()) === 1 &&
+          (await proof.locator('.ev-state-claimed').count()) === 1,
+      );
       assert.equal(await proof.locator('.ev-exit-fail').count(), 1);
       assert.equal(await proof.locator('.ev-state-claimed').count(), 1);
       await panel.locator('.cmt-sent-back').first().waitFor({ timeout: 10_000 });

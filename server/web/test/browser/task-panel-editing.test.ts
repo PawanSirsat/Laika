@@ -470,6 +470,7 @@ void describe('the title edits in place (LAI-827)', () => {
       await field.press('Escape');
       await h.page.waitForTimeout(300);
       assert.equal(patches(h).length, 0, 'Escape saved');
+      await until(async () => (await heading.innerText()).includes('Operator console'));
       assert.match(await heading.innerText(), /Operator console/);
 
       await shown.click();
@@ -629,6 +630,7 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
       await again.waitFor({ state: 'detached', timeout: 5_000 });
       // What is shown after saving is the safe renderer's.
       assert.equal(await description(h).locator('.md strong').innerText(), 'Loud');
+      await until(async () => (await description(h).locator('.md ul li').count()) === 2);
       assert.equal(await description(h).locator('.md ul li').count(), 2);
     } finally {
       await h.close();
@@ -724,6 +726,10 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
       await h.page.keyboard.type(' @gra');
       const options = h.page.locator('.rich-editor-picker [role="option"]');
       await options.first().waitFor({ timeout: 5_000 });
+      // Wait for the list it asserts, not the first option (LAI-715).
+      await until(
+        async () => (await options.allTextContents()).join('|') === 'Grace Hopper @grace',
+      );
       assert.deepEqual(await options.allTextContents(), ['Grace Hopper @grace']);
       await h.page.keyboard.press('Enter');
 
@@ -951,6 +957,9 @@ void describe('the stale-text protection of LAI-795 holds in the editor', () => 
       assert.equal(await h.page.locator('.rich-editor').count(), 0);
       release();
       await description(h).locator('.md h2').waitFor({ timeout: 10_000 });
+      await until(
+        async () => (await description(h).locator('[data-editable="description"]').count()) === 1,
+      );
       assert.equal(await description(h).locator('[data-editable="description"]').count(), 1);
     } finally {
       release();
@@ -991,6 +1000,16 @@ void describe('a paste keeps text, lists, links and tables, and nothing else', (
       await h.page.waitForTimeout(300);
 
       const doc = content(editor);
+      // The sleep is the quiet window for what must not appear; what must
+      // appear is waited for (LAI-715).
+      await until(
+        async () =>
+          (await doc.locator('ul li').count()) === 2 &&
+          (await doc.locator('table td').count()) === 2 &&
+          (await doc.locator('a[href="https://example.com/ok"]').count()) === 1 &&
+          (await doc.innerText()).includes('Pasted heading') &&
+          (await doc.innerText()).includes('a bad one'),
+      );
       assert.equal(await doc.locator('img, iframe, script, style, h1, strong, b').count(), 0);
       assert.equal(await doc.locator('ul li').count(), 2);
       assert.equal(await doc.locator('table td').count(), 2);
@@ -1146,7 +1165,16 @@ void describe('the comment composer is the same editor', () => {
       const editor = h.page.locator('.panel-composer .rich-editor');
       await editor.waitFor({ timeout: 10_000 });
       const toolbar = editor.getByRole('toolbar', { name: 'Formatting' });
-      for (const name of ['Bold', 'Mention someone', 'Link a card', 'Markdown']) {
+      const buttons = ['Bold', 'Mention someone', 'Link a card', 'Markdown'];
+      await until(async () => {
+        for (const name of buttons) {
+          if ((await toolbar.getByRole('button', { name, exact: true }).count()) !== 1) {
+            return false;
+          }
+        }
+        return true;
+      });
+      for (const name of buttons) {
         assert.equal(
           await toolbar.getByRole('button', { name, exact: true }).count(),
           1,

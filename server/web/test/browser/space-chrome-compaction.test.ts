@@ -17,7 +17,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, until, type ApiStub } from './harness.ts';
 
 const project = (slug: string, name: string, prefix: string) => ({
   id: slug,
@@ -107,6 +107,8 @@ void describe('the bar is two lines: identity, then tabs', () => {
       await h.page.setViewportSize({ width: 1920, height: 1000 });
       await h.page.locator('.space-bar-row').waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(500);
+      // The window settles the layout; the tabs themselves are waited for (LAI-715).
+      await until(async () => (await geometry(h.page)).tabCount > 0);
 
       const g = await geometry(h.page);
       assert.ok(g.tabCount > 0, 'no tabs found — this proves nothing');
@@ -130,6 +132,10 @@ void describe('the bar is two lines: identity, then tabs', () => {
       for (const width of [1600, 1280, 900, 420]) {
         await h.page.setViewportSize({ width, height: 1000 });
         await h.page.waitForTimeout(300);
+        await until(async () => {
+          const now = await geometry(h.page);
+          return now.overflow === 0 && (expected === 0 || now.tabCount === expected);
+        });
         const g = await geometry(h.page);
 
         if (expected === 0) expected = g.tabCount;
@@ -189,6 +195,10 @@ void describe('search and the faces are in exactly one place per view', () => {
       await h.page.locator('.space-bar-row').waitFor({ timeout: 20_000 });
       await h.page.locator('.board-bar').waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(500);
+      // The window is for the bar's absences below; the row's own controls are
+      // waited for (LAI-715).
+      await until(async () => (await h.page.locator('.board-bar .bt-search').count()) === 1);
+      await until(async () => (await h.page.locator('.board-bar .bt-member').count()) > 0);
 
       assert.equal(
         await h.page.locator('.board-bar .bt-search').count(),
@@ -219,6 +229,10 @@ void describe('search and the faces are in exactly one place per view', () => {
 
       assert.equal(await h.page.locator('.board-bar').count(), 0, 'the timeline grew a board row');
 
+      await until(async () => {
+        const now = await geometry(h.page);
+        return now.search === 1 && now.members === 1;
+      });
       const g = await geometry(h.page);
       assert.equal(g.search, 1, 'the timeline lost its search');
       assert.equal(g.members, 1, 'the timeline lost its assignee filter');
@@ -243,23 +257,29 @@ void describe('the space bar’s actions are on the right', () => {
     try {
       await h.page.setViewportSize({ width: 1600, height: 1000 });
       await h.page.locator('.space-create').waitFor({ timeout: 20_000 });
-      await h.page.waitForTimeout(400);
 
-      const m = await h.page.evaluate(() => {
-        const box = (s: string) => document.querySelector(s)?.getBoundingClientRect() ?? null;
-        const create = box('.space-create');
-        const top = box('.space-bar-top');
-        const tabs = box('.view-tabs');
-        const group = box('.space-bar-right');
-        return create === null || top === null || tabs === null || group === null
-          ? null
-          : {
-              createRight: Math.round(create.right),
-              topRight: Math.round(top.right),
-              tabsTop: Math.round(tabs.top),
-              groupTop: Math.round(group.top),
-            };
+      const measure = () =>
+        h.page.evaluate(() => {
+          const box = (s: string) => document.querySelector(s)?.getBoundingClientRect() ?? null;
+          const create = box('.space-create');
+          const top = box('.space-bar-top');
+          const tabs = box('.view-tabs');
+          const group = box('.space-bar-right');
+          return create === null || top === null || tabs === null || group === null
+            ? null
+            : {
+                createRight: Math.round(create.right),
+                topRight: Math.round(top.right),
+                tabsTop: Math.round(tabs.top),
+                groupTop: Math.round(group.top),
+              };
+        });
+      // Wait for the layout it asserts, not a clock (LAI-715).
+      await until(async () => {
+        const now = await measure();
+        return now !== null && now.createRight === now.topRight && now.groupTop < now.tabsTop;
       });
+      const m = await measure();
 
       assert.ok(m !== null, 'the bar, the tabs or the actions are missing');
       assert.equal(m.createRight, m.topRight, 'Create is not flush with the bar’s right edge');

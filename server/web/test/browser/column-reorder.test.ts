@@ -28,7 +28,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, refuse, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, open, refuse, until, type ApiStub, type Harness } from './harness.ts';
 import { pick } from './dropdown.ts';
 
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
@@ -217,6 +217,11 @@ void describe('dragging a column', () => {
 
     try {
       await board(h);
+      // Wait for every column it asserts, not the first title (LAI-715).
+      await until(
+        async () =>
+          (await titles(h)).join('|') === ['To do', 'In progress', 'Review', 'Done'].join('|'),
+      );
       assert.deepEqual(await titles(h), ['To do', 'In progress', 'Review', 'Done']);
 
       // Grip of the last lane onto the first.
@@ -503,13 +508,19 @@ void describe('the head reveals its own chrome', () => {
       // which the guard below correctly refuses — but the refusal describes the
       // wait, not the colours, and that is a slow way to learn nothing.
       await h.page.locator('.lane-head').first().waitFor({ state: 'attached' });
-      const seen = await h.page.evaluate(() => {
-        const dots = [...document.querySelectorAll('.lane-dot')];
-        return {
-          lanes: dots.length,
-          distinct: new Set(dots.map((d) => getComputedStyle(d).backgroundColor)).size,
-        };
+      const dots = (): Promise<{ lanes: number; distinct: number }> =>
+        h.page.evaluate(() => {
+          const dots = [...document.querySelectorAll('.lane-dot')];
+          return {
+            lanes: dots.length,
+            distinct: new Set(dots.map((d) => getComputedStyle(d).backgroundColor)).size,
+          };
+        });
+      await until(async () => {
+        const now = await dots();
+        return now.lanes >= 3 && now.distinct > 1;
       });
+      const seen = await dots();
       assert.ok(seen.lanes >= 3, `only ${String(seen.lanes)} dots — this proves little`);
       assert.ok(seen.distinct > 1, 'every status dot renders the same colour');
     } finally {
@@ -537,6 +548,13 @@ void describe('the count badge maps status to hue', () => {
     const h = await open('/board?project=laika-core', stub());
     try {
       await h.page.locator('.lane-head').first().waitFor({ state: 'attached' });
+      // Wait for the two coloured lanes it asserts, not the first head (LAI-715).
+      await until(async () => {
+        const statuses = await h.page
+          .locator('.lane')
+          .evaluateAll((els) => els.map((lane) => lane.getAttribute('data-status') ?? '(none)'));
+        return statuses.includes('in_progress') && statuses.includes('done');
+      });
       const seen = await h.page.evaluate(() => {
         const resolve = (token: string): string => {
           const probe = document.createElement('span');

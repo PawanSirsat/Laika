@@ -13,7 +13,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, setTheme, type ApiStub } from './harness.ts';
+import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
 
 const DAY = 86_400_000;
 const NOW = Date.now();
@@ -147,7 +147,10 @@ void describe('the card footer drops what the owner does not need', () => {
       // Positive control: both cards are on the page, so every absence below
       // is about the footer and not about an empty board.
       await h.page.locator('article.card').first().waitFor({ timeout: 15_000 });
+      // Wait for the count it asserts, not the first card (LAI-715).
+      await until(async () => (await h.page.locator('article.card').count()) === 2);
       assert.equal(await h.page.locator('article.card').count(), 2, 'both cards must render');
+      await until(async () => (await card(h, 'LAI-1').count()) === 1);
       assert.equal(await card(h, 'LAI-1').count(), 1, 'the noisy card is not on the board');
 
       const noisy = card(h, 'LAI-1');
@@ -172,10 +175,12 @@ void describe('the due chip, only when it is today or past (LAI-701)', () => {
     try {
       await h.page.locator('article.card').first().waitFor({ timeout: 15_000 });
       for (const key of ['LAI-3', 'LAI-4', 'LAI-5', 'LAI-6']) {
+        await until(async () => (await card(h, key).count()) === 1);
         assert.equal(await card(h, key).count(), 1, `${key} is not on the board`);
       }
 
       const past = card(h, 'LAI-3').locator('.card-due');
+      await until(async () => (await past.count()) === 1);
       assert.equal(await past.count(), 1, 'an overdue task shows no due chip');
       assert.ok(
         (await past.getAttribute('class'))?.includes('card-due-overdue'),
@@ -185,6 +190,7 @@ void describe('the due chip, only when it is today or past (LAI-701)', () => {
       assert.match(await past.innerText(), /\d{1,2} [A-Z][a-z]{2}/, 'the overdue chip has no date');
 
       const today = card(h, 'LAI-4').locator('.card-due');
+      await until(async () => (await today.count()) === 1);
       assert.equal(await today.count(), 1, 'a task due today shows no due chip');
       assert.ok(
         (await today.getAttribute('class'))?.includes('card-due-today'),
@@ -226,6 +232,11 @@ void describe('the due chip, only when it is today or past (LAI-701)', () => {
         await setTheme(h.page, theme);
         await h.page.waitForTimeout(250);
         const colour = (l: typeof past) => l.evaluate((el) => getComputedStyle(el).color);
+        await until(
+          async () =>
+            (await colour(past)) === (await token('--overdue')) &&
+            (await colour(today)) === (await token('--chip-orange')),
+        );
         const [overdue, amber, muted] = [
           await token('--overdue'),
           await token('--chip-orange'),
@@ -258,6 +269,11 @@ void describe('the due chip, only when it is today or past (LAI-701)', () => {
       await h.page.waitForTimeout(400);
 
       for (const key of ['LAI-7', 'LAI-8']) {
+        await until(
+          async () =>
+            (await card(h, key).evaluate((el) => Math.round(el.getBoundingClientRect().width))) <=
+            220,
+        );
         const seen = await card(h, key).evaluate((el) => {
           const box = el.getBoundingClientRect();
           const foot = el.querySelector('.card-foot');

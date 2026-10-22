@@ -350,6 +350,7 @@ void describe('the effort chip on a card', () => {
       assert.equal(await chip('LC-1').innerText(), 'XS');
       assert.equal(await chip('LC-3').innerText(), 'L');
       assert.equal((await chip('LC-2').innerText()).trim(), 'XL');
+      await until(async () => (await chip('LC-2').locator('.size-chip-dot').count()) === 1);
       assert.equal(
         await chip('LC-2').locator('.size-chip-dot').count(),
         1,
@@ -426,6 +427,12 @@ void describe('the List’s Effort column', () => {
 
       await header.click();
       await until(async () => (await keys())[0]?.startsWith('LC-1') === true);
+      // The whole order it asserts, not only its first row (LAI-715).
+      await until(
+        async () =>
+          (await keys()).map((k) => k.slice(0, 4)).join('|') ===
+          ['LC-1', 'LC-5', 'LC-3', 'LC-2', 'LC-4'].join('|'),
+      );
       assert.deepEqual(
         (await keys()).map((k) => k.slice(0, 4)),
         ['LC-1', 'LC-5', 'LC-3', 'LC-2', 'LC-4'],
@@ -435,10 +442,16 @@ void describe('the List’s Effort column', () => {
         'ascending',
       );
       // The URL keeps the API's name, so an address from before still works.
+      await until(() => h.page.url().includes('sort=size'));
       assert.match(h.page.url(), /sort=size/);
 
       await header.click();
       await until(async () => (await keys())[0]?.startsWith('LC-2') === true);
+      await until(
+        async () =>
+          (await keys()).map((k) => k.slice(0, 4)).join('|') ===
+          ['LC-2', 'LC-3', 'LC-5', 'LC-1', 'LC-4'].join('|'),
+      );
       assert.deepEqual(
         (await keys()).map((k) => k.slice(0, 4)),
         ['LC-2', 'LC-3', 'LC-5', 'LC-1', 'LC-4'],
@@ -457,6 +470,11 @@ void describe('the List’s Effort column', () => {
       await h.page.locator('.list-row').first().waitFor({ timeout: 20_000 });
       const keys = async () => h.page.locator('.list-row .list-key').allInnerTexts();
       await until(async () => (await keys())[0]?.startsWith('LC-2') === true);
+      await until(
+        async () =>
+          (await keys()).map((k) => k.slice(0, 4)).join('|') ===
+          ['LC-2', 'LC-3', 'LC-5', 'LC-1', 'LC-4'].join('|'),
+      );
       assert.deepEqual(
         (await keys()).map((k) => k.slice(0, 4)),
         ['LC-2', 'LC-3', 'LC-5', 'LC-1', 'LC-4'],

@@ -579,12 +579,14 @@ describe('the parser itself', () => {
     // of agent time, and a session's split between tasks. LAI-788's are keyed
     // by what Solidtime names — a project, a member, an entry — because the
     // point of each row is to be found again by that id on the next pull.
+    // LAI-833's is a session's five minutes of agent time.
     const withoutId = [...specTables.entries()]
       .filter(([, fields]) => !fields.includes('id'))
       .map(([table]) => table)
       .sort();
 
     expect(withoutId).toEqual([
+      'agent_time_buckets',
       'agent_time_days',
       'board_activity_days',
       'github_checks',

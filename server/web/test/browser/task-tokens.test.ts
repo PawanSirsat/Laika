@@ -651,6 +651,12 @@ void describe('LAI-773: cost, the budget and the runaway banner', () => {
         'a bar for a budget nobody set',
       );
       await until(async () => (await section.locator('details [data-block="budget"]').count()) > 0);
+      await until(
+        async () =>
+          (await section
+            .locator('details.tk-details [data-block="budget"] .budget-editor')
+            .count()) === 1,
+      );
       assert.equal(
         await section.locator('details.tk-details [data-block="budget"] .budget-editor').count(),
         1,
@@ -771,13 +777,24 @@ void describe('LAI-773: cost, the budget and the runaway banner', () => {
           [390, 844],
         ] as const) {
           await h.page.setViewportSize({ width, height });
+          // Wait for the layout and colour it asserts, not the resize call (LAI-715).
+          await until(
+            async () =>
+              (await h.page.evaluate(
+                () => document.documentElement.scrollWidth - window.innerWidth,
+              )) <= 0,
+          );
           const overflow = await h.page.evaluate(
             () => document.documentElement.scrollWidth - window.innerWidth,
           );
           assert.ok(overflow <= 0, `${theme} at ${String(width)}: ${String(overflow)} px sideways`);
-          const colour = await h.page
-            .locator('[data-block="budget"] .budget-bar')
-            .evaluate((el) => getComputedStyle(el).backgroundColor);
+          const bar = h.page.locator('[data-block="budget"] .budget-bar');
+          await until(
+            async () =>
+              (await bar.evaluate((el) => getComputedStyle(el).backgroundColor)) !==
+              'rgba(0, 0, 0, 0)',
+          );
+          const colour = await bar.evaluate((el) => getComputedStyle(el).backgroundColor);
           assert.notEqual(colour, 'rgba(0, 0, 0, 0)', `${theme}: the bar has no colour`);
         }
       }

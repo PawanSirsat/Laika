@@ -2,11 +2,13 @@
 id: LAI-857
 title: 'card-click "clicking the card body opens the panel" times out waiting for the first card in a contended root gate'
 area: web
-assignee: unclaimed
+assignee: strelka
 priority: p2
 depends-on: []
 discovered-from: LAI-841
-status: backlog
+status: review
+started: 2026-10-21T16:22:45Z
+finished: 2026-10-21T17:00:05Z
 ---
 
 ## Goal
@@ -24,7 +26,7 @@ board it opens is healthy. Keep its specific geometry assertions.
 - [ ] Fix the cause you found. Keep the title-exists, layout-box and
       `elementFromPoint` checks. Do not add a suite retry or a sleep, and do
       not raise the timeout without a measured reason.
-- [ ] The file passes alone, and in a root gate under measured contention.
+- [x] The file passes alone, and in a root gate under measured contention.
       `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Evidence
@@ -106,3 +108,58 @@ failed here. This failure is the `waitFor` at `:125` itself timing out, and
 the sweep's fix would not change that wait. If LAI-715's other lever,
 `--test-concurrency` for `test/browser/`, turns out to be the fix, take it
 under LAI-715, or with it, rather than twice.
+
+## Builder notes (Strelka, 2026-10-21): not reproduced, so not fixed
+
+**Criteria 1 and 2 are not met, and are left unticked on purpose.** The
+failure did not reproduce, so there is no cause to fix. What was measured,
+and what was shipped instead:
+
+- **Alone:** `node --test test/browser/card-click.test.ts` (in `server/web`),
+  exit 0, 2 of 2 cases, about 2.2s. A timed probe of this case's first open:
+  `open` took 2221ms (build and browser launch); the first card was visible
+  86ms after `open` returned.
+- **In a contended root gate** (lock held, base `6b8cd862`): six copies of a
+  probe of this case, 3 opens each, ran inside `pnpm test`. The load average
+  went from **41.29 at the start to 154.52 at the end** (the 1-minute figure
+  from `uptime`, other builders' gates running too). This is about twice the
+  77.62 of LAI-841's failing gate. **18 of 18 opens rendered the card.** Each
+  file's first open (build, launch, navigation) took **6305 to 7430ms**. The
+  card was visible **72 to 429ms** after `open` returned. Later opens took
+  under 0.7s in all. Web reported `# tests 2696`, `# pass 2696`, so
+  `card-click.test.ts` passed there too.
+- **Is it a slow answer?** `SESSION_TIMEOUT_MS` (8000,
+  `src/api/session-state.ts:36`) is the only timer on the startup path. With
+  `/api/v1/me` held back 7000ms and 9000ms by a `page.route`, the board
+  recovered both times. The card was visible 0.3s after `/me` answered. A late
+  session does not leave the board stuck.
+- So when the wait gave up on Belka, the page was in a state none of these
+  runs produced. It was not slow rendering under CPU load, and not a late
+  `/me`. Belka differs from this machine: 10 cores, Defender and Spotlight
+  scanning the worktrees and the fresh `laika-web-*` build, and several root
+  gates at once.
+
+**Shipped (`2c039030`): the wait now reports its own evidence.** If
+`card.waitFor` at `:125` gives up, the error names how long `open` took, the
+URL, the first 400 characters of `main`'s text and every API call made, with
+the Playwright timeout as its `cause`. No timeout, retry or sleep changed, and
+the title, layout-box and `elementFromPoint` checks are untouched. Mutation:
+point the locator at `article.card-MUTATED` (wait cut to 2s for the run).
+The case went red with `no card after open took 1018ms;
+http://127.0.0.1:53522/board?project=laika-core showed: Laika Core OFFLINE …
+TO DO 2 …; api calls: GET /api/v1/me, …`. Restored, and the file's checksum
+matched the original (`19e466e7`).
+
+**Root gates on this branch.** The first, at `92e2da81` (1-minute load 21.07
+at the start, 45.81 when `pnpm test` ended), went `TEST 1`, `LINT 0`, `FMT 0`.
+`card-click.test.ts` passed in it. One unrelated browser case failed:
+`task-markdown.test.ts:226`, a 5000ms wait for a link's popup, and that file
+passed alone straight after, 4 of 4. That failure is filed as **LAI-307**. The
+second, at `457c2601` (load 24.77 to 36.80), went `TEST 0`, `LINT 0`,
+`FMT 0`: web 2690 of 2690, server 3386 passed and 10 skipped, cli 533
+passed and 0 failed, with this case among the passes.
+
+**For the reviewer:** accept this as the instrument, so the next red gate
+records criterion 1's evidence, or send it back. LAI-715 (PR #12) edits this
+file at `:136-148` and `:174`, not this wait. The hunks are near each other
+but separate.

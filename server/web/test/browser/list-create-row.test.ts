@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, setTheme, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, open, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -275,18 +275,26 @@ void describe('the List’s Create row (LAI-717)', () => {
         await h.page.locator('.list-row .list-checkbox').last().check();
         await h.page.locator('.list-bulk').waitFor({ timeout: 5_000 });
         // The selection may add room at the end; read the end as it now is.
-        await scroller.evaluate((el) => {
-          el.scrollTop = el.scrollHeight;
+        const measure = async () => {
+          await scroller.evaluate((el) => {
+            el.scrollTop = el.scrollHeight;
+          });
+          return h.page.evaluate(() => {
+            const rows = document.querySelectorAll('.list tbody tr');
+            return {
+              bulkTop: document.querySelector('.list-bulk')!.getBoundingClientRect().top,
+              bulkBottom: document.querySelector('.list-bulk')!.getBoundingClientRect().bottom,
+              createTop: document.querySelector('.list-create')!.getBoundingClientRect().top,
+              lastBottom: rows[rows.length - 1]!.getBoundingClientRect().bottom,
+            };
+          });
+        };
+        // The room arrives after the bar; wait for the geometry asserted (LAI-715).
+        await until(async () => {
+          const now = await measure();
+          return now.bulkBottom <= now.createTop && now.lastBottom <= now.bulkTop;
         });
-        const g = await h.page.evaluate(() => {
-          const rows = document.querySelectorAll('.list tbody tr');
-          return {
-            bulkTop: document.querySelector('.list-bulk')!.getBoundingClientRect().top,
-            bulkBottom: document.querySelector('.list-bulk')!.getBoundingClientRect().bottom,
-            createTop: document.querySelector('.list-create')!.getBoundingClientRect().top,
-            lastBottom: rows[rows.length - 1]!.getBoundingClientRect().bottom,
-          };
-        });
+        const g = await measure();
         assert.ok(
           g.bulkBottom <= g.createTop,
           `the bulk bar ends at ${String(g.bulkBottom)}, over the Create row from ${String(g.createTop)}`,

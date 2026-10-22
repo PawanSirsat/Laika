@@ -106,6 +106,12 @@
 # `"session_id"` that is a plain id (letters, digits, `.`, `_`, `-`, at most
 # 128). It is appended to ~/.laika/activity/skip-sessions, 0600, and never
 # sent. Nothing at all when activity is not on here (no ~/.laika/activity).
+# For a sub-agent an Omnigent runner dispatched — `OMNIGENT=1` under a runner
+# primary id, neither the primary nor the orchestrator — the line ends with
+# the word `omnigent` (D-095, LAI-859), so the time drafter may let its card
+# label the person's untied minutes; its own time stays out. A `CI` or
+# `LAIKA_ACTIVITY_SKIP` session's line has no word, as every line before it
+# had, and lends nothing.
 #
 # ## A person's session start (LAI-770, D-084 item 5)
 #
@@ -130,7 +136,7 @@
 # no fork. It never prints (Claude Code parses `Stop` output) and always
 # exits 0 (exit 2 there keeps Claude from stopping).
 #
-# Owned by SHELL (plugin/). LAI-752, LAI-757, LAI-787, LAI-792.
+# Owned by SHELL (plugin/). LAI-752, LAI-757, LAI-787, LAI-792, LAI-859.
 
 exec >/dev/null 2>&1
 unset USER_PROMPT
@@ -147,11 +153,15 @@ AUTOMATED=no
 PRIMARY=no
 ORCHESTRATOR=no
 OSID=''
+WHY=''
 if [ -n "${CI:-}" ] || [ -n "${LAIKA_ACTIVITY_SKIP:-}" ]; then
   AUTOMATED=yes
 elif [ "${OMNIGENT:-}" = 1 ]; then
   AUTOMATED=yes
   if [ -n "${OMNIGENT_RUNNER_PRIMARY_SESSION_ID:-}" ]; then
+    # A sub-agent the runner dispatched, unless one of the two below: its
+    # skip line says so (D-095).
+    WHY=omnigent
     if [ "${OMNIGENT_TERMINAL_LAUNCH_SESSION_ID:-}" = "$OMNIGENT_RUNNER_PRIMARY_SESSION_ID" ]; then
       PRIMARY=yes
       AUTOMATED=no
@@ -281,7 +291,11 @@ if [ "$AUTOMATED" = yes ]; then
     if [ -n "$SID" ]; then
       case "$NOW" in '' | *[!0-9]*) NOW="$(date +%s)" ;; esac
       # One printf, one O_APPEND write; umask 077 makes the file 0600.
-      printf '%s %s\n' "$NOW" "$SID" >>"$HOME/.laika/activity/skip-sessions"
+      if [ -n "$WHY" ]; then
+        printf '%s %s %s\n' "$NOW" "$SID" "$WHY" >>"$HOME/.laika/activity/skip-sessions"
+      else
+        printf '%s %s\n' "$NOW" "$SID" >>"$HOME/.laika/activity/skip-sessions"
+      fi
     fi
   fi
   exit 0

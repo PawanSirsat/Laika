@@ -401,6 +401,8 @@ export async function getTimeSettings(
         org_mode: typeof body.org_mode === 'string' ? body.org_mode : '',
         draft_my_time: body.draft_my_time === true,
         drafting: body.drafting,
+        // Only a board that says so takes a block's `at` (D-096).
+        signal_times: body.signal_times === true,
       },
     };
   } catch {

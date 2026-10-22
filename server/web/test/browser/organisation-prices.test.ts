@@ -123,6 +123,7 @@ void describe('the price table, for everyone who may see the organisation', () =
       const text = await section.innerText();
       assert.match(text, /API-equivalent, not your bill/);
       assert.match(text, /table of 2026-10-18/);
+      await until(async () => (await section.locator('tbody tr').count()) === 3);
       assert.equal(await section.locator('tbody tr').count(), 3);
       const opus = section.locator('tr[data-model="claude-opus-5-5"]');
       assert.match(await opus.innerText(), /\$4\.00\s+\$20\.00\s+\$5\.00\s+\$0\.20/);
@@ -239,9 +240,11 @@ void describe('the price table, for everyone who may see the organisation', () =
           [390, 844],
         ] as const) {
           await h.page.setViewportSize({ width, height });
-          const overflow = await h.page.evaluate(
-            () => document.documentElement.scrollWidth - window.innerWidth,
-          );
+          const spill = () =>
+            h.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+          // The size lands before the reflow does (LAI-715).
+          await until(async () => (await spill()) <= 0);
+          const overflow = await spill();
           assert.ok(overflow <= 0, `${theme} at ${String(width)}: ${String(overflow)} px sideways`);
         }
       }

@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, until, type ApiStub } from './harness.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -130,17 +130,21 @@ void describe('the activity feed', () => {
     try {
       await h.page.locator('.dash-event').first().waitFor({ timeout: 20_000 });
 
-      const m = await h.page.evaluate(() => {
-        const box = document.querySelector('.dash-feed-scroll');
-        if (box === null) return null;
-        return {
-          rows: document.querySelectorAll('.dash-event').length,
-          scrolls: box.scrollHeight > box.clientHeight,
-          boxHeight: box.clientHeight,
-          pageHeight: document.documentElement.scrollHeight,
-          viewport: window.innerHeight,
-        };
-      });
+      const measure = () =>
+        h.page.evaluate(() => {
+          const box = document.querySelector('.dash-feed-scroll');
+          if (box === null) return null;
+          return {
+            rows: document.querySelectorAll('.dash-event').length,
+            scrolls: box.scrollHeight > box.clientHeight,
+            boxHeight: box.clientHeight,
+            pageHeight: document.documentElement.scrollHeight,
+            viewport: window.innerHeight,
+          };
+        });
+      // Wait for the rows it counts, not the first one (LAI-715).
+      await until(async () => ((await measure())?.rows ?? 0) > 100);
+      const m = await measure();
       assert.ok(m !== null, 'the feed has no scroll container');
 
       /*
@@ -172,10 +176,16 @@ void describe('the activity feed', () => {
       });
       try {
         await twice.page.locator('.dash-event').first().waitFor({ timeout: 20_000 });
-        const doubled = await twice.page.evaluate(() => ({
-          rows: document.querySelectorAll('.dash-event').length,
-          page: document.documentElement.scrollHeight,
-        }));
+        const measureTwice = () =>
+          twice.page.evaluate(() => ({
+            rows: document.querySelectorAll('.dash-event').length,
+            page: document.documentElement.scrollHeight,
+          }));
+        await until(async () => {
+          const now = await measureTwice();
+          return now.rows > m.rows && now.page === m.pageHeight;
+        });
+        const doubled = await measureTwice();
         assert.ok(doubled.rows > m.rows, 'the doubled fixture did not load');
         assert.equal(
           doubled.page,
@@ -197,9 +207,15 @@ void describe('the activity feed', () => {
     try {
       await h.page.locator('.dash-filter').first().waitFor({ timeout: 20_000 });
 
-      const counts = await h.page
-        .locator('.dash-filter-count')
-        .evaluateAll((els: Element[]) => els.map((e) => Number(e.textContent ?? '0')));
+      const tally = () =>
+        h.page
+          .locator('.dash-filter-count')
+          .evaluateAll((els: Element[]) => els.map((e) => Number(e.textContent ?? '0')));
+      await until(async () => {
+        const now = await tally();
+        return now.length === 3 && now[0] === (now[1] ?? 0) + (now[2] ?? 0) && (now[2] ?? 0) > 0;
+      });
+      const counts = await tally();
       assert.equal(counts.length, 3);
 
       /*
@@ -230,6 +246,11 @@ void describe('the activity feed', () => {
       // The design's order, left to right. `USER` down every row was the thing
       // the eye hit first and the thing that never varied.
       assert.equal(await row.locator('.dash-kind').count(), 0, 'the actor-kind badge is back');
+      await until(
+        async () =>
+          (await row.locator('.dash-when').count()) === 1 &&
+          (await row.locator('.dash-avatar').count()) === 1,
+      );
       assert.equal(await row.locator('.dash-when').count(), 1);
       assert.equal(await row.locator('.dash-avatar').count(), 1);
 

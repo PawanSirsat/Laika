@@ -5,6 +5,7 @@ import { type Db } from '../db/client.ts';
 import { type LocalActivityScope } from '../db/enums.ts';
 import { requireOrgId } from '../db/orgs.ts';
 import {
+  agentTimeBuckets,
   agentTimeDays,
   localActivityDays,
   orgs,
@@ -684,6 +685,7 @@ export function deleteOwnLocalActivity(db: Db, actor: ResolvedActor): void {
     // the same consent's figures. Time the person confirmed is a record, not
     // collected history, and stays.
     tx.delete(agentTimeDays).where(eq(agentTimeDays.userId, actor.userId)).run();
+    tx.delete(agentTimeBuckets).where(eq(agentTimeBuckets.userId, actor.userId)).run();
     tx.delete(tokenSessionTasks).where(eq(tokenSessionTasks.userId, actor.userId)).run();
   });
 }
