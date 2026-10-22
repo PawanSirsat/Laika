@@ -620,25 +620,40 @@ describe('sprintTaskCounts (LAI-611)', () => {
     expect(counts.size).toBe(2);
   });
 
-  it('is exact past the page size, where counting a list of tasks would be short', () => {
-    // The reason this is a grouped query and not `listTasks(...).length`.
-    // Measured rather than argued: `listTasks` returns `limit + 1` rows by
-    // design, so at 205 tasks the list-based count would say 201 and nothing
-    // about the number would reveal that it had been cut off.
-    const s = sprint({ name: 'Big', starts_on: jan(1), ends_on: jan(14) });
-    const ids = Array.from({ length: 205 }, (_, i) => task(`T${String(i)}`));
-    addTasksToSprint(t.sqlite, t.db, actor(adminId), s.id, ids);
+  /**
+   * **This test does 205 tasks' worth of writes** (LAI-304): each `createTask`
+   * is its own WAL commit, and `addTasksToSprint` updates and records every row.
+   * About 500ms on a quiet machine — 330ms creating, 120ms adding, 5ms counting
+   * and listing — and it ran on vitest's default 5s, so a loaded gate went red
+   * with nothing wrong in the code ("Test timed out in 5000ms", three times on
+   * 2026-10-21, at load averages from 57 to 219). The budget is on the setup,
+   * named here, not on the suite: nothing asserted below is about time.
+   */
+  const SETUP_BUDGET_MS = 60_000;
 
-    expect(sprintTaskCounts(t.db, actor(adminId), 'laika').get(s.id)?.total).toBe(205);
+  it(
+    'is exact past the page size, where counting a list of tasks would be short',
+    { timeout: SETUP_BUDGET_MS },
+    () => {
+      // The reason this is a grouped query and not `listTasks(...).length`.
+      // Measured rather than argued: `listTasks` returns `limit + 1` rows by
+      // design, so at 205 tasks the list-based count would say 201 and nothing
+      // about the number would reveal that it had been cut off.
+      const s = sprint({ name: 'Big', starts_on: jan(1), ends_on: jan(14) });
+      const ids = Array.from({ length: 205 }, (_, i) => task(`T${String(i)}`));
+      addTasksToSprint(t.sqlite, t.db, actor(adminId), s.id, ids);
 
-    const page = listTasks(t.db, actor(adminId), 'laika', {
-      limit: 200,
-      cursor: null,
-      updatedSince: null,
-      sprint: s.id,
-    });
-    expect(page.length).toBe(201);
-  });
+      expect(sprintTaskCounts(t.db, actor(adminId), 'laika').get(s.id)?.total).toBe(205);
+
+      const page = listTasks(t.db, actor(adminId), 'laika', {
+        limit: 200,
+        cursor: null,
+        updatedSince: null,
+        sprint: s.id,
+      });
+      expect(page.length).toBe(201);
+    },
+  );
 
   it('refuses an actor who cannot read the project', () => {
     const outsider = makeUser('viewer');
