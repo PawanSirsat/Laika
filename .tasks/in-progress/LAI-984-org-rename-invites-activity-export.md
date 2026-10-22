@@ -2,11 +2,12 @@
 id: LAI-984
 title: 'The organisation cannot be renamed, invites cannot be re-issued or given an expiry, and history cannot be exported'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T17:14:37Z
 ---
 
 ## Acceptance criteria (D-104 item 7; audit B7, B11)
