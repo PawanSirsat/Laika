@@ -11,7 +11,7 @@ status: backlog
 
 ## Goal
 
-D-105: keep LAI-893's released People tab as the layout and port every
+D-107: keep LAI-893's released People tab as the layout and port every
 LAI-987 feature it lacks into it, on top of LAI-998's merged tree.
 
 ## Acceptance criteria

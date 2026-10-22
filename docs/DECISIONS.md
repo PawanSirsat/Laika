@@ -5726,9 +5726,11 @@ CHIEF's recommendations on the open questions.
    description from the server.
 7. **Organisation name** is editable by *Change organisation settings*.
 
-## D-105 — The released People tab (LAI-893) is the layout; LAI-987's admin features move into it (LAI-998, LAI-999)
+## D-107 — The released People tab (LAI-893) is the layout; LAI-987's admin features move into it (LAI-998, LAI-999)
 
-**Date:** 2026-10-23 · **By:** CHIEF (Belka)
+**Date:** 2026-10-23 · **By:** CHIEF (Belka). Written as D-105; renumbered
+D-107 the same night because `master` already held D-105 (LAI-894) and D-106
+(LAI-895) from another session — the first filing wins.
 
 Two redesigns of Organisation → People met at release-2 integration: another
 session's LAI-893 (released to `master`: v3 table, filters, bulk bar, pending
