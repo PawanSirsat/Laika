@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
-import { getPermissions } from '../../src/api/permissions.ts';
+import { getOrgPermissions, getPermissions, setOrgPermissions } from '../../src/api/permissions.ts';
 import { fieldsOf } from '../helpers/interfaces.ts';
 
 const read = (relative: string) =>
@@ -25,8 +25,13 @@ const server = read('../../../src/services/permissions.ts');
 const client = read('../../src/api/permissions.ts');
 
 const sent: string[] = [];
-globalThis.fetch = ((input: string | URL) => {
+const writes: { method: string; body: unknown }[] = [];
+globalThis.fetch = ((input: string | URL, init?: RequestInit) => {
   sent.push(input instanceof URL ? input.href : input);
+  writes.push({
+    method: init?.method ?? 'GET',
+    body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+  });
   return Promise.resolve(
     new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }),
   );
@@ -36,6 +41,21 @@ void describe('the call (§6.4)', () => {
   void test('GET /api/v1/permissions', async () => {
     await getPermissions();
     assert.deepEqual(sent, ['/api/v1/permissions']);
+  });
+
+  void test('GET /api/v1/org/permissions (LAI-960)', async () => {
+    sent.length = 0;
+    await getOrgPermissions();
+    assert.deepEqual(sent, ['/api/v1/org/permissions']);
+  });
+
+  void test('PUT /api/v1/org/permissions sends the whole matrix as { grants }', async () => {
+    sent.length = 0;
+    writes.length = 0;
+    const grants = { admin: { a: true }, member: { a: false } };
+    await setOrgPermissions(grants);
+    assert.deepEqual(sent, ['/api/v1/org/permissions']);
+    assert.deepEqual(writes, [{ method: 'PUT', body: { grants } }]);
   });
 });
 

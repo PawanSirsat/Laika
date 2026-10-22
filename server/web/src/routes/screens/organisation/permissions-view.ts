@@ -1,4 +1,4 @@
-import type { PermissionRow, Permissions } from '../../../api/permissions.ts';
+import type { Grants, PermissionRow, Permissions } from '../../../api/permissions.ts';
 
 /**
  * What the Roles & permissions tab draws, derived from the response alone
@@ -67,4 +67,42 @@ export function projectLabel(
   id: string,
 ): string {
   return projects.find((project) => project.id === id)?.name ?? id;
+}
+
+/**
+ * The org roles no grant reaches — the owner today — in the order
+ * `GET /permissions` lists them. Their column is always on and cannot be
+ * switched; which roles they are is the two responses' difference, not a name
+ * this module knows.
+ */
+export function lockedRoles(
+  orgRoles: readonly string[],
+  grantable: readonly string[],
+): readonly string[] {
+  return orgRoles.filter((role) => !grantable.includes(role));
+}
+
+/** `grants` with one cell set, the rest copied. The input is not touched. */
+export function withGrant(grants: Grants, role: string, capability: string, on: boolean): Grants {
+  return { ...grants, [role]: { ...grants[role], [capability]: on } };
+}
+
+/** The same cells on, role by role. A cell missing on one side is off. */
+export function sameGrants(a: Grants, b: Grants): boolean {
+  const roles = new Set([...Object.keys(a), ...Object.keys(b)]);
+  return [...roles].every((role) => {
+    const left = a[role] ?? {};
+    const right = b[role] ?? {};
+    const capabilities = new Set([...Object.keys(left), ...Object.keys(right)]);
+    return [...capabilities].every((c) => (left[c] ?? false) === (right[c] ?? false));
+  });
+}
+
+/**
+ * Whether the grid is switches or text: the server's answer, from the actions
+ * `GET /permissions` says the caller may take on this credential. An owner on
+ * a token is refused `session_required`, and that is already in the answer.
+ */
+export function mayEditGrants(actions: readonly string[]): boolean {
+  return actions.includes('org.permissions.manage');
 }

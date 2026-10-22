@@ -480,6 +480,27 @@ const PAIRS: readonly Pair[] = [
     client: 'ModelPrices',
     clientFile: 'model-prices.ts',
   },
+  // Who can do what (LAI-958's endpoint, LAI-960's grid), paired the moment the
+  // mirror existed. The server's census listed all three in UNPAIRED until
+  // then; those three entries are stale from this commit (CLAUDE.md §4.4).
+  {
+    server: 'OrgPermissionsView',
+    serverFile: 'services/org-permissions.ts',
+    client: 'OrgPermissions',
+    clientFile: 'permissions.ts',
+  },
+  {
+    server: 'CapabilityView',
+    serverFile: 'services/org-permissions.ts',
+    client: 'Capability',
+    clientFile: 'permissions.ts',
+  },
+  {
+    server: 'OwnerLockedView',
+    serverFile: 'services/org-permissions.ts',
+    client: 'OwnerLocked',
+    clientFile: 'permissions.ts',
+  },
   // A person's own time (LAI-787, D-088), paired the moment the mirror existed.
   {
     server: 'TimeSettingsView',

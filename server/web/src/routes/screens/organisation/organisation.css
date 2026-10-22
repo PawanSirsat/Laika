@@ -1092,6 +1092,21 @@
   display: none;
 }
 
+.perm-grants {
+  margin-top: var(--space-3);
+}
+
+.perm-grants .perm-cell {
+  vertical-align: middle;
+}
+
+.perm-grants-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
 .perm-members {
   margin-top: var(--space-3);
 }

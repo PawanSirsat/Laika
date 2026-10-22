@@ -3,7 +3,15 @@ import { getPermissions, type Permissions } from '../../../api/permissions.ts';
 import type { Project } from '../../../api/projects.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
-import { actionName, cellFor, heldNames, projectLabel, rowsFor } from './permissions-view.ts';
+import { GrantsCard } from './GrantsCard.tsx';
+import {
+  actionName,
+  cellFor,
+  heldNames,
+  mayEditGrants,
+  projectLabel,
+  rowsFor,
+} from './permissions-view.ts';
 
 type PermissionsState =
   | { readonly status: 'loading' }
@@ -11,8 +19,8 @@ type PermissionsState =
   | { readonly status: 'ready'; readonly view: Permissions };
 
 export interface RolesPermissionsSectionProps {
-  /** Owner or Admin — the readers who may change an org role on People. */
-  readonly canManage: boolean;
+  /** The owner — the one reader who may change an org role on People (D-102 rule 5). */
+  readonly canChangeRoles: boolean;
   /** The projects the reader can see, to name a membership and link its Members. */
   readonly projects: readonly Project[];
   readonly onNavigate: (to: string) => void;
@@ -130,12 +138,15 @@ function Matrix({
  * Organisation → Roles & permissions (LAI-950): who may do what, **as `can()`
  * answers it**, from `GET /api/v1/permissions`.
  *
- * Read-only. Roles are still assigned where they always were — org roles on
- * People, project roles on each project's Members — and this tab links there
- * rather than growing a second place to change them.
+ * Roles are still assigned where they always were — org roles on People,
+ * project roles on each project's Members — and this tab links there rather
+ * than growing a second place to change them. **What each role may do** is
+ * the owner's to change here (LAI-960), in *Who can do what*; the tables
+ * below it are re-read after a save, because they are `can()`'s answer under
+ * those grants.
  */
 export function RolesPermissionsSection({
-  canManage,
+  canChangeRoles,
   projects,
   onNavigate,
 }: RolesPermissionsSectionProps) {
@@ -147,7 +158,9 @@ export function RolesPermissionsSection({
 
   useEffect(() => {
     const controller = new AbortController();
-    setState({ status: 'loading' });
+    // A re-read after a save keeps the tab on screen; only a first load or a
+    // retry from an error shows the skeleton.
+    setState((current) => (current.status === 'ready' ? current : { status: 'loading' }));
     getPermissions(controller.signal)
       .then((view) => {
         if (controller.signal.aborted) return;
@@ -265,6 +278,8 @@ export function RolesPermissionsSection({
         )}
       </section>
 
+      <GrantsCard orgRoles={view.org_roles} editable={mayEditGrants(me.actions)} onSaved={reload} />
+
       <Matrix
         id="perm-org"
         title="Organisation roles"
@@ -272,7 +287,7 @@ export function RolesPermissionsSection({
         view={view}
         scope="org"
         action={
-          canManage ? (
+          canChangeRoles ? (
             <InAppLink to="/organisation?tab=people" onNavigate={onNavigate}>
               Change someone&rsquo;s role
             </InAppLink>
