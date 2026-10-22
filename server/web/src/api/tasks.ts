@@ -293,6 +293,45 @@ export function listTasks(
   );
 }
 
+/**
+ * What the everyone's-work list takes (`GET /tasks`, LAI-887): the four
+ * filters the server accepts there and nothing else — it answers `422` to
+ * `priority`, `tag` or `ready` rather than ignoring them.
+ */
+export interface AllTasksFilter {
+  /** A project slug: only that space's tasks. */
+  readonly project?: string | undefined;
+  readonly status?: TaskStatus | undefined;
+  /** A user id, or the literal `none` for unassigned. */
+  readonly assignee?: string | undefined;
+  /** A sprint id, or the literal `none` for tasks in no sprint. */
+  readonly sprint?: string | undefined;
+  readonly limit?: number | undefined;
+  readonly cursor?: string | undefined;
+}
+
+/**
+ * A page of tasks from **every project the caller may read** (LAI-887,
+ * LAI-952), slim, in the per-project list's order. Which projects those are is
+ * the server's answer; the client never widens or narrows it.
+ */
+export function listAllTasks(
+  filter: AllTasksFilter = {},
+  signal?: AbortSignal,
+): Promise<Page<TaskSummary>> {
+  const params = new URLSearchParams({ fields: 'slim' });
+  if (filter.project !== undefined) params.set('project', filter.project);
+  if (filter.status !== undefined) params.set('status', filter.status);
+  if (filter.assignee !== undefined) params.set('assignee', filter.assignee);
+  if (filter.sprint !== undefined) params.set('sprint', filter.sprint);
+  if (filter.limit !== undefined) params.set('limit', String(filter.limit));
+  if (filter.cursor !== undefined) params.set('cursor', filter.cursor);
+  return request<Page<TaskSummary>>(
+    `/tasks?${params.toString()}`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
 export interface CreateTaskInput {
   readonly title: string;
   readonly priority?: TaskPriority | undefined;

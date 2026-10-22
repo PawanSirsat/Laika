@@ -1,0 +1,213 @@
+/*
+ * Work (LAI-952): everyone's work across every space. The card and its rows
+ * follow the review queue's (`review.css`); tokens only, so both themes come
+ * from `theme.css`.
+ *
+ * **Seven columns wide, one stacked row narrow.** Below 56rem the row is a
+ * two-line card — key and title, then the rest — so a phone never scrolls
+ * sideways.
+ */
+
+.work {
+  display: grid;
+  gap: var(--space-4);
+  padding-bottom: var(--space-6);
+  min-width: 0;
+}
+
+.work > :not(.screen-bar) {
+  margin-inline: 1.125rem;
+  min-width: 0;
+}
+
+.work-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.work-toggle {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.work-filters .work-filter {
+  width: 12rem;
+  max-width: 100%;
+}
+
+.work {
+  --work-columns: 6rem minmax(0, 1fr) 9rem 7.5rem 9rem 8rem 8.5rem;
+}
+
+.work-head,
+.work-row {
+  display: grid;
+  grid-template-columns: var(--work-columns);
+  gap: var(--space-3);
+  align-items: center;
+  padding-inline: var(--space-4);
+}
+
+.work-head {
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: calc(-1 * var(--space-2));
+}
+
+.work-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.work-item + .work-item {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.work-row {
+  width: 100%;
+  min-height: 2.75rem;
+  padding-block: var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.work-row:hover {
+  background: var(--bg-card-hover);
+}
+
+.work-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The cells after the title: grid cells here, one wrapping line when narrow. */
+.work-meta {
+  display: contents;
+}
+
+.work-row > span,
+.work-meta > span,
+.work-meta > time {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-key {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+}
+
+.work-title {
+  font-weight: var(--weight-medium);
+}
+
+.work-space {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.work-space-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.work-status {
+  justify-self: start;
+  max-width: 100%;
+  padding: 0.0625rem 0.5rem;
+  border: 1px solid var(--chip-neutral-border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-pill);
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+}
+
+.work-status[data-status='in_progress'] {
+  border-color: var(--chip-blue-border);
+  color: var(--chip-blue);
+}
+
+.work-status[data-status='review'] {
+  border-color: var(--chip-purple-border);
+  color: var(--chip-purple);
+}
+
+.work-status[data-status='done'] {
+  border-color: var(--chip-green-border);
+  color: var(--chip-green);
+}
+
+.work-assignee,
+.work-sprint,
+.work-updated {
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+.work-muted {
+  color: var(--text-muted);
+}
+
+.work-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+.work-more-error {
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+@media (max-width: 56rem) {
+  .work-head {
+    display: none;
+  }
+
+  .work-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: var(--space-1);
+    padding-block: var(--space-3);
+  }
+
+  .work-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .work-meta > * {
+    max-width: 100%;
+  }
+
+  .work-filters .work-filter {
+    flex: 1 1 10rem;
+    width: auto;
+  }
+}

@@ -11,6 +11,7 @@ import {
   createTask,
   finishTask,
   getTask,
+  listAllTasks,
   listTasks,
   removeTaskDependency,
   reorderTask,
@@ -145,6 +146,24 @@ const ClaimBody = strictObject({
 
 const UsageQuery = strictObject({ tz: z.string().min(1).max(64).optional() });
 
+/**
+ * `GET /tasks`'s query (LAI-887). Strict, so a filter this list does not take —
+ * `priority`, `tag`, `ready` — is `422` rather than silently ignored: a list
+ * that answers unfiltered to a filtered question looks right and is not. The
+ * values are checked below with the per-project list's own parsers, so a bad
+ * one gets the same `400` there and here.
+ */
+const AllTasksQuery = strictObject({
+  limit: z.string().optional(),
+  cursor: z.string().optional(),
+  updated_since: z.string().optional(),
+  fields: z.string().optional(),
+  project: z.string().optional(),
+  status: z.string().optional(),
+  assignee: z.string().optional(),
+  sprint: z.string().optional(),
+});
+
 const FinishBody = strictObject({
   summary: z.string().trim().min(1).max(50_000),
   checklist: z.array(z.string().min(1).max(500)).max(50).optional(),
@@ -264,6 +283,36 @@ export function projectTaskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
 export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db, sqlite } = options;
+
+  // Everyone's work: every project the caller may read, in the per-project
+  // list's shape and order (LAI-887). An empty filter value reads as absent.
+  app.get('/', (c) => {
+    const actor = requireActor(c);
+    const query = parseQuery(AllTasksQuery, c.req.query());
+    const { limit, cursor } = parsePageQuery(query);
+    const fields = parseEnum(query.fields, TASK_LIST_FIELDS, 'fields');
+    const given = (raw: string | undefined) => (raw === '' ? undefined : raw);
+
+    const rows = listAllTasks(db, actor, {
+      limit,
+      cursor,
+      updatedSince: parseUpdatedSince(query.updated_since),
+      project: given(query.project),
+      status: parseEnum(query.status, TASK_STATUSES, 'status'),
+      assignee: given(query.assignee),
+      sprint: given(query.sprint),
+    });
+
+    const page: Page<TaskView> = buildPage(rows, limit, (row) => ({
+      sortKey: row.updated_at,
+      id: row.id,
+    }));
+
+    if (fields === 'slim') {
+      return c.json({ ...page, data: page.data.map(summaryOf) } satisfies Page<TaskSummaryView>);
+    }
+    return c.json(page);
+  });
 
   app.get('/:id', (c) => c.json(getTask(db, requireActor(c), c.req.param('id'))));
 

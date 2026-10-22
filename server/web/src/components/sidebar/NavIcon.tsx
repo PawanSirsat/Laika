@@ -25,6 +25,8 @@ const PATHS: Readonly<Record<IconName, readonly string[]>> = {
     'M3.5 13 6 5.8A2 2 0 0 1 7.9 4.5h8.2A2 2 0 0 1 18 5.8l2.5 7.2v5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z',
     'M3.5 13h5l1.5 2.5h4L15.5 13h5',
   ],
+  // A list of lines with a tick at each: everyone's work, row by row.
+  work: ['M9.5 6.5h10M9.5 12h10M9.5 17.5h10', 'M4.5 6.5h1M4.5 12h1M4.5 17.5h1'],
   // Bars over a baseline: what the numbers say.
   insights: ['M4 20h16', 'M7 16.5V11M12 16.5V6.5M17 16.5v-3.5'],
   // A building: the organisation.
