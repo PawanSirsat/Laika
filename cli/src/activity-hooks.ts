@@ -156,16 +156,16 @@ export function configuredAgents(
 /* Writing                                                                    */
 /* -------------------------------------------------------------------------- */
 
-const asJson = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+export const asJson = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
-const isObject = (value: unknown): value is Record<string, unknown> =>
+export const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
  * Replace a file atomically, keeping its mode: `~/.claude/settings.json` may
  * hold the token `laika init` wrote (0600), and must never be rewritten wider.
  */
-function replaceFile(path: string, content: string): void {
+export function replaceFile(path: string, content: string): void {
   let mode = 0o600;
   try {
     mode = statSync(path).mode & 0o777;
@@ -183,7 +183,7 @@ function replaceFile(path: string, content: string): void {
 }
 
 /** The original, once. Private, because it may hold a token. */
-function backupOnce(path: string): string | undefined {
+export function backupOnce(path: string): string | undefined {
   const backup = `${path}.bak`;
   if (!existsSync(path) || existsSync(backup)) return undefined;
   writePrivately(backup, readFileSync(path));
@@ -213,7 +213,7 @@ type Parsed =
   | { readonly ok: true; readonly doc: Record<string, unknown>; readonly existed: boolean }
   | { readonly ok: false; readonly why: string };
 
-function parseConfig(path: string): Parsed {
+export function parseConfig(path: string): Parsed {
   let raw: string;
   try {
     raw = readFileSync(path, 'utf8');

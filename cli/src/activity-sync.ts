@@ -160,7 +160,7 @@ export function credentialsFor(
 /**
  * Whether Claude Code on this machine sends its metrics to `board` (review):
  * telemetry on, an OTLP metrics exporter, and a metrics endpoint under the
- * board's `/api/v1/otlp/` — the settings `laika activity otel` prints, each
+ * board's `/api/v1/otlp/` — the settings `laika activity on` writes, each
  * read from `~/.claude/settings.json`'s `env` (which Claude Code applies to
  * itself) or else the environment, which a hook-launched sync inherits from
  * Claude Code. Only then does a usage report name the sessions it left out.
