@@ -156,7 +156,7 @@ interface Tip {
 const agentMinutes = (seconds: number): number => Math.max(1, Math.round(seconds / 60));
 
 /**
- * My day as lanes, laid out as the owner's "Laika App v3" Timeline (LAI-883,
+ * My day as lanes, laid out as the owner's "Laika App v3" Timeline (LAI-888,
  * after LAI-831's lanes): a card of its own with the day's minutes in its
  * header — confirmed, drafted, needing a card, and the gaps — a column
  * naming the lanes with their figures, the hours along the top, and a footer

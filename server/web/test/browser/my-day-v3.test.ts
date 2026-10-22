@@ -1,5 +1,5 @@
 /**
- * My day as the owner's "Laika App v3" design draws it (LAI-883), in a real
+ * My day as the owner's "Laika App v3" design draws it (LAI-888), in a real
  * browser: the Timeline card's header figures, the hours along the top of
  * the track, the lane column's figures, Fit folding the idle hours, the
  * tooltip on a hovered block, ‹ › and ← → stepping along the blocks, and the
@@ -62,7 +62,7 @@ after(async () => {
   await closeBrowser();
 });
 
-void describe('the Timeline card (LAI-883, the v3 design)', () => {
+void describe('the Timeline card (LAI-888, the v3 design)', () => {
   void test('its header carries the day in minutes, the hours run along the top, and the column names each lane with its figure', async () => {
     const h = await openToday();
     try {

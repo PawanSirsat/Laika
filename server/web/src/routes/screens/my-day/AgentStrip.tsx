@@ -19,7 +19,7 @@ const pct = (share: number): string => `${String(Math.round(share * 1000) / 10)}
  * not the person working. Since LAI-831 one bar a card, as the owner's design
  * draws it — each a share of the busiest card, grey for time on none — and
  * keyboard minutes, the person's own time inside Claude Code, beneath. The
- * v3 design (LAI-883) names the builder on each row; the server has no
+ * v3 design (LAI-888) names the builder on each row; the server has no
  * agent name per card, so the row is the card and its minutes.
  *
  * **A card is a link only when the reader can read it** (LAI-810 review

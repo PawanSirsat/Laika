@@ -47,7 +47,7 @@ export interface InspectorActions {
   readonly unbreak: (id: string) => void;
 }
 
-/** How long the agent worked inside a span, and on how many runs (LAI-883). */
+/** How long the agent worked inside a span, and on how many runs (LAI-888). */
 export interface AgentsIn {
   readonly seconds: number;
   readonly onCardSeconds: number;

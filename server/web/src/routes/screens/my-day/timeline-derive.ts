@@ -33,7 +33,7 @@ export const PX_PER_HOUR: Readonly<Record<Zoom, number | undefined>> = {
   '1': 160,
   '2': 320,
 };
-/** An idle stretch at either end of the day this long or longer folds at Fit (LAI-883). */
+/** An idle stretch at either end of the day this long or longer folds at Fit (LAI-888). */
 export const FOLD_MIN = 45;
 /** How wide a folded stretch is drawn, in px. */
 export const FOLD_PX = 92;
@@ -533,7 +533,7 @@ export interface Segment {
   readonly folded: boolean;
 }
 
-/** Minutes after midnight to px along the track, and back (LAI-883). */
+/** Minutes after midnight to px along the track, and back (LAI-888). */
 export interface Scale {
   readonly segments: readonly Segment[];
   /** The track's width in px. */
@@ -545,7 +545,7 @@ export interface Scale {
 }
 
 /**
- * The idle stretches Fit folds (the owner's design, LAI-883): before the
+ * The idle stretches Fit folds (the owner's design, LAI-888): before the
  * first thing placed on the day and after the last — or after now, on today,
  * so the now line always stands on an open stretch — each only when it is
  * {@link FOLD_MIN} minutes or longer. A day with nothing placed folds
@@ -573,7 +573,7 @@ export function idleEnds(
 }
 
 /**
- * Where each minute of the axis is drawn (LAI-883). At 1× and 2× the axis is
+ * Where each minute of the axis is drawn (LAI-888). At 1× and 2× the axis is
  * linear at {@link PX_PER_HOUR}. At Fit it is `width` px across, with every
  * stretch in `folds` drawn {@link FOLD_PX} wide and the rest sharing what is
  * left — however little that is: Fit fits. A stretch that would be narrower
@@ -678,7 +678,7 @@ export function signalsDuring(
 
 /**
  * The day's minutes by kind, for the Timeline's header (the owner's design,
- * LAI-883): confirmed, drafted on a card or General, drafted on nothing, and
+ * LAI-888): confirmed, drafted on a card or General, drafted on nothing, and
  * the gaps between. Every block counts, placed or not; gaps are the lane's.
  */
 export function dayFigures(

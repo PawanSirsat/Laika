@@ -605,7 +605,7 @@
 /* ------------------------------------------------------------- the lanes */
 
 /*
- * The Timeline card (LAI-883, the owner's "Laika App v3" design): the day's
+ * The Timeline card (LAI-888, the owner's "Laika App v3" design): the day's
  * minutes in its header, a column naming the lanes with their figures, the
  * hours along the top of the track, and a footer of keys. The lane heights
  * are the design's px, held once here so the column and the track agree:
@@ -2189,7 +2189,7 @@ p.inspector-length {
   grid-template-columns: auto auto max-content max-content minmax(0, 1fr) auto;
 }
 
-/* The row's state at a glance, as the Timeline draws it (LAI-883). */
+/* The row's state at a glance, as the Timeline draws it (LAI-888). */
 .myday-swatch {
   flex: none;
   width: 1rem;

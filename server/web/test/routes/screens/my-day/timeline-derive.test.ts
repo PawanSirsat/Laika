@@ -506,7 +506,7 @@ void describe('placeChips — a badge only where it clears everything (LAI-860)'
   });
 });
 
-void describe('idleEnds — the idle stretches Fit folds (LAI-883)', () => {
+void describe('idleEnds — the idle stretches Fit folds (LAI-888)', () => {
   const line = (over: {
     blocks?: { start: number; end: number }[];
     now?: number;
@@ -567,7 +567,7 @@ void describe('idleEnds — the idle stretches Fit folds (LAI-883)', () => {
   });
 });
 
-void describe('buildScale — minutes to px and back (LAI-883)', () => {
+void describe('buildScale — minutes to px and back (LAI-888)', () => {
   void test('1× and 2× are linear at their px an hour, whatever the width', () => {
     const one = buildScale(6, 22, '1', 500);
     assert.equal(one.total, 16 * (PX_PER_HOUR['1'] ?? 0));
@@ -616,7 +616,7 @@ void describe('buildScale — minutes to px and back (LAI-883)', () => {
   });
 });
 
-void describe('agentsDuring and signalsDuring — what fell inside a span (LAI-883)', () => {
+void describe('agentsDuring and signalsDuring — what fell inside a span (LAI-888)', () => {
   void test('an agent run counts by the share of it inside the span, on a card or not', () => {
     const runs: AgentRun[] = [
       { start: min(9), end: min(9, 10), seconds: 600, onCard: true },
@@ -652,7 +652,7 @@ void describe('agentsDuring and signalsDuring — what fell inside a span (LAI-8
   });
 });
 
-void describe('dayFigures — the Timeline header (LAI-883)', () => {
+void describe('dayFigures — the Timeline header (LAI-888)', () => {
   void test('confirmed, drafted on a card or General, drafted on nothing, and the gaps', () => {
     const view = {
       entries: [entry('e1', at(11), 30), entry('e2', at(20), 15)],

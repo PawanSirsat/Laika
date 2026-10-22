@@ -58,7 +58,7 @@ const mondayOf = (day: string): string => {
  * "+", or nothing. Its name says which gap and how long, always.
  */
 /**
- * Whether a gap shows what it may (LAI-883): its glyph, *Add time*, and its
+ * Whether a gap shows what it may (LAI-888): its glyph, *Add time*, and its
  * range and length on a line of their own — each only where it fits as drawn,
  * so any of them may be left out, and nothing else is ever shown.
  */
@@ -395,7 +395,7 @@ void describe('no signal is not zero hours (3, 4)', () => {
         await h.page.locator('[data-no-signal]').innerText(),
         /No signal — nothing reached Laika from your machine\. That is not zero hours/,
       );
-      // The Timeline's header (LAI-883) and its You column give no figure either.
+      // The Timeline's header (LAI-888) and its You column give no figure either.
       for (const stat of ['confirmed', 'drafted', 'needs-card', 'gaps']) {
         const figure = await h.page.locator(`[data-stat="${stat}"] strong`).innerText();
         assert.equal(figure, '—', `${stat} reads ${figure}`);

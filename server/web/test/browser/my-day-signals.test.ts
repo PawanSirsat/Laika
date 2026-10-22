@@ -1,6 +1,6 @@
 /**
  * My day's SIGNALS lane in a real browser (LAI-834, D-096): the day's prompts
- * as bars and commits as dots (LAI-883), each in the five minutes it fell in, above
+ * as bars and commits as dots (LAI-888), each in the five minutes it fell in, above
  * the blocks — drawn only on a day the server sent them for, with its label
  * on its own row and "You" still on the blocks' row, in both themes.
  */
@@ -144,7 +144,7 @@ void describe('the SIGNALS lane (LAI-834)', () => {
           await lane.getAttribute('aria-label'),
           'Signals: 3 prompts and 3 commits, each in the five minutes it fell in',
         );
-        // The lane's column names each kind with the day's total (LAI-883).
+        // The lane's column names each kind with the day's total (LAI-888).
         const column = h.page.locator('.dayline-label-signals');
         assert.equal(await column.getByText('Prompts', { exact: true }).count(), 1);
         assert.equal(await column.getByText('Commits', { exact: true }).count(), 1);

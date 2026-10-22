@@ -38,7 +38,7 @@ void describe('typingIn', () => {
 });
 
 void describe('shortcutFor', () => {
-  void test('← and → step along the Timeline (LAI-883), and not while typing', () => {
+  void test('← and → step along the Timeline (LAI-888), and not while typing', () => {
     assert.equal(shortcutFor(key('ArrowRight')), 'right');
     assert.equal(shortcutFor(key('ArrowLeft')), 'left');
     assert.equal(shortcutFor(key('ArrowRight', { tagName: 'INPUT', type: 'text' })), undefined);

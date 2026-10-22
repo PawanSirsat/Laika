@@ -1,5 +1,5 @@
 ---
-id: LAI-883
+id: LAI-888
 title: "My day to the owner's \"Laika App v3\" design"
 area: web
 assignee: chief
@@ -91,7 +91,7 @@ and the two side cards take the design's rows, pills and columns.
 
 - Filed and built by CHIEF on the owner's direct instruction
   (*"implement this v3 in /My day page"*, 2026-10-22), in the temporary
-  worktree `Laika-myday-v3` on `LAI-883-my-day-v3`, as LAI-858 and LAI-860
+  worktree `Laika-myday-v3` on `LAI-888-my-day-v3`, as LAI-858 and LAI-860
   were.
 - Files: `server/web/src/routes/screens/my-day/` and its tests; `docs/design/`
   for the import only. No new dependencies.
@@ -109,7 +109,7 @@ and the two side cards take the design's rows, pills and columns.
 
 ## Record
 
-- Gate at `53de0a09` on `LAI-883-my-day-v3`: repo-root `pnpm test` 0,
+- Gate at `53de0a09` on `LAI-888-my-day-v3`: repo-root `pnpm test` 0,
   `pnpm lint` 0, `pnpm format` 0. The My day browser files: 74 tests, all
   green, the LAI-860 zoom suite included.
 - The design files' checksums as fetched: `Laika App v3.dc.html`
@@ -123,4 +123,13 @@ and the two side cards take the design's rows, pills and columns.
   room (`buildScale`).
 - Not in this task, by the Notes: the shared-hour split, agent names on a
   run, marks per five minutes, the design's inline toast.
+- **Renumbered from LAI-883 on 2026-10-22**, before the merge: the id was
+  taken from a sweep that had not fetched `origin` first (D-097 item 3), and
+  the other machine had meanwhile pushed five filings renumbered onto
+  LAI-883 to LAI-887. This filing was the earlier one by half an hour, but
+  those five were already on `origin/master`, so this one moved. **The
+  eight commits of this task carry `[LAI-883]`** in their messages, and the
+  branch is `LAI-883-my-day-v3`; §4 forbids rewriting them, so they stand,
+  and `LAI-883` (*owners see every project*) records that those commits are
+  not its own. The board card LAIKA-692 carries `LAI-888`.
 

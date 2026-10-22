@@ -140,7 +140,7 @@ void describe('the AGENTS lane (LAI-833)', () => {
           await lane.getAttribute('aria-label'),
           'Agents: worked 14 min, 12 min of it on a card',
         );
-        // The lane's column says how long, and how much of it on a card (LAI-883).
+        // The lane's column says how long, and how much of it on a card (LAI-888).
         assert.equal(
           await h.page.locator('.dayline-label-agents [data-agent-work]').innerText(),
           '14 min',

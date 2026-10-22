@@ -2,7 +2,7 @@
  * My day's keys (LAI-831, the owner's design and CHIEF's addition H): on the
  * selected draft, ↵ confirms, G puts it on General, X marks it not work; J
  * and K move to the next and previous draft; ← and → step along every block
- * on the Timeline (LAI-883, the design's footer); ? opens the sheet that
+ * on the Timeline (LAI-888, the design's footer); ? opens the sheet that
  * lists them.
  *
  * **None fires while typing.** A field, a text area, a select or editable

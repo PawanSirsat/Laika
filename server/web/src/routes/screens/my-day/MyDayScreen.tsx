@@ -707,7 +707,7 @@ export function MyDayScreen({
     }
     if (dialog !== null || busy) return false;
     if (shortcut === 'left' || shortcut === 'right') {
-      // ← → walk every placed block, as the Timeline's ‹ › do (LAI-883).
+      // ← → walk every placed block, as the Timeline's ‹ › do (LAI-888).
       const blocks = line.blocks;
       if (blocks.length === 0) return false;
       const at =
