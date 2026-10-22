@@ -24,6 +24,9 @@ progress.
 
 - [ ] No `.cap-tasks` footer on a card, no *Show tasks*, no *Claude Code ·
       working on LAI-n* line.
+- [ ] No *Activity · 14 days* block on a card and no *hand · agents ·
+      bookkeeping* column in the list (the owner, a minute later: *"also
+      remove this activity thing"*). The profile keeps the fortnight.
 - [ ] Capacity makes **no** `GET /tasks/:id` request, on load or after; its
       reads are `/capacity`, `/presence` and `/projects` (and the shell's
       `/review` and `/unlisted` counts). A browser test asserts the request
