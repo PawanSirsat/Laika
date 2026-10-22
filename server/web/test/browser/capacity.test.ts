@@ -4,7 +4,8 @@
  * a status ring and a load badge, never-seen people folded into a line. LAI-991
  * compacted the cards to one shape — every block drawn, zeros included — and
  * added a List view whose bars share one scale, replacing the *Team load*
- * chart.
+ * chart. LAI-992 took the *Show tasks* footer, the matched-task line and the
+ * 14-day activity off the cards: Capacity reads no task.
  *
  * The fixture is shaped like the owner's org (`capacity-org.ts`): five people,
  * three never seen, an owner with seven tasks in progress and two agents
@@ -17,9 +18,9 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { capacityFor, LAIKA, NOW, orgStub, PRESENCE, task } from './capacity-org.ts';
+import { capacityFor, NOW, orgStub, PRESENCE } from './capacity-org.ts';
 import { pick, valueOf } from './dropdown.ts';
-import { closeBrowser, open, refuse, setTheme, until, type ApiStub } from './harness.ts';
+import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
 
 void after(async () => {
   await closeBrowser();
@@ -305,19 +306,16 @@ void describe('finding people', () => {
 });
 
 void describe('what an owner sees and a member does not', () => {
-  void test('an owner: profile kind, 14-day activity, a profile link, every agent, Unlisted', async () => {
+  void test('an owner: profile kind, a profile link, every agent, Unlisted — and no activity', async () => {
     const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await ready(h.page);
       const pawan = card(h.page, 'Pawan Sirsat');
       assert.match(await pawan.locator('.cap-role').innerText(), /Owner · Builder/);
-      assert.equal(await pawan.locator('.cap-spark-bar').count(), 14);
-      // Who did the fortnight's 79 (LAI-818): bookkeeping apart from both.
-      assert.match(await pawan.locator('.cap-spark-block .cap-label-note').innerText(), /· 79$/);
-      assert.equal(
-        (await pawan.locator('.cap-spark-split').innerText()).replace(/\s+/g, ' ').trim(),
-        '21 by hand 40 by agents 18 bookkeeping',
-      );
+      // The fortnight's activity is the profile's, not this card's (LAI-992),
+      // though the owner's answer still carries it.
+      assert.equal(await h.page.locator('.cap-spark').count(), 0, 'activity is drawn');
+      assert.equal(await h.page.locator('.cap-spark-split').count(), 0, 'the split is drawn');
       // The link waits on the shell's `/me` as well as the cards, so wait for
       // it before counting (LAI-765's rule: wait for what you read).
       await pawan.locator('a.cap-name-link').waitFor({ timeout: 10_000 });
@@ -463,11 +461,9 @@ void describe('states', () => {
       await ready(h.page);
       await h.page.locator('.cap-never').getByRole('button', { name: 'Show' }).click();
       // Measure the page as drawn, not a guess at when it is (LAI-765): every
-      // card, the matched task (its own read), the review and unlisted counts
-      // (the shell's reads), and the self-hosted font's widths, not the
-      // fallback's.
+      // card, the review and unlisted counts (the shell's reads), and the
+      // self-hosted font's widths, not the fallback's.
       await until(async () => (await h.page.locator('.cap-grid > .cap-card').count()) === 5);
-      await h.page.locator('.cap-working').waitFor({ timeout: 10_000 });
       const review = h.page.locator('.cap-tile', { hasText: 'Waiting for review' });
       await until(async () => /Waiting for review\s*3/.test(await review.innerText()), 10_000);
       await h.page.locator('.cap-tile-unlisted').waitFor({ timeout: 10_000 });
@@ -548,162 +544,6 @@ void describe('live', () => {
       await h.page.clock.fastForward(20_000);
       await until(() => reads() === first + 2);
       assert.equal(reads(), first + 2, 'the 20 s poll did not re-read');
-    } finally {
-      await h.close();
-    }
-  });
-});
-
-void describe('tasks are drawn only when asked for', () => {
-  void test('only the matched task is read until Show tasks; then theirs', async () => {
-    const h = await open('/insights?tab=capacity', orgStub('owner'));
-    try {
-      await ready(h.page);
-      const pawan = card(h.page, 'Pawan Sirsat');
-      // The session's task, resolved to a key: "Claude Code · working on LAI-9".
-      await pawan.locator('.cap-working').waitFor({ timeout: 10_000 });
-      assert.match(
-        await pawan.locator('.cap-working').innerText(),
-        /Claude Code · working on\s*LAI-9/,
-      );
-      // A deliberate *nothing happens* window, which no condition can end
-      // early (`until`'s doc; LAI-765 kept these): a folded task must not be
-      // read, and a read that was coming would have gone with the matched one.
-      await h.page.waitForTimeout(300);
-      const tasksRead = () =>
-        h.calls
-          .map((c) => c.path)
-          .filter((p) => p.startsWith('/api/v1/tasks/'))
-          .sort();
-      assert.deepEqual(tasksRead(), ['/api/v1/tasks/t1'], 'folded tasks were read');
-
-      const toggle = pawan.getByRole('button', { name: /Show tasks/ });
-      assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
-      await toggle.click();
-      assert.equal(
-        await pawan.getByRole('button', { name: /Hide tasks/ }).getAttribute('aria-expanded'),
-        'true',
-      );
-      await pawan.locator('button.cap-task', { hasText: 'ONR-360' }).waitFor({ timeout: 10_000 });
-      await until(async () => (await pawan.locator('button.cap-task').count()) === 7, 10_000);
-      assert.equal(await pawan.locator('button.cap-task').count(), 7);
-      // Bea's are not drawn, so not read.
-      assert.equal(tasksRead().includes('/api/v1/tasks/t10'), false);
-    } finally {
-      await h.close();
-    }
-  });
-
-  /*
-   * LAI-755: Capacity spans every space, so a task is usually in a space other
-   * than the one last opened. It opens in its own.
-   */
-  void test('a task opens in its own space, not the last one opened (LAI-755)', async () => {
-    const web = { ...LAIKA, id: 'p9', slug: 'laika-web', name: 'Laika Web', prefix: 'LW' };
-    const lw1 = task('t9', 'LW-1', 'Toolbar reads its own width', 'in_progress', web);
-    const board = (slug: string, tasks: unknown[]): ApiStub => ({
-      [`/api/v1/projects/${slug}/tasks`]: { data: tasks, next_cursor: null },
-      [`/api/v1/projects/${slug}/members`]: { members: [] },
-      [`/api/v1/projects/${slug}/sprints`]: { data: [], next_cursor: null },
-      [`/api/v1/projects/${slug}/activity`]: { data: [], next_cursor: null },
-      [`/api/v1/projects/${slug}/tags`]: { tags: [] },
-      [`/api/v1/projects/${slug}/mentionable`]: { users: [] },
-    });
-    const view = capacityFor('owner');
-    const stub: ApiStub = {
-      ...orgStub('owner'),
-      ...board('laika', []),
-      ...board('laika-web', [lw1]),
-      '/api/v1/projects': { data: [LAIKA, web], next_cursor: null },
-      '/api/v1/projects/laika-web': web,
-      '/api/v1/org': {
-        id: 'o',
-        name: 'Kvell',
-        presence_enabled: true,
-        created_at: 1,
-        updated_at: 1,
-      },
-      '/api/v1/capacity': {
-        ...view,
-        people: view.people.map((p) =>
-          p.user_id === 'u2' ? { ...p, in_progress_tasks: ['t9'] } : p,
-        ),
-      },
-      '/api/v1/tasks/t9': lw1,
-      '/api/v1/tasks/t9/comments': { data: [], next_cursor: null },
-      '/api/v1/tasks/t9/watchers': { watchers: [] },
-    };
-
-    // Laika is the space last opened.
-    const h = await open('/board?project=laika', stub);
-    try {
-      await h.page.locator('.board-bar').waitFor({ timeout: 20_000 });
-      await h.page.evaluate(() => {
-        history.pushState({}, '', '/capacity');
-        dispatchEvent(new PopStateEvent('popstate'));
-      });
-      await ready(h.page);
-      const bea = card(h.page, 'Bea Nkosi');
-      await bea.getByRole('button', { name: /Show tasks/ }).click();
-      const row = bea.locator('button.cap-task', { hasText: 'LW-1' });
-      await row.waitFor({ timeout: 10_000 });
-      await row.click();
-
-      await h.page.waitForURL((url) => url.pathname === '/board', { timeout: 10_000 });
-      const url = new URL(h.page.url());
-      assert.equal(url.searchParams.get('project'), 'laika-web', 'not the task’s own space');
-      assert.equal(url.searchParams.get('task'), 't9', 'the task is not opened by id');
-
-      // `.drawer` is a frame whose slot the task panel fills afterwards, so it
-      // exists empty first (LAI-765: GitHub's runner read '' here). Wait for
-      // the content, then assert it.
-      const drawer = h.page.locator('.drawer');
-      await drawer.waitFor({ timeout: 10_000 });
-      await until(async () => {
-        const text = await drawer.innerText();
-        return text.includes('LW-1') && text.includes('Toolbar reads its own width');
-      }, 10_000);
-      assert.match(await drawer.innerText(), /LW-1/);
-      assert.match(await drawer.innerText(), /Toolbar reads its own width/);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('a task that failed to resolve is asked for again on the next poll', async () => {
-    let tries = 0;
-    const flaky: ApiStub = {
-      ...orgStub('owner'),
-      '/api/v1/tasks/t2': () => {
-        tries += 1;
-        return tries === 1
-          ? refuse(503, 'unavailable', 'Try again.')
-          : task('t2', 'LAI-12', 'Heartbeat retention job', 'in_progress');
-      },
-    };
-    const h = await open('/insights?tab=capacity', flaky, {
-      before: async (page) => {
-        await page.clock.install();
-      },
-    });
-    try {
-      await ready(h.page);
-      const pawan = card(h.page, 'Pawan Sirsat');
-      await pawan.getByRole('button', { name: /Show tasks/ }).click();
-      await pawan.locator('button.cap-task', { hasText: 'LAI-9' }).waitFor({ timeout: 10_000 });
-      await until(() => tries === 1);
-      assert.equal(tries, 1);
-      // Wait for t2's failure to settle, not only to be asked (LAI-809): t3–t7
-      // resolve in the same `Promise.all` as t2, so six are drawn only once its
-      // 503 is back. A poll that fires while t2 is still in flight joins that
-      // request rather than asking again.
-      await until(async () => (await pawan.locator('button.cap-task').count()) === 6);
-      assert.equal(await pawan.locator('button.cap-task').count(), 6);
-      assert.equal(await pawan.locator('button.cap-task', { hasText: 'LAI-12' }).count(), 0);
-
-      await h.page.clock.fastForward(21_000);
-      await pawan.locator('button.cap-task', { hasText: 'LAI-12' }).waitFor({ timeout: 10_000 });
-      assert.equal(tries, 2);
     } finally {
       await h.close();
     }
@@ -836,7 +676,6 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
       assert.deepEqual(labels, [
         'workload nothing in progress',
         'agents 0 running',
-        'activity 14 days · 0',
         'spaces 0 spaces',
       ]);
       assert.equal(
@@ -852,35 +691,23 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
         'No agents running',
       );
       assert.equal(
-        (await cal.locator('.cap-spark-split').innerText()).replace(/\s+/g, ' ').trim(),
-        '0 by hand 0 by agents 0 bookkeeping',
-      );
-      assert.equal(
         (await cal.locator('.cap-spaces-block .cap-quiet').innerText()).trim(),
         'No spaces',
-      );
-      assert.equal(
-        (await cal.locator('.cap-tasks').innerText()).replace(/\s+/g, ' ').trim(),
-        '0 in progress',
       );
       // Every card has the same blocks in the same order; only the figures differ.
       for (const name of ['Pawan Sirsat', 'Bea Nkosi', 'Dee Pillay', 'Eli van Wyk']) {
         const got = (await card(h.page, name).locator('.cap-label').allInnerTexts()).map((t) =>
           t.replace(/\s+/g, ' ').trim().split(' ')[0]?.toLowerCase(),
         );
-        assert.deepEqual(got, ['workload', 'agents', 'activity', 'spaces'], name);
-        assert.equal(
-          await card(h.page, name).locator('.cap-tasks').count(),
-          1,
-          `${name}: no footer`,
-        );
+        assert.deepEqual(got, ['workload', 'agents', 'spaces'], name);
+        assert.equal(await card(h.page, name).locator('.cap-tasks').count(), 0, `${name}: footer`);
       }
     } finally {
       await h.close();
     }
   });
 
-  void test('a member sees the same blocks less Activity, and never a hole', async () => {
+  void test('a member sees the same blocks, and never a hole', async () => {
     const h = await open('/insights?tab=capacity', orgStub('member'));
     try {
       await ready(h.page);
@@ -893,32 +720,26 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
         assert.deepEqual(got, ['workload', 'agents', 'spaces'], name);
       }
       assert.equal(await h.page.locator('.cap-spark-block').count(), 0);
+      assert.equal(await h.page.locator('.cap-tasks').count(), 0);
     } finally {
       await h.close();
     }
   });
 
-  void test('cards in a row are one height, the footer at the bottom of each', async () => {
+  void test('cards in a row are one height', async () => {
     const h = await open('/insights?tab=capacity', orgStub('owner'));
     try {
       await h.page.setViewportSize({ width: 1440, height: 1000 });
       await ready(h.page);
       await h.page.locator('.cap-never').getByRole('button', { name: 'Show' }).click();
       await until(async () => (await h.page.locator('.cap-grid > .cap-card').count()) === 5);
-      await h.page.locator('.cap-working').waitFor({ timeout: 10_000 });
       await h.page.evaluate(() => document.fonts.ready.then(() => undefined));
       // Three across at this width: the first row is Pawan, Bea, Dee — the
       // fullest card and an empty one side by side.
       const boxes = await h.page.evaluate(() =>
         [...document.querySelectorAll('.cap-grid > .cap-card')].map((el) => {
           const card = el.getBoundingClientRect();
-          const footer = el.querySelector('.cap-tasks')?.getBoundingClientRect();
-          return {
-            top: card.top,
-            height: card.height,
-            bottom: card.bottom,
-            footerBottom: footer?.bottom ?? NaN,
-          };
+          return { top: card.top, height: card.height };
         }),
       );
       const firstRow = boxes.filter((b) => Math.abs(b.top - boxes[0]!.top) < 1);
@@ -927,11 +748,6 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
         assert.ok(
           Math.abs(b.height - firstRow[0]!.height) <= 1,
           `a card is ${String(b.height)}px beside ${String(firstRow[0]!.height)}px`,
-        );
-        // The footer hugs the bottom edge (its padding apart), on the full card and the empty one alike.
-        assert.ok(
-          b.bottom - b.footerBottom < 16,
-          `footer sits ${String(b.bottom - b.footerBottom)}px above the edge`,
         );
       }
     } finally {
@@ -956,13 +772,6 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
       assert.ok(
         counts.every((t) => t.length > 20),
         `a count has no rule: ${counts.join(' | ')}`,
-      );
-      const figs = await pawan
-        .locator('.cap-fig')
-        .evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''));
-      assert.deepEqual(
-        figs.map((t) => t.split(' ').slice(0, 3).join(' ')),
-        ['Board actions they', 'Board actions made', 'Sprint moves and'],
       );
       assert.match(await titleOf('.cap-agent'), /^Running now · last signal/);
       assert.match(await titleOf('.cap-agents-block .cap-label-note'), /live session/);
@@ -1019,7 +828,6 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
         'to do',
         'review',
         'agents',
-        'hand · agents · bookkeeping',
         'spaces',
       ]);
 
@@ -1031,7 +839,7 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
             .allInnerTexts()
         ).map((t) => t.replace(/\s+/g, ' ').trim());
       const pawan = await cellsOf('Pawan Sirsat');
-      assert.equal(pawan.length, 9);
+      assert.equal(pawan.length, 8);
       assert.deepEqual(pawan.slice(1), [
         'Load: Heavy 1 overdue',
         '',
@@ -1039,20 +847,10 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
         '3',
         '2',
         '2',
-        '21 40 18',
         '2 Laika 8 committed, 12 in backlog, 1 waiting on reviewers Onroute 2 committed, 0 in backlog, 1 waiting on reviewers',
       ]);
       const cal = await cellsOf('Cal Mokoena');
-      assert.deepEqual(cal.slice(1), [
-        'Load: No load',
-        '',
-        '0',
-        '0',
-        '0',
-        '0',
-        '0 0 0',
-        '0 No spaces',
-      ]);
+      assert.deepEqual(cal.slice(1), ['Load: No load', '', '0', '0', '0', '0', '0 No spaces']);
 
       // One scale: Pawan's 10 committed fill the bar; Bea's 3 are three tenths of it.
       const widths = await h.page.locator('.cap-list tbody tr .cap-bar').evaluateAll((bars) =>
@@ -1080,7 +878,7 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
     }
   });
 
-  void test('List for a member: no Activity column, nothing else missing', async () => {
+  void test('List for a member: the same columns, no profile links', async () => {
     const h = await open('/insights?tab=capacity', orgStub('member'));
     try {
       await ready(h.page);
@@ -1111,6 +909,41 @@ void describe('one shape a card, and a list of the same people (LAI-991)', () =>
         await h.page.locator('.cap-list a.cap-name-link').count(),
         0,
         'a member got profile links',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('no task is read (LAI-992)', () => {
+  void test('Capacity asks for /capacity, /presence and /projects, never a task', async () => {
+    const h = await open('/insights?tab=capacity', orgStub('owner'));
+    try {
+      await ready(h.page);
+      await h.page.locator('.cap-never').getByRole('button', { name: 'Show' }).click();
+      await until(async () => (await h.page.locator('.cap-grid > .cap-card').count()) === 5);
+      // A deliberate *nothing happens* window: a read that was coming would
+      // have gone with the cards.
+      await h.page.waitForTimeout(300);
+      const paths = h.calls.map((c) => c.path);
+      assert.deepEqual(
+        paths.filter((p) => p.startsWith('/api/v1/tasks')),
+        [],
+        `tasks were read: ${paths.join(', ')}`,
+      );
+      for (const want of ['/api/v1/capacity', '/api/v1/presence', '/api/v1/projects']) {
+        assert.ok(paths.includes(want), `${want} was not read`);
+      }
+      assert.equal(await h.page.locator('.cap-working').count(), 0);
+      assert.equal(await h.page.getByRole('button', { name: /Show tasks/ }).count(), 0);
+      // The list view reads nothing more either.
+      await h.page.getByRole('button', { name: 'List', exact: true }).click();
+      await h.page.locator('.cap-list tbody tr').first().waitFor();
+      await h.page.waitForTimeout(300);
+      assert.deepEqual(
+        h.calls.map((c) => c.path).filter((p) => p.startsWith('/api/v1/tasks')),
+        [],
       );
     } finally {
       await h.close();

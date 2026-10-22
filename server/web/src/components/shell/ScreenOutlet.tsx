@@ -3,10 +3,7 @@ import { useShell } from './shell-context.ts';
 import { SpaceLayout } from '../space/SpaceLayout.tsx';
 import { BoardScreen } from '../../routes/screens/BoardScreen.tsx';
 import { CalendarScreen } from '../../routes/screens/calendar/CalendarScreen.tsx';
-import {
-  CapacityScreen,
-  type CapacityTaskLink,
-} from '../../routes/screens/capacity/CapacityScreen.tsx';
+import { CapacityScreen } from '../../routes/screens/capacity/CapacityScreen.tsx';
 import { ActivityScreen } from '../../routes/screens/activity/ActivityScreen.tsx';
 import { DashboardScreen } from '../../routes/screens/dashboard/DashboardScreen.tsx';
 import { SetupRoute } from '../../routes/screens/SetupRoute.tsx';
@@ -28,7 +25,7 @@ import { InsightsScreen } from '../../routes/screens/insights/InsightsScreen.tsx
 import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx';
 import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
 import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
-import { WorkScreen } from '../../routes/screens/work/WorkScreen.tsx';
+import { WorkScreen, type WorkTaskLink } from '../../routes/screens/work/WorkScreen.tsx';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import {
   INBOX_TABS,
@@ -108,7 +105,7 @@ function openTaskByKey(navigate: (to: string) => void) {
  * space is not known.
  */
 function openTaskInItsSpace(navigate: (to: string) => void) {
-  return ({ id, key, projectSlug }: CapacityTaskLink) => {
+  return ({ id, key, projectSlug }: WorkTaskLink) => {
     if (projectSlug === undefined) {
       openTaskByKey(navigate)(key);
       return;
@@ -176,7 +173,6 @@ function CapacityRoute() {
   }, [project]);
   return (
     <CapacityScreen
-      onOpenTask={openTaskInItsSpace(navigate)}
       unlistedOpen={unlistedOpen}
       reviewWaiting={reviewWaiting}
       reviewCapped={reviewCapped}

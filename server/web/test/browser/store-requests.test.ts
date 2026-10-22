@@ -414,14 +414,14 @@ void describe('presence follows every burst', () => {
   });
 });
 
-void describe('Capacity resolves tasks from the store (LAI-724)', () => {
+void describe('Capacity reads no task (LAI-992; was LAI-724)', () => {
   /*
-   * **Capacity is one global page since LAI-754**, reached from the sidebar,
-   * so there is no "open project" any more. What LAI-724 saved still holds for
-   * the space you came from: its task set is held, and the tasks in it resolve
-   * with no request. Only a drawn task from elsewhere is read by id.
+   * **Capacity is one global page since LAI-754**, reached from the sidebar.
+   * LAI-724 had it resolve a drawn task from the held set and read only a
+   * task from elsewhere by id; LAI-992 took the drawn tasks off the cards, so
+   * now it reads none at all — not a held one, not one from elsewhere.
    */
-  void test('no GET /tasks/:id for a held space’s tasks, one for a drawn task elsewhere, nothing twice', async () => {
+  void test('no GET /tasks/:id at all, and nothing twice', async () => {
     const server: Server = { t3: 'in_progress', events: [] };
     const elsewhere = task('x9', 9, 'in_progress', { key: 'OT-9', project_id: 'other' });
     const h = await open('/board?project=laika-core', {
@@ -454,9 +454,9 @@ void describe('Capacity resolves tasks from the store (LAI-724)', () => {
         ],
       },
       '/api/v1/unlisted': { data: [], next_cursor: null },
+      // Served if asked, so a client that still resolves an id by GET fails
+      // on the list below rather than on a missing stub.
       '/api/v1/tasks/x9': elsewhere,
-      // Served if asked, so a client that resolves every id by GET fails on
-      // the list below rather than on a missing stub.
       '/api/v1/tasks/x8': task('x8', 8, 'review', { key: 'OT-8', project_id: 'other' }),
       '/api/v1/tasks/t1': task('t1', 1, 'todo'),
       '/api/v1/tasks/t3': task('t3', 3, 'in_progress'),
@@ -466,20 +466,15 @@ void describe('Capacity resolves tasks from the store (LAI-724)', () => {
       const seen = record(h);
       // Capacity is Insights' first tab since LAI-796.
       await h.page.locator('#sidebar .sidebar-link', { hasText: 'Insights' }).click();
-      // Since LAI-767 a person's tasks are drawn when their *Show tasks* is
-      // opened, and only then resolved.
-      await h.page.getByRole('button', { name: /Show tasks/ }).click({ timeout: 20_000 });
-      await h.page.locator('.cap-task .cap-key', { hasText: 'LC-3' }).waitFor({ timeout: 20_000 });
-      await h.page.locator('.cap-task .cap-key', { hasText: 'OT-9' }).waitFor({ timeout: 10_000 });
+      await h.page
+        .locator('.cap-grid > .cap-card:not(.cap-card-skeleton)')
+        .first()
+        .waitFor({ timeout: 20_000 });
       await settle(seen, h.page);
 
       const perTask = seen.filter((p) => p.startsWith('/api/v1/tasks/'));
-      // x8 is in review: not drawn, so not read.
-      assert.deepEqual(perTask, ['/api/v1/tasks/x9'], `per-task reads: ${perTask.join(', ')}`);
-      assert.ok(
-        (await h.page.locator('.cap-task .cap-key', { hasText: 'LC-1' }).count()) === 1,
-        'a task in the held space did not resolve',
-      );
+      assert.deepEqual(perTask, [], `per-task reads: ${perTask.join(', ')}`);
+      assert.equal(await h.page.getByRole('button', { name: /Show tasks/ }).count(), 0);
       assert.ok(seen.length <= 8, `Capacity asked ${String(seen.length)}: ${seen.join(', ')}`);
       assert.deepEqual(duplicates(seen), [], 'Capacity asked for something twice');
     } finally {
