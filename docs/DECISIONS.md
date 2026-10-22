@@ -5716,3 +5716,41 @@ CHIEF's recommendations on the open questions.
    reproduce today's behaviour. Every capability carries a one-line
    description from the server.
 7. **Organisation name** is editable by *Change organisation settings*.
+
+## D-105 — The organisation's break is highlighted on the Timeline with the time worked in it; a break's glyph follows its name; the usual breaks are presets (LAI-894; amends D-101 item 4)
+
+**Date:** 2026-10-23 · **By:** CHIEF (Belka), on the owner's instruction
+
+The owner, 2026-10-22, with a screenshot of the Timeline design's lunch pill
+(*Lunch · 30m worked*): *"make the lunch break something like this … highlight
+the lunch break properly on top, short, the icon"*; and then: *"also handle
+what if I added the tea break or the coffee break — we need the icon, a
+manager can add anything … so for that also handle the predefined things, and
+improve the UI/UX of that."*
+
+1. **The band is highlighted, and it says what was worked in it.** Each
+   scheduled window on My day is a green-tinted band with dashed edges and, in
+   the strip above the blocks, a pill: the glyph, the window's name, its range
+   when there is room, and at the right, in the accent, `30 min worked`,
+   `worked through` or `offline`; under the pill a bar, green where the person
+   was off and accent where they worked. The part of each block inside the
+   window is hatched. The pill's title names the time off, the time worked and
+   the cards.
+2. **This amends D-101 item 4.** The figure *is* a comparison of the day with
+   the schedule, and the owner has asked for it by picture. Everything else in
+   D-101 stands: a scheduled break is still never time — it creates, clips and
+   removes no draft and no entry, drafting does not read it, and work in the
+   window stays visible and countable like any other. Nothing is stored for
+   the figure; it is read off the day each time it is drawn.
+3. **A break's glyph follows its name.** A manager types any label. The word in
+   it picks the glyph — a fork for a meal, a cup for tea or coffee, a moon for
+   a rest, a walker, two people for a stand-up or meeting — and a word nobody
+   listed gets a plain pause. `breakKind()` in `routes/screens/break-kinds.ts`
+   is the one list; nothing is stored on the window and no API changes.
+4. **The usual breaks are one click.** The editor offers Lunch, Tea break,
+   Coffee break, Stand-up, Walk and Rest as presets with a sensible clock and
+   Mon–Fri; a preset already in the list is not offered twice. The row it adds
+   is the manager's to change, and *Add your own* stays for anything else.
+5. **Not built:** the design's lunch *panel* — moving the window earlier or
+   later for one day. The schedule stays organisation-wide (D-101 item 1).
+

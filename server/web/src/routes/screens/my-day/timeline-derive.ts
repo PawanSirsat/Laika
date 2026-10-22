@@ -101,6 +101,55 @@ export interface ScheduledSpan extends Span {
   readonly label: string;
 }
 
+/** One run of a scheduled window: worked under a block, or not. */
+export interface WorkedRun extends Span {
+  readonly worked: boolean;
+}
+
+/** What the day did inside a scheduled window (LAI-894, D-105). */
+export interface WorkedIn {
+  /** Minutes of the window under a confirmed or drafted block, each minute once. */
+  readonly worked: number;
+  /** The rest of the window. */
+  readonly rest: number;
+  /** The window start to end, each stretch worked or not, adjacent alike merged. */
+  readonly runs: readonly WorkedRun[];
+}
+
+/**
+ * The organisation's window set against the blocks (LAI-894, D-105): how many
+ * of its minutes any block covers — two blocks at once count once — and the
+ * runs across it, for the pill's bar. A block partly outside is clipped to the
+ * window; one that does not touch it is nothing.
+ */
+export function workedIn(blocks: readonly Span[], window: Span): WorkedIn {
+  const length = Math.max(0, window.end - window.start);
+  const cuts = new Set<number>([window.start, window.end]);
+  for (const b of blocks) {
+    if (b.end <= window.start || b.start >= window.end) continue;
+    cuts.add(Math.max(window.start, b.start));
+    cuts.add(Math.min(window.end, b.end));
+  }
+  const points = [...cuts].sort((a, b) => a - b);
+  const runs: WorkedRun[] = [];
+  let worked = 0;
+  for (let i = 0; i + 1 < points.length; i += 1) {
+    const start = points[i] ?? window.start;
+    const end = points[i + 1] ?? window.end;
+    if (end <= start) continue;
+    // Every cut is a block edge, so a stretch is under a block wholly or not at all.
+    const under = blocks.some((b) => b.start < end && b.end > start);
+    if (under) worked += end - start;
+    const last = runs[runs.length - 1];
+    if (last?.worked === under) {
+      runs[runs.length - 1] = { start: last.start, end, worked: under };
+    } else {
+      runs.push({ start, end, worked: under });
+    }
+  }
+  return { worked, rest: length - worked, runs };
+}
+
 /** A signal's time is known to this many minutes and no finer (D-096). */
 export const SIGNAL_MINUTES = 5;
 

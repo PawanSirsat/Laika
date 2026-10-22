@@ -181,3 +181,11 @@ the `standalone-src` variants, which were not imported: v3 supersedes them.
 What the v3 design draws that the server has no field for, and so the page
 leaves out, is listed in LAI-888's Notes: a shared hour's split between
 cards, agent names per run, and marks per five minutes.
+
+**Refreshed 2026-10-23 (LAI-894):** `Timeline.dc.html` is the project's copy as of
+that night, which carries the organisation's lunch window — the tinted band,
+the pill with the fork glyph, the worked figure and its bar, the hatched blocks,
+and a lunch panel that moves the window for a day (the panel is not built,
+D-105 item 5). `timeline-core.js` was brought level with the project's copy by
+hand: the `LUNCH` fixture constant and its export, nothing else.
+

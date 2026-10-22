@@ -10,6 +10,8 @@ import {
   type ReactNode,
 } from 'react';
 import type { MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
+import { BreakGlyph } from '../../../components/BreakGlyph.tsx';
+import { breakKind } from '../break-kinds.ts';
 import { FitLabel } from './FitLabel.tsx';
 import { needsACard } from './folder.ts';
 import { agentDuration, clock, duration, hourName, span as spanOf } from './format.ts';
@@ -44,6 +46,7 @@ import {
   type LaneBlock,
   type Span,
   type Zoom,
+  workedIn,
 } from './timeline-derive.ts';
 
 /** What the reader has in hand: a block, a gap they picked, or a break. */
@@ -127,6 +130,21 @@ function labelOf(
     return { top: e.project.name, title: e.note ?? e.folder ?? '', card: undefined };
   const general = e.folder === undefined || e.folder === null ? 'General' : `General · ${e.folder}`;
   return { top: e.note === null ? general : `${general} · ${e.note}`, title: '', card: undefined };
+}
+
+/** `1h 20m`, `45m` — the pill's compact clock, the design's own (LAI-894). */
+function compact(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${String(m)}m`;
+  return m === 0 ? `${String(h)}h` : `${String(h)}h ${String(m)}m`;
+}
+
+/** `30m worked`, `worked through`, or `offline` — the window's own word (LAI-894). */
+function workedLabel(w: { readonly worked: number; readonly rest: number }): string {
+  if (w.worked === 0) return 'offline';
+  if (w.rest === 0) return 'worked through';
+  return `${compact(w.worked)} worked`;
 }
 
 /**
@@ -1126,21 +1144,81 @@ export function Timeline({
                 {/* The organisation's breaks (D-101): a shaded band behind
                     everything, named and timed, and nothing more — never time,
                     never pressed, never set against what was worked in it. */}
-                {line.scheduled.map((s) => (
-                  <div
-                    key={`scheduled-${String(s.start)}`}
-                    className="dayline-scheduled"
-                    data-scheduled-break={s.start}
-                    style={{ left: x(s.start), width: Math.max(1, x(s.end) - x(s.start)) }}
-                    role="note"
-                    aria-label={`${s.label}, ${rangeOf(s)} — the organisation’s break`}
-                    title={`${s.label}, ${rangeOf(s)} — the organisation’s break`}
-                  >
-                    <span className="dayline-scheduled-label" aria-hidden="true">
-                      <FitLabel options={[s.label, '']} />
-                    </span>
-                  </div>
-                ))}
+                {line.scheduled.map((s) => {
+                  // The window set against the day (LAI-894, D-105): the pill
+                  // says what was worked in it, and its bar shows where.
+                  const w = workedIn(line.blocks, s);
+                  const worked = workedLabel(w);
+                  const range = rangeOf(s);
+                  const bandW = Math.max(1, x(s.end) - x(s.start));
+                  const pillW = Math.max(18, bandW - 6);
+                  // The design's own arithmetic at the 12px step: ~7px a
+                  // character, the glyph and the padding first. The worked
+                  // figure goes before the range; the glyph and the name stay
+                  // whatever the room.
+                  const room = pillW - 14 - 17 - s.label.length * 7;
+                  const showWorked = room >= worked.length * 7 + 6;
+                  const showRange = showWorked && room >= (worked.length + range.length) * 7 + 16;
+                  const cards = [
+                    ...new Set(
+                      line.blocks
+                        .filter((b) => b.start < s.end && b.end > s.start)
+                        .map((b) => labelOf(b, drafts, entries).top)
+                        .filter((t) => t !== ''),
+                    ),
+                  ];
+                  const tip = `${s.label} ${range} · ${duration(w.rest)} off, ${duration(w.worked)} worked${cards.length > 0 ? ` · on ${cards.join(' · ')}` : ''}`;
+                  return (
+                    <div
+                      key={`scheduled-${String(s.start)}`}
+                      className="dayline-scheduled"
+                      data-scheduled-break={s.start}
+                      style={{ left: x(s.start), width: bandW }}
+                      role="note"
+                      aria-label={`${s.label}, ${range} — the organisation’s break`}
+                      title={`${s.label}, ${range} — the organisation’s break`}
+                    >
+                      <span
+                        className="dayline-scheduled-pill"
+                        data-scheduled-pill
+                        data-worked={w.worked}
+                        style={{ width: pillW }}
+                        title={tip}
+                      >
+                        <BreakGlyph kind={breakKind(s.label)} />
+                        <span className="dayline-scheduled-name">{s.label}</span>
+                        {showRange && <span className="dayline-scheduled-range">{range}</span>}
+                        {showWorked && (
+                          <span
+                            className={
+                              w.worked > 0
+                                ? 'dayline-scheduled-worked dayline-scheduled-worked-on'
+                                : 'dayline-scheduled-worked'
+                            }
+                            data-scheduled-worked
+                          >
+                            {worked}
+                          </span>
+                        )}
+                        <span className="dayline-scheduled-bar" aria-hidden="true">
+                          {w.runs.map((r) => (
+                            <span
+                              key={r.start}
+                              className={
+                                r.worked
+                                  ? 'dayline-scheduled-seg dayline-scheduled-seg-work'
+                                  : 'dayline-scheduled-seg'
+                              }
+                              style={{
+                                width: `${String(((r.end - r.start) / Math.max(1, s.end - s.start)) * 100)}%`,
+                              }}
+                            />
+                          ))}
+                        </span>
+                      </span>
+                    </div>
+                  );
+                })}
                 {view.state === 'no_signal' && nothing && (
                   <div className="dayline-nosignal" data-no-signal>
                     <p className="dayline-nosignal-text">
@@ -1403,6 +1481,39 @@ export function Timeline({
                     </div>
                   );
                 })}
+
+                {/* What was worked inside the organisation's window (LAI-894):
+                    hatched over each block's part in it, catching no pointer. */}
+                {line.scheduled.flatMap((s) =>
+                  line.blocks.flatMap((block, i) => {
+                    const shape = shaped[i] ?? block;
+                    if (shape.start >= s.end || shape.end <= s.start) return [];
+                    const { row, rows } = stacks[i] ?? { row: 0, rows: 1 };
+                    const bx0 = left(shape.start, shape.end);
+                    const bx1 = bx0 + wide(shape.start, shape.end);
+                    const x0 = Math.max(x(s.start), bx0);
+                    const x1 = Math.min(x(s.end), bx1);
+                    if (x1 - x0 < 2) return [];
+                    const edges = `${x0 <= bx0 + 0.5 ? ' dayline-bite-l' : ''}${x1 >= bx1 - 0.5 ? ' dayline-bite-r' : ''}`;
+                    return [
+                      <span
+                        key={`bite-${String(s.start)}-${block.kind}-${block.id}`}
+                        className={`dayline-bite${edges}`}
+                        data-scheduled-bite={block.id}
+                        data-kind={block.kind}
+                        aria-hidden="true"
+                        style={
+                          {
+                            left: x0,
+                            width: x1 - x0,
+                            '--row': String(row),
+                            '--rows': String(rows),
+                          } as CSSProperties
+                        }
+                      />,
+                    ];
+                  }),
+                )}
 
                 {/* The grip: drag the rows taller or shorter (LAI-891). */}
                 <button
