@@ -10,9 +10,9 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
+import { closeBrowser, setTheme, until, type ApiStub } from './harness.ts';
+import { open, TODAY } from './my-day-clock.ts';
 
-const TODAY = new Date().toISOString().slice(0, 10);
 const MIDNIGHT = Date.parse(`${TODAY}T00:00:00Z`);
 const at = (h: number, m = 0): number => MIDNIGHT + (h * 60 + m) * 60_000;
 
