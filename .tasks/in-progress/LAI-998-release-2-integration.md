@@ -2,11 +2,12 @@
 id: LAI-998
 title: 'Release 2 is twenty reviewed-or-pending branches that have never been combined, on a master another session has moved'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-968, LAI-970, LAI-973, LAI-975, LAI-977, LAI-978, LAI-987, LAI-988, LAI-989, LAI-993]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T20:05:09Z
 ---
 
 ## Goal
@@ -44,3 +45,10 @@ review and one PR to `master`.
       resolution needs a behaviour choice, STOP and report.
 - [ ] Gate on the merged tree: `pnpm test`, `pnpm lint`, `pnpm format`
       **all exit 0** — no allowed failures.
+
+## Claim note
+
+Claimed by CORE on CHIEF's dispatch (polly, Belka). Its `depends-on` ids are
+reviewed-or-pending branches, not yet in `.tasks/done/` on `master`: this task
+is the integration that combines them, so the §2 step 1 check is knowingly
+deviated from on CHIEF's direction.
