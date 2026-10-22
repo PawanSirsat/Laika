@@ -2,11 +2,12 @@
 id: LAI-886
 title: 'An owner has no paginated, filterable history of everything that happened across the organisation'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T10:51:39Z
 ---
 
 ## Goal
