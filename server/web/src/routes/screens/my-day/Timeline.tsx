@@ -30,6 +30,11 @@ import {
   PX_PER_HOUR,
   SIGNAL_MINUTES,
   STEP,
+  BLOCK_MAX_PX,
+  BLOCK_MIN_PX,
+  BLOCK_STEP_PX,
+  ZOOM_STEPS,
+  clampBlockHeight,
   zoomLabel,
   zoomStep,
   type Box,
@@ -214,6 +219,9 @@ export function Timeline({
   const [hover, setHover] = useState<Hover | undefined>(undefined);
   /** The minute at the middle of the view when the scale last changed — kept there (LAI-890). */
   const keep = useRef<number | undefined>(undefined);
+  /** The block height, dragged by the grip under the YOU row (LAI-891). */
+  const [blockPx, setBlockPx] = useState<number>(BLOCK_MIN_PX);
+  const gripDrag = useRef<{ y: number; px: number } | null>(null);
   const [chips, setChips] = useState<ReadonlyMap<string, ChipPlace>>(() => new Map());
   const [, setFonts] = useState(0);
 
@@ -651,6 +659,41 @@ export function Timeline({
     (selection?.kind === 'gap' ? 'the gap' : selection?.kind === 'break' ? 'the break' : undefined);
 
   const lanes = hasSignals || hasAgents;
+  /** The row's px from the dragged block height: the strip above, the blocks, a margin under. */
+  const rowStyle = {
+    '--block-h': `${String(blockPx)}px`,
+    '--you-h': `${String(28 + blockPx + 8)}px`,
+  } as CSSProperties;
+  const grip = {
+    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      gripDrag.current = { y: event.clientY, px: blockPx };
+    },
+    onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
+      const drag = gripDrag.current;
+      if (drag === null) return;
+      setBlockPx(clampBlockHeight(drag.px + (event.clientY - drag.y)));
+    },
+    onPointerUp: (event: PointerEvent<HTMLButtonElement>) => {
+      gripDrag.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    },
+    onPointerCancel: () => {
+      gripDrag.current = null;
+    },
+    onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => {
+      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+      event.preventDefault();
+      event.stopPropagation();
+      setBlockPx((px) =>
+        clampBlockHeight(px + (event.key === 'ArrowDown' ? BLOCK_STEP_PX : -BLOCK_STEP_PX)),
+      );
+    },
+  };
+  const sliderAt = zoom === 'fit' ? ZOOM_STEPS.indexOf('1') : ZOOM_STEPS.indexOf(zoom);
   const laneTotals = (): ReactNode => (
     <>
       <div className="dayline-axis-note" data-axis-note>
@@ -695,7 +738,7 @@ export function Timeline({
   );
 
   return (
-    <section className="myday-card dayline" aria-label="Timeline" data-dayline>
+    <section className="myday-card dayline" aria-label="Timeline" data-dayline style={rowStyle}>
       <header className="dayline-head">
         <div className="dayline-head-title">
           <h2 className="dayline-title">Timeline</h2>
@@ -805,6 +848,26 @@ export function Timeline({
             <span className="dayline-zoom-level" data-zoom-level={zoom} title={pxAnHour(zoom)}>
               {zoomLabel(zoom)}
             </span>
+            <input
+              type="range"
+              className={
+                zoom === 'fit'
+                  ? 'dayline-zoom-slider dayline-zoom-slider-fit'
+                  : 'dayline-zoom-slider'
+              }
+              data-zoom-slider
+              min={0}
+              max={ZOOM_STEPS.length - 1}
+              step={1}
+              value={sliderAt}
+              aria-label="Zoom, from half to five times"
+              aria-valuetext={zoomLabel(zoom)}
+              title="Drag to zoom"
+              onChange={(event) => {
+                const next = ZOOM_STEPS[Number(event.target.value)];
+                if (next !== undefined && next !== zoom) changeZoom(next);
+              }}
+            />
             <button
               type="button"
               className="dayline-tool"
@@ -1274,6 +1337,23 @@ export function Timeline({
                     </div>
                   );
                 })}
+
+                {/* The grip: drag the rows taller or shorter (LAI-891). */}
+                <button
+                  type="button"
+                  className="dayline-grip"
+                  data-row-grip
+                  role="slider"
+                  aria-label="Row height: drag, or ↑ and ↓"
+                  aria-valuemin={BLOCK_MIN_PX}
+                  aria-valuemax={BLOCK_MAX_PX}
+                  aria-valuenow={blockPx}
+                  aria-orientation="vertical"
+                  title="Drag to make the rows taller or shorter"
+                  {...grip}
+                >
+                  <span className="dayline-grip-bar" aria-hidden="true" />
+                </button>
               </div>
 
               {hasAgents && (

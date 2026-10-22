@@ -55,6 +55,14 @@ export function zoomStep(zoom: Zoom, by: 1 | -1): Zoom | undefined {
   return ZOOM_STEPS[at + by];
 }
 
+/** The YOU row's block height, dragged by its grip (LAI-891): the design's 80px, up to three times it. */
+export const BLOCK_MIN_PX = 80;
+export const BLOCK_MAX_PX = 240;
+/** ↑ and ↓ on the grip move the height by this much. */
+export const BLOCK_STEP_PX = 8;
+export const clampBlockHeight = (px: number): number =>
+  Math.round(Math.max(BLOCK_MIN_PX, Math.min(BLOCK_MAX_PX, px)));
+
 /** `1.5×`, `1×` — or `Fit`. */
 export const zoomLabel = (zoom: Zoom): string => (zoom === 'fit' ? 'Fit' : `${zoom}×`);
 /** An idle stretch at either end of the day this long or longer folds at Fit (LAI-888). */

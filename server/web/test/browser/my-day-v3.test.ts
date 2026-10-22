@@ -238,6 +238,101 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
     }
   });
 
+  void test('the slider sets the scale, and the grip drags the rows taller up to a limit (LAI-891)', async () => {
+    const h = await openToday();
+    try {
+      const level = () => h.page.locator('[data-zoom-level]').getAttribute('data-zoom-level');
+      const slider = h.page.locator('[data-zoom-slider]');
+      await slider.focus();
+      await h.page.keyboard.press('ArrowRight');
+      await until(async () => (await level()) === '1.5');
+      await h.page.keyboard.press('ArrowRight');
+      await until(async () => (await level()) === '2');
+      assert.equal(await slider.inputValue(), String(['0.5', '0.75', '1', '1.5', '2'].length - 1));
+      await h.page.locator('[data-zoom="1"]').click();
+      await until(async () => (await slider.inputValue()) === '2');
+
+      // Box heights: the row is 28 above the blocks, the blocks, and 8 under, its rule inside.
+      const rowH = () =>
+        h.page.locator('.dayline-row').evaluate((el) => el.getBoundingClientRect().height);
+      const blockH = (id: string) =>
+        h.page
+          .locator(`[data-block-id="${id}"]`)
+          .evaluate((el) => el.getBoundingClientRect().height);
+      assert.equal(Math.round(await rowH()), 116);
+      assert.equal(Math.round(await blockH('d1')), 80);
+
+      const grip = h.page.locator('[data-row-grip]');
+      await grip.scrollIntoViewIfNeeded();
+      const box = await grip.boundingBox();
+      assert.ok(box !== null);
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      // Dragged 60px down: the row, its label in the column and every block grow by 60.
+      await h.page.mouse.move(x, y);
+      await h.page.mouse.down();
+      await h.page.mouse.move(x, y + 30);
+      await h.page.mouse.move(x, y + 60);
+      await h.page.mouse.up();
+      await until(async () => Math.round(await rowH()) === 176);
+      // The column's label is exactly as tall as the row, rule for rule.
+      const rowBox = await h.page
+        .locator('.dayline-row')
+        .evaluate((el) => el.getBoundingClientRect().height);
+      const labelBox = await h.page
+        .locator('.dayline-label-you')
+        .evaluate((el) => el.getBoundingClientRect().height);
+      assert.ok(
+        Math.abs(rowBox - labelBox) <= 0.5,
+        `the column did not follow: ${String(labelBox)} vs ${String(rowBox)}`,
+      );
+      assert.equal(Math.round(await blockH('d1')), 140);
+      assert.equal(Math.round(await blockH('e2')), 140, 'a confirmed block did not follow');
+      // The label is still there, whole.
+      assert.equal(
+        (await h.page.locator('[data-block-id="d1"] .dayline-block-top').innerText()).trim(),
+        'LAI-11',
+      );
+      // Far past the limit: 240 and no further; far back up: 80 and no less.
+      const after = await grip.boundingBox();
+      assert.ok(after !== null);
+      await h.page.mouse.move(x, after.y + after.height / 2);
+      await h.page.mouse.down();
+      await h.page.mouse.move(x, after.y + 600);
+      await h.page.mouse.up();
+      await until(async () => Math.round(await rowH()) === 276);
+      assert.equal(await grip.getAttribute('aria-valuenow'), '240');
+      const top = await grip.boundingBox();
+      assert.ok(top !== null);
+      await h.page.mouse.move(x, top.y + top.height / 2);
+      await h.page.mouse.down();
+      await h.page.mouse.move(x, top.y - 900);
+      await h.page.mouse.up();
+      await until(async () => Math.round(await rowH()) === 116);
+      // ↓ on the grip is 8px.
+      await grip.focus();
+      await h.page.keyboard.press('ArrowDown');
+      await until(async () => Math.round(await rowH()) === 124);
+      // Nothing overflowed the card and no block lies over another.
+      const boxes = await h.page.locator('[data-block-id]').evaluateAll((els) =>
+        els.map((el) => {
+          const r = el.getBoundingClientRect();
+          return { l: r.left, r: r.right, t: r.top, b: r.bottom };
+        }),
+      );
+      for (const [i, a] of boxes.entries()) {
+        for (const b of boxes.slice(i + 1)) {
+          const over =
+            Math.min(a.r, b.r) - Math.max(a.l, b.l) > 0.5 &&
+            Math.min(a.b, b.b) - Math.max(a.t, b.t) > 0.5;
+          assert.equal(over, false, 'two blocks overlap after the drag');
+        }
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('hovering a block, a gap or an agent run says what it is, when and how long — counts only', async () => {
     const h = await openToday();
     try {

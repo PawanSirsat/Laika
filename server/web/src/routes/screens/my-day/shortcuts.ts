@@ -27,8 +27,12 @@ export interface KeyLike {
   } | null;
 }
 
-/** Inputs that take a click, not typing. */
-const PRESSED = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color']);
+/**
+ * Inputs that take a click, not typing. A range is not one of them: its ← →
+ * move its own thumb (the Timeline's zoom slider, LAI-891), so every key on
+ * it is its own.
+ */
+const PRESSED = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'color']);
 
 export function typingIn(target: KeyLike['target']): boolean {
   if (target === null) return false;
