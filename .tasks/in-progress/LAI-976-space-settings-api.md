@@ -2,11 +2,12 @@
 id: LAI-976
 title: 'Spaces cannot be renamed, recoloured, re-keyed, archived from a screen, left, or given per-space rules — the API half'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T17:10:09Z
 ---
 
 ## Goal
