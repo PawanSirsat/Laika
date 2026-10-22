@@ -124,10 +124,10 @@ export const users = sqliteTable(
      */
     profileKind: text('profile_kind', { enum: PROFILE_KINDS }).notNull().default('builder'),
     /**
-     * The developer's own consent to send local activity counts (§4.1, D-079,
-     * LAI-751). 0 by default. Set only by the person, from a web session —
-     * never by an admin and never with a token, because a token is how an
-     * agent acts and an agent must not be able to switch this on.
+     * What was the developer's own consent to send local activity counts
+     * (§4.1, D-079, LAI-751). 0 by default. **No longer read and no longer
+     * set** (D-102 amended, LAI-963): the organisation's Developer insights
+     * decides collection alone. The column keeps what each person last chose.
      */
     shareLocalActivity: integer('share_local_activity').notNull().default(0),
     /** Which repositories their collector counts in (§4.1, D-079). */
@@ -194,10 +194,10 @@ export const orgs = sqliteTable(
      */
     presenceEnabled: integer('presence_enabled').notNull().default(1),
     /**
-     * The org's half of D-079's two switches (§4.2, LAI-751). Default **0**.
-     * With it off nothing local is collected for anybody, whatever each
-     * developer has chosen; with it on, only the developers who turned on
-     * sharing themselves send anything.
+     * The organisation's Developer insights (§4.2, LAI-751). Default **0**.
+     * Since D-102 (amended) it decides alone: off, nothing local is collected
+     * for anybody; on, every connected machine's activity is collected,
+     * whatever its developer once chose.
      */
     developerInsights: integer('developer_insights').notNull().default(0),
     aiProvider: text('ai_provider', { enum: AI_PROVIDERS }),
@@ -2172,7 +2172,7 @@ export const orgTimeSettings = sqliteTable(
 /**
  * A person's own *Draft my time* (§4.46, D-088 item 5, LAI-787). **No row is
  * off.** Set only by the person, from a web session — never by an admin and
- * never with a token, as `share_local_activity` is.
+ * never with a token, as `share_local_activity` was until D-102 (amended).
  */
 export const userTimeSettings = sqliteTable(
   'user_time_settings',

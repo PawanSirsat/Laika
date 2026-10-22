@@ -175,7 +175,7 @@ export interface OwnLocalDay {
   cache_read: number;
 }
 
-/** What the server holds for the caller — the consent preview (§6.4). */
+/** What the server holds for the caller — the collection preview (§6.4). */
 export interface OwnLocalActivityView {
   /** The window, in `tz`: the last `days` days to today. */
   start: string;
@@ -564,9 +564,9 @@ export function latestReportZone(db: Db, userId: string): string {
 
 /**
  * `GET /me/local-activity?days=`: what the server holds for the caller over
- * their last days — the consent screen's preview (§6.4). Their own rows only,
- * whatever the switch says: what was kept before collection was turned off is
- * still theirs to see and to delete.
+ * their last days — the collection screen's preview (§6.4). Their own rows
+ * only, whatever the switch says: what was kept before collection was turned
+ * off is still theirs to see and to delete.
  */
 export function getOwnLocalActivity(
   db: Db,
@@ -635,7 +635,8 @@ export function localActivityOf(
     }
   }
   for (const [day, n] of pushed) at(day).pushed_commits = n;
-  // Their token totals (D-084 item 4): the consent screen names what is held.
+  // Their token totals (D-084 item 4): the collection screen names what is
+  // held.
   for (const row of db
     .select({
       day: tokenUsageDays.day,
@@ -691,7 +692,7 @@ export function localActivityOf(
 /**
  * `DELETE /me/local-activity`: every local row and key of theirs, now — and
  * their token usage too (D-084 item 4): it came from the same collector, under
- * the same consent, so *delete my history* reaches it.
+ * the same organisation switch, so *delete my history* reaches it.
  */
 export function deleteOwnLocalActivity(db: Db, actor: ResolvedActor): void {
   assertCan(actor, 'local_activity.delete_own');
@@ -709,8 +710,8 @@ export function deleteOwnLocalActivity(db: Db, actor: ResolvedActor): void {
     tx.delete(tokenArrivals).where(eq(tokenArrivals.userId, actor.userId)).run();
     tx.delete(tokenUsageZones).where(eq(tokenUsageZones.userId, actor.userId)).run();
     // And agent minutes with the split that ties them to cards (LAI-787):
-    // the same consent's figures. Time the person confirmed is a record, not
-    // collected history, and stays.
+    // the same collection's figures. Time the person confirmed is a record,
+    // not collected history, and stays.
     tx.delete(agentTimeDays).where(eq(agentTimeDays.userId, actor.userId)).run();
     tx.delete(agentTimeBuckets).where(eq(agentTimeBuckets.userId, actor.userId)).run();
     tx.delete(tokenSessionTasks).where(eq(tokenSessionTasks.userId, actor.userId)).run();
