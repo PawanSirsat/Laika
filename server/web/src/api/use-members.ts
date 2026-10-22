@@ -7,6 +7,7 @@ import {
   type Member,
   type ProjectRole,
 } from './members.ts';
+import type { OpenTasksChoice } from './offboarding.ts';
 
 export interface UseMembers {
   readonly status: 'loading' | 'ready' | 'error';
@@ -19,6 +20,13 @@ export interface UseMembers {
   readonly setRole: (userId: string, role: ProjectRole) => Promise<void>;
   /** Resolves `true` only when the server accepted, so a caller can offer Undo. */
   readonly remove: (userId: string) => Promise<boolean>;
+  /**
+   * Remove with the offboarding answer (D-104 item 5, LAI-988). **Rejects** with
+   * the server's refusal — the `409 open_tasks` the offboarding dialog turns
+   * into its question — rather than reporting it as `actionError`, because the
+   * dialog, not the list, is where it is answered.
+   */
+  readonly removeWith: (userId: string, openTasks: OpenTasksChoice | undefined) => Promise<void>;
   /** Resolves `true` only when the server accepted, so the form can close. */
   readonly add: (userId: string, role: ProjectRole) => Promise<boolean>;
   readonly reload: () => void;
@@ -98,6 +106,21 @@ export function useMembers(slug: string | undefined): UseMembers {
     [slug, run],
   );
 
+  const removeWith = useCallback(
+    async (userId: string, openTasks: OpenTasksChoice | undefined): Promise<void> => {
+      if (slug === undefined) return;
+      setPendingId(userId);
+      setActionError(null);
+      try {
+        const list = await removeMember(slug, userId, openTasks);
+        setMembers(list.members);
+      } finally {
+        setPendingId(undefined);
+      }
+    },
+    [slug],
+  );
+
   /**
    * Reports whether the server accepted, so the caller can keep the form open
    * on a refusal with the choice still in it. Closing on failure would discard
@@ -116,5 +139,16 @@ export function useMembers(slug: string | undefined): UseMembers {
     setAttempt((n) => n + 1);
   }, []);
 
-  return { status, members, error, pendingId, actionError, setRole, remove, add, reload };
+  return {
+    status,
+    members,
+    error,
+    pendingId,
+    actionError,
+    setRole,
+    remove,
+    removeWith,
+    add,
+    reload,
+  };
 }

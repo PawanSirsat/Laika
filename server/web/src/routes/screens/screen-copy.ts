@@ -137,6 +137,10 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'No invite in this link',
     body: 'An invite link carries a token. Ask whoever invited you to send the full link.',
   },
+  '/reset-password': {
+    headline: 'No reset link here',
+    body: 'A reset link carries a token. Ask whoever sent it for the full link.',
+  },
   '/setup': {
     headline: 'First boot did not load',
     body: 'Reload the page. If this instance already has an owner, sign in instead.',

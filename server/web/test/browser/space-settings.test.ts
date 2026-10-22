@@ -476,7 +476,8 @@ void describe('Members', () => {
       const row = h.page.locator('[data-member="u2"]');
       await row.locator('[data-action="remove"]').click();
       assert.equal(calls.length, 0, 'removed without asking');
-      await row.locator('[data-action="confirm-remove"]').click();
+      // The offboarding dialog asks (LAI-988); Tomas holds no open work, so one confirm.
+      await h.page.locator('[data-action="offboard-confirm"]').click();
       await until(() => calls.includes('DELETE'));
       await h.page.locator('[data-member="u2"]').waitFor({ state: 'detached' });
       const toast = h.page.locator('[data-toast]');

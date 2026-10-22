@@ -8,6 +8,7 @@ import { ActivityScreen } from '../../routes/screens/activity/ActivityScreen.tsx
 import { DashboardScreen } from '../../routes/screens/dashboard/DashboardScreen.tsx';
 import { SetupRoute } from '../../routes/screens/SetupRoute.tsx';
 import { InviteRoute } from '../../routes/screens/InviteRoute.tsx';
+import { ResetPasswordRoute } from '../../routes/screens/ResetPasswordRoute.tsx';
 import { LoginRoute } from '../../routes/screens/LoginRoute.tsx';
 import { MeetingReviewScreen } from '../../routes/screens/meeting-review/MeetingReviewScreen.tsx';
 import { MembersScreen } from '../../routes/screens/MembersScreen.tsx';
@@ -475,6 +476,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/people': { Component: ProfileRoute, layout: 'plain' },
   '/login': { Component: LoginRoute, layout: 'plain' },
   '/invite': { Component: InviteRoute, layout: 'plain' },
+  '/reset-password': { Component: ResetPasswordRoute, layout: 'plain' },
   '/setup': { Component: SetupRoute, layout: 'own-chrome' },
   '/design/tokens': { Component: TokenReference, layout: 'plain' },
   '/design/states': { Component: StateGallery, layout: 'plain' },

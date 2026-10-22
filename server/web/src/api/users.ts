@@ -1,4 +1,6 @@
 import { request } from './client.ts';
+import type { ProjectRole } from './members.ts';
+import type { OpenTasksChoice } from './offboarding.ts';
 import type { Page } from './tasks.ts';
 
 /**
@@ -117,7 +119,69 @@ export async function listAllUsers(
  */
 export function updateUser(
   id: string,
-  patch: { readonly org_role?: string; readonly is_active?: boolean },
+  patch: {
+    readonly org_role?: string;
+    readonly is_active?: boolean;
+    /** Deactivation only: what happens to their open tasks (D-104 item 5, LAI-986). */
+    readonly open_tasks?: OpenTasksChoice;
+  },
 ): Promise<OrgUser> {
   return request<OrgUser>(`/users/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch });
+}
+
+/** What `POST /users/:id/sign-out` answers (D-104 item 3, LAI-981). */
+export interface SignOutView {
+  readonly user_id: string;
+  readonly sessions_ended: number;
+}
+
+/**
+ * End every session of a person, without deactivating them. Their tokens stay:
+ * those are *Manage anyone's tokens*, listed beside this on the profile.
+ */
+export function signOutEverywhere(id: string): Promise<SignOutView> {
+  return request<SignOutView>(`/users/${encodeURIComponent(id)}/sign-out`, { method: 'POST' });
+}
+
+/**
+ * A one-time password-reset link for a person (D-104 item 4, LAI-983).
+ *
+ * **Shown once.** The server keeps only its hash, so this response is the only
+ * copy of the link there will ever be. The caller holds it in component state
+ * for as long as it is on screen and nowhere else — never a log, never storage.
+ */
+export interface ResetLinkView {
+  readonly url: string;
+  readonly expires_at: number;
+}
+
+export function issueResetLink(id: string): Promise<ResetLinkView> {
+  return request<ResetLinkView>(`/users/${encodeURIComponent(id)}/reset-link`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * One space a person belongs to, with their role in it (LAI-981). Narrowed by
+ * the server to the spaces the caller can read; an owner's or admin's implicit
+ * access everywhere is not a membership and is not listed.
+ */
+export interface PersonMembership {
+  readonly project_id: string;
+  readonly slug: string;
+  readonly name: string;
+  readonly prefix: string;
+  readonly role: ProjectRole;
+  readonly archived: boolean;
+  readonly joined_at: number;
+}
+
+export function listMemberships(
+  id: string,
+  signal?: AbortSignal,
+): Promise<{ readonly data: readonly PersonMembership[] }> {
+  return request<{ readonly data: readonly PersonMembership[] }>(
+    `/users/${encodeURIComponent(id)}/memberships`,
+    signal === undefined ? {} : { signal },
+  );
 }

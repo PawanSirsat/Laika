@@ -44,6 +44,7 @@ import { useTheme } from '../../../theme/use-theme.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { SCREEN_COPY } from '../screen-copy.ts';
 import { ActivityCard } from './ActivityCard.tsx';
+import { AdminPanel } from './AdminPanel.tsx';
 import { InfoTip } from './InfoTip.tsx';
 import { MyDayScreen } from '../my-day/MyDayScreen.tsx';
 import { PersonHours } from './PersonHours.tsx';
@@ -385,6 +386,21 @@ export function ProfileScreen({
     />
   );
 
+  /**
+   * After the Admin panel changed their role or active state: the profile
+   * again, quietly — the panel stays on screen, so a notice it just showed is
+   * not wiped by a loading state. A failed read is the screen's error.
+   */
+  const refreshProfile = (): void => {
+    getProfile(user.id)
+      .then((next) => {
+        if (shown.current === user.id) setLoad({ kind: 'ready', profile: next });
+      })
+      .catch((cause: unknown) => {
+        if (shown.current === user.id) setLoad({ kind: 'error', error: cause });
+      });
+  };
+
   const manager = user.profile_kind === 'manager';
   const cards: Readonly<Record<ProfileCardId, ReactNode>> = {
     delivery: profile.delivery !== undefined && (
@@ -474,6 +490,15 @@ export function ProfileScreen({
 
       {shownTab === 'overview' && (
         <>
+          {/* Managing this person (D-104, LAI-988): drawn only for what the server grants. */}
+          <AdminPanel
+            key={`admin-${user.id}`}
+            user={user}
+            me={me}
+            gates={gates}
+            onChanged={refreshProfile}
+          />
+
           <ActivityCard
             userId={user.id}
             name={user.name}
