@@ -2,11 +2,12 @@
 id: LAI-992
 title: 'Capacity: no Show tasks footer, and no task is read when the page loads'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-991]
 discovered-from: LAI-991
-status: backlog
+status: in-progress
+started: 2026-10-22T18:42:35Z
 ---
 
 ## Why
