@@ -2,11 +2,12 @@
 id: LAI-978
 title: 'The Spaces page is inconsistent: cards change shape with long descriptions, no search, filters, list view or archived'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-976]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T17:10:09Z
 ---
 
 ## Goal
