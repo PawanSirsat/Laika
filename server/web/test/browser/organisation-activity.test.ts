@@ -309,6 +309,8 @@ void describe('states', () => {
     try {
       await h.page.locator('.oh-row').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.oh-row').count(), 1);
+      // And it says what happened: a reorder, not an edit (LAI-970).
+      assert.equal(await h.page.locator('.oh-row .oh-what').innerText(), 'reordered this task');
     } finally {
       await h.close();
     }
