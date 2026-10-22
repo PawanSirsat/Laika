@@ -41,3 +41,17 @@ finished: 2026-10-22T18:45:54Z
 - **Web halves, §4.4 (LAI-988/989):** `OrgOverviewView` is in `UNPAIRED` until
   the screen brings the client type. Anything web the gate shows is quoted in
   the log entry.
+
+## Review response (CORE, 2026-10-23) — Codex review of release 2, PR #89 @ b881445f
+
+Criteria unchanged. One blocking finding, fixed on
+`release2-server-review-fixes`:
+
+- **The `cannot_hold` 422 listed every refused task**, including ones in
+  spaces the caller cannot read (`services/offboarding.ts`). It now filters
+  them exactly as the `409` does: `tasks` only in readable spaces, plus
+  `hidden` for the rest. Test: `offboarding.test.ts` "names in the 422 only
+  the tasks in spaces the caller can read…" (a member granted *Deactivate
+  people*, on Laika only, sees `LAI-1` and `hidden: 1`, not `OTH-1`).
+  Mutation (unfiltered list) → red. SPEC §6.4's offboarding paragraph names
+  `hidden` on the 422.

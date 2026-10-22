@@ -55,3 +55,33 @@ Built on LAI-981's head (50d8367b), so this branch carries LAI-981 too.
 3. `the stream subscribes to exactly what the server emits` — server list adds both verbs
 4. `every server field is visible to the client` — `OrgView.extra_owners` / `Org`; `UserView.last_seen_at` / `OrgUser`
 5. `describeProjectEvent` — `user.signed_out`, `org.ownership_transferred`
+
+## Review response (CORE, 2026-10-23) — Codex review of release 2, PR #89 @ b881445f
+
+Criteria unchanged. Two blocking findings, both fixed on
+`release2-server-review-fixes`:
+
+1. **Any owner could transfer** (`services/users.ts` `transferOwnership`).
+   Only the owner `orgs.owner_user_id` names may now; another owner from
+   before D-104 is `403 reason not_recorded_owner`. A transfer by the recorded
+   owner with an extra owner present leaves the owner count unchanged
+   (target in, caller out) and the extra owner still reported, not demoted.
+   Tests: `users.test.ts` "is refused to an owner from before D-104…",
+   "never adds an owner…". Mutation (guard disabled) → the first goes red.
+2. **A pending owner invite from before D-104 was still consumable**
+   (`services/invites.ts`). `consumeInvite` refuses it `422 reason
+   use_transfer` before spending it, the backstop every path meets;
+   `POST /invites/accept` refuses it before an account exists; the sign-up
+   hook answers `422 auth_code use_transfer` after removing the account. The
+   invite stays unaccepted. `GET /org` gives the owner
+   `owner_invites_pending: [{ id, email, expires_at }]` (unaccepted,
+   unexpired). Each guard was mutation-checked. A pre-account check in the
+   `before` hook was written, survived its mutation because the backstop
+   already refuses there, and was removed rather than kept untested.
+   - **Web half, §4.4:** `view-type-drift.test.ts:740` — *"OrgView.owner_invites_pending
+     is served and Org does not declare it"*. Needs SHELL to declare it on
+     `Org` and show it beside *More than one owner*. Not filed: CHIEF's
+     LAI-950–999 block has no free id. CHIEF to file.
+
+SPEC §6.4: the transfer line, the `GET /org` owner's read, and the invites
+line gained one clause each.

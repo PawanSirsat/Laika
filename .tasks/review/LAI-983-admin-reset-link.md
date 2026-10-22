@@ -63,3 +63,24 @@ the second:
 3. `the stream subscribes to exactly what the server emits` — LAI-981/982's verbs
 4. `every server field is visible to the client` — `OrgView.extra_owners`, `UserView.last_seen_at` (LAI-981/982)
 5. `describeProjectEvent` — LAI-981/982's verbs
+
+## Review response (CORE, 2026-10-23) — Codex review of release 2, PR #89 @ b881445f
+
+Criteria unchanged. One blocking finding, fixed on
+`release2-server-review-fixes`:
+
+- **The active check ran before the asynchronous hash and not again**
+  (`services/password-resets.ts` `consumeResetLink`). It now runs again inside
+  the transaction that claims the link and writes the password: inactive is
+  `403 reason inactive` and the link is not spent. The claim's own `WHERE`
+  re-checks unused / unrevoked / unexpired, and a lost claim now names what
+  spent the link from the row as it is (`used`, `revoked`, `expired`) rather
+  than always `used`. Tests (the hash dependency is the seam; it deactivates,
+  or issues a newer link, while it "hashes"): "refuses 403 inactive, link
+  unspent…", "names why the claim lost…". Mutations: in-transaction check
+  removed → the first goes red; reason from the stale row → the second and the
+  existing race test go red.
+- Non-blocking: `grants.ts` *Deactivate people* description now names
+  password-reset links.
+
+No SPEC change: §6.4 already documents `403 inactive`.
