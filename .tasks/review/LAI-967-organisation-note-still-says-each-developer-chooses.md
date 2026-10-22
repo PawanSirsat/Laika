@@ -6,8 +6,9 @@ assignee: shell
 priority: p2
 depends-on: [LAI-963, LAI-964]
 discovered-from: LAI-964
-status: in-progress
+status: review
 started: 2026-10-22T14:28:14Z
+finished: 2026-10-22T14:40:28Z
 ---
 
 ## Goal
@@ -21,7 +22,7 @@ the old switch, and were outside LAI-964's criteria. Found with
 
 ## Acceptance criteria
 
-- [ ] `routes/screens/organisation/OrganisationScreen.tsx`, the
+- [x] `routes/screens/organisation/OrganisationScreen.tsx`, the
       `#org-insights-note` (~line 419): it says *"each developer can choose —
       for themselves, on Connect — to share … Nothing is collected from anyone
       who has not turned it on"*. That is false since LAI-963. Say that when on,
@@ -29,11 +30,11 @@ the old switch, and were outside LAI-964's criteria. Found with
       told so; keep *"never prompt text …"* and *"Off stops it for everyone at
       once"*. `developer-insights.test.ts` asserts
       `/each developer can choose — for themselves/` today and changes with it.
-- [ ] `routes/screens/profile/UsageCard.tsx` `emptyLine` (~204) and
+- [x] `routes/screens/profile/UsageCard.tsx` `emptyLine` (~204) and
       `routes/screens/profile/ActivityCard.tsx` (~135, `not_sharing`): the
       `!sharing.enabled` branch tells a person to *"Turn on Share local activity
       on Connect"* or says *"<name> has not turned on sharing"*. The server now
       sends `enabled` equal to `org_enabled`, so the branch is unreachable from
       a current server. Remove it or reword it; neither may send anyone to a
       switch that no longer exists.
-- [ ] Light/dark, 1440/390 where wording changes. Gate exit 0.
+- [x] Light/dark, 1440/390 where wording changes. Gate exit 0.
