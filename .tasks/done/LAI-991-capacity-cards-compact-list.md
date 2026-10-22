@@ -6,7 +6,8 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: review
+status: done
+accepted: 2026-10-22T18:15:20Z
 finished: 2026-10-22T18:15:03Z
 started: 2026-10-22T17:42:37Z
 ---
