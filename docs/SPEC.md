@@ -2626,7 +2626,8 @@ reaches SSE, an MCP tool or an export (§4.21).
   `laika-repos` scope (D-079 item 4) — **sent only when Claude Code on that
   machine exports its metrics to this board** (telemetry on, an OTLP metrics
   exporter, an endpoint under `/api/v1/otlp/`, in `~/.claude/settings.json`'s
-  `env` or the environment; review): with none from there, there is nothing
+  `env` — where `laika activity on` writes them (LAI-867) — or the
+  environment; review): with none from there, there is nothing
   of theirs to drop. A key is
   the first 16 hex of `sha256("laika-session:" + session id)`, lower case —
   never the id. Each (person, collector, day) carried replaces
@@ -2813,18 +2814,38 @@ code.claude.com/docs/en/monitoring-usage on 2026-10-18 — the variable names,
 `http/json`, the two metrics and their attributes, `session.id` on by default
 (`OTEL_METRICS_INCLUDE_SESSION_ID`), and the temporality default `delta` with
 `cumulative` allowed. **Not confirmed there**: whether `session.id` arrives
-on the data point or the resource, so both are read. The settings Connect and
-`laika activity otel` print:
+on the data point or the resource, so both are read. **`laika activity on`
+sets it up** (LAI-867), once per laptop, in `~/.claude/settings.json` — which
+every Claude Code reads, one started from the Dock and Omnigent's SDK sessions
+(`--setting-sources=user,project`) included — so no shell-profile line is
+needed. It writes six non-secret variables into `env` and a top-level
+`otelHeadersHelper`, a 0700 script that reads `LAIKA_TOKEN` from
+`~/.laika/env` each time it runs and prints the header as JSON; **the token is
+never written**, into settings.json or the script. It backs up first by the
+`.bak` rule, keeps the file's mode, leaves a key the person set to another
+value and says so, and a second `on` writes nothing. `laika activity off`
+removes only what `on` added, each key only while it still holds `on`'s
+value; `laika activity status` probes this endpoint with a body carrying no
+metric and says whether telemetry reaches the board. Connect shows the same
+settings:
 
-```sh
-export CLAUDE_CODE_ENABLE_TELEMETRY=1
-export OTEL_METRICS_EXPORTER=otlp
-export OTEL_EXPORTER_OTLP_PROTOCOL=http/json
-export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="$LAIKA_URL/api/v1/otlp/v1/metrics"
-export OTEL_EXPORTER_OTLP_METRICS_HEADERS="Authorization=Bearer $LAIKA_TOKEN"
-export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
-export OTEL_LOGS_EXPORTER=none
+```json
+{
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+    "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "$LAIKA_URL/api/v1/otlp/v1/metrics",
+    "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "cumulative",
+    "OTEL_LOGS_EXPORTER": "none"
+  },
+  "otelHeadersHelper": "~/.laika/otel-headers"
+}
 ```
+
+`laika activity otel` still prints them as `export` lines, with
+`OTEL_EXPORTER_OTLP_METRICS_HEADERS="Authorization=Bearer $LAIKA_TOKEN"`, for
+whoever wants them by hand.
 
 **API-equivalent cost (D-084 item 10, LAI-773)** — what the tokens would cost
 at list price on the vendor's API, priced per model by §4.35, **labelled
@@ -4175,9 +4196,10 @@ anything missing sends the task back.
   among it, and *Delete my
   local-activity history* with a confirmation. With the organisation's switch
   off it says so and offers nothing to turn on. Beside it, **OpenTelemetry
-  (optional)** (LAI-773): the exact variables of §6.4 with this board's URL
-  filled in and `$LAIKA_TOKEN` left as a reference, a Copy button, and one
-  line saying it is metrics only and fills in what the session files miss.
+  (optional)** (LAI-773, LAI-867): what `laika activity on` writes to
+  `~/.claude/settings.json` (§6.4) with this board's URL filled in and no
+  token, a Copy button, and one line saying `laika activity on` sets it up on
+  each laptop, it is metrics only and fills in what the session files miss.
 - **Capacity** (Insights' first tab, `/insights?tab=capacity`, one page across
   every space, LAI-754; redesigned by LAI-767) — **tiles** that count and
   filter: *Online now*, *Agents running* (sessions), *In progress* (sorts
