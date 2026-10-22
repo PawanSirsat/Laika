@@ -151,6 +151,9 @@ const EVERY_ROLE_ORG = [
   'time_entries.read_own',
   'time_entries.write_own',
   'time_sync.own',
+  // Everyone may sign themselves out everywhere (LAI-981): conditional, and
+  // `/permissions` lists a conditional action the caller holds about themselves.
+  'user.sign_out',
 ] as const;
 const ADMIN_UP_ORG = [
   'org.settings.edit',
@@ -158,6 +161,7 @@ const ADMIN_UP_ORG = [
   'project.archive',
   'user.invite',
   'user.deactivate',
+  'user.reset_password',
   'token.list_any',
   'token.revoke_any',
   'audit_log.export',

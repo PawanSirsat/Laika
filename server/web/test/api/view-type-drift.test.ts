@@ -318,6 +318,31 @@ const PAIRS: readonly Pair[] = [
     client: 'OrgUser',
     clientFile: 'users.ts',
   },
+  // The person admin panel's reads and writes (D-104, LAI-988).
+  {
+    server: 'MembershipView',
+    serverFile: 'services/users.ts',
+    client: 'PersonMembership',
+    clientFile: 'users.ts',
+  },
+  {
+    server: 'SignOutView',
+    serverFile: 'services/users.ts',
+    client: 'SignOutView',
+    clientFile: 'users.ts',
+  },
+  {
+    server: 'ResetLinkView',
+    serverFile: 'http/routes/users.ts',
+    client: 'ResetLinkView',
+    clientFile: 'users.ts',
+  },
+  {
+    server: 'PasswordResetView',
+    serverFile: 'services/password-resets.ts',
+    client: 'PasswordResetView',
+    clientFile: 'password-resets.ts',
+  },
   {
     server: 'CommentView',
     serverFile: 'services/comments.ts',

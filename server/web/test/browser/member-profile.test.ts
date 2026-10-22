@@ -1858,7 +1858,8 @@ async function cardBoxes(page: Page): Promise<{ gap: number; cards: CardBox[] }>
  * The full-width cards that head the page, in order: Activity (LAI-751), then
  * Tokens (LAI-769). The columns start under the last of them.
  */
-const FULL_WIDTH = ['activity', 'tokens'];
+// The Admin panel (LAI-988) sits above them, full width, for a reader who manages the person.
+const FULL_WIDTH = ['admin', 'activity', 'tokens'];
 
 /** The cards below the full-width ones, grouped by the column they sit in, top first. */
 function columnsOf(cards: readonly CardBox[]): CardBox[][] {
@@ -2002,6 +2003,7 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
       assert.equal(columnsOf((await cardBoxes(h.page)).cards).length, 2, 'two columns at 1024');
 
       await assertOneColumn(h.page, [
+        'admin',
         'activity',
         'tokens',
         'delivery',
@@ -2064,6 +2066,7 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
       assert.equal(await h.page.locator('.prof-columns .prof-stats').count(), 0);
 
       await assertOneColumn(h.page, [
+        'admin',
         'activity',
         'tokens',
         'delivery',
@@ -2090,6 +2093,7 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
       const cards = await assertColumns(h.page, 3);
       assert.deepEqual(cards.map((card) => card.name).sort(), [
         'activity',
+        'admin',
         'decisions',
         'projects',
         'rating',
@@ -2097,6 +2101,7 @@ void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
         'tokens',
       ]);
       await assertOneColumn(h.page, [
+        'admin',
         'activity',
         'tokens',
         'review',

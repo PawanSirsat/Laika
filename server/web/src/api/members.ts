@@ -1,4 +1,5 @@
 import { request } from './client.ts';
+import type { OpenTasksChoice } from './offboarding.ts';
 import type { Member, MemberList } from './tasks.ts';
 
 /**
@@ -74,10 +75,21 @@ export function addMember(slug: string, userId: string, role: ProjectRole): Prom
   });
 }
 
-export function removeMember(slug: string, userId: string): Promise<MemberList> {
+/**
+ * Take someone out of the project. `openTasks` is the offboarding answer
+ * (D-104 item 5, LAI-986): absent, the server refuses `409 open_tasks` when
+ * they hold open work here, and the offboarding dialog asks.
+ */
+export function removeMember(
+  slug: string,
+  userId: string,
+  openTasks?: OpenTasksChoice,
+): Promise<MemberList> {
   return request<MemberList>(
     `/projects/${encodeURIComponent(slug)}/members/${encodeURIComponent(userId)}`,
-    { method: 'DELETE' },
+    openTasks === undefined
+      ? { method: 'DELETE' }
+      : { method: 'DELETE', body: { open_tasks: openTasks } },
   );
 }
 

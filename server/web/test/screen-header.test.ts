@@ -22,13 +22,19 @@ const SCREENS = fileURLToPath(new URL('../src/routes/screens/', import.meta.url)
 /**
  * Screens that legitimately have no app chrome.
  *
- * All three render **before** the shell exists — there is no sidebar, no
+ * All four render **before** the shell exists — there is no sidebar, no
  * project, and no nav to be consistent with, so a screen-level band would be
  * furniture for a room the reader is not in yet. Listed by name with the reason
  * attached, because an exemption list nobody can audit is how the original
  * inconsistency survived.
  */
-const PRE_AUTH = new Set(['LoginScreen.tsx', 'FirstBootScreen.tsx', 'InviteScreen.tsx']);
+const PRE_AUTH = new Set([
+  'LoginScreen.tsx',
+  'FirstBootScreen.tsx',
+  'InviteScreen.tsx',
+  // A reset link's page (LAI-988): opened signed out, from a link an admin sent.
+  'ResetPasswordScreen.tsx',
+]);
 
 /** In-app screens: routed inside the shell, so they share its chrome. */
 const IN_APP = new Set(['Screen.tsx', 'NotFound.tsx']);

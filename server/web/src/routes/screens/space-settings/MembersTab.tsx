@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
+import { OffboardingDialog } from '../../../components/OffboardingDialog.tsx';
 import {
   PROJECT_ROLES,
   ROLE_SUMMARY,
@@ -46,9 +47,11 @@ interface Toast {
  *
  * **Every list change is the server's list back** (`useMembers`), so a refused
  * change — the last space admin demoted or removed — shows the refusal and
- * the list as it really stands. Removal asks, then offers **Undo**, which adds
- * the person back with the role they had. Offboarding — what happens to their
- * open work — is D-104 item 5, not this page.
+ * the list as it really stands. Removal goes through the **offboarding
+ * dialog** (D-104 item 5, LAI-988) — the one deactivation uses — which asks
+ * what happens to their open tasks here when they hold any, then offers
+ * **Undo**, which adds the person back with the role they had. Undo restores
+ * the membership, not the tasks' assignee.
  */
 export function MembersTab({
   project,
@@ -60,7 +63,7 @@ export function MembersTab({
   onLeft,
 }: MembersTabProps) {
   const { theme } = useTheme();
-  const [confirming, setConfirming] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<Member | undefined>(undefined);
   const [toast, setToast] = useState<Toast | undefined>(undefined);
   const toastSeq = useRef(0);
   const [leaving, setLeaving] = useState<'ask' | 'busy' | undefined>(undefined);
@@ -102,16 +105,14 @@ export function MembersTab({
       });
   };
 
-  const remove = (member: Member): void => {
-    setConfirming(null);
+  /** Removed through the offboarding dialog; Undo adds them back with the role they had. */
+  const removed = (member: Member): void => {
+    setRemoving(undefined);
     const role = member.role as ProjectRole;
-    void members.remove(member.user_id).then((ok) => {
-      if (!ok) return;
-      say(`Removed ${member.name} from ${project.name}.`, () => {
-        setToast(undefined);
-        void members.add(member.user_id, role).then((back) => {
-          if (back) say(`${member.name} is back, as ${projectRoleLabel(role)}.`);
-        });
+    say(`Removed ${member.name} from ${project.name}.`, () => {
+      setToast(undefined);
+      void members.add(member.user_id, role).then((back) => {
+        if (back) say(`${member.name} is back, as ${projectRoleLabel(role)}.`);
       });
     });
   };
@@ -227,48 +228,18 @@ export function MembersTab({
                         }))}
                       />
                     </label>
-                    {confirming === member.user_id ? (
-                      <span
-                        className="ss-inline-confirm"
-                        role="group"
-                        aria-label={`Remove ${member.name}?`}
-                      >
-                        <span>Remove?</span>
-                        <button
-                          type="button"
-                          className="ss-btn ss-btn-danger-solid"
-                          data-action="confirm-remove"
-                          disabled={busy}
-                          onClick={() => {
-                            remove(member);
-                          }}
-                        >
-                          Yes, remove
-                        </button>
-                        <button
-                          type="button"
-                          className="ss-btn"
-                          onClick={() => {
-                            setConfirming(null);
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="ss-btn ss-btn-quiet"
-                        data-action="remove"
-                        disabled={busy}
-                        aria-label={`Remove ${member.name}`}
-                        onClick={() => {
-                          setConfirming(member.user_id);
-                        }}
-                      >
-                        Remove
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="ss-btn ss-btn-quiet"
+                      data-action="remove"
+                      disabled={busy}
+                      aria-label={`Remove ${member.name}`}
+                      onClick={() => {
+                        setRemoving(member);
+                      }}
+                    >
+                      Remove
+                    </button>
                   </div>
                 ) : (
                   <span
@@ -282,6 +253,30 @@ export function MembersTab({
             );
           })}
         </ul>
+      )}
+
+      {removing !== undefined && (
+        <OffboardingDialog
+          title={`Remove ${removing.name} from ${project.name}?`}
+          verb="Remove"
+          leavingId={removing.user_id}
+          consequences={
+            <p>
+              They lose access to {project.name} unless their organisation role opens every space.
+              Their work here stays.
+            </p>
+          }
+          loadCandidates={() =>
+            Promise.resolve(members.members.map((m) => ({ id: m.user_id, name: m.name })))
+          }
+          run={(openTasks) => members.removeWith(removing.user_id, openTasks)}
+          onDone={() => {
+            removed(removing);
+          }}
+          onClose={() => {
+            setRemoving(undefined);
+          }}
+        />
       )}
 
       <footer className="ss-card-foot ss-card-foot-note">

@@ -342,6 +342,8 @@ export const ROUTES: readonly Route[] = [
   },
   { public: true, path: '/login', label: 'Sign in', group: null, phase: 'Phase 1' },
   { public: true, path: '/invite', label: 'Accept invite', group: null, phase: 'Phase 2' },
+  // D-104 item 4 (LAI-988): an admin-issued link sets a new password here.
+  { public: true, path: '/reset-password', label: 'Reset password', group: null, phase: 'Phase 2' },
   {
     public: true,
     path: '/setup',
