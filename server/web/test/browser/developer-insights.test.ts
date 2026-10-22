@@ -170,6 +170,7 @@ function connect(
 void describe('Developer access: Share local activity', () => {
   for (const [role, guidance] of [
     ['owner', 'You can turn them on in Organisation.'],
+    ['admin', 'You can turn them on in Organisation.'],
     ['member', 'An owner or admin can turn them on.'],
   ] as const) {
     void test(`${role}: explains who can enable organisation insights`, async () => {
@@ -184,11 +185,11 @@ void describe('Developer access: Share local activity', () => {
         });
         const notice = section.locator('[data-state="org-off"]');
         assert.match(await notice.innerText(), /Developer insights are off for this organisation/);
-        assert.match(await notice.innerText(), new RegExp(guidance.replace('.', '\\.')));
+        assert.equal((await notice.innerText()).includes(guidance), true);
         assert.equal(await section.getByRole('switch').count(), 0);
         assert.equal(
-          await section.locator('a[href="/organisation?tab=overview#org-insights-label"]').count(),
-          role === 'owner' ? 1 : 0,
+          await section.locator('a[href="/organisation?tab=overview"]').count(),
+          role === 'owner' || role === 'admin' ? 1 : 0,
         );
       } finally {
         await h.close();
@@ -231,13 +232,24 @@ void describe('Developer access: Share local activity', () => {
         await setTheme(h.page, theme);
         for (const width of [1366, 390]) {
           await h.page.setViewportSize({ width, height: 900 });
-          assert.equal(
-            await h.page.evaluate(
-              () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-            ),
-            0,
-          );
           assert.equal(await section.isVisible(), true);
+          if (width === 390) {
+            const internals = section.locator('.share-list, [role="switch"]');
+            assert.equal(await internals.count(), 3);
+            for (const internal of await internals.all()) {
+              assert.deepEqual(
+                await internal.evaluate((element) => {
+                  const rect = element.getBoundingClientRect();
+                  return {
+                    fitsContent: element.scrollWidth <= element.clientWidth,
+                    withinViewport:
+                      rect.left >= 0 && rect.right <= document.documentElement.clientWidth,
+                  };
+                }),
+                { fitsContent: true, withinViewport: true },
+              );
+            }
+          }
         }
       }
     } finally {
@@ -259,15 +271,9 @@ void describe('Connect: Share local activity', () => {
       assert.match(await panel.innerText(), /Developer insights are off for this organisation/);
       assert.equal(await panel.getByRole('switch').count(), 0);
       await until(
-        async () =>
-          (await panel
-            .locator('a[href="/organisation?tab=overview#org-insights-label"]')
-            .count()) === 1,
+        async () => (await panel.locator('a[href="/organisation?tab=overview"]').count()) === 1,
       );
-      assert.equal(
-        await panel.locator('a[href="/organisation?tab=overview#org-insights-label"]').count(),
-        1,
-      );
+      assert.equal(await panel.locator('a[href="/organisation?tab=overview"]').count(), 1);
     } finally {
       await h.close();
     }

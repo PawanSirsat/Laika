@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { EmbeddedScreen, ScreenHeader } from '../../../components/ScreenHeader.tsx';
+import { canManageOrg } from '../../../api/invites.ts';
 import type { MeProfile } from '../../../api/me.ts';
 import { ShareActivity } from '../connect/ShareActivity.tsx';
 import { TokensScreen } from '../tokens/TokensScreen.tsx';
@@ -40,10 +41,7 @@ export function DeveloperScreen({ me, origin, onNavigate }: DeveloperScreenProps
               Share local activity
             </h2>
           </div>
-          <ShareActivity
-            canManageOrg={me?.org_role === 'owner' || me?.org_role === 'admin'}
-            origin={origin}
-          />
+          <ShareActivity canManageOrg={canManageOrg(me?.org_role ?? '')} origin={origin} />
         </section>
         <div className="dev-card dev-tokens">
           <EmbeddedScreen slot={slot} titled>

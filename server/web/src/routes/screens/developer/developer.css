@@ -15,10 +15,6 @@
   min-width: 0;
 }
 
-.dev-sharing {
-  overflow: hidden;
-}
-
 .dev-sharing .share-activity {
   padding: var(--space-4) 1.25rem 1.25rem;
 }
