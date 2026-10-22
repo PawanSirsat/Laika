@@ -575,6 +575,75 @@ describe('GET /activity/history — the organisation history (LAI-886)', () => {
     expect(await codeOf(bad)).toBe('bad_request');
   });
 
+  it('pages across rows that share one created_at without skipping or repeating', async () => {
+    // Five rows in one millisecond: a page boundary lands inside the tie twice,
+    // so only the `seq` half of the cursor can say where to resume.
+    const TIE = T0 + 10;
+    seed(
+      Array.from({ length: 5 }, (_, i) => ({
+        at: TIE,
+        projectId: i % 2 === 0 ? laikaId : otherId,
+        actorId: i % 2 === 0 ? member.id : ownerId,
+        type: 'task.updated' as const,
+      })),
+    );
+    const window = `since=${String(TIE)}&until=${String(TIE)}`;
+
+    const unpaged = await page(`${BASE}?${window}&limit=200`);
+    expect(unpaged.next_cursor).toBeNull();
+    expect(unpaged.data).toHaveLength(5);
+    expect(unpaged.data.every((row) => row.created_at === TIE)).toBe(true);
+
+    const walked: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const got: FeedPage = await page(
+        `${BASE}?${window}&limit=2${cursor === null ? '' : `&cursor=${cursor}`}`,
+      );
+      expect(got.data.length).toBeLessThanOrEqual(2);
+      walked.push(...got.data.map((row) => row.id));
+      cursor = got.next_cursor;
+      pages += 1;
+    } while (cursor !== null && pages < 10);
+
+    expect(pages).toBe(3);
+    expect(walked).toEqual(unpaged.data.map((row) => row.id));
+  });
+
+  it('?limit= follows §6.3: 0 is a 400, above 200 is served at 200', async () => {
+    for (const limit of ['0', '-1', 'ten']) {
+      const bad = await req(`${BASE}?limit=${limit}`);
+      expect(bad.status, limit).toBe(400);
+      expect(await codeOf(bad)).toBe('bad_request');
+    }
+
+    // More than 200 rows exist, so a clamp is visible as exactly 200 and a cursor.
+    seed(
+      Array.from({ length: 210 }, (_, i) => ({
+        at: T0 + 100 + i,
+        projectId: laikaId,
+        actorId: ownerId,
+        type: 'task.updated' as const,
+      })),
+    );
+    const clamped = await page(`${BASE}?limit=500`);
+    expect(clamped.data).toHaveLength(200);
+    expect(clamped.next_cursor).not.toBeNull();
+  });
+
+  it('a malformed or oversized ?since= / ?until= is a 400, never a silent page', async () => {
+    const values = ['-1', '1.5', '1e3', 'NaN', '99999999999999999999', `${'9'.repeat(400)}`];
+
+    for (const name of ['since', 'until']) {
+      for (const value of values) {
+        const res = await req(`${BASE}?${name}=${value}`);
+        expect(res.status, `${name}=${value}`).toBe(400);
+        expect(await codeOf(res), `${name}=${value}`).toBe('bad_request');
+      }
+    }
+  });
+
   it('is read-only', async () => {
     const res = await req(BASE, { method: 'POST', body: JSON.stringify({}) });
     expect(res.status).toBe(405);

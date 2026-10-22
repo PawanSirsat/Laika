@@ -27,15 +27,22 @@ function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) 
   return actor;
 }
 
-/** `?since=` — unix-ms, inclusive, and a bad value is an error rather than ignored. */
+/**
+ * `?since=` — unix-ms, inclusive, and a bad value is an error rather than ignored.
+ *
+ * Digits alone are not enough: twenty of them parse to a float past
+ * `MAX_SAFE_INTEGER`, which is no instant at all, and was served as an empty
+ * page rather than refused (LAI-886 review).
+ */
 function parseSince(raw: string | undefined, name = 'since'): number | undefined {
   if (raw === undefined || raw === '') return undefined;
 
-  if (!/^\d+$/.test(raw)) {
+  const value = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value)) {
     throw ApiError.badRequest(`${name} must be a unix-ms timestamp`, { [name]: raw });
   }
 
-  return Number(raw);
+  return value;
 }
 
 /** An empty `?actor=` is no filter, as an empty `?task_id=` already is. */
