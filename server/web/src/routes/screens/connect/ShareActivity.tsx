@@ -13,6 +13,7 @@ import {
   type LocalActivityScope,
   type OwnLocalActivity,
 } from '../../../api/local-activity.ts';
+import { getOrgPermissions, type OrgPermissions } from '../../../api/permissions.ts';
 import { dayLabel, HeldDays } from './HeldDays.tsx';
 
 /** The collector's command (LAI-752): it checks collection is on first, then installs. */
@@ -25,6 +26,26 @@ export const ACTIVITY_COMMAND = 'laika activity on';
  */
 export const COLLECTED =
   'per-day counts of your prompts, agent sessions and commits, and your agents’ token counts';
+
+/** The grant that lets a role see a person's analytics (D-102 rule 6, LAI-958). */
+const SEE_ANALYTICS = 'see_people_analytics';
+
+/**
+ * Who can see what is collected, as the notice says it (LAI-971): the owner,
+ * always, and every role the owner has granted *See everyone's analytics* —
+ * read from `GET /api/v1/org/permissions`, in the order its `roles` name them,
+ * so a changed grant changes the sentence. Without an answer it falls back to
+ * the CLI's words, which stay true whatever the owner granted.
+ */
+export function collectionAudience(permissions: OrgPermissions | undefined): string {
+  if (permissions === undefined) return 'The owner and anyone they grant access';
+  const granted = permissions.roles
+    .filter((role) => permissions.grants[role]?.[SEE_ANALYTICS] === true)
+    .map((role) => `${role}s`);
+  const names = ['The owner', ...granted];
+  const last = names.pop() ?? '';
+  return names.length === 0 ? last : `${names.join(', ')} and ${last}`;
+}
 
 const SCOPES: Readonly<Record<LocalActivityScope, { label: string; hint: string }>> = {
   'agent-repos': {
@@ -44,6 +65,8 @@ type State =
       readonly kind: 'ready';
       readonly sharing: ActivitySharing;
       readonly held: OwnLocalActivity;
+      /** `undefined` when the grants could not be read: the notice then says it in general. */
+      readonly permissions: OrgPermissions | undefined;
     };
 
 function said(cause: unknown, fallback: string): string {
@@ -78,9 +101,17 @@ export function ShareActivity({
   const otelRef = useRef<HTMLPreElement | null>(null);
 
   const load = useCallback((signal?: AbortSignal) => {
-    Promise.all([getActivitySharing(signal), getOwnLocalActivity(signal)])
-      .then(([sharing, held]) => {
-        setState({ kind: 'ready', sharing, held });
+    Promise.all([
+      getActivitySharing(signal),
+      getOwnLocalActivity(signal),
+      // Only the audience's wording rides on it, so a refusal never hides the panel.
+      getOrgPermissions(signal).catch((cause: unknown) => {
+        if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
+        return undefined;
+      }),
+    ])
+      .then(([sharing, held, permissions]) => {
+        setState({ kind: 'ready', sharing, held, permissions });
       })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
@@ -117,14 +148,14 @@ export function ShareActivity({
     );
   }
 
-  const { sharing, held } = state;
+  const { sharing, held, permissions } = state;
 
   const change = (next: { scope: LocalActivityScope }): void => {
     setBusy(true);
     setError(undefined);
     setActivitySharing(next)
       .then((answer) => {
-        setState({ kind: 'ready', sharing: answer, held });
+        setState({ kind: 'ready', sharing: answer, held, permissions });
       })
       .catch((cause: unknown) => {
         setError(said(cause, 'That change did not go through.'));
@@ -150,7 +181,7 @@ export function ShareActivity({
       .then(() => getOwnLocalActivity())
       .then((answer) => {
         setDeleted(true);
-        setState({ kind: 'ready', sharing, held: answer });
+        setState({ kind: 'ready', sharing, held: answer, permissions });
       })
       .catch((cause: unknown) => {
         setError(said(cause, 'The history was not deleted.'));
@@ -165,8 +196,7 @@ export function ShareActivity({
       <p className="conn-body">
         Your own machine can send daily counts to your profile’s <strong>Activity</strong> — so the
         board shows the work that happens before a task moves — and your agents’ token counts to{' '}
-        <strong>Usage</strong>. Owners and admins see them on your profile; they never feed a rating
-        or a score.
+        <strong>Usage</strong>. They show on your profile and never feed a rating or a score.
       </p>
 
       <div className="share-lists">
@@ -214,8 +244,8 @@ export function ShareActivity({
       ) : (
         <>
           <p className="conn-note share-collects" data-state="org-collects">
-            <strong>Your organisation collects your local activity:</strong> {COLLECTED}. Owners and
-            admins can see it, and you can see who looked.{' '}
+            <strong>Your organisation collects your local activity:</strong> {COLLECTED}.{' '}
+            {collectionAudience(permissions)} can see it, and you can see who looked.{' '}
             <a href="#share-held">See what the board holds for you</a>, and your own time on{' '}
             <a href="/my-day">My day</a>.{' '}
             {canManageOrg ? (

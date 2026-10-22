@@ -144,16 +144,40 @@ const HELD = {
 
 const NOTHING = { ...HELD, days: [], collectors: 0, oldest_day: null };
 
-/** D-102 amended (LAI-964): the words on Developer access, Connect and the CLI alike. */
-const NOTICE =
-  'Your organisation collects your local activity: per-day counts of your prompts, agent sessions and commits, and your agents’ token counts. Owners and admins can see it, and you can see who looked.';
+/** D-102 amended (LAI-964): what is collected, on Developer access, Connect and the CLI alike. */
+const COLLECTS =
+  'Your organisation collects your local activity: per-day counts of your prompts, agent sessions and commits, and your agents’ token counts.';
+/** Who can see it, from the owner's grants (LAI-971): the defaults give admins *See everyone's analytics*. */
+const NOTICE = `${COLLECTS} The owner and admins can see it, and you can see who looked.`;
+
+/** `GET /api/v1/org/permissions` (LAI-958), the capability that decides the audience. */
+const orgPermissions = (analytics: Readonly<Record<string, boolean>>) => ({
+  roles: ['admin', 'member', 'viewer'],
+  capabilities: [
+    { id: 'see_people_analytics', label: 'See everyone’s analytics', actions: [] },
+    { id: 'manage_people', label: 'Manage people', actions: [] },
+  ],
+  grants: Object.fromEntries(
+    ['admin', 'member', 'viewer'].map((role) => [
+      role,
+      { see_people_analytics: analytics[role] ?? false, manage_people: role === 'admin' },
+    ]),
+  ),
+  owner_locked: [],
+  updated_at: null,
+  updated_by: null,
+});
+
+const DEFAULT_GRANTS = { admin: true, member: false, viewer: false };
 
 function connect(
   state: { org: boolean; enabled: boolean; scope: string },
   held: { value: unknown },
   role = 'owner',
+  analytics: Readonly<Record<string, boolean>> | null = DEFAULT_GRANTS,
 ): ApiStub {
   return {
+    ...(analytics === null ? {} : { '/api/v1/org/permissions': orgPermissions(analytics) }),
     '/api/v1/me': me(role),
     '/api/v1/projects': { data: [], next_cursor: null },
     '/api/v1/tokens': { data: [], next_cursor: null },
@@ -301,6 +325,59 @@ void describe('Developer access: Share local activity', () => {
       await h.close();
     }
   });
+});
+
+void describe('Share local activity: who can see it follows the owner’s grants (LAI-971)', () => {
+  for (const [name, analytics, audience] of [
+    ['the defaults', DEFAULT_GRANTS, 'The owner and admins can see it'],
+    [
+      'admins’ grant revoked',
+      { admin: false, member: false, viewer: false },
+      'The owner can see it',
+    ],
+    [
+      'members granted',
+      { admin: true, member: true, viewer: false },
+      'The owner, admins and members can see it',
+    ],
+    [
+      'every role granted',
+      { admin: true, member: true, viewer: true },
+      'The owner, admins, members and viewers can see it',
+    ],
+    ['the grants unreadable', null, 'The owner and anyone they grant access can see it'],
+  ] as const) {
+    void test(`${name}: “${audience}”`, async () => {
+      const h = await open(
+        '/developer',
+        connect(
+          { org: true, enabled: true, scope: 'agent-repos' },
+          { value: HELD },
+          'member',
+          analytics,
+        ),
+      );
+      try {
+        const notice = h.page.locator('.dev-sharing [data-state="org-collects"]');
+        await notice.waitFor({ timeout: 20_000 });
+        const text = await notice.innerText();
+        assert.equal(
+          text.includes(`${COLLECTS} ${audience}, and you can see who looked.`),
+          true,
+          text,
+        );
+        // Asked of the server, never assumed (D-102 rule 6).
+        assert.equal(
+          h.calls.some((c) => c.method === 'GET' && c.path === '/api/v1/org/permissions'),
+          true,
+        );
+        // No fixed role list survives anywhere on the panel.
+        assert.doesNotMatch(await h.page.locator('.dev-sharing').innerText(), /Owners and admins/);
+      } finally {
+        await h.close();
+      }
+    });
+  }
 });
 
 void describe('Connect: Share local activity', () => {
