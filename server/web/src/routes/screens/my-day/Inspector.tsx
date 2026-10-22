@@ -445,7 +445,8 @@ export function Inspector({
             </button>
           </header>
           <TitleField
-            // A title saved or undone elsewhere starts the field again from it.
+            // When the saved title changes — saved here, or undone — the field
+            // starts again from it.
             key={draft.note ?? ''}
             draft={draft}
             busy={busy}
