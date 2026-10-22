@@ -2,11 +2,12 @@
 id: LAI-977
 title: 'There is no Space settings page: name, key, colour, members, access rules and archive have nowhere to live'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-976, LAI-970]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T18:00:44Z
 ---
 
 ## Goal
