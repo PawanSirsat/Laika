@@ -614,7 +614,14 @@ export function BoardScreen({
      */
   }, [slug]);
 
-  const mayCreate = project !== undefined && gates.project(project.id, 'task.write');
+  /**
+   * **Two questions, not one** (LAI-992). Creating a task is `task.create`,
+   * which a space set to *Space admins only* withholds from members (D-103
+   * item 6, LAI-976); editing, moving and assigning stay `task.write`. One
+   * gate for both offered members a create that answered `403`.
+   */
+  const mayCreate = project !== undefined && gates.project(project.id, 'task.create');
+  const mayWrite = project !== undefined && gates.project(project.id, 'task.write');
 
   /** Lead-only — a narrower rule than creating a task. */
   const mayConfigure = project !== undefined && gates.project(project.id, 'project.settings.edit');
@@ -1570,7 +1577,7 @@ export function BoardScreen({
               }}
               canAdd={mayCreate}
               // Editing a task is member+ (§3.2), the gate the drawer uses.
-              mayEdit={mayCreate}
+              mayEdit={mayWrite}
               maySetSprint={
                 boardProjectId !== undefined && gates.project(boardProjectId, 'task.assign_sprint')
               }
@@ -1618,8 +1625,8 @@ export function BoardScreen({
               fields={prefs.preferences.fields}
               // A reader who may not write tasks cannot drag one — the
               // affordance is absent, not refused (LAI-473, LAI-082).
-              cardsDraggable={mayCreate}
-              {...(mayCreate
+              cardsDraggable={mayWrite}
+              {...(mayWrite
                 ? {
                     onPlace: (
                       id: string,
@@ -1698,7 +1705,7 @@ export function BoardScreen({
         Reuses `board.move` — the same call the drag uses, so a rejected
         transition behaves identically in both places (LAI-056).
 
-        `mayEdit` shares `mayCreate`: editing a task is member+ (§3.2) and that
+        `mayEdit` is `mayWrite`: editing a task is member+ (§3.2) and that
         permission is already resolved. A Viewer sees tags and gets no way to
         change them, rather than a control that answers 403.
       */}
@@ -1735,8 +1742,9 @@ export function BoardScreen({
             statuses={statuses.all}
             meId={me?.id}
             meEmail={me?.email}
-            mayAssign={mayCreate}
-            mayEdit={mayCreate}
+            mayAssign={mayWrite}
+            mayEdit={mayWrite}
+            mayCreate={mayCreate}
             onTagsChanged={() => {
               refresh();
             }}

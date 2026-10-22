@@ -14,7 +14,7 @@ import { ViewTabs } from './ViewTabs.tsx';
 import type { TaskPriority } from '../../api/tasks.ts';
 import { isPriority, isTagName } from '../../api/task-filter.ts';
 import './space.css';
-import { usePermissions } from '../../api/permissions.ts';
+import { useGates, usePermissions } from '../../api/permissions.ts';
 
 /**
  * The bar shows only values the board applies (LAI-724): a refused
@@ -86,6 +86,9 @@ function SpaceFrame({
   children,
 }: SpaceFrameProps) {
   const { permissions } = usePermissions(signedIn);
+  // Whether Create is drawn: this space's `task.create`, as the server says (LAI-992).
+  const gates = useGates(signedIn);
+  const { spaceId } = useShell();
   /**
    * The space's display name.
    *
@@ -205,15 +208,19 @@ function SpaceFrame({
               onReady={(value) => {
                 setParam('ready', value ? 'true' : undefined);
               }}
-              onCreate={() => {
-                // The board owns task creation; Create from any view goes there
-                // with the form open rather than duplicating it per screen.
-                navigate(
-                  slug === undefined
-                    ? '/board?new=task'
-                    : `/board?project=${encodeURIComponent(slug)}&new=task`,
-                );
-              }}
+              {...(spaceId !== undefined && gates.project(spaceId, 'task.create')
+                ? {
+                    onCreate: () => {
+                      // The board owns task creation; Create from any view goes
+                      // there with the form open rather than duplicating it.
+                      navigate(
+                        slug === undefined
+                          ? '/board?new=task'
+                          : `/board?project=${encodeURIComponent(slug)}&new=task`,
+                      );
+                    },
+                  }
+                : {})}
             />
 
             <ViewTabs
