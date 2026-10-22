@@ -40,7 +40,8 @@ export interface SprintStatsProps {
  *
  * ## Three tiers, all in the row
  *
- * **full** (`S4 | DONE 7/30 | BLK 23 | LEFT 24`), **compact** (a glyph for each
+ * **full** (`S4 | DONE 7/30 | BLK 23 | LEFT 24`, or `STARTS in 14d` for a sprint
+ * still ahead), **compact** (a glyph for each
  * word) and **pill** (`S4 · 7/30`, with BLK and LEFT on hover, focus or click).
  * The widest tier that leaves search 120px is drawn, chosen by measuring the
  * row, because how full the row is depends on the sidebar, the members and
@@ -148,10 +149,16 @@ export function SprintStats({ scope, counts, partial }: SprintStatsProps) {
     ? `Done ${String(counts.done)} of ${String(counts.total)}${partial ? ' or more' : ''}`
     : 'Done: not counted yet';
   const blockedSaid = known ? `Blocked ${String(counts.blocked)}` : 'Blocked: not counted yet';
+  const days = (n: number): string => `${String(n)} ${n === 1 ? 'day' : 'days'}`;
+  // A sprint that has not started says when it does, not how long it has left
+  // once it has (LAI-819): LEFT 26 on a sprint a fortnight away was 14 days of
+  // nothing counted as time to work.
   const leftSaid =
-    scope.daysLeft === undefined
-      ? 'No sprint end date'
-      : `${String(scope.daysLeft)} ${scope.daysLeft === 1 ? 'day' : 'days'} left`;
+    scope.startsIn !== undefined
+      ? `Starts in ${days(scope.startsIn)}`
+      : scope.daysLeft === undefined
+        ? 'No sprint end date'
+        : `${days(scope.daysLeft)} left`;
 
   const pill = tier === 'pill';
   const open = pill && !dismissed && (hovered || focused || pinned);
@@ -250,7 +257,19 @@ export function SprintStats({ scope, counts, partial }: SprintStatsProps) {
             <circle cx="12" cy="12" r="8.5" />
             <path d="M12 7.5V12l3 2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <span className="bstats-key">LEFT</span> <b>{scope.daysLeft ?? dash}</b>
+          {scope.startsIn === undefined ? (
+            <>
+              <span className="bstats-key">LEFT</span> <b>{scope.daysLeft ?? dash}</b>
+            </>
+          ) : (
+            <>
+              {/* `in` stays in the compact tier, where the word goes: a bare
+                  number beside the clock would read as days left. */}
+              <span className="bstats-key">STARTS</span> <span className="bstats-in">in</span>{' '}
+              <b>{scope.startsIn}</b>
+              <span className="bstats-of">d</span>
+            </>
+          )}
         </span>
         <span className="visually-hidden">{leftSaid}</span>
       </span>
@@ -276,13 +295,22 @@ export function SprintStats({ scope, counts, partial }: SprintStatsProps) {
             <span className="bstats-pop-key">BLK</span>
             <b>{known ? counts.blocked : dash}</b>
           </span>
-          <span className="bstats-pop-row">
-            <span className="bstats-pop-key">LEFT</span>
-            <b>{scope.daysLeft ?? dash}</b>
-            {scope.daysLeft === undefined && (
-              <span className="bstats-pop-of"> no sprint end date</span>
-            )}
-          </span>
+          {scope.startsIn === undefined ? (
+            <span className="bstats-pop-row">
+              <span className="bstats-pop-key">LEFT</span>
+              <b>{scope.daysLeft ?? dash}</b>
+              {scope.daysLeft === undefined && (
+                <span className="bstats-pop-of"> no sprint end date</span>
+              )}
+            </span>
+          ) : (
+            <span className="bstats-pop-row">
+              <span className="bstats-pop-key">STARTS</span>
+              <span className="bstats-pop-of">in</span>
+              <b>{scope.startsIn}</b>
+              <span className="bstats-pop-of">{scope.startsIn === 1 ? 'day' : 'days'}</span>
+            </span>
+          )}
         </span>
       )}
     </span>,

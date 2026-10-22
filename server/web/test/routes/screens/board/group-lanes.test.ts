@@ -451,6 +451,48 @@ void describe('the busiest row is first and the bucket is last', () => {
     );
   });
 
+  void test('busiest means open work: finished cards do not lead (LAI-819)', () => {
+    // Ada has four cards, three of them finished; Bo has two, both to do.
+    const lanes = groupSwimlanes(
+      [
+        task({ id: '1', assignee_id: 'u1', status: 'done' }),
+        task({ id: '2', assignee_id: 'u1', status: 'done' }),
+        task({ id: '3', assignee_id: 'u1', status: 'cancelled' }),
+        task({ id: '4', assignee_id: 'u1', status: 'todo' }),
+        task({ id: '5', assignee_id: 'u2', status: 'todo' }),
+        task({ id: '6', assignee_id: 'u2', status: 'in_progress' }),
+      ],
+      'assignee',
+      COLUMNS,
+      options,
+    );
+
+    assert.deepEqual(
+      lanes.map((l) => [l.name, l.open, l.count]),
+      [
+        ['Bo', 2, 2],
+        ['Ada', 1, 4],
+      ],
+    );
+  });
+
+  void test('equal open work falls back to every card, then the name', () => {
+    const lanes = groupSwimlanes(
+      [
+        task({ id: '1', assignee_id: 'u2', status: 'todo' }),
+        task({ id: '2', assignee_id: 'u1', status: 'todo' }),
+        task({ id: '3', assignee_id: 'u2', status: 'done' }),
+      ],
+      'assignee',
+      COLUMNS,
+      options,
+    );
+    assert.deepEqual(
+      lanes.map((l) => l.name),
+      ['Bo', 'Ada'],
+    );
+  });
+
   void test('priority keeps its own order, not the count order', () => {
     // p1 → p3 is an ordered vocabulary; sorting it by size would put whichever
     // priority happens to be busiest on top, which is not what a priority row

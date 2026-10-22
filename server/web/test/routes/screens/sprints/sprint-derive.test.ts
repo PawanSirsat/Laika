@@ -26,7 +26,10 @@ import {
   validateSprintForm,
   type SprintFormValues,
   daysLeft,
+  daysUntilStart,
+  sprintFigures,
 } from '../../../../src/routes/screens/sprints/sprint-derive.ts';
+import { blockedState, byIdIndex } from '../../../../src/api/board-derive.ts';
 
 const AUG_1 = Date.parse('2026-08-01T00:00:00.000Z');
 const AUG_14 = Date.parse('2026-08-14T00:00:00.000Z');
@@ -347,5 +350,67 @@ void describe('daysLeft counts the last day (LAI-069)', () => {
     const start = midnight('2026-09-01');
     const end = midnight('2026-09-14');
     assert.equal(daysLeft(end, start + day / 2), sprintDays(start, end));
+  });
+});
+
+void describe('daysUntilStart — a sprint still ahead (LAI-819)', () => {
+  const noon = (iso: string): number => Date.parse(`${iso}T12:00:00Z`);
+  const midnight = (iso: string): number => Date.parse(`${iso}T00:00:00Z`);
+
+  void test('a fortnight ahead is fourteen; tomorrow is one; today has started', () => {
+    assert.equal(daysUntilStart(midnight('2026-09-08'), noon('2026-08-25')), 14);
+    assert.equal(daysUntilStart(midnight('2026-08-26'), noon('2026-08-25')), 1);
+    assert.equal(daysUntilStart(midnight('2026-08-25'), noon('2026-08-25')), 0);
+  });
+
+  void test('a sprint already under way, or over, is zero, never negative', () => {
+    assert.equal(daysUntilStart(midnight('2026-08-01'), noon('2026-08-25')), 0);
+  });
+
+  void test('the answer does not depend on the time of day, either side', () => {
+    const starts = midnight('2026-08-30');
+    assert.equal(daysUntilStart(starts, Date.parse('2026-08-25T00:01:00Z')), 5);
+    assert.equal(daysUntilStart(starts, Date.parse('2026-08-25T23:59:00Z')), 5);
+    // A start stored off midnight is still that day.
+    assert.equal(daysUntilStart(starts + 18 * 3_600_000, noon('2026-08-25')), 5);
+  });
+});
+
+void describe('sprintFigures — a sprint card’s lock and flow (LAI-819)', () => {
+  // s2's tasks, and one in s3 and one in no sprint that s2's work waits on.
+  const elsewhere = task({ id: 'x', status: 'todo', sprint_id: 's3' });
+  const loose = task({ id: 'y', status: 'in_progress', sprint_id: null });
+  const doneElsewhere = task({ id: 'z', status: 'done', sprint_id: 's1' });
+  const own = [
+    task({ id: '1', status: 'todo', sprint_id: 's2', ready: false, blocked_by: ['x'] }),
+    task({ id: '2', status: 'in_progress', sprint_id: 's2', ready: false, blocked_by: ['y'] }),
+    task({ id: '3', status: 'in_progress', sprint_id: 's2', ready: false, assignee_id: 'u' }),
+    task({ id: '4', status: 'todo', sprint_id: 's2', blocked_by: ['z'] }),
+    task({ id: '5', status: 'done', sprint_id: 's2', parent_task_id: '4', ready: false }),
+    task({ id: '6', status: 'cancelled', sprint_id: 's2', parent_task_id: '4', ready: false }),
+  ];
+  const project = byIdIndex([...own, elsewhere, loose, doneElsewhere]);
+
+  void test('the lock counts blockers outside the sprint', () => {
+    // 1 waits on s3, 2 on work in no sprint; 4's blocker is done.
+    assert.equal(sprintFigures(own, project).blocked, 2);
+  });
+
+  void test('the control: judged against the sprint alone, those blockers were unknown', () => {
+    // What the screen did — `blockedState` over the sprint's own tasks,
+    // counting `true` only — counted neither.
+    const sprintOnly = byIdIndex(own);
+    assert.equal(own.filter((t) => blockedState(t, sprintOnly) === true).length, 0);
+  });
+
+  void test('subtasks are counted where progress counts them, cancelled left out', () => {
+    // `progressFor` counts 5 (not 6, the cancelled one); one of those 5 is a subtask.
+    assert.equal(sprintFigures(own, project).subtasks, 1);
+  });
+
+  void test('in flight and unassigned are as they were', () => {
+    const figures = sprintFigures(own, project);
+    assert.equal(figures.wip, 2);
+    assert.equal(figures.unassigned, 5);
   });
 });

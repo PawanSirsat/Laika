@@ -130,6 +130,26 @@ void describe('the List row', () => {
     assert.equal(row.blocked, true);
   });
 
+  void test('names only the blockers still holding it (LAI-819)', () => {
+    // LC-1 was finished a week ago; the row went on saying it was blocked by it.
+    const finished = task({ id: 'a', key: 'LC-1', status: 'done' });
+    const open = task({ id: 'c', key: 'LC-2', status: 'in_progress' });
+    const one = task({ id: 'b', key: 'LC-6', blocked_by: [finished.id, open.id] });
+    const none = task({ id: 'd', key: 'LC-7', blocked_by: [finished.id] });
+    const { rows } = rowsFor([finished, open, one, none]);
+
+    const held = rows.find((r) => r.key === 'LC-6');
+    assert.ok(held !== undefined);
+    assert.equal(held.blockedBy, 'blocked by LC-2');
+    assert.equal(held.blocked, true);
+
+    // Nothing left holding it: no `blocked by`, and the row is not blocked.
+    const freed = rows.find((r) => r.key === 'LC-7');
+    assert.ok(freed !== undefined);
+    assert.equal(freed.blockedBy, '');
+    assert.equal(freed.blocked, false);
+  });
+
   void test('claims nothing about a blocker outside the loaded page', () => {
     /*
      * `blockedState` answers `undefined` for a dependency it cannot see, and
