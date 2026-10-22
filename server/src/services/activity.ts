@@ -1,6 +1,7 @@
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { listActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
+import { ACTIVITY_TYPES, type ActivityType } from '../db/enums.ts';
 import { requireOrgId } from '../db/orgs.ts';
 import { projects } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
@@ -132,6 +133,64 @@ export function listOrgActivity(
     includeOrgScoped: can(actor, 'audit_log.export'),
     ...(options.taskId === undefined ? {} : { taskId: options.taskId }),
     ...(options.since === undefined ? {} : { since: options.since }),
+    cursor: toCursor(options.cursor),
+    limit: options.limit + 1,
+  }).map(eventView);
+}
+
+export interface OrgHistoryOptions {
+  limit: number;
+  cursor: ListActivityOptions['cursor'];
+  /** A user id (§4.8 `actor_id`). An id nobody has is an empty page, not an error. */
+  actor?: string | undefined;
+  /** A project slug. */
+  project?: string | undefined;
+  /** One §4.8 verb, as the client spelled it — checked here. */
+  type?: string | undefined;
+  /** Unix-ms, both inclusive (§6.3). */
+  since?: number | undefined;
+  until?: number | undefined;
+}
+
+/**
+ * The organisation's whole history, for the people who hold the audit log
+ * (LAI-886).
+ *
+ * ## Why this and not `listOrgActivity`
+ *
+ * That feed is viewer+ and decides visibility **per row**, so it answers each
+ * caller with a different slice. This one answers one question — *what
+ * happened here* — and §3's rule for the org-wide feed already names who may
+ * ask it: *Export audit log*. So the gate is the whole of it, and an owner or
+ * admin gets every row: every project (they hold implicit lead on all of them,
+ * §3.1) and every org-scoped row. A member is refused outright rather than
+ * handed a filtered page, which is what makes the answer the same for everyone
+ * allowed to see it.
+ *
+ * Board rows only. D-079's local-activity counts live in their own tables and
+ * this reads `activity` and nothing else.
+ */
+export function listOrgHistory(
+  db: Db,
+  actor: ResolvedActor,
+  options: OrgHistoryOptions,
+): EventView[] {
+  assertCan(actor, 'audit_log.export');
+
+  if (options.type !== undefined && !(ACTIVITY_TYPES as readonly string[]).includes(options.type)) {
+    throw ApiError.badRequest('type is not an activity type (§4.8)', { type: options.type });
+  }
+
+  const projectId =
+    options.project === undefined ? undefined : requireProjectBySlug(db, options.project).id;
+
+  return listActivity(db, {
+    orgId: requireOrgId(db),
+    ...(projectId === undefined ? {} : { projectId }),
+    ...(options.actor === undefined ? {} : { actorId: options.actor }),
+    ...(options.type === undefined ? {} : { type: options.type as ActivityType }),
+    ...(options.since === undefined ? {} : { since: options.since }),
+    ...(options.until === undefined ? {} : { until: options.until }),
     cursor: toCursor(options.cursor),
     limit: options.limit + 1,
   }).map(eventView);
