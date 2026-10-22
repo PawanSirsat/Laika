@@ -154,7 +154,7 @@ const ours = (doc: HooksDoc, event: string): string[] =>
 
 /** D-102 amended (LAI-964): the words the web app shows too. */
 const NOTICE =
-  'Your organisation collects your local activity: per-day counts of your prompts, agent sessions and commits, and your agents’ token counts. Owners and admins can see it, and you can see who looked.';
+  'Your organisation collects your local activity: per-day counts of your prompts, agent sessions and commits, and your agents’ token counts. The owner and anyone they grant access can see it, and you can see who looked.';
 const noticeCount = (lines: readonly string[]): number =>
   lines.filter((line) => line.includes(NOTICE)).length;
 
@@ -497,6 +497,9 @@ void describe('status, sync, emails', () => {
     ]);
     assert.match(h.err.join('\n'), /LAIKA_TOKEN/);
     assert.ok(![...h.out, ...h.err].join('\n').includes(TOKEN), 'the token was printed');
+    // D-102 amended (LAI-971): the organisation's switch alone, never a personal one.
+    assert.match(h.err.join(' '), /while your organisation has Developer insights on/);
+    assert.doesNotMatch(h.err.join(' '), /Share my local activity/);
 
     h.out.length = 0;
     assert.equal(await h.run('status'), 0);
