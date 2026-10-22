@@ -34,7 +34,7 @@ void describe('updateSpace', () => {
     assert.equal(calls.length, 1);
     assert.match(calls[0]?.url ?? '', /\/api\/v1\/projects\/laika%20core$/);
     assert.equal(calls[0]?.init.method, 'PATCH');
-    assert.deepEqual(JSON.parse(String(calls[0]?.init.body)), { prefix: 'LK', repo: null });
+    assert.deepEqual(JSON.parse(calls[0]?.init.body as string), { prefix: 'LK', repo: null });
   });
 });
 
