@@ -94,7 +94,7 @@ export interface TaskDetailPanelProps {
    * them, rather than a control that answers `403`.
    */
   readonly mayEdit?: boolean | undefined;
-  /** `task.create` here — *Add subtask* (LAI-992). Absent is no. */
+  /** `task.create` here — *Add subtask* (LAI-178). Absent is no. */
   readonly mayCreate?: boolean | undefined;
   /** The board reloads so the card's chips follow the panel. */
   readonly onTagsChanged: (tags: readonly string[]) => void;

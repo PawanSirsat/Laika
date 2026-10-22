@@ -1,5 +1,5 @@
 /**
- * Creating a task follows `task.create`, not `task.write` (LAI-992).
+ * Creating a task follows `task.create`, not `task.write` (LAI-178).
  *
  * D-103 item 6 lets a space say *Space admins only* for who may create
  * tasks (LAI-976 serves it as its own action). The board asked `task.write`

@@ -1,5 +1,5 @@
 ---
-id: LAI-992
+id: LAI-178
 title: 'The board offers Add task on task.write, so "Space admins only" still shows members a create that answers 403'
 area: web
 assignee: shell
@@ -59,3 +59,11 @@ a status, not a task. Drag, edit and assign keep `task.write` (`mayWrite`).
 `LAI-992-capacity-no-task-reads`) holds the outside id LAI-992. This task
 was filed in git first (d8df0cb1). Its card is LAIKA-746, which the board
 refused the outside id. CHIEF to renumber one of the two.
+
+## Renumbered
+
+Filed as **LAI-992**, which `master` had already given to another session's
+task. LAI-998 (release-2 integration, 2026-10-23) renumbered it to **LAI-178**,
+the lowest id free on every ref (CHIEF's LAI-950–999 block is full). Per §3,
+the commits are not rewritten: `d8df0cb1` (filed, under `[LAI-977]`), `add7e760` (claim), `35b63d05`, `38f1b7dc`, `38dc1977`, `9d9e811b` (to review) and `3fd5d1be` (log) carry `[LAI-992]` and mean this task, as does the branch `LAI-992-board-create-follows-task-create`. The source comments that cited LAI-992 for this change now cite LAI-178.
+LAI-992 in `.tasks/done/` is master's *Capacity reads no task* (card LAIKA-743), and every other `[LAI-992]` commit is that one. This task's card is LAIKA-746.

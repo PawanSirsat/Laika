@@ -86,7 +86,7 @@ function SpaceFrame({
   children,
 }: SpaceFrameProps) {
   const { permissions } = usePermissions(signedIn);
-  // Whether Create is drawn: this space's `task.create`, as the server says (LAI-992).
+  // Whether Create is drawn: this space's `task.create`, as the server says (LAI-178).
   const gates = useGates(signedIn);
   const { spaceId } = useShell();
   /**

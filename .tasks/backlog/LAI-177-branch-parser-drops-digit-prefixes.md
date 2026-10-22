@@ -1,5 +1,5 @@
 ---
-id: LAI-991
+id: LAI-177
 title: 'The branch parser cannot read a key prefix that contains a digit'
 area: server
 assignee: unclaimed
@@ -25,3 +25,11 @@ project whose prefix has a digit. Found while making former prefixes resolve
       a test proves `p0x-12-fix` resolves to task 12 of the `P0X` project.
 - [ ] The existing branch-parsing tests stay green (`add-2fa-support` still
       narrows nothing unless a project holds that prefix).
+
+## Renumbered
+
+Filed as **LAI-991**, which `master` had already given to another session's
+task. LAI-998 (release-2 integration, 2026-10-23) renumbered it to **LAI-177**,
+the lowest id free on every ref (CHIEF's LAI-950–999 block is full). Per §3,
+the commits are not rewritten: `c77fc41d` (*docs(tasks): file LAI-991, digit prefixes in the branch parser [LAI-976]*) names this task as LAI-991 in its file path.
+LAI-991 in `.tasks/done/` is master's *Capacity cards compact list*, which is not this task.

@@ -615,7 +615,7 @@ export function BoardScreen({
   }, [slug]);
 
   /**
-   * **Two questions, not one** (LAI-992). Creating a task is `task.create`,
+   * **Two questions, not one** (LAI-178). Creating a task is `task.create`,
    * which a space set to *Space admins only* withholds from members (D-103
    * item 6, LAI-976); editing, moving and assigning stay `task.write`. One
    * gate for both offered members a create that answered `403`.

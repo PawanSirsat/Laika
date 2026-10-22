@@ -51,7 +51,7 @@ export interface ShellValue {
   readonly orgName: string | undefined;
   /** The open project's name, for the rail's wordmark and the bar's fallback. */
   readonly spaceName: string | undefined;
-  /** The open project's id, from the same read (LAI-992); `undefined` until it lands. */
+  /** The open project's id, from the same read (LAI-178); `undefined` until it lands. */
   readonly spaceId: string | undefined;
   /**
    * Unlisted notes still waiting, for an owner or admin (LAI-754); `undefined`

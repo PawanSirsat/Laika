@@ -32,7 +32,7 @@ export interface SubtasksSectionProps {
   readonly mayEdit: boolean;
   /**
    * `task.create` in this space — *Add subtask* creates a task, so a space
-   * set to *Space admins only* withholds it from members (LAI-992).
+   * set to *Space admins only* withholds it from members (LAI-178).
    */
   readonly mayCreate: boolean;
   /** `task.assign_other` — changes a child's assignee (§3.2, LAI-700). */

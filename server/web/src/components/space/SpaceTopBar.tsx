@@ -32,7 +32,7 @@ export interface SpaceTopBarProps {
   /**
    * Opens the board's create form. Absent unless the server says the reader
    * may create a task in this space — `task.create`, which a space set to
-   * *Space admins only* withholds from members (LAI-992) — so Create is not
+   * *Space admins only* withholds from members (LAI-178) — so Create is not
    * drawn rather than drawn to answer `403`.
    */
   readonly onCreate?: (() => void) | undefined;

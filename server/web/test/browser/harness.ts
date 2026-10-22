@@ -226,7 +226,7 @@ const PROJECT_ACTIONS_BY_ROLE: Readonly<Record<string, readonly string[]>> = {
 };
 // `task.create` (LAI-976) is a lead's and a member's under the default rule,
 // *Members*; a space set to *Space admins only* withholds it from members —
-// a test about that names its own `/permissions` (LAI-992).
+// a test about that names its own `/permissions` (LAI-178).
 
 interface StubMe {
   readonly org_role?: unknown;

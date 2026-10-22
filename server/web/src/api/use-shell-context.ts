@@ -35,7 +35,7 @@ export interface ShellContext {
    */
   readonly spaceName: string | undefined;
   /**
-   * The open project's id, from the same read as its name (LAI-992): the
+   * The open project's id, from the same read as its name (LAI-178): the
    * space bar asks the permissions store about *this* project — whether the
    * reader may create a task here — and the store is keyed by id.
    */

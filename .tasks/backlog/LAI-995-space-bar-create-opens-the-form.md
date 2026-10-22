@@ -4,8 +4,8 @@ title: 'The space bar''s Create goes to the board with ?new=task, but nothing re
 area: web
 assignee: unclaimed
 priority: p3
-depends-on: [LAI-992]
-discovered-from: LAI-992
+depends-on: [LAI-178]
+discovered-from: LAI-178
 status: backlog
 ---
 
