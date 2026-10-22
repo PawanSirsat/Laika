@@ -36,6 +36,7 @@ import {
   type SizeLevel,
   type SizeView,
 } from './estimates.ts';
+import { canBeMentioned } from './mentions.ts';
 import { normaliseTagNames, setTaskTags, tagsForTasks, taskIdsWithTag } from './tags.ts';
 import {
   ambiguousOutsideId,
@@ -524,6 +525,26 @@ function parentRefused(reason: 'self' | 'project' | 'depth', message: string): A
 }
 
 /**
+ * Only somebody who can read the project may hold one of its tasks (LAI-962).
+ *
+ * **Their authority, not the caller's** — `task.assign_other` already asked
+ * whether the caller may hand work out; this asks whether the person receiving
+ * it could even see it. `canBeMentioned` is that predicate, `project.read` on
+ * their own memberships, so org Owners and Admins with no membership row count
+ * (D-006) and a deactivated user or an id naming nobody does not. Reused rather
+ * than restated: a second copy is how the picker and the write would drift.
+ */
+function assertMayHold(db: Db, assigneeId: string, projectId: string): void {
+  if (canBeMentioned(db, assigneeId, projectId)) return;
+
+  throw new ApiError('unprocessable', 'The assignee cannot read this project', {
+    field: 'assignee_id',
+    reason: 'not_on_project',
+    assignee_id: assigneeId,
+  });
+}
+
+/**
  * `n/m done` for a parent (§4.6, D-066): `done` counts the children at `done`,
  * `total` leaves out `cancelled` — dropped work is not undone work. One
  * definition, used by `get_task_context` and mirrored by the client, so the
@@ -737,6 +758,7 @@ export function createTask(
 ): TaskView {
   const project = requireProjectBySlug(db, slug);
   assertCan(withProject(actor, project.id), 'task.write', { projectId: project.id });
+  if (input.assignee_id !== undefined) assertMayHold(db, input.assignee_id, project.id);
 
   const now = input.now ?? Date.now();
   const externalRef =
@@ -1132,6 +1154,7 @@ export function updateTask(
   const reassigning = input.assignee_id !== undefined && input.assignee_id !== task.assigneeId;
   if (reassigning) {
     assertCan(scoped, 'task.assign_other', { projectId: project.id });
+    if (typeof input.assignee_id === 'string') assertMayHold(db, input.assignee_id, project.id);
     changes.assigneeId = input.assignee_id;
   }
 
