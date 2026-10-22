@@ -807,11 +807,26 @@ export function can(principal: Principal, action: Action, resource: Resource = {
  * how an agent acts (§7) — reads and does nothing else. A narrowing, like the
  * token's own scope, so a person on a web session is never touched by it.
  */
-function agentsMay(actor: Actor, action: Action, resource: Resource): boolean {
+export function agentsMay(actor: Actor, action: Action, resource: Resource): boolean {
   if (actor.token === null || actor.token === undefined) return true;
   if (!isProjectAction(action)) return true;
   if (rulesFor(actor, resource.projectId).agentsAllowed) return true;
   return isReadAction(action);
+}
+
+/**
+ * D-103 item 7 on its own, for a write that no project action authorises
+ * (LAI-976 review). Deactivating someone is `user.deactivate`, an org
+ * action, and it moves their tasks in every space — so the space rule has to
+ * be asked of each space those tasks are in, without asking a role question
+ * the caller's org authority has already answered.
+ */
+export function assertAgentsMay(actor: Actor, action: Action, resource: Resource): void {
+  if (agentsMay(actor, action, resource)) return;
+  throw new ApiError('forbidden', 'This space does not let agents make changes', {
+    action,
+    reason: 'agents_off',
+  });
 }
 
 /**

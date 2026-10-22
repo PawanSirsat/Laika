@@ -87,3 +87,77 @@ not ok 2 - no server field is missing from its client type
 
 `LeaveProjectView` is named in the server's `UNPAIRED` (no client type
 exists) and leaves it when LAI-977 builds the mirror.
+
+## Review response (CORE, 2026-10-23) — release-2 cross-vendor review, PR #89
+
+Two blocking items, fixed on `release2-spaces-server-fixes`. Criteria
+unchanged.
+
+**1. Agents-off bypass through offboarding.** Deactivating someone asks
+`user.deactivate`, an org action, and `applyOffboardingChoice` then moved
+their tasks in every space without asking any space. An owner's token
+unassigned a task in an agents-off space. Now `applyOffboardingChoice` asks
+the new `assertAgentsMay` (`policy/can.ts`, the agents rule alone, as
+`task.write`) of every task's space **before the first write**. One such
+task refuses the whole deactivation `403 forbidden`, `reason: 'agents_off'`,
+and the transaction leaves the person active and every assignee as it was.
+A person on a session, and a token where agents are on, are unchanged.
+
+**Census: every write to `tasks` and its child tables in `server/src`.**
+These are the writes to `tasks`, `task_dependencies`, `comments`, `task_tags`
+and `time_entries`, by `.update/.insert/.delete` (32) plus raw SQL (1, migration
+0045). The grep was untruncated: 33 sites.
+- **Asks `assertCan` with the task's `projectId`**:
+  - `createTask`, `updateTask`, `claimTask`, `changeStatus`,
+    `reorderTask` and `removeTaskDependency` in `services/tasks.ts`.
+  - `addDependency` (via `addTaskDependency`).
+  - `setTaskTags` (via create and update).
+  - `addTasksToSprint` and `removeTaskFromSprint`.
+  - `addComment`, `editComment` and `deleteComment`.
+  - `setSizeOverride` (via create and update).
+  - `createTaskWithNumber` (via `createTask`).
+  - Estimates `settle` and `freezeWhereMissed`: derived, and run inside the
+    writes above or by the nightly job.
+- **Member removal** (`removeMember`): asks `project.members.manage` of that
+  space, so agents-off already refuses it. A test now asserts this.
+- **Deactivation** (`setUserActive`, then `applyOffboardingChoice`): **was
+  the bypass; fixed** as described above.
+- **Heartbeats** (`recordHeartbeat`, `services/heartbeats.ts`): asks
+  `heartbeat.send_own`, an org action, and then wrote `branch` onto the
+  matched task. **The same bypass; fixed.** The beat still records and
+  `matched_task_id` is kept. Only the task write is skipped when agents are
+  off in that space.
+- **The system principal, never an agent token**: `handlePullRequest`
+  (GitHub webhook), `flagStaleTasks` and the retention delete in
+  `jobs/jobs.ts`, `db/backfill.ts`, and migration 0045.
+- **Not a write to a task**: `time-entries.ts` writes the caller's own
+  timesheet (`time_entries.write_own`). It references a task and never
+  changes it.
+- **Project archive**: writes no task.
+- **Imports**: meeting reviews and unlisted promote go through
+  `createTask`/`updateTask`, as covered in round 1.
+
+**Left as is, for CHIEF:** deactivation also deletes the person's
+memberships in every space, agents-off spaces included. That is a membership
+change, not a task change, so I did not gate it. If an agent token should not
+be able to deactivate a member of an agents-off space at all, that is a
+decision.
+
+**2. Digit prefixes in branch names (absorbs LAI-177).**
+- `parseBranchRef` now matches
+  `(?<![A-Za-z0-9])([A-Za-z][A-Za-z0-9]{1,7})-(\d+)`. That is the
+  `Prefix` shape in `routes/projects.ts`: a letter, then one to seven letters
+  or digits. The prefix may not continue a word.
+- `web2-1-fix` reads `WEB2`, `p0x-12-fix` reads `P0X` (not `X`), and
+  `add-2fa-support` still reads `add`.
+- Tests cover current and former digit prefixes, and narrowing a shared repo.
+- SPEC §9.2 still writes `[a-z]+-(\d+)`. That is filed as **LAI-180**
+  (area docs).
+
+**Tests and mutations**, in `test/services/space-settings.test.ts`, 9 new
+tests:
+- Removing the offboarding check turns 1 red.
+- Removing the heartbeat check turns 1 red.
+- The old regex turns 4 red.
+
+For each run the file was confirmed changed beforehand and restored after.
