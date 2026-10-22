@@ -6,7 +6,8 @@ assignee: strelka
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T07:06:24Z
 ---
 
 ## Goal
@@ -141,3 +142,11 @@ Those are Strelka's tasks; Belka never worked on them.
   reach, or whose commits feed drafts. The rule lives only in the code header
   and the README. If the fix changes what SPEC says about drafts (§4.47,
   §13.4), stop and ask CHIEF; no SPEC edit is granted here.
+
+## Claim deviation (Strelka, 2026-10-22)
+
+This task file reached Strelka on Belka's PR #32 (`chief-ops-tasks-1022`),
+which was **not merged** into `master` when the claim was made. The owner
+(Pawan) told Strelka to start now, in parallel, so the claim is made on
+branch `LAI-864-fetched-commit-wrong-laptop`, based on #32 rather than on
+`master`. This branch's PR must merge after #32.
