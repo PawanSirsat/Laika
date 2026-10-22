@@ -5391,14 +5391,15 @@ changes.
 
 A block that no card named reads *"Nothing named a card"*. Nothing on it says
 which work it was, and an Omnigent chat records no folder at all (D-095). The
-person then has to remember, block by block, what each one was for. An
-earlier idea was to link a folder to a project. It was raised with the owner
-and never filed, and this replaces it: the person gives a folder a name of
-their own, and only that name travels.
+person then has to remember, block by block, what each one was for.
 
-The owner approved this on 2026-10-22: a drafted time block may carry a name
-the person chose for a work folder, and the branch name only if they turn
-that on.
+On 2026-10-22 Belka proposed to the owner: *"You name a work folder once ...
+Every block from that folder then carries the name ... if a Laika project
+matches the name, the block goes under that project as well."* It replaces
+the earlier option, linking a folder to a project, which was raised with the
+owner and never filed: the name *"does the same job, plus it works for
+projects that aren't on Laika"*. The owner answered **"go ahead"** the same
+day. The branch name goes too, but only if the person turns it on.
 
 1. **The person names a work folder, on their machine.** For example, this
    folder is *"Acme"*. The name is theirs: typed by them, kept in a 0600 file
@@ -5410,7 +5411,11 @@ that on.
 3. **The branch name is sent only when the person turns that on.** It is
    off by default.
 4. **If a Laika project the person may read matches the name**, the block
-   goes under that project.
+   goes under that project. So it is confirmed under that project, not as
+   *General*. From there it can reach Solidtime as that space's time: it
+   goes to the Solidtime project `laika time map` set for the space, or it
+   is held as `space_not_mapped` (SPEC §6.4, the outbox). The person sees
+   which project a block will be confirmed under before they confirm it.
 5. **Drafts stay the person's alone** (D-088 item 3). The name, and the
    branch when sent, travel with an entry only when the person confirms it,
    and they can change or clear them before that. Once confirmed, owners and
@@ -5421,17 +5426,21 @@ that on.
 
 ### What does not change
 
-- **The collector still never sends** a folder's path or real name, file
-  names, prompts, replies or commit messages (D-088 item 4). The chosen name,
-  and the branch name when turned on, are the only text a block may carry.
+- **The collector still never sends** a folder's path or real name, or
+  commit messages (D-096: no path, repository or commit message leaves the
+  machine), nor file names, prompts or replies (D-088 item 4). The chosen
+  name, and the branch name when turned on, are the only text a block may
+  carry.
   D-096's *"The upload stays a closed schema of numbers, a zone and a
   key-shaped string"* now reads: and those two strings. Its *"no … branch
   name … leaves the machine"* now holds unless the person turned the branch
   on. Nothing else in D-096 changes.
 - **Local-activity reports** (D-079, D-080) are untouched: they still carry
   no repository or branch name.
-- **Solidtime** is unchanged. Whether the name should reach it is a later
-  question.
+- **Solidtime's code** is unchanged. The name itself is not sent there:
+  the description stays the card's `KEY title`, or the note. Item 4's
+  project match is the one way this decision moves time toward Solidtime.
+  Whether the name should reach Solidtime is a later question.
 
 SPEC §4.47, §4.48, §6.4, §11.4.2.1 and §13.4 say this when LAI-866 lands.
 
