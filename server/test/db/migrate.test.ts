@@ -1461,6 +1461,106 @@ describe('0044 adds breaks and undo on a populated database (LAI-831)', () => {
   });
 });
 
+/**
+ * `0047` on a populated database (LAI-866): a work folder's chosen name and
+ * its branch, two columns on `time_drafts` and two on `time_entries`.
+ * **Additive is the property, and here it is the safety**: rebuilding
+ * `time_entries` trips `time_entry_revisions`' triggers, which name it, and a
+ * rebuild with foreign keys on would cascade its revisions away. So every
+ * table keeps its root page and every row, the four columns arrive null, and
+ * the entry is still kept three years — tested by deleting it.
+ */
+describe('0047 adds a work folder’s name to a populated database (LAI-866)', () => {
+  it('adds four null columns and rebuilds nothing', { timeout: UPGRADE_BUDGET_MS }, () => {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    copyMigrations(dir);
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { idx: number; tag: string; when: number }[];
+    };
+    const at = journal.entries.findIndex((e) => /^\d{4}_work_folder_names$/.test(e.tag));
+    expect(at, 'the work-folder migration is in the journal').toBeGreaterThan(0);
+    const dropped = journal.entries.splice(at).slice(0, 1);
+    writeFileSync(journalPath, JSON.stringify(journal));
+
+    const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+    const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+    try {
+      runMigrations(db, { migrationsFolder: dir });
+      const s = seed(db);
+      const now = Date.now();
+      const day = new Date(now).toISOString().slice(0, 10);
+      const entry = newId();
+      db.run(sql`
+        INSERT INTO time_entries (id, user_id, day, tz, minutes, source, source_ref, revision, created_at, updated_at)
+        VALUES (${entry}, ${s.userId}, ${day}, 'UTC', 30, 'draft', 'd1', 1, ${now}, ${now})
+      `);
+      db.run(sql`
+        INSERT INTO time_entry_revisions (id, entry_id, revision, change, changed_by, day, tz, minutes, created_at)
+        VALUES (${newId()}, ${entry}, 1, 'created', ${s.userId}, ${day}, 'UTC', 30, ${now})
+      `);
+      db.run(sql`
+        INSERT INTO time_drafts (id, user_id, source, collector_id, day, tz, started_at, ended_at, minutes, signals, state, entry_id, origin_id, origin_started_at, origin_ended_at, origin_minutes, created_at, updated_at)
+        VALUES ('d1', ${s.userId}, 'collector', '', ${day}, 'UTC', ${now}, ${now + 1_800_000}, 30, '{"prompts":2}', 'confirmed', ${entry}, 'd1', ${now}, ${now + 1_800_000}, 30, ${now}, ${now})
+      `);
+      // What every boot does beside the migrations, done before the census.
+      runMigrations(db, { migrationsFolder: dir });
+
+      const census = () =>
+        Object.fromEntries(
+          db
+            .all<{ name: string; rootpage: number }>(
+              sql`SELECT name, rootpage FROM sqlite_master
+                   WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                     AND name NOT LIKE '__drizzle%' ORDER BY name`,
+            )
+            .map((t) => [
+              t.name,
+              {
+                rootpage: t.rootpage,
+                rows: db.all<Record<string, unknown>>(
+                  sql.raw(`SELECT * FROM "${t.name}" ORDER BY rowid`),
+                ),
+              },
+            ]),
+        );
+      const before = census();
+      // The guard on the census: the rows it is to keep are in it.
+      expect(before.time_entries?.rows).toHaveLength(1);
+      expect(before.time_entry_revisions?.rows).toHaveLength(1);
+      expect(before.time_drafts?.rows).toHaveLength(1);
+      expect(before.time_entries?.rows[0]).not.toHaveProperty('folder');
+
+      journal.entries.push(...dropped);
+      writeFileSync(journalPath, JSON.stringify(journal));
+      runMigrations(db, { migrationsFolder: dir });
+
+      const { time_drafts: drafts, time_entries: entries, ...kept } = census();
+      const { time_drafts: draftsBefore, time_entries: entriesBefore, ...keptBefore } = before;
+      expect(kept).toEqual(keptBefore);
+      expect(drafts?.rootpage).toBe(draftsBefore?.rootpage);
+      expect(entries?.rootpage).toBe(entriesBefore?.rootpage);
+      const named = (r: Record<string, unknown>) => ({ ...r, folder: null, branch: null });
+      expect(drafts?.rows).toEqual(draftsBefore?.rows.map(named));
+      expect(entries?.rows).toEqual(entriesBefore?.rows.map(named));
+      expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+      // Still kept three years, and its history still append-only.
+      expectSqliteError(
+        () => db.run(sql`DELETE FROM time_entries WHERE id = ${entry}`),
+        /three years/,
+      );
+      expectSqliteError(
+        () => db.run(sql`DELETE FROM time_entry_revisions WHERE entry_id = ${entry}`),
+        /append-only/,
+      );
+    } finally {
+      sqlite.close();
+      rmSync(dbDir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('D-093 completed_at migration (LAI-822)', () => {
   const TAG = '0045_done_completed_at';
   // Building and upgrading real files needs an I/O budget under shared-machine load.

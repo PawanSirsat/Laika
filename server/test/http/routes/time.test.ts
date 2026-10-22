@@ -124,6 +124,7 @@ describe('the switches', () => {
       drafting: false,
       min_sync_interval_s: 600,
       signal_times: true,
+      folder_names: true,
     });
     const full = await mint();
     const set = await req(

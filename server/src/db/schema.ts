@@ -2183,9 +2183,10 @@ export const userTimeSettings = sqliteTable(
  * A person's drafted time (§4.47, D-088 items 3 and 13, LAI-787): a block their
  * own collector drafted on their machine, or an entry an agent proposed.
  * **Private to the person, on a web session** — no token reads one, and there
- * is no admin read. Counts of the signals behind a block and nothing else:
- * there is no column that could hold a prompt, a path, a repository or a
- * branch.
+ * is no admin read. Counts of the signals behind a block, and the two strings
+ * D-098 allows: the name the person gave a work folder, and its branch when
+ * they turned that on. There is no column that could hold a prompt, a path or
+ * a repository.
  *
  * A collector's pending blocks for a (person, collector, day) are replaced by
  * its next upload. Every block keeps its **origin** — the block as it was
@@ -2222,6 +2223,15 @@ export const timeDrafts = sqliteTable(
     signals: text('signals').notNull().default('{}'),
     /** An agent's proposal may say what it was for, briefly. */
     note: text('note'),
+    /**
+     * The name the person gave the work folder a block was drafted in, on
+     * their own machine (D-098, LAI-866) — never the folder's own name or path.
+     * Bounded by the service on every way in (`isFolderName`), not by a CHECK:
+     * one would rebuild this table and `time_entries` beside it.
+     */
+    folder: text('folder'),
+    /** That folder's branch, only when the person turned sending it on (D-098 item 3). */
+    branch: text('branch'),
     state: text('state', { enum: TIME_DRAFT_STATES }).notNull().default('pending'),
     /** The entry a confirmed draft became. */
     entryId: text('entry_id').references((): AnySQLiteColumn => timeEntries.id, {
@@ -2302,6 +2312,12 @@ export const timeEntries = sqliteTable(
     /** The draft it was confirmed from, or an import's own id (LAI-788). */
     sourceRef: text('source_ref'),
     note: text('note'),
+    /**
+     * The work folder's chosen name and its branch, carried from the draft it
+     * was confirmed from (D-098 item 5, LAI-866); null for any other entry.
+     */
+    folder: text('folder'),
+    branch: text('branch'),
     /** The number of its newest revision. */
     revision: integer('revision').notNull().default(1),
     deletedAt: integer('deleted_at'),

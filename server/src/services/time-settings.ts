@@ -49,6 +49,12 @@ export interface TimeSettingsView {
    * board that predates it never refuses an upload over it.
    */
   signal_times: boolean;
+  /**
+   * The board keeps a block's work folder name, and its branch when the person
+   * turned that on (D-098 item 6, LAI-866): a collector sends them only when
+   * this says so, as `signal_times` does for `at`.
+   */
+  folder_names: boolean;
 }
 
 /** The organisation's *Time*; `off` when nobody has set it. */
@@ -80,6 +86,7 @@ function viewFor(db: Db, userId: string): TimeSettingsView {
     drafting: mode === 'drafts' && mine,
     min_sync_interval_s: MIN_SYNC_INTERVAL_S,
     signal_times: true,
+    folder_names: true,
   };
 }
 
