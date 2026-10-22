@@ -5687,6 +5687,15 @@ needed and what is not."*
     description or "No description yet.", progress bar, done / active /
     blocked, member avatars, Context · Members · settings).
 
+**Addendum, same day (LAI-976's finding).** Task keys are not stored per
+task: a key is the space's current prefix plus the task's number. So after a
+prefix change, existing tasks keep their **numbers** and are *shown* under the
+new prefix (`COR-1` reads `ENG-1`), and **every former key keeps resolving**
+(`projects.former_prefixes`; REST, MCP, time, branch names, the collector). A
+prefix another space holds now or held before is refused, so an old key never
+names two tasks. CHIEF accepts this as item 3's meaning; storing a prefix on
+every task is not worth its cost.
+
 ## D-104 — People and organisation administration: one owner, offboarding, reset links, more grantable capabilities (LAI-981 – LAI-989)
 
 **Date:** 2026-10-22 · **By:** CHIEF (Belka), on the owner's approval of the
