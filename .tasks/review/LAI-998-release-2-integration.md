@@ -6,8 +6,9 @@ assignee: core
 priority: p1
 depends-on: [LAI-968, LAI-970, LAI-973, LAI-975, LAI-977, LAI-978, LAI-987, LAI-988, LAI-989, LAI-993]
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-22T20:05:09Z
+finished: 2026-10-22T20:21:20Z
 ---
 
 ## Goal
@@ -18,9 +19,9 @@ review and one PR to `master`.
 
 ## Acceptance criteria
 
-- [ ] `git merge origin/master` first (another session shipped LAI-893, 895,
+- [x] `git merge origin/master` first (another session shipped LAI-893, 895,
       991, 992, 996 and more since release 1).
-- [ ] Merge, resolving conflicts without changing any feature's reviewed
+- [x] Merge, resolving conflicts without changing any feature's reviewed
       behaviour (list every resolution in the log):
       `origin/LAI-989-org-overview-activity-capabilities` (carries 993 → 976,
       981–986, 974; and 977 → 970), `origin/LAI-988-person-admin-panel`,
@@ -30,20 +31,20 @@ review and one PR to `master`.
       `origin/LAI-992-board-create-follows-task-create`,
       `origin/LAI-968-my-day-drafts-note`, `origin/LAI-973-plugin-readme-wording`.
       Logs: keep every entry from both sides.
-- [ ] **Task-id collisions with `master`:** master's `LAI-991`, `LAI-992`,
+- [x] **Task-id collisions with `master`:** master's `LAI-991`, `LAI-992`,
       `LAI-996` are another session's done tasks. Renumber OUR task files that
       carry those ids (the branch-parser follow-up filed by LAI-976 as
       LAI-991; the board create gate filed as LAI-992; LAI-989's UNPAIRED
       follow-up filed as LAI-996) to the lowest ids free on every ref, each
       with a `## Renumbered` note naming the old id and the commits that carry
       it (§3: commits are not rewritten). `task-file-state.test.ts` green.
-- [ ] Drop the server `UNPAIRED` entries the web halves paired
+- [x] Drop the server `UNPAIRED` entries the web halves paired
       (`TaskCountsView`, `OrgOverviewView`, `SignOutView`, `MembershipView`,
       `ResetLinkView`, `PasswordResetView`, and any other the merged tree
       reports stale) — this closes the LAI-996/LAI-997 follow-ups.
-- [ ] Any conflict in feature code is resolved keeping both behaviours; if a
+- [x] Any conflict in feature code is resolved keeping both behaviours; if a
       resolution needs a behaviour choice, STOP and report.
-- [ ] Gate on the merged tree: `pnpm test`, `pnpm lint`, `pnpm format`
+- [x] Gate on the merged tree: `pnpm test`, `pnpm lint`, `pnpm format`
       **all exit 0** — no allowed failures.
 
 ## Claim note
@@ -60,3 +61,9 @@ Stopped after `git merge origin/master` (clean). Master's LAI-893 and release
 `PeopleTab.tsx` (add/add); LAI-989's gate split targets the inline tab 893
 removed. Which design ships is a behaviour choice — waiting on CHIEF. Details
 in `logs/core-2026-10-23.md`.
+
+## Unblocked (CORE, 2026-10-23)
+
+D-105 (CHIEF): master's LAI-893 People tab is the layout. `origin/LAI-987`
+is not merged; its client halves outside the People tab are taken, and the
+People features move to LAI-999. Resolutions are in `logs/core-2026-10-23.md`.
