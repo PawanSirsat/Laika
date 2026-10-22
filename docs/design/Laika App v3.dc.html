@@ -283,67 +283,156 @@ a:hover{color:#5b21b6}
 
   <!-- People -->
   <sc-if value="{{ tabPeople }}" hint-placeholder-val="{{ false }}">
-    <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
-      <div style="padding:14px 20px;border-bottom:1px solid #efeff4;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <input value="{{ q }}" onChange="{{ setQ }}" placeholder="Search name or email" style="flex:1;min-width:200px;max-width:320px;height:34px;border:1px solid #e3e3ea;border-radius:9px;padding:0 12px;font-size:13px;outline:none;background:#fafafc">
-        <div style="display:flex;background:#f2f2f6;border-radius:8px;padding:2px;gap:2px">
-          <sc-for list="{{ roleOpts }}" as="o" hint-placeholder-count="4">
-            <div onClick="{{ o.go }}" style="padding:5px 12px;border-radius:6px;font-size:13px;cursor:pointer;background:{{ o.bg }};color:{{ o.color }};font-weight:{{ o.weight }};box-shadow:{{ o.shadow }}">{{ o.label }}</div>
+    <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px;overflow:hidden">
+      <div style="padding:16px 20px;border-bottom:1px solid #efeff4;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px">
+          <div style="font-size:15px;font-weight:700">People</div>
+          <div style="font-size:13px;color:#6b6b78;margin-top:2px">{{ seatLine }}</div>
+        </div>
+      </div>
+
+      <sc-if value="{{ invOpen }}" hint-placeholder-val="{{ false }}">
+        <div onClick="{{ toggleInvite }}" onKeyDown="{{ invKey }}" style="position:fixed;inset:0;z-index:50;background:rgba(22,22,29,.42);display:flex;align-items:flex-start;justify-content:center;padding:12vh 16px 16px">
+          <div onClick="{{ stop }}" style="width:100%;max-width:520px;background:#fff;border-radius:14px;box-shadow:0 24px 60px rgba(22,22,29,.28),0 2px 6px rgba(22,22,29,.08);overflow:hidden">
+            <div style="padding:18px 20px 4px;display:flex;align-items:flex-start;gap:10px">
+              <div style="flex:1">
+                <div style="font-size:16px;font-weight:700">Invite people</div>
+                <div style="font-size:13px;color:#6b6b78;margin-top:2px">to <span style="font-family:'JetBrains Mono',monospace">kvelld.co.za</span></div>
+              </div>
+              <button onClick="{{ toggleInvite }}" style="width:30px;height:30px;border:0;border-radius:8px;background:transparent;color:#6b6b78;font-size:18px;cursor:pointer" style-hover="background:#f2f2f6">×</button>
+            </div>
+            <div style="padding:14px 20px 18px;display:flex;flex-direction:column;gap:14px">
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78">EMAILS</div>
+                <textarea autoFocus="{{ true }}" value="{{ invText }}" onChange="{{ setInvText }}" placeholder="Emails, separated by commas — or leave blank for a link" rows="3" style="width:100%;box-sizing:border-box;border:1px solid #dcdce4;border-radius:9px;padding:10px 12px;font-size:13.5px;line-height:20px;outline:none;resize:vertical;font-family:inherit;background:#fff"></textarea>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78">ROLE</div>
+                <div style="display:flex;background:#f2f2f6;border-radius:8px;padding:2px;gap:2px">
+                  <sc-for list="{{ invRoleOpts }}" as="o" hint-placeholder-count="2">
+                    <div onClick="{{ o.go }}" style="padding:5px 14px;border-radius:6px;font-size:13px;cursor:pointer;background:{{ o.bg }};color:{{ o.color }};font-weight:{{ o.weight }};box-shadow:{{ o.shadow }}">{{ o.label }}</div>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="font-size:12.5px;color:#6b6b78;line-height:18px">Invites expire after 7 days. Links expire after 2 days and are not emailed.</div>
+            </div>
+            <div style="padding:12px 20px;background:#fafafc;border-top:1px solid #efeff4;display:flex;justify-content:flex-end;gap:8px">
+              <button onClick="{{ toggleInvite }}" style="height:36px;padding:0 14px;border:1px solid #dcdce4;border-radius:9px;background:#fff;font-size:13.5px;cursor:pointer" style-hover="background:#f7f7fa">Cancel</button>
+              <button onClick="{{ sendInvite }}" style="white-space:nowrap;height:36px;padding:0 16px;border:0;border-radius:9px;background:#7c3aed;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer" style-hover="background:#6d28d9">{{ invBtn }}</button>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ hasInvMsg }}" hint-placeholder-val="{{ false }}">
+        <div style="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:51;background:#16161d;color:#fff;font-size:13px;padding:10px 16px;border-radius:10px;box-shadow:0 8px 24px rgba(22,22,29,.25);display:flex;gap:8px;align-items:center"><span style="color:#7ee2a8">✓</span>{{ invMsg }}</div>
+      </sc-if>
+
+      <div style="padding:12px 20px;border-bottom:1px solid #efeff4;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div style="position:relative;flex:1;min-width:200px;max-width:320px">
+          <span style="position:absolute;left:11px;top:8px;color:#8a8a96;font-size:13px;pointer-events:none">⌕</span>
+          <input value="{{ q }}" onChange="{{ setQ }}" placeholder="Search name or email" style="width:100%;box-sizing:border-box;height:34px;border:1px solid #e3e3ea;border-radius:9px;padding:0 12px 0 30px;font-size:13px;outline:none;background:#fafafc">
+        </div>
+        <div style="display:flex;background:#f2f2f6;border-radius:8px;padding:2px;gap:2px;flex-wrap:wrap">
+          <sc-for list="{{ roleOpts }}" as="o" hint-placeholder-count="5">
+            <div onClick="{{ o.go }}" style="padding:5px 10px;border-radius:6px;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;background:{{ o.bg }};color:{{ o.color }};font-weight:{{ o.weight }};box-shadow:{{ o.shadow }}">{{ o.label }}<span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8a8a96">{{ o.count }}</span></div>
           </sc-for>
         </div>
         <div style="flex:1"></div>
-        <span style="font-size:13px;color:#6b6b78">{{ peopleCount }}</span>
+        <sc-if value="{{ notPending }}" hint-placeholder-val="{{ true }}">
+          <button onClick="{{ sortNext }}" style="white-space:nowrap;height:34px;padding:0 12px;border:1px solid #e3e3ea;border-radius:9px;background:#fff;font-size:13px;color:#55555f;cursor:pointer;display:flex;align-items:center;gap:6px" style-hover="background:#f7f7fa">Sort: <span style="color:#16161d;font-weight:600">{{ sortLabel }}</span><span style="font-size:11px;color:#8a8a96">⇅</span></button>
+        </sc-if>
       </div>
-      <div style="overflow-x:auto">
-        <div style="min-width:820px">
-          <div style="display:grid;grid-template-columns:2.6fr 1.1fr .8fr .8fr 1.1fr 1.4fr;gap:12px;padding:10px 20px;font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;border-bottom:1px solid #f2f2f6"><span>PERSON</span><span>ROLE</span><span>SPACES</span><span>AGENTS</span><span>LAST ACTIVE</span><span></span></div>
-          <sc-for list="{{ people }}" as="p" hint-placeholder-count="5">
-            <div style="display:grid;grid-template-columns:2.6fr 1.1fr .8fr .8fr 1.1fr 1.4fr;gap:12px;padding:12px 20px;align-items:center;border-bottom:1px solid #f2f2f6" style-hover="background:#fbfafe">
-              <div style="display:flex;align-items:center;gap:12px;min-width:0">
-                <div style="width:34px;height:34px;border-radius:50%;background:{{ p.color }};color:#fff;font-size:11.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ p.ini }}</div>
-                <div style="min-width:0">
-                  <div style="display:flex;align-items:center;gap:6px"><span style="font-weight:600;text-decoration:underline;text-decoration-color:#d4d4dc;text-underline-offset:3px">{{ p.name }}</span><sc-if value="{{ p.you }}"><span style="font-size:10.5px;font-weight:700;letter-spacing:.06em;color:#6d28d9;background:#f3eefe;border:1px solid #d8c8fc;padding:0 6px;border-radius:5px">YOU</span></sc-if></div>
-                  <div style="font-size:12.5px;color:#6b6b78">{{ p.email }}</div>
+
+      <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:8px 12px 8px 20px;background:#16161d;color:#fff;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px">
+          <span style="font-weight:600;margin-right:6px">{{ selCount }} selected</span>
+          <button onClick="{{ bulkAdmin }}" style="height:28px;padding:0 10px;border:1px solid #3a3a46;border-radius:7px;background:transparent;color:#fff;font-size:12.5px;cursor:pointer" style-hover="background:#2a2a34">Make Admin</button>
+          <button onClick="{{ bulkMember }}" style="height:28px;padding:0 10px;border:1px solid #3a3a46;border-radius:7px;background:transparent;color:#fff;font-size:12.5px;cursor:pointer" style-hover="background:#2a2a34">Make Member</button>
+          <button onClick="{{ bulkDeact }}" style="height:28px;padding:0 10px;border:1px solid #5a2a32;border-radius:7px;background:transparent;color:#ff9aa6;font-size:12.5px;cursor:pointer" style-hover="background:#2a2a34">Deactivate</button>
+          <div style="flex:1"></div>
+          <button onClick="{{ clearSel }}" style="height:28px;padding:0 10px;border:0;border-radius:7px;background:transparent;color:#b9b9c6;font-size:12.5px;cursor:pointer" style-hover="color:#fff">Clear</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ notPending }}" hint-placeholder-val="{{ true }}">
+        <div style="max-height:560px;overflow:auto">
+          <div style="min-width:860px">
+            <div style="position:sticky;top:0;z-index:1;background:#fff;display:grid;grid-template-columns:20px 2.6fr 1.1fr .7fr .7fr 1fr 150px;gap:12px;padding:10px 20px;font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;border-bottom:1px solid #f2f2f6;align-items:center">
+              <div onClick="{{ toggleAll }}" style="width:16px;height:16px;border-radius:4px;border:1.5px solid {{ allCbBorder }};background:{{ allCbBg }};color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-sizing:border-box">{{ allCbMark }}</div>
+              <span>PERSON</span><span>ROLE</span><span>SPACES</span><span>AGENTS</span><span>LAST ACTIVE</span><span></span>
+            </div>
+            <sc-for list="{{ people }}" as="p" hint-placeholder-count="8">
+              <div style="display:grid;grid-template-columns:20px 2.6fr 1.1fr .7fr .7fr 1fr 150px;gap:12px;padding:9px 20px;align-items:center;border-bottom:1px solid #f4f4f8;background:{{ p.rowBg }}" style-hover="background:#fbfafe">
+                <div>
+                  <sc-if value="{{ p.editable }}"><div onClick="{{ p.toggle }}" style="width:16px;height:16px;border-radius:4px;border:1.5px solid {{ p.cbBorder }};background:{{ p.cbBg }};color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-sizing:border-box">{{ p.cbMark }}</div></sc-if>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;min-width:0;opacity:{{ p.opacity }}">
+                  <div style="position:relative;flex-shrink:0">
+                    <div style="width:30px;height:30px;border-radius:50%;background:{{ p.color }};color:#fff;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ p.ini }}</div>
+                    <span style="position:absolute;right:-1px;bottom:-1px;width:9px;height:9px;border-radius:50%;background:{{ p.dotColor }};border:2px solid {{ p.dotRing }}"></span>
+                  </div>
+                  <div style="min-width:0">
+                    <div style="display:flex;align-items:center;gap:6px"><span style="font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.name }}</span><sc-if value="{{ p.you }}"><span style="font-size:10.5px;font-weight:700;letter-spacing:.06em;color:#6d28d9;background:#f3eefe;border:1px solid #d8c8fc;padding:0 6px;border-radius:5px">YOU</span></sc-if></div>
+                    <div style="font-size:12px;color:#6b6b78;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.email }}</div>
+                  </div>
+                </div>
+                <div>
+                  <sc-if value="{{ p.isOwner }}"><span style="font-size:13px;font-weight:600">Owner</span></sc-if>
+                  <sc-if value="{{ p.roleEdit }}">
+                    <span style="position:relative;display:inline-flex">
+                      <select value="{{ p.role }}" onChange="{{ p.setRole }}" style="height:30px;padding:0 28px 0 10px;border:1px solid #dcdce4;border-radius:8px;font-size:13px;background:#fff;color:#16161d;appearance:none;-webkit-appearance:none;cursor:pointer;font-family:inherit;outline:none"><option value="Admin">Admin</option><option value="Member">Member</option></select>
+                      <span style="position:absolute;right:10px;top:8px;color:#8a8a96;font-size:10px;pointer-events:none">▾</span>
+                    </span>
+                  </sc-if>
+                  <sc-if value="{{ p.off }}"><span style="font-size:13px;color:#8a8a96">{{ p.role }}</span></sc-if>
+                </div>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;opacity:{{ p.opacity }}">{{ p.spaces }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;display:flex;align-items:center;gap:6px;opacity:{{ p.opacity }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ p.agentDot }}"></span>{{ p.agents }}</span>
+                <span style="font-size:13px;color:{{ p.activeColor }}">{{ p.last }}</span>
+                <div style="display:flex;gap:4px;justify-content:flex-end">
+                  <sc-if value="{{ p.roleEdit }}">
+                    <button style="white-space:nowrap;height:28px;padding:0 10px;border:1px solid #e3e3ea;border-radius:7px;background:#fff;font-size:12.5px;color:#55555f;cursor:pointer" style-hover="border-color:#c9c9d2;color:#16161d">Tokens</button>
+                    <button onClick="{{ p.deactivate }}" style="white-space:nowrap;height:28px;padding:0 8px;border:0;border-radius:7px;background:transparent;color:#8a8a96;font-size:12.5px;cursor:pointer" style-hover="background:#fdf1f2;color:#c62536">Deactivate</button>
+                  </sc-if>
+                  <sc-if value="{{ p.off }}">
+                    <button onClick="{{ p.reactivate }}" style="white-space:nowrap;height:28px;padding:0 10px;border:1px solid #e3e3ea;border-radius:7px;background:#fff;font-size:12.5px;color:#16161d;cursor:pointer" style-hover="border-color:#c9c9d2">Reactivate</button>
+                  </sc-if>
                 </div>
               </div>
-              <div>
-                <sc-if value="{{ p.isOwner }}"><span style="font-size:13px;font-weight:600">Owner</span></sc-if>
-                <sc-if value="{{ p.editable }}"><span style="display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 10px;border:1px solid #dcdce4;border-radius:8px;font-size:13px;cursor:pointer">{{ p.role }} <span style="color:#8a8a96;font-size:10px">▾</span></span></sc-if>
+            </sc-for>
+            <sc-if value="{{ noResults }}" hint-placeholder-val="{{ false }}">
+              <div style="padding:40px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">
+                <div style="font-size:14px;font-weight:600">No one matches “{{ q }}”</div>
+                <div style="font-size:13px;color:#6b6b78">Check the spelling, or invite them to the organisation.</div>
+                <button onClick="{{ inviteFromSearch }}" style="height:32px;padding:0 14px;border:1px solid #d8c8fc;border-radius:8px;background:#f7f3ff;color:#6d28d9;font-size:13px;font-weight:600;cursor:pointer">Invite someone</button>
               </div>
-              <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px">{{ p.spaces }}</span>
-              <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:{{ p.agentDot }}"></span>{{ p.agents }}</span>
-              <span style="font-size:13px;color:{{ p.activeColor }}">{{ p.last }}</span>
-              <div style="display:flex;gap:6px;justify-content:flex-end">
-                <sc-if value="{{ p.editable }}">
-                  <button style="white-space:nowrap;flex-shrink:0;height:30px;padding:0 10px;border:1px solid #dcdce4;border-radius:8px;background:#fff;font-size:12.5px;cursor:pointer">Tokens</button>
-                  <button style="white-space:nowrap;flex-shrink:0;height:30px;padding:0 10px;border:1px solid #f3b9c0;border-radius:8px;background:#fff;color:#c62536;font-size:12.5px;cursor:pointer" style-hover="background:#fdf1f2">Deactivate</button>
-                </sc-if>
+            </sc-if>
+          </div>
+        </div>
+        <div style="padding:10px 20px 14px;border-top:1px solid #efeff4;display:flex;gap:16px;align-items:baseline;flex-wrap:wrap;font-size:12.5px;color:#6b6b78;line-height:18px">
+          <span style="font-weight:600;color:#55555f;white-space:nowrap">{{ shownLine }}</span>
+          <span style="flex:1;min-width:260px">Your own row has no controls — changing your own role or locking yourself out is not something this screen offers. Project roles are managed on each project’s members screen.</span>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isPending }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:12px 20px 16px;display:flex;flex-direction:column;gap:8px">
+          <sc-for list="{{ pending }}" as="v" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px dashed #dcdce4;border-radius:10px;flex-wrap:wrap">
+              <div style="width:30px;height:30px;border-radius:50%;background:#f2f2f6;color:#8a8a96;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ v.glyph }}</div>
+              <div style="flex:1;min-width:220px">
+                <div style="display:flex;align-items:center;gap:8px"><span style="font-weight:600;font-size:13.5px">{{ v.email }}</span><span style="font-size:10.5px;font-weight:700;letter-spacing:.06em;background:#efeff4;color:#55555f;padding:1px 6px;border-radius:5px">{{ v.roleUp }}</span></div>
+                <div style="font-size:12.5px;color:#6b6b78;margin-top:2px">{{ v.meta }}</div>
               </div>
+              <button style="white-space:nowrap;flex-shrink:0;height:28px;padding:0 10px;border:1px solid #e3e3ea;border-radius:7px;background:#fff;font-size:12.5px;cursor:pointer">{{ v.action }}</button>
+              <button onClick="{{ v.revoke }}" style="white-space:nowrap;flex-shrink:0;height:28px;padding:0 8px;border:0;border-radius:7px;background:transparent;color:#c62536;font-size:12.5px;cursor:pointer" style-hover="background:#fdf1f2">Revoke</button>
             </div>
           </sc-for>
+          <sc-if value="{{ noPending }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:28px 0;text-align:center;font-size:13px;color:#6b6b78">No pending invites.</div>
+          </sc-if>
         </div>
-      </div>
-      <div style="padding:12px 20px 16px;font-size:12.5px;color:#6b6b78;line-height:18px;max-width:760px">Your own row has no controls — changing your own role or locking yourself out is not something this screen offers. Project roles are managed on each project’s members screen.</div>
-    </div>
-
-    <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
-      <div style="padding:16px 20px;border-bottom:1px solid #efeff4;font-size:15px;font-weight:700">Invite people</div>
-      <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px">
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <input placeholder="name@company.com — or leave blank for a link" style="flex:1;min-width:240px;height:38px;border:1px solid #dcdce4;border-radius:9px;padding:0 12px;font-size:13.5px;outline:none">
-          <span style="display:inline-flex;align-items:center;gap:10px;height:38px;padding:0 12px;border:1px solid #dcdce4;border-radius:9px;font-size:13.5px">Member <span style="color:#8a8a96;font-size:10px">▾</span></span>
-          <button style="white-space:nowrap;flex-shrink:0;height:38px;padding:0 16px;border:0;border-radius:9px;background:#7c3aed;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer" style-hover="background:#6d28d9">Send invite</button>
-        </div>
-        <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78">PENDING · 1</div>
-        <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px dashed #dcdce4;border-radius:10px;flex-wrap:wrap">
-          <div style="flex:1;min-width:220px">
-            <div style="display:flex;align-items:center;gap:8px"><span style="font-weight:600">Anyone with the link</span><span style="font-size:10.5px;font-weight:700;letter-spacing:.06em;background:#efeff4;color:#55555f;padding:1px 6px;border-radius:5px">MEMBER</span></div>
-            <div style="font-size:12.5px;color:#6b6b78;margin-top:2px">expires in 2 days · not emailed — send the link yourself</div>
-          </div>
-          <button style="white-space:nowrap;flex-shrink:0;height:30px;padding:0 10px;border:1px solid #dcdce4;border-radius:8px;background:#fff;font-size:12.5px">Copy link</button>
-          <button style="white-space:nowrap;flex-shrink:0;height:30px;padding:0 10px;border:1px solid #f3b9c0;border-radius:8px;background:#fdf1f2;color:#c62536;font-size:12.5px">Revoke</button>
-        </div>
-      </div>
+      </sc-if>
     </div>
   </sc-if>
 
@@ -851,13 +940,102 @@ a:hover{color:#5b21b6}
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;initialScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;myday&quot;,&quot;org&quot;,&quot;board&quot;,&quot;dev&quot;,&quot;insights&quot;,&quot;inbox&quot;],&quot;default&quot;:&quot;myday&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;showCounts&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
 class Component extends DCLogic {
-  state = { screen: null, orgTab: 'overview', insTab: 'capacity', inboxTab: 'review', menu: false, insights: true, time: 'Off', q: '', roleF: 'All', agent: 'Claude Code', md: this.mdInit() };
+  state = { screen: null, orgTab: 'overview', insTab: 'capacity', inboxTab: 'review', menu: false, insights: true, time: 'Off', q: '', roleF: 'All', agent: 'Claude Code', roles: {}, deact: {}, sel: {}, sort: 'active', invOpen: false, invText: '', invRole: 'Member', invMsg: '', pending: [
+    { link: true, email: 'Anyone with the link', role: 'Member', meta: 'expires in 2 days · not emailed — send the link yourself' },
+    { email: 'lindiwe.mthembu@kvelld.co.za', role: 'Member', meta: 'invited 1d ago by Andrea Ordóñez Cárdenas · expires in 6 days' },
+    { email: 'r.kapoor@kvelld.co.za', role: 'Admin', meta: 'invited 6d ago by Pawan Sirsat · expires tomorrow' }
+  ], md: this.mdInit() };
 
   go = (screen, extra) => () => this.setState({ screen, menu: false, ...(extra || {}) });
 
   tab(active, label, go, extra) {
     return { label, go, color: active ? '#6d28d9' : '#55555f', weight: active ? 600 : 500, border: active ? '#7c3aed' : 'transparent', ...(extra || {}) };
   }
+  peopleBase() {
+    if (this._pb) return this._pb;
+    const C = { AC: '#b636c9', AP: '#9a3bd6', DS: '#1f6f78', PS: '#d4283d', SG: '#7a4bdf' };
+    const base = [
+      { name: 'Andrea Ordóñez Cárdenas', email: 'andrea@kvelld.co.za', ini: 'AC', color: C.AC, role: 'Admin', spaces: 3, agents: 1, min: 12 },
+      { name: 'Ashutosh Patel', email: 'ashutosh.patel@kvelld.co.za', ini: 'AP', color: C.AP, role: 'Admin', spaces: 2, agents: 0, min: 120 },
+      { name: 'Dev Sharma', email: 'dev.sharma@kvelld.co.za', ini: 'DS', color: C.DS, role: 'Member', spaces: 2, agents: 1, min: 1500 },
+      { name: 'Pawan Sirsat', email: 'pawan.sirsat@kvelld.co.za', ini: 'PS', color: C.PS, role: 'Owner', spaces: 5, agents: 1, min: 0, you: true },
+      { name: 'Sakshi Gabhale', email: 'sakshi.gabhale@kvelld.co.za', ini: 'SG', color: C.SG, role: 'Member', spaces: 1, agents: 0, min: 4320 }
+    ];
+    const F = ['Aarav','Lerato','Thabo','Priya','Naledi','Sipho','Meera','Johan','Zanele','Rohan','Amahle','Kabir','Chloé','Kagiso','Ishaan','Nomvula','Tariq','Anika','Lwazi','Sofia','Vikram','Busisiwe','Marco','Ayesha','Pieter','Neha','Themba','Elena','Arjun','Palesa','Riaan','Divya','Mandla','Hannah','Siddharth','Refilwe','Tomás','Kavya','Bongani','Leila','Nikhil','Thandeka','Jonas','Ritika','Musa'];
+    const L = ['Naidoo','Mokoena','Khumalo','Reddy','Dlamini','van der Merwe','Iyer','Botha','Ndlovu','Kapoor','Mahlangu','Pillay','Fourie','Mehta','Zulu','Govender','Nkosi','Joshi','Smit','Molefe','Rao','Steyn','Maseko'];
+    const P = ['#b636c9','#9a3bd6','#1f6f78','#7a4bdf','#3b6fe0','#b8741a','#1f8a4c','#c2410c','#0e7490','#be185d'];
+    const M = [3, 18, 45, 95, 240, 520, 1500, 2900, 4400, 8600, 21000, 0];
+    for (let i = 0; i < 45; i++) {
+      const f = F[i], l = L[(i * 7 + 3) % L.length];
+      const slug = x => x.toLowerCase().normalize('NFD').replace(/[^a-z]/g, '');
+      base.push({ name: f + ' ' + l, email: slug(f) + '.' + slug(l) + '@kvelld.co.za', ini: (f[0] + l.split(' ').pop()[0]).toUpperCase(), color: P[i % P.length], role: i % 11 === 2 ? 'Admin' : 'Member', spaces: 1 + (i * 5) % 4, agents: (i * 3) % 7 === 0 ? 1 : 0, min: M[(i * 5 + 1) % M.length] });
+    }
+    return (this._pb = base);
+  }
+
+  peopleVals(s) {
+    const fmt = m => m === 0 ? 'Active now' : m < 60 ? m + 'm ago' : m < 1440 ? Math.round(m / 60) + 'h ago' : m < 2880 ? 'Yesterday' : m < 10080 ? Math.round(m / 1440) + 'd ago' : Math.round(m / 10080) + 'w ago';
+    const set = p => this.setState(p);
+    const all = this.peopleBase().map(p => ({ ...p, role: s.roles[p.email] || p.role, off: !!s.deact[p.email] }));
+    const n = r => all.filter(p => p.role === r).length;
+    const q = s.q.trim().toLowerCase();
+    const isPending = s.roleF === 'Pending';
+    const ord = { Owner: 0, Admin: 1, Member: 2 };
+    const sorts = { active: ['Last active', (a, b) => a.min - b.min], name: ['Name', (a, b) => a.name.localeCompare(b.name)], role: ['Role', (a, b) => ord[a.role] - ord[b.role] || a.name.localeCompare(b.name)] };
+    const keys = Object.keys(sorts);
+    const list = all.filter(p => (s.roleF === 'All' || p.role === s.roleF) && (!q || (p.name + p.email).toLowerCase().includes(q)))
+      .sort((a, b) => (b.you ? 1 : 0) - (a.you ? 1 : 0) || (a.off ? 1 : 0) - (b.off ? 1 : 0) || sorts[s.sort][1](a, b));
+    const selIds = Object.keys(s.sel).filter(k => s.sel[k]);
+    const selectable = list.filter(p => !p.you && p.role !== 'Owner');
+    const allSel = selectable.length > 0 && selectable.every(p => s.sel[p.email]);
+    const someSel = selectable.some(p => s.sel[p.email]);
+    const people = list.map(p => {
+      const on = !!s.sel[p.email], editable = !p.you && p.role !== 'Owner';
+      return { ...p, editable, roleEdit: editable && !p.off, off: editable && p.off, isOwner: p.role === 'Owner',
+        last: p.off ? 'Deactivated' : fmt(p.min), cbMark: on ? '✓' : '', cbBg: on ? '#7c3aed' : '#fff', cbBorder: on ? '#7c3aed' : '#c9c9d2',
+        rowBg: on ? '#f7f3ff' : '#fff', opacity: p.off ? .45 : 1, agentDot: p.agents && !p.off ? '#1f9a55' : '#c9c9d2',
+        activeColor: p.off ? '#8a8a96' : p.min === 0 ? '#1f8a4c' : p.min < 1440 ? '#16161d' : '#6b6b78',
+        dotColor: !p.off && p.min < 60 ? '#1f9a55' : 'transparent', dotRing: !p.off && p.min < 60 ? '#fff' : 'transparent',
+        toggle: () => set({ sel: { ...s.sel, [p.email]: !on } }),
+        setRole: e => set({ roles: { ...s.roles, [p.email]: e.target.value } }),
+        deactivate: () => set({ deact: { ...s.deact, [p.email]: true }, sel: { ...s.sel, [p.email]: false } }),
+        reactivate: () => set({ deact: { ...s.deact, [p.email]: false } }) };
+    });
+    const many = (v) => Object.fromEntries(selIds.map(k => [k, v]));
+    const emails = s.invText.split(/[\s,;]+/).filter(x => x.includes('@'));
+    const activeN = all.filter(p => !p.off).length;
+    return {
+      people, isPending, notPending: !isPending, noResults: !isPending && !list.length,
+      seatLine: activeN + ' members · ' + n('Admin') + ' admins · ' + s.pending.length + ' pending invite' + (s.pending.length === 1 ? '' : 's'),
+      shownLine: 'Showing ' + list.length + ' of ' + all.length,
+      peopleTotal: all.length,
+      roleOpts: [['All', all.length], ['Owner', n('Owner')], ['Admin', n('Admin')], ['Member', n('Member')], ['Pending', s.pending.length]]
+        .map(([r, c]) => ({ ...this.seg(s.roleF === r, r, () => set({ roleF: r, sel: {} })), count: c })),
+      sortLabel: sorts[s.sort][0], sortNext: () => set({ sort: keys[(keys.indexOf(s.sort) + 1) % keys.length] }),
+      hasSel: selIds.length > 0, selCount: selIds.length, clearSel: () => set({ sel: {} }),
+      bulkAdmin: () => set({ roles: { ...s.roles, ...many('Admin') }, sel: {} }),
+      bulkMember: () => set({ roles: { ...s.roles, ...many('Member') }, sel: {} }),
+      bulkDeact: () => set({ deact: { ...s.deact, ...many(true) }, sel: {} }),
+      toggleAll: () => set({ sel: allSel ? {} : Object.fromEntries(selectable.filter(p => !p.off).map(p => [p.email, true])) }),
+      allCbMark: allSel ? '✓' : someSel ? '–' : '', allCbBg: someSel ? '#7c3aed' : '#fff', allCbBorder: someSel ? '#7c3aed' : '#c9c9d2',
+      invOpen: s.invOpen, toggleInvite: () => set({ invOpen: !s.invOpen }), stop: e => e.stopPropagation(),
+      invKey: e => { if (e.key === 'Escape') set({ invOpen: false }); if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) this._send(); },
+      invText: s.invText, setInvText: e => set({ invText: e.target.value }),
+      invRoleOpts: ['Member', 'Admin'].map(r => this.seg(s.invRole === r, r, () => set({ invRole: r }))),
+      invBtn: emails.length > 1 ? 'Send ' + emails.length + ' invites' : emails.length ? 'Send invite' : 'Create link',
+      hasInvMsg: !!s.invMsg, invMsg: s.invMsg,
+      sendInvite: this._send = () => {
+        const add = emails.length ? emails.map(e => ({ email: e, role: s.invRole, meta: 'invited just now by Pawan Sirsat · expires in 7 days' }))
+          : [{ link: true, email: 'Anyone with the link', role: s.invRole, meta: 'expires in 2 days · not emailed — send the link yourself' }];
+        clearTimeout(this._toast); this._toast = setTimeout(() => this.setState({ invMsg: '' }), 3500);
+        set({ invOpen: false, roleF: 'Pending', pending: [...add, ...s.pending], invText: '', invMsg: emails.length ? emails.length + ' invite' + (emails.length > 1 ? 's' : '') + ' sent' : 'Invite link created' });
+      },
+      inviteFromSearch: () => set({ invOpen: true, invText: s.q.includes('@') ? s.q : '' }),
+      pending: s.pending.map((v, i) => ({ ...v, roleUp: v.role.toUpperCase(), glyph: v.link ? '⛓' : '@', action: v.link ? 'Copy link' : 'Resend', revoke: () => set({ pending: s.pending.filter((_, j) => j !== i) }) })),
+      noPending: !s.pending.length
+    };
+  }
+
   seg(active, label, go) {
     return { label, go, bg: active ? '#fff' : 'transparent', color: active ? '#16161d' : '#55555f', weight: active ? 600 : 500, shadow: active ? '0 1px 2px rgba(0,0,0,.08)' : 'none' };
   }
@@ -903,19 +1081,9 @@ class Component extends DCLogic {
     ];
 
     const C = { AC: '#b636c9', AP: '#9a3bd6', DS: '#1f6f78', PS: '#d4283d', SG: '#7a4bdf' };
-    const allPeople = [
-      { name: 'Andrea Ordóñez Cárdenas', email: 'andrea@kvelld.co.za', ini: 'AC', role: 'Admin', spaces: 3, agents: 1, last: '12m ago' },
-      { name: 'Ashutosh Patel', email: 'ashutosh.patel@kvelld.co.za', ini: 'AP', role: 'Admin', spaces: 2, agents: 0, last: '2h ago' },
-      { name: 'Dev Sharma', email: 'dev.sharma@kvelld.co.za', ini: 'DS', role: 'Member', spaces: 2, agents: 1, last: 'Yesterday' },
-      { name: 'Pawan Sirsat', email: 'pawan.sirsat@kvelld.co.za', ini: 'PS', role: 'Owner', spaces: 5, agents: 1, last: 'Active now', you: true },
-      { name: 'Sakshi Gabhale', email: 'sakshi.gabhale@kvelld.co.za', ini: 'SG', role: 'Member', spaces: 1, agents: 0, last: '3d ago' }
-    ];
-    const q = s.q.trim().toLowerCase();
-    const people = allPeople
-      .filter(p => (s.roleF === 'All' || p.role === s.roleF) && (!q || (p.name + p.email).toLowerCase().includes(q)))
-      .map(p => ({ ...p, color: C[p.ini], you: !!p.you, isOwner: p.role === 'Owner', editable: p.role !== 'Owner', agentDot: p.agents ? '#1f9a55' : '#c9c9d2', activeColor: p.last === 'Active now' ? '#1f8a4c' : '#55555f' }));
+    const ppl = this.peopleVals(s);
 
-    const orgTabsDef = [['overview', 'Overview'], ['people', 'People', 5], ['integrations', 'Integrations'], ['security', 'Security']];
+    const orgTabsDef = [['overview', 'Overview'], ['people', 'People', ppl.peopleTotal], ['integrations', 'Integrations'], ['security', 'Security']];
     const orgTabs = orgTabsDef.map(([id, label, count]) => this.tab(s.orgTab === id, label, () => this.setState({ orgTab: id }), { hasCount: !!count, count: count || '' }));
     const setOrg = id => () => this.setState({ screen: 'org', orgTab: id });
 
@@ -941,7 +1109,7 @@ class Component extends DCLogic {
     return {
       menuOpen: s.menu,
       toggleMenu: () => this.setState({ menu: !s.menu }),
-      goDev: this.go('dev'), goPeople: setOrg('people'), goSecurity: setOrg('security'),
+      goDev: this.go('dev'), goPeople: () => this.setState({ screen: 'org', orgTab: 'people', invOpen: true }), goSecurity: setOrg('security'),
       isBoard: cur === 'board', isOrg: cur === 'org', isDev: cur === 'dev', isInsights: cur === 'insights', isInbox: cur === 'inbox', isMyday: cur === 'myday',
 
       navWork: [this.nav(cur, 'myday', 'My day'), this.nav(cur, 'inbox', 'Inbox', { hasCount: showCounts, count: 282 })],
@@ -955,7 +1123,7 @@ class Component extends DCLogic {
       orgTabs,
       tabOverview: s.orgTab === 'overview', tabPeople: s.orgTab === 'people', tabIntegrations: s.orgTab === 'integrations', tabSecurity: s.orgTab === 'security',
       orgStats: [
-        { label: 'MEMBERS', value: '5', sub: '2 admins · 1 invite pending', go: setOrg('people') },
+        { label: 'MEMBERS', value: String(ppl.peopleTotal), sub: ppl.seatLine.split(' · ').slice(1).join(' · '), go: setOrg('people') },
         { label: 'SPACES', value: '5', sub: '4 active · 1 archived', go: () => {} },
         { label: 'ACTIVE AGENTS', value: '1', sub: '3 sessions today', go: this.go('insights') },
         { label: 'TOKENS', value: '7', sub: '2 never used', go: this.go('dev') }
@@ -979,8 +1147,7 @@ class Component extends DCLogic {
       ].map(([name, ini, dot, owner, oi, members, open, status]) => ({ name, ini, dot, owner, ownerIni: oi, ownerColor: C[oi], members, open, status, statusColor: status === 'Active' ? '#1f8a4c' : '#8a8a96' })),
 
       q: s.q, setQ: e => this.setState({ q: e.target.value }),
-      roleOpts: ['All', 'Owner', 'Admin', 'Member'].map(r => this.seg(s.roleF === r, r, () => this.setState({ roleF: r }))),
-      people, peopleCount: people.length + ' of 5',
+      ...ppl,
 
       hookStats: [
         { label: 'LAST DELIVERY', value: '4m ago', color: '#16161d' },
