@@ -822,16 +822,17 @@
 }
 
 /*
- * The grip along the bottom of the YOU row (LAI-891): drag it to make the
- * rows taller or shorter. It lies in the row's margin under the blocks, so
- * it never covers one, and it spans the whole track.
+ * The grip band along the bottom of the YOU row (LAI-891, made visible by
+ * LAI-892): a hatched band in the row's margin under the blocks — never over
+ * one — spanning the whole track, with a handle that is always drawn and a
+ * label on hover. Drag it to make the rows taller or shorter.
  */
 .dayline-grip {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 0.5rem;
+  height: 0.875rem;
   margin: 0;
   padding: 0;
   z-index: 7;
@@ -839,29 +840,96 @@
   align-items: center;
   justify-content: center;
   border: none;
-  background: transparent;
+  border-top: 1px solid var(--border-subtle);
+  background: repeating-linear-gradient(90deg, var(--bg-column) 0 6px, var(--bg-card) 6px 12px);
   cursor: ns-resize;
   touch-action: none;
+  transition: var(--transition);
 }
 
+.dayline-grip:hover,
+.dayline-grip:focus-visible {
+  background: var(--accent-bg);
+  border-top-color: var(--accent-border);
+}
+
+/* The handle stays in view wherever the day is scrolled: sticky in the scroller. */
 .dayline-grip-bar {
   position: sticky;
   left: 50%;
-  width: 2.5rem;
-  height: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4rem;
+  height: 0.625rem;
   border-radius: var(--radius-pill);
-  background: var(--border-default);
+  background: var(--text-muted);
   transition: var(--transition);
+}
+
+.dayline-grip-dots {
+  width: 1.5rem;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--bg-card) 0 2px, transparent 2px 4px);
 }
 
 .dayline-grip:hover .dayline-grip-bar,
 .dayline-grip:focus-visible .dayline-grip-bar {
   background: var(--accent);
-  width: 3.5rem;
+  width: 5rem;
+}
+
+.dayline-grip-label {
+  position: sticky;
+  left: calc(50% + 3rem);
+  margin-left: 0.5rem;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  white-space: nowrap;
+  opacity: 0;
+  transition: var(--transition);
+}
+
+.dayline-grip:hover .dayline-grip-label,
+.dayline-grip:focus-visible .dayline-grip-label {
+  opacity: 1;
 }
 
 .dayline-grip:focus-visible {
   outline: none;
+}
+
+/* The same height from the lane column: a slider under the YOU figures (LAI-892). */
+.dayline-row-height {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.25rem;
+  min-width: 0;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.dayline-row-height-name {
+  flex: none;
+}
+
+.dayline-row-height-slider {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  height: 1rem;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.dayline-row-height-slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* − level + : the scale in steps, the level in mono between them (LAI-890). */

@@ -259,9 +259,12 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
         h.page
           .locator(`[data-block-id="${id}"]`)
           .evaluate((el) => el.getBoundingClientRect().height);
-      assert.equal(Math.round(await rowH()), 116);
+      assert.equal(Math.round(await rowH()), 122);
       assert.equal(Math.round(await blockH('d1')), 80);
 
+      // Every drag stays inside the viewport: a pointer let go outside it never
+      // reaches the grip, and the grip then holds its last height.
+      await h.page.setViewportSize({ width: 1280, height: 1000 });
       const grip = h.page.locator('[data-row-grip]');
       await grip.scrollIntoViewIfNeeded();
       const box = await grip.boundingBox();
@@ -274,7 +277,7 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
       await h.page.mouse.move(x, y + 30);
       await h.page.mouse.move(x, y + 60);
       await h.page.mouse.up();
-      await until(async () => Math.round(await rowH()) === 176);
+      await until(async () => Math.round(await rowH()) === 182);
       // The column's label is exactly as tall as the row, rule for rule.
       const rowBox = await h.page
         .locator('.dayline-row')
@@ -298,21 +301,56 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
       assert.ok(after !== null);
       await h.page.mouse.move(x, after.y + after.height / 2);
       await h.page.mouse.down();
-      await h.page.mouse.move(x, after.y + 600);
+      await h.page.mouse.move(x, Math.min(after.y + 180, 980));
       await h.page.mouse.up();
-      await until(async () => Math.round(await rowH()) === 276);
+      await until(async () => Math.round(await rowH()) === 282);
       assert.equal(await grip.getAttribute('aria-valuenow'), '240');
       const top = await grip.boundingBox();
       assert.ok(top !== null);
       await h.page.mouse.move(x, top.y + top.height / 2);
       await h.page.mouse.down();
-      await h.page.mouse.move(x, top.y - 900);
+      await h.page.mouse.move(x, Math.max(1, top.y - 300));
       await h.page.mouse.up();
-      await until(async () => Math.round(await rowH()) === 116);
+      await until(async () => Math.round(await rowH()) === 122);
       // ↓ on the grip is 8px.
       await grip.focus();
       await h.page.keyboard.press('ArrowDown');
-      await until(async () => Math.round(await rowH()) === 124);
+      await until(async () => Math.round(await rowH()) === 130);
+      // The band and its handle are drawn without hovering, and the column's
+      // slider reads the same height and sets it (LAI-892).
+      const band = await grip.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const bar = el.querySelector('.dayline-grip-bar')?.getBoundingClientRect();
+        const s = getComputedStyle(el);
+        return {
+          height: r.height,
+          cursor: s.cursor,
+          barWidth: bar?.width ?? 0,
+          barOpacity:
+            bar === undefined
+              ? 0
+              : parseFloat(getComputedStyle(el.querySelector('.dayline-grip-bar')!).opacity),
+        };
+      });
+      assert.ok(band.height >= 8, `the band is ${String(band.height)}px tall`);
+      assert.equal(band.cursor, 'ns-resize');
+      assert.ok(band.barWidth >= 48 && band.barOpacity > 0, 'the handle is not drawn');
+      const rowSlider = h.page.locator('[data-row-slider]');
+      const seen = await h.page.evaluate(() =>
+        [...document.querySelectorAll<HTMLInputElement>('[data-row-slider]')].map((el) => ({
+          value: el.value,
+          attr: el.getAttribute('value'),
+          min: el.min,
+          max: el.max,
+          step: el.step,
+          now: document.querySelector('[data-row-grip]')?.getAttribute('aria-valuenow'),
+        })),
+      );
+      assert.equal(await rowSlider.inputValue(), '88', JSON.stringify(seen));
+      await rowSlider.focus();
+      await h.page.keyboard.press('ArrowRight');
+      await until(async () => Math.round(await rowH()) === 138);
+      assert.equal(await grip.getAttribute('aria-valuenow'), '96');
       // Nothing overflowed the card and no block lies over another.
       const boxes = await h.page.locator('[data-block-id]').evaluateAll((els) =>
         els.map((el) => {
