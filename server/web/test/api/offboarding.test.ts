@@ -1,14 +1,13 @@
 /**
- * The offboarding and reset-link refusals, read from the envelope (D-104,
- * LAI-988). The browser tests drive the dialog and the page; these pin each
- * `reason` the server sends to what the reader is told.
+ * The offboarding refusals, read from the envelope (D-104 item 5, LAI-988).
+ * The browser tests drive the dialog; these pin each `reason` the server
+ * sends to what the reader is told.
  */
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { ApiError } from '../../src/api/errors.ts';
 import { heldSummary, openTasksHeld, reassignRefusal } from '../../src/api/offboarding.ts';
-import { resetRefusal } from '../../src/api/password-resets.ts';
 
 const refused = (
   code: ConstructorParameters<typeof ApiError>[0],
@@ -62,24 +61,5 @@ void describe('a refused reassignment', () => {
 
   void test('a 422 on another field is not one', () => {
     assert.equal(reassignRefusal(refused('unprocessable', 422, { field: 'name' })), undefined);
-  });
-});
-
-void describe('a refused reset link', () => {
-  void test('maps every reason the server sends', () => {
-    assert.equal(resetRefusal(refused('not_found', 404, { reason: 'unknown' })), 'unknown');
-    for (const reason of ['used', 'revoked', 'expired'] as const) {
-      assert.equal(resetRefusal(refused('conflict', 409, { reason })), reason);
-    }
-    assert.equal(resetRefusal(refused('forbidden', 403, { reason: 'inactive' })), 'inactive');
-    assert.equal(
-      resetRefusal(refused('rate_limited', 429, { retry_after_seconds: 3 })),
-      'throttled',
-    );
-  });
-
-  void test('anything else is the form’s to show, not a dead link', () => {
-    assert.equal(resetRefusal(refused('unprocessable', 422, { field: 'new_password' })), undefined);
-    assert.equal(resetRefusal(new Error('offline')), undefined);
   });
 });
