@@ -30,6 +30,7 @@ import {
   closeBrowser,
   open,
   refuse,
+  reply,
   type ApiStub,
   type StubCall,
   setTheme,
@@ -275,13 +276,18 @@ void describe('role management', () => {
     }
   });
 
-  void test('the owner may grant any role, Owner included, with nothing greyed', async () => {
+  /**
+   * D-104 item 2 (LAI-999, from LAI-987): exactly one owner, handed over by
+   * Transfer ownership — so *Owner* is not in the picker at all, rather than
+   * offered and refused `422 use_transfer`.
+   */
+  void test('the owner may grant Admin, Member or Viewer — never Owner — with nothing greyed', async () => {
     const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
       await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
       const select = h.page.locator('.org-person', { hasText: 'Tomas Nel' }).getByRole('combobox');
       const { labels: options, disabled } = await optionsOf(select);
-      assert.deepEqual(options, ['Owner', 'Admin', 'Member', 'Viewer']);
+      assert.deepEqual(options, ['Admin', 'Member', 'Viewer']);
       assert.equal(disabled, 0, 'an option is greyed rather than absent');
     } finally {
       await h.close();
@@ -367,12 +373,28 @@ void describe('role management', () => {
     }
   });
 
-  void test('changing a role PATCHes that person with that role', async () => {
-    const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+  /** LAI-999 (from LAI-987): a role change asks first, and offers Undo once the server took it. */
+  void test('changing a role asks first, PATCHes that person with that role, and Undo puts it back', async () => {
+    const h = await open('/organisation?tab=people', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2': user('u2', 'Tomas Nel', 'admin'),
+    });
     try {
       await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
       const select = h.page.locator('.org-person', { hasText: 'Tomas Nel' }).getByRole('combobox');
       await pick(select, 'admin');
+
+      const dialog = h.page.locator('[data-confirm-dialog]');
+      await dialog.waitFor({ timeout: 20_000 });
+      assert.match(await dialog.innerText(), /Make Tomas Nel an admin\?/);
+      await h.page.waitForTimeout(300);
+      assert.equal(
+        h.calls.filter((c: StubCall) => c.method === 'PATCH').length,
+        0,
+        'the PATCH went out before the confirmation',
+      );
+      await dialog.locator('[data-confirm-ok] button').click();
 
       await h.page.waitForFunction(
         () => document.querySelectorAll('.org-person').length === 4,
@@ -385,6 +407,12 @@ void describe('role management', () => {
       assert.ok(patch, `no PATCH was sent; saw ${h.calls.map((c) => c.method).join(', ')}`);
       assert.equal(patch.path, '/api/v1/users/u2', 'patched the wrong person');
       assert.deepEqual(patch.body, { org_role: 'admin' });
+
+      await h.page.locator('[data-people-undo] button').click();
+      await until(() => h.calls.filter((c: StubCall) => c.method === 'PATCH').length === 2);
+      const undone = h.calls.filter((c: StubCall) => c.method === 'PATCH')[1];
+      assert.equal(undone?.path, '/api/v1/users/u2');
+      assert.deepEqual(undone?.body, { org_role: 'member' });
     } finally {
       await h.close();
     }
@@ -425,32 +453,50 @@ void describe('deactivation', () => {
     }
   });
 
-  void test('deactivating asks first, and says it is not deletion', async () => {
-    const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+  /**
+   * LAI-999: LAI-988's offboarding dialog, not `window.confirm` — it names the
+   * person, says what ends and what is kept, and turns the server's
+   * `409 open_tasks` into the question (D-104 item 5).
+   */
+  void test('deactivating asks first, says it is not deletion, and asks about open tasks', async () => {
+    const sent: unknown[] = [];
+    const h = await open('/organisation?tab=people', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2': (call: StubCall) => {
+        sent.push(call.body);
+        return (call.body as { open_tasks?: unknown }).open_tasks === undefined
+          ? reply(409, {
+              error: {
+                code: 'conflict',
+                message: 'They hold 2 open tasks; say whether to unassign or reassign them',
+                details: { reason: 'open_tasks', count: 2, keys: ['LC-1', 'LC-2'], hidden: 0 },
+              },
+            })
+          : user('u2', 'Tomas Nel', 'member', false);
+      },
+    });
     try {
       await h.page.locator('.org-deactivate').first().waitFor({ timeout: 20_000 });
-
-      let asked = '';
-      h.page.on('dialog', (d) => {
-        asked = d.message();
-        void d.dismiss();
-      });
-
       await h.page
         .locator('.org-person', { hasText: 'Tomas Nel' })
         .locator('.org-deactivate')
         .click();
-      // The sleep is the quiet window for the PATCH that must not go out.
-      await h.page.waitForTimeout(500);
-      await until(() => asked.includes('Tomas Nel') && /not deletion/i.test(asked));
 
+      const dialog = h.page.locator('.offb-dialog');
+      await dialog.waitFor({ timeout: 20_000 });
+      const asked = await dialog.innerText();
       assert.match(asked, /Tomas Nel/, 'the confirmation does not name who');
       assert.match(asked, /not deletion/i, 'does not say the row and history are kept');
-      assert.equal(
-        h.calls.filter((c: StubCall) => c.method === 'PATCH').length,
-        0,
-        'dismissing the confirmation still sent the PATCH',
-      );
+      await h.page.waitForTimeout(300);
+      assert.equal(sent.length, 0, 'deactivated without asking');
+
+      await dialog.locator('[data-action="offboard-confirm"]').click();
+      await until(async () => (await dialog.getAttribute('data-offboarding')) === 'open-tasks');
+      assert.equal(await dialog.locator('input[value="unassign"]').isChecked(), true);
+      await dialog.locator('[data-action="offboard-confirm"]').click();
+      await until(() => sent.length === 2);
+      assert.deepEqual(sent, [{ is_active: false }, { is_active: false, open_tasks: 'unassign' }]);
     } finally {
       await h.close();
     }
@@ -632,30 +678,29 @@ void describe('a refusal', () => {
    * *"Promote somebody else to Owner first"* — the instruction that gets the
    * person unstuck — and a client that renders its own wording loses it.
    */
+  // LAI-999: the owner's row has no picker any more (D-104 item 2), so the
+  // refusal is driven through a member's row; what is asserted is unchanged —
+  // the server's sentence, shown verbatim.
   void test("the server's own words are shown, not a rule the client invented", async () => {
     const MESSAGE =
-      'This is the last active Owner. Promote somebody else to Owner first — an organisation with no Owner cannot be recovered.';
+      'An organisation has exactly one Owner. Use Transfer ownership to hand it over.';
 
     const h = await open('/organisation?tab=people', {
       ...BASE,
-      // A second owner (LAI-958: only an owner has a role picker), demoting the
-      // first — the server, not the client, knows whether that one is the last.
-      '/api/v1/me': me('u3', 'owner'),
-      '/api/v1/users/u1': refuse(409, 'conflict', MESSAGE),
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2': refuse(422, 'unprocessable', MESSAGE),
     });
     try {
       await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
+      const select = h.page.locator('.org-person', { hasText: 'Tomas Nel' }).getByRole('combobox');
+      await pick(select, 'admin');
+      await h.page.locator('[data-confirm-dialog] [data-confirm-ok] button').click();
 
-      // The client did not pre-empt it: demoting the last owner is offered, and
-      // whatever the server refuses, the page shows its sentence and no other.
-      const select = h.page
-        .locator('.org-person', { hasText: 'Ada Lovelace' })
-        .getByRole('combobox');
-      await pick(select, 'member');
-
-      const error = h.page.locator('.org-error');
+      const error = h.page.locator('.org-people-error');
       await error.waitFor({ timeout: 20_000 });
       assert.equal(await error.innerText(), MESSAGE, 'the refusal was reworded rather than shown');
+      // No Undo for a change the server refused.
+      assert.equal(await h.page.locator('[data-people-undo]').count(), 0);
     } finally {
       await h.close();
     }

@@ -201,6 +201,8 @@ void describe('the People tab (LAI-893)', () => {
         'owner=Owner 1',
         'admin=Admin 1',
         'member=Member 2',
+        // LAI-999: LAI-987's Deactivated filter, shown when anyone is.
+        'off=Deactivated 1',
         'pending=Pending 2',
       ]);
 
@@ -298,6 +300,12 @@ void describe('the People tab (LAI-893)', () => {
       await bar.waitFor({ timeout: 5_000 });
       assert.match(await bar.innerText(), /^2 selected/);
       await bar.getByRole('button', { name: 'Make Admin' }).click();
+      // LAI-999: a role change asks first (LAI-987), the bulk one included.
+      const confirm = h.page.locator('[data-confirm-dialog]');
+      await confirm.waitFor({ timeout: 5_000 });
+      assert.match(await confirm.innerText(), /Make 2 people admins\?/);
+      assert.equal(h.calls.filter((c) => c.method === 'PATCH').length, 0);
+      await confirm.locator('[data-confirm-ok] button').click();
       await until(() => h.calls.filter((c) => c.method === 'PATCH').length === 2);
       const patches = h.calls.filter((c) => c.method === 'PATCH').map((c) => [c.path, c.body]);
       assert.deepEqual(patches, [
