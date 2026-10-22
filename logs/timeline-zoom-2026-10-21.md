@@ -150,3 +150,29 @@ on origin/master) in the worktree `Laika-860`, branch
 **State**
 In review on PR #9; gate result in the task file's round-1 section. Laika
 `finish_task` left to polly after cross-review, as instructed.
+
+## 2026-10-22T06:55:00Z — LAI-860 (PR #9 CI, merge, gate, [strelka])
+
+**What changed**
+- Committed the round-1 write-up in
+  .tasks/review/LAI-860-my-day-timeline-zoom-overlap.md and the entry above,
+  which the previous builder left uncommitted.
+- Merged `origin/master` (`28cf1877`, 115 commits). One conflict:
+  server/web/src/routes/screens/my-day/Timeline.tsx, the doc paragraph
+  LAI-834 rewrote; kept LAI-834's paragraph with the badge sentence ending
+  "wherever it clears its neighbours (CHIEF's addition G, LAI-860)".
+- Task file item 7: why PR #9 was red, and the gate.
+
+**Decisions**
+- PR #9's failed run (39603271201, on `14f4681c`) was the k1-label failure
+  that `d8d32758` fixes; that commit had not been pushed. No code change was
+  needed for CI beyond pushing it with the merge.
+- LAI-300 kept its id: the sweep over every local and `origin/*` ref and
+  both `git log` halves finds it only on this branch.
+
+**Discovered**
+- Gate run 1 failed only on `sprints.test.ts` "is exact past the page
+  size", LAI-304's known timeout; alone it passed, and run 2 was 0/0/0.
+
+**State**
+Pushed to PR #9; CI result on the card.

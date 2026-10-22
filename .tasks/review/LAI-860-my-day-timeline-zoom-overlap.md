@@ -414,4 +414,26 @@ by node and showed 844 and 124.
 **6. Merged `origin/master`** (`6b8cd862`, docs only, no conflict) with
 `git merge origin/master`, not the local `master`.
 
-**Gate** (repo root, after the last edit, load checked first): GATE_RESULT
+**7. PR #9's red CI run, and the merge of `origin/master`** ([strelka]
+2026-10-22). GitHub run 39603271201 on `14f4681c` failed on this test alone,
+"three at once lost k1's label" at 1× and 2×, both widths, both themes:
+exactly item 1, whose fix (`d8d32758`) was committed but never pushed. No
+other failure in that run. Merged `origin/master` (`28cf1877`, 115 commits,
+LAI-834 among them) with `git merge origin/master`: one conflict, the
+`Timeline` doc paragraph, resolved as item 4 says (LAI-834's paragraph, its
+badge sentence ending "wherever it clears its neighbours (CHIEF's addition
+G, LAI-860)"). `my-day.css` and `timeline-derive.ts` merged automatically.
+
+**Gate** (repo root, on `92d4e1a3`, the merge, under
+`/tmp/laika-root-gate.lock`, each command to its own file):
+
+- Run 1, load 5: `node --test test/browser/my-day-timeline-zoom.test.ts`
+  (server/web) exit 0; `pnpm test` **exit 1**, on one case only:
+  `server/test/services/sprints.test.ts` "is exact past the page size…"
+  timed out at 5000ms. That is LAI-304's known flake (server, untouched by
+  this branch). `pnpm lint` exit 0, `pnpm format` exit 0.
+- That file alone (`pnpm exec vitest run test/services/sprints.test.ts`,
+  server/, load 42): exit 0, 43 passed.
+- Run 2, load 13: the browser test exit 0; `pnpm test` **exit 0** (server
+  3411 passed, 10 skipped; server/web pass 2777 fail 0; cli pass 551 fail
+  0); `pnpm lint` exit 0; `pnpm format` exit 0.
