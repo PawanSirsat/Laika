@@ -275,23 +275,25 @@ export function ShareActivity({
             </pre>
           </div>
 
-          {/* LAI-773: the OpenTelemetry fallback, optional. Metrics only, with
-              this board's address and the token by reference — never printed. */}
+          {/* LAI-773: the OpenTelemetry fallback. Metrics only, with this
+              board's address and no token; `laika activity on` writes it (LAI-867). */}
           <section className="share-otel" aria-labelledby="share-otel-title" data-block="otel">
             <h3 className="share-h" id="share-otel-title">
               OpenTelemetry (optional)
             </h3>
             <p className="conn-note">
-              Claude Code can also send its own token metrics here. They fill in what its session
-              files miss — titles, classifiers, compaction — matched session by session, so nothing
-              counts twice. <strong>Metrics only</strong>: Laika refuses logs and traces, which can
-              carry prompt text. It needs sharing on, as above, and your Laika token in{' '}
-              <code>$LAIKA_TOKEN</code>; <code>laika activity otel</code> prints the same lines.
+              <code>laika activity on</code>, above, also has Claude Code send its own token metrics
+              here, from every Claude Code on the laptop — started from the Dock or by Omnigent
+              included — with no shell line. They fill in what its session files miss — titles,
+              classifiers, compaction — matched session by session, so nothing counts twice.{' '}
+              <strong>Metrics only</strong>: Laika refuses logs and traces, which can carry prompt
+              text. The token is never written: a helper reads it from <code>~/.laika/env</code>{' '}
+              each time. <code>laika activity status</code> says whether they reach this board.
             </p>
             <div className="conn-block">
               <div className="conn-block-bar">
                 <span className="conn-block-label" id="share-otel-label">
-                  In the shell you start Claude Code from
+                  What it writes to ~/.claude/settings.json — no token
                 </span>
                 <CopyButton
                   text={otelEnvBlock(origin)}

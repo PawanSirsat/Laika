@@ -192,6 +192,22 @@ void describe('My day after the reference', () => {
     }
   });
 
+  // LAI-867: the hint names the step that sends agent minutes, not a screen.
+  void test('no agent minutes: the hint says to run laika activity on on each laptop', async () => {
+    const none = { minutes: 0, keyboard_minutes: 0, by_task: [], unattributed_minutes: 0 };
+    const h = await open('/my-day', { ...STUB, '/api/v1/me/time': { ...DAY, agent: none } });
+    try {
+      const hint = h.page.locator('.myday-agent [data-agent-hint]');
+      await hint.waitFor({ timeout: 20_000 });
+      const text = await hint.innerText();
+      assert.match(text, /run laika activity on on each laptop\./);
+      assert.equal(await hint.locator('code').innerText(), 'laika activity on');
+      assert.doesNotMatch(text, /\(Connect\)/);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('the day is a lane of confirmed and drafted blocks, with a line at now', async () => {
     const h = await open('/my-day', STUB);
     try {

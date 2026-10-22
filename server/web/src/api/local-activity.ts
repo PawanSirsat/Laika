@@ -73,21 +73,28 @@ export function deleteOwnLocalActivity(): Promise<void> {
 export const OTLP_METRICS_PATH = '/api/v1/otlp/v1/metrics';
 
 /**
- * The OpenTelemetry block (LAI-773, design §3), with this board's address in
- * it and the token left as `$LAIKA_TOKEN` — the variable `laika init` and the
- * Connect steps already set — so the page never prints a secret. Metrics only:
+ * The OpenTelemetry block (LAI-773, design §3): what `laika activity on` writes
+ * into `~/.claude/settings.json` for this board (LAI-867), so the page shows
+ * exactly what changes on the laptop. No token: `otelHeadersHelper` names a
+ * script that reads it from `~/.laika/env` each time it runs. Metrics only:
  * JSON over HTTP (Laika has no protobuf decoder), cumulative so a retried
  * export cannot count twice, and logs off, because a log exporter can carry
  * prompt text and Laika refuses it.
  */
 export function otelEnvBlock(origin: string): string {
-  return [
-    'export CLAUDE_CODE_ENABLE_TELEMETRY=1',
-    'export OTEL_METRICS_EXPORTER=otlp',
-    'export OTEL_EXPORTER_OTLP_PROTOCOL=http/json',
-    `export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="${origin}${OTLP_METRICS_PATH}"`,
-    'export OTEL_EXPORTER_OTLP_METRICS_HEADERS="Authorization=Bearer $LAIKA_TOKEN"',
-    'export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative',
-    'export OTEL_LOGS_EXPORTER=none',
-  ].join('\n');
+  return JSON.stringify(
+    {
+      env: {
+        CLAUDE_CODE_ENABLE_TELEMETRY: '1',
+        OTEL_METRICS_EXPORTER: 'otlp',
+        OTEL_EXPORTER_OTLP_PROTOCOL: 'http/json',
+        OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: `${origin}${OTLP_METRICS_PATH}`,
+        OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: 'cumulative',
+        OTEL_LOGS_EXPORTER: 'none',
+      },
+      otelHeadersHelper: '~/.laika/otel-headers',
+    },
+    null,
+    2,
+  );
 }
