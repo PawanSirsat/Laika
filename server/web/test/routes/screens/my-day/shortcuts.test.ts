@@ -29,6 +29,11 @@ void describe('typingIn', () => {
     assert.equal(typingIn({ tagName: 'DIV', isContentEditable: true }), true);
   });
 
+  void test('a range input is: its arrows move its own thumb (LAI-891)', () => {
+    assert.equal(typingIn({ tagName: 'INPUT', type: 'range' }), true);
+    assert.equal(shortcutFor(key('ArrowRight', { tagName: 'INPUT', type: 'range' })), undefined);
+  });
+
   void test('a checkbox, a button or the page is not', () => {
     assert.equal(typingIn({ tagName: 'INPUT', type: 'checkbox' }), false);
     assert.equal(typingIn({ tagName: 'BUTTON' }), false);

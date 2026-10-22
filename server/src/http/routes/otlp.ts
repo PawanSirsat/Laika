@@ -44,7 +44,8 @@ export function otlpRoutes(options: { db: Db }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db } = options;
 
-  // The door first: the actor and the consent, then the size, then the body.
+  // The door first: the actor and the organisation's switch, then the size,
+  // then the body.
   app.use('/v1/metrics', async (c, next) => {
     assertMaySendLocalActivity(db, requireActor(c));
     await next();

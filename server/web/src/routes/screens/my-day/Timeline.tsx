@@ -30,6 +30,13 @@ import {
   PX_PER_HOUR,
   SIGNAL_MINUTES,
   STEP,
+  BLOCK_MAX_PX,
+  BLOCK_MIN_PX,
+  BLOCK_STEP_PX,
+  ZOOM_STEPS,
+  clampBlockHeight,
+  zoomLabel,
+  zoomStep,
   type Box,
   type ChipPlace,
   type DayLine,
@@ -69,6 +76,10 @@ const ZOOMS: readonly (readonly [Zoom, string, string])[] = [
   ['1', '1×', '160 px an hour'],
   ['2', '2×', '320 px an hour'],
 ];
+
+/** What a stepped level is, for its tooltip. */
+const pxAnHour = (zoom: Zoom): string =>
+  zoom === 'fit' ? 'The whole day in view' : `${String(PX_PER_HOUR[zoom] ?? 0)} px an hour`;
 
 /** The keys the footer lists, in the design's order. */
 const KEYS: readonly (readonly [string, string])[] = [
@@ -216,6 +227,11 @@ export function Timeline({
   );
   const [preview, setPreview] = useState<{ id: string; edit: Edit } | undefined>(undefined);
   const [hover, setHover] = useState<Hover | undefined>(undefined);
+  /** The minute at the middle of the view when the scale last changed — kept there (LAI-890). */
+  const keep = useRef<number | undefined>(undefined);
+  /** The block height, dragged by the grip under the YOU row (LAI-891). */
+  const [blockPx, setBlockPx] = useState<number>(BLOCK_MIN_PX);
+  const gripDrag = useRef<{ y: number; px: number } | null>(null);
   const [chips, setChips] = useState<ReadonlyMap<string, ChipPlace>>(() => new Map());
   const [, setFonts] = useState(0);
 
@@ -295,12 +311,29 @@ export function Timeline({
     };
   }, []);
 
+  /** A new scale, with the minute at the middle of the view remembered (LAI-890). */
+  const changeZoom = (next: Zoom): void => {
+    const box = scroller.current;
+    keep.current =
+      box === null || pph === undefined
+        ? undefined
+        : scale.at(box.scrollLeft + box.clientWidth / 2);
+    onZoom(next);
+  };
+
   // Open at now on today (LAI-889), else on the day's first block — at every
-  // zoom but the one that fits it all.
+  // zoom but the one that fits it all. A change of scale keeps the middle of
+  // the view where it was (LAI-890).
   const first = line.blocks[0]?.start;
   useEffect(() => {
     const box = scroller.current;
+    const kept = keep.current;
+    keep.current = undefined;
     if (box === null || pph === undefined) return;
+    if (kept !== undefined) {
+      box.scrollLeft = Math.max(0, x(kept) - box.clientWidth / 2);
+      return;
+    }
     box.scrollLeft =
       line.now === undefined
         ? Math.max(0, x((first ?? from * 60 + 120) - 30))
@@ -636,6 +669,50 @@ export function Timeline({
     (selection?.kind === 'gap' ? 'the gap' : selection?.kind === 'break' ? 'the break' : undefined);
 
   const lanes = hasSignals || hasAgents;
+  /** The row's px from the dragged block height: the strip above, the blocks, a margin under. */
+  const rowStyle = {
+    '--block-h': `${String(blockPx)}px`,
+    '--you-h': `${String(28 + blockPx + 14)}px`,
+  } as CSSProperties;
+  const grip = {
+    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      gripDrag.current = { y: event.clientY, px: blockPx };
+    },
+    onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
+      const drag = gripDrag.current;
+      if (drag === null) return;
+      // A move with no button held is not a drag: the button was let go where
+      // no pointerup reached us — outside the window, say.
+      if (event.buttons === 0) {
+        gripDrag.current = null;
+        return;
+      }
+      setBlockPx(clampBlockHeight(drag.px + (event.clientY - drag.y)));
+    },
+    onPointerUp: (event: PointerEvent<HTMLButtonElement>) => {
+      gripDrag.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    },
+    onPointerCancel: () => {
+      gripDrag.current = null;
+    },
+    onLostPointerCapture: () => {
+      gripDrag.current = null;
+    },
+    onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => {
+      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+      event.preventDefault();
+      event.stopPropagation();
+      setBlockPx((px) =>
+        clampBlockHeight(px + (event.key === 'ArrowDown' ? BLOCK_STEP_PX : -BLOCK_STEP_PX)),
+      );
+    },
+  };
+  const sliderAt = zoom === 'fit' ? ZOOM_STEPS.indexOf('1') : ZOOM_STEPS.indexOf(zoom);
   const laneTotals = (): ReactNode => (
     <>
       <div className="dayline-axis-note" data-axis-note>
@@ -662,6 +739,23 @@ export function Timeline({
           {figure(figures.confirmed + figures.drafted + figures.needsCard)}
         </strong>
         <span className="dayline-lane-sub">of work · {duration(figures.confirmed)} confirmed</span>
+        <label className="dayline-row-height">
+          <span className="dayline-row-height-name">Row height</span>
+          <input
+            type="range"
+            className="dayline-row-height-slider"
+            data-row-slider
+            min={BLOCK_MIN_PX}
+            max={BLOCK_MAX_PX}
+            step={BLOCK_STEP_PX}
+            value={blockPx}
+            aria-valuetext={`${String(blockPx)} px`}
+            title="Drag to make the rows taller or shorter"
+            onChange={(event) => {
+              setBlockPx(clampBlockHeight(Number(event.target.value)));
+            }}
+          />
+        </label>
       </div>
       {hasAgents && (
         <div className="dayline-lane-label dayline-label-agents">
@@ -680,7 +774,7 @@ export function Timeline({
   );
 
   return (
-    <section className="myday-card dayline" aria-label="Timeline" data-dayline>
+    <section className="myday-card dayline" aria-label="Timeline" data-dayline style={rowStyle}>
       <header className="dayline-head">
         <div className="dayline-head-title">
           <h2 className="dayline-title">Timeline</h2>
@@ -772,6 +866,67 @@ export function Timeline({
               <span aria-hidden="true">›</span>
             </button>
           </div>
+          <div className="dayline-steps dayline-zoom-steps" role="group" aria-label="Zoom in steps">
+            <button
+              type="button"
+              className="dayline-tool"
+              data-zoom-step="out"
+              aria-label="Zoom out"
+              title={
+                zoomStep(zoom, -1) === undefined
+                  ? 'As far out as it goes'
+                  : pxAnHour(zoomStep(zoom, -1) ?? zoom)
+              }
+              disabled={zoomStep(zoom, -1) === undefined}
+              onClick={() => {
+                const next = zoomStep(zoom, -1);
+                if (next !== undefined) changeZoom(next);
+              }}
+            >
+              <span aria-hidden="true">−</span>
+            </button>
+            <span className="dayline-zoom-level" data-zoom-level={zoom} title={pxAnHour(zoom)}>
+              {zoomLabel(zoom)}
+            </span>
+            <input
+              type="range"
+              className={
+                zoom === 'fit'
+                  ? 'dayline-zoom-slider dayline-zoom-slider-fit'
+                  : 'dayline-zoom-slider'
+              }
+              data-zoom-slider
+              min={0}
+              max={ZOOM_STEPS.length - 1}
+              step={1}
+              value={sliderAt}
+              aria-label="Zoom, from half to five times"
+              aria-valuetext={zoomLabel(zoom)}
+              title="Drag to zoom"
+              onChange={(event) => {
+                const next = ZOOM_STEPS[Number(event.target.value)];
+                if (next !== undefined && next !== zoom) changeZoom(next);
+              }}
+            />
+            <button
+              type="button"
+              className="dayline-tool"
+              data-zoom-step="in"
+              aria-label="Zoom in"
+              title={
+                zoomStep(zoom, 1) === undefined
+                  ? 'As far in as it goes'
+                  : pxAnHour(zoomStep(zoom, 1) ?? zoom)
+              }
+              disabled={zoomStep(zoom, 1) === undefined}
+              onClick={() => {
+                const next = zoomStep(zoom, 1);
+                if (next !== undefined) changeZoom(next);
+              }}
+            >
+              <span aria-hidden="true">+</span>
+            </button>
+          </div>
           <div className="dayline-zoom" role="group" aria-label="Zoom">
             {ZOOMS.map(([key, label, title]) => (
               <button
@@ -782,7 +937,7 @@ export function Timeline({
                 aria-pressed={zoom === key}
                 title={title}
                 onClick={() => {
-                  onZoom(key);
+                  changeZoom(key);
                 }}
               >
                 {label}
@@ -1248,6 +1403,28 @@ export function Timeline({
                     </div>
                   );
                 })}
+
+                {/* The grip: drag the rows taller or shorter (LAI-891). */}
+                <button
+                  type="button"
+                  className="dayline-grip"
+                  data-row-grip
+                  role="slider"
+                  aria-label="Row height: drag, or ↑ and ↓"
+                  aria-valuemin={BLOCK_MIN_PX}
+                  aria-valuemax={BLOCK_MAX_PX}
+                  aria-valuenow={blockPx}
+                  aria-orientation="vertical"
+                  title="Drag to make the rows taller or shorter"
+                  {...grip}
+                >
+                  <span className="dayline-grip-bar" aria-hidden="true">
+                    <span className="dayline-grip-dots" aria-hidden="true" />
+                  </span>
+                  <span className="dayline-grip-label" aria-hidden="true">
+                    ↕ drag to resize rows
+                  </span>
+                </button>
               </div>
 
               {hasAgents && (

@@ -743,8 +743,10 @@
 .dayline-nav {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-left: auto;
+  min-width: 0;
 }
 
 /* ‹ Now ›: one bordered group, as the design draws it. */
@@ -798,6 +800,154 @@
   background: var(--overdue);
 }
 
+/* The slider between − and +: eight levels to drag across (LAI-891). */
+.dayline-zoom-slider {
+  width: 6.5rem;
+  height: 100%;
+  margin: 0;
+  padding: 0 0.5rem;
+  border-left: 1px solid var(--border-card);
+  background: transparent;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.dayline-zoom-slider-fit {
+  opacity: 0.45;
+}
+
+.dayline-zoom-slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/*
+ * The grip band along the bottom of the YOU row (LAI-891, made visible by
+ * LAI-892): a hatched band in the row's margin under the blocks — never over
+ * one — spanning the whole track, with a handle that is always drawn and a
+ * label on hover. Drag it to make the rows taller or shorter.
+ */
+.dayline-grip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0.875rem;
+  margin: 0;
+  padding: 0;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  background: repeating-linear-gradient(90deg, var(--bg-column) 0 6px, var(--bg-card) 6px 12px);
+  cursor: ns-resize;
+  touch-action: none;
+  transition: var(--transition);
+}
+
+.dayline-grip:hover,
+.dayline-grip:focus-visible {
+  background: var(--accent-bg);
+  border-top-color: var(--accent-border);
+}
+
+/* The handle stays in view wherever the day is scrolled: sticky in the scroller. */
+.dayline-grip-bar {
+  position: sticky;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4rem;
+  height: 0.625rem;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+  transition: var(--transition);
+}
+
+.dayline-grip-dots {
+  width: 1.5rem;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--bg-card) 0 2px, transparent 2px 4px);
+}
+
+.dayline-grip:hover .dayline-grip-bar,
+.dayline-grip:focus-visible .dayline-grip-bar {
+  background: var(--accent);
+  width: 5rem;
+}
+
+.dayline-grip-label {
+  position: sticky;
+  left: calc(50% + 3rem);
+  margin-left: 0.5rem;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  white-space: nowrap;
+  opacity: 0;
+  transition: var(--transition);
+}
+
+.dayline-grip:hover .dayline-grip-label,
+.dayline-grip:focus-visible .dayline-grip-label {
+  opacity: 1;
+}
+
+.dayline-grip:focus-visible {
+  outline: none;
+}
+
+/* The same height from the lane column: a slider under the YOU figures (LAI-892). */
+.dayline-row-height {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.25rem;
+  min-width: 0;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.dayline-row-height-name {
+  flex: none;
+}
+
+.dayline-row-height-slider {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  height: 1rem;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.dayline-row-height-slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* − level + : the scale in steps, the level in mono between them (LAI-890). */
+.dayline-zoom-level {
+  min-width: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.375rem;
+  border-left: 1px solid var(--border-card);
+  border-right: 1px solid var(--border-card);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
 .dayline-zoom {
   display: inline-flex;
   gap: 2px;
@@ -846,6 +996,7 @@
 
 .dayline-axis-note {
   flex: none;
+  box-sizing: border-box;
   height: var(--axis-h);
   display: flex;
   align-items: center;
@@ -858,9 +1009,11 @@
   text-overflow: ellipsis;
 }
 
+/* Padding inside the lane's height, so each label is exactly as tall as its lane. */
 .dayline-lane-label {
   flex: none;
   min-width: 0;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 0.1875rem;
@@ -1041,6 +1194,18 @@
   bottom: 0;
   background: var(--accent-bg);
   pointer-events: none;
+}
+
+/*
+ * Every lane is border-box, its rule inside its height, so each is exactly
+ * as tall as its label in the column (LAI-891): the column had drifted a
+ * pixel a lane, and eight at the YOU row's padding.
+ */
+.dayline-axis,
+.dayline-signals-lane,
+.dayline-row,
+.dayline-agents-lane {
+  box-sizing: border-box;
 }
 
 /* The hours along the top. */
@@ -2994,6 +3159,12 @@ p.inspector-length {
   }
 
   .dayline-foot-hint {
+    margin-left: 0;
+  }
+
+  /* The three groups take their own line, and wrap within it. */
+  .dayline-nav {
+    flex-basis: 100%;
     margin-left: 0;
   }
 

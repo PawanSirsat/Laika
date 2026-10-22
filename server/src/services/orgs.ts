@@ -104,13 +104,14 @@ export interface OrgView {
    */
   presence_enabled: boolean;
   /**
-   * The org's half of D-079's two switches (§4.2, LAI-751): whether developers
-   * who turn on sharing may send local activity counts. Default off.
+   * The organisation's Developer insights (§4.2, LAI-751): whether every
+   * connected machine's local activity counts are collected. Since D-102
+   * (amended) it decides alone — no person's own switch is read. Default off.
    *
    * **Readable by everyone, for presence's reason.** It is a statement about
-   * what the org may collect about the people in it, and they have the
+   * what the org collects about the people in it, and they have the
    * strongest claim to know it; the Connect screen shows it to the developer
-   * deciding whether to share.
+   * whose machine it collects from.
    */
   developer_insights: boolean;
   created_at: number;
