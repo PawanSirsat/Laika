@@ -197,9 +197,26 @@ void describe('`laika activity backfill` and tokens', () => {
     assert.equal(await h.run('on'), 0);
     transcript(h.home, [{ id: 'msg_old', daysAgo: 12, output: 900 }]);
     h.answers = ['n'];
+    h.out.length = 0;
     assert.equal(await h.run('backfill'), 0);
     assert.equal(usageReports(h.board).length, 0);
     assert.equal(usageBackfill(activityPaths(h.home)), 'no');
+    // Collection, not a personal "sharing" (D-102 amended, LAI-971).
+    assert.match(h.out.join('\n'), /from before collection started on this machine/);
+    assert.doesNotMatch(h.out.join('\n'), /sharing/);
+  });
+
+  void test('Developer insights turned off before the tokens go: said in the organisation’s words', async () => {
+    const h = await harness();
+    h.answers = ['n'];
+    assert.equal(await h.run('on'), 0);
+    transcript(h.home, [{ id: 'msg_old', daysAgo: 3, output: 900 }]);
+    h.board.offForUsage = true;
+    h.out.length = 0;
+    assert.equal(await h.run('backfill', '--yes'), 1);
+    const text = h.out.join('\n');
+    assert.match(text, /Token usage not sent: Developer insights are off for your organisation\./);
+    assert.doesNotMatch(text, /sharing/);
   });
 
   void test('`--yes` sends without asking', async () => {

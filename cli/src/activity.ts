@@ -79,10 +79,9 @@ import { solidtimeCommand, TIME_SOLIDTIME_USAGE } from './time-solidtime.ts';
  * `laika activity on|off|status|sync|emails` (LAI-752, D-079).
  *
  * Local activity is counted on the developer's machine and sent as per-day
- * counts, and only when both switches are on: the organisation's Developer
- * insights and the developer's own "Share my local activity". **Neither can be
- * turned on from here** — the board refuses a token, so an agent cannot switch
- * on its own reporting. `on` only checks the board's answer and installs the
+ * counts, and only while the organisation's Developer insights is on (D-102
+ * amended: there is no personal switch). **It cannot be turned on from here**
+ * — the board refuses a token, so an agent cannot switch on its own reporting. `on` only checks the board's answer and installs the
  * hooks; it does nothing if the answer is no.
  */
 
@@ -180,9 +179,12 @@ export const COLLECTED =
 
 /**
  * Never silent (D-102 amended): collection is the organisation's, so `on`,
- * `status` and `sync` each say so once while its switch is on.
+ * `status` and `sync` each say so once while its switch is on. Who can see it
+ * is the owner's grant of *See everyone's analytics* (D-102 rule 6), which a
+ * token cannot read for every role — so the CLI names it in words that stay
+ * true whatever the owner grants, where the web app names the roles (LAI-971).
  */
-export const COLLECTION_NOTICE = `Your organisation collects your local activity: ${COLLECTED}. Owners and admins can see it, and you can see who looked.`;
+export const COLLECTION_NOTICE = `Your organisation collects your local activity: ${COLLECTED}. The owner and anyone they grant access can see it, and you can see who looked.`;
 
 function printNotice(io: ActivityIo, board: string): void {
   io.out(COLLECTION_NOTICE);
@@ -294,7 +296,7 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
     if (answer.status === 401) {
       io.err(`${creds.url} refused the token. Run \`laika init\` to mint a new one.`);
     } else if (answer.status === 404) {
-      io.err(`${creds.url} does not offer local activity sharing yet — it needs a newer Laika.`);
+      io.err(`${creds.url} does not offer local activity collection yet — it needs a newer Laika.`);
     } else {
       io.err(`Could not ask ${creds.url} whether collection is on: ${answer.message}.`);
     }
@@ -422,8 +424,8 @@ function otel(io: ActivityIo): number {
   io.err('`laika activity on` already sets this up for every Claude Code on this machine, in');
   io.err('~/.claude/settings.json, with no token written. These lines are for one shell by');
   io.err('hand; $LAIKA_TOKEN must hold your Laika token there.');
-  io.err('The board takes them only while Developer insights and "Share my local activity"');
-  io.err('are both on, adds only what the session files missed, and drops the sessions');
+  io.err('The board takes them only while your organisation has Developer insights on, adds');
+  io.err('only what the session files missed, and drops the sessions');
   io.err('this collector leaves out (automated, or out of your scope) once a sync names them.');
   return 0;
 }
@@ -787,7 +789,7 @@ const AGENT_NAMES: Readonly<Record<string, string>> = {
  * The token half of `backfill` (D-084 item 11): the last 30 days already in
  * the agents' session files, counted, shown, and sent once on a yes — the
  * commit look-back's shape (LAI-757). A no is kept: nothing from before
- * sharing went on is sent until a later `backfill` is answered yes.
+ * collection started is sent until a later `backfill` is answered yes.
  */
 async function backfillTokens(
   io: ActivityIo,
@@ -823,7 +825,7 @@ async function backfillTokens(
     ).trim();
     if (!/^y(es)?$/i.test(answer)) {
       setUsageBackfill(paths, 'no');
-      io.out('No token usage from before sharing went on is sent.');
+      io.out('No token usage from before collection started on this machine is sent.');
       io.out('');
       return 0;
     }
@@ -859,7 +861,7 @@ async function backfillTokens(
       : outcome.kind === 'sent'
         ? `Token usage sent: ${String(outcome.days)} ${outcome.days === 1 ? 'day' : 'days'}${outcome.pending > 0 ? ', the rest with the next syncs' : ''}.`
         : outcome.kind === 'off'
-          ? 'Token usage not sent: the board says sharing is off.'
+          ? 'Token usage not sent: Developer insights are off for your organisation.'
           : outcome.kind === 'refused' || outcome.kind === 'error'
             ? `Token usage not sent: ${outcome.message}. It is tried again with a later sync.`
             : 'Token usage goes with the next sync.',
@@ -1010,7 +1012,7 @@ async function backfillCommits(
     case 'off':
       writeState(paths, stopCollecting(paths, state, nowS));
       io.err(
-        'The board says sharing is off, so nothing more was sent and the local log was cleared.',
+        'Developer insights are off for your organisation, so nothing more was sent and the local log was cleared.',
       );
       return 1;
     case 'refused':
