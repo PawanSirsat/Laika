@@ -6,8 +6,9 @@ assignee: strelka
 priority: p1
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-22T07:06:24Z
+finished: 2026-10-22T07:19:10Z
 ---
 
 ## Goal
@@ -55,13 +56,13 @@ Those are Strelka's tasks; Belka never worked on them.
 
 ## Acceptance criteria
 
-- [ ] **Measure first, and record it here.** On Strelka, which fetches Belka's
+- [x] **Measure first, and record it here.** On Strelka, which fetches Belka's
       work the same way, run `laika time draft --days 2`. That command sends
       nothing (`cli/src/activity.ts:1130`). List each block whose key, or
       whose `commits` count, comes from a commit Strelka did not make. Record
       start, end, key and count only, never subjects, paths or branch names.
       If nothing shows, say so and why.
-- [ ] **The signal.** Choose how the collector knows a commit was made on this
+- [x] **The signal.** Choose how the collector knows a commit was made on this
       laptop, and justify the choice here against the alternatives. Reflog
       `commit:` entries and hashes recorded at commit time are two candidates.
       Whatever you choose:
@@ -75,10 +76,10 @@ Those are Strelka's tasks; Belka never worked on them.
         before the next draft, must still count. If no workable signal
         survives it, the test below shows what is lost, and that is written
         here before review.
-- [ ] **The fix.** In `draftCommits` or after it, a commit not made here is
+- [x] **The fix.** In `draftCommits` or after it, a commit not made here is
       dropped before `buildDraft` sees it. So it can neither name a card
       (`commitKey`) nor count (`:506-520`, `at.commits`, `read.commits`).
-- [ ] **Tests that fail on today's code.** These are real-git tests in
+- [x] **Tests that fail on today's code.** These are real-git tests in
       `cli/test/activity-time.test.ts`, with a bare remote and two clones under
       one email (`activity-census.test.ts:98-111` has `newRemote` and `clone`
       to copy). In each, clone B commits `LAI-7 …` and pushes. Clone A has an
@@ -95,18 +96,18 @@ Those are Strelka's tasks; Belka never worked on them.
         `git worktree remove` and `git branch -d`, all before drafting. It
         still ties and counts, or the test records the loss the signal
         criterion allows.
-- [ ] **Mutation check.** Remove the filter, keeping everything else. The
+- [x] **Mutation check.** Remove the filter, keeping everything else. The
       fetched and merged tests go red with an assertion error, while the
       positive halves stay green. Prove the mutation landed (a unique anchor
       and a `grep`), restore the file in a trap, and record the run here.
-- [ ] `activity-time.ts`'s header (*The rule*, `:45-72`) and `cli/README.md`
+- [x] `activity-time.ts`'s header (*The rule*, `:45-72`) and `cli/README.md`
       (*What a block is built from* and *The rule*, `:386-416`) say "commits
       you made on this machine", and say how that is known.
-- [ ] **Nothing new leaves the machine.** The body's schema is unchanged.
+- [x] **Nothing new leaves the machine.** The body's schema is unchanged.
       The existing *only blocks leave* test (`activity-time.test.ts:639`)
       and the stub board's contract (`cli/test/support/local-activity-contract.ts`)
       pass unedited.
-- [ ] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Notes
 
@@ -150,3 +151,104 @@ which was **not merged** into `master` when the claim was made. The owner
 (Pawan) told Strelka to start now, in parallel, so the claim is made on
 branch `LAI-864-fetched-commit-wrong-laptop`, based on #32 rather than on
 `master`. This branch's PR must merge after #32.
+
+## Builder's record (Strelka, 2026-10-22)
+
+**Measure first.** `cli/bin/laika time draft --days 2` from this worktree,
+before the fix, exit 0: **no block's key or `commits` count comes from a
+commit at all**. It reports `0 commits` read, because
+`~/.laika/activity/repos` on this machine is empty (0 bytes). The Claude Code
+hook has not remembered any repo here, since this machine's work runs through
+Omnigent, so `draftCommits` walks nothing. The blocks it did tie (LAI-304,
+LAI-307, LAI-308, LAI-314, LAI-315, LAI-801, LAI-860, LAI-864, LAI-866,
+LAI-867) are all *"a dispatched builder's card"* (D-095), not commit keys.
+
+What the bug *would* reach here, counted with no `head` (numbers only):
+across the Laika repo's refs, the non-merge commits authored under this
+machine's email in the last 3 days, as `--branches --remotes HEAD` sees them,
+number **569**. **106** of them have a reflog entry here that says a commit,
+amend, cherry-pick or rebase wrote them. The other 463 arrived by fetch, merge
+or pull, or were made in worktrees since removed. Once a repo is remembered,
+today's code would take all 569 as this laptop's.
+
+**The signal: git's own reflogs, plus a ledger the sync keeps.**
+
+- *Reflog.* `git log --walk-reflogs --all --format=%H%x09%gs`, one call per
+  repository. It walks every ref's reflog **and every worktree's `HEAD`**
+  (`worktrees/<name>/HEAD`, measured on git 2.54). A commit is made here when
+  the action before `: ` is `commit`, `commit (<kind>)` (amend, initial,
+  merge), `cherry-pick`, `revert`, `am`, or ends in `(pick|reword|edit|squash|
+  fixup|continue)`. The last covers both `rebase (pick)` and
+  `pull --rebase … (pick)`, whose action carries its command line (measured).
+  `fetch`, `pull`, `merge <x>`, `reset`, `checkout`, `branch`,
+  `update by push`, `rebase (start)` and `rebase (finish)` never match. The
+  last two are excluded on purpose: a rebase with no picks finishes on the
+  upstream tip, which is someone else's commit.
+- *Ledger.* `~/.laika/activity/made-here`, 0600, `<author epoch> <sha>` lines.
+  `timeStep` writes the hashes of the commits each draft kept, and only when
+  they changed. Entries are kept for 9 days after their author time, and the
+  file is deleted with `time-drafts.json` when drafting is off. `buildDraft`
+  only reads it, so `laika time draft` still writes nothing.
+- *Why not the alternatives.* Reflogs alone do not survive CLAUDE.md §4.2:
+  `git worktree remove` deletes `worktrees/<name>/logs/HEAD`, and
+  `git branch -d` deletes the branch's log. The `merge build-x` entry left on
+  `master` names a branch, not who made what it brought in. Hashes recorded at
+  commit time would need a git hook installed in every repo, or the Claude
+  Code hook running `git`, which breaks its fork-free path (LAI-859). Author
+  or committer identity and dates are the same on both laptops. Loose objects
+  versus packs depends on `fetch.unpackLimit` and `gc`. Nothing new is sent:
+  the reflog and the ledger are read on the machine, and neither reaches
+  `Block`.
+- **What is lost, and the test that shows it.** A commit made in a temporary
+  worktree that was merged and cleaned up **before any sync drafted it** has
+  no reflog and no ledger entry left, so it is treated as not made here. It
+  neither ties nor counts:
+  `activity-time-made-here.test.ts`, *"the loss: cleaned up before any draft
+  ran"*. With a sync in between it survives: *"a sync drafted while the
+  worktree lived"*. A sync runs at most every `min_sync_interval_s` (600 s
+  here) on a `Stop`, so the loss needs the commit, merge and clean-up to fall
+  in one gap between syncs. Known edge: a rebase that replays another laptop's
+  commits, after they were merged into a local branch, makes new commits here,
+  and those count as made here.
+
+**Where the tests are.** `cli/test/activity-time-made-here.test.ts`, not
+`activity-time.test.ts`. The Notes grant `cli/test/activity-time*.test.ts`,
+and LAI-866 and LAI-867 are editing `activity-time.test.ts` on sibling
+branches at the same time. A new file keeps the three from conflicting.
+`activity-time.test.ts` and `cli/test/support/local-activity-contract.ts` are
+**unedited** (`git diff --stat` shows neither).
+
+**Mutation check**, run from `cli/` with the file restored by an `EXIT` trap:
+
+```
+anchor: `      if (!here.has(sha) && !remembered.has(sha)) continue;`  (grep -c = 1)
+before  a235929d8f1262b7a7bb46c3c0cffda6782bf5d7  src/activity-time.ts
+MUTATION LANDED: filter gone (ffad84b31460)     # grep 'here.has(sha)' finds nothing
+node --test test/activity-time-made-here.test.ts → MUT EXIT 1
+  not ok  fetched …                 ERR_ASSERTION, only the 09:00 row differs
+  not ok  `git merge` …             ERR_ASSERTION
+  not ok  `git pull` …              ERR_ASSERTION
+  not ok  rebased here …            ERR_ASSERTION
+  ok      a sync drafted while the worktree lived
+  not ok  the loss …                ERR_ASSERTION
+after   a235929d8f1262b7a7bb46c3c0cffda6782bf5d7  RESTORED
+```
+
+In every diff the `10:00` row (A's own commit: `LAI-7`, 1,
+`[[bucket, 1]]`) is unchanged, so the positive halves hold under the
+mutation. A second mutation removed `rememberMadeHere(...)` from `timeStep`,
+and *"a sync drafted while the worktree lived"* went red with
+`ERR_ASSERTION` (restored, `diff -q` clean).
+
+**Backfill across laptops (Notes): no double-count, confirmed.** A two-clone
+run used a bare remote and clones A and B under one email, with one commit
+pushed from each. `countLookback` from A and from B produced the same two
+keys, and their union is 2. The server keeps keys as a set on
+`(user_id, key)`, so nothing was filed.
+
+**Gate** (repo root, under `/tmp/laika-root-gate.lock`, 07:15–07:19Z, on
+`e790ea17`, each command redirected to its own file):
+`pnpm test` → `TEST 0`, `pnpm lint` → `LINT 0`, `pnpm format` → `FMT 0`.
+`grep -E "Unhandled|Errors|Failed|not ok|✗"` over the test output finds only
+test names (`completeSetup and fieldErrors`), and no failures. The gate was
+run again after this commit, before the push. See the log.
