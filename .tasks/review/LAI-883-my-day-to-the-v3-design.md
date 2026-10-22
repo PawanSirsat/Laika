@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-22T10:14:46Z
+finished: 2026-10-22T10:57:32Z
 ---
 
 ## Goal
@@ -25,11 +26,11 @@ and the two side cards take the design's rows, pills and columns.
 
 ## Acceptance criteria
 
-- [ ] `docs/design/` carries `Laika App v3.dc.html`, `Timeline.dc.html` and
+- [x] `docs/design/` carries `Laika App v3.dc.html`, `Timeline.dc.html` and
       `timeline-core.js`, byte for byte as fetched from the project, and
       `README.md` says which screen they are the reference for. `support.js`
       is unchanged (checksum equal).
-- [ ] **Timeline card.** Header: *Timeline* and the day; a legend of
+- [x] **Timeline card.** Header: *Timeline* and the day; a legend of
       Confirmed, Drafted, Needs a card and Gaps **with the day's minutes
       beside each** (every figure from the response; Gaps opens the first
       gap); ‹ · Now · › moving the selection between blocks; Fit / 1× / 2×.
@@ -39,21 +40,21 @@ and the two side cards take the design's rows, pills and columns.
       *Beside your day. Never added to your hours.*). On today, the time after
       now is shaded and the now line carries its clock. A footer lists the keys
       (← → ↵ G X Esc) and, with a block selected, says *Editing … below ↓*.
-- [ ] **Blocks** are drawn as the design's: an icon chip (✓ ✎ ? + ‖ ×) and
+- [x] **Blocks** are drawn as the design's: an icon chip (✓ ✎ ? + ‖ ×) and
       the key or word on the first line, the card's title when the block is
       wide enough, and the range and length on a mono line — each line only
       where it fits, as `FitLabel` already decides. Blocks at the same time
       still take a row each (`stackOf`). Hovering a block, a gap, a signal
       bucket or an agent run shows a dark tooltip with its kind, its time and
       length, and its counts — **counts only**, never a prompt's text.
-- [ ] **Fit** folds every idle stretch of 45 minutes or more at either end of
+- [x] **Fit** folds every idle stretch of 45 minutes or more at either end of
       the day (before the first block, after the last block or now) into a
       hatched 92px segment that says *No activity* and its span; the lane
       column says *Idle hours folded*. 1× and 2× are linear. The selection,
       the gaps, the breaks, the edge handles, the now line, the SIGNALS and
       AGENTS lanes, the no-signal notice, the untimed count and the keys all
       keep working at every zoom, in both themes, at 1440 and 390 px.
-- [ ] **Editor** (the inspector): a state pill with its icon, the range in
+- [x] **Editor** (the inspector): a state pill with its icon, the range in
       mono at the heading size, the source line, *Not work* and the confirm
       button in the head; CARD / LENGTH / DRAFTED FROM (or BUILT FROM) as
       three columns that stack on a narrow page; the counts as tiles —
@@ -62,7 +63,7 @@ and the two side cards take the design's rows, pills and columns.
       time. Everything the inspector does today (Split in two, a typed
       length, General, Other card…, Delete, Note, History, a gap's Add time
       here and Mark as break, a break's Not a break) still does it.
-- [ ] **To settle**: the bulk actions (N selected · Confirm · General · Not
+- [x] **To settle**: the bulk actions (N selected · Confirm · General · Not
       work · Clear) sit in the card's header once anything is ticked; each row
       has a state swatch, the range, the length, the card and its title, and a
       source pill. **Confirmed**: each row has a solid swatch, the range, the
@@ -70,21 +71,21 @@ and the two side cards take the design's rows, pills and columns.
       foot on the quiet background with the lengths, the card chips, the note
       field and *Add …*. Paging, Shift-select, select-all, Undo and the batch
       progress are unchanged.
-- [ ] **Side**: *Agent time* — the total, the design's line, one bar a card
+- [x] **Side**: *Agent time* — the total, the design's line, one bar a card
       with its minutes, keyboard minutes beneath; *On your plate* as today
       with the design's group heads (dot · label · count · link →).
-- [ ] The week strip keeps *previous*, *next* and *Today* (SPEC §11.4.2) and
+- [x] The week strip keeps *previous*, *next* and *Today* (SPEC §11.4.2) and
       restyles its tiles to the design's.
-- [ ] No demo data, no hardcoded figure, no colour literal in
+- [x] No demo data, no hardcoded figure, no colour literal in
       `server/web/src/routes/screens/my-day/` (`theme-single-source.test.ts`
       stays green); the fonts stay self-hosted.
-- [ ] Every browser and unit test under `server/web/test/browser/my-day*` and
+- [x] Every browser and unit test under `server/web/test/browser/my-day*` and
       `server/web/test/routes/screens/my-day/` is green against the new
       layout — updated where it measured the old one (the stats strip, the
       axis at the foot, 110 px an hour) and extended for the new (the legend
       figures, the top axis, the folded stretch at Fit, the tooltip, the
       agents tile).
-- [ ] Gate: repo-root `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] Gate: repo-root `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Notes
 
@@ -105,3 +106,21 @@ and the two side cards take the design's rows, pills and columns.
 - The toast stays at the foot of the screen with Undo (LAI-831); the design's
   inline bar has no Undo.
 - The per-block count badge of LAI-860 stays as it is; LAI-881 is unaffected.
+
+## Record
+
+- Gate at `53de0a09` on `LAI-883-my-day-v3`: repo-root `pnpm test` 0,
+  `pnpm lint` 0, `pnpm format` 0. The My day browser files: 74 tests, all
+  green, the LAI-860 zoom suite included.
+- The design files' checksums as fetched: `Laika App v3.dc.html`
+  `0fd028bfe48713ccd9d07f050e6a392b`, `Timeline.dc.html`
+  `75dba641040922d679a88f5f02d5cf00`; `support.js` unchanged
+  (`951ae391b8ae72ef12e671c2fad23353`).
+- Two things the tests found that a screenshot did not, both in
+  `logs/myday-v3-2026-10-22.md`: a label box that sizes to its own words
+  makes `FitLabel` re-try for ever, and a 92px fold on a phone can cost more
+  than the stretch it replaces, so a fold now happens only where it makes
+  room (`buildScale`).
+- Not in this task, by the Notes: the shared-hour split, agent names on a
+  run, marks per five minutes, the design's inline toast.
+
