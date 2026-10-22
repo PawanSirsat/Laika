@@ -30,14 +30,16 @@ import { canSeeProject } from './projects.ts';
  * Local activity counts from a developer's own machine (SPEC §6.4, §4.23,
  * §4.24, D-079, LAI-751) — the heatmap's *GitHub* and *Local* colours.
  *
- * ## Two switches, both on, before anything is kept
+ * ## One switch, the organisation's (D-102 amended, LAI-963)
  *
- * The organisation's `developer_insights`, set by an owner or admin, and the
- * developer's own `share_local_activity`, set by them alone from a signed-in
- * web session (§3.1). Either off and a report is refused with
- * `local_activity_off` — read on every request, so turning one off stops
- * collection at once. Turning off deletes nothing; the developer deletes their
- * own history, and retention deletes it after 400 days (§11.6).
+ * The organisation's `developer_insights`, set by an owner or admin, decides
+ * alone: on, every connected machine's report is kept; off, every one is
+ * refused with `local_activity_off` — read on every request, so turning it off
+ * stops collection at once. The developer's own `share_local_activity` (D-079)
+ * is no longer read: the column stays, holding what each person last chose,
+ * and the person can no longer change it. Turning off deletes nothing; the
+ * developer deletes their own history, and retention deletes it after 400
+ * days (§11.6).
  *
  * ## Counts only, and nothing echoed
  *
@@ -103,8 +105,14 @@ export { LOCAL_ACTIVITY_SCOPES } from '../db/enums.ts';
 export interface ActivitySharingView {
   /** The organisation's switch. */
   org_enabled: boolean;
-  /** The developer's own switch. */
+  /**
+   * Whether this person's local activity is collected — the organisation's
+   * switch, since D-102 (amended). Kept beside `org_enabled` so a collector
+   * written against D-079's two switches syncs exactly when it may.
+   */
   enabled: boolean;
+  /** Always `false`: the person cannot stop collection (D-102 amended). */
+  person_can_opt_out: false;
   scope: LocalActivityScope;
   min_sync_interval_s: number;
   /**
@@ -184,42 +192,42 @@ export interface OwnLocalActivityView {
 
 // ------------------------------------------------------------------ sharing
 
-interface Switches {
-  org: boolean;
-  user: boolean;
-  scope: LocalActivityScope;
-}
-
-function switchesFor(db: Db, userId: string): Switches {
+/**
+ * Is local activity collected — the organisation's `developer_insights`, and
+ * nothing else (D-102 amended). The one question every write here asks, and
+ * every read that shows a person's local work: the heatmap, the profile and
+ * the usage card hide it when this is off.
+ */
+export function collectionOn(db: Db): boolean {
   const org = db
     .select({ on: orgs.developerInsights })
     .from(orgs)
     .where(eq(orgs.id, requireOrgId(db)))
     .get();
+  return org?.on === 1;
+}
+
+/**
+ * What a reader is told of collection for any person: `{ org_enabled,
+ * enabled }`, both the organisation's switch since D-102 (amended) — the
+ * shape D-079's two switches gave, kept so a client reads it unchanged.
+ */
+export function collectionView(db: Db): { org_enabled: boolean; enabled: boolean } {
+  const on = collectionOn(db);
+  return { org_enabled: on, enabled: on };
+}
+
+function sharingView(db: Db, userId: string): ActivitySharingView {
   const user = db
-    .select({ on: users.shareLocalActivity, scope: users.localActivityScope })
+    .select({ scope: users.localActivityScope })
     .from(users)
     .where(eq(users.id, userId))
     .get();
   if (user === undefined) throw ApiError.notFound(`No user with id "${userId}"`);
-  return { org: org?.on === 1, user: user.on === 1, scope: user.scope };
-}
-
-/**
- * Both switches, for a person — the one question every read and write here
- * asks. Exported for the heatmap's read, which hides the local series when
- * either is off.
- */
-export function sharingOn(db: Db, userId: string): { org: boolean; user: boolean } {
-  const s = switchesFor(db, userId);
-  return { org: s.org, user: s.user };
-}
-
-function sharingView(s: Switches): ActivitySharingView {
   return {
-    org_enabled: s.org,
-    enabled: s.user,
-    scope: s.scope,
+    ...collectionView(db),
+    person_can_opt_out: false,
+    scope: user.scope,
     min_sync_interval_s: MIN_SYNC_INTERVAL_S,
   };
 }
@@ -229,8 +237,8 @@ const USAGE_HELD_DAYS_BACK = 32;
 
 /**
  * `GET /me/activity-sharing`: a session or any token of theirs may ask. With
- * a collector id, from a caller who may send and with both switches on, it
- * also names the days other collectors hold tokens for (see the view).
+ * a collector id, from a caller who may send and with collection on, it also
+ * names the days other collectors hold tokens for (see the view).
  */
 export function getActivitySharing(
   db: Db,
@@ -239,14 +247,8 @@ export function getActivitySharing(
   now: number = Date.now(),
 ): ActivitySharingView {
   assertCan(actor, 'activity_sharing.read_own');
-  const switches = switchesFor(db, actor.userId);
-  const view = sharingView(switches);
-  if (
-    collectorId === undefined ||
-    !switches.org ||
-    !switches.user ||
-    !can(actor, 'local_activity.send_own')
-  ) {
+  const view = sharingView(db, actor.userId);
+  if (collectorId === undefined || !view.org_enabled || !can(actor, 'local_activity.send_own')) {
     return view;
   }
   const from = addDays(dayIn('UTC', now), -USAGE_HELD_DAYS_BACK);
@@ -286,8 +288,16 @@ export interface SetActivitySharingInput {
 }
 
 /**
- * `PUT /me/activity-sharing`: the developer's consent, from a web session only
- * (§3.1). Off stops collection at once and deletes nothing.
+ * `PUT /me/activity-sharing`: the developer's `scope`, from a web session only
+ * (§3.1).
+ *
+ * **`enabled` is refused, not ignored** (D-102 amended, LAI-963): collection
+ * is the organisation's, so a body carrying it — on or off, whatever the
+ * organisation's switch — is `403` with `details.reason:
+ * "organisation_controlled"` and writes nothing, its `scope` included. A
+ * client still offering the old switch is told why it did nothing, instead of
+ * a `200` that reads as consent given or withdrawn. The field stays in the
+ * body's schema so that answer, not `422`'s unknown field, is what it gets.
  *
  * No `activity` row: §4.8 has no verb for it, and a verb is an `activity`
  * rebuild — the same reason D-078 gave for the profile kind.
@@ -299,14 +309,21 @@ export function setActivitySharing(
 ): ActivitySharingView {
   assertCan(actor, 'activity_sharing.set_own');
 
-  const set: { shareLocalActivity?: number; localActivityScope?: LocalActivityScope } = {};
-  if (input.enabled !== undefined) set.shareLocalActivity = input.enabled ? 1 : 0;
-  if (input.scope !== undefined) set.localActivityScope = input.scope;
-  if (Object.keys(set).length > 0) {
-    db.update(users).set(set).where(eq(users.id, actor.userId)).run();
+  if (input.enabled !== undefined) {
+    throw new ApiError(
+      'forbidden',
+      'Local activity is collected by your organisation; it is not yours to turn on or off',
+      { reason: 'organisation_controlled', org_enabled: collectionOn(db) },
+    );
+  }
+  if (input.scope !== undefined) {
+    db.update(users)
+      .set({ localActivityScope: input.scope })
+      .where(eq(users.id, actor.userId))
+      .run();
   }
 
-  return sharingView(switchesFor(db, actor.userId));
+  return sharingView(db, actor.userId);
 }
 
 // ------------------------------------------------------------------ ingest
@@ -439,23 +456,20 @@ function foldPrompts(prompts: Record<string, number>): Map<AgentClient, number> 
 }
 
 /**
- * May this actor send a report at all: `can()`, then both switches (§6.4's
- * `local_activity_off`). The route asks before it reads the body, so a person
- * who stopped sharing is told so even when their collector sent something
- * odd; {@link recordLocalActivity} asks again for every other caller.
+ * May this actor send a report at all: `can()`, then the organisation's
+ * switch (§6.4's `local_activity_off`; D-102 amended — the person's own is
+ * not asked). The route asks before it reads the body, so a collector is told
+ * collection is off even when it sent something odd;
+ * {@link recordLocalActivity} asks again for every other caller.
  */
 export function assertMaySendLocalActivity(db: Db, actor: ResolvedActor): void {
   assertCan(actor, 'local_activity.send_own');
 
-  const switches = switchesFor(db, actor.userId);
-  if (!switches.org || !switches.user) {
-    throw new ApiError(
-      'forbidden',
-      switches.org
-        ? 'Local activity sharing is off for this account'
-        : 'Developer insights are off for this organisation',
-      { reason: 'local_activity_off', org_enabled: switches.org, enabled: switches.user },
-    );
+  if (!collectionOn(db)) {
+    throw new ApiError('forbidden', 'Developer insights are off for this organisation', {
+      reason: 'local_activity_off',
+      ...collectionView(db),
+    });
   }
 }
 
@@ -512,7 +526,7 @@ export function recordLocalActivity(
 /**
  * `PUT /me/local-activity` with `lookback: true` (D-080): a developer's own
  * pushed commits from before the snapshot window, as keys per day. The same
- * permission, switches and report budget as a snapshot; days back to
+ * permission, switch and report budget as a snapshot; days back to
  * retention's window; no snapshot row written or replaced.
  */
 export function recordLookback(
@@ -551,7 +565,7 @@ export function latestReportZone(db: Db, userId: string): string {
 /**
  * `GET /me/local-activity?days=`: what the server holds for the caller over
  * their last days — the consent screen's preview (§6.4). Their own rows only,
- * whatever the switches say: what was kept before sharing was turned off is
+ * whatever the switch says: what was kept before collection was turned off is
  * still theirs to see and to delete.
  */
 export function getOwnLocalActivity(

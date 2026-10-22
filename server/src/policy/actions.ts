@@ -182,15 +182,14 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'profile.rate',
   // The heatmap is part of the profile, and follows its rule (D-078, D-079).
   'profile.activity.read',
-  // The organisation's half of the consent (D-079, LAI-751 review): the
-  // developer's own switch is session-only, so the one that lets it count is
-  // too — a token is how an agent acts, and an agent must not turn on the
-  // collection of its own person's work.
+  // The organisation's switch (D-079, LAI-751 review; alone since D-102
+  // amended): a token is how an agent acts, and an agent must not turn on the
+  // collection of anybody's work.
   'org.developer_insights.set',
-  // **The developer's consent, and what follows from it** (D-079, LAI-751).
-  // A token is how an agent acts, so an agent must not be able to switch
-  // sharing on, read back what was collected, or erase it: each is the
-  // person's own decision, made signed in.
+  // **The developer's own side** (D-079, LAI-751; D-102 amended). A token is
+  // how an agent acts, so an agent must not be able to change which
+  // repositories are counted, read back what was collected, or erase it:
+  // each is the person's own decision, made signed in.
   'activity_sharing.set_own',
   'local_activity.read_own',
   'local_activity.delete_own',

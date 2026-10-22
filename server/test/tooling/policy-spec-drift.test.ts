@@ -75,7 +75,7 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ["View a member's activity heatmap", ['profile.activity.read']],
   ['Turn Developer insights on or off', ['org.developer_insights.set']],
   ['Read own activity-sharing setting', ['activity_sharing.read_own']],
-  ['Set own activity sharing', ['activity_sharing.set_own']],
+  ['Set own local-activity scope', ['activity_sharing.set_own']],
   ['Send own local activity', ['local_activity.send_own']],
   ['Read and delete own local activity', ['local_activity.read_own', 'local_activity.delete_own']],
   // D-084's rows (LAI-769): token usage, by who may see it.

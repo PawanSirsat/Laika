@@ -381,14 +381,14 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
       return isAdminUp;
 
     // | Read own activity-sharing setting | ✓ | ✓ | ✓ | ✓ |
-    // | Set own activity sharing | ✓ (session only) | … | ✓ (session only) |
+    // | Set own local-activity scope | ✓ (session only) | … | ✓ (session only) |
     // | Send own local activity | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
     // | Read / delete own local activity | ✓ (session only) | … | ✓ (session only) |
     //
     // Every role, because it is **their own record about their own work**
-    // (D-079) — the heartbeat's argument. What stops collection is the two
-    // switches, which the service reads; what stops an agent consenting for
-    // its person is `SESSION_ONLY_ACTIONS`, below. The Viewer's send cell is
+    // (D-079) — the heartbeat's argument. What stops collection is the
+    // organisation's switch alone (D-102 amended), which the service reads;
+    // what stops an agent acting for its person is `SESSION_ONLY_ACTIONS`. The Viewer's send cell is
     // the credential's refusal, exactly as for heartbeats: a Viewer's token is
     // forced `read_only`, and sending is not a read.
     case 'activity_sharing.read_own':

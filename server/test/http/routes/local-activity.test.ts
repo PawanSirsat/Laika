@@ -264,7 +264,7 @@ describe('PUT /me/local-activity', () => {
     );
   });
 
-  it('403s local_activity_off while the organisation\'s switch is off, whatever the person\'s says', async () => {
+  it("403s local_activity_off while the organisation's switch is off, whatever the person's says", async () => {
     const token = await mint(bea.cookie);
     for (const user of [true, false]) {
       switchOn(false, user);
@@ -281,7 +281,7 @@ describe('PUT /me/local-activity', () => {
     expect(h.db.select().from(localActivityDays).all()).toEqual([]);
   });
 
-  it('200s a report with the organisation\'s switch on and the person\'s off (D-102 amended)', async () => {
+  it("200s a report with the organisation's switch on and the person's off (D-102 amended)", async () => {
     switchOn(true, false);
     expect(await ok(put(report(), await mint(bea.cookie)))).toEqual({ accepted_days: 1 });
     expect(h.db.select().from(localActivityDays).all()).toHaveLength(1);

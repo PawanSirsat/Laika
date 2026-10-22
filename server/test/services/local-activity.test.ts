@@ -121,8 +121,8 @@ afterEach(() => {
   t.close();
 });
 
-describe('the sharing setting — the organisation\'s alone (D-102 amended, LAI-963)', () => {
-  it('is off while the organisation\'s is, says the person cannot opt out, and how often to sync', () => {
+describe("the sharing setting — the organisation's alone (D-102 amended, LAI-963)", () => {
+  it("is off while the organisation's is, says the person cannot opt out, and how often to sync", () => {
     expect(getActivitySharing(t.db, actor(bea))).toEqual({
       org_enabled: false,
       enabled: false,
@@ -132,7 +132,7 @@ describe('the sharing setting — the organisation\'s alone (D-102 amended, LAI-
     });
   });
 
-  it('is on for everyone the moment the organisation\'s is, whatever their old switch says', () => {
+  it("is on for everyone the moment the organisation's is, whatever their old switch says", () => {
     switches(true, bea, false);
     switches(true, cal, true);
     for (const who of [bea, cal]) {
@@ -204,7 +204,7 @@ describe('the sharing setting — the organisation\'s alone (D-102 amended, LAI-
   });
 });
 
-describe('a report follows the organisation\'s switch alone (D-102 amended)', () => {
+describe("a report follows the organisation's switch alone (D-102 amended)", () => {
   for (const user of [true, false]) {
     it(`org off, old personal switch ${user ? 'on' : 'off'}: local_activity_off, nothing kept`, () => {
       switches(false, bea, user);
@@ -221,7 +221,7 @@ describe('a report follows the organisation\'s switch alone (D-102 amended)', ()
     });
   }
 
-  it('is accepted with the organisation\'s on even though the person never switched theirs on', () => {
+  it("is accepted with the organisation's on even though the person never switched theirs on", () => {
     switches(true, bea, false);
     const sent = report([day(TODAY, { sessions: 1, pushed_keys: ['a1b2c3d4e5f6a7b8'] })]);
     expect(recordLocalActivity(t.db, actor(bea), sent, NOW)).toEqual({ accepted_days: 1 });
@@ -229,7 +229,7 @@ describe('a report follows the organisation\'s switch alone (D-102 amended)', ()
     expect(t.db.select().from(pushedCommitKeys).all()).toHaveLength(1);
   });
 
-  it('is refused again the moment the organisation\'s goes off, and what was kept stays', () => {
+  it("is refused again the moment the organisation's goes off, and what was kept stays", () => {
     switches(true, bea, false);
     const sent = report([day(TODAY, { sessions: 1 })]);
     recordLocalActivity(t.db, actor(bea), sent, NOW);
@@ -574,7 +574,7 @@ describe('a look-back report (D-080)', () => {
     }
   });
 
-  it('refuses while the organisation\'s switch is off, before the days are judged', () => {
+  it("refuses while the organisation's switch is off, before the days are judged", () => {
     switches(false, bea, true);
     expect(refusal(() => recordLookback(t.db, actor(bea), lookback([]), NOW))).toMatchObject({
       code: 'forbidden',

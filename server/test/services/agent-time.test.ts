@@ -181,7 +181,7 @@ describe('active time over OTLP', () => {
     expect(t.db.select().from(agentTimeDays).all()).toEqual([]);
   });
 
-  it('is refused like tokens while the organisation\'s switch is off', () => {
+  it("is refused like tokens while the organisation's switch is off", () => {
     t.db.update(orgs).set({ developerInsights: 0 }).run();
     expect(() =>
       recordTelemetry(
@@ -194,14 +194,9 @@ describe('active time over OTLP', () => {
     expect(t.db.select().from(agentTimeDays).all()).toEqual([]);
   });
 
-  it('is kept with the person\'s old switch off: the organisation\'s alone decides (D-102 amended)', () => {
+  it("is kept with the person's old switch off: the organisation's alone decides (D-102 amended)", () => {
     t.db.update(users).set({ shareLocalActivity: 0 }).where(eq(users.id, owner.userId)).run();
-    recordTelemetry(
-      t.db,
-      owner,
-      activeTime([{ session: SESSION, type: 'cli', seconds: 60 }]),
-      NOW,
-    );
+    recordTelemetry(t.db, owner, activeTime([{ session: SESSION, type: 'cli', seconds: 60 }]), NOW);
     expect(t.db.select().from(agentTimeDays).all()).not.toEqual([]);
   });
 });

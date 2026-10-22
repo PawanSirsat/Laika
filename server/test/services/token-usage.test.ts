@@ -270,7 +270,7 @@ describe('a usage report (PUT /me/local-activity, "usage": true)', () => {
     });
   });
 
-  it('is refused local_activity_off, storing nothing, when the organisation\'s switch is off', () => {
+  it("is refused local_activity_off, storing nothing, when the organisation's switch is off", () => {
     for (const user of [true, false]) {
       share(bea, user, false);
       const refused = refusal(() =>
@@ -284,7 +284,7 @@ describe('a usage report (PUT /me/local-activity, "usage": true)', () => {
     expect(stored()).toHaveLength(0);
   });
 
-  it('is stored with the organisation\'s switch on and the person\'s off (D-102 amended)', () => {
+  it("is stored with the organisation's switch on and the person's off (D-102 amended)", () => {
     share(bea, false, true);
     expect(
       recordTokenUsage(t.db, actor(bea), report([{ day: YESTERDAY, rows: [row()] }]), NOW),
@@ -545,8 +545,13 @@ describe('a machine counted once across collectors (review 1, the blocker)', () 
     expect(getActivitySharing(t.db, withToken(bea), undefined, NOW)).not.toHaveProperty(
       'usage_days_elsewhere',
     );
-    // Nor once sharing is off.
-    share(bea, false);
+    // The person's old switch decides nothing (D-102 amended)…
+    share(bea, false, true);
+    expect(getActivitySharing(t.db, withToken(bea), COLLECTOR_B, NOW).usage_days_elsewhere).toEqual(
+      ['2026-10-01', YESTERDAY],
+    );
+    // …but not once the organisation's is off.
+    share(bea, true, false);
     expect(getActivitySharing(t.db, withToken(bea), COLLECTOR_B, NOW)).not.toHaveProperty(
       'usage_days_elsewhere',
     );
@@ -1363,7 +1368,7 @@ describe('the task key prefixes a collector may tie tokens to (LAI-770)', () => 
     ]);
   });
 
-  it('is given only to a collector that may send, with both switches on', () => {
+  it('is given only to a collector that may send, with the organisation’s switch on', () => {
     member(bea, projectId);
     share(bea);
     expect(getActivitySharing(t.db, withToken(bea), undefined, NOW)).not.toHaveProperty(
@@ -1372,7 +1377,11 @@ describe('the task key prefixes a collector may tie tokens to (LAI-770)', () => 
     expect(
       getActivitySharing(t.db, withToken(bea, 'read_only'), COLLECTOR_A, NOW),
     ).not.toHaveProperty('task_prefixes');
-    share(bea, false);
+    share(bea, false, true);
+    expect(getActivitySharing(t.db, withToken(bea), COLLECTOR_A, NOW)).toHaveProperty(
+      'task_prefixes',
+    );
+    share(bea, true, false);
     expect(getActivitySharing(t.db, withToken(bea), COLLECTOR_A, NOW)).not.toHaveProperty(
       'task_prefixes',
     );

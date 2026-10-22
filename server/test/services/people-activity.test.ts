@@ -201,7 +201,7 @@ describe('board actions — always there, from the rollup of the log', () => {
   });
 });
 
-describe('local work and pushed commits — only with the organisation\'s switch on', () => {
+describe("local work and pushed commits — only with the organisation's switch on", () => {
   beforeEach(() => {
     share({ org: true, user: true });
     send([
@@ -261,7 +261,7 @@ describe('local work and pushed commits — only with the organisation\'s switch
     expect(view.tz).toBe('UTC');
   });
 
-  it('is shown whatever the person\'s old switch says — the organisation\'s alone decides (D-102 amended)', () => {
+  it("is shown whatever the person's old switch says — the organisation's alone decides (D-102 amended)", () => {
     share({ org: true, user: false });
     const view = getPeopleActivity(t.db, actor(owner), bea, '12w', NOW);
 
