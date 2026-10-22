@@ -1,6 +1,6 @@
 /**
  * My day's SIGNALS lane in a real browser (LAI-834, D-096): the day's prompts
- * as dots and commits as ticks, each in the five minutes it fell in, above
+ * as bars and commits as dots (LAI-883), each in the five minutes it fell in, above
  * the blocks — drawn only on a day the server sent them for, with its label
  * on its own row and "You" still on the blocks' row, in both themes.
  */
@@ -144,9 +144,12 @@ void describe('the SIGNALS lane (LAI-834)', () => {
           await lane.getAttribute('aria-label'),
           'Signals: 3 prompts and 3 commits, each in the five minutes it fell in',
         );
-        const legend = h.page.locator('.dayline-legend');
-        assert.equal(await legend.getByText('Prompt', { exact: true }).count(), 1);
-        assert.equal(await legend.getByText('Commit', { exact: true }).count(), 1);
+        // The lane's column names each kind with the day's total (LAI-883).
+        const column = h.page.locator('.dayline-label-signals');
+        assert.equal(await column.getByText('Prompts', { exact: true }).count(), 1);
+        assert.equal(await column.getByText('Commits', { exact: true }).count(), 1);
+        assert.equal(await column.locator('[data-prompt-total]').innerText(), '3');
+        assert.equal(await column.locator('[data-commit-total]').innerText(), '3');
       } finally {
         await h.close();
       }
@@ -159,11 +162,8 @@ void describe('the SIGNALS lane (LAI-834)', () => {
       await h.page.locator('.dayline-row').waitFor({ timeout: 10_000 });
       assert.equal(await h.page.locator('[data-signals-lane]').count(), 0);
       assert.equal(await h.page.locator('.dayline-label-signals').count(), 0);
-      assert.equal(
-        await h.page.locator('.dayline-legend').getByText('Prompt', { exact: true }).count(),
-        0,
-      );
-      const youLabel = await textBox(h.page.locator('.dayline-label'), 'the You label');
+      assert.equal(await h.page.locator('[data-prompt-total]').count(), 0);
+      const youLabel = await textBox(h.page.locator('.dayline-label-you'), 'the You label');
       const rowBox = await boxOf(h.page.locator('.dayline-row'), 'the blocks’ row');
       assert.ok(
         youLabel.y >= rowBox.y && youLabel.y + youLabel.height <= rowBox.y + rowBox.height,

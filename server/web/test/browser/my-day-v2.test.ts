@@ -57,7 +57,20 @@ const mondayOf = (day: string): string => {
  * What a gap may show, by the room the font leaves it: its length, a bare
  * "+", or nothing. Its name says which gap and how long, always.
  */
-const gapForms = (length: string): readonly string[] => [`+ ${length}`, '+', ''];
+/**
+ * Whether a gap shows what it may (LAI-883): its glyph, *Add time*, and its
+ * range and length on a line of their own — each only where it fits as drawn,
+ * so any of them may be left out, and nothing else is ever shown.
+ */
+const gapShows = (text: string, length: string): boolean => {
+  const rest = text.replace(/\s+/g, ' ').trim();
+  const len = length.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^(\\+ ?)?(Add time ?)?((\\S.* · )?${len})?$`).test(rest);
+};
+
+/** A break shows its glyph, the word, and its range and length — or less, never more. */
+const breakShows = (text: string): boolean =>
+  /^(‖ ?)?(Break ?)?((\S.* · )?\d+ (?:min|h)( \d+ min)?)?$/.test(text.replace(/\s+/g, ' ').trim());
 
 /** What a block's second line may show, by the same measure: both, the length, or nothing. */
 const subForms = (range: string, length: string): readonly string[] => [
@@ -331,10 +344,7 @@ void describe('gaps and breaks (4, D)', () => {
       );
       const shown = await gaps.allInnerTexts();
       for (const [i, minutes] of [30, 45].entries()) {
-        assert.ok(
-          gapForms(dur(minutes)).includes(shown[i] ?? '?'),
-          `gap ${String(i)}: "${shown[i] ?? ''}"`,
-        );
+        assert.ok(gapShows(shown[i] ?? '?', dur(minutes)), `gap ${String(i)}: "${shown[i] ?? ''}"`);
       }
     } finally {
       await h.close();
@@ -360,7 +370,7 @@ void describe('gaps and breaks (4, D)', () => {
       assert.match(await h.page.locator('[data-stat="gaps"]').innerText(), /1 unaccounted/);
       const drawn = h.page.locator('.dayline-break');
       assert.equal(await drawn.getAttribute('aria-label'), 'Break 11:30 AM–12:00 PM — not counted');
-      assert.ok(['Break', ''].includes(await drawn.innerText()), 'the break shows something else');
+      assert.ok(breakShows(await drawn.innerText()), 'the break shows something else');
 
       await h.page.locator('.dayline-break').click();
       await h.page.getByRole('button', { name: 'Not a break' }).click();
@@ -385,10 +395,12 @@ void describe('no signal is not zero hours (3, 4)', () => {
         await h.page.locator('[data-no-signal]').innerText(),
         /No signal — nothing reached Laika from your machine\. That is not zero hours/,
       );
-      for (const stat of ['confirmed', 'settle', 'gaps']) {
-        const figure = await h.page.locator(`[data-stat="${stat}"] .myday-stat-figure`).innerText();
+      // The Timeline's header (LAI-883) and its You column give no figure either.
+      for (const stat of ['confirmed', 'drafted', 'needs-card', 'gaps']) {
+        const figure = await h.page.locator(`[data-stat="${stat}"] strong`).innerText();
         assert.equal(figure, '—', `${stat} reads ${figure}`);
       }
+      assert.equal(await h.page.locator('[data-you-work]').innerText(), '—');
     } finally {
       await h.close();
     }
@@ -1036,7 +1048,7 @@ void describe('a phone, and both themes (I)', () => {
             h.page.evaluate(() =>
               [
                 ...document.querySelectorAll(
-                  '.dayline-gap, .dayline-break, .dayline-block-sub, .myday-week-figure, .myday-stat',
+                  '.dayline-gap, .dayline-break, .dayline-block-sub, .myday-week-figure, .dayline-totals li',
                 ),
               ]
                 .filter((el) => el.scrollWidth > el.clientWidth + 1)
@@ -1062,7 +1074,7 @@ void describe('a phone, and both themes (I)', () => {
           for (const [name = '', text = ''] of drawn.gaps) {
             const said = /^Unaccounted .+, (.+) — add time or mark a break$/.exec(name);
             assert.ok(said?.[1] !== undefined, `a gap named "${name}"`);
-            assert.ok(gapForms(said[1]).includes(text), `${name}: shows "${text}"`);
+            assert.ok(gapShows(text, said[1]), `${name}: shows "${text}"`);
           }
           for (const [name = '', text = ''] of drawn.blocks) {
             const said = /^(.+?), .*, ([^,]+)$/.exec(name);
@@ -1080,7 +1092,7 @@ void describe('a phone, and both themes (I)', () => {
         );
       assert.ok(gaps.length > 0, 'no gap to look at');
       for (const [px, text] of gaps) {
-        if (px >= 120) assert.match(text, /^\+ \d/, `a ${String(px)}px gap says only "${text}"`);
+        if (px >= 160) assert.match(text, / min$| h$/, `a ${String(px)}px gap says only "${text}"`);
       }
     } finally {
       await h.close();

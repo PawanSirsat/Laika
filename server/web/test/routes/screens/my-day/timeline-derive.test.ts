@@ -2,21 +2,30 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { MyDay, TimeDraft, TimeEntry } from '../../../../src/api/time.ts';
 import {
+  agentsDuring,
   along,
   axisHours,
+  buildScale,
   clip,
+  dayFigures,
   dayLine,
   dragEdge,
   gapsOf,
+  idleEnds,
   limitsOf,
   placeChips,
   setLength,
+  signalsDuring,
   snap,
   splitPoint,
   stackOf,
   stepEnd,
   stepMinutes,
+  FOLD_PX,
+  PX_PER_HOUR,
+  type AgentRun,
   type Box,
+  type SignalMark,
 } from '../../../../src/routes/screens/my-day/timeline-derive.ts';
 
 /**
@@ -494,5 +503,171 @@ void describe('placeChips — a badge only where it clears everything (LAI-860)'
 
   void test('a badge whose block is not drawn is left out', () => {
     assert.deepEqual([...placeChips([chip('gone')], new Map(), TRACK, 4)], []);
+  });
+});
+
+void describe('idleEnds — the idle stretches Fit folds (LAI-883)', () => {
+  const line = (over: {
+    blocks?: { start: number; end: number }[];
+    now?: number;
+    agents?: AgentRun[];
+    signals?: SignalMark[];
+  }) => ({
+    from: 6,
+    to: 22,
+    blocks: (over.blocks ?? []).map((b, i) => ({
+      kind: 'drafted' as const,
+      id: `b${String(i)}`,
+      ...b,
+      minutes: b.end - b.start,
+      needsCard: false,
+      locked: false,
+    })),
+    breaks: [],
+    signals: over.signals ?? [],
+    agents: over.agents ?? [],
+    now: over.now,
+  });
+
+  void test('before the first block and after the last, each only when 45 minutes or more', () => {
+    assert.deepEqual(idleEnds(line({ blocks: [{ start: min(9), end: min(17) }] })), [
+      { start: min(6), end: min(9) },
+      { start: min(17), end: min(22) },
+    ]);
+    // Forty minutes before the first block is not folded; the evening still is.
+    assert.deepEqual(idleEnds(line({ blocks: [{ start: min(6, 40), end: min(17) }] })), [
+      { start: min(17), end: min(22) },
+    ]);
+  });
+
+  void test('on today the tail starts at now, so the now line stands on an open stretch', () => {
+    assert.deepEqual(idleEnds(line({ blocks: [{ start: min(9), end: min(10) }], now: min(14) })), [
+      { start: min(6), end: min(9) },
+      { start: min(14), end: min(22) },
+    ]);
+  });
+
+  void test('a signal or an agent run counts as something placed', () => {
+    assert.deepEqual(
+      idleEnds(
+        line({
+          signals: [{ kind: 'prompt', start: min(8), count: 1 }],
+          agents: [{ start: min(20), end: min(20, 5), seconds: 300, onCard: true }],
+        }),
+      ),
+      [
+        { start: min(6), end: min(8) },
+        { start: min(20, 5), end: min(22) },
+      ],
+    );
+  });
+
+  void test('a day with nothing placed folds nothing', () => {
+    assert.deepEqual(idleEnds(line({})), []);
+  });
+});
+
+void describe('buildScale — minutes to px and back (LAI-883)', () => {
+  void test('1× and 2× are linear at their px an hour, whatever the width', () => {
+    const one = buildScale(6, 22, '1', 500);
+    assert.equal(one.total, 16 * (PX_PER_HOUR['1'] ?? 0));
+    assert.equal(one.pos(min(7)), PX_PER_HOUR['1']);
+    assert.equal(one.at(one.pos(min(13, 20))), min(13, 20));
+    assert.equal(one.folded(min(7)), false);
+    const two = buildScale(6, 22, '2', 500);
+    assert.equal(two.pos(min(7)), PX_PER_HOUR['2']);
+  });
+
+  void test('Fit is the width across, a folded stretch FOLD_PX wide and the rest minute for minute', () => {
+    const folds = [
+      { start: min(6), end: min(9) },
+      { start: min(17), end: min(22) },
+    ];
+    const scale = buildScale(6, 22, 'fit', 1000, folds);
+    assert.equal(scale.total, 1000);
+    assert.equal(scale.pos(min(9)), FOLD_PX);
+    assert.equal(scale.pos(min(17)), 1000 - FOLD_PX);
+    // The open eight hours share what the folds leave, so an hour is (1000 − 184) / 8.
+    const hour = (1000 - 2 * FOLD_PX) / 8;
+    assert.ok(Math.abs(scale.pos(min(10)) - (FOLD_PX + hour)) < 1e-9);
+    // Inside a fold a minute still has a place, and back again.
+    assert.ok(scale.pos(min(7, 30)) > 0 && scale.pos(min(7, 30)) < FOLD_PX);
+    assert.equal(scale.folded(min(7, 30)), true);
+    assert.equal(scale.folded(min(9)), false);
+    assert.ok(Math.abs(scale.at(scale.pos(min(12, 35))) - min(12, 35)) < 1e-9);
+  });
+
+  void test('a fold that would make no room stays open: an hour at 300 px across is 19 px, not 92', () => {
+    const scale = buildScale(6, 22, 'fit', 300, [{ start: min(6), end: min(7) }]);
+    assert.deepEqual(
+      scale.segments.map((s) => s.folded),
+      [false],
+    );
+    assert.equal(scale.total, 300);
+    assert.equal(scale.folded(min(6, 30)), false);
+  });
+
+  void test('Fit with nothing to fold is linear across the width; unmeasured, a pixel a minute', () => {
+    const plain = buildScale(6, 22, 'fit', 960);
+    assert.equal(plain.total, 960);
+    assert.equal(plain.pos(min(14)), 480);
+    const unmeasured = buildScale(6, 22, 'fit', 0, [{ start: min(6), end: min(9) }]);
+    assert.ok(unmeasured.total > 0);
+  });
+});
+
+void describe('agentsDuring and signalsDuring — what fell inside a span (LAI-883)', () => {
+  void test('an agent run counts by the share of it inside the span, on a card or not', () => {
+    const runs: AgentRun[] = [
+      { start: min(9), end: min(9, 10), seconds: 600, onCard: true },
+      { start: min(9, 10), end: min(9, 20), seconds: 300, onCard: false },
+      { start: min(12), end: min(12, 5), seconds: 300, onCard: true },
+    ];
+    assert.deepEqual(agentsDuring(runs, { start: min(9, 5), end: min(9, 15) }), {
+      seconds: 450,
+      onCardSeconds: 300,
+      runs: 2,
+    });
+    assert.deepEqual(agentsDuring(runs, { start: min(10), end: min(11) }), {
+      seconds: 0,
+      onCardSeconds: 0,
+      runs: 0,
+    });
+  });
+
+  void test('a signal bucket counts where its middle falls', () => {
+    const marks: SignalMark[] = [
+      { kind: 'prompt', start: min(9), count: 3 },
+      { kind: 'commit', start: min(9), count: 1 },
+      { kind: 'prompt', start: min(9, 5), count: 2 },
+    ];
+    assert.deepEqual(signalsDuring(marks, { start: min(9), end: min(9, 5) }), {
+      prompts: 3,
+      commits: 1,
+    });
+    assert.deepEqual(signalsDuring(marks, { start: min(9), end: min(10) }), {
+      prompts: 5,
+      commits: 1,
+    });
+  });
+});
+
+void describe('dayFigures — the Timeline header (LAI-883)', () => {
+  void test('confirmed, drafted on a card or General, drafted on nothing, and the gaps', () => {
+    const view = {
+      entries: [entry('e1', at(11), 30), entry('e2', at(20), 15)],
+      drafts: [
+        draft('d1', at(9), 60, { task: { id: 't', key: 'LAI-1', title: 'A' } }),
+        draft('d2', at(13), 40),
+        draft('d3', null, 25, { general: true }),
+      ],
+    };
+    assert.deepEqual(
+      dayFigures(view, [
+        { start: min(10), end: min(11) },
+        { start: min(12), end: min(12, 30) },
+      ]),
+      { confirmed: 45, drafted: 85, needsCard: 40, gaps: 90 },
+    );
   });
 });
