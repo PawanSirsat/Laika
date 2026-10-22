@@ -19,7 +19,9 @@ finished: 2026-10-22T19:33:36Z
 - [x] Roles & permissions grid: new capabilities and each capability's
       description under its label.
 - [x] Sidebar: pin spaces (stored per browser), pinned above recent.
-- [x] Light/dark, 1440/390, browser tests. Gate exit 0 with servers merged.
+- [ ] Light/dark, 1440/390, browser tests. Gate exit 0 with servers merged.
+      *(Light/dark, 1440/390 and browser tests: done. Gate exit 0: not yet.
+      It waits on the halves quoted under Submission.)*
 
 ## Claim note (SHELL, 2026-10-23)
 
