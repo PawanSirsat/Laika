@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { ORG_ROLES, PROJECT_ROLES } from '../../src/db/enums.ts';
 import { ApiError } from '../../src/errors.ts';
+import { SERVER_ROOT } from '../../src/paths.ts';
 import {
   ALL_ACTIONS,
   type OrgAction,
@@ -264,36 +267,50 @@ describe('conditions are declared, not guessed', () => {
   });
 });
 
-describe('labels are SPEC §3.1 / §3.2 rows', () => {
-  /**
-   * `presence.read` and `capacity.read` have no §3 row yet — the gap
-   * `policy-spec-drift.test.ts` parks under `ACTIONS_WITHOUT_A_ROW`. Their
-   * label is the row that test says is coming. When it lands this entry goes
-   * stale and the second test below fails until it is removed.
-   */
-  const WITHOUT_A_ROW: ReadonlySet<string> = new Set(['presence.read', 'capacity.read']);
+/**
+ * `ACTIONS_WITHOUT_A_ROW`, read out of `policy-spec-drift.test.ts` rather than
+ * copied: the actions `can()` has and no §3 row grants. Read as text, because
+ * importing a test file would run its suite a second time inside this one.
+ */
+function actionsWithoutARow(): Set<string> {
+  const text = readFileSync(
+    join(SERVER_ROOT, 'test', 'tooling', 'policy-spec-drift.test.ts'),
+    'utf8',
+  );
+  const start = text.indexOf('const ACTIONS_WITHOUT_A_ROW');
+  const end = text.indexOf(']);', start);
+  if (start < 0 || end < 0) throw new Error('ACTIONS_WITHOUT_A_ROW not found — ANCHOR FAILED');
+  return new Set([...text.slice(start, end).matchAll(/^\s*\['([a-z_.]+)',/gm)].map((m) => m[1]!));
+}
 
+describe('labels are SPEC §3.1 / §3.2 rows, or null where there is none', () => {
   const orgRows = new Set(parseMatrix('3.1 Org-level permission matrix').rows.map((r) => r.label));
   const projectRows = new Set(
     parseMatrix('3.2 Project-level permission matrix').rows.map((r) => r.label),
   );
+  const withoutARow = actionsWithoutARow();
 
-  it('takes every label from a row of its own scope', () => {
+  it('reads real action names out of ACTIONS_WITHOUT_A_ROW', () => {
+    const unknown = [...withoutARow].filter((a) => !HUMAN_ACTIONS.includes(a));
+    expect(unknown, 'parsed something that is not an action').toEqual([]);
+  });
+
+  it('has no label exactly for the actions policy-spec-drift parks without a row', () => {
+    const labelless = Object.entries(ACTION_LABELS)
+      .filter(([, label]) => label === null)
+      .map(([action]) => action)
+      .sort();
+    expect(labelless).toEqual([...withoutARow].sort());
+  });
+
+  it('takes every other label from a row of its own scope', () => {
     const wrong: string[] = [];
     for (const [action, label] of Object.entries(ACTION_LABELS)) {
-      if (WITHOUT_A_ROW.has(action)) continue;
+      if (label === null) continue;
       const rows = (ORG_ACTIONS as readonly string[]).includes(action) ? orgRows : projectRows;
       if (!rows.has(label)) wrong.push(`${action}: "${label}"`);
     }
     expect(wrong, 'label is not a row in its SPEC matrix').toEqual([]);
-  });
-
-  it('keeps the no-row exemption honest', () => {
-    for (const action of WITHOUT_A_ROW) {
-      expect(orgRows.has(ACTION_LABELS[action as OrgAction]), `${action} now has a row`).toBe(
-        false,
-      );
-    }
   });
 
   it('serves the label it declares', () => {
@@ -363,19 +380,63 @@ describe("the caller's own grants", () => {
     expect(me.projects[0]!.actions).toContain('project.read');
   });
 
-  it("follows a token's project whitelist", () => {
+  const TWO_PROJECTS = [
+    { projectId: 'p1', role: 'member' as const },
+    { projectId: 'p2', role: 'member' as const },
+  ];
+
+  it('lists every membership to a session', () => {
+    const { me } = permissionsCatalogue(actor({ memberships: TWO_PROJECTS }));
+
+    expect(me.project_scope).toBe('all');
+    expect(me.projects.map((p) => p.project_id).sort()).toEqual(['p1', 'p2']);
+  });
+
+  it("leaves out, by id, a project outside a token's whitelist", () => {
     const { me } = permissionsCatalogue(
       actor({
-        memberships: [
-          { projectId: 'p1', role: 'member' },
-          { projectId: 'p2', role: 'member' },
-        ],
+        memberships: TWO_PROJECTS,
         token: { id: 't1', scope: 'full', projectIds: ['p1'] },
       }),
     );
 
-    expect(me.projects.find((p) => p.project_id === 'p1')!.actions).toContain('task.write');
-    expect(me.projects.find((p) => p.project_id === 'p2')!.actions).toEqual([]);
+    expect(me.project_scope).toEqual(['p1']);
+    expect(me.projects.map((p) => p.project_id)).toEqual(['p1']);
+    expect(me.projects[0]!.actions).toContain('task.write');
+    expect(JSON.stringify(me)).not.toContain('p2');
+  });
+});
+
+describe("an owner's implicit lead, per credential", () => {
+  const OWNER = { orgRole: 'owner' as const, memberships: [] };
+
+  it('is lead on every project for a session', () => {
+    const { me } = permissionsCatalogue(actor(OWNER));
+
+    expect(me.credential).toBe('session');
+    expect(me.project_scope).toBe('all');
+    expect(me.implicit_project_role).toBe('lead');
+  });
+
+  it('is lead only inside the whitelist for a pinned token', () => {
+    const { me } = permissionsCatalogue(
+      actor({ ...OWNER, token: { id: 't1', scope: 'full', projectIds: ['p1'] } }),
+    );
+
+    expect(me.credential).toBe('token');
+    expect(me.project_scope).toEqual(['p1']);
+    expect(me.implicit_project_role).toBe('lead');
+  });
+
+  it('is still the role, not the grants, on a read-only token', () => {
+    const { me } = permissionsCatalogue(
+      actor({ ...OWNER, token: { id: 't1', scope: 'read_only', projectIds: null } }),
+    );
+
+    expect(me.credential).toBe('token');
+    expect(me.project_scope).toBe('all');
+    expect(me.implicit_project_role).toBe('lead');
+    expect(me.actions.every((a) => READ_ACTIONS.has(a))).toBe(true);
   });
 });
 

@@ -295,7 +295,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   // fallback must never shadow an API path.
   app.route(`${API_BASE}/health`, healthRoutes(options.version));
   app.route(`${API_BASE}/me`, meRoutes());
-  // Who may do what, as `can()` answers it (LAI-885). No database: like `/me`.
+  // Who may do what, as `can()` answers it (LAI-885). Beside `/me`: it reads
+  // only the actor auth already resolved, and takes no `db` of its own.
   app.route(`${API_BASE}/permissions`, permissionsRoutes());
 
   if (db !== undefined) {

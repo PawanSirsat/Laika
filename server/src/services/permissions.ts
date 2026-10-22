@@ -9,7 +9,8 @@
  * two things `can()` cannot say for itself:
  *
  *  - **the label**, a §3.1 / §3.2 row as written, because an action id is not
- *    prose (the test holds every label to a row of the document);
+ *    prose (the test holds every label to a row of the document). An action
+ *    no row grants yet has `label: null` — no text is invented for it;
  *  - **the condition**, for the actions whose answer depends on the resource.
  *    `can()` needs a target to say yes or no to those, and printing a flat
  *    answer for them would be a guess. Each is declared below with a resource
@@ -46,11 +47,12 @@ type CatalogueAction = OrgAction | ProjectAction;
  * also covers renaming a tag) the label is the row that names the action's
  * main use.
  *
- * `presence.read` and `capacity.read` have **no** §3.1 row yet — the gap
- * `policy-spec-drift.test.ts` parks as `ACTIONS_WITHOUT_A_ROW` — and carry the
- * row that test says is coming.
+ * `null` where §3 has **no** row yet — today `presence.read` and
+ * `capacity.read`, the gap `policy-spec-drift.test.ts` parks as
+ * `ACTIONS_WITHOUT_A_ROW`. The test holds the `null`s to exactly that list, so
+ * the day the row lands this map must take its text from the document.
  */
-export const ACTION_LABELS: Readonly<Record<CatalogueAction, string>> = {
+export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'org.delete': 'Delete org data / transfer ownership',
   'org.transfer_ownership': 'Delete org data / transfer ownership',
   'org.settings.edit': 'Org settings (AI provider, SMTP, signup mode)',
@@ -60,8 +62,8 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string>> = {
   'user.set_role': 'Invite users / change org roles',
   'user.deactivate': 'Deactivate user',
   'org.read': 'View the organisation',
-  'presence.read': 'Presence and capacity',
-  'capacity.read': 'Presence and capacity',
+  'presence.read': null,
+  'capacity.read': null,
   'member_list.read': 'View member list',
   'project.join_public': 'Join a public project',
   'token.create_own': 'Generate, read and revoke own tokens',
@@ -194,7 +196,8 @@ export type Holding = 'yes' | 'no' | 'conditional';
 export interface PermissionRow {
   action: CatalogueAction;
   scope: 'org' | 'project';
-  label: string;
+  /** The SPEC §3.1 / §3.2 row, or `null` for an action no row grants yet. */
+  label: string | null;
   /** No token may perform it, whatever its scope (`SESSION_ONLY_ACTIONS`). */
   session_only: boolean;
   /** A `read_only` token may perform it (`READ_ACTIONS`). */
@@ -220,11 +223,24 @@ export interface PermissionsView {
   me: {
     org_role: OrgRole;
     credential: 'session' | 'token';
-    /** `lead` for an Owner or Admin, on every project, membership or not. */
+    /**
+     * The projects this credential may reach: `'all'`, or a token's project
+     * whitelist (§4.9). Everything below about projects holds only inside it.
+     */
+    project_scope: 'all' | string[];
+    /**
+     * `lead` for an Owner or Admin, on every project in `project_scope`,
+     * membership or not. A role, not a grant: a `read_only` token still holds
+     * only reads there.
+     */
     implicit_project_role: ProjectRole | null;
     /** Org actions the caller may take on this credential, conditional ones included. */
     actions: OrgAction[];
-    /** Project actions per membership, on this credential. */
+    /**
+     * Project actions per membership, on this credential. A membership this
+     * credential may not read (`project.read`) is left out, not listed empty,
+     * so a token pinned to one project learns nothing of the others.
+     */
     projects: ProjectGrants[];
   };
 }
@@ -302,18 +318,22 @@ export function permissionsCatalogue(actor: ResolvedActor | null): PermissionsVi
 
   const orgActions = ORG_ACTIONS.filter((a) => can(actor, a, resourceFor(a, actor.userId)));
 
-  const projects = actor.memberships.map((m): ProjectGrants => {
+  const projects = actor.memberships.flatMap((m): ProjectGrants[] => {
     const inProject: Actor = { ...actor, projectRole: m.role };
-    return {
-      project_id: m.projectId,
-      role: effectiveProjectRole(inProject),
-      actions: PROJECT_ACTIONS.filter((a) =>
-        can(inProject, a, resourceFor(a, actor.userId, m.projectId)),
-      ),
-    };
+    if (!can(inProject, 'project.read', { projectId: m.projectId })) return [];
+    return [
+      {
+        project_id: m.projectId,
+        role: effectiveProjectRole(inProject),
+        actions: PROJECT_ACTIONS.filter((a) =>
+          can(inProject, a, resourceFor(a, actor.userId, m.projectId)),
+        ),
+      },
+    ];
   });
 
   const implicitLead = actor.orgRole === 'owner' || actor.orgRole === 'admin';
+  const whitelist = actor.token?.projectIds ?? null;
 
   return {
     org_roles: [...ORG_ROLES],
@@ -322,6 +342,7 @@ export function permissionsCatalogue(actor: ResolvedActor | null): PermissionsVi
     me: {
       org_role: actor.orgRole,
       credential: actor.token === undefined || actor.token === null ? 'session' : 'token',
+      project_scope: whitelist === null ? 'all' : [...whitelist],
       implicit_project_role: implicitLead ? 'lead' : null,
       actions: orgActions,
       projects,
