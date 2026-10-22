@@ -383,8 +383,8 @@ included, and their held local activity, **in the shape the person reads
 them**: the same answers as `GET /me/time` and `GET /me/local-activity`,
 from the same code. Read only — no row lets anybody write another person's
 time, drafts, breaks or switches, and every `/me` write touches the
-caller's own rows. Reading follows no sharing switch: consent governs
-collection (D-102, amended).
+caller's own rows. Reading follows no sharing switch, and collection
+follows only the organisation's Developer insights (D-102, amended).
 
 - **"not themselves"**: a person's own is `/me`'s, where nothing is logged.
 - **Every read of somebody else is logged** (§4.59) — this row's two reads
@@ -392,7 +392,7 @@ collection (D-102, amended).
   so a read that cannot be logged is not answered. The person reads who
   looked on `GET /me/analytics-views` under *Read and delete own local
   activity* (`local_activity.read_own`): what is held about them and who has
-  seen it are the same consent screen's, every role's, session only.
+  seen it are the same Developer access screen's, every role's, session only.
 
 ### 3.2 Project-level permission matrix
 
@@ -1726,7 +1726,7 @@ point is taken only when it starts at or after `last_end_ms`. A point out of
 order can only be dropped, never counted twice. **A cumulative series first
 seen more than five minutes after it began is a baseline**: its first value
 holds everything since its process started — possibly before sharing was on —
-so only its growth from there is counted. (A delta point from before consent
+so only its growth from there is counted. (A delta point from before Developer insights was on
 was refused when it was sent, and is never resent.) Kept three days past its last
 point.
 
@@ -2827,7 +2827,7 @@ reaches SSE, an MCP tool or an export (§4.21).
   too — **whatever the switches say**: what was kept before sharing was
   turned off is still theirs to see. `DELETE /me/local-activity` removes every
   local row, pushed key and token row of theirs, `204`. Both **web session
-  only**: an agent must not read back or erase what its person consented to.
+  only**: an agent must not read back or erase what is held about its person.
 
 **Token usage, read back** (D-084, LAI-769) — §4.33's rows, for the Usage page
 and the profile's Tokens card:
