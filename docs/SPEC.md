@@ -2514,6 +2514,7 @@ PUT    /api/v1/org/time/solidtime/projects   body { projects } → { projects } 
 PUT    /api/v1/org/time/solidtime/import     body { v, members, tz, from, to, complete, entries } → what changed, and not_on_laika   (owner, admin; session only)
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only; name 1–80 chars, trimmed — Change organisation settings, LAI-984)
                                              the owner's read adds extra_owners: [{ id, name, email }] — active owners besides orgs.owner_user_id, reported, never demoted silently (D-104 item 2)
+                                             and owner_invites_pending: [{ id, email, expires_at }] — owner invites from before D-104 still unaccepted and unexpired, to revoke (LAI-982)
 POST   /api/v1/org/transfer-ownership        body { user_id, confirm } — confirm is the target's email; target an active admin or member → { owner, previous_owner }; target becomes owner, caller admin, orgs.owner_user_id moves, one transaction; logged; only the owner orgs.owner_user_id names may — another owner from before D-104 is 403 reason not_recorded_owner   (owner only; session only; LAI-982)
 POST   /api/v1/org/github-webhook            set or rotate the GitHub webhook secret; answers it once (session only)
 DELETE /api/v1/org/github-webhook            clear it (204; session only)
@@ -2543,6 +2544,7 @@ GET    /api/v1/usage                         ?days=1–92&project=&tz= — the U
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
                                              POST takes optional expires_in_days: 1 | 7 | 30, default 7 (LAI-984)
                                              an invite never grants org_role 'owner' → 422 reason use_transfer (LAI-982)
+                                             accepting a pending owner invite from before D-104 is refused the same and the invite stays unaccepted (sign-up: 422 auth_code use_transfer)
 GET    /api/v1/invites/:token                unauthenticated preview — org name, inviter, role, expiry
 DELETE /api/v1/invites/:id                   revoke a pending invite (admin+)
 POST   /api/v1/invites/:id/reissue           body { expires_in_days? } — revoke a pending or expired invite and issue a new link for the same address, role and project, in one step → 201, POST /invites' answer; 409 if accepted   (as creating it: Invite people, and only the owner for an admin invite; LAI-984)
