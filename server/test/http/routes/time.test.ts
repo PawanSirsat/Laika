@@ -122,6 +122,7 @@ describe('the switches', () => {
       org_mode: 'off',
       draft_my_time: false,
       drafting: false,
+      place: null,
       min_sync_interval_s: 600,
       signal_times: true,
       folder_names: true,

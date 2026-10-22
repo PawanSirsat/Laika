@@ -1824,13 +1824,15 @@ not drafted again when drafting is turned back on. A table rather than an
 
 ### 4.46 `user_time_settings`
 
-A person's own *Draft my time* (D-088 item 5, LAI-787). **No row is off.** Set
-only by the person, on a web session (`time_settings.set_own`).
+A person's own *Draft my time* (D-088 item 5, LAI-787) and where they are
+(D-106, LAI-895). **No row is off, and nowhere.** Set only by the person, on a
+web session (`time_settings.set_own`).
 
 | field | notes |
 | --- | --- |
 | `user_id` | primary key, FK `users`, cascade |
 | `draft_my_time` | 0 or 1 (CHECK) |
+| `place` | text, null — the IANA zone of a place from the client's list (`Asia/Kolkata`), at most 64 characters; the person's Timeline computes its sunrise and sunset from it (D-106). The server stores the id and reads nothing into it |
 | `updated_at` | |
 
 Turning it off deletes every draft the person has not confirmed, in the same
@@ -3079,14 +3081,16 @@ the Max plan?*), not in tokens, so the number is always the developer's.
 parameter names anybody else.
 
 - **The switches.** `GET /me/time-settings` answers `{ org_mode, draft_my_time,
-  drafting, min_sync_interval_s, signal_times, folder_names, breaks }` to a
-  session or any token of the person's — a collector asks before it sends.
+  drafting, min_sync_interval_s, signal_times, folder_names, breaks, place }`
+  to a session or any token of the person's — a collector asks before it sends.
   `signal_times: true` says the board takes a block's `at` (D-096), and
   `folder_names: true` that it takes a block's `folder` and `branch` (D-098
   item 6); a collector sends each only then, so a board that predates it is
   never refused an upload over it. `PUT /me/time-settings` takes
-  `{ draft_my_time }` from a web session only; off deletes every draft the
-  person has not confirmed. `PUT /org/time` takes `{ mode }` — `off`, `manual`
+  `{ draft_my_time }`, `{ place }` or both from a web session only — `place`
+  an IANA zone id of at most 64 characters, or `null` to forget it (D-106);
+  an empty body is `422`. Off deletes every draft the person has not
+  confirmed. `PUT /org/time` takes `{ mode }` — `off`, `manual`
   or `drafts` — from an owner or admin on a web session (`org.time.set`);
   leaving `drafts` deletes everybody's unconfirmed drafts. A confirmed draft
   stays, its evidence blanked (§4.45), and entries are never deleted by a

@@ -41,6 +41,12 @@ export interface TimeSettings {
    * Absent from a board that predates it.
    */
   readonly breaks?: readonly BreakWindow[];
+  /**
+   * Where the person is (D-106): the IANA zone of a place from
+   * `routes/screens/places.ts`, or null until they set one. Their Timeline's
+   * sky is computed from it. Absent from a board that predates it.
+   */
+  readonly place?: string | null;
 }
 
 /** ISO weekdays, 1 (Monday) to 7 (Sunday). */
@@ -297,6 +303,11 @@ export function setDraftMyTime(on: boolean): Promise<TimeSettings> {
     method: 'PUT',
     body: { draft_my_time: on },
   });
+}
+
+/** *Where you are* — the person's own place, or null to forget it (D-106). */
+export function setPlace(place: string | null): Promise<TimeSettings> {
+  return request<TimeSettings>('/me/time-settings', { method: 'PUT', body: { place } });
 }
 
 /** The organisation's *Time* setting — owners and admins, signed in. */

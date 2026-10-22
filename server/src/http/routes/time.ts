@@ -92,7 +92,18 @@ const buckets = z
 const folderName = z.string().max(1000);
 const branchName = z.string().max(1000);
 
-const SettingsBody = strictObject({ draft_my_time: z.boolean() });
+/**
+ * The person's own settings: the drafting switch, and where they are (D-106)
+ * — an IANA zone id of at most 64 characters, or null to forget it. Either
+ * field, or both; an empty body is refused.
+ */
+const PLACE = /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){1,2}$/;
+const SettingsBody = strictObject({
+  draft_my_time: z.boolean().optional(),
+  place: z.string().max(64).regex(PLACE, 'a place is an IANA zone id').nullable().optional(),
+}).refine((b) => b.draft_my_time !== undefined || b.place !== undefined, {
+  message: 'send draft_my_time, place, or both',
+});
 const OrgTimeBody = strictObject({ mode: z.enum(TIME_MODES) });
 
 /**

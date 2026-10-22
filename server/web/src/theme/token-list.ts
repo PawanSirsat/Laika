@@ -115,6 +115,11 @@ export const COLOR_TOKENS: readonly TokenGroup[] = [
       '--heat-all-4',
     ],
   },
+  {
+    title: 'Sky',
+    note: 'Day and night behind the Timeline’s hours (LAI-895): the strip, the lanes, the sun and the moon.',
+    tokens: ['--sky-day', '--sky-night', '--sky-night-body', '--sun', '--moon'],
+  },
 ];
 
 /** Flat list of every themed colour token. */

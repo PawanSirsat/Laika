@@ -2181,6 +2181,12 @@ export const userTimeSettings = sqliteTable(
       .primaryKey()
       .references(() => users.id, { onDelete: 'cascade' }),
     draftMyTime: integer('draft_my_time').notNull().default(0),
+    /**
+     * Where the person is (§4.46, D-106, LAI-895): the IANA zone of a place
+     * from the client's list, so their Timeline's sky — sunrise, sunset — is
+     * theirs. Null until set; the client then falls back to the day's zone.
+     */
+    place: text('place'),
     updatedAt,
   },
   () => [check('user_time_settings_draft_my_time_check', sql.raw('draft_my_time IN (0, 1)'))],
