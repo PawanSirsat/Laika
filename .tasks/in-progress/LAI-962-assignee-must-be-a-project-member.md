@@ -2,11 +2,12 @@
 id: LAI-962
 title: 'A task can be assigned to someone who is not in its project, even a private one'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T13:30:34Z
 ---
 
 ## Goal
