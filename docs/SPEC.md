@@ -1812,7 +1812,7 @@ the person chose to send it.
 | `project_id` | nullable FK `projects`, set null |
 | `general` | 0 or 1 — put on no card and no project by the person, on purpose |
 | `signals` | JSON `{ prompts, replies, sessions, commits, marks, at? }` — counts, and `at` `{ prompts?, commits? }`: `[bucket, count]` pairs, a bucket being five minutes of unix time, `floor(ms / 300000)` (D-096, LAI-834). Numbers only |
-| `note` | nullable — an agent's proposal may say what it was for, ≤ 200 characters |
+| `note` | nullable — what the block was for, ≤ 200 characters (CHECK): an agent's proposal may say it, and the person may type it as the block's title (`PATCH`, LAI-865); confirming makes it the entry's note |
 | `folder` | nullable — the name the person gave the block's work folder on their machine (D-098, LAI-866): 1–60 characters, no `/` or `\`, no control or format character — a name, never a path. Bounded by the service on every way in (the upload and `PATCH`), not by a CHECK, which would rebuild this table |
 | `branch` | nullable — that folder's branch, only when the person turned sending it on (D-098 item 3), and only beside a `folder`; `[A-Za-z0-9._/-]`, 1–255 |
 | `state` | `pending` \| `confirmed` \| `dismissed` |
@@ -2324,7 +2324,7 @@ GET    /api/v1/me/time-settings              PUT .../time-settings  body { draft
 PUT    /api/v1/me/time-drafts                a collector's blocks, each with a work folder's chosen name and branch if sent → { accepted_days, stored_blocks }   (both time switches on; 30/hour)
 POST   /api/v1/me/time-drafts                an agent's proposal → 201 { id, minutes, day } (both time switches on; twin of propose_time_entry)
 DELETE /api/v1/me/time-drafts                every draft the caller has not confirmed → 204   (session only)
-PATCH  /api/v1/me/time-drafts/:id            body { task?, project?, general?, minutes?, started_at?, ended_at?, folder?, branch? }   POST .../split { at }   POST .../dismiss → 204   (session only)
+PATCH  /api/v1/me/time-drafts/:id            body { task?, project?, general?, minutes?, started_at?, ended_at?, folder?, branch?, note? }   POST .../split { at }   POST .../dismiss → 204   (session only)
 POST   /api/v1/me/time-drafts/:id/confirm    → 201, the entry   POST /api/v1/me/time/days/:day/confirm → { entries }   (session only)
 GET    /api/v1/me/time                       ?day=&tz= — My day: drafts, entries, breaks, agent minutes, drafts held, the week   (session only)
 POST   /api/v1/me/time/undo                  body { id } — the change an X-Undo-Id named, taken back → 204   (session only; LAI-831)
@@ -3033,9 +3033,11 @@ parameter names anybody else.
   minutes, moves its edges — `started_at`, `ended_at`, unix ms, My day's
   drag and −/+ (LAI-831) — or changes or clears its work folder's name and
   branch (`folder`, `branch`, D-098 item 5; clearing the name clears the
-  branch, and a branch with no name is `422 branch_without_folder`), and holds
-  it for them so no sync overwrites it. Confirming carries the name and branch
-  into the entry (§4.48).
+  branch, and a branch with no name is `422 branch_without_folder`), or gives
+  it a title (`note`, LAI-865: a string of at most 200 characters, the
+  draft's CHECK, or `null`; trimmed, a blank one is none), and holds it for
+  them so no sync overwrites it. Confirming carries the title, as the entry's
+  note, and the name and branch into the entry (§4.48).
   Refused `422` for an edge on a block with no span (`no_span`), a span that
   does not end after it starts (`invalid_span`) or leaves the block's day in
   its zone (`outside_day` — never moved to the next day), and a timed block
@@ -4388,6 +4390,9 @@ anything missing sends the task back.
   project the name matched, it reads as a space block does, the name beside
   it; *Drafted from* shows the name, and the branch when sent, and its line
   then says the name went with the counts; a confirmed entry shows the name.
+  A drafted block can carry a title the person types in the inspector — **T**
+  goes to it, ↵ saves it and never confirms — shown on its row and in the
+  inspector, and the entry's note once confirmed (LAI-865).
 - **Member profile** (`/people?user=<id>`, D-078; *My profile* in the user
   menu opens the reader's own, for an owner or an admin) — owners and admins only:
   anyone else sees a permission notice and the profile is never requested.
