@@ -213,6 +213,8 @@ export interface DraftPatch {
   /** The work folder's chosen name (D-098); `null` clears it, and its branch. */
   readonly folder?: string | null;
   readonly branch?: string | null;
+  /** A title the person typed (LAI-865), the entry's note once confirmed; `null` clears it. */
+  readonly note?: string | null;
 }
 
 export interface NewEntry {

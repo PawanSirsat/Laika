@@ -73,6 +73,9 @@ void describe('the calls — the caller’s own, and nothing names anybody else'
   void test('a draft: assign, split, dismiss, confirm — by its id', async () => {
     await updateDraft('d/1', { task: 'LAI-42' });
     await updateDraft('d1', { task: null, project: null, general: true });
+    // A title typed on the block (LAI-865), and one cleared.
+    await updateDraft('d1', { note: 'Planning the sprint' });
+    await updateDraft('d1', { note: null });
     await splitDraft('d1', 1_792_400_000_000);
     await dismissDraft('d1');
     await confirmDraft('d1');
@@ -82,6 +85,8 @@ void describe('the calls — the caller’s own, and nothing names anybody else'
         // An id is escaped, so it can never reach another path.
         ['PATCH', '/api/v1/me/time-drafts/d%2F1', { task: 'LAI-42' }],
         ['PATCH', '/api/v1/me/time-drafts/d1', { task: null, project: null, general: true }],
+        ['PATCH', '/api/v1/me/time-drafts/d1', { note: 'Planning the sprint' }],
+        ['PATCH', '/api/v1/me/time-drafts/d1', { note: null }],
         ['POST', '/api/v1/me/time-drafts/d1/split', { at: 1_792_400_000_000 }],
         ['POST', '/api/v1/me/time-drafts/d1/dismiss', undefined],
         ['POST', '/api/v1/me/time-drafts/d1/confirm', undefined],

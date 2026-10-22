@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type RefObject } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import {
   getRevisions,
@@ -42,6 +42,8 @@ export interface InspectorActions {
   readonly split: (draft: TimeDraft) => void;
   readonly remove: (entry: TimeEntry) => void;
   readonly saveNote: (entry: TimeEntry, note: string) => void;
+  /** A drafted block's title, trimmed (LAI-865): its entry's note once confirmed. */
+  readonly setTitle: (draft: TimeDraft, title: string) => void;
   readonly fill: (gap: Span) => void;
   readonly markBreak: (gap: Span) => void;
   readonly unbreak: (id: string) => void;
@@ -56,6 +58,8 @@ export interface InspectorProps {
   readonly pending: string | undefined;
   readonly actions: InspectorActions;
   readonly onNavigate: (to: string) => void;
+  /** The drafted block's title field, where T puts the focus (LAI-865). */
+  readonly titleRef?: RefObject<HTMLInputElement | null> | undefined;
 }
 
 const COUNTS = ['prompts', 'sessions', 'commits', 'marks'] as const;
@@ -233,6 +237,84 @@ function LengthField({
   );
 }
 
+/**
+ * A title for a drafted block (LAI-865): what it was, in the person's words,
+ * and the entry's note once confirmed. An agent's note is where it starts.
+ * ↵ saves it and hands the keys back to My day — it never confirms; Esc
+ * leaves it as it was saved. T reaches it from anywhere on the page.
+ */
+function TitleField({
+  draft,
+  busy,
+  fieldRef,
+  onSave,
+}: {
+  readonly draft: TimeDraft;
+  readonly busy: boolean;
+  readonly fieldRef: RefObject<HTMLInputElement | null> | undefined;
+  readonly onSave: (title: string) => void;
+}) {
+  const saved = draft.note ?? '';
+  const [text, setText] = useState<string | undefined>(undefined);
+  const typed = text ?? saved;
+  const save = (): boolean => {
+    if (busy) return false;
+    const title = typed.trim();
+    if (title !== saved) onSave(title);
+    setText(title);
+    return true;
+  };
+  // Out of the field and onto the block, so ↵ G X J K act on it again.
+  const leave = (field: HTMLElement): void => {
+    const home = field.closest<HTMLElement>('[data-inspector]');
+    if (home === null) field.blur();
+    else home.focus();
+  };
+  return (
+    <form
+      className="inspector-title"
+      onSubmit={(event) => {
+        event.preventDefault();
+        save();
+      }}
+    >
+      <label className="inspector-label" htmlFor="inspector-title-field">
+        Title
+      </label>
+      <input
+        ref={fieldRef}
+        id="inspector-title-field"
+        className="input"
+        data-draft-title-field
+        value={typed}
+        // 200, not an entry's 280: the draft's own CHECK holds it
+        // (`time_drafts_note_check`, server/src/db/schema.ts).
+        maxLength={200}
+        placeholder="A title for this block"
+        onChange={(event) => {
+          setText(event.target.value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            if (save()) leave(event.currentTarget);
+          } else if (event.key === 'Escape') {
+            event.preventDefault();
+            setText(undefined);
+            leave(event.currentTarget);
+          }
+        }}
+      />
+      <button type="submit" className="myday-chip" disabled={busy || typed.trim() === saved}>
+        Save title
+      </button>
+      <p className="inspector-note">
+        It becomes the entry’s note when you confirm. ↵ saves it, Esc leaves it.
+      </p>
+    </form>
+  );
+}
+
 function Stepper({
   minutes,
   canShorten,
@@ -299,6 +381,7 @@ export function Inspector({
   pending,
   actions,
   onNavigate,
+  titleRef,
 }: InspectorProps) {
   const [history, setHistory] = useState<History>({ kind: 'closed' });
   const [note, setNote] = useState<{ id: string; text: string } | undefined>(undefined);
@@ -331,8 +414,12 @@ export function Inspector({
             <span className="inspector-range">{whenOf(draft)}</span>
             <span className="inspector-source">
               {draft.source === 'agent' ? 'Proposed by an agent' : 'From your collector'}
-              {draft.note !== null && ` · “${draft.note}”`}
             </span>
+            {draft.note !== null && (
+              <span className="inspector-source inspector-said" data-inspector-title>
+                “{draft.note}”
+              </span>
+            )}
             <span className="inspector-head-gap" />
             <button
               type="button"
@@ -357,6 +444,17 @@ export function Inspector({
               {ready ? `Confirm ${duration(draft.minutes)}` : 'Needs a card'}
             </button>
           </header>
+          <TitleField
+            // When the saved title changes — saved here, or undone — the field
+            // starts again from it.
+            key={draft.note ?? ''}
+            draft={draft}
+            busy={busy}
+            fieldRef={titleRef}
+            onSave={(title) => {
+              actions.setTitle(draft, title);
+            }}
+          />
           <div className="inspector-parts">
             <div className="inspector-part">
               <h3 className="inspector-label">Card</h3>
@@ -459,9 +557,9 @@ export function Inspector({
           </div>
           <p className="inspector-keys">
             <kbd className="myday-kbd">↵</kbd> confirm <kbd className="myday-kbd">G</kbd> general{' '}
-            <kbd className="myday-kbd">X</kbd> not work <kbd className="myday-kbd">J</kbd>{' '}
-            <kbd className="myday-kbd">K</kbd> next / prev <kbd className="myday-kbd">?</kbd> all
-            keys
+            <kbd className="myday-kbd">X</kbd> not work <kbd className="myday-kbd">T</kbd> title{' '}
+            <kbd className="myday-kbd">J</kbd> <kbd className="myday-kbd">K</kbd> next / prev{' '}
+            <kbd className="myday-kbd">?</kbd> all keys
           </p>
         </section>
       );

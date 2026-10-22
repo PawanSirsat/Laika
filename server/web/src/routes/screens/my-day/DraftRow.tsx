@@ -60,8 +60,9 @@ function target(draft: TimeDraft): {
 /**
  * One block still to settle (LAI-810; the owner's design, LAI-831): a box to
  * tick it for a bulk action, when, how long, what it is on — its card a link
- * to it — the line under that, and where it came from. **The row selects the
- * block**; what to do with it is in the inspector, and the keys.
+ * to it — the line under that, its title when it has one (LAI-865), and where
+ * it came from. **The row selects the block**; what to do with it is in the
+ * inspector, and the keys.
  */
 export function DraftRow({
   draft,
@@ -135,6 +136,11 @@ export function DraftRow({
           )}
         </span>
         {draft.task === null && <span className="myday-row-line">{on.line}</span>}
+        {draft.note !== null && (
+          <span className="myday-row-title" data-draft-title>
+            {draft.note}
+          </span>
+        )}
       </span>
       <span className={`myday-source myday-source-${draft.source}`}>
         {draft.source === 'agent' ? 'agent' : 'collector'}
