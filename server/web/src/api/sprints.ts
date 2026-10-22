@@ -158,44 +158,6 @@ export function removeTaskFromSprint(id: string, taskId: string): Promise<unknow
   );
 }
 
-/**
- * May this actor create, edit, activate or delete sprints?
- *
- * `sprint.manage` is lead-only (`policy/can.ts`), and an org owner or admin
- * holds implicit lead everywhere (§3). Same shape and same caveat as
- * `canManageMembers`: this **hides** controls so nobody is offered a button
- * that answers 403. It is a display decision, not enforcement — the server
- * decides, and if the two ever disagree the server is right.
- */
-export function canManageSprints(
-  orgRole: string,
-  projectId: string,
-  memberships: readonly { readonly project_id: string; readonly role: string }[],
-): boolean {
-  if (orgRole === 'owner' || orgRole === 'admin') return true;
-  return memberships.some((m) => m.project_id === projectId && m.role === 'lead');
-}
-
-/**
- * May this actor move tasks into and out of a sprint?
- *
- * `task.assign_sprint` is **member and above** (§3.2), which is a wider cell
- * than `sprint.manage` — a Member plans their own work into a sprint without
- * being able to create or delete one. Two helpers rather than one because the
- * two controls sit next to each other on this screen and collapsing them would
- * silently hide assignment from every Member.
- */
-export function canAssignToSprints(
-  orgRole: string,
-  projectId: string,
-  memberships: readonly { readonly project_id: string; readonly role: string }[],
-): boolean {
-  if (orgRole === 'owner' || orgRole === 'admin') return true;
-  return memberships.some(
-    (m) => m.project_id === projectId && (m.role === 'lead' || m.role === 'member'),
-  );
-}
-
 // ------------------------------------------------- the forecast (LAI-772)
 
 export interface SprintForecastFigures {

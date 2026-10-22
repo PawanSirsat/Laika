@@ -22,11 +22,8 @@ import {
   type TimeDraft,
 } from '../../../api/time.ts';
 import { everyPage } from '../../../api/every-page.ts';
-import {
-  getPersonDay,
-  holdsPeopleAnalytics,
-  useOrgActions,
-} from '../../../api/people-analytics.ts';
+import { getPersonDay, PEOPLE_ANALYTICS } from '../../../api/people-analytics.ts';
+import { useGates } from '../../../api/permissions.ts';
 import { isProject, listProjects, type Project } from '../../../api/projects.ts';
 import { readerZone } from '../../../api/usage.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
@@ -241,8 +238,8 @@ export function MyDayScreen({
   embedded,
 }: MyDayScreenProps) {
   const tz = readerZone();
-  const { actions: orgActions, settled } = useOrgActions(me !== undefined);
-  const holds = holdsPeopleAnalytics(orgActions, me?.org_role);
+  const { org, settled } = useGates(me !== undefined);
+  const holds = org(PEOPLE_ANALYTICS);
   /** Whose day: somebody else's only by `?user=` naming another person. */
   const subjectId = user !== undefined && user !== '' && user !== me?.id ? user : undefined;
   const readOnly = subjectId !== undefined;

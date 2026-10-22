@@ -8,7 +8,7 @@ import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { everyPage } from '../../../api/every-page.ts';
-import { canManageOrg } from '../../../api/invites.ts';
+import { useGates } from '../../../api/permissions.ts';
 import { getOrg } from '../../../api/org.ts';
 import { getPresence, hasLocation } from '../../../api/presence.ts';
 import { pickProject } from '../../../api/pick-project.ts';
@@ -404,7 +404,12 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
     setExtra(id);
   };
 
-  const canInvite = me !== undefined && canManageOrg(me.org_role);
+  // Two questions, two actions — the server's answers, denied until it has
+  // them (LAI-970). Inviting is `user.invite`; the insights switch is
+  // `org.developer_insights.set`, as Developer access asks it.
+  const gates = useGates(me !== undefined);
+  const canInvite = gates.org('user.invite');
+  const canSetInsights = gates.org('org.developer_insights.set');
   const extras = extrasFor(canInvite);
   const openedExtra = extras.find((e) => e.id === extra);
 
@@ -963,7 +968,7 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
                 )}
 
                 {openedExtra?.id === 'activity' && (
-                  <ShareActivity canManageOrg={canInvite} origin={origin} />
+                  <ShareActivity canSetInsights={canSetInsights} origin={origin} />
                 )}
 
                 {openedExtra?.id === 'invite' && (

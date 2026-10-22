@@ -19,8 +19,6 @@ import {
   getPersonUsage,
   getTaskUsage,
   getUsage,
-  mayReadOrgUsage,
-  mayReadPeopleUsage,
   modelCostText,
   OUTSIDE_ANY_SPACE,
   outsideAnySpace,
@@ -75,19 +73,6 @@ void describe('the reads (§6.4)', () => {
       USAGE_RANGES.map((r) => r.days),
       [7, 30, 90],
     );
-  });
-});
-
-void describe('who sees what (D-084 item 7), mirrored from §3.1', () => {
-  void test('the organisation and people: owners and admins', () => {
-    for (const role of ['owner', 'admin']) {
-      assert.equal(mayReadOrgUsage(role), true);
-      assert.equal(mayReadPeopleUsage(role), true);
-    }
-    for (const role of ['member', 'viewer', undefined]) {
-      assert.equal(mayReadOrgUsage(role), false);
-      assert.equal(mayReadPeopleUsage(role), false);
-    }
   });
 });
 

@@ -17,8 +17,10 @@ import { after, describe, test } from 'node:test';
 import {
   closeBrowser,
   DEFAULT_STATUSES,
+  everSeen,
   open,
   until,
+  watchFor,
   type ApiStub,
   type Harness,
 } from './harness.ts';
@@ -107,6 +109,30 @@ const STUB: ApiStub = {
   '/api/v1/projects/laika-core/tags': { tags: [] },
   '/api/v1/presence': { data: [], next_cursor: null },
 };
+
+const withProjectSettings = (role: string, granted: boolean): ApiStub => ({
+  ...STUB,
+  '/api/v1/me': { ...(STUB['/api/v1/me'] as object), org_role: role },
+  '/api/v1/permissions': {
+    org_roles: [],
+    project_roles: [],
+    permissions: [],
+    me: {
+      org_role: role,
+      credential: 'session',
+      project_scope: 'all',
+      implicit_project_role: null,
+      actions: [],
+      projects: [
+        {
+          project_id: 'p1',
+          role: granted ? 'lead' : 'member',
+          actions: granted ? ['project.settings.edit'] : [],
+        },
+      ],
+    },
+  },
+});
 
 async function openPanel(h: Harness): Promise<void> {
   await h.page.waitForSelector('.card-title');
@@ -298,6 +324,62 @@ void describe('column width', () => {
         after <= before,
         `narrow should not widen the lanes: ${String(before)} → ${String(after)}`,
       );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('project visibility permission', () => {
+  for (const [role, granted] of [
+    ['admin', false],
+    ['member', true],
+    ['owner', true],
+  ] as const) {
+    void test(`${role} ${granted ? 'can' : 'cannot'} edit visibility from the live project grant`, async () => {
+      const h = await open('/board?project=laika-core', withProjectSettings(role, granted));
+      try {
+        await openPanel(h);
+        assert.equal(await h.page.locator('input[name="vs-visibility"]').count(), granted ? 2 : 0);
+      } finally {
+        await h.close();
+      }
+    });
+  }
+});
+
+void describe('an implicit viewer is not a lead (LAI-970)', () => {
+  void test('an org viewer granted Open every project is never offered Visibility', async () => {
+    // `implicit_project_role: viewer` and no membership: the server answers
+    // `project.settings.edit` no, as `effectiveProjectRole` makes them a viewer.
+    const h = await open(
+      '/board?project=laika-core',
+      {
+        ...STUB,
+        '/api/v1/me': { ...(STUB['/api/v1/me'] as object), org_role: 'viewer', memberships: [] },
+        '/api/v1/permissions': {
+          org_roles: [],
+          project_roles: [],
+          permissions: [],
+          me: {
+            org_role: 'viewer',
+            credential: 'session',
+            project_scope: 'all',
+            implicit_project_role: 'viewer',
+            actions: [],
+            projects: [],
+          },
+        },
+      },
+      { before: (page) => watchFor(page, ['input[name="vs-visibility"]', '.lane-add']) },
+    );
+    try {
+      await openPanel(h);
+      await until(() => h.calls.some((c) => c.path === '/api/v1/permissions'));
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      assert.equal(await everSeen(h.page, 'input[name="vs-visibility"]'), false);
+      // Nor any write: `task.write` is a member's, and a viewer is not one.
+      assert.equal(await everSeen(h.page, '.lane-add'), false, 'offered Add task');
     } finally {
       await h.close();
     }

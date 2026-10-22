@@ -210,6 +210,10 @@ export function isGrantsChange(event: Pick<ActivityEvent, 'type' | 'payload'>): 
 
 export function describeEvent(event: ActivityEvent): string {
   if (isGrantsChange(event)) return 'changed who can do what';
+  // A reorder is `task.updated` too, and *edited this task* says something
+  // changed that did not. Feeds drop it (`shownInFeed`); the organisation's
+  // full history (LAI-951) shows every row, so it reads as what it was.
+  if (isReorder(event)) return 'reordered this task';
   /*
    * The fallback stays. A type added on the server before a line is added here
    * still renders — as itself, which is legible and obviously incomplete — and

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { getPermissions, type Permissions } from '../../../api/permissions.ts';
+import { refreshPermissions, type Permissions } from '../../../api/permissions.ts';
 import type { Project } from '../../../api/projects.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -161,7 +161,7 @@ export function RolesPermissionsSection({
     // A re-read after a save keeps the tab on screen; only a first load or a
     // retry from an error shows the skeleton.
     setState((current) => (current.status === 'ready' ? current : { status: 'loading' }));
-    getPermissions(controller.signal)
+    refreshPermissions(controller.signal)
       .then((view) => {
         if (controller.signal.aborted) return;
         setState({ status: 'ready', view });

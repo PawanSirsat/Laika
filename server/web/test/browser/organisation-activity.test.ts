@@ -84,6 +84,19 @@ const FIRST = [
 const SECOND = [row(4, 'sprint.created', { actor_id: null, actor_kind: 'system' })];
 
 const me = (org_role: string) => ({ ...user('u1', 'Ada Lovelace', org_role), memberships: [] });
+const permissions = (org_role: string, actions: readonly string[]) => ({
+  org_roles: [],
+  project_roles: [],
+  permissions: [],
+  me: {
+    org_role,
+    credential: 'session',
+    project_scope: 'all',
+    implicit_project_role: null,
+    actions,
+    projects: [],
+  },
+});
 
 const BASE: ApiStub = {
   '/api/v1/projects': {
@@ -94,6 +107,7 @@ const BASE: ApiStub = {
   '/api/v1/invites': { data: [], next_cursor: null },
   '/api/v1/org': { id: 'o1', name: 'Acme', presence_enabled: true, created_at: 1, updated_at: 2 },
   '/api/v1/me': me('owner'),
+  '/api/v1/permissions': permissions('owner', ['audit_log.export', 'token.list_any']),
   '/api/v1/activity/history?limit=50': { data: FIRST, next_cursor: 'c1' },
   '/api/v1/activity/history?limit=50&cursor=c1': { data: SECOND, next_cursor: null },
 };
@@ -108,7 +122,11 @@ void after(async () => {
 void describe('who is offered it', () => {
   for (const role of ['owner', 'admin']) {
     void test(`an ${role} gets an Activity tab beside the others`, async () => {
-      const h = await open('/organisation', { ...BASE, '/api/v1/me': me(role) });
+      const h = await open('/organisation', {
+        ...BASE,
+        '/api/v1/me': me(role),
+        '/api/v1/permissions': permissions(role, ['audit_log.export', 'token.list_any']),
+      });
       try {
         await h.page.locator('.page-tab[data-tab="activity"]').waitFor({ timeout: 20_000 });
         const tabs = await h.page
@@ -122,7 +140,11 @@ void describe('who is offered it', () => {
   }
 
   void test('a member is not offered it, and its address says they may not see it', async () => {
-    const h = await open('/organisation?tab=activity', { ...BASE, '/api/v1/me': me('member') });
+    const h = await open('/organisation?tab=activity', {
+      ...BASE,
+      '/api/v1/me': me('member'),
+      '/api/v1/permissions': permissions('member', []),
+    });
     try {
       await h.page.locator('.state-forbidden').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.page-tab[data-tab="activity"]').count(), 0);
@@ -131,6 +153,30 @@ void describe('who is offered it', () => {
       assert.equal(historyCalls(h.calls).length, 0, 'asked the server for what it refuses');
     } finally {
       await h.close();
+    }
+  });
+
+  void test('the Activity tab follows the live audit grant, with owner unchanged', async () => {
+    for (const [role, actions, offered] of [
+      ['admin', [], false],
+      ['member', ['audit_log.export'], true],
+      ['owner', ['audit_log.export'], true],
+    ] as const) {
+      const h = await open('/organisation?tab=activity', {
+        ...BASE,
+        '/api/v1/me': me(role),
+        '/api/v1/permissions': permissions(role, actions),
+      });
+      try {
+        if (offered) await h.page.locator('.oh-row').first().waitFor({ timeout: 20_000 });
+        else await h.page.locator('.state-forbidden').waitFor({ timeout: 20_000 });
+        assert.equal(
+          await h.page.locator('.page-tab[data-tab="activity"]').count(),
+          offered ? 1 : 0,
+        );
+      } finally {
+        await h.close();
+      }
     }
   });
 });
@@ -252,6 +298,23 @@ void describe('the filters', () => {
 });
 
 void describe('states', () => {
+  void test('a page containing only reorder rows is still the full audit history', async () => {
+    const h = await open('/organisation?tab=activity', {
+      ...BASE,
+      '/api/v1/activity/history?limit=50': {
+        data: [row(9, 'task.updated', { payload: { field: 'position', key: 'ATL-7' } })],
+        next_cursor: null,
+      },
+    });
+    try {
+      await h.page.locator('.oh-row').waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.oh-row').count(), 1);
+      // And it says what happened: a reorder, not an edit (LAI-970).
+      assert.equal(await h.page.locator('.oh-row .oh-what').innerText(), 'reordered this task');
+    } finally {
+      await h.close();
+    }
+  });
   void test('nothing matching says so, rather than an empty box', async () => {
     const h = await open('/organisation?tab=activity', {
       ...BASE,

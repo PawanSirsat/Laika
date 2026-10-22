@@ -1,19 +1,15 @@
 /**
  * `src/api/members.ts` (LAI-059).
  *
- * Two things worth pinning: the mutations return the **full list** and the
- * screen must use it, and `canManageMembers` decides what the UI shows — a
- * display decision that must not be more generous than the server.
+ * Worth pinning: the mutations return the **full list** and the screen must
+ * use it. Who is offered the controls is the server's `project.members.manage`
+ * (`GET /permissions`, LAI-970), tested with the other gates in
+ * `test/api/permissions.test.ts`.
  */
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import {
-  canManageMembers,
-  changeMemberRole,
-  listMembers,
-  removeMember,
-} from '../../src/api/members.ts';
+import { changeMemberRole, listMembers, removeMember } from '../../src/api/members.ts';
 
 interface Call {
   url: string;
@@ -72,34 +68,5 @@ void describe('mutations return the whole list', () => {
   void test('listMembers reads the { members } envelope, not a page', async () => {
     stub(list);
     assert.equal((await listMembers('laika-core')).members[0]?.name, 'Ada Lovelace');
-  });
-});
-
-void describe('canManageMembers — what the UI is allowed to offer', () => {
-  const lead = [{ project_id: 'p1', role: 'lead' }];
-  const member = [{ project_id: 'p1', role: 'member' }];
-
-  void test('org owner and admin manage every project', () => {
-    // §2: they hold implicit lead everywhere, membership or not.
-    assert.equal(canManageMembers('owner', 'p1', []), true);
-    assert.equal(canManageMembers('admin', 'p1', []), true);
-  });
-
-  void test('a project lead manages that project', () => {
-    assert.equal(canManageMembers('member', 'p1', lead), true);
-  });
-
-  void test('a lead on one project does not manage another', () => {
-    // The check is per project, and getting this wrong shows controls that 403.
-    assert.equal(canManageMembers('member', 'p2', lead), false);
-  });
-
-  void test('a project member or viewer manages nothing', () => {
-    assert.equal(canManageMembers('member', 'p1', member), false);
-    assert.equal(canManageMembers('viewer', 'p1', [{ project_id: 'p1', role: 'viewer' }]), false);
-  });
-
-  void test('no memberships at all is not permission', () => {
-    assert.equal(canManageMembers('member', 'p1', []), false);
   });
 });

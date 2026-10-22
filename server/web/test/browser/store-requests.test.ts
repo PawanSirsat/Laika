@@ -101,6 +101,19 @@ function stub(server: Server): ApiStub {
       is_active: true,
       memberships: [{ project_id: 'laika-core', role: 'lead' }],
     },
+    '/api/v1/permissions': {
+      org_roles: [],
+      project_roles: [],
+      permissions: [],
+      me: {
+        org_role: 'owner',
+        credential: 'session',
+        project_scope: 'all',
+        implicit_project_role: 'lead',
+        actions: ['audit_log.export'],
+        projects: [],
+      },
+    },
     '/api/v1/health': { status: 'ok', version: '0.1.0', uptime_ms: 1 },
     '/api/v1/org': {
       id: 'o',

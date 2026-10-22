@@ -367,56 +367,6 @@ export function createTask(slug: string, input: CreateTaskInput): Promise<Task> 
 }
 
 /**
- * May this actor create a task in this project?
- *
- * `task.write` is `member`-or-`lead` (`policy/can.ts`), and the project role is
- * derived the way `effectiveProjectRole` derives it: org `owner`/`admin` hold
- * implicit lead everywhere, an org `viewer` is capped at `viewer` however their
- * membership row reads (D-006), and everyone else takes their membership.
- *
- * A display decision, not enforcement — the server decides, and if the two ever
- * disagree the server is right and this is the bug. It exists so a Viewer is not
- * shown a button that answers 403, which teaches people the app is broken rather
- * than that they lack permission.
- */
-/**
- * May this actor configure the board's columns? (LAI-266)
- *
- * `project.settings.edit` is **lead-only** (SPEC §3.2, *"Edit project settings
- * and `context_md`"*), with org owner/admin holding implicit lead — a strictly
- * narrower rule than `canCreateTask`, which admits members.
- * Projects and My day also use it as their implicit-lead visibility rule.
- *
- * The same display-only caveat applies as above, and the same consequence: the
- * grip, the `⋯` and the `+ Add column` tile are **absent** for anyone this
- * returns `false` for, not disabled. A control that answers 403 teaches people
- * the app is broken rather than that they lack permission (LAI-082).
- */
-export function canConfigureProject(
-  orgRole: string,
-  projectId: string,
-  memberships: readonly { readonly project_id: string; readonly role: string }[],
-): boolean {
-  if (orgRole === 'owner' || orgRole === 'admin') return true;
-  if (orgRole === 'viewer') return false;
-
-  return memberships.find((m) => m.project_id === projectId)?.role === 'lead';
-}
-
-export function canCreateTask(
-  orgRole: string,
-  projectId: string,
-  memberships: readonly { readonly project_id: string; readonly role: string }[],
-): boolean {
-  if (orgRole === 'owner' || orgRole === 'admin') return true;
-  if (orgRole === 'viewer') return false;
-
-  const membership = memberships.find((m) => m.project_id === projectId);
-  if (membership === undefined) return false;
-  return membership.role === 'lead' || membership.role === 'member';
-}
-
-/**
  * Assign a task, or clear it.
  *
  * `null` unassigns — the ordinary state, not an error. `PATCH` distinguishes
@@ -472,20 +422,6 @@ export function claimWinner(cause: unknown): string | undefined {
   if (typeof details !== 'object' || details === null) return undefined;
   const id = (details as { readonly assignee_id?: unknown }).assignee_id;
   return typeof id === 'string' ? id : undefined;
-}
-
-/**
- * May this actor assign a task to **someone else**?
- *
- * `task.assign_other` is member-or-lead (§3.2). Claiming for yourself is a
- * different action and a Viewer cannot do that either, since it writes.
- */
-export function canAssignOthers(
-  orgRole: string,
-  projectId: string,
-  memberships: readonly { readonly project_id: string; readonly role: string }[],
-): boolean {
-  return canCreateTask(orgRole, projectId, memberships);
 }
 
 /**

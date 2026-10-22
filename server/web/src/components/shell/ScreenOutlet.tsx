@@ -40,6 +40,9 @@ import {
 } from '../../routes/page-tabs.ts';
 import { StateGallery } from '../StateGallery.tsx';
 import { TokenReference } from '../../theme/TokenReference.tsx';
+import { usePermissions } from '../../api/permissions.ts';
+import { Button } from '../forms/Button.tsx';
+import '../states.css';
 
 /**
  * Which frame a screen mounts into.
@@ -309,7 +312,8 @@ function InboxRoute() {
     reviewWaiting,
     unlistedOpen,
   } = useShell();
-  const holds = permissionHolder(me?.org_role);
+  const { permissions } = usePermissions(me !== undefined);
+  const holds = permissionHolder(permissions?.me.actions);
   const tab = currentTab(INBOX_TABS, params, holds);
   return (
     <InboxScreen
@@ -329,7 +333,8 @@ function InsightsRoute() {
     route: { params, navigate },
     me,
   } = useShell();
-  const holds = permissionHolder(me?.org_role);
+  const { permissions } = usePermissions(me !== undefined);
+  const holds = permissionHolder(permissions?.me.actions);
   const tab = currentTab(INSIGHTS_TABS, params, holds);
   return (
     <InsightsScreen tabs={visibleTabs(INSIGHTS_TABS, holds)} current={tab} onNavigate={navigate}>
@@ -352,12 +357,15 @@ function OrganisationRoute() {
     me,
     route: { params, setParams, navigate },
   } = useShell();
+  const { permissions, settled } = usePermissions(me !== undefined);
   // The screen requires a user; the gate has already refused every other
   // session state on this protected route, so this is the frame before a
   // redirect lands rather than a state anyone sits in.
   if (me === undefined) return null;
-  const holds = permissionHolder(me.org_role);
-  const refused = refusedTab(ORGANISATION_TABS, params, holds);
+  const holds = permissionHolder(permissions?.me.actions);
+  // A gated tab is withheld until the server answers, and *refused* only once
+  // it has: before then nobody knows, and "you can't" would be a guess.
+  const refused = settled ? refusedTab(ORGANISATION_TABS, params, holds) : undefined;
   return (
     <OrganisationScreen
       me={me}
@@ -467,12 +475,42 @@ export function ScreenOutlet() {
   // The space frame belongs to the views of a project, and nothing else gets
   // it — `layout` is the registry's answer, checked against `SPACE_TAB_PATHS`
   // in screen-registry.test.ts.
-  return layout === 'space' ? (
-    <SpaceLayout>
-      <Component />
-    </SpaceLayout>
-  ) : (
-    <Component />
+  return (
+    <>
+      <PermissionsRetry />
+      {layout === 'space' ? (
+        <SpaceLayout>
+          <Component />
+        </SpaceLayout>
+      ) : (
+        <Component />
+      )}
+    </>
+  );
+}
+
+/**
+ * `GET /permissions` failed, so every gated control is withheld (LAI-970) —
+ * say so, once, and offer to ask again, rather than leave somebody wondering
+ * where their controls went.
+ */
+function PermissionsRetry() {
+  const { me } = useShell();
+  const { failed, refresh } = usePermissions(me !== undefined);
+  if (!failed) return null;
+  return (
+    <div className="banner" role="status" aria-live="polite" data-state="permissions-failed">
+      <span className="banner-dot" aria-hidden="true" />
+      <div>
+        <p className="banner-title">Couldn&rsquo;t load what you may do here</p>
+        <p className="banner-body">
+          Controls that need a permission stay hidden until it loads.{' '}
+          <Button variant="secondary" onClick={refresh}>
+            Retry
+          </Button>
+        </p>
+      </div>
+    </div>
   );
 }
 

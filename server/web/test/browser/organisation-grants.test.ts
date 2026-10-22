@@ -88,8 +88,15 @@ const GRANTS = {
   updated_by: null,
 };
 
-const OWNER_ACTIONS = ['org.read', 'org.permissions.manage', 'user.set_role', 'kite.fly'];
-const ADMIN_ACTIONS = ['org.read', 'user.invite', 'kite.fly'];
+const OWNER_ACTIONS = [
+  'org.read',
+  'org.permissions.manage',
+  'user.set_role',
+  'user.invite',
+  'user.deactivate',
+  'kite.fly',
+];
+const ADMIN_ACTIONS = ['org.read', 'user.invite', 'user.deactivate', 'kite.fly'];
 
 const stub = (
   id: string,

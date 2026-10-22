@@ -160,7 +160,10 @@ const STUB: ApiStub = {
   },
 };
 
-function privatePlateStub(role: 'owner' | 'admin' | 'member' | 'viewer'): ApiStub {
+function privatePlateStub(
+  role: 'owner' | 'admin' | 'member' | 'viewer',
+  implicit: 'lead' | null = role === 'owner' || role === 'admin' ? 'lead' : null,
+): ApiStub {
   const privateProject = {
     id: 'private-observatory',
     slug: 'private-observatory',
@@ -183,6 +186,19 @@ function privatePlateStub(role: 'owner' | 'admin' | 'member' | 'viewer'): ApiStu
       memberships: [],
     },
     '/api/v1/projects': { data: [privateProject], next_cursor: null },
+    '/api/v1/permissions': {
+      org_roles: [],
+      project_roles: [],
+      permissions: [],
+      me: {
+        org_role: role,
+        credential: 'session',
+        project_scope: 'all',
+        implicit_project_role: implicit,
+        actions: [],
+        projects: [],
+      },
+    },
     '/api/v1/projects/private-observatory/tasks?assignee=u1&status=in_progress': {
       data: [
         {
@@ -359,6 +375,30 @@ void describe('My day after the reference', () => {
             .length,
           0,
           `Private Observatory task list was read for a ${role}`,
+        );
+      } finally {
+        await h.close();
+      }
+    }
+  });
+
+  void test('On your plate follows a withdrawn admin grant and a granted member, with owner unchanged', async () => {
+    for (const [role, implicit, shown] of [
+      ['admin', null, false],
+      ['member', 'lead', true],
+      ['owner', 'lead', true],
+    ] as const) {
+      const h = await open('/my-day', privatePlateStub(role, implicit));
+      try {
+        await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
+        if (shown) {
+          await h.page
+            .getByText('Private Observatory migration', { exact: true })
+            .waitFor({ timeout: 20_000 });
+        }
+        assert.equal(
+          await h.page.getByText('Private Observatory migration', { exact: true }).count(),
+          shown ? 1 : 0,
         );
       } finally {
         await h.close();
