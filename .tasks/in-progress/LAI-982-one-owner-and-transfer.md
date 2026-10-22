@@ -2,11 +2,12 @@
 id: LAI-982
 title: 'The role picker can make a second owner and there is no way to transfer ownership'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T18:10:05Z
 ---
 
 ## Acceptance criteria (D-104 item 2)
