@@ -60,7 +60,9 @@ Fit was not reported as broken. Check it anyway.
   `Timeline.tsx`, `timeline-derive.ts` and `my-day.css`.
 - **Work in flight on the same files, on other branches; do not touch them:**
   LAI-834 (`LAI-834-signals-lane`) changes `Timeline.tsx`, `my-day.css` and
-  `timeline-derive.ts` to draw a SIGNALS lane in place of the count chip.
+  `timeline-derive.ts` to draw a SIGNALS lane above the row. It **keeps** the
+  per-block count badge ("every block still shows its counts as a badge");
+  this line said "in place of the count chip" until review round 1.
   LAI-858 (`LAI-858-my-day-lists-scroll`) has uncommitted edits to
   `my-day.css`. Keep this diff small and local to the chip and block layout,
   so whichever lands second merges it easily. Say in the review notes how this
@@ -104,10 +106,19 @@ All in `server/web/src/routes/screens/my-day/`, no token or colour changes:
 - `timeline-derive.ts` `stackOf`: blocks at the same time take a row each of
   the lane's height; a block nothing overlaps keeps the whole height. The CSS
   reads `--row`/`--rows`, and a stacked row drops to one line.
-- The chip is `FitLabel`'s, in a box kept inside its own block's width: whole
-  where it fits, not drawn where it does not. Only a stretch's top row has
-  one, since a lower row's chip would lie over the block above it. A block
-  whose chip is not drawn still shows its counts in the inspector.
+- ~~The chip is `FitLabel`'s, in a box kept inside its own block's width.
+  Only a stretch's top row has one.~~ **Replaced in round 1:**
+  `placeChips` (`timeline-derive.ts`) puts a badge inside its block's end
+  where it fits, or centred over a narrower block, and draws it only where
+  that box, as measured after each render, clears every other block, every
+  badge already placed and both ends of the track; longer blocks first. So a
+  short block alone keeps its badge, and no row-0 special case is needed. A
+  block whose badge is not drawn still shows its counts in the inspector.
+- **Round 1:** a stacked label uses `line-height: normal` (was `1`), the
+  label box is `flex-shrink: 0` outside a stack, `FitLabel` also checks
+  `scrollHeight`, and on a block under 20px tall or 10px wide the edge
+  handles are not drawn but keep Tab, ← and →. The track is
+  `overflow-x: clip`.
 - The label is `FitLabel`'s: whole, cut after a whole word (`Needs a…`), or
   nothing (`cutsOf`).
 - The ring is an inset shadow on `::after`, inside the block; the handles sit
@@ -130,8 +141,13 @@ This is a layout rule inside the existing YOU row, not new lanes, so the
   8 clicks that selected the wrong block, 48 cut labels, 4 rings 4 px out, 8
   handles out), at 2× 216, at Fit 350. **After: passes.** Run with master's
   three source files swapped in by name and restored by checksum.
+  **Round 1, on the final fixture (33 blocks):** master's code 3868
+  problems, `e262f6be` 264, final 0. Breakdown under "Strelka's fixes",
+  item 5.
 - `server/web/test/routes/screens/my-day/timeline-derive.test.ts`: four
   `stackOf` cases. Two mutations of `stackOf` turn it red (1 and 3 fail).
+  **Round 1:** six `stackOf` cases and seven `placeChips` cases; seven
+  mutations, each red (item 2 below).
 - Root gate, run 1, after merging master `0e1f6d38`: `pnpm test` exit 1, on
   two cases. One was `tokens.test.ts` (fixed above). The other was the
   wider-font case at `my-day-v2.test.ts:950`, cutting `1:00–2:50 PM · 1 h 50
@@ -147,6 +163,9 @@ This is a layout rule inside the existing YOU row, not new lanes, so the
 
 ## Review notes (LAI-860, for whoever merges second with LAI-834)
 
+- **No longer true after round 1; see "Strelka's fixes", item 4:** the
+  round-1 rework edits the `Timeline` doc paragraph that LAI-834 rewrites,
+  so the two now conflict there, and only there.
 - **Merges cleanly with `LAI-834-signals-lane`.** `git merge-tree
   --write-tree` of the two branches reports no conflict. The merged web tree
   typechecks, and this test plus LAI-834's `my-day-signals.test.ts` pass
@@ -250,3 +269,149 @@ gate run**. The file stays in `.tasks/review/` and PR #9 picks up the push.
    CLAUDE.md §5: load under 20, each exit code on its own line. Update
    Cause/Fix here, verify from `git show`, push, `finish_task` with
    `[strelka]`, and report.
+
+## Review round 1 — Strelka's fixes
+
+[strelka] 2026-10-21, on `LAI-860-my-day-timeline-zoom` after `375f5a35`.
+The file stays in `.tasks/review/`; PR #9 carries the push.
+
+**1. k1's label at 1× and 2× — measured, then fixed.** A probe on the same
+fixture read k1's boxes in the browser. The block is 18px, the body 18px
+with a 1px border (16px inside, no padding when stacked), and the label box
+had its full 12px line: **not the border or the rounding, and not
+`flex-shrink`** (the box was not squeezed). **Not the `key={rows}` remount**
+either: k1's `rows` never changes on this fixture. The cause is
+`.dayline-stacked .dayline-block-top { line-height: 1 }`: a 12px line box
+for JetBrains Mono, whose glyph box is about 16px, so with the label in
+place `scrollHeight` was 14 against `clientHeight` 12. FitLabel saw every
+option as cut down and left the label out, **whatever the row's height**.
+Fix: `line-height: normal`, the font's own line. The label box is then 16px
+in a 16px row, `scrollHeight` 16 = `clientHeight` 16, and `LAI-11` is
+drawn, at DPR 1 and at DPR 2 (CDP device-scale override; the owner's
+MacBook is DPR 2). Proved by mutation: `line-height: 1` put back (edit
+checked, file restored by checksum) brings back exactly the eight original
+failures, "three at once lost k1's label" at 1× and 2×, both widths, both
+themes. The test was not loosened.
+
+A second failure showed up once k1 was drawn, intermittently: "390 px,
+light, zoom fit: k1 is covered by …". The test now names what it hit:
+`.sidebar-nav`. Below 900px the sidebar is `position: fixed` and slides out
+with `transition: transform 160ms` (`sidebar.css`), and the first
+measurement after the resize to 390 landed inside those 160ms; k1 is the
+leftmost block. The test now waits after each resize until every finite
+animation has finished (`settle`), and did not switch motion off. 10 runs of
+10 green afterwards, the last under load 29.
+
+**2. B2: `stackOf`'s boundaries, and `placeChips` tested.** Two cases
+added: [8:00–8:10, 8:05–8:10, 8:10–8:15] gives rows 2, 2 and `{row 0,
+rows 1}`; [10:00–11:00, 10:05–10:10, 10:10–10:15] gives rows 2, the third
+taking row 1 again. Seven `placeChips` cases: end where it fits and centre
+one pixel short of it, a lone short block keeps its badge, a neighbour
+within reach hides it while touching does not, the longer block wins and
+the leftmost breaks a tie, both track ends, stacked rows (10px: top badge
+drawn; 8px: none), a badge whose block is missing.
+
+Mutations, each edit asserted to match its anchor exactly once and to
+change the file's SHA-256 before the run, the file restored and its
+checksum (`17c97df1…`) confirmed after each:
+
+| mutation | red |
+| --- | --- |
+| `block.start >= reach` → `>` | only "a block that starts as a stretch ends begins a new one" |
+| `end <= block.start` → `<` | only "a row is free from the minute its block ends" |
+| drop the other-blocks check | "not drawn where it would lie over another block…", "in a stack…" |
+| drop the longest-first order | "of two badges that would meet…" |
+| drop the track-ends check | "not drawn past either end of the track" |
+| drop the placed-badges check | "of two badges that would meet…" |
+| `crosses` at `>= 0` (touching counts) | "not drawn where it would lie over…; touching is not lying over" |
+
+The first two show the earlier four `stackOf` cases were green under both
+boundary mutations, which is the hole B2 named.
+
+**B1: the rules at any depth.** Every check in the browser test (no block,
+badge or label over another, no label cut across or down, badges on the
+track, handles usable or not drawn and still focusable, each block on top
+at its centre and selected by a click there) runs on all 33 blocks,
+including the eight-at-once stretch (g1–g8, a 6+ stretch). The 3-, 5- and
+8-at-once stretches and the vertical-cut check were in `375f5a35`; round 1
+adds that eight at once draw no label, badge or handle, so the write-up
+below claims nothing the test does not check.
+
+**Badges where they clear (the lone short block).** `placeChips` draws a
+badge whenever its box clears every neighbour. The test's positive controls
+hold at every width, theme and zoom: zl (five minutes, nothing near) keeps
+`4p 2c`, and at 2× z7, z10 and f1 keep theirs.
+
+**Comments.** `my-day.css` says why a stacked label is `line-height:
+normal`; `settle` says what it waits for and why. Re-read against what the
+assertions under them check: the test header, `ringReach`, the crowded-centre
+skip and the `PAST_THE_FLOOR` and floor comments claim no more than is
+asserted. The `Timeline` doc comment (badge "wherever it clears its
+neighbours") matches `placeChips`.
+
+**3. Where the rule stops — for the reviewer to agree or not.** Filed as
+**LAI-300** (Strelka's block, LAI-300–399, D-097; the handover said CHIEF's
+800–899, CLAUDE.md gives Strelka 300–399). Measured on stretches of one to
+eight hour-long blocks at 2×, rows are `60 / n − 2` px:
+
+- 1 at once, 58px: label, figures, badge, handles. The card title is not
+  drawn (three 18px lines do not fit a 46px body).
+- 2 at once, 28px: each label; the top row's badge; handles.
+- 3, 18px: each label; the top row's badge; no handles (under 20px).
+- 4, 13px, and 5, 10px: the top row's badge only. No labels.
+- 6, 8px; 7, 6.6px; 8, 5.5px: the blocks only. Each still has its own row,
+  is on top at its centre and is selected by a click there.
+
+**Across:** Chrome hit-tests up to about 0.9px off the boxes it reports at
+390px (Belka's measurement, on zl alone, with and without the clip; not
+re-measured in round 1). At Fit on a 390px
+window five minutes is about 1.7px, so two back-to-back five-minute blocks
+cannot be told apart by a pointer. **The browser test skips the "on top at
+its centre" check only for a centre within 1px of a neighbour's box**, and
+nowhere else. That skip is the one place the test is narrower than the
+rule; LAI-300 asks for the design that removes it (a cap with `+N`, a
+taller row, real lanes, or a minimum width at Fit) and covers the hidden
+card title.
+
+**4. LAI-834.** The Notes are corrected: LAI-834 keeps the badge.
+`git merge-tree --write-tree HEAD origin/LAI-834-signals-lane` (HEAD after
+merging `origin/master`; LAI-834 at `431193c8`) exits 1 with two
+conflicts:
+
+- `server/web/src/routes/screens/my-day/Timeline.tsx`: **the doc paragraph
+  only**, lines 101–115 of the merged file. Ours ends "…shows its counts
+  as a badge instead … wherever the badge clears its neighbours (LAI-860)";
+  LAI-834's says "every block still shows its counts as a badge". Before
+  `375f5a35` this merged silently and carried LAI-834's sentence, which is
+  no longer true after this fix. Resolve with LAI-834's paragraph and its
+  badge sentence ending "…as a badge wherever it clears its neighbours
+  (LAI-860)". `my-day.css` and `timeline-derive.ts` merge automatically.
+- `docs/DECISIONS.md`: **not ours.** `git merge-tree origin/master
+  origin/LAI-834-signals-lane` reports the same conflict without this
+  branch; LAI-834 has not merged `master` since D-097.
+
+**5. Before and after, final fixture.** The four source files
+(`FitLabel.tsx`, `Timeline.tsx`, `my-day.css`, `timeline-derive.ts`)
+swapped in by name from each ref, the test run, the files restored and all
+four checksums confirmed after each run:
+
+| code | problems | Fit | 1× | 2× | 1440px | 390px |
+| --- | --- | --- | --- | --- | --- | --- |
+| `origin/master` (6b8cd862) | **3868** | 1820 | 1012 | 1036 | 1752 | 2116 |
+| `e262f6be` | **264** | 16 | 120 | 128 | 132 | 132 |
+| final | **0** | | | | | |
+
+On master: 1624 badge over a block, 1072 badge into badge, 540 block over
+block, 312 labels cut, 96 + 96 + 12 eight-at-once blocks drawing labels,
+badges, handles, 48 handles out, 25 clicks selecting the wrong block, 24
+rings past their block, 16 badges off the track, 3 covered at the centre.
+On `e262f6be`: 132 labels cut, 64 eight-at-once labels, 24 handles drawn
+too small, 12 zl lost its badge, 12 eight-at-once handles, 8 badges over a
+block, 8 eight-at-once badges, 4 lost badges with room. **The counts come
+from the assertion's indexed listing**: the `+` diff above it is truncated
+by node and showed 844 and 124.
+
+**6. Merged `origin/master`** (`6b8cd862`, docs only, no conflict) with
+`git merge origin/master`, not the local `master`.
+
+**Gate** (repo root, after the last edit, load checked first): GATE_RESULT

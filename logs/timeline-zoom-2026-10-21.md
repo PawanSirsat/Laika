@@ -97,3 +97,56 @@ its three exit codes are in the PR body and on LAIKA-659.
 **State**
 In review; root gate re-run after this commit, exit codes in the PR body and
 on LAIKA-659.
+
+## 2026-10-21T13:35:00Z — LAI-860 (review round 1, [strelka])
+
+[strelka] Took over from Belka mid-round (HANDOVER, `logs/chief-2026-10-21.md`
+on origin/master) in the worktree `Laika-860`, branch
+`LAI-860-my-day-timeline-zoom`, from `14f4681c`.
+
+**What changed**
+- server/web/src/routes/screens/my-day/my-day.css — a stacked label is
+  `line-height: normal`, not `1`: the 12px line box under 16px glyphs made
+  `scrollHeight` exceed `clientHeight` on every stacked block, so FitLabel
+  hid k1's label at any row height (measured, DPR 1 and 2).
+- server/web/test/browser/my-day-timeline-zoom.test.ts — `settle` waits out
+  the sidebar's 160ms slide-out after each resize (it covered k1 at 390px,
+  intermittently); a covered block names what covers it; eight at once
+  asserted to draw no label, badge or handle.
+- server/web/test/routes/screens/my-day/timeline-derive.test.ts — two
+  `stackOf` boundary cases (B2) and seven `placeChips` cases.
+- .tasks/backlog/LAI-300-my-day-timeline-crowded-stretches.md — the design
+  follow-up: four or more at once, and blocks too narrow to point at.
+- .tasks/review/LAI-860-my-day-timeline-zoom-overlap.md — Notes on LAI-834
+  corrected; Fix and Verification updated; "Review round 1 — Strelka's
+  fixes" with the evidence.
+- Merged `origin/master` (`6b8cd862`), not the local `master`.
+
+**Decisions**
+- Fixed k1 with the font's own line height rather than loosening FitLabel's
+  or the test's `scrollHeight` check: the check is what found it, and a
+  label whose glyph box overflows its line can lose its descenders.
+- Waited for the sidebar's transition to finish rather than emulating
+  reduced motion, so nothing the Timeline animates is hidden from the test.
+- Filed from LAI-300, Strelka's block (D-097), not CHIEF's 800–899 as the
+  handover said; CLAUDE.md gives Strelka 300–399, and the §3 sweep (every
+  local and `origin/*` ref, both `git log` halves) found no 3xx id in use.
+- The 0.9px hit-test slop at 390px is Belka's measurement; I did not
+  re-measure it and the task file says so.
+
+**Discovered**
+- Node's assertion diff truncates a long array: the before counts read 844
+  (master) and 124 (`e262f6be`) from the `+` lines, and are really 3868 and
+  264 from the indexed listing. Recorded in the task file; the §5 "a
+  truncated answer looks complete" rule, met in a test runner.
+- Labels go from four at once, not six as the handover's notes put it
+  (probe on stretches of one to eight). Written into LAI-300.
+- `git merge-tree` against LAI-834 now conflicts on the `Timeline` doc
+  paragraph (expected) and on `docs/DECISIONS.md`, which conflicts between
+  `origin/master` and LAI-834 without this branch; not ours.
+- This worktree had no `node_modules`; `pnpm install --frozen-lockfile`
+  added nothing to the lockfile.
+
+**State**
+In review on PR #9; gate result in the task file's round-1 section. Laika
+`finish_task` left to polly after cross-review, as instructed.
