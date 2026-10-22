@@ -82,6 +82,16 @@ export const INVITE_TTL_DAYS = 7;
 export const INVITE_TTL_MS = INVITE_TTL_DAYS * 24 * 60 * 60 * 1000;
 
 /**
+ * The expiries an inviter may choose (LAI-984): a day, the default week, or a
+ * month. A closed list rather than any number, so a link cannot be made to
+ * live for ever by asking for ten thousand days.
+ */
+export const INVITE_EXPIRY_DAYS = [1, INVITE_TTL_DAYS, 30] as const;
+export type InviteExpiryDays = (typeof INVITE_EXPIRY_DAYS)[number];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
  * 256 bits of `randomBytes`, base64url — 43 characters.
  *
  * Drawn from the CSPRNG and from nothing else. The email, the id, the org and
@@ -132,6 +142,8 @@ export interface CreateInviteInput {
   orgRole: OrgRole;
   projectId?: string | null | undefined;
   projectRole?: ProjectRole | null | undefined;
+  /** One of `INVITE_EXPIRY_DAYS`; absent is `INVITE_TTL_DAYS`. */
+  expiresInDays?: InviteExpiryDays | undefined;
   now?: number;
 }
 
@@ -263,7 +275,7 @@ export function createInvite(
     projectRole: projectId === null ? null : (projectRole ?? 'member'),
     tokenHash: hashInviteToken(token),
     createdBy: actor.userId,
-    expiresAt: now + INVITE_TTL_MS,
+    expiresAt: now + (input.expiresInDays ?? INVITE_TTL_DAYS) * DAY_MS,
     acceptedBy: null,
     acceptedAt: null,
     createdAt: now,
@@ -359,6 +371,62 @@ export function revokeInvite(db: Db, actor: ResolvedActor, id: string): void {
   }
 
   db.delete(invites).where(eq(invites.id, id)).run();
+}
+
+export interface ReissueInviteInput {
+  expiresInDays?: InviteExpiryDays | undefined;
+  now?: number;
+}
+
+/**
+ * Revoke a pending or expired invite and issue a new link for the same
+ * address, role and project, in one step (LAI-984, audit B11).
+ *
+ * The old token is dead the moment this returns, and the two never both work:
+ * the delete and the insert are one transaction, so a refusal anywhere —
+ * the role the invite grants, an address that has since got an account —
+ * leaves the old invite exactly as it was.
+ *
+ * **Re-issuing is granting the role again**, so it is asked exactly as
+ * creating was, by `createInvite` itself: an admin cannot re-issue an invite
+ * the owner made for an admin. `user.invite` is asked first on its own so a
+ * member is told `403` rather than learning which ids exist.
+ */
+export function reissueInvite(
+  db: Db,
+  actor: ResolvedActor,
+  id: string,
+  input: ReissueInviteInput = {},
+): CreatedInvite {
+  assertCan(actor, 'user.invite');
+
+  return db.transaction(
+    () => {
+      const row = db.select().from(invites).where(eq(invites.id, id)).get();
+
+      if (row === undefined) throw ApiError.notFound('No such invite', { invite_id: id });
+
+      if (row.acceptedBy !== null) {
+        throw new ApiError(
+          'conflict',
+          'That invite has already been accepted and cannot be re-issued',
+          { invite_id: id },
+        );
+      }
+
+      db.delete(invites).where(eq(invites.id, id)).run();
+
+      return createInvite(db, actor, {
+        email: row.email,
+        orgRole: row.orgRole,
+        projectId: row.projectId,
+        projectRole: row.projectRole,
+        expiresInDays: input.expiresInDays,
+        ...(input.now === undefined ? {} : { now: input.now }),
+      });
+    },
+    { behavior: 'immediate' },
+  );
 }
 
 export interface InvitePreview {
@@ -552,6 +620,11 @@ export function consumeInvite(
       .where(eq(users.id, input.userId))
       .run();
 
+    // Named beside the id (LAI-984), as every membership row is.
+    const userName =
+      db.select({ name: users.name }).from(users).where(eq(users.id, input.userId)).get()?.name ??
+      null;
+
     // Org-scoped: `project_id` is null, so §3.1's audit-log cell governs who can
     // read it, which is admin+ (see `visibleTo` in services/events.ts).
     appendActivity(db, {
@@ -561,6 +634,7 @@ export function consumeInvite(
       type: 'member.added',
       payload: {
         user_id: input.userId,
+        user_name: userName,
         org_role: row.orgRole,
         via: 'invite',
         invite_id: row.id,
@@ -591,7 +665,7 @@ export function consumeInvite(
         actorId: input.userId,
         actorKind: 'user',
         type: 'member.added',
-        payload: { user_id: input.userId, role, via: 'invite' },
+        payload: { user_id: input.userId, user_name: userName, role, via: 'invite' },
         now,
       });
     }

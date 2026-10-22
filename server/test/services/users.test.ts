@@ -287,6 +287,7 @@ describe('changing an org role', () => {
     expect(readPayload(row!)).toEqual({
       scope: 'org',
       user_id: target,
+      user_name: 'Grace',
       from: 'member',
       to: 'admin',
     });

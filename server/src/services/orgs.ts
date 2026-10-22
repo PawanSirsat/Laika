@@ -289,6 +289,11 @@ function keyLast4(last4: string | null): string | null {
  * impossible to express.
  */
 export interface UpdateOrgInput {
+  /**
+   * The organisation's name (D-104 item 7, LAI-984), 1–80 characters, trimmed
+   * by the route. Writes no `activity` row: §4.8 has no verb for it.
+   */
+  name?: string | undefined;
   presence_enabled?: boolean | undefined;
   /** D-079's org switch (LAI-751). Writes no `activity` row: §4.8 has no verb for it. */
   developer_insights?: boolean | undefined;
@@ -396,59 +401,67 @@ export function updateOrg(
 
   const orgId = requireOrgId(db);
 
-  if (input.presence_enabled !== undefined) {
-    db.update(orgs)
-      .set({ presenceEnabled: input.presence_enabled ? 1 : 0, updatedAt: now })
-      .where(eq(orgs.id, orgId))
-      .run();
-  }
+  // One transaction, so a request refused by the AI settings' check below
+  // changes nothing — not even the name or presence given beside it.
+  db.transaction(() => {
+    if (input.name !== undefined) {
+      db.update(orgs).set({ name: input.name, updatedAt: now }).where(eq(orgs.id, orgId)).run();
+    }
 
-  if (input.developer_insights !== undefined) {
-    db.update(orgs)
-      .set({ developerInsights: input.developer_insights ? 1 : 0, updatedAt: now })
-      .where(eq(orgs.id, orgId))
-      .run();
-  }
+    if (input.presence_enabled !== undefined) {
+      db.update(orgs)
+        .set({ presenceEnabled: input.presence_enabled ? 1 : 0, updatedAt: now })
+        .where(eq(orgs.id, orgId))
+        .run();
+    }
 
-  const touchesAi =
-    input.ai_provider !== undefined ||
-    input.ai_base_url !== undefined ||
-    input.ai_api_key !== undefined;
+    if (input.developer_insights !== undefined) {
+      db.update(orgs)
+        .set({ developerInsights: input.developer_insights ? 1 : 0, updatedAt: now })
+        .where(eq(orgs.id, orgId))
+        .run();
+    }
 
-  if (touchesAi) {
-    const row = db
-      .select({
-        provider: orgs.aiProvider,
-        baseUrl: orgs.aiBaseUrl,
-        keyEnc: orgs.aiApiKeyEnc,
-        keyLast4: orgs.aiKeyLast4,
-      })
-      .from(orgs)
-      .where(eq(orgs.id, orgId))
-      .get();
+    const touchesAi =
+      input.ai_provider !== undefined ||
+      input.ai_base_url !== undefined ||
+      input.ai_api_key !== undefined;
 
-    const next = nextAiSettings(
-      {
-        provider: row?.provider ?? null,
-        baseUrl: row?.baseUrl ?? null,
-        keyEnc: row?.keyEnc ?? null,
-        keyLast4: row?.keyLast4 ?? null,
-      },
-      input,
-      serverSecret,
-    );
+    if (touchesAi) {
+      const row = db
+        .select({
+          provider: orgs.aiProvider,
+          baseUrl: orgs.aiBaseUrl,
+          keyEnc: orgs.aiApiKeyEnc,
+          keyLast4: orgs.aiKeyLast4,
+        })
+        .from(orgs)
+        .where(eq(orgs.id, orgId))
+        .get();
 
-    db.update(orgs)
-      .set({
-        aiProvider: next.provider,
-        aiBaseUrl: next.baseUrl,
-        aiApiKeyEnc: next.keyEnc,
-        aiKeyLast4: next.keyLast4,
-        updatedAt: now,
-      })
-      .where(eq(orgs.id, orgId))
-      .run();
-  }
+      const next = nextAiSettings(
+        {
+          provider: row?.provider ?? null,
+          baseUrl: row?.baseUrl ?? null,
+          keyEnc: row?.keyEnc ?? null,
+          keyLast4: row?.keyLast4 ?? null,
+        },
+        input,
+        serverSecret,
+      );
+
+      db.update(orgs)
+        .set({
+          aiProvider: next.provider,
+          aiBaseUrl: next.baseUrl,
+          aiApiKeyEnc: next.keyEnc,
+          aiKeyLast4: next.keyLast4,
+          updatedAt: now,
+        })
+        .where(eq(orgs.id, orgId))
+        .run();
+    }
+  });
 
   return getOrg(db, actor, publicUrl);
 }

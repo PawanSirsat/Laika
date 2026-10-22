@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { appendActivity } from '../../../src/db/activity.ts';
 import { ACTIVITY_TYPES, type ActivityType } from '../../../src/db/enums.ts';
 import { activity, orgs, projects, users } from '../../../src/db/schema.ts';
+import { HISTORY_CSV_COLUMNS } from '../../../src/services/activity-csv.ts';
 import {
   type AuthHarness,
   authHarness,
@@ -11,6 +12,7 @@ import {
   seedInvite,
   signUp,
 } from '../../helpers/auth.ts';
+import { parseCsv } from '../../helpers/csv.ts';
 
 let h: AuthHarness;
 let cookie: string;
@@ -648,5 +650,223 @@ describe('GET /activity/history — the organisation history (LAI-886)', () => {
     const res = await req(BASE, { method: 'POST', body: JSON.stringify({}) });
     expect(res.status).toBe(405);
     expect(await codeOf(res)).toBe('method_not_allowed');
+  });
+
+  describe('?format=csv — the same answer as a file (LAI-984)', () => {
+    async function csv(query: string, who = cookie): Promise<Response> {
+      return as(`${BASE}?format=csv${query === '' ? '' : `&${query}`}`, who);
+    }
+
+    /** The parsed body, header first, after asserting it is a CSV download. */
+    async function table(
+      query: string,
+    ): Promise<{ header: string[]; rows: Record<string, string>[] }> {
+      const res = await csv(query);
+      expect(res.status, await res.clone().text()).toBe(200);
+      expect(res.headers.get('content-type')).toBe('text/csv; charset=utf-8');
+      expect(res.headers.get('content-disposition')).toMatch(
+        /^attachment; filename="laika-history-/,
+      );
+
+      const [header = [], ...lines] = parseCsv(await res.text());
+      return {
+        header,
+        rows: lines.map((line) =>
+          Object.fromEntries(header.map((name, i) => [name, line[i] ?? ''])),
+        ),
+      };
+    }
+
+    it('answers with the documented columns and every row the JSON answer has, in its order', async () => {
+      const { header, rows } = await table('');
+      expect(header).toEqual([...HISTORY_CSV_COLUMNS]);
+
+      const json = await all('');
+      expect(rows.map((row) => row.id)).toEqual(json.map((row) => row.id));
+      expect(rows.map((row) => Number(row.seq))).toEqual(json.map((row) => row.seq));
+
+      const first = rows.find((row) => row.id === json[0]?.id);
+      expect(first?.created_at).toBe(new Date(json[0]?.created_at ?? 0).toISOString());
+    });
+
+    it('refuses a member with forbidden and an anonymous caller with unauthorized, as JSON', async () => {
+      const refused = await csv('', member.cookie);
+      expect(refused.status).toBe(403);
+      expect(await codeOf(refused)).toBe('forbidden');
+
+      const narrowed = await csv(`actor=${member.id}`, member.cookie);
+      expect(narrowed.status).toBe(403);
+      expect(await codeOf(narrowed)).toBe('forbidden');
+
+      const anonymous = await h.app.request(`${BASE}?format=csv`);
+      expect(anonymous.status).toBe(401);
+      expect(await codeOf(anonymous)).toBe('unauthorized');
+    });
+
+    it('an admin gets the same file as the owner', async () => {
+      const owner = await (await csv('')).text();
+      const res = await csv('', admin.cookie);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe(owner);
+    });
+
+    it('applies ?actor= and ?until= — the rows are exactly the filtered ones', async () => {
+      const { rows } = await table(`actor=${member.id}&until=${String(T0 + 4)}`);
+      const memberName = h.db.select().from(users).where(eq(users.id, member.id)).get()?.name;
+
+      expect(
+        rows.map((row) => [row.created_at_ms, row.type, row.actor_id, row.project_slug]),
+      ).toEqual([
+        [String(T0 + 4), 'task.updated', member.id, 'laika'],
+        [String(T0 + 2), 'comment.added', member.id, 'other'],
+        [String(T0 + 0), 'task.created', member.id, 'laika'],
+      ]);
+      expect(rows.every((row) => row.actor_name === memberName && row.actor_kind === 'user')).toBe(
+        true,
+      );
+    });
+
+    it('applies ?project=, ?type= and ?since= together', async () => {
+      const { rows } = await table(`project=other&type=task.created&since=${String(T0)}`);
+      expect(rows.map((row) => [row.created_at_ms, row.project_id, row.actor_id])).toEqual([
+        [String(T0 + 1), otherId, ownerId],
+      ]);
+    });
+
+    it('an org-scoped row has an empty project', async () => {
+      const { rows } = await table(`type=token.created&until=${String(T0 + 3)}`);
+      expect(rows.map((row) => [row.created_at_ms, row.project_id, row.project_slug])).toEqual([
+        [String(T0 + 3), '', ''],
+      ]);
+    });
+
+    it('carries a payload with commas, quotes and newlines intact', async () => {
+      const payload = { title: 'one, "two"\nthree', note: '=SUM(A1)' };
+      appendActivity(h.db, {
+        orgId,
+        projectId: laikaId,
+        actorId: ownerId,
+        actorKind: 'user',
+        type: 'task.updated',
+        payload,
+        now: T0 + 50,
+      });
+
+      const { rows } = await table(`since=${String(T0 + 50)}&until=${String(T0 + 50)}`);
+      expect(rows).toHaveLength(1);
+      expect(JSON.parse(rows[0]?.payload ?? '')).toEqual(payload);
+    });
+
+    it('is the whole answer, not a page: more rows than one page all arrive', async () => {
+      seed(
+        Array.from({ length: 450 }, (_, i) => ({
+          at: T0 + 100 + i,
+          projectId: laikaId,
+          actorId: ownerId,
+          type: 'task.updated' as const,
+        })),
+      );
+
+      const { rows } = await table('');
+      expect(rows).toHaveLength(h.db.select({ id: activity.id }).from(activity).all().length);
+      expect(new Set(rows.map((row) => row.id)).size).toBe(rows.length);
+    });
+
+    it('validates its filters exactly as the JSON answer does', async () => {
+      const badType = await csv('type=task.exploded');
+      expect(badType.status).toBe(400);
+      expect(await codeOf(badType)).toBe('bad_request');
+
+      const badSince = await csv('since=1.5');
+      expect(badSince.status).toBe(400);
+      expect(await codeOf(badSince)).toBe('bad_request');
+
+      const unknownProject = await csv('project=nope');
+      expect(unknownProject.status).toBe(404);
+      expect(await codeOf(unknownProject)).toBe('not_found');
+    });
+
+    it('refuses paging parameters, which a whole-file answer would ignore', async () => {
+      for (const query of ['limit=10', 'cursor=abc']) {
+        const res = await csv(query);
+        expect(res.status, query).toBe(400);
+        expect(await codeOf(res)).toBe('bad_request');
+      }
+    });
+
+    it('refuses a format it does not have; json is the default spelled out', async () => {
+      const res = await as(`${BASE}?format=xml`, cookie);
+      expect(res.status).toBe(400);
+      expect(await codeOf(res)).toBe('bad_request');
+
+      const json = await as(`${BASE}?format=json`, cookie);
+      expect(json.status).toBe(200);
+      expect(Object.keys((await json.json()) as object).sort()).toEqual(['data', 'next_cursor']);
+    });
+  });
+});
+
+describe('membership rows name the person they are about (LAI-984)', () => {
+  let personId: string;
+
+  beforeEach(async () => {
+    const orgId = h.db.select().from(orgs).get()?.id ?? '';
+    const ownerId =
+      h.db.select().from(users).where(eq(users.email, 'ada@example.test')).get()?.id ?? '';
+    const token = seedInvite(h.db, { orgId, createdBy: ownerId, email: 'cy@example.test' });
+    const res = await signUp(h.app, {
+      email: 'cy@example.test',
+      password: PASSWORD,
+      name: 'Cy Young',
+      inviteToken: token,
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+    personId = h.db.select().from(users).where(eq(users.email, 'cy@example.test')).get()?.id ?? '';
+  });
+
+  function rowsOf(type: ActivityType): { projectId: string | null; payload: unknown }[] {
+    return h.db
+      .select({ projectId: activity.projectId, payloadJson: activity.payloadJson })
+      .from(activity)
+      .where(eq(activity.type, type))
+      .all()
+      .map((row) => ({ projectId: row.projectId, payload: JSON.parse(row.payloadJson) as unknown }))
+      .filter((row) => (row.payload as { user_id?: string }).user_id === personId);
+  }
+
+  async function write(method: string, path: string, body: unknown): Promise<void> {
+    const res = await req(path, { method, body: JSON.stringify(body) });
+    expect(res.status, `${method} ${path} ${await res.clone().text()}`).toBeLessThan(300);
+  }
+
+  it('joining by invite carries user_name', () => {
+    expect(rowsOf('member.added').map((row) => row.payload)).toEqual([
+      expect.objectContaining({ user_id: personId, user_name: 'Cy Young', org_role: 'member' }),
+    ]);
+  });
+
+  it('a project add, role change and removal carry user_name and the roles', async () => {
+    await write('POST', '/api/v1/projects/laika/members', { user_id: personId, role: 'member' });
+    await write('PATCH', `/api/v1/projects/laika/members/${personId}`, { role: 'lead' });
+    await write('DELETE', `/api/v1/projects/laika/members/${personId}`, {});
+
+    const added = rowsOf('member.added').filter((row) => row.projectId !== null);
+    expect(added.map((row) => row.payload)).toEqual([
+      expect.objectContaining({ user_name: 'Cy Young', role: 'member' }),
+    ]);
+    expect(rowsOf('member.role_changed').map((row) => row.payload)).toEqual([
+      expect.objectContaining({ user_name: 'Cy Young', from: 'member', to: 'lead' }),
+    ]);
+    expect(rowsOf('member.removed').map((row) => row.payload)).toEqual([
+      expect.objectContaining({ user_name: 'Cy Young', role: 'lead' }),
+    ]);
+  });
+
+  it('an organisation role change carries user_name and the roles', async () => {
+    await write('PATCH', `/api/v1/users/${personId}`, { org_role: 'viewer' });
+
+    expect(rowsOf('member.role_changed').map((row) => row.payload)).toEqual([
+      { scope: 'org', user_id: personId, user_name: 'Cy Young', from: 'member', to: 'viewer' },
+    ]);
   });
 });
