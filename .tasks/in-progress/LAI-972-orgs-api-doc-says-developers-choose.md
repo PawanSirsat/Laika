@@ -2,11 +2,12 @@
 id: LAI-972
 title: 'server/src/services/orgs.ts still documents that developers choose whether to share local activity'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-963]
 discovered-from: LAI-963
-status: backlog
+status: in-progress
+started: 2026-10-22T16:18:19Z
 ---
 
 ## Acceptance criteria
