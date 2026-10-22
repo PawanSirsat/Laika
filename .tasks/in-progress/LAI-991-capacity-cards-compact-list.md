@@ -2,11 +2,12 @@
 id: LAI-991
 title: 'Capacity: compact cards of one height, every block drawn with a 0, consistent hover text, and a List view'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T17:42:37Z
 ---
 
 ## Why
