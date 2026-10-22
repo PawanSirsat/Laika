@@ -902,6 +902,46 @@ describe('transferring ownership (LAI-982)', () => {
     );
   });
 
+  it('is refused to an owner from before D-104 whom owner_user_id does not name', () => {
+    const legacy = makeUser('Legacy', 'owner', { email: 'legacy@example.test' });
+    const grace = makeUser('Grace', 'member', { email: 'grace@example.test' });
+
+    try {
+      transferOwnership(t.db, actor(legacy), { userId: grace, confirm: 'grace@example.test' });
+      throw new Error('Expected 403 not_recorded_owner, but nothing was thrown');
+    } catch (err) {
+      if (!(err instanceof ApiError)) throw err;
+      expect(err.code).toBe('forbidden');
+      expect((err.details as { reason?: string }).reason).toBe('not_recorded_owner');
+    }
+
+    expect(org().ownerUserId).toBe(ownerId);
+    expect(roleOf(grace)).toBe('member');
+    expect(roleOf(legacy)).toBe('owner');
+    expect(t.db.select().from(activity).all()).toHaveLength(0);
+  });
+
+  it('never adds an owner: the recorded owner hands over with an extra owner present', () => {
+    const legacy = makeUser('Legacy', 'owner', { email: 'legacy@example.test' });
+    const grace = makeUser('Grace', 'admin', { email: 'grace@example.test' });
+    const owners = () =>
+      t.db
+        .select()
+        .from(users)
+        .all()
+        .filter((u) => u.orgRole === 'owner')
+        .map((u) => u.id)
+        .sort();
+    expect(owners()).toHaveLength(2);
+
+    transferOwnership(t.db, actor(ownerId), { userId: grace, confirm: 'grace@example.test' });
+
+    expect(org().ownerUserId).toBe(grace);
+    expect(owners()).toEqual([grace, legacy].sort());
+    // The extra owner is still reported, not demoted.
+    expect(extraOwners(t.db).map((o) => o.id)).toEqual([legacy]);
+  });
+
   it("is refused to any token, even the owner's full one: session only", () => {
     const grace = makeUser('Grace', 'member', { email: 'grace@example.test' });
     const viaToken = {
