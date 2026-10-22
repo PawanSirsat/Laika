@@ -320,14 +320,54 @@ export function listAllTasks(
   signal?: AbortSignal,
 ): Promise<Page<TaskSummary>> {
   const params = new URLSearchParams({ fields: 'slim' });
-  if (filter.project !== undefined) params.set('project', filter.project);
-  if (filter.status !== undefined) params.set('status', filter.status);
-  if (filter.assignee !== undefined) params.set('assignee', filter.assignee);
-  if (filter.sprint !== undefined) params.set('sprint', filter.sprint);
+  setAllTasksFilters(params, filter);
   if (filter.limit !== undefined) params.set('limit', String(filter.limit));
   if (filter.cursor !== undefined) params.set('cursor', filter.cursor);
   return request<Page<TaskSummary>>(
     `/tasks?${params.toString()}`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
+/** The four filters `GET /tasks` and `GET /tasks/summary` share. */
+function setAllTasksFilters(params: URLSearchParams, filter: AllTasksFilter): void {
+  if (filter.project !== undefined) params.set('project', filter.project);
+  if (filter.status !== undefined) params.set('status', filter.status);
+  if (filter.assignee !== undefined) params.set('assignee', filter.assignee);
+  if (filter.sprint !== undefined) params.set('sprint', filter.sprint);
+}
+
+/** One person's share of the counted work; `user_id` null is nobody's. */
+export interface TasksSummaryAssignee {
+  readonly user_id: string | null;
+  readonly name: string;
+  readonly count: number;
+}
+
+/** The figures for everyone's work under a filter (LAI-974). */
+export interface TasksSummary {
+  readonly total: number;
+  readonly by_status: Readonly<Record<TaskStatus, number>>;
+  readonly by_assignee: readonly TasksSummaryAssignee[];
+  readonly overdue: number;
+  readonly blocked: number;
+  readonly unassigned: number;
+}
+
+/**
+ * Counts over the same tasks `listAllTasks` pages through (LAI-974, LAI-975),
+ * so the Work page's figures are the server's and never a sum of rows the
+ * client happens to hold.
+ */
+export function getTasksSummary(
+  filter: Omit<AllTasksFilter, 'limit' | 'cursor'> = {},
+  signal?: AbortSignal,
+): Promise<TasksSummary> {
+  const params = new URLSearchParams();
+  setAllTasksFilters(params, filter);
+  const query = params.toString();
+  return request<TasksSummary>(
+    `/tasks/summary${query === '' ? '' : `?${query}`}`,
     signal === undefined ? {} : { signal },
   );
 }
