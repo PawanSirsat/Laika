@@ -161,18 +161,34 @@ void describe('a member in a Space admins only space', () => {
     const h = await open('/board?project=laika', stub(MEMBER), {
       before: (page) => watchFor(page, CREATE),
     });
+    /*
+     * `watchFor` starts afresh on every load, so each page is read before the
+     * next is opened — a census taken only on the last page would have missed
+     * the first two (caught by breaking the List's gate and watching this stay
+     * green).
+     */
+    const shown = async (page: string): Promise<string[]> => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      const seen: string[] = [];
+      for (const selector of CREATE) {
+        if (await everSeen(h.page, selector)) seen.push(`${page}: ${selector}`);
+      }
+      return seen;
+    };
     try {
       await h.page.locator('.card-title').first().waitFor({ timeout: 20_000 });
       await until(() => h.calls.some((c) => c.path === '/api/v1/permissions'));
-      // The List, and the task drawer where Add subtask lives.
+      const offered = await shown('Board');
+
       await h.page.goto(`${h.origin}/list?project=laika`);
       await h.page.locator('.list-row, [data-task-id]').first().waitFor({ timeout: 20_000 });
+      offered.push(...(await shown('List')));
+
       await h.page.goto(`${h.origin}/board?project=laika&task=t1`);
       await h.page.locator('.sub-section').waitFor({ timeout: 20_000 });
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      for (const selector of CREATE) {
-        assert.equal(await everSeen(h.page, selector), false, `the member was shown ${selector}`);
-      }
+      offered.push(...(await shown('drawer')));
+
+      assert.deepEqual(offered, [], `the member was shown ${offered.join(', ')}`);
     } finally {
       await h.close();
     }
