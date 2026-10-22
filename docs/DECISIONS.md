@@ -5448,3 +5448,83 @@ SPEC §4.47, §4.48, §6.4, §11.4.2.1 and §13.4 say this when LAI-866 lands.
 
 A second person shares a machine, so that a folder's name is no longer one
 person's word. Or the owner wants the name in Solidtime too.
+
+## D-099 — My day shows polly's turns and the dispatched builders' commits on SIGNALS, and the builders' minutes on AGENTS; none of it is the person's time (LAI-314, LAI-315; amends D-096 item 2 and D-095 item 3)
+
+**Date:** 2026-10-22 · **By:** CHIEF, on the owner's instruction
+
+The owner types only into Omnigent's polly. D-096 item 2 times only prompts
+and commits, and polly writes neither, so My day's SIGNALS lane was always
+empty. The AGENTS lane had no builders either. With telemetry on, the
+collector named every `skip-sessions` id in `excluded`, so the board dropped
+the builders' points. A builder Omnigent dispatched also inherits Omnigent's
+environment, not the shell's, so it sent no telemetry of its own (measured
+from inside one, LAI-315).
+
+The owner's decision for LAI-314, 2026-10-22, is quoted in full in that task
+file. Part (b) says the dispatched builders' commits are *"counted as commits
+on the lane — lane ticks only, never added to the owner's hours or
+contribution (D-091 still holds for hours)"*.
+
+The owner's decision for LAI-315, the same day, is quoted in full in that
+task file. The builders' agent minutes are drawn on the AGENTS lane: *"They
+stay BESIDE the day, never added to the owner's hours, contribution or
+confirmed time, and remain marked automated everywhere else."*
+
+1. **A turn the person started in polly is a prompt** (LAI-314 (a); amends
+   D-096 item 2). It is counted in its block's `signals.prompts` and timed in
+   `at.prompts`. A turn Omnigent started itself is not (D-090).
+2. **A dispatched builder's commit is a commit on the lane** (LAI-314 (b);
+   amends D-096 item 2). A commit of the person's in a repository where a
+   builder the owner dispatched started (the skip line's `omnigent`, D-095
+   item 4) is counted in the block of the stretch it closes, in
+   `signals.commits` and `at.commits`. A commit already counted from the
+   person's own repositories is not counted again. It makes no minute, names
+   no task and moves no minute between tasks.
+3. **D-095 item 3 is amended.** It said a dispatched session *"never makes a
+   minute and adds no count"*. It still makes no minute, and its replies are
+   still not evidence in any block's counts. Its commits now add to a block's
+   commit count, as item 2 says, and to nothing else.
+4. **A dispatched builder's minutes are drawn on the AGENTS lane** (LAI-315).
+   The collector works out, per day, the five minutes each builder worked in
+   from its replies' times, ties them to the builder's card (its
+   `start_working` mark, else a key in its branch), and sends them as the
+   day's `dispatched`, whether or not telemetry is on. The board draws them on
+   `agent.lane`, and keeps the builder's key in `token_session_skips`, so its
+   telemetry is still dropped.
+5. **None of it is the person's time.** The lane's commit ticks and the
+   builders' lane minutes are never added to the person's hours,
+   contribution or confirmed time, to `agent.minutes` or to `by_task`. D-088
+   item 9 and D-091 hold: a builder's tokens stay marked automated everywhere
+   else.
+6. **Counts only.** No text, path, repository name, branch or commit message
+   leaves the machine (D-088 item 4). The builders' repositories are kept in
+   a local file, `~/.laika/activity/dispatched-repos`, 0600, never sent and
+   never in `repos`, so the heatmap census does not count them.
+
+### What does not change
+
+- D-095 items 1, 2, 4 and 5: a dispatched builder still lends its card to the
+  person's untied minutes, and only that.
+- D-096 items 1 and 3 to 6: five-minute buckets, checked against the block,
+  shown to the person alone.
+- D-091: an orchestrator's agents' tokens count for the organisation, the
+  space and the task, never for the person.
+
+### Known limits
+
+- A builder's commit outside every stretch of the person's own activity is
+  not shown. Ticks live on blocks, and a new block would add hours.
+- Found in review the same day, and filed: a builder that no day's
+  `dispatched` carries must stay in `excluded` (LAI-872), and the made-here
+  ledger must not move a builder's commit onto the person's block
+  (LAI-876).
+
+SPEC §6.4 and §4.57 still describe the lane as telemetry only and the
+signals as typed prompts and the person's own commits. LAI-316 brings them in
+line; this entry is its decision record.
+
+### Revisit when
+
+Omnigent tells a hook which session dispatched which. Or a second person runs
+builders on a shared machine.
