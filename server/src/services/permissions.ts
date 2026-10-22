@@ -113,7 +113,8 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'project.settings.edit': 'Edit project settings and context_md',
   'sprint.manage': 'Create / edit / delete sprints',
   'task.assign_sprint': 'Assign tasks into or out of a sprint',
-  'task.write': 'Create / edit / move any task',
+  'task.create': 'Create tasks',
+  'task.write': 'Edit / move any task',
   'task.claim': 'Claim a task (start_working)',
   'task.assign_other': 'Assign a task to someone else',
   'comment.create': 'Add comment',
@@ -126,6 +127,7 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'meeting_proposal.apply': 'Apply a meeting-diff proposal',
   'usage.read_project': "Read a project's token totals",
   'budget.set': 'Set token budgets',
+  'project.leave': 'Leave a project',
 };
 
 /**

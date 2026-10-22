@@ -217,6 +217,9 @@ const UNPAIRED = new Map<string, string>([
   ['SolidtimeSetup', 'no client type exists'],
   ['ImportResult', 'no client type exists'],
   ['AllImportResult', 'no client type exists'],
+  // LAI-976's leave answer; the Space settings screen (LAI-977) brings the
+  // mirror, and this entry leaves the way the rest do.
+  ['LeaveProjectView', 'no client type exists'],
 ]);
 
 /**

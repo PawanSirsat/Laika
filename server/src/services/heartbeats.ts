@@ -259,7 +259,12 @@ export function resolveRepoProjects(db: Db, repo: string, branch: string): RepoP
   if (wanted === null) return { projectIds: [], attribution: 'none' };
 
   const matches = db
-    .select({ id: projects.id, repo: projects.repo, prefix: projects.prefix })
+    .select({
+      id: projects.id,
+      repo: projects.repo,
+      prefix: projects.prefix,
+      formerPrefixes: projects.formerPrefixes,
+    })
     .from(projects)
     .all()
     .filter((row) => row.repo !== null && fold(row.repo) === wanted);
@@ -272,7 +277,11 @@ export function resolveRepoProjects(db: Db, repo: string, branch: string): RepoP
     // At most one within an org — `projects_org_prefix_unique` (§4.13) — but the
     // check is on the result rather than on that index, so a second org could
     // never make this quietly pick one of two.
-    const narrowed = matches.filter((row) => row.prefix.toLowerCase() === prefix);
+    // A branch named under a prefix the project carried before still counts
+    // (D-103): it was cut when that was the key.
+    const narrowed = matches.filter((row) =>
+      keyPrefixesOf(row).some((held) => held.toLowerCase() === prefix),
+    );
     if (narrowed.length === 1) return { projectIds: [narrowed[0]!.id], attribution: 'branch' };
   }
 
@@ -331,11 +340,16 @@ export function resolveBranchTask(
   // without consulting the branch at all — so `web-42` on a repo tracked only by
   // `LAI` arrives here with a project that does not own that prefix.
   const project = db
-    .select({ id: projects.id, prefix: projects.prefix })
+    .select({ id: projects.id, prefix: projects.prefix, formerPrefixes: projects.formerPrefixes })
     .from(projects)
     .where(eq(projects.id, projectId))
     .get();
-  if (project?.prefix.toLowerCase() !== ref.prefix) return null;
+  if (
+    project === undefined ||
+    !keyPrefixesOf(project).some((held) => held.toLowerCase() === ref.prefix)
+  ) {
+    return null;
+  }
 
   const task = db
     .select({ id: tasks.id })
@@ -359,7 +373,7 @@ export function resolveBranchTask(
  * has an opinion about it.
  */
 export { REPO_MAX_LENGTH } from './projects.ts';
-import { REPO_MAX_LENGTH } from './projects.ts';
+import { keyPrefixesOf, REPO_MAX_LENGTH } from './projects.ts';
 export const BRANCH_MAX_LENGTH = 255;
 
 export interface HeartbeatInput {

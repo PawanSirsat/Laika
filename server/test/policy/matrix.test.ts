@@ -238,7 +238,10 @@ const PROJECT_MATRIX: ProjectRow[] = [
   // Every role, including viewer — and **not** in `READ_ACTIONS`, which is what
   // refuses a `read_only` token (D-047). See `can.test.ts` for the pair.
   ['task.watch', true, true, true],
-  // | Create / edit / move any task | ✓ | ✓ | — |
+  // | Create tasks | ✓ | ✓ (unless space admins only) | — |
+  // The default; the space's other answer is `space-rules.test.ts` (D-103).
+  ['task.create', true, true, false],
+  // | Edit / move any task | ✓ | ✓ | — |
   ['task.write', true, true, false],
   // | Claim a task (start_working) | ✓ | ✓ | — |
   ['task.claim', true, true, false],
@@ -258,6 +261,9 @@ const PROJECT_MATRIX: ProjectRow[] = [
   // | Set token budgets | ✓ (session only) | — | — |
   // LAI-773: a lead, on a web session; soft, so it refuses nothing to anyone.
   ['budget.set', true, false, false],
+  // | Leave a project | ✓ | ✓ | ✓ |
+  // D-103 item 5; the last lead is the service's 409, not a cell.
+  ['project.leave', true, true, true],
 ];
 
 /** An org `member` so the org role never grants implicit lead. */

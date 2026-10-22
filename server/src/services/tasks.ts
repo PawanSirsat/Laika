@@ -44,7 +44,7 @@ import {
   normaliseOutsideId,
   readableByOutsideId,
 } from './outside-ids.ts';
-import { canSeeProject, requireProjectBySlug } from './projects.ts';
+import { canSeeProject, projectIdByKeyPrefix, requireProjectBySlug } from './projects.ts';
 import {
   activeSendBacks,
   evidenceItems,
@@ -612,20 +612,15 @@ function taskIdByKey(db: Db, ref: string): string | undefined {
   const [, prefix, number] = match;
   if (prefix === undefined || number === undefined) return undefined;
 
-  const project = db
-    .select({ id: projects.id })
-    .from(projects)
-    // Prefixes are stored upper-case (§4.3), and a person typing `lai-42` means
-    // the same task as one typing `LAI-42`.
-    .where(eq(projects.prefix, prefix.toUpperCase()))
-    .get();
-
-  if (project === undefined) return undefined;
+  // Case-insensitive — a person typing `lai-42` means `LAI-42` — and a prefix
+  // the project carried before its current one still names it (D-103).
+  const projectId = projectIdByKeyPrefix(db, prefix);
+  if (projectId === undefined) return undefined;
 
   return db
     .select({ id: tasks.id })
     .from(tasks)
-    .where(and(eq(tasks.projectId, project.id), eq(tasks.number, Number(number))))
+    .where(and(eq(tasks.projectId, projectId), eq(tasks.number, Number(number))))
     .get()?.id;
 }
 
@@ -758,7 +753,10 @@ export function createTask(
   input: CreateTaskInput,
 ): TaskView {
   const project = requireProjectBySlug(db, slug);
-  assertCan(withProject(actor, project.id), 'task.write', { projectId: project.id });
+  // `task.create`, not `task.write` (D-103 item 6): the space may keep creating
+  // to its leads. Every path that makes a task — REST, MCP, a meeting review,
+  // a promoted unlisted note — arrives here, so this one check is all of them.
+  assertCan(withProject(actor, project.id), 'task.create', { projectId: project.id });
   if (input.assignee_id !== undefined) assertMayHold(db, input.assignee_id, project.id);
 
   const now = input.now ?? Date.now();

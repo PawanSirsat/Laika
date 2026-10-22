@@ -2,7 +2,13 @@ import { serve } from '@hono/node-server';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { type AuthHarness, authHarness, cookieFrom, jsonHeaders, signUp } from '../../helpers/auth.ts';
+import {
+  type AuthHarness,
+  authHarness,
+  cookieFrom,
+  jsonHeaders,
+  signUp,
+} from '../../helpers/auth.ts';
 
 /**
  * Space settings, the API half (D-103, LAI-976): what `PATCH /projects/:slug`
@@ -23,7 +29,9 @@ interface ErrorBody {
 }
 
 async function api(path: string, init: RequestInit = {}, auth = ownerCookie): Promise<Response> {
-  const credential = auth.startsWith('lai_') ? { Authorization: `Bearer ${auth}` } : { Cookie: auth };
+  const credential = auth.startsWith('lai_')
+    ? { Authorization: `Bearer ${auth}` }
+    : { Cookie: auth };
   return h.app.request(path, {
     ...init,
     headers: jsonHeaders({ ...credential, ...((init.headers as Record<string, string>) ?? {}) }),
@@ -80,7 +88,12 @@ async function person(
     body: JSON.stringify({ email, org_role: orgRole }),
   });
   const { token } = (await invited.json()) as { token: string };
-  const signed = await signUp(h.app, { email, password: PASSWORD, name: email, inviteToken: token });
+  const signed = await signUp(h.app, {
+    email,
+    password: PASSWORD,
+    name: email,
+    inviteToken: token,
+  });
   expect(signed.status, await signed.clone().text()).toBe(200);
   const people = (await (await api('/api/v1/users')).json()) as {
     data: { id: string; email: string }[];
@@ -277,10 +290,14 @@ describe('who may create tasks (D-103 item 6)', () => {
     const lead = await person('l@example.test', 'core', 'lead');
     const made = (await (await newTask('core', 'Existing')).json()) as { id: string };
 
-    await must('/api/v1/projects/core', {
-      method: 'PATCH',
-      body: JSON.stringify({ task_create_min_role: 'lead' }),
-    }, 200);
+    await must(
+      '/api/v1/projects/core',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ task_create_min_role: 'lead' }),
+      },
+      200,
+    );
 
     const refused = await newTask('core', 'Nope', member.cookie);
     expect(refused.status).toBe(403);
@@ -302,10 +319,14 @@ describe('who may create tasks (D-103 item 6)', () => {
 
   it('space admins only: a member’s agent is refused on MCP too', async () => {
     const member = await person('m@example.test', 'core');
-    await must('/api/v1/projects/core', {
-      method: 'PATCH',
-      body: JSON.stringify({ task_create_min_role: 'lead' }),
-    }, 200);
+    await must(
+      '/api/v1/projects/core',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ task_create_min_role: 'lead' }),
+      },
+      200,
+    );
 
     const client = await connect(await mint(member.cookie));
     const result = await client.callTool({
@@ -329,10 +350,14 @@ describe('agents off (D-103 item 7)', () => {
   it('refuses an agent token every write on REST, allows its reads, and leaves people alone', async () => {
     const made = (await (await newTask('core', 'Work')).json()) as { id: string };
     const secret = await mint();
-    await must('/api/v1/projects/core', {
-      method: 'PATCH',
-      body: JSON.stringify({ agents_allowed: false }),
-    }, 200);
+    await must(
+      '/api/v1/projects/core',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ agents_allowed: false }),
+      },
+      200,
+    );
 
     const writes: [string, RequestInit][] = [
       ['/api/v1/projects/core/tasks', { method: 'POST', body: '{"title":"Nope"}' }],
@@ -357,10 +382,14 @@ describe('agents off (D-103 item 7)', () => {
   it('refuses the MCP write tools and answers the read ones', async () => {
     await must('/api/v1/projects/core/tasks', { method: 'POST', body: '{"title":"Work"}' });
     const client = await connect(await mint());
-    await must('/api/v1/projects/core', {
-      method: 'PATCH',
-      body: JSON.stringify({ agents_allowed: false }),
-    }, 200);
+    await must(
+      '/api/v1/projects/core',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ agents_allowed: false }),
+      },
+      200,
+    );
 
     const calls: [string, Record<string, unknown>][] = [
       ['create_task', { project: 'core', title: 'Nope' }],

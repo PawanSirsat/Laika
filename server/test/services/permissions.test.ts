@@ -156,6 +156,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'project.settings.edit': 'YNN',
   'sprint.manage': 'YNN',
   'task.assign_sprint': 'YYN',
+  'task.create': 'YYN',
   'task.write': 'YYN',
   'task.claim': 'YYN',
   'task.assign_other': 'YYN',
@@ -169,6 +170,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'meeting_proposal.apply': 'YYN',
   'usage.read_project': 'YYY',
   'budget.set': 'YNN',
+  'project.leave': 'YYY',
 };
 
 const LETTER = { yes: 'Y', no: 'N', conditional: 'C' } as const;

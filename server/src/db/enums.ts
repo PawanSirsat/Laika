@@ -45,6 +45,29 @@ export type ProjectRole = (typeof PROJECT_ROLES)[number];
 export const PROJECT_VISIBILITIES = ['public', 'private'] as const;
 export type ProjectVisibility = (typeof PROJECT_VISIBILITIES)[number];
 
+/**
+ * A space's colour, the design's fixed palette (D-103 item 4, LAI-976): names,
+ * not hex — the web app owns what each looks like in either theme.
+ */
+export const PROJECT_COLORS = [
+  'black',
+  'violet',
+  'teal',
+  'blue',
+  'amber',
+  'magenta',
+  'red',
+  'green',
+] as const;
+export type ProjectColor = (typeof PROJECT_COLORS)[number];
+
+/**
+ * Who may create tasks in a space (D-103 item 6): its members, or its space
+ * admins (`lead`) only. Viewers never may, so there is no `viewer` here.
+ */
+export const TASK_CREATE_MIN_ROLES = ['member', 'lead'] as const;
+export type TaskCreateMinRole = (typeof TASK_CREATE_MIN_ROLES)[number];
+
 /** SPEC §4.5 and §5. `backlog` is unrefined; `todo` is groomed. */
 export const TASK_STATUSES = [
   'backlog',
