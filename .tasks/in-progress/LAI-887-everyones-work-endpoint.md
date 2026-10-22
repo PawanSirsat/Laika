@@ -2,11 +2,12 @@
 id: LAI-887
 title: 'Seeing everyone''s work across all spaces takes one request per project — no cross-project task list'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+started: 2026-10-22T10:51:49Z
+status: in-progress
 ---
 
 ## Goal
