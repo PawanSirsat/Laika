@@ -14,7 +14,20 @@
 .view-settings {
   position: fixed;
   z-index: 31;
-  width: min(20rem, calc(100vw - 1rem));
+  /*
+   * Under the trigger, but never past either edge (LAI-961). On a phone the
+   * trigger sits near the left, and its offset from the right put most of the
+   * panel off-screen: at 390px it started at x = -296.
+   *
+   * `border-box`, so the width the clamp subtracts is the width drawn: as
+   * `content-box` the padding and border added 30px the sum never saw.
+   * 21.875rem keeps the 350px the panel already drew at.
+   */
+  box-sizing: border-box;
+  /* The trigger's offset. `ViewSettings` sets it inline; this is the default. */
+  --vs-right: 0.5rem;
+  right: clamp(0.5rem, var(--vs-right), calc(100vw - min(21.875rem, 100vw - 1rem) - 0.5rem));
+  width: min(21.875rem, calc(100vw - 1rem));
   max-height: min(34rem, calc(100vh - 5rem));
   overflow-y: auto;
   background: var(--bg-card);
@@ -174,6 +187,74 @@
 .vs-reset:hover {
   color: var(--text-primary);
   border-color: var(--border-default);
+}
+
+/* ------------------------------------------------ Visibility (LAI-961) */
+
+.vs-radios-stacked {
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.vs-value {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.vs-confirm {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  background: var(--bg-column);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+}
+
+.vs-confirm-text {
+  margin: 0 0 0.5rem;
+  font-size: var(--text-small);
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.vs-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.vs-confirm-yes,
+.vs-confirm-no {
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  padding: 0.1875rem 0.625rem;
+  cursor: pointer;
+}
+
+/* The `.button-primary` pair, at the popover's size. */
+.vs-confirm-yes {
+  color: var(--bg-card);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.vs-confirm-no {
+  color: var(--text-secondary);
+  background: var(--bg-card);
+}
+
+.vs-confirm-no:hover {
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.vs-confirm-yes:focus-visible,
+.vs-confirm-no:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* ------------------------------------ Show fields, as a list (LAI-290) */

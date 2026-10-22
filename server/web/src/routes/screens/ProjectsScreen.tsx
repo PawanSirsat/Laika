@@ -15,6 +15,7 @@ import {
   joinProject,
   slugify,
   suggestPrefix,
+  VISIBILITY_OPTIONS,
   type Project,
 } from '../../api/projects.ts';
 import { canEditProjectContext } from '../../api/project-context.ts';
@@ -233,10 +234,7 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
             value={visibility}
             onChange={setVisibility}
             disabled={submitting}
-            options={[
-              { value: 'private', label: 'Private — invited members only' },
-              { value: 'public', label: 'Public — anyone in the org can join' },
-            ]}
+            options={VISIBILITY_OPTIONS}
           />
 
           <div className="projects-form-actions">
