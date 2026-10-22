@@ -48,7 +48,12 @@ import {
 } from '../../src/services/tasks.ts';
 import { createToken, revokeOwnToken } from '../../src/services/tokens.ts';
 import { dismissUnlisted, logUnlistedWork, promoteUnlisted } from '../../src/services/unlisted.ts';
-import { setOrgRole, setUserActive } from '../../src/services/users.ts';
+import {
+  setOrgRole,
+  setUserActive,
+  signOutEverywhere,
+  transferOwnership,
+} from '../../src/services/users.ts';
 import { setOrgPermissions } from '../../src/services/org-permissions.ts';
 import {
   expireInvites,
@@ -569,8 +574,27 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
           updatedAt: new Date(1000),
         })
         .run();
+      // A session and a token first, so deactivation's payload carries what
+      // it ended (LAI-981) rather than two empty fields.
+      const sparesSession = () =>
+        t.db
+          .insert(schema.sessions)
+          .values({
+            id: newId(),
+            userId: spare,
+            token: newId(),
+            expiresAt: new Date(10_000_000),
+            createdAt: new Date(1000),
+            updatedAt: new Date(1000),
+          })
+          .run();
+      sparesSession();
+      createToken(t.sqlite, t.db, loadActor(t.db, spare)!, { name: 'spare', scope: 'full' });
       setUserActive(t.db, owner(), spare, false);
       setUserActive(t.db, owner(), spare, true);
+      // LAI-981: a forced sign-out, which writes only when it ended a session.
+      sparesSession();
+      signOutEverywhere(t.db, owner(), spare);
       setOrgRole(t.db, owner(), spare, 'admin');
       // LAI-958: the owner's grants ride `member.role_changed` too.
       setOrgPermissions(t.db, owner(), {
@@ -771,6 +795,9 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       // Archiving last: it is the one that takes a project out of active views.
       removeMember(t.db, owner(), 'core', memberId);
       updateProject(t.db, owner(), 'core', { archived: true });
+
+      // Very last, because it takes the owner's role away (LAI-982).
+      transferOwnership(t.db, owner(), { userId: spare, confirm: 'spare@example.test' });
 
       const rows = t.db.select().from(activity).all();
       const forbidden = drizzleOnlyNames();

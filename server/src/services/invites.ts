@@ -233,6 +233,17 @@ export function createInvite(
   // the owner invites as member or viewer only.
   assertCan(actor, 'user.invite', { targetOrgRole: input.orgRole });
 
+  // **No invite makes an owner** (§3, D-104 item 2, LAI-982): there is exactly
+  // one, and it changes hands by transfer. Accepting an owner invite would
+  // have made a second.
+  if (input.orgRole === 'owner') {
+    throw new ApiError(
+      'unprocessable',
+      'An organisation has exactly one Owner. Invite them as an admin, then use Transfer ownership.',
+      { reason: 'use_transfer' },
+    );
+  }
+
   const now = input.now ?? Date.now();
   const org = requireOrg(db);
   const email =

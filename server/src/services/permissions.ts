@@ -57,8 +57,8 @@ type CatalogueAction = OrgAction | ProjectAction;
  * the document, as `presence.read` and `capacity.read` did (LAI-953).
  */
 export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
-  'org.delete': 'Delete org data / transfer ownership',
-  'org.transfer_ownership': 'Delete org data / transfer ownership',
+  'org.delete': 'Delete org data',
+  'org.transfer_ownership': 'Transfer ownership',
   'org.settings.edit': 'Org settings (AI provider, SMTP, signup mode)',
   'project.create': 'Create / archive project',
   'project.archive': 'Create / archive project',
@@ -66,6 +66,8 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'user.set_role': 'Change org roles',
   'org.permissions.manage': 'Set what each role may do',
   'user.deactivate': 'Deactivate user',
+  'user.sign_out': 'Sign a person out everywhere',
+  'user.reset_password': 'Issue a password-reset link',
   'org.read': 'View the organisation',
   'presence.read': 'Presence and capacity',
   'capacity.read': 'Presence and capacity',
@@ -151,6 +153,8 @@ const SOMEONE_ELSE = 'someone-else';
  *  - `project.join_public` — every role, a public project only. Which project
  *    role the joiner lands on is `projectRoleOnJoin`, not a permission.
  *  - `token.read_own`, `token.revoke_own` — every role, their own tokens only.
+ *  - `user.sign_out` — every role may sign themselves out; somebody else is
+ *    whoever holds `manage_people`, with `user.deactivate` (LAI-981).
  *  - `profile.rate` — Owner and Admin, anybody but themselves.
  *  - `people.analytics.read` — anybody but themselves: their own is `/me`
  *    (LAI-957).
@@ -177,6 +181,16 @@ export const ACTION_CONDITIONS: Readonly<Partial<Record<CatalogueAction, ActionC
     text: 'Their own tokens only',
     holds: (userId) => ({ ownerId: userId }),
     fails: () => ({ ownerId: SOMEONE_ELSE }),
+  },
+  'user.sign_out': {
+    text: 'Themselves only',
+    holds: (userId) => ({ targetUserId: userId }),
+    fails: () => ({ targetUserId: SOMEONE_ELSE }),
+  },
+  'user.reset_password': {
+    text: 'Not for the Owner',
+    holds: () => ({ targetOrgRole: 'member' }),
+    fails: () => ({ targetOrgRole: 'owner' }),
   },
   'profile.rate': {
     text: 'Anyone but themselves',

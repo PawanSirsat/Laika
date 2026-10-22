@@ -1,7 +1,15 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { users } from '../../../src/db/schema.ts';
-import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
+import { orgs, users } from '../../../src/db/schema.ts';
+import {
+  type AuthHarness,
+  authHarness,
+  cookieFrom,
+  jsonHeaders,
+  seedInvite,
+  signIn,
+  signUp,
+} from '../../helpers/auth.ts';
 
 let h: AuthHarness;
 let cookie: string;
@@ -281,4 +289,144 @@ describe('PATCH /api/v1/users/:id', () => {
   // in is not needed to state the rule — `test/services/users.test.ts`,
   // "refuses a Member and a Viewer outright". A route-level duplicate would
   // assert the same `can()` call twice and cost an auth round trip to do it.
+});
+
+/**
+ * D-104 item 3 (LAI-981), end to end through real better-auth sessions: what
+ * the browser of somebody deactivated or signed out actually gets back.
+ */
+describe('deactivation and sign-out end access (LAI-981)', () => {
+  interface Person {
+    id: string;
+    cookie: string;
+  }
+
+  async function join(email: string, orgRole: 'admin' | 'member' | 'viewer'): Promise<Person> {
+    const orgId = h.db.select().from(orgs).get()!.id;
+    const token = seedInvite(h.db, { orgId, createdBy: ownerId, email, orgRole });
+    const res = await signUp(h.app, { email, password: PASSWORD, inviteToken: token });
+    expect(res.status, await res.clone().text()).toBe(200);
+    return {
+      id: h.db.select().from(users).where(eq(users.email, email)).get()!.id,
+      cookie: cookieFrom(res),
+    };
+  }
+
+  async function as(who: string, path: string, init: RequestInit = {}): Promise<Response> {
+    return h.app.request(path, {
+      ...init,
+      headers: jsonHeaders({ Cookie: who, ...((init.headers as Record<string, string>) ?? {}) }),
+    });
+  }
+
+  async function withToken(secret: string, path: string): Promise<Response> {
+    return h.app.request(path, { headers: { Authorization: `Bearer ${secret}` } });
+  }
+
+  async function mintFor(person: Person): Promise<string> {
+    const res = await as(person.cookie, '/api/v1/tokens', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'agent', scope: 'full' }),
+    });
+    expect(res.status, await res.clone().text()).toBe(201);
+    return ((await res.json()) as { secret: string }).secret;
+  }
+
+  async function code(res: Response): Promise<string> {
+    return ((await res.json()) as { error: { code: string } }).error.code;
+  }
+
+  it("a deactivated person's cookie and token stop working, and reactivating revives neither", async () => {
+    const grace = await join('grace@example.test', 'member');
+    const secret = await mintFor(grace);
+    expect((await as(grace.cookie, '/api/v1/me')).status).toBe(200);
+    expect((await withToken(secret, '/api/v1/me')).status).toBe(200);
+
+    const off = await req(`/api/v1/users/${grace.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active: false }),
+    });
+    expect(off.status).toBe(200);
+
+    const on = await req(`/api/v1/users/${grace.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active: true }),
+    });
+    expect(on.status).toBe(200);
+
+    // Reactivated, and still nothing they held works: the session is gone, so
+    // the cookie is anonymous, and the token is revoked.
+    const cookieRes = await as(grace.cookie, '/api/v1/me');
+    expect(cookieRes.status).toBe(401);
+    expect(await code(cookieRes)).toBe('unauthorized');
+    const tokenRes = await withToken(secret, '/api/v1/me');
+    expect(tokenRes.status).toBe(401);
+    expect(await code(tokenRes)).toBe('unauthorized');
+
+    // Signing in again is how they come back.
+    const again = await signIn(h.app, 'grace@example.test', PASSWORD);
+    expect(again.status).toBe(200);
+    expect((await as(cookieFrom(again), '/api/v1/me')).status).toBe(200);
+  });
+
+  it('POST /users/:id/sign-out ends their sessions, keeps their token, and says how many', async () => {
+    const grace = await join('grace@example.test', 'member');
+    const secret = await mintFor(grace);
+    const second = cookieFrom(await signIn(h.app, 'grace@example.test', PASSWORD));
+
+    const res = await req(`/api/v1/users/${grace.id}/sign-out`, { method: 'POST' });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await res.json()).toEqual({ user_id: grace.id, sessions_ended: 2 });
+
+    expect((await as(grace.cookie, '/api/v1/me')).status).toBe(401);
+    expect((await as(second, '/api/v1/me')).status).toBe(401);
+    expect((await withToken(secret, '/api/v1/me')).status).toBe(200);
+  });
+
+  it('lets a person sign themselves out everywhere', async () => {
+    const grace = await join('grace@example.test', 'viewer');
+
+    const res = await as(grace.cookie, `/api/v1/users/${grace.id}/sign-out`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect((await as(grace.cookie, '/api/v1/me')).status).toBe(401);
+  });
+
+  it('403s a member signing somebody else out, and 404s nobody', async () => {
+    const grace = await join('grace@example.test', 'member');
+    const hedy = await join('hedy@example.test', 'member');
+
+    const res = await as(hedy.cookie, `/api/v1/users/${grace.id}/sign-out`, { method: 'POST' });
+    expect(res.status).toBe(403);
+    expect(await code(res)).toBe('forbidden');
+    expect((await as(grace.cookie, '/api/v1/me')).status).toBe(200);
+
+    const nobody = await req('/api/v1/users/usr_nobody/sign-out', { method: 'POST' });
+    expect(nobody.status).toBe(404);
+    expect(await code(nobody)).toBe('not_found');
+  });
+
+  it('serves last_seen_at on the directory once somebody has signed in', async () => {
+    const grace = await join('grace@example.test', 'member');
+
+    const listed = (await page('/api/v1/users')).data.find((u) => u.id === grace.id) as
+      (UserBody & { last_seen_at: number | null }) | undefined;
+    expect(typeof listed?.last_seen_at).toBe('number');
+  });
+
+  it('GET /users/:id/memberships lists their spaces with the role held', async () => {
+    const grace = await join('grace@example.test', 'member');
+    const added = await req('/api/v1/projects/laika/members', {
+      method: 'POST',
+      body: JSON.stringify({ user_id: grace.id, role: 'member' }),
+    });
+    expect(added.status).toBe(201);
+
+    const res = await req(`/api/v1/users/${grace.id}/memberships`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { slug: string; role: string }[] };
+    expect(body.data.map((m) => [m.slug, m.role])).toEqual([['laika', 'member']]);
+
+    const nobody = await req('/api/v1/users/usr_nobody/memberships');
+    expect(nobody.status).toBe(404);
+  });
 });

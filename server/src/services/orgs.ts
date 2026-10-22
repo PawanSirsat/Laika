@@ -15,6 +15,7 @@ import { orgs } from '../db/schema.ts';
 import { encryptSecret } from '../secrets.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
+import { extraOwners } from './users.ts';
 
 /**
  * The organisation itself (SPEC §4.2, §6.4, LAI-222).
@@ -120,6 +121,14 @@ export interface OrgView {
   ai?: OrgAiView;
   /** Present only for a caller who passes `webhook.configure`. Absent, not null. */
   github_webhook?: OrgGithubWebhookView;
+  /**
+   * Active owners besides the one `orgs.owner_user_id` names — normally empty
+   * (D-104 item 2, LAI-982). Organisations from before D-104 may have more
+   * than one, and they are **reported here, not demoted silently**. Present
+   * only for a caller who passes `org.transfer_ownership`: the owner, signed
+   * in, who is the one able to act on it. Absent, not null.
+   */
+  extra_owners?: { id: string; name: string; email: string }[];
 }
 
 /**
@@ -167,11 +176,13 @@ export function getOrg(db: Db, actor: ResolvedActor, publicUrl = ''): OrgView {
     : view;
 
   // Its own grade: §3.1's *Configure webhooks*, session only (LAI-753).
-  if (!can(actor, 'webhook.configure')) return withAi;
-  return {
-    ...withAi,
-    github_webhook: githubWebhookView(row.githubWebhookSecretEnc, publicUrl),
-  };
+  const withWebhook: OrgView = can(actor, 'webhook.configure')
+    ? { ...withAi, github_webhook: githubWebhookView(row.githubWebhookSecretEnc, publicUrl) }
+    : withAi;
+
+  // The owner's, signed in (LAI-982): who else holds the role today.
+  if (!can(actor, 'org.transfer_ownership')) return withWebhook;
+  return { ...withWebhook, extra_owners: extraOwners(db) };
 }
 
 function githubWebhookView(enc: string | null, publicUrl: string): OrgGithubWebhookView {

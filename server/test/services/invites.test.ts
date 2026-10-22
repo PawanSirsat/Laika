@@ -230,11 +230,14 @@ describe('creating (AC1)', () => {
     ).toBe('admin');
   });
 
-  it('lets an Owner invite an Owner', () => {
-    expect(
-      createInvite(db, owner(), { email: 'co-owner@example.test', orgRole: 'owner' }).invite
-        .org_role,
-    ).toBe('owner');
+  it('refuses even an Owner inviting an Owner: 422 use_transfer (D-104 item 2, LAI-982)', () => {
+    // There is exactly one owner; accepting this would have made a second.
+    const err = expectApiError(
+      () => createInvite(db, owner(), { email: 'co-owner@example.test', orgRole: 'owner' }),
+      'unprocessable',
+    );
+    expect(err.details).toEqual({ reason: 'use_transfer' });
+    expect(db.select().from(invites).all()).toHaveLength(0);
   });
 
   it('refuses an address that already has an active account', () => {

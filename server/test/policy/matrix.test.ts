@@ -31,8 +31,9 @@ function actor(orgRole: OrgRole, projectRole: ProjectRole | null = null): Actor 
 type OrgRow = [OrgAction, boolean, boolean, boolean, boolean];
 
 const ORG_MATRIX: OrgRow[] = [
-  // | Delete org data / transfer ownership | ✓ | — | — | — |
+  // | Delete org data | ✓ | — | — | — |
   ['org.delete', true, false, false, false],
+  // | Transfer ownership | ✓ (session only) | — | — | — |
   ['org.transfer_ownership', true, false, false, false],
   // | Org settings (AI provider, SMTP, signup mode) | ✓ | ✓ | — | — |
   ['org.settings.edit', true, true, false, false],
@@ -49,6 +50,13 @@ const ORG_MATRIX: OrgRow[] = [
   ['org.permissions.manage', true, false, false, false],
   // | Deactivate user | ✓ | ✓ | — | — |
   ['user.deactivate', true, true, false, false],
+  // | Sign a person out everywhere | ✓ | ✓ | ✓ (themselves) | ✓ (themselves) |
+  // Asked about somebody else, so the cell's tick is the grant's; the
+  // themselves half is asserted in policy-spec-drift's qualifier (LAI-981).
+  ['user.sign_out', true, true, false, false],
+  // | Issue a password-reset link | ✓ (session only) | ✓ (session only, not for the owner) | — | — |
+  // No target named; the owner half is the qualifier's, in policy-spec-drift.
+  ['user.reset_password', true, true, false, false],
   // | View the organisation | ✓ | ✓ | ✓ | ✓ |
   // Its own row rather than folded into `member_list.read` (LAI-222): the
   // response also carries the AI provider block, which is gated field-level on

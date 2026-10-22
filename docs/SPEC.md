@@ -128,7 +128,7 @@ organisation's grants for exactly these actions and no others.
 | *See everyone's analytics* | `profile.read`, `profile.activity.read`, `usage.read_people` (and LAI-957's `people.analytics.read`) |
 | *See the organisation's activity history* | `audit_log.export` |
 | *Open every project* | the implicit project role above: `lead` on every project, `viewer` for an org viewer, who stays capped |
-| *Manage people and invites* | `user.invite` (as member or viewer only), `user.deactivate` |
+| *Manage people and invites* | `user.invite` (as member or viewer only), `user.deactivate`, `user.sign_out` (somebody else; anyone signs themselves out — LAI-981), `user.reset_password` (not for the owner — LAI-983; LAI-985 moves both) |
 | *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set` |
 
 **Never grantable, owner only:** delete the organisation, transfer ownership
@@ -142,13 +142,16 @@ are not part of this.
 
 | Action | Owner | Admin | Member | Viewer |
 | --- | :---: | :---: | :---: | :---: |
-| Delete org data / transfer ownership | ✓ | — | — | — |
+| Delete org data | ✓ | — | — | — |
+| Transfer ownership | ✓ (session only) | — | — | — |
 | Org settings (AI provider, SMTP, signup mode) | ✓ | ✓ | — | — |
 | Create / archive project | ✓ | ✓ | — | — |
 | Invite users | ✓ | ✓ (as member or viewer) | — | — |
 | Change org roles | ✓ | — | — | — |
 | Set what each role may do | ✓ (session only) | — | — | — |
 | Deactivate user | ✓ | ✓ | — | — |
+| Sign a person out everywhere | ✓ | ✓ | ✓ (themselves) | ✓ (themselves) |
+| Issue a password-reset link | ✓ (session only) | ✓ (session only, not for the owner) | — | — |
 | View member list | ✓ | ✓ | ✓ | ✓ |
 | Join a `public` project | ✓ | ✓ | ✓ (as member) | ✓ (as viewer) |
 | Generate, read and revoke own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |
@@ -527,7 +530,14 @@ name. A `system.database.vacuum` would be a permission that grants nothing.
 | `profile_kind` | text | `builder` \| `manager`, default `builder` — what the member profile shows (§11.4.2, D-078). **A label, never a permission**: `can()` does not read it (§3.1) |
 | `share_local_activity` | integer | default **0** — was the developer's own half of D-079's two switches. **Read by nothing since D-102 (amended, LAI-963)**: collection follows the organisation's `developer_insights` alone (§4.2), and no endpoint writes it. Kept, not dropped, so what each person last chose is not lost |
 | `local_activity_scope` | text | `agent-repos` \| `laika-repos`, default `agent-repos` — which repositories their collector counts in: every one where they run a connected agent on that machine, or only those set up for Laika. The server cannot see a repository; it stores the choice and the collector honours it (D-079) |
+| `last_seen_at` | integer | nullable — the latest activity of a session of theirs that has since been ended (deactivation or a forced sign-out), kept because ending a session deletes its row. The API's `last_seen_at` is the later of this and their live sessions' `updated_at` (D-104 item 3, LAI-981) |
 | `created_at`, `updated_at` | integer | |
+
+**Deactivation ends access** (D-104 item 3, LAI-981). Deactivating a person
+revokes every token of theirs and deletes every session, in the same
+transaction as `is_active = 0`; reactivating restores neither — they sign in
+again and mint new tokens. *Sign a person out everywhere* (§3.1,
+`POST /users/:id/sign-out`) deletes the sessions alone and leaves tokens.
 
 **There is no `avatar_color` column** (LAI-148). This table listed one, *"derived
 from id"*, and three places disagreed about it: the server derived it from
@@ -757,7 +767,8 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `webhook.commit`, `webhook.received`, `meeting.applied`, `unlisted.logged`,
 `unlisted.promoted`, `unlisted.dismissed`, `project.context_updated`,
 `sprint.created`, `sprint.updated`, `sprint.deleted`, `sprint.tasks_changed`,
-`user.deactivated`, `user.reactivated`, `task.stale_flagged`,
+`user.deactivated`, `user.reactivated`, `user.signed_out`,
+`org.ownership_transferred`, `task.stale_flagged`,
 `heartbeat.pruned`, `invite.expired`, `meeting_review.expired`,
 `meeting_review.discarded`.
 
@@ -2197,6 +2208,28 @@ retention, by `viewed_at`).
 Indexes `(subject_id, viewed_at, id)` for the person's list, `(viewer_id)`,
 `(viewed_at)` for retention.
 
+### 4.60 `password_resets`
+
+One-time password-reset links an admin issued for somebody (D-104 item 4,
+LAI-983). Laika sends no email, so whoever holds *Manage people* issues a link
+(§3.1 *Issue a password-reset link*), shown once, and hands it over. **The rows
+are the log** of who issued a link for whom and whether it was used, as
+`analytics_views` is for reads: §4.8 gains no verb. Issuing a link revokes the
+person's earlier unused ones.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `user_id` | FK `users`, cascade — whose password it resets |
+| `token_hash` | SHA-256 of the token, unique; the token itself is never stored (§13.1, as §4.11) |
+| `created_by` | FK `users` — who issued it |
+| `expires_at` | at most 24 hours after `created_at` |
+| `used_at` | nullable — when it set a password; a used link never works again |
+| `revoked_at` | nullable — when a newer link for the same person replaced it unused |
+| `created_at` | |
+
+Indexes: unique `(token_hash)`, `(user_id)`, `(created_by)`.
+
 ## 5. Task lifecycle
 
 ```
@@ -2325,6 +2358,16 @@ table above gives `401` to both a wrong password and an unknown address.
 any account from a foreign origin **without ever submitting a guess** — a cheaper
 denial of service than the one this trade accepts, arrived at by defending
 against the expensive one. A malformed body is not an attempt either.
+
+**A password-reset link is a third way to a password, not a third credential**
+(D-104 item 4, LAI-983). An admin issues it (`POST /users/:id/reset-link`,
+§3.1, session only); `POST /password-resets/consume` is public and the token
+is its whole authority, as an invite's is. It sets the password through
+better-auth's own hasher and **ends every session of that person**. Refused
+links back off by the rule above, on their own counter: keyed on the account
+the link belongs to, and on one shared key for a link that matches nothing,
+so a `429` never says which links exist. A malformed body or a too-short
+password is not an attempt.
 
 ### 6.2 Authorisation
 
@@ -2457,6 +2500,8 @@ GET    /api/v1/org/time/solidtime            the map, the people confirmed, and 
 PUT    /api/v1/org/time/solidtime/projects   body { projects } → { projects }   PUT .../people body { people } → { people }   (owner, admin; session only)
 PUT    /api/v1/org/time/solidtime/import     body { v, members, tz, from, to, complete, entries } → what changed, and not_on_laika   (owner, admin; session only)
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only; name 1–80 chars, trimmed — Change organisation settings, LAI-984)
+                                             the owner's read adds extra_owners: [{ id, name, email }] — active owners besides orgs.owner_user_id, reported, never demoted silently (D-104 item 2)
+POST   /api/v1/org/transfer-ownership        body { user_id, confirm } — confirm is the target's email; target an active admin or member → { owner, previous_owner }; target becomes owner, caller admin, orgs.owner_user_id moves, one transaction; logged   (owner only; session only; LAI-982)
 POST   /api/v1/org/github-webhook            set or rotate the GitHub webhook secret; answers it once (session only)
 DELETE /api/v1/org/github-webhook            clear it (204; session only)
 GET    /api/v1/org/model-prices              PUT/DELETE .../model-prices/:model — API-equivalent prices (set: owner, admin; session only; LAI-773)
@@ -2464,7 +2509,14 @@ GET    /api/v1/org/permissions               what each org role is granted → {
 PUT    /api/v1/org/permissions               body { grants: { admin|member|viewer: { <capability>: bool } } } — the whole matrix, every role and capability; same answer   (owner only; session only)
 GET    /api/v1/users                         ?limit=&cursor=&updated_since=&include_inactive=
                                              cursor is (name, id) — a directory reads alphabetically
+                                             each user carries last_seen_at: their latest session activity, or null (LAI-981)
 PATCH  /api/v1/users/:id                     (role: owner only; deactivate: owner, and admin by default — LAI-958)
+                                             org_role 'owner' → 422 reason use_transfer; so is demoting or deactivating the owner orgs.owner_user_id names (LAI-982)
+                                             deactivating revokes every token and ends every session; reactivating restores neither (D-104 item 3)
+POST   /api/v1/users/:id/reset-link          → 201 { url, expires_at } — a one-time password-reset link, shown once, ≤ 24 h; revokes their earlier unused links; recorded in §4.60   (owner, and admin by default; never for the owner unless the caller is the owner; session only; LAI-983)
+POST   /api/v1/password-resets/consume       body { token, new_password } → { user_id, sessions_ended } — public; new_password as setup's (12–512); ends every session of theirs; refusals 404 unknown, 409 used / revoked / expired, 403 inactive, 429 throttled like sign-in (§6.1)
+POST   /api/v1/users/:id/sign-out            end every session, not tokens → { user_id, sessions_ended }   (themselves; anyone else: owner, and admin by default; logged — LAI-981)
+GET    /api/v1/users/:id/memberships         → { data: [{ project_id, slug, name, prefix, role, archived, joined_at }] } — membership rows only, narrowed to spaces the caller can read   (viewer+; LAI-981)
 GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind }   (owner, admin; session only)
 POST   /api/v1/users/:id/ratings             body { score, note } → 201   (owner, admin; session only; not yourself)
 GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, or a role granted *See everyone's analytics*; session only; logged, D-102)
@@ -2475,6 +2527,7 @@ GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (th
 GET    /api/v1/usage                         ?days=1–92&project=&tz= — the Usage page   (owner/admin; a member with ?project=)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
                                              POST takes optional expires_in_days: 1 | 7 | 30, default 7 (LAI-984)
+                                             an invite never grants org_role 'owner' → 422 reason use_transfer (LAI-982)
 GET    /api/v1/invites/:token                unauthenticated preview — org name, inviter, role, expiry
 DELETE /api/v1/invites/:id                   revoke a pending invite (admin+)
 POST   /api/v1/invites/:id/reissue           body { expires_in_days? } — revoke a pending or expired invite and issue a new link for the same address, role and project, in one step → 201, POST /invites' answer; 409 if accepted   (as creating it: Invite people, and only the owner for an admin invite; LAI-984)

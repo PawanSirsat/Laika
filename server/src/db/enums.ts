@@ -180,6 +180,14 @@ export const ACTIVITY_TYPES = [
   // different questions people actually ask separately.
   'user.deactivated',
   'user.reactivated',
+  // D-104 item 3 (LAI-981): every session of a person ended without
+  // deactivating them. Its own verb because "who was signed out, by whom" is
+  // neither a lock-out nor a token being revoked.
+  'user.signed_out',
+  // D-104 item 2 (LAI-982): the one owner handed the organisation to somebody
+  // else. One event for the three writes it makes, because "who owns this,
+  // since when, and who handed it over" is one question.
+  'org.ownership_transferred',
   // LAI-431. §4.8's own D-022 note already named these four as things the
   // in-process cron writes — "heartbeat pruning, stale-task flagging, invite and
   // meeting-review expiry" — while the list below had a verb for none of them.
