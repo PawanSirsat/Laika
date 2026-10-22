@@ -373,8 +373,11 @@ describe('the catalogue follows the organisation’s grants', () => {
     expect(cells(view, 'audit_log.export')).toBe('YNNN');
     expect(cells(view, 'user.invite')).toBe('YNNN');
     expect(cells(view, 'org.time.set')).toBe('YNNN');
+    // Grantable since LAI-985: *Create and archive spaces*, *Manage anyone's tokens*.
+    expect(cells(view, 'project.create')).toBe('YNNN');
+    expect(cells(view, 'token.revoke_any')).toBe('YNNN');
     // Not a capability's, so not the grant's to withdraw.
-    expect(cells(view, 'project.create')).toBe('YYNN');
+    expect(cells(view, 'webhook.configure')).toBe('YYNN');
   });
 
   it('changes the caller’s own actions with their role’s grant', () => {
