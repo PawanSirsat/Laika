@@ -2,11 +2,12 @@
 id: LAI-307
 title: 'task-markdown "clicking the rendered text opens the raw markdown; a link does not" times out waiting for the link popup in a root gate'
 area: web
-assignee: unclaimed
+assignee: strelka
 priority: p2
 depends-on: []
 discovered-from: LAI-857
-status: backlog
+status: in-progress
+started: 2026-10-22T06:24:02Z
 ---
 
 ## Goal
