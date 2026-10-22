@@ -32,7 +32,13 @@ export interface PeopleTabProps {
   readonly invitesError: unknown;
   /** `GET /capacity`, or `null` when it could not be read. */
   readonly capacity: CapacityView | null;
-  readonly canManage: boolean;
+  /**
+   * The server's answers (LAI-970), never the role: `user.invite`,
+   * `user.deactivate` and `token.list_any`, each denied until it is known.
+   */
+  readonly canInvite: boolean;
+  readonly canDeactivate: boolean;
+  readonly canListTokens: boolean;
   /** Only an owner changes roles (LAI-958); any other manager reads them as text. */
   readonly canChangeRoles: boolean;
   /** Whose row is being changed, so two clicks cannot race. */
@@ -78,7 +84,9 @@ export function PeopleTab({
   invites,
   invitesError,
   capacity,
-  canManage,
+  canInvite,
+  canDeactivate,
+  canListTokens,
   canChangeRoles,
   changing,
   roleError,
@@ -104,9 +112,10 @@ export function PeopleTab({
     meId,
     (id) => entries.get(id)?.last_seen,
   );
-  // A manager may deactivate, reactivate and open tokens for anyone but
-  // themselves; the role picker is the owner's alone (`canChangeRoles`).
-  const editable = (p: OrgUser): boolean => canManage && p.id !== meId;
+  // Whoever may deactivate (or, as owner, change roles) gets controls on
+  // anyone's row but their own; each control below asks for its own gate.
+  const canManagePeople = canChangeRoles || canDeactivate;
+  const editable = (p: OrgUser): boolean => canManagePeople && p.id !== meId;
   const selectable = shown.filter((p) => editable(p) && p.is_active);
   const live = new Set([...selected].filter((id) => selectable.some((p) => p.id === id)));
   const allTicked = selectable.length > 0 && selectable.every((p) => live.has(p.id));
@@ -138,7 +147,7 @@ export function PeopleTab({
   };
 
   const filters = FILTERS.filter(
-    ([key]) => (key !== 'viewer' || counts.viewer > 0) && (key !== 'pending' || canManage),
+    ([key]) => (key !== 'viewer' || counts.viewer > 0) && (key !== 'pending' || canInvite),
   );
 
   return (
@@ -146,7 +155,7 @@ export function PeopleTab({
       <header className="org-card-head org-people-head">
         <h2 id="org-people">People</h2>
         <p className="org-people-seats" data-seat-line>
-          {seatLine(people, invites, truncated, canManage)}
+          {seatLine(people, invites, truncated, canInvite)}
         </p>
       </header>
 
@@ -207,7 +216,7 @@ export function PeopleTab({
         )}
       </div>
 
-      {canManage && someTicked && (
+      {canManagePeople && someTicked && (
         <div className="org-bulk" role="group" aria-label="Selected people" data-people-bulk>
           <strong>{String(live.size)} selected</strong>
           {canChangeRoles && (
@@ -234,16 +243,18 @@ export function PeopleTab({
               </button>
             </>
           )}
-          <button
-            type="button"
-            className="org-bulk-action org-bulk-danger"
-            disabled={busy}
-            onClick={() => {
-              void runBulk('Deactivating', { is_active: false });
-            }}
-          >
-            Deactivate
-          </button>
+          {canDeactivate && (
+            <button
+              type="button"
+              className="org-bulk-action org-bulk-danger"
+              disabled={busy}
+              onClick={() => {
+                void runBulk('Deactivating', { is_active: false });
+              }}
+            >
+              Deactivate
+            </button>
+          )}
           {bulk !== undefined && (
             <span className="org-bulk-progress" role="status">
               {bulk}…
@@ -327,7 +338,7 @@ export function PeopleTab({
             <div className="org-people-table" role="table" aria-label="People">
               <div className="org-people-row org-people-header" role="row">
                 <span role="columnheader" className="org-people-tick">
-                  {canManage && selectable.length > 0 && (
+                  {canManagePeople && selectable.length > 0 && (
                     <input
                       ref={head}
                       type="checkbox"
@@ -480,37 +491,41 @@ export function PeopleTab({
                     <span role="cell" className="org-people-actions">
                       {mine && person.is_active && (
                         <>
-                          <button
-                            type="button"
-                            className="org-tokens-open"
-                            disabled={busy}
-                            onClick={() => {
-                              onTokens(person.id);
-                            }}
-                          >
-                            Tokens
-                          </button>
+                          {canListTokens && (
+                            <button
+                              type="button"
+                              className="org-tokens-open"
+                              disabled={busy}
+                              onClick={() => {
+                                onTokens(person.id);
+                              }}
+                            >
+                              Tokens
+                            </button>
+                          )}
                           {/* **Two verbs, and the copy says which** (D-048). */}
-                          <button
-                            type="button"
-                            className="org-deactivate"
-                            disabled={busy}
-                            onClick={() => {
-                              if (
-                                !window.confirm(
-                                  `Deactivate ${person.name}? They are locked out immediately. Their tasks, comments and history stay exactly as they are — this is not deletion.`,
-                                )
-                              ) {
-                                return;
-                              }
-                              void onChange(person.id, { is_active: false });
-                            }}
-                          >
-                            Deactivate
-                          </button>
+                          {canDeactivate && (
+                            <button
+                              type="button"
+                              className="org-deactivate"
+                              disabled={busy}
+                              onClick={() => {
+                                if (
+                                  !window.confirm(
+                                    `Deactivate ${person.name}? They are locked out immediately. Their tasks, comments and history stay exactly as they are — this is not deletion.`,
+                                  )
+                                ) {
+                                  return;
+                                }
+                                void onChange(person.id, { is_active: false });
+                              }}
+                            >
+                              Deactivate
+                            </button>
+                          )}
                         </>
                       )}
-                      {mine && !person.is_active && (
+                      {mine && !person.is_active && canDeactivate && (
                         <button
                           type="button"
                           className="org-reactivate"
@@ -537,7 +552,7 @@ export function PeopleTab({
                       ? 'Nobody has this role.'
                       : 'Check the spelling, or invite them to the organisation.'}
                   </p>
-                  {canManage && (
+                  {canInvite && (
                     <button
                       type="button"
                       className="org-people-empty-invite"
@@ -568,7 +583,7 @@ export function PeopleTab({
               {truncated ? '+' : ''}
             </span>
             <span className="org-people-foot-note">
-              {canManage
+              {canManagePeople
                 ? 'Your own row has no controls — changing your own role or locking yourself out is not something this screen offers. Project roles are managed on each project’s members screen.'
                 : 'Roles are shown here and changed by an admin. Project roles are managed on each project’s members screen.'}
             </span>

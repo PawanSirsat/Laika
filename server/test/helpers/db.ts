@@ -56,10 +56,11 @@ export function seed(db: Db, now = Date.now()): Seed {
 
   // **Unless `users` is older than its newest column.** Drizzle names every
   // declared column in an INSERT — `profile_kind` (0029, LAI-743),
-  // `local_activity_scope` (0031, LAI-751) — and `migrate.test.ts` seeds
-  // databases cut back before them; there, the row is written with the
-  // columns every version has, and the migrations give it their defaults.
-  if (hasColumn(db, 'users', 'local_activity_scope')) {
+  // `local_activity_scope` (0031, LAI-751), `last_seen_at` (0053, LAI-981) —
+  // and `migrate.test.ts` seeds databases cut back before them; there, the row
+  // is written with the columns every version has, and the migrations give it
+  // their defaults.
+  if (hasColumn(db, 'users', 'last_seen_at')) {
     db.insert(users)
       .values({
         id: userId,
@@ -92,17 +93,25 @@ export function seed(db: Db, now = Date.now()): Seed {
     `);
   }
 
-  db.insert(projects)
-    .values({
-      id: projectId,
-      orgId,
-      name: 'Laika',
-      slug: 'laika',
-      prefix: 'LAI',
-      createdAt: now,
-      updatedAt: now,
-    })
-    .run();
+  // The same for `projects` and 0051's space settings (LAI-976).
+  if (hasColumn(db, 'projects', 'former_prefixes')) {
+    db.insert(projects)
+      .values({
+        id: projectId,
+        orgId,
+        name: 'Laika',
+        slug: 'laika',
+        prefix: 'LAI',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+  } else {
+    db.run(sql`
+      INSERT INTO projects (id, org_id, name, slug, prefix, created_at, updated_at)
+      VALUES (${projectId}, ${orgId}, 'Laika', 'laika', 'LAI', ${now}, ${now})
+    `);
+  }
 
   // This helper inserts the project row directly rather than going through
   // `createProject`, so it has to seed the statuses itself (LAI-738). Without

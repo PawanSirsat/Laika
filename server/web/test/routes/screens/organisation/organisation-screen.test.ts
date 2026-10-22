@@ -79,11 +79,11 @@ void describe('nothing is rendered that no endpoint serves', () => {
 });
 
 void describe('what it does render is gated the way the server is', () => {
-  void test('invite management is behind canManageOrg', () => {
+  void test('invite management is behind the effective user.invite action', () => {
     // Verified against a running instance: a viewer gets 403 on GET /invites
     // and 200 on GET /users. The screen must not offer what the server refuses.
-    assert.match(screen, /canManageOrg/);
-    assert.match(screen, /\{canManage &&/, 'the invites section is not conditional');
+    assert.match(screen, /user\.invite/);
+    assert.match(screen, /\{canInvite &&/, 'the invites section is not conditional');
   });
 
   void test('the one-time link says it is one-time', () => {

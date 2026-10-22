@@ -29,6 +29,7 @@ export const COLLECTED =
 
 /** The grant that lets a role see a person's analytics (D-102 rule 6, LAI-958). */
 const SEE_ANALYTICS = 'see_people_analytics';
+const CHANGE_ORG_SETTINGS = 'change_org_settings';
 
 /**
  * Who can see what is collected, as the notice says it (LAI-971): the owner,
@@ -45,6 +46,16 @@ export function collectionAudience(permissions: OrgPermissions | undefined): str
   const names = ['The owner', ...granted];
   const last = names.pop() ?? '';
   return names.length === 0 ? last : `${names.join(', ')} and ${last}`;
+}
+
+export function collectionManager(permissions: OrgPermissions | undefined): string {
+  if (permissions === undefined) return 'the owner and anyone they grant it';
+  const granted = permissions.roles
+    .filter((role) => permissions.grants[role]?.[CHANGE_ORG_SETTINGS] === true)
+    .map((role) => `${role}s`);
+  if (granted.length === 0) return 'the owner';
+  if (granted.length === 1) return `the owner and ${granted[0]}`;
+  return `the owner, ${granted.slice(0, -1).join(', ')} and ${granted.at(-1) ?? ''}`;
 }
 
 const SCOPES: Readonly<Record<LocalActivityScope, { label: string; hint: string }>> = {
@@ -86,10 +97,11 @@ function said(cause: unknown, fallback: string): string {
  * this says so.
  */
 export function ShareActivity({
-  canManageOrg,
+  canSetInsights,
   origin = window.location.origin,
 }: {
-  readonly canManageOrg: boolean;
+  /** `org.developer_insights.set`, as the server reports it — offered the Organisation link. */
+  readonly canSetInsights: boolean;
   /** This board's address, for the OpenTelemetry block (LAI-773). */
   readonly origin?: string;
 }) {
@@ -233,12 +245,12 @@ export function ShareActivity({
         <p className="conn-note conn-note-warn" data-state="org-off">
           <strong>Developer insights are off for this organisation</strong>, so nothing is collected
           from your machine.{' '}
-          {canManageOrg ? (
+          {canSetInsights ? (
             <>
               You can turn them on in <a href="/organisation?tab=overview">Organisation</a>.
             </>
           ) : (
-            'An owner or admin can turn them on.'
+            `Only ${collectionManager(permissions)} can turn them on.`
           )}
         </p>
       ) : (
@@ -248,13 +260,13 @@ export function ShareActivity({
             {collectionAudience(permissions)} can see it, and you can see who looked.{' '}
             <a href="#share-held">See what the board holds for you</a>, and your own time on{' '}
             <a href="/my-day">My day</a>.{' '}
-            {canManageOrg ? (
+            {canSetInsights ? (
               <>
                 You can turn Developer insights off in{' '}
                 <a href="/organisation?tab=overview">Organisation</a>.
               </>
             ) : (
-              'Only an owner or admin can turn it off.'
+              `Only ${collectionManager(permissions)} can turn it off.`
             )}
           </p>
 

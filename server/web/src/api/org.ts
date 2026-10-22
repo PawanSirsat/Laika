@@ -111,3 +111,32 @@ export function rotateGithubWebhookSecret(): Promise<GithubWebhookSecret> {
 export function clearGithubWebhookSecret(): Promise<void> {
   return request<void>('/org/github-webhook', { method: 'DELETE' });
 }
+
+/**
+ * The organisation's pulse (`GET /org/overview`, LAI-986; the tiles are
+ * LAI-989). Every number is the server's: tasks are counted over the spaces
+ * the caller can open, so a private space they cannot see is in no figure.
+ * Mirrors `OrgOverviewView` in `server/src/services/org-overview.ts`, paired in
+ * `test/api/view-type-drift.test.ts`.
+ */
+export interface OrgOverview {
+  readonly people: {
+    /** Active people in the organisation. */
+    readonly active: number;
+    /** Of those, seen signed in at or after `since`. */
+    readonly seen_this_week: number;
+    /** Unix-ms: the start of the last seven days, not of the calendar week. */
+    readonly since: number;
+  };
+  readonly tasks: {
+    /** Not done and not cancelled. */
+    readonly open: number;
+    readonly in_review: number;
+    readonly blocked: number;
+    readonly overdue: number;
+  };
+}
+
+export function getOrgOverview(signal?: AbortSignal): Promise<OrgOverview> {
+  return request<OrgOverview>('/org/overview', signal === undefined ? {} : { signal });
+}

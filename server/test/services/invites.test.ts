@@ -230,11 +230,14 @@ describe('creating (AC1)', () => {
     ).toBe('admin');
   });
 
-  it('lets an Owner invite an Owner', () => {
-    expect(
-      createInvite(db, owner(), { email: 'co-owner@example.test', orgRole: 'owner' }).invite
-        .org_role,
-    ).toBe('owner');
+  it('refuses even an Owner inviting an Owner: 422 use_transfer (D-104 item 2, LAI-982)', () => {
+    // There is exactly one owner; accepting this would have made a second.
+    const err = expectApiError(
+      () => createInvite(db, owner(), { email: 'co-owner@example.test', orgRole: 'owner' }),
+      'unprocessable',
+    );
+    expect(err.details).toEqual({ reason: 'use_transfer' });
+    expect(db.select().from(invites).all()).toHaveLength(0);
   });
 
   it('refuses an address that already has an active account', () => {
@@ -548,6 +551,8 @@ describe('consuming (AC3)', () => {
     expect(row?.actorId).toBe(invitee);
     expect(JSON.parse(row?.payloadJson ?? '{}')).toEqual({
       user_id: invitee,
+      // Named beside the id (LAI-984).
+      user_name: db.select().from(users).where(eq(users.id, invitee)).get()?.name,
       org_role: 'viewer',
       via: 'invite',
       invite_id: invite.id,
@@ -581,6 +586,7 @@ describe('consuming (AC3)', () => {
     expect(scoped).toHaveLength(1);
     expect(JSON.parse(scoped[0]?.payloadJson ?? '{}')).toEqual({
       user_id: invitee,
+      user_name: db.select().from(users).where(eq(users.id, invitee)).get()?.name,
       role: 'lead',
       via: 'invite',
     });

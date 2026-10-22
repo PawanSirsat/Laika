@@ -120,6 +120,15 @@ const PAIRS: readonly Pair[] = [
     client: 'Org',
     clientFile: 'org.ts',
   },
+  // The organisation's pulse (LAI-986's endpoint, LAI-989's tiles), paired the
+  // moment the mirror existed. The server's census listed it in UNPAIRED until
+  // then; that entry is stale from this commit (CLAUDE.md §4.4).
+  {
+    server: 'OrgOverviewView',
+    serverFile: 'services/org-overview.ts',
+    client: 'OrgOverview',
+    clientFile: 'org.ts',
+  },
   {
     server: 'OrgAiView',
     serverFile: 'services/orgs.ts',

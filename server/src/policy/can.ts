@@ -21,7 +21,12 @@
  */
 
 import { ApiError } from '../errors.ts';
-import { type OrgRole, type ProjectRole, type TokenScope } from '../db/enums.ts';
+import {
+  type OrgRole,
+  type ProjectRole,
+  type TaskCreateMinRole,
+  type TokenScope,
+} from '../db/enums.ts';
 import {
   type Action,
   isReadAction,
@@ -65,6 +70,32 @@ export interface Actor {
    * answer for every role from the actor it already has.
    */
   orgGrants?: OrgGrants | null | undefined;
+  /**
+   * Each project's own rules (D-103 items 6 and 7, LAI-976), by project id,
+   * loaded by the caller with the actor as the grants are. A project absent
+   * from the map — or no map at all — has the defaults: members create tasks,
+   * agents may write. `can()` reads the entry for `resource.projectId`, so a
+   * caller cannot ask about one project with another's rules.
+   */
+  projectRules?: ReadonlyMap<string, ProjectRules> | null | undefined;
+}
+
+/** What a space decides for itself (§4.3, D-103). */
+export interface ProjectRules {
+  /** Who may create tasks: `member` (and up) or `lead` only. Viewers never. */
+  taskCreateMinRole: TaskCreateMinRole;
+  /** `false`: an agent token may only read in this project. People are unaffected. */
+  agentsAllowed: boolean;
+}
+
+export const DEFAULT_PROJECT_RULES: ProjectRules = {
+  taskCreateMinRole: 'member',
+  agentsAllowed: true,
+};
+
+export function rulesFor(actor: Actor, projectId: string | undefined): ProjectRules {
+  if (projectId === undefined) return DEFAULT_PROJECT_RULES;
+  return actor.projectRules?.get(projectId) ?? DEFAULT_PROJECT_RULES;
 }
 
 export interface Resource {
@@ -246,7 +277,8 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
   const isAdminUp = orgRole === 'owner' || orgRole === 'admin';
 
   switch (action) {
-    // | Delete org data / transfer ownership | ✓ | — | — | — |
+    // | Delete org data | ✓ | — | — | — |
+    // | Transfer ownership | ✓ (session only) | — | — | — |
     // | Change org roles | ✓ | — | — | — |
     // | Set what each role may do | ✓ (session only) | — | — | — |
     //
@@ -267,9 +299,11 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
       return granted(actor, action);
 
     // | Create / archive project | ✓ | ✓ | — | — |
+    //
+    // *Create and archive spaces* (D-104 item 6, LAI-985).
     case 'project.create':
     case 'project.archive':
-      return isAdminUp;
+      return granted(actor, action);
 
     // | Invite users | ✓ | ✓ (as member or viewer) | — | — |
     //
@@ -285,6 +319,24 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // | Deactivate user | ✓ | ✓ | — | — |
     case 'user.deactivate':
       return granted(actor, action);
+
+    // | Sign a person out everywhere | ✓ | ✓ | ✓ (themselves) | ✓ (themselves) |
+    //
+    // Anyone may end their own sessions; ending somebody else's is the power
+    // to deactivate them, short of doing it (D-104 item 3, LAI-981), so it is
+    // carried with `user.deactivate` by *Deactivate people and reset access*
+    // (LAI-985).
+    case 'user.sign_out':
+      return resource.targetUserId === actor.userId || granted(actor, action);
+
+    // | Issue a password-reset link | ✓ (session only) | ✓ (session only, not for the owner) | — | — |
+    //
+    // D-104 item 4 (LAI-983): a link for the owner is the owner's account, so
+    // only the owner issues one — the `user.invite` shape, on the target's
+    // role. Carried by *Deactivate people and reset access* (LAI-985).
+    case 'user.reset_password':
+      if (!granted(actor, action)) return false;
+      return orgRole === 'owner' || resource.targetOrgRole !== 'owner';
 
     // | View the organisation | ✓ | ✓ | ✓ | ✓ |
     //
@@ -336,9 +388,11 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
       return resource.ownerId === actor.userId;
 
     // | List / revoke **anyone's** token | ✓ | ✓ | — | — |
+    //
+    // *Manage anyone's tokens* (D-104 item 6, LAI-985).
     case 'token.list_any':
     case 'token.revoke_any':
-      return isAdminUp;
+      return granted(actor, action);
 
     // | Log own unlisted work | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
     //
@@ -566,6 +620,13 @@ function canProjectAction(
     case 'task.assign_sprint':
       return isMemberUp;
 
+    // | Create tasks | ✓ | ✓ (unless space admins only) | — |
+    //
+    // D-103 item 6: the space decides between its members and its leads.
+    // A viewer is below both, so never.
+    case 'task.create':
+      return rulesFor(actor, resource.projectId).taskCreateMinRole === 'lead' ? isLead : isMemberUp;
+
     // | Watch / unwatch a task | ✓ | ✓ | ✓ |
     //
     // Every project role, including `viewer`: anyone who may read a task may
@@ -585,7 +646,7 @@ function canProjectAction(
     case 'task.watch':
       return true;
 
-    // | Create / edit / move any task | ✓ | ✓ | — |
+    // | Edit / move any task | ✓ | ✓ | — |
     case 'task.write':
       return isMemberUp;
 
@@ -639,6 +700,14 @@ function canProjectAction(
     // as sprints are a lead's. Soft: a budget refuses nothing to anybody.
     case 'budget.set':
       return isLead;
+
+    // | Leave a project | ✓ | ✓ | ✓ |
+    //
+    // D-103 item 5. The last lead is refused by the service (409
+    // `last_lead`), not here: that is a fact about the other rows, which a
+    // pure function is not given.
+    case 'project.leave':
+      return true;
 
     default:
       return assertNever(action);
@@ -728,7 +797,21 @@ export function can(principal: Principal, action: Action, resource: Resource = {
 
   if (!allowed) return false;
 
+  if (!agentsMay(actor, action, resource)) return false;
+
   return tokenAllows(actor, action, resource);
+}
+
+/**
+ * D-103 item 7 (LAI-976): in a space whose agents are off, a token — which is
+ * how an agent acts (§7) — reads and does nothing else. A narrowing, like the
+ * token's own scope, so a person on a web session is never touched by it.
+ */
+function agentsMay(actor: Actor, action: Action, resource: Resource): boolean {
+  if (actor.token === null || actor.token === undefined) return true;
+  if (!isProjectAction(action)) return true;
+  if (rulesFor(actor, resource.projectId).agentsAllowed) return true;
+  return isReadAction(action);
 }
 
 /**
@@ -757,6 +840,33 @@ export function assertCan(principal: Principal, action: Action, resource: Resour
       action,
       reason: 'session_required',
     });
+  }
+
+  // D-103's two space rules, said as such for the same reason: an agent told
+  // only `forbidden` cannot tell "this space keeps agents out" from "you may
+  // not", and a member cannot tell "space admins only" from either.
+  if (!isSystem(principal)) {
+    const rules = rulesFor(principal, resource.projectId);
+    const relaxed = { ...principal, projectRules: null };
+
+    if (!agentsMay(principal, action, resource) && can(relaxed, action, resource)) {
+      throw new ApiError('forbidden', 'This space does not let agents make changes', {
+        action,
+        reason: 'agents_off',
+      });
+    }
+
+    if (
+      action === 'task.create' &&
+      rules.taskCreateMinRole === 'lead' &&
+      can(relaxed, action, resource)
+    ) {
+      throw new ApiError('forbidden', 'Only space admins may create tasks in this space', {
+        action,
+        reason: 'task_create_min_role',
+        task_create_min_role: rules.taskCreateMinRole,
+      });
+    }
   }
 
   throw new ApiError('forbidden', 'You do not have permission to perform this action', {

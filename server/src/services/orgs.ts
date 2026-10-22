@@ -15,6 +15,7 @@ import { orgs } from '../db/schema.ts';
 import { encryptSecret } from '../secrets.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
+import { extraOwners } from './users.ts';
 
 /**
  * The organisation itself (SPEC §4.2, §6.4, LAI-222).
@@ -120,6 +121,14 @@ export interface OrgView {
   ai?: OrgAiView;
   /** Present only for a caller who passes `webhook.configure`. Absent, not null. */
   github_webhook?: OrgGithubWebhookView;
+  /**
+   * Active owners besides the one `orgs.owner_user_id` names — normally empty
+   * (D-104 item 2, LAI-982). Organisations from before D-104 may have more
+   * than one, and they are **reported here, not demoted silently**. Present
+   * only for a caller who passes `org.transfer_ownership`: the owner, signed
+   * in, who is the one able to act on it. Absent, not null.
+   */
+  extra_owners?: { id: string; name: string; email: string }[];
 }
 
 /**
@@ -167,11 +176,13 @@ export function getOrg(db: Db, actor: ResolvedActor, publicUrl = ''): OrgView {
     : view;
 
   // Its own grade: §3.1's *Configure webhooks*, session only (LAI-753).
-  if (!can(actor, 'webhook.configure')) return withAi;
-  return {
-    ...withAi,
-    github_webhook: githubWebhookView(row.githubWebhookSecretEnc, publicUrl),
-  };
+  const withWebhook: OrgView = can(actor, 'webhook.configure')
+    ? { ...withAi, github_webhook: githubWebhookView(row.githubWebhookSecretEnc, publicUrl) }
+    : withAi;
+
+  // The owner's, signed in (LAI-982): who else holds the role today.
+  if (!can(actor, 'org.transfer_ownership')) return withWebhook;
+  return { ...withWebhook, extra_owners: extraOwners(db) };
 }
 
 function githubWebhookView(enc: string | null, publicUrl: string): OrgGithubWebhookView {
@@ -289,6 +300,11 @@ function keyLast4(last4: string | null): string | null {
  * impossible to express.
  */
 export interface UpdateOrgInput {
+  /**
+   * The organisation's name (D-104 item 7, LAI-984), 1–80 characters, trimmed
+   * by the route. Writes no `activity` row: §4.8 has no verb for it.
+   */
+  name?: string | undefined;
   presence_enabled?: boolean | undefined;
   /** D-079's org switch (LAI-751). Writes no `activity` row: §4.8 has no verb for it. */
   developer_insights?: boolean | undefined;
@@ -396,59 +412,67 @@ export function updateOrg(
 
   const orgId = requireOrgId(db);
 
-  if (input.presence_enabled !== undefined) {
-    db.update(orgs)
-      .set({ presenceEnabled: input.presence_enabled ? 1 : 0, updatedAt: now })
-      .where(eq(orgs.id, orgId))
-      .run();
-  }
+  // One transaction, so a request refused by the AI settings' check below
+  // changes nothing — not even the name or presence given beside it.
+  db.transaction(() => {
+    if (input.name !== undefined) {
+      db.update(orgs).set({ name: input.name, updatedAt: now }).where(eq(orgs.id, orgId)).run();
+    }
 
-  if (input.developer_insights !== undefined) {
-    db.update(orgs)
-      .set({ developerInsights: input.developer_insights ? 1 : 0, updatedAt: now })
-      .where(eq(orgs.id, orgId))
-      .run();
-  }
+    if (input.presence_enabled !== undefined) {
+      db.update(orgs)
+        .set({ presenceEnabled: input.presence_enabled ? 1 : 0, updatedAt: now })
+        .where(eq(orgs.id, orgId))
+        .run();
+    }
 
-  const touchesAi =
-    input.ai_provider !== undefined ||
-    input.ai_base_url !== undefined ||
-    input.ai_api_key !== undefined;
+    if (input.developer_insights !== undefined) {
+      db.update(orgs)
+        .set({ developerInsights: input.developer_insights ? 1 : 0, updatedAt: now })
+        .where(eq(orgs.id, orgId))
+        .run();
+    }
 
-  if (touchesAi) {
-    const row = db
-      .select({
-        provider: orgs.aiProvider,
-        baseUrl: orgs.aiBaseUrl,
-        keyEnc: orgs.aiApiKeyEnc,
-        keyLast4: orgs.aiKeyLast4,
-      })
-      .from(orgs)
-      .where(eq(orgs.id, orgId))
-      .get();
+    const touchesAi =
+      input.ai_provider !== undefined ||
+      input.ai_base_url !== undefined ||
+      input.ai_api_key !== undefined;
 
-    const next = nextAiSettings(
-      {
-        provider: row?.provider ?? null,
-        baseUrl: row?.baseUrl ?? null,
-        keyEnc: row?.keyEnc ?? null,
-        keyLast4: row?.keyLast4 ?? null,
-      },
-      input,
-      serverSecret,
-    );
+    if (touchesAi) {
+      const row = db
+        .select({
+          provider: orgs.aiProvider,
+          baseUrl: orgs.aiBaseUrl,
+          keyEnc: orgs.aiApiKeyEnc,
+          keyLast4: orgs.aiKeyLast4,
+        })
+        .from(orgs)
+        .where(eq(orgs.id, orgId))
+        .get();
 
-    db.update(orgs)
-      .set({
-        aiProvider: next.provider,
-        aiBaseUrl: next.baseUrl,
-        aiApiKeyEnc: next.keyEnc,
-        aiKeyLast4: next.keyLast4,
-        updatedAt: now,
-      })
-      .where(eq(orgs.id, orgId))
-      .run();
-  }
+      const next = nextAiSettings(
+        {
+          provider: row?.provider ?? null,
+          baseUrl: row?.baseUrl ?? null,
+          keyEnc: row?.keyEnc ?? null,
+          keyLast4: row?.keyLast4 ?? null,
+        },
+        input,
+        serverSecret,
+      );
+
+      db.update(orgs)
+        .set({
+          aiProvider: next.provider,
+          aiBaseUrl: next.baseUrl,
+          aiApiKeyEnc: next.keyEnc,
+          aiKeyLast4: next.keyLast4,
+          updatedAt: now,
+        })
+        .where(eq(orgs.id, orgId))
+        .run();
+    }
+  });
 
   return getOrg(db, actor, publicUrl);
 }

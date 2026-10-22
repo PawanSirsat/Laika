@@ -128,8 +128,18 @@ organisation's grants for exactly these actions and no others.
 | *See everyone's analytics* | `profile.read`, `profile.activity.read`, `usage.read_people` (and LAI-957's `people.analytics.read`) |
 | *See the organisation's activity history* | `audit_log.export` |
 | *Open every project* | the implicit project role above: `lead` on every project, `viewer` for an org viewer, who stays capped |
-| *Manage people and invites* | `user.invite` (as member or viewer only), `user.deactivate` |
+| *Invite people* | `user.invite` (as member or viewer only) |
+| *Deactivate people and reset access* | `user.deactivate`, `user.sign_out` (somebody else; anyone signs themselves out — LAI-981), `user.reset_password` (not for the owner — LAI-983) |
+| *Create and archive spaces* | `project.create`, `project.archive` |
+| *Manage anyone's tokens* | `token.list_any`, `token.revoke_any` |
 | *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set` |
+
+*Invite people* and *Deactivate people and reset access* were one
+capability, *Manage people and invites*, until D-104 item 6 (LAI-985); an
+organisation that had stored a choice for it holds that choice for both. Each
+capability carries a one-line `description` from the server (§6.4's
+`GET /org/permissions`), so a screen explains a switch without inventing the
+words.
 
 **Never grantable, owner only:** delete the organisation, transfer ownership
 (`org.delete`, `org.transfer_ownership`), change org roles (`user.set_role`)
@@ -142,13 +152,16 @@ are not part of this.
 
 | Action | Owner | Admin | Member | Viewer |
 | --- | :---: | :---: | :---: | :---: |
-| Delete org data / transfer ownership | ✓ | — | — | — |
+| Delete org data | ✓ | — | — | — |
+| Transfer ownership | ✓ (session only) | — | — | — |
 | Org settings (AI provider, SMTP, signup mode) | ✓ | ✓ | — | — |
 | Create / archive project | ✓ | ✓ | — | — |
 | Invite users | ✓ | ✓ (as member or viewer) | — | — |
 | Change org roles | ✓ | — | — | — |
 | Set what each role may do | ✓ (session only) | — | — | — |
 | Deactivate user | ✓ | ✓ | — | — |
+| Sign a person out everywhere | ✓ | ✓ | ✓ (themselves) | ✓ (themselves) |
+| Issue a password-reset link | ✓ (session only) | ✓ (session only, not for the owner) | — | — |
 | View member list | ✓ | ✓ | ✓ | ✓ |
 | Join a `public` project | ✓ | ✓ | ✓ (as member) | ✓ (as viewer) |
 | Generate, read and revoke own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |
@@ -406,7 +419,8 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Apply or remove a task's tags | ✓ | ✓ | — |
 | Rename or delete a tag project-wide | ✓ | — | — |
 | Assign tasks into or out of a sprint | ✓ | ✓ | — |
-| Create / edit / move any task | ✓ | ✓ | — |
+| Create tasks | ✓ | ✓ (unless space admins only) | — |
+| Edit / move any task | ✓ | ✓ | — |
 | Claim a task (`start_working`) | ✓ | ✓ | — |
 | Assign a task to someone else | ✓ | ✓ | — |
 | Add comment | ✓ | ✓ | — |
@@ -418,6 +432,21 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Apply a meeting-diff proposal | ✓ | ✓ | — |
 | Read a project's token totals | ✓ | ✓ | ✓ |
 | Set token budgets | ✓ (session only) | — | — |
+| Leave a project | ✓ | ✓ | ✓ |
+
+**Per-space rules (D-103, LAI-976).** *Create tasks* follows the space's
+`task_create_min_role` (§4.3): `member`, the default, is the cell as written;
+`lead` takes it from members, so only space admins (and org Owners and Admins,
+as implicit leads) create tasks there. A viewer never does. It holds on every
+path that makes a task — REST, MCP, a meeting review and a promoted unlisted
+note — because all of them create through one service that asks `can()`.
+**When a space's `agents_allowed` is off,
+agent tokens may read and nothing else there**: every other row is refused to
+a token in that space, as a `read_only` token's would be, and people on a web
+session are unaffected. A refusal by either rule is `403 forbidden` with
+`details.reason` `task_create_min_role` or `agents_off`. *Leave a project*
+refuses the last lead `409 conflict` with `details.reason: last_lead` — hand
+over first.
 
 ### 3.3 The `can()` module is the only authority
 
@@ -511,7 +540,14 @@ name. A `system.database.vacuum` would be a permission that grants nothing.
 | `profile_kind` | text | `builder` \| `manager`, default `builder` — what the member profile shows (§11.4.2, D-078). **A label, never a permission**: `can()` does not read it (§3.1) |
 | `share_local_activity` | integer | default **0** — was the developer's own half of D-079's two switches. **Read by nothing since D-102 (amended, LAI-963)**: collection follows the organisation's `developer_insights` alone (§4.2), and no endpoint writes it. Kept, not dropped, so what each person last chose is not lost |
 | `local_activity_scope` | text | `agent-repos` \| `laika-repos`, default `agent-repos` — which repositories their collector counts in: every one where they run a connected agent on that machine, or only those set up for Laika. The server cannot see a repository; it stores the choice and the collector honours it (D-079) |
+| `last_seen_at` | integer | nullable — the latest activity of a session of theirs that has since been ended (deactivation or a forced sign-out), kept because ending a session deletes its row. The API's `last_seen_at` is the later of this and their live sessions' `updated_at` (D-104 item 3, LAI-981) |
 | `created_at`, `updated_at` | integer | |
+
+**Deactivation ends access** (D-104 item 3, LAI-981). Deactivating a person
+revokes every token of theirs and deletes every session, in the same
+transaction as `is_active = 0`; reactivating restores neither — they sign in
+again and mint new tokens. *Sign a person out everywhere* (§3.1,
+`POST /users/:id/sign-out`) deletes the sessions alone and leaves tokens.
 
 **There is no `avatar_color` column** (LAI-148). This table listed one, *"derived
 from id"*, and three places disagreed about it: the server derived it from
@@ -560,6 +596,11 @@ future multi-org becomes a migration rather than a rewrite.
 | `repo` | nullable — `owner/name` of the git repository this project tracks. Maps an incoming heartbeat's `repo` (§9.1) to a project; without it presence cannot be attributed. A full remote URL stored here still matches: §9.1 normalises both sides. |
 | `visibility` | `public` (org members may self-join) \| `private` |
 | `context_md` | text — the shared project brief served to agents (§7.1) |
+| `board_hide_done_days` | nullable integer — finished work older than this many days leaves the board; null never (LAI-266) |
+| `color` | nullable — one of the design's palette, `black` \| `violet` \| `teal` \| `blue` \| `amber` \| `magenta` \| `red` \| `green`; null until one is picked (D-103) |
+| `task_create_min_role` | `member` (default) \| `lead` — who may create tasks (§3.2, D-103) |
+| `agents_allowed` | boolean, default true — off, agent tokens only read here (§3.2, D-103) |
+| `former_prefixes` | JSON array of every prefix the project carried before `prefix`. A task stores its `number`, not its key, so a new prefix re-keys every task; a key resolves against `prefix` first and these second, so every old key keeps naming its task. Unique across the org together with `prefix`, enforced in code (D-103) |
 | `archived_at` | nullable |
 
 ### 4.4 `project_memberships`
@@ -736,7 +777,8 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `webhook.commit`, `webhook.received`, `meeting.applied`, `unlisted.logged`,
 `unlisted.promoted`, `unlisted.dismissed`, `project.context_updated`,
 `sprint.created`, `sprint.updated`, `sprint.deleted`, `sprint.tasks_changed`,
-`user.deactivated`, `user.reactivated`, `task.stale_flagged`,
+`user.deactivated`, `user.reactivated`, `user.signed_out`,
+`org.ownership_transferred`, `task.stale_flagged`,
 `heartbeat.pruned`, `invite.expired`, `meeting_review.expired`,
 `meeting_review.discarded`.
 
@@ -2178,6 +2220,29 @@ retention, by `viewed_at`).
 Indexes `(subject_id, viewed_at, id)` for the person's list, `(viewer_id)`,
 `(viewed_at)` for retention.
 
+### 4.60 `password_resets`
+
+One-time password-reset links an admin issued for somebody (D-104 item 4,
+LAI-983). Laika sends no email, so whoever holds *Deactivate people and reset
+access* issues a link (§3.1 *Issue a password-reset link*), shown once, and
+hands it over. **The rows
+are the log** of who issued a link for whom and whether it was used, as
+`analytics_views` is for reads: §4.8 gains no verb. Issuing a link revokes the
+person's earlier unused ones.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `user_id` | FK `users`, cascade — whose password it resets |
+| `token_hash` | SHA-256 of the token, unique; the token itself is never stored (§13.1, as §4.11) |
+| `created_by` | FK `users` — who issued it |
+| `expires_at` | at most 24 hours after `created_at` |
+| `used_at` | nullable — when it set a password; a used link never works again |
+| `revoked_at` | nullable — when a newer link for the same person replaced it unused |
+| `created_at` | |
+
+Indexes: unique `(token_hash)`, `(user_id)`, `(created_by)`.
+
 ## 5. Task lifecycle
 
 ```
@@ -2306,6 +2371,16 @@ table above gives `401` to both a wrong password and an unknown address.
 any account from a foreign origin **without ever submitting a guess** — a cheaper
 denial of service than the one this trade accepts, arrived at by defending
 against the expensive one. A malformed body is not an attempt either.
+
+**A password-reset link is a third way to a password, not a third credential**
+(D-104 item 4, LAI-983). An admin issues it (`POST /users/:id/reset-link`,
+§3.1, session only); `POST /password-resets/consume` is public and the token
+is its whole authority, as an invite's is. It sets the password through
+better-auth's own hasher and **ends every session of that person**. Refused
+links back off by the rule above, on their own counter: keyed on the account
+the link belongs to, and on one shared key for a link that matches nothing,
+so a `429` never says which links exist. A malformed body or a too-short
+password is not an attempt.
 
 ### 6.2 Authorisation
 
@@ -2437,15 +2512,26 @@ PUT    /api/v1/me/time/solidtime/import      body { v, member_id, tz, from, to, 
 GET    /api/v1/org/time/solidtime            the map, the people confirmed, and people not on Laika   (owner, admin; session only)
 PUT    /api/v1/org/time/solidtime/projects   body { projects } → { projects }   PUT .../people body { people } → { people }   (owner, admin; session only)
 PUT    /api/v1/org/time/solidtime/import     body { v, members, tz, from, to, complete, entries } → what changed, and not_on_laika   (owner, admin; session only)
-GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only)
+GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only; name 1–80 chars, trimmed — Change organisation settings, LAI-984)
+                                             the owner's read adds extra_owners: [{ id, name, email }] — active owners besides orgs.owner_user_id, reported, never demoted silently (D-104 item 2)
+POST   /api/v1/org/transfer-ownership        body { user_id, confirm } — confirm is the target's email; target an active admin or member → { owner, previous_owner }; target becomes owner, caller admin, orgs.owner_user_id moves, one transaction; logged   (owner only; session only; LAI-982)
 POST   /api/v1/org/github-webhook            set or rotate the GitHub webhook secret; answers it once (session only)
 DELETE /api/v1/org/github-webhook            clear it (204; session only)
 GET    /api/v1/org/model-prices              PUT/DELETE .../model-prices/:model — API-equivalent prices (set: owner, admin; session only; LAI-773)
+GET    /api/v1/org/overview                  people seen this week and open / in review / blocked / overdue counts over the spaces the caller can read → { people, tasks }   (viewer+; LAI-986)
 GET    /api/v1/org/permissions               what each org role is granted → { roles, capabilities, grants, owner_locked, updated_at, updated_by }   (viewer+; LAI-958)
 PUT    /api/v1/org/permissions               body { grants: { admin|member|viewer: { <capability>: bool } } } — the whole matrix, every role and capability; same answer   (owner only; session only)
 GET    /api/v1/users                         ?limit=&cursor=&updated_since=&include_inactive=
                                              cursor is (name, id) — a directory reads alphabetically
+                                             each user carries last_seen_at: their latest session activity, or null (LAI-981)
 PATCH  /api/v1/users/:id                     (role: owner only; deactivate: owner, and admin by default — LAI-958)
+                                             org_role 'owner' → 422 reason use_transfer; so is demoting or deactivating the owner orgs.owner_user_id names (LAI-982)
+                                             deactivating takes open_tasks: "unassign" | { reassign_to } — 409 without it while they hold open tasks (LAI-986)
+                                             deactivating revokes every token and ends every session; reactivating restores neither (D-104 item 3)
+POST   /api/v1/users/:id/reset-link          → 201 { url, expires_at } — a one-time password-reset link, shown once, ≤ 24 h; revokes their earlier unused links; recorded in §4.60   (owner, and admin by default; never for the owner unless the caller is the owner; session only; LAI-983)
+POST   /api/v1/password-resets/consume       body { token, new_password } → { user_id, sessions_ended } — public; new_password as setup's (12–512); ends every session of theirs; refusals 404 unknown, 409 used / revoked / expired, 403 inactive, 429 throttled like sign-in (§6.1)
+POST   /api/v1/users/:id/sign-out            end every session, not tokens → { user_id, sessions_ended }   (themselves; anyone else: owner, and admin by default; logged — LAI-981)
+GET    /api/v1/users/:id/memberships         → { data: [{ project_id, slug, name, prefix, role, archived, joined_at }] } — membership rows only, narrowed to spaces the caller can read   (viewer+; LAI-981)
 GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind }   (owner, admin; session only)
 POST   /api/v1/users/:id/ratings             body { score, note } → 201   (owner, admin; session only; not yourself)
 GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, or a role granted *See everyone's analytics*; session only; logged, D-102)
@@ -2455,13 +2541,20 @@ GET    /api/v1/me/analytics-views            ?limit=&cursor= — who looked at t
 GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner / a role granted *See everyone's analytics*; session only; logged, D-102)
 GET    /api/v1/usage                         ?days=1–92&project=&tz= — the Usage page   (owner/admin; a member with ?project=)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
+                                             POST takes optional expires_in_days: 1 | 7 | 30, default 7 (LAI-984)
+                                             an invite never grants org_role 'owner' → 422 reason use_transfer (LAI-982)
 GET    /api/v1/invites/:token                unauthenticated preview — org name, inviter, role, expiry
 DELETE /api/v1/invites/:id                   revoke a pending invite (admin+)
+POST   /api/v1/invites/:id/reissue           body { expires_in_days? } — revoke a pending or expired invite and issue a new link for the same address, role and project, in one step → 201, POST /invites' answer; 409 if accepted   (as creating it: Invite people, and only the owner for an admin invite; LAI-984)
 GET    /api/v1/projects                      POST /api/v1/projects   (admin+)
        └ each entry adds five fields §4.3 does not store — see below
+       └ ?archived=include|only — archived projects whole rather than as tombstones, to their members and to `project.archive` holders; absent is unchanged (D-103)
 GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
+       └ PATCH takes { name, description, repo, visibility, color, prefix, task_create_min_role, agents_allowed, board_hide_done_days, archived } (lead+; archived: project.archive). A new prefix keeps every old key resolving; one another project holds is 409 on `prefix`, and one another project held is 409 with `reason: 'former'` (D-103)
 POST   /api/v1/projects/:slug/join           (public projects)
+POST   /api/v1/projects/:slug/leave          any member → { slug, implicit_access, notice }; the last lead 409 `last_lead` (D-103)
 GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
+                                             DELETE takes an optional body { open_tasks } as deactivation does (LAI-986)
 GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
 GET    /api/v1/projects/:slug/budgets        PUT /api/v1/projects/:slug/budget  body { tokens | null }   (set: lead, session only; LAI-773)
 GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=&fields=
@@ -2485,6 +2578,7 @@ GET    /api/v1/projects/:slug/timeline       ?from=&to=  — sprints with date r
 POST   /api/v1/projects/:slug/tasks
 GET    /api/v1/tasks                         ?project=&status=&assignee=&sprint=&updated_since=&cursor=&fields= — every project the caller may read
                                              (project.read per project); the per-project list's task shape and order; any other filter is 422 (LAI-887)
+GET    /api/v1/tasks/summary                 /tasks' filters, same set → { total, by_status, by_assignee: [{ user_id|null|'others', name, count }] (top 10, then others), overdue, blocked, unassigned } (LAI-974)
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
 POST   /api/v1/tasks/:id/claim               POST /api/v1/tasks/:id/status
                                              claim: body { branch?, estimate? }, optional — the branch is kept
@@ -2512,6 +2606,7 @@ GET    /api/v1/tasks/:id/comments            POST /api/v1/tasks/:id/comments
 PATCH  /api/v1/comments/:id                  DELETE /api/v1/comments/:id
 GET    /api/v1/projects/:slug/activity       GET /api/v1/activity    (org-wide, viewer+)
 GET    /api/v1/activity/history              ?actor=&project=&type=&since=&until= — every row, newest first   (owner, admin)
+                                             ?format=csv — the same filters and gate, every row as one streamed text/csv file (no limit or cursor; LAI-984)
 GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id
 GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)
 POST   /api/v1/heartbeats                    202, token auth only
@@ -3420,6 +3515,31 @@ capacity lasts. `null` with `reason` `completed`, `no_tasks`, or
 a re-read with nothing changed draws nothing. Not story points: nothing in it
 is typed by anybody.
 
+**Offboarding asks (D-104 item 5, LAI-986).** Removing someone from a space
+(`DELETE /projects/:slug/members/:userId`) and deactivating them (`PATCH
+/users/:id { is_active: false }`) take `open_tasks`: `"unassign"`, or
+`{ "reassign_to": "<user id>" }`. "Open" is not `done` and not `cancelled`;
+the scope is that space for a removal and every space for a deactivation.
+Without `open_tasks`, while they hold any, the answer is `409` with `details:
+{ reason: "open_tasks", count, keys, hidden }` — `count` is every open task,
+`keys` only those in spaces the caller can read, `hidden` the rest. A
+reassignment must land on an active person, not the one leaving, who can hold
+**every** task (LAI-962's rule); otherwise `422` with `details: { field:
+"open_tasks.reassign_to", reason: "cannot_hold", tasks: [{ key, reason }] }`
+(or `reason: "self"` / `"inactive"` / `"no_such_user"`), and nothing changes.
+Each moved task writes `task.assigned` with `payload.via: "offboarding"`.
+Deactivation also removes every space membership, one `member.removed` per
+space with `payload.via: "deactivation"`; reactivating restores none. All of
+it is one transaction with the removal or deactivation itself.
+
+**The organisation's pulse (LAI-986).** `GET /org/overview` answers `{ people:
+{ active, seen_this_week, since }, tasks: { open, in_review, blocked, overdue }
+}`. `seen_this_week` counts active people whose `last_seen_at` (§6.4's
+`UserView`) is at or after `since`, seven days before now. The task figures
+are `GET /tasks/summary`'s, unfiltered, for the same caller (LAI-974): only
+spaces the caller can read, `open` being every category but `done` and
+`cancelled`.
+
 **The GitHub webhook secret (LAI-753).** `GET /org` carries `github_webhook:
 { configured, payload_url }` for a caller who may *Configure webhooks* (§3.1,
 session only) — absent, not null, for anyone else, as `ai` is.
@@ -3432,6 +3552,21 @@ refused from that moment. `DELETE /org/github-webhook` clears it and answers
 `204`; every delivery is then refused `401`. Both refuse a token `403` with
 `details.reason: "session_required"`: whoever holds the secret can sign
 deliveries that confirm an agent's proof (D-083).
+
+**The history export (LAI-984).** `GET /activity/history?format=csv` is the
+JSON answer's rows — same gate, same filters, same validation, newest first —
+as one `text/csv; charset=utf-8` attachment named `laika-history-<date>.csv`,
+streamed rather than paged, so `limit` and `cursor` beside it are `400`. A
+refusal or a bad filter is the ordinary JSON error, before the file starts.
+Columns, in order: `created_at` (ISO 8601, UTC), `created_at_ms`, `seq`, `id`,
+`type`, `actor_kind`, `actor_id`, `actor_name`, `actor_token_id`,
+`project_id`, `project_slug`, `task_id`, `payload` (the row's payload as
+JSON). RFC 4180: a field with a comma, quote, CR or LF is quoted and its
+quotes doubled; lines end CRLF; a text field starting `=`, `+`, `-`, `@`, tab
+or CR is prefixed `'`, so a spreadsheet does not run it. `member.added`,
+`member.role_changed` and `member.removed` rows name their subject:
+`payload.user_name` beside `user_id`, with `from`/`to` (a role change) or
+`role` / `org_role` as before.
 
 `GET /review` answers `{ tasks, truncated }`: every task in a `review`
 status on every project where the caller holds `task.write`, **oldest waiting

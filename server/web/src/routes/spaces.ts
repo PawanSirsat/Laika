@@ -12,6 +12,8 @@ import type { Project } from '../api/projects.ts';
 export const RECENT_LIMIT = 3;
 
 const STORAGE_KEY = 'laika.recent-spaces';
+/** Pins live under their own key: a pin never costs a recent slot (LAI-989). */
+const PINS_KEY = 'laika.pinned-spaces';
 
 export interface Space {
   /** The project's ULID — monotonic, so sorting by it is creation order. */
@@ -69,8 +71,12 @@ export function toSpace(project: Project): Space {
  * outcome than one that has forgotten which spaces you visited.
  */
 export function readRecent(storage: Pick<Storage, 'getItem'>): readonly string[] {
+  return readSlugs(storage, STORAGE_KEY);
+}
+
+function readSlugs(storage: Pick<Storage, 'getItem'>, key: string): readonly string[] {
   try {
-    const raw = storage.getItem(STORAGE_KEY);
+    const raw = storage.getItem(key);
     if (raw === null) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -148,4 +154,60 @@ export function recentSpaces(
        */
       .sort((a, b) => a.id.localeCompare(b.id))
   );
+}
+
+/**
+ * Pinned spaces (LAI-989): the slugs a person pinned, **in this browser** —
+ * a sidebar preference, like the recent list, and not something the server
+ * keeps. Unreadable storage answers `[]`, for `readRecent`'s reason.
+ */
+export function readPins(storage: Pick<Storage, 'getItem'>): readonly string[] {
+  return readSlugs(storage, PINS_KEY);
+}
+
+export function writePins(storage: Pick<Storage, 'setItem'>, pins: readonly string[]): void {
+  try {
+    storage.setItem(PINS_KEY, JSON.stringify(pins));
+  } catch {
+    // As `writeRecent`: a pin lost to a full quota is not worth an error.
+  }
+}
+
+/** Pin `slug`, or unpin it if it is pinned. Pure; writing is the caller's. */
+export function togglePin(pins: readonly string[], slug: string): readonly string[] {
+  return pins.includes(slug) ? pins.filter((s) => s !== slug) : [...pins, slug];
+}
+
+/** A sidebar row: a space, and whether it is one of the pinned. */
+export interface SidebarSpace extends Space {
+  readonly pinned: boolean;
+}
+
+/**
+ * The sidebar's rows: **the pinned spaces first, then the recent ones**
+ * (LAI-989). Each group is drawn in creation order, for LAI-260's reason — a
+ * row never moves under the pointer — and a pinned space is not listed again
+ * among the recent, which still fill their own {@link RECENT_LIMIT} from the
+ * rest. A pin for a space that no longer exists is dropped, not drawn.
+ */
+export function sidebarSpaces(
+  projects: readonly Project[],
+  recent: readonly string[],
+  pins: readonly string[],
+  current?: string,
+): readonly SidebarSpace[] {
+  const pinnedSet = new Set(pins);
+  const pinned = projects
+    .filter((p) => pinnedSet.has(p.slug))
+    .map(toSpace)
+    .sort((a, b) => a.id.localeCompare(b.id));
+  const rest = recentSpaces(
+    projects.filter((p) => !pinnedSet.has(p.slug)),
+    recent,
+    current,
+  );
+  return [
+    ...pinned.map((space) => ({ ...space, pinned: true })),
+    ...rest.map((space) => ({ ...space, pinned: false })),
+  ];
 }

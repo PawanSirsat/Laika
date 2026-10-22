@@ -1,7 +1,14 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { activity, orgs, users } from '../../../src/db/schema.ts';
-import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
+import {
+  type AuthHarness,
+  authHarness,
+  cookieFrom,
+  jsonHeaders,
+  seedInvite,
+  signUp,
+} from '../../helpers/auth.ts';
 
 /**
  * `GET /api/v1/org` (SPEC §6.4, LAI-222).
@@ -298,5 +305,280 @@ describe('PATCH /api/v1/org (LAI-207)', () => {
     });
 
     expect(res.status).toBe(401);
+  });
+});
+
+describe('PATCH /api/v1/org { name } — renaming the organisation (LAI-984, D-104 item 7)', () => {
+  async function patchAs(body: unknown, who = cookie): Promise<Response> {
+    return h.app.request('/api/v1/org', {
+      method: 'PATCH',
+      headers: jsonHeaders({ Cookie: who }),
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function errorOf(res: Response): Promise<{ code: string; details?: unknown }> {
+    return ((await res.json()) as { error: { code: string; details?: unknown } }).error;
+  }
+
+  async function joinAs(email: string, orgRole: 'admin' | 'member'): Promise<string> {
+    const orgId = h.db.select().from(orgs).get()?.id ?? '';
+    const token = seedInvite(h.db, { orgId, createdBy: ownerId, email, orgRole });
+    const res = await signUp(h.app, { email, password: PASSWORD, inviteToken: token });
+    expect(res.status, await res.clone().text()).toBe(200);
+    return cookieFrom(res);
+  }
+
+  it('renames it, trimmed, and every reader sees the new name', async () => {
+    const res = await patchAs({ name: '  Kvell Labs  ' });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(((await res.json()) as OrgBody).name).toBe('Kvell Labs');
+
+    expect(h.db.select({ name: orgs.name }).from(orgs).get()?.name).toBe('Kvell Labs');
+    expect(((await (await getOrgAs()).json()) as OrgBody).name).toBe('Kvell Labs');
+  });
+
+  it('takes 1 to 80 characters and refuses an empty, blank or longer name with 422', async () => {
+    expect((await patchAs({ name: 'K' })).status).toBe(200);
+    expect((await patchAs({ name: 'x'.repeat(80) })).status).toBe(200);
+
+    for (const name of ['', '   ', 'x'.repeat(81), 42, null]) {
+      const res = await patchAs({ name });
+      expect(res.status, JSON.stringify(name)).toBe(422);
+      expect((await errorOf(res)).code).toBe('unprocessable');
+    }
+    expect(h.db.select({ name: orgs.name }).from(orgs).get()?.name).toBe('x'.repeat(80));
+  });
+
+  it('an admin may rename it — Change organisation settings — and a member is refused 403', async () => {
+    const admin = await joinAs('ari@example.test', 'admin');
+    expect((await patchAs({ name: 'By the admin' }, admin)).status).toBe(200);
+
+    const member = await joinAs('bea@example.test', 'member');
+    const refused = await patchAs({ name: 'By the member' }, member);
+    expect(refused.status).toBe(403);
+    expect(await errorOf(refused)).toMatchObject({
+      code: 'forbidden',
+      details: { action: 'org.settings.edit' },
+    });
+    expect(h.db.select({ name: orgs.name }).from(orgs).get()?.name).toBe('By the admin');
+  });
+
+  it('an admin whose role lost Change organisation settings is refused', async () => {
+    const admin = await joinAs('ari@example.test', 'admin');
+    const revoked = await h.app.request('/api/v1/org/permissions', {
+      method: 'GET',
+      headers: jsonHeaders({ Cookie: cookie }),
+    });
+    const matrix = (await revoked.json()) as { grants: Record<string, Record<string, boolean>> };
+    const grants = {
+      ...matrix.grants,
+      admin: { ...matrix.grants.admin, change_org_settings: false },
+    };
+    const put = await h.app.request('/api/v1/org/permissions', {
+      method: 'PUT',
+      headers: jsonHeaders({ Cookie: cookie }),
+      body: JSON.stringify({ grants }),
+    });
+    expect(put.status, await put.clone().text()).toBe(200);
+
+    const res = await patchAs({ name: 'Nope' }, admin);
+    expect(res.status).toBe(403);
+    expect((await errorOf(res)).code).toBe('forbidden');
+  });
+
+  it('a request refused by another setting beside it leaves the name alone', async () => {
+    // openai_compatible without a base URL is refused (§12) — after the name
+    // would have been written, were the two not one transaction.
+    const res = await patchAs({ name: 'Half done', ai_provider: 'openai_compatible' });
+    expect(res.status).toBe(422);
+    expect((await errorOf(res)).code).toBe('unprocessable');
+    expect(h.db.select({ name: orgs.name }).from(orgs).get()?.name).toBe('Kvell Dynamics');
+  });
+
+  it('401s when signed out', async () => {
+    const res = await h.app.request('/api/v1/org', {
+      method: 'PATCH',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ name: 'Anyone' }),
+    });
+    expect(res.status).toBe(401);
+    expect((await errorOf(res)).code).toBe('unauthorized');
+  });
+});
+
+/**
+ * Exactly one owner, and the way it changes hands (D-104 item 2, LAI-982).
+ * The service drives each refusal; this is that the routes exist, that the
+ * codes reach the wire, and that a real session — not a token — is required.
+ */
+describe('one owner and transfer ownership (LAI-982)', () => {
+  interface ErrorBody {
+    error: { code: string; details: { reason?: string; action?: string } | null };
+  }
+
+  async function join(
+    email: string,
+    orgRole: 'admin' | 'member',
+  ): Promise<{ id: string; cookie: string }> {
+    const orgId = h.db.select().from(orgs).get()!.id;
+    const token = seedInvite(h.db, { orgId, createdBy: ownerId, email, orgRole });
+    const res = await signUp(h.app, { email, password: PASSWORD, inviteToken: token });
+    expect(res.status, await res.clone().text()).toBe(200);
+    return {
+      id: h.db.select().from(users).where(eq(users.email, email)).get()!.id,
+      cookie: cookieFrom(res),
+    };
+  }
+
+  async function post(
+    path: string,
+    body: unknown,
+    headers: Record<string, string>,
+  ): Promise<Response> {
+    return h.app.request(path, {
+      method: 'POST',
+      headers: jsonHeaders(headers),
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('hands the organisation over, and the new owner is the one GET /org answers as owner', async () => {
+    const grace = await join('grace@example.test', 'admin');
+
+    const res = await post(
+      '/api/v1/org/transfer-ownership',
+      { user_id: grace.id, confirm: 'grace@example.test' },
+      { Cookie: cookie },
+    );
+    expect(res.status, await res.clone().text()).toBe(200);
+    const body = (await res.json()) as {
+      owner: { id: string; org_role: string };
+      previous_owner: { id: string; org_role: string };
+    };
+    expect(body.owner).toMatchObject({ id: grace.id, org_role: 'owner' });
+    expect(body.previous_owner).toMatchObject({ id: ownerId, org_role: 'admin' });
+    expect(h.db.select().from(orgs).get()?.ownerUserId).toBe(grace.id);
+    expect(
+      h.db
+        .select()
+        .from(activity)
+        .all()
+        .filter((r) => r.type === 'org.ownership_transferred'),
+    ).toHaveLength(1);
+
+    // The new owner reads the owner's field; the former owner, now an admin, does not.
+    const asGrace = (await (await getOrgAs(grace.cookie)).json()) as { extra_owners?: unknown };
+    expect(asGrace.extra_owners).toEqual([]);
+    const asAda = (await (await getOrgAs()).json()) as { extra_owners?: unknown };
+    expect('extra_owners' in asAda).toBe(false);
+
+    // And the former owner can no longer transfer it back.
+    const again = await post(
+      '/api/v1/org/transfer-ownership',
+      { user_id: ownerId, confirm: 'ada@example.test' },
+      { Cookie: cookie },
+    );
+    expect(again.status).toBe(403);
+    expect(((await again.json()) as ErrorBody).error.code).toBe('forbidden');
+  });
+
+  it('422s a wrong confirmation with its reason, and moves nothing', async () => {
+    const grace = await join('grace@example.test', 'member');
+
+    const res = await post(
+      '/api/v1/org/transfer-ownership',
+      { user_id: grace.id, confirm: 'not-her@example.test' },
+      { Cookie: cookie },
+    );
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as ErrorBody).error).toMatchObject({
+      code: 'unprocessable',
+      details: { reason: 'confirm_mismatch' },
+    });
+    expect(h.db.select().from(orgs).get()?.ownerUserId).toBe(ownerId);
+  });
+
+  it('403s the owner’s own token: session only', async () => {
+    const grace = await join('grace@example.test', 'admin');
+    const minted = await post(
+      '/api/v1/tokens',
+      { name: 'An agent', scope: 'full' },
+      { Cookie: cookie },
+    );
+    expect(minted.status, await minted.clone().text()).toBe(201);
+    const { secret } = (await minted.json()) as { secret: string };
+
+    const res = await post(
+      '/api/v1/org/transfer-ownership',
+      { user_id: grace.id, confirm: 'grace@example.test' },
+      { Authorization: `Bearer ${secret}` },
+    );
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as ErrorBody).error).toMatchObject({
+      code: 'forbidden',
+      details: { action: 'org.transfer_ownership', reason: 'session_required' },
+    });
+    expect(h.db.select().from(orgs).get()?.ownerUserId).toBe(ownerId);
+  });
+
+  it('refuses an unknown key in the body', async () => {
+    const res = await post(
+      '/api/v1/org/transfer-ownership',
+      { user_id: ownerId, confirm: 'ada@example.test', demote_me: false },
+      { Cookie: cookie },
+    );
+    expect(res.status).toBe(422);
+  });
+
+  it('422s PATCH /users/:id to owner with use_transfer', async () => {
+    const grace = await join('grace@example.test', 'admin');
+
+    const res = await h.app.request(`/api/v1/users/${grace.id}`, {
+      method: 'PATCH',
+      headers: jsonHeaders({ Cookie: cookie }),
+      body: JSON.stringify({ org_role: 'owner' }),
+    });
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as ErrorBody).error).toMatchObject({
+      code: 'unprocessable',
+      details: { reason: 'use_transfer' },
+    });
+  });
+
+  it('422s an owner invite with use_transfer', async () => {
+    const res = await post(
+      '/api/v1/invites',
+      { email: 'co-owner@example.test', org_role: 'owner' },
+      { Cookie: cookie },
+    );
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as ErrorBody).error).toMatchObject({
+      code: 'unprocessable',
+      details: { reason: 'use_transfer' },
+    });
+  });
+
+  it('reports an owner left from before D-104 to the owner, and leaves them one', async () => {
+    const now = Date.now();
+    h.db
+      .insert(users)
+      .values({
+        id: 'usr_second',
+        email: 'second@example.test',
+        name: 'Second',
+        orgRole: 'owner',
+        createdAt: new Date(now),
+        updatedAt: new Date(now),
+      })
+      .run();
+
+    const body = (await (await getOrgAs()).json()) as { extra_owners?: unknown };
+    expect(body.extra_owners).toEqual([
+      { id: 'usr_second', name: 'Second', email: 'second@example.test' },
+    ]);
+    expect(h.db.select().from(users).where(eq(users.id, 'usr_second')).get()?.orgRole).toBe(
+      'owner',
+    );
   });
 });

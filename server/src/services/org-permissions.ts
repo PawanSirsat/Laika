@@ -11,6 +11,7 @@ import { type OrgAction } from '../policy/actions.ts';
 import { assertCan } from '../policy/can.ts';
 import {
   CAPABILITY_ACTIONS,
+  CAPABILITY_DESCRIPTIONS,
   CAPABILITY_LABELS,
   DEFAULT_GRANTS,
   type OrgGrants,
@@ -34,6 +35,8 @@ import { ACTION_LABELS } from './permissions.ts';
 export interface CapabilityView {
   id: Capability;
   label: string;
+  /** One line saying what it lets a role do (LAI-985). */
+  description: string;
   /** The §3.1 actions it carries. Empty for *Open every project*: a project role. */
   actions: OrgAction[];
 }
@@ -83,6 +86,7 @@ function view(db: Db): OrgPermissionsView {
     capabilities: CAPABILITIES.map((id) => ({
       id,
       label: CAPABILITY_LABELS[id],
+      description: CAPABILITY_DESCRIPTIONS[id],
       actions: [...CAPABILITY_ACTIONS[id]],
     })),
     grants: matrixOf(grants),

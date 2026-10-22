@@ -77,6 +77,20 @@ const me = (id: string, org_role: string) => ({
   memberships: [],
 });
 
+const permissions = (org_role: string, actions: readonly string[]) => ({
+  org_roles: [],
+  project_roles: [],
+  permissions: [],
+  me: {
+    org_role,
+    credential: 'session',
+    project_scope: 'all',
+    implicit_project_role: null,
+    actions,
+    projects: [],
+  },
+});
+
 void after(async () => {
   await closeBrowser();
 });
@@ -296,6 +310,34 @@ void describe('role management', () => {
       );
     } finally {
       await h.close();
+    }
+  });
+
+  void test('invite and deactivate controls follow their live grants; the role picker stays owner-only', async () => {
+    for (const [id, role, actions, invited, deactivates] of [
+      ['u3', 'admin', [], false, false],
+      ['u2', 'member', ['user.invite', 'user.deactivate'], true, true],
+      ['u1', 'owner', ['user.invite', 'user.deactivate', 'user.set_role'], true, true],
+    ] as const) {
+      const h = await open('/organisation?tab=people', {
+        ...BASE,
+        '/api/v1/me': me(id, role),
+        '/api/v1/permissions': permissions(role, actions),
+      });
+      try {
+        await h.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
+        await until(
+          async () => (await h.page.locator('.org-invite-form').count()) === (invited ? 1 : 0),
+        );
+        assert.equal(await h.page.locator('.org-invite-form').count(), invited ? 1 : 0);
+        assert.equal((await h.page.locator('.org-deactivate').count()) > 0, deactivates);
+        assert.equal(
+          (await h.page.locator('.org-person [role="combobox"]').count()) > 0,
+          role === 'owner',
+        );
+      } finally {
+        await h.close();
+      }
     }
   });
 

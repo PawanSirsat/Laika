@@ -157,14 +157,3 @@ export function createInvite(input: CreateInviteInput): Promise<CreatedInvite> {
 export function revokeInvite(id: string): Promise<void> {
   return request<void>(`/invites/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
-
-/**
- * Who may manage invites and see the org's people (SPEC §3.1).
- *
- * *"Invite users / change org roles"* is Owner and Admin. A Member or Viewer
- * gets no controls at all rather than controls that answer `403` — the server
- * refuses either way, and a button that always fails is worse than no button.
- */
-export function canManageOrg(orgRole: string): boolean {
-  return orgRole === 'owner' || orgRole === 'admin';
-}

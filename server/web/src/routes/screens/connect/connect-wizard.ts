@@ -247,7 +247,7 @@ export const EXTRAS: readonly Extra[] = [
   {
     id: 'share',
     name: 'Share with your project',
-    line: 'For the project lead: one block that puts every session in this project.',
+    line: 'For the space admin: one block that puts every session in this project.',
   },
   {
     id: 'tools',

@@ -85,6 +85,20 @@ function orgStub(role: string, breaks: readonly unknown[], extra: ApiStub = {}):
   };
 }
 
+const permissions = (role: string, actions: readonly string[]) => ({
+  org_roles: [],
+  project_roles: [],
+  permissions: [],
+  me: {
+    org_role: role,
+    credential: 'session',
+    project_scope: 'all',
+    implicit_project_role: null,
+    actions,
+    projects: [],
+  },
+});
+
 async function organisation(stub: ApiStub): Promise<Harness> {
   const h = await openPage('/organisation', stub);
   await h.page.locator('[data-fact="time"]').waitFor({ timeout: 20_000 });
@@ -381,6 +395,33 @@ void describe('Organisation: the break schedule', () => {
       assert.equal(await h.page.locator('[data-fact="breaks"]').count(), 0);
     } finally {
       await h.close();
+    }
+  });
+
+  void test('Time and breaks editors follow the live grant, with owner unchanged', async () => {
+    for (const [role, actions, editable] of [
+      ['admin', [], false],
+      ['member', ['org.time.set'], true],
+      ['owner', ['org.time.set'], true],
+    ] as const) {
+      const h = await organisation(
+        orgStub(role, [LUNCH], { '/api/v1/permissions': permissions(role, actions) }),
+      );
+      try {
+        const fact = h.page.locator('[data-fact="breaks"]');
+        await fact.waitFor({ timeout: 10_000 });
+        await until(
+          async () =>
+            (await fact.getByRole('button', { name: 'Edit breaks' }).count()) ===
+            (editable ? 1 : 0),
+        );
+        assert.equal(
+          await fact.getByRole('button', { name: 'Edit breaks' }).count(),
+          editable ? 1 : 0,
+        );
+      } finally {
+        await h.close();
+      }
     }
   });
 
