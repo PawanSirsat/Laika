@@ -12,6 +12,7 @@ import {
   type ProjectRole,
 } from '../../../api/members.ts';
 import type { MeProfile } from '../../../api/me.ts';
+import { useGates } from '../../../api/permissions.ts';
 import type { Project } from '../../../api/projects.ts';
 import { leaveSpace, type LeaveSpaceView } from '../../../api/space-settings.ts';
 import type { UseMembers } from '../../../api/use-members.ts';
@@ -63,6 +64,15 @@ export function MembersTab({
   onLeft,
 }: MembersTabProps) {
   const { theme } = useTheme();
+  /*
+   * A change to the reader's own membership changes what the server lets them
+   * do, so the gates are asked again — demote yourself and the controls go
+   * with it, not on the next page load (LAI-977 review).
+   */
+  const { refresh } = useGates();
+  const touchedSelf = (userId: string): void => {
+    if (userId === me.id) refresh();
+  };
   const [removing, setRemoving] = useState<Member | undefined>(undefined);
   const [toast, setToast] = useState<Toast | undefined>(undefined);
   const toastSeq = useRef(0);
@@ -97,6 +107,7 @@ export function MembersTab({
       .then((view) => {
         setLeaving(undefined);
         if (view.notice !== null) setLeftNotice(view.notice);
+        refresh();
         onLeft(view);
       })
       .catch((cause: unknown) => {
@@ -112,7 +123,9 @@ export function MembersTab({
     say(`Removed ${member.name} from ${project.name}.`, () => {
       setToast(undefined);
       void members.add(member.user_id, role).then((back) => {
-        if (back) say(`${member.name} is back, as ${projectRoleLabel(role)}.`);
+        if (!back) return;
+        touchedSelf(member.user_id);
+        say(`${member.name} is back, as ${projectRoleLabel(role)}.`);
       });
     });
   };
@@ -219,7 +232,9 @@ export function MembersTab({
                         value={member.role}
                         disabled={busy}
                         onChange={(value) => {
-                          void members.setRole(member.user_id, value as ProjectRole);
+                          void members.setRole(member.user_id, value as ProjectRole).then(() => {
+                            touchedSelf(member.user_id);
+                          });
                         }}
                         options={PROJECT_ROLES.map((role) => ({
                           value: role,
@@ -271,6 +286,7 @@ export function MembersTab({
           }
           run={(openTasks) => members.removeWith(removing.user_id, openTasks)}
           onDone={() => {
+            touchedSelf(removing.user_id);
             removed(removing);
           }}
           onClose={() => {
@@ -281,7 +297,8 @@ export function MembersTab({
 
       <footer className="ss-card-foot ss-card-foot-note">
         <p className="ss-muted">
-          Organisation Owners and Admins can manage every space, whether or not they are members.
+          Anyone whose organisation role is granted “Open every project” can manage every space
+          without being a member — a Viewer granted it can only read.
         </p>
         {isMember &&
           (leaving === undefined ? (
