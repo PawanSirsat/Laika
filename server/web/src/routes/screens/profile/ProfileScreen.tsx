@@ -479,7 +479,9 @@ export function ProfileScreen({
             userId={user.id}
             name={user.name}
             viewerId={me.id}
-            canManageOrg={mayOpenProfiles(me.org_role)}
+            canManageOrg={
+              actions?.includes('org.developer_insights.set') ?? mayOpenProfiles(me.org_role)
+            }
             sharing={profile.activity_sharing}
           />
 

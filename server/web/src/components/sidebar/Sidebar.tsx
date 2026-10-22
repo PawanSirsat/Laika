@@ -13,6 +13,7 @@ import { NavIcon } from './NavIcon.tsx';
 import type { Space } from '../../routes/spaces.ts';
 import type { MeProfile } from '../../api/me.ts';
 import './sidebar.css';
+import { usePermissions } from '../../api/permissions.ts';
 
 export interface SidebarProps {
   readonly currentPath: string;
@@ -90,11 +91,12 @@ export function Sidebar({
   onSignOut,
   signingOut,
 }: SidebarProps) {
+  const { permissions } = usePermissions(user !== undefined);
   /**
    * The reader's permissions, mirrored from `policy/can.ts` at one remove — the
    * one predicate every gated entry and tab asks.
    */
-  const holds = permissionHolder(orgRole);
+  const holds = permissionHolder(orgRole, permissions?.me.actions);
   // The Connect wizard lights Developer access, the page it is opened from.
   const section = navSection(currentPath);
 

@@ -86,6 +86,7 @@ import './board/board-motion.css';
 import { pickProject } from '../../api/pick-project.ts';
 import { withProjectParam } from '../nav-url.ts';
 import { clockTime } from '../../api/time-label.ts';
+import { holdsProjectAction, usePermissions } from '../../api/permissions.ts';
 
 export type BoardViewMode = 'kanban' | 'list';
 
@@ -111,6 +112,7 @@ export interface BoardScreenProps {
 const CARRIED_MS = 1000;
 
 export function BoardScreen({ params, onParamsChange, me, path = '/board' }: BoardScreenProps) {
+  const { permissions } = usePermissions(me !== undefined);
   const { theme } = useTheme();
 
   /*
@@ -613,7 +615,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const mayConfigure =
     me !== undefined &&
     project !== undefined &&
-    canConfigureProject(me.org_role, project.id, me.memberships);
+    (holdsProjectAction(permissions, project.id, 'project.settings.edit') ??
+      canConfigureProject(me.org_role, project.id, me.memberships));
 
   /*
    * **The add-column tile's gate, one expression for the board and its
@@ -633,7 +636,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const mayAddColumn =
     me !== undefined &&
     boardProjectId !== undefined &&
-    canConfigureProject(me.org_role, boardProjectId, me.memberships);
+    (holdsProjectAction(permissions, boardProjectId, 'project.settings.edit') ??
+      canConfigureProject(me.org_role, boardProjectId, me.memberships));
 
   /** `Column 5`, skipping any name already taken. */
 

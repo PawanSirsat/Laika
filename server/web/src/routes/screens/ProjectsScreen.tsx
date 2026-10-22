@@ -26,6 +26,7 @@ import { ApiError } from '../../api/errors.ts';
 import { fieldErrors } from '../../api/setup.ts';
 import { required } from '../../components/forms/validation.ts';
 import './projects.css';
+import { implicitlyLeads, usePermissions } from '../../api/permissions.ts';
 
 export interface ProjectsScreenProps {
   /** Open a project's board. `?project=<slug>` is what BoardScreen reads. */
@@ -49,6 +50,7 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
   const [contextFor, setContextFor] = useState<Project | undefined>(undefined);
   const { theme } = useTheme();
   const list = useProjects();
+  const { permissions } = usePermissions(me !== undefined);
   /** The space a join is in flight for, so only its own button says so. */
   const [joining, setJoining] = useState<string | undefined>(undefined);
   const [joinError, setJoinError] = useState<string | undefined>(undefined);
@@ -63,7 +65,9 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
    */
   const isMine = (project: Project): boolean =>
     me?.memberships.some((m) => m.project_id === project.id) === true ||
-    (me !== undefined && canConfigureProject(me.org_role, project.id, me.memberships));
+    (me !== undefined &&
+      (implicitlyLeads(permissions, project.id) ??
+        canConfigureProject(me.org_role, project.id, me.memberships)));
 
   const mine = list.status === 'ready' ? list.projects.filter(isMine) : [];
   const joinable =
@@ -424,7 +428,8 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
                  renders read-only rather than offering a Save that answers 403. */
               mayEdit={
                 me !== undefined &&
-                canEditProjectContext(me.org_role, contextFor.id, me.memberships)
+                (implicitlyLeads(permissions, contextFor.id) ??
+                  canEditProjectContext(me.org_role, contextFor.id, me.memberships))
               }
               /* The project summary already carries its members, so naming who
                  last edited the document costs no second request. */

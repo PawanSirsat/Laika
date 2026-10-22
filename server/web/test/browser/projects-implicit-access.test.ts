@@ -36,7 +36,10 @@ const ARCHIVED_SPACE = {
   archived_at: 2,
 };
 
-function stub(role: 'owner' | 'admin' | 'member' | 'viewer'): ApiStub {
+function stub(
+  role: 'owner' | 'admin' | 'member' | 'viewer',
+  implicit: 'lead' | 'viewer' | null = role === 'owner' || role === 'admin' ? 'lead' : null,
+): ApiStub {
   return {
     '/api/v1/me': {
       id: 'u1',
@@ -52,6 +55,19 @@ function stub(role: 'owner' | 'admin' | 'member' | 'viewer'): ApiStub {
     '/api/v1/projects': {
       data: [MEMBER_SPACE, PRIVATE_SPACE, PUBLIC_SPACE, ARCHIVED_SPACE],
       next_cursor: null,
+    },
+    '/api/v1/permissions': {
+      org_roles: [],
+      project_roles: [],
+      permissions: [],
+      me: {
+        org_role: role,
+        credential: 'session',
+        project_scope: 'all',
+        implicit_project_role: implicit,
+        actions: [],
+        projects: [],
+      },
     },
   };
 }
@@ -104,6 +120,27 @@ void describe('Projects effective access', () => {
         assert.match(page, /Archived Workshop/);
         assert.match(page, /Public Commons/);
         assert.doesNotMatch(page, /Private Observatory/);
+      } finally {
+        await h.close();
+      }
+    }
+  });
+
+  void test('live grants override the role: revoked admin loses implicit spaces, granted member gains them', async () => {
+    for (const [role, implicit, seesPrivate] of [
+      ['admin', null, false],
+      ['member', 'lead', true],
+      ['owner', 'lead', true],
+    ] as const) {
+      const h = await open('/projects', stub(role, implicit));
+      try {
+        await h.page.locator('.project-card-name').getByText('Member Workshop', { exact: true }).waitFor({ timeout: 20_000 });
+        const page = await h.page.locator('.projects').innerText();
+        assert.equal(page.includes('Private Observatory'), seesPrivate, `${role} ignored live grants`);
+        assert.equal(
+          await h.page.getByRole('button', { name: 'Join', exact: true }).count(),
+          seesPrivate ? 0 : 1,
+        );
       } finally {
         await h.close();
       }

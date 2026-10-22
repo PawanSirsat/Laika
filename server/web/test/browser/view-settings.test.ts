@@ -108,6 +108,19 @@ const STUB: ApiStub = {
   '/api/v1/presence': { data: [], next_cursor: null },
 };
 
+const withProjectSettings = (role: string, granted: boolean): ApiStub => ({
+  ...STUB,
+  '/api/v1/me': { ...(STUB['/api/v1/me'] as object), org_role: role },
+  '/api/v1/permissions': {
+    org_roles: [], project_roles: [], permissions: [],
+    me: {
+      org_role: role, credential: 'session', project_scope: 'all', implicit_project_role: null,
+      actions: [],
+      projects: [{ project_id: 'p1', role: granted ? 'lead' : 'member', actions: granted ? ['project.settings.edit'] : [] }],
+    },
+  },
+});
+
 async function openPanel(h: Harness): Promise<void> {
   await h.page.waitForSelector('.card-title');
   // The trigger moved into the board toolbar's icon cluster (LAI-290), where
@@ -302,4 +315,18 @@ void describe('column width', () => {
       await h.close();
     }
   });
+});
+
+void describe('project visibility permission', () => {
+  for (const [role, granted] of [['admin', false], ['member', true], ['owner', true]] as const) {
+    void test(`${role} ${granted ? 'can' : 'cannot'} edit visibility from the live project grant`, async () => {
+      const h = await open('/board?project=laika-core', withProjectSettings(role, granted));
+      try {
+        await openPanel(h);
+        assert.equal(await h.page.locator('input[name="vs-visibility"]').count(), granted ? 2 : 0);
+      } finally {
+        await h.close();
+      }
+    });
+  }
 });

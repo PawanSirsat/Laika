@@ -3,7 +3,6 @@ import {
   ACTIVITY_LABELS,
   describeEvent,
   pushSummary,
-  shownInFeed,
   statusMoveNames,
   type ActivityEvent,
 } from '../../../api/activity.ts';
@@ -207,7 +206,7 @@ export function OrgActivity({ people, params, setParams, onNavigate }: OrgActivi
       )}
 
       {state.status === 'ready' &&
-        (shownInFeed(state.rows).length === 0 && state.next === null ? (
+        (state.rows.length === 0 && state.next === null ? (
           <EmptyState
             headline="No activity"
             body={
@@ -219,7 +218,7 @@ export function OrgActivity({ people, params, setParams, onNavigate }: OrgActivi
         ) : (
           <>
             <ol className="oh-list">
-              {shownInFeed(state.rows).map((event) => {
+              {state.rows.map((event) => {
                 const space = event.project_id === null ? undefined : spaces.get(event.project_id);
                 const move = statusMoveNames(event);
                 const key = taskKey(event);

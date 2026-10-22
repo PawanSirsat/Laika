@@ -6,6 +6,7 @@ import { ShareActivity } from '../connect/ShareActivity.tsx';
 import { TokensScreen } from '../tokens/TokensScreen.tsx';
 import { ConnectCard } from './ConnectCard.tsx';
 import './developer.css';
+import { useOrgActions } from '../../../api/people-analytics.ts';
 
 export interface DeveloperScreenProps {
   readonly me: MeProfile | undefined;
@@ -24,6 +25,7 @@ export interface DeveloperScreenProps {
  * and revokes exactly as before.
  */
 export function DeveloperScreen({ me, origin, onNavigate }: DeveloperScreenProps) {
+  const { actions } = useOrgActions(me !== undefined);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   return (
     <div className="page dev-page">
@@ -41,7 +43,12 @@ export function DeveloperScreen({ me, origin, onNavigate }: DeveloperScreenProps
               Share local activity
             </h2>
           </div>
-          <ShareActivity canManageOrg={canManageOrg(me?.org_role ?? '')} origin={origin} />
+          <ShareActivity
+            canManageOrg={
+              actions?.includes('org.developer_insights.set') ?? canManageOrg(me?.org_role ?? '')
+            }
+            origin={origin}
+          />
         </section>
         <div className="dev-card dev-tokens">
           <EmbeddedScreen slot={slot} titled>

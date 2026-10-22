@@ -15,8 +15,12 @@ import { mayTriageUnlisted } from '../api/unlisted.ts';
  * the pre-auth render and the tests pass no role, and gated entries stay hidden
  * rather than leaking.
  */
-export function permissionHolder(orgRole: string | undefined): (permission: string) => boolean {
+export function permissionHolder(
+  orgRole: string | undefined,
+  actions?: readonly string[],
+): (permission: string) => boolean {
   return (permission) => {
+    if (actions !== undefined) return actions.includes(permission);
     if (permission === 'audit_log.export') return mayTriageUnlisted(orgRole ?? '');
     // §3.1 `profile.read` (LAI-743), through the predicate the links use.
     if (permission === 'profile.read') return mayOpenProfiles(orgRole);

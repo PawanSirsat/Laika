@@ -30,6 +30,7 @@ import { OrgActivity } from './OrgActivity.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import type { OrgRole } from '../../../api/invites.ts';
+import { holdsOrgAction, usePermissions } from '../../../api/permissions.ts';
 import './organisation.css';
 
 export interface OrganisationScreenProps {
@@ -116,14 +117,22 @@ export function OrganisationScreen({
   setParams,
   onNavigate,
 }: OrganisationScreenProps) {
-  const canManage = canManageOrg(me.org_role);
+  const { permissions } = usePermissions();
+  const action = (name: string, fallback: boolean): boolean =>
+    holdsOrgAction(permissions, name) ?? fallback;
+  const roleDefault = canManageOrg(me.org_role);
+  const canInvite = action('user.invite', roleDefault);
+  const canDeactivate = action('user.deactivate', roleDefault);
+  const canSetInsights = action('org.developer_insights.set', roleDefault);
+  const canSetTime = action('org.time.set', roleDefault);
+  const canListTokens = action('token.list_any', roleDefault);
   /**
    * Only the owner changes an org role (D-102 rule 5, LAI-958: `user.set_role`
    * is owner-locked). An admin keeps deactivating and inviting, and sees each
    * role as text. A mirror of the server's rule, not one invented here.
    */
   const canChangeRoles = me.org_role === 'owner';
-  const { state, reload } = useOrganisation(canManage);
+  const { state, reload } = useOrganisation(canInvite);
   const projects = useProjects();
   /** *Invite people* opens People with the address field focused. */
   const inviteRef = useRef<HTMLInputElement | null>(null);
@@ -260,7 +269,7 @@ export function OrganisationScreen({
       description={context}
       below={tabStrip}
     >
-      {canManage && (
+      {canInvite && (
         <button
           type="button"
           className="bar-control bar-control-primary"
@@ -355,7 +364,7 @@ export function OrganisationScreen({
                   </span>
                 </dd>
               </div>
-              {canManage && (
+              {canInvite && (
                 <div className="org-stat">
                   <dt>Pending invites</dt>
                   <dd>
@@ -391,7 +400,7 @@ export function OrganisationScreen({
                   <div className="org-fact" data-fact="developer-insights">
                     <dt id="org-insights-label">Developer insights</dt>
                     <dd>
-                      {canManage ? (
+                      {canSetInsights ? (
                         <Switch
                           checked={org.developer_insights}
                           labelledBy="org-insights-label"
@@ -423,12 +432,12 @@ export function OrganisationScreen({
                   {/* D-088 (LAI-787): the organisation's half of time — off, typed
                       entries only, or drafts too. Controls for an owner or admin, a
                       word for everyone else, as Developer insights above. */}
-                  <TimeModeFact canManage={canManage} />
+                  <TimeModeFact canManage={canSetTime} />
 
                   {/* D-101 (LAI-956): the organisation's breaks, drawn on every
                       person's My day. Editable by whoever sets Time; read by
                       everyone else, and absent when there are none. */}
-                  <BreakScheduleFact canManage={canManage} />
+                  <BreakScheduleFact canManage={canSetTime} />
                 </dl>
               </section>
             )}
@@ -489,7 +498,7 @@ export function OrganisationScreen({
                         </span>
                         <span className="org-person-email">{person.email}</span>
                       </span>
-                      {canManage && person.id !== me.id ? (
+                      {(canChangeRoles || canDeactivate) && person.id !== me.id ? (
                         /* **Absent, not disabled**, for somebody who may not manage
                            the org — the rest of this app hides what `can()` refuses,
                            and a greyed control still says "this exists and is yours",
@@ -526,24 +535,26 @@ export function OrganisationScreen({
                               `user.deactivated` and `user.reactivated` answer different
                               questions, and one button labelled "deactivate" doing both
                               would be worse than either. */}
-                          <button
-                            type="button"
-                            className={person.is_active ? 'org-deactivate' : 'org-reactivate'}
-                            disabled={changing === person.id}
-                            onClick={() => {
-                              if (
-                                person.is_active &&
-                                !window.confirm(
-                                  `Deactivate ${person.name}? They are locked out immediately. Their tasks, comments and history stay exactly as they are — this is not deletion.`,
-                                )
-                              ) {
-                                return;
-                              }
-                              change(person.id, { is_active: !person.is_active });
-                            }}
-                          >
-                            {person.is_active ? 'Deactivate' : 'Reactivate'}
-                          </button>
+                          {canDeactivate && (
+                            <button
+                              type="button"
+                              className={person.is_active ? 'org-deactivate' : 'org-reactivate'}
+                              disabled={changing === person.id}
+                              onClick={() => {
+                                if (
+                                  person.is_active &&
+                                  !window.confirm(
+                                    `Deactivate ${person.name}? They are locked out immediately. Their tasks, comments and history stay exactly as they are — this is not deletion.`,
+                                  )
+                                ) {
+                                  return;
+                                }
+                                change(person.id, { is_active: !person.is_active });
+                              }}
+                            >
+                              {person.is_active ? 'Deactivate' : 'Reactivate'}
+                            </button>
+                          )}
                         </span>
                       ) : (
                         <span className="org-person-role">
@@ -572,7 +583,7 @@ export function OrganisationScreen({
               </p>
             </section>
 
-            {canManage && (
+            {canInvite && (
               <section className="org-card" aria-labelledby="org-invites">
                 <header className="org-card-head">
                   <h2 id="org-invites">Pending invites</h2>
@@ -812,7 +823,7 @@ export function OrganisationScreen({
             />
           ))}
 
-        {tab === 'security' && canManage && (
+        {tab === 'security' && canListTokens && (
           <section className="org-card" aria-labelledby="org-security">
             <header className="org-card-head">
               <h2 id="org-security">Tokens by person</h2>

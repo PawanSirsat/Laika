@@ -40,6 +40,7 @@ import {
 } from '../../routes/page-tabs.ts';
 import { StateGallery } from '../StateGallery.tsx';
 import { TokenReference } from '../../theme/TokenReference.tsx';
+import { usePermissions } from '../../api/permissions.ts';
 
 /**
  * Which frame a screen mounts into.
@@ -309,7 +310,8 @@ function InboxRoute() {
     reviewWaiting,
     unlistedOpen,
   } = useShell();
-  const holds = permissionHolder(me?.org_role);
+  const { permissions } = usePermissions(me !== undefined);
+  const holds = permissionHolder(me?.org_role, permissions?.me.actions);
   const tab = currentTab(INBOX_TABS, params, holds);
   return (
     <InboxScreen
@@ -329,7 +331,8 @@ function InsightsRoute() {
     route: { params, navigate },
     me,
   } = useShell();
-  const holds = permissionHolder(me?.org_role);
+  const { permissions } = usePermissions(me !== undefined);
+  const holds = permissionHolder(me?.org_role, permissions?.me.actions);
   const tab = currentTab(INSIGHTS_TABS, params, holds);
   return (
     <InsightsScreen tabs={visibleTabs(INSIGHTS_TABS, holds)} current={tab} onNavigate={navigate}>
@@ -352,11 +355,12 @@ function OrganisationRoute() {
     me,
     route: { params, setParams, navigate },
   } = useShell();
+  const { permissions } = usePermissions(me !== undefined);
   // The screen requires a user; the gate has already refused every other
   // session state on this protected route, so this is the frame before a
   // redirect lands rather than a state anyone sits in.
   if (me === undefined) return null;
-  const holds = permissionHolder(me.org_role);
+  const holds = permissionHolder(me.org_role, permissions?.me.actions);
   const refused = refusedTab(ORGANISATION_TABS, params, holds);
   return (
     <OrganisationScreen

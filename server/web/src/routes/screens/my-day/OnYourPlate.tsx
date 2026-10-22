@@ -4,6 +4,7 @@ import type { MeProfile } from '../../../api/me.ts';
 import type { Project } from '../../../api/projects.ts';
 import type { ReviewQueueItem } from '../../../api/review.ts';
 import { canConfigureProject, getTask, listTasks, type TaskStatus } from '../../../api/tasks.ts';
+import { implicitlyLeads, usePermissions } from '../../../api/permissions.ts';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import {
   blockerIds,
@@ -58,6 +59,7 @@ export function usePlate(
   me: MeProfile | undefined,
   readable: readonly Project[] | null | undefined,
 ): PlateLoad {
+  const { permissions } = usePermissions(me !== undefined);
   const [load, setLoad] = useState<PlateLoad>({ kind: 'loading' });
   useEffect(() => {
     if (me === undefined || readable === undefined) return;
@@ -73,7 +75,9 @@ export function usePlate(
       const spaces = readable.filter(
         (p) =>
           p.archived_at === null &&
-          (member.has(p.id) || canConfigureProject(me.org_role, p.id, me.memberships)),
+          (member.has(p.id) ||
+            (implicitlyLeads(permissions, p.id) ??
+              canConfigureProject(me.org_role, p.id, me.memberships))),
       );
       const pages = await Promise.all(
         spaces.flatMap((space) =>
@@ -115,7 +119,7 @@ export function usePlate(
     return () => {
       controller.abort();
     };
-  }, [me, readable]);
+  }, [me, permissions, readable]);
   return load;
 }
 

@@ -1,4 +1,5 @@
 import { request } from './client.ts';
+import { useCallback, useEffect, useState } from 'react';
 
 /**
  * Who may do what (SPEC §6.4, LAI-885; the screen is LAI-950).
@@ -62,6 +63,82 @@ export interface Permissions {
 
 export function getPermissions(signal?: AbortSignal): Promise<Permissions> {
   return request<Permissions>('/permissions', signal === undefined ? {} : { signal });
+}
+
+export interface EffectivePermissions {
+  readonly permissions: Permissions | undefined;
+  readonly settled: boolean;
+  readonly refresh: () => void;
+}
+
+/**
+ * The browser's one source of effective authority. Every caller shares the
+ * request cache; a refresh publishes the new answer to every mounted gate.
+ */
+let current: Permissions | undefined;
+const listeners = new Set<() => void>();
+
+function publish(next: Permissions | undefined): void {
+  current = next;
+  for (const listener of listeners) listener();
+}
+
+export function usePermissions(enabled = true): EffectivePermissions {
+  const [, render] = useState(0);
+  const [settled, setSettled] = useState(!enabled);
+  useEffect(() => {
+    if (!enabled) return;
+    const controller = new AbortController();
+    const listener = () => render((n) => n + 1);
+    listeners.add(listener);
+    getPermissions(controller.signal)
+      .then((next) => {
+        if (!controller.signal.aborted) publish(next);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!controller.signal.aborted) setSettled(true);
+      });
+    return () => {
+      listeners.delete(listener);
+      controller.abort();
+    };
+  }, [enabled]);
+  const refresh = useCallback(() => {
+    void getPermissions().then(publish);
+  }, []);
+  return { permissions: current, settled, refresh };
+}
+
+export async function refreshPermissions(signal?: AbortSignal): Promise<Permissions> {
+  const next = await getPermissions(signal);
+  publish(next);
+  return next;
+}
+
+export function holdsOrgAction(view: Permissions | undefined, action: string): boolean | undefined {
+  return view?.me.actions.includes(action);
+}
+
+export function holdsProjectAction(
+  view: Permissions | undefined,
+  projectId: string,
+  action: string,
+): boolean | undefined {
+  if (view === undefined) return undefined;
+  const inScope = view.me.project_scope === 'all' || view.me.project_scope.includes(projectId);
+  if (!inScope) return false;
+  const explicit = view.me.projects.find((project) => project.project_id === projectId);
+  if (explicit?.actions.includes(action) === true) return true;
+  return view.me.implicit_project_role !== null && action === 'project.settings.edit';
+}
+
+export function implicitlyLeads(view: Permissions | undefined, projectId: string): boolean | undefined {
+  if (view === undefined) return undefined;
+  return (
+    view.me.implicit_project_role === 'lead' &&
+    (view.me.project_scope === 'all' || view.me.project_scope.includes(projectId))
+  );
 }
 
 /**

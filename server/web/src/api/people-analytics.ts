@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
 import { request } from './client.ts';
 import type { OwnLocalActivity } from './local-activity.ts';
-import { getPermissions } from './permissions.ts';
+import { usePermissions } from './permissions.ts';
 import { mayOpenProfiles } from './profiles.ts';
 import type { Page } from './tasks.ts';
 import type { MyDay } from './time.ts';
@@ -124,24 +123,6 @@ export interface OrgActions {
  * page asks one request between them.
  */
 export function useOrgActions(enabled = true): OrgActions {
-  const [state, setState] = useState<OrgActions>({ actions: undefined, settled: false });
-
-  useEffect(() => {
-    if (!enabled) return;
-    const controller = new AbortController();
-    getPermissions(controller.signal)
-      .then((permissions) => {
-        if (!controller.signal.aborted) {
-          setState({ actions: permissions.me.actions, settled: true });
-        }
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setState({ actions: undefined, settled: true });
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [enabled]);
-
-  return state;
+  const { permissions, settled } = usePermissions(enabled);
+  return { actions: permissions?.me.actions, settled };
 }

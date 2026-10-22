@@ -48,6 +48,11 @@ const org = (developer_insights: boolean) => ({
   updated_at: 2,
 });
 
+const permissions = (org_role: string, actions: readonly string[]) => ({
+  org_roles: [], project_roles: [], permissions: [],
+  me: { org_role, credential: 'session', project_scope: 'all', implicit_project_role: null, actions, projects: [] },
+});
+
 void after(async () => {
   await closeBrowser();
 });
@@ -110,6 +115,31 @@ void describe('Organisation: Developer insights', () => {
       assert.match(await fact.innerText(), /^Developer insights\s*on/i);
     } finally {
       await h.close();
+    }
+  });
+
+  void test('the editor follows the live grant for admin, member and owner', async () => {
+    for (const [role, actions, editable] of [
+      ['admin', [], false],
+      ['member', ['org.developer_insights.set'], true],
+      ['owner', ['org.developer_insights.set'], true],
+    ] as const) {
+      const h = await open('/organisation', {
+        '/api/v1/me': me(role),
+        '/api/v1/permissions': permissions(role, actions),
+        '/api/v1/projects': { data: [], next_cursor: null },
+        '/api/v1/users': { data: [user('u1', 'Ada Lovelace', role)], next_cursor: null },
+        '/api/v1/invites': { data: [], next_cursor: null },
+        '/api/v1/org': org(true),
+      });
+      try {
+        const fact = h.page.locator('[data-fact="developer-insights"]');
+        await fact.waitFor({ timeout: 20_000 });
+        await until(async () => (await fact.getByRole('switch').count()) === (editable ? 1 : 0));
+        assert.equal(await fact.getByRole('switch').count(), editable ? 1 : 0);
+      } finally {
+        await h.close();
+      }
     }
   });
 });
