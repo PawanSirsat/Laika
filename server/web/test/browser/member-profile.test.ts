@@ -1320,7 +1320,7 @@ void describe('the ways in are links for owners and admins only', () => {
       '/api/v1/users/u2/profile': BUILDER,
     });
     try {
-      const link = h.page.locator('.org-people a[href="/people?user=u2"]');
+      const link = h.page.locator('.org-people-table a[href="/people?user=u2"]');
       await link.waitFor({ timeout: 20_000 });
       assert.match(await link.innerText(), /Bea Builder/);
       await link.click();
@@ -1341,7 +1341,7 @@ void describe('the ways in are links for owners and admins only', () => {
       const h = await open('/organisation?tab=people', { ...ORG_STUB, '/api/v1/me': me(id, role) });
       try {
         await h.page
-          .locator('.org-people li', { hasText: 'Bea Builder' })
+          .locator('.org-person', { hasText: 'Bea Builder' })
           .waitFor({ timeout: 20_000 });
         assert.equal(
           await h.page.locator('a[href^="/people"]').count(),
