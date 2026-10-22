@@ -9,6 +9,7 @@ import { Spinner } from '../../../components/Spinner.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { everyPage } from '../../../api/every-page.ts';
 import { canManageOrg } from '../../../api/invites.ts';
+import { usePermissions } from '../../../api/permissions.ts';
 import { getOrg } from '../../../api/org.ts';
 import { getPresence, hasLocation } from '../../../api/presence.ts';
 import { pickProject } from '../../../api/pick-project.ts';
@@ -404,7 +405,10 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
     setExtra(id);
   };
 
-  const canInvite = me !== undefined && canManageOrg(me.org_role);
+  const { permissions } = usePermissions(me !== undefined);
+  const canInvite =
+    me !== undefined &&
+    (permissions?.me.actions.includes('user.invite') ?? canManageOrg(me.org_role));
   const extras = extrasFor(canInvite);
   const openedExtra = extras.find((e) => e.id === extra);
 

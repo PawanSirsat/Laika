@@ -181,16 +181,24 @@ const COLLECTS =
 const NOTICE = `${COLLECTS} The owner and admins can see it, and you can see who looked.`;
 
 /** `GET /api/v1/org/permissions` (LAI-958), the capability that decides the audience. */
-const orgPermissions = (analytics: Readonly<Record<string, boolean>>) => ({
+const orgPermissions = (
+  analytics: Readonly<Record<string, boolean>>,
+  settings: Readonly<Record<string, boolean>> = { admin: true },
+) => ({
   roles: ['admin', 'member', 'viewer'],
   capabilities: [
     { id: 'see_people_analytics', label: 'See everyone’s analytics', actions: [] },
     { id: 'manage_people', label: 'Manage people', actions: [] },
+    { id: 'change_org_settings', label: 'Change organisation settings', actions: [] },
   ],
   grants: Object.fromEntries(
     ['admin', 'member', 'viewer'].map((role) => [
       role,
-      { see_people_analytics: analytics[role] ?? false, manage_people: role === 'admin' },
+      {
+        see_people_analytics: analytics[role] ?? false,
+        manage_people: role === 'admin',
+        change_org_settings: settings[role] ?? false,
+      },
     ]),
   ),
   owner_locked: [],
@@ -205,9 +213,14 @@ function connect(
   held: { value: unknown },
   role = 'owner',
   analytics: Readonly<Record<string, boolean>> | null = DEFAULT_GRANTS,
+  settings: Readonly<Record<string, boolean>> = { admin: true },
+  actions: readonly string[] = role === 'owner' || role === 'admin'
+    ? ['org.developer_insights.set', 'user.invite']
+    : [],
 ): ApiStub {
   return {
-    ...(analytics === null ? {} : { '/api/v1/org/permissions': orgPermissions(analytics) }),
+    ...(analytics === null ? {} : { '/api/v1/org/permissions': orgPermissions(analytics, settings) }),
+    '/api/v1/permissions': permissions(role, actions),
     '/api/v1/me': me(role),
     '/api/v1/projects': { data: [], next_cursor: null },
     '/api/v1/tokens': { data: [], next_cursor: null },
@@ -247,7 +260,7 @@ void describe('Developer access: Share local activity', () => {
   for (const [role, guidance] of [
     ['owner', 'You can turn them on in Organisation.'],
     ['admin', 'You can turn them on in Organisation.'],
-    ['member', 'An owner or admin can turn them on.'],
+    ['member', 'Only the owner and admins can turn them on.'],
   ] as const) {
     void test(`${role}: explains who can enable organisation insights`, async () => {
       const h = await open(
@@ -276,7 +289,7 @@ void describe('Developer access: Share local activity', () => {
   for (const [role, guidance, organisationLink] of [
     ['owner', 'You can turn Developer insights off in Organisation.', 1],
     ['admin', 'You can turn Developer insights off in Organisation.', 1],
-    ['member', 'Only an owner or admin can turn it off.', 0],
+    ['member', 'Only the owner and admins can turn it off.', 0],
   ] as const) {
     void test(`${role}: with organisation insights on, is told plainly — no switch of their own (D-102)`, async () => {
       // `enabled: false` is what this person last chose under D-079; it no longer decides anything.
@@ -408,6 +421,37 @@ void describe('Share local activity: who can see it follows the owner’s grants
       }
     });
   }
+
+  void test('turn-off guidance follows withdrawn and granted change-org-settings permissions', async () => {
+    for (const [role, settings, actions, guidance, linked] of [
+      ['admin', { admin: false }, [], 'Only the owner can turn it off.', false],
+      ['member', { member: true }, ['org.developer_insights.set'], 'You can turn Developer insights off in Organisation.', true],
+      ['owner', { admin: false }, ['org.developer_insights.set'], 'You can turn Developer insights off in Organisation.', true],
+    ] as const) {
+      const h = await open(
+        '/developer',
+        connect(
+          { org: true, enabled: true, scope: 'agent-repos' },
+          { value: HELD },
+          role,
+          DEFAULT_GRANTS,
+          settings,
+          actions,
+        ),
+      );
+      try {
+        const notice = h.page.locator('.dev-sharing [data-state="org-collects"]');
+        await notice.waitFor({ timeout: 20_000 });
+        assert.match(await notice.innerText(), new RegExp(guidance.replace(/[.]/g, '\\.'), 'i'));
+        assert.equal(
+          await notice.locator('a[href="/organisation?tab=overview"]').count(),
+          linked ? 1 : 0,
+        );
+      } finally {
+        await h.close();
+      }
+    }
+  });
 });
 
 void describe('Connect: Share local activity', () => {
