@@ -2,11 +2,14 @@
 id: LAI-954
 title: 'Two My Day browser tests fail late in the day: "now at 60%" and the "12 PM" tick read the wall clock'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-953
-status: backlog
+status: done
+started: 2026-10-22T12:48:07Z
+finished: 2026-10-22T12:48:07Z
+accepted: 2026-10-22T12:48:07Z
 ---
 
 ## Goal
@@ -43,3 +46,14 @@ day.**
       pass at any local time of day; demonstrated by running them with the
       clock set to early morning, noon and late evening.
 - [ ] Gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
+
+## Closed as a duplicate (2026-10-22T12:48:07Z, CHIEF)
+
+Filed by the LAI-953 builder at 17:45 IST from a tree that predated
+`a9932c8e` (*"two My day tests stop depending on the clock"*, LAI-889), which
+another CHIEF session had already landed on `origin/master` for the same two
+tests. Re-run on the merged tree at 17:59 IST: `node --test
+test/browser/my-day-v3.test.ts test/browser/my-day.test.ts` → `# pass 14`,
+`# fail 0`, exit 0. No work done under this id; the first filing (LAI-889's
+fix) wins.
+
