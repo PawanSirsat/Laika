@@ -2,11 +2,12 @@
 id: LAI-959
 title: 'Owner and admin have nowhere to open a person''s day, hours and activity, and nothing links a name to it'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-957]
 discovered-from:
-status: backlog
+started: 2026-10-22T14:31:35Z
+status: in-progress
 ---
 
 ## Acceptance criteria
