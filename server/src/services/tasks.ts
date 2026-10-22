@@ -1112,7 +1112,7 @@ function allTasksScope(
 export const SUMMARY_ASSIGNEES = 10;
 
 /** The categories a task is still open in — not `done`, not `cancelled`. */
-const OPEN_STATUSES: readonly TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review'];
+export const OPEN_STATUSES: readonly TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review'];
 
 export interface TaskCountsView {
   total: number;

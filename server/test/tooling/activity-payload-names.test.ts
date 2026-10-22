@@ -788,7 +788,9 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       discardMeetingReview(t.db, owner(), discardedId, JAN1);
 
       // Archiving last: it is the one that takes a project out of active views.
-      removeMember(t.db, owner(), 'core', memberId);
+      // With their open tasks unassigned (LAI-986), so the offboarding
+      // `task.assigned` rows are in the census too.
+      removeMember(t.db, owner(), 'core', memberId, JAN1, 'unassign');
       updateProject(t.db, owner(), 'core', { archived: true });
 
       const rows = t.db.select().from(activity).all();

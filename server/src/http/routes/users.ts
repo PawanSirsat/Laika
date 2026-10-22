@@ -13,7 +13,7 @@ import {
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseUpdatedSince } from '../updated-since.ts';
-import { parseBody, strictObject, z } from '../validation.ts';
+import { OpenTasksSchema, parseBody, strictObject, z } from '../validation.ts';
 
 /**
  * `GET /api/v1/users` (SPEC §6.4). Transport only — §3.1's cell and §4.1's
@@ -36,6 +36,7 @@ import { parseBody, strictObject, z } from '../validation.ts';
 const UserPatchBody = strictObject({
   org_role: z.enum(ORG_ROLES).optional(),
   is_active: z.boolean().optional(),
+  open_tasks: OpenTasksSchema.optional(),
 });
 
 function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) {
@@ -105,7 +106,13 @@ export function userRoutes(options: { db: Db }): Hono<AppEnv> {
     }
 
     let view = body.org_role === undefined ? undefined : setOrgRole(db, actor, id, body.org_role);
-    if (body.is_active !== undefined) view = setUserActive(db, actor, id, body.is_active);
+    if (body.is_active !== undefined) {
+      view = setUserActive(db, actor, id, body.is_active, Date.now(), body.open_tasks);
+    } else if (body.open_tasks !== undefined) {
+      throw new ApiError('unprocessable', 'open_tasks applies only to deactivating someone', {
+        field: 'open_tasks',
+      });
+    }
 
     return c.json(view!);
   });
