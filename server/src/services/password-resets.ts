@@ -187,31 +187,37 @@ export async function consumeResetLink(
 
   if (row === undefined) refuse('not_found', 'unknown', 'That reset link is not valid.');
   const link = row!;
-  if (link.usedAt !== null) {
-    refuse('conflict', 'used', 'That reset link has already been used. Ask for a new one.');
-  }
-  if (link.revokedAt !== null) {
-    refuse('conflict', 'revoked', 'A newer reset link replaced this one. Use the newest.');
-  }
-  if (link.expiresAt <= clock()) {
-    refuse('conflict', 'expired', 'That reset link has expired. Ask for a new one.');
-  }
+  const refuseSpent = (spent: { usedAt: number | null; revokedAt: number | null }): never => {
+    if (spent.usedAt !== null) {
+      refuse('conflict', 'used', 'That reset link has already been used. Ask for a new one.');
+    }
+    if (spent.revokedAt !== null) {
+      refuse('conflict', 'revoked', 'A newer reset link replaced this one. Use the newest.');
+    }
+    return refuse('conflict', 'expired', 'That reset link has expired. Ask for a new one.');
+  };
+  const isActive = (): boolean =>
+    db.select({ isActive: users.isActive }).from(users).where(eq(users.id, link.userId)).get()
+      ?.isActive === 1;
+  const inactive = (): ApiError =>
+    new ApiError('forbidden', 'This account has been deactivated', { reason: 'inactive' });
 
-  const person = db
-    .select({ isActive: users.isActive })
-    .from(users)
-    .where(eq(users.id, link.userId))
-    .get();
-  if (person?.isActive !== 1) {
-    throw new ApiError('forbidden', 'This account has been deactivated', { reason: 'inactive' });
+  if (link.usedAt !== null || link.revokedAt !== null || link.expiresAt <= clock()) {
+    refuseSpent(link);
   }
+  if (!isActive()) throw inactive();
 
   // Hashing is asynchronous and the transaction below is not, so it happens
-  // first; the claim inside the transaction is what makes the link single-use.
+  // first. **Everything checked above is checked again inside the
+  // transaction**, because the await lets other requests run: a deactivation
+  // or a newer link landing while the password hashed must win (LAI-983
+  // review). The claim's own conditions re-check the link.
   const hash = await deps.hashPassword(input.newPassword);
   const now = clock();
 
   const ended = db.transaction(() => {
+    if (!isActive()) throw inactive();
+
     const claimed = db
       .update(passwordResets)
       .set({ usedAt: now })
@@ -242,10 +248,11 @@ export async function consumeResetLink(
     return endEverySession(db, link.userId);
   });
 
-  // Lost the race between the checks above and the claim: another request
-  // spent it first.
+  // Lost the race between the checks above and the claim: say what spent it.
   if (ended === null) {
-    refuse('conflict', 'used', 'That reset link has already been used. Ask for a new one.');
+    refuseSpent(
+      db.select().from(passwordResets).where(eq(passwordResets.id, link.id)).get() ?? link,
+    );
   }
 
   deps.throttle.recordSuccess(key);
