@@ -190,6 +190,9 @@ const PROJECT_LABELS: Readonly<Record<string, string>> = {
   'unlisted.dismissed': 'dismissed unlisted work',
   'user.deactivated': 'deactivated a member',
   'user.reactivated': 'reactivated a member',
+  // D-104 items 2 and 3 (LAI-981, LAI-982): org-level, like the two above.
+  'user.signed_out': 'signed a member out everywhere',
+  'org.ownership_transferred': 'transferred ownership of the organisation',
   // The in-process cron (LAI-431). Wording exists for all four because the
   // decision below is about *display*, not vocabulary.
   'heartbeat.pruned': 'pruned old heartbeats',

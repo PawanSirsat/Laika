@@ -31,6 +31,7 @@ const person = (id: string, name: string, org_role: string, is_active = true): O
   email: `${id}@example.com`,
   org_role,
   is_active,
+  last_seen_at: null,
   created_at: 1,
   updated_at: 1,
 });

@@ -20,6 +20,11 @@ export interface OrgUser {
   readonly email: string;
   readonly org_role: string;
   readonly is_active: boolean;
+  /**
+   * When they were last seen signed in — the latest activity of any session,
+   * live or ended (LAI-981). `null` for somebody who has never signed in.
+   */
+  readonly last_seen_at: number | null;
   readonly created_at: number;
   readonly updated_at: number;
 }

@@ -202,6 +202,8 @@ const LABELS: Readonly<Record<string, string>> = {
 
   'user.deactivated': 'deactivated a user',
   'user.reactivated': 'reactivated a user',
+  'user.signed_out': 'signed a user out everywhere',
+  'org.ownership_transferred': 'transferred ownership of the organisation',
 
   'invite.expired': 'let an invite expire',
 };
