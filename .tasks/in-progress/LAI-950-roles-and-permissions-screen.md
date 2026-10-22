@@ -2,11 +2,12 @@
 id: LAI-950
 title: 'Organisation has no Roles & Permissions view: an owner cannot see what each role may do'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-885]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T12:08:00Z
 ---
 
 ## Goal
