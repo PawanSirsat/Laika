@@ -55,3 +55,17 @@ The third criterion is ticked for its first five clauses. **Its last clause,
 This task's four endpoints (`users/*/memberships`, `users/*/sign-out`,
 `users/*/reset-link`, `password-resets/consume`) left the endpoint-coverage
 list, and their four view types are paired.
+
+## Review response — Codex release 2 review (PR #89), 2026-10-23 (SHELL)
+
+Criteria unchanged. Branch `release2-web-review-fixes` from `b881445f`.
+
+- **Blocking — the reset token stayed in the URL, history and state**
+  (`ResetPasswordRoute.tsx`). The token is read once into state, then
+  dropped from the address at once by `setParams` (`history.replaceState`),
+  so neither the bar nor Back holds it. It is cleared from state after a
+  set password or a terminal refusal; a throttle keeps it, since the link is
+  not spent. Tests in `person-admin.test.ts`: `page.url()` has no `token`
+  once the form is drawn, after success, and after each of the five
+  refusals. After a throttle the URL is clean and the retry still posts the
+  token. A missing token still says so.

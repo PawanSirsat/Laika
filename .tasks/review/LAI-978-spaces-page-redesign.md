@@ -64,3 +64,16 @@ cli 606 tests, 0 fail. `pnpm lint` 0, `pnpm format` 0.
 
 **Settings link.** Points at `/spaces/<slug>/settings`, which LAI-977 builds;
 until then it reaches Not found. No placeholder route was added.
+
+## Review response — Codex release 2 review (PR #89), 2026-10-23 (SHELL)
+
+Criteria unchanged. Branch `release2-web-review-fixes` from `b881445f`.
+
+- **Blocking — Restore gated on `project.archive` alone**
+  (`ProjectsScreen.tsx`). Restore is the settings `PATCH`, which also asks
+  the space's `project.settings.edit`. It now asks both, per space. Tests in
+  `spaces-page.test.ts`: a member granted *Create and archive spaces*
+  without *Open every project*, a plain member of the archived space, is
+  never shown Restore (watched from boot). The same grant as that space's
+  Space admin is shown it. The button gained `data-action="restore"` for
+  the watch.

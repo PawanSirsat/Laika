@@ -87,3 +87,28 @@ and the role-copy helpers are deleted (census in `logs/shell-2026-10-22.md`).
 its end state. The browser harness answers `/permissions` from the served
 `/me` under the default grants (generated from `permissionsCatalogue()`), so
 fixtures that predate LAI-970 keep their controls.
+
+## Review response — Codex release 2 review (PR #89), 2026-10-23 (SHELL)
+
+Criteria unchanged. Branch `release2-web-review-fixes` from `b881445f`.
+
+- **Blocking — a failed refresh kept the last grants** (`api/permissions.ts`).
+  A refresh that fails now publishes `failed` with no answer at all, so every
+  gate denies and the shell's *Retry* notice shows; `refreshPermissions`
+  does the same unless the caller aborted. Test: `grant-gates.test.ts` *a
+  refresh that fails after a good answer withdraws everything, and offers the
+  retry* — good load, then the re-read fails: Activity and Security tabs
+  go, the banner comes, Retry brings them back. Red on the old code.
+- **Blocking — Work's *By person* gated on `me.org_role`**
+  (`work/WorkScreen.tsx`). The server serves `by_assignee` to every reader:
+  `GET /tasks/summary` asks only each project's `task.read` (LAI-974,
+  `summariseAllTasks` → `allTasksScope`). There is no per-person action on
+  that route, so the row now asks the org grant meant for a per-person view,
+  `people.analytics.read` (*See everyone's analytics*). Tests in
+  `work.test.ts`: a member granted it sees the row; an admin it was withdrawn
+  from never does (watched from boot). **Note for CHIEF:** the figures are
+  not secret on the wire — a member can read `by_assignee` from the
+  response. If they should be, the server needs a gate; that is CORE's.
+- **Non-blocking — org token Revoke** (`OrganisationScreen.tsx`) now asks
+  `token.revoke_any` as well as the tab's `token.list_any`. Test in
+  `organisation-tokens.test.ts`.

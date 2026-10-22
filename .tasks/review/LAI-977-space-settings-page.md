@@ -66,3 +66,20 @@ Access · Danger zone**.
   Hide done, since Visibility left the panel.
 - **Discovered:** LAI-992 — the board offers *Add task* on `task.write`, so
   *Space admins only* still shows members a create that answers `403`.
+
+## Review response — Codex release 2 review (PR #89), 2026-10-23 (SHELL)
+
+Criteria unchanged. Branch `release2-web-review-fixes` from `b881445f`.
+
+- **Blocking — a space admin who demotes themselves kept the controls**
+  (`MembersTab.tsx`). The store loads only from idle, so nothing re-asked.
+  Any change to the reader's own membership now refreshes the permission
+  store: their role change, their removal, Undo adding them back, and Leave.
+  Test: `space-settings.test.ts` *a space admin who makes themselves a member
+  loses the admin controls at once* — Remove, the add form and role menus
+  go after `/permissions` is re-read. Red on the old code.
+- **Non-blocking — wording.** The Members footer said Owners and Admins
+  manage every space. It now says anyone whose role is granted “Open every
+  project” can, and a Viewer granted it can only read (`implicitProjectRole`).
+  The Danger zone said only an owner or admin can archive. It now says you
+  need to be Space admin and hold “Create and archive spaces”.
