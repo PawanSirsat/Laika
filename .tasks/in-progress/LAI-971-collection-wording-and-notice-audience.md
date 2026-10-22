@@ -2,11 +2,12 @@
 id: LAI-971
 title: 'The CLI still says sharing is personal, and the collection notice names "owners and admins" whatever the owner granted'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-963, LAI-964, LAI-958]
 discovered-from: LAI-964
-status: backlog
+status: in-progress
+started: 2026-10-22T16:18:11Z
 ---
 
 ## Goal
