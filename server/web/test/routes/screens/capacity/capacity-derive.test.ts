@@ -20,7 +20,6 @@ import {
   sortPeople,
   statusText,
   summarize,
-  taskIdsToResolve,
   teamLoad,
   workloadIn,
 } from '../../../../src/routes/screens/capacity/capacity-derive.ts';
@@ -370,16 +369,5 @@ void describe('bars and figures', () => {
         ['todo', 3, 75],
       ],
     );
-  });
-});
-
-void describe('taskIdsToResolve — only what is drawn', () => {
-  void test('the open cards’ tasks and the matched ones, nothing folded', () => {
-    const people = [
-      person({ user_id: 'a', in_progress_tasks: ['t1', 't2'] }),
-      person({ user_id: 'b', in_progress_tasks: ['t3'] }),
-    ];
-    assert.deepEqual(taskIdsToResolve(people, new Set(), ['t9', null]), ['t9']);
-    assert.deepEqual([...taskIdsToResolve(people, new Set(['a']), ['t1'])].sort(), ['t1', 't2']);
   });
 });
