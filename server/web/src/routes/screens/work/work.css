@@ -52,7 +52,7 @@
 
 .work-head {
   color: var(--text-muted);
-  font-size: var(--text-tiny);
+  font-size: var(--text-small);
   font-weight: var(--weight-semibold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
