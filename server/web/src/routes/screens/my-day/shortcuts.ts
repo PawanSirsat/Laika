@@ -12,15 +12,7 @@
  */
 
 export type Shortcut =
-  | 'confirm'
-  | 'general'
-  | 'dismiss'
-  | 'next'
-  | 'prev'
-  | 'right'
-  | 'left'
-  | 'help'
-  | 'close';
+  'confirm' | 'general' | 'dismiss' | 'next' | 'prev' | 'right' | 'left' | 'help' | 'close';
 
 /** What a key event carries that matters here — a real one, or a test's. */
 export interface KeyLike {

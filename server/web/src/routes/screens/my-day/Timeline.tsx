@@ -217,8 +217,11 @@ export function Timeline({
     .filter((s) => s.folded)
     .map((s) => ({ start: s.t0, end: s.t1 }));
   const x = scale.pos;
-  const left = (minute: number): number => x(minute) + 1;
-  const wide = (a: number, b: number): number => Math.max(1, x(b) - x(a) - 2);
+  // A block keeps a pixel's gutter each side, as the design draws it — unless
+  // it is narrower than sixteen, where the gutter would take the handle's room.
+  const inset = (a: number, b: number): number => (x(b) - x(a) >= 16 ? 1 : 0);
+  const left = (a: number, b: number): number => x(a) + inset(a, b);
+  const wide = (a: number, b: number): number => Math.max(1, x(b) - x(a) - 2 * inset(a, b));
   const pxPerMinute = scale.total / Math.max(1, (to - from) * 60);
 
   const drafts = new Map(view.drafts.map((d) => [d.id, d]));
@@ -993,7 +996,7 @@ export function Timeline({
                       type="button"
                       className="dayline-strip"
                       data-strip={s.id}
-                      style={{ left: left(s.start), width: wide(s.start, s.end) }}
+                      style={{ left: left(s.start, s.end), width: wide(s.start, s.end) }}
                       aria-label={`${String(s.n)} blocks at once, ${rangeOf(s)}`}
                       onClick={() => {
                         const b = line.blocks.find((k) => k.id === s.id);
@@ -1016,7 +1019,7 @@ export function Timeline({
                       type="button"
                       className={on ? 'dayline-gap dayline-gap-picked' : 'dayline-gap'}
                       data-gap-start={gap.start}
-                      style={{ left: left(gap.start), width: wide(gap.start, gap.end) }}
+                      style={{ left: left(gap.start, gap.end), width: wide(gap.start, gap.end) }}
                       aria-label={`Unaccounted ${rangeOf(gap)}, ${duration(minutes)} — add time or mark a break`}
                       title={`Unaccounted ${rangeOf(gap)} — click to fill`}
                       aria-pressed={on}
@@ -1050,7 +1053,7 @@ export function Timeline({
                         ? 'dayline-break dayline-break-picked'
                         : 'dayline-break'
                     }
-                    style={{ left: left(b.start), width: wide(b.start, b.end) }}
+                    style={{ left: left(b.start, b.end), width: wide(b.start, b.end) }}
                     aria-label={`Break ${rangeOf(b)} — not counted`}
                     title={`Break ${rangeOf(b)} — not counted`}
                     onClick={() => {
@@ -1117,7 +1120,7 @@ export function Timeline({
                       data-kind={block.kind}
                       style={
                         {
-                          left: left(shape.start),
+                          left: left(shape.start, shape.end),
                           width: wide(shape.start, shape.end),
                           '--row': String(row),
                           '--rows': String(rows),
@@ -1220,7 +1223,7 @@ export function Timeline({
                           .join(' ')}
                         data-agent-run={run.onCard ? 'card' : 'none'}
                         data-agent-start={run.start}
-                        style={{ left: left(run.start), width: wide(run.start, run.end) }}
+                        style={{ left: left(run.start, run.end), width: wide(run.start, run.end) }}
                         title={`Agent working ${rangeOf(run)} · ${minutes}${run.onCard ? '' : ' · on no card'}`}
                         onMouseEnter={enter('agent', String(run.start))}
                       >

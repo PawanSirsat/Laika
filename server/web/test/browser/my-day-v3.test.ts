@@ -106,6 +106,9 @@ void describe('the Timeline card (LAI-883, the v3 design)', () => {
   void test('Fit folds the idle hours before the first block and after now, and says so', async () => {
     const h = await openToday();
     try {
+      // Wide enough that the morning before 8:40 makes room when folded: a
+      // fold narrower than its stretch would be stays open (`buildScale`).
+      await h.page.setViewportSize({ width: 1600, height: 900 });
       await h.page.locator('[data-zoom="fit"]').click();
       await until(async () => (await h.page.locator('[data-fold]').count()) >= 1);
       const track = h.page.locator('[data-dayline-track]');
