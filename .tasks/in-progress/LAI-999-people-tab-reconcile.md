@@ -2,11 +2,12 @@
 id: LAI-999
 title: 'Release 2''s People-tab features (LAI-987) collide with the People tab master already shipped (LAI-893)'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-998]
 discovered-from: LAI-998
-status: backlog
+status: in-progress
+started: 2026-10-23T13:00:00Z
 ---
 
 ## Goal
@@ -32,3 +33,10 @@ LAI-987 feature it lacks into it, on top of LAI-998's merged tree.
       a stated reason; LAI-987's tests ported to the merged screen.
 - [ ] Light/dark 1440/390; screenshots.
 - [ ] Gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
+
+## Claim note (SHELL, 2026-10-23)
+
+`depends-on: [LAI-998]` is not in `done/` on `master`. Claimed on CHIEF's
+dispatch against base `d748fcb1` (LAI-998's release-2 integration, gate green);
+recorded as the §2 step 1 deviation. PR targets
+`integration-owner-visibility-2026-10-22`.
