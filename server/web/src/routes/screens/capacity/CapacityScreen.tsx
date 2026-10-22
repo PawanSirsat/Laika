@@ -1,12 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type MouseEvent,
-  type ReactNode,
-} from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { everyPage } from '../../../api/every-page.ts';
 import {
   getCapacity,
@@ -15,8 +7,6 @@ import {
   type PresenceView,
 } from '../../../api/presence.ts';
 import { isProject, listProjects } from '../../../api/projects.ts';
-import { taskStore } from '../../../api/store.ts';
-import { getTask, type TaskSummary } from '../../../api/tasks.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
@@ -34,7 +24,6 @@ import {
   sortPeople,
   SORTS,
   summarize,
-  taskIdsToResolve,
   teamLoad,
   type CapacityFilter,
   type CapacitySort,
@@ -43,22 +32,7 @@ import '../../../components/markers.css';
 import '../profile/profile.css';
 import './capacity.css';
 
-/**
- * A task to open, with its own space (LAI-755). `projectSlug` is `undefined`
- * only when the space list could not be read.
- */
-export interface CapacityTaskLink {
-  readonly id: string;
-  readonly key: string;
-  readonly projectSlug: string | undefined;
-}
-
 export interface CapacityScreenProps {
-  /**
-   * Open a task **in the task's own space** (LAI-755). Capacity spans every
-   * space, so the space last opened is usually the wrong one.
-   */
-  readonly onOpenTask: (task: CapacityTaskLink) => void;
   /**
    * Unlisted notes still waiting, from the shell (LAI-754). **`undefined` draws
    * no tile** — a reader without `audit_log.export` is not told the queue
@@ -122,8 +96,8 @@ function rememberView(view: CapacityViewMode): void {
  * one card a person with a status ring and a load badge.
  *
  * **LAI-991 compacted it to the owner's design.** Every card draws every block
- * — workload, agents, activity for an admin, spaces, tasks — with a `0` where
- * there is nothing, so the cards are one shape and one height. A **Cards /
+ * — workload, agents, spaces — with a `0` where there is nothing, so the
+ * cards are one shape and one height. A **Cards /
  * List** toggle adds a table of the same people, whose bars share one scale:
  * that table is the team-load chart, and it replaced the *Team load* and
  * *Agents running now* panels that sat under the grid.
@@ -132,8 +106,10 @@ function rememberView(view: CapacityViewMode): void {
  *
  * Status, last seen, the workload counts and the load badge arrive decided
  * (SPEC §9.3): this screen filters, sorts and says them. **What a member may
- * not see is not sent** — the profile kind, the 14-day series and the agents
- * a person is not running are absent from a member's answer, not hidden here.
+ * not see is not sent** — the profile kind and the agents a person is not
+ * running are absent from a member's answer, not hidden here. The 14-day
+ * series still arrives for an owner or admin and is drawn on the profile,
+ * not here (LAI-992).
  *
  * `enabled: false` is a fact, not an empty list: with presence off the cards
  * still show the workload, and say *Presence is off* where a status would be.
@@ -143,11 +119,10 @@ function rememberView(view: CapacityViewMode): void {
  * `GET /events` carries **activity** per space, not presence — nothing on that
  * stream fires when somebody comes online, so a screen driven by it would sit
  * still while going stale. This re-reads every 20 s while the tab is visible,
- * and at once when it comes back. Tasks are resolved from the shared task
- * store first (LAI-724), and only for what is drawn.
+ * and at once when it comes back. **No task is read** (LAI-992): the
+ * `GET /tasks/:id` behind a matched task and *Show tasks* went with them.
  */
 export function CapacityScreen({
-  onOpenTask,
   unlistedOpen,
   reviewWaiting,
   reviewCapped,
@@ -165,7 +140,6 @@ export function CapacityScreen({
   const [filter, setFilter] = useState<CapacityFilter>('all');
   const [space, setSpace] = useState<string | null>(null);
   const [sort, setSort] = useState<CapacitySort>('online');
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [showNever, setShowNever] = useState(false);
   const [view, setView] = useState<CapacityViewMode>(rememberedView);
   const chooseView = (next: CapacityViewMode): void => {
@@ -174,16 +148,8 @@ export function CapacityScreen({
   };
 
   /**
-   * The tasks the screen draws, by id: each session's matched task, and the
-   * in-progress tasks of a card whose *Show tasks* is open. A held task set
-   * answers first (LAI-724); otherwise one `GET /tasks/:id`, asked again on the
-   * next poll if it failed.
-   */
-  const [resolved, setResolved] = useState<ReadonlyMap<string, TaskSummary>>(new Map());
-
-  /**
-   * Every space this reader can see: for the selector, and so a task opens in
-   * its own space (LAI-755). `undefined` until read, `null` if the read failed.
+   * Every space this reader can see, for the selector. `undefined` until
+   * read, `null` if the read failed.
    */
   const [spaces, setSpaces] = useState<
     ReadonlyMap<string, { readonly slug: string; readonly name: string }> | null | undefined
@@ -259,73 +225,6 @@ export function CapacityScreen({
     };
   }, []);
 
-  const wanted = useMemo(
-    () =>
-      capacity === undefined || presence === undefined
-        ? []
-        : taskIdsToResolve(
-            capacity.people,
-            expanded,
-            presence.present.map((entry) => entry.matched_task_id),
-          ),
-    [capacity, presence, expanded],
-  );
-
-  useEffect(() => {
-    const missing = wanted.filter((id) => !resolved.has(id));
-    // Until the spaces are known a held set cannot be consulted, and reading
-    // by id first would spend the requests LAI-724 saved.
-    if (missing.length === 0 || spaces === undefined) return;
-
-    const held = new Map<string, TaskSummary>();
-    for (const { slug } of spaces?.values() ?? []) {
-      const set = taskStore.peek(slug);
-      if (set?.status !== 'ready') continue;
-      for (const id of missing) {
-        const task = set.byId.get(id);
-        if (task !== undefined) held.set(id, task);
-      }
-    }
-
-    const controller = new AbortController();
-    Promise.all(
-      missing
-        .filter((id) => !held.has(id))
-        .map((id) =>
-          getTask(id, controller.signal)
-            .then((task) => [id, task] as const)
-            .catch(() => undefined),
-        ),
-    )
-      .then((fetched) => {
-        if (controller.signal.aborted) return;
-        const found = [...held, ...fetched.filter((entry) => entry !== undefined)];
-        if (found.length === 0) return;
-        setResolved((prev) => new Map([...prev, ...found]));
-      })
-      .catch(() => undefined);
-    return () => {
-      controller.abort();
-    };
-  }, [wanted, spaces]);
-
-  const slugs = useMemo(
-    () =>
-      spaces === undefined || spaces === null
-        ? spaces
-        : new Map([...spaces].map(([id, s]) => [id, s.slug])),
-    [spaces],
-  );
-
-  const toggleTasks = useCallback((userId: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(userId)) next.delete(userId);
-      else next.add(userId);
-      return next;
-    });
-  }, []);
-
   if (error !== null) {
     return <ApiErrorState error={error} resource="capacity" scope="organisation" />;
   }
@@ -359,7 +258,6 @@ export function CapacityScreen({
   const sum = summarize(everyone, space);
   // One scale for every list row's bar, so the rows compare (the team load).
   const { scale } = teamLoad(everyone, space);
-  const presenceFor = (userId: string) => presence.present.find((e) => e.user_id === userId);
 
   const pick = (next: CapacityFilter): void => {
     setFilter(next);
@@ -563,12 +461,6 @@ export function CapacityScreen({
                   work in review: it waits on the reviewer, not on them. Overdue is past its due
                   date, and is its own badge.
                 </dd>
-                <dt>Activity</dt>
-                <dd>
-                  Their board actions over 14 days, owners and admins only: by hand on the web, by
-                  their agents, and bookkeeping (sprint moves and card reorders) counted apart from
-                  both.
-                </dd>
                 <dt>List</dt>
                 <dd>
                   The same people as the cards, one row each. Every row’s bar is drawn to the same
@@ -611,14 +503,6 @@ export function CapacityScreen({
                 now={now}
                 theme={theme}
                 space={space}
-                presence={presenceFor(person.user_id)}
-                resolved={resolved}
-                slugs={slugs}
-                expanded={expanded.has(person.user_id)}
-                onToggleTasks={() => {
-                  toggleTasks(person.user_id);
-                }}
-                onOpenTask={onOpenTask}
               />
             ))}
           </ul>

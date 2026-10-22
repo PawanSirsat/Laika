@@ -305,23 +305,3 @@ export function oldestAge(ms: number | null): string | undefined {
   if (elapsed < 60_000) return 'just now';
   return formatDurationMs(elapsed);
 }
-
-/**
- * Every task id the screen **draws** (LAI-754, LAI-767): the in-progress tasks
- * of people whose *Show tasks* is open, and each session's matched task.
- * Nothing collapsed is read, because each id is a request until LAI-728 sends
- * key and title beside it.
- */
-export function taskIdsToResolve(
-  people: readonly CapacityEntry[],
-  expanded: ReadonlySet<string>,
-  matched: readonly (string | null)[] = [],
-): readonly string[] {
-  const ids = new Set<string>();
-  for (const person of people) {
-    if (!expanded.has(person.user_id)) continue;
-    for (const id of person.in_progress_tasks) ids.add(id);
-  }
-  for (const id of matched) if (id !== null) ids.add(id);
-  return [...ids];
-}

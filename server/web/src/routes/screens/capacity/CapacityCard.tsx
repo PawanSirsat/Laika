@@ -1,12 +1,5 @@
-import { useId } from 'react';
 import { agentClientName, asAgentClient } from '../../../api/agent-clients.ts';
-import type {
-  ActivitySplit,
-  CapacityEntry,
-  CapacitySpace,
-  PresenceEntry,
-} from '../../../api/presence.ts';
-import type { TaskSummary } from '../../../api/tasks.ts';
+import type { CapacityEntry, CapacitySpace } from '../../../api/presence.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { PersonLink } from '../../../components/PersonLink.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
@@ -22,7 +15,6 @@ import {
   statusText,
   workloadIn,
 } from './capacity-derive.ts';
-import type { CapacityTaskLink } from './CapacityScreen.tsx';
 
 export const ROLE_LABEL: Readonly<Record<CapacityEntry['org_role'], string>> = {
   owner: 'Owner',
@@ -52,11 +44,6 @@ export const HOVER = {
   in_review: 'Their work in review. It waits on a reviewer, not on them, so it is not their load.',
   due_soon: 'Open tasks of theirs due within the next 7 days.',
   running: 'Agents with a live session on their token right now.',
-  by_self: 'Board actions they made themselves in the browser, signed in.',
-  by_agents:
-    'Board actions made with one of their personal access tokens: anything Claude Code, Omnigent, the CLI or another tool did as them over MCP or the API.',
-  bookkeeping:
-    'Sprint moves and card reorders, by them or their agents. Tidying, not work: counted in neither figure before it.',
   never: 'No sign-in, board action or agent signal has ever been recorded for them.',
   presence_off: 'Presence is off for this organisation, so nobody’s status or last seen is kept.',
 } as const;
@@ -75,46 +62,30 @@ export interface CapacityCardProps {
   readonly theme: Theme;
   /** The chosen space, or `null` for every space. */
   readonly space: string | null;
-  /** Their live presence entry, for the task a session is matched to. */
-  readonly presence: PresenceEntry | undefined;
-  /** Resolved tasks by id: the matched one, and theirs once *Show tasks* is open. */
-  readonly resolved: ReadonlyMap<string, TaskSummary>;
-  /** Project slug by id, to open a task in its own space (LAI-755). */
-  readonly slugs: ReadonlyMap<string, string> | null | undefined;
-  readonly expanded: boolean;
-  readonly onToggleTasks: () => void;
-  readonly onOpenTask: (task: CapacityTaskLink) => void;
 }
 
 /**
  * One person (LAI-767; compacted by LAI-991): who they are and whether they
- * are here, what is on their plate and how heavy it is, their agents, their
- * spaces, and — for an owner or admin — their last fortnight on the board.
+ * are here, what is on their plate and how heavy it is, their agents and
+ * their spaces.
+ *
+ * **No task is read or listed** (LAI-992, the owner). LAI-767 drew *Show
+ * tasks* and *Claude Code · working on LAI-9*, each a `GET /tasks/:id`; the
+ * workload counts already say how many are in progress, and the owner did
+ * not want the reads or the footer. **Nor the fortnight's activity**: the
+ * sparkline and *by hand · by agents · bookkeeping* LAI-767 and LAI-818 drew
+ * for owners and admins are gone from here (LAI-992); the profile keeps them.
  *
  * **Every card draws every block, in the same order, whoever the person is.**
  * A block with nothing to say draws a `0`, *No agents running* or *No spaces*
  * rather than disappearing, so the cards in a row are the same shape and a
  * reader's eye finds the same figure in the same place on each (LAI-991, the
- * owner's design). The one block that depends on who is *reading* — Activity,
- * sent to owners and admins only — is absent for everyone or present for
- * everyone, so it keeps the row even.
+ * owner's design).
  *
  * **Status is never colour alone**: the ring and dot are decoration
  * (`aria-hidden`) beside a line of words that says the same thing.
  */
-export function CapacityCard({
-  person,
-  now,
-  theme,
-  space,
-  presence,
-  resolved,
-  slugs,
-  expanded,
-  onToggleTasks,
-  onOpenTask,
-}: CapacityCardProps) {
-  const tasksId = useId();
+export function CapacityCard({ person, now, theme, space }: CapacityCardProps) {
   const ink = avatarColor(person.user_id, theme);
   const status = statusText(person, now);
   const ring = person.status ?? 'off';
@@ -125,14 +96,6 @@ export function CapacityCard({
   const age = oldestAge(person.oldest_in_progress_ms);
   const agents = person.agents.filter((a) => asAgentClient(a.client) !== null);
   const running = runningAgents(person).filter((a) => asAgentClient(a.client) !== null).length;
-
-  const open = (task: TaskSummary): void => {
-    onOpenTask({ id: task.id, key: task.key, projectSlug: slugs?.get(task.project_id) });
-  };
-
-  const matchedId = presence?.matched_task_id ?? null;
-  const matched = matchedId === null ? undefined : resolved.get(matchedId);
-  const sessionClient = presence === undefined ? null : asAgentClient(presence.client);
   const statusTitle =
     status.title ??
     (person.status === null ? HOVER.presence_off : person.status === 'never' ? HOVER.never : '');
@@ -288,26 +251,7 @@ export function CapacityCard({
             ))}
           </ul>
         )}
-        {matched !== undefined && (
-          <button
-            type="button"
-            className="cap-working"
-            title={`${matched.key} · ${matched.title}${presence?.branch === undefined ? '' : ` — ${presence.branch}`}`}
-            onClick={() => {
-              open(matched);
-            }}
-          >
-            {sessionClient === null
-              ? 'Working on'
-              : `${agentClientName(sessionClient)} · working on`}{' '}
-            <span className="cap-key">{matched.key}</span>
-          </button>
-        )}
       </div>
-
-      {person.activity_14d !== undefined && (
-        <Sparkline days={person.activity_14d} split={person.activity_14d_split} />
-      )}
 
       <div className="cap-block cap-spaces-block">
         <span className="cap-label">
@@ -323,51 +267,6 @@ export function CapacityCard({
             {person.spaces.map((s) => (
               <SpaceChip key={s.project_id} space={s} on={s.project_id === space} theme={theme} />
             ))}
-          </ul>
-        )}
-      </div>
-
-      <div className="cap-tasks">
-        {person.in_progress_tasks.length === 0 ? (
-          <span className="cap-tasks-none">
-            <span className="cap-tasks-n">0 in progress</span>
-          </span>
-        ) : (
-          <button
-            type="button"
-            className="cap-tasks-toggle"
-            aria-expanded={expanded}
-            aria-controls={tasksId}
-            onClick={onToggleTasks}
-          >
-            {expanded ? 'Hide tasks' : 'Show tasks'}
-            <span className="cap-tasks-n">{person.in_progress_tasks.length} in progress</span>
-          </button>
-        )}
-        {expanded && person.in_progress_tasks.length > 0 && (
-          <ul className="cap-task-list" id={tasksId}>
-            {person.in_progress_tasks.map((id) => {
-              const task = resolved.get(id);
-              return (
-                <li key={id}>
-                  {task === undefined ? (
-                    <span className="cap-task cap-task-loading">Loading…</span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="cap-task"
-                      title={`${task.key} · ${task.title} — ${task.status_name}`}
-                      onClick={() => {
-                        open(task);
-                      }}
-                    >
-                      <span className="cap-key">{task.key}</span>
-                      <span className="cap-task-title">{task.title}</span>
-                    </button>
-                  )}
-                </li>
-              );
-            })}
           </ul>
         )}
       </div>
@@ -402,61 +301,5 @@ export function SpaceChip({
       <span className="cap-space-n">{count(space.committed)}</span>
       <span className="visually-hidden"> committed, {aside}</span>
     </li>
-  );
-}
-
-/**
- * Board actions per day over the last fortnight (D-079's rollup), owners and
- * admins only — the server sends the series to nobody else. Under it, who did
- * them (LAI-818): by hand, by their agents, and bookkeeping — sprint moves and
- * reorders — **shown apart and in neither of the other two**, each a figure
- * with its rule on hover.
- */
-function Sparkline({
-  days,
-  split,
-}: {
-  readonly days: readonly number[];
-  readonly split: ActivitySplit | undefined;
-}) {
-  const top = Math.max(1, ...days);
-  const total = days.reduce((sum, n) => sum + n, 0);
-  return (
-    <div className="cap-block cap-spark-block">
-      <span className="cap-label">
-        Activity
-        <span className="cap-label-note">14 days · {count(total)}</span>
-      </span>
-      <div
-        className="cap-spark"
-        role="img"
-        aria-label={`${String(total)} board actions in the last 14 days`}
-      >
-        {days.map((n, i) => (
-          <span
-            // The series is positional: index i is a day, oldest first.
-            key={i}
-            className={n === 0 ? 'cap-spark-bar cap-spark-zero' : 'cap-spark-bar'}
-            style={{ height: n === 0 ? undefined : `${String(Math.max(12, (n / top) * 100))}%` }}
-          />
-        ))}
-      </div>
-      {split !== undefined && (
-        <ul className="cap-spark-split">
-          {(
-            [
-              ['by hand', split.by_self, HOVER.by_self],
-              ['by agents', split.by_agents, HOVER.by_agents],
-              ['bookkeeping', split.bookkeeping, HOVER.bookkeeping],
-            ] as const
-          ).map(([label, n, title]) => (
-            <li key={label} className={n === 0 ? 'cap-fig cap-fig-zero' : 'cap-fig'} title={title}>
-              <span className="cap-count-n">{count(n)}</span>
-              <span className="cap-fig-label">{label}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
   );
 }
