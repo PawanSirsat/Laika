@@ -92,10 +92,27 @@ export const PLACES: readonly Place[] = [
   { key: 'Pacific/Honolulu', city: 'Honolulu', country: 'United States', lat: 21.31, lng: -157.86 },
 ];
 
-/** The place a key names, or none: an unknown key draws no sky. */
+/**
+ * A zone as this runtime spells it (LAI-896). Browsers and Node answer the
+ * name they canonicalise to — `Asia/Calcutta` for India, not `Asia/Kolkata` —
+ * so a key and a list entry are the same place when both resolve to one
+ * name here. A name the runtime refuses comes back as it was.
+ */
+export function canonicalZone(zone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en', { timeZone: zone }).resolvedOptions().timeZone;
+  } catch {
+    return zone;
+  }
+}
+
+/** The place a key names, by the runtime's own spelling of it, or none: an unknown key draws no sky. */
 export function placeOf(key: string | null | undefined): Place | undefined {
-  if (key === null || key === undefined) return undefined;
-  return PLACES.find((p) => p.key === key);
+  if (key === null || key === undefined || key === '') return undefined;
+  const exact = PLACES.find((p) => p.key === key);
+  if (exact !== undefined) return exact;
+  const wanted = canonicalZone(key);
+  return PLACES.find((p) => canonicalZone(p.key) === wanted);
 }
 
 /** `New Delhi, India`. */

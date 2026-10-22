@@ -1461,6 +1461,8 @@
   font-size: var(--text-small);
   line-height: 1;
   pointer-events: auto;
+  /* On the axis row, over its hour lines and labels; the band under it stays under everything. */
+  z-index: 4;
 }
 
 .dayline-scheduled-pill .break-glyph {
