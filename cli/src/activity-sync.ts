@@ -403,6 +403,8 @@ export async function getTimeSettings(
         drafting: body.drafting,
         // Only a board that says so takes a block's `at` (D-096).
         signal_times: body.signal_times === true,
+        // Only a board that says so takes a block's folder name (D-098).
+        folder_names: body.folder_names === true,
       },
     };
   } catch {

@@ -315,9 +315,28 @@ export function timeDraftViolation(raw: string, now: Date): string | undefined {
       if (typeof block !== 'object' || block === null) return 'a block is not an object';
       const k = block as Record<string, unknown>;
       for (const key of Object.keys(k)) {
-        if (!['start', 'end', 'minutes', 'task', 'signals'].includes(key)) {
+        if (!['start', 'end', 'minutes', 'task', 'signals', 'folder', 'branch'].includes(key)) {
           return `unknown block field ${key}`;
         }
+      }
+      // A work folder's chosen name and its branch (D-098): a name, never a path.
+      if (
+        k.folder !== undefined &&
+        (typeof k.folder !== 'string' ||
+          k.folder.length < 1 ||
+          k.folder.length > 60 ||
+          k.folder.trim() !== k.folder ||
+          /[/\\\p{Cc}\p{Cf}]/u.test(k.folder))
+      ) {
+        return 'folder is not a name';
+      }
+      if (
+        k.branch !== undefined &&
+        (k.folder === undefined ||
+          typeof k.branch !== 'string' ||
+          !/^[A-Za-z0-9._/-]{1,255}$/.test(k.branch))
+      ) {
+        return 'branch is not a branch name with a folder';
       }
       if (!isInt(k.start) || !isInt(k.end) || k.end <= k.start) return 'start before end';
       if (dayIn(b.tz, new Date(k.start)) !== d.day) return 'a block starts on another day';

@@ -84,7 +84,14 @@ export interface StubBoard {
    * Time drafts (LAI-787): the two switches `GET /me/time-settings` answers,
    * or `undefined` for an older board that has neither endpoint (404).
    */
-  time: { org_mode: 'off' | 'manual' | 'drafts'; draft_my_time: boolean } | undefined;
+  time:
+    | {
+        org_mode: 'off' | 'manual' | 'drafts';
+        draft_my_time: boolean;
+        /** A board that takes a block's work folder name says so (D-098); an older one does not. */
+        folder_names?: boolean;
+      }
+    | undefined;
   /** Each (collector, day)'s blocks, replaced by every report that carries the day. */
   readonly drafts: Map<string, readonly unknown[]>;
   readonly close: () => void;

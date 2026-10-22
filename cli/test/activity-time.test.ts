@@ -11,6 +11,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -459,6 +460,11 @@ const SECRET = {
   subject: 'SUBJECT-acme-confidential-fix-zq',
   branch: 'feature/ACME-77-secret-branch',
 };
+/**
+ * The repository folder's real name (LAI-866): distinctive, so that finding
+ * it in a body means it leaked. The person names it "Acme" (D-098).
+ */
+const REAL_FOLDER = 'zq-orchard-ledger-7731';
 const PERSON = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
 const PRIMARY = 'bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb';
 const ROBOT = 'cccccccc-1111-4111-8111-cccccccccccc';
@@ -529,7 +535,7 @@ function machine() {
   const paths = activityPaths(home);
   mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
   writeState(paths, state());
-  const repo = join(home, 'work', 'acme');
+  const repo = join(home, 'work', REAL_FOLDER);
   mkdirSync(repo, { recursive: true });
   execFileSync('git', ['init', '-q', '-b', 'main', repo]);
   git(repo, ['config', 'user.email', EMAIL]);
@@ -598,6 +604,15 @@ function machine() {
   return { home, paths, top, options };
 }
 
+/** What `laika time folder name` writes (LAI-866): the person's names, and the branch switch. */
+function nameFolders(home: string, folders: Record<string, string>, branch = false): void {
+  writeFileSync(
+    join(home, '.laika', 'work-folders.json'),
+    `${JSON.stringify({ v: 1, branch, folders })}\n`,
+    { mode: 0o600 },
+  );
+}
+
 void describe('from the machine’s own files', () => {
   void test('a person’s and a primary session’s replies, typed prompts and commits; the automated session left out', async () => {
     const m = machine();
@@ -636,9 +651,31 @@ void describe('from the machine’s own files', () => {
     assert.deepEqual(counts, { prompts: { 'claude-code': 1, codex: 1 }, sessions: 0 });
   });
 
-  void test('only blocks leave: no text, path, branch, session id or subject in the body', async () => {
+  void test('only blocks leave: no text, path, branch, session id or subject in the body — a named folder’s name and nothing else of it (D-098)', async () => {
     const m = machine();
+    // The person names the repository "Acme" (LAI-866); the branch stays off.
+    // An Omnigent chat works in a folder inside it, whose own name is
+    // distinctive too: the nearest name, "Acme", is all that may leave.
+    const sub = join(m.top, 'apps', 'zq-quince-annex-5521');
+    mkdirSync(sub, { recursive: true });
+    nameFolders(m.home, { [m.top]: 'Acme' });
+    appendFileSync(
+      join(m.paths.dir, 'primary-sessions'),
+      `${String(T0 + 170 * MIN)} ${ORCHESTRATOR} main ${sub}\n`,
+    );
     const draft = await buildDraft(m.options);
+    const blocks = draft.days.get(UTC_DAY) ?? [];
+    assert.deepEqual(
+      blocks.map((b) => [new Date(b.start).toISOString().slice(11, 16), b.folder]),
+      [
+        ['09:00', 'Acme'],
+        ['09:40', 'Acme'],
+        // The primary session's reply, in the repository too.
+        ['11:00', 'Acme'],
+        // The Omnigent chat, by its working folder.
+        ['12:00', 'Acme'],
+      ],
+    );
     const body = timeDraftReports(
       '6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a',
       TZ,
@@ -656,13 +693,70 @@ void describe('from the machine’s own files', () => {
       ORCHESTRATOR,
       'feature',
       EMAIL,
+      // The folders' real names, and every part of their paths long enough to
+      // be told from the body's own words (a one- or two-letter segment, such
+      // as macOS's `T`, would match "UTC").
+      REAL_FOLDER,
+      'zq-quince-annex-5521',
+      ...sub.split('/').filter((part) => part.length >= 3),
+      // The files the names and times came from.
+      'work-folders',
+      'primary-sessions',
+      'events.log',
+      `${PERSON}.jsonl`,
+      // With the branch off, no branch name: neither the session's nor the chat's.
+      'main',
+      '"branch"',
     ]) {
       assert.equal(body.includes(secret), false, `${secret} left the machine`);
     }
     assert.match(body, /"task":"ACME-77"/);
+    assert.equal(body.match(/"folder":"Acme"/g)?.length, 4, 'every block carries the name');
     for (const report of JSON.parse(`[${body.replace(/\n/g, ',')}]`) as Record<string, unknown>[]) {
       assert.deepEqual(Object.keys(report).sort(), ['collector_id', 'days', 'tz', 'v']);
     }
+  });
+
+  void test('the branch goes with a named folder’s blocks only once the person turns it on (D-098 item 3)', async () => {
+    const m = machine();
+    // The hook's session starts (LAI-770) and the chat's start (LAI-866).
+    writeFileSync(
+      join(m.paths.dir, 'sessions'),
+      `${String(T0 - 60)} ${PERSON} ${SECRET.branch}\n${String(T0 + 119 * MIN)} ${PRIMARY} main\n`,
+      { mode: 0o600 },
+    );
+    appendFileSync(
+      join(m.paths.dir, 'primary-sessions'),
+      `${String(T0 + 170 * MIN)} ${ORCHESTRATOR} release/zq-9 ${m.top}\n`,
+    );
+    const rows = async () =>
+      ((await buildDraft(m.options)).days.get(UTC_DAY) ?? []).map((b) => [
+        new Date(b.start).toISOString().slice(11, 16),
+        b.folder,
+        b.branch,
+      ]);
+    nameFolders(m.home, { [m.top]: 'Acme' });
+    assert.deepEqual(await rows(), [
+      ['09:00', 'Acme', undefined],
+      ['09:40', 'Acme', undefined],
+      ['11:00', 'Acme', undefined],
+      ['12:00', 'Acme', undefined],
+    ]);
+    nameFolders(m.home, { [m.top]: 'Acme' }, true);
+    assert.deepEqual(await rows(), [
+      ['09:00', 'Acme', SECRET.branch],
+      ['09:40', 'Acme', SECRET.branch],
+      ['11:00', 'Acme', 'main'],
+      ['12:00', 'Acme', 'release/zq-9'],
+    ]);
+    // On, but no folder named: no name, and so no branch either.
+    nameFolders(m.home, {}, true);
+    assert.deepEqual(await rows(), [
+      ['09:00', undefined, undefined],
+      ['09:40', undefined, undefined],
+      ['11:00', undefined, undefined],
+      ['12:00', undefined, undefined],
+    ]);
   });
 
   void test('only a session the hook marked Omnigent-dispatched lends its card: not CI, LAIKA_ACTIVITY_SKIP or an older line (D-095)', async () => {
@@ -991,6 +1085,29 @@ void describe('through `laika activity sync`', () => {
     w.advance(600);
     await sync(w.ctx);
     assert.equal(w.drafts().length, 1, 'nothing new, sent again');
+  });
+
+  void test('a named folder: a board that says it takes the name gets it; an older board gets neither, and accepts (D-098 item 6)', async () => {
+    for (const takes of [true, false]) {
+      const w = await syncWorld();
+      nameFolders(w.home, { '/work': 'Acme' }, true);
+      writeFileSync(join(w.paths.dir, 'sessions'), `${String(T0 - 60)} ${PERSON} main\n`, {
+        mode: 0o600,
+      });
+      w.board.time = { org_mode: 'drafts', draft_my_time: true, folder_names: takes };
+      if (!takes) delete w.board.time.folder_names;
+      const outcome = await sync(w.ctx);
+      assert.equal(outcome.kind === 'sent' ? outcome.time?.kind : outcome.kind, 'sent');
+      assert.deepEqual(w.board.violations, [], 'the contract refused the body');
+      const blocks = w.drafts().flatMap((d) => d.days.flatMap((day) => day.blocks));
+      assert.equal(blocks.length, 1);
+      assert.deepEqual(
+        blocks.map((b) => [b.folder, b.branch]),
+        [takes ? ['Acme', 'main'] : [undefined, undefined]],
+        takes ? 'a board that takes the name' : 'an older board',
+      );
+      if (!takes) assert.doesNotMatch(JSON.stringify(w.drafts()), /Acme|"folder"|"branch"/);
+    }
   });
 
   void test('drafting off: nothing sent, and asked at most once an hour', async () => {
