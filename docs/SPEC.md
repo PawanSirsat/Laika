@@ -128,7 +128,7 @@ organisation's grants for exactly these actions and no others.
 | *See everyone's analytics* | `profile.read`, `profile.activity.read`, `usage.read_people` (and LAI-957's `people.analytics.read`) |
 | *See the organisation's activity history* | `audit_log.export` |
 | *Open every project* | the implicit project role above: `lead` on every project, `viewer` for an org viewer, who stays capped |
-| *Manage people and invites* | `user.invite` (as member or viewer only), `user.deactivate` |
+| *Manage people and invites* | `user.invite` (as member or viewer only), `user.deactivate`, `user.sign_out` (somebody else; anyone signs themselves out — LAI-981) |
 | *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set` |
 
 **Never grantable, owner only:** delete the organisation, transfer ownership
@@ -149,6 +149,7 @@ are not part of this.
 | Change org roles | ✓ | — | — | — |
 | Set what each role may do | ✓ (session only) | — | — | — |
 | Deactivate user | ✓ | ✓ | — | — |
+| Sign a person out everywhere | ✓ | ✓ | ✓ (themselves) | ✓ (themselves) |
 | View member list | ✓ | ✓ | ✓ | ✓ |
 | Join a `public` project | ✓ | ✓ | ✓ (as member) | ✓ (as viewer) |
 | Generate, read and revoke own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |
@@ -511,7 +512,14 @@ name. A `system.database.vacuum` would be a permission that grants nothing.
 | `profile_kind` | text | `builder` \| `manager`, default `builder` — what the member profile shows (§11.4.2, D-078). **A label, never a permission**: `can()` does not read it (§3.1) |
 | `share_local_activity` | integer | default **0** — was the developer's own half of D-079's two switches. **Read by nothing since D-102 (amended, LAI-963)**: collection follows the organisation's `developer_insights` alone (§4.2), and no endpoint writes it. Kept, not dropped, so what each person last chose is not lost |
 | `local_activity_scope` | text | `agent-repos` \| `laika-repos`, default `agent-repos` — which repositories their collector counts in: every one where they run a connected agent on that machine, or only those set up for Laika. The server cannot see a repository; it stores the choice and the collector honours it (D-079) |
+| `last_seen_at` | integer | nullable — the latest activity of a session of theirs that has since been ended (deactivation or a forced sign-out), kept because ending a session deletes its row. The API's `last_seen_at` is the later of this and their live sessions' `updated_at` (D-104 item 3, LAI-981) |
 | `created_at`, `updated_at` | integer | |
+
+**Deactivation ends access** (D-104 item 3, LAI-981). Deactivating a person
+revokes every token of theirs and deletes every session, in the same
+transaction as `is_active = 0`; reactivating restores neither — they sign in
+again and mint new tokens. *Sign a person out everywhere* (§3.1,
+`POST /users/:id/sign-out`) deletes the sessions alone and leaves tokens.
 
 **There is no `avatar_color` column** (LAI-148). This table listed one, *"derived
 from id"*, and three places disagreed about it: the server derived it from
@@ -736,7 +744,7 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `webhook.commit`, `webhook.received`, `meeting.applied`, `unlisted.logged`,
 `unlisted.promoted`, `unlisted.dismissed`, `project.context_updated`,
 `sprint.created`, `sprint.updated`, `sprint.deleted`, `sprint.tasks_changed`,
-`user.deactivated`, `user.reactivated`, `task.stale_flagged`,
+`user.deactivated`, `user.reactivated`, `user.signed_out`, `task.stale_flagged`,
 `heartbeat.pruned`, `invite.expired`, `meeting_review.expired`,
 `meeting_review.discarded`.
 
@@ -2443,7 +2451,11 @@ GET    /api/v1/org/permissions               what each org role is granted → {
 PUT    /api/v1/org/permissions               body { grants: { admin|member|viewer: { <capability>: bool } } } — the whole matrix, every role and capability; same answer   (owner only; session only)
 GET    /api/v1/users                         ?limit=&cursor=&updated_since=&include_inactive=
                                              cursor is (name, id) — a directory reads alphabetically
+                                             each user carries last_seen_at: their latest session activity, or null (LAI-981)
 PATCH  /api/v1/users/:id                     (role: owner only; deactivate: owner, and admin by default — LAI-958)
+                                             deactivating revokes every token and ends every session; reactivating restores neither (D-104 item 3)
+POST   /api/v1/users/:id/sign-out            end every session, not tokens → { user_id, sessions_ended }   (themselves; anyone else: owner, and admin by default; logged — LAI-981)
+GET    /api/v1/users/:id/memberships         → { data: [{ project_id, slug, name, prefix, role, archived, joined_at }] } — membership rows only, narrowed to spaces the caller can read   (viewer+; LAI-981)
 GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind }   (owner, admin; session only)
 POST   /api/v1/users/:id/ratings             body { score, note } → 201   (owner, admin; session only; not yourself)
 GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, or a role granted *See everyone's analytics*; session only; logged, D-102)
