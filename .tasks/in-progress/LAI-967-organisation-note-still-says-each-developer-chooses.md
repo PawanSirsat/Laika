@@ -2,11 +2,12 @@
 id: LAI-967
 title: 'Organisation’s Developer insights note and two profile empty lines still describe a personal sharing switch D-102 (amended) removed'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-963, LAI-964]
 discovered-from: LAI-964
-status: backlog
+status: in-progress
+started: 2026-10-22T14:28:14Z
 ---
 
 ## Goal
