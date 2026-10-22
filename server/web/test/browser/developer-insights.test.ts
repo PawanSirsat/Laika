@@ -71,8 +71,13 @@ void describe('Organisation: Developer insights', () => {
       const toggle = fact.getByRole('switch', { name: 'Developer insights' });
       await toggle.waitFor({ timeout: 20_000 });
       assert.equal(await toggle.getAttribute('aria-checked'), 'false');
-      assert.match(await fact.innerText(), /each developer can choose — for themselves/);
-      assert.match(await fact.innerText(), /never prompt text/);
+      // D-102 amended (LAI-967): collection follows this switch alone — no developer chooses.
+      const note = await fact.innerText();
+      assert.match(note, /every connected machine’s local activity is collected/);
+      assert.match(note, /each person is told so/);
+      assert.match(note, /never prompt text/);
+      assert.match(note, /Off stops it for everyone at once\./);
+      assert.doesNotMatch(note, /choose|for themselves|turned it on|on Connect/);
 
       await toggle.click();
       await until(async () => (await toggle.getAttribute('aria-checked')) === 'true');
@@ -309,6 +314,9 @@ void describe('Connect: Share local activity', () => {
       const panel = h.page.locator('.share-activity');
       await panel.locator('.share-list').first().waitFor({ timeout: 20_000 });
       assert.match(await panel.innerText(), /Developer insights are off for this organisation/);
+      // LAI-967: nothing waits on the person — off means nothing is collected.
+      assert.match(await panel.innerText(), /so nothing is collected from your machine\./);
+      assert.doesNotMatch(await panel.innerText(), /nothing to turn on/);
       assert.equal(await panel.getByRole('switch').count(), 0);
       await until(
         async () => (await panel.locator('a[href="/organisation?tab=overview"]').count()) === 1,

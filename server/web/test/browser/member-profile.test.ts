@@ -636,6 +636,38 @@ void describe('a builder’s profile', () => {
       await h.close();
     }
   });
+
+  /**
+   * D-102 amended (LAI-967): a current server sends `enabled` equal to
+   * `org_enabled`, so `enabled: false` beside an organisation that collects is
+   * a stale personal answer. It decides nothing, and the Tokens card's empty
+   * line sends nobody — the person or anyone reading — to a switch that is gone.
+   */
+  for (const [reader, readerRole, line] of [
+    ['an owner', me('u1', 'owner'), /^Nothing has arrived from Bea Builder’s machines yet\.$/],
+    ['the person', me('u2', 'admin'), /^Nothing has arrived from your machines yet: /],
+  ] as const) {
+    void test(`${reader}: a stale personal “off” names no switch on the Tokens card`, async () => {
+      const h = await open('/people?user=u2', {
+        ...BASE,
+        '/api/v1/me': readerRole,
+        '/api/v1/users/u2/profile': BUILDER,
+        '/api/v1/users/u2/usage': {
+          ...quietUsage('u2'),
+          sharing: { org_enabled: true, enabled: false },
+        },
+      });
+      try {
+        const empty = (await section(h.page, 'tokens')).locator('.prof-empty');
+        await until(async () => /Nothing has arrived/.test(await empty.innerText()));
+        const text = await empty.innerText();
+        assert.match(text, line);
+        assert.doesNotMatch(text, /Share local activity|turned on sharing|Turn on/);
+      } finally {
+        await h.close();
+      }
+    });
+  }
 });
 
 // ------------------------------------------------------- v2 cards (LAI-750)

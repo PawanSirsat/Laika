@@ -99,7 +99,7 @@ void describe('days from the response', () => {
     );
   });
 
-  void test('a source not shared stays null — never read as zero', () => {
+  void test('a source not collected stays null — never read as zero', () => {
     const days = heatDays(
       activity('2026-10-12', 2, {
         github: null,
@@ -309,15 +309,15 @@ void describe('what a day says', () => {
     assert.equal(agentLabel('gemini-cli'), 'Gemini CLI');
   });
 
-  void test('a source not shared says so instead of a zero', () => {
+  void test('a source not collected says so instead of a zero', () => {
     const lines = dayLines(
       day({ github: null, localCommits: null, prompts: null, sessions: null, local: null }),
     );
     assert.deepEqual(
       lines.filter((l) => l.source !== 'board').map((l) => [l.n, l.text]),
       [
-        [null, 'pushed commits not shared'],
-        [null, 'local activity not shared'],
+        [null, 'pushed commits not collected'],
+        [null, 'local activity not collected'],
       ],
     );
   });
