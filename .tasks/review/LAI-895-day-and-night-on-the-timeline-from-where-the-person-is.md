@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: [LAI-894]
 discovered-from: LAI-888
-status: in-progress
+status: review
 started: 2026-10-22T19:01:37Z
+finished: 2026-10-22T19:12:12Z
 ---
 
 ## Goal
@@ -42,28 +43,47 @@ day from **where the person is**.
 
 ## Acceptance criteria
 
-- [ ] Server: `user_time_settings.place` (text, null), migration generated;
+- [x] Server: `user_time_settings.place` (text, null), migration generated;
       `PUT /me/time-settings` takes `{ draft_my_time? , place? }` — at least
       one, `place` an IANA-shaped id of at most 64 characters or `null`;
       `GET /me/time-settings` answers `place`; a session only, the person's
       own, as today. Tests: set, clear, refused shapes, the view carries it.
       SPEC §4.46 and §6's `/me/time-settings` paragraph say so (named
       cross-area edits, D-033).
-- [ ] `routes/screens/my-day/daylight.ts`: `sunTimes(day, lat, lng, tz)` →
+- [x] `routes/screens/my-day/daylight.ts`: `sunTimes(day, lat, lng, tz)` →
       sunrise and sunset as minutes after the day's midnight in `tz`, or
       none in polar day or night; unit tests against New Delhi and London on
       a known date, within a few minutes.
-- [ ] `routes/screens/places.ts`: the list — zone, city, country, latitude,
+- [x] `routes/screens/places.ts`: the list — zone, city, country, latitude,
       longitude — and `placeOf(key)`; a test that every key is a valid zone
       the runtime knows.
-- [ ] The Timeline: sky phases behind the axis (night, dawn, day, dusk,
+- [x] The Timeline: sky phases behind the axis (night, dawn, day, dusk,
       night) from the day's sun times, the lanes under them faintly tinted
       by night; a sun before a daytime hour and a moon before a night one,
       in their own tokens; five tokens in both themes, listed in the token
       inventory. Nothing where no place is known.
-- [ ] *Where you are* on My day: a dropdown of the places, the current one
+- [x] *Where you are* on My day: a dropdown of the places, the current one
       shown, a change writes `PUT /me/time-settings { place }` and the day
       re-reads; read-only for an owner or admin looking at someone's day.
-- [ ] Browser tests with the pinned clock: the phases and the glyphs for a
+- [x] Browser tests with the pinned clock: the phases and the glyphs for a
       place; none without one; the control writes and the sky follows.
-- [ ] D-106 recorded. Gate: `pnpm test`, `pnpm lint`, `pnpm format` exit 0.
+- [x] D-106 recorded. Gate: `pnpm test`, `pnpm lint`, `pnpm format` exit 0.
+
+## Record
+
+- The owner's reference is their export, `~/Downloads/Laika App v3.html`
+  (a bundle; its Timeline page carries `DN`, `DUSK0/DUSK1`, the sun and the
+  moon). The five tokens are the design's values verbatim.
+- Sunrise and sunset: the plain sunrise equation, checked against New Delhi
+  and London on 2026-10-23 and Johannesburg at midsummer within six
+  minutes, and a polar night answers nothing. Dawn and dusk are the hour
+  centred on each; the sun stays on the hour through dusk, as the design.
+- `place` is set with the drafting switch on `PUT /me/time-settings` —
+  either field or both, the other kept; the older switch test now expects
+  `place: null` in the view. Migration `0051_user_place`.
+- Unset, the day's zone picks the place; a zone not on the list draws no
+  sky. The browser tests pin the clock and read the day in UTC, so New
+  Delhi's sun leaves 9 AM in the day and 4 PM in the night on any date.
+- The picker is capped at 12rem so the header still fits a phone — the
+  phone test caught a 42px overflow before that.
+
