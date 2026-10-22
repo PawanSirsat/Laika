@@ -81,6 +81,7 @@
           <sc-for list="{{ hlBands }}" as="h" hint-placeholder-count="0">
             <div style="position:absolute;left:{{ h.x }}px;width:{{ h.w }}px;top:29px;bottom:0;background:{{ t.hl }}"></div>
           </sc-for>
+          <sc-if value="{{ lunch.show }}"><div style="position:absolute;left:{{ lunch.x }}px;width:{{ lunch.w }}px;top:0;bottom:0;background:{{ lunch.band }};border-left:1.5px dashed {{ lunch.edge }};border-right:1.5px dashed {{ lunch.edge }};box-sizing:border-box;pointer-events:none"></div></sc-if>
           <sc-for list="{{ ticks }}" as="k" hint-placeholder-count="0">
             <div style="position:absolute;left:{{ k.x }}px;top:20px;bottom:0;width:1px;background:{{ t.grid }}"></div>
           </sc-for>
@@ -129,6 +130,20 @@
               <sc-if value="{{ b.showMeta }}"><div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;line-height:14px;white-space:nowrap;color:{{ b.sub }};text-align:{{ b.ta }}">{{ b.meta }}</div></sc-if>
             </div>
           </sc-for>
+          <sc-for list="{{ bites }}" as="q" hint-placeholder-count="0">
+            <div style="position:absolute;left:{{ q.x }}px;top:{{ q.y }}px;width:{{ q.w }}px;height:{{ q.h }}px;box-sizing:border-box;border-radius:{{ q.r }};background:{{ q.bg }};border-top:3px solid {{ q.edge }};pointer-events:none;z-index:2"></div>
+          </sc-for>
+          <sc-if value="{{ lunch.show }}">
+            <div onClick="{{ lunch.onClick }}" onMouseEnter="{{ lunch.onEnter }}" role="button" aria-label="{{ lunch.aria }}" style="position:absolute;left:{{ lunch.px }}px;width:{{ lunch.pw }}px;top:3px;height:22px;box-sizing:border-box;border-radius:7px;background:{{ lunch.pillBg }};border:1px solid {{ lunch.edge }};color:{{ lunch.ink }};box-shadow:{{ lunch.shadow }};display:flex;align-items:center;gap:5px;padding:0 7px 2px;overflow:hidden;cursor:pointer;z-index:4;white-space:nowrap">
+              <svg width="12" height="12" viewBox="0 0 12 12" style="flex-shrink:0"><path d="M2.5 1v3a1.5 1.5 0 0 0 3 0V1M4 1v10M9.5 11V1c-1.3.6-2 2-2 3.8 0 .9.6 1.4 2 1.4" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"></path></svg>
+              <span style="font-size:11px;font-weight:700">Lunch</span>
+              <sc-if value="{{ lunch.showRange }}"><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px">{{ lunch.range }}</span></sc-if>
+              <sc-if value="{{ lunch.showWorked }}"><span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;color:{{ lunch.workInk }}">{{ lunch.workedLabel }}</span></sc-if>
+              <div style="position:absolute;left:0;right:0;bottom:0;height:3px;display:flex">
+                <sc-for list="{{ lunch.segs }}" as="g" hint-placeholder-count="0"><div style="width:{{ g.pct }}%;height:100%;background:{{ g.c }}"></div></sc-for>
+              </div>
+            </div>
+          </sc-if>
           <sc-for list="{{ ag }}" as="a" hint-placeholder-count="0">
             <div onClick="{{ a.onClick }}" onMouseEnter="{{ a.onEnter }}" aria-label="{{ a.aria }}" style="position:absolute;left:{{ a.x }}px;top:{{ a.y }}px;width:{{ a.w }}px;height:{{ a.h }}px;box-sizing:border-box;border-radius:6px;background:{{ a.bg }};border:{{ a.border }};color:{{ a.ink }};opacity:{{ a.op }};box-shadow:{{ a.shadow }};cursor:pointer;overflow:hidden;display:flex;flex-direction:column;justify-content:{{ a.justify }};padding:{{ a.pad }};gap:2px;z-index:{{ a.z }};transition:box-shadow .12s,opacity .12s">
               <div style="display:flex;align-items:center;gap:5px;white-space:nowrap;min-width:0">
@@ -208,6 +223,31 @@
         </div>
       </div>
     </sc-if>
+    <sc-if value="{{ foot.lunch }}">
+      <div style="display:flex;align-items:center;gap:10px 18px;flex-wrap:wrap;padding:10px 20px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;padding:3px 8px 3px 6px;border-radius:6px;background:{{ lp.pillBg }};border:1px solid {{ lp.edge }};color:{{ lp.ink }}"><svg width="12" height="12" viewBox="0 0 12 12" style="flex-shrink:0"><path d="M2.5 1v3a1.5 1.5 0 0 0 3 0V1M4 1v10M9.5 11V1c-1.3.6-2 2-2 3.8 0 .9.6 1.4 2 1.4" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"></path></svg>Lunch</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;white-space:nowrap">{{ lp.range }}</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;flex:1 1 280px;min-width:220px;max-width:460px">
+          <div style="display:flex;height:10px;border-radius:5px;overflow:hidden">
+            <sc-for list="{{ lp.segs }}" as="g" hint-placeholder-count="2"><div style="width:{{ g.pct }}%;height:100%;background:{{ g.c }};box-sizing:border-box;border-right:2px solid {{ g.bd }}"></div></sc-for>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px 14px;flex-wrap:wrap;font-size:12px;color:{{ t.ink2 }}">
+            <span style="display:flex;align-items:center;gap:6px;white-space:nowrap"><span style="width:8px;height:8px;border-radius:2px;background:{{ lp.rest }}"></span><span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:{{ t.ink }}">{{ lp.rested }}</span>offline</span>
+            <span style="display:flex;align-items:center;gap:6px;white-space:nowrap"><span style="width:8px;height:8px;border-radius:2px;background:{{ lp.work }}"></span><span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:{{ t.ink }}">{{ lp.worked }}</span>worked through</span>
+            <sc-if value="{{ lp.hasCards }}"><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:{{ t.muted }}">{{ lp.cards }}</span></sc-if>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-left:auto">
+          <button onClick="{{ lp.onEarlier }}" style="height:30px;padding:0 10px;border:1px solid {{ t.chipBorder }};border-radius:8px;background:{{ t.btn }};color:{{ t.ink }};font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap">‹ 15m earlier</button>
+          <button onClick="{{ lp.onLater }}" style="height:30px;padding:0 10px;border:1px solid {{ t.chipBorder }};border-radius:8px;background:{{ t.btn }};color:{{ t.ink }};font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap">15m later ›</button>
+          <sc-if value="{{ lp.canMatch }}"><button onClick="{{ lp.onMatch }}" style="height:30px;padding:0 10px;border:1px solid {{ t.chipBorder }};border-radius:8px;background:{{ t.btn }};color:{{ t.ink }};font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap">Match my break <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ t.muted }}">{{ lp.matchLabel }}</span></button></sc-if>
+          <sc-if value="{{ lp.canReset }}"><button onClick="{{ lp.onReset }}" style="height:30px;padding:0 10px;border:1px solid {{ t.chipBorder }};border-radius:8px;background:{{ t.btn }};color:{{ t.ink }};font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap">Reset</button></sc-if>
+          <button onClick="{{ lp.onClose }}" style="height:30px;padding:0 12px;border:0;border-radius:8px;background:{{ t.accent }};color:#ffffff;font-size:12.5px;font-weight:600;cursor:pointer">Done</button>
+        </div>
+      </div>
+    </sc-if>
     <sc-if value="{{ foot.split }}">
       <div style="display:flex;align-items:center;gap:12px 18px;flex-wrap:wrap;padding:12px 20px">
         <div style="display:flex;flex-direction:column;gap:2px;min-width:200px;max-width:260px">
@@ -239,7 +279,7 @@
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1376,&quot;height&quot;:520},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;'light'|'dark'&quot;},&quot;zoom&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;fit&quot;,&quot;1x&quot;,&quot;2x&quot;,&quot;close&quot;],&quot;default&quot;:&quot;1x&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;scrollTo&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:650,&quot;tsType&quot;:&quot;number&quot;},&quot;agentsExpanded&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;forceHover&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;forceFocus&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;forceSelected&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;rangeStart&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:735,&quot;tsType&quot;:&quot;number&quot;},&quot;rangeEnd&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:840,&quot;tsType&quot;:&quot;number&quot;}}">
 class Component extends DCLogic {
-  state = { ready: !!window.LaikaTL, zoom: null, viewW: 0, sl: 0, hover: '', sel: null, focusId: '', focusVis: false, expanded: null, ov: {}, shares: null, custom: false, init: false };
+  state = { ready: !!window.LaikaTL, zoom: null, viewW: 0, sl: 0, hover: '', sel: null, focusId: '', focusVis: false, expanded: null, ov: {}, shares: null, custom: false, init: false, lunch: null, lunchSel: false };
   rootRef = React.createRef(); vpRef = React.createRef(); barRef = React.createRef();
 
   componentDidMount() {
@@ -275,7 +315,7 @@ class Component extends DCLogic {
   }
   setZoom(z) { const el = this.vpRef.current; this._pendingT = (el && this._scale && z !== 'fit') ? this._scale.at(el.scrollLeft + this.state.viewW / 2) : null; this.setState({ zoom: z }); }
   focusRoot() { const r = this.rootRef.current; if (r && document.activeElement !== r) r.focus({ preventScroll: true }); }
-  pick(id) { this._set({ sel: id, focusId: id }); this.focusRoot(); }
+  pick(id) { this._set({ sel: id, focusId: id, lunchSel: false }); this.focusRoot(); }
   units() { return window.LaikaTL.units(this._ov()); }
   reveal(u) {
     const el = this.vpRef.current; if (!el || !this._scale) return;
@@ -307,7 +347,7 @@ class Component extends DCLogic {
     if (k === 'Enter') { e.preventDefault(); if (u && u.group) this.confirmGroup(); else this.act('confirm', id); }
     else if (k === 'g' || k === 'G') this.act('general', id);
     else if (k === 'x' || k === 'X') this.act('notwork', id);
-    else if (k === 'Escape') this._set({ sel: '', focusVis: false });
+    else if (k === 'Escape') this._set({ sel: '', focusVis: false, lunchSel: false });
   };
   startDrag(i, e) {
     e.preventDefault(); e.stopPropagation();
@@ -427,13 +467,52 @@ class Component extends DCLogic {
       if (x1 - x0 >= need + 8) hours.push({ x: x0 + 6, top: SIGT + 5, p: c.p, c: c.c, m: c.m });
     }
 
+    const LT = theme === 'dark'
+      ? { band: 'rgba(63,191,127,.07)', edge: '#2f7350', pill: '#12281c', ink: '#a3e6c1', rest: '#3fbf7f', work: '#a78bfa', workInk: '#c4b5fd', hSolid: 'rgba(255,255,255,.16)', hLight: 'rgba(63,191,127,.24)' }
+      : { band: 'rgba(46,160,98,.07)', edge: '#7cc49c', pill: '#e7f4ec', ink: '#1d5e3c', rest: '#3fa06c', work: '#7c3aed', workInk: '#6d28d9', hSolid: 'rgba(255,255,255,.2)', hLight: 'rgba(46,160,98,.22)' };
+    const LN = st.lunch || L.LUNCH || { start: 720, end: 780 }, lnLen = LN.end - LN.start;
+    const isWork = u => u.state === 'confirmed' || u.state === 'drafted' || u.state === 'needs';
+    const lnRuns = [], lnCards = []; let lnWorked = 0;
+    for (let t = LN.start; t < LN.end; t++) {
+      const ws = us.filter(u => isWork(u) && t >= u.start && t < u.end), w = ws.length > 0; if (w) lnWorked++;
+      ws.forEach(u => { const c = u.card === 'GENERAL' ? 'General' : (u.card || 'No card'); if (!lnCards.includes(c)) lnCards.push(c); });
+      const r = lnRuns[lnRuns.length - 1]; if (r && r.w === w) r.b = t + 1; else lnRuns.push({ a: t, b: t + 1, w });
+    }
+    const lnRest = lnLen - lnWorked, lnSegs = lnRuns.map(r => ({ pct: (r.b - r.a) / lnLen * 100, c: r.w ? LT.work : LT.rest }));
+    let lunch = { show: false, segs: [] }; const bites = [];
+    if (inR(LN.start, LN.end) && !sc.inComp(LN.start + 1) && !sc.inComp(LN.end - 1)) {
+      const lx0 = X(Math.max(LN.start, sc.a)), lx1 = X(Math.min(LN.end, sc.b)), px = lx0 + 3, pw = Math.max(18, lx1 - lx0 - 6), on = !!st.lunchSel;
+      const range = L.rng(LN.start, LN.end), wl = lnWorked ? (lnRest ? L.dur(lnWorked) + ' worked' : 'worked through') : 'offline', room = pw - 14 - 17 - 38;
+      const showWorked = room >= wl.length * 6.5 + 6, showRange = showWorked && room >= (wl.length + range.length) * 6.5 + 16;
+      geo.lunch = { x: px, y: 3, w: pw, h: 22 };
+      lunch = { show: true, x: lx0, w: lx1 - lx0, px, pw, band: LT.band, edge: LT.edge, pillBg: LT.pill, ink: LT.ink, workInk: lnWorked ? LT.workInk : LT.ink,
+        range, showRange, workedLabel: wl, showWorked, segs: lnSegs,
+        shadow: on ? `0 0 0 2px ${T.selRing}` : hov === 'lunch' ? `0 3px 10px ${T.lift}` : 'none',
+        aria: `Lunch ${range}. ${L.dur(lnRest)} offline, ${L.dur(lnWorked)} worked`,
+        onEnter: () => this.setState({ hover: 'lunch' }),
+        onClick: () => { this._set({ sel: '' }); this.setState({ lunchSel: true, hover: '' }); this.focusRoot(); } };
+      us.forEach(u => {
+        if (!isWork(u) || !(u.start < LN.end && u.end > LN.start)) return; const g0 = geo[u.id]; if (!g0) return;
+        const bx0 = Math.max(lx0, g0.x), bx1 = Math.min(lx1, g0.x + g0.w); if (bx1 - bx0 < 2) return;
+        const R = u.group ? 6 : 8, l = bx0 <= g0.x + 0.5 ? R : 0, r = bx1 >= g0.x + g0.w - 0.5 ? R : 0;
+        bites.push({ x: bx0, y: g0.y, w: bx1 - bx0, h: g0.h, r: `${l}px ${r}px ${r}px ${l}px`, edge: LT.rest,
+          bg: `repeating-linear-gradient(135deg, ${u.state === 'confirmed' ? LT.hSolid : LT.hLight} 0 3px, transparent 3px 9px)` });
+      });
+    }
+    const brks = us.filter(u => u.state === 'break' && u.end - u.start >= 15 && u.end > LN.start - 90 && u.start < LN.end + 90).sort((p, q) => (q.end - q.start) - (p.end - p.start));
+    const mb = brks[0], shiftL = d => { const s = Math.max(L.DAY0, Math.min(L.NOW - lnLen, LN.start + d)); this.setState({ lunch: { start: s, end: s + lnLen } }); };
+    const lp = { range: `${L.rng(LN.start, LN.end)} · ${L.dur(lnLen)}`, segs: lnSegs.map(s => ({ ...s, bd: T.card })), rested: L.dur(lnRest), worked: L.dur(lnWorked),
+      cards: lnCards.length ? 'on ' + lnCards.join(' · ') : '', hasCards: lnCards.length > 0, pillBg: LT.pill, edge: LT.edge, ink: LT.ink, rest: LT.rest, work: LT.work,
+      onEarlier: () => shiftL(-15), onLater: () => shiftL(15), canMatch: !!mb && (mb.start !== LN.start || mb.end !== LN.end), matchLabel: mb ? L.rng(mb.start, mb.end) : '',
+      onMatch: () => { if (mb) this.setState({ lunch: { start: mb.start, end: mb.end } }); }, canReset: !!st.lunch, onReset: () => this.setState({ lunch: null }), onClose: () => this.setState({ lunchSel: false }) };
+
     const ticks = [], minors = []; let last = -1e9;
     const nowIn = L.NOW >= sc.a && L.NOW <= sc.b, nowX = X(L.NOW);
     const step = z === 'close' ? 15 : 60;
     for (let h = Math.ceil(sc.a / step); h * step <= sc.b; h++) {
       const tm = h * step; if (sc.inComp(tm)) continue;
       const x = X(tm), label = tm % 60 ? L.fmt(tm) : L.hourLabel(tm / 60);
-      const show = x - last >= 56 && x + 5 + label.length * 6.7 <= Wc && !(nowIn && x > nowX - 80 && x < nowX + 36);
+      const show = x - last >= 56 && x + 5 + label.length * 6.7 <= Wc && !(nowIn && x > nowX - 80 && x < nowX + 36) && !(lunch.show && x + 5 + label.length * 6.7 > lunch.px - 4 && x < lunch.px + lunch.pw);
       ticks.push({ x, lx: x + 5, label, show }); if (show) last = x;
     }
     if (z !== 'fit') for (let m = Math.ceil(sc.a / 5) * 5; m < sc.b; m += z === 'close' ? 5 : 15) { if (m % (z === 'close' ? 15 : 60)) minors.push({ x: X(m), top: m % 30 ? 24 : 22, h: m % 30 ? 4 : 6 }); }
@@ -479,6 +558,10 @@ class Component extends DCLogic {
         const t0 = +hov.slice(4), s = L.SIG.find(x => x.t === t0);
         tip = { show: true, x: tx, y: SIGT + SIGH + 4, tf: 'none', pill: 'Signals', icon: '▮', pillBg: 'transparent', pillBorder: `1px solid ${T.tipMuted}`, pillInk: T.tipInk, label: L.rng(t0, t0 + 5), hasTitle: false, title: '',
           rows: [{ k: 'Prompts', v: String(s.p), f: mono }, { k: 'Commits', v: String(s.c), f: mono }, { k: 'Marks', v: String(s.m), f: mono }] };
+      } else if (hov === 'lunch') {
+        tip = { show: true, x: tx, y: g.y + g.h + 8, tf: 'none', pill: 'Lunch', icon: '‖', pillBg: LT.pill, pillBorder: `1px solid ${LT.edge}`, pillInk: LT.ink, label: L.rng(LN.start, LN.end), hasTitle: true,
+          title: lnWorked ? (lnRest ? `You worked ${L.dur(lnWorked)} of your lunch hour` : 'You worked through lunch') : 'A clean lunch break',
+          rows: [{ k: 'Offline', v: L.dur(lnRest), f: mono }, { k: 'Worked', v: L.dur(lnWorked) + (lnWorked ? ' · stays in your hours' : ''), f: mono }].concat(lnCards.length ? [{ k: 'Cards', v: lnCards.join(' · '), f: mono }] : []).concat([{ k: 'Click', v: 'Move lunch or match your break', f: sans }]) };
       } else if (hov[0] === 'a') {
         const a = L.AGENTS.find(x => x.id === hov);
         tip = { show: true, x: tx, y: g.y - 8, tf: 'translateY(-100%)', pill: 'Agent', icon: '›_', pillBg: AS.bg, pillBorder: `1px solid ${AS.border}`, pillInk: AS.ink, label: a.card, hasTitle: true, title: L.CARDS[a.card],
@@ -511,7 +594,8 @@ class Component extends DCLogic {
     const names = [...new Set(L.AGENTS.map(a => a.agent))], agDur = L.AGENTS.reduce((s, a) => s + a.end - a.start, 0);
     const sw = k => ({ bg: S[k].bg, border: S[k].border });
     const compact = !!this.props.compactFooter;
-    const foot = { hint: !selU || (compact && !selU.group), block: false, fill: false, split: false };
+    const foot = { hint: !selU || (compact && !selU.group), block: false, fill: false, split: false, lunch: !!st.lunchSel && !selU };
+    if (foot.lunch) foot.hint = false;
     let fb = {}, ff = { sugg: [] }, fs = { segs: [] };
     if (selU) {
       if (selU.group) {
@@ -546,7 +630,7 @@ class Component extends DCLogic {
       sigTot, youWork: L.dur(tot.confirmed + tot.drafted + tot.needs), youConf: L.dur(tot.confirmed),
       agSummary: `${names.length} agents · ${L.dur(agDur)}`, expanded, expandLabel: expanded ? 'Collapse' : 'Expand', toggleAgents: () => this.setState({ expanded: !expanded }),
       future: { show: L.NOW < sc.b && z !== 'fit', x: X(L.NOW), w: X(sc.b) - X(L.NOW) },
-      comps, hlBands, ticks, minors, hours, sig, strips, you, ag,
+      comps, hlBands, ticks, minors, hours, sig, strips, you, ag, lunch, bites, lp,
       now: { show: nowIn, lx: nowX - 1, px: nowX - 32, label: L.fmt(L.NOW) },
       tip, foot, fb, ff, fs, hintRight: compact && selU ? 'Editing ' + (selU.card ? (selU.card === 'GENERAL' ? 'General' : selU.card) : (L.styles(theme)[selU.state] || {}).name) + ' below ↓' : 'Hover any block for detail · click a gap to fill it',
       keys: [{ k: '← →', v: 'Move' }, { k: '↵', v: 'Confirm' }, { k: 'G', v: 'General' }, { k: 'X', v: 'Not work' }, { k: 'Esc', v: 'Clear' }] };

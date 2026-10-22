@@ -25,7 +25,6 @@ import {
   type ApiStub,
   type StubCall,
 } from './harness.ts';
-import { offered } from './dropdown.ts';
 
 const user = (id: string, name: string, org_role: string) => ({
   id,
@@ -301,9 +300,11 @@ void describe('People: only the owner changes a role', () => {
     void test(`${who} is offered only the roles the server lets them invite as`, async () => {
       const h = await open('/organisation?tab=people', stub(id, role, actions));
       try {
-        const select = h.page.locator('.org-invite-role [role="combobox"]');
-        await select.waitFor({ timeout: 20_000 });
-        assert.deepEqual(await offered(select), expected);
+        // The invite is a dialog since LAI-893; its roles are a segment of buttons.
+        await h.page.locator('[data-invite-open]').click();
+        const dialog = h.page.locator('[data-invite-dialog]');
+        await dialog.waitFor({ timeout: 20_000 });
+        assert.deepEqual(await dialog.locator('[data-invite-role]').allInnerTexts(), expected);
       } finally {
         await h.close();
       }

@@ -41,6 +41,7 @@ import { AgentStrip } from './AgentStrip.tsx';
 import { cardChips } from './card-chips.ts';
 import { DraftList, type Batch } from './DraftList.tsx';
 import { DraftMyTime } from './DraftMyTime.tsx';
+import { WhereYouAre } from './WhereYouAre.tsx';
 import {
   confirmPlan,
   needCardLine,
@@ -873,6 +874,14 @@ export function MyDayScreen({
               <DraftMyTime
                 settings={settings}
                 held={view.drafts_held}
+                pending={pending}
+                run={(key, writeIt, said) =>
+                  run(key, [], () => writeIt(), said).then((r) => r !== undefined)
+                }
+              />
+              <WhereYouAre
+                settings={settings}
+                tz={view.tz}
                 pending={pending}
                 run={(key, writeIt, said) =>
                   run(key, [], () => writeIt(), said).then((r) => r !== undefined)

@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import { getTimeSettings, ISO_DAYS, setOrgBreaks, type BreakWindow } from '../../../api/time.ts';
 import { minuteClock, parseClock } from '../../../api/time-label.ts';
+import { BreakGlyph } from '../../../components/BreakGlyph.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
+import { BREAK_KIND_NAMES, BREAK_PRESETS, breakKind } from '../break-kinds.ts';
 
 export interface BreakScheduleFactProps {
   /** Owner or admin: the schedule can be edited; for anyone else, read. */
@@ -71,8 +73,10 @@ function issuesByWindow(cause: unknown): Map<number, string> {
 /**
  * The organisation's breaks (D-101, LAI-956), as one of the Organisation
  * card's facts beside *Time*: lunch and any other window, by wall clock and
- * weekday, drawn on every person's My day Timeline. **Display only** — a
- * scheduled break is never time, and nothing compares a person's day with it.
+ * weekday, drawn on every person's My day Timeline with what they worked in it
+ * (D-105). **Never time** — a scheduled break creates, clips and removes
+ * nothing. Its glyph follows its name (`breakKind`), and the usual breaks are
+ * one click each.
  *
  * Read from `GET /me/time-settings`, which every signed-in person may ask; set
  * whole by an owner or admin, signed in (`PUT /org/time/breaks`). Anyone else
@@ -150,6 +154,13 @@ export function BreakScheduleFact({ canManage }: BreakScheduleFactProps) {
               <ul className="org-breaks" aria-labelledby="org-breaks-label">
                 {breaks.map((w, i) => (
                   <li key={`${String(i)}-${w.label}`} className="org-break">
+                    <span
+                      className="org-break-glyph"
+                      title={BREAK_KIND_NAMES[breakKind(w.label)]}
+                      data-break-glyph={breakKind(w.label)}
+                    >
+                      <BreakGlyph kind={breakKind(w.label)} />
+                    </span>
                     <span className="org-break-label">{w.label}</span>
                     <span className="org-break-when">
                       {windowRange(w)} · {daysLabel(w.days)}
@@ -182,12 +193,58 @@ export function BreakScheduleFact({ canManage }: BreakScheduleFactProps) {
               save();
             }}
           >
+            {/* One click adds a usual break (D-105 item 5); the row is then
+                theirs to change. One already in the list is not offered twice. */}
+            <span className="org-break-presets" role="group" aria-label="Add a usual break">
+              {BREAK_PRESETS.map((preset) => {
+                const taken = drafts.some(
+                  (d) => d.label.trim().toLowerCase() === preset.label.toLowerCase(),
+                );
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className="org-break-preset"
+                    data-break-preset={preset.id}
+                    disabled={busy || taken || drafts.length >= MAX_WINDOWS}
+                    title={taken ? `${preset.label} is already in the list` : undefined}
+                    onClick={() => {
+                      setDrafts((list) => [
+                        ...(list ?? []),
+                        {
+                          label: preset.label,
+                          start: preset.start,
+                          end: preset.end,
+                          days: [...preset.days],
+                        },
+                      ]);
+                      setIssues(new Map());
+                    }}
+                  >
+                    <BreakGlyph kind={breakKind(preset.label)} />
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </span>
+            {drafts.length === 0 && (
+              <span className="org-break-none">No breaks yet — add one above, or your own.</span>
+            )}
             {drafts.map((d, i) => {
               const issue = issues.get(i);
+              const kind = breakKind(d.label);
               return (
                 <fieldset key={i} className="org-break-row" data-break-row={i}>
                   <legend className="org-break-legend">Break {String(i + 1)}</legend>
                   <span className="org-break-fields">
+                    {/* The glyph follows the name as it is typed. */}
+                    <span
+                      className="org-break-glyph org-break-glyph-edit"
+                      title={BREAK_KIND_NAMES[kind]}
+                      data-break-glyph={kind}
+                    >
+                      <BreakGlyph kind={kind} />
+                    </span>
                     <input
                       className="input org-break-name"
                       aria-label="Label"
@@ -198,27 +255,32 @@ export function BreakScheduleFact({ canManage }: BreakScheduleFactProps) {
                         change(i, { label: e.target.value });
                       }}
                     />
-                    <input
-                      className="input org-break-time"
-                      type="time"
-                      aria-label="Starts"
-                      value={d.start}
-                      onChange={(e) => {
-                        change(i, { start: e.target.value });
-                      }}
-                    />
-                    <input
-                      className="input org-break-time"
-                      type="time"
-                      aria-label="Ends"
-                      value={d.end}
-                      onChange={(e) => {
-                        change(i, { end: e.target.value });
-                      }}
-                    />
+                    <span className="org-break-clock">
+                      <input
+                        className="input org-break-time"
+                        type="time"
+                        aria-label="Starts"
+                        value={d.start}
+                        onChange={(e) => {
+                          change(i, { start: e.target.value });
+                        }}
+                      />
+                      <span className="org-break-to" aria-hidden="true">
+                        –
+                      </span>
+                      <input
+                        className="input org-break-time"
+                        type="time"
+                        aria-label="Ends"
+                        value={d.end}
+                        onChange={(e) => {
+                          change(i, { end: e.target.value });
+                        }}
+                      />
+                    </span>
                     <button
                       type="button"
-                      className="org-github-done"
+                      className="org-break-remove"
                       aria-label={`Remove ${d.label.trim() === '' ? `break ${String(i + 1)}` : d.label.trim()}`}
                       disabled={busy}
                       onClick={() => {
@@ -263,7 +325,7 @@ export function BreakScheduleFact({ canManage }: BreakScheduleFactProps) {
                   setDrafts((list) => [...(list ?? []), NEW_WINDOW]);
                 }}
               >
-                Add a break
+                Add your own
               </Button>
               <Button type="submit" busy={busy}>
                 Save breaks
@@ -283,8 +345,8 @@ export function BreakScheduleFact({ canManage }: BreakScheduleFactProps) {
           </form>
         )}
         <span className="org-fact-note">
-          Shown on everyone’s My day at these times, in their own zone. Never counted as time, and
-          nobody’s day is measured against it.
+          Shown on everyone’s My day at these times, in their own zone, with what they worked in
+          them. Never counted as time: a break creates, clips and removes nothing.
         </span>
         {error !== undefined && (
           <span className="org-fact-error" role="alert">

@@ -103,6 +103,7 @@ describe('the switches start off', () => {
       min_sync_interval_s: 600,
       signal_times: true,
       folder_names: true,
+      place: null,
       breaks: [],
     });
   });

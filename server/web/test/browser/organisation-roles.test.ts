@@ -311,11 +311,15 @@ void describe('role management', () => {
       );
       // Broad for the same reason: nothing on my own row, whatever it is.
       assert.equal(await mine.locator('button').count(), 0, 'offered a control on my own row');
-      // …and the others still have theirs, or the assertion above is vacuous.
+      // …and the active others still have theirs, or the assertion above is
+      // vacuous; a deactivated person's role is text beside Reactivate (LAI-893).
       await until(
-        async () => (await h.page.locator('.org-person [role="combobox"]').count()) === 3,
+        async () => (await h.page.locator('.org-person [role="combobox"]').count()) === 2,
       );
-      assert.equal(await h.page.locator('.org-person [role="combobox"]').count(), 3);
+      assert.equal(await h.page.locator('.org-person [role="combobox"]').count(), 2);
+      const off = h.page.locator('.org-person', { hasText: 'Sam Okafor' });
+      assert.equal(await off.locator('[role="combobox"]').count(), 0);
+      assert.equal(await off.locator('.org-reactivate').count(), 1);
     } finally {
       await h.close();
     }
@@ -600,7 +604,8 @@ void describe('a refusal', () => {
     try {
       await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
 
-      // The client did not pre-empt it: demoting the last owner is offered.
+      // The client did not pre-empt it: demoting the last owner is offered, and
+      // whatever the server refuses, the page shows its sentence and no other.
       const select = h.page
         .locator('.org-person', { hasText: 'Ada Lovelace' })
         .getByRole('combobox');

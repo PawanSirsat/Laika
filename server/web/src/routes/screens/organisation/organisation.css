@@ -238,7 +238,7 @@
  * like it is not for you. `:not()` rather than a second rule resetting opacity,
  * because nesting opacity multiplies and 0.55 × 1 is still 0.55.
  */
-.org-person-inactive > *:not(.org-person-controls):not(.org-tokens) {
+.org-person-inactive > *:not(.org-person-controls):not(.org-tokens):not(.org-people-actions) {
   opacity: 0.55;
 }
 
@@ -451,24 +451,43 @@
   cursor: default;
 }
 
-/* D-101's breaks (LAI-956): a short list, and its editor one window a row. */
+/*
+ * D-101's breaks (LAI-956, LAI-894): a short list, each with the glyph its
+ * name earns, and an editor — the usual breaks one click each, then a row a
+ * window: glyph, name, the clock pair, the days as chips, Remove.
+ */
 .org-breaks {
   margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
 }
 
 .org-break {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0 var(--space-2);
+}
+
+.org-break-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+  border: 1px solid var(--chip-green-border);
+  border-radius: var(--radius-xs);
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
 }
 
 .org-break-label {
   color: var(--text-primary);
+  font-weight: var(--weight-semibold);
 }
 
 .org-break-when {
@@ -489,15 +508,61 @@
   min-width: 0;
 }
 
+.org-break-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.org-break-preset {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0.25rem 0.625rem 0.25rem 0.5rem;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-chip);
+  background: var(--bg-card);
+  font: inherit;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.org-break-preset .break-glyph {
+  color: var(--chip-green);
+}
+
+.org-break-preset:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.org-break-preset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.org-break-preset:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.org-break-none {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
 .org-break-row {
   margin: 0;
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   min-width: 0;
   border: 1px solid var(--border-card);
   border-radius: var(--radius-card);
+  background: var(--bg-column);
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-2);
 }
 
 .org-break-legend {
@@ -513,14 +578,46 @@
   gap: var(--space-2);
 }
 
+.org-break-glyph-edit {
+  width: 2.125rem;
+  height: 2.125rem;
+}
+
 .org-break-name {
   flex: 1 1 10rem;
   min-width: 0;
 }
 
+.org-break-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.org-break-to {
+  color: var(--text-muted);
+}
+
 .org-break-time {
   flex: 0 0 auto;
   width: 8.5rem;
+}
+
+.org-break-remove {
+  margin-left: auto;
+  padding: 0.25rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.org-break-remove:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--overdue) 8%, transparent);
+  color: var(--overdue);
 }
 
 .org-break-days {
@@ -530,14 +627,28 @@
 }
 
 .org-break-day {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
   padding: 0.125rem 0.5rem;
   border: 1px solid var(--border-card);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-chip);
+  background: var(--bg-card);
   font-size: var(--text-small);
   color: var(--text-secondary);
+  cursor: pointer;
+}
+
+/* The chip is the box: the native one lies over it unseen, so a click or a
+   tab lands on a real checkbox and the chip's colour says checked. */
+.org-break-day input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
   cursor: pointer;
 }
 
@@ -545,6 +656,12 @@
   border-color: var(--accent);
   background: var(--accent-bg);
   color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+}
+
+.org-break-day:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* The provider and the key tail are one sentence — `anthropic ···9f2a`.
@@ -928,6 +1045,246 @@
   }
 }
 
+/* ------------------------------------------------ the header line (LAI-893) */
+
+/* Three facts with room between them, each kept on one line. */
+.org-context {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+}
+
+.org-context-fact {
+  white-space: nowrap;
+}
+
+/* --------------------------------------------- the People tab (LAI-893) */
+
+.org-people-card {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+.org-people-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.125rem;
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.org-people-head h2 {
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.org-people-seats {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+.org-people-note {
+  padding: var(--space-3) var(--space-5) 0;
+}
+
+.org-people-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.org-people-tools-gap {
+  flex: 1;
+}
+
+.org-people-search {
+  position: relative;
+  flex: 1 1 12.5rem;
+  max-width: 20rem;
+  min-width: 0;
+}
+
+.org-people-search-glyph {
+  position: absolute;
+  left: 0.6875rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: var(--text-body);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.org-people-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 2.125rem;
+  padding: 0 0.75rem 0 1.875rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  background: var(--bg-input);
+  font: inherit;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.org-people-search-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* A segment of filters, each with its count; the invite dialog's roles too. */
+.org-segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-control);
+  background: var(--bg-column);
+}
+
+.org-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0.3125rem 0.625rem;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.org-segment[aria-pressed='true'] {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+  box-shadow: var(--shadow-card);
+}
+
+.org-segment:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.org-segment:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.org-segment-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-normal);
+  color: var(--text-muted);
+}
+
+.org-people-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 2.125rem;
+  margin: 0;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  font: inherit;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.org-people-sort strong {
+  color: var(--text-primary);
+}
+
+.org-people-sort:hover {
+  background: var(--bg-card-hover);
+}
+
+.org-people-sort:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The bar for the rows ticked: dark, as the design draws it. */
+.org-bulk {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem 0.5rem var(--space-5);
+  background: var(--text-primary);
+  color: var(--bg-card);
+  font-size: var(--text-body);
+}
+
+.org-bulk strong {
+  margin-right: 0.375rem;
+  font-weight: var(--weight-semibold);
+}
+
+.org-bulk-action,
+.org-bulk-clear {
+  height: 1.75rem;
+  margin: 0;
+  padding: 0 0.625rem;
+  border: 1px solid color-mix(in srgb, var(--bg-card) 25%, transparent);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-small);
+  color: inherit;
+  cursor: pointer;
+}
+
+.org-bulk-action:hover:not(:disabled),
+.org-bulk-clear:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bg-card) 14%, transparent);
+}
+
+.org-bulk-action:disabled,
+.org-bulk-clear:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.org-bulk-danger {
+  border-color: color-mix(in srgb, var(--overdue) 55%, transparent);
+  color: color-mix(in srgb, var(--overdue) 70%, var(--bg-card));
+}
+
+.org-bulk-clear {
+  border-color: transparent;
+  opacity: 0.8;
+}
+
+.org-bulk-progress {
+  font-size: var(--text-small);
+  opacity: 0.8;
+}
+
+.org-bulk-action:focus-visible,
+.org-bulk-clear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* --- Roles & permissions (LAI-950) ----------------------------------------- */
 
 /* A role is the server's word, shown as a name. */
@@ -1208,6 +1565,508 @@
   outline-offset: 1px;
 }
 
+/* The table: a grid, scrolling sideways on a narrow screen. */
+.org-people-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.org-people-table {
+  min-width: 54rem;
+}
+
+.org-people-row {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 2.6fr) minmax(0, 1.1fr) 0.7fr 0.7fr 1fr 9.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5625rem var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.org-people-row:last-child {
+  border-bottom: none;
+}
+
+.org-people-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
+  background: var(--bg-card);
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.org-person:hover {
+  background: var(--bg-card-hover);
+}
+
+.org-person-ticked {
+  background: var(--accent-bg);
+}
+
+.org-people-tick {
+  display: flex;
+  align-items: center;
+}
+
+.org-check {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.org-check:disabled {
+  cursor: default;
+}
+
+.org-people-person {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.org-avatar-wrap {
+  position: relative;
+  flex: none;
+}
+
+/* Online: a green dot on the avatar's shoulder. */
+.org-presence-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-card);
+  background: var(--chip-green);
+}
+
+.org-people-role {
+  min-width: 0;
+}
+
+.org-person-role-owner {
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.org-people-num {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-primary);
+}
+
+.org-agent-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-default);
+}
+
+.org-agent-dot-on {
+  background: var(--chip-green);
+}
+
+.org-people-seen {
+  font-size: var(--text-body);
+  white-space: nowrap;
+}
+
+.org-people-seen-now {
+  color: var(--chip-green);
+}
+
+.org-people-seen-recent {
+  color: var(--text-primary);
+}
+
+.org-people-seen-muted {
+  color: var(--text-muted);
+}
+
+.org-people-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.org-tokens-open {
+  height: 1.75rem;
+  margin: 0;
+  padding: 0 0.625rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  font: inherit;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.org-tokens-open:hover:not(:disabled) {
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+
+.org-tokens-open:disabled,
+.org-people-actions .org-deactivate:disabled,
+.org-people-actions .org-reactivate:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.org-people-actions .org-deactivate {
+  height: 1.75rem;
+  padding: 0 0.5rem;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.org-people-actions .org-deactivate:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--overdue) 8%, transparent);
+  color: var(--overdue);
+}
+
+.org-people-actions .org-reactivate {
+  height: 1.75rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-xs);
+  background: var(--bg-card);
+  font-size: var(--text-small);
+  color: var(--text-primary);
+}
+
+.org-people-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2.5rem var(--space-5);
+  text-align: center;
+}
+
+.org-people-empty-title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.org-people-empty-body {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+.org-people-empty-invite {
+  height: 2rem;
+  margin: 0;
+  padding: 0 0.875rem;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-control);
+  background: var(--accent-bg);
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.org-people-error {
+  padding: var(--space-3) var(--space-5) 0;
+}
+
+.org-people-foot {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.625rem var(--space-5) 0.875rem;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+.org-people-shown {
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.org-people-foot-note {
+  flex: 1;
+  min-width: 16rem;
+}
+
+/* Pending: each invite in a dashed card. */
+.org-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: var(--space-3) var(--space-5) var(--space-4);
+}
+
+.org-pending .org-invites {
+  gap: 0.5rem;
+}
+
+.org-pending .org-invites li {
+  padding: 0.6875rem 0.875rem;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-card);
+}
+
+.org-invite-glyph {
+  flex: none;
+  display: flex;
+  width: 1.875rem;
+  height: 1.875rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--bg-column);
+  font-size: var(--text-body);
+  color: var(--text-muted);
+}
+
+.org-invite-revoke {
+  flex: none;
+  height: 1.75rem;
+  margin: 0;
+  padding: 0 0.5rem;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-small);
+  color: var(--overdue);
+  cursor: pointer;
+}
+
+.org-invite-revoke:hover {
+  background: color-mix(in srgb, var(--overdue) 8%, transparent);
+}
+
+.org-pending-empty {
+  margin: 0;
+  padding: 1.75rem 0;
+  text-align: center;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+/* ---------------------------------------------- the invite dialog (LAI-893) */
+
+.org-dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--scrim);
+}
+
+.org-dialog {
+  position: fixed;
+  top: 12vh;
+  left: 50%;
+  z-index: 61;
+  width: min(32.5rem, calc(100vw - 2rem));
+  max-height: 80vh;
+  overflow: auto;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-modal);
+}
+
+.org-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 1.125rem 1.25rem 0.25rem;
+}
+
+.org-dialog-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.org-dialog-title {
+  margin: 0;
+  font-size: var(--text-heading-md);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.org-dialog-sub {
+  margin: 0.125rem 0 0;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+.org-dialog-org {
+  font-family: var(--font-mono);
+}
+
+.org-dialog-close {
+  flex: none;
+  width: 1.875rem;
+  height: 1.875rem;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-heading-sm);
+  line-height: 1;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.org-dialog-close:hover {
+  background: var(--bg-column);
+}
+
+.org-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding: 0.875rem 1.25rem 1.125rem;
+}
+
+.org-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.org-dialog-label {
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.org-invite-emails {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-input);
+  font: inherit;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-primary);
+  resize: vertical;
+}
+
+.org-invite-emails:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.org-dialog-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.org-dialog-note {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+}
+
+.org-dialog-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-column);
+}
+
+.org-issued-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.org-issued-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.org-issued-to {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.org-dialog .org-issued-head {
+  margin: 0;
+}
+
+.org-dialog .org-issued-body {
+  margin: 0;
+}
+
+.org-dialog .org-issued-url {
+  display: block;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  background: var(--bg-column);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+@media (max-width: 40rem) {
+  .org-people-row {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+
+  .org-people-head,
+  .org-people-tools,
+  .org-people-foot,
+  .org-pending {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
+  }
+}
 .oh-list {
   list-style: none;
   margin: 0;

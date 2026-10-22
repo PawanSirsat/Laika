@@ -10,6 +10,10 @@ import {
   type ReactNode,
 } from 'react';
 import type { MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
+import { BreakGlyph } from '../../../components/BreakGlyph.tsx';
+import { breakKind } from '../break-kinds.ts';
+import { placeOf } from '../places.ts';
+import { glyphAt, skyPhases, sunTimes } from './daylight.ts';
 import { FitLabel } from './FitLabel.tsx';
 import { needsACard } from './folder.ts';
 import { agentDuration, clock, duration, hourName, span as spanOf } from './format.ts';
@@ -44,6 +48,7 @@ import {
   type LaneBlock,
   type Span,
   type Zoom,
+  workedIn,
 } from './timeline-derive.ts';
 
 /** What the reader has in hand: a block, a gap they picked, or a break. */
@@ -102,6 +107,36 @@ const ICONS = {
   break: '‖',
 } as const;
 
+/** The design's sun before a daytime hour (LAI-895). */
+function SunGlyph() {
+  return (
+    <svg className="dayline-axis-sun" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+      <circle cx="5" cy="5" r="2.2" fill="currentColor" />
+      <path
+        d="M5 .6v1.2M5 8.2v1.2M.6 5h1.2M8.2 5h1.2M1.9 1.9l.8.8M7.3 7.3l.8.8M1.9 8.1l.8-.8M7.3 2.7l.8-.8"
+        stroke="currentColor"
+        strokeWidth="1"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/** The design's moon before a night hour (LAI-895). */
+function MoonGlyph() {
+  return (
+    <svg
+      className="dayline-axis-moon"
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      aria-hidden="true"
+    >
+      <path d="M8.2 6.4A3.8 3.8 0 0 1 3.6 1.8a3.8 3.8 0 1 0 4.6 4.6z" fill="currentColor" />
+    </svg>
+  );
+}
+
 /** The design's px: the axis row, the signals lane's rows, the YOU row, the agents lane. */
 const AXIS_H = 28;
 const SIGNAL_ROW = 16;
@@ -127,6 +162,21 @@ function labelOf(
     return { top: e.project.name, title: e.note ?? e.folder ?? '', card: undefined };
   const general = e.folder === undefined || e.folder === null ? 'General' : `General · ${e.folder}`;
   return { top: e.note === null ? general : `${general} · ${e.note}`, title: '', card: undefined };
+}
+
+/** `1h 20m`, `45m` — the pill's compact clock, the design's own (LAI-894). */
+function compact(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${String(m)}m`;
+  return m === 0 ? `${String(h)}h` : `${String(h)}h ${String(m)}m`;
+}
+
+/** `30m worked`, `worked through`, or `offline` — the window's own word (LAI-894). */
+function workedLabel(w: { readonly worked: number; readonly rest: number }): string {
+  if (w.worked === 0) return 'offline';
+  if (w.rest === 0) return 'worked through';
+  return `${compact(w.worked)} worked`;
 }
 
 /**
@@ -479,15 +529,35 @@ export function Timeline({
 
   // The hours along the top: each where it really falls, labelled where there is room.
   const nowX = line.now === undefined ? undefined : x(line.now);
-  const ticks: { minute: number; x: number; label: string; show: boolean }[] = [];
+  // The sky (LAI-895, D-106): the day's sun at the person's place — set by
+  // them, else the day's own zone when the list knows it — and nothing where
+  // neither names a place.
+  const place = placeOf(view.settings.place ?? view.tz);
+  const sun = place === undefined ? undefined : sunTimes(view.day, place.lat, place.lng, view.tz);
+  const sky = sun === undefined ? [] : skyPhases(sun, from * 60, to * 60);
+  // Where each break pill sits on the axis row, so an hour label under it gives way.
+  const pills = line.scheduled.map((s) => {
+    const bandW = Math.max(1, x(s.end) - x(s.start));
+    return { px: x(s.start) + 3, pw: Math.max(18, bandW - 6) };
+  });
+  const ticks: {
+    minute: number;
+    x: number;
+    label: string;
+    show: boolean;
+    glyph: 'sun' | 'moon' | undefined;
+  }[] = [];
   let lastLabel = -Infinity;
   for (const mark of axisMarks(line, '1')) {
     if (scale.folded(mark.minute)) continue;
     const px = x(mark.minute);
     const label = hourName(mark.hour);
+    const glyph = sun === undefined ? undefined : glyphAt(sun, mark.minute);
+    const width = label.length * 6.7 + (glyph === undefined ? 0 : 14);
     const nearNow = nowX !== undefined && px > nowX - 80 && px < nowX + 36;
-    const show = px - lastLabel >= 56 && px + 5 + label.length * 6.7 <= scale.total && !nearNow;
-    ticks.push({ minute: mark.minute, x: px, label, show });
+    const underPill = pills.some((p) => px + 5 + width > p.px - 4 && px < p.px + p.pw);
+    const show = px - lastLabel >= 56 && px + 5 + width <= scale.total && !nearNow && !underPill;
+    ticks.push({ minute: mark.minute, x: px, label, show, glyph });
     if (show) lastLabel = px;
   }
   const minors: { minute: number; x: number; half: boolean }[] = [];
@@ -976,7 +1046,100 @@ export function Timeline({
               data-folds={folds.length}
               style={{ width: `${String(Math.max(scale.total, width))}px` }}
             >
-              {/* Behind everything: the folded stretches, the future, the selected card's bands, the hour lines. */}
+              {/* Behind everything: the sky, the folded stretches, the future, the selected card's bands, the hour lines. */}
+              {sky.map((phase) => (
+                <div
+                  key={`sky-${String(phase.start)}`}
+                  className={`dayline-sky dayline-sky-${phase.kind}`}
+                  data-sky={phase.kind}
+                  aria-hidden="true"
+                  style={{
+                    left: x(phase.start),
+                    width: Math.max(0, x(phase.end) - x(phase.start)),
+                  }}
+                >
+                  <span className="dayline-sky-strip" />
+                  <span className="dayline-sky-body" />
+                </div>
+              ))}
+              {/* The organisation's breaks (D-101, LAI-896): a band from the axis
+                  down through every lane, as the design draws it, and its pill
+                  on the axis row. Never pressed: a click goes to what is on it. */}
+              {line.scheduled.map((s) => {
+                // The window set against the day (LAI-894, D-105): the pill
+                // says what was worked in it, and its bar shows where.
+                const w = workedIn(line.blocks, s);
+                const worked = workedLabel(w);
+                const range = rangeOf(s);
+                const bandW = Math.max(1, x(s.end) - x(s.start));
+                const pillW = Math.max(18, bandW - 6);
+                // The design's own arithmetic at the 12px step: ~7px a
+                // character, the glyph and the padding first. The worked
+                // figure goes before the range; the glyph and the name stay
+                // whatever the room.
+                const room = pillW - 14 - 17 - s.label.length * 7;
+                const showWorked = room >= worked.length * 7 + 6;
+                const showRange = showWorked && room >= (worked.length + range.length) * 7 + 16;
+                const cards = [
+                  ...new Set(
+                    line.blocks
+                      .filter((b) => b.start < s.end && b.end > s.start)
+                      .map((b) => labelOf(b, drafts, entries).top)
+                      .filter((t) => t !== ''),
+                  ),
+                ];
+                const tip = `${s.label} ${range} · ${duration(w.rest)} off, ${duration(w.worked)} worked${cards.length > 0 ? ` · on ${cards.join(' · ')}` : ''}`;
+                return (
+                  <div
+                    key={`scheduled-${String(s.start)}`}
+                    className="dayline-scheduled"
+                    data-scheduled-break={s.start}
+                    style={{ left: x(s.start), width: bandW }}
+                    role="note"
+                    aria-label={`${s.label}, ${range} — the organisation’s break`}
+                    title={`${s.label}, ${range} — the organisation’s break`}
+                  >
+                    <span
+                      className="dayline-scheduled-pill"
+                      data-scheduled-pill
+                      data-worked={w.worked}
+                      style={{ width: pillW }}
+                      title={tip}
+                    >
+                      <BreakGlyph kind={breakKind(s.label)} />
+                      <span className="dayline-scheduled-name">{s.label}</span>
+                      {showRange && <span className="dayline-scheduled-range">{range}</span>}
+                      {showWorked && (
+                        <span
+                          className={
+                            w.worked > 0
+                              ? 'dayline-scheduled-worked dayline-scheduled-worked-on'
+                              : 'dayline-scheduled-worked'
+                          }
+                          data-scheduled-worked
+                        >
+                          {worked}
+                        </span>
+                      )}
+                      <span className="dayline-scheduled-bar" aria-hidden="true">
+                        {w.runs.map((r) => (
+                          <span
+                            key={r.start}
+                            className={
+                              r.worked
+                                ? 'dayline-scheduled-seg dayline-scheduled-seg-work'
+                                : 'dayline-scheduled-seg'
+                            }
+                            style={{
+                              width: `${String(((r.end - r.start) / Math.max(1, s.end - s.start)) * 100)}%`,
+                            }}
+                          />
+                        ))}
+                      </span>
+                    </span>
+                  </div>
+                );
+              })}
               {folds.map((fold) => (
                 <div
                   key={`fold-${String(fold.start)}`}
@@ -1031,7 +1194,10 @@ export function Timeline({
                           : 'dayline-axis-hour'
                       }
                       style={{ left: tick.x + 5 }}
+                      data-glyph={tick.glyph}
                     >
+                      {tick.glyph === 'sun' && <SunGlyph />}
+                      {tick.glyph === 'moon' && <MoonGlyph />}
                       {tick.label}
                     </span>
                   ))}
@@ -1123,24 +1289,6 @@ export function Timeline({
               )}
 
               <div className="dayline-row">
-                {/* The organisation's breaks (D-101): a shaded band behind
-                    everything, named and timed, and nothing more — never time,
-                    never pressed, never set against what was worked in it. */}
-                {line.scheduled.map((s) => (
-                  <div
-                    key={`scheduled-${String(s.start)}`}
-                    className="dayline-scheduled"
-                    data-scheduled-break={s.start}
-                    style={{ left: x(s.start), width: Math.max(1, x(s.end) - x(s.start)) }}
-                    role="note"
-                    aria-label={`${s.label}, ${rangeOf(s)} — the organisation’s break`}
-                    title={`${s.label}, ${rangeOf(s)} — the organisation’s break`}
-                  >
-                    <span className="dayline-scheduled-label" aria-hidden="true">
-                      <FitLabel options={[s.label, '']} />
-                    </span>
-                  </div>
-                ))}
                 {view.state === 'no_signal' && nothing && (
                   <div className="dayline-nosignal" data-no-signal>
                     <p className="dayline-nosignal-text">
@@ -1403,6 +1551,39 @@ export function Timeline({
                     </div>
                   );
                 })}
+
+                {/* What was worked inside the organisation's window (LAI-894):
+                    hatched over each block's part in it, catching no pointer. */}
+                {line.scheduled.flatMap((s) =>
+                  line.blocks.flatMap((block, i) => {
+                    const shape = shaped[i] ?? block;
+                    if (shape.start >= s.end || shape.end <= s.start) return [];
+                    const { row, rows } = stacks[i] ?? { row: 0, rows: 1 };
+                    const bx0 = left(shape.start, shape.end);
+                    const bx1 = bx0 + wide(shape.start, shape.end);
+                    const x0 = Math.max(x(s.start), bx0);
+                    const x1 = Math.min(x(s.end), bx1);
+                    if (x1 - x0 < 2) return [];
+                    const edges = `${x0 <= bx0 + 0.5 ? ' dayline-bite-l' : ''}${x1 >= bx1 - 0.5 ? ' dayline-bite-r' : ''}`;
+                    return [
+                      <span
+                        key={`bite-${String(s.start)}-${block.kind}-${block.id}`}
+                        className={`dayline-bite${edges}`}
+                        data-scheduled-bite={block.id}
+                        data-kind={block.kind}
+                        aria-hidden="true"
+                        style={
+                          {
+                            left: x0,
+                            width: x1 - x0,
+                            '--row': String(row),
+                            '--rows': String(rows),
+                          } as CSSProperties
+                        }
+                      />,
+                    ];
+                  }),
+                )}
 
                 {/* The grip: drag the rows taller or shorter (LAI-891). */}
                 <button

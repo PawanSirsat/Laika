@@ -18,6 +18,7 @@ import {
   signalsDuring,
   snap,
   splitPoint,
+  workedIn,
   stackOf,
   stepEnd,
   stepMinutes,
@@ -792,5 +793,47 @@ void describe('zoomStep — the scale in steps (LAI-890)', () => {
     }
     assert.equal(zoomLabel('fit'), 'Fit');
     assert.equal(buildScale(6, 22, '1.5', 500).pos(min(7)), 240);
+  });
+});
+
+void describe('workedIn — the organisation’s window set against the day (LAI-894)', () => {
+  const span = (start: number, end: number) => ({ start, end });
+
+  void test('nothing in the window: no minute worked, one run, not worked', () => {
+    assert.deepEqual(workedIn([span(600, 660)], span(720, 780)), {
+      worked: 0,
+      rest: 60,
+      runs: [{ start: 720, end: 780, worked: false }],
+    });
+  });
+
+  void test('a block over the first half: 30 worked, 30 off, two runs in order', () => {
+    assert.deepEqual(workedIn([span(720, 750)], span(720, 780)), {
+      worked: 30,
+      rest: 30,
+      runs: [
+        { start: 720, end: 750, worked: true },
+        { start: 750, end: 780, worked: false },
+      ],
+    });
+  });
+
+  void test('a block over the whole window, from outside it on both sides: worked through', () => {
+    assert.deepEqual(workedIn([span(700, 800)], span(720, 780)), {
+      worked: 60,
+      rest: 0,
+      runs: [{ start: 720, end: 780, worked: true }],
+    });
+  });
+
+  void test('two blocks at once count each minute once; touching blocks are one run', () => {
+    const w = workedIn([span(725, 745), span(735, 755), span(755, 760)], span(720, 780));
+    assert.equal(w.worked, 35);
+    assert.equal(w.rest, 25);
+    assert.deepEqual(w.runs, [
+      { start: 720, end: 725, worked: false },
+      { start: 725, end: 760, worked: true },
+      { start: 760, end: 780, worked: false },
+    ]);
   });
 });

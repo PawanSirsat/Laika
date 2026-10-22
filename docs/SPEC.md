@@ -1824,13 +1824,15 @@ not drafted again when drafting is turned back on. A table rather than an
 
 ### 4.46 `user_time_settings`
 
-A person's own *Draft my time* (D-088 item 5, LAI-787). **No row is off.** Set
-only by the person, on a web session (`time_settings.set_own`).
+A person's own *Draft my time* (D-088 item 5, LAI-787) and where they are
+(D-106, LAI-895). **No row is off, and nowhere.** Set only by the person, on a
+web session (`time_settings.set_own`).
 
 | field | notes |
 | --- | --- |
 | `user_id` | primary key, FK `users`, cascade |
 | `draft_my_time` | 0 or 1 (CHECK) |
+| `place` | text, null — the IANA zone of a place from the client's list (`Asia/Kolkata`), at most 64 characters; the person's Timeline computes its sunrise and sunset from it (D-106). The server stores the id and reads nothing into it |
 | `updated_at` | |
 
 Turning it off deletes every draft the person has not confirmed, in the same
@@ -3079,14 +3081,16 @@ the Max plan?*), not in tokens, so the number is always the developer's.
 parameter names anybody else.
 
 - **The switches.** `GET /me/time-settings` answers `{ org_mode, draft_my_time,
-  drafting, min_sync_interval_s, signal_times, folder_names, breaks }` to a
-  session or any token of the person's — a collector asks before it sends.
+  drafting, min_sync_interval_s, signal_times, folder_names, breaks, place }`
+  to a session or any token of the person's — a collector asks before it sends.
   `signal_times: true` says the board takes a block's `at` (D-096), and
   `folder_names: true` that it takes a block's `folder` and `branch` (D-098
   item 6); a collector sends each only then, so a board that predates it is
   never refused an upload over it. `PUT /me/time-settings` takes
-  `{ draft_my_time }` from a web session only; off deletes every draft the
-  person has not confirmed. `PUT /org/time` takes `{ mode }` — `off`, `manual`
+  `{ draft_my_time }`, `{ place }` or both from a web session only — `place`
+  an IANA zone id of at most 64 characters, or `null` to forget it (D-106);
+  an empty body is `422`. Off deletes every draft the person has not
+  confirmed. `PUT /org/time` takes `{ mode }` — `off`, `manual`
   or `drafts` — from an owner or admin on a web session (`org.time.set`);
   leaving `drafts` deletes everybody's unconfirmed drafts. A confirmed draft
   stays, its evidence blanked (§4.45), and entries are never deleted by a
@@ -4187,7 +4191,7 @@ call MCP; agents do.
 | **Tokens** *(on Developer access)* | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
 | **Organisation** *(four tabs, LAI-796)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
 | **Connect** *(Developer access's card, and the wizard at `/developer/connect`; not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` | — | ✅ D-079, D-084, D-087 |
-| **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects`, `GET /tasks/:id` (only a matched task and an opened *Show tasks*), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
+| **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
 | **Unlisted work** *(Inbox's tab, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
 | **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage` | — | ✅ D-078, D-079, D-084 |
@@ -4374,28 +4378,47 @@ anything missing sends the task back.
   at all; the id stays `none`, so a saved address still opens it. The toolbar
   goes on with a space selector (all spaces, or one, which narrows every count
   to it); a sort
-  (*Online first*, the default, *Heaviest load*, *Name*, *Last seen*); an (i)
+  (*Online first*, the default, *Heaviest load*, *Name*, *Last seen*); a
+  **Cards / List** toggle, remembered per browser (LAI-991); an (i)
   with the definitions. **One card a person** in a grid of three columns on a
-  laptop, two on a tablet and one on a phone: the avatar with a status ring
+  laptop, two on a tablet and one on a phone — **every card draws every block
+  in the same order, and a block with nothing to say draws a `0`, *No agents
+  running* or *No spaces* rather than disappearing, so the cards in a row are
+  one shape and one height** (LAI-991, the owner's design): the avatar with a status ring
   and dot (green online, amber away, grey offline, dashed never seen) and the
   same in words — *Online now*, *Away · 23 min*, *Last seen 2 h ago* with the
   date and time and the kind of signal on hover, *Never seen*; name, org role,
   and for owners and admins the profile kind; the load badge with its rule on
   hover — **the selected space's load** when one is selected, and the *Heavy
   load* chip reads the same — and beside it an *N overdue* badge of its own
-  (D-092, LAI-818); their agents with a green dot on each one running, and *Claude Code ·
-  working on LAI-9* where presence knows the matched task; the workload counts
+  (D-092, LAI-818); the workload counts
   *in progress · to do · backlog*, a thin stacked bar of committed work (in
   progress, to do), and apart from it *N waiting on reviewers* and *due in 7
-  days*; the spaces they have open work in, each showing its committed count
-  with backlog and review on hover; for owners and admins a 14-day
-  board-activity sparkline with its total and, under it, *by hand · by agents
-  · bookkeeping* from `activity_14d_split`, and
-  the name linking to the profile; and *Show tasks*, collapsed, listing their
-  in-progress tasks, each opening in its own space (LAI-755). People never seen
+  days*; *Agents · N running*, their agents with a green dot on each one
+  running, or *No agents running*; for owners and admins *Activity · 14 days
+  · total*, the fortnight as three figures, *by hand · by agents ·
+  bookkeeping* from `activity_14d_split`, each with what it counts on hover
+  and **no bar chart** (LAI-996); *Spaces · N*, the spaces they have open work in as chips
+  carrying the space's colour (the sidebar badge's, keyed by slug) and its
+  committed count, with backlog and review on hover, or *No spaces*; the name
+  linking to the profile for owners and admins. **No task is read and no
+  task is listed** (LAI-992, the owner): the *Show tasks* footer and the
+  *working on LAI-9* line LAI-767 drew each cost a `GET /tasks/:id`, and the
+  workload counts already say how many are in progress. **Nor the sparkline**
+  (LAI-992): the 14-day bar chart is the profile's; the three figures stay
+  (LAI-996). **Every figure with a rule
+  behind it says the rule on hover** — the load badge, overdue, each count,
+  each activity figure, each space and agent chip, the status line — the same
+  words on a card and in the list. People never seen
   fold into one line at the bottom, unless searched for or filtered to.
-  Under the grid, **Team load** — one bar a person with committed work,
-  heaviest first, and a count of those with nothing committed — and **Agents running now** (person, agent, when last active). It
+  **List** draws the same people, filtered and sorted the same way, as a
+  table: person, load, a workload bar, in progress, to do, review, agents
+  running, for owners and admins *hand · agents · bookkeeping*, and spaces.
+  **Every row's bar is drawn to one scale, the heaviest committed count on
+  the page, so the table is the team-load chart** — it replaced the *Team
+  load* and *Agents running now* panels that LAI-767 put under the grid
+  (LAI-991); the *Agents running* tile and each card's agents carry what the
+  second panel said. A legend under either view names the bar's two parts. It
   re-reads every 20 s while the tab is visible and when it comes back; the
   loading skeleton is the final layout; no matches has its own state. With
   `presence_enabled = 0` it says so, keeps the workload and draws no status.
