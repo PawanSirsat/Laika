@@ -514,6 +514,10 @@
   color: var(--text-muted);
 }
 
+.ss-switch {
+  align-self: flex-end;
+}
+
 .ss-switch .switch-track {
   flex: none;
 }
@@ -873,6 +877,10 @@
 
   .ss-row-field-end .ss-value {
     justify-content: flex-start;
+  }
+
+  .ss-switch {
+    align-self: flex-start;
   }
 
   .ss-card-head,
