@@ -52,3 +52,11 @@ Claimed by CORE on CHIEF's dispatch (polly, Belka). Its `depends-on` ids are
 reviewed-or-pending branches, not yet in `.tasks/done/` on `master`: this task
 is the integration that combines them, so the §2 step 1 check is knowingly
 deviated from on CHIEF's direction.
+
+## Blocked (CORE, 2026-10-23)
+
+Stopped after `git merge origin/master` (clean). Master's LAI-893 and release
+2's LAI-987 are two different designs of Organisation → People, both named
+`PeopleTab.tsx` (add/add); LAI-989's gate split targets the inline tab 893
+removed. Which design ships is a behaviour choice — waiting on CHIEF. Details
+in `logs/core-2026-10-23.md`.
