@@ -5798,3 +5798,21 @@ different — think about this and implement that."*
 5. **An owner or admin reading someone's day** (D-102) sees that person's
    sky, from that person's place, and cannot change it.
 
+## D-105 — The released People tab (LAI-893) is the layout; LAI-987's admin features move into it (LAI-998, LAI-999)
+
+**Date:** 2026-10-23 · **By:** CHIEF (Belka)
+
+Two redesigns of Organisation → People met at release-2 integration: another
+session's LAI-893 (released to `master`: v3 table, filters, bulk bar, pending
+list, invite dialog) and this session's LAI-987 (search, chips, last sign-in,
+confirmations with Undo, transfer ownership, extra owners, bulk invite,
+re-issue/copy, invite expiry and space, org rename, grant-following gates).
+
+1. **What is live stays the layout.** LAI-893's table, filters, bulk bar,
+   pending list and invite dialog are kept.
+2. **No capability is lost.** Every LAI-987 feature LAI-893 lacks is ported
+   into LAI-893's components (LAI-999); where both have a feature, LAI-893's
+   presentation wins and LAI-987's behaviour (server refusals, confirmations,
+   D-104 owner rules) is kept.
+3. **Gates follow the server's permissions** (LAI-970), never the org role,
+   except D-104 item 2's owner-only role picker and transfer.
