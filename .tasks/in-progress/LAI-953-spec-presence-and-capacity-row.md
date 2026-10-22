@@ -2,11 +2,12 @@
 id: LAI-953
 title: 'SPEC §3.1 never got its "Presence and capacity" row, so presence.read and capacity.read are still parked as "LAI-432, in flight" with LAI-432 done'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: [LAI-885]
 discovered-from: LAI-885
-status: backlog
+status: in-progress
+started: 2026-10-22T12:08:17Z
 ---
 
 ## Goal
