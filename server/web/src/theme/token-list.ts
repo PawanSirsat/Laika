@@ -92,6 +92,21 @@ export const COLOR_TOKENS: readonly TokenGroup[] = [
     tokens: ['--priority-high', '--priority-medium', '--priority-low'],
   },
   {
+    title: 'Space colours',
+    note: 'The eight a space may be painted (D-103), each solid under its white letter in both themes.',
+    tokens: [
+      '--space-black',
+      '--space-violet',
+      '--space-teal',
+      '--space-blue',
+      '--space-amber',
+      '--space-magenta',
+      '--space-red',
+      '--space-green',
+      '--on-space',
+    ],
+  },
+  {
     title: 'Overlays',
     note: 'The modal scrim and its shadow.',
     tokens: ['--scrim', '--shadow-modal'],
