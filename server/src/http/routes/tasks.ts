@@ -16,6 +16,7 @@ import {
   removeTaskDependency,
   reorderTask,
   SIZE_LEVELS,
+  summariseAllTasks,
   summaryOf,
   TASK_LIST_FIELDS,
   TASK_PRIORITIES,
@@ -163,6 +164,9 @@ const AllTasksQuery = strictObject({
   assignee: z.string().optional(),
   sprint: z.string().optional(),
 });
+
+/** `/tasks/summary` takes `/tasks`' filters and nothing that pages (LAI-974). */
+const SummaryQuery = AllTasksQuery.omit({ limit: true, cursor: true, fields: true });
 
 const FinishBody = strictObject({
   summary: z.string().trim().min(1).max(50_000),
@@ -312,6 +316,25 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
       return c.json({ ...page, data: page.data.map(summaryOf) } satisfies Page<TaskSummaryView>);
     }
     return c.json(page);
+  });
+
+  // The figures for exactly what `GET /` pages through, with the same filters
+  // (LAI-974). Registered before `/:id`, which would otherwise read `summary`
+  // as a task id.
+  app.get('/summary', (c) => {
+    const actor = requireActor(c);
+    const query = parseQuery(SummaryQuery, c.req.query());
+    const given = (raw: string | undefined) => (raw === '' ? undefined : raw);
+
+    return c.json(
+      summariseAllTasks(db, actor, {
+        updatedSince: parseUpdatedSince(query.updated_since),
+        project: given(query.project),
+        status: parseEnum(query.status, TASK_STATUSES, 'status'),
+        assignee: given(query.assignee),
+        sprint: given(query.sprint),
+      }),
+    );
   });
 
   app.get('/:id', (c) => c.json(getTask(db, requireActor(c), c.req.param('id'))));

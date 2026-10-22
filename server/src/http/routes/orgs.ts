@@ -19,6 +19,7 @@ import {
   setModelPrice,
 } from '../../services/org-model-prices.ts';
 import { type OwnershipTransferView, transferOwnership } from '../../services/users.ts';
+import { getOrgOverview, type OrgOverviewView } from '../../services/org-overview.ts';
 import { type AppEnv } from '../context.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
@@ -105,6 +106,16 @@ export function orgRoutes(options: OrgRouteOptions): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db, serverSecret } = options;
   const publicUrl = options.publicUrl ?? '';
+
+  /**
+   * `GET /api/v1/org/overview` (LAI-986): people seen this week and the open /
+   * in review / blocked / overdue figures over the spaces the caller can read.
+   */
+  app.get('/overview', (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+    return c.json<OrgOverviewView>(getOrgOverview(db, actor));
+  });
 
   app.get('/', (c) => {
     const actor = c.get('actor');

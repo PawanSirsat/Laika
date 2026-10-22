@@ -230,6 +230,12 @@ const UNPAIRED = new Map<string, string>([
   // LAI-976's leave answer; the Space settings screen (LAI-977) brings the
   // mirror, and this entry leaves the way the rest do.
   ['LeaveProjectView', 'no client type exists'],
+  // `GET /tasks/summary` (LAI-974). The Work page's strip is LAI-975's, which
+  // brings the mirror and with it this entry's expiry.
+  ['TaskCountsView', 'no client type exists'],
+  // `GET /org/overview` (LAI-986). The Organisation screen's pulse is
+  // LAI-988/989's, which brings the mirror and this entry's expiry.
+  ['OrgOverviewView', 'no client type exists'],
 ]);
 
 /**

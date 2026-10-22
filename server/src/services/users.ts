@@ -7,6 +7,12 @@ import { requireOrgId } from '../db/orgs.ts';
 import { orgs, projectMemberships, projects, sessions, tokens, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import {
+  applyOffboardingChoice,
+  assertOffboardingChoice,
+  openTasksHeldBy,
+  type OpenTasksChoice,
+} from './offboarding.ts';
 import { canSeeProject } from './projects.ts';
 
 /**
@@ -114,6 +120,20 @@ function liveSeenAt(db: Db, userIds: readonly string[]): Map<string, number> {
   return new Map(
     rows.flatMap((row) => (row.at === null ? [] : [[row.userId, row.at.getTime()] as const])),
   );
+}
+
+/**
+ * Active people, and how many of them were seen at or after `since` — by
+ * `last_seen_at` exactly as `UserView` serves it (LAI-981), so the overview
+ * and the directory cannot disagree about one person (LAI-986). No `can()`:
+ * a count, for `services/org-overview.ts`, which asks `org.read`.
+ */
+export function activePeopleSeenSince(db: Db, since: number): { active: number; seen: number } {
+  const views = viewsOf(db, db.select().from(users).where(eq(users.isActive, 1)).all());
+  return {
+    active: views.length,
+    seen: views.filter((v) => v.last_seen_at !== null && v.last_seen_at >= since).length,
+  };
 }
 
 function viewsOf(db: Db, rows: readonly UserRow[]): UserView[] {
@@ -358,6 +378,7 @@ export function setUserActive(
   userId: string,
   active: boolean,
   now: number = Date.now(),
+  openTasks?: OpenTasksChoice,
 ): UserView {
   const target = requireUser(db, userId);
 
@@ -368,6 +389,12 @@ export function setUserActive(
   // this" is exactly what it asks.
   assertAnOwnerRemains(db, target, active);
   if (!active) assertNotTheRecordedOwner(db, target);
+
+  if (active && openTasks !== undefined) {
+    throw new ApiError('unprocessable', 'open_tasks applies only to deactivating someone', {
+      field: 'open_tasks',
+    });
+  }
 
   if ((target.isActive === 1) === active) return viewOf(db, target);
 
@@ -388,6 +415,14 @@ export function setUserActive(
       });
       return;
     }
+
+    // Offboarding asks (D-104 item 5, LAI-986): their open tasks anywhere are
+    // unassigned or reassigned, or the whole deactivation is refused — checked
+    // here, inside the transaction, so nothing above it survives a refusal.
+    const open = openTasksHeldBy(db, userId);
+    assertOffboardingChoice(db, actor, userId, open, openTasks);
+    applyOffboardingChoice(db, actor, userId, open, openTasks, now);
+    removeEveryMembership(db, actor, userId, now);
 
     const revoked = revokeEveryToken(db, userId, now);
     const ended = endEverySession(db, userId);
@@ -455,6 +490,46 @@ export function signOutEverywhere(
   });
 
   return { user_id: userId, sessions_ended: ended };
+}
+
+/**
+ * Take a deactivated person off every space (D-104 item 5, LAI-986), one
+ * `member.removed` per space as a removal from the members screen writes, with
+ * `via: 'deactivation'`. Reactivating brings none back. The last lead may go:
+ * the owner holds lead on every space, so none is left without one who can
+ * manage it.
+ */
+function removeEveryMembership(db: Db, actor: ResolvedActor, userId: string, now: number): void {
+  const held = db
+    .select({
+      id: projectMemberships.id,
+      projectId: projectMemberships.projectId,
+      role: projectMemberships.role,
+      orgId: projects.orgId,
+    })
+    .from(projectMemberships)
+    .innerJoin(projects, eq(projects.id, projectMemberships.projectId))
+    .where(eq(projectMemberships.userId, userId))
+    .all();
+  // `member.*` rows name their subject (§6.4's history export, LAI-984).
+  const name = db.select({ name: users.name }).from(users).where(eq(users.id, userId)).get()?.name;
+
+  for (const membership of held) {
+    db.delete(projectMemberships).where(eq(projectMemberships.id, membership.id)).run();
+    appendActivity(db, {
+      orgId: membership.orgId,
+      projectId: membership.projectId,
+      ...activityActor(actor),
+      type: 'member.removed',
+      payload: {
+        user_id: userId,
+        user_name: name ?? null,
+        role: membership.role,
+        via: 'deactivation',
+      },
+      now,
+    });
+  }
 }
 
 /** Revoke every live token of a person; the ids it revoked. */

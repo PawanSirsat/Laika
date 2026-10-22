@@ -19,6 +19,12 @@ import { CAPABILITY_LABELS, implicitProjectRole } from '../policy/grants.ts';
 // From `db/`, not `services/project-statuses.ts`: that module reads projects
 // through this one, and the seed is all this needs.
 import { createDefaultProjectStatuses } from '../db/project-statuses.ts';
+import {
+  applyOffboardingChoice,
+  assertOffboardingChoice,
+  openTasksHeldBy,
+  type OpenTasksChoice,
+} from './offboarding.ts';
 
 /**
  * Re-exported so `routes/projects.ts` can validate a role or a visibility
@@ -965,12 +971,19 @@ export function changeMemberRole(
   return listMembers(db, actor, slug);
 }
 
+/**
+ * Take someone off a space (§6.4). Their open tasks there are the caller's to
+ * decide (D-104 item 5, LAI-986): `openTasks` unassigns or reassigns them, and
+ * without it a person holding any is `409` — see `services/offboarding.ts`.
+ * The membership, the tasks and every activity row are one transaction.
+ */
 export function removeMember(
   db: Db,
   actor: ResolvedActor,
   slug: string,
   userId: string,
   now: number = Date.now(),
+  openTasks?: OpenTasksChoice,
 ): MemberView[] {
   const row = requireProjectBySlug(db, slug);
   assertCan(withProject(actor, row.id), 'project.members.manage', { projectId: row.id });
@@ -979,18 +992,27 @@ export function removeMember(
 
   if (existing.role === 'lead') assertNotLastLead(db, row.id, userId);
 
-  db.delete(projectMemberships).where(eq(projectMemberships.id, existing.id)).run();
+  db.transaction(
+    () => {
+      const open = openTasksHeldBy(db, userId, row.id);
+      assertOffboardingChoice(db, actor, userId, open, openTasks);
 
-  // A removal leaves no row behind, so `updated_since` cannot report it as a
-  // tombstone — this activity row is how a catching-up client learns of it.
-  appendActivity(db, {
-    orgId: row.orgId,
-    projectId: row.id,
-    ...activityActor(actor),
-    type: 'member.removed',
-    payload: { user_id: userId, user_name: userNameOf(db, userId), role: existing.role },
-    now,
-  });
+      db.delete(projectMemberships).where(eq(projectMemberships.id, existing.id)).run();
+      applyOffboardingChoice(db, actor, userId, open, openTasks, now);
+
+      // A removal leaves no row behind, so `updated_since` cannot report it as a
+      // tombstone — this activity row is how a catching-up client learns of it.
+      appendActivity(db, {
+        orgId: row.orgId,
+        projectId: row.id,
+        ...activityActor(actor),
+        type: 'member.removed',
+        payload: { user_id: userId, user_name: userNameOf(db, userId), role: existing.role },
+        now,
+      });
+    },
+    { behavior: 'immediate' },
+  );
 
   return listMembers(db, actor, slug);
 }
@@ -1050,7 +1072,12 @@ export function leaveProject(
     projectId: row.id,
     ...activityActor(actor),
     type: 'member.removed',
-    payload: { user_id: actor.userId, role: existing.role, via: 'leave' },
+    payload: {
+      user_id: actor.userId,
+      user_name: userNameOf(db, actor.userId),
+      role: existing.role,
+      via: 'leave',
+    },
     now,
   });
 

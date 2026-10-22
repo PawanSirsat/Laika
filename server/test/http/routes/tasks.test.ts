@@ -1,5 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { newId } from '../../../src/db/ids.ts';
 import { tasks, users } from '../../../src/db/schema.ts';
 import { flagStaleTasks, STALE_AFTER_MS } from '../../../src/jobs/jobs.ts';
 import { MAX_TAGS_PER_TASK } from '../../../src/services/tags.ts';
@@ -1184,6 +1185,393 @@ describe("GET /api/v1/tasks — everyone's work across projects (LAI-887)", () =
   it('401s an anonymous caller', async () => {
     const res = await h.app.request('/api/v1/tasks');
     expect(res.status).toBe(401);
+  });
+});
+
+describe('GET /api/v1/tasks/summary — the figures for what /tasks pages through (LAI-974)', () => {
+  interface Listed {
+    id: string;
+    key: string;
+    status: string;
+    assignee_id: string | null;
+    due_on: number | null;
+    blocked_by: string[];
+  }
+  interface ListPage {
+    data: Listed[];
+    next_cursor: string | null;
+  }
+  interface Summary {
+    total: number;
+    by_status: Record<string, number>;
+    by_assignee: { user_id: string | null; name: string; count: number }[];
+    overdue: number;
+    blocked: number;
+    unassigned: number;
+  }
+
+  const OPEN = ['backlog', 'todo', 'in_progress', 'review'];
+  const PAST = Date.UTC(2020, 0, 1);
+  const FUTURE = Date.UTC(2099, 0, 1);
+
+  /** A setup write that must land — a broken setup must not satisfy a test. */
+  async function must(res: Response | Promise<Response>, expected: number): Promise<Response> {
+    const answered = await res;
+    expect(answered.status, await answered.clone().text()).toBe(expected);
+    return answered;
+  }
+
+  async function project(slug: string, prefix: string, visibility: 'private' | 'public') {
+    await must(post('/api/v1/projects', { name: slug, slug, prefix, visibility }), 201);
+  }
+
+  async function taskIn(slug: string, title: string, extra: Record<string, unknown> = {}) {
+    const res = await must(post(`/api/v1/projects/${slug}/tasks`, { title, ...extra }), 201);
+    return (await res.json()) as Listed;
+  }
+
+  /** Move a task past §5's transitions: a fixture, asserted to have landed. */
+  function force(id: string, status: 'done' | 'cancelled') {
+    // `tasks_status_fk` holds `status` to `status_id`, so both move together.
+    const statusId = h.db.all<{ id: string }>(
+      sql`SELECT s.id FROM project_statuses s JOIN tasks t ON t.project_id = s.project_id
+           WHERE t.id = ${id} AND s.category = ${status} ORDER BY s.position LIMIT 1`,
+    )[0]!.id;
+    expect(h.db.update(tasks).set({ status, statusId }).where(eq(tasks.id, id)).run().changes).toBe(
+      1,
+    );
+  }
+
+  async function blocks(blocker: Listed, blocked: Listed) {
+    await must(
+      post(`/api/v1/tasks/${blocked.id}/dependencies`, { blocked_by_task_id: blocker.id }),
+      201,
+    );
+  }
+
+  function headers(as: string): Record<string, string> {
+    return as.startsWith('Bearer ') ? { Authorization: as } : { Cookie: as };
+  }
+
+  async function summary(query = '', as = cookie): Promise<Summary> {
+    const res = await must(
+      h.app.request(`/api/v1/tasks/summary${query}`, { headers: jsonHeaders(headers(as)) }),
+      200,
+    );
+    return (await res.json()) as Summary;
+  }
+
+  /** `/tasks` walked to the end at `limit` a page; returns the rows and the page count. */
+  async function walk(query = '', as = cookie, limit = 2) {
+    const rows: Listed[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const sep = query === '' ? '?' : `${query}&`;
+      const path: string =
+        cursor === null
+          ? `/api/v1/tasks${sep}limit=${String(limit)}`
+          : `/api/v1/tasks${sep}limit=${String(limit)}&cursor=${encodeURIComponent(cursor)}`;
+      const res = await must(h.app.request(path, { headers: jsonHeaders(headers(as)) }), 200);
+      const p = (await res.json()) as ListPage;
+      rows.push(...p.data);
+      cursor = p.next_cursor;
+      pages++;
+    } while (cursor !== null && pages < 100);
+    return { rows, pages };
+  }
+
+  /**
+   * The figures counted on the client from a full walk — the answer the
+   * summary has to agree with. `statusOf` reads every task (the owner's walk),
+   * because a blocker need not match the filter for its task to be blocked.
+   */
+  function countWalk(rows: Listed[], statusOf: Map<string, string>) {
+    const today = Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`);
+    const byStatus: Record<string, number> = Object.fromEntries(
+      ['backlog', 'todo', 'in_progress', 'review', 'done', 'cancelled'].map((s) => [s, 0]),
+    );
+    const byAssignee = new Map<string | null, number>();
+    for (const t of rows) {
+      byStatus[t.status] = (byStatus[t.status] ?? 0) + 1;
+      byAssignee.set(t.assignee_id, (byAssignee.get(t.assignee_id) ?? 0) + 1);
+    }
+    const open = rows.filter((t) => OPEN.includes(t.status));
+    return {
+      total: rows.length,
+      by_status: byStatus,
+      by_assignee: byAssignee,
+      overdue: open.filter((t) => t.due_on !== null && t.due_on < today).length,
+      blocked: open.filter((t) => t.blocked_by.some((id) => statusOf.get(id) !== 'done')).length,
+      unassigned: byAssignee.get(null) ?? 0,
+    };
+  }
+
+  /** A member of `laika` only, signed in; returns their cookie and id. */
+  async function member(): Promise<{ cookie: string; id: string }> {
+    const orgId = h.db.all<{ id: string }>(sql`SELECT id FROM orgs`)[0]!.id;
+    const email = 'member@example.test';
+    const token = seedInvite(h.db, { orgId, createdBy: ownerUserId(), email, orgRole: 'member' });
+    const joined = await must(
+      signUp(h.app, { email, password: PASSWORD, inviteToken: token }),
+      200,
+    );
+    const id = h.db.select().from(users).where(eq(users.email, email)).get()!.id;
+    await must(post('/api/v1/projects/laika/members', { user_id: id, role: 'member' }), 201);
+    return { cookie: cookieFrom(joined), id };
+  }
+
+  /**
+   * Two projects, every status, an overdue and a not-yet-due task, open and
+   * closed ones past due, a task blocked by an open task, one by a done task
+   * (not blocked), one by a cancelled task (blocked — §4.5 needs `done`), and a
+   * closed task with an open blocker (not counted).
+   */
+  async function seed() {
+    await project('core', 'COR', 'private');
+    const me = ownerUserId();
+    const m = await member();
+
+    const a = await taskIn('laika', 'A', { assignee_id: me, due_on: PAST });
+    const b = await taskIn('laika', 'B', { status: 'todo', due_on: FUTURE });
+    const c = await taskIn('laika', 'C', { assignee_id: m.id, status: 'in_progress' });
+    const d = await taskIn('laika', 'D', { status: 'review', due_on: PAST });
+    const e = await taskIn('laika', 'E', { due_on: PAST });
+    const f = await taskIn('core', 'F', { assignee_id: me });
+    const g = await taskIn('core', 'G');
+    const x = await taskIn('core', 'X');
+    const y = await taskIn('core', 'Y', { assignee_id: me });
+    force(e.id, 'done');
+    force(x.id, 'done');
+    force(y.id, 'cancelled');
+
+    await blocks(c, a); //    open blocker      → A blocked
+    await blocks(x, b); //    done blocker      → B not blocked
+    await blocks(y, f); //    cancelled blocker → F blocked
+    await blocks(g, e); //    E is done         → not counted
+    await blocks(g, d); //    open blocker      → D blocked
+    await blocks(x, d); //    D twice over is still one blocked task
+
+    return { me, m };
+  }
+
+  it('answers the shape the Work page builds against, with the seeded figures', async () => {
+    const { me, m } = await seed();
+    const s = await summary();
+
+    expect(Object.keys(s).sort()).toEqual(
+      ['blocked', 'by_assignee', 'by_status', 'overdue', 'total', 'unassigned'].sort(),
+    );
+    expect(s.total).toBe(9);
+    expect(s.by_status).toEqual({
+      backlog: 3,
+      todo: 1,
+      in_progress: 1,
+      review: 1,
+      done: 2,
+      cancelled: 1,
+    });
+    // A and D are open and past due; E is past due and done.
+    expect(s.overdue).toBe(2);
+    // A, D and F. Not B (done blocker), not E (done itself).
+    expect(s.blocked).toBe(3);
+    expect(s.unassigned).toBe(5);
+    expect(s.by_assignee).toEqual([
+      { user_id: null, name: 'Unassigned', count: 5 },
+      { user_id: me, name: 'Ada', count: 3 },
+      { user_id: m.id, name: expect.any(String) as string, count: 1 },
+    ]);
+  });
+
+  it('agrees with walking /tasks to the end, for every filter', async () => {
+    const { me, m } = await seed();
+    const everything = (await walk()).rows;
+    const statusOf = new Map(everything.map((t) => [t.id, t.status]));
+    const sprint = (await (
+      await must(
+        post('/api/v1/projects/core/sprints', {
+          name: 'One',
+          starts_on: Date.UTC(2026, 9, 1),
+          ends_on: Date.UTC(2026, 9, 14),
+        }),
+        201,
+      )
+    ).json()) as { id: string };
+    const inSprint = everything.filter((t) => t.key === 'COR-1' || t.key === 'COR-2');
+    await must(
+      post(`/api/v1/sprints/${sprint.id}/tasks`, { task_ids: inSprint.map((t) => t.id) }),
+      200,
+    );
+
+    for (const query of [
+      '',
+      '?project=core',
+      '?project=laika',
+      '?assignee=none',
+      `?assignee=${me}`,
+      `?assignee=${m.id}`,
+      '?status=backlog',
+      '?status=done',
+      `?sprint=${sprint.id}`,
+      '?sprint=none',
+      `?project=laika&assignee=none&sprint=none`,
+      '?updated_since=0',
+    ]) {
+      const { rows, pages } = await walk(query);
+      const expected = countWalk(rows, statusOf);
+      const s = await summary(query);
+
+      expect(s.total, query).toBe(expected.total);
+      expect(s.by_status, query).toEqual(expected.by_status);
+      expect(s.overdue, query).toBe(expected.overdue);
+      expect(s.blocked, query).toBe(expected.blocked);
+      expect(s.unassigned, query).toBe(expected.unassigned);
+      expect(new Map(s.by_assignee.map((r) => [r.user_id, r.count])), query).toEqual(
+        expected.by_assignee,
+      );
+      if (query === '') expect(pages).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('leaves out a private project the member cannot read, by count and by key', async () => {
+    await project('secret', 'SEC', 'private');
+    await taskIn('laika', 'Shared');
+    // Every figure would move if this one counted: it is overdue and blocked.
+    const hiddenBlocker = await taskIn('secret', 'Blocker');
+    const hidden = await taskIn('secret', 'Hidden', { due_on: PAST, assignee_id: ownerUserId() });
+    await blocks(hiddenBlocker, hidden);
+    const m = await member();
+
+    const theirs = await summary('', m.cookie);
+    expect(theirs).toEqual({
+      total: 1,
+      by_status: { backlog: 1, todo: 0, in_progress: 0, review: 0, done: 0, cancelled: 0 },
+      by_assignee: [{ user_id: null, name: 'Unassigned', count: 1 }],
+      overdue: 0,
+      blocked: 0,
+      unassigned: 1,
+    });
+    // And their walk agrees: SEC-2 is not on it.
+    expect((await walk('', m.cookie)).rows.map((t) => t.key)).toEqual(['LAI-1']);
+
+    // The owner, who reads every project, counts it — so the absence above is
+    // the policy and not a task that never existed.
+    const owners = await summary();
+    expect(owners.total).toBe(3);
+    expect(owners.overdue).toBe(1);
+    expect(owners.blocked).toBe(1);
+    expect(owners.by_assignee).toContainEqual({ user_id: ownerUserId(), name: 'Ada', count: 1 });
+  });
+
+  it('refuses ?project= the caller cannot read 403 and an unknown slug 404, as /tasks does', async () => {
+    await project('secret', 'SEC', 'private');
+    const m = await member();
+
+    const crossed = await h.app.request('/api/v1/tasks/summary?project=secret', {
+      headers: jsonHeaders({ Cookie: m.cookie }),
+    });
+    expect(crossed.status).toBe(403);
+    expect(((await crossed.json()) as { error: { code: string } }).error.code).toBe('forbidden');
+
+    const missing = await req('/api/v1/tasks/summary?project=nowhere');
+    expect(missing.status).toBe(404);
+    const body = (await missing.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('not_found');
+    expect(body.error.message).toBe('No project with slug "nowhere"');
+  });
+
+  it('a token limited to one project counts only that project, by count and by key', async () => {
+    await project('core', 'COR', 'private');
+    await taskIn('laika', 'Here');
+    await taskIn('core', 'There', { due_on: PAST });
+    const laikaId = (
+      (await (await must(req('/api/v1/projects/laika'), 200)).json()) as { id: string }
+    ).id;
+    const res = await must(
+      post('/api/v1/tokens', { name: 'Agent', scope: 'full', project_ids: [laikaId] }),
+      201,
+    );
+    const bearer = `Bearer ${((await res.json()) as { secret: string }).secret}`;
+
+    const s = await summary('', bearer);
+    expect(s.total).toBe(1);
+    expect(s.overdue).toBe(0);
+    expect((await walk('', bearer)).rows.map((t) => t.key)).toEqual(['LAI-1']);
+    // The owner behind it reads both — the absence is the token's scope.
+    expect((await summary()).total).toBe(2);
+    expect((await summary()).overdue).toBe(1);
+  });
+
+  it('puts the top ten by count first, then one "others" entry for the rest', async () => {
+    // Twelve people seeded as rows, not signed up: twelve password hashes are
+    // what made this slow, and nothing here reads a session of theirs.
+    const people: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      const id = newId();
+      const now = new Date();
+      h.db
+        .insert(users)
+        .values({
+          id,
+          email: `p${String(i)}@example.test`,
+          name: `P${String(i)}`,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+      await must(post('/api/v1/projects/laika/members', { user_id: id, role: 'member' }), 201);
+      people.push(id);
+    }
+    // Person i holds i + 1 tasks: p11 has 12 … p0 has 1; plus 2 unassigned.
+    for (const [i, id] of people.entries()) {
+      for (let n = 0; n <= i; n++)
+        await taskIn('laika', `t${String(i)}-${String(n)}`, { assignee_id: id });
+    }
+    await taskIn('laika', 'loose 1');
+    await taskIn('laika', 'loose 2');
+
+    const s = await summary();
+    expect(s.total).toBe(78 + 2);
+    expect(s.unassigned).toBe(2);
+    expect(s.by_assignee).toHaveLength(11);
+    expect(s.by_assignee.slice(0, 10).map((r) => [r.user_id, r.count])).toEqual(
+      [11, 10, 9, 8, 7, 6, 5, 4, 3, 2].map((i) => [people[i], i + 1]),
+    );
+    // The rest: p1 (2), p0 (1) and the two unassigned.
+    expect(s.by_assignee[10]).toEqual({ user_id: 'others', name: 'Others', count: 5 });
+    expect(s.by_assignee.reduce((sum, r) => sum + r.count, 0)).toBe(s.total);
+  });
+
+  it('refuses a bad status 400 and an unknown or paging key 422, rather than ignoring it', async () => {
+    const status = await req('/api/v1/tasks/summary?status=nonsense');
+    expect(status.status).toBe(400);
+    expect(((await status.json()) as { error: { code: string } }).error.code).toBe('bad_request');
+
+    for (const key of ['priority=p1', 'ready=true', 'limit=10', 'cursor=x', 'fields=slim']) {
+      const unknown = await req(`/api/v1/tasks/summary?${key}`);
+      expect(unknown.status, key).toBe(422);
+      expect(((await unknown.json()) as { error: { code: string } }).error.code, key).toBe(
+        'unprocessable',
+      );
+    }
+  });
+
+  it('reads an empty filter value as absent and answers zeros for nothing', async () => {
+    const empty = await summary('?assignee=&sprint=&status=&project=');
+    expect(empty).toEqual({
+      total: 0,
+      by_status: { backlog: 0, todo: 0, in_progress: 0, review: 0, done: 0, cancelled: 0 },
+      by_assignee: [],
+      overdue: 0,
+      blocked: 0,
+      unassigned: 0,
+    });
+  });
+
+  it('401s an anonymous caller', async () => {
+    const res = await h.app.request('/api/v1/tasks/summary');
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('unauthorized');
   });
 });
 

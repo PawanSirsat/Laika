@@ -1,4 +1,21 @@
-import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, ne, or, type SQL } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  exists,
+  gt,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 import type Database from 'better-sqlite3';
 import {
   activityActor,
@@ -8,7 +25,7 @@ import {
   type ServiceCaller,
   withProject,
 } from '../auth/resolve-actor.ts';
-import { apiFieldNames, appendActivity, creatingClientNames } from '../db/activity.ts';
+import { apiFieldNames, appendActivity, boardDayOf, creatingClientNames } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import {
   addDependency,
@@ -16,13 +33,13 @@ import {
   DependencyError,
   type DependencyEdges,
 } from '../db/dependencies.ts';
-import { type TaskPriority, type TaskStatus } from '../db/enums.ts';
+import { TASK_STATUSES, type TaskPriority, type TaskStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction, nextTaskNumber } from '../db/numbering.ts';
 import { backfillTaskPositions, lastPosition } from '../db/backfill.ts';
 import { keyAfter, keyBetween } from '../db/order-key.ts';
 import { CATEGORY_LABELS, statusForCategory, type StatusRef } from '../db/project-statuses.ts';
-import { projects, projectStatuses, taskDependencies, tasks } from '../db/schema.ts';
+import { projects, projectStatuses, taskDependencies, tasks, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, effectiveProjectRole } from '../policy/can.ts';
 import { addComment, commentCounts } from './comments.ts';
@@ -917,7 +934,9 @@ export function listTasks(
  * The filters both task lists take: `status`, `assignee`, `sprint` and
  * `updated_since`, each the same predicate whichever list asks.
  */
-function sharedConditions(filter: ListTasksFilter | ListAllTasksFilter): SQL[] {
+function sharedConditions(
+  filter: Pick<ListAllTasksFilter, 'status' | 'assignee' | 'sprint' | 'updatedSince'>,
+): SQL[] {
   const conditions: SQL[] = [];
 
   if (filter.status !== undefined) conditions.push(eq(tasks.status, filter.status));
@@ -1040,6 +1059,26 @@ export interface ListAllTasksFilter {
  * the caller cannot read.
  */
 export function listAllTasks(db: Db, actor: ResolvedActor, filter: ListAllTasksFilter): TaskView[] {
+  const scope = allTasksScope(db, actor, filter);
+  if (scope === null) return [];
+
+  return readTaskPage(db, scope.conditions, (id) => scope.prefixes.get(id) ?? '', {
+    limit: filter.limit,
+    cursor: filter.cursor,
+  });
+}
+
+/**
+ * The set `GET /api/v1/tasks` pages through, as SQL conditions — the readable
+ * projects and the shared filters — or `null` when the caller can read no
+ * project at all. One function so the list and its summary (LAI-974) cannot
+ * count a different set from the one they page.
+ */
+function allTasksScope(
+  db: Db,
+  actor: ResolvedActor,
+  filter: Omit<ListAllTasksFilter, 'limit' | 'cursor'>,
+): { conditions: SQL[]; prefixes: Map<string, string> } | null {
   let readable: { id: string; prefix: string }[];
 
   if (filter.project !== undefined) {
@@ -1053,21 +1092,151 @@ export function listAllTasks(db: Db, actor: ResolvedActor, filter: ListAllTasksF
       .all()
       .filter((p) => canSeeProject(actor, p.id));
   }
-  if (readable.length === 0) return [];
+  if (readable.length === 0) return null;
 
-  const prefixes = new Map(readable.map((p) => [p.id, p.prefix]));
-  const conditions = [
-    inArray(
-      tasks.projectId,
-      readable.map((p) => p.id),
-    ),
-    ...sharedConditions(filter),
-  ];
+  return {
+    conditions: [
+      inArray(
+        tasks.projectId,
+        readable.map((p) => p.id),
+      ),
+      ...sharedConditions(filter),
+    ],
+    prefixes: new Map(readable.map((p) => [p.id, p.prefix])),
+  };
+}
 
-  return readTaskPage(db, conditions, (id) => prefixes.get(id) ?? '', {
-    limit: filter.limit,
-    cursor: filter.cursor,
-  });
+/** How many named people `by_assignee` lists before folding the rest into `others`. */
+export const SUMMARY_ASSIGNEES = 10;
+
+/** The categories a task is still open in — not `done`, not `cancelled`. */
+export const OPEN_STATUSES: readonly TaskStatus[] = ['backlog', 'todo', 'in_progress', 'review'];
+
+export interface TaskCountsView {
+  total: number;
+  by_status: Record<TaskStatus, number>;
+  /**
+   * The top {@link SUMMARY_ASSIGNEES} by count — `user_id: null` is unassigned
+   * work — then, only when there are more, one `{ user_id: 'others' }` entry
+   * holding the rest. The counts always sum to `total`.
+   */
+  by_assignee: { user_id: string | null; name: string; count: number }[];
+  /** Open and due before today (UTC) — `countTask`'s rule in presence.ts. */
+  overdue: number;
+  /** Open with a dependency that is not `done` — `projectSummaries`' rule. */
+  blocked: number;
+  unassigned: number;
+}
+
+/**
+ * The figures for exactly the set {@link listAllTasks} pages through
+ * (`GET /api/v1/tasks/summary`, LAI-974): same readable projects through
+ * `can()`, same token scope, same filters, because the conditions come from
+ * the same {@link allTasksScope}. Four queries, whatever the size of the set.
+ *
+ * - **overdue** is presence.ts's `countTask`: an open task whose `due_on` is
+ *   before today's UTC midnight (the board's day, `boardDayOf`).
+ * - **blocked** is projects.ts's `projectSummaries`: an open task with at
+ *   least one dependency that is not `done` — so a **cancelled** blocker still
+ *   blocks, as `isReady` requires `done` and nothing else.
+ */
+export function summariseAllTasks(
+  db: Db,
+  actor: ResolvedActor,
+  filter: Omit<ListAllTasksFilter, 'limit' | 'cursor'>,
+  now: number = Date.now(),
+): TaskCountsView {
+  const byStatus = Object.fromEntries(TASK_STATUSES.map((s) => [s, 0])) as Record<
+    TaskStatus,
+    number
+  >;
+  const counts: TaskCountsView = {
+    total: 0,
+    by_status: byStatus,
+    by_assignee: [],
+    overdue: 0,
+    blocked: 0,
+    unassigned: 0,
+  };
+
+  const scope = allTasksScope(db, actor, filter);
+  if (scope === null) return counts;
+  const where = scope.conditions;
+  const open = inArray(tasks.status, [...OPEN_STATUSES]);
+
+  // 1. Total and by status.
+  for (const row of db
+    .select({ status: tasks.status, total: count() })
+    .from(tasks)
+    .where(and(...where))
+    .groupBy(tasks.status)
+    .all()) {
+    byStatus[row.status] = row.total;
+    counts.total += row.total;
+  }
+
+  // 2. By assignee — every group, ranked here: there is one per person, not
+  //    one per task.
+  const groups = db
+    .select({ userId: tasks.assigneeId, name: users.name, total: count() })
+    .from(tasks)
+    .leftJoin(users, eq(users.id, tasks.assigneeId))
+    .where(and(...where))
+    .groupBy(tasks.assigneeId)
+    .all()
+    .map((g) => ({
+      user_id: g.userId,
+      name: g.userId === null ? 'Unassigned' : (g.name ?? ''),
+      count: g.total,
+    }))
+    .sort(
+      (a, b) =>
+        b.count - a.count ||
+        a.name.localeCompare(b.name) ||
+        (a.user_id ?? '').localeCompare(b.user_id ?? ''),
+    );
+  counts.unassigned = groups.find((g) => g.user_id === null)?.count ?? 0;
+  counts.by_assignee = groups.slice(0, SUMMARY_ASSIGNEES);
+  const rest = groups.slice(SUMMARY_ASSIGNEES);
+  if (rest.length > 0) {
+    counts.by_assignee.push({
+      user_id: 'others',
+      name: 'Others',
+      count: rest.reduce((sum, g) => sum + g.count, 0),
+    });
+  }
+
+  // 3. Overdue.
+  const today = Date.parse(`${boardDayOf(now)}T00:00:00Z`);
+  counts.overdue =
+    db
+      .select({ total: count() })
+      .from(tasks)
+      .where(and(...where, open, lt(tasks.dueOn, today)))
+      .get()?.total ?? 0;
+
+  // 4. Blocked — `EXISTS`, so a task blocked three times over is one task.
+  const blocker = alias(tasks, 'blocker');
+  counts.blocked =
+    db
+      .select({ total: count() })
+      .from(tasks)
+      .where(
+        and(
+          ...where,
+          open,
+          exists(
+            db
+              .select({ one: sql`1` })
+              .from(taskDependencies)
+              .innerJoin(blocker, eq(blocker.id, taskDependencies.dependsOnTaskId))
+              .where(and(eq(taskDependencies.taskId, tasks.id), ne(blocker.status, 'done'))),
+          ),
+        ),
+      )
+      .get()?.total ?? 0;
+
+  return counts;
 }
 
 /**

@@ -32,7 +32,7 @@ import { mentionableUsers } from '../../services/mentions.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseUpdatedSince, tombstone, type WithTombstones } from '../updated-since.ts';
-import { parseBody, strictObject, z } from '../validation.ts';
+import { OpenTasksSchema, parseBody, strictObject, z } from '../validation.ts';
 
 /**
  * Projects and memberships (SPEC §6.4). Transport only — every decision lives in
@@ -124,7 +124,18 @@ const MemberBody = strictObject({
   role: z.enum(PROJECT_ROLES),
 });
 
+function parseJsonOrNull(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
 const RoleBody = strictObject({ role: z.enum(PROJECT_ROLES) });
+
+/** `DELETE /:slug/members/:userId` — an optional body, for their open tasks (LAI-986). */
+const RemoveMemberBody = strictObject({ open_tasks: OpenTasksSchema.optional() });
 
 // The shape is validated in `services/tags.ts` beside the CHECK it mirrors, so
 // this only bounds the length — two regexes for one rule is how they drift.
@@ -318,11 +329,24 @@ export function projectRoutes(options: ProjectRouteOptions): Hono<AppEnv> {
     });
   });
 
-  app.delete('/:slug/members/:userId', (c) =>
-    c.json({
-      members: removeMember(db, requireActor(c), c.req.param('slug'), c.req.param('userId')),
-    }),
-  );
+  app.delete('/:slug/members/:userId', async (c) => {
+    const actor = requireActor(c);
+    // No body is "no choice", not a malformed request: most removals need none.
+    const text = await c.req.text();
+    const raw: unknown = text.trim() === '' ? {} : parseJsonOrNull(text);
+    const body = parseBody(RemoveMemberBody, raw);
+
+    return c.json({
+      members: removeMember(
+        db,
+        actor,
+        c.req.param('slug'),
+        c.req.param('userId'),
+        Date.now(),
+        body.open_tasks,
+      ),
+    });
+  });
 
   return app;
 }
