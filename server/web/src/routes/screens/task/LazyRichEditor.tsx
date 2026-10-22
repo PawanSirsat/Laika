@@ -48,6 +48,8 @@ export interface RichEditorProps {
   /** Cancel, or a submit with nothing changed: nothing is sent. */
   readonly onClose: () => void;
   readonly people: readonly MentionCandidate[];
+  /** The reader: a mention of them is the stronger pill (LAI-868). */
+  readonly meId?: string | undefined;
   readonly cards: readonly CardCandidate[];
   /** The composer's shape: no Cancel when empty, one line at rest. */
   readonly compact?: boolean;

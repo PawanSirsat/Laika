@@ -1723,6 +1723,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             }
             statuses={statuses.all}
             meId={me?.id}
+            meEmail={me?.email}
             mayAssign={mayCreate}
             mayEdit={mayCreate}
             onTagsChanged={() => {

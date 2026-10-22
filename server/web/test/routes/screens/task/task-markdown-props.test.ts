@@ -50,6 +50,10 @@ void describe('TaskMarkdown props', () => {
 
   void test('the plugins passed to the renderer are module constants', () => {
     assert.match(SOURCE, /remarkPlugins=\{\[remarkGfm\]\}/);
-    assert.match(SOURCE, /rehypePlugins=\{singleHardBreaks \? SINGLE_HARD_BREAKS : undefined\}/);
+    // LAI-868: the mention step is always on, so the off case is `MENTIONS`.
+    assert.match(
+      SOURCE,
+      /rehypePlugins=\{singleHardBreaks \? MENTIONS_AND_SINGLE_HARD_BREAKS : MENTIONS\}/,
+    );
   });
 });

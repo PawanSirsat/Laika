@@ -78,6 +78,12 @@ export interface TaskDetailPanelProps {
   readonly maySetSprint: boolean;
   /** The signed-in user's id, for Claim. */
   readonly meId?: string | undefined;
+  /**
+   * The signed-in user's email: the handle `@` resolves for them when they
+   * have no member row here — an org Owner (D-006) — so their own mention is
+   * still their pill (LAI-868).
+   */
+  readonly meEmail?: string | undefined;
   /** False for a Viewer — `task.assign_other` is member+ (§3.2). */
   readonly mayAssign?: boolean | undefined;
   /**
@@ -164,6 +170,7 @@ export function TaskDetailPanel({
   sprints,
   maySetSprint,
   meId,
+  meEmail,
   mayAssign = false,
   mayEdit = false,
   onTagsChanged,
@@ -193,7 +200,11 @@ export function TaskDetailPanel({
    * **Who `@` offers, and the cards a link can name** (LAI-827), for the
    * description, acceptance and comment editors alike. The server decides who
    * is mentionable; a member's email gives the handle it resolves, and someone
-   * mentionable without a member row (an org Owner, D-006) is written by name.
+   * mentionable without a member row (an org Owner, D-006) is written by name
+   * — unless it is the reader, whose own email the panel has (LAI-868).
+   *
+   * The same list decides the pills (LAI-868): a handle exactly one of these
+   * people holds is a pill, the reader's the stronger one.
    */
   const [mentionable, setMentionable] = useState<readonly MentionableUser[]>([]);
   useEffect(() => {
@@ -214,9 +225,9 @@ export function TaskDetailPanel({
       mentionable.map((user) => ({
         id: user.id,
         name: user.name,
-        handle: handleOf(members.get(user.id)?.email),
+        handle: handleOf(members.get(user.id)?.email ?? (user.id === meId ? meEmail : undefined)),
       })),
-    [mentionable, members],
+    [mentionable, members, meId, meEmail],
   );
   const cards = useMemo<readonly CardCandidate[]>(
     () =>
@@ -484,7 +495,7 @@ export function TaskDetailPanel({
             </time>
           </p>
 
-          <CommentBody body={comment.body_md} />
+          <CommentBody body={comment.body_md} people={people} meId={meId} />
         </div>
       </li>
     );
@@ -539,7 +550,7 @@ export function TaskDetailPanel({
         </span>
       )}
 
-      <CommentComposer people={people} cards={cards} onPost={detail.post} />
+      <CommentComposer people={people} meId={meId} cards={cards} onPost={detail.post} />
     </div>
   );
 
@@ -765,6 +776,7 @@ export function TaskDetailPanel({
                     placeholder="Add a description…"
                     mayEdit={mayEdit === true && !text.stale}
                     people={people}
+                    meId={meId}
                     cards={cards}
                     onOpen={() => {
                       editedFrom.current.description = text.version;
@@ -863,6 +875,7 @@ export function TaskDetailPanel({
                     placeholder="Add acceptance criteria…"
                     mayEdit={mayEdit === true && !text.stale}
                     people={people}
+                    meId={meId}
                     cards={cards}
                     onOpen={() => {
                       editedFrom.current.acceptance = text.version;
@@ -908,6 +921,8 @@ export function TaskDetailPanel({
             sendBack={task.send_back ?? null}
             nameOf={(id) => personName(id, members)}
             hideWhenEmpty
+            people={people}
+            meId={meId}
           />
 
           {/*

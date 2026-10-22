@@ -5,6 +5,8 @@ import './task-panel.css';
 export interface CommentComposerProps {
   /** Who `@` offers — `GET /projects/:slug/mentionable`, with handles. */
   readonly people: readonly MentionCandidate[];
+  /** The reader, for their own mention's pill (LAI-868). */
+  readonly meId?: string | undefined;
   readonly cards: readonly CardCandidate[];
   /** Posts the markdown; rejects to keep the draft open with the reason. */
   readonly onPost: (bodyMd: string) => Promise<void>;
@@ -26,7 +28,7 @@ export interface CommentComposerProps {
  * read it, and `GET /projects/:slug/mentionable` is where that is decided; the
  * panel only adds each person's handle, which is what the server resolves.
  */
-export function CommentComposer({ people, cards, onPost }: CommentComposerProps) {
+export function CommentComposer({ people, meId, cards, onPost }: CommentComposerProps) {
   const [open, setOpen] = useState(false);
 
   if (!open) {
@@ -52,6 +54,7 @@ export function CommentComposer({ people, cards, onPost }: CommentComposerProps)
         placeholder="Leave a comment — @ to mention someone, ⌘↵ to send"
         submitLabel="Comment"
         people={people}
+        meId={meId}
         cards={cards}
         onClose={() => {
           setOpen(false);

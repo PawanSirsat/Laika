@@ -20,7 +20,10 @@ export interface DocumentFieldProps {
   readonly onOpen: () => void;
   /** Rejects to keep the editor open with the reason. */
   readonly onSave: (next: string) => Promise<void>;
+  /** Who `@` offers, and whose mention is a pill (LAI-868). */
   readonly people: readonly MentionCandidate[];
+  /** The reader, whose own mention is the stronger pill. */
+  readonly meId?: string | undefined;
   readonly cards: readonly CardCandidate[];
 }
 
@@ -50,6 +53,7 @@ export function DocumentField({
   onOpen,
   onSave,
   people,
+  meId,
   cards,
 }: DocumentFieldProps) {
   /** The text editing opened on, kept: a newer one arriving does not change it. */
@@ -67,7 +71,7 @@ export function DocumentField({
     text.trim() === '' ? (
       <p className="doc-field-placeholder">{placeholder}</p>
     ) : (
-      <TaskMarkdown source={text} className="md-reading" />
+      <TaskMarkdown source={text} className="md-reading" people={people} meId={meId} />
     );
 
   if (editing !== null) {
@@ -80,6 +84,7 @@ export function DocumentField({
         placeholder={placeholder}
         submitLabel="Save"
         people={people}
+        meId={meId}
         cards={cards}
         onClose={() => {
           setEditing(null);
@@ -98,7 +103,7 @@ export function DocumentField({
         {value.trim() === '' ? (
           <p className="doc-field-placeholder">Nothing here yet.</p>
         ) : (
-          <TaskMarkdown source={value} className="md-reading" />
+          <TaskMarkdown source={value} className="md-reading" people={people} meId={meId} />
         )}
       </div>
     );

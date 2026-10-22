@@ -279,3 +279,87 @@ void describe('a comment renders as markdown', () => {
     }
   });
 });
+
+/*
+ * LAI-868: a mention in a comment is a pill, as in the description. The reader
+ * is an org Owner with no member row (D-006): their handle comes from their
+ * own `/me`, not from `/members`, which does not list them.
+ */
+const MENTIONING =
+  'For @pawan: ask @ada, then (@ada) and **@grace**.\nNot ada@example.com, `@ada` or @sam.';
+
+const MENTION_STUB: ApiStub = {
+  ...STUB,
+  '/api/v1/me': {
+    id: 'u0',
+    email: 'pawan@kvelld.example',
+    name: 'Pawan Sirsat',
+    org_role: 'owner',
+    is_active: true,
+    memberships: [],
+  },
+  '/api/v1/tasks/t3/comments': {
+    data: [comment('c1', MENTIONING, 60_000)],
+    next_cursor: null,
+  },
+  '/api/v1/projects/laika-core/members': {
+    members: [
+      { user_id: 'u1', name: 'Ada Lovelace', email: 'ada@example.com', role: 'lead' },
+      { user_id: 'u2', name: 'Grace Hopper', email: 'grace@example.com', role: 'member' },
+      { user_id: 'u3', name: 'Sam Rivera', email: 'sam@example.com', role: 'member' },
+      { user_id: 'u4', name: 'Sam Okafor', email: 'sam@other.example', role: 'member' },
+    ],
+  },
+  '/api/v1/projects/laika-core/mentionable': {
+    users: [
+      { id: 'u0', name: 'Pawan Sirsat' },
+      { id: 'u1', name: 'Ada Lovelace' },
+      { id: 'u2', name: 'Grace Hopper' },
+      { id: 'u3', name: 'Sam Rivera' },
+      { id: 'u4', name: 'Sam Okafor' },
+    ],
+  },
+};
+
+void describe('a mention in a comment is a pill (LAI-868)', () => {
+  void test('a person, in brackets and in bold, and the reader’s own; never code, an address or a shared handle', async () => {
+    const h = await open('/board?project=laika-core', MENTION_STUB);
+    try {
+      await h.page
+        .locator('.card', { hasText: 'Import the backlog' })
+        .first()
+        .waitFor({ timeout: 20_000 });
+      await h.page.locator('.card', { hasText: 'Import the backlog' }).first().click();
+      const md = body(h, 0);
+      await md.locator('.md-mention').first().waitFor({ timeout: 10_000 });
+
+      const pills = await md
+        .locator('.md-mention')
+        .evaluateAll((els) =>
+          els.map(
+            (el) =>
+              `${el.textContent ?? ''} ${(el.getAttribute('class') ?? '').replace('md-mention ', '')}`,
+          ),
+        );
+      assert.deepEqual(pills, [
+        '@pawan md-mention-me',
+        '@ada md-mention-person',
+        '@ada md-mention-person',
+        '@grace md-mention-person',
+      ]);
+      assert.equal(await md.locator('strong > .md-mention').innerText(), '@grace');
+      assert.equal(await md.locator('code .md-mention, a .md-mention').count(), 0);
+
+      // Not one character added: the paragraph reads as it was written.
+      assert.equal(
+        await md
+          .locator('p')
+          .first()
+          .evaluate((p) => p.textContent),
+        'For @pawan: ask @ada, then (@ada) and @grace.\nNot ada@example.com, @ada or @sam.',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});

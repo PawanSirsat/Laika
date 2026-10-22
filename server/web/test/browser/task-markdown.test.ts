@@ -16,7 +16,8 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import type { Locator } from 'playwright';
+import { closeBrowser, open, setTheme, type ApiStub } from './harness.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -265,3 +266,283 @@ void describe('the description renders as markdown', () => {
     }
   });
 });
+
+/*
+ * LAI-868: a mention that names somebody is a pill.
+ *
+ * **The reader here is an org Owner with no member row** (D-006), as the
+ * owner is on most projects. `/mentionable` offers them, `/members` does not
+ * list them, so the panel has no handle for them from the member list — only
+ * from their own `/me`. A fixture where every reader is a member would hide
+ * exactly that case.
+ */
+const MENTIONING = [
+  'For @pawan: ask @ada, then (@ada) and **@grace**.',
+  '',
+  'Handed to @strelka and @belka.',
+  '',
+  'Not pills: ada@example.com, `@ada`, [@ada](https://example.com/ada), @sam and @nobody.',
+  '',
+  '```',
+  'ping @ada',
+  '```',
+].join('\n');
+
+const MENTION_SUBJECT = {
+  ...SUBJECT,
+  title: 'Ping the reviewers',
+  description_md: MENTIONING,
+  acceptance_md: 'Signed off by @grace and @pawan.',
+  send_back: { reason_md: 'Ask @ada first.', decided_by: 'u1', created_at: NOW - 60_000 },
+};
+
+const MENTION_STUB: ApiStub = {
+  ...STUB,
+  '/api/v1/me': {
+    id: 'u0',
+    email: 'pawan@kvelld.example',
+    name: 'Pawan Sirsat',
+    org_role: 'owner',
+    is_active: true,
+    memberships: [],
+  },
+  '/api/v1/projects/laika-core/tasks?limit=200': { data: [MENTION_SUBJECT], next_cursor: null },
+  '/api/v1/tasks/t3': MENTION_SUBJECT,
+  '/api/v1/projects/laika-core/members': {
+    members: [
+      { user_id: 'u1', name: 'Ada Lovelace', email: 'ada@example.com', role: 'lead' },
+      { user_id: 'u2', name: 'Grace Hopper', email: 'grace@example.com', role: 'member' },
+      // Two people, one handle: `@sam` is ambiguous (SPEC §4.19).
+      { user_id: 'u3', name: 'Sam Rivera', email: 'sam@example.com', role: 'member' },
+      { user_id: 'u4', name: 'Sam Okafor', email: 'sam@other.example', role: 'member' },
+    ],
+  },
+  '/api/v1/projects/laika-core/mentionable': {
+    users: [
+      // The reader, with no member row.
+      { id: 'u0', name: 'Pawan Sirsat' },
+      { id: 'u1', name: 'Ada Lovelace' },
+      { id: 'u2', name: 'Grace Hopper' },
+      { id: 'u3', name: 'Sam Rivera' },
+      { id: 'u4', name: 'Sam Okafor' },
+    ],
+  },
+};
+
+async function openMentioning(h: H): Promise<void> {
+  const card = h.page.locator('.card', { hasText: 'Ping the reviewers' }).first();
+  await card.waitFor({ timeout: 20_000 });
+  await card.click();
+  await h.page.locator('[data-section="description"] .md p').first().waitFor({ timeout: 10_000 });
+}
+
+/** Each pill in `root` as `text kind`, in order. */
+async function pillsIn(root: Locator): Promise<string[]> {
+  return root
+    .locator('.md-mention')
+    .evaluateAll((els) =>
+      els.map(
+        (el) =>
+          `${el.textContent ?? ''} ${[...el.classList].find((c) => c.startsWith('md-mention-'))?.slice('md-mention-'.length) ?? '?'}`,
+      ),
+    );
+}
+
+void describe('a mention that names somebody is a pill (LAI-868)', () => {
+  void test('in the description: a person, the reader, the machines; never code, a link or an address', async () => {
+    const h = await open('/board?project=laika-core', MENTION_STUB);
+    try {
+      await openMentioning(h);
+      const md = h.page.locator('[data-section="description"] .doc-field .md');
+      // Wait for the people list: the pills are drawn once it lands.
+      await md.locator('.md-mention').first().waitFor({ timeout: 10_000 });
+
+      assert.deepEqual(await pillsIn(md), [
+        // The reader, an org Owner with no member row: their own `/me` gives the handle.
+        '@pawan me',
+        '@ada person',
+        '@ada person',
+        '@grace person',
+        '@strelka machine',
+        '@belka machine',
+      ]);
+
+      // `(@ada)` and `**@grace**`: the pill is the mention, not the brackets or the bold.
+      const first = md.locator('p').first();
+      assert.equal(
+        await first.evaluate((p) => p.textContent),
+        'For @pawan: ask @ada, then (@ada) and @grace.',
+      );
+      assert.equal(await first.locator('strong > .md-mention').innerText(), '@grace');
+
+      // Code, a code block and a link's words are as written, and an address is an address.
+      assert.equal(await md.locator('code .md-mention, pre .md-mention, a .md-mention').count(), 0);
+      const plain = md.locator('p').nth(2);
+      assert.equal(await plain.locator('.md-mention').count(), 0, 'a non-mention is a pill');
+      assert.match(await plain.innerText(), /ada@example\.com, @ada, @ada, @sam and @nobody\./);
+      assert.equal((await md.locator('pre code').innerText()).trim(), 'ping @ada');
+
+      // The acceptance and a send-back go through the same renderer.
+      assert.deepEqual(await pillsIn(h.page.locator('.panel-acceptance .md')), [
+        '@grace person',
+        '@pawan me',
+      ]);
+      assert.deepEqual(await pillsIn(h.page.locator('.ev-sendback-body .md')), ['@ada person']);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('without the reader’s own email, an Owner with no member row is not a pill', async () => {
+    // The control for the first test's `@pawan me`: the same reader, with the
+    // `/me` email belonging to nobody `@` names, so nothing can resolve `@pawan`.
+    const h = await open('/board?project=laika-core', {
+      ...MENTION_STUB,
+      '/api/v1/me': {
+        ...(MENTION_STUB['/api/v1/me'] as Record<string, unknown>),
+        email: 'owner@kvelld.example',
+      },
+    });
+    try {
+      await openMentioning(h);
+      const md = h.page.locator('[data-section="description"] .doc-field .md');
+      await md.locator('.md-mention').first().waitFor({ timeout: 10_000 });
+      const pills = await pillsIn(md);
+      assert.equal(pills[0], '@ada person', `@pawan was pilled: ${pills.join(', ')}`);
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * **Stronger and softer, measured** (PR #32 review). Each pill's fill is
+   * composited over the surface it sits on, then:
+   *
+   * - **stronger** — the reader's fill stands further from the surface
+   *   (contrast ratio) and carries more colour (chroma) than a person's;
+   * - **softer** — a machine's fill stands less far and carries less colour
+   *   than a person's, and so does its ink.
+   *
+   * Chroma is the sRGB channel spread, `max − min`: zero for a grey.
+   */
+  void test('three looks in light and dark: the reader’s stronger, the machines’ softer', async () => {
+    const h = await open('/board?project=laika-core', MENTION_STUB);
+    try {
+      await openMentioning(h);
+      const md = h.page.locator('[data-section="description"] .doc-field .md');
+      await md.locator('.md-mention').first().waitFor({ timeout: 10_000 });
+
+      for (const theme of ['Dark', 'Light']) {
+        await setTheme(h.page, theme);
+        // Off the text, so the surface is not the editable block's hover.
+        await h.page.mouse.move(0, 0);
+        await h.page.waitForTimeout(300);
+
+        const look = async (kind: string) =>
+          md
+            .locator(`.md-mention-${kind}`)
+            .first()
+            .evaluate((el) => {
+              const style = getComputedStyle(el);
+              const layers: string[] = [];
+              for (let n = el.parentElement; n !== null; n = n.parentElement) {
+                const bg = getComputedStyle(n).backgroundColor;
+                if (bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') continue;
+                layers.push(bg);
+                if (!bg.startsWith('rgba')) break;
+              }
+              return { fill: style.backgroundColor, ink: style.color, under: layers };
+            });
+        const seen = {
+          me: await look('me'),
+          person: await look('person'),
+          machine: await look('machine'),
+        };
+
+        const pairs = [
+          ['me', 'person'],
+          ['me', 'machine'],
+          ['person', 'machine'],
+        ] as const;
+        for (const [a, b] of pairs) {
+          assert.notDeepEqual(
+            [seen[a].fill, seen[a].ink],
+            [seen[b].fill, seen[b].ink],
+            `${theme}: ${a} and ${b} look the same`,
+          );
+        }
+
+        const surface = flatten(seen.person.under);
+        const measure = (kind: keyof typeof seen) => {
+          const fill = over(parse(seen[kind].fill), flatten(seen[kind].under));
+          return {
+            stands: contrast(fill, surface),
+            fill: chroma(fill),
+            ink: chroma(over(parse(seen[kind].ink), fill)),
+          };
+        };
+        const me = measure('me');
+        const person = measure('person');
+        const machine = measure('machine');
+        const said = `${theme}: me ${JSON.stringify(me)}, person ${JSON.stringify(person)}, machine ${JSON.stringify(machine)}`;
+
+        assert.ok(me.stands > person.stands, `the reader's pill is not stronger — ${said}`);
+        assert.ok(me.fill > person.fill, `the reader's pill has less colour — ${said}`);
+        assert.ok(machine.stands < person.stands, `a machine's pill is not softer — ${said}`);
+        assert.ok(machine.fill < person.fill, `a machine's fill has more colour — ${said}`);
+        assert.ok(machine.ink < person.ink, `a machine's ink has more colour — ${said}`);
+      }
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+type Rgb = readonly [number, number, number];
+type Rgba = readonly [number, number, number, number];
+
+/** `rgb(r, g, b)` or `rgba(r, g, b, a)`, as `getComputedStyle` writes them. */
+function parse(css: string): Rgba {
+  const n = /^rgba?\(([^)]+)\)$/
+    .exec(css)?.[1]
+    ?.split(',')
+    .map((v) => Number(v.trim()));
+  assert.ok(n !== undefined && n.length >= 3 && n.every(Number.isFinite), `not a colour: ${css}`);
+  return [n[0] ?? 0, n[1] ?? 0, n[2] ?? 0, n[3] ?? 1];
+}
+
+/** `top` painted over an opaque `under`. */
+function over(top: Rgba, under: Rgb): Rgb {
+  const a = top[3];
+  return [0, 1, 2].map((i) => a * (top[i] ?? 0) + (1 - a) * (under[i] ?? 0)) as unknown as Rgb;
+}
+
+/** Backgrounds from the nearest up to the first opaque one, painted together. */
+function flatten(layers: readonly string[]): Rgb {
+  const parsed = layers.map(parse);
+  const base = parsed.at(-1);
+  assert.ok(base?.[3] === 1, `no opaque surface under the pill: ${layers.join(' | ')}`);
+  return parsed
+    .slice(0, -1)
+    .reduceRight<Rgb>((under, top) => over(top, under), [base[0], base[1], base[2]]);
+}
+
+/** WCAG relative luminance. */
+function luminance(rgb: Rgb): number {
+  const [r, g, b] = rgb.map((v) => {
+    const c = v / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  }) as unknown as Rgb;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG contrast ratio, 1 to 21. */
+function contrast(a: Rgb, b: Rgb): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** How much colour: the channel spread, 0 for a grey. */
+function chroma(rgb: Rgb): number {
+  return Math.max(...rgb) - Math.min(...rgb);
+}
