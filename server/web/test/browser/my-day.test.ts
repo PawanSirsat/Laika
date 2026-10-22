@@ -286,6 +286,60 @@ void describe('My day after the reference', () => {
     }
   });
 
+  void test('On your plate reads Private Observatory through an owner’s implicit lead', async () => {
+    const privateProject = {
+      id: 'private-observatory',
+      slug: 'private-observatory',
+      prefix: 'OBS',
+      name: 'Private Observatory',
+      archived_at: null,
+      visibility: 'private',
+      task_counts: { backlog: 0, todo: 0, in_progress: 1, review: 0, done: 0, cancelled: 0 },
+      member_count: 0,
+      members: [],
+    };
+    const implicit = {
+      ...STUB,
+      '/api/v1/me': {
+        id: 'u1',
+        email: 'a@example.com',
+        name: 'Ada Lovelace',
+        org_role: 'owner',
+        is_active: true,
+        memberships: [],
+      },
+      '/api/v1/projects': { data: [privateProject], next_cursor: null },
+      '/api/v1/projects/private-observatory/tasks?assignee=u1&status=in_progress': {
+        data: [
+          {
+            ...task('private-task', 'OBS-7', 'Private Observatory migration', 'in_progress'),
+            project_id: 'private-observatory',
+          },
+        ],
+        next_cursor: null,
+      },
+      '/api/v1/projects/private-observatory/tasks?assignee=u1&status=todo': {
+        data: [],
+        next_cursor: null,
+      },
+    } satisfies ApiStub;
+
+    const h = await open('/my-day', implicit);
+    try {
+      const progress = h.page.locator('[data-plate="progress"]');
+      await progress.getByText('Private Observatory migration', { exact: true }).waitFor({
+        timeout: 20_000,
+      });
+      assert.match(await progress.innerText(), /Private Observatory migration/);
+      assert.ok(
+        h.calls.some((call) => call.path === '/api/v1/projects/private-observatory/tasks'),
+        'Private Observatory task list was not read',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('two columns on a laptop, one on a phone, in both themes, never sideways', async () => {
     const h = await open('/my-day', STUB);
     try {

@@ -3,7 +3,7 @@ import { everyPage } from '../../../api/every-page.ts';
 import type { MeProfile } from '../../../api/me.ts';
 import type { Project } from '../../../api/projects.ts';
 import type { ReviewQueueItem } from '../../../api/review.ts';
-import { getTask, listTasks, type TaskStatus } from '../../../api/tasks.ts';
+import { canConfigureProject, getTask, listTasks, type TaskStatus } from '../../../api/tasks.ts';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import {
   blockerIds,
@@ -70,7 +70,11 @@ export function usePlate(
     const member = new Set(me.memberships.map((m) => m.project_id));
 
     void (async () => {
-      const spaces = readable.filter((p) => p.archived_at === null && member.has(p.id));
+      const spaces = readable.filter(
+        (p) =>
+          p.archived_at === null &&
+          (member.has(p.id) || canConfigureProject(me.org_role, p.id, me.memberships)),
+      );
       const pages = await Promise.all(
         spaces.flatMap((space) =>
           OPEN.map((status) =>

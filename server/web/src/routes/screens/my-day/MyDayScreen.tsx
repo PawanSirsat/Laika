@@ -154,8 +154,8 @@ async function undoEach(made: readonly Made[]): Promise<string> {
 
 /**
  * The spaces the reader can read, once for the page (LAI-810 review round
- * 1): *On your plate* reads the reader's work in the ones they belong to, and
- * *Agent minutes* links a card only when its space is one of them.
+ * 1): *On your plate* reads the reader's work in every space they can access,
+ * and *Agent minutes* links a card only when its space is one of them.
  * `undefined` while reading, `null` if the read failed.
  */
 function useSpaces(): readonly Project[] | null | undefined {
