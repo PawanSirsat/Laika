@@ -6,6 +6,7 @@ import { revokeInvite, type OrgRole, type PendingInvite } from '../../../api/inv
 import type { CapacityView } from '../../../api/presence.ts';
 import type { OrgUser } from '../../../api/users.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
+import type { Theme } from '../../../theme/theme.ts';
 import { initials } from '../../../theme/initials.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import {
@@ -24,7 +25,7 @@ import {
 
 export interface PeopleTabProps {
   readonly meId: string;
-  readonly theme: 'light' | 'dark';
+  readonly theme: Theme;
   readonly people: readonly OrgUser[];
   readonly truncated: boolean;
   readonly invites: readonly PendingInvite[];

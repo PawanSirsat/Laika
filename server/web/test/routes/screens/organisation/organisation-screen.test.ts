@@ -23,19 +23,20 @@ import { before, describe, test } from 'node:test';
 import { code } from '../../../helpers/code.ts';
 
 let screen = '';
+/** The invite flow moved into its own dialog with LAI-893; its words are read from there. */
+let dialog = '';
 
-before(async () => {
-  screen = code(
+const source = async (name: string): Promise<string> =>
+  code(
     await readFile(
-      fileURLToPath(
-        new URL(
-          '../../../../src/routes/screens/organisation/OrganisationScreen.tsx',
-          import.meta.url,
-        ),
-      ),
+      fileURLToPath(new URL(`../../../../src/routes/screens/organisation/${name}`, import.meta.url)),
       'utf8',
     ),
   );
+
+before(async () => {
+  screen = await source('OrganisationScreen.tsx');
+  dialog = await source('InviteDialog.tsx');
 });
 
 void describe('nothing is rendered that no endpoint serves', () => {
@@ -87,7 +88,7 @@ void describe('what it does render is gated the way the server is', () => {
     // The server stores only a hash, so this really is the only moment it
     // exists. Someone who closes the panel assuming they can find it again has
     // to revoke and re-issue.
-    assert.match(screen, /shown once/i);
+    assert.match(dialog, /shown once/i);
   });
 
   /**
