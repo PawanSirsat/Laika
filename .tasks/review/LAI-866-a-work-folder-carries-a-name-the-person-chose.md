@@ -6,8 +6,9 @@ assignee: strelka
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-22T07:06:44Z
+finished: 2026-10-22T07:46:02Z
 ---
 
 ## Goal
@@ -72,7 +73,7 @@ or commit messages.
 
 ## Acceptance criteria
 
-- [ ] **Naming a folder, on the machine.** A CLI command names a folder,
+- [x] **Naming a folder, on the machine.** A CLI command names a folder,
       renames it, lists the names and forgets one. You choose its shape. The
       names are kept under `~/.laika` in a 0600 file, and the task file says
       whether `laika activity off` keeps them.
@@ -81,7 +82,7 @@ or commit messages.
       - A name is bounded: you choose the length; no newline, no control
         character, no `/` or `\`.
       - A folder inside a named folder takes the nearest name.
-- [ ] **Blocks carry the name.** Every block drafted from a named folder
+- [x] **Blocks carry the name.** Every block drafted from a named folder
       carries its name, for Claude Code sessions (by `cwd`) and for Omnigent
       chats (by the chat's working folder). For Omnigent, the hook may record
       that folder locally (0600, never sent). If it does, the hook stays
@@ -89,10 +90,10 @@ or commit messages.
       working, as LAI-859 did for `skip-sessions`. A block whose lanes come
       from two differently named folders follows a rule you write in
       `cli/README.md` and test.
-- [ ] **The branch, off by default.** A setting the person turns on
+- [x] **The branch, off by default.** A setting the person turns on
       explicitly adds the branch name to a named folder's blocks. Off, no
       branch is sent. A test asserts both.
-- [ ] **Nothing else leaves.** A CLI test names a folder whose real name is
+- [x] **Nothing else leaves.** A CLI test names a folder whose real name is
       distinctive and drafts from it, a Claude Code session and an Omnigent
       turn both. The sent body carries the chosen name. It carries neither the
       folder's real name, nor any part of its path, nor `HOME`, a file name, a
@@ -100,12 +101,12 @@ or commit messages.
       appears either. The test extends *only blocks leave*
       (`cli/test/activity-time.test.ts:639`). The stub-board contract
       (`local-activity-contract.ts:318`) is widened by the new field(s) only.
-- [ ] **Older boards are never refused.** `GET /me/time-settings` says the
+- [x] **Older boards are never refused.** `GET /me/time-settings` says the
       board takes the name, as `signal_times: true` does for `at` (D-096
       item 6). The collector sends the name and branch only then. A test
       against a board that does not say so shows an accepted upload with
       neither.
-- [ ] **The server keeps it, bounded.**
+- [x] **The server keeps it, bounded.**
       - The upload takes the name, and the branch when sent, on a block.
         Both are stored on the draft, which only its person reads, on a web
         session (§4.47, as today).
@@ -114,7 +115,7 @@ or commit messages.
       - The existing text-refusal test keeps refusing `prompt`, `repo` and
         `title` unchanged. Any line in it that the new field changes is
         changed on purpose and named in the task file.
-- [ ] **A matching project.** The server puts an untied block under a
+- [x] **A matching project.** The server puts an untied block under a
       project when the name matches one the person may read (`project.read`).
       The rule (slug or name, case, ties) is written in SPEC §6.4. Tests
       cover:
@@ -122,11 +123,11 @@ or commit messages.
       - no match;
       - a matching project the person cannot read, which never matches;
       - a block with a card, which keeps its card's project.
-- [ ] **The person's hands.** Before confirming, the person can change or
+- [x] **The person's hands.** Before confirming, the person can change or
       clear the name, and the branch, on a draft (`PATCH`). Confirming carries
       them into the entry, where they show. A server test confirms a named
       block and reads the name back from the entry. It fails today.
-- [ ] **Web.**
+- [x] **Web.**
       - An untied, unmatched block from a named folder reads "Needs a card ·
         Acme" in the To settle row and in the Inspector.
       - A block under a matched project reads as a space block does today,
@@ -136,7 +137,7 @@ or commit messages.
         stays true. If the name or branch shows under *Drafted from*, the
         line says so, and `my-day-v2.test.ts:464` is changed to match.
       - Both themes, with `setTheme`.
-- [ ] **SPEC, a named edit (D-033/D-034), these sections only.** Each is
+- [x] **SPEC, a named edit (D-033/D-034), these sections only.** Each is
       updated in this PR to say what is now sent and kept:
       - **§4.47** `time_drafts`: its opening paragraph ("no column can hold
         … a branch"), the new column(s) and `note`'s neighbours;
@@ -148,7 +149,7 @@ or commit messages.
       - **§11.4.2.1**, the My day entry (`:4315` on);
       - **§13.4**, the paragraph *Time drafts are inbound too*
         (`:4684-4689`).
-- [ ] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Deviation (claim)
 
@@ -176,3 +177,58 @@ merges. The PR for this task must merge after #32.
   question.
 - LAI-865 (on Belka) adds a title to the same To settle row and Inspector.
   Whichever lands second merges the other.
+
+## Builder notes (Strelka)
+
+- **The command:** `laika time folder name|rename NAME [DIR]`,
+  `forget [DIR]`, `list`, `branch on|off` (`cli/src/time-folders.ts`). A name
+  is 1–60 characters, trimmed, no `/` or `\`, no control or format character
+  (`\p{Cc}\p{Cf}`), the same rule on the CLI and the server.
+- **The names file:** `~/.laika/work-folders.json`, 0600, `~/.laika` kept
+  0700. **`laika activity off` keeps it**: it sits beside `solidtime.json`,
+  not in `~/.laika/activity`, because the names are the person's settings,
+  not something counted.
+- **The two-folder rule** (`cli/README.md`, tested in
+  `cli/test/time-folders.test.ts`): each lane-minute that went to a block
+  votes for its folder's name. The most lane-minutes wins. **A tie carries no
+  name.** The branch is chosen the same way among the winning name's
+  lane-minutes.
+- **Omnigent's folder:** the hook appends the chat's working folder and the
+  branch from `.git/HEAD` (read with `read`, never `git`) to the existing
+  `primary-sessions` line, `<epoch> <id> <branch|-> <folder>`. Older readers
+  take field 2 as before. It is fork-free under zsh: tested with
+  `PATH=''`. A Claude Code session's branch is the one it started on (the
+  hook's `sessions` file, LAI-770).
+- **Server bound, no CHECK:** a table CHECK made drizzle-kit rebuild
+  `time_entries`, and on an upgraded database that rename fails on
+  `time_entry_revisions`' trigger (`migrate.test.ts` D-093 case found it).
+  So 0047 is four `ADD COLUMN`s, and the service bounds `folder`/`branch`
+  on both ways in (upload and `PATCH`). A new 0047 migration test asserts
+  root pages and rows unchanged and both `time_entries` triggers still firing.
+- **A branch only with a name:** a block with `branch` and no `folder` is
+  `422 invalid_blocks`; `PATCH { folder: null }` clears the branch too, and
+  `PATCH { branch }` on a draft with no name is `422 branch_without_folder`.
+- **Lines of the text-refusal test** (`server/test/http/routes/time.test.ts`,
+  "takes blocks and counts, and refuses anything that could carry text"):
+  **none changed.** `{ branch: 'LAI-1-x' }` is still refused, now because a
+  branch needs a name. The only edit in that file is `folder_names: true` in
+  the switches' exact shape (`:126`), as in `time-settings.test.ts:103`.
+- **`my-day-v2.test.ts:464`:** the line is unchanged for a block with no
+  named folder, so only the test's title changed, to say so. The named case
+  is asserted in `server/web/test/browser/my-day-folders.test.ts`, both
+  themes.
+- **Fixture:** `cli/test/activity-time.test.ts`'s repository folder is
+  renamed from `acme` to `zq-orchard-ledger-7731`, so that finding its real
+  name in a body means it leaked.
+- **Migration number:** 0047. If LAI-864 or LAI-867 also adds one, whichever
+  merges second regenerates on top (`server/src/db/migrations/README.md`).
+- **Gate, run 1** (HEAD `9ae6dc83`, load ~40): `pnpm test` EXIT 1. The
+  only failure was `server/test/services/sprints.test.ts` › "is exact past
+  the page size" timing out at 5000 ms. That file is untouched here and
+  belongs to the load-timeout family (`logs/load-timeouts-2026-10-20.md`).
+  Alone, it passed 43/43, EXIT 0. `pnpm lint` EXIT 0, `pnpm format` EXIT 0.
+  Run 2's result is in the log and on the PR.
+- **Mutations** (each restored, checksum matched): a chat block carrying
+  its folder's real name, the branch sent while off, the project match
+  without `project.read`, and names sent to a board that didn't say
+  `folder_names` — each red on its own assertion.
