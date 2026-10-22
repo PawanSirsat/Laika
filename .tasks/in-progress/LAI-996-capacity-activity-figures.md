@@ -2,11 +2,12 @@
 id: LAI-996
 title: 'Capacity: the three activity figures come back without the bar chart'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-992]
 discovered-from: LAI-992
-status: backlog
+status: in-progress
+started: 2026-10-22T19:27:26Z
 ---
 
 ## Why
