@@ -6,8 +6,9 @@ assignee: strelka
 priority: p2
 depends-on: []
 discovered-from: LAI-480
-status: review
+status: done
 finished: 2026-10-22T06:31:47Z
+accepted: 2026-10-22T09:19:01Z
 started: 2026-10-22T06:24:05Z
 ---
 

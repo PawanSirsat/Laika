@@ -6,9 +6,10 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-10-22T07:09:08Z
 finished: 2026-10-22T08:35:03Z
+accepted: 2026-10-22T09:19:01Z
 ---
 
 ## Goal
@@ -328,6 +329,8 @@ was captured on its own line.
 | `pnpm test` | **1** | web 2790 test cases, 0 failed; cli 553 test cases, 0 failed; **server: 3 failed** of 3421 (10 skipped) |
 | `pnpm lint` | 0 | |
 | `pnpm format` | 0 | |
+
+Final gate on a95dc11d: pnpm test 0, pnpm lint 0, pnpm format 0 (PR #38 body); the exit-1 row above is the earlier run at fd775661.
 
 All three server failures are **timeouts**, in files this task does not
 touch. The diff changes nothing under `server/` outside `server/web/`.

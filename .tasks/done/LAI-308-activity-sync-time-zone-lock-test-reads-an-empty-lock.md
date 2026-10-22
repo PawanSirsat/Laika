@@ -6,9 +6,10 @@ assignee: strelka
 priority: p3
 depends-on: []
 discovered-from: LAI-854
-status: review
+status: done
 started: 2026-10-22T06:24:16Z
 finished: 2026-10-22T06:34:18Z
+accepted: 2026-10-22T09:19:01Z
 ---
 
 ## Goal
