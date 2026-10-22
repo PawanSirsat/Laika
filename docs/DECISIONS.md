@@ -5686,3 +5686,33 @@ needed and what is not."*
     (letter avatar, name, key · repository, access badge, updated, a two-line
     description or "No description yet.", progress bar, done / active /
     blocked, member avatars, Context · Members · settings).
+
+## D-104 — People and organisation administration: one owner, offboarding, reset links, more grantable capabilities (LAI-981 – LAI-989)
+
+**Date:** 2026-10-22 · **By:** CHIEF (Belka), on the owner's approval of the
+admin-gap audit (*"do all the A, small bugs, then B, also the C"*), taking
+CHIEF's recommendations on the open questions.
+
+1. **Leaving a space** — as D-103 item 5.
+2. **Exactly one owner, transferable** (SPEC §3 already says so; the code
+   allowed a second). *Owner* leaves the role picker; **Transfer ownership**
+   (owner only, typed confirmation) makes the target owner and the former
+   owner an admin, atomically. Existing extra owners are reported, not
+   demoted silently.
+3. **Deactivation ends access:** deactivating a person revokes every token and
+   session of theirs; reactivation does not bring them back. **Force
+   sign-out** ends all sessions without deactivating.
+4. **Admin-issued reset link:** with no email in Laika, whoever holds *Manage
+   people* may issue a one-time, short-lived password-reset link for another
+   person (never for the owner unless they are the owner), shown once, every
+   issue logged. Using it ends the person's other sessions.
+5. **Offboarding asks.** Removing someone from a space or deactivating them
+   shows their open tasks and asks: unassign (pre-selected) or reassign to a
+   named person; tokens revoked; space memberships removed on deactivation.
+6. **More grantable capabilities** (D-102 rule 6 extended): *Create and
+   archive spaces* (`project.create`, `project.archive`), *Manage anyone's
+   tokens* (`token.list_any`, `token.revoke_any`), and *Manage people* splits
+   into *Invite people* and *Deactivate people and reset access*. Defaults
+   reproduce today's behaviour. Every capability carries a one-line
+   description from the server.
+7. **Organisation name** is editable by *Change organisation settings*.
