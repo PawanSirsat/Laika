@@ -7,7 +7,8 @@ priority: p2
 depends-on: []
 discovered-from:
 started: 2026-10-22T08:46:56Z
-status: in-progress
+status: review
+finished: 2026-10-22T09:12:57Z
 ---
 
 ## Goal
@@ -51,28 +52,28 @@ mouse, and in both themes.
 
 ## Acceptance criteria
 
-- [ ] **Server.** `PATCH /me/time-drafts/:id` takes `note`: a string of at
+- [x] **Server.** `PATCH /me/time-drafts/:id` takes `note`: a string of at
       most 200 characters (the draft CHECK), or `null`. It is trimmed, and
       blank becomes `null`, as the entry's note does
       (`time-entries.ts:685-690`). A server test sets a note, confirms the
       block, and asserts the entry's `note`. It runs once through
       `…/confirm` and once through `POST /me/time/days/:day/confirm`. It
       fails today with `422` on the PATCH, not with some other error.
-- [ ] Setting a title **holds** the block, as every other edit does. A test
+- [x] Setting a title **holds** the block, as every other edit does. A test
       uploads the same day from the collector after the title is set and
       asserts the block and its title are still there.
-- [ ] **No migration.** 200 stays the draft limit. The field's `maxLength` is
+- [x] **No migration.** 200 stays the draft limit. The field's `maxLength` is
       200, and the reason (the draft CHECK, `schema.ts:2262`) is in a comment.
-- [ ] **Web: typed and shown.** A drafted block in To settle has a title
+- [x] **Web: typed and shown.** A drafted block in To settle has a title
       field. An agent's existing note is its starting text. Once saved, the
       title shows on the block's row in To settle and in the Inspector. A
       browser test types a title, saves it, and reads it back from both
       places.
-- [ ] **It carries into the entry, and stays editable.** After confirming,
+- [x] **It carries into the entry, and stays editable.** After confirming,
       the entry's Note field holds the title, and **Save note** changes it
       (`PATCH /me/time-entries/:id`). A browser test asserts both requests,
       confirm then note, and the shown text after each.
-- [ ] **From the keyboard: T reaches the field.** **T** moves the focus
+- [x] **From the keyboard: T reaches the field.** **T** moves the focus
       into the selected block's title field. It is a new `'title'` shortcut
       in `shortcuts.ts` (`LETTERS`, `:41-46`), and like every other key it
       does not fire while typing. T is free: My day uses ↵, G, X (not work,
@@ -93,23 +94,23 @@ mouse, and in both themes.
       keeps its title. While the focus is in the field, J, K, G, X, T and ?
       type letters and fire nothing (`typingIn`). `shortcuts.test.ts` covers
       T, and the case where T is typed in a field.
-- [ ] **The key is listed.** `SHORTCUT_SHEET` (`shortcuts.ts:61-69`) gains
+- [x] **The key is listed.** `SHORTCUT_SHEET` (`shortcuts.ts:61-69`) gains
       `['T', 'Type a title for the selected draft']`, and the Inspector's
       hint row (`Inspector.tsx:445-450`) shows T beside the others. A test
       asserts the sheet's row.
-- [ ] **Both themes.** The field and the row's title are checked in light and
+- [x] **Both themes.** The field and the row's title are checked in light and
       dark with `setTheme` (`server/web/test/browser/harness.ts:556`). Text and
       placeholder use existing tokens only (D-020), and the title does not
       overflow the row at the 390px phone layout (LAI-831).
-- [ ] The client's `DraftPatch` (`server/web/src/api/time.ts:191-201`)
+- [x] The client's `DraftPatch` (`server/web/src/api/time.ts:191-201`)
       carries `note`. `server/web/test/api/view-type-drift.test.ts` stays green.
-- [ ] **SPEC, a named edit (D-033/D-034), these lines only:**
+- [x] **SPEC, a named edit (D-033/D-034), these lines only:**
       - §4.47's `note` row (`docs/SPEC.md:1812`): the person may set it too;
       - §6.4's `PATCH /api/v1/me/time-drafts/:id` body (`:2321`);
       - §6.4's *The person's hands* paragraph (`:2989-3003`);
       - §11.4.2.1's My day entry (`:4315` on), one clause: a block can carry
         a title.
-- [ ] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Notes
 
@@ -139,3 +140,39 @@ mouse, and in both themes.
 - The confirm route takes no body, so a title cannot ride on `…/confirm`.
   Setting it by PATCH means bulk Confirm and Confirm day carry it with no
   further change.
+
+## Build notes (Belka builder, 2026-10-22)
+
+Branch `LAI-865-type-a-title-on-a-to-settle-block`, cut from `origin/master`
+9250fc3e, which carries LAI-866. Board card LAIKA-676.
+
+- **Server.** `DraftPatchBody` takes `note: z.string().max(200).nullable()`,
+  commented with the draft CHECK (`time_drafts_note_check`); `updateDraft`
+  trims it, makes a blank one `null`, and sets `collectorId: ''` as for
+  every edit. Seven route tests in `time-my-day-v2.test.ts` (*a block's
+  title, typed before it is confirmed*) and three in `time-drafts.test.ts`.
+  Run against master's code, all seven route tests failed on the PATCH with
+  `422 … Unrecognized key: "note"` and no other error.
+- **Web.** The title field is in the drafted block's inspector, as a row
+  under its head, because the row selects and the inspector acts (LAI-831).
+  The saved title shows on the To settle row (`data-draft-title`, one line,
+  cut with an ellipsis) and in the inspector head (`data-inspector-title`).
+  T is `'title'` in `LETTERS`, in `SHORTCUT_SHEET` after X, and in the hint
+  row. ↵ in the field saves it, moves the focus to the inspector and never
+  confirms. Esc puts the saved text back and leaves the field.
+- **Tests.** The browser test is the new `server/web/test/browser/my-day-title.test.ts`,
+  with a stub that keeps what it is sent. The mouse case runs in light and
+  dark and checks the field's text against `--text-primary`, the placeholder
+  against `--text-muted` and the row's title against `--text-secondary`. The
+  keyboard cases are J, T, typing, ↵ saves, ↵ confirms, then *Save note* on
+  the entry; a second case does G after saving. A 390 px case uses a
+  200-character title in both themes.
+- **Mutations.** Each was confirmed by checksum before the run, and
+  `git diff --quiet` was clean after restoring. Removing `t: 'title'` failed
+  3 tests. Leaving the focus in the field on ↵ failed the keyboard case at
+  "↵ left the focus in the field". Hiding the row's title failed 6 of 7.
+- **Found on the way.** My first placeholder, "What it was, briefly", also
+  matched `my-day-v2.test.ts`'s `getByPlaceholder(/What it was/)` for the
+  Add time field whenever a draft is selected. It is now "A title for this
+  block".
+
