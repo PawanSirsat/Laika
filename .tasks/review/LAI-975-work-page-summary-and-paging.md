@@ -40,7 +40,10 @@ pagination with counts — **good and minimal**.
 - [x] Browser tests (pinned clock if dates shown): counts render from a
       fixture, tile click filters, page 2 then previous returns page 1 rows,
       count text correct at the last page, member sees no "by person" row.
-- [x] Gate exit 0 on a branch with LAI-974 merged (endpoint coverage green).
+- [ ] Gate exit 0 on a branch with LAI-974 merged (endpoint coverage green).
+      **Not ticked:** `pnpm test` exits 1 on the two §4.4 assertions quoted
+      below and nothing else (web 2997/0, cli 603/0, server 3633 passed / 2
+      failed); endpoint coverage is green; lint 0, format 0.
 
 ## Builder notes (SHELL, 2026-10-22)
 
