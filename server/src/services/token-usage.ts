@@ -36,7 +36,7 @@ import {
   agentKindOf,
   assertMaySendLocalActivity,
   assertReportDays,
-  sharingOn,
+  collectionView,
 } from './local-activity.ts';
 import {
   type DispatchedInput,
@@ -84,7 +84,7 @@ import {
  * ## In: a third kind of collector report
  *
  * The same `PUT /me/local-activity` as the snapshot and the look-back, marked
- * `"usage": true`, under the same two switches, body limit and report bucket
+ * `"usage": true`, under the same switch, body limit and report bucket
  * (D-084 item 4). Per day, rows of agent × model × task key-or-null with the
  * four counts — nothing that could hold text (the route's schema is strict
  * and every string is a pattern). Each (person, collector, day) the report
@@ -444,7 +444,7 @@ export interface PersonUsageView {
   by_agent: UsageAgentSlice[];
   by_model: UsageModelSlice[];
   no_token_data: AgentClient[];
-  /** D-079's two switches for them: whether tokens can arrive at all. */
+  /** Whether tokens can arrive at all: the organisation's switch, in D-079's shape (D-102 amended). */
   sharing: { org_enabled: boolean; enabled: boolean };
 }
 
@@ -1772,7 +1772,6 @@ function personUsageOf(db: Db, userId: string, now: number): PersonUsageView {
     }
   }
 
-  const switches = sharingOn(db, userId);
   return {
     user_id: userId,
     from,
@@ -1782,7 +1781,7 @@ function personUsageOf(db: Db, userId: string, now: number): PersonUsageView {
     by_agent: byAgent,
     by_model: byModel,
     no_token_data: agentsWithoutTokens(db, [userId]),
-    sharing: { org_enabled: switches.org, enabled: switches.user },
+    sharing: collectionView(db),
   };
 }
 

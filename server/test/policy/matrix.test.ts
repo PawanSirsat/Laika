@@ -95,7 +95,7 @@ const ORG_MATRIX: OrgRow[] = [
   ['org.developer_insights.set', true, true, false, false],
   // | Read own activity-sharing setting | ✓ | ✓ | ✓ | ✓ |
   ['activity_sharing.read_own', true, true, true, true],
-  // | Set own activity sharing | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+  // | Set own local-activity scope | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
   ['activity_sharing.set_own', true, true, true, true],
   // | Send own local activity | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
   // The heartbeat's shape: a Viewer is stopped by the credential, not the role.

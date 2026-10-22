@@ -597,19 +597,20 @@ describe('a person with no history (LAI-743)', () => {
   });
 });
 
-describe('the Activity card’s two switches ride on the profile (D-079, LAI-751)', () => {
-  it('says each switch as it stands, for a builder and a manager alike', () => {
+describe('the Activity card’s switch rides on the profile (D-079, LAI-751; D-102 amended)', () => {
+  it('follows the organisation’s switch alone, for a builder and a manager alike', () => {
     const read = (id: string) => getProfile(t.db, actor(ada), id, NOW).activity_sharing;
     expect(read(eve)).toEqual({ org_enabled: false, enabled: false });
 
+    // Her old personal switch on decides nothing while the organisation's is off.
     t.db.update(users).set({ shareLocalActivity: 1 }).where(eq(users.id, eve)).run();
-    expect(read(eve)).toEqual({ org_enabled: false, enabled: true });
+    expect(read(eve)).toEqual({ org_enabled: false, enabled: false });
 
     t.db.update(orgs).set({ developerInsights: 1 }).run();
     expect(read(eve)).toEqual({ org_enabled: true, enabled: true });
 
-    // Her switch, not anyone else's: Ada never turned hers on.
-    expect(read(ada)).toEqual({ org_enabled: true, enabled: false });
+    // Ada never turned hers on, and is collected all the same.
+    expect(read(ada)).toEqual({ org_enabled: true, enabled: true });
     setProfileKind(t.db, actor(ada), eve, 'manager', NOW);
     expect(read(eve)).toEqual({ org_enabled: true, enabled: true });
   });

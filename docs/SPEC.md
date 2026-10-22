@@ -218,7 +218,7 @@ be obvious because someone will be asking for it.
 | View a member's day, time and shared activity | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
 | Turn Developer insights on or off | ✓ (session only) | ✓ (session only) | — | — |
 | Read own activity-sharing setting | ✓ | ✓ | ✓ | ✓ |
-| Set own activity sharing | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| Set own local-activity scope | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Send own local activity | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
 | Read and delete own local activity | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | View the organisation's token usage | ✓ | ✓ | — | — |
@@ -508,7 +508,7 @@ name. A `system.database.vacuum` would be a permission that grants nothing.
 | `org_role` | text | `owner` \| `admin` \| `member` \| `viewer` |
 | `is_active` | integer | 0 = deactivated, row kept for history |
 | `profile_kind` | text | `builder` \| `manager`, default `builder` — what the member profile shows (§11.4.2, D-078). **A label, never a permission**: `can()` does not read it (§3.1) |
-| `share_local_activity` | integer | default **0** — the developer's own half of D-079's two switches: whether their collector may send local activity counts (§4.23, §4.24). Set only by them, from a web session (§3.1); off stops collection at once and deletes nothing |
+| `share_local_activity` | integer | default **0** — was the developer's own half of D-079's two switches. **Read by nothing since D-102 (amended, LAI-963)**: collection follows the organisation's `developer_insights` alone (§4.2), and no endpoint writes it. Kept, not dropped, so what each person last chose is not lost |
 | `local_activity_scope` | text | `agent-repos` \| `laika-repos`, default `agent-repos` — which repositories their collector counts in: every one where they run a connected agent on that machine, or only those set up for Laika. The server cannot see a repository; it stores the choice and the collector honours it (D-079) |
 | `created_at`, `updated_at` | integer | |
 
@@ -2409,7 +2409,7 @@ POST   /api/v1/auth/*                        better-auth mounted routes
 GET    /api/v1/setup/status                  POST /api/v1/setup      (disabled once an org exists)
        └ { setup_required, system: { database, migrations_applied, smtp_configured } }
 GET    /api/v1/me
-GET    /api/v1/me/activity-sharing           PUT .../activity-sharing  body { enabled?, scope? }   (PUT session only)
+GET    /api/v1/me/activity-sharing           PUT .../activity-sharing  body { scope? }   (PUT session only; `enabled` → 403 organisation_controlled)
 PUT    /api/v1/me/local-activity             a collector's report, look-back or usage report → { accepted_days }   (both switches on; 30/hour)
 GET    /api/v1/me/local-activity             ?days=1–14 — what is held for the caller   DELETE → 204   (session only)
 GET    /api/v1/me/token-alerts               the caller's own budget and runaway alerts   POST .../:id/dismiss → 204   (session only; LAI-773)
@@ -2646,11 +2646,16 @@ reaches SSE, an MCP tool or an export (§4.21).
 **The developer's side of D-079** (LAI-751), the contract the collector
 (`laika activity`, LAI-752) is written against:
 
-- `GET /me/activity-sharing` answers `{ org_enabled, enabled, scope,
-  min_sync_interval_s }` — `600`, how often a collector may sync — to a
-  session or any token of theirs, so a collector asks before it sends. Asked
+- `GET /me/activity-sharing` answers `{ org_enabled, enabled,
+  person_can_opt_out, scope, min_sync_interval_s }` — `600`, how often a
+  collector may sync — to a session or any token of theirs, so a collector
+  asks before it sends. **Collection is the organisation's** (D-102 amended,
+  LAI-963): `enabled` is whether this person's local activity is collected,
+  and equals `org_enabled`; `person_can_opt_out` is always `false`. `enabled`
+  is kept so a collector written against D-079's two switches syncs exactly
+  when it may. Asked
   with `?collector_id=<uuid v4>` by a caller who may send (not a `read_only`
-  token) with both switches on, it adds `usage_days_elsewhere`: the days, back
+  token) with collection on, it adds `usage_days_elsewhere`: the days, back
   to today − 32 in UTC, that **other** collectors of this person hold token
   rows for — dates only, never a count (D-084, LAI-769 review 1). The preview
   below is session only, so this is how a collector learns which days of a
@@ -2660,10 +2665,14 @@ reaches SSE, an MCP tool or an export (§4.21).
   LAI-780). A key in a branch name counts for a task only when its
   prefix is one of them, so `release-2026` or `gpt-5` is never taken for a
   task; the collector keeps the last answer.
-- `PUT /me/activity-sharing` takes `{ enabled?, scope? }` — `scope` is
-  `agent-repos` or `laika-repos` — from a **web session only** and answers the
-  same shape. Off stops collection at once and deletes nothing. No `activity`
-  row: §4.8 has no verb for it.
+- `PUT /me/activity-sharing` takes `{ scope? }` — `agent-repos` or
+  `laika-repos` — from a **web session only** and answers the same shape. A
+  body carrying `enabled`, on or off, whatever the organisation's switch, is
+  refused `403` with `details: { reason: "organisation_controlled",
+  org_enabled }` and writes nothing, its `scope` included: the switch is no
+  longer the person's (D-102 amended). `enabled` stays in the body's schema so
+  that is the answer an old client gets, not `422`'s unknown field. No
+  `activity` row: §4.8 has no verb for it.
 - `PUT /me/local-activity` takes one machine's snapshot of its last days, at
   most **16 KB**:
   `{ "v": 1, "collector_id": "<uuid v4>", "tz": "<IANA zone>", "days": [{

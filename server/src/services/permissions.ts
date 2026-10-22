@@ -87,7 +87,7 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'people.analytics.read': "View a member's day, time and shared activity",
   'org.developer_insights.set': 'Turn Developer insights on or off',
   'activity_sharing.read_own': 'Read own activity-sharing setting',
-  'activity_sharing.set_own': 'Set own activity sharing',
+  'activity_sharing.set_own': 'Set own local-activity scope',
   'local_activity.send_own': 'Send own local activity',
   'local_activity.read_own': 'Read and delete own local activity',
   'local_activity.delete_own': 'Read and delete own local activity',

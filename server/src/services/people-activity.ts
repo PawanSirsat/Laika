@@ -8,10 +8,10 @@ import { assertCan } from '../policy/can.ts';
 import { addDays, daysBetween, dayIn } from './calendar-days.ts';
 import {
   agentKindOf,
+  collectionView,
   latestReportZone,
   pushedPerDay,
   readPrompts,
-  sharingOn,
 } from './local-activity.ts';
 import { readLogged } from './analytics-views.ts';
 
@@ -32,8 +32,9 @@ import { readLogged } from './analytics-views.ts';
  *   log. Always there: it is what the board already records (D-078 item 4).
  * - **GitHub** and **Local** — what the person's own machines reported
  *   (`pushed_commit_keys`, `local_activity_days`). `null`, never zeros, unless
- *   **both** switches are on for that person now: a developer who stops sharing
- *   stops being shown, whatever is still held.
+ *   the organisation's switch is on now — the person's own is not asked (D-102
+ *   amended): an organisation that stops collecting stops showing it,
+ *   whatever is still held.
  *
  * ## Bounded reads only
  *
@@ -107,8 +108,9 @@ export function getPeopleActivity(
 }
 
 function activityOf(db: Db, userId: string, range: ActivityRange, now: number): PeopleActivityView {
-  const sharing = sharingOn(db, userId);
-  const shown = sharing.org && sharing.user;
+  // The organisation's switch alone (D-102 amended): the person's own is not asked.
+  const sharing = collectionView(db);
+  const shown = sharing.org_enabled;
 
   const tz = shown ? latestReportZone(db, userId) : 'UTC';
   const length = RANGE_DAYS[range];
@@ -140,7 +142,7 @@ function activityOf(db: Db, userId: string, range: ActivityRange, now: number): 
     start,
     end,
     tz,
-    sharing: { org_enabled: sharing.org, enabled: sharing.user },
+    sharing,
     series: {
       github: null,
       local_commits: null,
