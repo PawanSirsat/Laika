@@ -160,6 +160,45 @@ const STUB: ApiStub = {
   },
 };
 
+function privatePlateStub(role: 'owner' | 'admin' | 'member' | 'viewer'): ApiStub {
+  const privateProject = {
+    id: 'private-observatory',
+    slug: 'private-observatory',
+    prefix: 'OBS',
+    name: 'Private Observatory',
+    archived_at: null,
+    visibility: 'private',
+    task_counts: { backlog: 0, todo: 0, in_progress: 1, review: 0, done: 0, cancelled: 0 },
+    member_count: 0,
+    members: [],
+  };
+  return {
+    ...STUB,
+    '/api/v1/me': {
+      id: 'u1',
+      email: 'a@example.com',
+      name: 'Ada Lovelace',
+      org_role: role,
+      is_active: true,
+      memberships: [],
+    },
+    '/api/v1/projects': { data: [privateProject], next_cursor: null },
+    '/api/v1/projects/private-observatory/tasks?assignee=u1&status=in_progress': {
+      data: [
+        {
+          ...task('private-task', 'OBS-7', 'Private Observatory migration', 'in_progress'),
+          project_id: 'private-observatory',
+        },
+      ],
+      next_cursor: null,
+    },
+    '/api/v1/projects/private-observatory/tasks?assignee=u1&status=todo': {
+      data: [],
+      next_cursor: null,
+    },
+  };
+}
+
 void after(async () => {
   await closeBrowser();
 });
@@ -286,57 +325,44 @@ void describe('My day after the reference', () => {
     }
   });
 
-  void test('On your plate reads Private Observatory through an owner’s implicit lead', async () => {
-    const privateProject = {
-      id: 'private-observatory',
-      slug: 'private-observatory',
-      prefix: 'OBS',
-      name: 'Private Observatory',
-      archived_at: null,
-      visibility: 'private',
-      task_counts: { backlog: 0, todo: 0, in_progress: 1, review: 0, done: 0, cancelled: 0 },
-      member_count: 0,
-      members: [],
-    };
-    const implicit = {
-      ...STUB,
-      '/api/v1/me': {
-        id: 'u1',
-        email: 'a@example.com',
-        name: 'Ada Lovelace',
-        org_role: 'owner',
-        is_active: true,
-        memberships: [],
-      },
-      '/api/v1/projects': { data: [privateProject], next_cursor: null },
-      '/api/v1/projects/private-observatory/tasks?assignee=u1&status=in_progress': {
-        data: [
-          {
-            ...task('private-task', 'OBS-7', 'Private Observatory migration', 'in_progress'),
-            project_id: 'private-observatory',
-          },
-        ],
-        next_cursor: null,
-      },
-      '/api/v1/projects/private-observatory/tasks?assignee=u1&status=todo': {
-        data: [],
-        next_cursor: null,
-      },
-    } satisfies ApiStub;
+  void test('On your plate reads Private Observatory through owner/admin implicit lead', async () => {
+    for (const role of ['owner', 'admin'] as const) {
+      const h = await open('/my-day', privatePlateStub(role));
+      try {
+        const progress = h.page.locator('[data-plate="progress"]');
+        await progress.getByText('Private Observatory migration', { exact: true }).waitFor({
+          timeout: 20_000,
+        });
+        assert.match(await progress.innerText(), /Private Observatory migration/);
+        assert.ok(
+          h.calls.some((call) => call.path === '/api/v1/projects/private-observatory/tasks'),
+          `Private Observatory task list was not read for ${role}`,
+        );
+      } finally {
+        await h.close();
+      }
+    }
+  });
 
-    const h = await open('/my-day', implicit);
-    try {
-      const progress = h.page.locator('[data-plate="progress"]');
-      await progress.getByText('Private Observatory migration', { exact: true }).waitFor({
-        timeout: 20_000,
-      });
-      assert.match(await progress.innerText(), /Private Observatory migration/);
-      assert.ok(
-        h.calls.some((call) => call.path === '/api/v1/projects/private-observatory/tasks'),
-        'Private Observatory task list was not read',
-      );
-    } finally {
-      await h.close();
+  void test('On your plate excludes Private Observatory for a non-member org member/viewer', async () => {
+    for (const role of ['member', 'viewer'] as const) {
+      const h = await open('/my-day', privatePlateStub(role));
+      try {
+        await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
+        assert.equal(
+          await h.page.getByText('Private Observatory migration', { exact: true }).count(),
+          0,
+          `Private Observatory migration was shown to a ${role}`,
+        );
+        assert.equal(
+          h.calls.filter((call) => call.path === '/api/v1/projects/private-observatory/tasks')
+            .length,
+          0,
+          `Private Observatory task list was read for a ${role}`,
+        );
+      } finally {
+        await h.close();
+      }
     }
   });
 

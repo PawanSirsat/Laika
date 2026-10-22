@@ -31,6 +31,10 @@ const project = (id: string, name: string, visibility: 'public' | 'private') => 
 const MEMBER_SPACE = project('mine', 'Member Workshop', 'private');
 const PRIVATE_SPACE = project('secret', 'Private Observatory', 'private');
 const PUBLIC_SPACE = project('public', 'Public Commons', 'public');
+const ARCHIVED_SPACE = {
+  ...project('archive', 'Archived Workshop', 'private'),
+  archived_at: 2,
+};
 
 function stub(role: 'owner' | 'admin' | 'member' | 'viewer'): ApiStub {
   return {
@@ -40,10 +44,13 @@ function stub(role: 'owner' | 'admin' | 'member' | 'viewer'): ApiStub {
       name: 'Reader',
       org_role: role,
       is_active: true,
-      memberships: [{ project_id: MEMBER_SPACE.id, role: role === 'viewer' ? 'viewer' : 'member' }],
+      memberships: [MEMBER_SPACE, ARCHIVED_SPACE].map((space) => ({
+        project_id: space.id,
+        role: role === 'viewer' ? 'viewer' : 'member',
+      })),
     },
     '/api/v1/projects': {
-      data: [MEMBER_SPACE, PRIVATE_SPACE, PUBLIC_SPACE],
+      data: [MEMBER_SPACE, PRIVATE_SPACE, PUBLIC_SPACE, ARCHIVED_SPACE],
       next_cursor: null,
     },
   };
@@ -62,6 +69,22 @@ void describe('Projects effective access', () => {
         await yours.getByText('Private Observatory', { exact: true }).waitFor({ timeout: 20_000 });
         assert.match(await yours.innerText(), /Private Observatory/);
         assert.match(await yours.innerText(), /Public Commons/);
+        assert.match(await yours.innerText(), /Archived Workshop/);
+        assert.equal(
+          await yours.getByText('Public Commons', { exact: true }).count(),
+          1,
+          'Public Commons was duplicated outside Your spaces',
+        );
+        assert.equal(
+          await h.page.getByText('PUBLIC IN THIS ORG', { exact: true }).count(),
+          0,
+          'owner/admin still gets a public join section',
+        );
+        assert.equal(
+          await h.page.getByRole('button', { name: 'Join', exact: true }).count(),
+          0,
+          'owner/admin is offered Join for an implicit-lead space',
+        );
       } finally {
         await h.close();
       }
@@ -78,6 +101,7 @@ void describe('Projects effective access', () => {
           .waitFor({ timeout: 20_000 });
         const page = await h.page.locator('.projects').innerText();
         assert.match(page, /Member Workshop/);
+        assert.match(page, /Archived Workshop/);
         assert.match(page, /Public Commons/);
         assert.doesNotMatch(page, /Private Observatory/);
       } finally {
