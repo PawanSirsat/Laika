@@ -58,6 +58,7 @@ import {
   TOKEN_SCOPES,
   TOKEN_SESSION_SOURCES,
   AGENT_TIME_KINDS,
+  ANALYTICS_VIEW_KINDS,
   TIME_DRAFT_SOURCES,
   TIME_DRAFT_STATES,
   TIME_ENTRY_SOURCES,
@@ -2547,6 +2548,41 @@ export const orgRoleGrants = sqliteTable(
     check('org_role_grants_org_role_check', oneOf('org_role', GRANTABLE_ROLES)),
     check('org_role_grants_capability_check', oneOf('capability', CAPABILITIES)),
     check('org_role_grants_granted_check', sql.raw('granted IN (0, 1)')),
+  ],
+);
+
+// ---------------------------------------------- §4.59 analytics_views
+
+/**
+ * Who looked at a person's analytics, and when (§4.59, D-102 rule 3, D-088
+ * item 7, LAI-957). One row per read an owner or admin made of somebody
+ * else's day, local activity, heatmap or tokens, written in the same
+ * transaction as the read, so a read nobody can see does not happen. The
+ * person reads their own rows on `GET /me/analytics-views`; kept 400 days
+ * (§11.6).
+ */
+export const analyticsViews = sqliteTable(
+  'analytics_views',
+  {
+    id: text('id').primaryKey(),
+    viewerId: text('viewer_id')
+      .notNull()
+      .references(() => users.id),
+    subjectId: text('subject_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: ANALYTICS_VIEW_KINDS }).notNull(),
+    /** `YYYY-MM-DD` — the day read, for My day; `null` for a range. */
+    day: text('day'),
+    viewedAt: integer('viewed_at').notNull(),
+  },
+  (t) => [
+    // The person's list, newest first.
+    index('analytics_views_subject_idx').on(t.subjectId, t.viewedAt, t.id),
+    index('analytics_views_viewer_idx').on(t.viewerId),
+    // §11.6's retention deletes by age alone.
+    index('analytics_views_viewed_at_idx').on(t.viewedAt),
+    check('analytics_views_kind_check', oneOf('kind', ANALYTICS_VIEW_KINDS)),
   ],
 );
 

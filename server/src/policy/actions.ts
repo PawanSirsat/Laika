@@ -39,6 +39,9 @@ export const ORG_ACTIONS = [
   'profile.set_kind',
   'profile.rate',
   'profile.activity.read',
+  // D-102 rule 1 (LAI-957): a person's day, hours and shared local activity,
+  // read by somebody else in the shape the person reads them.
+  'people.analytics.read',
   'org.developer_insights.set',
   'activity_sharing.read_own',
   'activity_sharing.set_own',
@@ -184,6 +187,10 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'profile.rate',
   // The heatmap is part of the profile, and follows its rule (D-078, D-079).
   'profile.activity.read',
+  // **A person's day, drafts included, and their local activity** (D-102,
+  // LAI-957): the profile's rule, and the rule the person's own `/me` reads
+  // follow — a token, an agent's included, reads nobody's day.
+  'people.analytics.read',
   // The organisation's half of the consent (D-079, LAI-751 review): the
   // developer's own switch is session-only, so the one that lets it count is
   // too — a token is how an agent acts, and an agent must not turn on the

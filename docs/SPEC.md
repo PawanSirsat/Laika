@@ -215,6 +215,7 @@ be obvious because someone will be asking for it.
 | Set a member's profile kind | ✓ (session only) | ✓ (session only) | — | — |
 | Rate a member | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
 | View a member's activity heatmap | ✓ (session only) | ✓ (session only) | — | — |
+| View a member's day, time and shared activity | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
 | Turn Developer insights on or off | ✓ (session only) | ✓ (session only) | — | — |
 | Read own activity-sharing setting | ✓ | ✓ | ✓ | ✓ |
 | Set own activity sharing | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
@@ -370,6 +371,27 @@ only**.
 - **Saying which Solidtime member is which person, and pulling everyone, are
   an owner's or admin's** (D-088 item 7): the CLI suggests a match by email
   on its own machine, and only the confirmation reaches the board.
+
+**"View a member's day, time and shared activity" is `people.analytics.read`**
+(D-102 rules 1–4, LAI-957), behind §6.4's `GET /people/:id/time` and `GET
+/people/:id/local-activity`. It is *See everyone's analytics* (§3's grants),
+with the profile, the heatmap and the per-person tokens: the cells above are
+the defaults. **It amends the time rows' *"no admin row for drafts"*** — an
+owner, and whoever the owner grants it, reads a person's My day, drafts
+included, and their held local activity, **in the shape the person reads
+them**: the same answers as `GET /me/time` and `GET /me/local-activity`,
+from the same code. Read only — no row lets anybody write another person's
+time, drafts, breaks or switches, and every `/me` write touches the
+caller's own rows. Reading follows no sharing switch: consent governs
+collection (D-102, amended).
+
+- **"not themselves"**: a person's own is `/me`'s, where nothing is logged.
+- **Every read of somebody else is logged** (§4.59) — this row's two reads
+  and the heatmap's and per-person tokens' — in the read's own transaction,
+  so a read that cannot be logged is not answered. The person reads who
+  looked on `GET /me/analytics-views` under *Read and delete own local
+  activity* (`local_activity.read_own`): what is held about them and who has
+  seen it are the same consent screen's, every role's, session only.
 
 ### 3.2 Project-level permission matrix
 
@@ -2131,6 +2153,28 @@ Primary key `(org_id, org_role, capability)`; index `(set_by)`. A change
 writes one `member.role_changed` row, org-scoped, with `payload.scope:
 "org_permissions"` and the whole matrix `from` and `to` (§4.8).
 
+### 4.59 `analytics_views`
+
+Who looked at a person's analytics, and when (D-102 rule 3, D-088 item 7,
+LAI-957; §3.1's *"View a member's day, time and shared activity"*). One row
+per read of somebody else's My day, local activity, heatmap or per-person
+tokens, written in the same transaction as the read; a person reading their
+own writes none. Read by the person alone, `GET /me/analytics-views`. No
+`activity` row: §4.8 gains no verb. Kept **400 days** (§11.6's local-activity
+retention, by `viewed_at`).
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `viewer_id` | FK `users` — who looked |
+| `subject_id` | FK `users`, cascade — whose analytics |
+| `kind` | `time` \| `local_activity` \| `activity` \| `usage` (CHECK) |
+| `day` | nullable `YYYY-MM-DD` — the day read, for `time`; null for a range |
+| `viewed_at` | |
+
+Indexes `(subject_id, viewed_at, id)` for the person's list, `(viewer_id)`,
+`(viewed_at)` for retention.
+
 ## 5. Task lifecycle
 
 ```
@@ -2402,6 +2446,9 @@ PATCH  /api/v1/users/:id                     (role: owner only; deactivate: owne
 GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind }   (owner, admin; session only)
 POST   /api/v1/users/:id/ratings             body { score, note } → 201   (owner, admin; session only; not yourself)
 GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, admin; session only)
+GET    /api/v1/people/:id/time               ?day=&tz= — that person's GET /me/time answer, drafts included; logged   (owner, admin by default; session only; not yourself; LAI-957)
+GET    /api/v1/people/:id/local-activity     ?days=1–14 — that person's GET /me/local-activity answer; logged   (owner, admin by default; session only; not yourself)
+GET    /api/v1/me/analytics-views            ?limit=&cursor= — who looked at the caller → { data: [{ id, viewer: { id, name }, kind, day, viewed_at }], next_cursor }, newest first   (session only)
 GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner/admin; session only)
 GET    /api/v1/usage                         ?days=1–92&project=&tz= — the Usage page   (owner/admin; a member with ?project=)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept

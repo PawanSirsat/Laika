@@ -13,6 +13,7 @@ import {
   readPrompts,
   sharingOn,
 } from './local-activity.ts';
+import { readLogged } from './analytics-views.ts';
 
 /**
  * One person's activity per day, for the profile's heatmap (SPEC §6.4,
@@ -93,6 +94,19 @@ export function getPeopleActivity(
   const person = db.select({ id: users.id }).from(users).where(eq(users.id, userId)).get();
   if (person === undefined) throw ApiError.notFound(`No user with id "${userId}"`);
 
+  // Somebody else's heatmap is a logged read (D-102 rule 3, LAI-957).
+  return readLogged(
+    db,
+    actor,
+    userId,
+    'activity',
+    () => activityOf(db, userId, range, now),
+    () => null,
+    now,
+  );
+}
+
+function activityOf(db: Db, userId: string, range: ActivityRange, now: number): PeopleActivityView {
   const sharing = sharingOn(db, userId);
   const shown = sharing.org && sharing.user;
 

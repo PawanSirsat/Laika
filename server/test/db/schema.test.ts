@@ -76,6 +76,8 @@ describe('migrations', () => {
     'agent_time_buckets',
     // LAI-787, D-088: Claude Code's active time, agent minutes.
     'agent_time_days',
+    // LAI-957, D-102: who looked at a person's analytics.
+    'analytics_views',
     'board_activity_days',
     'comment_mentions',
     'comments',

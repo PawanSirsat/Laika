@@ -561,9 +561,22 @@ export function getOwnLocalActivity(
   now: number = Date.now(),
 ): OwnLocalActivityView {
   assertCan(actor, 'local_activity.read_own');
+  return localActivityOf(db, actor.userId, days, now);
+}
 
+/**
+ * One person's held local activity, as `GET /me/local-activity` answers it —
+ * **no `can()` here**: the person's read asks `local_activity.read_own`, an
+ * owner's or admin's `people.analytics.read` (D-102 rule 1, LAI-957).
+ */
+export function localActivityOf(
+  db: Db,
+  userId: string,
+  days: number = OWN_PREVIEW_DAYS_MAX,
+  now: number = Date.now(),
+): OwnLocalActivityView {
   const span = Math.min(Math.max(Math.trunc(days), 1), OWN_PREVIEW_DAYS_MAX);
-  const tz = latestReportZone(db, actor.userId);
+  const tz = latestReportZone(db, userId);
   const end = dayIn(tz, now);
   const start = addDays(end, -(span - 1));
 
@@ -572,13 +585,13 @@ export function getOwnLocalActivity(
     .from(localActivityDays)
     .where(
       and(
-        eq(localActivityDays.userId, actor.userId),
+        eq(localActivityDays.userId, userId),
         gte(localActivityDays.day, start),
         lte(localActivityDays.day, end),
       ),
     )
     .all();
-  const pushed = pushedPerDay(db, actor.userId, start, end);
+  const pushed = pushedPerDay(db, userId, start, end);
 
   const byDay = new Map<string, OwnLocalDay>();
   const at = (day: string): OwnLocalDay => {
@@ -618,7 +631,7 @@ export function getOwnLocalActivity(
     .from(tokenUsageDays)
     .where(
       and(
-        eq(tokenUsageDays.userId, actor.userId),
+        eq(tokenUsageDays.userId, userId),
         gte(tokenUsageDays.day, start),
         lte(tokenUsageDays.day, end),
       ),
@@ -633,19 +646,19 @@ export function getOwnLocalActivity(
   const oldest = db
     .select({ day: min(localActivityDays.day) })
     .from(localActivityDays)
-    .where(eq(localActivityDays.userId, actor.userId))
+    .where(eq(localActivityDays.userId, userId))
     .get();
   const oldestKey = db
     .select({ day: min(pushedCommitKeys.day) })
     .from(pushedCommitKeys)
-    .where(eq(pushedCommitKeys.userId, actor.userId))
+    .where(eq(pushedCommitKeys.userId, userId))
     .get();
   // Token rows are held too (D-084): someone with only those can still see
   // that something is kept, and delete it.
   const oldestTokens = db
     .select({ day: min(tokenUsageDays.day) })
     .from(tokenUsageDays)
-    .where(eq(tokenUsageDays.userId, actor.userId))
+    .where(eq(tokenUsageDays.userId, userId))
     .get();
   const oldestDay = [oldest?.day, oldestKey?.day, oldestTokens?.day]
     .filter((d): d is string => d !== null && d !== undefined)

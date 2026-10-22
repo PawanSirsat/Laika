@@ -33,7 +33,12 @@ export type OrgGrants = Readonly<Record<GrantableRole, readonly Capability[]>>;
  * that decides it is never ambiguous.
  */
 export const CAPABILITY_ACTIONS: Readonly<Record<Capability, readonly OrgAction[]>> = {
-  see_people_analytics: ['profile.read', 'profile.activity.read', 'usage.read_people'],
+  see_people_analytics: [
+    'profile.read',
+    'profile.activity.read',
+    'usage.read_people',
+    'people.analytics.read',
+  ],
   see_org_activity: ['audit_log.export'],
   open_all_projects: [],
   manage_people: ['user.invite', 'user.deactivate'],

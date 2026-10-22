@@ -31,6 +31,14 @@ export const CAPABILITIES = [
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
 
+/**
+ * Which of a person's analytics an owner or admin looked at (§4.59, D-102
+ * rule 3, LAI-957): My day, their shared local activity, the profile's
+ * heatmap, their tokens. One per read, never a count.
+ */
+export const ANALYTICS_VIEW_KINDS = ['time', 'local_activity', 'activity', 'usage'] as const;
+export type AnalyticsViewKind = (typeof ANALYTICS_VIEW_KINDS)[number];
+
 export const PROJECT_ROLES = ['lead', 'member', 'viewer'] as const;
 export type ProjectRole = (typeof PROJECT_ROLES)[number];
 

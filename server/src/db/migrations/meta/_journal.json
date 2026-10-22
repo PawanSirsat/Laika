@@ -337,6 +337,13 @@
       "when": 1792676300034,
       "tag": "0048_org_role_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "6",
+      "when": 1792678308195,
+      "tag": "0049_analytics_views",
+      "breakpoints": true
     }
   ]
 }

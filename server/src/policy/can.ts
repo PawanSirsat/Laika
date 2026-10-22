@@ -88,9 +88,9 @@ export interface Resource {
    */
   targetOrgRole?: OrgRole | undefined;
   /**
-   * For `profile.rate`: the person being rated. §3.1's *"not themselves"* is
-   * this compared with `actor.userId`, and an absent target is a denial
-   * (LAI-743).
+   * For `profile.rate` and `people.analytics.read`: the person being rated or
+   * read. §3.1's *"not themselves"* is this compared with `actor.userId`, and
+   * an absent target is a denial (LAI-743, LAI-957).
    */
   targetUserId?: string | undefined;
 }
@@ -410,6 +410,20 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // reviewed. Today the two answer alike, as D-078 and D-079 both say.
     case 'profile.activity.read':
       return granted(actor, action);
+
+    // | View a member's day, time and shared activity | ✓ (session only, not themselves) | … | — | — |
+    //
+    // D-102 rule 1 (LAI-957): My day and the local activity a person reads
+    // of their own, read for them — *See everyone's analytics*. **Not
+    // themselves**: a person reads their own on `/me`, where nothing is
+    // logged, and a self-read here would write a view log row saying they
+    // looked at themselves. An absent target is a denial, as for a rating.
+    case 'people.analytics.read':
+      return (
+        granted(actor, action) &&
+        resource.targetUserId !== undefined &&
+        resource.targetUserId !== actor.userId
+      );
 
     // | Turn Developer insights on or off | ✓ (session only) | ✓ (session only) | — | — |
     //

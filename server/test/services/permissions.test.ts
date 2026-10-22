@@ -127,6 +127,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'profile.set_kind': 'YYNN',
   'profile.rate': 'CCNN',
   'profile.activity.read': 'YYNN',
+  'people.analytics.read': 'CCNN',
   'org.developer_insights.set': 'YYNN',
   'activity_sharing.read_own': 'YYYY',
   'activity_sharing.set_own': 'YYYY',
@@ -349,11 +350,19 @@ describe('the catalogue follows the organisation’s grants', () => {
       expect(cells(before, action), action).toBe('YYNN');
       expect(cells(after, action), action).toBe('YYYN');
     }
+    // LAI-957's read of somebody else carries its "not themselves" condition.
+    expect(cells(before, 'people.analytics.read')).toBe('CCNN');
+    expect(cells(after, 'people.analytics.read')).toBe('CCCN');
     // Everything else is untouched, cell for cell.
     const changed = after.permissions
       .filter((p, i) => JSON.stringify(p) !== JSON.stringify(before.permissions[i]))
       .map((p) => p.action);
-    expect(changed.sort()).toEqual(['profile.activity.read', 'profile.read', 'usage.read_people']);
+    expect(changed.sort()).toEqual([
+      'people.analytics.read',
+      'profile.activity.read',
+      'profile.read',
+      'usage.read_people',
+    ]);
   });
 
   it('turns an admin’s cells off when the owner withdraws a grant', () => {

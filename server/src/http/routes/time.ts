@@ -214,7 +214,7 @@ const BreakBody = strictObject({ day, tz: zone, started_at: instantMs, ended_at:
 // Undo names one change: the id that change answered with (LAI-831 review round 1).
 const UndoBody = strictObject({ id: z.string().min(1).max(64) });
 
-const MyDayQuery = strictObject({ day: day.optional(), tz: zone.optional() });
+export const MyDayQuery = strictObject({ day: day.optional(), tz: zone.optional() });
 
 // The Solidtime bridge (LAI-788). **No field can hold a description**: an
 // entry carries the key the CLI read from it, or none, and a digest.

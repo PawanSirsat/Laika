@@ -221,7 +221,7 @@ const SharingQuery = strictObject({
   collector_id: ReportBody.shape.collector_id.optional(),
 });
 
-const PreviewQuery = strictObject({
+export const PreviewQuery = strictObject({
   days: z.coerce.number().int().min(1).max(OWN_PREVIEW_DAYS_MAX).optional(),
 });
 
