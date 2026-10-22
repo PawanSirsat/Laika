@@ -54,6 +54,7 @@ export function EntryRow({
       }}
     >
       <span className="myday-ledger-mark" aria-hidden="true" />
+      <span className="myday-swatch myday-swatch-confirmed" aria-hidden="true" />
       <button
         type="button"
         className="myday-row-select"

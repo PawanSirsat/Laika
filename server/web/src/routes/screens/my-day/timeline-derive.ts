@@ -24,12 +24,19 @@ export const AXIS_FROM = 6;
 export const AXIS_TO = 22;
 
 export type Zoom = 'fit' | '1' | '2';
-/** Pixels an hour at each zoom; `fit` is the whole axis in the width there is. */
+/**
+ * Pixels an hour at 1× and 2× (the owner's "Laika App v3" Timeline: 160 and
+ * 320); `fit` is the whole axis in the width there is, idle hours folded.
+ */
 export const PX_PER_HOUR: Readonly<Record<Zoom, number | undefined>> = {
   fit: undefined,
-  '1': 110,
-  '2': 220,
+  '1': 160,
+  '2': 320,
 };
+/** An idle stretch at either end of the day this long or longer folds at Fit (LAI-888). */
+export const FOLD_MIN = 45;
+/** How wide a folded stretch is drawn, in px. */
+export const FOLD_PX = 92;
 
 export interface LaneBlock {
   readonly kind: 'confirmed' | 'drafted';
@@ -515,3 +522,178 @@ export function splitPoint(block: Shape): number | undefined {
 
 /** The instant minute `m` of the day names, for a write. */
 export const instantOf = (midnight: number, m: number): number => midnight + m * 60_000;
+
+/** One stretch of the axis as drawn: minutes `t0`–`t1` onto px `p0`–`p1`. */
+export interface Segment {
+  readonly t0: number;
+  readonly t1: number;
+  readonly p0: number;
+  readonly p1: number;
+  /** Idle hours folded to {@link FOLD_PX} (Fit only). */
+  readonly folded: boolean;
+}
+
+/** Minutes after midnight to px along the track, and back (LAI-888). */
+export interface Scale {
+  readonly segments: readonly Segment[];
+  /** The track's width in px. */
+  readonly total: number;
+  readonly pos: (minute: number) => number;
+  readonly at: (px: number) => number;
+  /** `minute` lies strictly inside a folded stretch. */
+  readonly folded: (minute: number) => boolean;
+}
+
+/**
+ * The idle stretches Fit folds (the owner's design, LAI-888): before the
+ * first thing placed on the day and after the last — or after now, on today,
+ * so the now line always stands on an open stretch — each only when it is
+ * {@link FOLD_MIN} minutes or longer. A day with nothing placed folds
+ * nothing: there is nothing to make room for.
+ */
+export function idleEnds(
+  line: Pick<DayLine, 'blocks' | 'breaks' | 'signals' | 'agents' | 'now' | 'from' | 'to'>,
+): Span[] {
+  const starts = [...line.blocks, ...line.breaks, ...line.signals, ...line.agents].map(
+    (s) => s.start,
+  );
+  const ends = [
+    ...[...line.blocks, ...line.breaks, ...line.agents].map((s) => s.end),
+    ...line.signals.map((s) => s.start + SIGNAL_MINUTES),
+  ];
+  if (starts.length === 0) return [];
+  const a = line.from * 60;
+  const b = line.to * 60;
+  const first = Math.max(a, Math.min(...starts));
+  const last = Math.min(b, Math.max(...ends, line.now ?? -Infinity));
+  const folds: Span[] = [];
+  if (first - a >= FOLD_MIN) folds.push({ start: a, end: first });
+  if (b - last >= FOLD_MIN && last > first) folds.push({ start: last, end: b });
+  return folds;
+}
+
+/**
+ * Where each minute of the axis is drawn (LAI-888). At 1× and 2× the axis is
+ * linear at {@link PX_PER_HOUR}. At Fit it is `width` px across, with every
+ * stretch in `folds` drawn {@link FOLD_PX} wide and the rest sharing what is
+ * left — however little that is: Fit fits. A stretch that would be narrower
+ * than {@link FOLD_PX} drawn as it is stays as it is. `width` of 0 — not
+ * measured yet — gives a linear Fit at a pixel a minute, which the next
+ * measure replaces.
+ */
+export function buildScale(
+  from: number,
+  to: number,
+  zoom: Zoom,
+  width: number,
+  folds: readonly Span[] = [],
+): Scale {
+  const a = from * 60;
+  const b = to * 60;
+  const pph = PX_PER_HOUR[zoom];
+  const segments: Segment[] = [];
+  if (pph !== undefined || folds.length === 0) {
+    const k = pph === undefined ? (width > 0 ? width / Math.max(1, b - a) : 1) : pph / 60;
+    segments.push({ t0: a, t1: b, p0: 0, p1: (b - a) * k, folded: false });
+  } else {
+    // A fold only where it makes room: on a phone a stretch may be narrower
+    // than FOLD_PX drawn as it is, and folding it would take width from the day.
+    const k0 = width / Math.max(1, b - a);
+    const sorted = [...folds]
+      .map((f) => ({ start: Math.max(a, f.start), end: Math.min(b, f.end) }))
+      .filter((f) => f.end > f.start && (f.end - f.start) * k0 > FOLD_PX)
+      .sort((x, y) => x.start - y.start);
+    const stretches: { readonly t0: number; readonly t1: number; readonly folded: boolean }[] = [];
+    let cursor = a;
+    for (const f of sorted) {
+      if (f.start > cursor) stretches.push({ t0: cursor, t1: f.start, folded: false });
+      stretches.push({ t0: f.start, t1: f.end, folded: true });
+      cursor = f.end;
+    }
+    if (cursor < b) stretches.push({ t0: cursor, t1: b, folded: false });
+    const open = stretches.filter((s) => !s.folded).reduce((n, s) => n + s.t1 - s.t0, 0);
+    const room = width > 0 ? Math.max(1, width - sorted.length * FOLD_PX) : open;
+    const k = open === 0 ? 1 : room / open;
+    let p = 0;
+    for (const s of stretches) {
+      const len = s.folded ? FOLD_PX : (s.t1 - s.t0) * k;
+      segments.push({ t0: s.t0, t1: s.t1, p0: p, p1: p + len, folded: s.folded });
+      p += len;
+    }
+  }
+  const total = segments.at(-1)?.p1 ?? 0;
+  const pos = (minute: number): number => {
+    if (minute <= a) return 0;
+    for (const s of segments) {
+      if (minute <= s.t1) return s.p0 + ((minute - s.t0) / (s.t1 - s.t0)) * (s.p1 - s.p0);
+    }
+    return total;
+  };
+  const at = (px: number): number => {
+    if (px <= 0) return a;
+    for (const s of segments) {
+      if (px <= s.p1) return s.t0 + ((px - s.p0) / Math.max(1e-6, s.p1 - s.p0)) * (s.t1 - s.t0);
+    }
+    return b;
+  };
+  const folded = (minute: number): boolean =>
+    segments.some((s) => s.folded && minute > s.t0 && minute < s.t1);
+  return { segments, total, pos, at, folded };
+}
+
+/** The agent's work inside a span: how long, how much of it on a card, and how many runs. */
+export function agentsDuring(
+  runs: readonly AgentRun[],
+  span: Span,
+): { readonly seconds: number; readonly onCardSeconds: number; readonly runs: number } {
+  let seconds = 0;
+  let onCardSeconds = 0;
+  let count = 0;
+  for (const run of runs) {
+    const overlap = Math.min(span.end, run.end) - Math.max(span.start, run.start);
+    if (overlap <= 0) continue;
+    const share = (run.seconds * overlap) / (run.end - run.start);
+    seconds += share;
+    if (run.onCard) onCardSeconds += share;
+    count += 1;
+  }
+  return { seconds: Math.round(seconds), onCardSeconds: Math.round(onCardSeconds), runs: count };
+}
+
+/** The signals that fell inside a span, by kind. */
+export function signalsDuring(
+  marks: readonly SignalMark[],
+  span: Span,
+): { readonly prompts: number; readonly commits: number } {
+  let prompts = 0;
+  let commits = 0;
+  for (const m of marks) {
+    const mid = m.start + SIGNAL_MINUTES / 2;
+    if (mid < span.start || mid >= span.end) continue;
+    if (m.kind === 'prompt') prompts += m.count;
+    else commits += m.count;
+  }
+  return { prompts, commits };
+}
+
+/**
+ * The day's minutes by kind, for the Timeline's header (the owner's design,
+ * LAI-888): confirmed, drafted on a card or General, drafted on nothing, and
+ * the gaps between. Every block counts, placed or not; gaps are the lane's.
+ */
+export function dayFigures(
+  view: Pick<MyDay, 'drafts' | 'entries'>,
+  gaps: readonly Span[],
+): {
+  readonly confirmed: number;
+  readonly drafted: number;
+  readonly needsCard: number;
+  readonly gaps: number;
+} {
+  return {
+    confirmed: view.entries.reduce((n, e) => n + e.minutes, 0),
+    drafted: view.drafts.reduce((n, d) => n + (needsCard(d) ? 0 : d.minutes), 0),
+    needsCard: view.drafts.reduce((n, d) => n + (needsCard(d) ? d.minutes : 0), 0),
+    gaps: gaps.reduce((n, g) => n + g.end - g.start, 0),
+  };
+}

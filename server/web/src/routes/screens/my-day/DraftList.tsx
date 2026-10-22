@@ -144,63 +144,62 @@ export function DraftList({
             {dayNeedCard > 0 ? needCardLine(dayNeedCard) : 'all ready to confirm'}
           </span>
         )}
-      </header>
-
-      {live.size > 0 && (
-        <div className="myday-bulk" role="group" aria-label="Selected blocks">
-          <span className="myday-bulk-count" data-bulk-count>
-            <strong>{live.size} selected</strong> · {duration(minutesOf(drafts, live))}
-          </span>
-          {chosenNeedCard > 0 && (
-            <span className="myday-bulk-warn" data-bulk-needcard>
-              {needCardLine(chosenNeedCard)} — left out of Confirm
+        {live.size > 0 && (
+          <div className="myday-bulk" role="group" aria-label="Selected blocks">
+            <span className="myday-bulk-count" data-bulk-count>
+              <strong>{live.size} selected</strong> · {duration(minutesOf(drafts, live))}
             </span>
-          )}
-          <span className="myday-bulk-actions">
-            <button
-              type="button"
-              className="myday-chip myday-chip-primary"
-              disabled={busy}
-              onClick={() => {
-                act('confirm');
-              }}
-            >
-              Confirm
-            </button>
-            <button
-              type="button"
-              className="myday-chip"
-              disabled={busy}
-              onClick={() => {
-                act('general');
-              }}
-            >
-              General
-            </button>
-            <button
-              type="button"
-              className="myday-chip"
-              disabled={busy}
-              onClick={() => {
-                act('dismiss');
-              }}
-            >
-              Not work
-            </button>
-            <button
-              type="button"
-              className="myday-chip"
-              disabled={busy}
-              onClick={() => {
-                setChecked(NO_SELECTION);
-                setAnchor(undefined);
-              }}
-            >
-              Clear
-            </button>
-          </span>
-        </div>
-      )}
+            {chosenNeedCard > 0 && (
+              <span className="myday-bulk-warn" data-bulk-needcard>
+                {needCardLine(chosenNeedCard)} — left out of Confirm
+              </span>
+            )}
+            <span className="myday-bulk-actions">
+              <button
+                type="button"
+                className="myday-chip myday-chip-primary"
+                disabled={busy}
+                onClick={() => {
+                  act('confirm');
+                }}
+              >
+                Confirm
+              </button>
+              <button
+                type="button"
+                className="myday-chip"
+                disabled={busy}
+                onClick={() => {
+                  act('general');
+                }}
+              >
+                General
+              </button>
+              <button
+                type="button"
+                className="myday-chip"
+                disabled={busy}
+                onClick={() => {
+                  act('dismiss');
+                }}
+              >
+                Not work
+              </button>
+              <button
+                type="button"
+                className="myday-chip"
+                disabled={busy}
+                onClick={() => {
+                  setChecked(NO_SELECTION);
+                  setAnchor(undefined);
+                }}
+              >
+                Clear
+              </button>
+            </span>
+          </div>
+        )}
+      </header>
 
       {batch.kind === 'running' && (
         <p className="myday-bulk-progress" role="status">
