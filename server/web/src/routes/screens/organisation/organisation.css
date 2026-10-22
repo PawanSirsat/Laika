@@ -1396,10 +1396,12 @@
   margin-bottom: var(--space-3);
 }
 
-/* A segmented group: the chosen one raised on a grey track. */
+/* A segmented group: the chosen one raised on a grey track. It shrinks and
+   scrolls rather than widening the card on a phone. */
 .org-seg {
   display: inline-flex;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 100%;
   overflow-x: auto;
   gap: 2px;
@@ -1442,6 +1444,11 @@
   font-family: var(--font-mono);
   font-size: var(--text-small);
   color: var(--text-muted);
+}
+
+/* A grid item of `.org-body`: without this its content sets its width. */
+.org-people-card {
+  min-width: 0;
 }
 
 /* Person · last sign-in · role · controls — one fixed shape for every row. */

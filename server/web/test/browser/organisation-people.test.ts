@@ -492,8 +492,14 @@ void describe('light and dark, wide and narrow', () => {
           );
           assert.equal(sideways, 0, `the page scrolls sideways by ${String(sideways)}px`);
 
-          // Every row's controls are inside its card.
+          // The card is inside the viewport — an ancestor clipping it would
+          // keep the page from scrolling and still cut the controls off.
           const card = await h.page.locator('.org-people-card').boundingBox();
+          assert.ok(
+            card !== null && card.x + card.width <= width + 1,
+            `the People card runs ${String(Math.round((card?.x ?? 0) + (card?.width ?? 0) - width))}px past the viewport`,
+          );
+          // Every row's controls are inside its card.
           for (const box of await h.page.locator('.org-people-card .org-deactivate').all()) {
             const b = await box.boundingBox();
             assert.ok(
