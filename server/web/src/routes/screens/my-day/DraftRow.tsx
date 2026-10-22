@@ -115,6 +115,10 @@ export function DraftRow({
           onCheck(event.target.checked, shifted(event));
         }}
       />
+      <span
+        className={on.ready ? 'myday-swatch' : 'myday-swatch myday-swatch-needs'}
+        aria-hidden="true"
+      />
       <button
         type="button"
         className="myday-row-select"

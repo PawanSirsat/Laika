@@ -11,7 +11,7 @@ import {
 import { Spinner } from '../../../components/Spinner.tsx';
 import { CardLink } from './CardLink.tsx';
 import { folderOf, needsACard } from './folder.ts';
-import { clock, duration, span } from './format.ts';
+import { agentDuration, clock, duration, span } from './format.ts';
 import { canChange, dayIn, dayLabel, minutesUnderstood, parseMinutes } from './my-day-derive.ts';
 import type { Selection } from './Timeline.tsx';
 import {
@@ -47,18 +47,46 @@ export interface InspectorActions {
   readonly unbreak: (id: string) => void;
 }
 
+/** How long the agent worked inside a span, and on how many runs (LAI-888). */
+export interface AgentsIn {
+  readonly seconds: number;
+  readonly onCardSeconds: number;
+  readonly runs: number;
+}
+
 export interface InspectorProps {
   readonly view: MyDay;
   readonly line: DayLine;
   readonly selection: Selection | undefined;
   /** The chips for a block whose own card is `own`. */
   readonly chipsFor: (own: TaskRef | null) => readonly TaskRef[];
+  /** The AGENTS lane inside a span — the editor's fourth tile and its line. */
+  readonly agentsIn?: (span: Span) => AgentsIn;
   readonly pending: string | undefined;
   readonly actions: InspectorActions;
   readonly onNavigate: (to: string) => void;
 }
 
-const COUNTS = ['prompts', 'sessions', 'commits', 'marks'] as const;
+/** The tiles under *Drafted from*, in the design's order; *agents* is the lane's. */
+const COUNTS = ['prompts', 'commits', 'marks'] as const;
+
+/** The design's glyph for each kind, as the Timeline draws it. */
+const ICONS = { drafted: '✎', needs: '?', confirmed: '✓', gap: '+', break: '‖' } as const;
+
+const agentMinutes = (seconds: number): number => Math.max(1, Math.round(seconds / 60));
+
+/** What the agent did inside a block, in one line — minutes, never what it typed. */
+function agentLine(during: AgentsIn | undefined): string {
+  if (during === undefined || during.runs === 0) {
+    return 'No agent ran in this time. Counts only, never what you typed.';
+  }
+  const worked = agentDuration(agentMinutes(during.seconds));
+  const onCard =
+    during.onCardSeconds > 0
+      ? `, ${agentDuration(agentMinutes(during.onCardSeconds))} of it on a card`
+      : ', on no card';
+  return `During this time an agent worked ${worked}${onCard}. Counts only, never what you typed.`;
+}
 
 const SOURCES: Readonly<Record<TimeEntry['source'], string>> = {
   draft: 'From a draft',
@@ -296,6 +324,7 @@ export function Inspector({
   line,
   selection,
   chipsFor,
+  agentsIn,
   pending,
   actions,
   onNavigate,
@@ -327,10 +356,22 @@ export function Inspector({
           aria-label="The selected drafted block"
         >
           <header className="inspector-head">
-            <span className="inspector-kind inspector-kind-drafted">Drafted</span>
+            <span
+              className={
+                ready
+                  ? 'inspector-kind inspector-kind-drafted'
+                  : 'inspector-kind inspector-kind-needs'
+              }
+            >
+              <span className="inspector-kind-icon" aria-hidden="true">
+                {ready ? ICONS.drafted : ICONS.needs}
+              </span>
+              {ready ? 'Drafted' : 'Needs a card'}
+            </span>
             <span className="inspector-range">{whenOf(draft)}</span>
             <span className="inspector-source">
-              {draft.source === 'agent' ? 'Proposed by an agent' : 'From your collector'}
+              {draft.source === 'agent' ? 'Proposed by an agent' : 'From your collector'} · only you
+              see it
               {draft.note !== null && ` · “${draft.note}”`}
             </span>
             <span className="inspector-head-gap" />
@@ -442,12 +483,21 @@ export function Inspector({
                     <dt>{kind}</dt>
                   </div>
                 ))}
+                <div className="inspector-count">
+                  <dd data-count="agents">
+                    {String(block === undefined ? 0 : (agentsIn?.(block).runs ?? 0))}
+                  </dd>
+                  <dt>agents</dt>
+                </div>
               </dl>
               {folderOf(draft) !== undefined && (
                 <p className="inspector-card" data-drafted-folder>
                   {folderOf(draft)}
                 </p>
               )}
+              <p className="inspector-note" data-agent-line>
+                {agentLine(block === undefined ? undefined : agentsIn?.(block))}
+              </p>
               <p className="inspector-note">
                 {folderOf(draft) === undefined
                   ? 'Counts only — never what you typed, file names or commit messages.'
@@ -459,9 +509,9 @@ export function Inspector({
           </div>
           <p className="inspector-keys">
             <kbd className="myday-kbd">↵</kbd> confirm <kbd className="myday-kbd">G</kbd> general{' '}
-            <kbd className="myday-kbd">X</kbd> not work <kbd className="myday-kbd">J</kbd>{' '}
-            <kbd className="myday-kbd">K</kbd> next / prev <kbd className="myday-kbd">?</kbd> all
-            keys
+            <kbd className="myday-kbd">X</kbd> not work <kbd className="myday-kbd">← →</kbd> move on
+            the timeline <kbd className="myday-kbd">J</kbd> <kbd className="myday-kbd">K</kbd> move
+            in the list <kbd className="myday-kbd">?</kbd> all keys
           </p>
         </section>
       );
@@ -502,10 +552,15 @@ export function Inspector({
           aria-label="The selected confirmed entry"
         >
           <header className="inspector-head">
-            <span className="inspector-kind inspector-kind-confirmed">Confirmed</span>
+            <span className="inspector-kind inspector-kind-confirmed">
+              <span className="inspector-kind-icon" aria-hidden="true">
+                {ICONS.confirmed}
+              </span>
+              Confirmed
+            </span>
             <span className="inspector-range">{whenOf(entry)}</span>
             <span className="inspector-source">
-              {SOURCES[entry.source]} · rev {String(entry.revision)}
+              {SOURCES[entry.source]} · others can see it · rev {String(entry.revision)}
               {!changeable && ' · change it in Solidtime'}
             </span>
             <span className="inspector-head-gap" />
@@ -606,6 +661,20 @@ export function Inspector({
                 </ol>
               )}
             </div>
+            {block !== undefined && agentsIn !== undefined && (
+              <div className="inspector-part">
+                <h3 className="inspector-label">Built from</h3>
+                <dl className="inspector-counts inspector-counts-one">
+                  <div className="inspector-count">
+                    <dd data-count="agents">{String(agentsIn(block).runs)}</dd>
+                    <dt>agents</dt>
+                  </div>
+                </dl>
+                <p className="inspector-note" data-agent-line>
+                  {agentLine(agentsIn(block))}
+                </p>
+              </div>
+            )}
             {changeable && (
               <form
                 className="inspector-part"
@@ -655,7 +724,12 @@ export function Inspector({
         aria-label="The picked gap"
       >
         <header className="inspector-head">
-          <span className="inspector-kind inspector-kind-gap">Gap</span>
+          <span className="inspector-kind inspector-kind-gap">
+            <span className="inspector-kind-icon" aria-hidden="true">
+              {ICONS.gap}
+            </span>
+            Gap
+          </span>
           <span className="inspector-range">{span(at(gap.start), at(gap.end), view.tz)}</span>
           <span className="inspector-source">
             {duration(gap.end - gap.start)} nothing on your day covers
@@ -701,7 +775,12 @@ export function Inspector({
           aria-label="The picked break"
         >
           <header className="inspector-head">
-            <span className="inspector-kind inspector-kind-break">Break</span>
+            <span className="inspector-kind inspector-kind-break">
+              <span className="inspector-kind-icon" aria-hidden="true">
+                {ICONS.break}
+              </span>
+              Break
+            </span>
             <span className="inspector-range">{span(at(b.start), at(b.end), view.tz)}</span>
             <span className="inspector-source">not time, and not a gap</span>
             <span className="inspector-head-gap" />
@@ -726,7 +805,7 @@ export function Inspector({
       <p className="inspector-empty">
         <strong>Nothing selected</strong>{' '}
         <span className="myday-quiet">
-          Pick a block on the day, or a row below, to review it here.
+          Pick a block on the timeline, or a row below, to edit it here.
         </span>
       </p>
     </section>

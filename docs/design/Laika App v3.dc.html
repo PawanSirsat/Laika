@@ -1,0 +1,1204 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Plus Jakarta Sans',system-ui,sans-serif;background:#f1f1f6;color:#16161d;-webkit-font-smoothing:antialiased}
+button,input,select{font-family:inherit}
+a{color:#6d28d9;text-decoration:underline;text-underline-offset:2px}
+a:hover{color:#5b21b6}
+</style>
+<script src="timeline-core.js"></script>
+</helmet>
+<div style="display:flex;height:100vh;overflow:hidden;font-size:14px">
+
+<!-- SIDEBAR -->
+<aside style="width:232px;flex-shrink:0;background:#fff;border-right:1px solid #e7e7ee;display:flex;flex-direction:column;position:relative">
+  <div style="display:flex;align-items:center;gap:10px;padding:14px 14px;border-bottom:1px solid #ececf2">
+    <div style="width:30px;height:30px;border-radius:8px;background:#16161d;display:flex;align-items:center;justify-content:center">
+      <div style="width:8px;height:8px;border-radius:50%;border:1.5px solid #fff"></div>
+    </div>
+    <div style="display:flex;flex-direction:column;min-width:0;flex:1">
+      <div style="font-weight:700;font-size:15px;line-height:18px">Laika</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#55555f">Kvell Dynamics</div>
+    </div>
+    <button style="white-space:nowrap;flex-shrink:0;width:26px;height:26px;border:1px solid #e3e3ea;border-radius:7px;background:#fff;color:#55555f;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center" title="Search">⌘K</button>
+  </div>
+
+  <nav style="flex:1;overflow:auto;padding:12px 8px;display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;flex-direction:column;gap:1px">
+      <sc-for list="{{ navWork }}" as="it" hint-placeholder-count="2">
+        <div onClick="{{ it.go }}" style="display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:8px;cursor:pointer;background:{{ it.bg }};color:{{ it.color }};font-weight:{{ it.weight }}" style-hover="background:#f4f2fa">
+          <div style="width:3px;height:14px;border-radius:2px;background:{{ it.bar }}"></div>
+          <span style="flex:1">{{ it.label }}</span>
+          <sc-if value="{{ it.hasCount }}"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:1px 7px;border-radius:10px;background:#efeff4;color:#55555f">{{ it.count }}</span></sc-if>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:1px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 10px 6px">
+        <span style="font-size:11px;font-weight:700;letter-spacing:.09em;color:#6b6b78">SPACES</span>
+        <span style="color:#6b6b78;font-size:16px;line-height:1;cursor:pointer">+</span>
+      </div>
+      <sc-for list="{{ navSpaces }}" as="it" hint-placeholder-count="4">
+        <div onClick="{{ it.go }}" style="display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:8px;cursor:pointer;background:{{ it.bg }};color:{{ it.color }};font-weight:{{ it.weight }}" style-hover="background:#f4f2fa">
+          <div style="width:3px;height:14px;border-radius:2px;background:{{ it.bar }}"></div>
+          <span style="width:16px;height:16px;border-radius:4px;background:{{ it.dot }};color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ it.initial }}</span>
+          <span style="flex:1">{{ it.label }}</span>
+        </div>
+      </sc-for>
+      <div style="display:flex;align-items:center;height:30px;padding:0 10px 0 21px;color:#6b6b78;font-size:13px;cursor:pointer;justify-content:space-between" style-hover="color:#16161d">
+        <span>More spaces</span><span>›</span>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:1px">
+      <div style="padding:0 10px 6px;font-size:11px;font-weight:700;letter-spacing:.09em;color:#6b6b78">ORGANISATION</div>
+      <sc-for list="{{ navOrg }}" as="it" hint-placeholder-count="3">
+        <div onClick="{{ it.go }}" style="display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:8px;cursor:pointer;background:{{ it.bg }};color:{{ it.color }};font-weight:{{ it.weight }}" style-hover="background:#f4f2fa">
+          <div style="width:3px;height:14px;border-radius:2px;background:{{ it.bar }}"></div>
+          <span style="flex:1">{{ it.label }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </nav>
+
+  <sc-if value="{{ menuOpen }}">
+    <div style="position:absolute;left:10px;right:10px;bottom:62px;background:#fff;border:1px solid #e3e3ea;border-radius:12px;box-shadow:0 12px 32px rgba(22,22,29,.12);padding:6px;z-index:5">
+      <div style="padding:8px 10px 10px;border-bottom:1px solid #efeff4;margin-bottom:4px">
+        <div style="font-weight:600">Pawan Sirsat</div>
+        <div style="font-size:12px;color:#6b6b78">pawan.sirsat@kvelld.co.za</div>
+      </div>
+      <div style="padding:8px 10px;border-radius:7px;cursor:pointer" style-hover="background:#f4f2fa">My profile</div>
+      <div style="padding:8px 10px;border-radius:7px;cursor:pointer;display:flex;justify-content:space-between" style-hover="background:#f4f2fa"><span>Switch to dark</span><span style="color:#8a8a96;font-size:12px">☾</span></div>
+      <div onClick="{{ goDev }}" style="padding:8px 10px;border-radius:7px;cursor:pointer" style-hover="background:#f4f2fa">Developer access</div>
+      <div style="padding:8px 10px;border-radius:7px;cursor:pointer;color:#c62536;border-top:1px solid #efeff4;margin-top:4px" style-hover="background:#fdf1f2">Sign out</div>
+    </div>
+  </sc-if>
+
+  <div style="border-top:1px solid #ececf2;padding:8px">
+    <div onClick="{{ toggleMenu }}" style="display:flex;align-items:center;gap:10px;padding:6px 8px;border-radius:9px;cursor:pointer" style-hover="background:#f4f2fa">
+      <div style="width:30px;height:30px;border-radius:50%;background:#d4283d;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">PS</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px;line-height:16px">Pawan Sirsat</div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#d4283d">OWNER</div>
+      </div>
+      <span style="color:#8a8a96;font-size:12px">⌃</span>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<main style="flex:1;min-width:0;overflow:auto;background:#f1f1f6">
+
+<!-- BOARD -->
+<sc-if value="{{ isBoard }}" hint-placeholder-val="{{ false }}">
+  <div style="display:flex;flex-direction:column;min-height:100%">
+    <div style="background:#fff;border-bottom:1px solid #e7e7ee;padding:14px 24px 0">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:30px;height:30px;border-radius:8px;background:#16161d;color:#fff;display:flex;align-items:flex-end;justify-content:center;gap:2px;padding-bottom:9px;box-sizing:border-box">
+          <span style="width:2px;height:6px;background:#fff"></span><span style="width:2px;height:10px;background:#fff"></span><span style="width:2px;height:8px;background:#fff"></span>
+        </div>
+        <div style="font-size:22px;font-weight:700;letter-spacing:-.01em">Laika</div>
+        <span style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;letter-spacing:.06em;color:#1f8a4c;background:#e8f6ee;border:1px solid #bfe5cd;padding:3px 9px;border-radius:20px"><span style="width:5px;height:5px;border-radius:50%;background:#1f8a4c"></span>LIVE</span>
+        <div style="flex:1"></div>
+        <button style="white-space:nowrap;flex-shrink:0;height:34px;padding:0 12px;border:1px solid #e3e3ea;border-radius:9px;background:#fff;font-size:13px;font-weight:500;display:flex;align-items:center;gap:8px;cursor:pointer"><span style="width:6px;height:6px;border-radius:50%;background:#1f8a4c"></span>Agents 1</button>
+        <button style="white-space:nowrap;flex-shrink:0;height:34px;padding:0 16px;border:0;border-radius:9px;background:#7c3aed;color:#fff;font-size:14px;font-weight:600;cursor:pointer" style-hover="background:#6d28d9">+ Create</button>
+      </div>
+      <div style="display:flex;align-items:flex-end;gap:4px;margin-top:10px;flex-wrap:wrap">
+        <sc-for list="{{ boardViews }}" as="t" hint-placeholder-count="4">
+          <div style="padding:8px 10px 10px;font-size:14px;font-weight:{{ t.weight }};color:{{ t.color }};border-bottom:2px solid {{ t.border }};cursor:pointer">{{ t.label }}</div>
+        </sc-for>
+        <div style="width:1px;height:18px;background:#e3e3ea;margin:0 8px 12px"></div>
+        <sc-for list="{{ boardPlan }}" as="t" hint-placeholder-count="4">
+          <div style="padding:8px 10px 10px;font-size:14px;color:#55555f;border-bottom:2px solid transparent;cursor:pointer" style-hover="color:#16161d">{{ t }}</div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="padding:14px 24px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <div style="flex:1;min-width:220px;max-width:420px;height:34px;border:1px solid #e3e3ea;border-radius:9px;background:#fff;display:flex;align-items:center;gap:8px;padding:0 12px;color:#8a8a96;font-size:13px">⌕ <span>Search board</span></div>
+      <button style="white-space:nowrap;flex-shrink:0;height:34px;padding:0 12px;border:1px solid #c9b5fb;border-radius:9px;background:#f3eefe;color:#6d28d9;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px">Filter <span style="background:#7c3aed;color:#fff;border-radius:10px;font-size:11px;padding:0 6px">1</span></button>
+      <button style="white-space:nowrap;flex-shrink:0;height:34px;padding:0 12px;border:1px solid #e3e3ea;border-radius:9px;background:#fff;font-size:13px">Group</button>
+      <button style="white-space:nowrap;flex-shrink:0;height:34px;padding:0 12px;border:1px solid #e3e3ea;border-radius:9px;background:#fff;font-size:13px;color:#55555f">1 hidden</button>
+      <div style="flex:1"></div>
+      <div style="display:flex;height:34px;border:1px solid #e3e3ea;border-radius:9px;background:#fff;overflow:hidden;font-size:12px;font-weight:700;letter-spacing:.04em">
+        <div style="padding:0 12px;display:flex;align-items:center;background:#f4f4f8;border-right:1px solid #e3e3ea">S9</div>
+        <div style="padding:0 12px;display:flex;align-items:center;gap:5px;border-right:1px solid #e3e3ea">DONE <span style="font-family:'JetBrains Mono',monospace">4/82</span></div>
+        <div style="padding:0 12px;display:flex;align-items:center;gap:5px;color:#c62536;border-right:1px solid #e3e3ea">BLK <span style="font-family:'JetBrains Mono',monospace">78</span></div>
+        <div style="padding:0 12px;display:flex;align-items:center;gap:5px">LEFT <span style="font-family:'JetBrains Mono',monospace">9</span></div>
+      </div>
+      <button style="white-space:nowrap;flex-shrink:0;width:34px;height:34px;border:1px solid #e3e3ea;border-radius:9px;background:#fff;font-size:15px;color:#55555f" title="Burndown, settings, refresh">⋯</button>
+    </div>
+    <div style="padding:10px 24px 12px;display:flex;align-items:center;gap:10px;font-size:13px">
+      <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;white-space:nowrap">FILTERED BY</span>
+      <span style="color:#6d28d9;background:#f3eefe;border:1px solid #d8c8fc;border-radius:20px;padding:3px 10px;white-space:nowrap">Sprint: S9 · Sprint 9 · Fix trust (P0 #1–6) ×</span>
+      <a href="#">Clear all</a>
+    </div>
+
+    <div style="flex:1;display:flex;gap:12px;padding:0 24px 24px;overflow-x:auto;align-items:flex-start">
+      <sc-for list="{{ columns }}" as="col" hint-placeholder-count="5">
+        <div style="width:272px;flex-shrink:0;background:#e9e9f0;border-radius:12px;padding:12px 10px 8px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px;padding:0 4px 4px">
+            <span style="width:7px;height:7px;border-radius:50%;background:{{ col.dot }}"></span>
+            <span style="font-size:12px;font-weight:700;letter-spacing:.07em;white-space:nowrap">{{ col.name }}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;background:#fff;border-radius:5px;padding:0 6px;color:#55555f">{{ col.count }}</span>
+          </div>
+          <sc-for list="{{ col.cards }}" as="c" hint-placeholder-count="3">
+            <div style="background:#fff;border:1px solid #e3e3ea;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:9px;cursor:pointer" style-hover="border-color:#c9b5fb">
+              <div style="font-size:14px;font-weight:500;line-height:20px;color:{{ col.ink }};display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ c.key }} · {{ c.title }}</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px">
+                <sc-for list="{{ c.tags }}" as="tg"><span style="font-size:11.5px;font-weight:500;padding:1px 7px;border-radius:5px;background:{{ tg.bg }};color:{{ tg.fg }};border:1px solid {{ tg.bd }}">{{ tg.t }}</span></sc-for>
+              </div>
+              <sc-if value="{{ c.blocked }}"><div style="font-size:12px;color:#c62536;background:#fdf1f2;border:1px solid #f6c9ce;border-radius:6px;padding:4px 8px">Blocked by {{ c.blocked }}</div></sc-if>
+              <div style="display:flex;align-items:center;gap:6px;border-top:1px solid #f0f0f4;padding-top:9px">
+                <svg width="12" height="12" viewBox="0 0 12 12"><path d="{{ c.priPath }}" fill="none" stroke="{{ c.priColor }}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:600;color:#3a3a44">{{ c.id }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;padding:0 5px;border:1px solid #d9dcf2;border-radius:4px;color:#4b55b8;background:#f2f4fd">{{ c.size }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;padding:0 5px;border:1px solid #d8c8fc;border-radius:4px;color:#6d28d9;background:#f6f1fe">S9</span>
+                <div style="flex:1"></div>
+                <div style="width:24px;height:24px;border-radius:50%;background:#d4283d;color:#fff;font-size:9.5px;font-weight:700;display:flex;align-items:center;justify-content:center">PS</div>
+              </div>
+            </div>
+          </sc-for>
+          <div style="padding:6px 6px 2px;color:#55555f;font-size:13px;cursor:pointer" style-hover="color:#16161d">+ Add task</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</sc-if>
+
+<!-- ORGANISATION -->
+<sc-if value="{{ isOrg }}" hint-placeholder-val="{{ true }}">
+  <div style="background:#fff;border-bottom:1px solid #e7e7ee;padding:22px 32px 0">
+    <div style="max-width:1120px;margin:0 auto">
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div style="width:48px;height:48px;border-radius:12px;background:#16161d;color:#fff;font-weight:800;font-size:16px;display:flex;align-items:center;justify-content:center;letter-spacing:.02em">KD</div>
+        <div style="flex:1;min-width:220px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div style="font-size:22px;font-weight:700;letter-spacing:-.01em;white-space:nowrap">Kvell Dynamics</div>
+            <span style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#6d28d9;background:#f3eefe;border:1px solid #d8c8fc;padding:2px 8px;border-radius:20px;white-space:nowrap">TEAM PLAN</span>
+          </div>
+          <div style="font-size:13px;color:#6b6b78;margin-top:3px;display:flex;gap:12px;flex-wrap:wrap"><span style="font-family:'JetBrains Mono',monospace">kvelld.co.za</span><span>Owner · Pawan Sirsat</span><span>Created 3 Mar 2026</span></div>
+        </div>
+        <button onClick="{{ goPeople }}" style="height:34px;padding:0 14px;border:0;border-radius:9px;background:#7c3aed;color:#fff;font-size:13px;font-weight:600;cursor:pointer" style-hover="background:#6d28d9">+ Invite people</button>
+      </div>
+      <div style="display:flex;gap:4px;margin-top:18px;flex-wrap:wrap">
+        <sc-for list="{{ orgTabs }}" as="t" hint-placeholder-count="4">
+          <div onClick="{{ t.go }}" style="padding:8px 12px 11px;font-size:14px;font-weight:{{ t.weight }};color:{{ t.color }};border-bottom:2px solid {{ t.border }};cursor:pointer;display:flex;gap:6px;align-items:center">{{ t.label }}<sc-if value="{{ t.hasCount }}"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#6b6b78">{{ t.count }}</span></sc-if></div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="max-width:1120px;margin:0 auto;padding:24px 32px 48px;display:flex;flex-direction:column;gap:20px">
+
+  <!-- Overview -->
+  <sc-if value="{{ tabOverview }}" hint-placeholder-val="{{ true }}">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+      <sc-for list="{{ orgStats }}" as="s" hint-placeholder-count="4">
+        <div onClick="{{ s.go }}" style="background:#fff;border:1px solid #e7e7ee;border-radius:12px;padding:16px 18px;cursor:pointer" style-hover="border-color:#c9b5fb">
+          <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78">{{ s.label }}</div>
+          <div style="font-size:28px;font-weight:700;margin-top:6px;letter-spacing:-.02em">{{ s.value }}</div>
+          <div style="font-size:12.5px;color:#6b6b78;margin-top:2px">{{ s.sub }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:20px;align-items:start">
+      <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+        <div style="padding:16px 20px;border-bottom:1px solid #efeff4;font-size:15px;font-weight:700">Workspace settings</div>
+        <div style="padding:6px 20px 8px">
+          <div style="padding:14px 0;border-bottom:1px solid #f2f2f6;display:flex;gap:16px">
+            <div style="flex:1">
+              <div style="font-weight:600">Presence</div>
+              <div style="font-size:13px;color:#6b6b78;margin-top:2px;line-height:19px">Sessions appear on Capacity and the board.</div>
+            </div>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:12px;background:#f2f2f6;border-radius:6px;padding:3px 8px;align-self:flex-start">recorded</span>
+          </div>
+          <div style="padding:14px 0;border-bottom:1px solid #f2f2f6;display:flex;gap:16px">
+            <div style="flex:1">
+              <div style="font-weight:600">Developer insights</div>
+              <div style="font-size:13px;color:#6b6b78;margin-top:2px;line-height:19px;text-wrap:pretty">When on, each developer can choose — for themselves, on Connect — to share daily counts from their own machine: prompts to agents, agent sessions, and commits pushed or not yet pushed. They appear on that person’s profile as activity. Nothing is collected from anyone who has not turned it on, and never prompt text, file or repository names, branches or commit messages. Off stops it for everyone at once.</div>
+            </div>
+            <div onClick="{{ toggleInsights }}" style="width:38px;height:22px;border-radius:12px;background:{{ swBg }};position:relative;cursor:pointer;flex-shrink:0;transition:background .15s">
+              <div style="position:absolute;top:3px;left:{{ swLeft }};width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s"></div>
+            </div>
+          </div>
+          <div style="padding:14px 0">
+            <div style="display:flex;gap:16px;align-items:center">
+              <div style="flex:1;font-weight:600">Time</div>
+              <div style="display:flex;background:#f2f2f6;border-radius:8px;padding:2px;gap:2px">
+                <sc-for list="{{ timeOpts }}" as="o" hint-placeholder-count="3">
+                  <div onClick="{{ o.go }}" style="padding:4px 12px;border-radius:6px;font-size:13px;cursor:pointer;background:{{ o.bg }};color:{{ o.color }};font-weight:{{ o.weight }};box-shadow:{{ o.shadow }}">{{ o.label }}</div>
+                </sc-for>
+              </div>
+            </div>
+            <div style="font-size:13px;color:#6b6b78;margin-top:6px;line-height:19px;text-wrap:pretty">Time is off for this organisation: nothing can be added or drafted. Per-person hours are never shown as a score. Leaving Drafts deletes every draft held; confirmed time stays.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+        <div style="padding:16px 20px;border-bottom:1px solid #efeff4;display:flex;justify-content:space-between;align-items:center"><span style="font-size:15px;font-weight:700">Recent admin activity</span><span onClick="{{ goSecurity }}" style="font-size:13px;color:#6d28d9;cursor:pointer">Full log →</span></div>
+        <div style="padding:4px 20px 10px">
+          <sc-for list="{{ auditShort }}" as="a" hint-placeholder-count="5">
+            <div style="display:flex;gap:12px;padding:11px 0;border-bottom:1px solid #f2f2f6">
+              <div style="width:26px;height:26px;border-radius:50%;background:{{ a.color }};color:#fff;font-size:9.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ a.ini }}</div>
+              <div style="flex:1;font-size:13px;line-height:19px"><span style="font-weight:600">{{ a.who }}</span> {{ a.what }}</div>
+              <div style="font-size:12px;color:#8a8a96;white-space:nowrap">{{ a.when }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+      <div style="padding:16px 20px;border-bottom:1px solid #efeff4;display:flex;justify-content:space-between;align-items:center"><span style="font-size:15px;font-weight:700">Spaces <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#6b6b78;font-weight:500;margin-left:4px">5</span></span><button style="white-space:nowrap;flex-shrink:0;height:30px;padding:0 12px;border:1px solid #dcdce4;border-radius:8px;background:#fff;font-size:13px;font-weight:500">+ New space</button></div>
+      <div style="overflow-x:auto">
+        <div style="min-width:640px">
+          <div style="display:grid;grid-template-columns:2fr 1.6fr 1fr 1fr 1fr;gap:12px;padding:10px 20px;font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;border-bottom:1px solid #f2f2f6"><span>SPACE</span><span>OWNER</span><span>MEMBERS</span><span>OPEN TASKS</span><span>STATUS</span></div>
+          <sc-for list="{{ spaces }}" as="s" hint-placeholder-count="5">
+            <div style="display:grid;grid-template-columns:2fr 1.6fr 1fr 1fr 1fr;gap:12px;padding:12px 20px;align-items:center;border-bottom:1px solid #f2f2f6;font-size:13.5px">
+              <div style="display:flex;align-items:center;gap:10px"><span style="width:22px;height:22px;border-radius:6px;background:{{ s.dot }};color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ s.ini }}</span><span style="font-weight:600">{{ s.name }}</span></div>
+              <div style="display:flex;align-items:center;gap:8px"><span style="width:22px;height:22px;border-radius:50%;background:{{ s.ownerColor }};color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ s.ownerIni }}</span>{{ s.owner }}</div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px">{{ s.members }}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px">{{ s.open }}</span>
+              <span style="font-size:12px;font-weight:600;color:{{ s.statusColor }}">{{ s.status }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- People -->
+  <sc-if value="{{ tabPeople }}" hint-placeholder-val="{{ false }}">
+    <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+      <div style="padding:14px 20px;border-bottom:1px solid #efeff4;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input value="{{ q }}" onChange="{{ setQ }}" placeholder="Search name or email" style="flex:1;min-width:200px;max-width:320px;height:34px;border:1px solid #e3e3ea;border-radius:9px;padding:0 12px;font-size:13px;outline:none;background:#fafafc">
+        <div style="display:flex;background:#f2f2f6;border-radius:8px;padding:2px;gap:2px">
+          <sc-for list="{{ roleOpts }}" as="o" hint-placeholder-count="4">
+            <div onClick="{{ o.go }}" style="padding:5px 12px;border-radius:6px;font-size:13px;cursor:pointer;background:{{ o.bg }};color:{{ o.color }};font-weight:{{ o.weight }};box-shadow:{{ o.shadow }}">{{ o.label }}</div>
+          </sc-for>
+        </div>
+        <div style="flex:1"></div>
+        <span style="font-size:13px;color:#6b6b78">{{ peopleCount }}</span>
+      </div>
+      <div style="overflow-x:auto">
+        <div style="min-width:820px">
+          <div style="display:grid;grid-template-columns:2.6fr 1.1fr .8fr .8fr 1.1fr 1.4fr;gap:12px;padding:10px 20px;font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;border-bottom:1px solid #f2f2f6"><span>PERSON</span><span>ROLE</span><span>SPACES</span><span>AGENTS</span><span>LAST ACTIVE</span><span></span></div>
+          <sc-for list="{{ people }}" as="p" hint-placeholder-count="5">
+            <div style="display:grid;grid-template-columns:2.6fr 1.1fr .8fr .8fr 1.1fr 1.4fr;gap:12px;padding:12px 20px;align-items:center;border-bottom:1px solid #f2f2f6" style-hover="background:#fbfafe">
+              <div style="display:flex;align-items:center;gap:12px;min-width:0">
+                <div style="width:34px;height:34px;border-radius:50%;background:{{ p.color }};color:#fff;font-size:11.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ p.ini }}</div>
+                <div style="min-width:0">
+                  <div style="display:flex;align-items:center;gap:6px"><span style="font-weight:600;text-decoration:underline;text-decoration-color:#d4d4dc;text-underline-offset:3px">{{ p.name }}</span><sc-if value="{{ p.you }}"><span style="font-size:10.5px;font-weight:700;letter-spacing:.06em;color:#6d28d9;background:#f3eefe;border:1px solid #d8c8fc;padding:0 6px;border-radius:5px">YOU</span></sc-if></div>
+                  <div style="font-size:12.5px;color:#6b6b78">{{ p.email }}</div>
+                </div>
+              </div>
+              <div>
+                <sc-if value="{{ p.isOwner }}"><span style="font-size:13px;font-weight:600">Owner</span></sc-if>
+                <sc-if value="{{ p.editable }}"><span style="display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 10px;border:1px solid #dcdce4;border-radius:8px;font-size:13px;cursor:pointer">{{ p.role }} <span style="color:#8a8a96;font-size:10px">▾</span></span></sc-if>
+              </div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px">{{ p.spaces }}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:{{ p.agentDot }}"></span>{{ p.agents }}</span>
+              <span style="font-size:13px;color:{{ p.activeColor }}">{{ p.last }}</span>
+              <div style="display:flex;gap:6px;justify-content:flex-end">
+                <sc-if value="{{ p.editable }}">
+                  <button style="white-space:nowrap;flex-shrink:0;height:30px;padding:0 10px;border:1px solid #dcdce4;border-radius:8px;background:#fff;font-size:12.5px;cursor:pointer">Tokens</button>
+                  <button style="white-space:nowrap;flex-shrink:0;height:30px;padding:0 10px;border:1px solid #f3b9c0;border-radius:8px;background:#fff;color:#c62536;font-size:12.5px;cursor:pointer" style-hover="background:#fdf1f2">Deactivate</button>
+                </sc-if>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="padding:12px 20px 16px;font-size:12.5px;color:#6b6b78;line-height:18px;max-width:760px">Your own row has no controls — changing your own role or locking yourself out is not something this screen offers. Project roles are managed on each project’s members screen.</div>
+    </div>
+
+    <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+      <div style="padding:16px 20px;border-bottom:1px solid #efeff4;font-size:15px;font-weight:700">Invite people</div>
+      <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input placeholder="name@company.com — or leave blank for a link" style="flex:1;min-width:240px;height:38px;border:1px solid #dcdce4;border-radius:9px;padding:0 12px;font-size:13.5px;outline:none">
+          <span style="display:inline-flex;align-items:center;gap:10px;height:38px;padding:0 12px;border:1px solid #dcdce4;border-radius:9px;font-size:13.5px">Member <span style="color:#8a8a96;font-size:10px">▾</span></span>
+          <button style="white-space:nowrap;flex-shrink:0;height:38px;padding:0 16px;border:0;border-radius:9px;background:#7c3aed;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer" style-hover="background:#6d28d9">Send invite</button>
+        </div>
+        <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78">PENDING · 1</div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px dashed #dcdce4;border-radius:10px;flex-wrap:wrap">
+          <div style="flex:1;min-width:220px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-weight:600">Anyone with the link</span><span style="font-size:10.5px;font-weight:700;letter-spacing:.06em;background:#efeff4;color:#55555f;padding:1px 6px;border-radius:5px">MEMBER</span></div>
+            <div style="font-size:12.5px;color:#6b6b78;margin-top:2px">expires in 2 days · not emailed — send the link yourself</div>
+          </div>
+          <button style="white-space:nowrap;flex-shrink:0;height:30px;padding:0 10px;border:1px solid #dcdce4;border-radius:8px;background:#fff;font-size:12.5px">Copy link</button>
+          <button style="white-space:nowrap;flex-shrink:0;height:30px;padding:0 10px;border:1px solid #f3b9c0;border-radius:8px;background:#fdf1f2;color:#c62536;font-size:12.5px">Revoke</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- Integrations -->
+  <sc-if value="{{ tabIntegrations }}" hint-placeholder-val="{{ false }}">
+    <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+      <div style="padding:16px 20px;border-bottom:1px solid #efeff4;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:15px;font-weight:700">GitHub webhook</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;background:#e8f6ee;color:#1f8a4c;border:1px solid #bfe5cd;border-radius:5px;padding:1px 7px">secret set</span>
+        <div style="flex:1"></div>
+        <button style="white-space:nowrap;flex-shrink:0;height:30px;padding:0 12px;border:1px solid #dcdce4;border-radius:8px;background:#fff;font-size:13px;font-weight:500">Rotate secret</button>
+        <button style="white-space:nowrap;flex-shrink:0;height:30px;padding:0 12px;border:1px solid #f3b9c0;border-radius:8px;background:#fdf1f2;color:#c62536;font-size:13px;font-weight:500">Clear</button>
+      </div>
+      <div style="padding:16px 20px;font-size:13.5px;color:#55555f;line-height:20px;max-width:760px;text-wrap:pretty">GitHub tells Laika about pushes, pull requests and CI, and that is what turns an agent’s claimed proof into confirmed or failed on the Review page. Laika never calls GitHub; it only reads what GitHub sends here.</div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1px;background:#efeff4;border-top:1px solid #efeff4;border-bottom:1px solid #efeff4">
+        <sc-for list="{{ hookStats }}" as="s" hint-placeholder-count="4">
+          <div style="background:#fff;padding:14px 20px">
+            <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78">{{ s.label }}</div>
+            <div style="font-size:20px;font-weight:700;margin-top:4px;color:{{ s.color }}">{{ s.value }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr))">
+        <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px;border-right:1px solid #efeff4">
+          <div>
+            <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;margin-bottom:6px">PAYLOAD URL</div>
+            <div style="display:flex;gap:6px"><code style="flex:1;font-family:'JetBrains Mono',monospace;font-size:12.5px;background:#f4f4f8;border:1px solid #e7e7ee;border-radius:8px;padding:8px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">http://52.72.203.206/webhooks/github</code><button style="white-space:nowrap;flex-shrink:0;padding:0 12px;border:1px solid #dcdce4;border-radius:8px;background:#fff;font-size:12.5px">Copy</button></div>
+          </div>
+          <div style="display:flex;gap:24px;flex-wrap:wrap">
+            <div><div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;margin-bottom:6px">CONTENT TYPE</div><code style="font-family:'JetBrains Mono',monospace;font-size:12.5px">application/json</code></div>
+            <div><div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;margin-bottom:6px">SECRET</div><div style="font-size:13px;color:#55555f">Set, and not shown again. Rotate it to make a new one.</div></div>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;margin-bottom:6px">EVENTS</div>
+            <div style="font-size:13px;color:#55555f;margin-bottom:8px"><em>Let me select individual events</em>, then tick:</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              <sc-for list="{{ events }}" as="e" hint-placeholder-count="6"><span style="font-size:12.5px;padding:3px 9px;border:1px solid #e3e3ea;border-radius:6px;background:#fafafc">✓ {{ e }}</span></sc-for>
+            </div>
+          </div>
+        </div>
+        <div style="padding:16px 20px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;margin-bottom:6px">RECENT DELIVERIES</div>
+          <sc-for list="{{ deliveries }}" as="d" hint-placeholder-count="6">
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f2f2f6;font-size:13px">
+              <span style="width:7px;height:7px;border-radius:50%;background:{{ d.dot }}"></span>
+              <code style="font-family:'JetBrains Mono',monospace;font-size:12px;flex:1">{{ d.event }}</code>
+              <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:{{ d.dot }}">{{ d.code }}</code>
+              <span style="font-size:12px;color:#8a8a96;width:64px;text-align:right">{{ d.when }}</span>
+            </div>
+          </sc-for>
+          <div style="font-size:12.5px;color:#6b6b78;line-height:18px;margin-top:10px;text-wrap:pretty">GitHub does not retry a failed delivery: one sent while Laika restarts — every deploy — is lost unless you press <em>Redeliver</em> on the webhook’s <em>Recent Deliveries</em> page.</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px;padding:16px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+      <div style="flex:1;min-width:260px">
+        <div style="display:flex;align-items:center;gap:10px"><span style="font-size:15px;font-weight:700">AI provider</span><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;background:#f2f2f6;border-radius:5px;padding:1px 7px">none</span></div>
+        <div style="font-size:13px;color:#6b6b78;margin-top:4px">Meeting reviews need one; without it a transcript is accepted and no proposals come back.</div>
+      </div>
+      <button style="white-space:nowrap;flex-shrink:0;height:34px;padding:0 14px;border:1px solid #dcdce4;border-radius:9px;background:#fff;font-size:13px;font-weight:600">Connect provider</button>
+    </div>
+  </sc-if>
+
+  <!-- Security -->
+  <sc-if value="{{ tabSecurity }}" hint-placeholder-val="{{ false }}">
+    <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+      <div style="padding:16px 20px;border-bottom:1px solid #efeff4"><div style="font-size:15px;font-weight:700">Default roles &amp; permissions</div><div style="font-size:13px;color:#6b6b78;margin-top:2px">Applies org-wide. Project roles can narrow these on each project’s members screen.</div></div>
+      <div style="overflow-x:auto">
+        <div style="min-width:640px">
+          <div style="display:grid;grid-template-columns:2.4fr repeat(4,1fr);padding:10px 20px;font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;border-bottom:1px solid #f2f2f6"><span>PERMISSION</span><span style="text-align:center">OWNER</span><span style="text-align:center">ADMIN</span><span style="text-align:center">MEMBER</span><span style="text-align:center">VIEWER</span></div>
+          <sc-for list="{{ perms }}" as="r" hint-placeholder-count="6">
+            <div style="display:grid;grid-template-columns:2.4fr repeat(4,1fr);padding:11px 20px;border-bottom:1px solid #f2f2f6;font-size:13.5px;align-items:center">
+              <span>{{ r.label }}</span>
+              <sc-for list="{{ r.cells }}" as="c"><span style="text-align:center;font-weight:700;color:{{ c.color }}">{{ c.v }}</span></sc-for>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px;padding:6px 20px">
+      <div style="padding:12px 0;border-bottom:1px solid #f2f2f6;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:240px"><div style="font-weight:600">Maximum token lifetime</div><div style="font-size:13px;color:#6b6b78;margin-top:2px">New tokens can’t be created with a longer expiry.</div></div>
+        <span style="display:inline-flex;align-items:center;gap:10px;height:32px;padding:0 12px;border:1px solid #dcdce4;border-radius:8px;font-size:13px">90 days <span style="color:#8a8a96;font-size:10px">▾</span></span>
+      </div>
+      <div style="padding:12px 0;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:240px"><div style="font-weight:600">Viewer tokens</div><div style="font-size:13px;color:#6b6b78;margin-top:2px">A Viewer’s token is forced to <code style="font-family:'JetBrains Mono',monospace;color:#6d28d9">read_only</code> by the server, whatever is asked for.</div></div>
+        <span onClick="{{ goDev }}" style="font-size:13px;color:#6d28d9;cursor:pointer">Manage tokens →</span>
+      </div>
+    </div>
+
+    <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+      <div style="padding:14px 20px;border-bottom:1px solid #efeff4;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span style="font-size:15px;font-weight:700;flex:1">Audit log</span><button style="white-space:nowrap;flex-shrink:0;height:30px;padding:0 12px;border:1px solid #dcdce4;border-radius:8px;background:#fff;font-size:13px">Export CSV</button></div>
+      <div style="padding:0 20px 8px">
+        <sc-for list="{{ audit }}" as="a" hint-placeholder-count="8">
+          <div style="display:grid;grid-template-columns:120px 1fr auto;gap:14px;padding:10px 0;border-bottom:1px solid #f2f2f6;font-size:13px;align-items:center">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#8a8a96">{{ a.ts }}</span>
+            <span><span style="font-weight:600">{{ a.who }}</span> {{ a.what }}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#55555f;background:#f2f2f6;border-radius:5px;padding:1px 7px">{{ a.kind }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="background:#fff;border:1px solid #f3b9c0;border-radius:12px">
+      <div style="padding:14px 20px;border-bottom:1px solid #f8dade;font-size:15px;font-weight:700;color:#c62536">Danger zone</div>
+      <div style="padding:6px 20px">
+        <div style="padding:12px 0;border-bottom:1px solid #f8e6e8;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+          <div style="flex:1;min-width:240px"><div style="font-weight:600">Transfer ownership</div><div style="font-size:13px;color:#6b6b78;margin-top:2px">Hand the Owner role to an Admin. You become an Admin.</div></div>
+          <button style="white-space:nowrap;flex-shrink:0;height:32px;padding:0 14px;border:1px solid #f3b9c0;border-radius:8px;background:#fff;color:#c62536;font-size:13px;font-weight:600">Transfer…</button>
+        </div>
+        <div style="padding:12px 0;display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+          <div style="flex:1;min-width:240px"><div style="font-weight:600">Delete organisation</div><div style="font-size:13px;color:#6b6b78;margin-top:2px">Removes every space, task, token and invite for Kvell Dynamics. This can’t be undone.</div></div>
+          <button style="white-space:nowrap;flex-shrink:0;height:32px;padding:0 14px;border:0;border-radius:8px;background:#c62536;color:#fff;font-size:13px;font-weight:600">Delete organisation</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+  </div>
+</sc-if>
+
+<!-- DEVELOPER ACCESS -->
+<sc-if value="{{ isDev }}" hint-placeholder-val="{{ false }}">
+  <div style="background:#fff;border-bottom:1px solid #e7e7ee;padding:22px 32px 20px">
+    <div style="max-width:1120px;margin:0 auto;display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:1;min-width:280px">
+        <div style="font-size:22px;font-weight:700;letter-spacing:-.01em">Developer access</div>
+        <div style="font-size:13.5px;color:#55555f;margin-top:6px;line-height:20px;max-width:720px;text-wrap:pretty">A token lets a tool act as you — point your coding agent at this board, or call the API. It carries your permissions, so treat it like your password.</div>
+      </div>
+      <button style="white-space:nowrap;flex-shrink:0;height:34px;padding:0 14px;border:0;border-radius:9px;background:#7c3aed;color:#fff;font-size:13px;font-weight:600;cursor:pointer" style-hover="background:#6d28d9">+ New token</button>
+    </div>
+  </div>
+  <div style="max-width:1120px;margin:0 auto;padding:24px 32px 48px;display:flex;flex-direction:column;gap:20px">
+    <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+      <div style="padding:16px 20px;border-bottom:1px solid #efeff4;font-size:15px;font-weight:700">Connect an agent</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))">
+        <div style="padding:18px 20px;border-right:1px solid #efeff4">
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px"><span style="width:22px;height:22px;border-radius:50%;background:#7c3aed;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center">1</span><span style="font-weight:600">Pick your agent</span></div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <sc-for list="{{ agents }}" as="a" hint-placeholder-count="3">
+              <div onClick="{{ a.go }}" style="padding:6px 12px;border-radius:8px;font-size:13px;cursor:pointer;border:1px solid {{ a.bd }};background:{{ a.bg }};color:{{ a.color }};font-weight:{{ a.weight }}">{{ a.label }}</div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="padding:18px 20px;border-right:1px solid #efeff4">
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px"><span style="width:22px;height:22px;border-radius:50%;background:#7c3aed;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center">2</span><span style="font-weight:600">Create a token</span></div>
+          <div style="font-size:13px;color:#55555f;line-height:19px;margin-bottom:10px">Named <code style="font-family:'JetBrains Mono',monospace;font-size:12px">{{ agentSlug }} on macOS</code>, scope <code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#c62536">full</code>, all projects.</div>
+          <button style="white-space:nowrap;flex-shrink:0;height:32px;padding:0 12px;border:1px solid #c9b5fb;border-radius:8px;background:#f3eefe;color:#6d28d9;font-size:13px;font-weight:600">Generate token</button>
+        </div>
+        <div style="padding:18px 20px">
+          <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px"><span style="width:22px;height:22px;border-radius:50%;background:#7c3aed;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center">3</span><span style="font-weight:600">Run in your repo</span></div>
+          <pre style="margin:0;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:19px;background:#16161d;color:#e9e6f5;border-radius:8px;padding:10px 12px;white-space:pre-wrap">{{ cliCmd }}</pre>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+      <div style="padding:16px 20px;border-bottom:1px solid #efeff4;display:flex;align-items:center;gap:8px"><span style="font-size:15px;font-weight:700">Your tokens</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#6b6b78">7</span></div>
+      <div style="overflow-x:auto">
+        <div style="min-width:820px">
+          <div style="display:grid;grid-template-columns:2.4fr .8fr 1fr 1fr 1.1fr 90px;gap:12px;padding:10px 20px;font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;border-bottom:1px solid #f2f2f6"><span>NAME</span><span>SCOPE</span><span>LAST USED</span><span>PROJECTS</span><span>EXPIRES</span><span></span></div>
+          <sc-for list="{{ tokens }}" as="t" hint-placeholder-count="7">
+            <div style="display:grid;grid-template-columns:2.4fr .8fr 1fr 1fr 1.1fr 90px;gap:12px;padding:12px 20px;align-items:center;border-bottom:1px solid #f2f2f6;font-size:13.5px" style-hover="background:#fbfafe">
+              <div style="display:flex;align-items:center;gap:10px;min-width:0"><span style="font-weight:600;white-space:nowrap">{{ t.name }}</span><code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#6b6b78">{{ t.id }}</code></div>
+              <span><code style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#c62536;background:#fdf1f2;border:1px solid #f3b9c0;border-radius:20px;padding:1px 8px">full</code></span>
+              <span style="color:{{ t.usedColor }};font-size:13px">{{ t.used }}</span>
+              <span style="font-size:13px;color:#55555f">All projects</span>
+              <span style="font-size:13px;color:#55555f">{{ t.exp }}</span>
+              <div style="text-align:right"><button style="white-space:nowrap;flex-shrink:0;height:28px;padding:0 10px;border:1px solid #f3b9c0;border-radius:7px;background:#fff;color:#c62536;font-size:12.5px;cursor:pointer" style-hover="background:#fdf1f2">Revoke</button></div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px;padding:16px 20px;display:flex;flex-direction:column;gap:10px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78">SCOPE REFERENCE</div>
+      <div style="display:grid;grid-template-columns:110px 1fr;gap:10px 16px;font-size:13.5px;align-items:baseline">
+        <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#6d28d9;background:#f3eefe;border:1px solid #d8c8fc;border-radius:5px;padding:1px 7px;justify-self:start">full</code><span>Everything you can do. A tool holding it can create, edit and move tasks, comment, and run agent sessions as you.</span>
+        <code style="font-family:'JetBrains Mono',monospace;font-size:12.5px;color:#6d28d9;background:#f3eefe;border:1px solid #d8c8fc;border-radius:5px;padding:1px 7px;justify-self:start">read_only</code><span>Reads anything you can see and writes nothing. A Viewer's token is forced to this by the server, whatever is asked for here.</span>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<!-- INSIGHTS -->
+<sc-if value="{{ isInsights }}" hint-placeholder-val="{{ false }}">
+  <div style="background:#fff;border-bottom:1px solid #e7e7ee;padding:22px 32px 0">
+    <div style="max-width:1120px;margin:0 auto">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div style="font-size:22px;font-weight:700;letter-spacing:-.01em;flex:1">Insights</div>
+        <div style="display:flex;background:#f2f2f6;border-radius:8px;padding:2px;gap:2px;font-size:13px">
+          <div style="padding:4px 12px;border-radius:6px;color:#55555f">Today</div>
+          <div style="padding:4px 12px;border-radius:6px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.08);font-weight:600">7 days</div>
+          <div style="padding:4px 12px;border-radius:6px;color:#55555f">30 days</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:4px;margin-top:16px">
+        <sc-for list="{{ insTabs }}" as="t" hint-placeholder-count="2">
+          <div onClick="{{ t.go }}" style="padding:8px 12px 11px;font-size:14px;font-weight:{{ t.weight }};color:{{ t.color }};border-bottom:2px solid {{ t.border }};cursor:pointer">{{ t.label }}</div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+  <div style="max-width:1120px;margin:0 auto;padding:24px 32px 48px;display:flex;flex-direction:column;gap:20px">
+    <sc-if value="{{ insCapacity }}" hint-placeholder-val="{{ true }}">
+      <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+        <div style="padding:16px 20px;border-bottom:1px solid #efeff4"><div style="font-size:15px;font-weight:700">Who’s working on what</div><div style="font-size:13px;color:#6b6b78;margin-top:2px">Sessions appear on Capacity and the board.</div></div>
+        <div style="overflow-x:auto"><div style="min-width:720px">
+          <div style="display:grid;grid-template-columns:2fr 2.4fr .9fr .9fr .9fr;gap:14px;padding:10px 20px;font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;border-bottom:1px solid #f2f2f6"><span>PERSON</span><span>AGENT SESSIONS</span><span style="white-space:nowrap">IN PROGRESS</span><span style="white-space:nowrap">IN REVIEW</span><span style="white-space:nowrap">LIVE NOW</span></div>
+          <sc-for list="{{ capacity }}" as="p" hint-placeholder-count="5">
+            <div style="display:grid;grid-template-columns:2fr 2.4fr .9fr .9fr .9fr;gap:14px;padding:12px 20px;border-bottom:1px solid #f2f2f6;align-items:center;font-size:13.5px">
+              <div style="display:flex;align-items:center;gap:10px"><span style="width:28px;height:28px;border-radius:50%;background:{{ p.color }};color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">{{ p.ini }}</span><span style="font-weight:600">{{ p.name }}</span></div>
+              <div style="display:flex;align-items:center;gap:10px"><div style="flex:1;height:8px;background:#f0eef7;border-radius:4px;overflow:hidden"><div style="height:100%;width:{{ p.pct }};background:#7c3aed;border-radius:4px"></div></div><span style="font-family:'JetBrains Mono',monospace;font-size:12px;width:28px;text-align:right">{{ p.sessions }}</span></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px">{{ p.prog }}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px">{{ p.rev }}</span>
+              <span style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:{{ p.liveColor }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ p.liveColor }}"></span>{{ p.live }}</span>
+            </div>
+          </sc-for>
+        </div></div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ insUsage }}" hint-placeholder-val="{{ false }}">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+        <sc-for list="{{ usageStats }}" as="s" hint-placeholder-count="3">
+          <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px;padding:16px 18px">
+            <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78">{{ s.label }}</div>
+            <div style="font-size:26px;font-weight:700;margin-top:6px;letter-spacing:-.02em">{{ s.value }}</div>
+            <div style="font-size:12.5px;color:#6b6b78;margin-top:2px">{{ s.sub }}</div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+        <div style="padding:16px 20px;border-bottom:1px solid #efeff4;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:15px;font-weight:700">Model prices</span><code style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#6b6b78">table of 2026-10-18</code>
+        </div>
+        <div style="padding:14px 20px 4px;font-size:13px;color:#55555f;line-height:19px;max-width:760px;text-wrap:pretty">Every cost on Usage is <strong style="color:#16161d">API-equivalent, not your bill</strong>: these list prices on the vendor’s API, in dollars per million tokens, applied to the tokens Laika counted. Laika never fetches a price. Cache writes are priced at the five-minute rate.</div>
+        <div style="overflow-x:auto"><div style="min-width:820px">
+          <div style="display:grid;grid-template-columns:2fr .8fr .8fr .9fr .9fr 2fr 50px;gap:12px;padding:10px 20px;font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;border-bottom:1px solid #f2f2f6"><span>MODEL</span><span>INPUT</span><span>OUTPUT</span><span>CACHE WRITE</span><span>CACHE READ</span><span>PRICE FROM</span><span></span></div>
+          <sc-for list="{{ prices }}" as="m" hint-placeholder-count="7">
+            <div style="display:grid;grid-template-columns:2fr .8fr .8fr .9fr .9fr 2fr 50px;gap:12px;padding:11px 20px;border-bottom:1px solid #f2f2f6;font-family:'JetBrains Mono',monospace;font-size:12.5px;align-items:baseline">
+              <span style="font-weight:600">{{ m.id }}</span><span>{{ m.i }}</span><span>{{ m.o }}</span><span>{{ m.cw }}</span><span>{{ m.cr }}</span>
+              <div style="font-family:Figtree,sans-serif;font-size:12.5px"><a href="#">platform.claude.com · 2026-10-18</a><sc-if value="{{ m.hasNote }}"><div style="color:#6b6b78;margin-top:3px;line-height:17px">{{ m.note }}</div></sc-if></div>
+              <a href="#" style="font-family:Figtree,sans-serif;font-size:12.5px;text-align:right">Edit</a>
+            </div>
+          </sc-for>
+        </div></div>
+        <div style="padding:14px 20px;display:flex;gap:8px;flex-wrap:wrap">
+          <input placeholder="model id, e.g. gpt-5.1-codex-mini" style="flex:1;min-width:240px;height:36px;border:1px solid #dcdce4;border-radius:9px;padding:0 12px;font-size:13px;outline:none">
+          <button style="white-space:nowrap;flex-shrink:0;height:36px;padding:0 14px;border:1px solid #dcdce4;border-radius:9px;background:#fff;font-size:13px;font-weight:600">Price a model</button>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</sc-if>
+
+<!-- INBOX -->
+<sc-if value="{{ isInbox }}" hint-placeholder-val="{{ false }}">
+  <div style="background:#fff;border-bottom:1px solid #e7e7ee;padding:22px 32px 0">
+    <div style="max-width:1120px;margin:0 auto">
+      <div style="font-size:22px;font-weight:700;letter-spacing:-.01em">Inbox</div>
+      <div style="display:flex;gap:4px;margin-top:16px">
+        <sc-for list="{{ inboxTabs }}" as="t" hint-placeholder-count="2">
+          <div onClick="{{ t.go }}" style="padding:8px 12px 11px;font-size:14px;font-weight:{{ t.weight }};color:{{ t.color }};border-bottom:2px solid {{ t.border }};cursor:pointer;display:flex;gap:6px;align-items:center">{{ t.label }}<span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#6b6b78">{{ t.count }}</span></div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+  <div style="max-width:1120px;margin:0 auto;padding:24px 32px 48px">
+    <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+      <div style="padding:14px 20px;border-bottom:1px solid #efeff4;font-size:13px;color:#6b6b78">{{ inboxHint }}</div>
+      <sc-for list="{{ inboxRows }}" as="r" hint-placeholder-count="5">
+        <div style="display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid #f2f2f6;font-size:13.5px;flex-wrap:wrap" style-hover="background:#fbfafe">
+          <code style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;width:96px">{{ r.id }}</code>
+          <span style="flex:1;min-width:200px">{{ r.title }}</span>
+          <span style="font-size:12px;font-weight:600;padding:2px 8px;border-radius:20px;color:{{ r.fg }};background:{{ r.bg }}">{{ r.status }}</span>
+          <span style="font-size:12px;color:#8a8a96;width:60px;text-align:right">{{ r.when }}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</sc-if>
+
+<!-- MY DAY -->
+<sc-if value="{{ isMyday }}" hint-placeholder-val="{{ true }}">
+  <div style="background:#fff;border-bottom:1px solid #e7e7ee;padding:22px 32px 18px">
+    <div style="max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:240px">
+          <div style="font-size:22px;font-weight:700;letter-spacing:-.01em">My day</div>
+          <div style="font-size:13px;color:#6b6b78;margin-top:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="white-space:nowrap">Thursday 22 October · today</span><span style="width:3px;height:3px;border-radius:50%;background:#b4b4bf"></span>
+            <span style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap"><svg width="11" height="11" viewBox="0 0 12 12"><rect x="2" y="5.5" width="8" height="5.5" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.3"></rect><path d="M4 5.5V4a2 2 0 0 1 4 0v1.5" fill="none" stroke="currentColor" stroke-width="1.3"></path></svg>Only you see drafts</span>
+          </div>
+        </div>
+        <div onClick="{{ mdToggleDraft }}" style="display:flex;align-items:center;gap:10px;height:34px;padding:0 10px 0 12px;border:1px solid #e3e3ea;border-radius:9px;cursor:pointer;font-size:13px;font-weight:500;white-space:nowrap" style-hover="border-color:#c9b5fb">
+          Draft my time
+          <div style="width:30px;height:18px;border-radius:10px;background:{{ mdSwBg }};position:relative;transition:background .15s"><div style="position:absolute;top:2px;left:{{ mdSwLeft }};width:14px;height:14px;border-radius:50%;background:#fff;transition:left .15s"></div></div>
+        </div>
+        <sc-if value="{{ mdHasDrafts }}" hint-placeholder-val="{{ true }}">
+          <button onClick="{{ mdConfirmDay }}" title="{{ mdConfirmTitle }}" style="height:34px;padding:0 14px;border:0;border-radius:9px;background:#7c3aed;color:#fff;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap" style-hover="background:#6d28d9">{{ mdConfirmLabel }}</button>
+        </sc-if>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px">
+        <sc-for list="{{ mdWeek }}" as="d" hint-placeholder-count="7">
+          <div style="border:1px solid {{ d.bd }};background:{{ d.bg }};opacity:{{ d.opacity }};border-radius:10px;padding:8px 10px 9px;display:flex;flex-direction:column;gap:6px;min-width:0">
+            <div style="display:flex;align-items:center;gap:5px;min-width:0">
+              <span style="font-size:12px;font-weight:600;color:{{ d.nameColor }}">{{ d.name }}</span>
+              <span style="font-size:12px;color:#8a8a96">{{ d.date }}</span>
+              <sc-if value="{{ d.isToday }}"><span style="width:6px;height:6px;border-radius:50%;background:#d4283d;flex-shrink:0" title="Today"></span></sc-if>
+            </div>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600;line-height:18px;min-height:18px;overflow:hidden;white-space:nowrap">{{ d.fig }}</span>
+            <div style="height:6px;border-radius:3px;background:{{ d.track }};display:flex;overflow:hidden">
+              <div style="width:{{ d.cW }};background:#7c3aed"></div>
+              <div style="width:{{ d.dW }};background:repeating-linear-gradient(90deg,#b49af3 0 3px,#e6dcfc 3px 5px)"></div>
+            </div>
+            <span style="font-size:11px;color:{{ d.labelColor }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:14px">{{ d.label }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <div style="padding:20px 32px 48px">
+    <div style="max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:20px">
+      <sc-if value="{{ mdHasToast }}">
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;background:#16161d;color:#fff;font-size:13px">
+          <span style="width:6px;height:6px;border-radius:50%;background:#a78bfa"></span><span style="flex:1">{{ mdToast }}</span>
+          <span onClick="{{ mdCloseToast }}" style="cursor:pointer;color:#b4b4bf;font-size:15px;line-height:1">×</span>
+        </div>
+      </sc-if>
+
+      <dc-import name="Timeline" theme="light" zoom="1x" scroll-to="{{ 668 }}" compact-footer="{{ true }}" ov="{{ tlOv }}" shares="{{ tlShares }}" custom="{{ tlCustom }}" sel="{{ tlSel }}" on-change="{{ tlChange }}" hint-size="100%,470px"></dc-import>
+
+      <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
+        <div style="flex:999 1 560px;min-width:0;display:flex;flex-direction:column;gap:20px">
+
+          <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px;overflow:hidden">
+            <sc-if value="{{ edNone }}">
+              <div style="padding:16px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <span style="font-weight:600">Nothing selected</span>
+                <span style="font-size:13px;color:#6b6b78">Pick a block on the timeline, or a row below, to edit it here.</span>
+              </div>
+            </sc-if>
+            <sc-if value="{{ edOn }}" hint-placeholder-val="{{ true }}">
+              <div style="padding:14px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                <span style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;padding:3px 8px 3px 5px;border-radius:6px;background:{{ ed.pillBg }};border:{{ ed.pillBd }};color:{{ ed.pillInk }};white-space:nowrap"><span style="width:12px;text-align:center">{{ ed.pillIcon }}</span>{{ ed.pillName }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;white-space:nowrap">{{ ed.range }}</span>
+                <span style="font-size:12.5px;color:#6b6b78">{{ ed.src }}</span>
+                <div style="flex:1"></div>
+                <sc-if value="{{ ed.showDismiss }}"><button onClick="{{ ed.dismiss }}" style="height:34px;padding:0 14px;border:1px solid #dcdce4;border-radius:9px;background:#fff;color:#55555f;font-size:13px;cursor:pointer;white-space:nowrap" style-hover="background:#f4f4f8">Not work</button></sc-if>
+                <button onClick="{{ ed.confirm }}" style="height:34px;padding:0 16px;border:0;border-radius:9px;background:{{ ed.confirmBg }};color:{{ ed.confirmColor }};font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap">{{ ed.confirmLabel }}</button>
+              </div>
+              <sc-if value="{{ ed.isShared }}">
+                <div style="padding:10px 20px;border-top:1px solid #efeff4;background:#faf8ff;font-size:12.5px;line-height:18px;color:#4c1d95;text-wrap:pretty">{{ ed.sharedLine }}</div>
+              </sc-if>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));border-top:1px solid #efeff4">
+                <div style="padding:14px 20px;display:flex;flex-direction:column;gap:10px;border-right:1px solid #efeff4">
+                  <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;white-space:nowrap">CARD</span>
+                  <sc-if value="{{ ed.needCard }}"><div style="font-size:12.5px;line-height:18px;color:#7a4a00;background:#fff7e8;border:1px solid #f1d39b;border-radius:8px;padding:8px 10px">{{ ed.warn }}</div></sc-if>
+                  <sc-if value="{{ ed.hasCard }}"><div style="font-size:13px;line-height:19px"><span style="font-family:'JetBrains Mono',monospace;font-weight:600">{{ ed.cardKey }}</span> <span style="color:#55555f">{{ ed.cardTitle }}</span></div></sc-if>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px">
+                    <sc-for list="{{ ed.cardOpts }}" as="o" hint-placeholder-count="5">
+                      <div onClick="{{ o.go }}" title="{{ o.title }}" style="display:flex;align-items:center;gap:5px;padding:4px 9px;border-radius:7px;font-size:12px;cursor:pointer;border:1px solid {{ o.bd }};background:{{ o.bg }};color:{{ o.color }};font-weight:{{ o.weight }};font-family:'JetBrains Mono',monospace"><span style="width:5px;height:5px;border-radius:50%;background:{{ o.dot }}"></span>{{ o.label }}</div>
+                    </sc-for>
+                  </div>
+                  <span style="font-size:11.5px;color:#6b6b78;display:flex;align-items:center;gap:5px"><span style="width:5px;height:5px;border-radius:50%;background:#0f766e"></span>An agent worked on it near this time</span>
+                </div>
+                <div style="padding:14px 20px;display:flex;flex-direction:column;gap:10px;border-right:1px solid #efeff4">
+                  <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;white-space:nowrap">LENGTH</span>
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <sc-if value="{{ ed.canLen }}">
+                      <div style="display:flex;align-items:center;border:1px solid #dcdce4;border-radius:8px;overflow:hidden">
+                        <button onClick="{{ ed.minus }}" style="width:30px;height:30px;border:0;background:#fff;cursor:pointer;font-size:15px;color:#55555f" style-hover="background:#f4f2fa">−</button>
+                        <span style="min-width:64px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;border-left:1px solid #ececf2;border-right:1px solid #ececf2;line-height:30px">{{ ed.len }}</span>
+                        <button onClick="{{ ed.plus }}" style="width:30px;height:30px;border:0;background:#fff;cursor:pointer;font-size:15px;color:#55555f" style-hover="background:#f4f2fa">+</button>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ ed.noLen }}"><span style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600">{{ ed.len }}</span></sc-if>
+                  </div>
+                  <span style="font-size:12px;line-height:17px;color:#6b6b78">{{ ed.lenNote }}</span>
+                </div>
+                <div style="padding:14px 20px;display:flex;flex-direction:column;gap:10px">
+                  <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;white-space:nowrap">{{ ed.fromLabel }}</span>
+                  <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px">
+                    <sc-for list="{{ ed.stats }}" as="s" hint-placeholder-count="4">
+                      <div style="background:#fafafc;border:1px solid #f0f0f4;border-radius:8px;padding:6px 8px;min-width:0"><div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600">{{ s.v }}</div><div style="font-size:11px;color:#6b6b78;overflow:hidden;text-overflow:ellipsis">{{ s.l }}</div></div>
+                    </sc-for>
+                  </div>
+                  <span style="font-size:12px;color:#6b6b78;line-height:17px;text-wrap:pretty">{{ ed.agentLine }}</span>
+                </div>
+              </div>
+              <div style="padding:9px 20px;border-top:1px solid #efeff4;background:#fafafc;display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:#6b6b78">
+                <span><span style="font-family:'JetBrains Mono',monospace;border:1px solid #dcdce4;border-radius:4px;padding:0 4px;color:#55555f">↵</span> confirm</span><span><span style="font-family:'JetBrains Mono',monospace;border:1px solid #dcdce4;border-radius:4px;padding:0 4px;color:#55555f">G</span> general</span><span><span style="font-family:'JetBrains Mono',monospace;border:1px solid #dcdce4;border-radius:4px;padding:0 4px;color:#55555f">X</span> not work</span><span><span style="font-family:'JetBrains Mono',monospace;border:1px solid #dcdce4;border-radius:4px;padding:0 4px;color:#55555f">← →</span> move on the timeline</span><span><span style="font-family:'JetBrains Mono',monospace;border:1px solid #dcdce4;border-radius:4px;padding:0 4px;color:#55555f">J K</span> move in the list</span>
+              </div>
+            </sc-if>
+          </div>
+
+          <sc-if value="{{ mdHasQueue }}" hint-placeholder-val="{{ true }}">
+            <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+              <div style="padding:14px 20px;border-bottom:1px solid #efeff4;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <div onClick="{{ mdToggleAll }}" style="width:16px;height:16px;border-radius:4px;border:1.5px solid {{ mdAllBd }};background:{{ mdAllBg }};color:#fff;font-size:11px;line-height:13px;text-align:center;cursor:pointer;box-sizing:border-box">{{ mdAllMark }}</div>
+                <span style="font-size:15px;font-weight:700;white-space:nowrap">To settle</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#6b6b78;white-space:nowrap">{{ mdQueueCount }}</span>
+                <div style="flex:1"></div>
+                <sc-if value="{{ mdHasChecked }}">
+                  <span style="font-size:12.5px;color:#55555f">{{ mdCheckedCount }} selected</span>
+                  <button onClick="{{ mdBulkConfirm }}" style="height:30px;padding:0 11px;border:1px solid #dcdce4;border-radius:8px;background:#fff;font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap;color:#2a2a33;background:#7c3aed;border-color:#7c3aed;color:#fff;font-weight:600">Confirm</button>
+                  <button onClick="{{ mdBulkGeneral }}" style="height:30px;padding:0 11px;border:1px solid #dcdce4;border-radius:8px;background:#fff;font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap;color:#2a2a33">General</button>
+                  <button onClick="{{ mdBulkDismiss }}" style="height:30px;padding:0 11px;border:1px solid #dcdce4;border-radius:8px;background:#fff;font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap;color:#2a2a33;color:#55555f">Not work</button>
+                </sc-if>
+                <sc-if value="{{ mdNoChecked }}"><span style="font-size:12.5px;color:#6b6b78">{{ mdQueueHint }}</span></sc-if>
+              </div>
+              <sc-for list="{{ mdQueue }}" as="r" hint-placeholder-count="5">
+                <div onClick="{{ r.go }}" style="display:flex;align-items:center;gap:12px;padding:10px 20px 10px 17px;border-bottom:1px solid #f2f2f6;border-left:3px solid {{ r.bar }};background:{{ r.bg }};cursor:pointer" style-hover="background:#fbfafe">
+                  <div onClick="{{ r.toggle }}" style="width:16px;height:16px;border-radius:4px;border:1.5px solid {{ r.ckBd }};background:{{ r.ckBg }};color:#fff;font-size:11px;line-height:13px;text-align:center;box-sizing:border-box;flex-shrink:0">{{ r.ckMark }}</div>
+                  <span style="width:16px;height:12px;border-radius:3px;box-sizing:border-box;background:{{ r.swBg }};border:{{ r.swBd }};flex-shrink:0"></span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#6b6b78;width:150px;flex-shrink:0;white-space:nowrap">{{ r.range }}</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;width:56px;flex-shrink:0;white-space:nowrap">{{ r.hm }}</span>
+                  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:600;color:{{ r.labelColor }};white-space:nowrap">{{ r.label }}</span>
+                    <span style="font-size:12.5px;color:#6b6b78;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.title }}</span>
+                  </div>
+                  <span style="font-size:11px;font-weight:600;color:{{ r.srcColor }};background:{{ r.srcBg }};border-radius:5px;padding:2px 7px;white-space:nowrap;font-family:'JetBrains Mono',monospace;flex-shrink:0">{{ r.src }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+            <div style="padding:14px 20px;border-bottom:1px solid #efeff4;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <span style="font-size:15px;font-weight:700">Confirmed</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#6b6b78;white-space:nowrap">{{ mdConfirmedTotal }}</span>
+              <div style="flex:1"></div>
+              <span style="font-size:12.5px;color:#6b6b78">the only time anyone else can see</span>
+            </div>
+            <sc-if value="{{ mdNoEntries }}"><div style="padding:16px 20px;font-size:13px;color:#6b6b78">Nothing confirmed yet.</div></sc-if>
+            <sc-for list="{{ mdLedger }}" as="e" hint-placeholder-count="3">
+              <div onClick="{{ e.go }}" style="display:flex;align-items:center;gap:12px;padding:10px 20px 10px 17px;border-bottom:1px solid #f2f2f6;border-left:3px solid {{ e.bar }};background:{{ e.bg }};cursor:pointer" style-hover="background:#fbfafe">
+                <span style="width:16px;flex-shrink:0"></span>
+                <span style="width:16px;height:12px;border-radius:3px;background:#7c3aed;flex-shrink:0"></span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#6b6b78;width:150px;flex-shrink:0;white-space:nowrap">{{ e.range }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;width:56px;flex-shrink:0;white-space:nowrap">{{ e.hm }}</span>
+                <div style="flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:600">{{ e.key }}</span> <span style="color:#55555f">{{ e.title }}</span><span style="color:#8a8a96">{{ e.note }}</span></div>
+                <span style="font-size:11px;font-weight:600;color:#55555f;background:#f2f2f6;border-radius:5px;padding:2px 7px;white-space:nowrap;font-family:'JetBrains Mono',monospace;flex-shrink:0">{{ e.src }}</span>
+              </div>
+            </sc-for>
+            <div style="padding:14px 20px 16px;background:#fafafc;border-radius:0 0 12px 12px;display:flex;flex-direction:column;gap:10px">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;white-space:nowrap">ADD TIME</span><span style="font-size:12px;color:#6b6b78">a meeting, a call: confirmed as you add it. To place it on the day, click a gap on the timeline.</span></div>
+              <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+                <div style="display:flex;background:#efeff4;border-radius:8px;padding:2px;gap:2px">
+                  <sc-for list="{{ mdLenOpts }}" as="o" hint-placeholder-count="5"><div onClick="{{ o.go }}" style="padding:5px 10px;border-radius:6px;font-size:12.5px;cursor:pointer;font-family:'JetBrains Mono',monospace;background:{{ o.bg }};color:{{ o.color }};font-weight:{{ o.weight }};box-shadow:{{ o.shadow }}">{{ o.label }}</div></sc-for>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{ mdAddCards }}" as="o" hint-placeholder-count="4"><div onClick="{{ o.go }}" title="{{ o.title }}" style="padding:4px 9px;border-radius:7px;font-size:12px;cursor:pointer;border:1px solid {{ o.bd }};background:{{ o.bg }};color:{{ o.color }};font-weight:{{ o.weight }};font-family:'JetBrains Mono',monospace">{{ o.label }}</div></sc-for></div>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <input value="{{ mdNote }}" onChange="{{ mdSetNote }}" placeholder="What it was, e.g. Sprint planning with Andrea" style="flex:1;min-width:220px;height:36px;border:1px solid #dcdce4;border-radius:8px;padding:0 12px;font-size:13.5px;outline:none;background:#fff">
+                <button onClick="{{ mdAdd }}" style="height:36px;padding:0 16px;border:0;border-radius:8px;background:#7c3aed;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap" style-hover="background:#6d28d9">{{ mdAddLabel }}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="flex:1 1 320px;min-width:0;display:flex;flex-direction:column;gap:20px;position:sticky;top:20px">
+          <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+            <div style="padding:14px 20px;border-bottom:1px solid #efeff4;display:flex;align-items:center;gap:10px"><span style="font-size:15px;font-weight:700">Agent time</span><div style="flex:1"></div><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#6b6b78">{{ mdAgentTotal }}</span></div>
+            <div style="padding:12px 20px 4px;font-size:12px;color:#6b6b78;line-height:17px">Claude Code builders you dispatched. Shown beside your day, never added to it. {{ mdAgentPeak }}</div>
+            <div style="padding:8px 8px 10px;display:flex;flex-direction:column;gap:2px">
+              <sc-for list="{{ mdAgentRows }}" as="a" hint-placeholder-count="5">
+                <div onClick="{{ a.go }}" style="display:flex;flex-direction:column;gap:5px;padding:7px 12px;border-radius:8px;cursor:pointer;background:{{ a.bg }}" style-hover="background:#f7f7fa">
+                  <div style="display:flex;gap:8px;font-size:12.5px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:600;white-space:nowrap">{{ a.key }}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#55555f">{{ a.title }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;white-space:nowrap">{{ a.min }}</span></div>
+                  <div style="height:5px;background:#eef1f5;border-radius:3px"><div style="height:100%;width:{{ a.pct }};background:#8b9ab0;border-radius:3px"></div></div>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#6b6b78">›_ {{ a.who }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="background:#fff;border:1px solid #e7e7ee;border-radius:12px">
+            <div style="padding:14px 20px;border-bottom:1px solid #efeff4;display:flex;align-items:center;gap:10px"><span style="font-size:15px;font-weight:700">On your plate</span></div>
+            <sc-for list="{{ mdPlate }}" as="g" hint-placeholder-count="3">
+              <div style="padding:12px 20px 4px;display:flex;align-items:center;gap:8px"><span style="width:7px;height:7px;border-radius:50%;background:{{ g.dot }}"></span><span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6b6b78;white-space:nowrap">{{ g.label }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#6b6b78">{{ g.count }}</span><div style="flex:1"></div><span onClick="{{ g.go }}" style="font-size:12.5px;color:#6d28d9;cursor:pointer;white-space:nowrap">{{ g.link }}</span></div>
+              <sc-for list="{{ g.rows }}" as="t">
+                <div onClick="{{ g.go }}" style="display:flex;flex-direction:column;gap:1px;padding:6px 20px;cursor:pointer" style-hover="background:#fbfafe">
+                  <div style="display:flex;gap:10px;font-size:13px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:600;color:#3a3a44;white-space:nowrap">{{ t.id }}</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.title }}</span></div>
+                  <sc-if value="{{ t.hasSub }}"><span style="font-size:12px;color:{{ t.subColor }}">{{ t.sub }}</span></sc-if>
+                </div>
+              </sc-for>
+            </sc-for>
+            <div style="height:10px"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;initialScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;myday&quot;,&quot;org&quot;,&quot;board&quot;,&quot;dev&quot;,&quot;insights&quot;,&quot;inbox&quot;],&quot;default&quot;:&quot;myday&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;showCounts&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  state = { screen: null, orgTab: 'overview', insTab: 'capacity', inboxTab: 'review', menu: false, insights: true, time: 'Off', q: '', roleF: 'All', agent: 'Claude Code', md: this.mdInit() };
+
+  go = (screen, extra) => () => this.setState({ screen, menu: false, ...(extra || {}) });
+
+  tab(active, label, go, extra) {
+    return { label, go, color: active ? '#6d28d9' : '#55555f', weight: active ? 600 : 500, border: active ? '#7c3aed' : 'transparent', ...(extra || {}) };
+  }
+  seg(active, label, go) {
+    return { label, go, bg: active ? '#fff' : 'transparent', color: active ? '#16161d' : '#55555f', weight: active ? 600 : 500, shadow: active ? '0 1px 2px rgba(0,0,0,.08)' : 'none' };
+  }
+  nav(cur, id, label, extra) {
+    const a = cur === id;
+    return { label, go: this.go(id), bg: a ? '#f1ebfe' : 'transparent', color: a ? '#6d28d9' : '#2a2a33', weight: a ? 600 : 500, bar: a ? '#7c3aed' : 'transparent', hasCount: false, ...(extra || {}) };
+  }
+
+  renderVals() {
+    const s = this.state, P = this.props;
+    const showCounts = P.showCounts ?? true;
+    const cur = s.screen || (P.initialScreen ?? 'myday');
+    this._cur = cur;
+
+    const tag = t => {
+      const map = { docs: ['#e8f6ee', '#1f7a45', '#bfe5cd'], server: ['#eef3fe', '#2f5fd0', '#c4d4f8'] };
+      const [bg, fg, bd] = map[t] || ['#f4f4f7', '#45454f', '#e3e3ea'];
+      return { t, bg, fg, bd };
+    };
+    const pri = { low: ['M2 4l4 4 4-4', '#3b6fe0'], med: ['M2 4.5h8M2 7.5h8', '#c98a12'], high: ['M2 8l4-4 4 4', '#d4283d'] };
+    const card = (key, title, tags, id, size, p, blocked) => ({ key, title, tags: tags.map(tag), id, size, priPath: pri[p][0], priColor: pri[p][1], blocked: blocked || '' });
+    const columns = [
+      { name: 'BACKLOG', count: 8, dot: '#8b8b96', ink: '#16161d', cards: [
+        card('LAI-777', 'Codex: a forked rollout without per-response…', ['cli', 'omnigent', 'repo'], 'LAIKA-581', 'S', 'low'),
+        card('LAI-781', 'create_task moves the task into its sprint after…', ['omnigent', 'repo', 'server'], 'LAIKA-585', 'S', 'low'),
+        card('LAI-782', 'Size and forecasts, phase 2 follow-ups: sprint…', ['omnigent', 'repo', 'server', 'web'], 'LAIKA-586', 'M', 'low')] },
+      { name: 'TO DO', count: 17, dot: '#6d5cf0', ink: '#16161d', cards: [
+        card('LAI-624', 'The docs describe a CLI invocation and a setup…', ['docs', 'p0', 'repo'], 'LAIKA-439', 'M', 'med'),
+        card('LAI-626', '.laika-local/ is untracked and unignored —…', ['docs', 'p0', 'repo', 'security'], 'LAIKA-440', 'M', 'med'),
+        card('LAI-628', 'The repository is public, the licence says…', ['decision', 'docs', 'p0', 'repo'], 'LAIKA-441', 'M', 'high')] },
+      { name: 'IN PROGRESS', count: 3, dot: '#3b6fe0', ink: '#16161d', cards: [
+        card('LAI-627', 'No production address in the repo, and thre…', ['cli', 'p0', 'repo', 'security'], 'LAIKA-381', 'M', 'high'),
+        card('LAI-788', 'Time, phase 2: Solidtime bridge — the…', ['cli', 'omnigent', 'repo'], 'LAIKA-591', 'M', 'high'),
+        card('LAI-795', 'Slim task list: Board and List load tasks without…', ['omnigent', 'repo', 'server', 'web'], 'LAIKA-598', 'M', 'high')] },
+      { name: 'REVIEW', count: 50, dot: '#b8741a', ink: '#16161d', cards: [
+        card('LAI-266', 'Dynamic board columns, and a Jira-style…', ['repo', 'review-queue', 'web'], 'LAIKA-363', 'L', 'high'),
+        card('LAI-290', 'Swimlanes, the board toolbar, and a create…', ['repo', 'review-queue', 'web'], 'LAIKA-364', 'M', 'high'),
+        card('LAI-291', 'The add-column tile creates a column without…', ['repo', 'review-queue', 'web'], 'LAIKA-365', 'L', 'high', 'LAIKA-364')] },
+      { name: 'DONE', count: 4, dot: '#1f9a55', ink: '#55555f', cards: [
+        card('LAI-743', 'Member profile v1: an admin-only page per…', ['history', 'repo', 'server'], 'LAIKA-359', 'L', 'med'),
+        card('LAI-746', 'Member profile v1: review follow-ups —…', ['history', 'repo', 'server'], 'LAIKA-360', 'L', 'high'),
+        card('LAI-749', 'Member profile: three blockers from the…', ['history', 'repo', 'server'], 'LAIKA-361', 'M', 'high')] }
+    ];
+
+    const C = { AC: '#b636c9', AP: '#9a3bd6', DS: '#1f6f78', PS: '#d4283d', SG: '#7a4bdf' };
+    const allPeople = [
+      { name: 'Andrea Ordóñez Cárdenas', email: 'andrea@kvelld.co.za', ini: 'AC', role: 'Admin', spaces: 3, agents: 1, last: '12m ago' },
+      { name: 'Ashutosh Patel', email: 'ashutosh.patel@kvelld.co.za', ini: 'AP', role: 'Admin', spaces: 2, agents: 0, last: '2h ago' },
+      { name: 'Dev Sharma', email: 'dev.sharma@kvelld.co.za', ini: 'DS', role: 'Member', spaces: 2, agents: 1, last: 'Yesterday' },
+      { name: 'Pawan Sirsat', email: 'pawan.sirsat@kvelld.co.za', ini: 'PS', role: 'Owner', spaces: 5, agents: 1, last: 'Active now', you: true },
+      { name: 'Sakshi Gabhale', email: 'sakshi.gabhale@kvelld.co.za', ini: 'SG', role: 'Member', spaces: 1, agents: 0, last: '3d ago' }
+    ];
+    const q = s.q.trim().toLowerCase();
+    const people = allPeople
+      .filter(p => (s.roleF === 'All' || p.role === s.roleF) && (!q || (p.name + p.email).toLowerCase().includes(q)))
+      .map(p => ({ ...p, color: C[p.ini], you: !!p.you, isOwner: p.role === 'Owner', editable: p.role !== 'Owner', agentDot: p.agents ? '#1f9a55' : '#c9c9d2', activeColor: p.last === 'Active now' ? '#1f8a4c' : '#55555f' }));
+
+    const orgTabsDef = [['overview', 'Overview'], ['people', 'People', 5], ['integrations', 'Integrations'], ['security', 'Security']];
+    const orgTabs = orgTabsDef.map(([id, label, count]) => this.tab(s.orgTab === id, label, () => this.setState({ orgTab: id }), { hasCount: !!count, count: count || '' }));
+    const setOrg = id => () => this.setState({ screen: 'org', orgTab: id });
+
+    const cmds = { 'Claude Code': 'claude-code', 'Codex': 'codex', 'omnigent': 'omnigent' };
+    const agentSlug = cmds[s.agent];
+
+    const tok = (name, id, used, exp) => ({ name, id, used, exp, usedColor: used === 'Never used' ? '#8a8a96' : '#55555f' });
+    const price = (id, i, o, cw, cr, note) => ({ id, i, o, cw, cr, note: note || '', hasNote: !!note });
+
+    const reviewRows = [
+      { id: 'LAIKA-363', title: 'Dynamic board columns, and a Jira-style…', status: 'CI pending', fg: '#9a5b00', bg: '#fdf3e1', when: '5m' },
+      { id: 'LAIKA-364', title: 'Swimlanes, the board toolbar, and a create…', status: 'Proof confirmed', fg: '#1f7a45', bg: '#e8f6ee', when: '22m' },
+      { id: 'LAIKA-365', title: 'The add-column tile creates a column without…', status: 'Blocked', fg: '#c62536', bg: '#fdf1f2', when: '1h' },
+      { id: 'LAIKA-360', title: 'Member profile v1: review follow-ups —…', status: 'Proof failed', fg: '#c62536', bg: '#fdf1f2', when: '3h' },
+      { id: 'LAIKA-598', title: 'Slim task list: Board and List load tasks without…', status: 'Awaiting review', fg: '#6d28d9', bg: '#f3eefe', when: '5h' }
+    ];
+    const unlistedRows = [
+      { id: 'a91f3c2', title: 'fix: board column drag on Safari', status: 'No task', fg: '#55555f', bg: '#f2f2f6', when: '1h' },
+      { id: '4be07d1', title: 'chore: bump drizzle to 0.36', status: 'No task', fg: '#55555f', bg: '#f2f2f6', when: '4h' },
+      { id: 'agent · 41m', title: 'claude-code session on laika/web, no task claimed', status: 'Session', fg: '#2f5fd0', bg: '#eef3fe', when: '6h' }
+    ];
+
+    return {
+      menuOpen: s.menu,
+      toggleMenu: () => this.setState({ menu: !s.menu }),
+      goDev: this.go('dev'), goPeople: setOrg('people'), goSecurity: setOrg('security'),
+      isBoard: cur === 'board', isOrg: cur === 'org', isDev: cur === 'dev', isInsights: cur === 'insights', isInbox: cur === 'inbox', isMyday: cur === 'myday',
+
+      navWork: [this.nav(cur, 'myday', 'My day'), this.nav(cur, 'inbox', 'Inbox', { hasCount: showCounts, count: 282 })],
+      navSpaces: [['OnRoute', '#1f6f78'], ['Sauce', '#c98a12'], ['Laika', '#16161d']].map(([n, dot]) => ({ ...this.nav(n === 'Laika' ? cur : '', 'board', n), dot, initial: n[0] })),
+      navOrg: [this.nav(cur, 'insights', 'Insights'), this.nav(cur, 'org', 'Organisation'), this.nav(cur, 'dev', 'Developer access')],
+
+      boardViews: ['Board', 'List', 'Timeline', 'Calendar'].map((l, i) => this.tab(i === 0, l, null)),
+      boardPlan: ['Sprints', 'Dashboard', 'Activity', 'Meeting review'],
+      columns,
+
+      orgTabs,
+      tabOverview: s.orgTab === 'overview', tabPeople: s.orgTab === 'people', tabIntegrations: s.orgTab === 'integrations', tabSecurity: s.orgTab === 'security',
+      orgStats: [
+        { label: 'MEMBERS', value: '5', sub: '2 admins · 1 invite pending', go: setOrg('people') },
+        { label: 'SPACES', value: '5', sub: '4 active · 1 archived', go: () => {} },
+        { label: 'ACTIVE AGENTS', value: '1', sub: '3 sessions today', go: this.go('insights') },
+        { label: 'TOKENS', value: '7', sub: '2 never used', go: this.go('dev') }
+      ],
+      swBg: s.insights ? '#7c3aed' : '#d4d4dc', swLeft: s.insights ? '19px' : '3px',
+      toggleInsights: () => this.setState({ insights: !s.insights }),
+      timeOpts: ['Off', 'Manual', 'Drafts'].map(t => this.seg(s.time === t, t, () => this.setState({ time: t }))),
+      auditShort: [
+        { ini: 'PS', color: C.PS, who: 'Pawan Sirsat', what: 'rotated the GitHub webhook secret', when: '2h' },
+        { ini: 'AC', color: C.AC, who: 'Andrea Ordóñez Cárdenas', what: 'changed Dev Sharma’s role to Member', when: '1d' },
+        { ini: 'PS', color: C.PS, who: 'Pawan Sirsat', what: 'created an invite link (Member)', when: '1d' },
+        { ini: 'PS', color: C.PS, who: 'Pawan Sirsat', what: 'turned Developer insights on', when: '3d' },
+        { ini: 'AP', color: C.AP, who: 'Ashutosh Patel', what: 'created the space Sauce', when: '6d' }
+      ],
+      spaces: [
+        ['Laika', 'L', '#16161d', 'Pawan Sirsat', 'PS', 5, 82, 'Active'],
+        ['OnRoute', 'O', '#1f6f78', 'Andrea Ordóñez Cárdenas', 'AC', 3, 41, 'Active'],
+        ['Sauce', 'S', '#c98a12', 'Ashutosh Patel', 'AP', 3, 27, 'Active'],
+        ['Field Ops', 'F', '#3b6fe0', 'Dev Sharma', 'DS', 2, 9, 'Active'],
+        ['Pilot 2025', 'P', '#8b8b96', 'Pawan Sirsat', 'PS', 4, 0, 'Archived']
+      ].map(([name, ini, dot, owner, oi, members, open, status]) => ({ name, ini, dot, owner, ownerIni: oi, ownerColor: C[oi], members, open, status, statusColor: status === 'Active' ? '#1f8a4c' : '#8a8a96' })),
+
+      q: s.q, setQ: e => this.setState({ q: e.target.value }),
+      roleOpts: ['All', 'Owner', 'Admin', 'Member'].map(r => this.seg(s.roleF === r, r, () => this.setState({ roleF: r }))),
+      people, peopleCount: people.length + ' of 5',
+
+      hookStats: [
+        { label: 'LAST DELIVERY', value: '4m ago', color: '#16161d' },
+        { label: 'SUCCESS · 7 DAYS', value: '98.6%', color: '#1f8a4c' },
+        { label: 'FAILED · 7 DAYS', value: '3', color: '#c62536' },
+        { label: 'EVENTS · 7 DAYS', value: '214', color: '#16161d' }
+      ],
+      events: ['Pushes', 'Pull requests', 'Issue comments', 'Check runs', 'Check suites', 'Workflow runs'],
+      deliveries: [
+        ['push', '200', '4m'], ['check_run', '200', '6m'], ['pull_request', '200', '18m'], ['workflow_run', '502', '2h'], ['check_suite', '200', '2h'], ['issue_comment', '200', '5h']
+      ].map(([event, code, when]) => ({ event, code, when, dot: code === '200' ? '#1f9a55' : '#c62536' })),
+
+      perms: [
+        ['Create, edit and move tasks', 1, 1, 1, 0], ['Comment', 1, 1, 1, 0], ['Run agent sessions', 1, 1, 1, 0],
+        ['Create full-scope tokens', 1, 1, 1, 0], ['Create spaces', 1, 1, 0, 0], ['Manage people and invites', 1, 1, 0, 0],
+        ['Change organisation settings', 1, 1, 0, 0], ['Transfer or delete organisation', 1, 0, 0, 0]
+      ].map(([label, ...c]) => ({ label, cells: c.map(v => ({ v: v ? '✓' : '—', color: v ? '#6d28d9' : '#c9c9d2' })) })),
+      audit: [
+        ['20 Oct 08:14', 'Pawan Sirsat', 'rotated the GitHub webhook secret', 'integration'],
+        ['19 Oct 16:02', 'Andrea Ordóñez Cárdenas', 'changed Dev Sharma’s role from Admin to Member', 'people'],
+        ['19 Oct 11:40', 'Pawan Sirsat', 'created an invite link (Member, 2 days)', 'people'],
+        ['18 Oct 09:55', 'Pawan Sirsat', 'updated model prices (table of 2026-10-18)', 'settings'],
+        ['17 Oct 14:21', 'Pawan Sirsat', 'turned Developer insights on', 'settings'],
+        ['16 Oct 10:08', 'Dev Sharma', 'created token claude-code on macOS', 'token'],
+        ['14 Oct 17:30', 'Ashutosh Patel', 'created the space Sauce', 'space']
+      ].map(([ts, who, what, kind]) => ({ ts, who, what, kind })),
+
+      agents: ['Claude Code', 'Codex', 'omnigent'].map(a => {
+        const on = s.agent === a;
+        return { label: a, go: () => this.setState({ agent: a }), bg: on ? '#f3eefe' : '#fff', bd: on ? '#c9b5fb' : '#e3e3ea', color: on ? '#6d28d9' : '#2a2a33', weight: on ? 600 : 500 };
+      }),
+      agentSlug,
+      cliCmd: 'laika login --token lai_••••\nlaika connect ' + agentSlug + ' \\\n  --board kvell/laika',
+      tokens: [
+        tok('omnigent on macOS', 'lai_wdj7', 'Used 5m ago', 'Expires 14/01/2027'),
+        tok('claude-code on macOS', 'lai_NXV1', 'Used 2m ago', 'Expires 14/01/2027'),
+        tok('claude-code on macOS', 'lai_eFTc', 'Used 4d ago', 'Expires 13/01/2027'),
+        tok('omnigent on macOS', 'lai_2B1W', 'Used 4d ago', 'Expires 13/01/2027'),
+        tok('claude-code on macOS', 'lai_CG6B', 'Never used', 'Expires 12/01/2027'),
+        tok('omnigent on macOS', 'lai_K41e', 'Never used', 'Expires 10/01/2027'),
+        tok('claude-token', 'lai_ece6', 'Used 17h ago', 'No expiry')
+      ],
+
+      insTabs: [['capacity', 'Capacity'], ['usage', 'Usage & cost']].map(([id, l]) => this.tab(s.insTab === id, l, () => this.setState({ insTab: id }))),
+      insCapacity: s.insTab === 'capacity', insUsage: s.insTab === 'usage',
+      capacity: [
+        ['Pawan Sirsat', 'PS', 48, 3, 50, 'Live'], ['Andrea Ordóñez Cárdenas', 'AC', 31, 2, 6, 'Live'], ['Dev Sharma', 'DS', 22, 1, 4, 'Idle'],
+        ['Ashutosh Patel', 'AP', 9, 0, 2, 'Idle'], ['Sakshi Gabhale', 'SG', 4, 1, 0, 'Off']
+      ].map(([name, ini, sessions, prog, rev, live]) => ({ name, ini, color: C[ini], sessions, prog, rev, live, pct: Math.round(sessions / 48 * 100) + '%', liveColor: live === 'Live' ? '#1f8a4c' : live === 'Idle' ? '#c98a12' : '#8a8a96' })),
+      usageStats: [
+        { label: 'TOKENS COUNTED', value: '48.2M', sub: 'last 7 days' },
+        { label: 'API-EQUIVALENT COST', value: '$312.40', sub: 'not your bill' },
+        { label: 'AGENT SESSIONS', value: '114', sub: 'across 5 people' }
+      ],
+      prices: [
+        price('claude-fable-5', '$10.00', '$50.00', '$12.50', '$1.00'),
+        price('claude-fable-5-1', '$10.00', '$50.00', '$12.50', '$0.25'),
+        price('claude-haiku-4-5', '$1.00', '$5.00', '$1.25', '$0.10'),
+        price('claude-haiku-4-5-20251001', '$1.00', '$5.00', '$1.25', '$0.10'),
+        price('claude-haiku-5-5', '$0.10', '$0.50', '$0.125', '$0.01', 'Priced at its rate for prompts up to 100,000 tokens; longer prompts cost five times as much, so this is a floor.'),
+        price('claude-opus-4-5', '$5.00', '$25.00', '$6.25', '$0.50'),
+        price('claude-opus-4-6', '$5.00', '$25.00', '$6.25', '$0.50')
+      ],
+
+      inboxTabs: [['review', 'Review', 200], ['unlisted', 'Unlisted work', 82]].map(([id, l, c]) => this.tab(s.inboxTab === id, l, () => this.setState({ inboxTab: id }), { count: c })),
+      inboxRows: s.inboxTab === 'review' ? reviewRows : unlistedRows,
+      inboxHint: s.inboxTab === 'review' ? 'Agent-claimed proof, confirmed or failed by what GitHub sends.' : 'Commits and agent sessions that aren’t linked to a task yet.',
+      ...this.myDay(setOrg)
+    };
+  }
+
+  componentDidMount() {
+    if (!window.LaikaTL) this._poll = setInterval(() => { if (window.LaikaTL) { clearInterval(this._poll); this.forceUpdate(); } }, 40);
+    this._onKey = ev => {
+      const k = this._mdKeys; if (!k) return;
+      const t = ev.target; if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (t && t.closest && t.closest('[role=application]')) return;
+      const map = { Enter: k.confirm, g: k.general, x: k.dismiss, j: k.next, k: k.prev };
+      const fn = map[ev.key]; if (fn) { ev.preventDefault(); fn(); }
+    };
+    window.addEventListener('keydown', this._onKey);
+  }
+  componentWillUnmount() { clearInterval(this._poll); window.removeEventListener('keydown', this._onKey); }
+
+  mdInit() { return { ov: {}, shares: null, custom: false, sel: 'b8', checked: [], toast: '', draftOn: true, manual: [], len: 30, addCard: 'GENERAL', note: '', seq: 1 }; }
+
+  myDay() {
+    const L = window.LaikaTL, md = this.state.md;
+    if (!L) return { mdWeek: [], mdQueue: [], mdLedger: [], mdAgentRows: [], mdPlate: [], ed: { cardOpts: [], stats: [] }, mdLenOpts: [], mdAddCards: [], edNone: true };
+    const set = p => this.setState({ md: { ...this.state.md, ...p } });
+    const S = L.styles('light'), dur = L.dur, rng = L.rng;
+    const ov = md.ov, shares = md.shares || L.evenShares(L.GROUP), us = L.units(ov);
+    const orig = id => { for (const b of L.YOU) { if (b.id === id) return b; if (b.subs) { const s = b.subs.find(x => x.id === id); if (s) return s; } } return null; };
+    const lenOf = u => u.group ? shares[u.id] : u.end - u.start;
+    const label = u => u.card ? (u.card === 'GENERAL' ? 'General' : u.card) : S[u.state].name;
+    const patch = (id, p) => ({ ...ov, [id]: { ...(ov[id] || {}), ...p } });
+    const settle = us.filter(u => u.state === 'drafted' || u.state === 'needs');
+    const nextAfter = id => { const i = settle.findIndex(x => x.id === id), rest = settle.filter(x => x.id !== id); return rest.length ? rest[Math.min(Math.max(i, 0), rest.length - 1)].id : ''; };
+    const setCard = (u, card) => set({ ov: patch(u.id, { card, state: u.state === 'confirmed' ? 'confirmed' : 'drafted' }) });
+    const notWork = u => set({ ov: patch(u.id, { state: 'notwork', card: null }), sel: nextAfter(u.id), checked: md.checked.filter(i => i !== u.id), toast: 'Marked not work. A later sync won’t bring it back.' });
+    const confirm1 = u => {
+      if (u.state === 'confirmed') return;
+      if (!u.card) return set({ toast: 'Pick a card or General first, then confirm.' });
+      set({ ov: patch(u.id, { state: 'confirmed' }), sel: nextAfter(u.id), checked: md.checked.filter(i => i !== u.id), toast: dur(lenOf(u)) + ' confirmed to ' + label(u) + '. Your organisation can see it now.' });
+    };
+    const confirmMany = ids => {
+      const o = { ...ov }; let n = 0, m = 0;
+      ids.forEach(id => { const u = us.find(x => x.id === id); if (u && u.card && (u.state === 'drafted' || u.state === 'needs')) { o[id] = { ...(o[id] || {}), state: 'confirmed' }; n++; m += lenOf(u); } });
+      const left = ids.length - n;
+      set({ ov: o, checked: [], toast: (n ? dur(m) + ' confirmed' : 'Nothing confirmed') + (left ? ' · ' + left + ' left out, ' + (left === 1 ? 'it needs' : 'they need') + ' a card' : '. Your organisation can see it now.') });
+    };
+    const adjust = (u, d) => { const o = orig(u.id); set({ ov: patch(u.id, { end: Math.max(u.start + 5, Math.min(o.end, u.end + d)) }) }); };
+
+    const tot = L.totals(ov, shares), toSettle = tot.drafted + tot.needs;
+    const ready = settle.filter(u => u.card), need = settle.filter(u => !u.card);
+    const selU = us.find(u => u.id === md.sel) || null;
+    const selCard = selU && selU.card && (selU.state === 'confirmed' || selU.state === 'drafted') ? selU.card : null;
+    const IDS = ['SKYNET-71', 'LAI-860', 'LAI-864', 'LAI-866', 'LAI-867', 'LAI-307'];
+
+    let ed = { cardOpts: [], stats: [] };
+    if (selU) {
+      const s = S[selU.state], c = L.sigIn(selU.start, selU.end), ags = L.agentsDuring(selU.start, selU.end);
+      const near = L.agentsDuring(selU.start - 15, selU.end + 15).map(a => a.card);
+      const opt = (on, lbl, go, title, hint) => ({ label: lbl, go, title, bg: on ? '#f3eefe' : '#fff', bd: on ? '#c9b5fb' : '#e3e3ea', color: on ? '#6d28d9' : '#2a2a33', weight: on ? 600 : 500, dot: hint ? '#0f766e' : 'transparent' });
+      const order = [...IDS.filter(i => near.includes(i)), ...IDS.filter(i => !near.includes(i))];
+      const g = selU.group ? L.GROUP : null;
+      const others = g ? g.subs.filter(x => x.id !== selU.id).map(x => label(us.find(y => y.id === x.id))) : [];
+      const canC = !!selU.card && (selU.state === 'drafted' || selU.state === 'needs');
+      ed = {
+        pillBg: s.bg, pillBd: s.border, pillInk: s.color, pillIcon: s.icon, pillName: s.name,
+        range: rng(selU.start, selU.end),
+        src: selU.state === 'gap' ? 'Nothing reached Laika in this time' : selU.state === 'confirmed' ? 'Confirmed · others can see it' : selU.state === 'notwork' ? 'Not work · not counted' : selU.state === 'break' ? 'Break · not counted' : 'From your collector · only you see it',
+        isShared: !!g, sharedLine: g ? 'Shared hour: ' + rng(g.start, g.end) + ' with ' + others.join(' and ') + '. Your share here is ' + dur(shares[selU.id]) + (md.custom ? ' (custom split).' : ' (even split).') + ' Drag the handles in the timeline footer to change it.' : '',
+        needCard: !selU.card && (selU.state === 'needs' || selU.state === 'gap'),
+        warn: selU.state === 'gap' ? 'Nothing was recorded here. Pick what you worked on, or mark it Not work.' : (selU.hint || 'Work happened') + '. Pick a card, or General if it was general work.',
+        hasCard: !!selU.card, cardKey: label(selU), cardTitle: selU.card && selU.card !== 'GENERAL' ? L.CARDS[selU.card] : 'No card, on purpose',
+        cardOpts: [...order.map(k => opt(selU.card === k, k, () => setCard(selU, k), L.CARDS[k], near.includes(k))), opt(selU.card === 'GENERAL', 'General', () => setCard(selU, 'GENERAL'), 'No card, on purpose', false)],
+        canLen: !g, noLen: !!g, len: dur(lenOf(selU)), minus: () => adjust(selU, -5), plus: () => adjust(selU, 5),
+        lenNote: g ? 'Your share of the hour. The split sets it, so the hour always adds up to 1h.' : '5-minute steps, never longer than what the collector saw.',
+        fromLabel: selU.state === 'confirmed' ? 'BUILT FROM' : 'DRAFTED FROM',
+        stats: [['prompts', c.p], ['commits', c.c], ['marks', c.m], ['agents', ags.length]].map(([l, v]) => ({ l, v })),
+        agentLine: ags.length ? 'During this time: ' + ags.map(a => a.agent + ' on ' + a.card + ' (' + dur(a.ov) + ')').join(', ') + '. Counts only, never what you typed.' : 'No agents ran in this time. Counts only, never what you typed.',
+        confirmLabel: selU.state === 'confirmed' ? 'Confirmed ✓' : canC ? 'Confirm ' + dur(lenOf(selU)) : 'Needs a card',
+        confirmBg: canC ? '#7c3aed' : '#efeff4', confirmColor: canC ? '#fff' : '#6b6b78',
+        confirm: () => confirm1(selU), dismiss: () => notWork(selU), showDismiss: selU.state !== 'notwork' && selU.state !== 'confirmed'
+      };
+    }
+    const step = d => { if (!settle.length) return; const i = settle.findIndex(x => x.id === md.sel); set({ sel: settle[(i + d + settle.length) % settle.length].id }); };
+    this._mdKeys = this._cur === 'myday' && selU ? { confirm: () => confirm1(selU), general: () => setCard(selU, 'GENERAL'), dismiss: () => notWork(selU), next: () => step(1), prev: () => step(-1) } : this._cur === 'myday' ? { next: () => step(1), prev: () => step(-1) } : null;
+
+    const checked = settle.filter(u => md.checked.includes(u.id));
+    const conf = us.filter(u => u.state === 'confirmed'), manSum = md.manual.reduce((n, e) => n + e.len, 0);
+    const byCard = {}; L.AGENTS.forEach(a => { const v = byCard[a.card] || (byCard[a.card] = { m: 0, who: [] }); v.m += a.end - a.start; if (!v.who.includes(a.agent)) v.who.push(a.agent); });
+    const agMax = Math.max(...Object.values(byCard).map(v => v.m)), agSum = L.AGENTS.reduce((n, a) => n + a.end - a.start, 0);
+    const pickCard = k => { const m = us.filter(u => u.card === k).sort((p, q) => p.start - q.start)[0]; if (m) set({ sel: m.id }); };
+    const lenOpt = (on, label, go) => ({ label, go, bg: on ? '#fff' : 'transparent', color: on ? '#16161d' : '#55555f', weight: on ? 600 : 500, shadow: on ? '0 1px 2px rgba(0,0,0,.08)' : 'none' });
+    const chip = (on, label, go, title) => ({ label, go, title: title || '', bg: on ? '#f3eefe' : '#fff', bd: on ? '#c9b5fb' : '#e3e3ea', color: on ? '#6d28d9' : '#2a2a33', weight: on ? 600 : 500 });
+    const WEEK = [['Mon', '19', 400, 0, 'settled'], ['Tue', '20', 0, 0, 'nosig'], ['Wed', '21', 425, 0, 'settled'], ['Thu', '22', tot.confirmed, toSettle, 'today'], ['Fri', '23', 0, 0, 'future'], ['Sat', '24', 0, 0, 'future'], ['Sun', '25', 0, 0, 'future']];
+
+    return {
+      tlOv: ov, tlShares: md.shares, tlCustom: md.custom, tlSel: md.sel, tlChange: p => set(p),
+      mdSwBg: md.draftOn ? '#7c3aed' : '#d4d4dc', mdSwLeft: md.draftOn ? '14px' : '2px',
+      mdToggleDraft: () => set({ draftOn: !md.draftOn, toast: md.draftOn ? 'Draft my time is off. New drafts stop; confirmed time stays.' : 'Draft my time is on. Your collector drafts from its next sync.' }),
+      mdHasDrafts: ready.length > 0,
+      mdConfirmLabel: need.length ? 'Confirm ' + ready.length + ' ready · ' + dur(ready.reduce((n, u) => n + lenOf(u), 0)) : 'Confirm day · ' + dur(toSettle),
+      mdConfirmTitle: need.length ? need.length + ' block' + (need.length > 1 ? 's need' : ' needs') + ' a card first and will be left out' : '',
+      mdConfirmDay: () => confirmMany(ready.map(u => u.id)),
+      mdWeek: WEEK.map(([n, d, c, dr, k]) => { const sel = k === 'today'; return {
+        name: n, date: d, isToday: sel, fig: k === 'future' ? '' : k === 'nosig' ? '—' : dur(c + dr),
+        label: { future: 'Not yet', nosig: 'No signal', settled: 'Settled', today: dr ? dur(dr) + ' to settle' : 'Settled' }[k],
+        labelColor: k === 'today' && dr ? '#6d28d9' : (k === 'settled' || k === 'today') ? '#1f8a4c' : '#6b6b78',
+        cW: Math.min(100, c / 480 * 100) + '%', dW: Math.min(100, dr / 480 * 100) + '%',
+        track: k === 'nosig' ? 'repeating-linear-gradient(135deg,#e3e3ea 0 2px,#fff 2px 5px)' : '#f0eef7',
+        bd: sel ? '#7c3aed' : '#ececf2', bg: sel ? '#f6f1fe' : '#fff', nameColor: sel ? '#6d28d9' : '#2a2a33', opacity: k === 'future' ? 0.6 : 1 }; }),
+      mdHasToast: !!md.toast, mdToast: md.toast, mdCloseToast: () => set({ toast: '' }),
+      edNone: !selU, edOn: !!selU, ed,
+
+      mdHasQueue: settle.length > 0, mdQueueCount: settle.length + ' · ' + dur(toSettle),
+      mdHasChecked: checked.length > 0, mdNoChecked: checked.length === 0, mdCheckedCount: checked.length,
+      mdQueueHint: need.length ? need.length + ' need' + (need.length === 1 ? 's' : '') + ' a card' : 'all ready to confirm',
+      mdAllBg: checked.length && checked.length === settle.length ? '#7c3aed' : '#fff', mdAllBd: checked.length ? '#7c3aed' : '#c9c9d2',
+      mdAllMark: checked.length && checked.length === settle.length ? '✓' : checked.length ? '–' : '',
+      mdToggleAll: () => set({ checked: checked.length === settle.length ? [] : settle.map(u => u.id) }),
+      mdBulkConfirm: () => confirmMany(checked.map(u => u.id)),
+      mdBulkGeneral: () => { const o = { ...ov }; checked.forEach(u => { o[u.id] = { ...(o[u.id] || {}), card: 'GENERAL', state: 'drafted' }; }); set({ ov: o, toast: checked.length + ' moved to General, ready to confirm.' }); },
+      mdBulkDismiss: () => { const o = { ...ov }; checked.forEach(u => { o[u.id] = { state: 'notwork', card: null }; }); set({ ov: o, checked: [], toast: checked.length + ' marked not work.' }); },
+      mdQueue: settle.map(u => { const sel = md.sel === u.id, ck = md.checked.includes(u.id), s = S[u.state]; return {
+        range: rng(u.start, u.end), hm: dur(lenOf(u)), label: label(u),
+        title: u.card ? (u.card === 'GENERAL' ? 'No card, on purpose' : L.CARDS[u.card]) : (u.hint || 'Nothing named a card'),
+        labelColor: u.card ? '#16161d' : '#9a5b00', swBg: s.bg, swBd: s.border,
+        src: u.group ? 'shared hour' : 'collector', srcColor: u.group ? '#5b21b6' : '#55555f', srcBg: u.group ? '#f3eefe' : '#f2f2f6',
+        bg: sel ? '#f6f1fe' : 'transparent', bar: sel ? '#7c3aed' : 'transparent',
+        ckBg: ck ? '#7c3aed' : '#fff', ckBd: ck ? '#7c3aed' : '#c9c9d2', ckMark: ck ? '✓' : '',
+        toggle: e => { e.stopPropagation(); set({ checked: ck ? md.checked.filter(i => i !== u.id) : [...md.checked, u.id] }); },
+        go: () => set({ sel: u.id }) }; }),
+
+      mdNoEntries: !conf.length && !md.manual.length, mdConfirmedTotal: dur(tot.confirmed + manSum),
+      mdLedger: [...conf.map(u => { const sel = md.sel === u.id; return { range: rng(u.start, u.end), hm: dur(lenOf(u)), key: label(u), title: u.card === 'GENERAL' ? '' : (L.CARDS[u.card] || ''), note: u.group ? ' · shared hour' : '',
+        src: ov[u.id] ? 'You confirmed' : 'From draft', bg: sel ? '#f6f1fe' : 'transparent', bar: sel ? '#7c3aed' : 'transparent', go: () => set({ sel: u.id }) }; }),
+        ...md.manual.map(e => ({ range: 'No set time', hm: dur(e.len), key: e.card === 'GENERAL' ? 'General' : e.card, title: e.card === 'GENERAL' ? '' : L.CARDS[e.card], note: e.note ? ' · ' + e.note : '', src: 'Typed', bg: 'transparent', bar: 'transparent', go: null }))],
+      mdLenOpts: [15, 30, 45, 60, 90].map(m => lenOpt(md.len === m, dur(m), () => set({ len: m }))),
+      mdAddCards: [chip(md.addCard === 'GENERAL', 'General', () => set({ addCard: 'GENERAL' })), ...IDS.map(k => chip(md.addCard === k, k, () => set({ addCard: k }), L.CARDS[k]))],
+      mdNote: md.note, mdSetNote: ev => set({ note: ev.target.value }), mdAddLabel: 'Add ' + dur(md.len),
+      mdAdd: () => set({ manual: [...md.manual, { id: 'n' + md.seq, len: md.len, card: md.addCard, note: md.note.trim() }], seq: md.seq + 1, note: '', toast: dur(md.len) + ' added to ' + (md.addCard === 'GENERAL' ? 'General' : md.addCard) + '. Confirmed as you add it.' }),
+
+      mdAgentTotal: dur(agSum), mdAgentPeak: 'Peak: 5 at once, 12:50 – 1:15 PM.',
+      mdAgentRows: Object.entries(byCard).sort((p, q) => q[1].m - p[1].m).map(([k, v]) => ({ key: k, title: L.CARDS[k], who: v.who.join(', '), min: dur(v.m), pct: Math.round(v.m / agMax * 100) + '%', bg: selCard === k ? '#f3eefe' : 'transparent', go: () => pickCard(k) })),
+      mdPlate: [
+        { label: 'IN PROGRESS', count: 3, dot: '#3b6fe0', link: 'Board →', go: this.go('board'), rows: ['LAI-864', 'LAI-867', 'LAI-307'].map(k => ({ id: k, title: L.CARDS[k], hasSub: false })) },
+        { label: 'WAITING ON YOUR REVIEW', count: 200, dot: '#b8741a', link: 'Inbox →', go: this.go('inbox'), rows: [
+          { id: 'LAI-866', title: L.CARDS['LAI-866'], hasSub: true, sub: 'Proof confirmed by CI · 22m', subColor: '#1f7a45' },
+          { id: 'SKYNET-71', title: L.CARDS['SKYNET-71'], hasSub: true, sub: 'Proof failed · 3h', subColor: '#c62536' }] },
+        { label: 'BLOCKED', count: 1, dot: '#c62536', link: '', go: this.go('board'), rows: [
+          { id: 'LAI-860', title: L.CARDS['LAI-860'], hasSub: true, sub: 'Waiting on LAI-866', subColor: '#c62536' }] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
