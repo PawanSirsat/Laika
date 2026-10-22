@@ -506,6 +506,101 @@ void describe('placeChips — a badge only where it clears everything (LAI-860)'
   });
 });
 
+void describe('the organisation’s breaks on the day (D-101, LAI-956)', () => {
+  // 2026-10-20 is a Tuesday: ISO day 2.
+  const LUNCH = { label: 'Lunch', start: '12:00', end: '13:00', days: [1, 2, 3, 4, 5] };
+  const withSchedule = (
+    breaks: { label: string; start: string; end: string; days: number[] }[],
+    over: Parameters<typeof view>[0] = {},
+  ) => ({ ...view(over), settings: { breaks } });
+
+  void test('a window on the viewed weekday is placed, by its label, in the day’s own zone', () => {
+    const line = dayLine(
+      withSchedule([LUNCH, { label: 'Weekend walk', start: '15:00', end: '16:00', days: [6, 7] }]),
+      0,
+    );
+    assert.deepEqual(line.scheduled, [{ label: 'Lunch', start: min(12), end: min(13) }]);
+  });
+
+  void test('none on a weekday it does not name, and none from a board that sends no schedule', () => {
+    // 2026-10-24 is a Saturday.
+    const saturday = dayLine({ ...withSchedule([LUNCH]), day: '2026-10-24' }, 0);
+    assert.deepEqual(saturday.scheduled, []);
+    assert.deepEqual(dayLine(view(), 0).scheduled, []);
+  });
+
+  void test('wall-clock in the day’s zone: 12:00 in Kolkata is 06:30 UTC, minute 720 of its day', () => {
+    const line = dayLine({ ...withSchedule([LUNCH]), tz: 'Asia/Kolkata' }, 0);
+    assert.deepEqual(line.scheduled, [{ label: 'Lunch', start: min(12), end: min(13) }]);
+    assert.equal(
+      line.midnight === undefined ? undefined : line.midnight + min(12) * 60_000,
+      Date.UTC(2026, 9, 20, 6, 30),
+    );
+  });
+
+  void test('on a clock-change day a window sits where its wall clock really falls', () => {
+    // Europe/London: 25 October 2026 has 25 hours; 12:00 is 13 hours after midnight.
+    const line = dayLine(
+      { ...withSchedule([{ ...LUNCH, days: [7] }]), day: '2026-10-25', tz: 'Europe/London' },
+      0,
+    );
+    assert.deepEqual(line.scheduled, [{ label: 'Lunch', start: 13 * 60, end: 14 * 60 }]);
+  });
+
+  void test('a scheduled window is cut out of a gap like the person’s own break', () => {
+    const line = dayLine(
+      withSchedule([LUNCH], { drafts: [draft('a', at(10), 120), draft('b', at(13, 30), 60)] }),
+      0,
+    );
+    // 12:00–13:30, less lunch: 13:00–13:30 is still a gap.
+    assert.deepEqual(line.gaps, [{ start: min(13), end: min(13, 30) }]);
+    // And what is left is held to the same twenty minutes.
+    const short = dayLine(
+      withSchedule([LUNCH], { drafts: [draft('a', at(10), 120), draft('b', at(13, 15), 60)] }),
+      0,
+    );
+    assert.deepEqual(short.gaps, []);
+  });
+
+  void test('nothing before the first block or after the last becomes a gap because of one', () => {
+    const line = dayLine(withSchedule([LUNCH], { drafts: [draft('a', at(9), 60)] }), 0);
+    assert.deepEqual(line.gaps, []);
+  });
+
+  void test('gapsOf takes scheduled windows as cuts, the same as breaks', () => {
+    const blocks = [
+      { start: min(9), end: min(10) },
+      { start: min(11), end: min(12) },
+    ];
+    assert.deepEqual(gapsOf(blocks, [], [{ start: min(10), end: min(10, 30) }]), [
+      { start: min(10, 30), end: min(11) },
+    ]);
+  });
+
+  void test('the axis reaches a window outside 6 AM – 10 PM', () => {
+    const line = dayLine(
+      withSchedule([{ label: 'Dawn stretch', start: '05:00', end: '05:30', days: [2] }]),
+      0,
+    );
+    assert.deepEqual([line.from, line.to], [5, 22]);
+    const late = dayLine(
+      withSchedule([{ label: 'Night', start: '22:30', end: '23:15', days: [2] }]),
+      0,
+    );
+    assert.deepEqual([late.from, late.to], [6, 24]);
+  });
+
+  void test('Fit never folds a window away, and a window alone folds nothing', () => {
+    const lunchOnly = dayLine(withSchedule([LUNCH]), 0);
+    assert.deepEqual(idleEnds(lunchOnly), []);
+    const morning = dayLine(withSchedule([LUNCH], { drafts: [draft('a', at(9), 60)] }), 0);
+    assert.deepEqual(idleEnds(morning), [
+      { start: min(6), end: min(9) },
+      { start: min(13), end: min(22) },
+    ]);
+  });
+});
+
 void describe('idleEnds — the idle stretches Fit folds (LAI-888)', () => {
   const line = (over: {
     blocks?: { start: number; end: number }[];
@@ -524,6 +619,7 @@ void describe('idleEnds — the idle stretches Fit folds (LAI-888)', () => {
       locked: false,
     })),
     breaks: [],
+    scheduled: [],
     signals: over.signals ?? [],
     agents: over.agents ?? [],
     now: over.now,

@@ -1174,6 +1174,31 @@
   color: var(--text-secondary);
 }
 
+/*
+ * The organisation's break (D-101): a quiet shaded band the height of the row,
+ * its name in the strip above the blocks. Drawn first, so every block, gap and
+ * break lies over it; never pressed, so a click goes to what is on it.
+ */
+.dayline-scheduled {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  border-inline: 1px dashed var(--border-card);
+  background: var(--bg-column);
+  pointer-events: none;
+}
+
+.dayline-scheduled-label {
+  display: block;
+  padding: 0.25rem 0.375rem 0;
+  overflow: hidden;
+  font-size: var(--text-small);
+  line-height: var(--leading-body);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 /* The folded stretch, named in the row. */
 .dayline-fold-label {
   position: absolute;
