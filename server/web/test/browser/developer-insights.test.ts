@@ -1,7 +1,9 @@
 /**
- * D-079's two switches in a real browser (LAI-751): the organisation's
- * *Developer insights* on Organisation, and the developer's own *Share local
- * activity* on Connect, with what is held for them and the delete.
+ * D-079's switches in a real browser (LAI-751): the organisation's
+ * *Developer insights* on Organisation, and on Developer access and Connect
+ * what that means for the developer — since D-102 (amended, LAI-964) a plain
+ * notice that their organisation collects, never a personal switch — with what
+ * is held for them and the delete.
  *
  * Each write is asserted by the request the page sent — method, path and
  * body — and by what the page then shows from the answer, so a switch that
@@ -137,6 +139,10 @@ const HELD = {
 
 const NOTHING = { ...HELD, days: [], collectors: 0, oldest_day: null };
 
+/** D-102 amended (LAI-964): the words on Developer access, Connect and the CLI alike. */
+const NOTICE =
+  'Your organisation collects your local activity: per-day counts of your prompts, agent sessions and commits, and your agents’ token counts. Owners and admins can see it, and you can see who looked.';
+
 function connect(
   state: { org: boolean; enabled: boolean; scope: string },
   held: { value: unknown },
@@ -149,10 +155,21 @@ function connect(
     '/api/v1/presence': { enabled: true, present: [] },
     '/api/v1/org': org(state.org),
     '/api/v1/me/activity-sharing': (call: StubCall) => {
-      if (call.method === 'PUT') Object.assign(state, call.body);
+      if (call.method === 'PUT') {
+        // LAI-963: the server refuses `enabled` outright.
+        if ((call.body as Record<string, unknown>).enabled !== undefined) {
+          return reply(403, {
+            code: 'forbidden',
+            message: 'Local activity is collected by your organisation',
+            details: { reason: 'organisation_controlled', org_enabled: state.org },
+          });
+        }
+        Object.assign(state, call.body);
+      }
       return {
         org_enabled: state.org,
-        enabled: state.enabled,
+        enabled: state.org,
+        person_can_opt_out: false,
         scope: state.scope,
         min_sync_interval_s: 600,
       };
@@ -197,26 +214,51 @@ void describe('Developer access: Share local activity', () => {
     });
   }
 
-  void test('a member can turn on their own sharing when organisation insights are on', async () => {
-    const state = { org: true, enabled: false, scope: 'agent-repos' };
-    const h = await open('/developer', connect(state, { value: NOTHING }, 'member'));
-    try {
-      const section = h.page.locator('.dev-sharing');
-      const toggle = section.getByRole('switch', { name: 'Share my local activity' });
-      await toggle.waitFor({ timeout: 20_000 });
-      assert.equal(await toggle.getAttribute('aria-checked'), 'false');
+  for (const [role, guidance, organisationLink] of [
+    ['owner', 'You can turn Developer insights off in Organisation.', 1],
+    ['admin', 'You can turn Developer insights off in Organisation.', 1],
+    ['member', 'Only an owner or admin can turn it off.', 0],
+  ] as const) {
+    void test(`${role}: with organisation insights on, is told plainly — no switch of their own (D-102)`, async () => {
+      // `enabled: false` is what this person last chose under D-079; it no longer decides anything.
+      const state = { org: true, enabled: false, scope: 'agent-repos' };
+      const h = await open('/developer', connect(state, { value: HELD }, role));
+      try {
+        const section = h.page.locator('.dev-sharing');
+        const notice = section.locator('[data-state="org-collects"]');
+        await notice.waitFor({ timeout: 20_000 });
+        const text = await notice.innerText();
+        assert.equal(text.includes(NOTICE), true, text);
+        assert.equal(text.includes(guidance), true, text);
+        assert.equal(await section.getByRole('switch').count(), 0);
+        assert.doesNotMatch(await section.innerText(), /Share my local activity/);
 
-      await toggle.click();
-      await until(async () => (await toggle.getAttribute('aria-checked')) === 'true');
-      assert.deepEqual(
-        h.calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/me/activity-sharing')
-          ?.body,
-        { enabled: true },
-      );
-    } finally {
-      await h.close();
-    }
-  });
+        // Their own data, on this page, and their own time until *Who looked* lands (LAI-959).
+        const own = notice.locator('a[href="#share-held"]');
+        assert.equal(await own.count(), 1);
+        assert.equal(await section.locator('#share-held').count(), 1);
+        assert.equal(await notice.locator('a[href="/my-day"]').count(), 1);
+        assert.equal(
+          await notice.locator('a[href="/organisation?tab=overview"]').count(),
+          organisationLink,
+        );
+
+        // The scope is still theirs, and the page never sends `enabled`.
+        const narrow = section.locator('input[name="share-scope"][value="laika-repos"]');
+        await narrow.click();
+        await until(() => narrow.isChecked());
+        const puts = h.calls.filter(
+          (call) => call.method === 'PUT' && call.path === '/api/v1/me/activity-sharing',
+        );
+        assert.deepEqual(
+          puts.map((call) => call.body),
+          [{ scope: 'laika-repos' }],
+        );
+      } finally {
+        await h.close();
+      }
+    });
+  }
 
   void test('the reused section fits laptop and phone in light and dark', async () => {
     const h = await open(
@@ -225,16 +267,14 @@ void describe('Developer access: Share local activity', () => {
     );
     try {
       const section = h.page.locator('.dev-sharing');
-      await section.getByRole('switch', { name: 'Share my local activity' }).waitFor({
-        timeout: 20_000,
-      });
+      await section.locator('[data-state="org-collects"]').waitFor({ timeout: 20_000 });
       for (const theme of ['light', 'dark']) {
         await setTheme(h.page, theme);
-        for (const width of [1366, 390]) {
+        for (const width of [1440, 390]) {
           await h.page.setViewportSize({ width, height: 900 });
           assert.equal(await section.isVisible(), true);
           if (width === 390) {
-            const internals = section.locator('.share-list, [role="switch"]');
+            const internals = section.locator('.share-list, [data-state="org-collects"]');
             assert.equal(await internals.count(), 3);
             for (const internal of await internals.all()) {
               assert.deepEqual(
@@ -279,34 +319,32 @@ void describe('Connect: Share local activity', () => {
     }
   });
 
-  void test('turns sharing on and narrows the scope, shows the command, what is sent and never sent', async () => {
+  void test('says the organisation collects, narrows the scope, shows the command, what is sent and never sent', async () => {
     const state = { org: true, enabled: false, scope: 'agent-repos' };
-    const h = await open('/developer/connect', connect(state, { value: HELD }));
+    const h = await open('/developer/connect', connect(state, { value: HELD }, 'member'));
     try {
       await h.page.locator('.conn-rail-extra', { hasText: 'Share local activity' }).click();
       const panel = h.page.locator('.share-activity');
-      const toggle = panel.getByRole('switch', { name: 'Share my local activity' });
-      await toggle.waitFor({ timeout: 20_000 });
+      const notice = panel.locator('[data-state="org-collects"]');
+      await notice.waitFor({ timeout: 20_000 });
+      assert.equal((await notice.innerText()).includes(NOTICE), true);
+      assert.equal(await panel.getByRole('switch').count(), 0);
+      assert.equal(await notice.locator('a[href="#share-held"]').count(), 1);
+      assert.equal(await notice.locator('a[href="/my-day"]').count(), 1);
       const text = await panel.innerText();
       assert.match(text, /How many prompts you sent, per agent/);
       assert.match(text, /Prompt text, or anything an agent wrote/);
       assert.match(text, /Commit messages, author emails or commit ids/);
       assert.match(text, /merge commits never count/);
 
-      assert.equal(await toggle.getAttribute('aria-checked'), 'false');
-      await toggle.click();
-      await until(async () => (await toggle.getAttribute('aria-checked')) === 'true');
-      assert.equal(await toggle.getAttribute('aria-checked'), 'true');
-      const puts = () =>
-        h.calls.filter((c) => c.method === 'PUT' && c.path === '/api/v1/me/activity-sharing');
-      assert.deepEqual(puts()[0]?.body, { enabled: true });
-
       // The radio follows the server's answer, so click and wait for it —
       // `check()` would assert before the PUT has returned.
+      const puts = () =>
+        h.calls.filter((c) => c.method === 'PUT' && c.path === '/api/v1/me/activity-sharing');
       const narrow = panel.locator('input[name="share-scope"][value="laika-repos"]');
       await narrow.click();
-      await until(() => puts().length === 2);
-      assert.deepEqual(puts()[1]?.body, { scope: 'laika-repos' });
+      await until(() => puts().length === 1);
+      assert.deepEqual(puts()[0]?.body, { scope: 'laika-repos' });
       await until(() => narrow.isChecked());
       assert.equal(await narrow.isChecked(), true);
 

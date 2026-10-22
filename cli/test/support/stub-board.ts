@@ -44,7 +44,14 @@ export interface StubBoard {
   readonly url: string;
   readonly requests: Recorded[];
   readonly violations: string[];
-  sharing: { org_enabled: boolean; enabled: boolean; scope: string; min_sync_interval_s: number };
+  sharing: {
+    org_enabled: boolean;
+    enabled: boolean;
+    /** Sent by a board with D-102 amended (LAI-963); always `false`. */
+    person_can_opt_out?: false;
+    scope: string;
+    min_sync_interval_s: number;
+  };
   /**
    * The project prefixes the board answers a collector with (§6.4, LAI-770),
    * or `undefined` for an older board that names none.
@@ -122,7 +129,13 @@ export async function stubBoard(token: string): Promise<StubBoard> {
     url: '',
     requests: [],
     violations: [],
-    sharing: { org_enabled: true, enabled: true, scope: 'agent-repos', min_sync_interval_s: 600 },
+    sharing: {
+      org_enabled: true,
+      enabled: true,
+      person_can_opt_out: false,
+      scope: 'agent-repos',
+      min_sync_interval_s: 600,
+    },
     get: 'ok',
     put: { kind: 'ok' },
     now: () => new Date(),
