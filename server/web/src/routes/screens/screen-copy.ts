@@ -98,7 +98,7 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
   },
   '/developer/connect': {
     headline: 'No project to mirror work into',
-    body: 'Setup still works without one — a session can connect and report in. Create a project and this page fills in the block its lead commits.',
+    body: 'Setup still works without one — a session can connect and report in. Create a project and this page fills in the block its space admin commits.',
   },
   /*
    * An empty state, not an "unbuilt" notice — the screen exists (LAI-086).
@@ -124,6 +124,10 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
   '/members': {
     headline: 'No project chosen',
     body: 'Open a project from Projects to see who is on it.',
+  },
+  '/spaces/:slug/settings': {
+    headline: 'No such space',
+    body: 'Space settings open from a space: its ⋯ menu, or the gear on its card under Spaces.',
   },
   '/login': {
     headline: 'Sign-in did not load',

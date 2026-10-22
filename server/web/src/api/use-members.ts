@@ -17,7 +17,8 @@ export interface UseMembers {
   /** The server's reason for refusing the last change. */
   readonly actionError: unknown;
   readonly setRole: (userId: string, role: ProjectRole) => Promise<void>;
-  readonly remove: (userId: string) => Promise<void>;
+  /** Resolves `true` only when the server accepted, so a caller can offer Undo. */
+  readonly remove: (userId: string) => Promise<boolean>;
   /** Resolves `true` only when the server accepted, so the form can close. */
   readonly add: (userId: string, role: ProjectRole) => Promise<boolean>;
   readonly reload: () => void;
@@ -90,9 +91,9 @@ export function useMembers(slug: string | undefined): UseMembers {
   );
 
   const remove = useCallback(
-    async (userId: string): Promise<void> => {
-      if (slug === undefined) return;
-      await run(userId, () => removeMember(slug, userId));
+    (userId: string): Promise<boolean> => {
+      if (slug === undefined) return Promise.resolve(false);
+      return run(userId, () => removeMember(slug, userId));
     },
     [slug, run],
   );

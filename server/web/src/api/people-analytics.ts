@@ -1,8 +1,5 @@
-import { useEffect, useState } from 'react';
 import { request } from './client.ts';
 import type { OwnLocalActivity } from './local-activity.ts';
-import { getPermissions } from './permissions.ts';
-import { mayOpenProfiles } from './profiles.ts';
 import type { Page } from './tasks.ts';
 import type { MyDay } from './time.ts';
 
@@ -77,24 +74,6 @@ export function listAnalyticsViews(
   return request<Page<WhoLooked>>(`/me/analytics-views${qs === '' ? '' : `?${qs}`}`, opts(signal));
 }
 
-/**
- * Whether the reader may read other people's analytics — and so open their
- * profile, their day and their hours, and see a name as a link to them.
- *
- * **The server's answer when it has one**: `GET /permissions`' `me.actions`,
- * which already reflects the owner's grants (LAI-958). Until it answers, or if
- * it cannot, **the default grants** stand in — owner and admin — which is
- * what an organisation whose owner changed nothing has. The server refuses
- * every read it would not answer, so a stand-in can only ever show a link the
- * server then refuses, never data.
- */
-export function holdsPeopleAnalytics(
-  actions: readonly string[] | undefined,
-  orgRole: string | undefined,
-): boolean {
-  return actions === undefined ? mayOpenProfiles(orgRole) : actions.includes(PEOPLE_ANALYTICS);
-}
-
 /** How a view of the person's analytics reads in their list. */
 export const VIEW_KIND_LABELS: Readonly<Record<AnalyticsViewKind, string>> = {
   time: 'your day',
@@ -105,43 +84,4 @@ export const VIEW_KIND_LABELS: Readonly<Record<AnalyticsViewKind, string>> = {
 
 export function viewKindLabel(kind: WhoLooked['kind']): string {
   return (VIEW_KIND_LABELS as Readonly<Record<string, string>>)[kind] ?? kind.replace(/_/g, ' ');
-}
-
-export interface OrgActions {
-  /** `GET /permissions`' `me.actions`; `undefined` until it answers, or when it cannot. */
-  readonly actions: readonly string[] | undefined;
-  /** The question has an answer: read, or failed and left to the defaults. */
-  readonly settled: boolean;
-}
-
-/**
- * The org actions the reader holds on this credential, as the server computes
- * them — the owner's grants included (D-102 rule 6, LAI-958).
- *
- * **A role says what an organisation whose owner changed nothing allows; this
- * says what this one allows.** Read once per screen through the shared GET
- * cache (`client.ts` keeps `/permissions` for a while), so every link on a
- * page asks one request between them.
- */
-export function useOrgActions(enabled = true): OrgActions {
-  const [state, setState] = useState<OrgActions>({ actions: undefined, settled: false });
-
-  useEffect(() => {
-    if (!enabled) return;
-    const controller = new AbortController();
-    getPermissions(controller.signal)
-      .then((permissions) => {
-        if (!controller.signal.aborted) {
-          setState({ actions: permissions.me.actions, settled: true });
-        }
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setState({ actions: undefined, settled: true });
-      });
-    return () => {
-      controller.abort();
-    };
-  }, [enabled]);
-
-  return state;
 }

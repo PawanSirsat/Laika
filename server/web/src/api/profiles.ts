@@ -6,9 +6,9 @@ import { request } from './client.ts';
  * §11.4.2, D-078, LAI-743).
  *
  * **Owners and admins only, signed in.** The server answers `profile.*` to
- * nobody else and refuses every token; {@link mayOpenProfiles} is the client's
- * mirror of that row, so a link to a profile is drawn for exactly the people
- * who can open it — absent, not disabled, for everyone else (LAI-082).
+ * nobody else and refuses every token; `GET /permissions`' `profile.read` is
+ * how the client knows (LAI-970), so a link to a profile is drawn for exactly
+ * the people who can open it — absent, not disabled, for everyone else (LAI-082).
  *
  * Every type below mirrors a server view in `services/profiles.ts`;
  * `view-type-drift.test.ts` holds the two in step.
@@ -248,19 +248,6 @@ export function rateMember(
 export function attemptKey(): string {
   const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
   return `rating-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
-}
-
-/** §3.1 `profile.read`: an owner or an admin. Nobody before the session lands. */
-export function mayOpenProfiles(orgRole: string | undefined): boolean {
-  return orgRole === 'owner' || orgRole === 'admin';
-}
-
-/** §3.1 `profile.rate`: as {@link mayOpenProfiles}, and *"not themselves"*. */
-export function mayRate(
-  me: { readonly id: string; readonly org_role: string } | undefined,
-  userId: string,
-): boolean {
-  return me !== undefined && mayOpenProfiles(me.org_role) && me.id !== userId;
 }
 
 /** Where a person's profile lives — a link someone can paste. */

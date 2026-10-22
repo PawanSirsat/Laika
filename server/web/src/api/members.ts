@@ -17,6 +17,22 @@ export type ProjectRole = 'lead' | 'member' | 'viewer';
 
 export const PROJECT_ROLES: readonly ProjectRole[] = ['lead', 'member', 'viewer'];
 
+/**
+ * What each role is called on screen (D-103 item 2). **`lead` is "Space
+ * admin"** everywhere a person reads it; the data, the API and SPEC keep
+ * `lead`. One map, so no screen says "lead" beside another saying "admin".
+ */
+export const PROJECT_ROLE_LABELS: Readonly<Record<ProjectRole, string>> = {
+  lead: 'Space admin',
+  member: 'Member',
+  viewer: 'Viewer',
+};
+
+/** A role's screen name; a role this client does not know is shown as sent. */
+export function projectRoleLabel(role: string): string {
+  return (PROJECT_ROLE_LABELS as Readonly<Record<string, string>>)[role] ?? role;
+}
+
 /** What each project role permits, in the terms §3.1 uses. */
 export const ROLE_SUMMARY: Readonly<Record<ProjectRole, string>> = {
   lead: 'Manages members, project settings and sprints, plus everything a member can do.',
@@ -66,23 +82,3 @@ export function removeMember(slug: string, userId: string): Promise<MemberList> 
 }
 
 export type { Member };
-
-/**
- * May this actor manage members of this project?
- *
- * `project.members.manage` is lead-only (`policy/can.ts`), and an org owner or
- * admin holds implicit lead everywhere (§2). Computed here so the UI can
- * **hide** controls rather than offering them and answering 403 — which teaches
- * people the app is broken rather than that they lack permission.
- *
- * This is a display decision, not enforcement. The server decides; if the two
- * ever disagree the server is right and the UI is the bug.
- */
-export function canManageMembers(
-  orgRole: string,
-  projectId: string,
-  memberships: readonly { readonly project_id: string; readonly role: string }[],
-): boolean {
-  if (orgRole === 'owner' || orgRole === 'admin') return true;
-  return memberships.some((m) => m.project_id === projectId && m.role === 'lead');
-}

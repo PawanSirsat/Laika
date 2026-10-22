@@ -54,9 +54,9 @@ void describe('the task panel can change a sprint', () => {
   });
 
   void test('the control asks the policy, and does not invent an answer', () => {
-    // §3.2: assigning to a sprint is member+. The same helper the Sprints
-    // screen uses — not a second rule that can drift from it.
-    assert.match(board, /canAssignToSprints\(me\.org_role, boardProjectId, me\.memberships\)/);
+    // §3.2: assigning to a sprint is member+ — asked of the server's answer
+    // (LAI-970), as the Sprints screen asks it, not a second rule here.
+    assert.match(board, /gates\.project\(boardProjectId, 'task\.assign_sprint'\)/);
     assert.match(meta, /disabled=\{sprintBusy \|\| !maySetSprint\}/, 'a Viewer can edit it');
   });
 

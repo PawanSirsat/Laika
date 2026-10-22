@@ -17,8 +17,19 @@ import {
 } from '../../src/routes/page-tabs.ts';
 import { permissionHolder } from '../../src/routes/nav-permissions.ts';
 
-const admin = permissionHolder('admin');
-const member = permissionHolder('member');
+/**
+ * What `GET /permissions` lists under the default grants (D-102 rule 6) — the
+ * tabs decide from the server's actions, never from a role (LAI-970).
+ */
+const ACTIONS: Readonly<Record<string, readonly string[]>> = {
+  owner: ['org.read', 'audit_log.export', 'token.list_any', 'profile.read'],
+  admin: ['org.read', 'audit_log.export', 'token.list_any', 'profile.read'],
+  member: ['org.read'],
+  viewer: ['org.read'],
+};
+const as = (role: string) => permissionHolder(ACTIONS[role]);
+const admin = as('admin');
+const member = as('member');
 
 void describe('the tabs are the owner’s grouping', () => {
   void test('Inbox is Review then Unlisted work', () => {
@@ -63,20 +74,16 @@ void describe('a gated tab is absent, not disabled', () => {
   });
 
   void test('Security — everyone’s tokens — is an owner’s or an admin’s', () => {
-    assert.ok(
-      visibleTabs(ORGANISATION_TABS, permissionHolder('owner')).some((t) => t.id === 'security'),
-    );
+    assert.ok(visibleTabs(ORGANISATION_TABS, as('owner')).some((t) => t.id === 'security'));
     assert.ok(visibleTabs(ORGANISATION_TABS, admin).some((t) => t.id === 'security'));
     assert.ok(!visibleTabs(ORGANISATION_TABS, member).some((t) => t.id === 'security'));
-    assert.ok(
-      !visibleTabs(ORGANISATION_TABS, permissionHolder('viewer')).some((t) => t.id === 'security'),
-    );
+    assert.ok(!visibleTabs(ORGANISATION_TABS, as('viewer')).some((t) => t.id === 'security'));
   });
 
   void test('Roles & permissions is everyone’s — the endpoint is org.read (LAI-950)', () => {
     for (const role of ['owner', 'admin', 'member', 'viewer']) {
       assert.ok(
-        visibleTabs(ORGANISATION_TABS, permissionHolder(role)).some((t) => t.id === 'roles'),
+        visibleTabs(ORGANISATION_TABS, as(role)).some((t) => t.id === 'roles'),
         `${role} is not offered Roles & permissions`,
       );
     }
@@ -87,15 +94,12 @@ void describe('a gated tab is absent, not disabled', () => {
     assert.equal(ORGANISATION_TABS.find((t) => t.id === 'activity')?.requires, 'audit_log.export');
     for (const role of ['owner', 'admin']) {
       assert.ok(
-        visibleTabs(ORGANISATION_TABS, permissionHolder(role)).some((t) => t.id === 'activity'),
+        visibleTabs(ORGANISATION_TABS, as(role)).some((t) => t.id === 'activity'),
         role,
       );
     }
     for (const role of ['member', 'viewer']) {
-      assert.ok(
-        !visibleTabs(ORGANISATION_TABS, permissionHolder(role)).some((t) => t.id === 'activity'),
-        role,
-      );
+      assert.ok(!visibleTabs(ORGANISATION_TABS, as(role)).some((t) => t.id === 'activity'), role);
     }
   });
 

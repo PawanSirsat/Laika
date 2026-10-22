@@ -517,7 +517,8 @@ export function ReviewScreen({ onNavigate, onChanged }: ReviewScreenProps) {
                       </a>
                       {!item.can_decide && (
                         <span className="rev-why">
-                          Only the assignee, a project lead or an admin decides this one.
+                          Only the assignee, a space admin or an organisation admin decides this
+                          one.
                         </span>
                       )}
                     </div>

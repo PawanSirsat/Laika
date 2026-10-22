@@ -14,6 +14,7 @@ import { ViewTabs } from './ViewTabs.tsx';
 import type { TaskPriority } from '../../api/tasks.ts';
 import { isPriority, isTagName } from '../../api/task-filter.ts';
 import './space.css';
+import { usePermissions } from '../../api/permissions.ts';
 
 /**
  * The bar shows only values the board applies (LAI-724): a refused
@@ -57,7 +58,7 @@ export function SpaceLayout({ children }: SpaceLayoutProps) {
         params={params}
         setParams={setParams}
         navigate={navigate}
-        orgRole={me?.org_role}
+        signedIn={me !== undefined}
       >
         {children}
       </SpaceFrame>
@@ -71,7 +72,7 @@ interface SpaceFrameProps {
   readonly params: URLSearchParams;
   readonly setParams: (next: URLSearchParams, options?: { readonly push?: boolean }) => void;
   readonly navigate: (to: string) => void;
-  readonly orgRole: string | undefined;
+  readonly signedIn: boolean;
   readonly children: ReactNode;
 }
 
@@ -81,9 +82,10 @@ function SpaceFrame({
   params,
   setParams,
   navigate,
-  orgRole,
+  signedIn,
   children,
 }: SpaceFrameProps) {
+  const { permissions } = usePermissions(signedIn);
   /**
    * The space's display name.
    *
@@ -219,7 +221,7 @@ function SpaceFrame({
               projectSlug={slug}
               params={params}
               onNavigate={navigate}
-              holds={permissionHolder(orgRole)}
+              holds={permissionHolder(permissions?.me.actions)}
               counts={{ '/meeting-review': pendingReviews }}
             />
           </div>

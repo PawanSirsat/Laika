@@ -5,7 +5,8 @@ import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
-import { canAssignToSprints, canManageSprints, type Sprint } from '../../../api/sprints.ts';
+import { type Sprint } from '../../../api/sprints.ts';
+import { useGates } from '../../../api/permissions.ts';
 import { listProjects } from '../../../api/projects.ts';
 import { useShell } from '../../../components/shell/shell-context.ts';
 import { useRoute } from '../../use-route.ts';
@@ -48,6 +49,8 @@ export function SprintsScreen() {
    * replaced the shell's 401 handler with its own and cleared it on leaving.
    */
   const { me } = useShell();
+  // `sprint.manage` and `task.assign_sprint`, as the server reports them (LAI-970).
+  const gates = useGates(me !== undefined);
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectId, setProjectId] = useState<string | undefined>(undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
@@ -94,14 +97,8 @@ export function SprintsScreen() {
 
   const sprints = useSprints(slug);
 
-  const canManage =
-    me !== undefined &&
-    projectId !== undefined &&
-    canManageSprints(me.org_role, projectId, me.memberships);
-  const canAssign =
-    me !== undefined &&
-    projectId !== undefined &&
-    canAssignToSprints(me.org_role, projectId, me.memberships);
+  const canManage = projectId !== undefined && gates.project(projectId, 'sprint.manage');
+  const canAssign = projectId !== undefined && gates.project(projectId, 'task.assign_sprint');
 
   if (projectError !== null) {
     return (
@@ -242,7 +239,7 @@ export function SprintsScreen() {
           body={
             canManage
               ? 'Plan the first one — a name and two dates is all it needs.'
-              : 'A project lead can plan the first one.'
+              : 'A space admin can plan the first one.'
           }
           {...(canManage
             ? {

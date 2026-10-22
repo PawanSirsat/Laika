@@ -41,6 +41,17 @@ void describe('describeEvent', () => {
     assert.equal(describeEvent(event({ type: 'task.status_changed' })), 'moved this task');
   });
 
+  void test('a reorder reads as a reorder, not as an edit (LAI-970)', () => {
+    // The organisation's history shows every row; a drag is `task.updated`
+    // naming `position`, and *edited this task* would claim a change it was not.
+    const reorder = event({ type: 'task.updated', payload: { field: 'position' } });
+    assert.equal(describeEvent(reorder), 'reordered this task');
+    assert.equal(
+      describeEvent(event({ type: 'task.updated', payload: { field: 'title' } })),
+      'edited this task',
+    );
+  });
+
   void test('an unknown type degrades to itself, not to a crash or a blank', () => {
     // New server-side types will appear as themselves until someone adds a
     // line. Legible and obviously incomplete is the right failure.

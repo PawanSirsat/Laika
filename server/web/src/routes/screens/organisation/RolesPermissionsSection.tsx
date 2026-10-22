@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { getPermissions, type Permissions } from '../../../api/permissions.ts';
+import { refreshPermissions, type Permissions } from '../../../api/permissions.ts';
+import { projectRoleLabel } from '../../../api/members.ts';
 import type { Project } from '../../../api/projects.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -81,7 +82,7 @@ function Matrix({
             <th scope="col">Action</th>
             {roles.map((role) => (
               <th key={role} scope="col" className="perm-role">
-                {role}
+                {scope === 'project' ? projectRoleLabel(role) : role}
               </th>
             ))}
           </tr>
@@ -119,7 +120,7 @@ function Matrix({
                 return (
                   <td key={role} className="perm-cell" data-role={role} data-holding={cell.kind}>
                     <span className="perm-cell-role" aria-hidden="true">
-                      {role}
+                      {scope === 'project' ? projectRoleLabel(role) : role}
                     </span>
                     <span className="perm-cell-value">{cell.text}</span>
                   </td>
@@ -161,7 +162,7 @@ export function RolesPermissionsSection({
     // A re-read after a save keeps the tab on screen; only a first load or a
     // retry from an error shows the skeleton.
     setState((current) => (current.status === 'ready' ? current : { status: 'loading' }));
-    getPermissions(controller.signal)
+    refreshPermissions(controller.signal)
       .then((view) => {
         if (controller.signal.aborted) return;
         setState({ status: 'ready', view });
@@ -263,7 +264,7 @@ export function RolesPermissionsSection({
                       {projectLabel(projects, grant.project_id)}
                     </span>
                     {grant.role !== null && (
-                      <span className="org-chip perm-role">{grant.role}</span>
+                      <span className="org-chip perm-role">{projectRoleLabel(grant.role)}</span>
                     )}
                   </div>
                   <ul className="perm-held">

@@ -60,7 +60,6 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
       spaces={spaces}
       allSpaces={allSpaces}
       onOpenSpace={openSpace}
-      orgRole={me?.org_role}
       orgName={orgName}
       spaceName={spaceName}
       // Inbox is what waits on its two tabs (LAI-796): the review queue
