@@ -10,6 +10,7 @@ import {
   required,
 } from '../../components/forms/validation.ts';
 import { INVITE_REFUSED_REASON } from '../../api/invites.ts';
+import { projectRoleLabel } from '../../api/members.ts';
 import { ORG_ROLE_PERMITS, PROJECT_ROLE_PERMITS, orgRoleLabel } from './invite-roles.ts';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
@@ -209,7 +210,7 @@ export function InviteScreen({
 
           {invite.project_role !== null && invite.project_name !== null && (
             <p className="auth-role-permits">
-              In <b>{invite.project_name}</b> you are a {invite.project_role}:{' '}
+              In <b>{invite.project_name}</b> you are a {projectRoleLabel(invite.project_role)}:{' '}
               {PROJECT_ROLE_PERMITS[invite.project_role]}
             </p>
           )}

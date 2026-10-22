@@ -9,7 +9,12 @@ import { Dropdown } from '../../components/Dropdown.tsx';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import { useMembers } from '../../api/use-members.ts';
-import { PROJECT_ROLES, ROLE_SUMMARY, type ProjectRole } from '../../api/members.ts';
+import {
+  PROJECT_ROLES,
+  ROLE_SUMMARY,
+  projectRoleLabel,
+  type ProjectRole,
+} from '../../api/members.ts';
 import { getProject, type Project } from '../../api/projects.ts';
 import type { MeProfile } from '../../api/me.ts';
 import { useGates } from '../../api/permissions.ts';
@@ -179,7 +184,7 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
                         }}
                         options={PROJECT_ROLES.map((role) => ({
                           value: role,
-                          label: role,
+                          label: projectRoleLabel(role),
                           title: ROLE_SUMMARY[role],
                         }))}
                       />
@@ -232,7 +237,7 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
                     className="member-role-static"
                     title={ROLE_SUMMARY[member.role as ProjectRole]}
                   >
-                    {member.role}
+                    {projectRoleLabel(member.role)}
                   </span>
                 )}
               </li>

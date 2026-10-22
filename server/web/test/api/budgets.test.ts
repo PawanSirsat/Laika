@@ -84,7 +84,10 @@ void describe('how a budget is said', () => {
       // Plain words since LAI-785: the high end of the token estimate, not "p80".
       'the token estimate’s high end, frozen at claim',
     );
-    assert.equal(budgetSource({ scope: 'task', source: 'set', period: null }), 'set by a lead');
+    assert.equal(
+      budgetSource({ scope: 'task', source: 'set', period: null }),
+      'set by a space admin',
+    );
     assert.equal(
       budgetSource({
         scope: 'project',

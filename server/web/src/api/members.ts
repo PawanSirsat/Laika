@@ -17,6 +17,22 @@ export type ProjectRole = 'lead' | 'member' | 'viewer';
 
 export const PROJECT_ROLES: readonly ProjectRole[] = ['lead', 'member', 'viewer'];
 
+/**
+ * What each role is called on screen (D-103 item 2). **`lead` is "Space
+ * admin"** everywhere a person reads it; the data, the API and SPEC keep
+ * `lead`. One map, so no screen says "lead" beside another saying "admin".
+ */
+export const PROJECT_ROLE_LABELS: Readonly<Record<ProjectRole, string>> = {
+  lead: 'Space admin',
+  member: 'Member',
+  viewer: 'Viewer',
+};
+
+/** A role's screen name; a role this client does not know is shown as sent. */
+export function projectRoleLabel(role: string): string {
+  return (PROJECT_ROLE_LABELS as Readonly<Record<string, string>>)[role] ?? role;
+}
+
 /** What each project role permits, in the terms §3.1 uses. */
 export const ROLE_SUMMARY: Readonly<Record<ProjectRole, string>> = {
   lead: 'Manages members, project settings and sprints, plus everything a member can do.',

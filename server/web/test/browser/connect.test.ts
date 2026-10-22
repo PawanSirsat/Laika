@@ -1249,7 +1249,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
 
       const card = h.page.locator('.conn-wizard-card');
       const expect: readonly [string, RegExp][] = [
-        ['Share with your project', /For the project lead|Commit this to CLAUDE\.md/],
+        ['Share with your project', /For the space admin|Commit this to CLAUDE\.md/],
         [
           'What agents can do',
           /Eighteen tools[\s\S]*Find work[\s\S]*Three rules the board enforces/i,

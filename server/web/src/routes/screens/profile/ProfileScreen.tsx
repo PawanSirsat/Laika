@@ -127,9 +127,9 @@ const MEANS = {
   decided30: 'Their accepts and send-backs on work that is not theirs in the last 30 days.',
   decide:
     'Median time from a task’s latest move into Review — or its creation, if it was created there — to their decision on it. Decisions made from outside Review are counted, not measured.',
-  led: 'Projects where their membership role is Lead, not archived.',
+  led: 'Spaces where they are a Space admin, not archived.',
   waiting:
-    'Tasks in Review in the projects they lead that are not theirs — someone else’s, or nobody’s.',
+    'Tasks in Review in the spaces where they are a Space admin that are not theirs — someone else’s, or nobody’s.',
   oldest: 'How long the longest-waiting of those has been in Review.',
 } as const;
 
@@ -1156,7 +1156,7 @@ function ReviewCard({
             ...(queue === undefined
               ? []
               : ([
-                  ['Projects led', MEANS.led],
+                  ['Spaces as Space admin', MEANS.led],
                   ['Waiting now', MEANS.waiting],
                   ['Oldest waiting', MEANS.oldest],
                 ] satisfies Def[])),

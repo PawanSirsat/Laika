@@ -239,7 +239,7 @@ export function SprintsScreen() {
           body={
             canManage
               ? 'Plan the first one — a name and two dates is all it needs.'
-              : 'A project lead can plan the first one.'
+              : 'A space admin can plan the first one.'
           }
           {...(canManage
             ? {
