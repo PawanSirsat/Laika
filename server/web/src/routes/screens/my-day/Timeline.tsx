@@ -662,7 +662,7 @@ export function Timeline({
   /** The row's px from the dragged block height: the strip above, the blocks, a margin under. */
   const rowStyle = {
     '--block-h': `${String(blockPx)}px`,
-    '--you-h': `${String(28 + blockPx + 8)}px`,
+    '--you-h': `${String(28 + blockPx + 14)}px`,
   } as CSSProperties;
   const grip = {
     onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
@@ -673,6 +673,12 @@ export function Timeline({
     onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
       const drag = gripDrag.current;
       if (drag === null) return;
+      // A move with no button held is not a drag: the button was let go where
+      // no pointerup reached us — outside the window, say.
+      if (event.buttons === 0) {
+        gripDrag.current = null;
+        return;
+      }
       setBlockPx(clampBlockHeight(drag.px + (event.clientY - drag.y)));
     },
     onPointerUp: (event: PointerEvent<HTMLButtonElement>) => {
@@ -682,6 +688,9 @@ export function Timeline({
       }
     },
     onPointerCancel: () => {
+      gripDrag.current = null;
+    },
+    onLostPointerCapture: () => {
       gripDrag.current = null;
     },
     onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -720,6 +729,23 @@ export function Timeline({
           {figure(figures.confirmed + figures.drafted + figures.needsCard)}
         </strong>
         <span className="dayline-lane-sub">of work · {duration(figures.confirmed)} confirmed</span>
+        <label className="dayline-row-height">
+          <span className="dayline-row-height-name">Row height</span>
+          <input
+            type="range"
+            className="dayline-row-height-slider"
+            data-row-slider
+            min={BLOCK_MIN_PX}
+            max={BLOCK_MAX_PX}
+            step={BLOCK_STEP_PX}
+            value={blockPx}
+            aria-valuetext={`${String(blockPx)} px`}
+            title="Drag to make the rows taller or shorter"
+            onChange={(event) => {
+              setBlockPx(clampBlockHeight(Number(event.target.value)));
+            }}
+          />
+        </label>
       </div>
       {hasAgents && (
         <div className="dayline-lane-label dayline-label-agents">
@@ -1352,7 +1378,12 @@ export function Timeline({
                   title="Drag to make the rows taller or shorter"
                   {...grip}
                 >
-                  <span className="dayline-grip-bar" aria-hidden="true" />
+                  <span className="dayline-grip-bar" aria-hidden="true">
+                    <span className="dayline-grip-dots" aria-hidden="true" />
+                  </span>
+                  <span className="dayline-grip-label" aria-hidden="true">
+                    ↕ drag to resize rows
+                  </span>
                 </button>
               </div>
 
