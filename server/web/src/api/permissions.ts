@@ -64,6 +64,31 @@ export function getPermissions(signal?: AbortSignal): Promise<Permissions> {
   return request<Permissions>('/permissions', signal === undefined ? {} : { signal });
 }
 
+/** Whether the caller holds an org action on this credential (`me.actions`). */
+export function mayInOrg(permissions: Permissions, action: string): boolean {
+  return permissions.me.actions.includes(action);
+}
+
+/**
+ * Whether the caller holds a project action in one space (LAI-978).
+ *
+ * By membership, from `me.projects`; or — for an owner or admin, who is in no
+ * list for a space they never joined — by the role they hold everywhere,
+ * answered from that role's cell in the server's own table. Either way the
+ * answer is `can()`'s; nothing here knows which role grants what.
+ */
+export function mayInProject(permissions: Permissions, projectId: string, action: string): boolean {
+  const { me } = permissions;
+  if (me.projects.some((g) => g.project_id === projectId && g.actions.includes(action)))
+    return true;
+  const implicit = me.implicit_project_role;
+  if (implicit === null) return false;
+  if (me.project_scope !== 'all' && !me.project_scope.includes(projectId)) return false;
+  return permissions.permissions.some(
+    (row) => row.scope === 'project' && row.action === action && row.roles[implicit] === 'yes',
+  );
+}
+
 /**
  * Who can do what — what the owner has granted each org role (SPEC §6.4,
  * D-102 rule 6, LAI-958; the grid is LAI-960).

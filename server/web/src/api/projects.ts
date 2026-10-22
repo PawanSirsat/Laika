@@ -1,5 +1,6 @@
 import { request } from './client.ts';
 import type { MemberList, Page } from './tasks.ts';
+import type { SpaceColor } from '../theme/space-color.ts';
 
 /**
  * Projects (SPEC §6.4, LAI-010).
@@ -30,6 +31,12 @@ export interface Project {
    */
   readonly repo: string | null;
   readonly visibility: 'public' | 'private';
+  /**
+   * The palette entry the space is painted (D-103 item 4, LAI-976). Optional
+   * because a space stored before it existed may send none; `spaceColor()`
+   * then derives one from the slug.
+   */
+  readonly color?: SpaceColor | null;
   readonly context_md: string;
   /** Days after which finished work leaves the board; `null` never (LAI-266). */
   readonly board_hide_done_days: number | null;
@@ -93,6 +100,11 @@ export interface ListProjectsQuery {
   readonly limit?: number | undefined;
   /** Unix ms. Asking for changes since a point is what produces tombstones. */
   readonly updatedSince?: number | undefined;
+  /**
+   * `include` adds archived spaces, `only` lists nothing else (LAI-976).
+   * Omitted, the list is live spaces only, as it always was.
+   */
+  readonly archived?: 'include' | 'only' | undefined;
 }
 
 export function listProjects(
@@ -103,6 +115,7 @@ export function listProjects(
   if (query.cursor !== undefined) params.set('cursor', query.cursor);
   if (query.limit !== undefined) params.set('limit', String(query.limit));
   if (query.updatedSince !== undefined) params.set('updated_since', String(query.updatedSince));
+  if (query.archived !== undefined) params.set('archived', query.archived);
 
   const search = params.toString();
   return request<Page<ProjectRow>>(
@@ -271,5 +284,17 @@ export function setProjectVisibility(
   return request<Project>(`/projects/${encodeURIComponent(slug)}`, {
     method: 'PATCH',
     body: { visibility },
+  });
+}
+
+/**
+ * Archive or restore a space (D-103 item 10). The same `PATCH` the server has
+ * taken `{archived}` on all along; the Spaces page's *Archived* chip offers
+ * Restore to whoever holds `project.archive`.
+ */
+export function setProjectArchived(slug: string, archived: boolean): Promise<Project> {
+  return request<Project>(`/projects/${encodeURIComponent(slug)}`, {
+    method: 'PATCH',
+    body: { archived },
   });
 }
