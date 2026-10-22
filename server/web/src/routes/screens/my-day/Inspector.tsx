@@ -290,7 +290,7 @@ function TitleField({
         // 200, not an entry's 280: the draft's own CHECK holds it
         // (`time_drafts_note_check`, server/src/db/schema.ts).
         maxLength={200}
-        placeholder="What it was, briefly"
+        placeholder="A title for this block"
         onChange={(event) => {
           setText(event.target.value);
         }}

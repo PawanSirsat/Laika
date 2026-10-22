@@ -184,7 +184,7 @@ void describe('a title on a To settle block (LAI-865)', () => {
         const inspector = await select(h, 'd2');
         const field = inspector.locator('[data-draft-title-field]');
         assert.equal(await field.inputValue(), '');
-        assert.equal(await field.getAttribute('placeholder'), 'What it was, briefly');
+        assert.equal(await field.getAttribute('placeholder'), 'A title for this block');
         assert.equal(await field.getAttribute('maxlength'), '200');
 
         // The placeholder and, once typed, the text: the theme's own tokens.
