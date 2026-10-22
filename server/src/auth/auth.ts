@@ -6,11 +6,7 @@ import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
 import * as schema from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import {
-  consumeInvite,
-  ownerInviteRefused,
-  removeOrphanedInvitee,
-} from '../services/invites.ts';
+import { consumeInvite, ownerInviteRefused, removeOrphanedInvitee } from '../services/invites.ts';
 import { findUsableInvite, inviteMatchesEmail, isInviteOnly } from './invites.ts';
 import { scrubTelemetryEnv } from './telemetry.ts';
 import { trustedOriginsFor } from './trusted-origins.ts';
