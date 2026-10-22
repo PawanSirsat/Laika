@@ -7,6 +7,10 @@ import {
   inviteButtonLabel,
   invitedLabel,
   lastActive,
+  lastSignIn,
+  newOwnerCandidates,
+  rejectedEmails,
+  spaceRolesFor,
   nextSort,
   parseEmails,
   roleCounts,
@@ -122,6 +126,8 @@ void describe('the order and the filters', () => {
       admin: 1,
       member: 2,
       viewer: 0,
+      // LAI-999: the Deactivated filter LAI-987 brought, counted the same way.
+      off: 1,
       pending: 2,
     });
     assert.equal(seatLine(PEOPLE, invites, false, true), '4 members · 1 admin · 2 pending invites');
@@ -153,5 +159,50 @@ void describe('the invite dialog’s reading of its field', () => {
     assert.equal(invitedLabel(NOW - 10 * MIN, NOW), 'just now');
     assert.equal(invitedLabel(NOW - 3 * HOUR, NOW), '3h ago');
     assert.equal(invitedLabel(NOW - 2 * DAY, NOW), '2d ago');
+  });
+});
+
+/** LAI-999: what LAI-987 brought into LAI-893's tab (D-107). */
+void describe('LAI-987 features in the LAI-893 tab', () => {
+  void test('last sign-in reads the server’s last_seen_at in the tab’s own words', () => {
+    assert.deepEqual(lastSignIn(null, NOW), { text: 'Never', tone: 'muted' });
+    // A server from before LAI-981 sends no field; that is never, not a crash.
+    assert.deepEqual(lastSignIn(undefined, NOW), { text: 'Never', tone: 'muted' });
+    assert.equal(lastSignIn(NOW - 3 * HOUR, NOW).text, '3h ago');
+    assert.equal(lastSignIn(NOW - 9 * DAY, NOW).text, '1w ago');
+  });
+
+  void test('the Deactivated filter shows only deactivated people', () => {
+    assert.deepEqual(
+      filterPeople(PEOPLE, 'off', '').map((p) => p.id),
+      ['u4'],
+    );
+  });
+
+  void test('a space narrows to that space’s people, and nobody while it is unknown', () => {
+    const spaces: Record<string, readonly string[]> = { u2: ['core'], u3: ['core', 'web'] };
+    const of = (id: string) => spaces[id];
+    assert.deepEqual(
+      filterPeople(PEOPLE, 'all', '', { slug: 'core', of }).map((p) => p.id),
+      ['u2', 'u3'],
+    );
+    assert.deepEqual(filterPeople(PEOPLE, 'all', '', { slug: 'core', of: () => undefined }), []);
+  });
+
+  void test('what is typed and is not an address is named, not dropped silently', () => {
+    assert.deepEqual(rejectedEmails('ok@x.test, nope; also-bad\n'), ['nope', 'also-bad']);
+    assert.deepEqual(rejectedEmails(''), []);
+  });
+
+  void test('ownership goes to an active admin or member, admins first — never a viewer or the reader', () => {
+    assert.deepEqual(
+      newOwnerCandidates(PEOPLE, 'u1').map((p) => p.id),
+      ['u3', 'u5', 'u2'],
+    );
+  });
+
+  void test('an org viewer may be invited into a space only as a viewer', () => {
+    assert.deepEqual(spaceRolesFor('viewer'), ['viewer']);
+    assert.deepEqual(spaceRolesFor('member'), ['lead', 'member', 'viewer']);
   });
 });
