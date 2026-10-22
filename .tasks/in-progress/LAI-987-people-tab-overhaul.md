@@ -2,11 +2,12 @@
 id: LAI-987
 title: 'Organisation → People is hard to operate: no search or filters, no confirmations, invites are clumsy, no transfer'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-981, LAI-982, LAI-984, LAI-970]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-23T09:00:00Z
 ---
 
 ## Acceptance criteria (audit A4, B3, B5, B6, B7, B8)
@@ -21,3 +22,11 @@ status: backlog
 - [ ] Organisation name editable on Overview (holders only).
 - [ ] Every gate from the server's permissions (LAI-970). Light/dark,
       1440/390, browser tests. Gate exit 0 with servers merged.
+
+## Claim note (SHELL, 2026-10-23)
+
+`depends-on` names LAI-981, LAI-982, LAI-984 and LAI-970, none in `done/` on
+`master`. Claimed on CHIEF's dispatch against base `63690059` — LAI-993's
+integration of the release-2 server work (976, 981–986, 974) plus LAI-977's
+branch, which carries LAI-970's `useGates()`. Recorded as the §2 step 1
+deviation; the PR targets `integration-owner-visibility-2026-10-22`.
