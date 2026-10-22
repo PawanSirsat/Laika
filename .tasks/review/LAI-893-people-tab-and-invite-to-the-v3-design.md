@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-888
-status: in-progress
+status: review
 started: 2026-10-22T16:53:09Z
+finished: 2026-10-22T17:12:40Z
 ---
 
 ## Goal
@@ -25,12 +26,12 @@ the created date and the headcount so they read as three facts.
 
 ## Acceptance criteria
 
-- [ ] The People card's seat line counts active members, admins and pending
+- [x] The People card's seat line counts active members, admins and pending
       invites from the responses; the filters All / Owner / Admin / Member
       (and Viewer when there is one) / Pending carry counts; the search
       matches name or email; Sort cycles Last active → Name → Role; the own
       row is first and deactivated people last.
-- [ ] Each row: avatar with a green dot when online, name linking to the
+- [x] Each row: avatar with a green dot when online, name linking to the
       profile where the reader may open it, YOU and DEACTIVATED chips, email;
       Owner as text, otherwise the role dropdown for a manager; spaces and
       agents from `GET /capacity` (a dash when it is unavailable, *Presence is
@@ -38,22 +39,22 @@ the created date and the headcount so they read as three facts.
       ago*, *Yesterday*, *6d ago* or *Never*; Tokens opens that person's
       tokens on Security; Deactivate asks first; Reactivate on a deactivated
       row.
-- [ ] Ticking rows shows a bar: *N selected*, Make Admin, Make Member,
+- [x] Ticking rows shows a bar: *N selected*, Make Admin, Make Member,
       Deactivate (asks once), Clear — one PATCH per person, in order; the
       header box ticks every editable row shown.
-- [ ] Pending lists each invite with its role, who invited it and when, its
+- [x] Pending lists each invite with its role, who invited it and when, its
       expiry, *not emailed* when so, and Revoke; *No pending invites* when none.
-- [ ] *Invite people* (header button, the empty search's button) opens a
+- [x] *Invite people* (header button, the empty search's button) opens a
       modal: EMAILS textarea, ROLE segment, the note, Cancel and a button that
       reads *Create link* with no address, *Send invite* with one and *Send N
       invites* with more; one POST per address, or one with no address; the
       accept links shown once with Done, as before.
-- [ ] The header line is three spaced facts: *Owner · Name*, *Created …*,
+- [x] The header line is three spaced facts: *Owner · Name*, *Created …*,
       *N people*.
-- [ ] A reader who may not manage the organisation sees the table with no
+- [x] A reader who may not manage the organisation sees the table with no
       controls, no boxes and no Pending filter.
-- [ ] Every organisation browser test green; a new one covers the tab.
-- [ ] Gate: repo-root `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] Every organisation browser test green; a new one covers the tab.
+- [x] Gate: repo-root `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Notes
 
@@ -64,3 +65,27 @@ the created date and the headcount so they read as three facts.
   section changed after LAI-888's import). No new dependencies.
 - Left out, with no endpoint: *Resend* and *Copy link* on a pending invite —
   the server keeps only a hash of a link.
+
+## Record
+
+- `server/web/src/routes/screens/organisation/PeopleTab.tsx`,
+  `InviteDialog.tsx`, `people-derive.ts` are new; `use-organisation.ts`
+  reads `GET /capacity` softly and keeps the screen's data while it reloads;
+  `OrganisationScreen.tsx` hands the tab its state and opens the dialog;
+  `organisation.css` carries the table, the bulk bar, the pending list and
+  the dialog, tokens only.
+- Three decisions beyond the design: an owner's row is an owner's to change
+  (an admin reads *Owner* as text, as the design draws it, and is offered
+  nothing — the server's §3.1 rule, mirrored); a deactivated person's role is
+  text beside Reactivate; a Viewer segment appears only when someone is one.
+- Two defects found by the tests and fixed: reloading the organisation
+  blanked the screen to *loading*, which unmounted the invite dialog before
+  its links showed — now a reload keeps what is on screen; and the dimming of
+  a deactivated row reached its Reactivate button once the actions moved to
+  a cell of their own.
+- `organisation-roles.test.ts`: three tests re-aimed — the admin-sees-Owner
+  case asserts the text and no control; the own-row case counts the two
+  active others' dropdowns; the refusal case has an owner demote an admin the
+  stub refuses, since an admin is no longer offered an owner.
+- Left out, with no endpoint: *Resend* and *Copy link* on a pending invite.
+
