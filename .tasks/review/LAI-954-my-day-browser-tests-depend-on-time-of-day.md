@@ -6,8 +6,9 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-953
-status: in-progress
+status: review
 started: 2026-10-22T18:22:59+05:30
+finished: 2026-10-22T18:37:08+05:30
 ---
 
 ## Goal
@@ -40,10 +41,10 @@ day.**
 
 ## Acceptance criteria
 
-- [ ] Both tests pin the clock (or derive their expectation from it) so they
+- [x] Both tests pin the clock (or derive their expectation from it) so they
       pass at any local time of day; demonstrated by running them with the
       clock set to early morning, noon and late evening.
-- [ ] **Sweep, not patch (CLAUDE.md §5):** a third site fails the same way —
+- [x] **Sweep, not patch (CLAUDE.md §5):** a third site fails the same way —
       `my-day-v3.test.ts:102` (*"its header carries the day in minutes, the
       hours run along the top…"*), `hours: … 11 AM, 12 PM, 2 PM …` with `1 PM`
       missing at 18:21 IST on `master`, after LAI-889's `a9932c8e` fixed two
@@ -51,7 +52,7 @@ day.**
       *today*) runs against a pinned clock, so none depends on the hour; the
       census of which tests were changed and why is in the log, from an
       untruncated search.
-- [ ] Proof: the whole `test/browser/my-day*.test.ts` set passes with the
+- [x] Proof: the whole `test/browser/my-day*.test.ts` set passes with the
       process clock faked to 06:00, 12:00, 18:30 and 23:30 local, and that
       proof is reproducible from a command written in the log.
-- [ ] Gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
+- [x] Gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
