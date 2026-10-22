@@ -451,6 +451,102 @@
   cursor: default;
 }
 
+/* D-101's breaks (LAI-956): a short list, and its editor one window a row. */
+.org-breaks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.org-break {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+}
+
+.org-break-label {
+  color: var(--text-primary);
+}
+
+.org-break-when {
+  color: var(--text-secondary);
+}
+
+.org-break-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-1) 0;
+}
+
+.org-breaks-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.org-break-row {
+  margin: 0;
+  padding: var(--space-2);
+  min-width: 0;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.org-break-legend {
+  padding: 0 var(--space-1);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.org-break-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.org-break-name {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.org-break-time {
+  flex: 0 0 auto;
+  width: 8.5rem;
+}
+
+.org-break-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.org-break-day {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-xs);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.org-break-day:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--text-primary);
+}
+
 /* The provider and the key tail are one sentence — `anthropic ···9f2a`.
    **The wrapper is what puts them on one line, not this rule.** The `dd` is
    `flex-direction: column`, so the tail span was a flex *item* and got its own

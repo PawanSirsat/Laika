@@ -954,6 +954,24 @@ export function Timeline({
               )}
 
               <div className="dayline-row">
+                {/* The organisation's breaks (D-101): a shaded band behind
+                    everything, named and timed, and nothing more — never time,
+                    never pressed, never set against what was worked in it. */}
+                {line.scheduled.map((s) => (
+                  <div
+                    key={`scheduled-${String(s.start)}`}
+                    className="dayline-scheduled"
+                    data-scheduled-break={s.start}
+                    style={{ left: x(s.start), width: Math.max(1, x(s.end) - x(s.start)) }}
+                    role="note"
+                    aria-label={`${s.label}, ${rangeOf(s)} — the organisation’s break`}
+                    title={`${s.label}, ${rangeOf(s)} — the organisation’s break`}
+                  >
+                    <span className="dayline-scheduled-label" aria-hidden="true">
+                      <FitLabel options={[s.label, '']} />
+                    </span>
+                  </div>
+                ))}
                 {view.state === 'no_signal' && nothing && (
                   <div className="dayline-nosignal" data-no-signal>
                     <p className="dayline-nosignal-text">

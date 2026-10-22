@@ -22,6 +22,7 @@ import { useTheme } from '../../../theme/use-theme.ts';
 import { useOrganisation } from './use-organisation.ts';
 import { GithubWebhookSection } from './GithubWebhookSection.tsx';
 import { ModelPricesSection } from './ModelPricesSection.tsx';
+import { BreakScheduleFact } from './BreakScheduleFact.tsx';
 import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
 import { RolesPermissionsSection } from './RolesPermissionsSection.tsx';
@@ -435,6 +436,11 @@ export function OrganisationScreen({
                       entries only, or drafts too. Controls for an owner or admin, a
                       word for everyone else, as Developer insights above. */}
                   <TimeModeFact canManage={canManage} />
+
+                  {/* D-101 (LAI-956): the organisation's breaks, drawn on every
+                      person's My day. Editable by whoever sets Time; read by
+                      everyone else, and absent when there are none. */}
+                  <BreakScheduleFact canManage={canManage} />
                 </dl>
               </section>
             )}
