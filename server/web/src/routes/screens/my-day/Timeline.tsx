@@ -298,14 +298,21 @@ export function Timeline({
     // Only when the day or the zoom changes — never under the reader's hand.
   }, [view.day, zoom]);
 
-  // Follow the selection: a block picked in a list is brought into view.
+  // Follow the selection: a block picked in a list is brought into view —
+  // when the reader moves from one block to another. The first selection is
+  // the page's own (its first draft), and following it would undo opening at
+  // now (LAI-889); a zoom change re-opens the day instead.
   const selectedBlock =
     selection !== undefined && (selection.kind === 'draft' || selection.kind === 'entry')
       ? line.blocks.find((b) => b.id === selection.id)
       : undefined;
+  const followed = useRef<string | undefined>(undefined);
   useEffect(() => {
     const box = scroller.current;
+    const before = followed.current;
+    followed.current = selectedBlock?.id;
     if (box === null || pph === undefined || selectedBlock === undefined) return;
+    if (before === undefined || before === selectedBlock.id) return;
     const a = x(selectedBlock.start);
     const b = x(selectedBlock.end);
     if (a >= box.scrollLeft && b <= box.scrollLeft + box.clientWidth) return;

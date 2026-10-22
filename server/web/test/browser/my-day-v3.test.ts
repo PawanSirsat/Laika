@@ -55,6 +55,20 @@ const dur = (minutes: number): string => {
       : `${String(h)} h ${String(m)} min`;
 };
 
+/**
+ * Hover something on the track: scrolled into view first and settled a frame,
+ * because a scroll clears the tooltip (the thing under the pointer moved) and
+ * Playwright's own scroll-then-hover would otherwise lose it a frame later.
+ */
+async function hoverOnTrack(h: Harness, selector: string): Promise<void> {
+  const el = h.page.locator(selector).first();
+  await el.scrollIntoViewIfNeeded();
+  await h.page.evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+  );
+  await el.hover();
+}
+
 const pressed = async (h: Harness, id: string): Promise<boolean> =>
   (await h.page.locator(`[data-block-select="${id}"]`).getAttribute('aria-pressed')) === 'true';
 
@@ -176,7 +190,7 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
   void test('hovering a block, a gap or an agent run says what it is, when and how long — counts only', async () => {
     const h = await openToday();
     try {
-      await h.page.locator('[data-block-id="d1"]').hover();
+      await hoverOnTrack(h, '[data-block-id="d1"]');
       const tip = h.page.locator('[role="tooltip"]');
       await tip.waitFor({ timeout: 5_000 });
       const said = await tip.innerText();
@@ -188,11 +202,11 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
       assert.match(said, /worked 11 min, 9 min of it on a card/);
       assert.equal(await tip.getAttribute('data-dayline-tip'), 'block');
 
-      await h.page.locator('.dayline-gap').first().hover();
+      await hoverOnTrack(h, '.dayline-gap');
       await until(async () => (await tip.getAttribute('data-dayline-tip')) === 'gap');
       assert.match(await tip.innerText(), /Gap[\s\S]*No activity · click to fill/);
 
-      await h.page.locator('[data-agent-run]').first().hover();
+      await hoverOnTrack(h, '[data-agent-run]');
       await until(async () => (await tip.getAttribute('data-dayline-tip')) === 'agent');
       assert.match(await tip.innerText(), /Agent working[\s\S]*Not counted/);
 
