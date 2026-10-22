@@ -51,3 +51,39 @@ never a role list.
       justified in the log.
 - [x] Light/dark, 1440/390. Gate: `pnpm test`, `pnpm lint`, `pnpm format`
       each exit 0 on the integration branch.
+
+## Review response — cross-vendor review, 2026-10-22 (SHELL, continuing Codex's branch)
+
+Criteria unchanged. Each blocking item, and where it was fixed:
+
+1. **Gates denied while unsettled/failed.** `useGates()` in
+   `server/web/src/api/permissions.ts` is the one helper: `org`, `project`,
+   `leads` answer `false` until `GET /permissions` has answered, and on
+   failure. Every `?? <role check>` is gone. `ScreenOutlet` shows a
+   *Couldn't load what you may do here* notice with **Retry** when it failed.
+   `test/browser/grant-gates.test.ts` records whether a control was **ever**
+   in the DOM (MutationObserver from before boot), for a held and a failing
+   `/permissions`.
+2. **Explicit lead keeps the context editor.** Projects asks
+   `project.settings.edit` per project (`me.projects`); tested with a member
+   who leads by membership and has no implicit role.
+3. **Implicit viewer not offered settings.** `holdsProjectAction` answers a
+   membership from `me.projects` and a non-member project from
+   `implicit_project_role === 'lead'` only, mirroring `effectiveProjectRole()`
+   in `server/src/policy/can.ts`. Tested on the board (Visibility, Add task).
+4. **Account switch.** The store is a `useSyncExternalStore` over a module
+   snapshot keyed by user; `setStoreUser` (called by the session before it
+   publishes `me`) resets it. Tested: sign out and in as a second admin in the
+   same tab; and a gate mounted after the first answer follows a later one.
+5. **Connect asks `org.developer_insights.set`.** ShareActivity's prop is now
+   `canSetInsights`; Connect and Developer access are tested to agree for an
+   admin who keeps people and loses settings, and a member granted settings.
+6. **Reorder wording.** `describeEvent` reads `task.updated` naming
+   `position` as *reordered this task*; unit and browser tests.
+
+Non-blocking class: every remaining role gate now reads the server's actions
+and the role-copy helpers are deleted (census in `logs/shell-2026-10-22.md`).
+`usePermissions().refresh` never rejects. The projects grants test waits for
+its end state. The browser harness answers `/permissions` from the served
+`/me` under the default grants (generated from `permissionsCatalogue()`), so
+fixtures that predate LAI-970 keep their controls.
