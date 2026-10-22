@@ -285,12 +285,16 @@ export function Timeline({
     };
   }, []);
 
-  // Open on the day's first block, at every zoom but the one that fits it all.
+  // Open at now on today (LAI-889), else on the day's first block — at every
+  // zoom but the one that fits it all.
   const first = line.blocks[0]?.start;
   useEffect(() => {
     const box = scroller.current;
     if (box === null || pph === undefined) return;
-    box.scrollLeft = Math.max(0, x((first ?? from * 60 + 120) - 30));
+    box.scrollLeft =
+      line.now === undefined
+        ? Math.max(0, x((first ?? from * 60 + 120) - 30))
+        : Math.max(0, x(line.now) - box.clientWidth * 0.6);
     // Only when the day or the zoom changes — never under the reader's hand.
   }, [view.day, zoom]);
 

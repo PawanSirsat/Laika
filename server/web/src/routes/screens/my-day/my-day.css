@@ -21,7 +21,6 @@
 .myday {
   padding: 1.25rem 1.125rem 2rem;
   min-width: 0;
-  max-width: 84rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -43,7 +42,8 @@
 }
 
 /*
- * Beside the day, and never longer than the viewport (LAI-810): sticky in
+ * Beside the editor and the lists — the Timeline spans the page above them
+ * (LAI-889) — and never longer than the viewport (LAI-810): sticky in
  * `.shell-main`, the one scroller, and scrolling on its own past that. At
  * either end it hands the wheel back to the page — no `overscroll-behavior:
  * contain`, which kept it and left the page stuck under the pointer (LAI-311).
