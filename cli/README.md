@@ -385,9 +385,19 @@ and Gemini CLI are LAI-790), the turns you started in an Omnigent
 orchestrator's session (`events.log` too, LAI-792 — a lane of their own, each
 end a reply, never a typed prompt; the ones Omnigent started itself are left
 out, D-090), the Laika marks that start work on a task,
-your own commits in the repos sessions started in (author time, and a task key
-from the subject, which is read and dropped at once), and the reply times and
-task of each builder an Omnigent runner dispatched (D-095 — for its key alone).
+the commits you made on this machine in the repos sessions started in (author
+time, and a task key from the subject, which is read and dropped at once), and
+the reply times and task of each builder an Omnigent runner dispatched (D-095 —
+for its key alone).
+
+**Made on this machine** (LAI-864): your email cannot tell two laptops apart,
+so a commit counts only when git's own reflogs here say a commit, amend,
+cherry-pick, revert, `git am` or a rebase wrote it — never a fetch, pull, merge,
+reset or checkout. Each sync also keeps the hashes it drafted in
+`~/.laika/activity/made-here` (0600, never sent, deleted when drafting is off),
+so a commit still counts after its worktree and branch are removed. One made in
+a worktree that was removed before any sync ran is lost: nothing here says it
+was yours.
 
 **The rule** (measured over 14 days on the owner's machine):
 
@@ -397,8 +407,9 @@ task of each builder an Omnigent runner dispatched (D-095 — for its key alone)
 - A minute counts **once**, however many lanes are active in it: parallel
   sessions split your time, never multiply it. A minute's tasks are the keys
   of the lanes active in it, and it is split equally between them.
-- A session's untied minute takes the key of a commit in its repository with
-  exactly one key the board serves, authored within 15 minutes after it.
+- A session's untied minute takes the key of a commit you made on this machine
+  in its repository with exactly one key the board serves, authored within 15
+  minutes after it.
   Commits never make time.
 - **A minute you were active in, with no key from any lane of yours, takes
   the card of each builder Omnigent dispatched that is active in it** (D-095):

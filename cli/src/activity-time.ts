@@ -31,10 +31,13 @@ import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-
  * times of the prompts the person typed (`events.log`), the times an
  * Omnigent-native orchestrator's turns started and ended in the person's
  * primary session (`events.log` too, LAI-792), the Laika marks that
- * start work on a task, the person's own commits in the repos the hook has
- * seen sessions start in (author time, and a key from the subject, which is
- * read and dropped at once), and the reply times and task of each session the
- * hook marked Omnigent-dispatched (D-095). **Only blocks leave**: a start, an
+ * start work on a task, the commits the person made on this machine in the
+ * repos the hook has seen sessions start in (author time, and a key from the
+ * subject, which is read and dropped at once; made here when a reflog says a
+ * commit, amend, cherry-pick or rebase wrote it, or the ledger a sync kept
+ * does — {@link madeHereFile}, LAI-864), and the reply times and task of
+ * each session the hook marked Omnigent-dispatched (D-095). **Only blocks
+ * leave**: a start, an
  * end, minutes, a task key or `null`, how many of each signal fell in it, and
  * — to a board that takes them — which five minutes its prompts and commits
  * fell in (D-096, {@link blocksToSend}). Never prompt or reply text, paths,
@@ -56,9 +59,9 @@ import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-
  * - A **minute** counts once, whatever number of lanes are active in it:
  *   parallel sessions share a person's time and never multiply it.
  * - A minute's **tasks** are the distinct keys of the lanes active in it. A
- *   session's untied minute in a repository takes the key of a commit there
- *   with exactly one key the board serves, authored within
- *   {@link COMMIT_REACH_S} after it. The minute is split equally between its
+ *   session's untied minute in a repository takes the key of a commit made
+ *   there on this machine with exactly one key the board serves, authored
+ *   within {@link COMMIT_REACH_S} after it. The minute is split equally between its
  *   tasks; with none, it is untied (`task: null`).
  * - **A minute none of the person's lanes tied takes the keys of the
  *   sessions Omnigent dispatched that are active in it** (D-095): each such
@@ -678,6 +681,8 @@ export interface Draft {
   readonly days: Map<string, Block[]>;
   /** Local only, never sent: the blocks that took a key a dispatched session lent (D-095). */
   readonly lent: ReadonlySet<Block>;
+  /** Local only, never sent: the commits made here it read, for the sync's ledger (LAI-864). */
+  readonly made: ReadonlyMap<string, number>;
   /** What the blocks were built from, counted — for `laika time draft`. */
   readonly read: {
     readonly replies: number;
@@ -734,12 +739,80 @@ function turnTimes(lines: readonly string[], fromS: number): TurnEvent[] {
 
 const COMMON = ['--no-merges', '--no-use-mailmap', '--no-show-signature', '--no-color'];
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+/**
+ * A reflog action that wrote a commit on this machine (LAI-864): a commit,
+ * amend or cherry-pick, a revert, `git am`, and a rebase's replayed commits —
+ * `pull --rebase`'s too, whose action carries its command line. Never a fetch,
+ * pull, merge, reset or checkout: each moves a ref to a commit made elsewhere.
+ */
+const MADE_HERE =
+  /^(?:commit(?: \([a-z-]+\))?|cherry-pick|revert|am|.+ \((?:pick|reword|edit|squash|fixup|continue)\))$/;
+/** The ledger keeps a commit this long after its author time — past any drafted day. */
+const MADE_HERE_KEEP_S = (DRAFT_DAYS + 2) * 86_400;
+
+/**
+ * The commits made here that a sync has drafted, and their author times
+ * (LAI-864): a reflog ends with its worktree or branch, and CLAUDE.md §4.2
+ * removes both the moment the work is merged. 0600, local; deleted when
+ * drafting is off.
+ */
+export function madeHereFile(paths: ActivityPaths): string {
+  return join(paths.dir, 'made-here');
+}
+
+function readMadeHere(paths: ActivityPaths): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const line of (readText(madeHereFile(paths)) ?? '').split('\n')) {
+    const [at, sha] = line.split(' ');
+    const epoch = Number(at);
+    if (sha !== undefined && SHA.test(sha) && Number.isFinite(epoch)) out.set(sha, epoch);
+  }
+  return out;
+}
+
+/** Add a draft's commits made here to the ledger, and forget the ones past keeping. */
+function rememberMadeHere(
+  paths: ActivityPaths,
+  made: ReadonlyMap<string, number>,
+  nowS: number,
+): void {
+  const held = readMadeHere(paths);
+  const kept = new Map([...held, ...made].filter(([, at]) => at >= nowS - MADE_HERE_KEEP_S));
+  if (kept.size === held.size && [...kept.keys()].every((sha) => held.has(sha))) return;
+  const lines = [...kept].map(([sha, at]) => `${String(at)} ${sha}\n`).join('');
+  if (lines === '') rmSync(madeHereFile(paths), { force: true });
+  else writeFile600(madeHereFile(paths), lines);
+}
+
+/**
+ * The commits the reflogs of a repository — every ref's and every worktree's
+ * `HEAD` — say were made here (LAI-864).
+ */
+async function madeHere(git: GitRunner, repo: string): Promise<Set<string>> {
+  const out = new Set<string>();
+  const log = await git(repo, [
+    'log',
+    '--walk-reflogs',
+    '--all',
+    '--no-color',
+    '--format=%H%x09%gs',
+  ]);
+  for (const line of (log ?? '').split('\n')) {
+    const tab = line.indexOf('\t');
+    const colon = line.indexOf(': ', tab);
+    if (tab < 0 || colon < 0) continue;
+    if (MADE_HERE.test(line.slice(tab + 1, colon))) out.add(line.slice(0, tab));
+  }
+  return out;
+}
 
 /**
  * The person's commits since `fromS` in the repos the hook has seen sessions
  * start in (in scope), each with the repo's identity and the one key its
  * subject carries that the board serves. The subject is read here and goes
- * no further than this loop.
+ * no further than this loop. Only a commit made on this machine (LAI-864): a
+ * reflog says so, or the ledger does. One that arrived by fetch, merge or
+ * pull is another machine's, under the same email, and is left out.
  */
 async function draftCommits(options: {
   readonly paths: ActivityPaths;
@@ -751,7 +824,7 @@ async function draftCommits(options: {
   readonly serves: (key: string) => boolean;
   readonly signal?: AbortSignal;
   readonly stopAt?: number;
-}): Promise<CommitEvent[]> {
+}): Promise<{ commits: CommitEvent[]; made: Map<string, number> }> {
   const { git } = options;
   const repos = await reposInScope(
     rememberedRepos(options.paths, options.nowS),
@@ -760,6 +833,8 @@ async function draftCommits(options: {
   const seen = new Set<string>();
   const shas = new Set<string>();
   const out: CommitEvent[] = [];
+  const remembered = readMadeHere(options.paths);
+  const made = new Map<string, number>();
   for (const repo of repos) {
     if (
       options.signal?.aborted === true ||
@@ -785,18 +860,21 @@ async function draftCommits(options: {
       `--since=@${String(options.fromS - 86_400)}`,
       '--format=%H%x09%at%x09%ae%x09%s',
     ]);
+    const here = await madeHere(git, repo);
     for (const line of (log ?? '').split('\n')) {
       const [sha, at, email, ...rest] = line.split('\t');
       if (sha === undefined || !SHA.test(sha) || shas.has(sha)) continue;
       const epoch = Number(at);
       if (!Number.isFinite(epoch) || epoch < options.fromS) continue;
       if (!mine.has((email ?? '').trim().toLowerCase())) continue;
+      if (!here.has(sha) && !remembered.has(sha)) continue;
       shas.add(sha);
+      made.set(sha, epoch);
       const keys = [...new Set(textKeys(rest.join('\t')).filter(options.serves))];
       out.push({ at: epoch, repo: gitDir, task: keys.length === 1 ? (keys[0] ?? null) : null });
     }
   }
-  return out;
+  return { commits: out, made };
 }
 
 /**
@@ -828,7 +906,7 @@ export async function buildDraft(options: DraftOptions): Promise<Draft> {
   const served = sources.prefixes === undefined ? undefined : new Set(sources.prefixes);
   const serves = (key: string): boolean => served?.has(key.slice(0, key.lastIndexOf('-'))) === true;
 
-  const commits = await draftCommits({
+  const { commits, made } = await draftCommits({
     paths: options.paths,
     state: options.state,
     nowS,
@@ -877,6 +955,7 @@ export async function buildDraft(options: DraftOptions): Promise<Draft> {
   return {
     days: drafted.days,
     lent: drafted.lent,
+    made,
     read: {
       replies: replies.length,
       prompts: prompts.length,
@@ -980,6 +1059,7 @@ function readMemory(paths: ActivityPaths): Memory {
 
 function forget(paths: ActivityPaths): void {
   rmSync(timeDraftsFile(paths), { force: true });
+  rmSync(madeHereFile(paths), { force: true });
 }
 
 /** The body `PUT /me/time-drafts` takes (SPEC §6.4). */
@@ -1072,6 +1152,7 @@ export async function timeStep(ctx: TimeContext): Promise<TimeOutcome> {
     }
 
     const draft = await buildDraft(ctx);
+    rememberMadeHere(paths, draft.made, nowS);
     const memory = readMemory(paths);
     const first = [...draft.days.keys()][0] ?? '';
     for (const day of Object.keys(memory.sent)) if (day < first) delete memory.sent[day];
