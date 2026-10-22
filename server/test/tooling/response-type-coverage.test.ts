@@ -210,11 +210,6 @@ const UNPAIRED = new Map<string, string>([
   ['MetricsView', 'no client type exists'],
   // LAI-885's catalogue; the web Roles & Permissions screen brings the mirror.
   ['PermissionsView', 'no client type exists'],
-  // LAI-958's grants; the owner's Roles & permissions grid is LAI-960, which
-  // brings the mirror.
-  ['OrgPermissionsView', 'no client type exists'],
-  ['CapabilityView', 'no client type exists'],
-  ['OwnerLockedView', 'no client type exists'],
   // LAI-957's who-looked list; the person's "who looked" view is LAI-959,
   // which brings the mirror.
   ['WhoLookedView', 'no client type exists'],
