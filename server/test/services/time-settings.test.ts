@@ -2,12 +2,13 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { newId } from '../../src/db/ids.ts';
-import { activity, timeDrafts, timeEntries, users } from '../../src/db/schema.ts';
+import { activity, orgTimeSettings, timeDrafts, timeEntries, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import {
   assertDrafting,
   assertTimeOn,
   getTimeSettings,
+  setOrgBreaks,
   setOrgTimeMode,
   setTimeSettings,
 } from '../../src/services/time-settings.ts';
@@ -102,6 +103,7 @@ describe('the switches start off', () => {
       min_sync_interval_s: 600,
       signal_times: true,
       folder_names: true,
+      breaks: [],
     });
   });
 
@@ -221,5 +223,39 @@ describe('the refusals a collector and a person read', () => {
     expect(reason(() => assertDrafting(t.db, bea))).toBe('forbidden:time_drafts_off');
     setTimeSettings(t.db, bea, { draft_my_time: true }, NOW);
     expect(reason(() => assertDrafting(t.db, bea))).toBe('no error');
+  });
+});
+
+describe('the organisation’s break schedule (D-101, LAI-955)', () => {
+  const LUNCH = { label: 'Lunch', start: '13:00', end: '13:45', days: [1, 2, 3, 4, 5] };
+
+  it('asks org.time.set itself, whoever calls it', () => {
+    expect(reason(() => setOrgBreaks(t.db, bea, [LUNCH], NOW))).toBe('forbidden:');
+    expect(reason(() => setOrgBreaks(t.db, { ...owner, token: TOKEN }, [LUNCH], NOW))).toBe(
+      'forbidden:session_required',
+    );
+    expect(setOrgBreaks(t.db, person('Ada', 'admin'), [LUNCH], NOW).breaks).toEqual([LUNCH]);
+    expect(getTimeSettings(t.db, bea).breaks).toEqual([LUNCH]);
+  });
+
+  it('judges the rules between fields itself, before it writes', () => {
+    for (const windows of [
+      [{ ...LUNCH, end: '12:00' }],
+      [{ ...LUNCH, days: [1, 1] }],
+      [LUNCH, { ...LUNCH, label: 'Tea', start: '13:30', end: '14:00', days: [5] }],
+    ]) {
+      expect(
+        reason(() => setOrgBreaks(t.db, owner, windows, NOW)),
+        JSON.stringify(windows),
+      ).toBe('unprocessable:');
+    }
+    expect(t.db.select().from(orgTimeSettings).all()).toEqual([]);
+  });
+
+  it('writes no activity row, and leaves Time as it was', () => {
+    setOrgTimeMode(t.db, owner, 'manual', NOW);
+    setOrgBreaks(t.db, owner, [LUNCH], NOW);
+    expect(getTimeSettings(t.db, bea).org_mode).toBe('manual');
+    expect(t.db.select().from(activity).all()).toEqual([]);
   });
 });
