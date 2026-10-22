@@ -67,7 +67,7 @@ signed-in browser — a token cannot turn it on, so no agent can switch on its o
 reporting).
 
 ```bash
-laika activity on                 # check both switches, then install the hooks
+laika activity on                 # check both switches, then install the hooks and Claude Code's telemetry
 laika activity on --agent copilot # also install for an agent not detected
 laika activity status             # the exact JSON the next sync sends, and the last result
 laika activity sync               # send now, if the board's interval allows it
@@ -75,7 +75,7 @@ laika activity emails a@b c@d     # extra author emails that count as yours (--c
 laika activity backfill           # 30 days of token totals and a year of your pushed commits, once: shows, asks, sends
 laika activity backfill --days 90 --yes ~/src/other-repo   # a shorter window, no question, one more repo
 laika activity off                # remove the hooks and delete ~/.laika/activity
-laika activity otel               # the variables that send Claude Code's own token counts too (LAI-773)
+laika activity otel               # the same telemetry as variables, for one shell by hand (LAI-773)
 ```
 
 **What is sent** (`PUT /api/v1/me/local-activity`), per local day for the last
@@ -248,7 +248,7 @@ no token counts on the machine, so they have none to send.
   Code tokens split per session and model, the session named only by the
   first 16 hex characters of `sha256("laika-session:" + session id)` — never
   the id — and, once Claude Code here sends its metrics to the board
-  (`laika activity otel`), every report names the same way the sessions whose
+  (`laika activity on` sets that up), every report names the same way the sessions whose
   telemetry is to be dropped (`excluded`): automated ones, whose tokens are the
   rows marked `automated` and in no session's split, and under `laika-repos`
   the ones outside your scope, whose tokens are left out. Without that, they
@@ -261,15 +261,27 @@ no token counts on the machine, so they have none to send.
   `usage-data.json` and `usage-days/` (0600, never sent); *Delete my
   local-activity history* in the web app deletes the board's token rows too.
 
-**OpenTelemetry, optional** (LAI-773). Session files miss the calls an agent
+**OpenTelemetry** (LAI-773, LAI-867). Session files miss the calls an agent
 makes outside the conversation — titles, classifiers, compaction: about 20–30%
-for Claude Code on the measured machine. `laika activity otel` prints the
-variables that make Claude Code send its own counts to this board as OTLP/HTTP
-JSON metrics (`claude_code.token.usage`, `claude_code.cost.usage`), the board's
-address filled in and `$LAIKA_TOKEN` left as a reference — the token is never
-printed. Only the exports go to stdout, so `eval "$(laika activity otel)"`
-works. Logs are switched off, and the board refuses them: they can carry
-prompts. The board takes the metrics only under the same two switches.
+for Claude Code on the measured machine. `laika activity on` has Claude Code
+send its own counts to this board as OTLP/HTTP JSON metrics
+(`claude_code.token.usage`, `claude_code.cost.usage`), from every Claude Code
+on the laptop — started from a terminal, the Dock or Omnigent — with no
+shell-profile line. It writes six variables into `~/.claude/settings.json`'s
+`env` (telemetry on, `otlp`, `http/json`, this board's metrics endpoint,
+`cumulative`, logs `none`) and an `otelHeadersHelper` naming
+`~/.laika/otel-headers`, a 0700 script that reads `LAIKA_TOKEN` from
+`~/.laika/env` each time it runs and prints the `Authorization` header. **The
+token is never written**, into settings.json or the script. A key you already
+set to another value is left as you set it, and `on` says so; `off` removes
+only what `on` added, each key only while it still holds `on`'s value.
+`laika activity status` says whether telemetry reaches the board — not set up,
+your settings disagree, the helper fails, the board refuses (401, or 403
+`local_activity_off`), or reaching it — from one request that carries no
+metric. `laika activity otel` still prints the same settings as `export`
+lines for anyone who wants them by hand. Logs are switched off, and the board
+refuses them: they can carry prompts. The board takes the metrics only under
+the same two switches.
 
 **Sessions nobody is typing in count nothing as yours.** The hook counts
 nothing — no event, no repo, no sync — when `OMNIGENT=1` (Omnigent sets it in
@@ -428,7 +440,7 @@ dispatched builder's card, which the body does not say; `--json` prints the
 exact body. Neither writes or sends anything.
 
 **Agent minutes are not your hours.** With Claude Code's OpenTelemetry on
-(`laika activity otel`), each usage report also carries every session's tokens
+(`laika activity on`), each usage report also carries every session's tokens
 per task (`session_tasks`: a session's one-way key, a task key, a count), so
 the board can split Claude Code's own `active_time` the way tokens are split.
 The board shows it as agent minutes, never as hours.

@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
@@ -218,29 +218,28 @@ void describe('`laika activity backfill` and tokens', () => {
  * The sessions a collector left out are named to the board (`excluded`) only
  * when Claude Code here sends its metrics to that board (review): through each
  * place a usage report is built — the sync, `backfill`, and `status`.
+ *
+ * LAI-867: `on` itself now puts the telemetry in settings.json, so "with" is
+ * `on` alone — no shell variable, no settings written by hand (D-088 still
+ * holds) — and "without" is a machine whose settings no longer point here.
  */
 void describe('the sessions left out, only with telemetry from this machine', () => {
   const ROBOT = 'cccccccc-1111-4222-8333-444444444444';
-  const otel = (url: string) => ({
-    CLAUDE_CODE_ENABLE_TELEMETRY: '1',
-    OTEL_METRICS_EXPORTER: 'otlp',
-    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: `${url}/api/v1/otlp/v1/metrics`,
-  });
   const excludedOf = (board: StubBoard) =>
     board.requests
       .filter((r) => r.method === 'PUT' && r.body.includes('"usage":true'))
       .map((r) => (JSON.parse(r.body) as { excluded?: string[] }).excluded);
   async function setUp(withOtel: boolean): Promise<Harness> {
     const h = await harness();
-    if (withOtel) {
-      mkdirSync(join(h.home, '.claude'), { recursive: true });
-      writeFileSync(
-        join(h.home, '.claude', 'settings.json'),
-        JSON.stringify({ env: otel(h.board.url) }),
-      );
-    }
     h.answers = ['n'];
     assert.equal(await h.run('on'), 0, h.out.join('\n'));
+    const settings = join(h.home, '.claude', 'settings.json');
+    if (!withOtel) {
+      const doc = JSON.parse(readFileSync(settings, 'utf8')) as Record<string, unknown>;
+      delete doc.env;
+      delete doc.otelHeadersHelper;
+      writeFileSync(settings, JSON.stringify(doc));
+    }
     transcript(h.home, [{ id: 'msg_new', daysAgo: 0, output: 90 }]);
     writeFileSync(
       join(activityPaths(h.home).dir, 'skip-sessions'),

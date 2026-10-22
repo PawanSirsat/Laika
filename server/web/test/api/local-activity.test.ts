@@ -83,20 +83,21 @@ void describe('the developer’s requests (§6.4)', () => {
 });
 
 void describe('the OpenTelemetry block (LAI-773)', () => {
-  void test('is metrics only, JSON, cumulative, logs off — this board’s address, the token by reference', () => {
+  // LAI-867: what `laika activity on` writes to settings.json — no export line, no token.
+  void test('is metrics only, JSON, cumulative, logs off — this board’s address, a helper for the token', () => {
     const block = otelEnvBlock('https://laika.example.com');
-    assert.equal(
-      block,
-      [
-        'export CLAUDE_CODE_ENABLE_TELEMETRY=1',
-        'export OTEL_METRICS_EXPORTER=otlp',
-        'export OTEL_EXPORTER_OTLP_PROTOCOL=http/json',
-        'export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="https://laika.example.com/api/v1/otlp/v1/metrics"',
-        'export OTEL_EXPORTER_OTLP_METRICS_HEADERS="Authorization=Bearer $LAIKA_TOKEN"',
-        'export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative',
-        'export OTEL_LOGS_EXPORTER=none',
-      ].join('\n'),
-    );
+    assert.deepEqual(JSON.parse(block), {
+      env: {
+        CLAUDE_CODE_ENABLE_TELEMETRY: '1',
+        OTEL_METRICS_EXPORTER: 'otlp',
+        OTEL_EXPORTER_OTLP_PROTOCOL: 'http/json',
+        OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: 'https://laika.example.com/api/v1/otlp/v1/metrics',
+        OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: 'cumulative',
+        OTEL_LOGS_EXPORTER: 'none',
+      },
+      otelHeadersHelper: '~/.laika/otel-headers',
+    });
+    assert.doesNotMatch(block, /export |LAIKA_TOKEN|Bearer/);
     // Never a secret on the page, never a logs or traces endpoint.
     assert.doesNotMatch(block, /laika_[A-Za-z0-9]{8,}/);
     assert.doesNotMatch(block, /v1\/(logs|traces)/);

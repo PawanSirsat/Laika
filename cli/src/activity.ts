@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { accessSync, constants, rmSync } from 'node:fs';
+import { accessSync, constants, existsSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -26,6 +26,14 @@ import {
   type LookbackOutcome,
   type Plan,
 } from './activity-lookback.ts';
+import {
+  checkOtel,
+  describeOtel,
+  installOtel,
+  otelPaths,
+  removeOtel,
+  type OtelReport,
+} from './activity-otel.ts';
 import {
   acquireLock,
   activityPaths,
@@ -165,7 +173,8 @@ export const SKIP_RULE =
 const USAGE = [
   'Usage:',
   '  laika activity on [--agent id] [--yes|--no]',
-  '                                 check sharing is on, then install the counting hooks;',
+  '                                 check sharing is on, then install the counting hooks and',
+  '                                 Claude Code’s telemetry (~/.claude/settings.json, no token);',
   '                                 --yes/--no answer whether to count 30 days of tokens',
   '  laika activity off             remove the hooks and delete ~/.laika/activity',
   '  laika activity status          what the next sync would send, and the last result',
@@ -173,8 +182,8 @@ const USAGE = [
   '  laika activity backfill [--days N] [--yes] [repo …]',
   '                                 send a year of your pushed commits, once (asks first)',
   '  laika activity emails [a@b …]  extra author emails that count as yours (--clear)',
-  '  laika activity otel            the variables that send Claude Code’s token counts by',
-  '                                 OpenTelemetry too, for this board (`eval "$(…)"`)',
+  '  laika activity otel            the same telemetry as variables, for one shell by hand;',
+  '                                 `laika activity on` already sets it for every Claude Code',
 ];
 
 const context = (io: ActivityIo): SyncContext => ({
@@ -296,6 +305,7 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
   const paths = activityPaths(io.home);
   startCollecting(paths, sharing, nowS, creds.url);
 
+  const settingsExisted = existsSync(otelPaths(io.home).settings);
   const detected = configuredAgents(io.home, io.env);
   const agents = HOOK_AGENTS.filter((a) => detected.includes(a) || forced.includes(a));
   const reports = installActivityHooks({
@@ -306,10 +316,12 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
     env: io.env,
   });
   const others = HOOK_AGENTS.filter((a) => !agents.includes(a) && a !== 'cline');
+  const telemetry = installOtel(io.home, creds.url, settingsExisted);
 
   io.out(`Local activity is on for ${creds.url} (scope: ${sharing.scope}).`);
   io.out('');
   printHooks(reports, io);
+  printOtel(telemetry, io);
   if (others.length > 0) {
     io.out(`  · not set up for Laika here: ${others.join(', ')} — after \`laika connect\`, run`);
     io.out('    `laika activity on` again, or add one with --agent <id>');
@@ -393,15 +405,27 @@ function otel(io: ActivityIo): number {
   io.err('');
   io.err(`Claude Code then sends its own token counts to ${board} every minute, as`);
   io.err('OpenTelemetry metrics — counts only: the board refuses logs, which can hold prompts.');
-  io.err('Put the lines where Claude Code starts from (your shell profile); $LAIKA_TOKEN must');
-  io.err('hold your Laika token there — `laika connect` keeps it in ~/.laika/env.');
+  io.err('`laika activity on` already sets this up for every Claude Code on this machine, in');
+  io.err('~/.claude/settings.json, with no token written. These lines are for one shell by');
+  io.err('hand; $LAIKA_TOKEN must hold your Laika token there.');
   io.err('The board takes them only while Developer insights and "Share my local activity"');
   io.err('are both on, adds only what the session files missed, and drops the sessions');
   io.err('this collector leaves out (automated, or out of your scope) once a sync names them.');
   return 0;
 }
 
+function printOtel(report: OtelReport, io: ActivityIo): void {
+  const mark = report.status === 'refused' ? '!' : '✓';
+  io.out(`  ${mark} Claude Code telemetry: ${report.summary}`);
+  if (report.status !== 'removed' && report.kept.length > 0) {
+    io.out(`      left as you set it: ${report.kept.join(', ')} — \`laika activity status\` says`);
+    io.out('      whether telemetry still reaches the board');
+  }
+}
+
 function off(io: ActivityIo): number {
+  // Telemetry first: the hooks step deletes a settings.json that only Laika filled.
+  const telemetry = removeOtel(io.home);
   const reports = removeActivityHooks(io.home, io.env);
   const paths = activityPaths(io.home);
   rmSync(paths.dir, { recursive: true, force: true });
@@ -409,11 +433,12 @@ function off(io: ActivityIo): number {
   io.out('Local activity is off on this machine.');
   io.out('');
   printHooks(reports, io);
+  printOtel(telemetry, io);
   io.out(`  ✓ deleted ~/.laika/activity`);
   io.out('');
   io.out('What the board already holds is not deleted by this. To stop the board accepting');
   io.out('it, or to delete it, use "Share my local activity" in the web app.');
-  return reports.some((r) => r.status === 'refused') ? 1 : 0;
+  return reports.some((r) => r.status === 'refused') || telemetry.status === 'refused' ? 1 : 0;
 }
 
 async function status(io: ActivityIo): Promise<number> {
@@ -480,7 +505,9 @@ async function status(io: ActivityIo): Promise<number> {
         : `counted since ${when(state.since)}${tokens === 'no' ? '' : ' (`backfill` can send 30 days)'}`
     } — Claude Code, Codex, Gemini CLI`,
   );
-  io.out('OpenTelemetry   optional, for Claude Code’s background calls: `laika activity otel`');
+  if (state.board !== undefined) {
+    io.out(`OpenTelemetry   ${describeOtel(await checkOtel(io.home, state.board), state.board)}`);
+  }
   // Time drafts (LAI-787): the board's answer as last given, never asked here.
   io.out(
     `Time drafting   ${

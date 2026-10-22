@@ -70,9 +70,9 @@ export function AgentStrip({ agent, spaces, onNavigate }: AgentStripProps) {
         added to it.
       </p>
       {nothing ? (
-        <p className="myday-quiet myday-pad">
-          None reported for this day. Agent minutes come from Claude Code’s own telemetry, when it
-          is pointed at this board (Connect).
+        <p className="myday-quiet myday-pad" data-agent-hint>
+          None reported for this day. Agent minutes come from Claude Code’s own telemetry: run{' '}
+          <code>laika activity on</code> on each laptop.
         </p>
       ) : (
         <ul className="myday-agent-tasks">

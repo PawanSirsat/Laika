@@ -87,6 +87,11 @@ export interface StubBoard {
   time: { org_mode: 'off' | 'manual' | 'drafts'; draft_my_time: boolean } | undefined;
   /** Each (collector, day)'s blocks, replaced by every report that carries the day. */
   readonly drafts: Map<string, readonly unknown[]>;
+  /**
+   * `POST /api/v1/otlp/v1/metrics` (LAI-867), as the real route answers: the
+   * token first (401), then the switches (403 `local_activity_off`), then `{}`.
+   */
+  otlp: 'ok' | 'off';
   readonly close: () => void;
 }
 
@@ -125,6 +130,7 @@ export async function stubBoard(token: string): Promise<StubBoard> {
     bucket: { on: false, tokens: 30, at: 0, limited: 0 },
     time: undefined,
     drafts: new Map(),
+    otlp: 'ok',
     close: () => undefined,
   };
 
@@ -177,6 +183,14 @@ export async function stubBoard(token: string): Promise<StubBoard> {
           usage_days_elsewhere: [...elsewhere].sort(),
           ...(board.prefixes === undefined ? {} : { task_prefixes: board.prefixes }),
         });
+        return;
+      }
+      if (req.method === 'POST' && url.pathname === '/api/v1/otlp/v1/metrics') {
+        if (board.otlp === 'off') {
+          refuse(403, 'forbidden', { reason: 'local_activity_off' });
+          return;
+        }
+        json(200, {});
         return;
       }
       // LAI-787: the time switches, and the blocks they let through.
