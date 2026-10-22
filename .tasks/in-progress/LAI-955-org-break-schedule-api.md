@@ -2,11 +2,12 @@
 id: LAI-955
 title: 'An owner cannot set the organisation''s lunch and other breaks: no break schedule exists, only one person''s breaks on one day'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T13:30:30Z
 ---
 
 ## Goal
