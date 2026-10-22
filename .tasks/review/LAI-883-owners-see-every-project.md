@@ -6,8 +6,9 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-22T10:51:47Z
+finished: 2026-10-22T11:28:10Z
 ---
 
 ## Goal
@@ -28,16 +29,16 @@ returns those projects — but the UI drops them.
 
 ## Acceptance criteria
 
-- [ ] Every project `GET /projects` returns is rendered on Projects for an
+- [x] Every project `GET /projects` returns is rendered on Projects for an
       owner or admin, including private projects with no explicit membership.
       Shown in "Your spaces" (or a clearly labelled "All spaces" section — the
       builder picks one and says why in the log).
-- [ ] A member or viewer sees exactly what they see today (test pins it).
-- [ ] On your plate uses the same rule: an owner's/admin's assigned work in a
+- [x] A member or viewer sees exactly what they see today (test pins it).
+- [x] On your plate uses the same rule: an owner's/admin's assigned work in a
       project they reach only through the implicit lead is shown.
-- [ ] Tests red first against today's code, for both screens; assertions name
+- [x] Tests red first against today's code, for both screens; assertions name
       the private project, not a count.
-- [ ] Both themes unaffected. Gate: `pnpm test`, `pnpm lint`, `pnpm format`
+- [x] Both themes unaffected. Gate: `pnpm test`, `pnpm lint`, `pnpm format`
       each exit 0.
 
 ## Notes
