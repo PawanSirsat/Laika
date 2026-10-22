@@ -1,6 +1,7 @@
 import type { ChangeEvent } from 'react';
 import type { TimeDraft } from '../../../api/time.ts';
 import { CardLink } from './CardLink.tsx';
+import { folderOf, needsACard } from './folder.ts';
 import { duration, span } from './format.ts';
 
 export interface DraftRowProps {
@@ -25,22 +26,33 @@ function shifted(event: ChangeEvent<HTMLInputElement>): boolean {
   return native.shiftKey === true;
 }
 
-/** What a block is on: its key, General, a space, or *Needs a card* — and the line under it. */
+/**
+ * What a block is on: its key, General, a space, or *Needs a card* — and the
+ * line under it. A block from a folder the person named says the name (D-098):
+ * *Needs a card · Acme*, or a space's line with it.
+ */
 function target(draft: TimeDraft): {
   readonly label: string;
   readonly line: string;
   readonly ready: boolean;
 } {
+  const folder = folderOf(draft);
   if (draft.task !== null) return { label: draft.task.key, line: draft.task.title, ready: true };
   if (draft.project !== null)
-    return { label: draft.project.name, line: 'A space, no card', ready: true };
+    return {
+      label: draft.project.name,
+      line: folder === undefined ? 'A space, no card' : `A space, no card · ${folder}`,
+      ready: true,
+    };
   if (draft.general) return { label: 'General', line: 'No card, on purpose', ready: true };
   return {
-    label: 'Needs a card',
+    label: needsACard(draft),
     line:
-      draft.task_key === null
-        ? 'Nothing named a card'
-        : `${draft.task_key} was named — a card you can’t read`,
+      draft.task_key !== null
+        ? `${draft.task_key} was named — a card you can’t read`
+        : draft.folder !== undefined && draft.folder !== null
+          ? 'Pick a card, or General'
+          : 'Nothing named a card',
     ready: false,
   };
 }

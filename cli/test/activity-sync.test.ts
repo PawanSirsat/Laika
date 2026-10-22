@@ -710,6 +710,39 @@ void describe('syncs cannot pile up (review 1, item 1)', () => {
   );
 
   /**
+   * The deadline fell while the board's GET was still in flight — what a busy
+   * gate does to the test above. The aborted GET came back as an ordinary
+   * failure and was recorded on top of the deadline's: `failures: 2`, the next
+   * sync 1200 s away (LAI-801). Here the GET never answers, so the deadline
+   * always lands on it, however slow the machine; and the abandoned run is
+   * waited for — its fetch settled, then everything queued behind that — not
+   * given a few hundred ms.
+   */
+  void test('a sync abandoned mid-request records one failure, not two', async () => {
+    const w = await world();
+    w.board.get = 'hang';
+    const inFlight: Promise<unknown>[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (...args: Parameters<typeof fetch>) => {
+      const call = realFetch(...args);
+      inFlight.push(call);
+      return call;
+    };
+    try {
+      const outcome = await sync({ ...w.ctx, deadlineMs: 300 });
+      assert.ok(outcome.kind === 'error' && outcome.deadline === true);
+      assert.equal(inFlight.length, 1);
+      await Promise.allSettled(inFlight);
+      await new Promise((res) => setImmediate(res));
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    assert.equal(readState(w.paths)?.failures, 1);
+    assert.equal(readState(w.paths)?.next_sync_at, w.nowS() + 600);
+    assert.match(readFileSync(w.paths.lastError, 'utf8'), /did not finish within 0\.3 s/);
+  });
+
+  /**
    * `ps -o lstart` prints in the caller's time zone. An agent started with
    * another `TZ` wrote its start time in that zone; read back in this one it
    * looked like a different process, and the lock was taken from a live sync.
@@ -742,6 +775,72 @@ void describe('syncs cannot pile up (review 1, item 1)', () => {
       } finally {
         if (ownTz === undefined) delete process.env.TZ;
         else process.env.TZ = ownTz;
+        holder.kill('SIGKILL');
+      }
+    },
+  );
+
+  /**
+   * The lock was created empty and its holder written into it afterwards. A
+   * sync that read it in between saw no holder, broke it and took it from a
+   * live one — and the test above read `''` under load (LAI-308). The holder
+   * here is stopped at the moment it writes itself down, and the lock is
+   * looked at right then.
+   */
+  void test(
+    'the lock is never seen before its holder is written in it',
+    { timeout: 30_000 },
+    async () => {
+      const w = await world();
+      const store = pathToFileURL(
+        fileURLToPath(new URL('../src/activity-store.ts', import.meta.url)),
+      ).href;
+      // Every way the holder could write itself down stops once, says so on
+      // stdout, and waits for a line on stdin before writing.
+      const script =
+        "import fs from 'node:fs';\n" +
+        "import { syncBuiltinESMExports } from 'node:module';\n" +
+        'let stopped = false;\n' +
+        'const stop = (data) => {\n' +
+        '  if (stopped || !String(data).includes(\'"pid":\')) return;\n' +
+        '  stopped = true;\n' +
+        "  realWriteSync(1, 'writing\\n');\n" +
+        '  fs.readSync(0, Buffer.alloc(1));\n' +
+        '};\n' +
+        'const realWriteSync = fs.writeSync;\n' +
+        'const realWriteFileSync = fs.writeFileSync;\n' +
+        'fs.writeSync = (fd, data, ...rest) => { stop(data); return realWriteSync(fd, data, ...rest); };\n' +
+        'fs.writeFileSync = (path, data, ...rest) => { stop(data); return realWriteFileSync(path, data, ...rest); };\n' +
+        'syncBuiltinESMExports();\n' +
+        `const m = await import(${JSON.stringify(store)});\n` +
+        `if (m.acquireLock(m.activityPaths(${JSON.stringify(w.home)})) === undefined) process.exit(3);\n` +
+        'setInterval(() => {}, 1000);\n';
+      const holder = spawn(process.execPath, ['--input-type=module', '-e', script], {
+        stdio: ['pipe', 'pipe', 'inherit'],
+      });
+      const writing = new Promise<void>((res, rej) => {
+        holder.stdout.on('data', (chunk: Buffer) => {
+          if (chunk.toString().includes('writing')) res();
+        });
+        holder.on('exit', (code) => {
+          rej(new Error(`the holder exited ${String(code)} before writing`));
+        });
+      });
+      const mine = new RegExp(`"pid":${String(holder.pid)}[,}]`);
+      try {
+        await writing;
+        const seen = existsSync(w.paths.lock) ? readFileSync(w.paths.lock, 'utf8') : undefined;
+        assert.ok(
+          seen === undefined || mine.test(seen),
+          `the lock was there before its holder: ${JSON.stringify(seen)}`,
+        );
+        holder.stdin.write('\n');
+        await until(
+          () => mine.test(existsSync(w.paths.lock) ? readFileSync(w.paths.lock, 'utf8') : ''),
+          20_000,
+        );
+        assert.equal((await sync(w.ctx)).kind, 'busy', 'a live sync’s lock was taken');
+      } finally {
         holder.kill('SIGKILL');
       }
     },
@@ -1004,5 +1103,37 @@ void describe('the server’s error envelope (LAI-751)', () => {
       assert.equal(zoneUnder(tz), 'UTC', `TZ=${JSON.stringify(tz)}`);
     }
     assert.equal(zoneUnder('Africa/Johannesburg'), 'Africa/Johannesburg');
+  });
+});
+
+/**
+ * LAI-314: `laika activity on` again, for the same board, kept everything but
+ * the board's last answer on time drafting — so `status` said "not asked
+ * yet" beside a time-drafts.json the board had taken.
+ */
+void describe('turning activity on again for the same board', () => {
+  void test('keeps what the board last said about time drafting', () => {
+    const home = mkdtempSync(join(tmpdir(), 'laika-again-'));
+    try {
+      const paths = activityPaths(home);
+      const sharing = {
+        org_enabled: true,
+        enabled: true,
+        scope: 'agent-repos',
+        min_sync_interval_s: 600,
+      } as const;
+      startCollecting(paths, sharing, 1_000, 'http://board.example');
+      const first = readState(paths);
+      assert.ok(first !== undefined);
+      writeState(paths, { ...first, drafting: true, drafting_checked_at: 2_000 });
+      startCollecting(paths, sharing, 3_000, 'http://board.example');
+      assert.equal(readState(paths)?.drafting, true);
+      assert.equal(readState(paths)?.drafting_checked_at, 2_000);
+      // Another board starts over, and has not been asked.
+      startCollecting(paths, sharing, 4_000, 'http://other.example');
+      assert.equal(readState(paths)?.drafting, undefined);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

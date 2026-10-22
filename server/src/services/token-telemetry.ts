@@ -89,7 +89,8 @@ import { assertMaySendLocalActivity, TELEMETRY_COLLECTOR } from './local-activit
  * collector sends their keys, and those outside the developer's `laika-repos`
  * scope (D-079 item 4) — telemetry has no working directory — as `excluded`,
  * and telemetry for them is dropped, including what was added before the key
- * arrived.
+ * arrived. A builder the owner dispatched through Omnigent is named in its
+ * day's `dispatched` instead (LAI-315), and its telemetry is dropped the same.
  */
 
 export { TELEMETRY_COLLECTOR };
@@ -431,15 +432,20 @@ export function storeSessionFiles(
  * The collector's excluded sessions (automated, or outside the scope): kept as
  * keys, and whatever telemetry they had sent dropped. Returns the days whose
  * gap must be recomputed.
+ *
+ * `dispatched` — the builders the owner dispatched through Omnigent (LAI-315)
+ * — are left out the same way, but for their buckets: those are the lane the
+ * collector sent for them (`storeDispatched`), not telemetry's.
  */
 export function storeExcluded(
   tx: Tx,
   userId: string,
   keys: readonly string[],
   now: number,
+  dispatched: readonly string[] = [],
 ): string[] {
-  if (keys.length === 0) return [];
-  const unique = [...new Set(keys)];
+  const unique = [...new Set([...keys, ...dispatched])];
+  if (unique.length === 0) return [];
   tx.insert(tokenSessionSkips)
     .values(unique.map((sessionKey) => ({ userId, sessionKey, createdAt: now })))
     .onConflictDoNothing()
@@ -468,7 +474,13 @@ export function storeExcluded(
       .run();
   }
   // Their agent minutes are not the developer's either (LAI-787).
-  dropAgentTime(tx, userId, unique);
+  const lane = new Set(dispatched.filter((k) => !keys.includes(k)));
+  dropAgentTime(
+    tx,
+    userId,
+    unique.filter((k) => !lane.has(k)),
+  );
+  dropAgentTime(tx, userId, [...lane], false);
   return days;
 }
 
@@ -635,7 +647,7 @@ export function recomputeGap(tx: Tx, userId: string, days: readonly string[], no
   // The file tokens no session list placed, on the span and the days beside
   // it: they may be any session's, so they are taken to be these. Not an
   // automated session's (D-091): the collector names those in `excluded`
-  // whenever this machine sends telemetry, so no telemetry of theirs is kept
+  // whenever this machine sends telemetry, or in `dispatched` (LAI-315), so no telemetry of theirs is kept
   // to match, and taking them as unplaced would empty the person's own gap.
   const near = [...new Set(spanDays.flatMap((d) => [neighbour(d, -1), d, neighbour(d, 1)]))];
   const dayFiles = new Map<string, Counts>();

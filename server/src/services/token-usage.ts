@@ -38,7 +38,12 @@ import {
   assertReportDays,
   sharingOn,
 } from './local-activity.ts';
-import { type SessionTaskInput, storeSessionTasks } from './agent-time.ts';
+import {
+  type DispatchedInput,
+  type SessionTaskInput,
+  storeDispatched,
+  storeSessionTasks,
+} from './agent-time.ts';
 import { readableByOutsideId } from './outside-ids.ts';
 import { recordArrival } from './plan-limit.ts';
 import { requireProjectBySlug } from './projects.ts';
@@ -211,6 +216,11 @@ export interface TokenUsageReport {
      * are tied (D-088 item 8).
      */
     session_tasks?: SessionTaskInput[] | undefined;
+    /**
+     * The builders the owner dispatched through Omnigent that day (LAI-315):
+     * their buckets for My day's AGENTS lane, read from their transcripts.
+     */
+    dispatched?: DispatchedInput[] | undefined;
   }[];
 }
 
@@ -576,6 +586,8 @@ export function recordTokenUsage(
   for (const day of report.days) {
     for (const row of day.rows) if (row.task !== null) keys.add(row.task);
     for (const split of day.session_tasks ?? []) keys.add(split.task);
+    for (const builder of day.dispatched ?? [])
+      if (builder.task !== undefined) keys.add(builder.task);
   }
   const resolved = resolveKeys(db, actor, keys);
 
@@ -684,6 +696,7 @@ export function recordTokenUsage(
 
     // Each session's split between tasks (LAI-787), replaced with the day.
     storeSessionTasks(tx, actor.userId, collectorId, report.days, resolved, now);
+    storeDispatched(tx, actor.userId, collectorId, report.tz, report.days, resolved, now);
 
     // The telemetry match (LAI-773), best effort: the zone, this machine's
     // sessions for the days it sent, the sessions it left out, and the gap.
@@ -719,7 +732,8 @@ function telemetryMatch(
     tx.transaction((inner) => {
       storeZone(inner, userId, report.tz, now);
       storeSessionFiles(inner, userId, collectorId, report.days, now);
-      const moved = storeExcluded(inner, userId, report.excluded ?? [], now);
+      const dispatched = report.days.flatMap((d) => (d.dispatched ?? []).map((b) => b.key));
+      const moved = storeExcluded(inner, userId, report.excluded ?? [], now, dispatched);
       recomputeGap(inner, userId, [...new Set([...report.days.map((d) => d.day), ...moved])], now);
     });
   } catch (error) {

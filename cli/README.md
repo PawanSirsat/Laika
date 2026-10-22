@@ -67,7 +67,7 @@ signed-in browser — a token cannot turn it on, so no agent can switch on its o
 reporting).
 
 ```bash
-laika activity on                 # check both switches, then install the hooks
+laika activity on                 # check both switches, then install the hooks and Claude Code's telemetry
 laika activity on --agent copilot # also install for an agent not detected
 laika activity status             # the exact JSON the next sync sends, and the last result
 laika activity sync               # send now, if the board's interval allows it
@@ -75,7 +75,7 @@ laika activity emails a@b c@d     # extra author emails that count as yours (--c
 laika activity backfill           # 30 days of token totals and a year of your pushed commits, once: shows, asks, sends
 laika activity backfill --days 90 --yes ~/src/other-repo   # a shorter window, no question, one more repo
 laika activity off                # remove the hooks and delete ~/.laika/activity
-laika activity otel               # the variables that send Claude Code's own token counts too (LAI-773)
+laika activity otel               # the same telemetry as variables, for one shell by hand (LAI-773)
 ```
 
 **What is sent** (`PUT /api/v1/me/local-activity`), per local day for the last
@@ -248,7 +248,7 @@ no token counts on the machine, so they have none to send.
   Code tokens split per session and model, the session named only by the
   first 16 hex characters of `sha256("laika-session:" + session id)` — never
   the id — and, once Claude Code here sends its metrics to the board
-  (`laika activity otel`), every report names the same way the sessions whose
+  (`laika activity on` sets that up), every report names the same way the sessions whose
   telemetry is to be dropped (`excluded`): automated ones, whose tokens are the
   rows marked `automated` and in no session's split, and under `laika-repos`
   the ones outside your scope, whose tokens are left out. Without that, they
@@ -261,15 +261,27 @@ no token counts on the machine, so they have none to send.
   `usage-data.json` and `usage-days/` (0600, never sent); *Delete my
   local-activity history* in the web app deletes the board's token rows too.
 
-**OpenTelemetry, optional** (LAI-773). Session files miss the calls an agent
+**OpenTelemetry** (LAI-773, LAI-867). Session files miss the calls an agent
 makes outside the conversation — titles, classifiers, compaction: about 20–30%
-for Claude Code on the measured machine. `laika activity otel` prints the
-variables that make Claude Code send its own counts to this board as OTLP/HTTP
-JSON metrics (`claude_code.token.usage`, `claude_code.cost.usage`), the board's
-address filled in and `$LAIKA_TOKEN` left as a reference — the token is never
-printed. Only the exports go to stdout, so `eval "$(laika activity otel)"`
-works. Logs are switched off, and the board refuses them: they can carry
-prompts. The board takes the metrics only under the same two switches.
+for Claude Code on the measured machine. `laika activity on` has Claude Code
+send its own counts to this board as OTLP/HTTP JSON metrics
+(`claude_code.token.usage`, `claude_code.cost.usage`), from every Claude Code
+on the laptop — started from a terminal, the Dock or Omnigent — with no
+shell-profile line. It writes six variables into `~/.claude/settings.json`'s
+`env` (telemetry on, `otlp`, `http/json`, this board's metrics endpoint,
+`cumulative`, logs `none`) and an `otelHeadersHelper` naming
+`~/.laika/otel-headers`, a 0700 script that reads `LAIKA_TOKEN` from
+`~/.laika/env` each time it runs and prints the `Authorization` header. **The
+token is never written**, into settings.json or the script. A key you already
+set to another value is left as you set it, and `on` says so; `off` removes
+only what `on` added, each key only while it still holds `on`'s value.
+`laika activity status` says whether telemetry reaches the board — not set up,
+your settings disagree, the helper fails, the board refuses (401, or 403
+`local_activity_off`), or reaching it — from one request that carries no
+metric. `laika activity otel` still prints the same settings as `export`
+lines for anyone who wants them by hand. Logs are switched off, and the board
+refuses them: they can carry prompts. The board takes the metrics only under
+the same two switches.
 
 **Sessions nobody is typing in count nothing as yours.** The hook counts
 nothing — no event, no repo, no sync — when `OMNIGENT=1` (Omnigent sets it in
@@ -385,9 +397,19 @@ and Gemini CLI are LAI-790), the turns you started in an Omnigent
 orchestrator's session (`events.log` too, LAI-792 — a lane of their own, each
 end a reply, never a typed prompt; the ones Omnigent started itself are left
 out, D-090), the Laika marks that start work on a task,
-your own commits in the repos sessions started in (author time, and a task key
-from the subject, which is read and dropped at once), and the reply times and
-task of each builder an Omnigent runner dispatched (D-095 — for its key alone).
+the commits you made on this machine in the repos sessions started in (author
+time, and a task key from the subject, which is read and dropped at once), and
+the reply times and task of each builder an Omnigent runner dispatched (D-095 —
+for its key alone).
+
+**Made on this machine** (LAI-864): your email cannot tell two laptops apart,
+so a commit counts only when git's own reflogs here say a commit, amend,
+cherry-pick, revert, `git am` or a rebase wrote it — never a fetch, pull, merge,
+reset or checkout. Each sync also keeps the hashes it drafted in
+`~/.laika/activity/made-here` (0600, never sent, deleted when drafting is off),
+so a commit still counts after its worktree and branch are removed. One made in
+a worktree that was removed before any sync ran is lost: nothing here says it
+was yours.
 
 **The rule** (measured over 14 days on the owner's machine):
 
@@ -397,8 +419,9 @@ task of each builder an Omnigent runner dispatched (D-095 — for its key alone)
 - A minute counts **once**, however many lanes are active in it: parallel
   sessions split your time, never multiply it. A minute's tasks are the keys
   of the lanes active in it, and it is split equally between them.
-- A session's untied minute takes the key of a commit in its repository with
-  exactly one key the board serves, authored within 15 minutes after it.
+- A session's untied minute takes the key of a commit you made on this machine
+  in its repository with exactly one key the board serves, authored within 15
+  minutes after it.
   Commits never make time.
 - **A minute you were active in, with no key from any lane of yours, takes
   the card of each builder Omnigent dispatched that is active in it** (D-095):
@@ -420,18 +443,69 @@ key or `null`, and counts — prompts, replies, sessions, commits, marks — and
 to a board that says it takes them (`signal_times` in its time settings), which
 five minutes the block's prompts and commits fell in: `at`, `[bucket, count]`
 pairs, so My day can draw its SIGNALS lane (D-096). A day whose report would
-pass 16 KB with them goes without them. Never prompt or reply text, paths,
-repository or branch names, session ids, commit messages or window titles. `laika time draft [--days N]` prints the blocks for
+pass 16 KB with them goes without them. Never prompt or reply text, paths, a
+folder's own name, repository names, a branch you did not turn on (below),
+session ids, commit messages or window titles. `laika time draft [--days N]` prints the blocks for
 your last days, and what they were built from — Omnigent orchestrator turns
 included, since a block carries counts only — and which blocks took a
 dispatched builder's card, which the body does not say; `--json` prints the
 exact body. Neither writes or sends anything.
 
 **Agent minutes are not your hours.** With Claude Code's OpenTelemetry on
-(`laika activity otel`), each usage report also carries every session's tokens
+(`laika activity on`), each usage report also carries every session's tokens
 per task (`session_tasks`: a session's one-way key, a task key, a count), so
 the board can split Claude Code's own `active_time` the way tokens are split.
 The board shows it as agent minutes, never as hours.
+
+### `laika time folder` — a name you chose for a work folder (LAI-866, D-098)
+
+```
+laika time folder name NAME [DIR]     name a folder (default: the one you are in)
+laika time folder rename NAME [DIR]
+laika time folder forget [DIR]
+laika time folder list                the names on this machine, and the branch switch
+laika time folder branch on|off       send a named folder's branch too (off by default)
+```
+
+Name a folder once — *this folder is "Acme"* — and every block drafted from it
+carries **Acme**: a Claude Code session by its working directory, an Omnigent
+chat by its working folder. In *To settle* an untied block then reads
+**Needs a card · Acme**, and when a project you can read matches the name the
+board puts the block under it.
+
+- **The name is yours.** You type it; it is never filled in from the
+  folder's own name. 1 to 60 characters, no `/` or `\`, no control character,
+  no space at either end — the board refuses anything else.
+- **Only the name leaves.** The folder's real name and path are read on this
+  machine, to look the name up, and go no further; nor do file names, prompts,
+  replies or commit messages. The branch goes only after
+  `laika time folder branch on`: for a Claude Code session the branch it
+  started on (the hook's `sessions` file), for an Omnigent chat the branch its
+  folder was on when the chat started.
+- **A folder inside a named folder takes the nearest name.** `~/work/acme`
+  named *Acme* and `~/work/acme/web` named *Acme Web*: a session in
+  `~/work/acme/web/src` is *Acme Web*, one in `~/work/acme/docs` is *Acme*.
+- **A block whose lanes come from two differently named folders** takes the
+  name with the most lane-minutes behind it — each minute of the block, each
+  of your lanes active in it that went to the block counts one for its
+  folder's name. A lane in an unnamed folder, and the prompts you typed, count
+  for no name. **Two names tied for the most, and the block carries no name**,
+  rather than one picked. The branch is chosen the same way among that name's
+  lane-minutes.
+- **Kept in `~/.laika/work-folders.json`**, 0600 — beside `solidtime.json`,
+  not in `~/.laika/activity`, so **`laika activity off` keeps your names**:
+  they are your settings, not something counted. Delete the file to forget
+  them all.
+- **An older board is never refused.** The name and branch go only to a board
+  whose time settings say `folder_names: true`; to any other the blocks go
+  without them.
+
+The Omnigent chat's folder and branch come from the hook: at the chat's start
+it appends `<epoch> <session> <branch|-> <folder>` to
+`~/.laika/activity/primary-sessions` (0600, never sent), reading the branch
+from the repository's `.git/HEAD` with shell builtins — no `git`, no fork. A
+line from before LAI-866 has two fields, names no folder, and is read as it
+always was.
 
 ## `laika time push` and `pull` — the Solidtime bridge (LAI-788, D-088)
 
