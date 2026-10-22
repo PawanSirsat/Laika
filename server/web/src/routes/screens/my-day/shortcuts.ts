@@ -1,7 +1,8 @@
 /**
  * My day's keys (LAI-831, the owner's design and CHIEF's addition H): on the
- * selected draft, ↵ confirms, G puts it on General, X marks it not work; J
- * and K move to the next and previous; ? opens the sheet that lists them.
+ * selected draft, ↵ confirms, G puts it on General, X marks it not work, T
+ * goes to its title (LAI-865); J and K move to the next and previous; ? opens
+ * the sheet that lists them.
  *
  * **None fires while typing.** A field, a text area, a select or editable
  * text keeps every key, so a note that says "fix the gap" never marks a block
@@ -9,7 +10,8 @@
  * or a link presses *that* — it never confirms behind the reader's back.
  */
 
-export type Shortcut = 'confirm' | 'general' | 'dismiss' | 'next' | 'prev' | 'help' | 'close';
+export type Shortcut =
+  'confirm' | 'general' | 'dismiss' | 'title' | 'next' | 'prev' | 'help' | 'close';
 
 /** What a key event carries that matters here — a real one, or a test's. */
 export interface KeyLike {
@@ -41,6 +43,7 @@ const ACTS_ON_ENTER = new Set(['BUTTON', 'A', 'INPUT', 'SUMMARY', 'SELECT', 'TEX
 const LETTERS: Readonly<Record<string, Shortcut>> = {
   g: 'general',
   x: 'dismiss',
+  t: 'title',
   j: 'next',
   k: 'prev',
 };
@@ -62,6 +65,7 @@ export const SHORTCUT_SHEET: readonly (readonly [string, string])[] = [
   ['↵', 'Confirm the selected draft'],
   ['G', 'Put it on General'],
   ['X', 'Mark it not work'],
+  ['T', 'Type a title for the selected draft'],
   ['J', 'Next draft'],
   ['K', 'Previous draft'],
   ['?', 'Show these keys'],

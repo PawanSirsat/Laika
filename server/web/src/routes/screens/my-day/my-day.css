@@ -1362,6 +1362,33 @@
   color: var(--text-secondary);
 }
 
+/* A title on a drafted block (LAI-865): one line across, above its parts. */
+.inspector-title {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.625rem;
+  padding: 0.75rem 1.125rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.inspector-title .input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  width: auto;
+}
+
+.inspector-title .inspector-note {
+  flex-basis: 100%;
+}
+
+/* The saved title in the head: it wraps rather than widening the inspector. */
+.inspector-said {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .inspector-parts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
@@ -1718,6 +1745,16 @@ p.inspector-length {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-muted);
+}
+
+/* A block's title (LAI-865): one line, cut short rather than widening the row. */
+.myday-row-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
 }
 
 .myday-source {
@@ -2356,6 +2393,7 @@ p.inspector-length {
   }
 
   .inspector-head,
+  .inspector-title,
   .inspector-part {
     padding-left: 0.875rem;
     padding-right: 0.875rem;

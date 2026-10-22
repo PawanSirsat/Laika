@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  SHORTCUT_SHEET,
   shortcutFor,
   typingIn,
   type KeyLike,
 } from '../../../../src/routes/screens/my-day/shortcuts.ts';
 
 /**
- * My day's keys (LAI-831, CHIEF's addition H): ↵ G X J K on the selected
+ * My day's keys (LAI-831, CHIEF's addition H): ↵ G X T J K on the selected
  * draft, ? for the sheet — and **none of them while typing in a field**.
  */
 
@@ -49,8 +50,24 @@ void describe('shortcutFor', () => {
     assert.equal(shortcutFor(key('Escape')), 'close');
   });
 
+  void test('T goes to the selected draft’s title (LAI-865), in either case', () => {
+    assert.equal(shortcutFor(key('t')), 'title');
+    assert.equal(shortcutFor(key('T')), 'title');
+    // From a button too, as every letter: it has no use for one.
+    assert.equal(shortcutFor(key('t', { tagName: 'BUTTON' })), 'title');
+    assert.equal(shortcutFor(key('t', { tagName: 'BODY' }, { metaKey: true })), undefined);
+  });
+
+  void test('T typed in a field is a letter, the title field’s own included (LAI-865)', () => {
+    for (const k of ['t', 'T']) {
+      assert.equal(shortcutFor(key(k, { tagName: 'INPUT', type: 'text' })), undefined, k);
+      assert.equal(shortcutFor(key(k, { tagName: 'INPUT' })), undefined, k);
+      assert.equal(shortcutFor(key(k, { tagName: 'TEXTAREA' })), undefined, k);
+    }
+  });
+
   void test('none fires while typing', () => {
-    for (const k of ['Enter', 'g', 'x', 'j', 'k', '?']) {
+    for (const k of ['Enter', 'g', 'x', 't', 'j', 'k', '?']) {
       assert.equal(shortcutFor(key(k, { tagName: 'INPUT', type: 'text' })), undefined, k);
       assert.equal(shortcutFor(key(k, { tagName: 'TEXTAREA' })), undefined, k);
     }
@@ -68,6 +85,17 @@ void describe('shortcutFor', () => {
     assert.equal(shortcutFor(key('Enter', { tagName: 'INPUT', type: 'checkbox' })), undefined);
     // Letters still work from a button: it has no use for them.
     assert.equal(shortcutFor(key('x', { tagName: 'BUTTON' })), 'dismiss');
+  });
+
+  void test('the sheet lists T beside the others (LAI-865)', () => {
+    assert.deepEqual(
+      SHORTCUT_SHEET.find(([k]) => k === 'T'),
+      ['T', 'Type a title for the selected draft'],
+    );
+    assert.deepEqual(
+      SHORTCUT_SHEET.map(([k]) => k),
+      ['↵', 'G', 'X', 'T', 'J', 'K', '?', 'Esc'],
+    );
   });
 
   void test('anything else is not a shortcut', () => {

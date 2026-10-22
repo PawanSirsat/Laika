@@ -202,8 +202,8 @@ const ready = (d: TimeDraft): boolean => d.task !== null || d.project !== null |
  * figures and as a lane timeline with its gaps; an inspector for the block in
  * hand; *To settle* and *Confirmed* beneath; and beside them *Agent minutes*
  * and *On your plate*. Every action is said in a toast, with **Undo** where
- * the server can put it back exactly; the keys ↵ G X J K act on the selected
- * draft and ? lists them.
+ * the server can put it back exactly; the keys ↵ G X T J K act on the
+ * selected draft and ? lists them.
  *
  * Every figure, name, key and count comes from the API. A day nothing reached
  * the board on is *No signal*, never zero hours; agent time is minutes beside
@@ -232,6 +232,7 @@ export function MyDayScreen({
   const spaces = useSpaces();
   const plate = usePlate(me, spaces);
   const noteRef = useRef<HTMLInputElement | null>(null);
+  const titleRef = useRef<HTMLInputElement | null>(null);
   const toastSeq = useRef(0);
   const lastDraftIndex = useRef(0);
   const batching = pending !== undefined && BATCHES.has(pending);
@@ -658,6 +659,20 @@ export function MyDayScreen({
         'Note saved. Every edit is kept as a revision.',
       );
     },
+    setTitle: (draft, title) => {
+      void run(
+        `title:${draft.id}`,
+        [draft.id],
+        (onUndo) => updateDraft(draft.id, { note: title === '' ? null : title }, onUndo),
+        () => ({
+          text:
+            title === ''
+              ? 'Title cleared.'
+              : 'Title saved — it becomes the entry’s note when you confirm.',
+          undoable: true,
+        }),
+      );
+    },
     fill: (gap) => {
       setSlot(gap);
       noteRef.current?.scrollIntoView({ block: 'center' });
@@ -718,6 +733,14 @@ export function MyDayScreen({
       return true;
     }
     if (current === undefined) return false;
+    if (shortcut === 'title') {
+      // Into the selected block's title, the caret after what it says.
+      const field = titleRef.current;
+      if (field === null) return false;
+      field.focus();
+      field.setSelectionRange(field.value.length, field.value.length);
+      return true;
+    }
     if (shortcut === 'confirm') confirmOne(current);
     else if (shortcut === 'dismiss') dismissOne(current);
     else if (!current.general) actions.setCard({ kind: 'draft', draft: current }, 'general');
@@ -838,6 +861,7 @@ export function MyDayScreen({
                 pending={pending}
                 actions={actions}
                 onNavigate={onNavigate}
+                titleRef={titleRef}
               />
             )}
 
