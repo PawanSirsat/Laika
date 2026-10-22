@@ -15,7 +15,8 @@ export interface ActivityEvent {
   /** Monotonic, and the cursor tiebreaker — several rows share a millisecond. */
   readonly seq: number;
   readonly type: string;
-  readonly project_id: string;
+  /** `null` on an organisation row — `token.created`, `member.role_changed` (§4.8). */
+  readonly project_id: string | null;
   readonly task_id: string | null;
   readonly actor_id: string | null;
   /**
@@ -77,6 +78,43 @@ export function listProjectActivity(
   const params = new URLSearchParams({ limit: String(limit) });
   return request<Page<ActivityEvent>>(
     `/projects/${encodeURIComponent(slug)}/activity?${params.toString()}`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
+/** `GET /activity/history`'s filters (LAI-886), each optional, all combinable. */
+export interface HistoryQuery {
+  /** A user id. */
+  readonly actor?: string;
+  /** A space's slug. */
+  readonly project?: string;
+  /** One §4.8 verb. */
+  readonly type?: string;
+  /** Unix-ms, inclusive. */
+  readonly since?: number;
+  /** Unix-ms, inclusive. */
+  readonly until?: number;
+}
+
+/**
+ * One page of the organisation's whole history, newest first — owner and admin
+ * only (`audit_log.export`). Organisation → Activity walks it a page at a time,
+ * on *Load more* (LAI-951).
+ */
+export function listOrgHistory(
+  query: HistoryQuery,
+  cursor: string | undefined,
+  signal?: AbortSignal,
+): Promise<Page<ActivityEvent>> {
+  const params = new URLSearchParams({ limit: '50' });
+  if (query.actor !== undefined) params.set('actor', query.actor);
+  if (query.project !== undefined) params.set('project', query.project);
+  if (query.type !== undefined) params.set('type', query.type);
+  if (query.since !== undefined) params.set('since', String(query.since));
+  if (query.until !== undefined) params.set('until', String(query.until));
+  if (cursor !== undefined) params.set('cursor', cursor);
+  return request<Page<ActivityEvent>>(
+    `/activity/history?${params.toString()}`,
     signal === undefined ? {} : { signal },
   );
 }

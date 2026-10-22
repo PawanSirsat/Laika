@@ -7,6 +7,7 @@ import {
   inArray,
   isNull,
   lt,
+  lte,
   or,
   sql,
   type SQL,
@@ -212,8 +213,14 @@ export interface ListActivityFilter {
   /** Also return rows with no project — the org-level half of §4.8. */
   includeOrgScoped?: boolean;
   taskId?: string;
+  /** Rows this person wrote, whatever they wrote them with (LAI-886). */
+  actorId?: string;
+  /** One §4.8 verb (LAI-886). */
+  type?: ActivityType;
   /** Unix-ms, inclusive lower bound — the §6.3 `updated_since` semantic. */
   since?: number;
+  /** Unix-ms, inclusive upper bound — `since`'s other end (LAI-886). */
+  until?: number;
   before?: number;
   /** Keyset position for the newest-first order below (§6.3). */
   cursor?: { createdAt: number; seq: number } | null;
@@ -280,7 +287,10 @@ export function listActivity(db: Db, filter: ListActivityFilter): ActivityEvent[
     );
   }
   if (filter.taskId !== undefined) conditions.push(eq(activity.taskId, filter.taskId));
+  if (filter.actorId !== undefined) conditions.push(eq(activity.actorId, filter.actorId));
+  if (filter.type !== undefined) conditions.push(eq(activity.type, filter.type));
   if (filter.since !== undefined) conditions.push(gte(activity.createdAt, filter.since));
+  if (filter.until !== undefined) conditions.push(lte(activity.createdAt, filter.until));
   if (filter.before !== undefined) conditions.push(lt(activity.createdAt, filter.before));
 
   if (filter.projectIds !== undefined) {

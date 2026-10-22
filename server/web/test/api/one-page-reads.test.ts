@@ -87,6 +87,15 @@ const ALLOWED: ReadonlyMap<string, { readonly names: readonly string[]; readonly
       'api/use-events.ts',
       { names: ['listProjectActivity'], why: 'a deliberate recent window behind the live stream' },
     ],
+    /*
+     * LAI-951: the organisation's whole history is every row ever written, so
+     * Organisation → Activity reads a page and walks `next_cursor` on *Load
+     * more* — the reader asks for each page, and none is passed off as all.
+     */
+    [
+      'routes/screens/organisation/use-org-history.ts',
+      { names: ['listOrgHistory'], why: 'a page per *Load more*, walking `next_cursor`' },
+    ],
   ]);
 
 interface Call {

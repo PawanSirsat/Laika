@@ -35,6 +35,7 @@ import {
   INSIGHTS_TABS,
   ORGANISATION_TABS,
   currentTab,
+  refusedTab,
   visibleTabs,
 } from '../../routes/page-tabs.ts';
 import { StateGallery } from '../StateGallery.tsx';
@@ -341,18 +342,22 @@ function DeveloperRoute() {
 function OrganisationRoute() {
   const {
     me,
-    route: { params, navigate },
+    route: { params, setParams, navigate },
   } = useShell();
   // The screen requires a user; the gate has already refused every other
   // session state on this protected route, so this is the frame before a
   // redirect lands rather than a state anyone sits in.
   if (me === undefined) return null;
   const holds = permissionHolder(me.org_role);
+  const refused = refusedTab(ORGANISATION_TABS, params, holds);
   return (
     <OrganisationScreen
       me={me}
       tabs={visibleTabs(ORGANISATION_TABS, holds)}
-      tab={currentTab(ORGANISATION_TABS, params, holds)}
+      tab={refused?.id ?? currentTab(ORGANISATION_TABS, params, holds)}
+      refused={refused !== undefined}
+      params={params}
+      setParams={setParams}
       onNavigate={navigate}
     />
   );
