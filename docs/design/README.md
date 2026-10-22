@@ -155,3 +155,23 @@ The prototype contains mistakes and placeholders. Reproducing them is a bug.
 Tracked as SPEC gaps and resolved in §11.4.2 — listed here so the mismatch is
 visible from the design side too: a `repo` per project, an org-level presence
 toggle, and a **Calendar** screen that has no decision behind it.
+
+## 2026-10-22 — the "Laika App v3" My day design (LAI-883)
+
+Imported from the owner's Claude Design project **"UI Reorganization and
+Simplification"** (`1af73506-d3bf-4636-807b-46695bf84eb4`), as fetched on
+2026-10-22, byte for byte:
+
+| File | What it is |
+| --- | --- |
+| `Laika App v3.dc.html` | the whole app in one file — **My day is the screen built from it** (LAI-883); the board, organisation, developer access, insights and inbox screens in it are a reference only |
+| `Timeline.dc.html` | the Timeline card My day embeds (`<dc-import name="Timeline">`): the lane column, the top axis, the tooltip, Fit folding idle hours, the footer |
+| `timeline-core.js` | the fixture and the scale maths behind `Timeline.dc.html` — **mock data**, nothing in it ships |
+
+`support.js` is the same file as before (checksum equal). The project also
+holds `Laika App v2`, `Laika App`, `Laika Timeline`, `Timeline Mobile` and
+the `standalone-src` variants, which were not imported: v3 supersedes them.
+
+What the v3 design draws that the server has no field for, and so the page
+leaves out, is listed in LAI-883's Notes: a shared hour's split between
+cards, agent names per run, and marks per five minutes.
