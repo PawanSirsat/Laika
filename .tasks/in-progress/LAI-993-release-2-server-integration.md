@@ -2,11 +2,12 @@
 id: LAI-993
 title: 'The release-2 server branches cannot be combined: duplicate migration numbers, a grants split the reset link predates, and SPEC/test conflicts'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-976, LAI-981, LAI-982, LAI-983, LAI-984, LAI-985, LAI-986]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T18:56:17Z
 ---
 
 ## Goal
