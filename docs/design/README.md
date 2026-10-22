@@ -168,6 +168,12 @@ Simplification"** (`1af73506-d3bf-4636-807b-46695bf84eb4`), as fetched on
 | `Timeline.dc.html` | the Timeline card My day embeds (`<dc-import name="Timeline">`): the lane column, the top axis, the tooltip, Fit folding idle hours, the footer |
 | `timeline-core.js` | the fixture and the scale maths behind `Timeline.dc.html` — **mock data**, nothing in it ships |
 
+**Refreshed on 2026-10-22 by LAI-893** (checksum `9527c58821f5b600f5df299210fb5624`):
+the project's `Laika App v3.dc.html` had changed since LAI-888's import — the
+Organisation → People section is new (a seat line, a modal *Invite people*,
+search, role filters with counts, a sort, a bulk bar, a Pending view); the
+My day section is as imported.
+
 `support.js` is the same file as before (checksum equal). The project also
 holds `Laika App v2`, `Laika App`, `Laika Timeline`, `Timeline Mobile` and
 the `standalone-src` variants, which were not imported: v3 supersedes them.

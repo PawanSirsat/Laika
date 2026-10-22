@@ -299,19 +299,23 @@ void describe('role management', () => {
     const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u3', 'admin') });
     try {
       await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
-      const select = h.page
-        .locator('.org-person', { hasText: 'Ada Lovelace' })
-        .getByRole('combobox');
-      assert.equal(await valueOf(select), 'owner', "an owner's row shows no role");
+      // An owner's row is an owner's to change (LAI-893, the design): the
+      // admin reads *Owner* as text and is offered no control on it.
+      const row = h.page.locator('.org-person', { hasText: 'Ada Lovelace' });
       assert.equal(
-        (await select.innerText()).trim(),
+        await row.locator('[role="combobox"]').count(),
+        0,
+        'an admin is offered an owner',
+      );
+      assert.equal(
+        (await row.locator('.org-person-role').innerText()).trim(),
         'Owner',
         "the owner's row does not say Owner",
       );
-      assert.ok(
-        (await offered(select)).includes('Owner'),
-        'the current role is not among the options, so the control renders blank',
-      );
+      // …while the others still have theirs, so the absence is the claim.
+      const other = h.page.locator('.org-person', { hasText: 'Tomas Nel' }).getByRole('combobox');
+      assert.equal(await valueOf(other), 'member');
+      assert.ok(!(await offered(other)).includes('Owner'), 'an admin is offered Owner to grant');
     } finally {
       await h.close();
     }
@@ -329,11 +333,15 @@ void describe('role management', () => {
       );
       // Broad for the same reason: nothing on my own row, whatever it is.
       assert.equal(await mine.locator('button').count(), 0, 'offered a control on my own row');
-      // …and the others still have theirs, or the assertion above is vacuous.
+      // …and the active others still have theirs, or the assertion above is
+      // vacuous; a deactivated person's role is text beside Reactivate (LAI-893).
       await until(
-        async () => (await h.page.locator('.org-person [role="combobox"]').count()) === 3,
+        async () => (await h.page.locator('.org-person [role="combobox"]').count()) === 2,
       );
-      assert.equal(await h.page.locator('.org-person [role="combobox"]').count(), 3);
+      assert.equal(await h.page.locator('.org-person [role="combobox"]').count(), 2);
+      const off = h.page.locator('.org-person', { hasText: 'Sam Okafor' });
+      assert.equal(await off.locator('[role="combobox"]').count(), 0);
+      assert.equal(await off.locator('.org-reactivate').count(), 1);
     } finally {
       await h.close();
     }
@@ -610,15 +618,15 @@ void describe('a refusal', () => {
 
     const h = await open('/organisation?tab=people', {
       ...BASE,
-      '/api/v1/me': me('u3', 'admin'),
-      '/api/v1/users/u1': refuse(409, 'conflict', MESSAGE),
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u3': refuse(409, 'conflict', MESSAGE),
     });
     try {
       await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
 
-      // The client did not pre-empt it: demoting the last owner is offered.
+      // Whatever the server refuses, the page shows its sentence and no other.
       const select = h.page
-        .locator('.org-person', { hasText: 'Ada Lovelace' })
+        .locator('.org-person', { hasText: 'Priya Raman' })
         .getByRole('combobox');
       await pick(select, 'member');
 

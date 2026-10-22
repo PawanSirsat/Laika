@@ -4,6 +4,7 @@ import { listAllUsers } from '../../../api/users.ts';
 import { listInvites } from '../../../api/invites.ts';
 import type { OrgUser } from '../../../api/users.ts';
 import type { PendingInvite } from '../../../api/invites.ts';
+import { getCapacity, type CapacityView } from '../../../api/presence.ts';
 
 export type OrganisationState =
   | { readonly status: 'loading' }
@@ -17,6 +18,12 @@ export type OrganisationState =
       readonly truncated: boolean;
       /** Set when invites could not be read for a reason other than permission. */
       readonly invitesError: unknown;
+      /**
+       * `GET /capacity` — spaces, agents and last seen per person (LAI-893).
+       * `null` when it could not be read: the columns show a dash, and the
+       * directory is still the screen.
+       */
+      readonly capacity: CapacityView | null;
     };
 
 export interface UseOrganisation {
@@ -43,7 +50,10 @@ export function useOrganisation(canManage: boolean): UseOrganisation {
 
   useEffect(() => {
     const controller = new AbortController();
-    setState({ status: 'loading' });
+    // A reload keeps what is on screen until the new answer lands (LAI-893):
+    // a role change or an invite issued no longer blanks the page — and the
+    // invite dialog, which lives in the ready screen, keeps its links.
+    setState((current) => (current.status === 'ready' ? current : { status: 'loading' }));
 
     // Not `Promise.all`: the invites half is allowed to fail without taking the
     // people list down with it.
@@ -66,8 +76,13 @@ export function useOrganisation(canManage: boolean): UseOrganisation {
         )
       : Promise.resolve({ rows: [] as readonly PendingInvite[], error: null });
 
-    Promise.all([people, invites])
-      .then(([directory, invited]) => {
+    const capacity = getCapacity(controller.signal).then(
+      (view) => view,
+      () => null,
+    );
+
+    Promise.all([people, invites, capacity])
+      .then(([directory, invited, seen]) => {
         if (controller.signal.aborted) return;
         setState({
           status: 'ready',
@@ -75,6 +90,7 @@ export function useOrganisation(canManage: boolean): UseOrganisation {
           invites: invited.rows,
           truncated: directory.truncated,
           invitesError: invited.error,
+          capacity: seen,
         });
       })
       .catch((error: unknown) => {
