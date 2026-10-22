@@ -267,9 +267,11 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
       return granted(actor, action);
 
     // | Create / archive project | ✓ | ✓ | — | — |
+    //
+    // *Create and archive spaces* (D-104 item 6, LAI-985).
     case 'project.create':
     case 'project.archive':
-      return isAdminUp;
+      return granted(actor, action);
 
     // | Invite users | ✓ | ✓ (as member or viewer) | — | — |
     //
@@ -290,8 +292,8 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     //
     // Anyone may end their own sessions; ending somebody else's is the power
     // to deactivate them, short of doing it (D-104 item 3, LAI-981), so it is
-    // carried by the grant that carries `user.deactivate` — until LAI-985
-    // gives it *Deactivate people and reset access*.
+    // carried with `user.deactivate` by *Deactivate people and reset access*
+    // (LAI-985).
     case 'user.sign_out':
       return resource.targetUserId === actor.userId || granted(actor, action);
 
@@ -345,9 +347,11 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
       return resource.ownerId === actor.userId;
 
     // | List / revoke **anyone's** token | ✓ | ✓ | — | — |
+    //
+    // *Manage anyone's tokens* (D-104 item 6, LAI-985).
     case 'token.list_any':
     case 'token.revoke_any':
-      return isAdminUp;
+      return granted(actor, action);
 
     // | Log own unlisted work | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
     //

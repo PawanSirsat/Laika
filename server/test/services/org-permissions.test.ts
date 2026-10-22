@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { readPayload } from '../../src/db/activity.ts';
+import { CAPABILITIES, GRANTABLE_ROLES } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
 import { activity, orgRoleGrants, orgs, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
@@ -26,7 +27,10 @@ const OFF = {
   see_people_analytics: false,
   see_org_activity: false,
   open_all_projects: false,
-  manage_people: false,
+  invite_people: false,
+  deactivate_people: false,
+  create_archive_projects: false,
+  manage_any_tokens: false,
   change_org_settings: false,
 };
 const ON = Object.fromEntries(Object.keys(OFF).map((k) => [k, true]));
@@ -115,7 +119,15 @@ describe('replacing', () => {
 
     expect(view.grants.member.see_org_activity).toBe(true);
     expect(view.updated_at).toBe(1_000);
-    expect(t.db.select().from(orgRoleGrants).all()).toHaveLength(15);
+    // Every cell: each grantable role × each capability, by name.
+    expect(
+      t.db
+        .select()
+        .from(orgRoleGrants)
+        .all()
+        .map((row) => `${row.orgRole} ${row.capability}`)
+        .sort(),
+    ).toEqual(GRANTABLE_ROLES.flatMap((role) => CAPABILITIES.map((c) => `${role} ${c}`)).sort());
     expect(can(member(), 'audit_log.export')).toBe(true);
     // The viewer's answer is untouched.
     expect(can(actor('viewer'), 'audit_log.export')).toBe(false);

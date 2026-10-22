@@ -41,10 +41,14 @@ export const CAPABILITY_ACTIONS: Readonly<Record<Capability, readonly OrgAction[
   ],
   see_org_activity: ['audit_log.export'],
   open_all_projects: [],
-  // `user.sign_out` rides with deactivation (D-104 item 3, LAI-981) until
-  // LAI-985 splits this into *Invite people* and *Deactivate people and reset
-  // access*. Signing yourself out needs no grant; see `can()`.
-  manage_people: ['user.invite', 'user.deactivate', 'user.sign_out'],
+  // *Manage people* split in two (D-104 item 6, LAI-985): inviting someone in
+  // and taking access away are different powers. Ending somebody else's
+  // sessions is the second (LAI-981); LAI-983's reset link joins it. Signing
+  // yourself out needs no grant; see `can()`.
+  invite_people: ['user.invite'],
+  deactivate_people: ['user.deactivate', 'user.sign_out'],
+  create_archive_projects: ['project.create', 'project.archive'],
+  manage_any_tokens: ['token.list_any', 'token.revoke_any'],
   change_org_settings: ['org.settings.edit', 'org.time.set', 'org.developer_insights.set'],
 };
 
@@ -53,8 +57,28 @@ export const CAPABILITY_LABELS: Readonly<Record<Capability, string>> = {
   see_people_analytics: "See everyone's analytics",
   see_org_activity: "See the organisation's activity history",
   open_all_projects: 'Open every project',
-  manage_people: 'Manage people and invites',
+  invite_people: 'Invite people',
+  deactivate_people: 'Deactivate people and reset access',
+  create_archive_projects: 'Create and archive spaces',
+  manage_any_tokens: "Manage anyone's tokens",
   change_org_settings: 'Change organisation settings, Time and breaks',
+};
+
+/**
+ * One line each, from the server, so the Roles & permissions screen says what
+ * a switch does without inventing it (D-104 item 6, LAI-985).
+ */
+export const CAPABILITY_DESCRIPTIONS: Readonly<Record<Capability, string>> = {
+  see_people_analytics:
+    "Open anyone's profile, activity heatmap, time and token usage; every look is logged.",
+  see_org_activity: "Read and export the organisation's whole activity history.",
+  open_all_projects: 'Work in every space without being added to it.',
+  invite_people: 'Create, list and revoke invite links for new members and viewers.',
+  deactivate_people: 'Deactivate or reactivate a person, and sign them out everywhere.',
+  create_archive_projects: 'Create new spaces, and archive or restore them.',
+  manage_any_tokens: "See and revoke anyone's agent and API tokens.",
+  change_org_settings:
+    "Change the organisation's AI provider, presence, Developer insights, Time and breaks.",
 };
 
 /**
@@ -75,7 +99,10 @@ export const DEFAULT_GRANTS: OrgGrants = {
     'see_people_analytics',
     'see_org_activity',
     'open_all_projects',
-    'manage_people',
+    'invite_people',
+    'deactivate_people',
+    'create_archive_projects',
+    'manage_any_tokens',
     'change_org_settings',
   ],
   member: [],

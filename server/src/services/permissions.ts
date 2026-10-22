@@ -151,7 +151,8 @@ const SOMEONE_ELSE = 'someone-else';
  *    role the joiner lands on is `projectRoleOnJoin`, not a permission.
  *  - `token.read_own`, `token.revoke_own` — every role, their own tokens only.
  *  - `user.sign_out` — every role may sign themselves out; somebody else is
- *    whoever holds `manage_people`, with `user.deactivate` (LAI-981).
+ *    whoever holds *Deactivate people and reset access*, with
+ *    `user.deactivate` (LAI-981, LAI-985).
  *  - `profile.rate` — Owner and Admin, anybody but themselves.
  *  - `people.analytics.read` — anybody but themselves: their own is `/me`
  *    (LAI-957).

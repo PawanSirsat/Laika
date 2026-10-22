@@ -30,7 +30,7 @@ import { assertCan } from '../policy/can.ts';
  *
  * **An invite is a role grant with a delay on it**, so creating one passes the
  * role it grants as `targetOrgRole`: only the owner invites an admin or an
- * owner, and whoever else holds *Manage people and invites* invites as member
+ * owner, and whoever else holds *Invite people* (LAI-985) invites as member
  * or viewer. Until LAI-958 this was a second check against `user.set_role`;
  * that action is the owner's alone now, and keeping the check would have
  * refused an admin every invite.

@@ -81,7 +81,10 @@ const OFF = {
   see_people_analytics: false,
   see_org_activity: false,
   open_all_projects: false,
-  manage_people: false,
+  invite_people: false,
+  deactivate_people: false,
+  create_archive_projects: false,
+  manage_any_tokens: false,
   change_org_settings: false,
 };
 const ON = Object.fromEntries(Object.keys(OFF).map((k) => [k, true]));
