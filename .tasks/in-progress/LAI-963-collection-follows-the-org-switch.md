@@ -2,11 +2,12 @@
 id: LAI-963
 title: 'Local activity is collected only when the person opts in; D-102 (amended) makes the organisation''s switch alone decide'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T13:33:37Z
 ---
 
 ## Goal
