@@ -376,6 +376,14 @@ const PAIRS: readonly Pair[] = [
     client: 'OwnLocalActivity',
     clientFile: 'local-activity.ts',
   },
+  {
+    // Who looked at a person's analytics (D-102 rule 3, LAI-957), paired the
+    // moment My day listed it (LAI-959).
+    server: 'WhoLookedView',
+    serverFile: 'services/analytics-views.ts',
+    client: 'WhoLooked',
+    clientFile: 'people-analytics.ts',
+  },
   /*
    * The review gate (D-082, LAI-758), paired the moment the client existed.
    * `ReviewQueueView.tasks` and `TaskRoundsView.rounds` hold the nested

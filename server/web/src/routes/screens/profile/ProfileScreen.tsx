@@ -37,6 +37,7 @@ import {
   type ProfileReview,
   type ProfileTask,
 } from '../../../api/profiles.ts';
+import { holdsPeopleAnalytics, useOrgActions } from '../../../api/people-analytics.ts';
 import { dateTime, timeLabel } from '../../../api/time-label.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -45,6 +46,9 @@ import { orgRoleLabel } from '../invite-roles.ts';
 import { SCREEN_COPY } from '../screen-copy.ts';
 import { ActivityCard } from './ActivityCard.tsx';
 import { InfoTip } from './InfoTip.tsx';
+import { MyDayScreen } from '../my-day/MyDayScreen.tsx';
+import { PersonHours } from './PersonHours.tsx';
+import { PersonLocalActivity } from './PersonLocalActivity.tsx';
 import {
   agentRows,
   barHeights,
@@ -72,7 +76,23 @@ export interface ProfileScreenProps {
   /** `?user=` — whose profile. */
   readonly userId: string | undefined;
   readonly me: MeProfile | undefined;
+  /** `?tab=` — `day` or `hours` (LAI-959); anything else is the overview. */
+  readonly tab?: string | undefined;
+  readonly onTab?: (tab: ProfileTab) => void;
+  /** `?day=` — the day the Day and Hours tabs read; today when absent. */
+  readonly day?: string | undefined;
+  readonly onDay?: (day: string) => void;
+  readonly onNavigate?: (to: string) => void;
 }
+
+/** The profile's sections (LAI-959): the record, and the person's day and hours. */
+export type ProfileTab = 'overview' | 'day' | 'hours';
+
+const TABS: readonly (readonly [ProfileTab, string])[] = [
+  ['overview', 'Overview'],
+  ['day', 'Day'],
+  ['hours', 'Hours'],
+];
 
 type Load =
   | { readonly kind: 'loading' }
@@ -160,8 +180,22 @@ function useColumnCount(): ColumnCount {
  * a builder's no queue, so those cards are absent — not empty — and that is all
  * the kind changes. What a figure means is in the (i) beside it.
  */
-export function ProfileScreen({ userId, me }: ProfileScreenProps) {
-  const allowed = mayOpenProfiles(me?.org_role);
+export function ProfileScreen({
+  userId,
+  me,
+  tab,
+  onTab = () => undefined,
+  day,
+  onDay = () => undefined,
+  onNavigate = () => undefined,
+}: ProfileScreenProps) {
+  // *See everyone's analytics* carries the profile and the day alike (§3's
+  // grants, D-102 rule 6): the server's answer once it has one, the default
+  // grants — owner and admin — until then (LAI-959).
+  const { actions, settled } = useOrgActions(me !== undefined);
+  const allowed =
+    actions === undefined ? mayOpenProfiles(me?.org_role) : actions.includes('profile.read');
+  const readsDays = holdsPeopleAnalytics(actions, me?.org_role);
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [kindBusy, setKindBusy] = useState(false);
@@ -218,6 +252,15 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
   );
 
   if (me === undefined) return null;
+
+  if (!allowed && !settled) {
+    return (
+      <div className="prof">
+        {header}
+        <LoadingState shape="card" count={4} label="Loading the profile" />
+      </div>
+    );
+  }
 
   if (!allowed) {
     return (
@@ -375,39 +418,92 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
     decisions: <DecisionsCard review={profile.review} weeks={weeks} now={now} />,
   };
 
+  // A person's own day is My day's; their Day and Hours are for somebody else.
+  const tabbed = readsDays && me.id !== user.id;
+  const shownTab: ProfileTab = tabbed && (tab === 'day' || tab === 'hours') ? tab : 'overview';
+  const tabHref = (id: ProfileTab): string => {
+    const q = new URLSearchParams({ user: user.id });
+    if (id !== 'overview') q.set('tab', id);
+    return `/people?${q.toString()}`;
+  };
+
   return (
     <div className="prof" data-kind={user.profile_kind}>
       {header}
 
       <ProfileHead profile={profile} busy={kindBusy} error={kindError} onKind={changeKind} />
 
-      <ActivityCard
-        userId={user.id}
-        name={user.name}
-        viewerId={me.id}
-        canManageOrg={mayOpenProfiles(me.org_role)}
-        sharing={profile.activity_sharing}
-      />
+      {tabbed && (
+        <nav className="prof-tabs" aria-label={`${user.name}’s profile`}>
+          {TABS.map(([id, label]) => (
+            <a
+              key={id}
+              href={tabHref(id)}
+              className={id === shownTab ? 'prof-tab prof-tab-active' : 'prof-tab'}
+              aria-current={id === shownTab ? 'page' : undefined}
+              data-profile-tab={id}
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                onTab(id);
+              }}
+            >
+              {label}
+            </a>
+          ))}
+        </nav>
+      )}
 
-      {/* Their agents' tokens (D-084, LAI-769): full width, like Activity. */}
-      <UsageCard key={user.id} userId={user.id} name={user.name} self={me.id === user.id} />
+      {shownTab === 'day' && (
+        <>
+          <MyDayScreen
+            key={user.id}
+            me={me}
+            user={user.id}
+            embedded={{ name: user.name }}
+            day={day}
+            onDay={onDay}
+            onNavigate={onNavigate}
+          />
+          <PersonLocalActivity key={`held-${user.id}`} userId={user.id} name={user.name} />
+        </>
+      )}
 
-      {/*
-       * The rest flows in columns (LAI-751, owner, 2026-10-16): each column
-       * stacks its cards one gap apart, so a short card is never followed by a
-       * hole the height of its neighbour. Which card goes where is
-       * `columnPlan`'s — chosen, not computed — and one column is the reading
-       * order.
-       */}
-      <div className="prof-columns" data-columns={columns}>
-        {columnPlan(user.profile_kind, columns).map((ids) => (
-          <div key={ids.join('-')} className="prof-column">
-            {ids.map((id) => (
-              <Fragment key={id}>{cards[id]}</Fragment>
+      {shownTab === 'hours' && (
+        <PersonHours key={user.id} userId={user.id} name={user.name} day={day} onDay={onDay} />
+      )}
+
+      {shownTab === 'overview' && (
+        <>
+          <ActivityCard
+            userId={user.id}
+            name={user.name}
+            viewerId={me.id}
+            canManageOrg={mayOpenProfiles(me.org_role)}
+            sharing={profile.activity_sharing}
+          />
+
+          {/* Their agents' tokens (D-084, LAI-769): full width, like Activity. */}
+          <UsageCard key={user.id} userId={user.id} name={user.name} self={me.id === user.id} />
+
+          {/*
+           * The rest flows in columns (LAI-751, owner, 2026-10-16): each column
+           * stacks its cards one gap apart, so a short card is never followed by a
+           * hole the height of its neighbour. Which card goes where is
+           * `columnPlan`'s — chosen, not computed — and one column is the reading
+           * order.
+           */}
+          <div className="prof-columns" data-columns={columns}>
+            {columnPlan(user.profile_kind, columns).map((ids) => (
+              <div key={ids.join('-')} className="prof-column">
+                {ids.map((id) => (
+                  <Fragment key={id}>{cards[id]}</Fragment>
+                ))}
+              </div>
             ))}
           </div>
-        ))}
-      </div>
+        </>
+      )}
 
       {rating.open && (
         <RatingDialog

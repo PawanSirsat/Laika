@@ -145,6 +145,8 @@ void describe('the rows', () => {
       status: 'review',
       statusName: 'QA',
       assignee: 'Pawan Sirsat',
+      // Whose profile the name links to, for a reader who may open it (LAI-959).
+      assigneeId: 'u1',
       sprint: 'Sprint 14',
       updatedAt: 42,
     });
@@ -156,6 +158,7 @@ void describe('the rows', () => {
       lookups,
     );
     assert.equal(bare?.assignee, 'Unassigned');
+    assert.equal(bare?.assigneeId, null);
     assert.equal(bare?.sprint, null);
     assert.equal(unknown?.space, undefined);
     assert.equal(unknown?.assignee, 'Someone');

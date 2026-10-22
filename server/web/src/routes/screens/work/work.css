@@ -76,13 +76,12 @@
 }
 
 .work-row {
+  position: relative;
+  box-sizing: border-box;
   width: 100%;
   min-height: 2.75rem;
   padding-block: var(--space-2);
-  border: 0;
-  background: none;
   color: var(--text-primary);
-  font: inherit;
   font-size: var(--text-body);
   text-align: left;
   cursor: pointer;
@@ -92,9 +91,50 @@
   background: var(--bg-card-hover);
 }
 
-.work-row:focus-visible {
+/* The title is the row's button, and its hit area is the whole row. */
+.work-open {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-open::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.work-open:focus-visible {
+  outline: none;
+}
+
+.work-open:focus-visible::after {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+/* The assignee's profile link sits above the row's hit area (LAI-959). */
+.work-person {
+  position: relative;
+  z-index: 1;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-default);
+  text-underline-offset: 0.2em;
+}
+
+.work-person:hover {
+  color: var(--accent);
+  text-decoration-color: currentColor;
 }
 
 /* The cells after the title: grid cells here, one wrapping line when narrow. */

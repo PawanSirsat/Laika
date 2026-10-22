@@ -344,6 +344,56 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
     }
   });
 
+  void test('an assignee is a link to their profile for a holder, and plain text for anyone else (LAI-959)', async () => {
+    const permissions = (role: string, actions: readonly string[]) => ({
+      org_roles: [],
+      project_roles: [],
+      permissions: [],
+      me: {
+        org_role: role,
+        credential: 'session',
+        project_scope: 'all',
+        implicit_project_role: null,
+        actions,
+        projects: [],
+      },
+    });
+    const owner = await openWork('/work', {
+      ...OWNER_STUB,
+      '/api/v1/permissions': permissions('owner', ['people.analytics.read', 'profile.read']),
+    });
+    try {
+      await keys(owner.page);
+      const link = owner.page.locator('.work-row a.work-person[data-person-link="u2"]');
+      await link.waitFor({ timeout: 10_000 });
+      assert.equal((await link.innerText()).trim(), 'Bea Nkosi');
+      // The name opens the person, not the task the row opens.
+      await link.click();
+      await until(() => new URL(owner.page.url()).pathname === '/people');
+      const url = new URL(owner.page.url());
+      assert.equal(url.pathname, '/people');
+      assert.equal(url.searchParams.get('user'), 'u2');
+    } finally {
+      await owner.close();
+    }
+
+    // A member the owner granted nothing: the name, and no link.
+    const member = await openWork('/work', {
+      ...shell(MEMBER),
+      '/api/v1/tasks?fields=slim': { data: MEMBER_PAGE, next_cursor: null },
+      '/api/v1/permissions': permissions('member', ['local_activity.read_own']),
+    });
+    try {
+      await keys(member.page);
+      await until(() => member.calls.some((c) => c.path === '/api/v1/permissions'));
+      await member.page.waitForTimeout(200);
+      assert.equal(await member.page.locator('.work-row a[data-person-link]').count(), 0);
+      assert.ok((await member.page.locator('.work-row').first().innerText()).includes('Bea Nkosi'));
+    } finally {
+      await member.close();
+    }
+  });
+
   void test('a row opens the task in its own space’s drawer', async () => {
     const h = await openWork('/work', {
       ...OWNER_STUB,

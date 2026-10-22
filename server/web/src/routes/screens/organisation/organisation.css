@@ -1318,3 +1318,16 @@
     grid-area: detail;
   }
 }
+
+/* A person in the history, as the way to their profile (LAI-959). */
+.oh-person {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-default);
+  text-underline-offset: 0.2em;
+}
+
+.oh-person:hover {
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}

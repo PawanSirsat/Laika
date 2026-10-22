@@ -226,6 +226,7 @@ function UsageRoute() {
 /**
  * The reader's own day (LAI-787). `?day=` names which; absent is today. A
  * day picked is a URL, so back and forward walk the days as they were seen.
+ * `?user=` is somebody else's day, read only (LAI-959), picked the same way.
  */
 function MyDayRoute() {
   const {
@@ -244,6 +245,13 @@ function MyDayRoute() {
       onDay={(day) => {
         const next = new URLSearchParams(params);
         next.set('day', day);
+        setParams(next, { push: true });
+      }}
+      user={params.get('user') ?? undefined}
+      onUser={(userId) => {
+        const next = new URLSearchParams(params);
+        if (userId === undefined) next.delete('user');
+        else next.set('user', userId);
         setParams(next, { push: true });
       }}
     />
@@ -373,12 +381,33 @@ function MembersRoute() {
 
 function ProfileRoute() {
   const {
-    route: { params },
+    route: { params, setParams, navigate },
     me,
   } = useShell();
   // `?user=` names whose profile (LAI-743); the screen refuses anyone who may
-  // not open profiles before it asks the server for one.
-  return <ProfileScreen userId={params.get('user') ?? undefined} me={me} />;
+  // not open profiles before it asks the server for one. `?tab=` and `?day=`
+  // are its Day and Hours (LAI-959), each a URL, so Back walks them.
+  const set = (name: string, value: string | undefined): void => {
+    const next = new URLSearchParams(params);
+    if (value === undefined) next.delete(name);
+    else next.set(name, value);
+    setParams(next, { push: true });
+  };
+  return (
+    <ProfileScreen
+      userId={params.get('user') ?? undefined}
+      me={me}
+      tab={params.get('tab') ?? undefined}
+      onTab={(tab) => {
+        set('tab', tab === 'overview' ? undefined : tab);
+      }}
+      day={params.get('day') ?? undefined}
+      onDay={(day) => {
+        set('day', day);
+      }}
+      onNavigate={navigate}
+    />
+  );
 }
 
 /**

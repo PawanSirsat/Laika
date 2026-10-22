@@ -10,6 +10,7 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
+import { PersonLink } from '../../../components/PersonLink.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { SpaceBadge } from '../../../components/SpaceBadge.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
@@ -329,16 +330,24 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
               const updated = timeLabel(row.updatedAt, now);
               return (
                 <li key={row.id} className="work-item">
-                  <button
-                    type="button"
-                    className="work-row"
-                    data-task-id={row.id}
-                    onClick={() => {
-                      onOpenTask({ id: row.id, key: row.key, projectSlug: row.space?.slug });
-                    }}
-                  >
+                  {/*
+                    The row opens its task — the title's button covers it
+                    (`::after`) — and the assignee's name is its own link to
+                    their profile, above that, for a reader who may open it
+                    (LAI-959): a link cannot sit inside a button.
+                  */}
+                  <div className="work-row">
                     <span className="work-key">{row.key}</span>
-                    <span className="work-title">{row.title}</span>
+                    <button
+                      type="button"
+                      className="work-title work-open"
+                      data-task-id={row.id}
+                      onClick={() => {
+                        onOpenTask({ id: row.id, key: row.key, projectSlug: row.space?.slug });
+                      }}
+                    >
+                      {row.title}
+                    </button>
                     <span className="work-meta">
                       <span className="work-space">
                         {row.space === undefined ? (
@@ -360,7 +369,17 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
                             : 'work-assignee'
                         }
                       >
-                        {row.assignee}
+                        {row.assigneeId === null ? (
+                          row.assignee
+                        ) : (
+                          <PersonLink
+                            userId={row.assigneeId}
+                            className="work-person"
+                            label={`${row.assignee}’s profile`}
+                          >
+                            {row.assignee}
+                          </PersonLink>
+                        )}
                       </span>
                       <span
                         className={row.sprint === null ? 'work-sprint work-muted' : 'work-sprint'}
@@ -371,7 +390,7 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
                         {updated.text}
                       </time>
                     </span>
-                  </button>
+                  </div>
                 </li>
               );
             })}
