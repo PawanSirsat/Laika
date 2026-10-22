@@ -5754,3 +5754,38 @@ improve the UI/UX of that."*
 5. **Not built:** the design's lunch *panel* — moving the window earlier or
    later for one day. The schedule stays organisation-wide (D-101 item 1).
 
+## D-106 — The Timeline tells day from night, from where the person is; the person sets their place (LAI-895)
+
+**Date:** 2026-10-23 · **By:** CHIEF (Belka), on the owner's instruction
+
+The owner, 2026-10-23, with the design's axis — *☀ 3 PM · ☀ 4 PM · 5:05 PM ·
+☾ 6 PM · ☾ 7 PM*: *"also add this effect on top, day / night, so we can
+differentiate; also we can set this thing in profile, like where that
+employee belongs to, because for India it's different and for others it's
+different — think about this and implement that."*
+
+1. **The sky behind the hours.** On every day view the axis strip is tinted
+   by day and by night, blending across the hour centred on sunrise and on
+   sunset; a sun sits before a daytime hour and a moon before a night one;
+   the lanes under a night hour carry a faint tint. Five tokens in each
+   theme, the design's own values. It is paint: no figure, no count, and
+   nothing stored for it.
+2. **Sunrise and sunset come from where the person is**, computed on the
+   client for the day shown, in that day's zone — never a fixed clock, so a
+   day in New Delhi and a day in Johannesburg differ, and so does June from
+   December. The arithmetic is the plain sunrise equation; a polar day or
+   night draws one phase.
+3. **Where you are is the person's own setting**, on My day beside *Draft my
+   time* — not on the profile page, which owners and admins alone can open.
+   It is one place from a short list, keyed by its IANA zone, kept as
+   `place` on `user_time_settings` (§4.46) and set by `PUT /me/time-settings
+   { place }` under the same `time_settings.set_own` as the drafting switch:
+   a web session, the person's own, never an admin's and never a token's.
+   The server stores a zone-shaped id and nothing else; the list and its
+   coordinates are the client's.
+4. **Unset, the day's own zone stands in** when the list has a place for it,
+   so most people see their sky before they have set anything. A zone the
+   list does not know draws no sky at all rather than a wrong one.
+5. **An owner or admin reading someone's day** (D-102) sees that person's
+   sky, from that person's place, and cannot change it.
+
