@@ -112,11 +112,22 @@ const withProjectSettings = (role: string, granted: boolean): ApiStub => ({
   ...STUB,
   '/api/v1/me': { ...(STUB['/api/v1/me'] as object), org_role: role },
   '/api/v1/permissions': {
-    org_roles: [], project_roles: [], permissions: [],
+    org_roles: [],
+    project_roles: [],
+    permissions: [],
     me: {
-      org_role: role, credential: 'session', project_scope: 'all', implicit_project_role: null,
+      org_role: role,
+      credential: 'session',
+      project_scope: 'all',
+      implicit_project_role: null,
       actions: [],
-      projects: [{ project_id: 'p1', role: granted ? 'lead' : 'member', actions: granted ? ['project.settings.edit'] : [] }],
+      projects: [
+        {
+          project_id: 'p1',
+          role: granted ? 'lead' : 'member',
+          actions: granted ? ['project.settings.edit'] : [],
+        },
+      ],
     },
   },
 });
@@ -318,7 +329,11 @@ void describe('column width', () => {
 });
 
 void describe('project visibility permission', () => {
-  for (const [role, granted] of [['admin', false], ['member', true], ['owner', true]] as const) {
+  for (const [role, granted] of [
+    ['admin', false],
+    ['member', true],
+    ['owner', true],
+  ] as const) {
     void test(`${role} ${granted ? 'can' : 'cannot'} edit visibility from the live project grant`, async () => {
       const h = await open('/board?project=laika-core', withProjectSettings(role, granted));
       try {

@@ -134,9 +134,16 @@ void describe('Projects effective access', () => {
     ] as const) {
       const h = await open('/projects', stub(role, implicit));
       try {
-        await h.page.locator('.project-card-name').getByText('Member Workshop', { exact: true }).waitFor({ timeout: 20_000 });
+        await h.page
+          .locator('.project-card-name')
+          .getByText('Member Workshop', { exact: true })
+          .waitFor({ timeout: 20_000 });
         const page = await h.page.locator('.projects').innerText();
-        assert.equal(page.includes('Private Observatory'), seesPrivate, `${role} ignored live grants`);
+        assert.equal(
+          page.includes('Private Observatory'),
+          seesPrivate,
+          `${role} ignored live grants`,
+        );
         assert.equal(
           await h.page.getByRole('button', { name: 'Join', exact: true }).count(),
           seesPrivate ? 0 : 1,

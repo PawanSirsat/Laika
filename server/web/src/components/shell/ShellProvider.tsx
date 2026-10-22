@@ -9,6 +9,7 @@ import { useTokenAlerts } from '../../api/token-alerts.ts';
 import { mayTriageUnlisted } from '../../api/unlisted.ts';
 import { showsAppNav } from '../shell-chrome.ts';
 import { ShellProviderContext, type ShellValue } from './shell-context.ts';
+import { usePermissions } from '../../api/permissions.ts';
 
 /**
  * Whether this instance still has no owner. `undefined` until `/setup/status`
@@ -54,8 +55,10 @@ export function ShellProvider({ children }: ShellProviderProps) {
   }, [signOut, navigate]);
 
   const me = session.status === 'authenticated' ? session.user : undefined;
+  const { permissions } = usePermissions(me !== undefined, me?.id);
   const { open: unlistedOpen, refresh: refreshUnlisted } = useUnlistedCount(
-    me !== undefined && mayTriageUnlisted(me.org_role),
+    me !== undefined &&
+      (permissions?.me.actions.includes('audit_log.export') ?? mayTriageUnlisted(me.org_role)),
   );
   const {
     waiting: reviewWaiting,

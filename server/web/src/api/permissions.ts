@@ -76,6 +76,8 @@ export interface EffectivePermissions {
  * request cache; a refresh publishes the new answer to every mounted gate.
  */
 let current: Permissions | undefined;
+let currentSession: string | undefined;
+let pending: Promise<Permissions> | undefined;
 const listeners = new Set<() => void>();
 
 function publish(next: Permissions | undefined): void {
@@ -83,27 +85,42 @@ function publish(next: Permissions | undefined): void {
   for (const listener of listeners) listener();
 }
 
-export function usePermissions(enabled = true): EffectivePermissions {
+function loadPermissions(): Promise<Permissions> {
+  pending ??= getPermissions().finally(() => {
+    pending = undefined;
+  });
+  return pending;
+}
+
+export function usePermissions(enabled = true, sessionKey?: string): EffectivePermissions {
   const [, render] = useState(0);
   const [settled, setSettled] = useState(!enabled);
   useEffect(() => {
     if (!enabled) return;
-    const controller = new AbortController();
+    if (sessionKey !== undefined && sessionKey !== currentSession) {
+      currentSession = sessionKey;
+      publish(undefined);
+    }
+    if (current !== undefined) {
+      setSettled(true);
+      return;
+    }
     const listener = () => render((n) => n + 1);
     listeners.add(listener);
-    getPermissions(controller.signal)
+    let active = true;
+    loadPermissions()
       .then((next) => {
-        if (!controller.signal.aborted) publish(next);
+        if (active) publish(next);
       })
       .catch(() => undefined)
       .finally(() => {
-        if (!controller.signal.aborted) setSettled(true);
+        if (active) setSettled(true);
       });
     return () => {
       listeners.delete(listener);
-      controller.abort();
+      active = false;
     };
-  }, [enabled]);
+  }, [enabled, sessionKey]);
   const refresh = useCallback(() => {
     void getPermissions().then(publish);
   }, []);
@@ -133,7 +150,10 @@ export function holdsProjectAction(
   return view.me.implicit_project_role !== null && action === 'project.settings.edit';
 }
 
-export function implicitlyLeads(view: Permissions | undefined, projectId: string): boolean | undefined {
+export function implicitlyLeads(
+  view: Permissions | undefined,
+  projectId: string,
+): boolean | undefined {
   if (view === undefined) return undefined;
   return (
     view.me.implicit_project_role === 'lead' &&

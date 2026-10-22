@@ -78,8 +78,17 @@ const me = (id: string, org_role: string) => ({
 });
 
 const permissions = (org_role: string, actions: readonly string[]) => ({
-  org_roles: [], project_roles: [], permissions: [],
-  me: { org_role, credential: 'session', project_scope: 'all', implicit_project_role: null, actions, projects: [] },
+  org_roles: [],
+  project_roles: [],
+  permissions: [],
+  me: {
+    org_role,
+    credential: 'session',
+    project_scope: 'all',
+    implicit_project_role: null,
+    actions,
+    projects: [],
+  },
 });
 
 void after(async () => {
@@ -317,10 +326,15 @@ void describe('role management', () => {
       });
       try {
         await h.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
-        await until(async () => (await h.page.locator('.org-invite-form').count()) === (invited ? 1 : 0));
+        await until(
+          async () => (await h.page.locator('.org-invite-form').count()) === (invited ? 1 : 0),
+        );
         assert.equal(await h.page.locator('.org-invite-form').count(), invited ? 1 : 0);
         assert.equal((await h.page.locator('.org-deactivate').count()) > 0, deactivates);
-        assert.equal((await h.page.locator('.org-person [role="combobox"]').count()) > 0, role === 'owner');
+        assert.equal(
+          (await h.page.locator('.org-person [role="combobox"]').count()) > 0,
+          role === 'owner',
+        );
       } finally {
         await h.close();
       }

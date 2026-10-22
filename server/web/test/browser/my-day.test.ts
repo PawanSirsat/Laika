@@ -187,8 +187,17 @@ function privatePlateStub(
     },
     '/api/v1/projects': { data: [privateProject], next_cursor: null },
     '/api/v1/permissions': {
-      org_roles: [], project_roles: [], permissions: [],
-      me: { org_role: role, credential: 'session', project_scope: 'all', implicit_project_role: implicit, actions: [], projects: [] },
+      org_roles: [],
+      project_roles: [],
+      permissions: [],
+      me: {
+        org_role: role,
+        credential: 'session',
+        project_scope: 'all',
+        implicit_project_role: implicit,
+        actions: [],
+        projects: [],
+      },
     },
     '/api/v1/projects/private-observatory/tasks?assignee=u1&status=in_progress': {
       data: [
@@ -383,9 +392,14 @@ void describe('My day after the reference', () => {
       try {
         await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
         if (shown) {
-          await h.page.getByText('Private Observatory migration', { exact: true }).waitFor({ timeout: 20_000 });
+          await h.page
+            .getByText('Private Observatory migration', { exact: true })
+            .waitFor({ timeout: 20_000 });
         }
-        assert.equal(await h.page.getByText('Private Observatory migration', { exact: true }).count(), shown ? 1 : 0);
+        assert.equal(
+          await h.page.getByText('Private Observatory migration', { exact: true }).count(),
+          shown ? 1 : 0,
+        );
       } finally {
         await h.close();
       }

@@ -86,8 +86,17 @@ function orgStub(role: string, breaks: readonly unknown[], extra: ApiStub = {}):
 }
 
 const permissions = (role: string, actions: readonly string[]) => ({
-  org_roles: [], project_roles: [], permissions: [],
-  me: { org_role: role, credential: 'session', project_scope: 'all', implicit_project_role: null, actions, projects: [] },
+  org_roles: [],
+  project_roles: [],
+  permissions: [],
+  me: {
+    org_role: role,
+    credential: 'session',
+    project_scope: 'all',
+    implicit_project_role: null,
+    actions,
+    projects: [],
+  },
 });
 
 async function organisation(stub: ApiStub): Promise<Harness> {
@@ -319,8 +328,15 @@ void describe('Organisation: the break schedule', () => {
       try {
         const fact = h.page.locator('[data-fact="breaks"]');
         await fact.waitFor({ timeout: 10_000 });
-        await until(async () => (await fact.getByRole('button', { name: 'Edit breaks' }).count()) === (editable ? 1 : 0));
-        assert.equal(await fact.getByRole('button', { name: 'Edit breaks' }).count(), editable ? 1 : 0);
+        await until(
+          async () =>
+            (await fact.getByRole('button', { name: 'Edit breaks' }).count()) ===
+            (editable ? 1 : 0),
+        );
+        assert.equal(
+          await fact.getByRole('button', { name: 'Edit breaks' }).count(),
+          editable ? 1 : 0,
+        );
       } finally {
         await h.close();
       }

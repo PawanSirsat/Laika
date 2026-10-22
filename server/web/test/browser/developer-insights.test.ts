@@ -49,8 +49,17 @@ const org = (developer_insights: boolean) => ({
 });
 
 const permissions = (org_role: string, actions: readonly string[]) => ({
-  org_roles: [], project_roles: [], permissions: [],
-  me: { org_role, credential: 'session', project_scope: 'all', implicit_project_role: null, actions, projects: [] },
+  org_roles: [],
+  project_roles: [],
+  permissions: [],
+  me: {
+    org_role,
+    credential: 'session',
+    project_scope: 'all',
+    implicit_project_role: null,
+    actions,
+    projects: [],
+  },
 });
 
 void after(async () => {
@@ -219,7 +228,9 @@ function connect(
     : [],
 ): ApiStub {
   return {
-    ...(analytics === null ? {} : { '/api/v1/org/permissions': orgPermissions(analytics, settings) }),
+    ...(analytics === null
+      ? {}
+      : { '/api/v1/org/permissions': orgPermissions(analytics, settings) }),
     '/api/v1/permissions': permissions(role, actions),
     '/api/v1/me': me(role),
     '/api/v1/projects': { data: [], next_cursor: null },
@@ -425,8 +436,20 @@ void describe('Share local activity: who can see it follows the owner’s grants
   void test('turn-off guidance follows withdrawn and granted change-org-settings permissions', async () => {
     for (const [role, settings, actions, guidance, linked] of [
       ['admin', { admin: false }, [], 'Only the owner can turn it off.', false],
-      ['member', { member: true }, ['org.developer_insights.set'], 'You can turn Developer insights off in Organisation.', true],
-      ['owner', { admin: false }, ['org.developer_insights.set'], 'You can turn Developer insights off in Organisation.', true],
+      [
+        'member',
+        { member: true },
+        ['org.developer_insights.set'],
+        'You can turn Developer insights off in Organisation.',
+        true,
+      ],
+      [
+        'owner',
+        { admin: false },
+        ['org.developer_insights.set'],
+        'You can turn Developer insights off in Organisation.',
+        true,
+      ],
     ] as const) {
       const h = await open(
         '/developer',

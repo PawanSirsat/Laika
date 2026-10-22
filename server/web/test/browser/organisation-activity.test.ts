@@ -85,8 +85,17 @@ const SECOND = [row(4, 'sprint.created', { actor_id: null, actor_kind: 'system' 
 
 const me = (org_role: string) => ({ ...user('u1', 'Ada Lovelace', org_role), memberships: [] });
 const permissions = (org_role: string, actions: readonly string[]) => ({
-  org_roles: [], project_roles: [], permissions: [],
-  me: { org_role, credential: 'session', project_scope: 'all', implicit_project_role: null, actions, projects: [] },
+  org_roles: [],
+  project_roles: [],
+  permissions: [],
+  me: {
+    org_role,
+    credential: 'session',
+    project_scope: 'all',
+    implicit_project_role: null,
+    actions,
+    projects: [],
+  },
 });
 
 const BASE: ApiStub = {
@@ -161,7 +170,10 @@ void describe('who is offered it', () => {
       try {
         if (offered) await h.page.locator('.oh-row').first().waitFor({ timeout: 20_000 });
         else await h.page.locator('.state-forbidden').waitFor({ timeout: 20_000 });
-        assert.equal(await h.page.locator('.page-tab[data-tab="activity"]').count(), offered ? 1 : 0);
+        assert.equal(
+          await h.page.locator('.page-tab[data-tab="activity"]').count(),
+          offered ? 1 : 0,
+        );
       } finally {
         await h.close();
       }
