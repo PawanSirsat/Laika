@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MeProfile } from '../../../api/me.ts';
 import { everyPage } from '../../../api/every-page.ts';
+import { useGates } from '../../../api/permissions.ts';
 import { isProject, listProjects, type Project } from '../../../api/projects.ts';
 import { listSprints, type Sprint } from '../../../api/sprints.ts';
 import {
@@ -88,6 +89,7 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
   const size = readPageSize(params);
   const query = useMemo(() => allTasksFilter(filter, size), [filter, size]);
   const queryKey = JSON.stringify(query);
+  const gates = useGates();
 
   /*
    * The pages walked so far, as the cursor each was read with — page one's is
@@ -245,7 +247,13 @@ export function WorkScreen({ me, params, setParams, onOpenTask }: WorkScreenProp
     ...spaceSprints.map((s) => ({ value: s.id, label: s.name })),
   ];
   const filtered = Object.keys(filter).length > 0;
-  const seesPeople = me?.org_role === 'owner' || me?.org_role === 'admin';
+  /*
+   * The server sends `by_assignee` to anyone who reads the tasks it counts —
+   * the summary asks only each project's `task.read` (LAI-974). Who sees a
+   * per-person breakdown is *See everyone's analytics*, the grant the owner
+   * gives for exactly this, and never the org role (LAI-970).
+   */
+  const seesPeople = gates.org('people.analytics.read');
 
   const copy = SCREEN_COPY['/work'];
 
