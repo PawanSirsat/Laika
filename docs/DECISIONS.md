@@ -5641,3 +5641,78 @@ yes; admins keep today's powers by default — yes.
   not in this amendment: deletion stays as it is today.
 - Collection still needs the person's machine to be connected (the hook and
   `laika activity on`); nothing installs itself.
+
+## D-103 — Spaces get a settings page and a consistent Spaces list; per-space task-creation and agent rules; Done stays a person's (LAI-976 – LAI-980)
+
+**Date:** 2026-10-22 · **By:** CHIEF (Belka), on the owner's designs (six
+screenshots: Spaces grid, Spaces list, and Space settings → General, Members,
+Access, Danger zone) and instruction *"you can take a decision on what is
+needed and what is not."*
+
+1. **Space settings** at `/spaces/<slug>/settings` (tabs General · Members ·
+   Access · Danger zone), editable by whoever holds `project.settings.edit`
+   (a space admin; an org owner or admin through *Open every project*);
+   read-only otherwise. The header says how the reader manages it ("you manage
+   this space as organisation Owner").
+2. **"Space admin" is the screen name for `lead`.** The data and SPEC keep
+   `lead`; only wording changes.
+3. **The key prefix may change; existing tasks keep their keys.** New tasks
+   take the new prefix; every old key keeps resolving everywhere a key is
+   accepted (REST, MCP, links, `external_ref` matching). If that cannot be
+   guaranteed, the change is refused, never half-done.
+4. **Colour** is one of the design's fixed palette entries, stored per space;
+   the letter avatar on cards and settings uses it.
+5. **Leave a space.** Anyone may leave a space they are a member of; the last
+   space admin must hand over first (the existing last-lead rule, now with a
+   message saying so). An org owner or admin who leaves keeps implicit access
+   while they hold *Open every project*, and is told so.
+6. **Who can create tasks:** *Members* (default) or *Space admins only*, per
+   space. Viewers never can. Applies to every path (REST, MCP, imports).
+7. **Agent sessions**, per space, default **on**. Off: agent tokens may read
+   but may not claim, start working, create, update or finish tasks in that
+   space; people are unaffected.
+8. **Person sign-off for Done is not a setting.** Only a person moves a task
+   to Done (Laika's core promise); the Access tab states it, locked on.
+9. **Join without approval** (join requests for public spaces) is deferred to
+   LAI-980; until then public spaces are joined directly, as today, and the
+   toggle is not shown.
+10. **Archive / restore** live in the Danger zone; archived spaces are listed
+    under the Spaces page's *Archived* filter for those allowed to see them.
+11. **Delete a space** is owner only, typed-key confirmation, permanent —
+    LAI-979, after the rest lands; it must say what happens to the activity
+    history (§13: append-only).
+12. **Spaces page** follows the owner's design: search, *All / Yours / Public
+    / Archived* chips with counts, Grid/List toggle, cards of one fixed shape
+    (letter avatar, name, key · repository, access badge, updated, a two-line
+    description or "No description yet.", progress bar, done / active /
+    blocked, member avatars, Context · Members · settings).
+
+## D-104 — People and organisation administration: one owner, offboarding, reset links, more grantable capabilities (LAI-981 – LAI-989)
+
+**Date:** 2026-10-22 · **By:** CHIEF (Belka), on the owner's approval of the
+admin-gap audit (*"do all the A, small bugs, then B, also the C"*), taking
+CHIEF's recommendations on the open questions.
+
+1. **Leaving a space** — as D-103 item 5.
+2. **Exactly one owner, transferable** (SPEC §3 already says so; the code
+   allowed a second). *Owner* leaves the role picker; **Transfer ownership**
+   (owner only, typed confirmation) makes the target owner and the former
+   owner an admin, atomically. Existing extra owners are reported, not
+   demoted silently.
+3. **Deactivation ends access:** deactivating a person revokes every token and
+   session of theirs; reactivation does not bring them back. **Force
+   sign-out** ends all sessions without deactivating.
+4. **Admin-issued reset link:** with no email in Laika, whoever holds *Manage
+   people* may issue a one-time, short-lived password-reset link for another
+   person (never for the owner unless they are the owner), shown once, every
+   issue logged. Using it ends the person's other sessions.
+5. **Offboarding asks.** Removing someone from a space or deactivating them
+   shows their open tasks and asks: unassign (pre-selected) or reassign to a
+   named person; tokens revoked; space memberships removed on deactivation.
+6. **More grantable capabilities** (D-102 rule 6 extended): *Create and
+   archive spaces* (`project.create`, `project.archive`), *Manage anyone's
+   tokens* (`token.list_any`, `token.revoke_any`), and *Manage people* splits
+   into *Invite people* and *Deactivate people and reset access*. Defaults
+   reproduce today's behaviour. Every capability carries a one-line
+   description from the server.
+7. **Organisation name** is editable by *Change organisation settings*.
