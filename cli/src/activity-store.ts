@@ -4,6 +4,7 @@ import {
   chmodSync,
   closeSync,
   existsSync,
+  linkSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -343,8 +344,11 @@ function readHolder(raw: string | undefined): Holder | undefined {
  * whose pid now belongs to a process that started at another time (the pid was
  * reused), is broken and retaken.
  *
- * `wx` is the atomic part: two syncs started in the same instant cannot both
- * create the file. Release removes the file only while it is still ours.
+ * `link` is the atomic part: two syncs started in the same instant cannot both
+ * create the file, and the lock appears with its holder already in it. It was
+ * created empty and written afterwards, and a sync that read it in between
+ * saw no holder and took it from a live one (LAI-308). Release removes the
+ * file only while it is still ours.
  */
 export function acquireLock(paths: ActivityPaths): (() => void) | undefined {
   const mine = JSON.stringify({ pid: process.pid, start: processStart(process.pid) });
@@ -352,14 +356,17 @@ export function acquireLock(paths: ActivityPaths): (() => void) | undefined {
     if (readText(paths.lock)?.trim() === mine) rmSync(paths.lock, { force: true });
   };
   const take = (): (() => void) | undefined => {
-    let fd: number;
+    const written = `${paths.lock}.${String(process.pid)}.tmp`;
     try {
-      fd = openSync(paths.lock, 'wx', 0o600);
+      const fd = openSync(written, 'w', 0o600);
+      writeSync(fd, `${mine}\n`);
+      closeSync(fd);
+      linkSync(written, paths.lock);
     } catch {
       return undefined;
+    } finally {
+      rmSync(written, { force: true });
     }
-    writeSync(fd, `${mine}\n`);
-    closeSync(fd);
     return release;
   };
 
