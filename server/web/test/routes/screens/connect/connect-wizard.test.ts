@@ -221,11 +221,15 @@ void describe('the optional entries and the notes (LAI-741)', () => {
       [
         'Share with your project',
         'What agents can do',
-        // D-079 (LAI-751): every signed-in developer's own choice.
+        // D-079 (LAI-751); since D-102 amended the organisation's, not a choice (LAI-967).
         'Share local activity',
         'Invite a teammate',
       ],
     );
+    // LAI-967: the rail line says the organisation collects — nobody's choice any more.
+    const activity = EXTRAS.find((e) => e.id === 'activity')?.line ?? '';
+    assert.match(activity, /^What your organisation collects from your machine/);
+    assert.doesNotMatch(activity, /choice|choose/i);
     assert.deepEqual(
       extrasFor(false).map((e) => e.id),
       ['share', 'tools', 'activity'],

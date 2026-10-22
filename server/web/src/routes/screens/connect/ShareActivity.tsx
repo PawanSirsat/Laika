@@ -216,8 +216,8 @@ export function ShareActivity({
 
       {!sharing.org_enabled ? (
         <p className="conn-note conn-note-warn" data-state="org-off">
-          <strong>Developer insights are off for this organisation</strong>, so there is nothing to
-          turn on yet.{' '}
+          <strong>Developer insights are off for this organisation</strong>, so nothing is collected
+          from your machine.{' '}
           {canManageOrg ? (
             <>
               You can turn them on in <a href="/organisation?tab=overview">Organisation</a>.

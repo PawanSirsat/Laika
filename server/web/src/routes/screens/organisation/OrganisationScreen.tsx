@@ -405,12 +405,12 @@ export function OrganisationScreen({
                         <span>{org.developer_insights ? 'on' : 'off'}</span>
                       )}
                       <span className="org-fact-note" id="org-insights-note">
-                        When on, each developer can choose — for themselves, on Connect — to share
-                        daily counts from their own machine: prompts to agents, agent sessions, and
-                        commits pushed or not yet pushed. They appear on that person’s profile as
-                        activity. Nothing is collected from anyone who has not turned it on, and
-                        never prompt text, file or repository names, branches or commit messages.
-                        Off stops it for everyone at once.
+                        When on, every connected machine’s local activity is collected: daily counts
+                        of prompts to agents, agent sessions, and commits pushed or not yet pushed,
+                        and agents’ token counts. They appear on that person’s profile as activity,
+                        and each person is told so on Developer access and Connect — never prompt
+                        text, file or repository names, branches or commit messages. Off stops it
+                        for everyone at once.
                       </span>
                       {insightsError !== undefined && (
                         <span className="org-fact-error" role="alert">
