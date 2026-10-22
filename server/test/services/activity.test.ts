@@ -125,6 +125,7 @@ describe('the module is read-only (AC6)', () => {
     // door, so the export list is asserted rather than trusted.
     expect(Object.keys(activityService).sort()).toEqual([
       'listOrgActivity',
+      'listOrgHistory',
       'listProjectActivity',
       'visibleProjectIds',
     ]);

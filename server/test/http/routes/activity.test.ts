@@ -1,7 +1,16 @@
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { appendActivity } from '../../../src/db/activity.ts';
-import { orgs, projects, users } from '../../../src/db/schema.ts';
-import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
+import { ACTIVITY_TYPES, type ActivityType } from '../../../src/db/enums.ts';
+import { activity, orgs, projects, users } from '../../../src/db/schema.ts';
+import {
+  type AuthHarness,
+  authHarness,
+  cookieFrom,
+  jsonHeaders,
+  seedInvite,
+  signUp,
+} from '../../helpers/auth.ts';
 
 let h: AuthHarness;
 let cookie: string;
@@ -14,6 +23,7 @@ interface Row {
   type: string;
   project_id: string | null;
   task_id: string | null;
+  actor_id: string | null;
   actor_kind: string;
   payload: unknown;
   created_at: number;
@@ -351,5 +361,223 @@ describe('GET /projects/:slug/metrics (LAI-124)', () => {
 
   it('404s an unknown project', async () => {
     expect((await req('/api/v1/projects/nope/metrics')).status).toBe(404);
+  });
+});
+
+describe('GET /activity/history — the organisation history (LAI-886)', () => {
+  const BASE = '/api/v1/activity/history';
+  /** Far below anything setup writes, so the seeded rows are the oldest in the log. */
+  const T0 = 5_000_000;
+
+  let orgId: string;
+  let ownerId: string;
+  let laikaId: string;
+  let otherId: string;
+  let admin: { cookie: string; id: string };
+  let member: { cookie: string; id: string };
+
+  async function as(path: string, who: string): Promise<Response> {
+    return h.app.request(path, { headers: jsonHeaders({ Cookie: who }) });
+  }
+
+  async function page(path: string): Promise<FeedPage> {
+    const res = await req(path);
+    expect(res.status, `${path} ${await res.clone().text()}`).toBe(200);
+    return (await res.json()) as FeedPage;
+  }
+
+  async function codeOf(res: Response): Promise<string> {
+    return ((await res.json()) as { error: { code: string } }).error.code;
+  }
+
+  async function join(email: string, orgRole: 'admin' | 'member') {
+    const token = seedInvite(h.db, { orgId, createdBy: ownerId, email, orgRole });
+    const res = await signUp(h.app, { email, password: PASSWORD, inviteToken: token });
+    expect(res.status, await res.clone().text()).toBe(200);
+    return {
+      cookie: cookieFrom(res),
+      id: h.db.select().from(users).where(eq(users.email, email)).get()?.id ?? '',
+    };
+  }
+
+  /** Rows with timestamps the test chose, so every filter has an exact answer. */
+  function seed(
+    rows: { at: number; projectId: string | null; actorId: string; type: ActivityType }[],
+  ): void {
+    for (const row of rows) {
+      appendActivity(h.db, {
+        orgId,
+        projectId: row.projectId,
+        actorId: row.actorId,
+        actorKind: 'user',
+        type: row.type,
+        now: row.at,
+      });
+    }
+  }
+
+  /** Every page of one query, so a filter is asserted on the whole answer. */
+  async function all(query: string, limit = 200): Promise<Row[]> {
+    const rows: Row[] = [];
+    let cursor: string | null = null;
+
+    for (let pages = 0; pages < 100; pages++) {
+      const sep = query === '' ? '?' : `?${query}&`;
+      const got: FeedPage = await page(
+        `${BASE}${sep}limit=${String(limit)}${cursor === null ? '' : `&cursor=${cursor}`}`,
+      );
+      rows.push(...got.data);
+      cursor = got.next_cursor;
+      if (cursor === null) break;
+    }
+
+    return rows;
+  }
+
+  beforeEach(async () => {
+    orgId = h.db.select().from(orgs).get()?.id ?? '';
+    ownerId = h.db.select().from(users).where(eq(users.email, 'ada@example.test')).get()?.id ?? '';
+    laikaId = h.db.select().from(projects).where(eq(projects.slug, 'laika')).get()?.id ?? '';
+
+    const created = await req('/api/v1/projects', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Other', slug: 'other', prefix: 'OTH' }),
+    });
+    expect(created.status, await created.clone().text()).toBe(201);
+    otherId = ((await created.json()) as { id: string }).id;
+
+    admin = await join('ari@example.test', 'admin');
+    member = await join('bea@example.test', 'member');
+
+    seed([
+      { at: T0 + 0, projectId: laikaId, actorId: member.id, type: 'task.created' },
+      { at: T0 + 1, projectId: otherId, actorId: ownerId, type: 'task.created' },
+      { at: T0 + 2, projectId: otherId, actorId: member.id, type: 'comment.added' },
+      { at: T0 + 3, projectId: null, actorId: ownerId, type: 'token.created' },
+      { at: T0 + 4, projectId: laikaId, actorId: member.id, type: 'task.updated' },
+    ]);
+  });
+
+  it('answers an owner and an admin; refuses a member with forbidden, anonymous with unauthorized', async () => {
+    for (const who of [cookie, admin.cookie]) {
+      const res = await as(BASE, who);
+      expect(res.status, await res.clone().text()).toBe(200);
+      expect(Object.keys((await res.json()) as object).sort()).toEqual(['data', 'next_cursor']);
+    }
+
+    const refused = await as(BASE, member.cookie);
+    expect(refused.status).toBe(403);
+    expect(await codeOf(refused)).toBe('forbidden');
+
+    const anonymous = await h.app.request(BASE);
+    expect(anonymous.status).toBe(401);
+    expect(await codeOf(anonymous)).toBe('unauthorized');
+  });
+
+  it('a member is refused even with a filter naming only themselves', async () => {
+    const res = await as(`${BASE}?actor=${member.id}`, member.cookie);
+    expect(res.status).toBe(403);
+    expect(await codeOf(res)).toBe('forbidden');
+  });
+
+  it('returns every board activity row across every project, newest first', async () => {
+    const rows = await all('');
+    const everyRow = h.db.select({ id: activity.id }).from(activity).all();
+
+    // Every `activity` row and nothing else — no D-079 local-activity counts,
+    // which live in their own tables and never reach this read.
+    expect(rows.map((row) => row.id).sort()).toEqual(everyRow.map((row) => row.id).sort());
+    expect(rows.every((row) => (ACTIVITY_TYPES as readonly string[]).includes(row.type))).toBe(
+      true,
+    );
+    expect(rows.some((row) => row.project_id === laikaId)).toBe(true);
+    expect(rows.some((row) => row.project_id === otherId)).toBe(true);
+    expect(rows.some((row) => row.project_id === null)).toBe(true);
+
+    const order = rows.map((row) => [row.created_at, row.seq] as const);
+    expect(order).toEqual([...order].sort((a, b) => (b[0] === a[0] ? b[1] - a[1] : b[0] - a[0])));
+  });
+
+  it('?actor= narrows to one person', async () => {
+    // Joining wrote a row of their own, so the whole answer is only theirs, and
+    // the seeded window is exactly the three they were given.
+    const rows = await all(`actor=${member.id}`);
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+    expect(rows.every((row) => row.actor_id === member.id)).toBe(true);
+
+    const seeded = await all(`actor=${member.id}&until=${String(T0 + 4)}`);
+    expect(seeded.map((row) => row.created_at)).toEqual([T0 + 4, T0 + 2, T0 + 0]);
+    expect(await all(`actor=nobody`)).toEqual([]);
+  });
+
+  it('?project= narrows to one project by slug, and 404s an unknown one', async () => {
+    const rows = await all('project=other');
+
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+    expect(rows.every((row) => row.project_id === otherId)).toBe(true);
+    expect(rows.filter((row) => row.created_at < T0 + 5).map((row) => row.created_at)).toEqual([
+      T0 + 2,
+      T0 + 1,
+    ]);
+
+    const unknown = await req(`${BASE}?project=nope`);
+    expect(unknown.status).toBe(404);
+    expect(await codeOf(unknown)).toBe('not_found');
+  });
+
+  it('?type= narrows to one §4.8 verb, and 400s one that is not', async () => {
+    const rows = await all('type=token.created');
+
+    expect(rows.map((row) => row.created_at)).toEqual([T0 + 3]);
+    expect(rows.every((row) => row.type === 'token.created')).toBe(true);
+
+    const bad = await req(`${BASE}?type=task.exploded`);
+    expect(bad.status).toBe(400);
+    expect(await codeOf(bad)).toBe('bad_request');
+  });
+
+  it('?since= and ?until= are inclusive unix-ms bounds, and nonsense is a 400', async () => {
+    const rows = await all(`since=${String(T0 + 1)}&until=${String(T0 + 3)}`);
+    expect(rows.map((row) => row.created_at)).toEqual([T0 + 3, T0 + 2, T0 + 1]);
+
+    expect((await all(`until=${String(T0 + 1)}`)).map((row) => row.created_at)).toEqual([
+      T0 + 1,
+      T0 + 0,
+    ]);
+
+    for (const query of ['since=yesterday', 'until=tomorrow']) {
+      const bad = await req(`${BASE}?${query}`);
+      expect(bad.status, query).toBe(400);
+      expect(await codeOf(bad)).toBe('bad_request');
+    }
+  });
+
+  it('filters combine', async () => {
+    const rows = await all(
+      `actor=${member.id}&project=laika&type=task.updated&since=${String(T0)}&until=${String(T0 + 4)}`,
+    );
+    expect(rows.map((row) => row.created_at)).toEqual([T0 + 4]);
+  });
+
+  it('pages a filtered query without repeating or losing a row', async () => {
+    const whole = await all(`until=${String(T0 + 4)}`);
+    const walked = await all(`until=${String(T0 + 4)}`, 2);
+
+    expect(whole.map((row) => row.created_at)).toEqual([T0 + 4, T0 + 3, T0 + 2, T0 + 1, T0]);
+    expect(walked.map((row) => row.id)).toEqual(whole.map((row) => row.id));
+
+    const first = await page(`${BASE}?until=${String(T0 + 4)}&limit=2`);
+    expect(first.data).toHaveLength(2);
+    expect(first.next_cursor).not.toBeNull();
+
+    const bad = await req(`${BASE}?cursor=not-a-cursor`);
+    expect(bad.status).toBe(400);
+    expect(await codeOf(bad)).toBe('bad_request');
+  });
+
+  it('is read-only', async () => {
+    const res = await req(BASE, { method: 'POST', body: JSON.stringify({}) });
+    expect(res.status).toBe(405);
+    expect(await codeOf(res)).toBe('method_not_allowed');
   });
 });
