@@ -129,6 +129,15 @@ const PAIRS: readonly Pair[] = [
     client: 'OrgOverview',
     clientFile: 'org.ts',
   },
+  // What a transfer of ownership answers (LAI-982), paired by LAI-999 when the
+  // People tab's Transfer ownership started reading it. The server's census
+  // listed it in UNPAIRED until then; that entry goes in the same change.
+  {
+    server: 'OwnershipTransferView',
+    serverFile: 'services/users.ts',
+    client: 'OwnershipTransfer',
+    clientFile: 'org.ts',
+  },
   {
     server: 'OrgAiView',
     serverFile: 'services/orgs.ts',
