@@ -114,6 +114,8 @@ export function OrganisationScreen({
   const canSetInsights = gates.org('org.developer_insights.set');
   const canSetTime = gates.org('org.time.set');
   const canListTokens = gates.org('token.list_any');
+  /** Listing and revoking are two §3.1 actions; Revoke asks its own (LAI-970 review). */
+  const canRevokeTokens = gates.org('token.revoke_any');
   /** D-104 item 7: the name is *Change organisation settings*'. */
   const canEditOrg = gates.org('org.settings.edit');
   /**
@@ -697,9 +699,13 @@ export function OrganisationScreen({
                                 key={token.id}
                                 token={token}
                                 now={now}
-                                onRevoke={(revoked) => {
-                                  revoke(person, revoked);
-                                }}
+                                onRevoke={
+                                  canRevokeTokens
+                                    ? (revoked) => {
+                                        revoke(person, revoked);
+                                      }
+                                    : undefined
+                                }
                               />
                             ))}
                           </ul>
