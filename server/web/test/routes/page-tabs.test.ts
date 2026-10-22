@@ -35,10 +35,10 @@ void describe('the tabs are the owner’s grouping', () => {
     );
   });
 
-  void test('Organisation is Overview, People, Integrations, Security, Activity', () => {
+  void test('Organisation is Overview, People, Roles & permissions, Integrations, Security, Activity', () => {
     assert.deepEqual(
       ORGANISATION_TABS.map((t) => t.label),
-      ['Overview', 'People', 'Integrations', 'Security', 'Activity'],
+      ['Overview', 'People', 'Roles & permissions', 'Integrations', 'Security', 'Activity'],
     );
   });
 
@@ -71,6 +71,15 @@ void describe('a gated tab is absent, not disabled', () => {
     assert.ok(
       !visibleTabs(ORGANISATION_TABS, permissionHolder('viewer')).some((t) => t.id === 'security'),
     );
+  });
+
+  void test('Roles & permissions is everyone’s — the endpoint is org.read (LAI-950)', () => {
+    for (const role of ['owner', 'admin', 'member', 'viewer']) {
+      assert.ok(
+        visibleTabs(ORGANISATION_TABS, permissionHolder(role)).some((t) => t.id === 'roles'),
+        `${role} is not offered Roles & permissions`,
+      );
+    }
   });
 
   void test('Activity — the organisation history — is an owner’s or an admin’s (LAI-951)', () => {

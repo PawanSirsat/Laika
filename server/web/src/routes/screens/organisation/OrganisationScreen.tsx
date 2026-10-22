@@ -24,6 +24,7 @@ import { GithubWebhookSection } from './GithubWebhookSection.tsx';
 import { ModelPricesSection } from './ModelPricesSection.tsx';
 import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
+import { RolesPermissionsSection } from './RolesPermissionsSection.tsx';
 import { OrgActivity } from './OrgActivity.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import type { MeProfile } from '../../../api/me.ts';
@@ -34,7 +35,7 @@ export interface OrganisationScreenProps {
   readonly me: MeProfile;
   /** The tabs this reader is offered — Security is an owner's or an admin's. */
   readonly tabs: readonly PageTab[];
-  /** The open tab: `overview`, `people`, `integrations`, `security` or `activity`. */
+  /** The open tab: `overview`, `people`, `roles`, `integrations`, `security` or `activity`. */
   readonly tab: string;
   /**
    * The address named `tab` and this reader may not open it — the not-allowed
@@ -114,7 +115,10 @@ function expiryLabel(expiresAt: number, now: number): string {
  * **Security** — everyone's tokens, for an owner or an admin. Nothing moved
  * out of reach and no section gained or lost a control. What the reference
  * showed that Laika has no data for — a plan badge, an admin activity log, a
- * permission matrix, a token lifetime limit, a danger zone — is not drawn.
+ * token lifetime limit, a danger zone — is not drawn.
+ *
+ * **Roles & permissions** joined them in LAI-950, once `GET /permissions`
+ * served the matrix `can()` computes: it was on that list until then.
  *
  * **Activity** (LAI-951) is the admin activity log that reference showed, now
  * that `GET /activity/history` serves it: an owner's or an admin's.
@@ -712,6 +716,14 @@ export function OrganisationScreen({
               </section>
             )}
           </>
+        )}
+
+        {tab === 'roles' && (
+          <RolesPermissionsSection
+            canManage={canManage}
+            projects={projects.projects}
+            onNavigate={onNavigate}
+          />
         )}
 
         {tab === 'integrations' && (

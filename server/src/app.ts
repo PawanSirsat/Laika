@@ -20,6 +20,7 @@ import { createSecurityHeaders } from './http/middleware/security-headers.ts';
 import { buildContentSecurityPolicy, extractStyleHashes } from './http/security-headers.ts';
 import { healthRoutes } from './http/routes/health.ts';
 import { meRoutes, meWatchRoutes } from './http/routes/me.ts';
+import { permissionsRoutes } from './http/routes/permissions.ts';
 import { localActivityRoutes } from './http/routes/local-activity.ts';
 import { usageRoutes, userUsageRoutes } from './http/routes/usage.ts';
 import { meUsageRoutes } from './http/routes/me-usage.ts';
@@ -294,6 +295,9 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   // fallback must never shadow an API path.
   app.route(`${API_BASE}/health`, healthRoutes(options.version));
   app.route(`${API_BASE}/me`, meRoutes());
+  // Who may do what, as `can()` answers it (LAI-885). Beside `/me`: it reads
+  // only the actor auth already resolved, and takes no `db` of its own.
+  app.route(`${API_BASE}/permissions`, permissionsRoutes());
 
   if (db !== undefined) {
     app.route(`${API_BASE}/me`, meWatchRoutes({ db }));
