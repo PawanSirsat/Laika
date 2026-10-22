@@ -6,7 +6,8 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+started: 2026-10-22T08:46:56Z
+status: in-progress
 ---
 
 ## Goal
