@@ -2,11 +2,12 @@
 id: LAI-883
 title: 'An owner or admin does not see a private space they are not a member of, on Projects or in My day''s On your plate'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T10:51:47Z
 ---
 
 ## Goal
