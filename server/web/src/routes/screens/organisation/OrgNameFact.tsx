@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { updateOrg, type Org } from '../../../api/org.ts';
+import { Spinner } from '../../../components/Spinner.tsx';
 
 export interface OrgNameFactProps {
   readonly org: Org;
@@ -59,8 +60,10 @@ export function OrgNameFact({ org, canEdit, onSaved }: OrgNameFactProps) {
               type="submit"
               className="org-btn org-btn-primary org-name-save"
               disabled={!changed || trimmed === '' || busy}
+              aria-busy={busy}
             >
-              {busy ? 'Saving…' : 'Save'}
+              {busy && <Spinner />}
+              Save
             </button>
           </form>
         ) : (

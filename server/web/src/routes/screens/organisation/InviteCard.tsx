@@ -2,6 +2,7 @@ import { useState, type Ref } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
+import { Spinner } from '../../../components/Spinner.tsx';
 import {
   createInvite,
   INVITE_EXPIRY_DAYS,
@@ -251,14 +252,14 @@ export function InviteCard({
             type="submit"
             className="org-btn org-btn-primary org-invite-send"
             disabled={busy || parsed.invalid.length > 0}
+            aria-busy={busy}
           >
-            {busy
-              ? 'Sending…'
-              : parsed.valid.length > 1
-                ? `Create ${String(parsed.valid.length)} invites`
-                : parsed.valid.length === 1
-                  ? 'Create invite'
-                  : 'Create link'}
+            {busy && <Spinner />}
+            {parsed.valid.length > 1
+              ? `Create ${String(parsed.valid.length)} invites`
+              : parsed.valid.length === 1
+                ? 'Create invite'
+                : 'Create link'}
           </button>
         </div>
       </form>

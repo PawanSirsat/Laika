@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useDialogFocus } from '../../../components/use-dialog-focus.ts';
+import { Spinner } from '../../../components/Spinner.tsx';
 
 export interface ConfirmDialogProps {
   /** Names the change and who it is to: *Make Tomas Nel an admin?* */
@@ -128,8 +129,10 @@ export function ConfirmDialog({
               type="submit"
               className={`org-btn ${danger ? 'org-btn-danger' : 'org-btn-primary'} org-dialog-confirm`}
               disabled={!matches || busy}
+              aria-busy={busy}
             >
-              {busy ? 'Working…' : confirmLabel}
+              {busy && <Spinner />}
+              {confirmLabel}
             </button>
           </div>
         </form>
