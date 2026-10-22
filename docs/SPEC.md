@@ -1725,7 +1725,7 @@ A **cumulative** point adds only its growth over `last_value`; a **delta**
 point is taken only when it starts at or after `last_end_ms`. A point out of
 order can only be dropped, never counted twice. **A cumulative series first
 seen more than five minutes after it began is a baseline**: its first value
-holds everything since its process started — possibly before sharing was on —
+holds everything since its process started — possibly before Developer insights was on —
 so only its growth from there is counted. (A delta point from before Developer insights was on
 was refused when it was sent, and is never resent.) Kept three days past its last
 point.
