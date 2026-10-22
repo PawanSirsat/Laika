@@ -2,11 +2,12 @@
 id: LAI-983
 title: 'A person who forgets their password is locked out for good'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T18:22:55Z
 ---
 
 ## Acceptance criteria (D-104 item 4)
