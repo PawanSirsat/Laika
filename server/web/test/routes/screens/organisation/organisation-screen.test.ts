@@ -24,18 +24,31 @@ import { code } from '../../../helpers/code.ts';
 
 let screen = '';
 
+/**
+ * The screen and the parts its tabs moved into (LAI-987) — read as one, so a
+ * rule that held of the single file still holds of the screen.
+ */
+const PARTS = [
+  'OrganisationScreen.tsx',
+  'PeopleTab.tsx',
+  'InviteCard.tsx',
+  'TransferOwnership.tsx',
+  'ConfirmDialog.tsx',
+  'OrgNameFact.tsx',
+];
+
 before(async () => {
-  screen = code(
-    await readFile(
-      fileURLToPath(
-        new URL(
-          '../../../../src/routes/screens/organisation/OrganisationScreen.tsx',
-          import.meta.url,
+  const sources = await Promise.all(
+    PARTS.map((part) =>
+      readFile(
+        fileURLToPath(
+          new URL(`../../../../src/routes/screens/organisation/${part}`, import.meta.url),
         ),
+        'utf8',
       ),
-      'utf8',
     ),
   );
+  screen = sources.map((source) => code(source)).join('\n');
 });
 
 void describe('nothing is rendered that no endpoint serves', () => {
