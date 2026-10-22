@@ -803,6 +803,11 @@ export interface DraftPatch {
   folder?: string | null | undefined;
   /** Its branch changed or cleared; a branch needs a name. */
   branch?: string | null | undefined;
+  /**
+   * A title the person typed (LAI-865), trimmed; a blank one is none. It is
+   * the block's `note`, so confirming makes it the entry's.
+   */
+  note?: string | null | undefined;
 }
 
 /** The name and branch a patch leaves a block with, or `undefined` when it touches neither. */
@@ -873,7 +878,8 @@ function patchedSpan(
  *
  * Since LAI-831 it also moves the block's edges on its own day — My day's
  * drag and −/+ — and records what it replaced, so Undo puts the block back
- * as its collector left it, held or not.
+ * as its collector left it, held or not. Since LAI-865 it gives the block a
+ * title, which holds it like any other edit.
  */
 export function updateDraft(
   db: Db,
@@ -917,6 +923,9 @@ export function updateDraft(
         ...(patch.minutes === undefined ? {} : { minutes: patch.minutes }),
         ...(span ?? {}),
         ...(named ?? {}),
+        ...(patch.note === undefined
+          ? {}
+          : { note: patch.note === null || patch.note.trim() === '' ? null : patch.note.trim() }),
         collectorId: '',
         updatedAt: now,
       })

@@ -94,6 +94,7 @@ interface Draft {
   task: { key: string } | null;
   task_key: string | null;
   general: boolean;
+  note: string | null;
 }
 interface Entry {
   id: string;
@@ -101,6 +102,7 @@ interface Entry {
   started_at: number | null;
   ended_at: number | null;
   revision: number;
+  note: string | null;
 }
 interface Day {
   drafts: Draft[];
@@ -873,5 +875,110 @@ describe('the drafts a person holds, for the off switch (F)', () => {
     );
     expect((await myDay()).drafts_held).toEqual({ count: 0, minutes: 0 });
     expect((await undo(undoOf(dismissed))).status).toBe(404);
+  });
+});
+
+describe('a block’s title, typed before it is confirmed (LAI-865)', () => {
+  /** `PATCH {note}` on a draft, which must succeed: today it is `422`, an unknown field. */
+  const title = (id: string, note: string | null) =>
+    ok(`/api/v1/me/time-drafts/${id}`, { method: 'PATCH', body: JSON.stringify({ note }) }, 200);
+
+  it('becomes the entry’s note when the block is confirmed alone', async () => {
+    const { onCard } = await drafted();
+    const titled = (await (await title(onCard.id, 'Fixed the retry gap')).json()) as Draft;
+    expect(titled.note).toBe('Fixed the retry gap');
+
+    const confirmed = await ok(
+      `/api/v1/me/time-drafts/${onCard.id}/confirm`,
+      { method: 'POST' },
+      201,
+    );
+    expect(((await confirmed.json()) as Entry).note).toBe('Fixed the retry gap');
+    expect((await myDay()).entries.map((e) => e.note)).toEqual(['Fixed the retry gap']);
+  });
+
+  it('becomes the entry’s note when the block is confirmed with its day', async () => {
+    const { untied } = await drafted();
+    await title(untied.id, 'Planning the sprint');
+    await ok(`/api/v1/me/time/days/${today()}/confirm`, { method: 'POST' }, 200);
+    const entries = (await myDay()).entries;
+    expect(entries.map((e) => [e.started_at, e.note])).toEqual([
+      [at(9), null],
+      [at(11), 'Planning the sprint'],
+    ]);
+  });
+
+  it('is trimmed, a blank one is none, and null clears it', async () => {
+    const { untied } = await drafted();
+    const saved = async (note: string | null) =>
+      ((await (await title(untied.id, note)).json()) as Draft).note;
+    expect(await saved('  Planning  ')).toBe('Planning');
+    expect(await saved('   ')).toBeNull();
+    expect(await saved('Planning')).toBe('Planning');
+    expect(await saved(null)).toBeNull();
+  });
+
+  it('is at most 200 characters — the draft’s CHECK, not an entry’s 280', async () => {
+    const { untied } = await drafted();
+    expect(((await (await title(untied.id, 'x'.repeat(200))).json()) as Draft).note).toHaveLength(
+      200,
+    );
+    for (const note of ['x'.repeat(201), 42]) {
+      const refused = await req(
+        `/api/v1/me/time-drafts/${untied.id}`,
+        { method: 'PATCH', body: JSON.stringify({ note }) },
+        cookie,
+      );
+      expect(refused.status).toBe(422);
+      expect((await errorOf(refused)).code).toBe('unprocessable');
+    }
+    expect((await myDay()).drafts.find((d) => d.id === untied.id)?.note).toHaveLength(200);
+  });
+
+  it('holds the block: the collector’s next upload of the day keeps it and its title', async () => {
+    const { untied } = await drafted();
+    await title(untied.id, 'Planning the sprint');
+    // The same day again, the 11:00 block shorter: a block still the
+    // collector's would be replaced by it (Undo's "its collector's again").
+    await ok(
+      '/api/v1/me/time-drafts',
+      { method: 'PUT', body: upload([block(9, 60, 'LAI-1'), block(11, 30, null)]) },
+      200,
+      await mint(),
+    );
+    const drafts = (await myDay()).drafts;
+    expect(drafts.map((d) => [d.started_at, d.minutes, d.note])).toEqual([
+      [at(9), 60, null],
+      [at(11), 40, 'Planning the sprint'],
+    ]);
+    expect(drafts[1]?.id).toBe(untied.id);
+  });
+
+  it('stays when the block goes on General, and goes with it into the entry', async () => {
+    const { untied } = await drafted();
+    await title(untied.id, 'Planning the sprint');
+    const general = await ok(
+      `/api/v1/me/time-drafts/${untied.id}`,
+      { method: 'PATCH', body: JSON.stringify({ general: true }) },
+      200,
+    );
+    expect((await general.json()) as Draft).toMatchObject({
+      general: true,
+      note: 'Planning the sprint',
+    });
+    const confirmed = await ok(
+      `/api/v1/me/time-drafts/${untied.id}/confirm`,
+      { method: 'POST' },
+      201,
+    );
+    expect(((await confirmed.json()) as Entry).note).toBe('Planning the sprint');
+  });
+
+  it('is undone with the rest of the row', async () => {
+    const { untied } = await drafted();
+    const before = await myDay();
+    const titled = await title(untied.id, 'Planning the sprint');
+    expect((await undo(undoOf(titled))).status).toBe(204);
+    expect((await myDay()).drafts).toEqual(before.drafts);
   });
 });

@@ -160,6 +160,9 @@ const DraftPatchBody = strictObject({
   // The work folder's name and branch, changed or cleared (D-098 item 5).
   folder: folderName.nullable().optional(),
   branch: branchName.nullable().optional(),
+  // A title the person typed (LAI-865), the entry's note once confirmed: at
+  // most 200, the draft's CHECK (`time_drafts_note_check`), not an entry's 280.
+  note: z.string().max(200).nullable().optional(),
 });
 
 const SplitBody = strictObject({ at: z.number().int().min(0) });

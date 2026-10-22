@@ -223,6 +223,15 @@ describe('a collector’s upload', () => {
     ]);
   });
 
+  it('never overwrites a block the person titled (LAI-865)', () => {
+    send([block(AT(9), AT(10))]);
+    updateDraft(t.db, bea, pending()[0]?.id ?? '', { note: 'Planning the sprint' }, NOW);
+    send([block(AT(9), AT(9, 40))]);
+    expect(pending().map((r) => [r.startedAt, r.endedAt, r.note])).toEqual([
+      [AT(9), AT(10), 'Planning the sprint'],
+    ]);
+  });
+
   it('is a union with another machine, never a sum', () => {
     send([block(AT(9), AT(10))]);
     send([block(AT(9, 30), AT(10, 30))], OTHER_MACHINE);
@@ -370,6 +379,21 @@ describe('the person’s hands', () => {
     const general = updateDraft(t.db, bea, id, { general: true }, NOW);
     expect([general.task, general.project, general.general]).toEqual([null, null, true]);
     expect(reason(() => updateDraft(t.db, bea, id, { task: 'HID-1' }, NOW))).toBe('not_found:');
+  });
+
+  it('give a block a title, trimmed, kept by every other edit and into its entry (LAI-865)', () => {
+    const id = pending()[0]?.id ?? '';
+    expect(updateDraft(t.db, bea, id, { note: '  Planning  ' }, NOW).note).toBe('Planning');
+    expect(updateDraft(t.db, bea, id, { general: true }, NOW).note).toBe('Planning');
+    expect(updateDraft(t.db, bea, id, { minutes: 50 }, NOW).note).toBe('Planning');
+    expect(confirmDraft(t.db, bea, id, NOW).note).toBe('Planning');
+  });
+
+  it('a blank title is none, and null clears one (LAI-865)', () => {
+    const id = pending()[0]?.id ?? '';
+    expect(updateDraft(t.db, bea, id, { note: ' \t ' }, NOW).note).toBeNull();
+    expect(updateDraft(t.db, bea, id, { note: 'Planning' }, NOW).note).toBe('Planning');
+    expect(updateDraft(t.db, bea, id, { note: null }, NOW).note).toBeNull();
   });
 
   it('split a block at a minute inside it, minutes shared, evidence kept', () => {
