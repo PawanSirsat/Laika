@@ -18,6 +18,8 @@ export const ORG_ACTIONS = [
   'project.archive',
   'user.invite',
   'user.set_role',
+  // D-102 rule 5 (LAI-958): what each org role may do — the owner's alone.
+  'org.permissions.manage',
   'user.deactivate',
   'org.read',
   'presence.read',
@@ -37,6 +39,9 @@ export const ORG_ACTIONS = [
   'profile.set_kind',
   'profile.rate',
   'profile.activity.read',
+  // D-102 rule 1 (LAI-957): a person's day, hours and shared local activity,
+  // read by somebody else in the shape the person reads them.
+  'people.analytics.read',
   'org.developer_insights.set',
   'activity_sharing.read_own',
   'activity_sharing.set_own',
@@ -182,15 +187,18 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'profile.rate',
   // The heatmap is part of the profile, and follows its rule (D-078, D-079).
   'profile.activity.read',
-  // The organisation's half of the consent (D-079, LAI-751 review): the
-  // developer's own switch is session-only, so the one that lets it count is
-  // too — a token is how an agent acts, and an agent must not turn on the
-  // collection of its own person's work.
+  // **A person's day, drafts included, and their local activity** (D-102,
+  // LAI-957): the profile's rule, and the rule the person's own `/me` reads
+  // follow — a token, an agent's included, reads nobody's day.
+  'people.analytics.read',
+  // The organisation's switch (D-079, LAI-751 review; alone since D-102
+  // amended): a token is how an agent acts, and an agent must not turn on the
+  // collection of anybody's work.
   'org.developer_insights.set',
-  // **The developer's consent, and what follows from it** (D-079, LAI-751).
-  // A token is how an agent acts, so an agent must not be able to switch
-  // sharing on, read back what was collected, or erase it: each is the
-  // person's own decision, made signed in.
+  // **The developer's own side** (D-079, LAI-751; D-102 amended). A token is
+  // how an agent acts, so an agent must not be able to change which
+  // repositories are counted, read back what was collected, or erase it:
+  // each is the person's own decision, made signed in.
   'activity_sharing.set_own',
   'local_activity.read_own',
   'local_activity.delete_own',
@@ -232,4 +240,8 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'time_sync.own',
   'time_sync.map',
   'time_sync.import_all',
+  // **Who may do what is the owner's, signed in** (D-102, LAI-958): an
+  // agent's token that could grant its own role a capability would hand its
+  // person whatever it was refused.
+  'org.permissions.manage',
 ]);

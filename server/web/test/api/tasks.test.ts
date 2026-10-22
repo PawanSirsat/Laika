@@ -19,6 +19,7 @@ import {
   canCreateTask,
   changeStatus,
   createTask,
+  listAllTasks,
   listMembers,
   listTasks,
   SLIM_OMITS,
@@ -117,6 +118,42 @@ void describe('listTasks query string', () => {
     const calls = stub(page);
     await listTasks('a project/with slash');
     assert.ok(calls[0]?.url.includes('a%20project%2Fwith%20slash'));
+  });
+});
+
+void describe('listAllTasks — everyone’s work (LAI-887, LAI-952)', () => {
+  void test('reads GET /tasks, slim, with nothing else when no filter is set', async () => {
+    const calls = stub(page);
+    await listAllTasks();
+    assert.equal(calls[0]?.url, '/api/v1/tasks?fields=slim');
+  });
+
+  void test('maps the four filters it takes, and the cursor, onto their params', async () => {
+    const calls = stub(page);
+    await listAllTasks({
+      project: 'onroute',
+      status: 'in_progress',
+      assignee: 'none',
+      sprint: 's1',
+      limit: 50,
+      cursor: 'C2',
+    });
+    const query = new URL(calls[0]?.url ?? '', 'http://x').searchParams;
+    assert.deepEqual(Object.fromEntries(query), {
+      fields: 'slim',
+      project: 'onroute',
+      status: 'in_progress',
+      assignee: 'none',
+      sprint: 's1',
+      limit: '50',
+      cursor: 'C2',
+    });
+  });
+
+  void test('hands the page back exactly as the server sent it', async () => {
+    const served = { data: [{ id: 't1' }, { id: 't2' }], next_cursor: 'C3' };
+    stub(served);
+    assert.deepEqual(await listAllTasks(), served);
   });
 });
 

@@ -10,6 +10,8 @@ import { inviteButtonLabel, parseEmails } from './people-derive.ts';
 export interface InviteDialogProps {
   /** Where the invite is to: the organisation's name. */
   readonly orgName: string;
+  /** The roles this reader may invite as — never Owner; an admin only Member or Viewer (LAI-958). */
+  readonly roles: readonly OrgRole[];
   /** What the search box held, when the dialog opened from an empty search. */
   readonly initialText?: string;
   readonly onClose: () => void;
@@ -18,9 +20,6 @@ export interface InviteDialogProps {
   /** Where focus goes when it closes — the control that opened it. */
   readonly restore?: () => HTMLElement | null | undefined;
 }
-
-/** The roles an invite may carry: never Owner. */
-const INVITE_ROLES: readonly OrgRole[] = ['member', 'admin', 'viewer'];
 
 interface Issued {
   readonly email: string | null;
@@ -41,6 +40,7 @@ interface Issued {
  */
 export function InviteDialog({
   orgName,
+  roles,
   initialText = '',
   onClose,
   onIssued,
@@ -49,7 +49,9 @@ export function InviteDialog({
   const box = useRef<HTMLDivElement | null>(null);
   useDialogFocus(box, { restore });
   const [text, setText] = useState(initialText);
-  const [role, setRole] = useState<OrgRole>('member');
+  const [role, setRole] = useState<OrgRole>(
+    roles.includes('member') ? 'member' : (roles[0] ?? 'member'),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [issued, setIssued] = useState<readonly Issued[] | undefined>(undefined);
@@ -148,7 +150,7 @@ export function InviteDialog({
                   Role
                 </span>
                 <div className="org-segmented" role="group" aria-labelledby="org-invite-role">
-                  {INVITE_ROLES.map((r) => (
+                  {roles.map((r) => (
                     <button
                       key={r}
                       type="button"

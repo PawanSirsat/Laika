@@ -15,12 +15,13 @@ import {
   joinProject,
   slugify,
   suggestPrefix,
+  VISIBILITY_OPTIONS,
   type Project,
 } from '../../api/projects.ts';
 import { canEditProjectContext } from '../../api/project-context.ts';
 import { ProjectContextPanel } from './projects/ProjectContextPanel.tsx';
 import type { MeProfile } from '../../api/me.ts';
-import type { Member } from '../../api/tasks.ts';
+import { canConfigureProject, type Member } from '../../api/tasks.ts';
 import { ApiError } from '../../api/errors.ts';
 import { fieldErrors } from '../../api/setup.ts';
 import { required } from '../../components/forms/validation.ts';
@@ -53,14 +54,16 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
   const [joinError, setJoinError] = useState<string | undefined>(undefined);
 
   /**
-   * Membership from `me.memberships`, never from the summary's `members`.
+   * Explicit membership from `me.memberships`, never from the summary's
+   * `members`; owner/admin implicit lead from the shared project helper.
    *
    * That array is capped for drawing faces — a space with forty members sends a
-   * handful — so testing it would make a space you are already in look
+   * handful — so testing it would make a space you can already open look
    * joinable once it grew past the cap.
    */
   const isMine = (project: Project): boolean =>
-    me?.memberships.some((m) => m.project_id === project.id) === true;
+    me?.memberships.some((m) => m.project_id === project.id) === true ||
+    (me !== undefined && canConfigureProject(me.org_role, project.id, me.memberships));
 
   const mine = list.status === 'ready' ? list.projects.filter(isMine) : [];
   const joinable =
@@ -231,10 +234,7 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
             value={visibility}
             onChange={setVisibility}
             disabled={submitting}
-            options={[
-              { value: 'private', label: 'Private — invited members only' },
-              { value: 'public', label: 'Public — anyone in the org can join' },
-            ]}
+            options={VISIBILITY_OPTIONS}
           />
 
           <div className="projects-form-actions">

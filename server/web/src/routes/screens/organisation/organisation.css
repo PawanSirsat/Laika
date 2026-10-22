@@ -451,6 +451,102 @@
   cursor: default;
 }
 
+/* D-101's breaks (LAI-956): a short list, and its editor one window a row. */
+.org-breaks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.org-break {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+}
+
+.org-break-label {
+  color: var(--text-primary);
+}
+
+.org-break-when {
+  color: var(--text-secondary);
+}
+
+.org-break-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-1) 0;
+}
+
+.org-breaks-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.org-break-row {
+  margin: 0;
+  padding: var(--space-2);
+  min-width: 0;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.org-break-legend {
+  padding: 0 var(--space-1);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.org-break-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.org-break-name {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.org-break-time {
+  flex: 0 0 auto;
+  width: 8.5rem;
+}
+
+.org-break-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.org-break-day {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-xs);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.org-break-day:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--text-primary);
+}
+
 /* The provider and the key tail are one sentence — `anthropic ···9f2a`.
    **The wrapper is what puts them on one line, not this rule.** The `dd` is
    `flex-direction: column`, so the tail span was a flex *item* and got its own
@@ -1072,6 +1168,286 @@
   outline-offset: 1px;
 }
 
+/* --- Roles & permissions (LAI-950) ----------------------------------------- */
+
+/* A role is the server's word, shown as a name. */
+.perm-role {
+  text-transform: capitalize;
+}
+
+.perm-me {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+}
+
+.perm-me-fact dt {
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.perm-me-fact dd {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.perm-subhead {
+  font-size: var(--text-body);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+  margin: var(--space-3) 0 var(--space-2);
+}
+
+.perm-held {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.perm-held li {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  padding: 0.125rem var(--space-2);
+}
+
+.perm-projects {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.perm-project-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.perm-project-name {
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.perm-card .org-card-head {
+  flex-wrap: wrap;
+}
+
+.perm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-body);
+}
+
+.perm-table thead th {
+  text-align: left;
+  padding: 0 var(--space-3) var(--space-2) 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.perm-table tbody th,
+.perm-table td {
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top;
+  text-align: left;
+}
+
+.perm-table tbody tr:last-child th,
+.perm-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.perm-action {
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.perm-marks {
+  display: inline-flex;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+  vertical-align: middle;
+}
+
+.perm-mark[data-mark='session-only'] {
+  color: var(--chip-purple);
+  background: var(--chip-purple-bg);
+  border-color: var(--chip-purple-border);
+}
+
+.perm-mark[data-mark='read-only'] {
+  color: var(--chip-blue);
+  background: var(--chip-blue-bg);
+  border-color: var(--chip-blue-border);
+}
+
+.perm-cell {
+  color: var(--text-secondary);
+}
+
+.perm-cell[data-holding='yes'] .perm-cell-value {
+  color: var(--chip-green);
+  font-weight: var(--weight-bold);
+}
+
+.perm-cell[data-holding='no'] .perm-cell-value,
+.perm-cell[data-holding='absent'] .perm-cell-value {
+  color: var(--text-muted);
+}
+
+.perm-cell[data-holding='conditional'] .perm-cell-value {
+  display: inline-block;
+  font-size: var(--text-small);
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
+  border-radius: var(--radius-chip);
+  padding: 0 var(--space-1);
+}
+
+/* The role a cell answers for: the column head says it on a wide screen. */
+.perm-cell-role {
+  display: none;
+}
+
+.perm-grants {
+  margin-top: var(--space-3);
+}
+
+.perm-grants .perm-cell {
+  vertical-align: middle;
+}
+
+.perm-grants-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.perm-members {
+  margin-top: var(--space-3);
+}
+
+.perm-members .org-head-action {
+  margin-left: 0;
+}
+
+/* On a phone each action is a block with its roles beneath, not a table. */
+@media (max-width: 40rem) {
+  .perm-table thead {
+    display: none;
+  }
+
+  .perm-table,
+  .perm-table tbody,
+  .perm-table tr,
+  .perm-table tbody th,
+  .perm-table td {
+    display: block;
+  }
+
+  .perm-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .perm-table tbody tr:last-child {
+    border-bottom: none;
+  }
+
+  .perm-table tbody th {
+    grid-column: 1 / -1;
+  }
+
+  .perm-table tbody th,
+  .perm-table td {
+    padding: 0;
+    border-bottom: none;
+  }
+
+  .perm-table .perm-cell {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  .perm-cell-role {
+    display: inline;
+    text-transform: capitalize;
+    color: var(--text-muted);
+    font-size: var(--text-small);
+  }
+}
+
+/* Activity (LAI-951): the organisation's history, a filter row over a list. */
+.oh-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 var(--space-4);
+}
+
+.oh-filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.oh-filter-label {
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Drawn as the Dropdown's field beside it (`.dd-field`), so the row is one height. */
+.oh-date {
+  height: 2rem;
+  padding: 0 0.375rem 0 0.5rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-chip);
+  background: var(--bg-column);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-body);
+  color-scheme: light dark;
+  min-width: 0;
+}
+
+.oh-date:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* The table: a grid, scrolling sideways on a narrow screen. */
 .org-people-scroll {
   overflow-x: auto;
@@ -1573,4 +1949,127 @@
     padding-left: var(--space-4);
     padding-right: var(--space-4);
   }
+}
+.oh-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.oh-row {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 11rem) minmax(0, 1fr) minmax(0, 14rem);
+  grid-template-areas: 'when who what where';
+  align-items: baseline;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+.oh-row:last-child {
+  border-bottom: 0;
+}
+
+.oh-when {
+  grid-area: when;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.oh-who {
+  grid-area: who;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+}
+
+.oh-what {
+  grid-area: what;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.oh-detail {
+  grid-column: 3;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.oh-where {
+  grid-area: where;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+}
+
+.oh-space,
+.oh-task {
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+}
+
+.oh-task {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+}
+
+.oh-space:hover,
+.oh-task:hover {
+  text-decoration: underline;
+}
+
+.oh-space:focus-visible,
+.oh-task:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.oh-foot {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-3);
+}
+
+/* A phone: who and when on one line, what under it, where under that. */
+@media (max-width: 720px) {
+  .oh-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'who when'
+      'what what'
+      'detail detail'
+      'where where';
+  }
+
+  .oh-detail {
+    grid-area: detail;
+  }
+}
+
+/* A person in the history, as the way to their profile (LAI-959). */
+.oh-person {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-default);
+  text-underline-offset: 0.2em;
+}
+
+.oh-person:hover {
+  color: var(--accent);
+  text-decoration-color: currentColor;
 }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
-import { revokeInvite, type OrgRole, type PendingInvite } from '../../../api/invites.ts';
+import { ORG_ROLES, revokeInvite, type OrgRole, type PendingInvite } from '../../../api/invites.ts';
 import type { CapacityView } from '../../../api/presence.ts';
 import type { OrgUser } from '../../../api/users.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
@@ -33,8 +33,8 @@ export interface PeopleTabProps {
   /** `GET /capacity`, or `null` when it could not be read. */
   readonly capacity: CapacityView | null;
   readonly canManage: boolean;
-  /** The roles this reader may grant (an Admin never grants Owner). */
-  readonly grantable: readonly OrgRole[];
+  /** Only an owner changes roles (LAI-958); any other manager reads them as text. */
+  readonly canChangeRoles: boolean;
   /** Whose row is being changed, so two clicks cannot race. */
   readonly changing: string | undefined;
   /** The server's refusal, verbatim. */
@@ -79,7 +79,7 @@ export function PeopleTab({
   invitesError,
   capacity,
   canManage,
-  grantable,
+  canChangeRoles,
   changing,
   roleError,
   onChange,
@@ -104,10 +104,9 @@ export function PeopleTab({
     meId,
     (id) => entries.get(id)?.last_seen,
   );
-  // An owner's row is an owner's to change: an admin sees *Owner* as plain
-  // text, as the design draws it, and is offered nothing (§3.1 mirrors this).
-  const editable = (p: OrgUser): boolean =>
-    canManage && p.id !== meId && (p.org_role !== 'owner' || grantable.includes('owner'));
+  // A manager may deactivate, reactivate and open tokens for anyone but
+  // themselves; the role picker is the owner's alone (`canChangeRoles`).
+  const editable = (p: OrgUser): boolean => canManage && p.id !== meId;
   const selectable = shown.filter((p) => editable(p) && p.is_active);
   const live = new Set([...selected].filter((id) => selectable.some((p) => p.id === id)));
   const allTicked = selectable.length > 0 && selectable.every((p) => live.has(p.id));
@@ -211,26 +210,30 @@ export function PeopleTab({
       {canManage && someTicked && (
         <div className="org-bulk" role="group" aria-label="Selected people" data-people-bulk>
           <strong>{String(live.size)} selected</strong>
-          <button
-            type="button"
-            className="org-bulk-action"
-            disabled={busy || !grantable.includes('admin')}
-            onClick={() => {
-              void runBulk('Making admins', { org_role: 'admin' });
-            }}
-          >
-            Make Admin
-          </button>
-          <button
-            type="button"
-            className="org-bulk-action"
-            disabled={busy}
-            onClick={() => {
-              void runBulk('Making members', { org_role: 'member' });
-            }}
-          >
-            Make Member
-          </button>
+          {canChangeRoles && (
+            <>
+              <button
+                type="button"
+                className="org-bulk-action"
+                disabled={busy}
+                onClick={() => {
+                  void runBulk('Making admins', { org_role: 'admin' });
+                }}
+              >
+                Make Admin
+              </button>
+              <button
+                type="button"
+                className="org-bulk-action"
+                disabled={busy}
+                onClick={() => {
+                  void runBulk('Making members', { org_role: 'member' });
+                }}
+              >
+                Make Member
+              </button>
+            </>
+          )}
           <button
             type="button"
             className="org-bulk-action org-bulk-danger"
@@ -423,15 +426,14 @@ export function PeopleTab({
                       </span>
                     </span>
                     <span role="cell" className="org-people-role">
-                      {mine && person.is_active ? (
+                      {canChangeRoles && mine && person.is_active ? (
                         <>
                           <label className="visually-hidden" htmlFor={`role-${person.id}`}>
                             Org role for {person.name}
                           </label>
-                          {/* Their current role is always an option even when this
-                              actor could not grant it — an Admin looking at an Owner
-                              must see what that person *is*, and a control whose
-                              value is not among its options shows nothing. */}
+                          {/* Every role, Owner included: the owner grants any, and
+                              whether this one is the last owner is the server's
+                              to say (D-102 rule 5, LAI-958). */}
                           <Dropdown
                             id={`role-${person.id}`}
                             variant="bare"
@@ -442,10 +444,7 @@ export function PeopleTab({
                             onChange={(value) => {
                               void onChange(person.id, { org_role: value });
                             }}
-                            options={(grantable.includes(person.org_role as OrgRole)
-                              ? grantable
-                              : [person.org_role as OrgRole, ...grantable]
-                            ).map((r) => ({ value: r, label: orgRoleLabel(r) }))}
+                            options={ORG_ROLES.map((r) => ({ value: r, label: orgRoleLabel(r) }))}
                           />
                         </>
                       ) : (

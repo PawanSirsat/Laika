@@ -31,6 +31,7 @@ import {
   type SystemAction,
 } from './actions.ts';
 import { ORG_ACTIONS, PROJECT_ACTIONS, SYSTEM_ACTIONS } from './actions.ts';
+import { capabilityOf, holdsCapability, implicitProjectRole, type OrgGrants } from './grants.ts';
 
 export { type Action, type OrgAction, type ProjectAction } from './actions.ts';
 
@@ -56,6 +57,14 @@ export interface Actor {
   projectRole: ProjectRole | null;
   /** Absent or `null` when the request arrived on a session cookie (§6.1). */
   token?: TokenContext | null;
+  /**
+   * The organisation's grants, every role's (§3, §4.58, LAI-958), loaded by
+   * the caller with the actor. Absent or `null` means the defaults — today's
+   * behaviour — which is what an org whose owner never changed them has.
+   * The whole matrix rather than the actor's own row, so the catalogue can
+   * answer for every role from the actor it already has.
+   */
+  orgGrants?: OrgGrants | null | undefined;
 }
 
 export interface Resource {
@@ -73,12 +82,15 @@ export interface Resource {
   createdBy?: string | null | undefined;
   /** §3.1 "Join a `public` project" — private projects are not joinable. */
   visibility?: 'public' | 'private' | undefined;
-  /** For `user.set_role`: the role being granted. Admins may not grant `owner`. */
+  /**
+   * For `user.invite`: the role the invite grants. Anyone but an owner may
+   * invite only as `member` or `viewer` (D-102 rule 5, LAI-958).
+   */
   targetOrgRole?: OrgRole | undefined;
   /**
-   * For `profile.rate`: the person being rated. §3.1's *"not themselves"* is
-   * this compared with `actor.userId`, and an absent target is a denial
-   * (LAI-743).
+   * For `profile.rate` and `people.analytics.read`: the person being rated or
+   * read. §3.1's *"not themselves"* is this compared with `actor.userId`, and
+   * an absent target is a denial (LAI-743, LAI-957).
    */
   targetUserId?: string | undefined;
 }
@@ -203,17 +215,29 @@ function canSystem(principal: SystemPrincipal, action: Action, resource: Resourc
  * The project role the actor actually has, after the two structural rules in
  * SPEC §3 that are easy to get wrong:
  *
- *  - org `owner` and `admin` hold **implicit `lead`** everywhere and never need a
- *    membership row;
+ *  - an org role holding *Open every project* has an **implicit** project role
+ *    everywhere and never needs a membership row — `lead`, which is what org
+ *    `owner` always and `admin` by default hold (LAI-958);
  *  - an org `viewer` may hold **only** project role `viewer`. A membership row
  *    saying otherwise is data corruption or an escalation attempt, and is capped
- *    here rather than trusted (D-006).
+ *    here rather than trusted (D-006) — and so is the grant.
  */
 export function effectiveProjectRole(actor: Actor): ProjectRole | null {
-  if (actor.orgRole === 'owner' || actor.orgRole === 'admin') return 'lead';
-  if (actor.projectRole === null) return null;
+  const implicit = implicitProjectRole(actor.orgRole, actor.orgGrants);
+  if (implicit === 'lead') return 'lead';
+  if (actor.projectRole === null) return implicit;
   if (actor.orgRole === 'viewer') return 'viewer';
   return actor.projectRole;
+}
+
+/**
+ * Whether the actor's org role holds the capability that decides `action`
+ * (§3's grants, LAI-958). Called only for the actions a capability carries;
+ * every other §3.1 row is answered by its role alone, as before.
+ */
+function granted(actor: Actor, action: OrgAction): boolean {
+  const capability = capabilityOf(action);
+  return capability !== null && holdsCapability(actor.orgRole, actor.orgGrants, capability);
 }
 
 /** SPEC §3.1, row by row. */
@@ -223,34 +247,44 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
 
   switch (action) {
     // | Delete org data / transfer ownership | ✓ | — | — | — |
+    // | Change org roles | ✓ | — | — | — |
+    // | Set what each role may do | ✓ (session only) | — | — | — |
+    //
+    // Owner only and never grantable (D-102 rules 5 and 6, LAI-958): a role
+    // that could change roles or grants could give itself anything else.
     case 'org.delete':
     case 'org.transfer_ownership':
+    case 'user.set_role':
+    case 'org.permissions.manage':
       return orgRole === 'owner';
 
     // | Org settings (AI provider, SMTP, signup mode) | ✓ | ✓ | — | — |
+    //
+    // From here, a row that a capability carries (§3's grants, LAI-958) is
+    // answered by the grant: the owner always, and the Admin cell is the
+    // default — `granted` reads the organisation's actual matrix.
     case 'org.settings.edit':
-      return isAdminUp;
+      return granted(actor, action);
 
     // | Create / archive project | ✓ | ✓ | — | — |
     case 'project.create':
     case 'project.archive':
       return isAdminUp;
 
-    // | Invite users / change org roles | ✓ | ✓ (not to Owner) | — | — |
+    // | Invite users | ✓ | ✓ (as member or viewer) | — | — |
+    //
+    // An invite is a role grant with a delay on it, so only the owner invites
+    // an admin or an owner (D-102 rule 5): a role that may not change roles
+    // must not mint them either. **No `targetOrgRole` is listing or revoking**,
+    // which grants no role and is the grant's alone.
     case 'user.invite':
-      return isAdminUp;
-
-    case 'user.set_role':
-      if (orgRole === 'owner') return true;
-      // The "(not to Owner)" caveat: an Admin may set any role except Owner.
-      // Without this an Admin promotes themselves and the distinction is
-      // decorative.
-      if (orgRole === 'admin') return resource.targetOrgRole !== 'owner';
-      return false;
+      if (!granted(actor, action)) return false;
+      if (orgRole === 'owner' || resource.targetOrgRole === undefined) return true;
+      return resource.targetOrgRole === 'member' || resource.targetOrgRole === 'viewer';
 
     // | Deactivate user | ✓ | ✓ | — | — |
     case 'user.deactivate':
-      return isAdminUp;
+      return granted(actor, action);
 
     // | View the organisation | ✓ | ✓ | ✓ | ✓ |
     //
@@ -335,7 +369,7 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
 
     // | Export audit log | ✓ | ✓ | — | — |
     case 'audit_log.export':
-      return isAdminUp;
+      return granted(actor, action);
 
     // | Configure webhooks | ✓ (session only) | ✓ (session only) | — | — |
     case 'webhook.configure':
@@ -352,7 +386,12 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // "session only" is `tokenAllows`'s half, below. **The profile kind is not
     // an input here or anywhere in this file** (D-078): it is a label on the
     // profile, and a test holds every answer equal for a builder and a manager.
+    //
+    // Reading is *See everyone's analytics* (LAI-958); setting the kind is
+    // not part of seeing, and stays the Admin's.
     case 'profile.read':
+      return granted(actor, action);
+
     case 'profile.set_kind':
       return isAdminUp;
 
@@ -370,25 +409,39 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // profile does not, and a borrowed row would hand them a grant nobody
     // reviewed. Today the two answer alike, as D-078 and D-079 both say.
     case 'profile.activity.read':
-      return isAdminUp;
+      return granted(actor, action);
+
+    // | View a member's day, time and shared activity | ✓ (session only, not themselves) | … | — | — |
+    //
+    // D-102 rule 1 (LAI-957): My day and the local activity a person reads
+    // of their own, read for them — *See everyone's analytics*. **Not
+    // themselves**: a person reads their own on `/me`, where nothing is
+    // logged, and a self-read here would write a view log row saying they
+    // looked at themselves. An absent target is a denial, as for a rating.
+    case 'people.analytics.read':
+      return (
+        granted(actor, action) &&
+        resource.targetUserId !== undefined &&
+        resource.targetUserId !== actor.userId
+      );
 
     // | Turn Developer insights on or off | ✓ (session only) | ✓ (session only) | — | — |
     //
     // The organisation's switch of D-079, its own row rather than
     // `org.settings.edit` borrowed: that one a token may hold, and this one
-    // no token may (LAI-751 review).
+    // no token may (LAI-751 review). Granted with it, as one capability.
     case 'org.developer_insights.set':
-      return isAdminUp;
+      return granted(actor, action);
 
     // | Read own activity-sharing setting | ✓ | ✓ | ✓ | ✓ |
-    // | Set own activity sharing | ✓ (session only) | … | ✓ (session only) |
+    // | Set own local-activity scope | ✓ (session only) | … | ✓ (session only) |
     // | Send own local activity | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
     // | Read / delete own local activity | ✓ (session only) | … | ✓ (session only) |
     //
     // Every role, because it is **their own record about their own work**
-    // (D-079) — the heartbeat's argument. What stops collection is the two
-    // switches, which the service reads; what stops an agent consenting for
-    // its person is `SESSION_ONLY_ACTIONS`, below. The Viewer's send cell is
+    // (D-079) — the heartbeat's argument. What stops collection is the
+    // organisation's switch alone (D-102 amended), which the service reads;
+    // what stops an agent acting for its person is `SESSION_ONLY_ACTIONS`. The Viewer's send cell is
     // the credential's refusal, exactly as for heartbeats: a Viewer's token is
     // forced `read_only`, and sending is not a read.
     case 'activity_sharing.read_own':
@@ -408,8 +461,11 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // different things. A member reads a project's totals through §3.2's
     // `usage.read_project`, and never a per-person split.
     case 'usage.read_org':
-    case 'usage.read_people':
       return isAdminUp;
+
+    // Per person is *See everyone's analytics* (LAI-958).
+    case 'usage.read_people':
+      return granted(actor, action);
 
     case 'usage.read_own':
       return true;
@@ -439,7 +495,7 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     // — a token may hold that one, and an agent must not turn on the drafting
     // of its own person's day.
     case 'org.time.set':
-      return isAdminUp;
+      return granted(actor, action);
 
     // | Read own time settings | ✓ | ✓ | ✓ | ✓ |
     // | Set own Draft my time | ✓ (session only) | … | ✓ (session only) |

@@ -35,6 +35,27 @@ export interface TimeSettings {
   readonly signal_times?: boolean;
   /** The board keeps a block's work folder name and branch (D-098) — the collector's cue. */
   readonly folder_names?: boolean;
+  /**
+   * The organisation's break schedule (D-101), `[]` when it has none:
+   * wall-clock windows on each person's own day, display only — never time.
+   * Absent from a board that predates it.
+   */
+  readonly breaks?: readonly BreakWindow[];
+}
+
+/** ISO weekdays, 1 (Monday) to 7 (Sunday). */
+export const ISO_DAYS = [1, 2, 3, 4, 5, 6, 7] as const;
+
+/**
+ * One window of the organisation's break schedule (D-101): a label, a
+ * wall-clock `HH:MM` start and end with no zone, and the ISO weekdays it
+ * falls on. Mirrors `services/time-settings.ts`' `BreakWindow`.
+ */
+export interface BreakWindow {
+  readonly label: string;
+  readonly start: string;
+  readonly end: string;
+  readonly days: readonly number[];
 }
 
 export interface TaskRef {
@@ -281,6 +302,14 @@ export function setDraftMyTime(on: boolean): Promise<TimeSettings> {
 /** The organisation's *Time* setting — owners and admins, signed in. */
 export function setOrgTimeMode(mode: TimeMode): Promise<{ readonly mode: TimeMode }> {
   return request<{ readonly mode: TimeMode }>('/org/time', { method: 'PUT', body: { mode } });
+}
+
+/**
+ * The organisation's break schedule — owners and admins, signed in. **The
+ * whole list every time**: `[]` clears it. Answers the caller's time settings.
+ */
+export function setOrgBreaks(breaks: readonly BreakWindow[]): Promise<TimeSettings> {
+  return request<TimeSettings>('/org/time/breaks', { method: 'PUT', body: { breaks } });
 }
 
 export function getMyDay(day: string, tz: string, signal?: AbortSignal): Promise<MyDay> {

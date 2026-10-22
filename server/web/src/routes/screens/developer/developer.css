@@ -1,4 +1,4 @@
-/* Developer access (LAI-796). Tokens only. */
+/* Developer access (LAI-796): connect, local activity and tokens. */
 
 .dev-body {
   display: flex;
@@ -12,6 +12,10 @@
   border: 1px solid var(--border-card);
   border-radius: var(--radius-column);
   min-width: 0;
+}
+
+.dev-sharing .share-activity {
+  padding: var(--space-4) 1.25rem 1.25rem;
 }
 
 /* The embedded Tokens screen draws its own rows; the card gives them a ground. */

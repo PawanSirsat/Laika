@@ -22,17 +22,18 @@ import { assertCan } from '../policy/can.ts';
  *
  * ## Which §3.1 cells govern it
  *
- * **"Invite users / change org roles | ✓ | ✓ (not to Owner) | — | — |"** — the
- * one row, read whole. Creating, listing and revoking are all `user.invite`:
- * they are one capability seen from three sides, and the row names one thing.
- * That is different from "List / revoke **anyone's** token", which the actions
- * list splits in two, because that row names two operations in its own text.
+ * **"Invite users | ✓ | ✓ (as member or viewer) | — | —"** (D-102 rule 5,
+ * LAI-958). Creating, listing and revoking are all `user.invite`: they are one
+ * capability seen from three sides, and the row names one thing. That is
+ * different from "List / revoke **anyone's** token", which the actions list
+ * splits in two, because that row names two operations in its own text.
  *
- * The `(not to Owner)` half is enforced as a **second** check against
- * `user.set_role` with the role being granted. Without it an Admin invites
- * themselves a fresh Owner account and the caveat on `user.set_role` is
- * decorative — the same reasoning already written into `can()` for the direct
- * role change. An invite is a role grant with a delay on it.
+ * **An invite is a role grant with a delay on it**, so creating one passes the
+ * role it grants as `targetOrgRole`: only the owner invites an admin or an
+ * owner, and whoever else holds *Manage people and invites* invites as member
+ * or viewer. Until LAI-958 this was a second check against `user.set_role`;
+ * that action is the owner's alone now, and keeping the check would have
+ * refused an admin every invite.
  *
  * A project-scoped invite (§4.11 `project_id`) additionally needs
  * `project.members.manage` on that project, which is §3.2's own cell for putting
@@ -216,10 +217,9 @@ export function createInvite(
   actor: ResolvedActor,
   input: CreateInviteInput,
 ): CreatedInvite {
-  assertCan(actor, 'user.invite');
-  // The row's "(not to Owner)" half. `user.set_role` is the only action that
-  // takes `targetOrgRole`, and an invite grants a role just as surely.
-  assertCan(actor, 'user.set_role', { targetOrgRole: input.orgRole });
+  // The role the invite grants is part of the question (LAI-958): anyone but
+  // the owner invites as member or viewer only.
+  assertCan(actor, 'user.invite', { targetOrgRole: input.orgRole });
 
   const now = input.now ?? Date.now();
   const org = requireOrg(db);

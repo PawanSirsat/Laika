@@ -165,6 +165,7 @@ describe('GET and PUT /me/activity-sharing', () => {
     const expected = {
       org_enabled: false,
       enabled: false,
+      person_can_opt_out: false,
       scope: 'agent-repos',
       min_sync_interval_s: 600,
     };
@@ -174,36 +175,56 @@ describe('GET and PUT /me/activity-sharing', () => {
     ).toEqual(expected);
   });
 
-  it('sets both fields from a session, and turning off stops a report at once', async () => {
+  it('says collection is on once the organisation turns it on — the person never did (D-102 amended)', async () => {
+    switchOn(true, false);
+    expect(await ok(req('/api/v1/me/activity-sharing', {}, bea.cookie))).toEqual({
+      org_enabled: true,
+      enabled: true,
+      person_can_opt_out: false,
+      scope: 'agent-repos',
+      min_sync_interval_s: 600,
+    });
+  });
+
+  it('403s organisation_controlled to a session that sends enabled, writing nothing — scope included', async () => {
+    for (const org of [true, false]) {
+      switchOn(org, true);
+      for (const enabled of [true, false]) {
+        const res = await req(
+          '/api/v1/me/activity-sharing',
+          { method: 'PUT', body: JSON.stringify({ enabled, scope: 'laika-repos' }) },
+          bea.cookie,
+        );
+        expect(res.status).toBe(403);
+        expect(await errorOf(res)).toEqual({
+          code: 'forbidden',
+          message: expect.any(String) as string,
+          details: { reason: 'organisation_controlled', org_enabled: org },
+        });
+      }
+    }
+    const row = h.db.select().from(users).where(eq(users.id, bea.id)).get();
+    expect(row?.shareLocalActivity).toBe(1);
+    expect(row?.localActivityScope).toBe('agent-repos');
+  });
+
+  it('still sets the scope from a session', async () => {
     switchOn(true, false);
     expect(
       await ok(
         req(
           '/api/v1/me/activity-sharing',
-          { method: 'PUT', body: JSON.stringify({ enabled: true, scope: 'laika-repos' }) },
+          { method: 'PUT', body: JSON.stringify({ scope: 'laika-repos' }) },
           bea.cookie,
         ),
       ),
-    ).toEqual({ org_enabled: true, enabled: true, scope: 'laika-repos', min_sync_interval_s: 600 });
-
-    const token = await mint(bea.cookie);
-    await ok(put(report(), token));
-
-    await ok(
-      req(
-        '/api/v1/me/activity-sharing',
-        { method: 'PUT', body: JSON.stringify({ enabled: false }) },
-        bea.cookie,
-      ),
-    );
-    const res = await put(report(), token);
-    expect(res.status).toBe(403);
-    expect(await errorOf(res)).toMatchObject({
-      code: 'forbidden',
-      details: { reason: 'local_activity_off' },
+    ).toEqual({
+      org_enabled: true,
+      enabled: true,
+      person_can_opt_out: false,
+      scope: 'laika-repos',
+      min_sync_interval_s: 600,
     });
-    // Off deletes nothing.
-    expect(h.db.select().from(localActivityDays).all()).toHaveLength(1);
   });
 
   it('403s every token the PUT with session_required — an agent must not consent', async () => {
@@ -243,24 +264,27 @@ describe('PUT /me/local-activity', () => {
     );
   });
 
-  it('403s local_activity_off while either switch is off — and says which', async () => {
+  it("403s local_activity_off while the organisation's switch is off, whatever the person's says", async () => {
     const token = await mint(bea.cookie);
-    for (const [org, user] of [
-      [false, true],
-      [true, false],
-    ] as const) {
-      switchOn(org, user);
+    for (const user of [true, false]) {
+      switchOn(false, user);
       const res = await put(report(), token);
       expect(res.status).toBe(403);
       expect(await errorOf(res)).toMatchObject({
         code: 'forbidden',
-        details: { reason: 'local_activity_off', org_enabled: org, enabled: user },
+        details: { reason: 'local_activity_off', org_enabled: false, enabled: false },
       });
     }
-    // Even a malformed report is told sharing is off, not that it is malformed.
+    // Even a malformed report is told collection is off, not that it is malformed.
     const res = await put({ nonsense: true }, token);
     expect((await errorOf(res)).details).toMatchObject({ reason: 'local_activity_off' });
     expect(h.db.select().from(localActivityDays).all()).toEqual([]);
+  });
+
+  it("200s a report with the organisation's switch on and the person's off (D-102 amended)", async () => {
+    switchOn(true, false);
+    expect(await ok(put(report(), await mint(bea.cookie)))).toEqual({ accepted_days: 1 });
+    expect(h.db.select().from(localActivityDays).all()).toHaveLength(1);
   });
 
   describe('both switches on', () => {

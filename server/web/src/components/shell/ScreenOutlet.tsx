@@ -28,12 +28,14 @@ import { InsightsScreen } from '../../routes/screens/insights/InsightsScreen.tsx
 import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx';
 import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
 import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
+import { WorkScreen } from '../../routes/screens/work/WorkScreen.tsx';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import {
   INBOX_TABS,
   INSIGHTS_TABS,
   ORGANISATION_TABS,
   currentTab,
+  refusedTab,
   visibleTabs,
 } from '../../routes/page-tabs.ts';
 import { StateGallery } from '../StateGallery.tsx';
@@ -224,6 +226,7 @@ function UsageRoute() {
 /**
  * The reader's own day (LAI-787). `?day=` names which; absent is today. A
  * day picked is a URL, so back and forward walk the days as they were seen.
+ * `?user=` is somebody else's day, read only (LAI-959), picked the same way.
  */
 function MyDayRoute() {
   const {
@@ -244,6 +247,32 @@ function MyDayRoute() {
         next.set('day', day);
         setParams(next, { push: true });
       }}
+      user={params.get('user') ?? undefined}
+      onUser={(userId) => {
+        const next = new URLSearchParams(params);
+        if (userId === undefined) next.delete('user');
+        else next.set('user', userId);
+        setParams(next, { push: true });
+      }}
+    />
+  );
+}
+
+/**
+ * Everyone's work (LAI-952). The filters are the URL, replaced rather than
+ * pushed, as a filter is; a row opens the task in its own space's drawer.
+ */
+function WorkRoute() {
+  const {
+    route: { params, setParams, navigate },
+    me,
+  } = useShell();
+  return (
+    <WorkScreen
+      me={me}
+      params={params}
+      setParams={setParams}
+      onOpenTask={openTaskInItsSpace(navigate)}
     />
   );
 }
@@ -321,18 +350,22 @@ function DeveloperRoute() {
 function OrganisationRoute() {
   const {
     me,
-    route: { params, navigate },
+    route: { params, setParams, navigate },
   } = useShell();
   // The screen requires a user; the gate has already refused every other
   // session state on this protected route, so this is the frame before a
   // redirect lands rather than a state anyone sits in.
   if (me === undefined) return null;
   const holds = permissionHolder(me.org_role);
+  const refused = refusedTab(ORGANISATION_TABS, params, holds);
   return (
     <OrganisationScreen
       me={me}
       tabs={visibleTabs(ORGANISATION_TABS, holds)}
-      tab={currentTab(ORGANISATION_TABS, params, holds)}
+      tab={refused?.id ?? currentTab(ORGANISATION_TABS, params, holds)}
+      refused={refused !== undefined}
+      params={params}
+      setParams={setParams}
       onNavigate={navigate}
     />
   );
@@ -348,12 +381,33 @@ function MembersRoute() {
 
 function ProfileRoute() {
   const {
-    route: { params },
+    route: { params, setParams, navigate },
     me,
   } = useShell();
   // `?user=` names whose profile (LAI-743); the screen refuses anyone who may
-  // not open profiles before it asks the server for one.
-  return <ProfileScreen userId={params.get('user') ?? undefined} me={me} />;
+  // not open profiles before it asks the server for one. `?tab=` and `?day=`
+  // are its Day and Hours (LAI-959), each a URL, so Back walks them.
+  const set = (name: string, value: string | undefined): void => {
+    const next = new URLSearchParams(params);
+    if (value === undefined) next.delete(name);
+    else next.set(name, value);
+    setParams(next, { push: true });
+  };
+  return (
+    <ProfileScreen
+      userId={params.get('user') ?? undefined}
+      me={me}
+      tab={params.get('tab') ?? undefined}
+      onTab={(tab) => {
+        set('tab', tab === 'overview' ? undefined : tab);
+      }}
+      day={params.get('day') ?? undefined}
+      onDay={(day) => {
+        set('day', day);
+      }}
+      onNavigate={navigate}
+    />
+  );
 }
 
 /**
@@ -374,6 +428,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/projects': { Component: ProjectsRoute, layout: 'plain' },
   '/my-day': { Component: MyDayRoute, layout: 'plain' },
   '/inbox': { Component: InboxRoute, layout: 'plain' },
+  '/work': { Component: WorkRoute, layout: 'plain' },
   '/insights': { Component: InsightsRoute, layout: 'plain' },
   '/organisation': { Component: OrganisationRoute, layout: 'plain' },
   '/developer': { Component: DeveloperRoute, layout: 'plain' },

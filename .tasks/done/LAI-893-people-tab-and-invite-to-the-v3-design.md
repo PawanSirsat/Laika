@@ -90,3 +90,25 @@ the created date and the headcount so they read as three facts.
   stub refuses, since an admin is no longer offered an owner.
 - Left out, with no endpoint: *Resend* and *Copy link* on a pending invite.
 
+## Merged with the other machine's integration (CHIEF, 2026-10-22T17:37:20Z)
+
+`origin/master` took PR #68 (LAI-950 to LAI-972, D-102 to D-104) while
+this was in review. Three files conflicted — the screen, its stylesheet and
+`organisation-roles.test.ts` — and the People tab was reconciled with
+LAI-958 / LAI-960 rather than the other way round:
+
+- **The role picker is the owner's alone** (`canChangeRoles`); an admin
+  reads every role as text and keeps Tokens and Deactivate. The bulk bar
+  offers *Make Admin* / *Make Member* to the owner only.
+- **The invite dialog offers `invitableRoles(me.org_role)`**: an admin
+  Member or Viewer, the owner Admin, Member or Viewer. Never Owner.
+- A deactivated person's role stays text beside Reactivate (this task's
+  call), so the own-row test counts two pickers for the three others, not
+  three.
+- Two LAI-960 tests in `organisation-grants.test.ts` opened the old inline
+  invite form; they open the dialog now and read its segment.
+- LAI-987 (filed by the other machine for this tab) overlaps: search, role
+  chips, counts, last-active column and bulk invites are here. What it still
+  wants — transfer ownership, invite expiry choice, Copy link, Re-issue,
+  confirmations on role change — stays with it.
+

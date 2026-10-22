@@ -94,7 +94,8 @@ function activity(
     if (!empty) for (const [ago, n] of Object.entries(values)) out[at(Number(ago))] = n;
     return out;
   };
-  const shown = sharing.org_enabled && sharing.enabled;
+  // LAI-963: the server draws GitHub and Local on the organisation's switch alone.
+  const shown = sharing.org_enabled;
   return {
     range,
     start,
@@ -470,7 +471,7 @@ void describe('the states', () => {
         ['board'],
       );
       assert.equal(await cells(h.page, 'board').count(), 364);
-      assert.match(await h.page.locator('[data-stat="pushed_share"]').innerText(), /not shared/);
+      assert.match(await h.page.locator('[data-stat="pushed_share"]').innerText(), /not collected/);
 
       // A: the same panel, and the board as a single-colour grid.
       await activityCard.locator('input[value="split"]').check();
@@ -482,16 +483,21 @@ void describe('the states', () => {
     }
   });
 
-  void test('a developer who has not shared: named, and only they can turn it on', async () => {
+  /**
+   * D-102 amended (LAI-967): collection follows the organisation's switch
+   * alone, and a current server sends `enabled` equal to `org_enabled`. An
+   * `enabled: false` beside it is a stale personal answer that decides nothing:
+   * GitHub and Local are drawn, and nobody is sent to a switch that is gone.
+   */
+  void test('organisation on: a stale personal “off” hides nothing and names no switch', async () => {
     const h = await open('/people?user=u2', stub({ org_enabled: true, enabled: false }));
     try {
       const activityCard = await card(h.page);
-      assert.match(
-        await activityCard.locator('.hm-off').innerText(),
-        /GitHub and Local are not shown: Bea Builder hasn’t turned on sharing, and only they can\./,
-      );
-      assert.equal(await activityCard.locator('a').count(), 0, 'nothing an admin can turn on');
-      assert.equal(await h.page.locator('.hm-grid').count(), 1);
+      await until(async () => (await cells(h.page, 'github').count()) === 364);
+      assert.equal(await activityCard.locator('.hm-off').count(), 0);
+      assert.doesNotMatch(await activityCard.innerText(), /turned on sharing|only they can/);
+      assert.equal(await cells(h.page, 'github').count(), 364);
+      assert.equal(await cells(h.page, 'local').count(), 364);
       assert.equal(await cells(h.page, 'board').count(), 364);
     } finally {
       await h.close();
@@ -530,7 +536,7 @@ void describe('the states', () => {
       ['shown', stub()],
       ['nothing yet', stub(undefined, true)],
       ['insights off', stub({ org_enabled: false, enabled: true })],
-      ['not sharing', stub({ org_enabled: true, enabled: false })],
+      ['stale personal off', stub({ org_enabled: true, enabled: false })],
     ];
     const moved: string[] = [];
     for (const [state, api] of states) {

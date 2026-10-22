@@ -1,4 +1,4 @@
-import type { ActivityEvent } from '../../../api/activity.ts';
+import { isGrantsChange, type ActivityEvent } from '../../../api/activity.ts';
 import type { TaskSummary, TaskStatus } from '../../../api/tasks.ts';
 
 /**
@@ -238,6 +238,7 @@ export function shownInFeed(type: string): boolean {
 }
 
 export function describeProjectEvent(event: ActivityEvent): string {
+  if (isGrantsChange(event)) return 'changed who can do what';
   return PROJECT_LABELS[event.type] ?? event.type;
 }
 

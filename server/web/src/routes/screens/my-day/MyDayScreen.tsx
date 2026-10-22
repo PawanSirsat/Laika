@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import {
   addBreak,
@@ -22,10 +22,16 @@ import {
   type TimeDraft,
 } from '../../../api/time.ts';
 import { everyPage } from '../../../api/every-page.ts';
+import {
+  getPersonDay,
+  holdsPeopleAnalytics,
+  useOrgActions,
+} from '../../../api/people-analytics.ts';
 import { isProject, listProjects, type Project } from '../../../api/projects.ts';
 import { readerZone } from '../../../api/usage.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
+import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import type { MeProfile } from '../../../api/me.ts';
@@ -67,6 +73,8 @@ import {
   type Zoom,
 } from './timeline-derive.ts';
 import { Toast, type ToastState } from './Toast.tsx';
+import { usePeople, ViewingSwitch } from './ViewingSwitch.tsx';
+import { WhoLooked } from './WhoLooked.tsx';
 import { WeekStrip } from './WeekStrip.tsx';
 import { dayLong } from './week-derive.ts';
 import './my-day.css';
@@ -83,6 +91,18 @@ export interface MyDayScreenProps {
   readonly queueCapped?: boolean | undefined;
   /** Open a task from *On your plate* without reloading the page. */
   readonly onNavigate?: (to: string) => void;
+  /**
+   * `?user=` — somebody else's day, read only (D-102, LAI-959). Absent, or
+   * the reader's own id, is their own day.
+   */
+  readonly user?: string | undefined;
+  /** Whom the *Viewing* switcher picked; `undefined` is the reader again. */
+  readonly onUser?: (userId: string | undefined) => void;
+  /**
+   * Drawn inside a member's profile (LAI-959): the person is fixed and named
+   * by the profile, so there is no page title and no switcher.
+   */
+  readonly embedded?: { readonly name: string } | undefined;
 }
 
 type Load =
@@ -154,8 +174,8 @@ async function undoEach(made: readonly Made[]): Promise<string> {
 
 /**
  * The spaces the reader can read, once for the page (LAI-810 review round
- * 1): *On your plate* reads the reader's work in the ones they belong to, and
- * *Agent minutes* links a card only when its space is one of them.
+ * 1): *On your plate* reads the reader's work in every space they can access,
+ * and *Agent minutes* links a card only when its space is one of them.
  * `undefined` while reading, `null` if the read failed.
  */
 function useSpaces(): readonly Project[] | null | undefined {
@@ -216,8 +236,23 @@ export function MyDayScreen({
   queue,
   queueCapped,
   onNavigate = () => undefined,
+  user,
+  onUser,
+  embedded,
 }: MyDayScreenProps) {
   const tz = readerZone();
+  const { actions: orgActions, settled } = useOrgActions(me !== undefined);
+  const holds = holdsPeopleAnalytics(orgActions, me?.org_role);
+  /** Whose day: somebody else's only by `?user=` naming another person. */
+  const subjectId = user !== undefined && user !== '' && user !== me?.id ? user : undefined;
+  const readOnly = subjectId !== undefined;
+  /** A refused `?user=` is decided once the server has said what the reader holds. */
+  const refused = readOnly && !holds && settled;
+  const people = usePeople(holds && embedded === undefined);
+  const subjectName =
+    embedded?.name ??
+    (subjectId === undefined ? undefined : (people ?? []).find((p) => p.id === subjectId)?.name) ??
+    'This person';
   const selectedDay = isDay(day) ? day : dayIn(tz, Date.now());
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [pending, setPending] = useState<string | undefined>(undefined);
@@ -230,7 +265,7 @@ export function MyDayScreen({
   const [zoom, setZoom] = useState<Zoom>('1');
   const [now, setNow] = useState(() => Date.now());
   const spaces = useSpaces();
-  const plate = usePlate(me, spaces);
+  const plate = usePlate(readOnly ? undefined : me, spaces);
   const noteRef = useRef<HTMLInputElement | null>(null);
   const toastSeq = useRef(0);
   const lastDraftIndex = useRef(0);
@@ -240,9 +275,21 @@ export function MyDayScreen({
     setTick((n) => n + 1);
   }, []);
 
+  // Somebody else's day is asked only of a reader who holds the capability:
+  // the server would refuse it, and a refused read is the not-allowed state.
+  const asking = !readOnly || holds;
+  // Another person's day never shows under the last one's — a re-read after a
+  // change keeps the page as it is until the answer lands.
   useEffect(() => {
+    setLoad({ kind: 'loading' });
+  }, [subjectId]);
+  useEffect(() => {
+    if (!asking) return;
     const controller = new AbortController();
-    getMyDay(selectedDay, tz, controller.signal)
+    (subjectId === undefined
+      ? getMyDay(selectedDay, tz, controller.signal)
+      : getPersonDay(subjectId, selectedDay, tz, controller.signal)
+    )
       .then((view) => {
         if (!controller.signal.aborted) setLoad({ kind: 'ready', view });
       })
@@ -252,7 +299,7 @@ export function MyDayScreen({
     return () => {
       controller.abort();
     };
-  }, [selectedDay, tz, tick]);
+  }, [selectedDay, tz, tick, subjectId, asking]);
 
   // The now line moves with the clock.
   useEffect(() => {
@@ -264,12 +311,13 @@ export function MyDayScreen({
     };
   }, []);
 
-  // A new day starts with nothing in hand.
+  // A new day, or somebody else's, starts with nothing in hand.
   useEffect(() => {
     setSelection(undefined);
     setSlot(undefined);
     setBatch({ kind: 'idle' });
-  }, [selectedDay]);
+    setToast(undefined);
+  }, [selectedDay, subjectId]);
 
   // The selection stays something that exists: a confirmed or dismissed block
   // hands it to the next one, and an open day starts on its first draft.
@@ -465,18 +513,55 @@ export function MyDayScreen({
     };
   }, []);
 
-  if (load.kind === 'loading' || view === undefined || line === undefined) {
-    return (
+  const title = readOnly && embedded === undefined ? `${subjectName}’s day` : 'My day';
+  const switcher =
+    holds && embedded === undefined && me !== undefined && onUser !== undefined ? (
+      <ViewingSwitch meId={me.id} subjectId={subjectId} people={people} onPick={onUser} />
+    ) : undefined;
+  const banner = readOnly && (
+    <p className="myday-viewing-banner" role="status" data-viewing-banner>
+      <strong>Viewing {subjectName}’s day — read only.</strong> Nothing here can be changed, and{' '}
+      {subjectName} can see that you looked.
+    </p>
+  );
+  const shell = (body: ReactNode) =>
+    embedded === undefined ? (
       <div className="myday-page">
-        <ScreenHeader variant="page" title="My day" description={dayLong(selectedDay)} />
-        <div className="myday">
-          {load.kind === 'error' ? (
-            <ApiErrorState error={load.error} resource="your day" onRetry={reload} />
-          ) : (
-            <LoadingState shape="card" count={3} label="Reading your day" />
-          )}
-        </div>
+        <ScreenHeader variant="page" title={title} description={dayLong(selectedDay)}>
+          {switcher}
+        </ScreenHeader>
+        {banner}
+        <div className="myday">{body}</div>
       </div>
+    ) : (
+      <div className="myday-page myday-embedded">
+        {banner}
+        <div className="myday">{body}</div>
+      </div>
+    );
+
+  if (refused) {
+    return shell(
+      <PermissionDenied resource="other people’s days" requiredRole="admin" scope="organisation" />,
+    );
+  }
+
+  if (load.kind === 'loading' || view === undefined || line === undefined || !asking) {
+    return shell(
+      load.kind === 'error' ? (
+        <ApiErrorState
+          error={load.error}
+          resource={readOnly ? `${subjectName}’s day` : 'your day'}
+          {...(readOnly ? { requiredRole: 'admin' as const, scope: 'organisation' as const } : {})}
+          onRetry={reload}
+        />
+      ) : (
+        <LoadingState
+          shape="card"
+          count={3}
+          label={readOnly ? `Reading ${subjectName}’s day` : 'Reading your day'}
+        />
+      ),
     );
   }
 
@@ -512,6 +597,7 @@ export function MyDayScreen({
       : run(key, [held.entry.id], () => updateEntry(held.entry.id, patch), said);
 
   const onEdge = (lane: LaneBlock, edit: Edit): void => {
+    if (readOnly) return;
     const patch: { started_at?: number; ended_at?: number; minutes: number } = {
       minutes: edit.minutes,
     };
@@ -738,7 +824,7 @@ export function MyDayScreen({
       if (next !== undefined) setSelection({ kind: 'draft', id: next.id });
       return true;
     }
-    if (current === undefined) return false;
+    if (current === undefined || readOnly) return false;
     if (shortcut === 'confirm') confirmOne(current);
     else if (shortcut === 'dismiss') dismissOne(current);
     else if (!current.general) actions.setCard({ kind: 'draft', draft: current }, 'general');
@@ -751,69 +837,89 @@ export function MyDayScreen({
       : undefined;
 
   return (
-    <div className="myday-page">
-      <ScreenHeader
-        variant="page"
-        title="My day"
-        description={
-          <span className="myday-subtitle">
+    <div className={embedded === undefined ? 'myday-page' : 'myday-page myday-embedded'}>
+      {embedded === undefined ? (
+        <ScreenHeader
+          variant="page"
+          title={title}
+          description={
+            <span className="myday-subtitle">
+              <span>
+                {dayLong(view.day)}
+                {view.day === view.today && ' · today'}
+              </span>
+              <span className="myday-subtitle-dot" aria-hidden="true" />
+              <span className="myday-lock">
+                <Padlock />
+                {readOnly
+                  ? `Read only · ${subjectName} sees that you looked`
+                  : 'Only you see drafts'}
+              </span>
+            </span>
+          }
+          below={
+            <WeekStrip
+              week={view.week}
+              selected={view.day}
+              today={view.today}
+              locked={batching}
+              onPick={onDay}
+            />
+          }
+        >
+          {switcher}
+          {!readOnly && (
+            <>
+              <DraftMyTime
+                settings={settings}
+                held={view.drafts_held}
+                pending={pending}
+                run={(key, writeIt, said) =>
+                  run(key, [], () => writeIt(), said).then((r) => r !== undefined)
+                }
+              />
+              {view.drafts.length > 0 && (
+                <button
+                  type="button"
+                  className="myday-chip myday-chip-primary myday-confirm-day"
+                  data-confirm-day
+                  disabled={busy || dayPlan.ready.length === 0}
+                  title={
+                    dayPlan.needCard.length > 0
+                      ? `${needCardLine(dayPlan.needCard.length)} first — left out`
+                      : `Confirm every drafted block of ${dayLong(view.day)}`
+                  }
+                  onClick={() => {
+                    void runBatch(
+                      'confirm-day',
+                      'Confirming',
+                      view.day,
+                      view.drafts.map((d) => d.id),
+                      (api, progress) => runConfirmDay(view.drafts, view.day, api, progress),
+                    );
+                  }}
+                >
+                  {pending === 'confirm-day' && <Spinner size="sm" label="Confirming the day" />}
+                  {dayPlan.needCard.length === 0
+                    ? `Confirm day · ${duration(readyMinutes)}`
+                    : `Confirm ${String(dayPlan.ready.length)} ready · ${duration(readyMinutes)}`}
+                </button>
+              )}
+            </>
+          )}
+        </ScreenHeader>
+      ) : (
+        <div className="myday-embed-head">
+          <p className="myday-subtitle">
             <span>
               {dayLong(view.day)}
               {view.day === view.today && ' · today'}
             </span>
-            <span className="myday-subtitle-dot" aria-hidden="true" />
-            <span className="myday-lock">
-              <Padlock />
-              Only you see drafts
-            </span>
-          </span>
-        }
-        below={
-          <WeekStrip
-            week={view.week}
-            selected={view.day}
-            today={view.today}
-            locked={batching}
-            onPick={onDay}
-          />
-        }
-      >
-        <DraftMyTime
-          settings={settings}
-          held={view.drafts_held}
-          pending={pending}
-          run={(key, writeIt, said) =>
-            run(key, [], () => writeIt(), said).then((r) => r !== undefined)
-          }
-        />
-        {view.drafts.length > 0 && (
-          <button
-            type="button"
-            className="myday-chip myday-chip-primary myday-confirm-day"
-            data-confirm-day
-            disabled={busy || dayPlan.ready.length === 0}
-            title={
-              dayPlan.needCard.length > 0
-                ? `${needCardLine(dayPlan.needCard.length)} first — left out`
-                : `Confirm every drafted block of ${dayLong(view.day)}`
-            }
-            onClick={() => {
-              void runBatch(
-                'confirm-day',
-                'Confirming',
-                view.day,
-                view.drafts.map((d) => d.id),
-                (api, progress) => runConfirmDay(view.drafts, view.day, api, progress),
-              );
-            }}
-          >
-            {pending === 'confirm-day' && <Spinner size="sm" label="Confirming the day" />}
-            {dayPlan.needCard.length === 0
-              ? `Confirm day · ${duration(readyMinutes)}`
-              : `Confirm ${String(dayPlan.ready.length)} ready · ${duration(readyMinutes)}`}
-          </button>
-        )}
-      </ScreenHeader>
+          </p>
+          <WeekStrip week={view.week} selected={view.day} today={view.today} onPick={onDay} />
+        </div>
+      )}
+      {banner}
 
       <div className="myday" data-myday-ready>
         {/* The Timeline spans the page (LAI-889, the v3 design); the editor, the lists and the side column sit under it. */}
@@ -835,6 +941,7 @@ export function MyDayScreen({
             }}
             onEdge={onEdge}
             busy={busy}
+            readOnly={readOnly}
           />
         )}
         <div className="myday-grid">
@@ -856,6 +963,7 @@ export function MyDayScreen({
                 pending={pending}
                 actions={actions}
                 onNavigate={onNavigate}
+                readOnly={readOnly}
               />
             )}
 
@@ -873,6 +981,7 @@ export function MyDayScreen({
                   setSelection({ kind: 'draft', id: draft.id });
                 }}
                 onNavigate={onNavigate}
+                readOnly={readOnly}
                 onBulk={(kind, chosen) =>
                   runBatch(
                     'bulk',
@@ -895,7 +1004,7 @@ export function MyDayScreen({
                 }}
                 onNavigate={onNavigate}
               >
-                {addable && (
+                {addable && !readOnly && (
                   <AddTimeForm
                     day={view.day}
                     tz={view.tz}
@@ -932,16 +1041,23 @@ export function MyDayScreen({
             )}
           </div>
 
-          <aside className="myday-side" aria-label="Beside your day" data-myday-side>
+          <aside
+            className="myday-side"
+            aria-label={readOnly ? `Beside ${subjectName}’s day` : 'Beside your day'}
+            data-myday-side
+          >
             <AgentStrip agent={view.agent} spaces={spaces} onNavigate={onNavigate} />
-            <OnYourPlate
-              me={me}
-              spaces={spaces}
-              load={plate}
-              queue={queue}
-              reviewCapped={queueCapped}
-              onNavigate={onNavigate}
-            />
+            {!readOnly && (
+              <OnYourPlate
+                me={me}
+                spaces={spaces}
+                load={plate}
+                queue={queue}
+                reviewCapped={queueCapped}
+                onNavigate={onNavigate}
+              />
+            )}
+            {!readOnly && <WhoLooked tz={view.tz} today={view.today} />}
           </aside>
         </div>
       </div>

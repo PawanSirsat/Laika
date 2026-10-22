@@ -152,6 +152,13 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
     // hook could not see either, since both are properties of the mounted tree.
     'a React hook; its lazy fetch is asserted in test/browser/organisation-tokens.test.ts',
   ],
+  [
+    'routes/screens/organisation/use-org-history.ts',
+    // LAI-951. What is worth guarding is the walk — the first page, then
+    // `next_cursor` on *Load more*, appended — and `test/browser/
+    // organisation-activity.test.ts` asserts it on the wire and the page.
+    'a React hook; its cursor walk is asserted in test/browser/organisation-activity.test.ts',
+  ],
   ['theme/theme.ts', 'DOM-bound theme application; asserted in a browser under LAI-018'],
   ['theme/use-theme.ts', 'a React hook — no renderer in this package'],
   ['api/use-shell-context.ts', 'a React hook — no renderer in this package'],

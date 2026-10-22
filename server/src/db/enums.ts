@@ -10,6 +10,35 @@
 export const ORG_ROLES = ['owner', 'admin', 'member', 'viewer'] as const;
 export type OrgRole = (typeof ORG_ROLES)[number];
 
+/**
+ * The org roles an owner grants capabilities to (D-102 rule 6, LAI-958) —
+ * every role but `owner`, which holds them all and cannot lose one.
+ */
+export const GRANTABLE_ROLES = ['admin', 'member', 'viewer'] as const;
+export type GrantableRole = (typeof GRANTABLE_ROLES)[number];
+
+/**
+ * What an owner may switch on or off per grantable role (§3, §4.58,
+ * LAI-958). Which §3.1 actions each one carries is `policy/grants.ts`'s; this
+ * is only the vocabulary `org_role_grants.capability`'s CHECK holds.
+ */
+export const CAPABILITIES = [
+  'see_people_analytics',
+  'see_org_activity',
+  'open_all_projects',
+  'manage_people',
+  'change_org_settings',
+] as const;
+export type Capability = (typeof CAPABILITIES)[number];
+
+/**
+ * Which of a person's analytics an owner or admin looked at (§4.59, D-102
+ * rule 3, LAI-957): My day, their shared local activity, the profile's
+ * heatmap, their tokens. One per read, never a count.
+ */
+export const ANALYTICS_VIEW_KINDS = ['time', 'local_activity', 'activity', 'usage'] as const;
+export type AnalyticsViewKind = (typeof ANALYTICS_VIEW_KINDS)[number];
+
 export const PROJECT_ROLES = ['lead', 'member', 'viewer'] as const;
 export type ProjectRole = (typeof PROJECT_ROLES)[number];
 

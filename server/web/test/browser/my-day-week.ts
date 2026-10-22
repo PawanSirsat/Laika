@@ -12,10 +12,11 @@
  */
 
 import type { ApiStub } from './harness.ts';
+import { TODAY } from './my-day-clock.ts';
 
 const DAY_MS = 86_400_000;
 
-export const TODAY = new Date().toISOString().slice(0, 10);
+export { TODAY };
 export const addDays = (day: string, n: number): string =>
   new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
 export const YESTERDAY = addDays(TODAY, -1);

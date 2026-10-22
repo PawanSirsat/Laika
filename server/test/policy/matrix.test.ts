@@ -39,8 +39,14 @@ const ORG_MATRIX: OrgRow[] = [
   // | Create / archive project | ✓ | ✓ | — | — |
   ['project.create', true, true, false, false],
   ['project.archive', true, true, false, false],
-  // | Invite users / change org roles | ✓ | ✓ (not to Owner) | — | — |
+  // | Invite users | ✓ | ✓ (as member or viewer) | — | — |
+  // The role half, no role named — listing and revoking. Which roles an
+  // invite may grant is asserted below (D-102 rule 5, LAI-958).
   ['user.invite', true, true, false, false],
+  // | Change org roles | ✓ | — | — | — |
+  ['user.set_role', true, false, false, false],
+  // | Set what each role may do | ✓ (session only) | — | — | — |
+  ['org.permissions.manage', true, false, false, false],
   // | Deactivate user | ✓ | ✓ | — | — |
   ['user.deactivate', true, true, false, false],
   // | View the organisation | ✓ | ✓ | ✓ | ✓ |
@@ -89,7 +95,7 @@ const ORG_MATRIX: OrgRow[] = [
   ['org.developer_insights.set', true, true, false, false],
   // | Read own activity-sharing setting | ✓ | ✓ | ✓ | ✓ |
   ['activity_sharing.read_own', true, true, true, true],
-  // | Set own activity sharing | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+  // | Set own local-activity scope | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
   ['activity_sharing.set_own', true, true, true, true],
   // | Send own local activity | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
   // The heartbeat's shape: a Viewer is stopped by the credential, not the role.
@@ -147,23 +153,25 @@ describe('SPEC §3.1 — org-level matrix', () => {
 });
 
 describe('SPEC §3.1 — rows that depend on the resource', () => {
-  it('Admin may set any role except Owner', () => {
-    expect(can(actor('admin'), 'user.set_role', { targetOrgRole: 'admin' })).toBe(true);
-    expect(can(actor('admin'), 'user.set_role', { targetOrgRole: 'member' })).toBe(true);
-    expect(can(actor('admin'), 'user.set_role', { targetOrgRole: 'owner' })).toBe(false);
-  });
-
-  it('Owner may set any role including Owner', () => {
+  it('only the Owner sets roles, any role, Admin included (D-102 rule 5)', () => {
     for (const target of ORG_ROLES) {
       expect(can(actor('owner'), 'user.set_role', { targetOrgRole: target })).toBe(true);
+      for (const role of ['admin', 'member', 'viewer'] as const) {
+        expect(can(actor(role), 'user.set_role', { targetOrgRole: target }), role).toBe(false);
+      }
     }
   });
 
-  it('Member and Viewer may set no roles at all', () => {
+  it('an Admin invites as member or viewer only; the Owner invites any role', () => {
+    for (const target of ORG_ROLES) {
+      expect(can(actor('owner'), 'user.invite', { targetOrgRole: target }), target).toBe(true);
+    }
+    expect(can(actor('admin'), 'user.invite', { targetOrgRole: 'member' })).toBe(true);
+    expect(can(actor('admin'), 'user.invite', { targetOrgRole: 'viewer' })).toBe(true);
+    expect(can(actor('admin'), 'user.invite', { targetOrgRole: 'admin' })).toBe(false);
+    expect(can(actor('admin'), 'user.invite', { targetOrgRole: 'owner' })).toBe(false);
     for (const role of ['member', 'viewer'] as const) {
-      for (const target of ORG_ROLES) {
-        expect(can(actor(role), 'user.set_role', { targetOrgRole: target })).toBe(false);
-      }
+      expect(can(actor(role), 'user.invite', { targetOrgRole: 'member' }), role).toBe(false);
     }
   });
 
@@ -195,6 +203,19 @@ describe('SPEC §3.1 — rows that depend on the resource', () => {
     }
     for (const role of ['member', 'viewer'] as const) {
       expect(can(actor(role), 'profile.rate', { targetUserId: 'u2' }), role).toBe(false);
+    }
+  });
+
+  // | View a member's day, time and shared activity | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
+  it("Owner and Admin read anyone's day but their own; Member and Viewer nobody's (LAI-957)", () => {
+    for (const role of ['owner', 'admin'] as const) {
+      expect(can(actor(role), 'people.analytics.read', { targetUserId: 'u2' }), role).toBe(true);
+      // `actor()` is `u1`: their own day is `/me`'s.
+      expect(can(actor(role), 'people.analytics.read', { targetUserId: 'u1' }), role).toBe(false);
+      expect(can(actor(role), 'people.analytics.read', {}), role).toBe(false);
+    }
+    for (const role of ['member', 'viewer'] as const) {
+      expect(can(actor(role), 'people.analytics.read', { targetUserId: 'u2' }), role).toBe(false);
     }
   });
 });
@@ -381,7 +402,6 @@ describe('completeness', () => {
     const asserted = new Set<string>([
       ...ORG_MATRIX.map(([a]) => a as string),
       ...PROJECT_MATRIX.map(([a]) => a as string),
-      'user.set_role',
       'project.join_public',
       'token.read_own',
       'token.revoke_own',
@@ -389,6 +409,7 @@ describe('completeness', () => {
       'comment.delete',
       'task.delete',
       'profile.rate',
+      'people.analytics.read',
       // §3.4's own, asserted in full by the describe above.
       ...SYSTEM_ACTIONS,
     ]);

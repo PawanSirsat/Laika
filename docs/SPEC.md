@@ -105,12 +105,38 @@ Org `owner` and `admin` hold **implicit `lead`** on every project and bypass the
 membership check. A user whose org role is `viewer` may hold **only** the project
 role `viewer` — no escalation via project assignment, enforced in code.
 
-- **Owner** — the person who installed Laika. Exactly one, transferable.
-- **Admin** — creates projects, invites, sets roles, manages webhooks and org
-  settings. Cannot delete the org or transfer ownership.
+- **Owner** — the person who installed Laika. Exactly one, transferable. The
+  only one who changes roles and decides what each role may do (D-102).
+- **Admin** — creates projects, invites members and viewers, manages webhooks
+  and org settings. Cannot delete the org, transfer ownership, change roles or
+  change what each role may do.
 - **Member** — the working role. Creates and edits tasks, comments, claims work,
   mints their own tokens. **This is what agent sessions run as.**
 - **Viewer** — read-only. Tokens are forced to `read_only` scope.
+
+**The owner decides who sees what** (D-102 rule 6, LAI-958). A small, fixed
+set of capabilities is granted per org role — admin, member, viewer — on
+Organisation → Roles & permissions (`PUT /org/permissions`, §6.4), stored per
+org × role (§4.58). Each carries existing §3.1 actions and nothing new. The
+owner holds every one, always, and is not a column that can change. **The
+matrices below are the defaults** — admin on, member and viewer off — which is
+what an organisation whose owner changed nothing has; `can()` reads the
+organisation's grants for exactly these actions and no others.
+
+| Capability | Carries |
+| --- | --- |
+| *See everyone's analytics* | `profile.read`, `profile.activity.read`, `usage.read_people` (and LAI-957's `people.analytics.read`) |
+| *See the organisation's activity history* | `audit_log.export` |
+| *Open every project* | the implicit project role above: `lead` on every project, `viewer` for an org viewer, who stays capped |
+| *Manage people and invites* | `user.invite` (as member or viewer only), `user.deactivate` |
+| *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set` |
+
+**Never grantable, owner only:** delete the organisation, transfer ownership
+(`org.delete`, `org.transfer_ownership`), change org roles (`user.set_role`)
+and change what each role may do (`org.permissions.manage`). A grant widens
+the role and nothing else: *session only* and `read_only` tokens narrow it
+afterwards exactly as they narrow a role (§3.3 rule 4). Per-person exceptions
+are not part of this.
 
 ### 3.1 Org-level permission matrix
 
@@ -119,7 +145,9 @@ role `viewer` — no escalation via project assignment, enforced in code.
 | Delete org data / transfer ownership | ✓ | — | — | — |
 | Org settings (AI provider, SMTP, signup mode) | ✓ | ✓ | — | — |
 | Create / archive project | ✓ | ✓ | — | — |
-| Invite users / change org roles | ✓ | ✓ (not to Owner) | — | — |
+| Invite users | ✓ | ✓ (as member or viewer) | — | — |
+| Change org roles | ✓ | — | — | — |
+| Set what each role may do | ✓ (session only) | — | — | — |
 | Deactivate user | ✓ | ✓ | — | — |
 | View member list | ✓ | ✓ | ✓ | ✓ |
 | Join a `public` project | ✓ | ✓ | ✓ (as member) | ✓ (as viewer) |
@@ -182,13 +210,15 @@ the feed but not export it — that is the moment to split them, and the split w
 be obvious because someone will be asking for it.
 | Configure webhooks | ✓ (session only) | ✓ (session only) | — | — |
 | View the organisation | ✓ | ✓ | ✓ | ✓ |
+| Presence and capacity | ✓ | ✓ | ✓ | ✓ |
 | View a member's profile | ✓ (session only) | ✓ (session only) | — | — |
 | Set a member's profile kind | ✓ (session only) | ✓ (session only) | — | — |
 | Rate a member | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
 | View a member's activity heatmap | ✓ (session only) | ✓ (session only) | — | — |
+| View a member's day, time and shared activity | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
 | Turn Developer insights on or off | ✓ (session only) | ✓ (session only) | — | — |
 | Read own activity-sharing setting | ✓ | ✓ | ✓ | ✓ |
-| Set own activity sharing | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+| Set own local-activity scope | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Send own local activity | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
 | Read and delete own local activity | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | View the organisation's token usage | ✓ | ✓ | — | — |
@@ -253,9 +283,10 @@ reads it, and no row of §3.1 or §3.2 depends on it.
   rows. Today the two answer alike.
 - **The rest are the developer's own record about their own work**, the
   heartbeat's argument, so every role holds them. What stops collection is
-  not the matrix: it is the two switches — the organisation's
-  `developer_insights` (§4.2, its own row above) and the developer's
-  `share_local_activity` (§4.1) — which the service reads on every report.
+  not the matrix: it is the organisation's `developer_insights` (§4.2, its
+  own row above), which the service reads on every report. Since D-102
+  (amended, LAI-963) the developer's `share_local_activity` (§4.1) stops
+  nothing.
 - **Both switches are a web session's.** `developer_insights` on `PATCH
   /org` is its own action, `org.developer_insights.set`, not *Org settings*
   borrowed: a token may hold `org.settings.edit`, and an owner's token must
@@ -287,10 +318,10 @@ project's totals and **never a per-person split**.
   not even its own person's**. `GET /usage` answers a reader without
   `usage.read_people` with `by_developer: null` rather than refusing the page.
 - **Sending tokens is not a new row.** A usage report is the collector's, on
-  `PUT /me/local-activity` under *Send own local activity* and the same two
-  switches (D-084 item 4). So is OpenTelemetry (LAI-773): Claude Code's
+  `PUT /me/local-activity` under *Send own local activity* and the
+  organisation's switch (D-084 item 4; D-102 amended). So is OpenTelemetry (LAI-773): Claude Code's
   metrics on `POST /otlp/v1/metrics` are the developer's own usage sent
-  another way, under the same row and the same two switches.
+  another way, under the same row and the same switch.
 
 **LAI-773's rows** — `org.model_prices.set`, `token_alerts.own` and
 `plan_limit.own`, with §3.2's `budget.set` — are all **session only**:
@@ -341,6 +372,27 @@ only**.
 - **Saying which Solidtime member is which person, and pulling everyone, are
   an owner's or admin's** (D-088 item 7): the CLI suggests a match by email
   on its own machine, and only the confirmation reaches the board.
+
+**"View a member's day, time and shared activity" is `people.analytics.read`**
+(D-102 rules 1–4, LAI-957), behind §6.4's `GET /people/:id/time` and `GET
+/people/:id/local-activity`. It is *See everyone's analytics* (§3's grants),
+with the profile, the heatmap and the per-person tokens: the cells above are
+the defaults. **It amends the time rows' *"no admin row for drafts"*** — an
+owner, and whoever the owner grants it, reads a person's My day, drafts
+included, and their held local activity, **in the shape the person reads
+them**: the same answers as `GET /me/time` and `GET /me/local-activity`,
+from the same code. Read only — no row lets anybody write another person's
+time, drafts, breaks or switches, and every `/me` write touches the
+caller's own rows. Reading follows no sharing switch, and collection
+follows only the organisation's Developer insights (D-102, amended).
+
+- **"not themselves"**: a person's own is `/me`'s, where nothing is logged.
+- **Every read of somebody else is logged** (§4.59) — this row's two reads
+  and the heatmap's and per-person tokens' — in the read's own transaction,
+  so a read that cannot be logged is not answered. The person reads who
+  looked on `GET /me/analytics-views` under *Read and delete own local
+  activity* (`local_activity.read_own`): what is held about them and who has
+  seen it are the same Developer access screen's, every role's, session only.
 
 ### 3.2 Project-level permission matrix
 
@@ -457,7 +509,7 @@ name. A `system.database.vacuum` would be a permission that grants nothing.
 | `org_role` | text | `owner` \| `admin` \| `member` \| `viewer` |
 | `is_active` | integer | 0 = deactivated, row kept for history |
 | `profile_kind` | text | `builder` \| `manager`, default `builder` — what the member profile shows (§11.4.2, D-078). **A label, never a permission**: `can()` does not read it (§3.1) |
-| `share_local_activity` | integer | default **0** — the developer's own half of D-079's two switches: whether their collector may send local activity counts (§4.23, §4.24). Set only by them, from a web session (§3.1); off stops collection at once and deletes nothing |
+| `share_local_activity` | integer | default **0** — was the developer's own half of D-079's two switches. **Read by nothing since D-102 (amended, LAI-963)**: collection follows the organisation's `developer_insights` alone (§4.2), and no endpoint writes it. Kept, not dropped, so what each person last chose is not lost |
 | `local_activity_scope` | text | `agent-repos` \| `laika-repos`, default `agent-repos` — which repositories their collector counts in: every one where they run a connected agent on that machine, or only those set up for Laika. The server cannot see a repository; it stores the choice and the collector honours it (D-079) |
 | `created_at`, `updated_at` | integer | |
 
@@ -484,7 +536,7 @@ tables** (§11.3). Do not hand-write password or session columns.
 | `owner_user_id` | |
 | `invite_only` | integer, default **1** (D-004) |
 | `presence_enabled` | integer, default **1** — org-wide off switch for heartbeats. When 0, `POST /heartbeats` returns `202` and discards, and Presence/Capacity show a disabled state rather than an empty one. D-005 makes the product's privacy claim; this makes it enforceable by the org, not just promised by us. |
-| `developer_insights` | integer, default **0** — the organisation's half of D-079's two switches, set by owners and admins from a web session (*Turn Developer insights on or off*, §3.1). Off: no developer's local activity is accepted, whatever they chose, and the heatmap shows board actions only. Readable by everyone, for `presence_enabled`'s reason. |
+| `developer_insights` | integer, default **0** — the switch that alone decides local-activity collection since D-102 (amended, LAI-963; was the organisation's half of D-079's two switches), set from a web session by the owner or a role granted *Change organisation settings, Time and breaks* (*Turn Developer insights on or off*, §3.1). Off: no developer's local activity is accepted and the heatmap shows board actions only. On: every connected machine's is. Readable by everyone, for `presence_enabled`'s reason. |
 | `ai_provider` | `anthropic` \| `openai_compatible` \| `null` |
 | `ai_base_url` | **nullable** — for Ollama / vLLM; null means the provider's own default endpoint |
 | `ai_api_key_enc` | **nullable** — AES-256-GCM, key derived from `LAIKA_SECRET` (§12). **Null is how "no provider configured" is recorded**; there is no separate flag, so §10.2 and the Assistant both read this column to decide whether they can run at all |
@@ -1139,7 +1191,7 @@ D-079, LAI-751) — the heatmap's *Local* colour.
 | `prompts` | integer — prompts sent to agents that day, the sum of `prompts_by_agent` |
 | `prompts_by_agent` | JSON `{ "<agent kind>": n }`, kinds folded onto §9.3's agent slugs; anything else is `other` |
 | `sessions` | integer — agent sessions started |
-| `commits_local` | integer — their commits that day on no remote yet; merge commits and commits authored before they turned sharing on are not counted (§6.4) |
+| `commits_local` | integer — their commits that day on no remote yet; merge commits and commits authored before their machine was connected are not counted (§6.4) |
 | `tz` | the IANA zone the machine reported its days in |
 | `updated_at` | integer — when this snapshot arrived |
 
@@ -1154,7 +1206,7 @@ leaves `commits_local` on the next report. Machines sum. Kept 400 days (§11.6).
 ### 4.24 `pushed_commit_keys`
 
 One key per commit a developer has on a remote — the heatmap's *GitHub* colour
-(§6.4, D-079, LAI-751). Commits authored after they turned sharing on, and once
+(§6.4, D-079, LAI-751). Commits authored after their machine was connected (`laika activity on`), and once
 per repository a look-back of up to a year before that (D-080, LAI-757); never
 a merge commit — the collector's rules (§6.4).
 
@@ -1673,8 +1725,8 @@ A **cumulative** point adds only its growth over `last_value`; a **delta**
 point is taken only when it starts at or after `last_end_ms`. A point out of
 order can only be dropped, never counted twice. **A cumulative series first
 seen more than five minutes after it began is a baseline**: its first value
-holds everything since its process started — possibly before sharing was on —
-so only its growth from there is counted. (A delta point from before consent
+holds everything since its process started — possibly before Developer insights was on —
+so only its growth from there is counted. (A delta point from before Developer insights was on
 was refused when it was sent, and is never resent.) Kept three days past its last
 point.
 
@@ -1762,6 +1814,7 @@ by an owner or admin on a web session (`org.time.set`, §3.1).
 | `org_id` | primary key, FK `orgs`, cascade |
 | `mode` | `off` \| `manual` \| `drafts` — `manual`: people type their own entries; `drafts`: their collectors may also draft their day |
 | `closed_through` | nullable `YYYY-MM-DD` — the last day of the closed period (LAI-788). On or before it a Solidtime change is flagged, never taken, and nothing is written to Solidtime (D-088 item 6). Set by LAI-789's month close; null until then |
+| `breaks` | nullable JSON text — the organisation's break schedule (D-101, LAI-955): a list of `{ label, start, end, days }`, `start`/`end` wall-clock `HH:MM` with no zone, `days` ISO 1 (Mon) – 7 (Sun). Null is no schedule. Set by `PUT /org/time/breaks`; display only — nothing that drafts or counts time reads it |
 | `updated_at` | |
 
 Leaving `drafts` deletes every draft anybody has not confirmed (§4.47), in the
@@ -1900,7 +1953,7 @@ over an existing id, and `DELETE` while its entry exists.
 
 Claude Code's own `active_time` per session and day (D-088 item 8, LAI-787):
 `user`, time at the keyboard in Claude Code, apart from `cli`, the agent
-working. From D-087's OTLP receiver, under its two switches. **Agent minutes,
+working. From D-087's OTLP receiver, under the organisation's switch. **Agent minutes,
 never hours**; nothing adds them to a time entry.
 
 | field | notes |
@@ -2079,6 +2132,49 @@ Primary key `(user_id, session_key, bucket)`; index `(user_id, bucket)`, one
 range per day. A session the collector left out (§4.40) has its rows dropped,
 and none are added. Kept 40 days (§11.6), and deleted with the person's
 history (`DELETE /me/local-activity`).
+
+### 4.58 `org_role_grants`
+
+What the owner has granted each org role (D-102 rule 6, LAI-958; §3). **No
+row is the default** — admin on, member and viewer off — so an organisation
+whose owner never changed them has none. Written whole by `PUT
+/org/permissions` (owner only, session only), and read with the actor on
+every request so a withdrawn grant takes effect at once.
+
+| field | notes |
+| --- | --- |
+| `org_id` | FK `orgs`, cascade |
+| `org_role` | `admin` \| `member` \| `viewer` (CHECK) — never `owner`, who holds every capability |
+| `capability` | `see_people_analytics` \| `see_org_activity` \| `open_all_projects` \| `manage_people` \| `change_org_settings` (CHECK); what each carries is §3's |
+| `granted` | 0 or 1 (CHECK) |
+| `set_by` | FK `users` — the owner who saved it |
+| `updated_at` | |
+
+Primary key `(org_id, org_role, capability)`; index `(set_by)`. A change
+writes one `member.role_changed` row, org-scoped, with `payload.scope:
+"org_permissions"` and the whole matrix `from` and `to` (§4.8).
+
+### 4.59 `analytics_views`
+
+Who looked at a person's analytics, and when (D-102 rule 3, D-088 item 7,
+LAI-957; §3.1's *"View a member's day, time and shared activity"*). One row
+per read of somebody else's My day, local activity, heatmap or per-person
+tokens, written in the same transaction as the read; a person reading their
+own writes none. Read by the person alone, `GET /me/analytics-views`. No
+`activity` row: §4.8 gains no verb. Kept **400 days** (§11.6's local-activity
+retention, by `viewed_at`).
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `viewer_id` | FK `users` — who looked |
+| `subject_id` | FK `users`, cascade — whose analytics |
+| `kind` | `time` \| `local_activity` \| `activity` \| `usage` (CHECK) |
+| `day` | nullable `YYYY-MM-DD` — the day read, for `time`; null for a range |
+| `viewed_at` | |
+
+Indexes `(subject_id, viewed_at, id)` for the person's list, `(viewer_id)`,
+`(viewed_at)` for retention.
 
 ## 5. Task lifecycle
 
@@ -2314,12 +2410,12 @@ POST   /api/v1/auth/*                        better-auth mounted routes
 GET    /api/v1/setup/status                  POST /api/v1/setup      (disabled once an org exists)
        └ { setup_required, system: { database, migrations_applied, smtp_configured } }
 GET    /api/v1/me
-GET    /api/v1/me/activity-sharing           PUT .../activity-sharing  body { enabled?, scope? }   (PUT session only)
-PUT    /api/v1/me/local-activity             a collector's report, look-back or usage report → { accepted_days }   (both switches on; 30/hour)
+GET    /api/v1/me/activity-sharing           PUT .../activity-sharing  body { scope? }   (PUT session only; `enabled` → 403 organisation_controlled)
+PUT    /api/v1/me/local-activity             a collector's report, look-back or usage report → { accepted_days }   (organisation's Developer insights on; 30/hour)
 GET    /api/v1/me/local-activity             ?days=1–14 — what is held for the caller   DELETE → 204   (session only)
 GET    /api/v1/me/token-alerts               the caller's own budget and runaway alerts   POST .../:id/dismiss → 204   (session only; LAI-773)
 GET    /api/v1/me/plan-limit                 PUT .../plan-limit   DELETE → 204 — the developer's own forecast, an estimate   (session only; D-087)
-POST   /api/v1/otlp/v1/metrics               OpenTelemetry metrics, OTLP/HTTP JSON, from the developer's own agents (both switches on; LAI-773)
+POST   /api/v1/otlp/v1/metrics               OpenTelemetry metrics, OTLP/HTTP JSON, from the developer's own agents (organisation's Developer insights on; LAI-773)
 GET    /api/v1/me/time-settings              PUT .../time-settings  body { draft_my_time } — the org's Time and the person's own switch   (PUT session only; LAI-787)
 PUT    /api/v1/me/time-drafts                a collector's blocks, each with a work folder's chosen name and branch if sent → { accepted_days, stored_blocks }   (both time switches on; 30/hour)
 POST   /api/v1/me/time-drafts                an agent's proposal → 201 { id, minutes, day } (both time switches on; twin of propose_time_entry)
@@ -2332,6 +2428,7 @@ POST   /api/v1/me/time-breaks                body { day, tz, started_at, ended_a
 POST   /api/v1/me/time-entries               body { day, tz, minutes, task?, project?, note? } → 201   PATCH/DELETE .../:id   (session only)
 GET    /api/v1/me/time-entries/:id/revisions an entry's append-only history   (session only)
 PUT    /api/v1/org/time                      body { mode } — off | manual | drafts   (owner, admin; session only; LAI-787)
+PUT    /api/v1/org/time/breaks               body { breaks } — the organisation's break schedule → the caller's time settings   (owner, admin; session only; LAI-955)
 GET    /api/v1/me/time/solidtime             ?since= — what the person's CLI writes to Solidtime → { closed_through, push, held, projects, taken }   (session only; LAI-788)
 PUT    /api/v1/me/time/solidtime/links       body { member_id, links } — what it wrote → { linked, removed, retired }   (session only)
 PUT    /api/v1/me/time/solidtime/import      body { v, member_id, tz, from, to, complete, entries } → what changed   (session only)
@@ -2342,13 +2439,18 @@ GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai
 POST   /api/v1/org/github-webhook            set or rotate the GitHub webhook secret; answers it once (session only)
 DELETE /api/v1/org/github-webhook            clear it (204; session only)
 GET    /api/v1/org/model-prices              PUT/DELETE .../model-prices/:model — API-equivalent prices (set: owner, admin; session only; LAI-773)
+GET    /api/v1/org/permissions               what each org role is granted → { roles, capabilities, grants, owner_locked, updated_at, updated_by }   (viewer+; LAI-958)
+PUT    /api/v1/org/permissions               body { grants: { admin|member|viewer: { <capability>: bool } } } — the whole matrix, every role and capability; same answer   (owner only; session only)
 GET    /api/v1/users                         ?limit=&cursor=&updated_since=&include_inactive=
                                              cursor is (name, id) — a directory reads alphabetically
-PATCH  /api/v1/users/:id                     (role, deactivate — admin+)
+PATCH  /api/v1/users/:id                     (role: owner only; deactivate: owner, and admin by default — LAI-958)
 GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind }   (owner, admin; session only)
 POST   /api/v1/users/:id/ratings             body { score, note } → 201   (owner, admin; session only; not yourself)
-GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, admin; session only)
-GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner/admin; session only)
+GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, or a role granted *See everyone's analytics*; session only; logged, D-102)
+GET    /api/v1/people/:id/time               ?day=&tz= — that person's GET /me/time answer, drafts included; logged   (owner, admin by default; session only; not yourself; LAI-957)
+GET    /api/v1/people/:id/local-activity     ?days=1–14 — that person's GET /me/local-activity answer; logged   (owner, admin by default; session only; not yourself)
+GET    /api/v1/me/analytics-views            ?limit=&cursor= — who looked at the caller → { data: [{ id, viewer: { id, name }, kind, day, viewed_at }], next_cursor }, newest first   (session only)
+GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner / a role granted *See everyone's analytics*; session only; logged, D-102)
 GET    /api/v1/usage                         ?days=1–92&project=&tz= — the Usage page   (owner/admin; a member with ?project=)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
 GET    /api/v1/invites/:token                unauthenticated preview — org name, inviter, role, expiry
@@ -2379,6 +2481,8 @@ PATCH  /api/v1/projects/:slug/tags/:name     rename project-wide (lead+)
 DELETE /api/v1/projects/:slug/tags/:name     remove from every task (lead+); tasks are untouched
 GET    /api/v1/projects/:slug/timeline       ?from=&to=  — sprints with date ranges and their tasks
 POST   /api/v1/projects/:slug/tasks
+GET    /api/v1/tasks                         ?project=&status=&assignee=&sprint=&updated_since=&cursor=&fields= — every project the caller may read
+                                             (project.read per project); the per-project list's task shape and order; any other filter is 422 (LAI-887)
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
 POST   /api/v1/tasks/:id/claim               POST /api/v1/tasks/:id/status
                                              claim: body { branch?, estimate? }, optional — the branch is kept
@@ -2405,10 +2509,12 @@ DELETE /api/v1/tasks/:id/dependencies/:depId
 GET    /api/v1/tasks/:id/comments            POST /api/v1/tasks/:id/comments
 PATCH  /api/v1/comments/:id                  DELETE /api/v1/comments/:id
 GET    /api/v1/projects/:slug/activity       GET /api/v1/activity    (org-wide, viewer+)
+GET    /api/v1/activity/history              ?actor=&project=&type=&since=&until= — every row, newest first   (owner, admin)
 GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id
 GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)
 POST   /api/v1/heartbeats                    202, token auth only
 GET    /api/v1/presence                      GET /api/v1/capacity
+GET    /api/v1/permissions                   every org and project action: label, scope, which roles hold it, conditions; and the caller's own grants (viewer+; LAI-885) — answered under the organisation's grants (LAI-958)
 GET    /api/v1/unlisted                      ?user=&since=  — work logged outside any project
 POST   /api/v1/unlisted/:id/promote          body { project_slug, title, priority? } → creates a task
 DELETE /api/v1/unlisted/:id                  dismiss
@@ -2432,7 +2538,12 @@ the same three optional fields (`parent_task_id`, `due_on`, `planned_start`)
 beside `discovered_from`. Both take `external_ref`, an outside id (§4.5) —
 anything of another shape is `422` on that field, and one another task of the
 project holds is `422` with `details: { field: 'external_ref', reason:
-'taken', external_ref, task }` — and `PATCH` clears it with `null` (LAI-780). `?parent=<id>` on the list returns that task's
+'taken', external_ref, task }` — and `PATCH` clears it with `null` (LAI-780).
+An `assignee_id` on either must name somebody who can read the project on their
+own authority — `project.read`, so an org Owner or Admin with no membership row
+counts — or it is `422` with `details: { field: 'assignee_id', reason:
+'not_on_project', assignee_id }`; MCP's `assignee` reaches the same check
+(LAI-962). `?parent=<id>` on the list returns that task's
 subtasks only, and pages with `cursor` like any other filter (D-066).
 
 **A slim list: `?fields=slim`** (LAI-795). The task list answers every field
@@ -2491,7 +2602,7 @@ on a Monday, 00:00 UTC:
 | `projects` | a membership, a task assigned to them, or a review decision in the window; each with their role, open tasks, accepted and reviewed |
 | `review` | their moves of a task that is not theirs — someone else's, or nobody's (LAI-751) — into a Done status (`accepted`) or from Review to an earlier status (`sent_back`), and the most recent of them, `assignee` null for an unassigned task; `per_week` (both, per week of the window), `last_30_days` (decisions in the thirty days to now) and `time_to_decide` — the median from the task's latest entry into Review to the decision (LAI-750). **The entry** is the latest move into a Review status from another category — a move between two Review statuses is not one — or, when every logged move before it stays inside Review, the task's creation, because it was created there (LAI-751). A decision made from outside Review, or one whose entry the log cannot place, is counted as `unmeasured` |
 | `ratings` | §4.21, newest first; the first is the current one. At most 50, with `ratings_total` beside it (LAI-746) |
-| `activity_sharing` | D-079's two switches for this person, `{ org_enabled, enabled }` — the organisation's Developer insights and their own sharing — whatever their kind, so the Activity card is drawn in its final shape before `GET /people/:id/activity` answers (LAI-751). Whether their pushed and local work may be shown, never a count of it |
+| `activity_sharing` | `{ org_enabled, enabled }` — since D-102 (amended) both are the organisation's Developer insights (`enabled` kept for older clients) — whatever their kind, so the Activity card is drawn in its final shape before `GET /people/:id/activity` answers (LAI-751). Whether their pushed and local work may be shown, never a count of it |
 | `current_work` | their tasks in progress, oldest start first, and in review, longest waiting first — each review task with `review_since`, its entry into Review by `review`'s rule, null when the log cannot say (LAI-751); each list at most 50, with `in_progress_total` and `in_review_total` |
 | `delivery` | `accepted_per_week` and `accepted`: moves of their tasks into a Done status (D-077) by someone else; `sent_back`: Review to an earlier status by someone else; `reopened`: Done back into work; `cycle_time`: p50/p75 of `completed_at − started_at` for their tasks done in the window, the unstarted ones counted as `unmeasured` |
 | `agents` | their usable tokens with the agent each last connected as (D-076), most recently used first, at most 50 with `tokens_total`; which agents are online now (§9.3) — never where; and `writes`: their `activity` rows made through a token in the window, grouped by the agent that token last connected as, most first, with `writes_total` — revoked tokens' writes included (LAI-750) |
@@ -2520,7 +2631,7 @@ reaches SSE, an MCP tool or an export (§4.21).
   a web session and their agents' with their tokens, by **UTC day**. Always
   there: they are what the board already records (D-078 item 4).
 - **`github`, `local_commits`, `prompts` and `sessions` are `null`** — not
-  zeros — **unless both switches are on for that person now** (§4.1, §4.2); then
+  zeros — **unless the organisation's Developer insights is on now** (§4.2; D-102 amended); then
   they sum every machine of theirs (§4.23), and `github` counts distinct pushed
   keys by the day first reported (§4.24). Local days are the reporting
   machine's own dates, aligned with the board's by date.
@@ -2536,11 +2647,16 @@ reaches SSE, an MCP tool or an export (§4.21).
 **The developer's side of D-079** (LAI-751), the contract the collector
 (`laika activity`, LAI-752) is written against:
 
-- `GET /me/activity-sharing` answers `{ org_enabled, enabled, scope,
-  min_sync_interval_s }` — `600`, how often a collector may sync — to a
-  session or any token of theirs, so a collector asks before it sends. Asked
+- `GET /me/activity-sharing` answers `{ org_enabled, enabled,
+  person_can_opt_out, scope, min_sync_interval_s }` — `600`, how often a
+  collector may sync — to a session or any token of theirs, so a collector
+  asks before it sends. **Collection is the organisation's** (D-102 amended,
+  LAI-963): `enabled` is whether this person's local activity is collected,
+  and equals `org_enabled`; `person_can_opt_out` is always `false`. `enabled`
+  is kept so a collector written against D-079's two switches syncs exactly
+  when it may. Asked
   with `?collector_id=<uuid v4>` by a caller who may send (not a `read_only`
-  token) with both switches on, it adds `usage_days_elsewhere`: the days, back
+  token) with collection on, it adds `usage_days_elsewhere`: the days, back
   to today − 32 in UTC, that **other** collectors of this person hold token
   rows for — dates only, never a count (D-084, LAI-769 review 1). The preview
   below is session only, so this is how a collector learns which days of a
@@ -2550,10 +2666,14 @@ reaches SSE, an MCP tool or an export (§4.21).
   LAI-780). A key in a branch name counts for a task only when its
   prefix is one of them, so `release-2026` or `gpt-5` is never taken for a
   task; the collector keeps the last answer.
-- `PUT /me/activity-sharing` takes `{ enabled?, scope? }` — `scope` is
-  `agent-repos` or `laika-repos` — from a **web session only** and answers the
-  same shape. Off stops collection at once and deletes nothing. No `activity`
-  row: §4.8 has no verb for it.
+- `PUT /me/activity-sharing` takes `{ scope? }` — `agent-repos` or
+  `laika-repos` — from a **web session only** and answers the same shape. A
+  body carrying `enabled`, on or off, whatever the organisation's switch, is
+  refused `403` with `details: { reason: "organisation_controlled",
+  org_enabled }` and writes nothing, its `scope` included: the switch is no
+  longer the person's (D-102 amended). `enabled` stays in the body's schema so
+  that is the answer an old client gets, not `422`'s unknown field. No
+  `activity` row: §4.8 has no verb for it.
 - `PUT /me/local-activity` takes one machine's snapshot of its last days, at
   most **16 KB**:
   `{ "v": 1, "collector_id": "<uuid v4>", "tz": "<IANA zone>", "days": [{
@@ -2648,7 +2768,7 @@ reaches SSE, an MCP tool or an export (§4.21).
   read is kept. It ties the session's agent minutes to cards the way its
   tokens are tied.
 - Refusals, in §6.3's envelope with the contract's reason in `details.reason`:
-  `403 local_activity_off` when either switch is off (asked before the body is
+  `403 local_activity_off` when the organisation's switch is off (asked before the body is
   judged); `422 day_out_of_range` when `days` is empty, longer than 14, repeats
   a day, or holds a day that is not a date within *today − 14* to *today + 1*
   in `tz` — for a look-back, *today − 400* to *today + 1*, for a usage report
@@ -2660,8 +2780,8 @@ reaches SSE, an MCP tool or an export (§4.21).
   token (per user for a session; §6.3). A collector that
   is refused `local_activity_off` stops and asks again after 24 hours.
 - **Which commits count** (settled with the collector, LAI-752; D-080):
-  `commits_local` covers only commits the developer authored **after they
-  turned sharing on**, and **merge commits are counted in neither** it nor the
+  `commits_local` covers only commits the developer authored **after their
+  machine was connected**, and **merge commits are counted in neither** it nor the
   keys. A snapshot's `pushed_keys` follow the same start; **once per
   repository a look-back** adds keys for the developer's pushed commits of up
   to the last 365 days before it — only those no snapshot can count, so a
@@ -2707,7 +2827,7 @@ reaches SSE, an MCP tool or an export (§4.21).
   too — **whatever the switches say**: what was kept before sharing was
   turned off is still theirs to see. `DELETE /me/local-activity` removes every
   local row, pushed key and token row of theirs, `204`. Both **web session
-  only**: an agent must not read back or erase what its person consented to.
+  only**: an agent must not read back or erase what is held about its person.
 
 **Token usage, read back** (D-084, LAI-769) — §4.33's rows, for the Usage page
 and the profile's Tokens card:
@@ -2959,8 +3079,8 @@ the Max plan?*), not in tokens, so the number is always the developer's.
 parameter names anybody else.
 
 - **The switches.** `GET /me/time-settings` answers `{ org_mode, draft_my_time,
-  drafting, min_sync_interval_s, signal_times, folder_names }` to a session or
-  any token of the person's — a collector asks before it sends.
+  drafting, min_sync_interval_s, signal_times, folder_names, breaks }` to a
+  session or any token of the person's — a collector asks before it sends.
   `signal_times: true` says the board takes a block's `at` (D-096), and
   `folder_names: true` that it takes a block's `folder` and `branch` (D-098
   item 6); a collector sends each only then, so a board that predates it is
@@ -2970,7 +3090,16 @@ parameter names anybody else.
   or `drafts` — from an owner or admin on a web session (`org.time.set`);
   leaving `drafts` deletes everybody's unconfirmed drafts. A confirmed draft
   stays, its evidence blanked (§4.45), and entries are never deleted by a
-  switch.
+  switch. `PUT /org/time/breaks` takes `{ breaks: [{ label, start, end, days
+  }] }` from the same people on the same terms (`org.time.set`, D-101): at
+  most eight windows, a label of 1–40 characters, `start` and `end` as
+  `HH:MM` with start before end, `days` a non-empty list of unique ISO days
+  1–7, and no two windows overlapping on a day they share; a broken rule is
+  `422` with an issue naming the window (`breaks.N…`). An empty list clears
+  the schedule; with no §4.45 row yet one is made with `mode: off`. It answers
+  the caller's time settings, and writes nothing else — no draft, entry or
+  break. `breaks` in the answer above is that schedule, `[]` when there is
+  none: wall-clock windows on each person's own day, display only.
 - **A collector's upload.** `PUT /me/time-drafts` takes `{ v: 1, collector_id,
   tz, days: [{ day, blocks: [{ start, end, minutes, task, signals, at?,
   folder?, branch? }] }] }` —
@@ -4426,13 +4555,13 @@ anything missing sends the task back.
   actions by them and by their agents; arrow keys move between days and each
   day reads as text; stats — active days, current and longest streak, busiest
   weekday, pushed vs local — computed on the client. It says plainly when the
-  organisation's switch is off (with a link to Organisation), when the person
-  has not turned on sharing, and when nothing has arrived yet. Context only:
+  organisation's switch is off (with a link to Organisation) and when nothing
+  has arrived yet. Context only:
   nothing on it feeds the rating. A **Tokens** card follows it, full width
   (D-084, LAI-769): tokens over 12 weeks, **at least**, with cache reads and
   the share tied to a task beside it; a bar per week; their top agents and
-  models; agents with *no token data* named; and plainly when either switch is
-  off or nothing has arrived. Reached from a person's name on Organisation, a Capacity card or a
+  models; agents with *no token data* named; and plainly when the
+  organisation's switch is off or nothing has arrived. Reached from a person's name on Organisation, a Capacity card or a
   Dashboard *Contributors* row (LAI-817) — links for owners and admins, plain text for everyone
   else.
 
@@ -4722,16 +4851,17 @@ absent. The only outbound calls Laika ever makes are to the org's configured LLM
 provider (§12), configured SMTP, and a webhook source it was configured to talk
 to. Any task proposing otherwise is rejected at review.
 
-**Local activity counts are inbound, opt-in twice, and counts only** (D-079).
-A developer's own machine sends per-day counts to their own board — only while
-the organisation's *Developer insights* and their own *Share local activity*
-are both on — and nothing leaves the deployment. Never prompt text, file
+**Local activity counts are inbound, the organisation's choice, and counts
+only** (D-079; D-102 amended). A developer's connected machine sends per-day
+counts to their own board — only while the organisation's *Developer insights*
+is on, and the developer is told so wherever they look (Developer access,
+Connect, the CLI) — and nothing leaves the deployment. Never prompt text, file
 names, repository names or paths, remote URLs, branch names, commit messages,
 author emails or raw commit ids. No call to GitHub is added.
 
 **OpenTelemetry is inbound too, and metrics only** (LAI-773, D-087). A
 developer may point their own Claude Code's metrics at their own board, with
-their own token, under the same two switches; Laika keeps the counts of the
+their own token, under the same switch; Laika keeps the counts of the
 metrics §6.4 names and a one-way key of the session, drops every other
 attribute, and has no route for logs or traces. **Prices are a dated table in
 the code**, edited by an admin; nothing fetches one. The plan-limit forecast is

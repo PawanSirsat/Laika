@@ -343,7 +343,7 @@ export interface TipLine {
 export function dayLines(day: HeatDay): TipLine[] {
   const lines: TipLine[] = [];
   if (day.github === null) {
-    lines.push({ source: 'github', n: null, text: 'pushed commits not shared' });
+    lines.push({ source: 'github', n: null, text: 'pushed commits not collected' });
   } else {
     lines.push({
       source: 'github',
@@ -353,7 +353,7 @@ export function dayLines(day: HeatDay): TipLine[] {
   }
 
   if (day.local === null) {
-    lines.push({ source: 'local', n: null, text: 'local activity not shared' });
+    lines.push({ source: 'local', n: null, text: 'local activity not collected' });
   } else {
     lines.push({
       source: 'local',

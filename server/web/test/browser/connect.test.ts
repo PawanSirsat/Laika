@@ -70,6 +70,7 @@ function stub(over: Partial<ApiStub> = {}): ApiStub {
     '/api/v1/me/activity-sharing': {
       org_enabled: false,
       enabled: false,
+      person_can_opt_out: false,
       scope: 'agent-repos',
       min_sync_interval_s: 600,
     },

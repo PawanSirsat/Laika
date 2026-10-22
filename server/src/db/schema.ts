@@ -32,6 +32,7 @@ import {
   ACTOR_KINDS,
   AI_PROVIDERS,
   BUDGET_SCOPES,
+  CAPABILITIES,
   CLAIM_CONFIDENCES,
   CREATED_VIA,
   CHECK_OUTCOMES,
@@ -39,6 +40,7 @@ import {
   EVIDENCE_KINDS,
   EVIDENCE_STATES,
   GITHUB_CHECK_KINDS,
+  GRANTABLE_ROLES,
   LOCAL_ACTIVITY_SCOPES,
   MEETING_REVIEW_STATUSES,
   ORG_ROLES,
@@ -56,6 +58,7 @@ import {
   TOKEN_SCOPES,
   TOKEN_SESSION_SOURCES,
   AGENT_TIME_KINDS,
+  ANALYTICS_VIEW_KINDS,
   TIME_DRAFT_SOURCES,
   TIME_DRAFT_STATES,
   TIME_ENTRY_SOURCES,
@@ -121,10 +124,10 @@ export const users = sqliteTable(
      */
     profileKind: text('profile_kind', { enum: PROFILE_KINDS }).notNull().default('builder'),
     /**
-     * The developer's own consent to send local activity counts (§4.1, D-079,
-     * LAI-751). 0 by default. Set only by the person, from a web session —
-     * never by an admin and never with a token, because a token is how an
-     * agent acts and an agent must not be able to switch this on.
+     * What was the developer's own consent to send local activity counts
+     * (§4.1, D-079, LAI-751). 0 by default. **No longer read and no longer
+     * set** (D-102 amended, LAI-963): the organisation's Developer insights
+     * decides collection alone. The column keeps what each person last chose.
      */
     shareLocalActivity: integer('share_local_activity').notNull().default(0),
     /** Which repositories their collector counts in (§4.1, D-079). */
@@ -191,10 +194,10 @@ export const orgs = sqliteTable(
      */
     presenceEnabled: integer('presence_enabled').notNull().default(1),
     /**
-     * The org's half of D-079's two switches (§4.2, LAI-751). Default **0**.
-     * With it off nothing local is collected for anybody, whatever each
-     * developer has chosen; with it on, only the developers who turned on
-     * sharing themselves send anything.
+     * The organisation's Developer insights (§4.2, LAI-751). Default **0**.
+     * Since D-102 (amended) it decides alone: off, nothing local is collected
+     * for anybody; on, every connected machine's activity is collected,
+     * whatever its developer once chose.
      */
     developerInsights: integer('developer_insights').notNull().default(0),
     aiProvider: text('ai_provider', { enum: AI_PROVIDERS }),
@@ -2153,6 +2156,12 @@ export const orgTimeSettings = sqliteTable(
      * The month close that sets it is LAI-789's.
      */
     closedThrough: text('closed_through'),
+    /**
+     * The organisation's break schedule (D-101, LAI-955): a JSON list of
+     * `{ label, start, end, days }`, wall-clock `HH:MM` with no zone, or null
+     * — no schedule. Display only: nothing that drafts or counts time reads it.
+     */
+    breaks: text('breaks'),
     updatedAt,
   },
   () => [check('org_time_settings_mode_check', oneOf('mode', TIME_MODES))],
@@ -2163,7 +2172,7 @@ export const orgTimeSettings = sqliteTable(
 /**
  * A person's own *Draft my time* (§4.46, D-088 item 5, LAI-787). **No row is
  * off.** Set only by the person, from a web session — never by an admin and
- * never with a token, as `share_local_activity` is.
+ * never with a token, as `share_local_activity` was until D-102 (amended).
  */
 export const userTimeSettings = sqliteTable(
   'user_time_settings',
@@ -2510,6 +2519,73 @@ export const agentTimeBuckets = sqliteTable(
   ],
 );
 
+// --------------------------------------------------- §4.58 org_role_grants
+
+/**
+ * What the owner has granted each org role (§4.58, D-102 rule 6, LAI-958):
+ * one row per org × grantable role × capability. **No row is the default** —
+ * admin on, member and viewer off — so an organisation whose owner never
+ * opened the screen has no rows and behaves as it always did. Written whole
+ * by `PUT /org/permissions`; read onto every actor by `loadActor`.
+ */
+export const orgRoleGrants = sqliteTable(
+  'org_role_grants',
+  {
+    orgId: text('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    orgRole: text('org_role', { enum: GRANTABLE_ROLES }).notNull(),
+    capability: text('capability', { enum: CAPABILITIES }).notNull(),
+    granted: integer('granted').notNull(),
+    setBy: text('set_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.orgId, t.orgRole, t.capability] }),
+    index('org_role_grants_set_by_idx').on(t.setBy),
+    check('org_role_grants_org_role_check', oneOf('org_role', GRANTABLE_ROLES)),
+    check('org_role_grants_capability_check', oneOf('capability', CAPABILITIES)),
+    check('org_role_grants_granted_check', sql.raw('granted IN (0, 1)')),
+  ],
+);
+
+// ---------------------------------------------- §4.59 analytics_views
+
+/**
+ * Who looked at a person's analytics, and when (§4.59, D-102 rule 3, D-088
+ * item 7, LAI-957). One row per read an owner or admin made of somebody
+ * else's day, local activity, heatmap or tokens, written in the same
+ * transaction as the read, so a read nobody can see does not happen. The
+ * person reads their own rows on `GET /me/analytics-views`; kept 400 days
+ * (§11.6).
+ */
+export const analyticsViews = sqliteTable(
+  'analytics_views',
+  {
+    id: text('id').primaryKey(),
+    viewerId: text('viewer_id')
+      .notNull()
+      .references(() => users.id),
+    subjectId: text('subject_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: ANALYTICS_VIEW_KINDS }).notNull(),
+    /** `YYYY-MM-DD` — the day read, for My day; `null` for a range. */
+    day: text('day'),
+    viewedAt: integer('viewed_at').notNull(),
+  },
+  (t) => [
+    // The person's list, newest first.
+    index('analytics_views_subject_idx').on(t.subjectId, t.viewedAt, t.id),
+    index('analytics_views_viewer_idx').on(t.viewerId),
+    // §11.6's retention deletes by age alone.
+    index('analytics_views_viewed_at_idx').on(t.viewedAt),
+    check('analytics_views_kind_check', oneOf('kind', ANALYTICS_VIEW_KINDS)),
+  ],
+);
+
 // ------------------------------------------------- §4.51 token_session_tasks
 
 /**
@@ -2702,3 +2778,4 @@ export type TimeDraft = typeof timeDrafts.$inferSelect;
 export type TimeEntry = typeof timeEntries.$inferSelect;
 export type TimeEntryRevision = typeof timeEntryRevisions.$inferSelect;
 export type TimeBreak = typeof timeBreaks.$inferSelect;
+export type OrgRoleGrant = typeof orgRoleGrants.$inferSelect;

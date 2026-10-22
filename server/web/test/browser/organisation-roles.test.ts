@@ -36,7 +36,7 @@ import {
   until,
 } from './harness.ts';
 import { capacityPerson } from './capacity-org.ts';
-import { offered, optionsOf, pick, valueOf } from './dropdown.ts';
+import { optionsOf, pick } from './dropdown.ts';
 
 const user = (id: string, name: string, org_role: string, is_active = true) => ({
   id,
@@ -261,61 +261,39 @@ void describe('role management', () => {
     }
   });
 
-  void test('an owner may grant Owner; an admin may not, and it is missing not greyed', async () => {
-    for (const [role, expected] of [
-      ['owner', true],
-      ['admin', false],
-    ] as const) {
-      const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u3', role) });
-      try {
-        await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
-
-        // Tomas is a member, so no option is pinned by his own current role.
-        const select = h.page
-          .locator('.org-person', { hasText: 'Tomas Nel' })
-          .getByRole('combobox');
-        const { labels: options, disabled } = await optionsOf(select);
-
-        assert.ok(options.includes('Member'), `${role}: Member is not offered`);
-        assert.equal(
-          options.includes('Owner'),
-          expected,
-          `${role}: Owner should ${expected ? '' : 'not '}be offered, saw ${options.join(', ')}`,
-        );
-        assert.equal(disabled, 0, `${role}: an option is greyed rather than absent`);
-      } finally {
-        await h.close();
-      }
+  void test('the owner may grant any role, Owner included, with nothing greyed', async () => {
+    const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    try {
+      await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
+      const select = h.page.locator('.org-person', { hasText: 'Tomas Nel' }).getByRole('combobox');
+      const { labels: options, disabled } = await optionsOf(select);
+      assert.deepEqual(options, ['Owner', 'Admin', 'Member', 'Viewer']);
+      assert.equal(disabled, 0, 'an option is greyed rather than absent');
+    } finally {
+      await h.close();
     }
   });
 
   /**
-   * An Admin cannot *grant* Owner and can still be looking at one. A control
-   * whose value matches none of its options shows nothing (a `<select>`
-   * rendered blank; the dropdown shows its placeholder), so the row would show
-   * an Owner as having no role at all.
+   * D-102 rule 5 (LAI-958): `user.set_role` is the owner's alone, so an Admin
+   * has **no** role control — absent, not disabled — and reads every role,
+   * an Owner's included, as text. Deactivate stays theirs.
    */
-  void test("an admin sees an owner's actual role even though they cannot grant it", async () => {
+  void test('an admin reads roles as text, an Owner included, and keeps Deactivate', async () => {
     const h = await open('/organisation?tab=people', { ...BASE, '/api/v1/me': me('u3', 'admin') });
     try {
-      await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
-      // An owner's row is an owner's to change (LAI-893, the design): the
-      // admin reads *Owner* as text and is offered no control on it.
-      const row = h.page.locator('.org-person', { hasText: 'Ada Lovelace' });
+      await h.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('.org-person').count()) === 4);
+      assert.equal(await h.page.locator('.org-person [role="combobox"]').count(), 0);
+      const ada = h.page.locator('.org-person', { hasText: 'Ada Lovelace' });
+      assert.equal(await ada.locator('.org-person-role').innerText(), 'Owner');
       assert.equal(
-        await row.locator('[role="combobox"]').count(),
-        0,
-        'an admin is offered an owner',
+        await h.page
+          .locator('.org-person', { hasText: 'Tomas Nel' })
+          .locator('button.org-deactivate')
+          .count(),
+        1,
       );
-      assert.equal(
-        (await row.locator('.org-person-role').innerText()).trim(),
-        'Owner',
-        "the owner's row does not say Owner",
-      );
-      // …while the others still have theirs, so the absence is the claim.
-      const other = h.page.locator('.org-person', { hasText: 'Tomas Nel' }).getByRole('combobox');
-      assert.equal(await valueOf(other), 'member');
-      assert.ok(!(await offered(other)).includes('Owner'), 'an admin is offered Owner to grant');
     } finally {
       await h.close();
     }
@@ -618,15 +596,18 @@ void describe('a refusal', () => {
 
     const h = await open('/organisation?tab=people', {
       ...BASE,
-      '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u3': refuse(409, 'conflict', MESSAGE),
+      // A second owner (LAI-958: only an owner has a role picker), demoting the
+      // first — the server, not the client, knows whether that one is the last.
+      '/api/v1/me': me('u3', 'owner'),
+      '/api/v1/users/u1': refuse(409, 'conflict', MESSAGE),
     });
     try {
       await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
 
-      // Whatever the server refuses, the page shows its sentence and no other.
+      // The client did not pre-empt it: demoting the last owner is offered, and
+      // whatever the server refuses, the page shows its sentence and no other.
       const select = h.page
-        .locator('.org-person', { hasText: 'Priya Raman' })
+        .locator('.org-person', { hasText: 'Ada Lovelace' })
         .getByRole('combobox');
       await pick(select, 'member');
 

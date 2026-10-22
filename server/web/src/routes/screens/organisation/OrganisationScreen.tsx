@@ -5,7 +5,8 @@ import { useProjects } from '../../../api/use-projects.ts';
 import type { PageTab } from '../../page-tabs.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
-import { canManageOrg, ORG_ROLES } from '../../../api/invites.ts';
+import { canManageOrg } from '../../../api/invites.ts';
+import { invitableRoles } from '../invite-roles.ts';
 import { getOrg, updateOrg, type Org } from '../../../api/org.ts';
 import { revokeUserToken, type TokenView } from '../../../api/tokens.ts';
 import { Switch } from '../../../components/Switch.tsx';
@@ -17,20 +18,31 @@ import { useTheme } from '../../../theme/use-theme.ts';
 import { useOrganisation } from './use-organisation.ts';
 import { GithubWebhookSection } from './GithubWebhookSection.tsx';
 import { ModelPricesSection } from './ModelPricesSection.tsx';
+import { BreakScheduleFact } from './BreakScheduleFact.tsx';
 import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
 import { PeopleTab } from './PeopleTab.tsx';
 import { InviteDialog } from './InviteDialog.tsx';
+import { RolesPermissionsSection } from './RolesPermissionsSection.tsx';
+import { OrgActivity } from './OrgActivity.tsx';
+import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import type { MeProfile } from '../../../api/me.ts';
-import type { OrgRole } from '../../../api/invites.ts';
 import './organisation.css';
 
 export interface OrganisationScreenProps {
   readonly me: MeProfile;
   /** The tabs this reader is offered — Security is an owner's or an admin's. */
   readonly tabs: readonly PageTab[];
-  /** The open tab: `overview`, `people`, `integrations` or `security`. */
+  /** The open tab: `overview`, `people`, `roles`, `integrations`, `security` or `activity`. */
   readonly tab: string;
+  /**
+   * The address named `tab` and this reader may not open it — the not-allowed
+   * state, rather than another tab (LAI-951, `refusedTab`).
+   */
+  readonly refused?: boolean;
+  /** The address's query — Activity keeps its filters there (LAI-951). */
+  readonly params: URLSearchParams;
+  readonly setParams: (next: URLSearchParams) => void;
   readonly onNavigate: (to: string) => void;
 }
 
@@ -41,23 +53,6 @@ function createdLabel(ms: number): string {
     month: 'short',
     year: 'numeric',
   });
-}
-
-/**
- * The roles this actor may **grant**, from §3.1's *"(not to Owner)"* caveat.
- *
- * An Admin may set any role except Owner — `can()` reads `targetOrgRole` for
- * exactly this, and without the caveat an Admin promotes themselves and the
- * Owner/Admin distinction is decorative. So Owner is **absent** from an Admin's
- * dropdown rather than present and answering `403`.
- *
- * **This is a mirror of a rule the server states, not a rule invented here.**
- * The last-owner invariant is the other kind — it depends on how many active
- * Owners exist, which this screen cannot know — and that one is left to the
- * server and shown verbatim when it fires.
- */
-function grantableRoles(actorRole: string): readonly OrgRole[] {
-  return actorRole === 'owner' ? ORG_ROLES : ORG_ROLES.filter((r) => r !== 'owner');
 }
 
 /**
@@ -90,10 +85,30 @@ function grantableRoles(actorRole: string): readonly OrgRole[] {
  * **Security** — everyone's tokens, for an owner or an admin. Nothing moved
  * out of reach and no section gained or lost a control. What the reference
  * showed that Laika has no data for — a plan badge, an admin activity log, a
- * permission matrix, a token lifetime limit, a danger zone — is not drawn.
+ * token lifetime limit, a danger zone — is not drawn.
+ *
+ * **Roles & permissions** joined them in LAI-950, once `GET /permissions`
+ * served the matrix `can()` computes: it was on that list until then.
+ *
+ * **Activity** (LAI-951) is the admin activity log that reference showed, now
+ * that `GET /activity/history` serves it: an owner's or an admin's.
  */
-export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationScreenProps) {
+export function OrganisationScreen({
+  me,
+  tabs,
+  tab,
+  refused = false,
+  params,
+  setParams,
+  onNavigate,
+}: OrganisationScreenProps) {
   const canManage = canManageOrg(me.org_role);
+  /**
+   * Only the owner changes an org role (D-102 rule 5, LAI-958: `user.set_role`
+   * is owner-locked). An admin keeps deactivating and inviting, and sees each
+   * role as text. A mirror of the server's rule, not one invented here.
+   */
+  const canChangeRoles = me.org_role === 'owner';
   const { state, reload } = useOrganisation(canManage);
   const projects = useProjects();
   /** *Invite people* (LAI-893): the dialog, and what its field opens with. */
@@ -260,7 +275,6 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
 
   const now = Date.now();
   const active = state.people.filter((p) => p.is_active).length;
-  const grantable = grantableRoles(me.org_role);
 
   const people = `${String(state.people.length)}${state.truncated ? '+' : ''} ${
     state.people.length === 1 && !state.truncated ? 'person' : 'people'
@@ -376,12 +390,12 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
                         <span>{org.developer_insights ? 'on' : 'off'}</span>
                       )}
                       <span className="org-fact-note" id="org-insights-note">
-                        When on, each developer can choose — for themselves, on Connect — to share
-                        daily counts from their own machine: prompts to agents, agent sessions, and
-                        commits pushed or not yet pushed. They appear on that person’s profile as
-                        activity. Nothing is collected from anyone who has not turned it on, and
-                        never prompt text, file or repository names, branches or commit messages.
-                        Off stops it for everyone at once.
+                        When on, every connected machine’s local activity is collected: daily counts
+                        of prompts to agents, agent sessions, and commits pushed or not yet pushed,
+                        and agents’ token counts. They appear on that person’s profile as activity,
+                        and each person is told so on Developer access and Connect — never prompt
+                        text, file or repository names, branches or commit messages. Off stops it
+                        for everyone at once.
                       </span>
                       {insightsError !== undefined && (
                         <span className="org-fact-error" role="alert">
@@ -395,6 +409,11 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
                       entries only, or drafts too. Controls for an owner or admin, a
                       word for everyone else, as Developer insights above. */}
                   <TimeModeFact canManage={canManage} />
+
+                  {/* D-101 (LAI-956): the organisation's breaks, drawn on every
+                      person's My day. Editable by whoever sets Time; read by
+                      everyone else, and absent when there are none. */}
+                  <BreakScheduleFact canManage={canManage} />
                 </dl>
               </section>
             )}
@@ -414,7 +433,7 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
               invitesError={state.invitesError}
               capacity={state.capacity}
               canManage={canManage}
-              grantable={grantable}
+              canChangeRoles={canChangeRoles}
               changing={changing}
               roleError={roleError}
               onChange={change}
@@ -431,6 +450,7 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
             {invite !== undefined && (
               <InviteDialog
                 orgName={org?.name ?? 'this organisation'}
+                roles={invitableRoles(me.org_role)}
                 initialText={invite.text}
                 onClose={() => {
                   setInvite(undefined);
@@ -440,6 +460,14 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
               />
             )}
           </>
+        )}
+
+        {tab === 'roles' && (
+          <RolesPermissionsSection
+            canChangeRoles={canChangeRoles}
+            projects={projects.projects}
+            onNavigate={onNavigate}
+          />
         )}
 
         {tab === 'integrations' && (
@@ -513,6 +541,22 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
             )}
           </>
         )}
+
+        {tab === 'activity' &&
+          (refused ? (
+            <PermissionDenied
+              resource="the organisation’s activity"
+              requiredRole="admin"
+              scope="organisation"
+            />
+          ) : (
+            <OrgActivity
+              people={state.people}
+              params={params}
+              setParams={setParams}
+              onNavigate={onNavigate}
+            />
+          ))}
 
         {tab === 'security' && canManage && (
           <section className="org-card" aria-labelledby="org-security">

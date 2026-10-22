@@ -1,10 +1,11 @@
-import type { MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
+import type { MyDay, TimeDraft, TimeEntry, TimeSettings } from '../../../api/time.ts';
 import { addDays, atClock } from './my-day-derive.ts';
 
 /**
  * My day's lane timeline (LAI-831, the owner's "Laika App v2" design): the
  * day's blocks along the hours, the **gaps** between them, the breaks the
- * person waved away, and the arithmetic of moving an edge.
+ * person waved away, the organisation's scheduled breaks (D-101), and the
+ * arithmetic of moving an edge.
  *
  * **Minutes after the day's midnight**, in the day's own zone (`view.tz`), are
  * the unit throughout; the page turns them back into instants only to write.
@@ -92,6 +93,14 @@ export interface BreakSpan extends Span {
   readonly id: string;
 }
 
+/**
+ * One window of the organisation's break schedule on the day (D-101): display
+ * only — never time, never compared with what the person did in it.
+ */
+export interface ScheduledSpan extends Span {
+  readonly label: string;
+}
+
 /** A signal's time is known to this many minutes and no finer (D-096). */
 export const SIGNAL_MINUTES = 5;
 
@@ -126,6 +135,8 @@ export interface DayLine {
   readonly untimed: number;
   readonly gaps: readonly Span[];
   readonly breaks: readonly BreakSpan[];
+  /** The organisation's breaks whose weekday is this day's, in order. */
+  readonly scheduled: readonly ScheduledSpan[];
   /**
    * The SIGNALS lane (LAI-834): the day's prompts, then its commits, each in
    * the five minutes it fell in — only what the server sent (D-096).
@@ -177,11 +188,16 @@ export function clip(span: Span, cuts: readonly Span[]): Span[] {
 
 /**
  * The gaps of a day: stretches of at least {@link GAP_MIN} minutes **between**
- * placed blocks, less every break. Nothing before the first block and nothing
+ * placed blocks, less every break — the person's own and the organisation's
+ * scheduled ones alike (D-101). Nothing before the first block and nothing
  * after the last counts — the day starts when the person did and ends with its
  * last block; an evening is not hours unaccounted (review round 1).
  */
-export function gapsOf(blocks: readonly Span[], breaks: readonly Span[]): Span[] {
+export function gapsOf(
+  blocks: readonly Span[],
+  breaks: readonly Span[],
+  scheduled: readonly Span[] = [],
+): Span[] {
   const sorted = [...blocks].sort((a, b) => a.start - b.start);
   const gaps: Span[] = [];
   let reach: number | undefined;
@@ -191,14 +207,19 @@ export function gapsOf(blocks: readonly Span[], breaks: readonly Span[]): Span[]
     }
     reach = reach === undefined ? block.end : Math.max(reach, block.end);
   }
+  const cuts = [...breaks, ...scheduled];
   return gaps
-    .flatMap((gap) => clip(gap, breaks))
+    .flatMap((gap) => clip(gap, cuts))
     .filter((piece) => piece.end - piece.start >= GAP_MIN);
 }
+
+/** `2026-10-20` → its ISO weekday, 1 (Monday) to 7 (Sunday). */
+const isoDay = (day: string): number => ((new Date(`${day}T00:00:00Z`).getUTCDay() + 6) % 7) + 1;
 
 export function dayLine(
   view: Pick<MyDay, 'day' | 'tz' | 'today' | 'drafts' | 'entries' | 'breaks' | 'signal_times'> & {
     readonly agent?: Pick<MyDay['agent'], 'lane'>;
+    readonly settings?: Pick<TimeSettings, 'breaks'>;
   },
   nowMs: number,
 ): DayLine {
@@ -243,8 +264,24 @@ export function dayLine(
     start: minute(b.started_at),
     end: minute(b.ended_at),
   }));
+  // Each wall-clock window on this weekday, at the instant it names in the
+  // day's own zone (D-101 item 2) — on a clock-change day, where it really falls.
+  const weekday = isoDay(view.day);
+  const scheduled: ScheduledSpan[] = [];
+  if (midnight !== undefined) {
+    for (const w of view.settings?.breaks ?? []) {
+      if (!w.days.includes(weekday)) continue;
+      const a = atClock(view.day, w.start, view.tz);
+      const b = atClock(view.day, w.end, view.tz);
+      if (a === undefined || b === undefined) continue;
+      const start = minute(a);
+      const end = minute(b);
+      if (end > start) scheduled.push({ label: w.label, start, end });
+    }
+    scheduled.sort((x, y) => x.start - y.start);
+  }
   const now = view.day === view.today ? minute(nowMs) : undefined;
-  const gaps = gapsOf(blocks, breaks);
+  const gaps = gapsOf(blocks, breaks, scheduled);
 
   // Placed as sent, never clamped onto the day: one that is not on it is left out.
   const signals: SignalMark[] = [];
@@ -281,9 +318,9 @@ export function dayLine(
     }
   }
 
-  const starts = [...blocks, ...breaks, ...signals, ...agents].map((s) => s.start);
+  const starts = [...blocks, ...breaks, ...scheduled, ...signals, ...agents].map((s) => s.start);
   const ends = [
-    ...[...blocks, ...breaks, ...agents].map((s) => s.end),
+    ...[...blocks, ...breaks, ...scheduled, ...agents].map((s) => s.end),
     ...signals.map((s) => s.start + SIGNAL_MINUTES),
   ];
   if (now !== undefined) {
@@ -305,7 +342,21 @@ export function dayLine(
     // A wall hour the clock skips names the same instant as the next one: once.
     if (hours.at(-1)?.minute !== m) hours.push({ hour, minute: m });
   }
-  return { midnight, length, blocks, untimed, gaps, breaks, signals, agents, now, from, to, hours };
+  return {
+    midnight,
+    length,
+    blocks,
+    untimed,
+    gaps,
+    breaks,
+    scheduled,
+    signals,
+    agents,
+    now,
+    from,
+    to,
+    hours,
+  };
 }
 
 /** Where `minute` sits along an axis from hour `from` to hour `to`, as a percentage. */
@@ -581,19 +632,22 @@ export interface Scale {
  * first thing placed on the day and after the last — or after now, on today,
  * so the now line always stands on an open stretch — each only when it is
  * {@link FOLD_MIN} minutes or longer. A day with nothing placed folds
- * nothing: there is nothing to make room for.
+ * nothing: there is nothing to make room for. The organisation's scheduled
+ * breaks (D-101) are never folded away, but alone they place nothing.
  */
 export function idleEnds(
-  line: Pick<DayLine, 'blocks' | 'breaks' | 'signals' | 'agents' | 'now' | 'from' | 'to'>,
+  line: Pick<
+    DayLine,
+    'blocks' | 'breaks' | 'scheduled' | 'signals' | 'agents' | 'now' | 'from' | 'to'
+  >,
 ): Span[] {
-  const starts = [...line.blocks, ...line.breaks, ...line.signals, ...line.agents].map(
-    (s) => s.start,
-  );
+  const placed = [...line.blocks, ...line.breaks, ...line.signals, ...line.agents];
+  if (placed.length === 0) return [];
+  const starts = [...placed, ...line.scheduled].map((s) => s.start);
   const ends = [
-    ...[...line.blocks, ...line.breaks, ...line.agents].map((s) => s.end),
+    ...[...line.blocks, ...line.breaks, ...line.scheduled, ...line.agents].map((s) => s.end),
     ...line.signals.map((s) => s.start + SIGNAL_MINUTES),
   ];
-  if (starts.length === 0) return [];
   const a = line.from * 60;
   const b = line.to * 60;
   const first = Math.max(a, Math.min(...starts));

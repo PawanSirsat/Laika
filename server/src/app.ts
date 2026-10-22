@@ -20,6 +20,7 @@ import { createSecurityHeaders } from './http/middleware/security-headers.ts';
 import { buildContentSecurityPolicy, extractStyleHashes } from './http/security-headers.ts';
 import { healthRoutes } from './http/routes/health.ts';
 import { meRoutes, meWatchRoutes } from './http/routes/me.ts';
+import { permissionsRoutes } from './http/routes/permissions.ts';
 import { localActivityRoutes } from './http/routes/local-activity.ts';
 import { usageRoutes, userUsageRoutes } from './http/routes/usage.ts';
 import { meUsageRoutes } from './http/routes/me-usage.ts';
@@ -30,7 +31,7 @@ import {
   sprintBudgetRoutes,
   taskBudgetRoutes,
 } from './http/routes/token-budgets.ts';
-import { peopleRoutes } from './http/routes/people.ts';
+import { meAnalyticsViewRoutes, peopleRoutes } from './http/routes/people.ts';
 import { setupRoutes } from './http/routes/setup.ts';
 import { projectRoutes } from './http/routes/projects.ts';
 import { projectStatusRoutes } from './http/routes/project-statuses.ts';
@@ -294,6 +295,9 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   // fallback must never shadow an API path.
   app.route(`${API_BASE}/health`, healthRoutes(options.version));
   app.route(`${API_BASE}/me`, meRoutes());
+  // Who may do what, as `can()` answers it (LAI-885). Beside `/me`: it reads
+  // only the actor auth already resolved, and takes no `db` of its own.
+  app.route(`${API_BASE}/permissions`, permissionsRoutes());
 
   if (db !== undefined) {
     app.route(`${API_BASE}/me`, meWatchRoutes({ db }));
@@ -335,8 +339,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/projects`, projectBudgetRoutes({ db }));
     app.route(`${API_BASE}/sprints`, sprintBudgetRoutes({ db }));
     app.route(`${API_BASE}/tasks`, taskBudgetRoutes({ db }));
-    // The profile's heatmap (D-079, LAI-751), by day.
+    // The profile's heatmap (D-079, LAI-751), by day; a person's day and local
+    // activity read for them, and who looked (D-102, LAI-957).
     app.route(`${API_BASE}/people`, peopleRoutes({ db }));
+    app.route(`${API_BASE}/me`, meAnalyticsViewRoutes({ db }));
     app.route(`${API_BASE}/users`, userRoutes({ db }));
     app.route(
       `${API_BASE}/org`,

@@ -122,14 +122,22 @@ describe('POST /api/v1/invites (AC1)', () => {
     expect((await body(res)).error).toMatchObject({ code: 'forbidden' });
   });
 
-  it('refuses an Admin inviting an Owner (§3.1, "not to Owner")', async () => {
-    const res = await post(
-      '/api/v1/invites',
-      { email: 'escalate@example.test', org_role: 'owner' },
-      adminCookie,
-    );
+  it('refuses an Admin inviting an Owner or an Admin (§3.1, "as member or viewer")', async () => {
+    // D-102 rule 5 (LAI-958): an invite is a role grant with a delay on it,
+    // and only the owner grants admin.
+    for (const org_role of ['owner', 'admin']) {
+      const res = await post(
+        '/api/v1/invites',
+        { email: `escalate-${org_role}@example.test`, org_role },
+        adminCookie,
+      );
 
-    expect(res.status).toBe(403);
+      expect(res.status, org_role).toBe(403);
+      expect((await body(res)).error).toMatchObject({
+        code: 'forbidden',
+        details: { action: 'user.invite' },
+      });
+    }
   });
 
   it('rejects unknown body fields rather than dropping them', async () => {
@@ -248,7 +256,7 @@ describe('POST /api/v1/invites/accept (AC3, AC6)', () => {
     const created = await body(
       await post(
         '/api/v1/invites',
-        { email: 'joiner@example.test', org_role: 'admin' },
+        { email: 'joiner@example.test', org_role: 'viewer' },
         adminCookie,
       ),
     );
@@ -262,21 +270,21 @@ describe('POST /api/v1/invites/accept (AC3, AC6)', () => {
     expect(res.status, await res.clone().text()).toBe(201);
     expect(await body(res)).toMatchObject({
       email: 'joiner@example.test',
-      org_role: 'admin',
+      org_role: 'viewer',
       project_id: null,
     });
 
     // The role really landed, and the cookie really works.
     const row = db.select().from(users).where(eq(users.email, 'joiner@example.test')).get();
-    expect(row?.orgRole).toBe('admin');
+    expect(row?.orgRole).toBe('viewer');
 
     const me = await get('/api/v1/me', cookieFrom(res));
     expect(me.status).toBe(200);
-    expect(await body(me)).toMatchObject({ id: row?.id, org_role: 'admin' });
+    expect(await body(me)).toMatchObject({ id: row?.id, org_role: 'viewer' });
   });
 
   it('refuses the replay — the second attempt gets 403, not a second account', async () => {
-    const created = await body(await post('/api/v1/invites', { org_role: 'admin' }, adminCookie));
+    const created = await body(await post('/api/v1/invites', { org_role: 'viewer' }, adminCookie));
 
     const first = await post('/api/v1/invites/accept', {
       token: created.token,
@@ -304,7 +312,7 @@ describe('POST /api/v1/invites/accept (AC3, AC6)', () => {
     // The hole this closes: `/auth/sign-up/email` takes an `inviteToken` and is
     // public, so an accept endpoint that consumed invites on its own would leave
     // the token spendable for ever by anyone posting straight to better-auth.
-    const created = await body(await post('/api/v1/invites', { org_role: 'admin' }, adminCookie));
+    const created = await body(await post('/api/v1/invites', { org_role: 'viewer' }, adminCookie));
 
     const first = await signUp(h.app, {
       email: 'direct1@example.test',
@@ -314,7 +322,7 @@ describe('POST /api/v1/invites/accept (AC3, AC6)', () => {
     expect(first.status).toBe(200);
     expect(
       db.select().from(users).where(eq(users.email, 'direct1@example.test')).get()?.orgRole,
-    ).toBe('admin');
+    ).toBe('viewer');
 
     const second = await signUp(h.app, {
       email: 'direct2@example.test',
