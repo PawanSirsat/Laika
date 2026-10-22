@@ -6,8 +6,9 @@ assignee: shell
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-22T16:22:02+05:30
+finished: 2026-10-22T16:40:35+05:30
 ---
 
 ## Goal
@@ -22,17 +23,17 @@ switch exists only inside the Connect wizard's Optional section
 
 ## Acceptance criteria
 
-- [ ] The Developer access page (`/developer`) shows a "Share local activity"
+- [x] The Developer access page (`/developer`) shows a "Share local activity"
       section outside the wizard, reusing the existing `ShareActivity`
       component and its endpoints (`GET/PUT /me/activity-sharing`) — no new
       endpoint, no second implementation.
-- [ ] When the organisation switch is off, the section says so in one line;
+- [x] When the organisation switch is off, the section says so in one line;
       for an owner or admin it links straight to Organisation → Overview's
       Developer insights switch; for others it names who can turn it on.
-- [ ] When it is on, every signed-in role can flip their own switch there.
-- [ ] The wizard keeps working as today.
-- [ ] Tests for both org states and for owner vs member wording.
-- [ ] Light and dark, laptop and phone. Gate: `pnpm test`, `pnpm lint`,
+- [x] When it is on, every signed-in role can flip their own switch there.
+- [x] The wizard keeps working as today.
+- [x] Tests for both org states and for owner vs member wording.
+- [x] Light and dark, laptop and phone. Gate: `pnpm test`, `pnpm lint`,
       `pnpm format` each exit 0.
 
 ## Renumbered
