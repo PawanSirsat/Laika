@@ -71,9 +71,9 @@ type Load =
   | { readonly kind: 'ready'; readonly activity: PeopleActivity };
 
 /** Why GitHub and Local are not drawn at all, if they are not. */
-type Off = 'org_off' | 'not_sharing' | null;
+type Off = 'org_off' | null;
 
-/** GitHub's and Local's line when both switches are on and nothing has come. */
+/** GitHub's and Local's line when Developer insights are on and nothing has come. */
 const NOTHING_YET = 'nothing from their machines yet';
 
 const RANGES: readonly { value: ActivityRange; label: string; caption: string }[] = [
@@ -130,10 +130,13 @@ function todayUtc(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/**
+ * Only the organisation's switch hides GitHub and Local: since D-102 (amended,
+ * LAI-963) collection follows it alone and the server sends `enabled` equal to
+ * it, so `enabled` is not read here — a stale personal answer decides nothing.
+ */
 function offReason(sharing: ActivitySwitches): Off {
-  if (!sharing.org_enabled) return 'org_off';
-  if (!sharing.enabled) return 'not_sharing';
-  return null;
+  return sharing.org_enabled ? null : 'org_off';
 }
 
 /**
@@ -278,7 +281,7 @@ interface HeatmapProps {
   readonly loading: boolean;
   readonly design: HeatDesign;
   readonly off: Off;
-  /** Both switches on, and nothing from their machines in the range. */
+  /** Developer insights on, and nothing from their machines in the range. */
   readonly noData: boolean;
   readonly name: string;
   readonly canManageOrg: boolean;
@@ -397,7 +400,7 @@ function Heatmap({ days, loading, design, off, noData, name, canManageOrg }: Hea
   const total = (source: HeatSource): string =>
     loading ? '\u00a0' : noData && source !== 'board' ? NOTHING_YET : totalText(source, totals);
   const waiting = noData
-    ? `Sharing is on, and nothing has arrived from ${name}’s machines yet — they connect it with laika activity on.`
+    ? `Developer insights are on, and nothing has arrived from ${name}’s machines yet — they connect it with laika activity on.`
     : undefined;
 
   const style = { '--hm-cols': String(layout.columns) } as CSSProperties;
@@ -407,7 +410,7 @@ function Heatmap({ days, loading, design, off, noData, name, canManageOrg }: Hea
     <div className="hm-body">
       <Stats stats={stats} loading={loading} shown={shown} />
 
-      {off !== null && <OffPanel off={off} name={name} canManageOrg={canManageOrg} />}
+      {off !== null && <OffPanel off={off} canManageOrg={canManageOrg} />}
 
       <div className="hm-figure">
         <div className="hm-scroll" ref={scroll}>
@@ -712,11 +715,9 @@ function OrgLink({ canManageOrg }: { readonly canManageOrg: boolean }) {
  */
 function OffPanel({
   off,
-  name,
   canManageOrg,
 }: {
   readonly off: Exclude<Off, null>;
-  readonly name: string;
   readonly canManageOrg: boolean;
 }) {
   return (
@@ -725,16 +726,10 @@ function OffPanel({
         <i className="hm-key" data-source="github" data-off="true" />
         <i className="hm-key" data-source="local" data-off="true" />
       </span>
-      {off === 'org_off' ? (
-        <span>
-          <b>GitHub and Local are not shown:</b> Developer insights are off for this organisation.{' '}
-          <OrgLink canManageOrg={canManageOrg} />
-        </span>
-      ) : (
-        <span>
-          <b>GitHub and Local are not shown:</b> {name} hasn’t turned on sharing, and only they can.
-        </span>
-      )}
+      <span>
+        <b>GitHub and Local are not shown:</b> Developer insights are off for this organisation.{' '}
+        <OrgLink canManageOrg={canManageOrg} />
+      </span>
     </p>
   );
 }
@@ -856,7 +851,7 @@ function Stats({
             : pushed === null
               ? shown
                 ? 'no commits'
-                : 'not shared'
+                : 'not collected'
               : `${String(100 - pushed)}% local only`
         }
         hint="Of their commits counted in this range, the share already on a remote; the rest exist only on their machine."

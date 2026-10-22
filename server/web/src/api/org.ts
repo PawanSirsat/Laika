@@ -59,9 +59,10 @@ export interface Org {
    */
   readonly presence_enabled: boolean;
   /**
-   * D-079's organisation switch (LAI-751): whether developers who choose to
-   * may share local activity counts. Readable by everyone, for presence's
-   * reason; writable by Admin up.
+   * D-079's organisation switch (LAI-751): whether local activity counts are
+   * collected — since D-102 (amended, LAI-963) from every connected machine,
+   * with no personal switch. Readable by everyone, for presence's reason;
+   * writable by Admin up.
    */
   readonly developer_insights: boolean;
   readonly created_at: number;

@@ -434,7 +434,7 @@ function UsageDetail({
       {nothing && (
         <EmptyState
           headline="No token usage in this range"
-          body="Tokens arrive from developers who share local activity (Connect → Share local activity, then laika activity on), at their next sync."
+          body="With Developer insights on, tokens arrive from every connected machine (laika activity on) at its next sync."
         />
       )}
 

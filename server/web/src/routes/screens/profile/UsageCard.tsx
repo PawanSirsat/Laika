@@ -201,11 +201,6 @@ function emptyLine(usage: PersonUsage, name: string, self: boolean): string {
   if (!usage.sharing.org_enabled) {
     return 'Developer insights are off for this organisation, so no tokens are counted.';
   }
-  if (!usage.sharing.enabled) {
-    return self
-      ? 'Turn on Share local activity on Connect, then run laika activity on — token counts come with it.'
-      : `${name} has not turned on sharing, so no tokens arrive from their machines.`;
-  }
   return self
     ? 'Nothing has arrived from your machines yet: tokens go with the next laika activity sync.'
     : `Nothing has arrived from ${name}’s machines yet.`;
