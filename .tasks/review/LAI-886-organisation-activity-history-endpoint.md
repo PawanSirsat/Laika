@@ -36,7 +36,9 @@ activity is readable per project; org-wide rows exist behind
 - [x] **Named cross-area edit (D-033):** the endpoint's row in SPEC §6.4
       Endpoints only.
 - [x] No new `ACTIVITY_TYPES` verb (that would make this three-owner).
-- [x] Gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0 (repo root).
+- [ ] Gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0 (repo root).
+      **Not met alone (§4.4 step 1):** lint 0, format 0, test 1 on the one
+      `server/web` assertion quoted below; LAI-889 turns it green.
 
 ## Notes
 
