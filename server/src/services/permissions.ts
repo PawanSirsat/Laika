@@ -67,6 +67,7 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'org.permissions.manage': 'Set what each role may do',
   'user.deactivate': 'Deactivate user',
   'user.sign_out': 'Sign a person out everywhere',
+  'user.reset_password': 'Issue a password-reset link',
   'org.read': 'View the organisation',
   'presence.read': 'Presence and capacity',
   'capacity.read': 'Presence and capacity',
@@ -183,6 +184,11 @@ export const ACTION_CONDITIONS: Readonly<Partial<Record<CatalogueAction, ActionC
     text: 'Themselves only',
     holds: (userId) => ({ targetUserId: userId }),
     fails: () => ({ targetUserId: SOMEONE_ELSE }),
+  },
+  'user.reset_password': {
+    text: 'Not for the Owner',
+    holds: () => ({ targetOrgRole: 'member' }),
+    fails: () => ({ targetOrgRole: 'owner' }),
   },
   'profile.rate': {
     text: 'Anyone but themselves',

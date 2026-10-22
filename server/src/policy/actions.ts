@@ -24,6 +24,8 @@ export const ORG_ACTIONS = [
   // D-104 item 3 (LAI-981): end every session of a person without
   // deactivating them.
   'user.sign_out',
+  // D-104 item 4 (LAI-983): issue somebody a one-time password-reset link.
+  'user.reset_password',
   'org.read',
   'presence.read',
   'capacity.read',
@@ -251,4 +253,7 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // LAI-982): an agent's token that could transfer ownership could give the
   // whole organisation away in its person's name.
   'org.transfer_ownership',
+  // **A reset link is the person's account** (D-104 item 4, LAI-983): an
+  // agent's token that could mint one could sign in as anybody it named.
+  'user.reset_password',
 ]);

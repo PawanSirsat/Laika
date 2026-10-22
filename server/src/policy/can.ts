@@ -296,6 +296,16 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'user.sign_out':
       return resource.targetUserId === actor.userId || granted(actor, action);
 
+    // | Issue a password-reset link | ✓ (session only) | ✓ (session only, not for the owner) | — | — |
+    //
+    // D-104 item 4 (LAI-983): a link for the owner is the owner's account, so
+    // only the owner issues one — the `user.invite` shape, on the target's
+    // role. Carried by `manage_people` until LAI-985 gives it *Deactivate
+    // people and reset access*.
+    case 'user.reset_password':
+      if (!granted(actor, action)) return false;
+      return orgRole === 'owner' || resource.targetOrgRole !== 'owner';
+
     // | View the organisation | ✓ | ✓ | ✓ | ✓ |
     //
     // Deliberately **not** folded into `member_list.read`, which was the obvious

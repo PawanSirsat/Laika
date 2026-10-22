@@ -42,6 +42,7 @@ import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { userRoutes } from './http/routes/users.ts';
 import { profileRoutes } from './http/routes/profiles.ts';
 import { inviteRoutes } from './http/routes/invites.ts';
+import { passwordResetRoutes } from './http/routes/password-resets.ts';
 import { activityRoutes, projectActivityRoutes } from './http/routes/activity.ts';
 import { commentRoutes, taskCommentRoutes } from './http/routes/comments.ts';
 import { eventRoutes } from './http/routes/events.ts';
@@ -113,6 +114,11 @@ export interface CreateAppOptions {
    * and proving it against `Date.now()` would mean sleeping for the delay.
    */
   signInThrottle?: SignInThrottle;
+  /**
+   * The same rules for password-reset links (LAI-983), as its own instance so
+   * a burst of bad links never spends a sign-in's free attempts.
+   */
+  passwordResetThrottle?: SignInThrottle;
   logger?: Logger;
   /**
    * Auth and the database. Optional so the HTTP-level tests of LAI-002 can build
@@ -343,7 +349,7 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // activity read for them, and who looked (D-102, LAI-957).
     app.route(`${API_BASE}/people`, peopleRoutes({ db }));
     app.route(`${API_BASE}/me`, meAnalyticsViewRoutes({ db }));
-    app.route(`${API_BASE}/users`, userRoutes({ db }));
+    app.route(`${API_BASE}/users`, userRoutes({ db, publicUrl: options.publicUrl }));
     app.route(
       `${API_BASE}/org`,
       orgRoutes({ db, serverSecret: options.serverSecret ?? '', publicUrl: options.publicUrl }),
@@ -359,6 +365,15 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(
       `${API_BASE}/invites`,
       inviteRoutes({ db, auth: options.auth, publicUrl: options.publicUrl }),
+    );
+    // Public, like `/invites/accept`: the link's token is the authority (LAI-983).
+    app.route(
+      `${API_BASE}/password-resets`,
+      passwordResetRoutes({
+        db,
+        auth: options.auth,
+        throttle: options.passwordResetThrottle ?? new SignInThrottle(),
+      }),
     );
     app.route(`${API_BASE}/projects`, projectRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/tasks`, taskCommentRoutes({ db }));

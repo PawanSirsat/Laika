@@ -470,7 +470,7 @@ function revokeEveryToken(db: Db, userId: string, now: number): string[] {
  * it cannot misread. What the rows knew about when the person was last seen is
  * kept on `users.last_seen_at` first, so the deletion does not erase it.
  */
-function endEverySession(db: Db, userId: string): number {
+export function endEverySession(db: Db, userId: string): number {
   const seen = liveSeenAt(db, [userId]).get(userId);
   if (seen !== undefined) {
     const row = requireUser(db, userId);

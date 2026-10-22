@@ -111,6 +111,8 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'user.deactivate': 'YYNN',
   // LAI-981: anyone signs themselves out; somebody else is the deactivate grant's.
   'user.sign_out': 'YYCC',
+  // LAI-983: an admin issues a link for anybody but the owner.
+  'user.reset_password': 'YCNN',
   'org.read': 'YYYY',
   'presence.read': 'YYYY',
   'capacity.read': 'YYYY',

@@ -68,6 +68,8 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Deactivate user', ['user.deactivate']],
   // D-104 item 3 (LAI-981).
   ['Sign a person out everywhere', ['user.sign_out']],
+  // D-104 item 4 (LAI-983).
+  ['Issue a password-reset link', ['user.reset_password']],
   ['View member list', ['member_list.read']],
   ['Join a public project', ['project.join_public']],
   [
@@ -364,6 +366,23 @@ const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
     {
       why: 'The role may, and only on a signed-in web session: any personal access token is refused, whatever its scope or project list (D-078, LAI-743). A profile carries private ratings and a token is how an agent acts.',
       verify: (action: Action, role: string) => verifySessionOnly(action, role),
+    },
+  ],
+  [
+    'session only, not for the owner',
+    {
+      why: 'As "session only", and an Admin may not issue a link for the Owner: a reset link for the owner is the owner\'s account (D-104 item 4, LAI-983).',
+      verify: (action: Action, role: string) => {
+        verifySessionOnly(action, role);
+
+        const actor = orgActor(role.toLowerCase() as OrgRole);
+        expect(can(actor, action, { targetOrgRole: 'member' }), 'for a member').toBe(true);
+        expect(can(actor, action, { targetOrgRole: 'owner' }), 'for the owner').toBe(false);
+        expect(
+          can(orgActor('owner'), action, { targetOrgRole: 'owner' }),
+          'owner, for the owner',
+        ).toBe(true);
+      },
     },
   ],
   [

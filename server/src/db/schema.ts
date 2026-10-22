@@ -2594,6 +2594,43 @@ export const analyticsViews = sqliteTable(
   ],
 );
 
+// ---------------------------------------------- §4.60 password_resets
+
+/**
+ * One-time password-reset links an admin issued for somebody (§4.60, D-104
+ * item 4, LAI-983). Laika sends no email, so a person who forgot their
+ * password had no way back; now whoever holds *Manage people* issues a link,
+ * shown once, and hands it over.
+ *
+ * **The rows are the log** — who issued a link for whom, when, and whether it
+ * was used — as `analytics_views` is for reads (§4.59): §4.8 gains no verb.
+ * Only the SHA-256 of the token is stored, as for invites (§4.11).
+ */
+export const passwordResets = sqliteTable(
+  'password_resets',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id),
+    expiresAt: integer('expires_at').notNull(),
+    /** When the link set a password. Set once; a used link never works again. */
+    usedAt: integer('used_at'),
+    /** When a newer link for the same person replaced this one unused. */
+    revokedAt: integer('revoked_at'),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('password_resets_token_hash_unique').on(t.tokenHash),
+    index('password_resets_user_id_idx').on(t.userId),
+    index('password_resets_created_by_idx').on(t.createdBy),
+  ],
+);
+
 // ------------------------------------------------- §4.51 token_session_tasks
 
 /**
@@ -2787,3 +2824,4 @@ export type TimeEntry = typeof timeEntries.$inferSelect;
 export type TimeEntryRevision = typeof timeEntryRevisions.$inferSelect;
 export type TimeBreak = typeof timeBreaks.$inferSelect;
 export type OrgRoleGrant = typeof orgRoleGrants.$inferSelect;
+export type PasswordReset = typeof passwordResets.$inferSelect;
