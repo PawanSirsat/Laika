@@ -659,7 +659,7 @@ void describe('a builder’s profile', () => {
       });
       try {
         const empty = (await section(h.page, 'tokens')).locator('.prof-empty');
-        await until(async () => /Nothing has arrived/.test(await empty.innerText()));
+        await until(async () => (await empty.innerText()).includes('Nothing has arrived'));
         const text = await empty.innerText();
         assert.match(text, line);
         assert.doesNotMatch(text, /Share local activity|turned on sharing|Turn on/);
