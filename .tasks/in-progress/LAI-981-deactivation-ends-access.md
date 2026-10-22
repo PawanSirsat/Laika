@@ -2,11 +2,12 @@
 id: LAI-981
 title: 'Deactivating someone leaves their tokens and sessions alive, and nobody can sign a person out'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T17:13:42Z
 ---
 
 ## Acceptance criteria (D-104 items 3, plus reads the web needs)
