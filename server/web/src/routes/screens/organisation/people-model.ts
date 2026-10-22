@@ -120,7 +120,8 @@ export function peopleCounts(people: readonly OrgUser[], query: PeopleQuery): Pe
 
 /** The *Last sign-in* cell: `Never signed in`, `3 h ago`, `14 Oct, 9:12 AM`. */
 export function lastSeenLabel(at: number | null, now: number): TimeLabel {
-  if (at === null) return { text: 'Never signed in', full: 'Never signed in', iso: '', fresh: false };
+  if (at === null)
+    return { text: 'Never signed in', full: 'Never signed in', iso: '', fresh: false };
   return timeLabel(at, now);
 }
 
