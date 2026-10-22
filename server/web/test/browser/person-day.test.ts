@@ -309,11 +309,55 @@ void describe('who looked at my time (D-102 rule 3)', () => {
       assert.match(rows[0] ?? '', /Ada Lovelace looked at your day for/);
       assert.match(rows[0] ?? '', /2:02 PM today/);
       assert.match(rows[1] ?? '', /Ada Lovelace looked at your shared local activity/);
+      // Who can look, in the words the rest of My day uses (LAI-968).
+      assert.match(
+        await h.page.locator('[data-who-looked]').innerText(),
+        /can be read by owners, admins and anyone the owner lets see everyone’s analytics/,
+      );
       assert.ok(h.calls.some((c) => c.path === '/api/v1/me/analytics-views'));
     } finally {
       await h.close();
     }
   });
+});
+
+void describe('who reads drafts is said on the person’s own day (D-102, LAI-968)', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    void test(`${theme}: the header names who reads drafts, and its link brings who looked into view`, async () => {
+      const h = await openAt(
+        `/my-day?day=${TODAY}`,
+        stub({ ...GRACE }, ['local_activity.read_own']),
+      );
+      try {
+        await h.page.locator('[data-looked]').first().waitFor({ timeout: 20_000 });
+        await setTheme(h.page, theme);
+        const lock = h.page.locator('.screen-page .myday-lock');
+        assert.match(await lock.innerText(), /Drafts: you, owners and admins/);
+        assert.match(
+          (await lock.getAttribute('title')) ?? '',
+          /owners, admins and anyone the owner lets see everyone’s analytics/,
+        );
+        const link = lock.getByRole('link', { name: 'who looked' });
+        assert.equal(await link.count(), 1);
+        // Readable in both themes: a colour, and not the page's own background.
+        const ink = await link.evaluate((el) => getComputedStyle(el).color);
+        const ground = await h.page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+        assert.notEqual(ink, ground);
+        await link.click();
+        const looked = h.page.locator('[data-who-looked]');
+        await until(async () => {
+          const box = await looked.boundingBox();
+          return box !== null && box.y >= 0 && box.y < 900;
+        });
+        const box = await looked.boundingBox();
+        assert.ok(box !== null && box.y >= 0 && box.y < 900, `who looked is at ${String(box?.y)}`);
+        assert.deepEqual(writes(h), []);
+        await shoot(h.page, `drafts-readers-${theme}-1440`);
+      } finally {
+        await h.close();
+      }
+    });
+  }
 });
 
 void describe('a member’s profile: Day and Hours (LAI-959)', () => {

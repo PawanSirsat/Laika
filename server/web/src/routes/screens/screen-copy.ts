@@ -1,3 +1,5 @@
+import { DRAFT_READERS } from './my-day/my-day-derive.ts';
+
 /**
  * The empty state each screen shows before its endpoints exist.
  *
@@ -86,7 +88,8 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
   },
   '/my-day': {
     headline: 'Nothing on this day yet',
-    body: 'Your day is drafted on your own machine by the Laika collector when Draft my time is on, and only you see it until you confirm it. Add a meeting or a call by hand at any time.',
+    // Who reads drafts, in My day's own words (D-102, LAI-968).
+    body: `Your day is drafted on your own machine by the Laika collector when Draft my time is on. Until you confirm it, it can be read by you and by ${DRAFT_READERS} — and you can see who looked. Add a meeting or a call by hand at any time.`,
   },
   /*
    * Developer access (LAI-796): connecting an agent and your tokens, on one

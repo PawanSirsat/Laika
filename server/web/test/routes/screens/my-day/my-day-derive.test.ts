@@ -23,6 +23,7 @@ import {
   evidenceLine,
   isDay,
   minutesUnderstood,
+  DRAFT_READERS,
   MODE_NOTES,
   parseMinutes,
   rangeLabel,
@@ -310,6 +311,67 @@ void describe('the organisation’s setting', () => {
     assert.equal(canAddTime(settings('drafts')), true);
     assert.match(MODE_NOTES.off, /nothing can be added/);
     assert.match(MODE_NOTES.manual, /Nothing is drafted/);
+  });
+});
+
+/*
+ * D-102 rule 1, amended: an owner and an admin — and whoever the owner grants
+ * *See everyone's analytics* — read a person's drafts, and the person sees who
+ * looked (rule 3). Nothing on My day or about Time may still say drafts are
+ * the person's alone (LAI-968).
+ */
+void describe('who reads a person’s drafts is said truthfully (D-102, LAI-968)', () => {
+  void test('the Drafts note names who reads them and that the person sees who looked', () => {
+    assert.doesNotMatch(MODE_NOTES.drafts, /ever seen by anyone else/);
+    assert.match(
+      MODE_NOTES.drafts,
+      /owners, admins and anyone the owner lets see everyone’s analytics/,
+    );
+    assert.match(MODE_NOTES.drafts, /see who looked/);
+    // The person's own switch is still theirs (D-088 item 5; D-102 amended
+    // only local-activity collection), so the first sentence stands.
+    assert.match(MODE_NOTES.drafts, /^Each person may also choose to have their day drafted/);
+    assert.ok(MODE_NOTES.drafts.includes(DRAFT_READERS));
+  });
+
+  void test('My day’s empty-state copy says the same', async () => {
+    const { SCREEN_COPY } = await import('../../../../src/routes/screens/screen-copy.ts');
+    const body = SCREEN_COPY['/my-day']?.body ?? '';
+    assert.ok(body.length > 0, 'no copy for /my-day');
+    assert.doesNotMatch(body, /only you see it/i);
+    assert.ok(body.includes(DRAFT_READERS), body);
+    assert.match(body, /see who looked/);
+  });
+
+  void test('no source of My day or of Time still calls drafts private — a census, not a sample', async () => {
+    const root = new URL('../../../../src/', import.meta.url);
+    const dir = new URL('routes/screens/my-day/', root);
+    const files = [
+      ...(await readdir(dir)).filter((f) => /\.(ts|tsx)$/.test(f)).map((f) => new URL(f, dir)),
+      new URL('routes/screens/screen-copy.ts', root),
+      new URL('routes/screens/organisation/TimeModeFact.tsx', root),
+      new URL('api/time.ts', root),
+    ];
+    // The positive control: the walk reached the screen and the note's home.
+    assert.ok(files.some((f) => f.pathname.endsWith('/MyDayScreen.tsx')));
+    assert.ok(files.length > 20, `only ${String(files.length)} files`);
+    const claims = [
+      /only you see (it|drafts|them)/i,
+      /only they read it/i,
+      /ever seen by anyone else/i,
+      /only time any(one|body) else can (ever )?see/i,
+      /only the reader sees them/i,
+      /no admin view/i,
+    ];
+    const found: string[] = [];
+    for (const file of files) {
+      const text = await readFile(file, 'utf8');
+      for (const claim of claims) {
+        if (claim.test(text))
+          found.push(`${file.pathname.split('/src/')[1] ?? ''}: ${String(claim)}`);
+      }
+    }
+    assert.deepEqual(found, []);
   });
 });
 
