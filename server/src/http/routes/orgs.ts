@@ -53,6 +53,8 @@ const OrgPermissionsBody = strictObject({
 });
 
 const OrgPatchBody = strictObject({
+  // D-104 item 7 (LAI-984): trimmed, so a name of spaces is refused as empty.
+  name: z.string().trim().min(1).max(80).optional(),
   presence_enabled: z.boolean().optional(),
   developer_insights: z.boolean().optional(),
   ai_provider: z.enum(AI_PROVIDERS).nullable().optional(),

@@ -7,6 +7,7 @@ import {
   listProjectActivity,
   type ListActivityOptions,
 } from '../../services/activity.ts';
+import { type HistoryCsv, orgHistoryCsv } from '../../services/activity-csv.ts';
 import { type EventView } from '../../services/events.ts';
 import { projectMetrics } from '../../services/metrics.ts';
 import { type AppEnv } from '../context.ts';
@@ -74,6 +75,29 @@ function pageOf(rows: EventView[], limit: number): Page<EventView> {
   return buildPage(rows, limit, (row) => ({ sortKey: row.created_at, id: String(row.seq) }));
 }
 
+/** The file, pulled a line at a time, so a large history is never one string in memory. */
+function csvResponse(csv: HistoryCsv): Response {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const next = csv.lines.next();
+      if (next.done === true) controller.close();
+      else controller.enqueue(encoder.encode(next.value));
+    },
+    cancel() {
+      csv.lines.return(undefined);
+    },
+  });
+
+  return new Response(body, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${csv.filename}"`,
+    },
+  });
+}
+
 export interface ActivityRouteOptions {
   db: Db;
 }
@@ -137,26 +161,43 @@ export function activityRoutes(options: ActivityRouteOptions): Hono<AppEnv> {
   /**
    * `GET /api/v1/activity/history` — every row, owner and admin only (LAI-886).
    * `?actor=&project=&type=&since=&until=`, all optional, all combinable.
+   *
+   * `?format=csv` (LAI-984) answers the same filters as one file, streamed,
+   * rather than a page: so `limit` and `cursor` are refused beside it instead
+   * of being silently ignored. `json` is the default and may be spelled out.
    */
   app.get('/history', (c) => {
     const actor = requireActor(c);
     const query = c.req.query();
+    const format = present(query.format) ?? 'json';
+
+    if (format !== 'json' && format !== 'csv') {
+      throw ApiError.badRequest('format must be json or csv', { format });
+    }
+
+    const filters = {
+      actor: present(query.actor),
+      project: present(query.project),
+      type: present(query.type),
+      since: parseSince(query.since),
+      until: parseSince(query.until, 'until'),
+    };
+
+    if (format === 'csv') {
+      for (const name of ['limit', 'cursor'] as const) {
+        if (query[name] !== undefined) {
+          throw ApiError.badRequest(`${name} does not apply to format=csv, which is every row`, {
+            [name]: query[name],
+          });
+        }
+      }
+
+      return csvResponse(orgHistoryCsv(db, actor, filters));
+    }
+
     const { limit, cursor } = parsePageQuery(query);
 
-    return c.json(
-      pageOf(
-        listOrgHistory(db, actor, {
-          limit,
-          cursor,
-          actor: present(query.actor),
-          project: present(query.project),
-          type: present(query.type),
-          since: parseSince(query.since),
-          until: parseSince(query.until, 'until'),
-        }),
-        limit,
-      ),
-    );
+    return c.json(pageOf(listOrgHistory(db, actor, { limit, cursor, ...filters }), limit));
   });
 
   return app;

@@ -736,6 +736,17 @@ export function listMembers(db: Db, actor: ResolvedActor, slug: string): MemberV
  * and refusing the row is better than storing one that gets silently downgraded
  * on every read.
  */
+/**
+ * The name a membership row carries beside the id (LAI-984), so the history
+ * export reads "who" without a join to a person who may since be renamed.
+ * Null only for an id with no row, which the callers have already refused.
+ */
+function userNameOf(db: Db, userId: string): string | null {
+  return (
+    db.select({ name: users.name }).from(users).where(eq(users.id, userId)).get()?.name ?? null
+  );
+}
+
 function assertRoleAllowedForUser(db: Db, userId: string, role: ProjectRole): void {
   const target = db
     .select({ orgRole: users.orgRole })
@@ -783,7 +794,7 @@ export function addMember(
     projectId: row.id,
     ...activityActor(actor),
     type: 'member.added',
-    payload: { user_id: userId, role },
+    payload: { user_id: userId, user_name: userNameOf(db, userId), role },
     now,
   });
 
@@ -815,7 +826,7 @@ export function changeMemberRole(
     projectId: row.id,
     ...activityActor(actor),
     type: 'member.role_changed',
-    payload: { user_id: userId, from: existing.role, to: role },
+    payload: { user_id: userId, user_name: userNameOf(db, userId), from: existing.role, to: role },
     now,
   });
 
@@ -845,7 +856,7 @@ export function removeMember(
     projectId: row.id,
     ...activityActor(actor),
     type: 'member.removed',
-    payload: { user_id: userId, role: existing.role },
+    payload: { user_id: userId, user_name: userNameOf(db, userId), role: existing.role },
     now,
   });
 
@@ -927,7 +938,7 @@ export function joinPublicProject(
     projectId: row.id,
     ...activityActor(actor),
     type: 'member.added',
-    payload: { user_id: actor.userId, role, via: 'join' },
+    payload: { user_id: actor.userId, user_name: userNameOf(db, actor.userId), role, via: 'join' },
     now,
   });
 

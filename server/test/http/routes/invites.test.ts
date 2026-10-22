@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type Db } from '../../../src/db/client.ts';
 import { ERROR_STATUS } from '../../../src/errors.ts';
-import { users } from '../../../src/db/schema.ts';
+import { invites, users } from '../../../src/db/schema.ts';
 import { acceptUrlFor } from '../../../src/http/routes/invites.ts';
 import { INVITE_TTL_MS } from '../../../src/services/invites.ts';
 import {
@@ -551,5 +551,201 @@ describe('acceptUrlFor', () => {
     expect(acceptUrlFor('https://laika.example', 'a&b=c')).toBe(
       'https://laika.example/invite?token=a%26b%3Dc',
     );
+  });
+});
+
+describe('an invite’s expiry is chosen, and an invite can be re-issued (LAI-984)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  async function create(extra: Record<string, unknown> = {}): Promise<Record<string, never>> {
+    const res = await post(
+      '/api/v1/invites',
+      { email: 'new@example.test', org_role: 'member', ...extra },
+      adminCookie,
+    );
+    expect(res.status, await res.clone().text()).toBe(201);
+    return body(res);
+  }
+
+  function inviteOf(created: Record<string, never>): { id: string; expires_at: number } {
+    return created.invite as unknown as { id: string; expires_at: number };
+  }
+
+  it('expires_in_days takes 1, 7 or 30, and 7 is the default', async () => {
+    for (const days of [1, 7, 30]) {
+      const before = Date.now();
+      const res = await post(
+        '/api/v1/invites',
+        { org_role: 'viewer', expires_in_days: days },
+        adminCookie,
+      );
+      expect(res.status, String(days)).toBe(201);
+      const expiresAt = inviteOf(await body(res)).expires_at;
+      expect(expiresAt).toBeGreaterThanOrEqual(before + days * DAY);
+      expect(expiresAt).toBeLessThanOrEqual(Date.now() + days * DAY);
+    }
+
+    const before = Date.now();
+    const defaulted = inviteOf(await create());
+    expect(defaulted.expires_at).toBeGreaterThanOrEqual(before + 7 * DAY);
+    expect(defaulted.expires_at).toBeLessThanOrEqual(Date.now() + 7 * DAY);
+  });
+
+  it('refuses any other expiry with 422', async () => {
+    for (const days of [0, 2, 14, 31, 365, -7, 1.5, '7', null]) {
+      const res = await post(
+        '/api/v1/invites',
+        { org_role: 'viewer', expires_in_days: days },
+        adminCookie,
+      );
+      expect(res.status, JSON.stringify(days)).toBe(422);
+      expect((await body(res)).error).toMatchObject({ code: 'unprocessable' });
+    }
+  });
+
+  it('re-issuing revokes the old link and answers a new one, for the same person and role', async () => {
+    const first = await create({ project_id: null });
+    const old = inviteOf(first);
+
+    const res = await post(`/api/v1/invites/${old.id}/reissue`, {}, adminCookie);
+    expect(res.status, await res.clone().text()).toBe(201);
+    const second = await body(res);
+    const fresh = inviteOf(second);
+
+    expect(fresh.id).not.toBe(old.id);
+    expect(second.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(second.token).not.toBe(first.token);
+    expect(second.accept_url).toBe(`${TEST_ORIGIN}/invite?token=${String(second.token)}`);
+    expect(second.invite).toMatchObject({
+      email: 'new@example.test',
+      org_role: 'member',
+      project_id: null,
+      created_by: adminId,
+      email_sent: false,
+    });
+
+    // The old link is dead on every path; the new one works.
+    expect((await get(`/api/v1/invites/${String(first.token)}`)).status).toBe(404);
+    const preview = await get(`/api/v1/invites/${String(second.token)}`);
+    expect(preview.status).toBe(200);
+    const refused = await post('/api/v1/invites/accept', {
+      token: first.token,
+      name: 'New',
+      password: PASSWORD,
+    });
+    expect(refused.status).toBe(403);
+    expect((await body(refused)).error).toMatchObject({ code: 'forbidden' });
+
+    // Exactly one pending invite for the address: the new one.
+    const list = await get('/api/v1/invites', adminCookie);
+    const pending = ((await list.json()) as { data: { id: string; email: string | null }[] }).data;
+    expect(pending.filter((row) => row.email === 'new@example.test').map((row) => row.id)).toEqual([
+      fresh.id,
+    ]);
+  });
+
+  it('re-issues an expired invite, with a fresh expiry that may be chosen', async () => {
+    const token = seedInvite(db, {
+      orgId,
+      createdBy: ownerId,
+      email: 'late@example.test',
+      orgRole: 'viewer',
+      expiresAt: Date.now() - DAY,
+    });
+    const id = db.select().from(invites).where(eq(invites.email, 'late@example.test')).get()?.id;
+    expect((await get(`/api/v1/invites/${token}`)).status).toBe(404);
+
+    const before = Date.now();
+    const res = await post(
+      `/api/v1/invites/${String(id)}/reissue`,
+      { expires_in_days: 30 },
+      adminCookie,
+    );
+    expect(res.status, await res.clone().text()).toBe(201);
+    const fresh = inviteOf(await body(res));
+    expect(fresh.expires_at).toBeGreaterThanOrEqual(before + 30 * DAY);
+
+    const bad = await post(
+      `/api/v1/invites/${fresh.id}/reissue`,
+      { expires_in_days: 3 },
+      adminCookie,
+    );
+    expect(bad.status).toBe(422);
+    expect((await body(bad)).error).toMatchObject({ code: 'unprocessable' });
+  });
+
+  it('refuses an accepted invite with 409, and an unknown one with 404', async () => {
+    const token = seedInvite(db, { orgId, createdBy: ownerId, email: 'used@example.test' });
+    expect(
+      (await signUp(h.app, { email: 'used@example.test', password: PASSWORD, inviteToken: token }))
+        .status,
+    ).toBe(200);
+    const id = db.select().from(invites).where(eq(invites.email, 'used@example.test')).get()?.id;
+
+    const used = await post(`/api/v1/invites/${String(id)}/reissue`, {}, adminCookie);
+    expect(used.status).toBe(409);
+    expect((await body(used)).error).toMatchObject({ code: 'conflict' });
+
+    const missing = await post('/api/v1/invites/nope/reissue', {}, adminCookie);
+    expect(missing.status).toBe(404);
+    expect((await body(missing)).error).toMatchObject({ code: 'not_found' });
+  });
+
+  it('refuses an anonymous caller, a member, and an admin re-issuing an admin invite', async () => {
+    const old = inviteOf(await create());
+
+    const anonymous = await post(`/api/v1/invites/${old.id}/reissue`, {});
+    expect(anonymous.status).toBe(401);
+    expect((await body(anonymous)).error).toMatchObject({ code: 'unauthorized' });
+
+    const memberCookie = await join('member@example.test', 'member');
+    const member = await post(`/api/v1/invites/${old.id}/reissue`, {}, memberCookie);
+    expect(member.status).toBe(403);
+    expect((await body(member)).error).toMatchObject({ code: 'forbidden' });
+
+    // Re-issuing is granting the role again, so it is asked as creating was.
+    seedInvite(db, { orgId, createdBy: ownerId, email: 'boss@example.test', orgRole: 'admin' });
+    const adminInvite = db
+      .select()
+      .from(invites)
+      .where(eq(invites.email, 'boss@example.test'))
+      .get();
+    const escalate = await post(
+      `/api/v1/invites/${String(adminInvite?.id)}/reissue`,
+      {},
+      adminCookie,
+    );
+    expect(escalate.status).toBe(403);
+    expect((await body(escalate)).error).toMatchObject({
+      code: 'forbidden',
+      details: { action: 'user.invite' },
+    });
+
+    // Nothing was revoked by any refusal.
+    expect(db.select().from(invites).where(eq(invites.id, old.id)).get()).toBeDefined();
+    expect(db.select().from(invites).where(eq(invites.email, 'boss@example.test')).get()?.id).toBe(
+      adminInvite?.id,
+    );
+  });
+
+  it('refuses re-issuing an invite whose address has since got an account', async () => {
+    seedInvite(db, { orgId, createdBy: ownerId, email: 'twice@example.test' });
+    const id = db.select().from(invites).where(eq(invites.email, 'twice@example.test')).get()?.id;
+    const other = seedInvite(db, { orgId, createdBy: ownerId });
+    expect(
+      (await signUp(h.app, { email: 'twice@example.test', password: PASSWORD, inviteToken: other }))
+        .status,
+    ).toBe(200);
+
+    const res = await post(`/api/v1/invites/${String(id)}/reissue`, {}, adminCookie);
+    expect(res.status).toBe(409);
+    expect((await body(res)).error).toMatchObject({ code: 'conflict' });
+    expect(
+      db
+        .select()
+        .from(invites)
+        .where(eq(invites.id, String(id)))
+        .get(),
+    ).toBeDefined();
   });
 });

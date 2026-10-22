@@ -240,7 +240,13 @@ export function setOrgRole(
     projectId: null,
     ...activityActor(actor),
     type: 'member.role_changed',
-    payload: { scope: 'org', user_id: userId, from: target.orgRole, to: role },
+    payload: {
+      scope: 'org',
+      user_id: userId,
+      user_name: target.name,
+      from: target.orgRole,
+      to: role,
+    },
     now,
   });
 
