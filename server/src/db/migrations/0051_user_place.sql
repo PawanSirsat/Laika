@@ -1,0 +1,1 @@
+ALTER TABLE `user_time_settings` ADD `place` text;

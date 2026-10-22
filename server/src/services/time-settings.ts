@@ -61,6 +61,12 @@ export interface TimeSettingsView {
    * Display only — never time, and nothing compares a day against it.
    */
   breaks: { label: string; start: string; end: string; days: number[] }[];
+  /**
+   * Where the person is (D-106, LAI-895): the IANA zone of a place from the
+   * client's list, or null until they set one. Their Timeline's sky is
+   * computed from it; the server reads nothing into it.
+   */
+  place: string | null;
 }
 
 /** One window of the schedule, as `PUT /org/time/breaks` takes it and the view gives it. */
@@ -85,19 +91,26 @@ export function timeMode(db: Db): TimeMode {
 
 /** A person's own *Draft my time*; off when they never turned it on. */
 export function draftMyTime(db: Db, userId: string): boolean {
-  const row = db
-    .select({ on: userTimeSettings.draftMyTime })
-    .from(userTimeSettings)
-    .where(eq(userTimeSettings.userId, userId))
-    .get();
-  return row?.on === 1;
+  return ownSettings(db, userId).draftMyTime === 1;
+}
+
+/** The person's own row — drafting and where they are — or the defaults for one who set nothing. */
+function ownSettings(db: Db, userId: string): { draftMyTime: number; place: string | null } {
+  return (
+    db
+      .select({ draftMyTime: userTimeSettings.draftMyTime, place: userTimeSettings.place })
+      .from(userTimeSettings)
+      .where(eq(userTimeSettings.userId, userId))
+      .get() ?? { draftMyTime: 0, place: null }
+  );
 }
 
 /** A person's Time settings as they read them — My day's, theirs or read for them. */
 export function timeSettingsFor(db: Db, userId: string): TimeSettingsView {
   const row = orgRow(db);
   const mode = row?.mode ?? 'off';
-  const mine = draftMyTime(db, userId);
+  const own = ownSettings(db, userId);
+  const mine = own.draftMyTime === 1;
   return {
     org_mode: mode,
     draft_my_time: mine,
@@ -107,6 +120,7 @@ export function timeSettingsFor(db: Db, userId: string): TimeSettingsView {
     folder_names: true,
     // Only `setOrgBreaks` writes it, and only what it has judged.
     breaks: row?.breaks == null ? [] : (JSON.parse(row.breaks) as BreakWindow[]),
+    place: own.place,
   };
 }
 
@@ -139,26 +153,30 @@ export function getTimeSettings(db: Db, actor: ResolvedActor): TimeSettingsView 
 }
 
 /**
- * `PUT /me/time-settings`: the person's own *Draft my time*, from a web
- * session only. Off deletes every draft they have not confirmed, now.
+ * `PUT /me/time-settings`: the person's own *Draft my time* and where they
+ * are (D-106), from a web session only — either or both, the other left as
+ * it was. Drafting off deletes every draft they have not confirmed, now.
  */
 export function setTimeSettings(
   db: Db,
   actor: ResolvedActor,
-  input: { draft_my_time: boolean },
+  input: { draft_my_time?: boolean | undefined; place?: string | null | undefined },
   now: number = Date.now(),
 ): TimeSettingsView {
   assertCan(actor, 'time_settings.set_own');
-  const value = input.draft_my_time ? 1 : 0;
+  const before = ownSettings(db, actor.userId);
+  const draftMyTime =
+    input.draft_my_time === undefined ? before.draftMyTime : input.draft_my_time ? 1 : 0;
+  const place = input.place === undefined ? before.place : input.place;
   db.transaction((tx) => {
     tx.insert(userTimeSettings)
-      .values({ userId: actor.userId, draftMyTime: value, updatedAt: now })
+      .values({ userId: actor.userId, draftMyTime, place, updatedAt: now })
       .onConflictDoUpdate({
         target: userTimeSettings.userId,
-        set: { draftMyTime: value, updatedAt: now },
+        set: { draftMyTime, place, updatedAt: now },
       })
       .run();
-    if (value === 0) forgetDrafts(tx, actor.userId);
+    if (input.draft_my_time === false) forgetDrafts(tx, actor.userId);
   });
   return timeSettingsFor(db, actor.userId);
 }
