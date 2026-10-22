@@ -292,15 +292,20 @@ describe('changing an org role', () => {
     });
   });
 
-  it('lets an Admin set any role except Owner (§3.1’s caveat)', () => {
+  it('refuses an Admin any role change — roles are the Owner’s alone (D-102 rule 5)', () => {
     const adminId = makeUser('Admin', 'admin');
     const target = makeUser('Grace', 'member');
 
-    expect(setOrgRole(t.db, actor(adminId), target, 'admin').org_role).toBe('admin');
-
-    // Without this an Admin promotes themselves and the distinction is
-    // decorative.
-    expect(() => setOrgRole(t.db, actor(adminId), target, 'owner')).toThrow(ApiError);
+    for (const role of ['owner', 'admin', 'member', 'viewer'] as const) {
+      try {
+        setOrgRole(t.db, actor(adminId), target, role);
+        expect.unreachable(`an admin set ${role}`);
+      } catch (err) {
+        expect(err).toBeInstanceOf(ApiError);
+        expect((err as ApiError).code).toBe('forbidden');
+      }
+    }
+    expect(t.db.select().from(activity).all()).toEqual([]);
   });
 
   it('refuses a Member and a Viewer outright', () => {
@@ -352,12 +357,10 @@ describe('the last active Owner is the invariant, not four rules', () => {
     expect(() => setOrgRole(t.db, actor(ownerId), ownerId, 'admin')).toThrow(/last active Owner/i);
   });
 
-  it('lets an Admin demote themselves, because that is recoverable', () => {
+  it('refuses an Admin demoting themselves too, since an Admin changes no role (LAI-958)', () => {
     const adminId = makeUser('Admin', 'admin');
 
-    // Any Owner can promote them back; an org with no Owner has no route back at
-    // all. Only unrecoverable states are guarded.
-    expect(setOrgRole(t.db, actor(adminId), adminId, 'member').org_role).toBe('member');
+    expect(() => setOrgRole(t.db, actor(adminId), adminId, 'member')).toThrow(ApiError);
   });
 });
 

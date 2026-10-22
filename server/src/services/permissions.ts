@@ -20,6 +20,9 @@
  *
  * Role holding is about the **role**, so the synthetic actors are signed in:
  * whether a token may do it is the row's `session_only` and `read_only` flags.
+ * They carry **the organisation's grants** (§3, LAI-958), the same matrix the
+ * caller's actor was loaded with, so a cell changes when the owner changes a
+ * grant and there is still no table here to drift.
  * The caller's own grants, under `me`, are the opposite — the caller's real
  * credential, token narrowing and all.
  */
@@ -36,6 +39,7 @@ import {
   SESSION_ONLY_ACTIONS,
 } from '../policy/actions.ts';
 import { type Actor, assertCan, can, effectiveProjectRole, type Resource } from '../policy/can.ts';
+import { DEFAULT_GRANTS, implicitProjectRole, type OrgGrants } from '../policy/grants.ts';
 
 type CatalogueAction = OrgAction | ProjectAction;
 
@@ -58,8 +62,9 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'org.settings.edit': 'Org settings (AI provider, SMTP, signup mode)',
   'project.create': 'Create / archive project',
   'project.archive': 'Create / archive project',
-  'user.invite': 'Invite users / change org roles',
-  'user.set_role': 'Invite users / change org roles',
+  'user.invite': 'Invite users',
+  'user.set_role': 'Change org roles',
+  'org.permissions.manage': 'Set what each role may do',
   'user.deactivate': 'Deactivate user',
   'org.read': 'View the organisation',
   'presence.read': 'Presence and capacity',
@@ -138,8 +143,8 @@ const SOMEONE_ELSE = 'someone-else';
  * Every action `can()` answers differently for different resources. These
  * are the cases the task asks to be documented:
  *
- *  - `user.set_role` — an Admin may grant any role but Owner (§3.1's
- *    *"not to Owner"*); an Owner may grant any.
+ *  - `user.invite` — anyone but the Owner invites as Member or Viewer only
+ *    (D-102 rule 5, LAI-958); an Owner may invite any role.
  *  - `project.join_public` — every role, a public project only. Which project
  *    role the joiner lands on is `projectRoleOnJoin`, not a permission.
  *  - `token.read_own`, `token.revoke_own` — every role, their own tokens only.
@@ -148,10 +153,10 @@ const SOMEONE_ELSE = 'someone-else';
  *  - `task.delete` — a Lead any task, a Member one they created.
  */
 export const ACTION_CONDITIONS: Readonly<Partial<Record<CatalogueAction, ActionCondition>>> = {
-  'user.set_role': {
-    text: 'Any role except Owner',
+  'user.invite': {
+    text: 'As Member or Viewer only',
     holds: () => ({ targetOrgRole: 'member' }),
-    fails: () => ({ targetOrgRole: 'owner' }),
+    fails: () => ({ targetOrgRole: 'admin' }),
   },
   'project.join_public': {
     text: 'Public projects only',
@@ -229,9 +234,11 @@ export interface PermissionsView {
      */
     project_scope: 'all' | string[];
     /**
-     * `lead` for an Owner or Admin, on every project in `project_scope`,
-     * membership or not. A role, not a grant: a `read_only` token still holds
-     * only reads there.
+     * The project role held on every project in `project_scope`, membership
+     * or not: `lead` for an Owner, and for a role granted *Open every
+     * project* (an Admin by default), `viewer` for a Viewer granted it
+     * (LAI-958). A role, not a grant of actions: a `read_only` token still
+     * holds only reads there.
      */
     implicit_project_role: ProjectRole | null;
     /** Org actions the caller may take on this credential, conditional ones included. */
@@ -265,23 +272,36 @@ function holding(actor: Actor, action: CatalogueAction, projectId?: string): Hol
   return whenFails ? 'yes' : 'conditional';
 }
 
-function row(action: CatalogueAction, scope: 'org' | 'project'): PermissionRow {
+function row(
+  action: CatalogueAction,
+  scope: 'org' | 'project',
+  orgGrants: OrgGrants | null | undefined,
+): PermissionRow {
   const roles: Record<string, Holding> = {};
 
   if (scope === 'org') {
     for (const orgRole of ORG_ROLES) {
-      const actor: Actor = { userId: SYNTHETIC_USER, orgRole, isActive: true, projectRole: null };
+      const actor: Actor = {
+        userId: SYNTHETIC_USER,
+        orgRole,
+        isActive: true,
+        projectRole: null,
+        orgGrants,
+      };
       roles[orgRole] = holding(actor, action);
     }
   } else {
     // An org member holding each project role: the one org role whose project
     // role is neither implied (owner, admin) nor capped (viewer).
     for (const projectRole of PROJECT_ROLES) {
+      // Without *Open every project*, or a member granted it would answer
+      // `lead` in every column.
       const actor: Actor = {
         userId: SYNTHETIC_USER,
         orgRole: 'member',
         isActive: true,
         projectRole,
+        orgGrants: { ...(orgGrants ?? DEFAULT_GRANTS), member: [] },
       };
       roles[projectRole] = holding(actor, action, SYNTHETIC_PROJECT);
     }
@@ -312,8 +332,8 @@ export function permissionsCatalogue(actor: ResolvedActor | null): PermissionsVi
   assertCan(actor, 'org.read');
 
   const permissions = [
-    ...ORG_ACTIONS.map((a) => row(a, 'org')),
-    ...PROJECT_ACTIONS.map((a) => row(a, 'project')),
+    ...ORG_ACTIONS.map((a) => row(a, 'org', actor.orgGrants)),
+    ...PROJECT_ACTIONS.map((a) => row(a, 'project', actor.orgGrants)),
   ];
 
   const orgActions = ORG_ACTIONS.filter((a) => can(actor, a, resourceFor(a, actor.userId)));
@@ -332,7 +352,6 @@ export function permissionsCatalogue(actor: ResolvedActor | null): PermissionsVi
     ];
   });
 
-  const implicitLead = actor.orgRole === 'owner' || actor.orgRole === 'admin';
   const whitelist = actor.token?.projectIds ?? null;
 
   return {
@@ -343,7 +362,7 @@ export function permissionsCatalogue(actor: ResolvedActor | null): PermissionsVi
       org_role: actor.orgRole,
       credential: actor.token === undefined || actor.token === null ? 'session' : 'token',
       project_scope: whitelist === null ? 'all' : [...whitelist],
-      implicit_project_role: implicitLead ? 'lead' : null,
+      implicit_project_role: implicitProjectRole(actor.orgRole, actor.orgGrants),
       actions: orgActions,
       projects,
     },

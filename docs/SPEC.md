@@ -105,12 +105,38 @@ Org `owner` and `admin` hold **implicit `lead`** on every project and bypass the
 membership check. A user whose org role is `viewer` may hold **only** the project
 role `viewer` — no escalation via project assignment, enforced in code.
 
-- **Owner** — the person who installed Laika. Exactly one, transferable.
-- **Admin** — creates projects, invites, sets roles, manages webhooks and org
-  settings. Cannot delete the org or transfer ownership.
+- **Owner** — the person who installed Laika. Exactly one, transferable. The
+  only one who changes roles and decides what each role may do (D-102).
+- **Admin** — creates projects, invites members and viewers, manages webhooks
+  and org settings. Cannot delete the org, transfer ownership, change roles or
+  change what each role may do.
 - **Member** — the working role. Creates and edits tasks, comments, claims work,
   mints their own tokens. **This is what agent sessions run as.**
 - **Viewer** — read-only. Tokens are forced to `read_only` scope.
+
+**The owner decides who sees what** (D-102 rule 6, LAI-958). A small, fixed
+set of capabilities is granted per org role — admin, member, viewer — on
+Organisation → Roles & permissions (`PUT /org/permissions`, §6.4), stored per
+org × role (§4.58). Each carries existing §3.1 actions and nothing new. The
+owner holds every one, always, and is not a column that can change. **The
+matrices below are the defaults** — admin on, member and viewer off — which is
+what an organisation whose owner changed nothing has; `can()` reads the
+organisation's grants for exactly these actions and no others.
+
+| Capability | Carries |
+| --- | --- |
+| *See everyone's analytics* | `profile.read`, `profile.activity.read`, `usage.read_people` (and LAI-957's `people.analytics.read`) |
+| *See the organisation's activity history* | `audit_log.export` |
+| *Open every project* | the implicit project role above: `lead` on every project, `viewer` for an org viewer, who stays capped |
+| *Manage people and invites* | `user.invite` (as member or viewer only), `user.deactivate` |
+| *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set` |
+
+**Never grantable, owner only:** delete the organisation, transfer ownership
+(`org.delete`, `org.transfer_ownership`), change org roles (`user.set_role`)
+and change what each role may do (`org.permissions.manage`). A grant widens
+the role and nothing else: *session only* and `read_only` tokens narrow it
+afterwards exactly as they narrow a role (§3.3 rule 4). Per-person exceptions
+are not part of this.
 
 ### 3.1 Org-level permission matrix
 
@@ -119,7 +145,9 @@ role `viewer` — no escalation via project assignment, enforced in code.
 | Delete org data / transfer ownership | ✓ | — | — | — |
 | Org settings (AI provider, SMTP, signup mode) | ✓ | ✓ | — | — |
 | Create / archive project | ✓ | ✓ | — | — |
-| Invite users / change org roles | ✓ | ✓ (not to Owner) | — | — |
+| Invite users | ✓ | ✓ (as member or viewer) | — | — |
+| Change org roles | ✓ | — | — | — |
+| Set what each role may do | ✓ (session only) | — | — | — |
 | Deactivate user | ✓ | ✓ | — | — |
 | View member list | ✓ | ✓ | ✓ | ✓ |
 | Join a `public` project | ✓ | ✓ | ✓ (as member) | ✓ (as viewer) |
@@ -2082,6 +2110,27 @@ range per day. A session the collector left out (§4.40) has its rows dropped,
 and none are added. Kept 40 days (§11.6), and deleted with the person's
 history (`DELETE /me/local-activity`).
 
+### 4.58 `org_role_grants`
+
+What the owner has granted each org role (D-102 rule 6, LAI-958; §3). **No
+row is the default** — admin on, member and viewer off — so an organisation
+whose owner never changed them has none. Written whole by `PUT
+/org/permissions` (owner only, session only), and read with the actor on
+every request so a withdrawn grant takes effect at once.
+
+| field | notes |
+| --- | --- |
+| `org_id` | FK `orgs`, cascade |
+| `org_role` | `admin` \| `member` \| `viewer` (CHECK) — never `owner`, who holds every capability |
+| `capability` | `see_people_analytics` \| `see_org_activity` \| `open_all_projects` \| `manage_people` \| `change_org_settings` (CHECK); what each carries is §3's |
+| `granted` | 0 or 1 (CHECK) |
+| `set_by` | FK `users` — the owner who saved it |
+| `updated_at` | |
+
+Primary key `(org_id, org_role, capability)`; index `(set_by)`. A change
+writes one `member.role_changed` row, org-scoped, with `payload.scope:
+"org_permissions"` and the whole matrix `from` and `to` (§4.8).
+
 ## 5. Task lifecycle
 
 ```
@@ -2345,9 +2394,11 @@ GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai
 POST   /api/v1/org/github-webhook            set or rotate the GitHub webhook secret; answers it once (session only)
 DELETE /api/v1/org/github-webhook            clear it (204; session only)
 GET    /api/v1/org/model-prices              PUT/DELETE .../model-prices/:model — API-equivalent prices (set: owner, admin; session only; LAI-773)
+GET    /api/v1/org/permissions               what each org role is granted → { roles, capabilities, grants, owner_locked, updated_at, updated_by }   (viewer+; LAI-958)
+PUT    /api/v1/org/permissions               body { grants: { admin|member|viewer: { <capability>: bool } } } — the whole matrix, every role and capability; same answer   (owner only; session only)
 GET    /api/v1/users                         ?limit=&cursor=&updated_since=&include_inactive=
                                              cursor is (name, id) — a directory reads alphabetically
-PATCH  /api/v1/users/:id                     (role, deactivate — admin+)
+PATCH  /api/v1/users/:id                     (role: owner only; deactivate: owner, and admin by default — LAI-958)
 GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind }   (owner, admin; session only)
 POST   /api/v1/users/:id/ratings             body { score, note } → 201   (owner, admin; session only; not yourself)
 GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, admin; session only)
@@ -2415,7 +2466,7 @@ GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api
 GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)
 POST   /api/v1/heartbeats                    202, token auth only
 GET    /api/v1/presence                      GET /api/v1/capacity
-GET    /api/v1/permissions                   every org and project action: label, scope, which roles hold it, conditions; and the caller's own grants (viewer+; LAI-885)
+GET    /api/v1/permissions                   every org and project action: label, scope, which roles hold it, conditions; and the caller's own grants (viewer+; LAI-885) — answered under the organisation's grants (LAI-958)
 GET    /api/v1/unlisted                      ?user=&since=  — work logged outside any project
 POST   /api/v1/unlisted/:id/promote          body { project_slug, title, priority? } → creates a task
 DELETE /api/v1/unlisted/:id                  dismiss

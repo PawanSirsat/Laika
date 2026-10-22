@@ -156,8 +156,9 @@ export function listUsers(db: Db, actor: ResolvedActor, options: ListUsersOption
 /**
  * Org role changes and deactivation (SPEC §3.1, §4.1, LAI-222).
  *
- * §3.1 grants Owner and Admin *"Invite users / change org roles"* and
- * *"Deactivate user"*, and `users` has carried `org_role` and `is_active` since
+ * §3.1 grants the Owner *"Change org roles"* (theirs alone since D-102,
+ * LAI-958) and Owner and Admin *"Deactivate user"* (a grant, LAI-958), and
+ * `users` has carried `org_role` and `is_active` since
  * LAI-003 — but until LAI-222 **no route wrote either**, so the permissions were
  * real and unreachable.
  *
@@ -220,10 +221,9 @@ export function setOrgRole(
 ): UserView {
   const target = requireUser(db, userId);
 
-  // `targetOrgRole` is what `can()` compares for §3.1's "(not to Owner)" caveat:
-  // an Admin may set any role except Owner. Passing it is not optional — without
-  // it the caveat cannot be evaluated and an Admin promotes themselves.
-  assertCan(actor, 'user.set_role', { targetOrgRole: role });
+  // Owner only, whatever the role (D-102 rule 5, LAI-958): an admin who could
+  // set roles could make a member an admin with every grant the owner gave.
+  assertCan(actor, 'user.set_role');
 
   assertAnOwnerRemains(db, target, role === 'owner');
 

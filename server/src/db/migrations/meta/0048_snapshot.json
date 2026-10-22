@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "b48bae15-d2a1-4fc2-859b-e7e95991c094",
+  "id": "286b9e93-8d76-4235-9df9-2a493355f016",
   "prevId": "4eabb735-2a92-4a9b-938a-dc1f005cd1d3",
   "tables": {
     "accounts": {
@@ -1679,6 +1679,101 @@
         }
       }
     },
+    "org_role_grants": {
+      "name": "org_role_grants",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "org_role": {
+          "name": "org_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "capability": {
+          "name": "capability",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "granted": {
+          "name": "granted",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "set_by": {
+          "name": "set_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "org_role_grants_set_by_idx": {
+          "name": "org_role_grants_set_by_idx",
+          "columns": ["set_by"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "org_role_grants_org_id_orgs_id_fk": {
+          "name": "org_role_grants_org_id_orgs_id_fk",
+          "tableFrom": "org_role_grants",
+          "tableTo": "orgs",
+          "columnsFrom": ["org_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "org_role_grants_set_by_users_id_fk": {
+          "name": "org_role_grants_set_by_users_id_fk",
+          "tableFrom": "org_role_grants",
+          "tableTo": "users",
+          "columnsFrom": ["set_by"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "org_role_grants_org_id_org_role_capability_pk": {
+          "columns": ["org_id", "org_role", "capability"],
+          "name": "org_role_grants_org_id_org_role_capability_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "org_role_grants_org_role_check": {
+          "name": "org_role_grants_org_role_check",
+          "value": "org_role IN ('admin', 'member', 'viewer')"
+        },
+        "org_role_grants_capability_check": {
+          "name": "org_role_grants_capability_check",
+          "value": "capability IN ('see_people_analytics', 'see_org_activity', 'open_all_projects', 'manage_people', 'change_org_settings')"
+        },
+        "org_role_grants_granted_check": {
+          "name": "org_role_grants_granted_check",
+          "value": "granted IN (0, 1)"
+        }
+      }
+    },
     "org_time_settings": {
       "name": "org_time_settings",
       "columns": {
@@ -1698,13 +1793,6 @@
         },
         "closed_through": {
           "name": "closed_through",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "breaks": {
-          "name": "breaks",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

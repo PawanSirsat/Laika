@@ -15,6 +15,7 @@ import {
   SESSION_ONLY_ACTIONS,
 } from '../../src/policy/actions.ts';
 import { type Actor, can, type Resource } from '../../src/policy/can.ts';
+import { DEFAULT_GRANTS } from '../../src/policy/grants.ts';
 import {
   ACTION_CONDITIONS,
   ACTION_LABELS,
@@ -102,8 +103,11 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'org.settings.edit': 'YYNN',
   'project.create': 'YYNN',
   'project.archive': 'YYNN',
-  'user.invite': 'YYNN',
-  'user.set_role': 'YCNN',
+  // D-102 rule 5 (LAI-958): an admin invites as member or viewer only, and
+  // only the owner changes roles or grants.
+  'user.invite': 'YCNN',
+  'user.set_role': 'YNNN',
+  'org.permissions.manage': 'YNNN',
   'user.deactivate': 'YYNN',
   'org.read': 'YYYY',
   'presence.read': 'YYYY',
@@ -317,6 +321,84 @@ describe('labels are SPEC §3.1 / §3.2 rows, or null where there is none', () =
     for (const p of permissionsCatalogue(actor()).permissions) {
       expect(p.label, p.action).toBe(ACTION_LABELS[p.action]);
     }
+  });
+});
+
+/**
+ * The organisation's grants reach the catalogue (LAI-958): both the `roles`
+ * cells and the caller's own `me.actions`, from the matrix loaded with the
+ * actor — so a changed grant changes the answer and nothing else does.
+ */
+describe('the catalogue follows the organisation’s grants', () => {
+  const MEMBER_ANALYTICS = {
+    admin: DEFAULT_GRANTS.admin,
+    member: ['see_people_analytics'] as const,
+    viewer: [],
+  };
+
+  function cells(view: ReturnType<typeof permissionsCatalogue>, action: string): string {
+    const p = view.permissions.find((row) => row.action === action)!;
+    return ORG_ROLES.map((r) => LETTER[p.roles[r]!]).join('');
+  }
+
+  it('turns a granted role’s cells on, for that role only', () => {
+    const before = permissionsCatalogue(actor());
+    const after = permissionsCatalogue(actor({ orgGrants: MEMBER_ANALYTICS }));
+
+    for (const action of ['profile.read', 'profile.activity.read', 'usage.read_people']) {
+      expect(cells(before, action), action).toBe('YYNN');
+      expect(cells(after, action), action).toBe('YYYN');
+    }
+    // Everything else is untouched, cell for cell.
+    const changed = after.permissions
+      .filter((p, i) => JSON.stringify(p) !== JSON.stringify(before.permissions[i]))
+      .map((p) => p.action);
+    expect(changed.sort()).toEqual(['profile.activity.read', 'profile.read', 'usage.read_people']);
+  });
+
+  it('turns an admin’s cells off when the owner withdraws a grant', () => {
+    const view = permissionsCatalogue(actor({ orgGrants: { admin: [], member: [], viewer: [] } }));
+
+    expect(cells(view, 'audit_log.export')).toBe('YNNN');
+    expect(cells(view, 'user.invite')).toBe('YNNN');
+    expect(cells(view, 'org.time.set')).toBe('YNNN');
+    // Not a capability's, so not the grant's to withdraw.
+    expect(cells(view, 'project.create')).toBe('YYNN');
+  });
+
+  it('changes the caller’s own actions with their role’s grant', () => {
+    const plain = permissionsCatalogue(actor()).me;
+    const granted = permissionsCatalogue(actor({ orgGrants: MEMBER_ANALYTICS })).me;
+
+    expect(plain.actions).not.toContain('profile.read');
+    expect(granted.actions).toContain('profile.read');
+    expect(granted.actions).toContain('usage.read_people');
+    expect(granted.actions).not.toContain('audit_log.export');
+  });
+
+  it('reports the implicit project role the grant gives, and none without it', () => {
+    const open = {
+      admin: [],
+      member: ['open_all_projects'] as const,
+      viewer: ['open_all_projects'] as const,
+    };
+
+    expect(permissionsCatalogue(actor({ orgGrants: open })).me.implicit_project_role).toBe('lead');
+    expect(
+      permissionsCatalogue(actor({ orgRole: 'viewer', orgGrants: open })).me.implicit_project_role,
+    ).toBe('viewer');
+    expect(
+      permissionsCatalogue(actor({ orgRole: 'admin', orgGrants: open })).me.implicit_project_role,
+    ).toBeNull();
+  });
+
+  it('keeps §3.2’s columns about project roles, whatever a member was granted', () => {
+    const open = { admin: [], member: ['open_all_projects'] as const, viewer: [] };
+    const before = permissionsCatalogue(actor()).permissions.filter((p) => p.scope === 'project');
+    const after = permissionsCatalogue(actor({ orgGrants: open })).permissions.filter(
+      (p) => p.scope === 'project',
+    );
+    expect(after).toEqual(before);
   });
 });
 

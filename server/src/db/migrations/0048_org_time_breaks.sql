@@ -1,1 +1,0 @@
-ALTER TABLE `org_time_settings` ADD `breaks` text;
