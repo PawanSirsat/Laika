@@ -18,7 +18,9 @@ const pct = (share: number): string => `${String(Math.round(share * 1000) / 10)}
  * never hours, and never added to the person's day.** The agent working is
  * not the person working. Since LAI-831 one bar a card, as the owner's design
  * draws it — each a share of the busiest card, grey for time on none — and
- * keyboard minutes, the person's own time inside Claude Code, beneath.
+ * keyboard minutes, the person's own time inside Claude Code, beneath. The
+ * v3 design (LAI-883) names the builder on each row; the server has no
+ * agent name per card, so the row is the card and its minutes.
  *
  * **A card is a link only when the reader can read it** (LAI-810 review
  * round 1): its key is looked up among the spaces they can (`spaceOfKey`),
@@ -58,7 +60,7 @@ export function AgentStrip({ agent, spaces, onNavigate }: AgentStripProps) {
     <section className="myday-card myday-agent" aria-labelledby="myday-agent-title">
       <header className="myday-card-head">
         <h2 className="myday-card-title" id="myday-agent-title">
-          Agent minutes
+          Agent time
         </h2>
         <span className="myday-card-head-gap" />
         <span className="myday-card-figure" data-agent-minutes>
@@ -66,7 +68,7 @@ export function AgentStrip({ agent, spaces, onNavigate }: AgentStripProps) {
         </span>
       </header>
       <p className="myday-quiet myday-pad">
-        Claude Code working on your behalf: minutes, never hours — shown beside your day, never
+        Claude Code builders you dispatched: minutes, never hours. Shown beside your day, never
         added to it.
       </p>
       {nothing ? (

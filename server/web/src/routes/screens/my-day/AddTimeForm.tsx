@@ -119,7 +119,10 @@ export function AddTimeForm({
     <form className="myday-add" onSubmit={submit} aria-label="Add time">
       <div className="myday-add-head">
         <span className="myday-add-title">Add time</span>
-        <span className="myday-card-caption">a meeting, a call — confirmed as you add it</span>
+        <span className="myday-card-caption">
+          a meeting, a call: confirmed as you add it. To place it on the day, click a gap on the
+          timeline.
+        </span>
         <span className="myday-card-head-gap" />
         {slot !== undefined && startMs !== undefined ? (
           <span className="myday-slot" data-slot>
@@ -145,7 +148,7 @@ export function AddTimeForm({
             </button>
           </span>
         ) : (
-          <span className="myday-quiet">No set time — or click a gap on the timeline</span>
+          <span className="myday-quiet">No set time</span>
         )}
       </div>
 

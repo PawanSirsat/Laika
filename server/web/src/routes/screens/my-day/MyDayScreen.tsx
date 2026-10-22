@@ -51,9 +51,9 @@ import { canAddTime, dayIn, isDay } from './my-day-derive.ts';
 import { OnYourPlate, usePlate } from './OnYourPlate.tsx';
 import { shortcutFor, type Shortcut } from './shortcuts.ts';
 import { ShortcutSheet } from './ShortcutSheet.tsx';
-import { StatsStrip } from './StatsStrip.tsx';
 import { Timeline, type Selection } from './Timeline.tsx';
 import {
+  agentsDuring,
   dayLine,
   instantOf,
   limitsIn,
@@ -706,6 +706,27 @@ export function MyDayScreen({
       return false;
     }
     if (dialog !== null || busy) return false;
+    if (shortcut === 'left' || shortcut === 'right') {
+      // ← → walk every placed block, as the Timeline's ‹ › do (LAI-883).
+      const blocks = line.blocks;
+      if (blocks.length === 0) return false;
+      const at =
+        selection !== undefined && 'id' in selection
+          ? blocks.findIndex((b) => b.id === selection.id)
+          : -1;
+      const by = shortcut === 'right' ? 1 : -1;
+      const next =
+        at < 0
+          ? by > 0
+            ? 0
+            : blocks.length - 1
+          : Math.max(0, Math.min(blocks.length - 1, at + by));
+      const block = blocks[next];
+      if (block !== undefined) {
+        setSelection({ kind: block.kind === 'drafted' ? 'draft' : 'entry', id: block.id });
+      }
+      return true;
+    }
     const drafts = view.drafts;
     const current =
       selection?.kind === 'draft' ? drafts.find((d) => d.id === selection.id) : undefined;
@@ -797,30 +818,26 @@ export function MyDayScreen({
       <div className="myday" data-myday-ready>
         <div className="myday-grid">
           <div className="myday-main">
-            <section className="myday-card myday-day" aria-labelledby="myday-day-title">
-              <h2 className="visually-hidden" id="myday-day-title">
-                {dayLong(view.day)}
-              </h2>
-              <StatsStrip view={view} gaps={line.gaps} onGap={pickGap} />
-              {view.state === 'future' ? (
+            {view.state === 'future' ? (
+              <section className="myday-card" aria-label="Timeline">
                 <p className="myday-future">This day has not happened yet.</p>
-              ) : (
-                <Timeline
-                  view={view}
-                  line={line}
-                  nowMs={now}
-                  zoom={zoom}
-                  onZoom={setZoom}
-                  selection={selection}
-                  onSelect={(next) => {
-                    if (next.kind === 'gap') pickGap(next);
-                    else setSelection(next);
-                  }}
-                  onEdge={onEdge}
-                  busy={busy}
-                />
-              )}
-            </section>
+              </section>
+            ) : (
+              <Timeline
+                view={view}
+                line={line}
+                nowMs={now}
+                zoom={zoom}
+                onZoom={setZoom}
+                selection={selection}
+                onSelect={(next) => {
+                  if (next.kind === 'gap') pickGap(next);
+                  else setSelection(next);
+                }}
+                onEdge={onEdge}
+                busy={busy}
+              />
+            )}
 
             {view.state !== 'future' && (
               <Inspector
@@ -835,6 +852,7 @@ export function MyDayScreen({
                 line={line}
                 selection={selection}
                 chipsFor={chipsFor}
+                agentsIn={(span) => agentsDuring(line.agents, span)}
                 pending={pending}
                 actions={actions}
                 onNavigate={onNavigate}
