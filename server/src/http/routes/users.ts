@@ -2,10 +2,12 @@ import { Hono } from 'hono';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import {
+  listMemberships,
   listUsers,
   ORG_ROLES,
   setOrgRole,
   setUserActive,
+  signOutEverywhere,
   type UserView,
 } from '../../services/users.ts';
 import { type AppEnv } from '../context.ts';
@@ -107,6 +109,25 @@ export function userRoutes(options: { db: Db }): Hono<AppEnv> {
 
     return c.json(view!);
   });
+
+  /**
+   * `POST /api/v1/users/:id/sign-out` — end every session of a person (§6.4,
+   * D-104 item 3, LAI-981). Their tokens stay; `sessions_ended` says how many
+   * sessions went. No body: there is nothing to choose.
+   */
+  app.post('/:id/sign-out', (c) =>
+    c.json(signOutEverywhere(db, requireActor(c), c.req.param('id'))),
+  );
+
+  /**
+   * `GET /api/v1/users/:id/memberships` — the spaces a person belongs to, with
+   * their role in each, narrowed to the spaces the caller can read (§6.4,
+   * LAI-981). One person's memberships are few and are not paged, like a
+   * project's statuses.
+   */
+  app.get('/:id/memberships', (c) =>
+    c.json({ data: listMemberships(db, requireActor(c), c.req.param('id')) }),
+  );
 
   return app;
 }

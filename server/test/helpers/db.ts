@@ -56,10 +56,11 @@ export function seed(db: Db, now = Date.now()): Seed {
 
   // **Unless `users` is older than its newest column.** Drizzle names every
   // declared column in an INSERT — `profile_kind` (0029, LAI-743),
-  // `local_activity_scope` (0031, LAI-751) — and `migrate.test.ts` seeds
-  // databases cut back before them; there, the row is written with the
-  // columns every version has, and the migrations give it their defaults.
-  if (hasColumn(db, 'users', 'local_activity_scope')) {
+  // `local_activity_scope` (0031, LAI-751), `last_seen_at` (0051, LAI-981) —
+  // and `migrate.test.ts` seeds databases cut back before them; there, the row
+  // is written with the columns every version has, and the migrations give it
+  // their defaults.
+  if (hasColumn(db, 'users', 'last_seen_at')) {
     db.insert(users)
       .values({
         id: userId,

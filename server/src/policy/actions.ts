@@ -21,6 +21,9 @@ export const ORG_ACTIONS = [
   // D-102 rule 5 (LAI-958): what each org role may do — the owner's alone.
   'org.permissions.manage',
   'user.deactivate',
+  // D-104 item 3 (LAI-981): end every session of a person without
+  // deactivating them.
+  'user.sign_out',
   'org.read',
   'presence.read',
   'capacity.read',

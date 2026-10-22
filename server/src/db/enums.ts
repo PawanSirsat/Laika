@@ -157,6 +157,10 @@ export const ACTIVITY_TYPES = [
   // different questions people actually ask separately.
   'user.deactivated',
   'user.reactivated',
+  // D-104 item 3 (LAI-981): every session of a person ended without
+  // deactivating them. Its own verb because "who was signed out, by whom" is
+  // neither a lock-out nor a token being revoked.
+  'user.signed_out',
   // LAI-431. §4.8's own D-022 note already named these four as things the
   // in-process cron writes — "heartbeat pruning, stale-task flagging, invite and
   // meeting-review expiry" — while the list below had a verb for none of them.

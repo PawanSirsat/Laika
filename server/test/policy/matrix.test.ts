@@ -49,6 +49,10 @@ const ORG_MATRIX: OrgRow[] = [
   ['org.permissions.manage', true, false, false, false],
   // | Deactivate user | ✓ | ✓ | — | — |
   ['user.deactivate', true, true, false, false],
+  // | Sign a person out everywhere | ✓ | ✓ | ✓ (themselves) | ✓ (themselves) |
+  // Asked about somebody else, so the cell's tick is the grant's; the
+  // themselves half is asserted in policy-spec-drift's qualifier (LAI-981).
+  ['user.sign_out', true, true, false, false],
   // | View the organisation | ✓ | ✓ | ✓ | ✓ |
   // Its own row rather than folded into `member_list.read` (LAI-222): the
   // response also carries the AI provider block, which is gated field-level on

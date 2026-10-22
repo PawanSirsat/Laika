@@ -134,6 +134,14 @@ export const users = sqliteTable(
     localActivityScope: text('local_activity_scope', { enum: LOCAL_ACTIVITY_SCOPES })
       .notNull()
       .default('agent-repos'),
+    /**
+     * The latest activity of a session that has since been ended — by
+     * deactivation or a forced sign-out (§4.1, D-104 item 3, LAI-981). Ending
+     * a session deletes its row, and this keeps *when they were last seen*
+     * from going with it. `last_seen_at` on the API is the later of this and
+     * the person's live sessions.
+     */
+    lastSeenAt: integer('last_seen_at'),
 
     // --- required by better-auth's `user` model (LAI-005) ---
     // This table *is* better-auth's user table, remapped: one identity, one row.

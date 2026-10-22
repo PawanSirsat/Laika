@@ -5,9 +5,25 @@ import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { type OrgRole } from '../../src/db/enums.ts';
 import { readPayload } from '../../src/db/activity.ts';
 import { newId } from '../../src/db/ids.ts';
-import { activity, orgs, users } from '../../src/db/schema.ts';
+import { findTokenBySecret } from '../../src/auth/tokens.ts';
+import {
+  activity,
+  orgs,
+  projectMemberships,
+  projects,
+  sessions,
+  tokens,
+  users,
+} from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
-import { listUsers, setOrgRole, setUserActive } from '../../src/services/users.ts';
+import { createToken } from '../../src/services/tokens.ts';
+import {
+  listMemberships,
+  listUsers,
+  setOrgRole,
+  setUserActive,
+  signOutEverywhere,
+} from '../../src/services/users.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 let t: TestDb;
@@ -106,6 +122,9 @@ describe('the fields a picker needs (AC1)', () => {
       'email',
       'id',
       'is_active',
+      // When they were last seen signed in (LAI-981) — derived from sessions,
+      // not a better-auth field passed through.
+      'last_seen_at',
       'name',
       'org_role',
       'updated_at',
@@ -403,5 +422,325 @@ describe('deactivating and reactivating', () => {
     setUserActive(t.db, actor(ownerId), target, true);
 
     expect(t.db.select().from(activity).all()).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------- D-104 item 3 (LAI-981)
+
+/** A better-auth session row, as sign-in writes one. */
+function seedSession(userId: string, updatedAt: number): string {
+  const id = newId();
+  t.db
+    .insert(sessions)
+    .values({
+      id,
+      userId,
+      token: `tok_${id}`,
+      expiresAt: new Date(updatedAt + 7 * 24 * 60 * 60 * 1000),
+      createdAt: new Date(updatedAt),
+      updatedAt: new Date(updatedAt),
+    })
+    .run();
+  return id;
+}
+
+function sessionsOf(userId: string): number {
+  return t.db.select().from(sessions).where(eq(sessions.userId, userId)).all().length;
+}
+
+function mint(userId: string, name: string): { id: string; secret: string } {
+  const { token, secret } = createToken(t.sqlite, t.db, actor(userId), { name, scope: 'full' });
+  return { id: token.id, secret };
+}
+
+function payloadsOf(type: string): Record<string, unknown>[] {
+  return t.db
+    .select()
+    .from(activity)
+    .all()
+    .filter((row) => row.type === type)
+    .map((row) => readPayload(row) as Record<string, unknown>);
+}
+
+describe('deactivation ends access (D-104 item 3, LAI-981)', () => {
+  it('revokes every token and ends every session of the person', () => {
+    const target = makeUser('Grace', 'member');
+    const laptop = mint(target, 'laptop');
+    const agent = mint(target, 'agent');
+    seedSession(target, 1000);
+    seedSession(target, 2000);
+
+    setUserActive(t.db, actor(ownerId), target, false, 5000);
+
+    expect(findTokenBySecret(t.db, laptop.secret, 6000)).toEqual({ ok: false, reason: 'revoked' });
+    expect(findTokenBySecret(t.db, agent.secret, 6000)).toEqual({ ok: false, reason: 'revoked' });
+    expect(sessionsOf(target)).toBe(0);
+
+    const [payload] = payloadsOf('user.deactivated');
+    expect(payload).toMatchObject({ user_id: target, sessions_ended: 2 });
+    expect([...(payload?.token_ids as string[])].sort()).toEqual([laptop.id, agent.id].sort());
+  });
+
+  it("leaves everybody else's tokens and sessions alone", () => {
+    const target = makeUser('Grace', 'member');
+    const bystander = makeUser('Hedy', 'member');
+    mint(target, 'laptop');
+    const theirs = mint(bystander, 'laptop');
+    seedSession(bystander, 1000);
+
+    setUserActive(t.db, actor(ownerId), target, false);
+
+    expect(findTokenBySecret(t.db, theirs.secret, Date.now()).ok).toBe(true);
+    expect(sessionsOf(bystander)).toBe(1);
+  });
+
+  it("keeps an already-revoked token's revoked_at, rather than restamping it", () => {
+    const target = makeUser('Grace', 'member');
+    const old = mint(target, 'old');
+    t.db.update(tokens).set({ revokedAt: 1234 }).where(eq(tokens.id, old.id)).run();
+
+    setUserActive(t.db, actor(ownerId), target, false, 5000);
+
+    expect(t.db.select().from(tokens).where(eq(tokens.id, old.id)).get()?.revokedAt).toBe(1234);
+    expect(payloadsOf('user.deactivated')[0]?.token_ids).toEqual([]);
+  });
+
+  it('restores neither tokens nor sessions on reactivation', () => {
+    const target = makeUser('Grace', 'member');
+    const laptop = mint(target, 'laptop');
+    seedSession(target, 1000);
+
+    setUserActive(t.db, actor(ownerId), target, false, 5000);
+    setUserActive(t.db, actor(ownerId), target, true, 6000);
+
+    expect(findTokenBySecret(t.db, laptop.secret, 7000)).toEqual({ ok: false, reason: 'revoked' });
+    expect(sessionsOf(target)).toBe(0);
+    expect(payloadsOf('user.reactivated')[0]).toEqual({ user_id: target, org_role: 'member' });
+  });
+
+  it('does it in the same transaction as the flag: a refusal leaves all three untouched', () => {
+    // The last Owner cannot be deactivated (409). Nothing of theirs may go.
+    const laptop = mint(ownerId, 'laptop');
+    seedSession(ownerId, 1000);
+
+    expectApiError(() => setUserActive(t.db, actor(ownerId), ownerId, false), 'conflict');
+
+    expect(findTokenBySecret(t.db, laptop.secret, Date.now()).ok).toBe(true);
+    expect(sessionsOf(ownerId)).toBe(1);
+  });
+
+  it('rolls the flag back when ending access fails part-way', () => {
+    const target = makeUser('Grace', 'member');
+    const laptop = mint(target, 'laptop');
+    seedSession(target, 1000);
+    // Fail the last write before the event: the flag and the tokens have
+    // already been written inside the transaction when the sessions refuse.
+    t.sqlite.exec(
+      "CREATE TRIGGER sessions_refuse BEFORE DELETE ON sessions BEGIN SELECT RAISE(ABORT, 'refused'); END",
+    );
+
+    expect(() => setUserActive(t.db, actor(ownerId), target, false)).toThrow(/refused/);
+
+    expect(t.db.select().from(users).where(eq(users.id, target)).get()?.isActive).toBe(1);
+    expect(findTokenBySecret(t.db, laptop.secret, Date.now()).ok).toBe(true);
+    expect(sessionsOf(target)).toBe(1);
+  });
+
+  it('keeps when they were last seen after their sessions are gone', () => {
+    const target = makeUser('Grace', 'member');
+    seedSession(target, 1000);
+    seedSession(target, 3000);
+
+    const view = setUserActive(t.db, actor(ownerId), target, false, 5000);
+
+    expect(view.last_seen_at).toBe(3000);
+  });
+});
+
+describe('signing a person out everywhere (D-104 item 3, LAI-981)', () => {
+  it('ends every session and leaves their tokens', () => {
+    const target = makeUser('Grace', 'member');
+    const laptop = mint(target, 'laptop');
+    seedSession(target, 1000);
+    seedSession(target, 2000);
+
+    expect(signOutEverywhere(t.db, actor(ownerId), target, 5000)).toEqual({
+      user_id: target,
+      sessions_ended: 2,
+    });
+
+    expect(sessionsOf(target)).toBe(0);
+    expect(findTokenBySecret(t.db, laptop.secret, 6000).ok).toBe(true);
+    // And they stay active: this is not a deactivation.
+    expect(t.db.select().from(users).where(eq(users.id, target)).get()?.isActive).toBe(1);
+  });
+
+  it('is logged, naming who and how many', () => {
+    const target = makeUser('Grace', 'member');
+    seedSession(target, 1000);
+
+    signOutEverywhere(t.db, actor(ownerId), target, 5000);
+
+    const rows = t.db.select().from(activity).all();
+    expect(rows.map((r) => [r.type, r.actorId, r.projectId])).toEqual([
+      ['user.signed_out', ownerId, null],
+    ]);
+    expect(payloadsOf('user.signed_out')).toEqual([{ user_id: target, sessions_ended: 1 }]);
+  });
+
+  it('writes no event when there was nothing to end', () => {
+    const target = makeUser('Grace', 'member');
+
+    expect(signOutEverywhere(t.db, actor(ownerId), target).sessions_ended).toBe(0);
+    expect(t.db.select().from(activity).all()).toHaveLength(0);
+  });
+
+  it('lets anyone sign themselves out, a Viewer included', () => {
+    for (const role of ['member', 'viewer'] as const) {
+      const self = makeUser(`Self ${role}`, role);
+      seedSession(self, 1000);
+
+      expect(signOutEverywhere(t.db, actor(self), self).sessions_ended).toBe(1);
+    }
+  });
+
+  it('lets an Admin sign somebody else out, by default', () => {
+    const target = makeUser('Grace', 'member');
+    seedSession(target, 1000);
+
+    expect(signOutEverywhere(t.db, actor(makeUser('Admin', 'admin')), target).sessions_ended).toBe(
+      1,
+    );
+  });
+
+  it('refuses a Member or Viewer signing somebody else out, with forbidden', () => {
+    const target = makeUser('Grace', 'member');
+    seedSession(target, 1000);
+
+    for (const role of ['member', 'viewer'] as const) {
+      expectApiError(
+        () => signOutEverywhere(t.db, actor(makeUser(`Other ${role}`, role)), target),
+        'forbidden',
+      );
+    }
+    expect(sessionsOf(target)).toBe(1);
+  });
+
+  it('404s on a person who does not exist', () => {
+    expectApiError(() => signOutEverywhere(t.db, actor(ownerId), 'usr_nobody'), 'not_found');
+  });
+});
+
+describe('last_seen_at (LAI-981)', () => {
+  it('is null for somebody who never signed in', () => {
+    makeUser('Grace', 'member');
+
+    const grace = listUsers(t.db, actor(ownerId), PAGE).find((u) => u.name === 'Grace');
+    expect(grace?.last_seen_at).toBeNull();
+  });
+
+  it('is the latest activity across their live sessions', () => {
+    const target = makeUser('Grace', 'member');
+    seedSession(target, 1000);
+    seedSession(target, 4000);
+    seedSession(ownerId, 9000);
+
+    const grace = listUsers(t.db, actor(ownerId), PAGE).find((u) => u.id === target);
+    expect(grace?.last_seen_at).toBe(4000);
+  });
+
+  it('survives a forced sign-out, and a later sign-in moves it on', () => {
+    const target = makeUser('Grace', 'member');
+    seedSession(target, 4000);
+    signOutEverywhere(t.db, actor(ownerId), target);
+
+    const find = () => listUsers(t.db, actor(ownerId), PAGE).find((u) => u.id === target);
+    expect(find()?.last_seen_at).toBe(4000);
+
+    seedSession(target, 8000);
+    expect(find()?.last_seen_at).toBe(8000);
+  });
+});
+
+describe("a person's spaces (LAI-981)", () => {
+  function makeProject(name: string, visibility: 'public' | 'private' = 'private'): string {
+    const id = newId();
+    const now = Date.now();
+    const orgId = t.db.select().from(orgs).get()!.id;
+    t.db
+      .insert(projects)
+      .values({
+        id,
+        orgId,
+        name,
+        slug: name.toLowerCase(),
+        prefix: name.slice(0, 3).toUpperCase(),
+        visibility,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    return id;
+  }
+
+  function join(projectId: string, userId: string, role: 'lead' | 'member' | 'viewer'): void {
+    t.db
+      .insert(projectMemberships)
+      .values({ id: newId(), projectId, userId, role, createdAt: 1000 })
+      .run();
+  }
+
+  it('lists each space with the role held there, alphabetically', () => {
+    const target = makeUser('Grace', 'member');
+    const zeta = makeProject('Zeta');
+    const alpha = makeProject('Alpha');
+    join(zeta, target, 'lead');
+    join(alpha, target, 'viewer');
+
+    expect(listMemberships(t.db, actor(ownerId), target)).toEqual([
+      {
+        project_id: alpha,
+        slug: 'alpha',
+        name: 'Alpha',
+        prefix: 'ALP',
+        role: 'viewer',
+        archived: false,
+        joined_at: 1000,
+      },
+      {
+        project_id: zeta,
+        slug: 'zeta',
+        name: 'Zeta',
+        prefix: 'ZET',
+        role: 'lead',
+        archived: false,
+        joined_at: 1000,
+      },
+    ]);
+  });
+
+  it('shows a member only the spaces they can read themselves', () => {
+    const target = makeUser('Grace', 'member');
+    const asker = makeUser('Hedy', 'member');
+    const shared = makeProject('Shared');
+    const secret = makeProject('Secret');
+    join(shared, target, 'member');
+    join(shared, asker, 'member');
+    join(secret, target, 'member');
+
+    expect(listMemberships(t.db, actor(asker), target).map((m) => m.name)).toEqual(['Shared']);
+    // The owner reads every space, so sees both.
+    expect(listMemberships(t.db, actor(ownerId), target).map((m) => m.name)).toEqual([
+      'Secret',
+      'Shared',
+    ]);
+  });
+
+  it('refuses a deactivated caller and 404s an unknown person', () => {
+    const target = makeUser('Grace', 'member');
+    const gone = makeUser('Gone', 'admin', { isActive: 0 });
+
+    expectApiError(() => listMemberships(t.db, actor(gone), target), 'forbidden');
+    expectApiError(() => listMemberships(t.db, actor(ownerId), 'usr_nobody'), 'not_found');
   });
 });

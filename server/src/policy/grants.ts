@@ -41,7 +41,10 @@ export const CAPABILITY_ACTIONS: Readonly<Record<Capability, readonly OrgAction[
   ],
   see_org_activity: ['audit_log.export'],
   open_all_projects: [],
-  manage_people: ['user.invite', 'user.deactivate'],
+  // `user.sign_out` rides with deactivation (D-104 item 3, LAI-981) until
+  // LAI-985 splits this into *Invite people* and *Deactivate people and reset
+  // access*. Signing yourself out needs no grant; see `can()`.
+  manage_people: ['user.invite', 'user.deactivate', 'user.sign_out'],
   change_org_settings: ['org.settings.edit', 'org.time.set', 'org.developer_insights.set'],
 };
 

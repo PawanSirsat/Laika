@@ -286,6 +286,15 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'user.deactivate':
       return granted(actor, action);
 
+    // | Sign a person out everywhere | ✓ | ✓ | ✓ (themselves) | ✓ (themselves) |
+    //
+    // Anyone may end their own sessions; ending somebody else's is the power
+    // to deactivate them, short of doing it (D-104 item 3, LAI-981), so it is
+    // carried by the grant that carries `user.deactivate` — until LAI-985
+    // gives it *Deactivate people and reset access*.
+    case 'user.sign_out':
+      return resource.targetUserId === actor.userId || granted(actor, action);
+
     // | View the organisation | ✓ | ✓ | ✓ | ✓ |
     //
     // Deliberately **not** folded into `member_list.read`, which was the obvious

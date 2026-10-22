@@ -64,6 +64,8 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Change org roles', ['user.set_role']],
   ['Set what each role may do', ['org.permissions.manage']],
   ['Deactivate user', ['user.deactivate']],
+  // D-104 item 3 (LAI-981).
+  ['Sign a person out everywhere', ['user.sign_out']],
   ['View member list', ['member_list.read']],
   ['Join a public project', ['project.join_public']],
   [
@@ -341,6 +343,17 @@ const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
         const member = projectActor('member');
         expect(can(member, action, { projectId: 'p', createdBy: 'me' })).toBe(true);
         expect(can(member, action, { projectId: 'p', createdBy: 'someone-else' })).toBe(false);
+      },
+    },
+  ],
+  [
+    'themselves',
+    {
+      why: 'Every role may sign itself out everywhere; signing out somebody else is the holders of the deactivate grant (D-104 item 3, LAI-981).',
+      verify: (action: Action, role: string) => {
+        const self = orgActor(role.toLowerCase() as OrgRole);
+        expect(can(self, action, { targetUserId: self.userId }), 'themselves').toBe(true);
+        expect(can(self, action, { targetUserId: 'someone-else' }), 'someone else').toBe(false);
       },
     },
   ],

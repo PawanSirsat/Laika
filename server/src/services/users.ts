@@ -1,12 +1,13 @@
-import { and, asc, eq, gt, gte, or, type SQL } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, inArray, isNull, max, or, type SQL } from 'drizzle-orm';
 import { activityActor, type ResolvedActor } from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
-import { type OrgRole } from '../db/enums.ts';
+import { type OrgRole, type ProjectRole } from '../db/enums.ts';
 import { requireOrgId } from '../db/orgs.ts';
-import { users } from '../db/schema.ts';
+import { projectMemberships, projects, sessions, tokens, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import { canSeeProject } from './projects.ts';
 
 /**
  * Re-exported so `http/routes/users.ts` can validate a role without importing
@@ -65,24 +66,66 @@ export interface UserView {
   org_role: OrgRole;
   /** False for a deactivated person. The row is kept so history keeps its author. */
   is_active: boolean;
+  /**
+   * When they were last seen signed in: the latest activity of any of their
+   * sessions, live or ended (D-104 item 3, LAI-981). `null` for somebody who
+   * has never signed in. better-auth refreshes a session at most once per
+   * `updateAge`, so this is as fine-grained as that and no finer.
+   */
+  last_seen_at: number | null;
   created_at: number;
   updated_at: number;
 }
 
 type UserRow = typeof users.$inferSelect;
 
-function toView(row: UserRow): UserView {
+function toView(row: UserRow, liveSeenAt: number | null): UserView {
   return {
     id: row.id,
     name: row.name,
     email: row.email,
     org_role: row.orgRole,
     is_active: row.isActive === 1,
+    last_seen_at: latest(row.lastSeenAt, liveSeenAt),
     // Date-typed columns since LAI-005 (better-auth hands the adapter `Date`s);
     // the API speaks unix-ms like every other timestamp in §6.3.
     created_at: row.createdAt.getTime(),
     updated_at: row.updatedAt.getTime(),
   };
+}
+
+function latest(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.max(a, b);
+}
+
+/** Each person's latest live-session activity, for the rows about to be served. */
+function liveSeenAt(db: Db, userIds: readonly string[]): Map<string, number> {
+  if (userIds.length === 0) return new Map();
+
+  const rows = db
+    .select({ userId: sessions.userId, at: max(sessions.updatedAt) })
+    .from(sessions)
+    .where(inArray(sessions.userId, [...userIds]))
+    .groupBy(sessions.userId)
+    .all();
+
+  return new Map(
+    rows.flatMap((row) => (row.at === null ? [] : [[row.userId, row.at.getTime()] as const])),
+  );
+}
+
+function viewsOf(db: Db, rows: readonly UserRow[]): UserView[] {
+  const seen = liveSeenAt(
+    db,
+    rows.map((row) => row.id),
+  );
+  return rows.map((row) => toView(row, seen.get(row.id) ?? null));
+}
+
+function viewOf(db: Db, row: UserRow): UserView {
+  return viewsOf(db, [row])[0]!;
 }
 
 export interface ListUsersOptions {
@@ -143,14 +186,15 @@ export function listUsers(db: Db, actor: ResolvedActor, options: ListUsersOption
     );
   }
 
-  return db
+  const rows = db
     .select()
     .from(users)
     .where(conditions.length === 0 ? undefined : and(...conditions))
     .orderBy(asc(users.name), asc(users.id))
     .limit(options.limit + 1)
-    .all()
-    .map(toView);
+    .all();
+
+  return viewsOf(db, rows);
 }
 
 /**
@@ -227,7 +271,7 @@ export function setOrgRole(
 
   assertAnOwnerRemains(db, target, role === 'owner');
 
-  if (target.orgRole === role) return toView(target);
+  if (target.orgRole === role) return viewOf(db, target);
 
   db.update(users)
     .set({ orgRole: role, updatedAt: new Date(now) })
@@ -244,7 +288,7 @@ export function setOrgRole(
     now,
   });
 
-  return toView(requireUser(db, userId));
+  return viewOf(db, requireUser(db, userId));
 }
 
 /**
@@ -254,6 +298,17 @@ export function setOrgRole(
  * already refuses every action to an inactive user, so deactivation is a lock
  * rather than a delete. That is why neither `member.removed` nor a hard delete
  * describes it, and why §4.8 gained `user.deactivated` / `user.reactivated`.
+ *
+ * ## Deactivating ends access, and reactivating does not restore it
+ *
+ * D-104 item 3 (LAI-981): every token of theirs is revoked and every session
+ * ended, **in the same transaction** as the flag. The lock alone was not
+ * enough: the flag stopped each request, but the credentials stayed valid, so
+ * reactivating someone months later silently brought back every token they
+ * had ever handed to an agent and every browser they had left signed in.
+ *
+ * Reactivation therefore restores neither. A person let back in signs in again
+ * and mints new tokens, which is the only way anyone can say what holds access.
  */
 export function setUserActive(
   db: Db,
@@ -271,21 +326,179 @@ export function setUserActive(
   // this" is exactly what it asks.
   assertAnOwnerRemains(db, target, active);
 
-  if ((target.isActive === 1) === active) return toView(target);
+  if ((target.isActive === 1) === active) return viewOf(db, target);
 
-  db.update(users)
-    .set({ isActive: active ? 1 : 0, updatedAt: new Date(now) })
-    .where(eq(users.id, userId))
-    .run();
+  db.transaction(() => {
+    db.update(users)
+      .set({ isActive: active ? 1 : 0, updatedAt: new Date(now) })
+      .where(eq(users.id, userId))
+      .run();
 
-  appendActivity(db, {
-    orgId: requireOrgId(db),
-    projectId: null,
-    ...activityActor(actor),
-    type: active ? 'user.reactivated' : 'user.deactivated',
-    payload: { user_id: userId, org_role: target.orgRole },
-    now,
+    if (active) {
+      appendActivity(db, {
+        orgId: requireOrgId(db),
+        projectId: null,
+        ...activityActor(actor),
+        type: 'user.reactivated',
+        payload: { user_id: userId, org_role: target.orgRole },
+        now,
+      });
+      return;
+    }
+
+    const revoked = revokeEveryToken(db, userId, now);
+    const ended = endEverySession(db, userId);
+
+    appendActivity(db, {
+      orgId: requireOrgId(db),
+      projectId: null,
+      ...activityActor(actor),
+      type: 'user.deactivated',
+      payload: {
+        user_id: userId,
+        org_role: target.orgRole,
+        token_ids: revoked,
+        sessions_ended: ended,
+      },
+      now,
+    });
   });
 
-  return toView(requireUser(db, userId));
+  return viewOf(db, requireUser(db, userId));
+}
+
+/** What `POST /users/:id/sign-out` answers. */
+export interface SignOutView {
+  user_id: string;
+  sessions_ended: number;
+}
+
+/**
+ * Force sign-out: end every session of a person, and nothing else (D-104
+ * item 3, LAI-981). Tokens are left alone — an agent working on their behalf
+ * is not a browser left open, and *List / revoke anyone's token* is the row
+ * for those.
+ *
+ * Anyone may sign themselves out everywhere; somebody else needs
+ * `user.sign_out`'s grant. The call ends the caller's own session too when
+ * they are the target, which is what "everywhere" means.
+ *
+ * **Logged only when it ended something** — the rule `revoke` in
+ * `services/tokens.ts` follows: an event claiming a change that did not happen
+ * is worse than a missing one.
+ */
+export function signOutEverywhere(
+  db: Db,
+  actor: ResolvedActor,
+  userId: string,
+  now: number = Date.now(),
+): SignOutView {
+  requireUser(db, userId);
+  assertCan(actor, 'user.sign_out', { targetUserId: userId });
+
+  const ended = db.transaction(() => {
+    const count = endEverySession(db, userId);
+    if (count === 0) return 0;
+
+    appendActivity(db, {
+      orgId: requireOrgId(db),
+      projectId: null,
+      ...activityActor(actor),
+      type: 'user.signed_out',
+      payload: { user_id: userId, sessions_ended: count },
+      now,
+    });
+    return count;
+  });
+
+  return { user_id: userId, sessions_ended: ended };
+}
+
+/** Revoke every live token of a person; the ids it revoked. */
+function revokeEveryToken(db: Db, userId: string, now: number): string[] {
+  return db
+    .update(tokens)
+    .set({ revokedAt: now })
+    .where(and(eq(tokens.userId, userId), isNull(tokens.revokedAt)))
+    .returning({ id: tokens.id })
+    .all()
+    .map((row) => row.id);
+}
+
+/**
+ * Delete every session of a person; how many there were.
+ *
+ * Deleted rather than expired, because better-auth reads the row on every
+ * request (no cookie cache is configured) and a missing row is the one answer
+ * it cannot misread. What the rows knew about when the person was last seen is
+ * kept on `users.last_seen_at` first, so the deletion does not erase it.
+ */
+function endEverySession(db: Db, userId: string): number {
+  const seen = liveSeenAt(db, [userId]).get(userId);
+  if (seen !== undefined) {
+    const row = requireUser(db, userId);
+    db.update(users)
+      .set({ lastSeenAt: latest(row.lastSeenAt, seen) })
+      .where(eq(users.id, userId))
+      .run();
+  }
+
+  return db.delete(sessions).where(eq(sessions.userId, userId)).run().changes;
+}
+
+/** One space a person belongs to, as `GET /users/:id/memberships` serves it. */
+export interface MembershipView {
+  project_id: string;
+  slug: string;
+  name: string;
+  prefix: string;
+  role: ProjectRole;
+  archived: boolean;
+  /** When the membership row was written. */
+  joined_at: number;
+}
+
+/**
+ * The spaces a person is a member of, with their role in each (D-104, LAI-981)
+ * — what the person admin panel lists.
+ *
+ * Gated on *View member list*, the row every other read about who belongs
+ * where uses, and **narrowed to the spaces the caller can read**: a member
+ * asking about a colleague learns of the shared spaces only, never the name of
+ * a private one they are not in. `GET /projects/:slug/members` already shows
+ * the same rows to anyone with `project.read`, so this answers nothing new;
+ * it answers it from the other side.
+ *
+ * Membership rows only. An org owner or admin's implicit access everywhere is
+ * not a membership and is not listed (D-103 item 5's distinction).
+ */
+export function listMemberships(db: Db, actor: ResolvedActor, userId: string): MembershipView[] {
+  requireUser(db, userId);
+  assertCan(actor, 'member_list.read');
+
+  return db
+    .select({
+      projectId: projects.id,
+      slug: projects.slug,
+      name: projects.name,
+      prefix: projects.prefix,
+      role: projectMemberships.role,
+      archivedAt: projects.archivedAt,
+      joinedAt: projectMemberships.createdAt,
+    })
+    .from(projectMemberships)
+    .innerJoin(projects, eq(projects.id, projectMemberships.projectId))
+    .where(eq(projectMemberships.userId, userId))
+    .orderBy(asc(projects.name), asc(projects.id))
+    .all()
+    .filter((row) => canSeeProject(actor, row.projectId))
+    .map((row) => ({
+      project_id: row.projectId,
+      slug: row.slug,
+      name: row.name,
+      prefix: row.prefix,
+      role: row.role,
+      archived: row.archivedAt !== null,
+      joined_at: row.joinedAt,
+    }));
 }
