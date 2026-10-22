@@ -2,11 +2,12 @@
 id: LAI-954
 title: 'Two My Day browser tests fail late in the day: "now at 60%" and the "12 PM" tick read the wall clock'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-953
-status: backlog
+status: in-progress
+started: 2026-10-22T18:22:59+05:30
 ---
 
 ## Goal
