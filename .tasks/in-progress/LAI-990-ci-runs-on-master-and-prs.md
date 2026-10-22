@@ -2,11 +2,12 @@
 id: LAI-990
 title: 'CI runs the full gate on every push to every branch, including one-line claim commits, and never cancels a stale run'
 area: ops
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T17:41:32Z
 ---
 
 ## Goal
