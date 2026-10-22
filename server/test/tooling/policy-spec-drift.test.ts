@@ -83,6 +83,8 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Rate a member', ['profile.rate']],
   // D-079's rows (LAI-751): the heatmap, and the developer's own side of it.
   ["View a member's activity heatmap", ['profile.activity.read']],
+  // D-102 rule 1 (LAI-957): a person's day and local activity, read for them.
+  ["View a member's day, time and shared activity", ['people.analytics.read']],
   ['Turn Developer insights on or off', ['org.developer_insights.set']],
   ['Read own activity-sharing setting', ['activity_sharing.read_own']],
   ['Set own activity sharing', ['activity_sharing.set_own']],

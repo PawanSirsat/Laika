@@ -205,6 +205,19 @@ describe('SPEC §3.1 — rows that depend on the resource', () => {
       expect(can(actor(role), 'profile.rate', { targetUserId: 'u2' }), role).toBe(false);
     }
   });
+
+  // | View a member's day, time and shared activity | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
+  it("Owner and Admin read anyone's day but their own; Member and Viewer nobody's (LAI-957)", () => {
+    for (const role of ['owner', 'admin'] as const) {
+      expect(can(actor(role), 'people.analytics.read', { targetUserId: 'u2' }), role).toBe(true);
+      // `actor()` is `u1`: their own day is `/me`'s.
+      expect(can(actor(role), 'people.analytics.read', { targetUserId: 'u1' }), role).toBe(false);
+      expect(can(actor(role), 'people.analytics.read', {}), role).toBe(false);
+    }
+    for (const role of ['member', 'viewer'] as const) {
+      expect(can(actor(role), 'people.analytics.read', { targetUserId: 'u2' }), role).toBe(false);
+    }
+  });
 });
 
 // ---------------------------------------------------------------- SPEC §3.2
@@ -396,6 +409,7 @@ describe('completeness', () => {
       'comment.delete',
       'task.delete',
       'profile.rate',
+      'people.analytics.read',
       // §3.4's own, asserted in full by the describe above.
       ...SYSTEM_ACTIONS,
     ]);

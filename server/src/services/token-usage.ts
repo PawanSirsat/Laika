@@ -45,6 +45,7 @@ import {
   storeSessionTasks,
 } from './agent-time.ts';
 import { readableByOutsideId } from './outside-ids.ts';
+import { readLogged } from './analytics-views.ts';
 import { recordArrival } from './plan-limit.ts';
 import { requireProjectBySlug } from './projects.ts';
 import {
@@ -1734,6 +1735,19 @@ export function getPersonUsage(
   const person = db.select({ id: users.id }).from(users).where(eq(users.id, userId)).get();
   if (person === undefined) throw ApiError.notFound(`No user with id "${userId}"`);
 
+  // Somebody else's tokens are a logged read; their own are not (D-102 rule 3, LAI-957).
+  return readLogged(
+    db,
+    actor,
+    userId,
+    'usage',
+    () => personUsageOf(db, userId, now),
+    () => null,
+    now,
+  );
+}
+
+function personUsageOf(db: Db, userId: string, now: number): PersonUsageView {
   // A machine ahead of UTC is already on tomorrow; its day is still this week's.
   const today = dayIn('UTC', now);
   const thisWeek = mondayOf(today);

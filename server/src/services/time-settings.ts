@@ -77,7 +77,8 @@ export function draftMyTime(db: Db, userId: string): boolean {
   return row?.on === 1;
 }
 
-function viewFor(db: Db, userId: string): TimeSettingsView {
+/** A person's Time settings as they read them — My day's, theirs or read for them. */
+export function timeSettingsFor(db: Db, userId: string): TimeSettingsView {
   const mode = timeMode(db);
   const mine = draftMyTime(db, userId);
   return {
@@ -115,7 +116,7 @@ function forgetDrafts(tx: Tx, userId?: string): void {
 /** `GET /me/time-settings`: a session or any token of theirs (§3.1). */
 export function getTimeSettings(db: Db, actor: ResolvedActor): TimeSettingsView {
   assertCan(actor, 'time_settings.read_own');
-  return viewFor(db, actor.userId);
+  return timeSettingsFor(db, actor.userId);
 }
 
 /**
@@ -140,7 +141,7 @@ export function setTimeSettings(
       .run();
     if (value === 0) forgetDrafts(tx, actor.userId);
   });
-  return viewFor(db, actor.userId);
+  return timeSettingsFor(db, actor.userId);
 }
 
 /**
@@ -171,7 +172,7 @@ export function setOrgTimeMode(
  * `local_activity_off`). Asked before anything is read or written.
  */
 export function assertDrafting(db: Db, actor: ResolvedActor): void {
-  const view = viewFor(db, actor.userId);
+  const view = timeSettingsFor(db, actor.userId);
   if (view.drafting) return;
   throw new ApiError(
     'forbidden',

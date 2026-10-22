@@ -33,12 +33,16 @@ function only(role: (typeof GRANTABLE_ROLES)[number], capability: Capability): O
   return { ...NONE, [role]: [capability] };
 }
 
-/** Every org action's answer, per org role, under `grants`. */
+/**
+ * Every org action's answer, per org role, under `grants` — about somebody
+ * else, so a *"not themselves"* row (LAI-957's `people.analytics.read`) is
+ * answered by its grant rather than refused for want of a target.
+ */
 function answers(grants: OrgGrants | undefined): Record<string, boolean> {
   const out: Record<string, boolean> = {};
   for (const role of ORG_ROLES) {
     for (const action of ORG_ACTIONS) {
-      out[`${role} ${action}`] = can(actor(role, grants), action, {});
+      out[`${role} ${action}`] = can(actor(role, grants), action, { targetUserId: 'u2' });
     }
   }
   return out;

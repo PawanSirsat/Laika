@@ -84,6 +84,7 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'profile.set_kind': "Set a member's profile kind",
   'profile.rate': 'Rate a member',
   'profile.activity.read': "View a member's activity heatmap",
+  'people.analytics.read': "View a member's day, time and shared activity",
   'org.developer_insights.set': 'Turn Developer insights on or off',
   'activity_sharing.read_own': 'Read own activity-sharing setting',
   'activity_sharing.set_own': 'Set own activity sharing',
@@ -149,6 +150,8 @@ const SOMEONE_ELSE = 'someone-else';
  *    role the joiner lands on is `projectRoleOnJoin`, not a permission.
  *  - `token.read_own`, `token.revoke_own` — every role, their own tokens only.
  *  - `profile.rate` — Owner and Admin, anybody but themselves.
+ *  - `people.analytics.read` — anybody but themselves: their own is `/me`
+ *    (LAI-957).
  *  - `comment.edit`, `comment.delete` — a Lead any comment, a Member their own.
  *  - `task.delete` — a Lead any task, a Member one they created.
  */
@@ -174,6 +177,11 @@ export const ACTION_CONDITIONS: Readonly<Partial<Record<CatalogueAction, ActionC
     fails: () => ({ ownerId: SOMEONE_ELSE }),
   },
   'profile.rate': {
+    text: 'Anyone but themselves',
+    holds: () => ({ targetUserId: SOMEONE_ELSE }),
+    fails: (userId) => ({ targetUserId: userId }),
+  },
+  'people.analytics.read': {
     text: 'Anyone but themselves',
     holds: () => ({ targetUserId: SOMEONE_ELSE }),
     fails: (userId) => ({ targetUserId: userId }),

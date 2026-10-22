@@ -6,6 +6,7 @@ import { AGENT_BUCKET_MS } from '../services/agent-time.ts';
 import {
   agentTimeBuckets,
   agentTimeDays,
+  analyticsViews,
   heartbeats,
   invites,
   localActivityDays,
@@ -137,7 +138,8 @@ export const LOCAL_ACTIVITY_RETENTION_DAYS = 400;
 
 /**
  * Delete local-activity rows, pushed-commit keys and token usage older than
- * 400 days (§11.6, D-079, LAI-751, D-084). Daily, and once at boot
+ * 400 days (§11.6, D-079, LAI-751, D-084), and the log of who looked at them
+ * (§4.59, LAI-957). Daily, and once at boot
  * (`scheduler.ts`), so a server that was down on the day still keeps the
  * promise when it comes up.
  *
@@ -197,6 +199,12 @@ export function pruneLocalActivity(db: Db, now: number): JobResult {
       .delete(tokenArrivals)
       .where(lt(tokenArrivals.bucketMs, now - ARRIVALS_KEPT_MS))
       .run();
+    // Who looked at a person's analytics (§4.59, LAI-957) is kept as long as
+    // what they looked at, by instant: a view is a moment, not a local day.
+    const views = tx
+      .delete(analyticsViews)
+      .where(lt(analyticsViews.viewedAt, now - LOCAL_ACTIVITY_RETENTION_DAYS * DAY_MS))
+      .run();
     return (
       days.changes +
       keys.changes +
@@ -207,7 +215,8 @@ export function pruneLocalActivity(db: Db, now: number): JobResult {
       buckets.changes +
       series.changes +
       skips.changes +
-      arrivals.changes
+      arrivals.changes +
+      views.changes
     );
   });
 

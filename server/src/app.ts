@@ -31,7 +31,7 @@ import {
   sprintBudgetRoutes,
   taskBudgetRoutes,
 } from './http/routes/token-budgets.ts';
-import { peopleRoutes } from './http/routes/people.ts';
+import { meAnalyticsViewRoutes, peopleRoutes } from './http/routes/people.ts';
 import { setupRoutes } from './http/routes/setup.ts';
 import { projectRoutes } from './http/routes/projects.ts';
 import { projectStatusRoutes } from './http/routes/project-statuses.ts';
@@ -339,8 +339,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/projects`, projectBudgetRoutes({ db }));
     app.route(`${API_BASE}/sprints`, sprintBudgetRoutes({ db }));
     app.route(`${API_BASE}/tasks`, taskBudgetRoutes({ db }));
-    // The profile's heatmap (D-079, LAI-751), by day.
+    // The profile's heatmap (D-079, LAI-751), by day; a person's day and local
+    // activity read for them, and who looked (D-102, LAI-957).
     app.route(`${API_BASE}/people`, peopleRoutes({ db }));
+    app.route(`${API_BASE}/me`, meAnalyticsViewRoutes({ db }));
     app.route(`${API_BASE}/users`, userRoutes({ db }));
     app.route(
       `${API_BASE}/org`,
