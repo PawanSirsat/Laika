@@ -98,3 +98,33 @@ with the anchor counted (=1) and the file checksum compared before and after:
 depend on `resource.ownerId`, and the undeclared-condition guard went red
 (`task.claim for member/lead`). `can.ts` was restored byte-identical
 (sha `17d931e9`).
+
+## Review response (CORE, cross-review of PR #46 at `acce3481`)
+
+Three blocking items, fixed together in one commit. The criteria above are
+unchanged.
+
+1. **Invented labels.** `presence.read` and `capacity.read` now serve
+   `label: null`, and the strings are gone. A test holds the set of actions
+   with no label equal to `ACTIONS_WITHOUT_A_ROW`, which it reads out of
+   `policy-spec-drift.test.ts` as text rather than copying it, so the test
+   expires when §3.1 gains the row. Every other label still has to match its
+   parsed SPEC row.
+2. **Project ids outside a token's whitelist.** `me.projects` now leaves out
+   any membership the caller's real `can(…, 'project.read', { projectId })`
+   refuses. The test asserts that `p2` is absent, by id and anywhere in `me`,
+   for a token pinned to `p1`, and present for a session.
+3. **`implicit_project_role` claimed "every project".** A new field,
+   `me.project_scope: 'all' | string[]` (the token's whitelist), bounds it.
+   It is tested for an owner on a session (`'all'`), on a pinned token
+   (`['p1']`), and on a read-only token (`'all'`; the role is still `lead`,
+   and `actions` holds reads only).
+
+The "needs no database" comments in `app.ts` and the route now say only that
+the route queries nothing itself.
+
+Mutations, each with its anchor counted (=1) and `permissions.ts` restored
+to sha `538d8d2a`:
+- Removing the `project.read` filter turned the whitelist test red.
+- Giving `presence.read` a label turned both label tests red.
+- Hard-coding `project_scope: 'all'` turned both whitelist tests red.
