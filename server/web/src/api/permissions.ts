@@ -119,8 +119,9 @@ export function setPermissionsUser(userId: string | undefined): void {
 /**
  * Ask the server again and publish its answer to every mounted gate. Never
  * rejects: a failure is a state (`failed`), which the gates deny on and the
- * shell offers a retry for. A refresh that fails keeps the last good answer —
- * it was the server's, and denying everything over a blip helps nobody.
+ * shell offers a retry for. **A refresh that fails drops the last answer too**
+ * (fails closed): a refresh is asked because grants may have changed, and a
+ * stale yes is exactly the withdrawn control LAI-970 exists to hide.
  */
 function load(fresh: boolean): Promise<void> {
   const asked = generation;
@@ -131,10 +132,14 @@ function load(fresh: boolean): Promise<void> {
       if (asked === generation) publish({ ...snapshot, status: 'ready', permissions });
     },
     () => {
-      if (asked !== generation) return;
-      if (snapshot.permissions === undefined) publish({ ...snapshot, status: 'failed' });
+      if (asked === generation) failClosed();
     },
   );
+}
+
+/** Deny everything and let the shell offer its retry: nothing stale is kept. */
+function failClosed(): void {
+  publish({ ...snapshot, status: 'failed', permissions: undefined });
 }
 
 /** For tests: forget everything, as a fresh page load would. */
@@ -148,7 +153,7 @@ export interface EffectivePermissions {
   readonly permissions: Permissions | undefined;
   /** The question has an answer: read, or failed. */
   readonly settled: boolean;
-  /** `GET /permissions` failed and there is no earlier answer. Gates deny. */
+  /** The last `GET /permissions` failed. Gates deny, whatever an earlier answer said. */
   readonly failed: boolean;
   /** Ask again — after the owner saves grants, or to retry a failure. */
   readonly refresh: () => void;
@@ -174,12 +179,20 @@ export function usePermissions(enabled = true): EffectivePermissions {
  * Re-read for a screen that shows the answer itself (Roles & permissions) and
  * so needs the failure, not a state: rejects as the request does. Its answer is
  * published like any other — every mounted gate re-renders on it, which is how
- * a save of the owner's grants reaches the controls on screen.
+ * a save of the owner's grants reaches the controls on screen. A failure
+ * fails closed, as `load`'s does — except an abort, which is the caller
+ * leaving, not the server refusing.
  */
 export async function refreshPermissions(signal?: AbortSignal): Promise<Permissions> {
   const asked = generation;
   sharedCache.invalidate((key) => key === '/permissions');
-  const permissions = await getPermissions(signal);
+  let permissions: Permissions;
+  try {
+    permissions = await getPermissions(signal);
+  } catch (cause) {
+    if (asked === generation && signal?.aborted !== true) failClosed();
+    throw cause;
+  }
   if (asked === generation) publish({ ...snapshot, status: 'ready', permissions });
   return permissions;
 }

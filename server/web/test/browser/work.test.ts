@@ -15,12 +15,14 @@ import type { Page } from 'playwright';
 import { LAIKA, ONROUTE, task } from './capacity-org.ts';
 import {
   closeBrowser,
+  everSeen,
   open,
   refuse,
   setTheme,
   until,
   type ApiStub,
   type Harness,
+  watchFor,
 } from './harness.ts';
 
 const NOW = Date.now();
@@ -683,6 +685,59 @@ void describe('Work: the header, the figures and the pages (LAI-975)', () => {
       await tile(h.page, 'Total');
       await h.page.waitForTimeout(200);
       assert.equal(await h.page.locator('.work-people').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * The row follows *See everyone's analytics* as the server reports it, not
+   * the org role (LAI-970): the summary itself is served to every reader.
+   */
+  const analytics = (role: string, actions: readonly string[]) => ({
+    org_roles: [],
+    project_roles: [],
+    permissions: [],
+    me: {
+      org_role: role,
+      credential: 'session',
+      project_scope: 'all',
+      implicit_project_role: null,
+      actions,
+      projects: [],
+    },
+  });
+
+  void test('a member the owner granted everyone’s analytics sees the “by person” row', async () => {
+    const h = await openWork('/work', {
+      ...shell(MEMBER),
+      '/api/v1/permissions': analytics('member', ['org.read', 'people.analytics.read']),
+      '/api/v1/tasks?fields=slim': { data: MEMBER_PAGE, next_cursor: null },
+    });
+    try {
+      await keys(h.page);
+      await h.page.locator('.work-people').waitFor({ timeout: 10_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an admin the owner withdrew it from is never shown the row', async () => {
+    const h = await open(
+      '/work',
+      {
+        ...OWNER_STUB,
+        '/api/v1/me': { ...OWNER, org_role: 'admin' },
+        '/api/v1/permissions': analytics('admin', ['org.read', 'member_list.read']),
+      },
+      { before: (page) => watchFor(page, ['.work-people']) },
+    );
+    try {
+      await keys(h.page);
+      await tile(h.page, 'Total');
+      await until(() => h.calls.some((c) => c.path === '/api/v1/permissions'));
+      await h.page.waitForTimeout(400);
+      assert.equal(await everSeen(h.page, '.work-people'), false, 'the admin was shown By person');
     } finally {
       await h.close();
     }

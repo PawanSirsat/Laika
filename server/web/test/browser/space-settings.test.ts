@@ -428,7 +428,7 @@ void describe('Members', () => {
       );
       assert.match(
         await h.page.locator('.ss-card-foot').innerText(),
-        /Organisation Owners and Admins can manage every space/,
+        /granted “Open every project” can manage every\s+space without being a member/,
       );
 
       const search = h.page.getByRole('searchbox', { name: 'Add people from Kvelld' });
@@ -729,8 +729,55 @@ void describe('Danger zone', () => {
       assert.equal(await h.page.locator('[data-action="archive"]').count(), 0);
       assert.match(
         await h.page.locator('.ss-danger').innerText(),
-        /Only an organisation owner or admin can archive a space\./,
+        /To archive a space you need to be its Space admin and\s+hold “Create and archive spaces” in your organisation role\./,
       );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('a change to the reader’s own membership reaches their controls', () => {
+  void test('a space admin who makes themselves a member loses the admin controls at once', async () => {
+    // Space admin by membership alone — no org role to fall back on — so only
+    // a fresh `/permissions` can say they are now a member.
+    const lead = {
+      ...ME,
+      id: 'u2',
+      name: 'Tomas Nel',
+      org_role: 'member',
+      memberships: [{ project_id: 'p1', role: 'lead' }],
+    };
+    let role: 'lead' | 'member' = 'lead';
+    const grants = (r: string) =>
+      defaultPermissions({ ...lead, memberships: [{ project_id: 'p1', role: r }] });
+    const h = await open(
+      `${SETTINGS}?tab=members`,
+      stub(lead, {
+        '/api/v1/permissions': () => grants(role),
+        [`/api/v1/projects/${SLUG}/members`]: () => ({
+          members: [member('u1', 'Pawan Sirsat', 'lead'), member('u2', 'Tomas Nel', role)],
+        }),
+        [`/api/v1/projects/${SLUG}/members/u2`]: (call: StubCall) => {
+          if (call.method === 'PATCH') role = (call.body as { role: 'lead' | 'member' }).role;
+          return {
+            members: [member('u1', 'Pawan Sirsat', 'lead'), member('u2', 'Tomas Nel', role)],
+          };
+        },
+      }),
+    );
+    try {
+      await settled(h);
+      const remove = h.page.locator('[data-action="remove"]');
+      await remove.first().waitFor({ timeout: 20_000 });
+      const before = h.calls.filter((c) => c.path === '/api/v1/permissions').length;
+
+      await pick(h.page.locator('[data-member="u2"] [role="combobox"]'), 'member');
+      await until(() => h.calls.some((c) => c.method === 'PATCH'));
+      await until(() => h.calls.filter((c) => c.path === '/api/v1/permissions').length > before);
+      await remove.first().waitFor({ state: 'detached', timeout: 10_000 });
+      assert.equal(await h.page.locator('[data-add-role]').count(), 0);
+      assert.equal(await h.page.locator('[data-member] [role="combobox"]').count(), 0);
     } finally {
       await h.close();
     }

@@ -197,6 +197,40 @@ void describe('a withdrawn admin is never shown a withdrawn control', () => {
       await h.close();
     }
   });
+  void test('a refresh that fails after a good answer withdraws everything, and offers the retry', async () => {
+    // The first answer grants; then the owner withdraws, and the re-read
+    // fails. Keeping the first answer would leave the withdrawn controls up.
+    let fail = false;
+    const h = await open('/organisation?tab=people', {
+      ...BASE,
+      '/api/v1/me': me('u3', 'admin'),
+      '/api/v1/permissions': () =>
+        fail
+          ? reply(500, { error: { code: 'internal', message: 'down' } })
+          : defaultPermissions(me('u3', 'admin')),
+    });
+    try {
+      const activity = h.page.locator('.page-tab[data-tab="activity"]');
+      await activity.waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-invite-open]').waitFor({ timeout: 10_000 });
+
+      fail = true;
+      // Roles & permissions re-reads `/permissions` (`refreshPermissions`).
+      await h.page.locator('.page-tab[data-tab="roles"]').click();
+      const banner = h.page.locator('[data-state="permissions-failed"]');
+      await banner.waitFor({ timeout: 10_000 });
+      await activity.waitFor({ state: 'detached', timeout: 10_000 });
+      assert.equal(await h.page.locator('.page-tab[data-tab="security"]').count(), 0);
+
+      // And Retry brings them back once the server answers again.
+      fail = false;
+      await banner.getByRole('button', { name: 'Retry' }).click();
+      await activity.waitFor({ timeout: 10_000 });
+      assert.equal(await banner.count(), 0, 'the failure notice outlived the answer');
+    } finally {
+      await h.close();
+    }
+  });
 });
 
 void describe('the store follows the user and every publish', () => {

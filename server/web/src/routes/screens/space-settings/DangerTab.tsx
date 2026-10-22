@@ -57,7 +57,8 @@ export function DangerTab({ project, mayArchive, onSaved }: DangerTabProps) {
           <div className="ss-row-field ss-row-field-end">
             {!mayArchive ? (
               <p className="ss-value ss-muted">
-                Only an organisation owner or admin can {archived ? 'restore' : 'archive'} a space.
+                To {archived ? 'restore' : 'archive'} a space you need to be its Space admin and
+                hold “Create and archive spaces” in your organisation role.
               </p>
             ) : archived ? (
               <button

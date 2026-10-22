@@ -749,6 +749,13 @@ void describe('/reset-password', () => {
     '/api/v1/setup/status': { setup_required: false },
   };
 
+  /** The token left the address bar — and so this history entry — the moment it was read. */
+  function assertNoToken(page: Page, when: string) {
+    const url = new URL(page.url());
+    assert.equal(url.searchParams.has('token'), false, `the token is still in ${url.href} ${when}`);
+    assert.equal(url.pathname, '/reset-password', when);
+  }
+
   async function fill(page: Page, password: string) {
     const fields = page.locator('input[type="password"]');
     await fields.nth(0).fill(password);
@@ -769,6 +776,8 @@ void describe('/reset-password', () => {
     h.page.on('console', (m) => logged.push(m.text()));
     try {
       await h.page.locator('[data-reset-state="form"]').waitFor({ timeout: 20_000 });
+      await until(() => !new URL(h.page.url()).searchParams.has('token'));
+      assertNoToken(h.page, 'once the form is drawn');
       await fill(h.page, 'short');
       assert.match(
         await h.page.locator('[data-reset-state="form"]').innerText(),
@@ -778,6 +787,7 @@ void describe('/reset-password', () => {
 
       await fill(h.page, 'a-long-enough-password');
       await h.page.locator('[data-reset-state="done"]').waitFor();
+      assertNoToken(h.page, 'after the password was set');
       assert.equal(sent.length, 1);
       assert.equal(sent[0]!.path, '/api/v1/password-resets/consume');
       assert.deepEqual(sent[0]!.body, { token: 'tok-abc', new_password: 'a-long-enough-password' });
@@ -817,6 +827,7 @@ void describe('/reset-password', () => {
         const card = h.page.locator(`[data-reset-state="${state}"]`);
         await card.waitFor();
         assert.match(await card.innerText(), says);
+        assertNoToken(h.page, `after a ${state} refusal`);
         await card.getByRole('button', { name: 'Go to sign in' }).waitFor();
       } finally {
         await h.close();
@@ -841,6 +852,12 @@ void describe('/reset-password', () => {
       await h.page.locator('.auth-alert').waitFor();
       assert.match(await h.page.locator('.auth-alert').innerText(), /Wait a minute/);
       assert.equal(await h.page.locator('[data-reset-state="form"]').count(), 1);
+      // Out of the address, but still held: a wait is not a spent link.
+      assertNoToken(h.page, 'after a throttle');
+      await fill(h.page, 'a-long-enough-password');
+      await until(() => h.calls.filter((c) => c.path.endsWith('/consume')).length === 2);
+      const tries = h.calls.filter((c) => c.path.endsWith('/consume'));
+      assert.equal((tries[1]!.body as { token?: string }).token, 'tok-x');
     } finally {
       await h.close();
     }

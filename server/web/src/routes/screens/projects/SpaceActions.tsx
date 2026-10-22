@@ -148,6 +148,7 @@ export function SpaceActions({
       <button
         type="button"
         className="space-link"
+        data-action="restore"
         disabled={busy}
         onClick={() => {
           handlers.onRestore(space);

@@ -84,7 +84,14 @@ export function ProjectsScreen({
    * client decides grants them. Each denies until the server has answered.
    */
   const mayCreate = gates.org('project.create');
-  const mayRestore = gates.org('project.archive');
+  /**
+   * Restore is the settings `PATCH`, which asks both: the org's
+   * `project.archive` and this space's `project.settings.edit` (LAI-976) —
+   * so *Create and archive spaces* alone, without a way into the space, is
+   * not enough.
+   */
+  const mayRestore = (space: Project): boolean =>
+    gates.org('project.archive') && gates.project(space.id, 'project.settings.edit');
   /** The space a join or restore is in flight for, so only its own button says so. */
   const [busy, setBusy] = useState<string | undefined>(undefined);
   const [actionError, setActionError] = useState<string | undefined>(undefined);
@@ -163,7 +170,7 @@ export function ProjectsScreen({
     space,
     kind,
     maySettings: gates.project(space.id, 'project.settings.edit'),
-    mayRestore,
+    mayRestore: mayRestore(space),
     busy: busy === space.slug,
     theme,
     now,
@@ -407,7 +414,8 @@ export function ProjectsScreen({
           {section('PUBLIC IN THIS ORG', 'Public in this org', 'joinable', sections.joinable)}
 
           {/* The *Archived* chip's own list (D-103 item 10, LAI-976's
-              `?archived=only`), muted, with Restore for `project.archive`. */}
+              `?archived=only`), muted, with Restore for `project.archive` and the space's
+              `project.settings.edit`. */}
           {query.filter === 'archived' && archivedList.status === 'error' ? (
             <ApiErrorState
               error={archivedList.error}
