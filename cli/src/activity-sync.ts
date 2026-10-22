@@ -620,10 +620,12 @@ async function syncLocked(
     if (signal.aborted) throw new Abandoned();
     writeState(paths, next);
   };
-  const fail = (message: string, status?: number): SyncOutcome => ({
-    kind: 'error',
-    ...failed_(paths, nowS, message, status),
-  });
+  // A request the deadline aborted comes back as a failure: the deadline has
+  // recorded that one already.
+  const fail = (message: string, status?: number): SyncOutcome => {
+    if (signal.aborted) throw new Abandoned();
+    return { kind: 'error', ...failed_(paths, nowS, message, status) };
+  };
 
   try {
     // Claimed before any work, so a sync that hangs or dies still holds the

@@ -710,6 +710,39 @@ void describe('syncs cannot pile up (review 1, item 1)', () => {
   );
 
   /**
+   * The deadline fell while the board's GET was still in flight — what a busy
+   * gate does to the test above. The aborted GET came back as an ordinary
+   * failure and was recorded on top of the deadline's: `failures: 2`, the next
+   * sync 1200 s away (LAI-801). Here the GET never answers, so the deadline
+   * always lands on it, however slow the machine; and the abandoned run is
+   * waited for — its fetch settled, then everything queued behind that — not
+   * given a few hundred ms.
+   */
+  void test('a sync abandoned mid-request records one failure, not two', async () => {
+    const w = await world();
+    w.board.get = 'hang';
+    const inFlight: Promise<unknown>[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (...args: Parameters<typeof fetch>) => {
+      const call = realFetch(...args);
+      inFlight.push(call);
+      return call;
+    };
+    try {
+      const outcome = await sync({ ...w.ctx, deadlineMs: 300 });
+      assert.ok(outcome.kind === 'error' && outcome.deadline === true);
+      assert.equal(inFlight.length, 1);
+      await Promise.allSettled(inFlight);
+      await new Promise((res) => setImmediate(res));
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+    assert.equal(readState(w.paths)?.failures, 1);
+    assert.equal(readState(w.paths)?.next_sync_at, w.nowS() + 600);
+    assert.match(readFileSync(w.paths.lastError, 'utf8'), /did not finish within 0\.3 s/);
+  });
+
+  /**
    * `ps -o lstart` prints in the caller's time zone. An agent started with
    * another `TZ` wrote its start time in that zone; read back in this one it
    * looked like a different process, and the lock was taken from a live sync.
