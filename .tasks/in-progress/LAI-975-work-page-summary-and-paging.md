@@ -2,11 +2,12 @@
 id: LAI-975
 title: 'The Work page is one long list with no header, figures or pages'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-974, LAI-952]
 discovered-from:
-status: backlog
+started: 2026-10-22T16:37:12Z
+status: in-progress
 ---
 
 ## Goal
