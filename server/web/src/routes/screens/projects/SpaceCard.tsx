@@ -7,7 +7,7 @@ import {
   SpaceCounts,
   SpaceFaces,
   type SpaceItemProps,
-} from './SpaceParts.tsx';
+} from './SpaceActions.tsx';
 
 /**
  * A space in the grid (D-103 item 12, LAI-978): **one shape for every space.**

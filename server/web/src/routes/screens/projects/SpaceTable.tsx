@@ -8,7 +8,7 @@ import {
   SpaceCounts,
   SpaceFaces,
   type SpaceItemProps,
-} from './SpaceParts.tsx';
+} from './SpaceActions.tsx';
 
 export interface SpaceTableProps {
   readonly spaces: readonly Project[];

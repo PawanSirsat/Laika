@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { ScreenHeader } from '../../components/ScreenHeader.tsx';
 import { useTheme } from '../../theme/use-theme.ts';
@@ -18,11 +18,10 @@ import {
   type Project,
 } from '../../api/projects.ts';
 import { canEditProjectContext } from '../../api/project-context.ts';
-import { mayInOrg, mayInProject } from '../../api/permissions.ts';
-import { usePermissions } from '../../api/use-permissions.ts';
+import { getPermissions, mayInOrg, mayInProject, type Permissions } from '../../api/permissions.ts';
 import { ProjectContextPanel } from './projects/ProjectContextPanel.tsx';
 import { SpaceCard } from './projects/SpaceCard.tsx';
-import type { SpaceHandlers, SpaceItemProps, SpaceKind } from './projects/SpaceParts.tsx';
+import type { SpaceHandlers, SpaceItemProps, SpaceKind } from './projects/SpaceActions.tsx';
 import { SpaceTable } from './projects/SpaceTable.tsx';
 import { SpacesToolbar } from './projects/SpacesToolbar.tsx';
 import {
@@ -39,6 +38,28 @@ import { ApiError } from '../../api/errors.ts';
 import { fieldErrors } from '../../api/setup.ts';
 import { required } from '../../components/forms/validation.ts';
 import './projects.css';
+
+/**
+ * The reader's own grants (`GET /permissions`), for the controls only a holder
+ * is offered (LAI-978). `undefined` while loading and after a failure: a
+ * control not known to be allowed is not offered, and the server would refuse
+ * it anyway.
+ */
+function usePermissions(): Permissions | undefined {
+  const [permissions, setPermissions] = useState<Permissions | undefined>(undefined);
+  useEffect(() => {
+    const controller = new AbortController();
+    getPermissions(controller.signal)
+      .then(setPermissions)
+      .catch(() => {
+        setPermissions(undefined);
+      });
+    return () => {
+      controller.abort();
+    };
+  }, []);
+  return permissions;
+}
 
 export interface ProjectsScreenProps {
   /** Open a project's board. `?project=<slug>` is what BoardScreen reads. */
