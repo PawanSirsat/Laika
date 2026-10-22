@@ -107,10 +107,25 @@ void describe('My day: the organisation’s breaks on the Timeline', () => {
         (await band.getAttribute('aria-label')) ?? '',
         /^Lunch, 12:00–1:00 PM — the organisation’s break$/,
       );
-      // Display only: nothing to press, nothing about what was worked in it.
+      // Nothing to press on the band; the pill on it says what was worked
+      // (D-105): e2 is 12:00–12:30, half the window.
       assert.equal(await band.evaluate((el) => getComputedStyle(el).pointerEvents), 'none');
       assert.equal(await band.locator('button, a, [tabindex]').count(), 0);
-      assert.doesNotMatch(await band.innerText(), /work|late|long|over|through|\d+\s*(h|min)/i);
+      await h.page.locator('[data-zoom="1"]').click();
+      const pill = band.locator('[data-scheduled-pill]');
+      await until(async () => (await pill.locator('[data-scheduled-worked]').count()) === 1);
+      assert.equal(await pill.getAttribute('data-worked'), '30');
+      assert.equal(await pill.locator('[data-scheduled-worked]').innerText(), '30 min worked');
+      assert.equal(await pill.locator('[data-break-kind="meal"]').count(), 1, 'Lunch has no fork');
+      assert.match((await pill.getAttribute('title')) ?? '', /30 min off, 30 min worked/);
+      // Its bar: worked first, then off, half each.
+      const segs = pill.locator('.dayline-scheduled-seg');
+      assert.equal(await segs.count(), 2);
+      assert.ok((await segs.nth(0).evaluate((el: Element) => el.className)).includes('seg-work'));
+      // And e2's half inside the window is hatched, over the block, catching nothing.
+      const bite = h.page.locator('[data-scheduled-bite="e2"]');
+      assert.equal(await bite.count(), 1);
+      assert.equal(await bite.evaluate((el) => getComputedStyle(el).pointerEvents), 'none');
 
       // e2 (12:00–12:30) sits over the band, whole and on top.
       const e2 = h.page.locator('[data-block-select="e2"]');
@@ -131,6 +146,30 @@ void describe('My day: the organisation’s breaks on the Timeline', () => {
 
       // 12:30–13:00 was a gap between e2 and d3; inside lunch it is not.
       assert.equal(await h.page.locator('[data-gap-start="750"]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a window nothing was worked in says offline; one a block covers says worked through', async () => {
+    const h = await myDay(TODAY, [
+      { label: 'Tea break', start: '16:30', end: '17:00', days: [ISO_TODAY] },
+      { label: 'Stand-up', start: '13:00', end: '13:45', days: [ISO_TODAY] },
+    ]);
+    try {
+      await h.page.locator('[data-zoom="2"]').click();
+      const tea = h.page.locator('[data-scheduled-break="990"] [data-scheduled-pill]');
+      await until(async () => (await tea.locator('[data-scheduled-worked]').count()) === 1);
+      assert.equal(await tea.locator('[data-scheduled-worked]').innerText(), 'offline');
+      assert.equal(await tea.getAttribute('data-worked'), '0');
+      assert.equal(await tea.locator('[data-break-kind="cup"]').count(), 1, 'Tea has no cup');
+      assert.equal(await h.page.locator('[data-scheduled-bite]').count(), 1, 'only d3 is hatched');
+      // 13:00–13:45 lies inside d3 (13:00–14:50).
+      const standup = h.page.locator('[data-scheduled-break="780"] [data-scheduled-pill]');
+      await until(async () => (await standup.locator('[data-scheduled-worked]').count()) === 1);
+      assert.equal(await standup.locator('[data-scheduled-worked]').innerText(), 'worked through');
+      assert.equal(await standup.locator('[data-break-kind="people"]').count(), 1);
+      assert.equal(await h.page.locator('[data-scheduled-bite="d3"]').count(), 1);
     } finally {
       await h.close();
     }
@@ -207,7 +246,7 @@ void describe('Organisation: the break schedule', () => {
         .getByRole('button', { name: /Remove/ })
         .click();
       await rows.nth(0).getByLabel('Label').fill('Lunch break');
-      await fact.getByRole('button', { name: 'Add a break' }).click();
+      await fact.getByRole('button', { name: 'Add your own' }).click();
       const added = rows.nth(1);
       await added.getByLabel('Label').fill('Stand-up');
       await added.getByLabel('Starts').fill('09:30');
@@ -237,6 +276,49 @@ void describe('Organisation: the break schedule', () => {
     }
   });
 
+  void test('a usual break is one click, with its glyph, and is not offered twice', async () => {
+    const writes: StubCall[] = [];
+    const h = await organisation(
+      orgStub('owner', [LUNCH], {
+        '/api/v1/org/time/breaks': (call: StubCall) => {
+          writes.push(call);
+          return settings((call.body as { breaks: unknown[] }).breaks);
+        },
+      }),
+    );
+    try {
+      const fact = h.page.locator('[data-fact="breaks"]');
+      await fact.waitFor({ timeout: 10_000 });
+      // Read-only: Lunch wears the fork.
+      assert.equal(await fact.locator('.org-break [data-break-kind="meal"]').count(), 1);
+      await fact.getByRole('button', { name: 'Edit breaks' }).click();
+      const lunch = fact.locator('[data-break-preset="lunch"]');
+      await lunch.waitFor();
+      assert.equal(await lunch.isDisabled(), true, 'Lunch is offered although it is in the list');
+      await fact.locator('[data-break-preset="tea"]').click();
+      const rows = fact.locator('[data-break-row]');
+      await until(async () => (await rows.count()) === 2);
+      assert.equal(await rows.nth(1).getByLabel('Label').inputValue(), 'Tea break');
+      assert.equal(await rows.nth(1).locator('[data-break-kind="cup"]').count(), 1);
+      assert.equal(await fact.locator('[data-break-preset="tea"]').isDisabled(), true);
+      // Renaming the row changes its glyph.
+      await rows.nth(1).getByLabel('Label').fill('Afternoon walk');
+      await until(
+        async () => (await rows.nth(1).locator('[data-break-kind="walk"]').count()) === 1,
+      );
+      await fact.getByRole('button', { name: 'Save breaks' }).click();
+      await until(() => writes.length === 1);
+      assert.deepEqual(writes[0]?.body, {
+        breaks: [
+          { label: 'Lunch', start: '12:00', end: '13:00', days: [ISO_TODAY] },
+          { label: 'Afternoon walk', start: '16:00', end: '16:15', days: [1, 2, 3, 4, 5] },
+        ],
+      });
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('a refused window carries the server’s message, on the window it names', async () => {
     const h = await organisation(
       orgStub('admin', [], {
@@ -261,8 +343,8 @@ void describe('Organisation: the break schedule', () => {
       const fact = h.page.locator('[data-fact="breaks"]');
       await fact.waitFor({ timeout: 10_000 });
       await fact.getByRole('button', { name: 'Edit breaks' }).click();
-      await fact.getByRole('button', { name: 'Add a break' }).click();
-      await fact.getByRole('button', { name: 'Add a break' }).click();
+      await fact.getByRole('button', { name: 'Add your own' }).click();
+      await fact.getByRole('button', { name: 'Add your own' }).click();
       const rows = fact.locator('[data-break-row]');
       await rows.nth(0).getByLabel('Label').fill('Lunch');
       await rows.nth(1).getByLabel('Label').fill('Late lunch');

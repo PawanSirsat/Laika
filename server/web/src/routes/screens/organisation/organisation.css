@@ -451,24 +451,43 @@
   cursor: default;
 }
 
-/* D-101's breaks (LAI-956): a short list, and its editor one window a row. */
+/*
+ * D-101's breaks (LAI-956, LAI-894): a short list, each with the glyph its
+ * name earns, and an editor — the usual breaks one click each, then a row a
+ * window: glyph, name, the clock pair, the days as chips, Remove.
+ */
 .org-breaks {
   margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
 }
 
 .org-break {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0 var(--space-2);
+}
+
+.org-break-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+  border: 1px solid var(--chip-green-border);
+  border-radius: var(--radius-xs);
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
 }
 
 .org-break-label {
   color: var(--text-primary);
+  font-weight: var(--weight-semibold);
 }
 
 .org-break-when {
@@ -489,15 +508,61 @@
   min-width: 0;
 }
 
+.org-break-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.org-break-preset {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0.25rem 0.625rem 0.25rem 0.5rem;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-chip);
+  background: var(--bg-card);
+  font: inherit;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.org-break-preset .break-glyph {
+  color: var(--chip-green);
+}
+
+.org-break-preset:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.org-break-preset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.org-break-preset:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.org-break-none {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
 .org-break-row {
   margin: 0;
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   min-width: 0;
   border: 1px solid var(--border-card);
   border-radius: var(--radius-card);
+  background: var(--bg-column);
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
+  gap: var(--space-2);
 }
 
 .org-break-legend {
@@ -513,14 +578,46 @@
   gap: var(--space-2);
 }
 
+.org-break-glyph-edit {
+  width: 2.125rem;
+  height: 2.125rem;
+}
+
 .org-break-name {
   flex: 1 1 10rem;
   min-width: 0;
 }
 
+.org-break-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.org-break-to {
+  color: var(--text-muted);
+}
+
 .org-break-time {
   flex: 0 0 auto;
   width: 8.5rem;
+}
+
+.org-break-remove {
+  margin-left: auto;
+  padding: 0.25rem 0.5rem;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.org-break-remove:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--overdue) 8%, transparent);
+  color: var(--overdue);
 }
 
 .org-break-days {
@@ -530,14 +627,28 @@
 }
 
 .org-break-day {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
   padding: 0.125rem 0.5rem;
   border: 1px solid var(--border-card);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-chip);
+  background: var(--bg-card);
   font-size: var(--text-small);
   color: var(--text-secondary);
+  cursor: pointer;
+}
+
+/* The chip is the box: the native one lies over it unseen, so a click or a
+   tab lands on a real checkbox and the chip's colour says checked. */
+.org-break-day input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
   cursor: pointer;
 }
 
@@ -545,6 +656,12 @@
   border-color: var(--accent);
   background: var(--accent-bg);
   color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+}
+
+.org-break-day:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* The provider and the key tail are one sentence — `anthropic ···9f2a`.
