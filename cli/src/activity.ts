@@ -1177,5 +1177,10 @@ export async function time(argv: readonly string[], io: ActivityIo = CONSOLE): P
       `${n(read.dispatched, 'reply of builders Omnigent dispatched was', 'replies of builders Omnigent dispatched were')} read for their cards alone — none counts as yours.`,
     );
   }
+  if (read.laneCommits > 0) {
+    io.out(
+      `${n(read.laneCommits, 'commit of yours in a dispatched builder’s repo', 'commits of yours in dispatched builders’ repos')} counted on the signals lane alone — no minute, no card (LAI-314).`,
+    );
+  }
   return 0;
 }

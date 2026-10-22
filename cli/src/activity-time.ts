@@ -33,8 +33,9 @@ import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-
  * primary session (`events.log` too, LAI-792), the Laika marks that
  * start work on a task, the person's own commits in the repos the hook has
  * seen sessions start in (author time, and a key from the subject, which is
- * read and dropped at once), and the reply times and task of each session the
- * hook marked Omnigent-dispatched (D-095). **Only blocks leave**: a start, an
+ * read and dropped at once), the reply times and task of each session the
+ * hook marked Omnigent-dispatched (D-095), and the times of the person's
+ * commits in the repos the hook saw those sessions start in (LAI-314). **Only blocks leave**: a start, an
  * end, minutes, a task key or `null`, how many of each signal fell in it, and
  * — to a board that takes them — which five minutes its prompts and commits
  * fell in (D-096, {@link blocksToSend}). Never prompt or reply text, paths,
@@ -52,7 +53,8 @@ import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-
  *   started itself — a sub-agent finishing, a timer, an idle terminal; the
  *   hook's `w` (D-090) — makes no time, and nor does the end that closes it:
  *   each end closes the start before it in its session, and an end with no
- *   start counts nothing. A kept end is a reply; no start is a typed prompt.
+ *   start counts nothing. A kept end is a reply; a kept start is counted as
+ *   a prompt (LAI-314, the owner types only there), though it was not typed.
  * - A **minute** counts once, whatever number of lanes are active in it:
  *   parallel sessions share a person's time and never multiply it.
  * - A minute's **tasks** are the distinct keys of the lanes active in it. A
@@ -66,7 +68,9 @@ import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-
  *   between their distinct keys. A minute the person's lanes tied keeps its
  *   keys and gains none.
  * - **Commits and dispatched sessions never make time**: they add a key —
- *   a commit a count too — to minutes the person's lanes already made.
+ *   a commit a count too — to minutes the person's lanes already made. A
+ *   commit in a dispatched builder's repo adds a count and nothing else
+ *   (LAI-314): no key, no minute, and never the heatmap's.
  * - A **stretch** is a run of active minutes, cut at local midnight; it gives
  *   one block per task in it, its minutes by largest remainder so a stretch's
  *   blocks add up to its wall-clock minutes.
@@ -200,6 +204,11 @@ export interface DraftInputs {
   readonly turns: readonly TurnEvent[];
   /** The replies of sessions Omnigent dispatched: they lend keys, and make no minute. */
   readonly dispatched?: readonly DispatchedEvent[];
+  /**
+   * Epoch seconds of the person's commits in the repos of builders Omnigent
+   * dispatched (LAI-314): counted on the lane, and nothing else.
+   */
+  readonly laneCommits?: readonly number[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -491,6 +500,11 @@ export function draftDays(
     const b = laneTarget(Math.floor(t.at / 60), lane);
     if (b === undefined) continue;
     if (t.kind === 'end') b.signals.replies += 1;
+    // A turn the person started is their prompt, on the lane (LAI-314).
+    if (t.kind === 'start') {
+      b.signals.prompts += 1;
+      timeIn(b, 'prompts', Math.floor(t.at / 60));
+    }
     b.sessions.add(lane);
   }
   // A prompt is evidence for every task its minute was split between.
@@ -504,8 +518,11 @@ export function draftDays(
     }
   }
   // A commit lands in the stretch it closes: its own minute, or the active one
-  // before it within reach; in its task's block when the stretch has one.
-  for (const c of inputs.commits) {
+  // before it within reach; in its task's block when the stretch has one. A
+  // dispatched builder's has no task here, so it lands in the stretch's first
+  // block: a count and a bucket, never a minute or a key (LAI-314).
+  const laneCommits = (inputs.laneCommits ?? []).map((at) => ({ at, task: null }));
+  for (const c of [...inputs.commits, ...laneCommits]) {
     let minute = Math.floor(c.at / 60);
     const floor = minute - COMMIT_REACH_S / 60;
     while (minute >= floor && !info.has(minute)) minute -= 1;
@@ -690,6 +707,8 @@ export interface Draft {
     readonly runtimeTurns: number;
     /** Replies of sessions Omnigent dispatched, read for their keys alone (D-095). */
     readonly dispatched: number;
+    /** The person's commits in dispatched builders' repos, for the lane alone (LAI-314). */
+    readonly laneCommits: number;
   };
 }
 
@@ -736,15 +755,15 @@ const COMMON = ['--no-merges', '--no-use-mailmap', '--no-show-signature', '--no-
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 
 /**
- * The person's commits since `fromS` in the repos the hook has seen sessions
- * start in (in scope), each with the repo's identity and the one key its
- * subject carries that the board serves. The subject is read here and goes
- * no further than this loop.
+ * The person's commits since `fromS` in `repos`, each with the repo's
+ * identity and the one key its subject carries that the board serves. The
+ * subject is read here and goes no further than this loop. A repository in
+ * `seen`, or a commit in `shas`, was read already and is not counted twice.
  */
 async function draftCommits(options: {
-  readonly paths: ActivityPaths;
-  readonly state: ActivityState;
-  readonly nowS: number;
+  readonly repos: readonly string[];
+  readonly seen: Set<string>;
+  readonly shas: Set<string>;
   readonly fromS: number;
   readonly extraEmails: readonly string[];
   readonly git: GitRunner;
@@ -752,13 +771,7 @@ async function draftCommits(options: {
   readonly signal?: AbortSignal;
   readonly stopAt?: number;
 }): Promise<CommitEvent[]> {
-  const { git } = options;
-  const repos = await reposInScope(
-    rememberedRepos(options.paths, options.nowS),
-    options.state.scope,
-  );
-  const seen = new Set<string>();
-  const shas = new Set<string>();
+  const { git, repos, seen, shas } = options;
   const out: CommitEvent[] = [];
   for (const repo of repos) {
     if (
@@ -828,17 +841,25 @@ export async function buildDraft(options: DraftOptions): Promise<Draft> {
   const served = sources.prefixes === undefined ? undefined : new Set(sources.prefixes);
   const serves = (key: string): boolean => served?.has(key.slice(0, key.lastIndexOf('-'))) === true;
 
-  const commits = await draftCommits({
-    paths: options.paths,
-    state: options.state,
-    nowS,
-    fromS,
-    extraEmails: options.extraEmails,
-    git: options.git,
-    serves,
-    ...(options.signal === undefined ? {} : { signal: options.signal }),
-    ...(options.stopAt === undefined ? {} : { stopAt: options.stopAt }),
-  });
+  // The repos the hook saw the person's sessions start in, then those of the
+  // builders Omnigent dispatched (LAI-314): a commit the first counted is not
+  // counted again, and the second's only tick the lane.
+  const seen = new Set<string>();
+  const shas = new Set<string>();
+  const commitsIn = async (file: string): Promise<CommitEvent[]> =>
+    draftCommits({
+      repos: await reposInScope(rememberedRepos(options.paths, nowS, file), options.state.scope),
+      seen,
+      shas,
+      fromS,
+      extraEmails: options.extraEmails,
+      git: options.git,
+      serves,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(options.stopAt === undefined ? {} : { stopAt: options.stopAt }),
+    });
+  const commits = await commitsIn(options.paths.repos);
+  const laneCommits = (await commitsIn(dispatchedReposFile(options.paths))).map((c) => c.at);
 
   // A session's repository, only when a commit could name its task.
   const repoOf = new Map<string, string | null>();
@@ -870,7 +891,7 @@ export async function buildDraft(options: DraftOptions): Promise<Draft> {
     task: r.task,
   }));
   const drafted = draftDays(
-    { replies, prompts, commits, marks: sources.marks, turns, dispatched },
+    { replies, prompts, commits, marks: sources.marks, turns, dispatched, laneCommits },
     tz,
     days,
   );
@@ -885,6 +906,7 @@ export async function buildDraft(options: DraftOptions): Promise<Draft> {
       turns: turns.filter((t) => t.kind === 'start').length,
       runtimeTurns: turns.filter((t) => t.kind === 'wake').length,
       dispatched: dispatched.length,
+      laneCommits: laneCommits.length,
     },
   };
 }
@@ -934,6 +956,15 @@ export interface TimeContext extends DraftOptions {
   readonly collectorId: string;
   readonly settings: () => Promise<TimeAnswer<TimeSettings>>;
   readonly send: (body: string) => Promise<TimeAnswer<unknown>>;
+}
+
+/**
+ * Written by the hook at the start of a builder Omnigent dispatched (LAI-314):
+ * its repository's top level, as `repos` is written — 0600, never sent, and
+ * never read by the heatmap's census.
+ */
+export function dispatchedReposFile(paths: ActivityPaths): string {
+  return join(paths.dir, 'dispatched-repos');
 }
 
 /** What the board last took, per day — 0600, local; deleted when drafting is off. */

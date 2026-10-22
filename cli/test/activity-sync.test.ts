@@ -1006,3 +1006,35 @@ void describe('the server’s error envelope (LAI-751)', () => {
     assert.equal(zoneUnder('Africa/Johannesburg'), 'Africa/Johannesburg');
   });
 });
+
+/**
+ * LAI-314: `laika activity on` again, for the same board, kept everything but
+ * the board's last answer on time drafting — so `status` said "not asked
+ * yet" beside a time-drafts.json the board had taken.
+ */
+void describe('turning activity on again for the same board', () => {
+  void test('keeps what the board last said about time drafting', () => {
+    const home = mkdtempSync(join(tmpdir(), 'laika-again-'));
+    try {
+      const paths = activityPaths(home);
+      const sharing = {
+        org_enabled: true,
+        enabled: true,
+        scope: 'agent-repos',
+        min_sync_interval_s: 600,
+      } as const;
+      startCollecting(paths, sharing, 1_000, 'http://board.example');
+      const first = readState(paths);
+      assert.ok(first !== undefined);
+      writeState(paths, { ...first, drafting: true, drafting_checked_at: 2_000 });
+      startCollecting(paths, sharing, 3_000, 'http://board.example');
+      assert.equal(readState(paths)?.drafting, true);
+      assert.equal(readState(paths)?.drafting_checked_at, 2_000);
+      // Another board starts over, and has not been asked.
+      startCollecting(paths, sharing, 4_000, 'http://other.example');
+      assert.equal(readState(paths)?.drafting, undefined);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});

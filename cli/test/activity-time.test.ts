@@ -246,7 +246,7 @@ void describe('the rule (pure)', () => {
     ]);
   });
 
-  void test('an Omnigent orchestrator’s turns are a lane: each end a reply, never a typed prompt (LAI-792)', () => {
+  void test('an Omnigent orchestrator’s turns are a lane: each end a reply, each start the person’s prompt (LAI-792, LAI-314)', () => {
     const blocks = day({
       turns: [
         turn(T0, 'o1', 'start'),
@@ -260,7 +260,13 @@ void describe('the rule (pure)', () => {
         end: (T0 + 15 * MIN) * 1000,
         minutes: 15,
         task: null,
-        signals: { prompts: 0, replies: 1, sessions: 1, commits: 0, marks: 0 },
+        signals: { prompts: 2, replies: 1, sessions: 1, commits: 0, marks: 0 },
+        at: {
+          prompts: [
+            [Math.floor(T0 / 300), 1],
+            [Math.floor((T0 + 10 * MIN) / 300), 1],
+          ],
+        },
       },
     ]);
   });
@@ -283,7 +289,8 @@ void describe('the rule (pure)', () => {
     // Their untied minutes beside tied ones are the tied task's, as a session's are.
     assert.deepEqual(
       together.map((b) => [b.task, b.signals]),
-      [['LAI-1', { prompts: 1, replies: 4, sessions: 3, commits: 0, marks: 0 }]],
+      // The typed prompt and the two turns the person started (LAI-314).
+      [['LAI-1', { prompts: 3, replies: 4, sessions: 3, commits: 0, marks: 0 }]],
     );
     const after = day({
       replies: [reply(T0, 'a', 'LAI-1')],
@@ -313,7 +320,8 @@ void describe('the rule (pure)', () => {
       [['03:05', 8, null]],
     );
     assert.deepEqual(blocks[0]?.signals, {
-      prompts: 0,
+      // The owner's turn; none of the wake-ups (LAI-314).
+      prompts: 1,
       replies: 1,
       sessions: 1,
       commits: 0,
@@ -352,7 +360,8 @@ void describe('the rule (pure)', () => {
         minutes: 8,
         task: 'LAI-5',
         // The person's turn and its reply; none of the builder's four replies.
-        signals: { prompts: 0, replies: 1, sessions: 1, commits: 0, marks: 0 },
+        signals: { prompts: 1, replies: 1, sessions: 1, commits: 0, marks: 0 },
+        at: { prompts: [[Math.floor(T0 / 300), 1]] },
       },
     ]);
   });
@@ -619,7 +628,8 @@ void describe('from the machine’s own files', () => {
     assert.equal(blocks[0]?.signals.prompts, 1, 'the Claude Code prompt; the Codex one is LAI-790');
     assert.equal(blocks[1]?.signals.commits, 1);
     assert.deepEqual(blocks[3]?.signals, {
-      prompts: 0,
+      // The turn the person started is a prompt on the lane (LAI-314).
+      prompts: 1,
       replies: 1,
       sessions: 1,
       commits: 0,
@@ -745,6 +755,100 @@ void describe('from the machine’s own files', () => {
           'at carries something other than numbers',
         );
       }
+    }
+  });
+
+  void test('a dispatched builder’s commits are commits on the lane: no minute, no task, no path (LAI-314)', async () => {
+    const m = machine();
+    // A builder's own repository, and a worktree of the person's: the hook
+    // writes both to `dispatched-repos` at a dispatched session's start.
+    const builder = join(m.home, 'work', 'builder');
+    mkdirSync(builder, { recursive: true });
+    execFileSync('git', ['init', '-q', '-b', 'main', builder]);
+    git(builder, ['config', 'user.email', EMAIL]);
+    // 12:02, inside the orchestrator's 12:00–12:09: counted.
+    git(
+      builder,
+      ['commit', '-q', '--allow-empty', '-m', `${SECRET.subject} ACME-80`],
+      T0 + 182 * MIN,
+    );
+    // 12:03, somebody else's: not counted.
+    execFileSync('git', ['-C', builder, 'commit', '-q', '--allow-empty', '-m', 'theirs'], {
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Other',
+        GIT_AUTHOR_EMAIL: 'other@example.test',
+        GIT_COMMITTER_NAME: 'Other',
+        GIT_COMMITTER_EMAIL: 'other@example.test',
+        GIT_AUTHOR_DATE: `@${String(T0 + 183 * MIN)} +0000`,
+        GIT_COMMITTER_DATE: `@${String(T0 + 183 * MIN)} +0000`,
+      },
+    });
+    // 13:23, naming ACME-80, after the person's own session there at 13:20:
+    // counted, and it names no task for those minutes.
+    git(builder, ['commit', '-q', '--allow-empty', '-m', 'ACME-80 tidy'], T0 + 263 * MIN);
+    // 15:00, in no stretch of the person's: not counted.
+    git(builder, ['commit', '-q', '--allow-empty', '-m', 'late'], T0 + 360 * MIN);
+    const worktree = join(m.home, 'work', 'acme-wt');
+    git(m.top, ['worktree', 'add', '-q', '-b', 'wt', worktree]);
+    const top = git(builder, ['rev-parse', '--show-toplevel']).trim();
+    writeFileSync(
+      join(
+        m.home,
+        '.claude',
+        'projects',
+        '-work-acme',
+        'eeeeeeee-1111-4111-8111-eeeeeeeeeeee.jsonl',
+      ),
+      `${claude('msg_b1', T0 + 260 * MIN, 'eeeeeeee-1111-4111-8111-eeeeeeeeeeee', top, 'main')}\n`,
+    );
+    const wtTop = git(worktree, ['rev-parse', '--show-toplevel']).trim();
+    writeFileSync(
+      join(m.paths.dir, 'dispatched-repos'),
+      `${String(NOW_S - 600)}\t${top}\n${String(NOW_S - 600)}\t${wtTop}\n`,
+      { mode: 0o600 },
+    );
+
+    const before = (await buildDraft(m.options)).days;
+    rmSync(join(m.paths.dir, 'dispatched-repos'));
+    const without = (await buildDraft(m.options)).days.get(UTC_DAY) ?? [];
+    const blocks = before.get(UTC_DAY) ?? [];
+    // The same minutes and tasks: a builder's commit makes no time and names no task.
+    assert.deepEqual(
+      blocks.map((b) => [b.start, b.minutes, b.task]),
+      without.map((b) => [b.start, b.minutes, b.task]),
+    );
+    assert.deepEqual(
+      blocks.map((b) => [new Date(b.start).toISOString().slice(11, 16), b.task, b.signals.commits]),
+      [
+        ['09:00', 'ACME-77', 0],
+        // The person's 09:50 once: the worktree adds nothing.
+        ['09:40', 'ACME-80', 1],
+        ['11:00', null, 0],
+        // The builder's 12:02.
+        ['12:00', null, 1],
+        // The builder's 13:23 names ACME-80, and these minutes stay untied.
+        ['13:20', null, 1],
+      ],
+    );
+    assert.deepEqual(blocks[3]?.at?.commits, [[Math.floor((T0 + 182 * MIN) / 300), 1]]);
+
+    writeFileSync(
+      join(m.paths.dir, 'dispatched-repos'),
+      `${String(NOW_S - 600)}\t${top}\n${String(NOW_S - 600)}\t${wtTop}\n`,
+      { mode: 0o600 },
+    );
+    const draft = await buildDraft(m.options);
+    assert.equal(draft.read.laneCommits, 3, 'the builder’s three of its own; not the other’s');
+    const body = timeDraftReports(
+      '6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a',
+      TZ,
+      [...draft.days].map(([d, b]) => ({ day: d, blocks: b })),
+    )
+      .map((r) => r.body)
+      .join('\n');
+    for (const secret of [top, wtTop, 'builder', 'acme-wt', SECRET.subject, 'other@example.test']) {
+      assert.equal(body.includes(secret), false, `${secret} left the machine`);
     }
   });
 
@@ -1064,7 +1168,7 @@ void describe('`laika time draft`', () => {
     const text = out.join('\n');
     assert.match(text, /2026-10-20 {2}1 h 4 min in 4 blocks, 50 min tied to a task/);
     assert.match(text, /09:00–09:40 +40 min {2}ACME-77 +1 prompt · 4 replies · 1 session/);
-    assert.match(text, /12:00–12:09 +9 min {2}no task +1 reply · 1 session/);
+    assert.match(text, /12:00–12:09 +9 min {2}no task +1 prompt · 1 reply · 1 session/);
     assert.match(text, /1 Omnigent orchestrator turn\b/);
     assert.match(text, /1 turn Omnigent started itself left out/);
     for (const secret of [...Object.values(SECRET), m.top, PERSON, PRIMARY, ROBOT, ORCHESTRATOR]) {
@@ -1091,7 +1195,7 @@ void describe('`laika time draft`', () => {
     );
     assert.match(
       text,
-      /12:00–12:05 +5 min {2}ACME-77 +1 reply · 1 session · a dispatched builder’s card$/m,
+      /12:00–12:05 +5 min {2}ACME-77 +1 prompt · 1 reply · 1 session · a dispatched builder’s card$/m,
     );
     assert.match(text, /09:00–09:40 +40 min {2}ACME-77 +1 prompt · 4 replies · 1 session$/m);
     assert.match(text, /^2 blocks took the card of a builder Omnigent dispatched/m);

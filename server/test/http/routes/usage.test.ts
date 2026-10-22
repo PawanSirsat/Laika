@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { orgs, tokenUsageDays, users } from '../../../src/db/schema.ts';
+import { agentTimeBuckets, orgs, tokenUsageDays, users } from '../../../src/db/schema.ts';
 import { RateLimiter } from '../../../src/http/rate-limit.ts';
 import {
   type AuthHarness,
@@ -286,6 +286,52 @@ describe('rows an automated session spent, over the wire (D-091, LAI-815)', () =
       const res = await put(usage({}, { automated: odd }), token);
       expect(res.status, JSON.stringify(odd)).toBe(422);
     }
+  });
+});
+
+describe('dispatched builders, over the wire (LAI-315)', () => {
+  const KEY = '0123456789abcdef';
+  const withBuilder = (builder: Record<string, unknown>) => {
+    const body = usage();
+    return { ...body, days: body.days.map((d) => ({ ...d, dispatched: [builder] })) };
+  };
+
+  it('takes a session key, a card and seconds per five minutes — and lays them on the lane', async () => {
+    switchOn(true, true);
+    const token = await mint(bea.cookie);
+    const from = Math.floor(Date.parse(`${yesterday()}T09:00:00Z`) / 300_000);
+    expect(
+      await ok(put(withBuilder({ key: KEY, task: 'LAI-1', from, seconds: [300, 60] }), token)),
+    ).toEqual({
+      accepted_days: 1,
+    });
+    expect(
+      h.db
+        .select({ key: agentTimeBuckets.sessionKey, seconds: agentTimeBuckets.seconds })
+        .from(agentTimeBuckets)
+        .all(),
+    ).toEqual([
+      { key: KEY, seconds: 300 },
+      { key: KEY, seconds: 60 },
+    ]);
+  });
+
+  it('refuses anything but times and counts', async () => {
+    switchOn(true, true);
+    const token = await mint(bea.cookie);
+    for (const builder of [
+      { key: 'b3c1a9e0-5d2f', from: 1, seconds: [1] },
+      { key: KEY, from: 1, seconds: [301] },
+      { key: KEY, from: 1, seconds: [1.5] },
+      { key: KEY, from: 1, seconds: [] },
+      { key: KEY, from: 1, seconds: Array.from({ length: 289 }, () => 1) },
+      { key: KEY, task: 'feature/secret-branch', from: 1, seconds: [1] },
+      { key: KEY, from: 1, seconds: [1], cwd: '/Users/bea/secret-repo' },
+    ]) {
+      const res = await put(withBuilder(builder), token);
+      expect(res.status, JSON.stringify(builder)).toBe(422);
+    }
+    expect(h.db.select().from(agentTimeBuckets).all()).toHaveLength(0);
   });
 });
 

@@ -143,17 +143,120 @@ export function storeAgentBuckets(
   }
 }
 
-/** A session the collector left out (automated, or out of scope): its agent time goes too. */
-export function dropAgentTime(tx: Tx, userId: string, keys: readonly string[]): void {
+/**
+ * A session the collector left out (automated, or out of scope): its agent
+ * time goes too — all but a dispatched builder's buckets (`buckets: false`),
+ * which are its `dispatched` lane and nothing else (LAI-315).
+ */
+export function dropAgentTime(
+  tx: Tx,
+  userId: string,
+  keys: readonly string[],
+  buckets = true,
+): void {
   if (keys.length === 0) return;
   tx.delete(agentTimeDays)
     .where(and(eq(agentTimeDays.userId, userId), inArray(agentTimeDays.sessionKey, [...keys])))
     .run();
+  if (!buckets) return;
   tx.delete(agentTimeBuckets)
     .where(
       and(eq(agentTimeBuckets.userId, userId), inArray(agentTimeBuckets.sessionKey, [...keys])),
     )
     .run();
+}
+
+/** At most this many dispatched sessions a day of a usage report may carry (LAI-315). */
+export const DISPATCHED_PER_DAY_MAX = 50;
+/** A day has 288 buckets; a dispatched session's run of them is at most that long. */
+export const DISPATCHED_BUCKETS_MAX = (24 * 60 * 60_000) / AGENT_BUCKET_MS;
+
+/**
+ * One builder the owner dispatched through Omnigent, on one day (LAI-315):
+ * the seconds it worked in each bucket from `from` on, as the collector read
+ * them from its transcript — OpenTelemetry cannot see a builder, which
+ * inherits Omnigent's environment — and the card its marks or branch tie it to.
+ */
+export interface DispatchedInput {
+  key: string;
+  task?: string | undefined;
+  from: number;
+  seconds: number[];
+}
+
+/**
+ * A usage report's dispatched builders (LAI-315, the owner's decision of
+ * 2026-10-22), inside its transaction: each day's list **replaces** that day's
+ * buckets for the keys it names, so a resend adds nothing. They are buckets
+ * only — never `agent_time_days`, so in no agent minutes, no card's split and
+ * no hours — and a key in `token_session_skips` (`storeExcluded`) is the only
+ * way a bucket comes from here: the receiver drops such a key's points.
+ *
+ * The card goes in `token_session_tasks` as a tie the lane reads, one token
+ * standing for "tied": nothing sums it, because no agent minutes of the
+ * session are kept to split.
+ */
+export function storeDispatched(
+  tx: Tx,
+  userId: string,
+  collectorId: string,
+  tz: string,
+  days: readonly { day: string; dispatched?: readonly DispatchedInput[] | undefined }[],
+  resolved: ReadonlyMap<string, ResolvedTask>,
+  now: number,
+): void {
+  for (const { day, dispatched } of days) {
+    if (dispatched === undefined || dispatched.length === 0) continue;
+    const keys = [...new Set(dispatched.map((d) => d.key))];
+    for (const held of bucketsOn(tx, userId, day, tz)) {
+      if (!keys.includes(held.sessionKey)) continue;
+      tx.delete(agentTimeBuckets)
+        .where(
+          and(
+            eq(agentTimeBuckets.userId, userId),
+            eq(agentTimeBuckets.sessionKey, held.sessionKey),
+            eq(agentTimeBuckets.bucket, held.bucket),
+          ),
+        )
+        .run();
+    }
+    const sums = new Map<string, AgentBucketSeconds>();
+    for (const d of dispatched) {
+      d.seconds.forEach((seconds, i) => {
+        const bucket = d.from + i;
+        if (!(seconds > 0) || dayIn(tz, bucket * AGENT_BUCKET_MS) !== day) return;
+        const id = `${d.key}\u0000${String(bucket)}`;
+        const held = sums.get(id) ?? { sessionKey: d.key, bucket, seconds: 0 };
+        held.seconds += seconds;
+        sums.set(id, held);
+      });
+      const task = d.task === undefined ? undefined : resolved.get(d.task);
+      if (task === undefined) continue;
+      tx.insert(tokenSessionTasks)
+        .values({
+          userId,
+          collectorId,
+          day,
+          sessionKey: d.key,
+          taskId: task.taskId,
+          tokens: 1,
+          updatedAt: now,
+        })
+        .onConflictDoNothing()
+        .run();
+    }
+    for (const a of sums.values()) {
+      tx.insert(agentTimeBuckets)
+        .values({
+          userId,
+          sessionKey: a.sessionKey,
+          bucket: a.bucket,
+          seconds: Math.min(AGENT_BUCKET_MS / 1000, a.seconds),
+          updatedAt: now,
+        })
+        .run();
+    }
+  }
 }
 
 /** At most this many session-to-task rows a day of a usage report may carry. */
@@ -245,7 +348,7 @@ export interface AgentDayView {
  * fourteen hours either side), each bucket kept where its start falls.
  */
 function bucketsOn(
-  db: Db,
+  db: Db | Tx,
   userId: string,
   day: string,
   tz: string,
