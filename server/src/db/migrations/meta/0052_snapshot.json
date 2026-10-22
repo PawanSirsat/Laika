@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "151ec7af-004d-4392-bf8f-34454614ad99",
-  "prevId": "0a838c6a-6165-4aa4-bb38-62951cffbf04",
+  "id": "a88c8bfd-6ef6-4b49-9d95-7bc0b54a0a3b",
+  "prevId": "f8011718-4be4-4ad7-8ed1-706362e47783",
   "tables": {
     "accounts": {
       "name": "accounts",
@@ -277,7 +277,7 @@
         },
         "activity_type_check": {
           "name": "activity_type_check",
-          "value": "type IN ('org.created', 'task.created', 'task.updated', 'task.status_changed', 'task.assigned', 'task.dependency_added', 'task.dependency_removed', 'comment.added', 'comment.edited', 'comment.deleted', 'project.created', 'project.updated', 'project.archived', 'member.added', 'member.role_changed', 'member.removed', 'token.created', 'token.revoked', 'heartbeat.session', 'webhook.commit', 'webhook.received', 'meeting.applied', 'meeting_review.discarded', 'unlisted.logged', 'sprint.created', 'sprint.updated', 'sprint.deleted', 'sprint.tasks_changed', 'project.context_updated', 'unlisted.promoted', 'unlisted.dismissed', 'user.deactivated', 'user.reactivated', 'user.signed_out', 'org.ownership_transferred', 'heartbeat.pruned', 'task.stale_flagged', 'invite.expired', 'meeting_review.expired')"
+          "value": "type IN ('org.created', 'task.created', 'task.updated', 'task.status_changed', 'task.assigned', 'task.dependency_added', 'task.dependency_removed', 'comment.added', 'comment.edited', 'comment.deleted', 'project.created', 'project.updated', 'project.archived', 'member.added', 'member.role_changed', 'member.removed', 'token.created', 'token.revoked', 'heartbeat.session', 'webhook.commit', 'webhook.received', 'meeting.applied', 'meeting_review.discarded', 'unlisted.logged', 'sprint.created', 'sprint.updated', 'sprint.deleted', 'sprint.tasks_changed', 'project.context_updated', 'unlisted.promoted', 'unlisted.dismissed', 'user.deactivated', 'user.reactivated', 'user.signed_out', 'heartbeat.pruned', 'task.stale_flagged', 'invite.expired', 'meeting_review.expired')"
         },
         "activity_system_actor_check": {
           "name": "activity_system_actor_check",
@@ -2411,6 +2411,37 @@
           "notNull": false,
           "autoincrement": false
         },
+        "color": {
+          "name": "color",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "task_create_min_role": {
+          "name": "task_create_min_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'member'"
+        },
+        "agents_allowed": {
+          "name": "agents_allowed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "former_prefixes": {
+          "name": "former_prefixes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -2441,6 +2472,11 @@
           "name": "projects_org_id_idx",
           "columns": ["org_id"],
           "isUnique": false
+        },
+        "projects_rules_idx": {
+          "name": "projects_rules_idx",
+          "columns": ["task_create_min_role", "agents_allowed"],
+          "isUnique": false
         }
       },
       "foreignKeys": {
@@ -2460,6 +2496,18 @@
         "projects_visibility_check": {
           "name": "projects_visibility_check",
           "value": "visibility IN ('public', 'private')"
+        },
+        "projects_color_check": {
+          "name": "projects_color_check",
+          "value": "color IS NULL OR color IN ('black', 'violet', 'teal', 'blue', 'amber', 'magenta', 'red', 'green')"
+        },
+        "projects_task_create_min_role_check": {
+          "name": "projects_task_create_min_role_check",
+          "value": "task_create_min_role IN ('member', 'lead')"
+        },
+        "projects_agents_allowed_check": {
+          "name": "projects_agents_allowed_check",
+          "value": "agents_allowed IN (0, 1)"
         }
       }
     },

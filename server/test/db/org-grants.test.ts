@@ -120,38 +120,38 @@ describe('loadActor carries the grants', () => {
 });
 
 /**
- * 0052 splits *Manage people* (LAI-985, D-104 item 6). A database migrated to
- * 0051 holds `manage_people` rows; after 0052 each is two rows, `invite_people`
+ * 0054 splits *Manage people* (LAI-985, D-104 item 6). A database migrated to
+ * 0053 holds `manage_people` rows; after 0054 each is two rows, `invite_people`
  * and `deactivate_people`, granted exactly as the old one was, and the old
  * name is gone. Raw SQL, because the old value is no longer in `schema.ts`.
  */
-describe('migration 0052 maps a stored manage_people onto both halves', { timeout: 60_000 }, () => {
+describe('migration 0054 maps a stored manage_people onto both halves', { timeout: 60_000 }, () => {
   let dir: string;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'laika-0052-'));
+    dir = mkdtempSync(join(tmpdir(), 'laika-0054-'));
   });
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  function folderBefore0052(cut: string): void {
+  function folderBefore0054(cut: string): void {
     cpSync(MIGRATIONS_FOLDER, cut, {
       recursive: true,
       filter: (source) => !source.endsWith('_snapshot.json'),
     });
     const journalPath = join(cut, 'meta', '_journal.json');
     const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as { entries: { tag: string }[] };
-    const at = journal.entries.findIndex((e) => e.tag.startsWith('0052_'));
+    const at = journal.entries.findIndex((e) => e.tag.startsWith('0054_'));
     const dropped = journal.entries.splice(at);
     // The guard on the guard: the first entry cut must be this migration.
-    expect(dropped[0]?.tag).toBe('0052_more_grantable_capabilities');
+    expect(dropped[0]?.tag).toBe('0054_more_grantable_capabilities');
     writeFileSync(journalPath, JSON.stringify(journal));
   }
 
   it('keeps each role’s answer, drops the old name, and the defaults fill the new capabilities', () => {
     const cut = join(dir, 'migrations');
-    folderBefore0052(cut);
+    folderBefore0054(cut);
     const opened = openDb({ path: join(dir, 'laika.db') });
     try {
       runMigrations(opened.db, { migrationsFolder: cut });

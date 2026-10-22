@@ -362,8 +362,29 @@
     {
       "idx": 51,
       "version": "6",
-      "when": 1792692899193,
-      "tag": "0052_more_grantable_capabilities",
+      "when": 1792695705934,
+      "tag": "0052_deactivation_ends_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "6",
+      "when": 1792695711370,
+      "tag": "0053_one_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "6",
+      "when": 1792695718188,
+      "tag": "0054_more_grantable_capabilities",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1792695724558,
+      "tag": "0055_password_resets",
       "breakpoints": true
     }
   ]

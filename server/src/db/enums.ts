@@ -26,7 +26,7 @@ export const CAPABILITIES = [
   'see_people_analytics',
   'see_org_activity',
   'open_all_projects',
-  // *Manage people* split in two by D-104 item 6 (LAI-985); migration 0052
+  // *Manage people* split in two by D-104 item 6 (LAI-985); migration 0054
   // maps a stored `manage_people` onto both.
   'invite_people',
   'deactivate_people',

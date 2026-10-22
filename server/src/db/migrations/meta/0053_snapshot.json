@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "dee84118-05c5-4dbd-99fd-bc3381ea6c55",
-  "prevId": "151ec7af-004d-4392-bf8f-34454614ad99",
+  "id": "e9f5a2d7-4e06-4c56-9fa0-f9b2b336e03b",
+  "prevId": "a88c8bfd-6ef6-4b49-9d95-7bc0b54a0a3b",
   "tables": {
     "accounts": {
       "name": "accounts",
@@ -2057,107 +2057,6 @@
         }
       }
     },
-    "password_resets": {
-      "name": "password_resets",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "token_hash": {
-          "name": "token_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "used_at": {
-          "name": "used_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "password_resets_token_hash_unique": {
-          "name": "password_resets_token_hash_unique",
-          "columns": ["token_hash"],
-          "isUnique": true
-        },
-        "password_resets_user_id_idx": {
-          "name": "password_resets_user_id_idx",
-          "columns": ["user_id"],
-          "isUnique": false
-        },
-        "password_resets_created_by_idx": {
-          "name": "password_resets_created_by_idx",
-          "columns": ["created_by"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "password_resets_user_id_users_id_fk": {
-          "name": "password_resets_user_id_users_id_fk",
-          "tableFrom": "password_resets",
-          "tableTo": "users",
-          "columnsFrom": ["user_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "password_resets_created_by_users_id_fk": {
-          "name": "password_resets_created_by_users_id_fk",
-          "tableFrom": "password_resets",
-          "tableTo": "users",
-          "columnsFrom": ["created_by"],
-          "columnsTo": ["id"],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
     "plan_limits": {
       "name": "plan_limits",
       "columns": {
@@ -2512,6 +2411,37 @@
           "notNull": false,
           "autoincrement": false
         },
+        "color": {
+          "name": "color",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "task_create_min_role": {
+          "name": "task_create_min_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'member'"
+        },
+        "agents_allowed": {
+          "name": "agents_allowed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "former_prefixes": {
+          "name": "former_prefixes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -2542,6 +2472,11 @@
           "name": "projects_org_id_idx",
           "columns": ["org_id"],
           "isUnique": false
+        },
+        "projects_rules_idx": {
+          "name": "projects_rules_idx",
+          "columns": ["task_create_min_role", "agents_allowed"],
+          "isUnique": false
         }
       },
       "foreignKeys": {
@@ -2561,6 +2496,18 @@
         "projects_visibility_check": {
           "name": "projects_visibility_check",
           "value": "visibility IN ('public', 'private')"
+        },
+        "projects_color_check": {
+          "name": "projects_color_check",
+          "value": "color IS NULL OR color IN ('black', 'violet', 'teal', 'blue', 'amber', 'magenta', 'red', 'green')"
+        },
+        "projects_task_create_min_role_check": {
+          "name": "projects_task_create_min_role_check",
+          "value": "task_create_min_role IN ('member', 'lead')"
+        },
+        "projects_agents_allowed_check": {
+          "name": "projects_agents_allowed_check",
+          "value": "agents_allowed IN (0, 1)"
         }
       }
     },
