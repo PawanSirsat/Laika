@@ -5581,3 +5581,41 @@ do."*
 5. **The person's own breaks are unchanged.** `time_breaks` (§4.55) stays
    per person, per day. A per-person opt-out of the schedule is not in this
    decision.
+
+## D-102 — Owner and admin see what each person sees of their own analytics; only the owner changes roles and permissions (LAI-957 – LAI-960; amends D-079, D-084 item 7, D-088 items 2 and 7)
+
+**Date:** 2026-10-22 · **By:** CHIEF (Belka), on the owner's instruction
+
+The owner, 2026-10-22: *"what an individual can see about their analytics data,
+the same thing can be seen by the owner as well, also the admin — only admin
+can't change the roles and permissions"*, and earlier: *"owner can see
+everything … we need to manage this in RBAC so the owner decides who can see
+that."*
+
+1. **Mirror rule.** Whatever a person can see about their own work and time —
+   My day (drafts, confirmed entries, breaks, signals, agent minutes), their
+   hours, their shared local activity, their activity heatmap, their token
+   usage — an **owner and an admin can see for that person**, read-only, in
+   the same shape. **Amends D-088 item 2** (drafts were the person's alone)
+   and **D-088 item 7** (per-person hours: owners and admins — unchanged —
+   but now drafts and the day too).
+2. **Consent governs collection, not reading.** A person's own switch still
+   decides whether their machine's activity is *collected* (D-079 is kept for
+   collection: no switch, no data). Once collected, it is readable by owner
+   and admin without a further consent check. **Amends D-079 / D-084 item 7**
+   for reading only.
+3. **Every such view is logged and the person sees who looked and when**
+   (D-088 item 7's log is kept and now covers every mirrored read).
+4. **Read-only.** No owner or admin edits another person's time, drafts,
+   breaks or sharing switch.
+5. **Only the owner changes roles and permissions.** Assigning org roles
+   (`user.set_role`) becomes **owner only** — admins lose it. The
+   organisation's permission settings (rule 6) are owner only.
+6. **The owner decides who can see what.** A small, fixed set of capabilities
+   is grantable per org role (admin, member, viewer) by the owner; owner is
+   always on and locked. Defaults reproduce today plus rule 1: admin on,
+   member and viewer off. Never grantable: delete the organisation, transfer
+   ownership, change roles, change these settings. Per-person exceptions are
+   not in this decision.
+7. **Not a score.** D-078 / D-088 item 1 stand: nothing ranks or rates a
+   person from this data.
