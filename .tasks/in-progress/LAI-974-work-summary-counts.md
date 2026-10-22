@@ -2,11 +2,12 @@
 id: LAI-974
 title: 'The Work page cannot say how many tasks match or how they split: GET /tasks has no counts'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-887]
 discovered-from:
-status: backlog
+started: 2026-10-22T16:37:03Z
+status: in-progress
 ---
 
 ## Goal
