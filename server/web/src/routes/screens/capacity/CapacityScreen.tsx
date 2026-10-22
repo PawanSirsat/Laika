@@ -8,7 +8,6 @@ import {
   type ReactNode,
 } from 'react';
 import { everyPage } from '../../../api/every-page.ts';
-import { agentClientName, asAgentClient } from '../../../api/agent-clients.ts';
 import {
   getCapacity,
   getPresence,
@@ -22,25 +21,21 @@ import { timeLabel } from '../../../api/time-label.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
-import { PersonLink } from '../../../components/PersonLink.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
-import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { InfoTip } from '../profile/InfoTip.tsx';
 import { CapacityCard, LOAD_RULE } from './CapacityCard.tsx';
+import { CapacityList } from './CapacityList.tsx';
 import {
-  barSegments,
   FILTERS,
   matchesQuery,
   passesFilter,
   PRESENCE_FILTERS,
-  runningAgents,
   sortPeople,
   SORTS,
   summarize,
   taskIdsToResolve,
   teamLoad,
-  workloadIn,
   type CapacityFilter,
   type CapacitySort,
 } from './capacity-derive.ts';
@@ -87,6 +82,35 @@ const POLL_MS = 20_000;
 /** A focus and a visibility change arrive together; one read answers both. */
 const REFOCUS_GAP_MS = 2_000;
 
+/** Cards or a table (LAI-991). Remembered per browser; cards until chosen. */
+export type CapacityViewMode = 'cards' | 'list';
+const VIEW_KEY = 'laika.capacity.view';
+
+/** Local storage, or nothing — reading the property itself can throw. */
+function storage(): Storage | undefined {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
+function rememberedView(): CapacityViewMode {
+  try {
+    return storage()?.getItem(VIEW_KEY) === 'list' ? 'list' : 'cards';
+  } catch {
+    return 'cards';
+  }
+}
+
+function rememberView(view: CapacityViewMode): void {
+  try {
+    storage()?.setItem(VIEW_KEY, view);
+  } catch {
+    // A browser that refuses storage still shows the view chosen.
+  }
+}
+
 /**
  * Capacity — who is here, who is loaded and who can take the next task, across
  * **every space you can see** (§11.4.2, LAI-754; redesigned by LAI-767).
@@ -95,8 +119,14 @@ const REFOCUS_GAP_MS = 2_000;
  * task' without asking."* The owner found the first answer to it — a wide row
  * a person, task chips in every row — not informative: no search, no clear
  * online state, no last seen. So now: a search and filters, tiles that count,
- * one card a person with a status ring and a load badge, and a *Team load*
- * chart that shows an imbalance in one glance.
+ * one card a person with a status ring and a load badge.
+ *
+ * **LAI-991 compacted it to the owner's design.** Every card draws every block
+ * — workload, agents, activity for an admin, spaces, tasks — with a `0` where
+ * there is nothing, so the cards are one shape and one height. A **Cards /
+ * List** toggle adds a table of the same people, whose bars share one scale:
+ * that table is the team-load chart, and it replaced the *Team load* and
+ * *Agents running now* panels that sat under the grid.
  *
  * ## What the server decided, and what is left to this screen
  *
@@ -137,6 +167,11 @@ export function CapacityScreen({
   const [sort, setSort] = useState<CapacitySort>('online');
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const [showNever, setShowNever] = useState(false);
+  const [view, setView] = useState<CapacityViewMode>(rememberedView);
+  const chooseView = (next: CapacityViewMode): void => {
+    setView(next);
+    rememberView(next);
+  };
 
   /**
    * The tasks the screen draws, by id: each session's matched task, and the
@@ -322,14 +357,8 @@ export function CapacityScreen({
   const never = fold ? shown.filter((p) => p.status === 'never') : [];
 
   const sum = summarize(everyone, space);
-  const load = teamLoad(everyone, space);
-  const running = everyone
-    .flatMap((person) =>
-      runningAgents(person)
-        .filter((agent) => asAgentClient(agent.client) !== null)
-        .map((agent) => ({ person, agent })),
-    )
-    .sort((a, b) => (b.agent.last_at ?? 0) - (a.agent.last_at ?? 0));
+  // One scale for every list row's bar, so the rows compare (the team load).
+  const { scale } = teamLoad(everyone, space);
   const presenceFor = (userId: string) => presence.present.find((e) => e.user_id === userId);
 
   const pick = (next: CapacityFilter): void => {
@@ -495,6 +524,28 @@ export function CapacityScreen({
                 onChange={setSort}
               />
             </span>
+            <span className="cap-view" role="group" aria-label="View">
+              <button
+                type="button"
+                className="cap-view-button"
+                aria-pressed={view === 'cards'}
+                onClick={() => {
+                  chooseView('cards');
+                }}
+              >
+                Cards
+              </button>
+              <button
+                type="button"
+                className="cap-view-button"
+                aria-pressed={view === 'list'}
+                onClick={() => {
+                  chooseView('list');
+                }}
+              >
+                List
+              </button>
+            </span>
             <InfoTip label="About these figures">
               <dl className="prof-defs">
                 <dt>Online, away, last seen</dt>
@@ -512,11 +563,16 @@ export function CapacityScreen({
                   work in review: it waits on the reviewer, not on them. Overdue is past its due
                   date, and is its own badge.
                 </dd>
-                <dt>Board activity</dt>
+                <dt>Activity</dt>
                 <dd>
                   Their board actions over 14 days, owners and admins only: by hand on the web, by
                   their agents, and bookkeeping (sprint moves and card reorders) counted apart from
                   both.
+                </dd>
+                <dt>List</dt>
+                <dd>
+                  The same people as the cards, one row each. Every row’s bar is drawn to the same
+                  scale, so the longest bar is the heaviest person.
                 </dd>
               </dl>
             </InfoTip>
@@ -544,6 +600,8 @@ export function CapacityScreen({
               },
             }}
           />
+        ) : view === 'list' ? (
+          <CapacityList people={cards} now={now} theme={theme} space={space} scale={scale} />
         ) : (
           <ul className="cap-grid">
             {cards.map((person) => (
@@ -598,105 +656,17 @@ export function CapacityScreen({
           </button>
         )}
 
-        <div className="cap-lower">
-          <section className="prof-card cap-team" aria-labelledby="cap-team-title">
-            <div className="prof-card-head">
-              <h2 className="prof-card-title" id="cap-team-title">
-                Team load
-              </h2>
-              <span className="prof-card-caption">
-                committed work
-                {space === null ? '' : ` in ${spaces?.get(space)?.name ?? 'this space'}`}, heaviest
-                first
-              </span>
-            </div>
-            {load.rows.length === 0 ? (
-              <p className="cap-quiet">Nobody has committed work here.</p>
-            ) : (
-              <ul className="cap-team-rows">
-                {load.rows.map((person) => {
-                  const work = workloadIn(person, space);
-                  const parts = barSegments(work, load.scale);
-                  return (
-                    <li key={person.user_id} className="cap-team-row">
-                      <span className="cap-team-name">
-                        <PersonLink userId={person.user_id} className="cap-name-link">
-                          {person.name}
-                        </PersonLink>
-                      </span>
-                      <span
-                        className="cap-bar cap-team-bar"
-                        role="img"
-                        aria-label={`${person.name}: ${parts.map((s) => `${String(s.n)} ${s.label.toLowerCase()}`).join(', ')}${work.overdue > 0 ? `, ${String(work.overdue)} overdue` : ''}`}
-                      >
-                        {parts.map((s) => (
-                          <span
-                            key={s.key}
-                            className={`cap-bar-part cap-part-${s.key}`}
-                            style={{ width: `${String(s.pct)}%` }}
-                          />
-                        ))}
-                      </span>
-                      <span className="cap-team-n" aria-hidden="true">
-                        {work.committed}
-                        {work.overdue > 0 && (
-                          <span className="cap-team-overdue">{work.overdue} overdue</span>
-                        )}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            <ul className="cap-legend" aria-hidden="true">
-              <li>
-                <span className="cap-swatch cap-part-in_progress" />
-                In progress
-              </li>
-              <li>
-                <span className="cap-swatch cap-part-todo" />
-                To do
-              </li>
-            </ul>
-            {load.idle > 0 && (
-              <p className="cap-quiet">
-                {load.idle} {load.idle === 1 ? 'person has' : 'people have'} nothing committed
-                {space === null ? '' : ' here'}.
-              </p>
-            )}
-          </section>
-
-          <section className="prof-card cap-running" aria-labelledby="cap-running-title">
-            <div className="prof-card-head">
-              <h2 className="prof-card-title" id="cap-running-title">
-                Agents running now
-              </h2>
-              {on && <span className="prof-card-count">{running.length}</span>}
-            </div>
-            {!on ? (
-              <p className="cap-quiet">Presence is off, so no session is recorded.</p>
-            ) : running.length === 0 ? (
-              <p className="cap-quiet">No agent is running right now.</p>
-            ) : (
-              <ul className="cap-running-rows">
-                {running.map(({ person, agent }) => (
-                  <li key={`${person.user_id}-${agent.client}`} className="cap-running-row">
-                    <AgentMark client={agent.client} size="md" />
-                    <span className="cap-running-who">
-                      <span className="cap-running-agent">{agentClientName(agent.client)}</span>
-                      <span className="cap-running-person">{person.name}</span>
-                    </span>
-                    {agent.last_at !== null && (
-                      <span className="cap-running-when" title={timeLabel(agent.last_at, now).full}>
-                        active {timeLabel(agent.last_at, now).text}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        </div>
+        <ul className="cap-legend" aria-hidden="true">
+          <li>
+            <span className="cap-swatch cap-part-in_progress" />
+            In progress
+          </li>
+          <li>
+            <span className="cap-swatch cap-part-todo" />
+            To do
+          </li>
+          <li className="cap-legend-note">committed work; backlog and review are counted apart</li>
+        </ul>
       </div>
     </div>
   );
