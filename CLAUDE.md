@@ -380,15 +380,16 @@ one:
 
 | Session | Range | Second block (D-036) | Third block (D-068) |
 | --- | --- | --- | --- |
-| CHIEF | `LAI-001` – `LAI-099` — **full** | `LAI-400` – `LAI-499` — **full** | `LAI-700` – `LAI-799` — **full**; then `LAI-800` – `LAI-899` (D-089) |
+| CHIEF | `LAI-001` – `LAI-099` — **full** | `LAI-400` – `LAI-499` — **full** | `LAI-700` – `LAI-799` — **full**; then `LAI-800` – `LAI-899` (D-089) — **full**; then `LAI-950` – `LAI-999` (D-100) |
 | CORE | `LAI-100` – `LAI-199` | `LAI-500` – `LAI-599` | — (given to CHIEF, D-089) |
-| SHELL | `LAI-200` – `LAI-299` | `LAI-600` – `LAI-699` | `LAI-900` – `LAI-999` |
+| SHELL | `LAI-200` – `LAI-299` | `LAI-600` – `LAI-699` | `LAI-900` – `LAI-949` (D-100 gave `950`–`999` to CHIEF) |
 
 `LAI-300` – `LAI-399` was reserved for a fourth session (D-017). **D-097 gives
 it to Strelka**, the second machine (see *Two machines* at the end of this
 file); nobody else takes from it. Move to your second block only when your first has no free
 number left, and to the third when the second has none (D-068). CHIEF's
-first three are full, so CHIEF files from `LAI-800` (D-089). A builder CHIEF
+first three are full, and so is `LAI-800` – `LAI-899` (D-089), so CHIEF files
+from `LAI-950` (D-100). A builder CHIEF
 dispatches files from CHIEF's block.
 
 Use the lowest unused number **in your own range**, checked across every branch:

@@ -5528,3 +5528,28 @@ line; this entry is its decision record.
 
 Omnigent tells a hook which session dispatched which. Or a second person runs
 builders on a shared machine.
+
+## D-100 — CHIEF's ids run out at LAI-899; CHIEF files from LAI-950 – LAI-999, the unused half of SHELL's third block
+
+**Date:** 2026-10-22 · **By:** CHIEF (Belka), on the owner's instruction to
+finish the owner-visibility and roles work (*"first complete everything"*)
+
+On 2026-10-22 CHIEF needed four ids for the owner-visibility and roles work's
+second half (three screens and one SPEC row) and had none:
+
+- `LAI-800` – `LAI-899` (D-089) is used through `LAI-889`. The board's
+  two-laptop split gives this laptop `LAI-861` – `LAI-889` and the other
+  `LAI-890` – `LAI-899`, which stays theirs.
+- A sweep of every local and `origin` ref, the `.tasks/` history and every
+  commit subject found **no** id in `LAI-900` – `LAI-999` (SHELL's third
+  block, D-068) in use.
+
+1. **CHIEF files from `LAI-950` – `LAI-999`.** SHELL keeps `LAI-900` –
+   `LAI-949`, which is more than SHELL has filed in any block since D-068.
+2. The laptop split is unchanged: `LAI-890` – `LAI-899` stays the other
+   laptop's; this block is Belka's.
+3. CLAUDE.md §3's id table says so. Nothing else moves.
+
+**Why not take `LAI-890` – `LAI-899`:** the board's rule gives it to the other
+laptop, and this session has already collided twice today by reading a range
+as free when it was not. A block nobody has touched is the only safe answer.
