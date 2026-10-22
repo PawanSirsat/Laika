@@ -111,6 +111,8 @@ export interface WorkRow {
   /** The project's own name for the status — `QA`, not `review`. */
   readonly statusName: string;
   readonly assignee: string;
+  /** Whose name it is, for the link to their profile (LAI-959); null for nobody. */
+  readonly assigneeId: string | null;
   /** Null for work in no sprint. */
   readonly sprint: string | null;
   readonly updatedAt: number;
@@ -135,6 +137,7 @@ export function workRows(tasks: readonly TaskSummary[], lookups: WorkLookups): W
       task.assignee_id === null
         ? 'Unassigned'
         : (lookups.people.get(task.assignee_id) ?? 'Someone'),
+    assigneeId: task.assignee_id,
     sprint: task.sprint_id === null ? null : (lookups.sprints.get(task.sprint_id) ?? 'A sprint'),
     updatedAt: task.updated_at,
   }));

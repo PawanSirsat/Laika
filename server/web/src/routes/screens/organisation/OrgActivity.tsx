@@ -15,6 +15,7 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown, type DropdownOption } from '../../../components/Dropdown.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
+import { PersonLink } from '../../../components/PersonLink.tsx';
 import { plainClick, taskHref } from '../my-day/task-link.ts';
 import {
   filtersFrom,
@@ -238,7 +239,18 @@ export function OrgActivity({ people, params, setParams, onNavigate }: OrgActivi
                       {dateTime(event.created_at, now)}
                     </time>
                     <span className="oh-who">
-                      {who}
+                      {event.actor_kind === 'system' || event.actor_id === null ? (
+                        who
+                      ) : (
+                        // Their profile, for a reader who may open it (LAI-959).
+                        <PersonLink
+                          userId={event.actor_id}
+                          className="oh-person"
+                          label={`${who}’s profile`}
+                        >
+                          {who}
+                        </PersonLink>
+                      )}
                       {event.actor_kind === 'agent' && <span className="org-chip">Agent</span>}
                     </span>
                     <span className="oh-what">{pushSummary(event) ?? describeEvent(event)}</span>
