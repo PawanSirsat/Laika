@@ -3527,8 +3527,10 @@ Without `open_tasks`, while they hold any, the answer is `409` with `details:
 `keys` only those in spaces the caller can read, `hidden` the rest. A
 reassignment must land on an active person, not the one leaving, who can hold
 **every** task (LAI-962's rule); otherwise `422` with `details: { field:
-"open_tasks.reassign_to", reason: "cannot_hold", tasks: [{ key, reason }] }`
-(or `reason: "self"` / `"inactive"` / `"no_such_user"`), and nothing changes.
+"open_tasks.reassign_to", reason: "cannot_hold", tasks: [{ key, reason }],
+hidden }` — `tasks` only those in spaces the caller can read, `hidden` the
+rest, as the `409` (or `reason: "self"` / `"inactive"` / `"no_such_user"`),
+and nothing changes.
 Each moved task writes `task.assigned` with `payload.via: "offboarding"`.
 Deactivation also removes every space membership, one `member.removed` per
 space with `payload.via: "deactivation"`; reactivating restores none. All of
