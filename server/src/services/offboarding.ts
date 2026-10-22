@@ -18,7 +18,8 @@ import { OPEN_STATUSES } from './tasks.ts';
  * - `'unassign'` — every open task they hold in scope loses its assignee;
  * - `{ reassign_to }` — every one goes to that person, who must be able to
  *   hold **each** of them (LAI-962's rule, `canBeMentioned`), or nothing moves
- *   and the refusal names every task that could not.
+ *   and the refusal names every task that could not — those the caller may
+ *   read, with `hidden` counting the rest, as the `409` does.
  *
  * Without it, and with open tasks in scope, the answer is `409` with the
  * count and the keys, so a screen can ask. "Open" is LAI-974's
@@ -32,7 +33,7 @@ import { OPEN_STATUSES } from './tasks.ts';
  * a separate `task.assign_other` per task. What the caller is **shown** is
  * still bounded by what they can read: the `409` counts every open task but
  * lists only the keys in spaces the caller may read, and `hidden` says how
- * many it left out.
+ * many it left out. The `422`'s refused tasks are filtered the same way.
  *
  * ## No new verb
  *
@@ -92,10 +93,13 @@ export function assertOffboardingChoice(
 ): void {
   if (open.length === 0) return;
 
+  // What the caller is shown, in the `409` and the `422` alike: keys only in
+  // spaces they may read, and `hidden` for the rest.
+  const readable = (t: OpenTask): boolean =>
+    can(withProject(actor, t.projectId), 'project.read', { projectId: t.projectId });
+
   if (choice === undefined) {
-    const shown = open.filter((t) =>
-      can(withProject(actor, t.projectId), 'project.read', { projectId: t.projectId }),
-    );
+    const shown = open.filter(readable);
     throw new ApiError(
       'conflict',
       `They hold ${String(open.length)} open task${open.length === 1 ? '' : 's'}; say whether to unassign or reassign them`,
@@ -130,14 +134,18 @@ export function assertOffboardingChoice(
     });
   }
 
-  const refused = open
-    .filter((t) => !canBeMentioned(db, target, t.projectId))
-    .map((t) => ({ key: t.key, reason: 'not_on_project' as const }));
+  const refused = open.filter((t) => !canBeMentioned(db, target, t.projectId));
   if (refused.length > 0) {
+    const shown = refused.filter(readable);
     throw new ApiError(
       'unprocessable',
       'That person cannot hold every one of these tasks; nothing was changed',
-      { field: 'open_tasks.reassign_to', reason: 'cannot_hold', tasks: refused },
+      {
+        field: 'open_tasks.reassign_to',
+        reason: 'cannot_hold',
+        tasks: shown.map((t) => ({ key: t.key, reason: 'not_on_project' as const })),
+        hidden: refused.length - shown.length,
+      },
     );
   }
 }
