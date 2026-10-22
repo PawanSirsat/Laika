@@ -749,3 +749,87 @@ describe('an invite’s expiry is chosen, and an invite can be re-issued (LAI-98
     ).toBeDefined();
   });
 });
+
+describe('an owner invite from before D-104 is never accepted (LAI-982)', () => {
+  function oldOwnerInvite(email: string): string {
+    return seedInvite(db, { orgId, createdBy: ownerId, email, orgRole: 'owner' });
+  }
+
+  function unaccepted(): boolean {
+    return db
+      .select()
+      .from(invites)
+      .all()
+      .filter((row) => row.orgRole === 'owner')
+      .every((row) => row.acceptedBy === null);
+  }
+
+  it('422s use_transfer on POST /invites/accept, before any account exists', async () => {
+    const token = oldOwnerInvite('co-owner@example.test');
+
+    const res = await post('/api/v1/invites/accept', {
+      token,
+      name: 'Co Owner',
+      password: PASSWORD,
+    });
+
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { error: unknown }).error).toMatchObject({
+      code: 'unprocessable',
+      details: { reason: 'use_transfer' },
+    });
+    expect(
+      db.select().from(users).where(eq(users.email, 'co-owner@example.test')).get(),
+    ).toBeUndefined();
+    expect(unaccepted()).toBe(true);
+  });
+
+  it('refuses it use_transfer on the public sign-up path too, leaving no account', async () => {
+    const token = oldOwnerInvite('co-owner@example.test');
+
+    const res = await signUp(h.app, {
+      email: 'co-owner@example.test',
+      password: PASSWORD,
+      inviteToken: token,
+    });
+
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { error: unknown }).error).toMatchObject({
+      code: 'unprocessable',
+      details: { auth_code: 'use_transfer' },
+    });
+    expect(
+      db.select().from(users).where(eq(users.email, 'co-owner@example.test')).get(),
+    ).toBeUndefined();
+    expect(unaccepted()).toBe(true);
+  });
+
+  it('refuses it on an instance that is not invite-only, where the gate is skipped', async () => {
+    const open = authHarness();
+    const seeded = seedOrg(open.db, false);
+    const token = seedInvite(open.db, {
+      orgId: seeded.orgId,
+      createdBy: seeded.ownerId,
+      email: 'co-owner@example.test',
+      orgRole: 'owner',
+    });
+
+    const res = await signUp(open.app, {
+      email: 'co-owner@example.test',
+      password: PASSWORD,
+      inviteToken: token,
+    });
+
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { error: unknown }).error).toMatchObject({
+      code: 'unprocessable',
+      details: { auth_code: 'use_transfer' },
+    });
+    expect(
+      open.db.select().from(users).where(eq(users.email, 'co-owner@example.test')).get(),
+    ).toBeUndefined();
+    expect(open.db.select().from(invites).get()?.acceptedBy).toBeNull();
+
+    open.close();
+  });
+});

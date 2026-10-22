@@ -15,6 +15,7 @@ import { orgs } from '../db/schema.ts';
 import { encryptSecret } from '../secrets.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
+import { pendingOwnerInvites } from './invites.ts';
 import { extraOwners } from './users.ts';
 
 /**
@@ -129,6 +130,12 @@ export interface OrgView {
    * in, who is the one able to act on it. Absent, not null.
    */
   extra_owners?: { id: string; name: string; email: string }[];
+  /**
+   * Owner invites from before D-104 that could still be accepted (LAI-982).
+   * Accepting one is refused `use_transfer`; this is where the owner sees
+   * them, to revoke. Same gate as `extra_owners`; absent, not null.
+   */
+  owner_invites_pending?: { id: string; email: string | null; expires_at: number }[];
 }
 
 /**
@@ -182,7 +189,11 @@ export function getOrg(db: Db, actor: ResolvedActor, publicUrl = ''): OrgView {
 
   // The owner's, signed in (LAI-982): who else holds the role today.
   if (!can(actor, 'org.transfer_ownership')) return withWebhook;
-  return { ...withWebhook, extra_owners: extraOwners(db) };
+  return {
+    ...withWebhook,
+    extra_owners: extraOwners(db),
+    owner_invites_pending: pendingOwnerInvites(db),
+  };
 }
 
 function githubWebhookView(enc: string | null, publicUrl: string): OrgGithubWebhookView {
