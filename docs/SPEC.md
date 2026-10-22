@@ -2437,7 +2437,12 @@ the same three optional fields (`parent_task_id`, `due_on`, `planned_start`)
 beside `discovered_from`. Both take `external_ref`, an outside id (§4.5) —
 anything of another shape is `422` on that field, and one another task of the
 project holds is `422` with `details: { field: 'external_ref', reason:
-'taken', external_ref, task }` — and `PATCH` clears it with `null` (LAI-780). `?parent=<id>` on the list returns that task's
+'taken', external_ref, task }` — and `PATCH` clears it with `null` (LAI-780).
+An `assignee_id` on either must name somebody who can read the project on their
+own authority — `project.read`, so an org Owner or Admin with no membership row
+counts — or it is `422` with `details: { field: 'assignee_id', reason:
+'not_on_project', assignee_id }`; MCP's `assignee` reaches the same check
+(LAI-962). `?parent=<id>` on the list returns that task's
 subtasks only, and pages with `cursor` like any other filter (D-066).
 
 **A slim list: `?fields=slim`** (LAI-795). The task list answers every field
