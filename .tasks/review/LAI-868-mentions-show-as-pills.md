@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-22T07:09:08Z
+finished: 2026-10-22T08:35:03Z
 ---
 
 ## Goal
@@ -83,17 +84,17 @@ and the editor's round-trip guard (LAI-827, LAI-849) is unaffected.
 
 ## Acceptance criteria
 
-- [ ] **One grammar.** The web finds mentions with the server's pattern. A
+- [x] **One grammar.** The web finds mentions with the server's pattern. A
       web test reads `server/src/services/mentions.ts` as text and asserts the
       web pattern's source equals `parseMentionHandles`'s, so the two cannot
       drift. A pill covers exactly the characters that pattern matches.
-- [ ] **Who gets a pill.** A handle gets a pill when it matches exactly one
+- [x] **Who gets a pill.** A handle gets a pill when it matches exactly one
       person in the panel's people list (`/mentionable`, handles as
       `TaskDetailPanel.tsx:212-219` builds them). If two people share the
       handle, or nobody has it, it **stays plain text**, as SPEC §4.19 says.
       `strelka` and `belka`, when no person holds them, get the machine pill.
       Matching is case-insensitive.
-- [ ] **Three looks, existing tokens only.**
+- [x] **Three looks, existing tokens only.**
       - **Viewer:** the matched person's id is `meId`. This is the stronger
         style.
       - **Person:** anyone else.
@@ -104,7 +105,7 @@ and the editor's round-trip guard (LAI-827, LAI-849) is unaffected.
       reads each kind's computed `background-color` and `color`. It asserts
       the three kinds differ pairwise in both themes. It fails today, because
       there is no pill.
-- [ ] **Read-only surfaces.** Pills show in the description, the acceptance
+- [x] **Read-only surfaces.** Pills show in the description, the acceptance
       criteria and comments, through `TaskMarkdown`, so `EvidenceSection`
       gets them too. There are no pills inside inline code, code blocks or
       link text.
@@ -117,17 +118,17 @@ and the editor's round-trip guard (LAI-827, LAI-849) is unaffected.
         - a pill on `@ada`, `(@ada)` and `**@grace**`;
         - none on `ada@example.com`, `` `@ada` `` or an ambiguous handle;
         - the viewer's own handle gets the viewer style.
-- [ ] **A pill adds no text.** The element's text is exactly the source's
+- [x] **A pill adds no text.** The element's text is exactly the source's
       characters, so copying, find and screen readers read what was written.
       `comment-markdown.test.ts:196-204`, which asserts `@Ada Lovelace` in the
       first paragraph's text, passes unedited.
-- [ ] **The rich editor.** Pills show while editing the description,
+- [x] **The rich editor.** Pills show while editing the description,
       acceptance and a comment. They come from a ProseMirror **decoration**
       plugin, added beside `Placeholder` (`RichEditor.tsx:261`), never as a
       mark or node in `MARKDOWN_EXTENSIONS`, which this task does not change.
       A pill appears when a person is chosen from the `@` list. The browser
       test (`task-panel-editing.test.ts`, near `:719`) asserts it.
-- [ ] **Byte-identical round trip.** A new case in `markdown-bridge.test.ts`
+- [x] **Byte-identical round trip.** A new case in `markdown-bridge.test.ts`
       uses `roundTrips` on a description holding:
       - `@ada`, `(@ada)`, `**@grace**`;
       - `@strelka` and `@belka`;
@@ -144,14 +145,14 @@ and the editor's round-trip guard (LAI-827, LAI-849) is unaffected.
       instead of a decoration. The round-trip case goes red. Prove the
       mutation landed with a `grep`, restore the file, and record the run in
       the task file.
-- [ ] **Stored text unchanged.** The composer still posts
+- [x] **Stored text unchanged.** The composer still posts
       `{ body_md: '**Done** for @ada' }` (`task-panel-editing.test.ts:1202`),
       unedited.
-- [ ] **SPEC, a named edit (D-033/D-034):** one sentence in §11.4.2.1's task
+- [x] **SPEC, a named edit (D-033/D-034):** one sentence in §11.4.2.1's task
       panel entry, next to the `@` autocomplete (`docs/SPEC.md:4118-4121`),
       saying a mention that names someone shows as a pill. §4.19's "It
       renders as plain text" stays as written.
-- [ ] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Notes
 
@@ -313,3 +314,32 @@ does not match. A `grep` proved it landed. A trap restored the file from
   exit 1.
 
 After every run, `git status --porcelain` showed no source file changed.
+
+### Gate
+
+This Mac's load stayed between 25 and 62 for the whole 45-minute wait
+(13:09 to 13:54). Following the brief, the gate then ran anyway: from
+13:54, at `fd775661`, with a load of 32 at the start and 67 to 77 during
+`pnpm test`. Each command's output went to its own file, and each exit code
+was captured on its own line.
+
+| Command | Exit code | Result |
+| --- | --- | --- |
+| `pnpm test` | **1** | web 2790 test cases, 0 failed; cli 553 test cases, 0 failed; **server: 3 failed** of 3421 (10 skipped) |
+| `pnpm lint` | 0 | |
+| `pnpm format` | 0 | |
+
+All three server failures are **timeouts**, in files this task does not
+touch. The diff changes nothing under `server/` outside `server/web/`.
+
+- `test/mcp/project-tools.test.ts` *create_sprint accepts unix-ms*: hook
+  timed out in 10000ms.
+- `test/tooling/activity-payload-names.test.ts` *survives payload shapes
+  that carry no `changed`*: test timed out in 5000ms.
+- `test/http/routes/time-my-day-v2.test.ts` *delete, undone…*: hook timed
+  out in 10000ms.
+
+Re-run alone with `npx vitest run` on those three files: **exit 0**, 81 test
+cases passed. The load was 54 to 68 during that run.
+
+The final gate before the push is reported in the PR and on the card.
