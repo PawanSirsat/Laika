@@ -748,6 +748,72 @@ void describe('syncs cannot pile up (review 1, item 1)', () => {
   );
 
   /**
+   * The lock was created empty and its holder written into it afterwards. A
+   * sync that read it in between saw no holder, broke it and took it from a
+   * live one — and the test above read `''` under load (LAI-308). The holder
+   * here is stopped at the moment it writes itself down, and the lock is
+   * looked at right then.
+   */
+  void test(
+    'the lock is never seen before its holder is written in it',
+    { timeout: 30_000 },
+    async () => {
+      const w = await world();
+      const store = pathToFileURL(
+        fileURLToPath(new URL('../src/activity-store.ts', import.meta.url)),
+      ).href;
+      // Every way the holder could write itself down stops once, says so on
+      // stdout, and waits for a line on stdin before writing.
+      const script =
+        "import fs from 'node:fs';\n" +
+        "import { syncBuiltinESMExports } from 'node:module';\n" +
+        'let stopped = false;\n' +
+        'const stop = (data) => {\n' +
+        '  if (stopped || !String(data).includes(\'"pid":\')) return;\n' +
+        '  stopped = true;\n' +
+        "  realWriteSync(1, 'writing\\n');\n" +
+        '  fs.readSync(0, Buffer.alloc(1));\n' +
+        '};\n' +
+        'const realWriteSync = fs.writeSync;\n' +
+        'const realWriteFileSync = fs.writeFileSync;\n' +
+        'fs.writeSync = (fd, data, ...rest) => { stop(data); return realWriteSync(fd, data, ...rest); };\n' +
+        'fs.writeFileSync = (path, data, ...rest) => { stop(data); return realWriteFileSync(path, data, ...rest); };\n' +
+        'syncBuiltinESMExports();\n' +
+        `const m = await import(${JSON.stringify(store)});\n` +
+        `if (m.acquireLock(m.activityPaths(${JSON.stringify(w.home)})) === undefined) process.exit(3);\n` +
+        'setInterval(() => {}, 1000);\n';
+      const holder = spawn(process.execPath, ['--input-type=module', '-e', script], {
+        stdio: ['pipe', 'pipe', 'inherit'],
+      });
+      const writing = new Promise<void>((res, rej) => {
+        holder.stdout.on('data', (chunk: Buffer) => {
+          if (chunk.toString().includes('writing')) res();
+        });
+        holder.on('exit', (code) => {
+          rej(new Error(`the holder exited ${String(code)} before writing`));
+        });
+      });
+      const mine = new RegExp(`"pid":${String(holder.pid)}[,}]`);
+      try {
+        await writing;
+        const seen = existsSync(w.paths.lock) ? readFileSync(w.paths.lock, 'utf8') : undefined;
+        assert.ok(
+          seen === undefined || mine.test(seen),
+          `the lock was there before its holder: ${JSON.stringify(seen)}`,
+        );
+        holder.stdin.write('\n');
+        await until(
+          () => mine.test(existsSync(w.paths.lock) ? readFileSync(w.paths.lock, 'utf8') : ''),
+          20_000,
+        );
+        assert.equal((await sync(w.ctx)).kind, 'busy', 'a live sync’s lock was taken');
+      } finally {
+        holder.kill('SIGKILL');
+      }
+    },
+  );
+
+  /**
    * The deadline must end a git that ignores SIGTERM too. It was sent SIGTERM
    * only, and the 10 s SIGKILL timer went with the callback.
    */
