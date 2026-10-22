@@ -2,11 +2,12 @@
 id: LAI-177
 title: 'The branch parser cannot read a key prefix that contains a digit'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-976
-status: backlog
+status: in-progress
+started: 2026-10-22T21:24:36Z
 ---
 
 ## Goal
