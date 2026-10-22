@@ -27,6 +27,7 @@ import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
 import { RolesPermissionsSection } from './RolesPermissionsSection.tsx';
 import { OrgActivity } from './OrgActivity.tsx';
+import { OrgPulse } from './OrgPulse.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import type { OrgRole } from '../../../api/invites.ts';
@@ -330,6 +331,9 @@ export function OrganisationScreen({
       <div className="org-body" data-tab={tab}>
         {tab === 'overview' && (
           <>
+            {/* This week's pulse (LAI-989): `GET /org/overview`'s figures. */}
+            <OrgPulse />
+
             {/* The figures (LAI-796) — each a count the page already holds. */}
             <dl className="org-stats">
               <div className="org-stat">
