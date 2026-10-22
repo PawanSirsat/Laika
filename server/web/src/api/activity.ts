@@ -1,6 +1,7 @@
 import { STATUS_LABELS } from './board-derive.ts';
 import { withPage, type PageQuery } from './every-page.ts';
-import { request } from './client.ts';
+import { API_BASE, request } from './client.ts';
+import { projectRoleLabel } from './members.ts';
 import type { Page } from './tasks.ts';
 
 /**
@@ -120,6 +121,23 @@ export function listOrgHistory(
 }
 
 /**
+ * The organisation's history as a CSV file, with the filters on screen
+ * (LAI-989; the server's half is LAI-984). An address, not a `request()`: the
+ * browser downloads it with the session cookie, and the server streams every
+ * matching row. Never `limit` or `cursor` — the server refuses both beside
+ * `format=csv`, since the file is every row.
+ */
+export function historyCsvHref(query: HistoryQuery): string {
+  const params = new URLSearchParams({ format: 'csv' });
+  if (query.actor !== undefined) params.set('actor', query.actor);
+  if (query.project !== undefined) params.set('project', query.project);
+  if (query.type !== undefined) params.set('type', query.type);
+  if (query.since !== undefined) params.set('since', String(query.since));
+  if (query.until !== undefined) params.set('until', String(query.until));
+  return `${API_BASE}/activity/history?${params.toString()}`;
+}
+
+/**
  * Human wording for every event type the server can emit (LAI-225).
  *
  * **All of them, named.** The map covered ten of the thirty-seven in
@@ -208,8 +226,75 @@ export function isGrantsChange(event: Pick<ActivityEvent, 'type' | 'payload'>): 
   return payload?.scope === 'org_permissions';
 }
 
+/** An organisation role as the organisation screens name it: `admin` is *Admin*. */
+function orgRoleName(role: string): string {
+  return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+/**
+ * A membership row that says who and which roles (LAI-989): *added Mia as
+ * Member*, *changed Adam's role: Space admin → Member*. The payloads carry
+ * `user_name` and the roles since LAI-993. A row without a name — written
+ * before then — answers `undefined`, and keeps the generic line rather than
+ * reading *added undefined*.
+ *
+ * A row with `scope: "org"` or an `org_role` is an organisation role; the rest
+ * are a space's, where `lead` is *Space admin* (D-103 item 2). `via` tells a
+ * person acting on themselves — joining, accepting an invite, leaving — from
+ * someone acting on them.
+ */
+function describeMembership(event: Pick<ActivityEvent, 'type' | 'payload'>): string | undefined {
+  const payload = event.payload as {
+    user_name?: unknown;
+    role?: unknown;
+    org_role?: unknown;
+    from?: unknown;
+    to?: unknown;
+    via?: unknown;
+    scope?: unknown;
+  } | null;
+  if (payload === null || typeof payload.user_name !== 'string' || payload.user_name === '') {
+    return undefined;
+  }
+  const who = payload.user_name;
+  const org = payload.scope === 'org';
+  const name = (role: unknown): string | undefined =>
+    typeof role !== 'string' ? undefined : org ? orgRoleName(role) : projectRoleLabel(role);
+
+  if (event.type === 'member.role_changed') {
+    const from = name(payload.from);
+    const to = name(payload.to);
+    return from === undefined || to === undefined
+      ? undefined
+      : `changed ${who}’s role: ${from} → ${to}`;
+  }
+
+  if (event.type === 'member.added') {
+    if (typeof payload.org_role === 'string') {
+      return `joined the organisation as ${orgRoleName(payload.org_role)}`;
+    }
+    const role = name(payload.role);
+    if (role === undefined) return undefined;
+    return payload.via === 'join' || payload.via === 'invite'
+      ? `joined as ${role}`
+      : `added ${who} as ${role}`;
+  }
+
+  if (event.type === 'member.removed') {
+    const role = name(payload.role);
+    if (role === undefined) return undefined;
+    if (payload.via === 'leave') return `left the space as ${role}`;
+    if (payload.via === 'deactivation') return `removed ${who} (${role}) on deactivation`;
+    return `removed ${who} (${role})`;
+  }
+
+  return undefined;
+}
+
 export function describeEvent(event: ActivityEvent): string {
   if (isGrantsChange(event)) return 'changed who can do what';
+  const membership = describeMembership(event);
+  if (membership !== undefined) return membership;
   // A reorder is `task.updated` too, and *edited this task* says something
   // changed that did not. Feeds drop it (`shownInFeed`); the organisation's
   // full history (LAI-951) shows every row, so it reads as what it was.

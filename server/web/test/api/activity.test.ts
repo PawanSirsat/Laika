@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   describeEvent,
+  historyCsvHref,
   isReorder,
   listProjectActivityPage,
   pushSummary,
@@ -72,6 +73,86 @@ void describe('describeEvent', () => {
         event({ type: 'member.role_changed', payload: { from: 'member', to: 'admin' } }),
       ),
       'changed a member’s role',
+    );
+  });
+
+  void test('a membership row says who and which roles (LAI-989)', () => {
+    // The payloads carry `user_name` and the roles since LAI-993; "lead" is
+    // "Space admin" on screen (D-103 item 2).
+    const member = (type: string, payload: Record<string, unknown>) =>
+      describeEvent(event({ type, task_id: null, payload }));
+    assert.equal(
+      member('member.added', { user_id: 'u2', user_name: 'Mia', role: 'member' }),
+      'added Mia as Member',
+    );
+    assert.equal(
+      member('member.role_changed', {
+        user_id: 'u3',
+        user_name: 'Adam',
+        from: 'lead',
+        to: 'member',
+      }),
+      'changed Adam’s role: Space admin → Member',
+    );
+    assert.equal(
+      member('member.removed', { user_id: 'u2', user_name: 'Mia', role: 'viewer' }),
+      'removed Mia (Viewer)',
+    );
+    // The person acting on themselves, as the payload says.
+    assert.equal(
+      member('member.added', { user_id: 'u', user_name: 'Ada', role: 'lead', via: 'join' }),
+      'joined as Space admin',
+    );
+    assert.equal(
+      member('member.added', { user_id: 'u', user_name: 'Ada', role: 'member', via: 'invite' }),
+      'joined as Member',
+    );
+    assert.equal(
+      member('member.removed', { user_id: 'u', user_name: 'Ada', role: 'member', via: 'leave' }),
+      'left the space as Member',
+    );
+    assert.equal(
+      member('member.removed', {
+        user_id: 'u2',
+        user_name: 'Mia',
+        role: 'member',
+        via: 'deactivation',
+      }),
+      'removed Mia (Member) on deactivation',
+    );
+  });
+
+  void test('an organisation role reads as the organisation names it (LAI-989)', () => {
+    const org = (payload: Record<string, unknown>) =>
+      describeEvent(
+        event({ type: 'member.role_changed', project_id: null, task_id: null, payload }),
+      );
+    assert.equal(
+      org({ scope: 'org', user_id: 'u3', user_name: 'Adam', from: 'admin', to: 'member' }),
+      'changed Adam’s role: Admin → Member',
+    );
+    assert.equal(
+      describeEvent(
+        event({
+          type: 'member.added',
+          project_id: null,
+          task_id: null,
+          payload: { user_id: 'u', user_name: 'Ada', org_role: 'viewer', via: 'invite' },
+        }),
+      ),
+      'joined the organisation as Viewer',
+    );
+  });
+
+  void test('an older row without a name keeps the generic line', () => {
+    // Rows written before LAI-993 carry only ids: never "added undefined".
+    assert.equal(
+      describeEvent(event({ type: 'member.added', payload: { user_id: 'u2', role: 'member' } })),
+      'added a member',
+    );
+    assert.equal(
+      describeEvent(event({ type: 'member.removed', payload: { user_id: 'u2', user_name: null } })),
+      'removed a member',
     );
   });
 
@@ -224,5 +305,30 @@ void describe('pushSummary (LAI-753)', () => {
     assert.equal(pushSummary(old), undefined);
     assert.equal(describeEvent(old), 'pushed a commit');
     assert.equal(pushSummary(event({ type: 'task.created' })), undefined);
+  });
+});
+
+void describe('historyCsvHref (LAI-989)', () => {
+  void test('is the history endpoint as a file, with the filters on screen', () => {
+    const href = historyCsvHref({
+      actor: 'u1',
+      project: 'core',
+      type: 'task.created',
+      since: 10,
+      until: 20,
+    });
+    const url = new URL(href, 'http://x');
+    assert.equal(url.pathname, '/api/v1/activity/history');
+    assert.equal(url.searchParams.get('format'), 'csv');
+    assert.equal(url.searchParams.get('actor'), 'u1');
+    assert.equal(url.searchParams.get('project'), 'core');
+    assert.equal(url.searchParams.get('type'), 'task.created');
+    assert.equal(url.searchParams.get('since'), '10');
+    assert.equal(url.searchParams.get('until'), '20');
+  });
+
+  void test('never carries limit or cursor, which the server refuses beside csv', () => {
+    const url = new URL(historyCsvHref({}), 'http://x');
+    assert.deepEqual([...url.searchParams.keys()], ['format']);
   });
 });

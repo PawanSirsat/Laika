@@ -344,6 +344,70 @@ void describe('states', () => {
   });
 });
 
+void describe('who and which roles, and the file (LAI-989)', () => {
+  const MEMBERS = [
+    row(1, 'member.added', { payload: { user_id: 'u5', user_name: 'Mia', role: 'member' } }),
+    row(2, 'member.role_changed', {
+      payload: { user_id: 'u6', user_name: 'Adam', from: 'lead', to: 'member' },
+    }),
+    row(3, 'member.role_changed', {
+      project_id: null,
+      payload: { scope: 'org', user_id: 'u6', user_name: 'Adam', from: 'admin', to: 'viewer' },
+    }),
+  ];
+
+  void test('a membership row says who, and the roles in the screen’s words', async () => {
+    const h = await open('/organisation?tab=activity', {
+      ...BASE,
+      '/api/v1/activity/history?limit=50': { data: MEMBERS, next_cursor: null },
+    });
+    try {
+      const what = h.page.locator('.oh-row .oh-what');
+      await until(async () => (await what.count()) === 3);
+      assert.deepEqual(await what.allTextContents(), [
+        'added Mia as Member',
+        // "Space admin" is the screen word for `lead` (D-103 item 2).
+        'changed Adam’s role: Space admin → Member',
+        'changed Adam’s role: Admin → Viewer',
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Export CSV is the history as a file, with the filters on screen', async () => {
+    const h = await open('/organisation?tab=activity&actor=u2&project=atlas&type=task.created', {
+      ...BASE,
+      '/api/v1/activity/history?limit=50&actor=u2&project=atlas&type=task.created': {
+        data: [FIRST[0]],
+        next_cursor: null,
+      },
+    });
+    try {
+      const link = h.page.getByRole('link', { name: 'Export CSV' });
+      await link.waitFor({ timeout: 20_000 });
+      assert.notEqual(await link.getAttribute('download'), null, 'it is not a download');
+      const href = new URL((await link.getAttribute('href')) ?? '', h.origin);
+      assert.equal(href.pathname, '/api/v1/activity/history');
+      assert.equal(href.searchParams.get('format'), 'csv');
+      assert.equal(href.searchParams.get('actor'), 'u2');
+      assert.equal(href.searchParams.get('project'), 'atlas');
+      assert.equal(href.searchParams.get('type'), 'task.created');
+      // The server refuses both beside csv: the file is every row.
+      assert.equal(href.searchParams.has('limit'), false);
+      assert.equal(href.searchParams.has('cursor'), false);
+
+      // A filter chosen on screen reaches the file too.
+      await pick(h.page.locator('#oh-space'), 'borealis');
+      await until(async () =>
+        ((await link.getAttribute('href')) ?? '').includes('project=borealis'),
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('fits', () => {
   for (const width of [1440, 390]) {
     for (const theme of ['light', 'dark']) {
