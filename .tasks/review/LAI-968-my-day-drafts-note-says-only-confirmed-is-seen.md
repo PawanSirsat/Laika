@@ -7,7 +7,8 @@ priority: p2
 depends-on: [LAI-957]
 discovered-from: LAI-967
 started: 2026-10-22T16:06:40Z
-status: in-progress
+status: review
+finished: 2026-10-22T16:11:02Z
 ---
 
 ## Goal
@@ -31,9 +32,26 @@ Read D-102 and D-088 before rewording the first sentence.
 
 ## Acceptance criteria
 
-- [ ] `MODE_NOTES.drafts` no longer claims nobody else sees an unconfirmed
+- [x] `MODE_NOTES.drafts` no longer claims nobody else sees an unconfirmed
       draft; it says owners and admins can read them and the person can see
       who looked — matching the wording LAI-959 uses on the person's day.
-- [ ] The first sentence is kept or changed according to D-102/D-088 as read
+- [x] The first sentence is kept or changed according to D-102/D-088 as read
       at the time, with the decision named in the log.
-- [ ] A test asserts the new wording; light/dark where it renders. Gate exit 0.
+- [x] A test asserts the new wording; light/dark where it renders. Gate exit 0.
+
+## Builder notes (SHELL, 2026-10-22)
+
+- **First sentence kept.** *Draft my time* is still each person's own switch
+  (D-088 item 5; SPEC §3.1 "Set own Draft my time"; `GET /me/time-settings`
+  "both switches"). D-102's amendment replaced the personal switch for
+  **local-activity collection** only, so *"Each person may also choose to have
+  their day drafted"* is still true.
+- **New wording**, one phrase (`DRAFT_READERS` in `my-day-derive.ts`):
+  *"owners, admins and anyone the owner lets see everyone’s analytics"*, plus
+  *"they can see who looked"*. The person's header links to *Who looked at my
+  time* (LAI-959).
+- **Census**, untruncated, of `server/web/src`, for wording that calls drafts
+  private: 9 sites, all fixed, listed in `logs/shell-2026-10-22.md`. A census
+  test now guards My day, `screen-copy.ts`, `TimeModeFact.tsx` and `api/time.ts`.
+- Gate: see the log and the PR. `server/test/tooling/response-type-coverage.test.ts`
+  may still be red from the `WhoLookedView` entry (CORE removes it on LAI-969).
