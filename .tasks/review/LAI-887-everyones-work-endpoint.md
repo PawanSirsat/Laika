@@ -82,3 +82,27 @@ Filed by CHIEF on 2026-10-22 as `LAI-875`, which collided with a task already on
 carries `[LAI-871]` for all five filings, and a claim commit `2c1a7274`
 `[LAI-872]` (pushed as branch `LAI-872-share-activity-switch`) belongs to the
 filing now LAI-884 — **neither is the task that holds that number now.**
+
+## Review response — Codex cross-review of PR #44 at 36058ebd (2026-10-22)
+
+**Correction to the §4.4 note above.** It said the full `pnpm test` run failed
+on *exactly one* assertion. That run (head `36058ebd`) actually printed four
+failures: the endpoint-coverage assertion and three timeouts —
+`restore-drill.test.ts` *"is taken while writes are in flight, not from a quiet
+database"*, `project-statuses.test.ts` *"keeps every category covered through
+any sequence of adds and deletes"* (both `Test timed out in 5000ms`), and
+`timeline-derive.test.ts` *"the widest drawable window steps by month and week,
+not by day"*. Re-running those files on their own proved nothing about the
+full gate.
+
+**The full repo-root `pnpm test`, re-run in the foreground after the last edit
+of this response, exited 1 and printed exactly one failing test:**
+`server/web/test/api/endpoint-coverage.test.ts` › *every served endpoint has a
+caller, or a named reason* › *no endpoint is served, uncalled and unexplained*
+(`+ [ 'api/v1/tasks' ]`). `pnpm lint` exited 0, `pnpm format` exited 0.
+
+Also in this response: the route comment no longer claims the per-project list
+reads an empty value as absent (it does not, for `assignee` and `sprint`). A
+test now pins that behaviour on the new endpoint. Added tests: a cursor walk
+through a tie on `updated_at`, ordered by id (mutation-checked); a token
+limited to one project; and a `read_only` token. Criteria unchanged.
