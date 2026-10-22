@@ -418,4 +418,32 @@ describe('deactivating someone (PATCH /users/:id { is_active: false })', () => {
       hidden: 1,
     });
   });
+
+  it('names in the 422 only the tasks in spaces the caller can read, and counts the rest', async () => {
+    // As above: a member granted *Deactivate people and reset access*, on Laika only.
+    const matrix = (await ok(await call('GET', '/api/v1/org/permissions'))) as {
+      grants: Record<string, Record<string, boolean>>;
+    };
+    await ok(
+      await call('PUT', '/api/v1/org/permissions', {
+        grants: { ...matrix.grants, member: { ...matrix.grants.member, deactivate_people: true } },
+      }),
+    );
+
+    // Vi can hold neither task, so both are refused; cy may read only Laika's.
+    const res = await call(
+      'PATCH',
+      path(),
+      { is_active: false, open_tasks: { reassign_to: ids.vi } },
+      cookies.cy,
+    );
+    expect(res.status).toBe(422);
+    expect((await errorOf(res)).details).toEqual({
+      field: 'open_tasks.reassign_to',
+      reason: 'cannot_hold',
+      tasks: [{ key: inLaika.key, reason: 'not_on_project' }],
+      hidden: 1,
+    });
+    expect(isActive('bea')).toBe(true);
+  });
 });

@@ -181,6 +181,45 @@ describe('using', () => {
     expect(passwordOf(grace)).toBe('hash:first-long-passphrase');
   });
 
+  it('refuses 403 inactive, link unspent, when they are deactivated while the password hashes', async () => {
+    const grace = makeUser('grace', 'member');
+    const { token } = issueResetLink(t.db, actor(ownerId), grace);
+
+    // Hashing is the one await between the checks and the claim: deactivate
+    // inside it, as a request landing in that window would.
+    const deactivating = {
+      ...deps(),
+      hashPassword: (pw: string) => {
+        t.db.update(users).set({ isActive: 0 }).where(eq(users.id, grace)).run();
+        return Promise.resolve(`hash:${pw}`);
+      },
+    };
+
+    await expect(
+      consumeResetLink(t.db, { token, newPassword: 'a-long-new-passphrase' }, deactivating),
+    ).rejects.toMatchObject({ code: 'forbidden', details: { reason: 'inactive' } });
+    expect(passwordOf(grace)).toBe('hash:old');
+    expect(t.db.select().from(passwordResets).get()?.usedAt).toBeNull();
+  });
+
+  it('names why the claim lost when the link was revoked while the password hashed', async () => {
+    const grace = makeUser('grace', 'member');
+    const { token } = issueResetLink(t.db, actor(ownerId), grace);
+
+    const reissuing = {
+      ...deps(),
+      hashPassword: (pw: string) => {
+        issueResetLink(t.db, actor(ownerId), grace);
+        return Promise.resolve(`hash:${pw}`);
+      },
+    };
+
+    await expect(
+      consumeResetLink(t.db, { token, newPassword: 'a-long-new-passphrase' }, reissuing),
+    ).rejects.toMatchObject({ code: 'conflict', details: { reason: 'revoked' } });
+    expect(passwordOf(grace)).toBe('hash:old');
+  });
+
   it('rolls the claim back when there is no password account to set', async () => {
     const grace = makeUser('grace', 'member');
     t.db.delete(accounts).where(eq(accounts.userId, grace)).run();

@@ -15,6 +15,7 @@ import {
   INVITE_TTL_MS,
   listInvites,
   newInviteToken,
+  pendingOwnerInvites,
   previewInvite,
   removeOrphanedInvitee,
   revokeInvite,
@@ -630,5 +631,58 @@ describe('removeOrphanedInvitee', () => {
     expect(
       createInvite(db, owner(), { email: 'stranded@example.test', orgRole: 'member' }).invite.email,
     ).toBe('stranded@example.test');
+  });
+});
+
+describe('an owner invite from before D-104 (LAI-982)', () => {
+  /** `createInvite` refuses `owner` now, so the old row is written as it was. */
+  function oldOwnerInvite(now = Date.now()): { id: string; token: string } {
+    const id = newId();
+    const token = newInviteToken();
+    db.insert(invites)
+      .values({
+        id,
+        orgId: ctx.orgId,
+        email: 'co-owner@example.test',
+        orgRole: 'owner',
+        tokenHash: createHash('sha256').update(token).digest('hex'),
+        createdBy: ctx.userId,
+        expiresAt: now + INVITE_TTL_MS,
+        createdAt: now,
+      })
+      .run();
+    return { id, token };
+  }
+
+  function expectUseTransfer(fn: () => unknown): void {
+    const err = expectApiError(fn, 'unprocessable');
+    expect((err.details as { reason?: string }).reason).toBe('use_transfer');
+  }
+
+  it('is never spent into an owner: 422 use_transfer, and the invite stays unaccepted', () => {
+    const { id, token } = oldOwnerInvite();
+    const invitee = makeUser('member', { email: 'co-owner@example.test' });
+
+    expectUseTransfer(() => consumeInvite(t.sqlite, db, { token, userId: invitee }));
+
+    expect(db.select().from(invites).where(eq(invites.id, id)).get()?.acceptedBy).toBeNull();
+    expect(db.select().from(users).where(eq(users.id, invitee)).get()?.orgRole).toBe('member');
+    expect(db.select().from(activity).all()).toHaveLength(0);
+  });
+
+  it('is refused before an account exists, on the accept path', () => {
+    const { token } = oldOwnerInvite();
+    expectUseTransfer(() => resolveInviteForAccept(db, token));
+  });
+
+  it('is reported while it could still be used, and not once it has expired', () => {
+    const now = 1_700_000_000_000;
+    const { id } = oldOwnerInvite(now);
+    createInvite(db, owner(), { email: 'admin2@example.test', orgRole: 'admin', now });
+
+    expect(pendingOwnerInvites(db, now)).toEqual([
+      { id, email: 'co-owner@example.test', expires_at: now + INVITE_TTL_MS },
+    ]);
+    expect(pendingOwnerInvites(db, now + INVITE_TTL_MS)).toEqual([]);
   });
 });

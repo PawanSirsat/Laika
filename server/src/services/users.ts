@@ -655,6 +655,15 @@ export function transferOwnership(
   now: number = Date.now(),
 ): OwnershipTransferView {
   assertCan(actor, 'org.transfer_ownership');
+  // The policy grants this to the role `owner`, and an organisation from before
+  // D-104 may still have a second one. Only the owner `orgs.owner_user_id`
+  // names may hand it over: anyone else would leave two owners behind, or
+  // move `owner_user_id` away from the one it names.
+  if (actor.userId !== recordedOwnerId(db)) {
+    throw new ApiError('forbidden', 'Only the recorded Owner can transfer ownership.', {
+      reason: 'not_recorded_owner',
+    });
+  }
   const target = requireUser(db, input.userId);
 
   const refuse = (reason: string, message: string): never => {

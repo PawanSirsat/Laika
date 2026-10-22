@@ -582,3 +582,31 @@ describe('one owner and transfer ownership (LAI-982)', () => {
     );
   });
 });
+
+describe('owner invites from before D-104 are reported to the owner (LAI-982)', () => {
+  it('lists the pending ones on the owner’s GET /org, and on nobody else’s', async () => {
+    const orgId = h.db.select().from(orgs).get()!.id;
+    seedInvite(h.db, { orgId, createdBy: ownerId, email: 'co@example.test', orgRole: 'owner' });
+    seedInvite(h.db, { orgId, createdBy: ownerId, email: 'adm@example.test', orgRole: 'admin' });
+    const admin = seedInvite(h.db, {
+      orgId,
+      createdBy: ownerId,
+      email: 'boss@example.test',
+      orgRole: 'admin',
+    });
+    const res = await signUp(h.app, {
+      email: 'boss@example.test',
+      password: PASSWORD,
+      inviteToken: admin,
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+
+    const asOwner = (await (await getOrgAs()).json()) as {
+      owner_invites_pending?: { id: string; email: string | null; expires_at: number }[];
+    };
+    expect(asOwner.owner_invites_pending?.map((i) => i.email)).toEqual(['co@example.test']);
+
+    const asAdmin = (await (await getOrgAs(cookieFrom(res))).json()) as object;
+    expect('owner_invites_pending' in asAdmin).toBe(false);
+  });
+});

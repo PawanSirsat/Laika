@@ -511,6 +511,42 @@ export function previewInvite(db: Db, token: string, now: number = Date.now()): 
 /** The one wording every accept path refuses with. See `resolveInviteForAccept`. */
 const REFUSED = 'That invite is invalid, expired, or already used';
 
+/**
+ * `422 use_transfer` for an owner invite made before D-104 (LAI-982).
+ *
+ * `createInvite` refuses `owner` now, but a pending invite from before still
+ * names it. Accepting one would make a second owner, so every accept path
+ * refuses it and the invite stays unaccepted: the owner sees it in `GET /org`
+ * (`pendingOwnerInvites`) and revokes or re-issues it.
+ */
+export function ownerInviteRefused(): ApiError {
+  return new ApiError(
+    'unprocessable',
+    'This invite would make a second Owner. Ask the owner for a new invite; ownership changes only by transfer.',
+    { reason: 'use_transfer' },
+  );
+}
+
+/**
+ * Owner invites from before D-104 that could still be accepted — unaccepted
+ * and unexpired (LAI-982). Served to the owner in `GET /org`, beside
+ * `extra_owners`, so nothing that would have made an owner goes unseen.
+ */
+export function pendingOwnerInvites(
+  db: Db,
+  now: number = Date.now(),
+): { id: string; email: string | null; expires_at: number }[] {
+  return db
+    .select({ id: invites.id, email: invites.email, expiresAt: invites.expiresAt })
+    .from(invites)
+    .where(
+      and(eq(invites.orgRole, 'owner'), isNull(invites.acceptedBy), gt(invites.expiresAt, now)),
+    )
+    .orderBy(invites.createdAt, invites.id)
+    .all()
+    .map((row) => ({ id: row.id, email: row.email, expires_at: row.expiresAt }));
+}
+
 export interface AcceptableInvite {
   /** Null for a link invite — the caller must supply an address of their own. */
   email: string | null;
@@ -553,6 +589,7 @@ export function resolveInviteForAccept(
     .get();
 
   if (row === undefined) throw new ApiError('forbidden', REFUSED);
+  if (row.orgRole === 'owner') throw ownerInviteRefused();
 
   return row;
 }
@@ -613,6 +650,8 @@ export function consumeInvite(
     if (row?.acceptedBy !== null || row.expiresAt <= now) {
       throw new ApiError('forbidden', REFUSED);
     }
+    // The backstop every path meets: no invite is ever spent into `owner`.
+    if (row.orgRole === 'owner') throw ownerInviteRefused();
 
     const marked = db
       .update(invites)
