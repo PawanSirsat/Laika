@@ -65,6 +65,13 @@ export interface InspectorProps {
   readonly pending: string | undefined;
   readonly actions: InspectorActions;
   readonly onNavigate: (to: string) => void;
+  /**
+   * Somebody else's day, read (D-102 rule 4, LAI-959): what the block is and
+   * nothing to change it with — no confirm, card, length, split, note,
+   * delete, break or history (the history is a `/me` read of the reader's
+   * own entries).
+   */
+  readonly readOnly?: boolean;
 }
 
 /** The tiles under *Drafted from*, in the design's order; *agents* is the lane's. */
@@ -76,16 +83,16 @@ const ICONS = { drafted: '✎', needs: '?', confirmed: '✓', gap: '+', break: '
 const agentMinutes = (seconds: number): number => Math.max(1, Math.round(seconds / 60));
 
 /** What the agent did inside a block, in one line — minutes, never what it typed. */
-function agentLine(during: AgentsIn | undefined): string {
+function agentLine(during: AgentsIn | undefined, who: 'you' | 'they' = 'you'): string {
   if (during === undefined || during.runs === 0) {
-    return 'No agent ran in this time. Counts only, never what you typed.';
+    return `No agent ran in this time. Counts only, never what ${who} typed.`;
   }
   const worked = agentDuration(agentMinutes(during.seconds));
   const onCard =
     during.onCardSeconds > 0
       ? `, ${agentDuration(agentMinutes(during.onCardSeconds))} of it on a card`
       : ', on no card';
-  return `During this time an agent worked ${worked}${onCard}. Counts only, never what you typed.`;
+  return `During this time an agent worked ${worked}${onCard}. Counts only, never what ${who} typed.`;
 }
 
 const SOURCES: Readonly<Record<TimeEntry['source'], string>> = {
@@ -328,6 +335,7 @@ export function Inspector({
   pending,
   actions,
   onNavigate,
+  readOnly = false,
 }: InspectorProps) {
   const [history, setHistory] = useState<History>({ kind: 'closed' });
   const [note, setNote] = useState<{ id: string; text: string } | undefined>(undefined);
@@ -370,38 +378,58 @@ export function Inspector({
             </span>
             <span className="inspector-range">{whenOf(draft)}</span>
             <span className="inspector-source">
-              {draft.source === 'agent' ? 'Proposed by an agent' : 'From your collector'} · only you
-              see it
+              {readOnly ? (
+                <>
+                  {draft.source === 'agent' ? 'Proposed by an agent' : 'From their collector'} · not
+                  confirmed
+                </>
+              ) : (
+                <>
+                  {draft.source === 'agent' ? 'Proposed by an agent' : 'From your collector'} · only
+                  you see it
+                </>
+              )}
               {draft.note !== null && ` · “${draft.note}”`}
             </span>
             <span className="inspector-head-gap" />
-            <button
-              type="button"
-              className="myday-chip"
-              disabled={busy}
-              onClick={() => {
-                actions.dismiss(draft);
-              }}
-            >
-              Not work
-            </button>
-            <button
-              type="button"
-              className="myday-chip myday-chip-primary inspector-confirm"
-              data-inspector-confirm
-              disabled={busy || !ready}
-              onClick={() => {
-                actions.confirm(draft);
-              }}
-            >
-              {pending === `confirm:${draft.id}` && <Spinner size="sm" label="Confirming" />}
-              {ready ? `Confirm ${duration(draft.minutes)}` : 'Needs a card'}
-            </button>
+            {!readOnly && (
+              <>
+                <button
+                  type="button"
+                  className="myday-chip"
+                  disabled={busy}
+                  onClick={() => {
+                    actions.dismiss(draft);
+                  }}
+                >
+                  Not work
+                </button>
+                <button
+                  type="button"
+                  className="myday-chip myday-chip-primary inspector-confirm"
+                  data-inspector-confirm
+                  disabled={busy || !ready}
+                  onClick={() => {
+                    actions.confirm(draft);
+                  }}
+                >
+                  {pending === `confirm:${draft.id}` && <Spinner size="sm" label="Confirming" />}
+                  {ready ? `Confirm ${duration(draft.minutes)}` : 'Needs a card'}
+                </button>
+              </>
+            )}
           </header>
           <div className="inspector-parts">
             <div className="inspector-part">
               <h3 className="inspector-label">Card</h3>
-              {!ready && (
+              {!ready && readOnly && (
+                <p className="inspector-card" data-card-warning>
+                  {draft.task_key !== null
+                    ? `${draft.task_key} was named — a card you can’t read.`
+                    : 'Nothing named a card yet.'}
+                </p>
+              )}
+              {!ready && !readOnly && (
                 <p className="inspector-warn" data-card-warning>
                   {draft.task_key !== null
                     ? `${draft.task_key} was named, but it is a card you can’t read. Pick one of yours, or General.`
@@ -421,59 +449,71 @@ export function Inspector({
                   {draft.folder !== undefined && draft.folder !== null && ` · ${draft.folder}`}
                 </p>
               )}
-              <CardPicker
-                current={draft.task?.key}
-                general={draft.general}
-                chips={chipsFor(draft.task)}
-                busy={busy}
-                onPick={(card) => {
-                  actions.setCard(held, card);
-                }}
-              />
-            </div>
-            <div className="inspector-part">
-              <h3 className="inspector-label">Length</h3>
-              <div className="inspector-row">
-                <Stepper
-                  minutes={draft.minutes}
-                  canShorten={
-                    block === undefined
-                      ? stepMinutes(draft.minutes, -5) !== undefined
-                      : stepEnd(block, -5) !== undefined
-                  }
-                  canLengthen={
-                    block === undefined
-                      ? stepMinutes(draft.minutes, 5) !== undefined
-                      : stepEnd(block, 5, hi) !== undefined
-                  }
+              {draft.general && draft.task === null && draft.project === null && readOnly && (
+                <p className="inspector-card">General</p>
+              )}
+              {!readOnly && (
+                <CardPicker
+                  current={draft.task?.key}
+                  general={draft.general}
+                  chips={chipsFor(draft.task)}
                   busy={busy}
-                  onStep={(by) => {
-                    actions.step(held, by);
+                  onPick={(card) => {
+                    actions.setCard(held, card);
                   }}
                 />
-                <button
-                  type="button"
-                  className="myday-chip"
-                  disabled={busy || block === undefined || splitPoint(block) === undefined}
-                  onClick={() => {
-                    actions.split(draft);
-                  }}
-                >
-                  Split in two
-                </button>
-              </div>
-              <LengthField
-                minutes={draft.minutes}
-                busy={busy}
-                onSet={(minutes) => {
-                  actions.setLength(held, minutes);
-                }}
-              />
-              <p className="inspector-note">
-                5-minute steps, or type a length. Confirming makes this visible to your
-                organisation.
-              </p>
+              )}
             </div>
+            {readOnly ? (
+              <div className="inspector-part">
+                <h3 className="inspector-label">Length</h3>
+                <p className="inspector-length">{duration(draft.minutes)}</p>
+              </div>
+            ) : (
+              <div className="inspector-part">
+                <h3 className="inspector-label">Length</h3>
+                <div className="inspector-row">
+                  <Stepper
+                    minutes={draft.minutes}
+                    canShorten={
+                      block === undefined
+                        ? stepMinutes(draft.minutes, -5) !== undefined
+                        : stepEnd(block, -5) !== undefined
+                    }
+                    canLengthen={
+                      block === undefined
+                        ? stepMinutes(draft.minutes, 5) !== undefined
+                        : stepEnd(block, 5, hi) !== undefined
+                    }
+                    busy={busy}
+                    onStep={(by) => {
+                      actions.step(held, by);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="myday-chip"
+                    disabled={busy || block === undefined || splitPoint(block) === undefined}
+                    onClick={() => {
+                      actions.split(draft);
+                    }}
+                  >
+                    Split in two
+                  </button>
+                </div>
+                <LengthField
+                  minutes={draft.minutes}
+                  busy={busy}
+                  onSet={(minutes) => {
+                    actions.setLength(held, minutes);
+                  }}
+                />
+                <p className="inspector-note">
+                  5-minute steps, or type a length. Confirming makes this visible to your
+                  organisation.
+                </p>
+              </div>
+            )}
             <div className="inspector-part">
               <h3 className="inspector-label">Drafted from</h3>
               <dl className="inspector-counts">
@@ -496,23 +536,30 @@ export function Inspector({
                 </p>
               )}
               <p className="inspector-note" data-agent-line>
-                {agentLine(block === undefined ? undefined : agentsIn?.(block))}
+                {agentLine(
+                  block === undefined ? undefined : agentsIn?.(block),
+                  readOnly ? 'they' : 'you',
+                )}
               </p>
               <p className="inspector-note">
-                {folderOf(draft) === undefined
-                  ? 'Counts only — never what you typed, file names or commit messages.'
-                  : draft.branch !== undefined && draft.branch !== null
-                    ? 'Counts, the name you gave this folder and its branch — never what you typed, file names or commit messages.'
-                    : 'Counts and the name you gave this folder — never what you typed, file names or commit messages.'}
+                {readOnly
+                  ? 'Counts only — never what they typed, file names or commit messages.'
+                  : folderOf(draft) === undefined
+                    ? 'Counts only — never what you typed, file names or commit messages.'
+                    : draft.branch !== undefined && draft.branch !== null
+                      ? 'Counts, the name you gave this folder and its branch — never what you typed, file names or commit messages.'
+                      : 'Counts and the name you gave this folder — never what you typed, file names or commit messages.'}
               </p>
             </div>
           </div>
-          <p className="inspector-keys">
-            <kbd className="myday-kbd">↵</kbd> confirm <kbd className="myday-kbd">G</kbd> general{' '}
-            <kbd className="myday-kbd">X</kbd> not work <kbd className="myday-kbd">← →</kbd> move on
-            the timeline <kbd className="myday-kbd">J</kbd> <kbd className="myday-kbd">K</kbd> move
-            in the list <kbd className="myday-kbd">?</kbd> all keys
-          </p>
+          {!readOnly && (
+            <p className="inspector-keys">
+              <kbd className="myday-kbd">↵</kbd> confirm <kbd className="myday-kbd">G</kbd> general{' '}
+              <kbd className="myday-kbd">X</kbd> not work <kbd className="myday-kbd">← →</kbd> move
+              on the timeline <kbd className="myday-kbd">J</kbd> <kbd className="myday-kbd">K</kbd>{' '}
+              move in the list <kbd className="myday-kbd">?</kbd> all keys
+            </p>
+          )}
         </section>
       );
     }
@@ -522,7 +569,7 @@ export function Inspector({
     const entry = view.entries.find((e) => e.id === selection.id);
     if (entry !== undefined) {
       const block = placed(entry.id);
-      const changeable = canChange(entry);
+      const changeable = !readOnly && canChange(entry);
       const held: Held = { kind: 'entry', entry };
       const typed = note?.id === entry.id ? note.text : (entry.note ?? '');
       const hi = block === undefined ? undefined : limitsIn(line, block).hi;
@@ -560,8 +607,11 @@ export function Inspector({
             </span>
             <span className="inspector-range">{whenOf(entry)}</span>
             <span className="inspector-source">
-              {SOURCES[entry.source]} · others can see it · rev {String(entry.revision)}
-              {!changeable && ' · change it in Solidtime'}
+              {readOnly
+                ? SOURCES[entry.source].replace('by you', 'by them')
+                : SOURCES[entry.source]}{' '}
+              · others can see it · rev {String(entry.revision)}
+              {!readOnly && !changeable && ' · change it in Solidtime'}
             </span>
             <span className="inspector-head-gap" />
             {changeable && (
@@ -634,17 +684,19 @@ export function Inspector({
               ) : (
                 <p className="inspector-length">{duration(entry.minutes)}</p>
               )}
-              <p className="inspector-note">
-                Every edit is kept as a revision.{' '}
-                <button
-                  type="button"
-                  className="myday-linkish"
-                  aria-expanded={history.kind !== 'closed'}
-                  onClick={toggleHistory}
-                >
-                  {history.kind === 'closed' ? 'History' : 'Hide history'}
-                </button>
-              </p>
+              {!readOnly && (
+                <p className="inspector-note">
+                  Every edit is kept as a revision.{' '}
+                  <button
+                    type="button"
+                    className="myday-linkish"
+                    aria-expanded={history.kind !== 'closed'}
+                    onClick={toggleHistory}
+                  >
+                    {history.kind === 'closed' ? 'History' : 'Hide history'}
+                  </button>
+                </p>
+              )}
               {history.kind === 'loading' && <Spinner size="sm" label="Reading the history" />}
               {history.kind === 'error' && <p className="myday-error">{history.message}</p>}
               {history.kind === 'ready' && (
@@ -671,7 +723,7 @@ export function Inspector({
                   </div>
                 </dl>
                 <p className="inspector-note" data-agent-line>
-                  {agentLine(agentsIn(block))}
+                  {agentLine(agentsIn(block), readOnly ? 'they' : 'you')}
                 </p>
               </div>
             )}
@@ -732,33 +784,39 @@ export function Inspector({
           </span>
           <span className="inspector-range">{span(at(gap.start), at(gap.end), view.tz)}</span>
           <span className="inspector-source">
-            {duration(gap.end - gap.start)} nothing on your day covers
+            {duration(gap.end - gap.start)} nothing on {readOnly ? 'their' : 'your'} day covers
           </span>
           <span className="inspector-head-gap" />
-          <button
-            type="button"
-            className="myday-chip"
-            disabled={busy}
-            onClick={() => {
-              actions.markBreak(gap);
-            }}
-          >
-            Mark as break
-          </button>
-          <button
-            type="button"
-            className="myday-chip myday-chip-primary"
-            onClick={() => {
-              actions.fill(gap);
-            }}
-          >
-            Add time here
-          </button>
+          {!readOnly && (
+            <>
+              <button
+                type="button"
+                className="myday-chip"
+                disabled={busy}
+                onClick={() => {
+                  actions.markBreak(gap);
+                }}
+              >
+                Mark as break
+              </button>
+              <button
+                type="button"
+                className="myday-chip myday-chip-primary"
+                onClick={() => {
+                  actions.fill(gap);
+                }}
+              >
+                Add time here
+              </button>
+            </>
+          )}
         </header>
-        <p className="inspector-note inspector-pad">
-          Say what it was under Add time, or mark it a break: a break is not time, and stops
-          counting as a gap.
-        </p>
+        {!readOnly && (
+          <p className="inspector-note inspector-pad">
+            Say what it was under Add time, or mark it a break: a break is not time, and stops
+            counting as a gap.
+          </p>
+        )}
       </section>
     );
   }
@@ -784,16 +842,18 @@ export function Inspector({
             <span className="inspector-range">{span(at(b.start), at(b.end), view.tz)}</span>
             <span className="inspector-source">not time, and not a gap</span>
             <span className="inspector-head-gap" />
-            <button
-              type="button"
-              className="myday-chip"
-              disabled={busy}
-              onClick={() => {
-                actions.unbreak(b.id);
-              }}
-            >
-              Not a break
-            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                className="myday-chip"
+                disabled={busy}
+                onClick={() => {
+                  actions.unbreak(b.id);
+                }}
+              >
+                Not a break
+              </button>
+            )}
           </header>
         </section>
       );
@@ -805,7 +865,9 @@ export function Inspector({
       <p className="inspector-empty">
         <strong>Nothing selected</strong>{' '}
         <span className="myday-quiet">
-          Pick a block on the timeline, or a row below, to edit it here.
+          {readOnly
+            ? 'Pick a block on the timeline, or a row below, to see it here.'
+            : 'Pick a block on the timeline, or a row below, to edit it here.'}
         </span>
       </p>
     </section>

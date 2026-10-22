@@ -15,7 +15,8 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { closeBrowser, open, setTheme, type Harness } from './harness.ts';
+import { closeBrowser, setTheme, type Harness } from './harness.ts';
+import { open } from './my-day-clock.ts';
 import {
   ATLAS,
   CARD_A,

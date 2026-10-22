@@ -136,7 +136,9 @@ void describe('the sidebar offers nothing that does not exist', () => {
       // lead the rail; Insights holds Capacity and Usage, Inbox Review and
       // Unlisted work, Developer access Connect and Tokens. None is gated —
       // Unlisted work's gate is its tab's (`page-tabs.test.ts`).
-      ['My day', 'Inbox', 'Insights', 'Organisation', 'Developer access'],
+      // **Six, since LAI-952**: Work, everyone's work across every space,
+      // after Inbox — ungated; the server decides whose tasks are sent.
+      ['My day', 'Inbox', 'Work', 'Insights', 'Organisation', 'Developer access'],
     );
   });
 

@@ -2,11 +2,13 @@
 id: LAI-883
 title: 'An owner or admin does not see a private space they are not a member of, on Projects or in My day''s On your plate'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: review
+started: 2026-10-22T10:51:47Z
+finished: 2026-10-22T11:28:10Z
 ---
 
 ## Goal
@@ -27,16 +29,16 @@ returns those projects — but the UI drops them.
 
 ## Acceptance criteria
 
-- [ ] Every project `GET /projects` returns is rendered on Projects for an
+- [x] Every project `GET /projects` returns is rendered on Projects for an
       owner or admin, including private projects with no explicit membership.
       Shown in "Your spaces" (or a clearly labelled "All spaces" section — the
       builder picks one and says why in the log).
-- [ ] A member or viewer sees exactly what they see today (test pins it).
-- [ ] On your plate uses the same rule: an owner's/admin's assigned work in a
+- [x] A member or viewer sees exactly what they see today (test pins it).
+- [x] On your plate uses the same rule: an owner's/admin's assigned work in a
       project they reach only through the implicit lead is shown.
-- [ ] Tests red first against today's code, for both screens; assertions name
+- [x] Tests red first against today's code, for both screens; assertions name
       the private project, not a count.
-- [ ] Both themes unaffected. Gate: `pnpm test`, `pnpm lint`, `pnpm format`
+- [x] Both themes unaffected. Gate: `pnpm test`, `pnpm lint`, `pnpm format`
       each exit 0.
 
 ## Notes
@@ -52,3 +54,6 @@ Filed by CHIEF on 2026-10-22 as `LAI-871`, which collided with a task already on
 carries `[LAI-871]` for all five filings, and a claim commit `2c1a7274`
 `[LAI-872]` (pushed as branch `LAI-872-share-activity-switch`) belongs to the
 filing now LAI-884 — **neither is the task that holds that number now.**
+
+Briefly renamed LAI-888 on branch LAI-888-owners-see-every-project (commit
+3377178f) during an id race; reverted — LAI-888 is the My-day task.

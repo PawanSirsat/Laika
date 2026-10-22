@@ -76,7 +76,9 @@ void describe('sidebar groups (AC1)', () => {
     // are asserted in `page-tabs.test.ts`.
     assert.deepEqual(
       routesInGroup('HOME', () => true).map((r) => r.label),
-      ['My day', 'Inbox'],
+      // Work (LAI-952): everyone's work across every space — the task's
+      // "WORK group", which LAI-796 folded into these unheaded places.
+      ['My day', 'Inbox', 'Work'],
     );
     assert.deepEqual(
       routesInGroup('ORG', () => true).map((r) => r.label),

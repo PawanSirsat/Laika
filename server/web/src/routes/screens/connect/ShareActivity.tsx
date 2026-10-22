@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
-import { Switch } from '../../../components/Switch.tsx';
 import { ApiError } from '../../../api/errors.ts';
 import {
   deleteOwnLocalActivity,
@@ -14,12 +13,39 @@ import {
   type LocalActivityScope,
   type OwnLocalActivity,
 } from '../../../api/local-activity.ts';
-import type { AgentClient } from '../../../api/agent-clients.ts';
-import { compactTokens, exactTokens } from '../../../api/usage.ts';
-import { agentLabel } from '../profile/activity-derive.ts';
+import { getOrgPermissions, type OrgPermissions } from '../../../api/permissions.ts';
+import { dayLabel, HeldDays } from './HeldDays.tsx';
 
-/** The collector's command (LAI-752): it checks sharing first, then installs. */
+/** The collector's command (LAI-752): it checks collection is on first, then installs. */
 export const ACTIVITY_COMMAND = 'laika activity on';
+
+/**
+ * What the organisation collects, in the notice (D-102 amended, LAI-964) —
+ * word for word what `laika activity on` / `status` / `sync` print, which
+ * `cli/test/activity-command.test.ts` holds.
+ */
+export const COLLECTED =
+  'per-day counts of your prompts, agent sessions and commits, and your agents’ token counts';
+
+/** The grant that lets a role see a person's analytics (D-102 rule 6, LAI-958). */
+const SEE_ANALYTICS = 'see_people_analytics';
+
+/**
+ * Who can see what is collected, as the notice says it (LAI-971): the owner,
+ * always, and every role the owner has granted *See everyone's analytics* —
+ * read from `GET /api/v1/org/permissions`, in the order its `roles` name them,
+ * so a changed grant changes the sentence. Without an answer it falls back to
+ * the CLI's words, which stay true whatever the owner granted.
+ */
+export function collectionAudience(permissions: OrgPermissions | undefined): string {
+  if (permissions === undefined) return 'The owner and anyone they grant access';
+  const granted = permissions.roles
+    .filter((role) => permissions.grants[role]?.[SEE_ANALYTICS] === true)
+    .map((role) => `${role}s`);
+  const names = ['The owner', ...granted];
+  const last = names.pop() ?? '';
+  return names.length === 0 ? last : `${names.join(', ')} and ${last}`;
+}
 
 const SCOPES: Readonly<Record<LocalActivityScope, { label: string; hint: string }>> = {
   'agent-repos': {
@@ -39,34 +65,25 @@ type State =
       readonly kind: 'ready';
       readonly sharing: ActivitySharing;
       readonly held: OwnLocalActivity;
+      /** `undefined` when the grants could not be read: the notice then says it in general. */
+      readonly permissions: OrgPermissions | undefined;
     };
 
 function said(cause: unknown, fallback: string): string {
   return cause instanceof ApiError ? cause.message : fallback;
 }
 
-/** `Thu 15 Oct` — a held day, as a date; `Mon 13 Oct 2025` when not this year (LAI-751). */
-function dayLabel(day: string): string {
-  const date = new Date(`${day}T00:00:00Z`);
-  const label = date.toLocaleDateString('en-GB', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    timeZone: 'UTC',
-  });
-  const thisYear = date.getUTCFullYear() === new Date().getUTCFullYear();
-  return thisYear ? label : `${label} ${String(date.getUTCFullYear())}`;
-}
-
 /**
- * Connect's *Share local activity* (D-079, LAI-751): the signed-in
- * developer's own consent to send daily counts from their machine, and a look
- * at what the server holds for them.
+ * Connect's *Share local activity* (D-079, LAI-751): what the developer's
+ * machine sends, and a look at what the server holds for them.
  *
- * Everything here is the developer's alone: the switch, the scope and the
- * delete are web-session-only on the server, so no agent can do any of them
- * for its person. With the organisation's switch off there is nothing to turn
- * on, and this says so instead of offering a control that would do nothing.
+ * **Collection is the organisation's** since D-102 (amended, LAI-964): with
+ * *Developer insights* on, every connected machine is collected, so there is
+ * no switch of the person's here — a plain notice instead, saying what is
+ * collected and who can see it, never silence. The scope and the delete stay
+ * the developer's, web-session-only on the server, so no agent can do either
+ * for its person. With the organisation's switch off nothing is collected, and
+ * this says so.
  */
 export function ShareActivity({
   canManageOrg,
@@ -84,9 +101,17 @@ export function ShareActivity({
   const otelRef = useRef<HTMLPreElement | null>(null);
 
   const load = useCallback((signal?: AbortSignal) => {
-    Promise.all([getActivitySharing(signal), getOwnLocalActivity(signal)])
-      .then(([sharing, held]) => {
-        setState({ kind: 'ready', sharing, held });
+    Promise.all([
+      getActivitySharing(signal),
+      getOwnLocalActivity(signal),
+      // Only the audience's wording rides on it, so a refusal never hides the panel.
+      getOrgPermissions(signal).catch((cause: unknown) => {
+        if (cause instanceof DOMException && cause.name === 'AbortError') throw cause;
+        return undefined;
+      }),
+    ])
+      .then(([sharing, held, permissions]) => {
+        setState({ kind: 'ready', sharing, held, permissions });
       })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
@@ -123,14 +148,14 @@ export function ShareActivity({
     );
   }
 
-  const { sharing, held } = state;
+  const { sharing, held, permissions } = state;
 
-  const change = (next: { enabled?: boolean; scope?: LocalActivityScope }): void => {
+  const change = (next: { scope: LocalActivityScope }): void => {
     setBusy(true);
     setError(undefined);
     setActivitySharing(next)
       .then((answer) => {
-        setState({ kind: 'ready', sharing: answer, held });
+        setState({ kind: 'ready', sharing: answer, held, permissions });
       })
       .catch((cause: unknown) => {
         setError(said(cause, 'That change did not go through.'));
@@ -144,8 +169,8 @@ export function ShareActivity({
     if (
       !window.confirm(
         'Delete every daily count and commit key the board holds for you? Your profile’s ' +
-          'activity loses its GitHub and Local history. This cannot be undone. Sharing stays as ' +
-          'it is.',
+          'activity loses its GitHub and Local history. This cannot be undone. Collection carries ' +
+          'on while your organisation has Developer insights on.',
       )
     ) {
       return;
@@ -156,7 +181,7 @@ export function ShareActivity({
       .then(() => getOwnLocalActivity())
       .then((answer) => {
         setDeleted(true);
-        setState({ kind: 'ready', sharing, held: answer });
+        setState({ kind: 'ready', sharing, held: answer, permissions });
       })
       .catch((cause: unknown) => {
         setError(said(cause, 'The history was not deleted.'));
@@ -171,8 +196,7 @@ export function ShareActivity({
       <p className="conn-body">
         Your own machine can send daily counts to your profile’s <strong>Activity</strong> — so the
         board shows the work that happens before a task moves — and your agents’ token counts to{' '}
-        <strong>Usage</strong>. Owners and admins see them on your profile; they never feed a rating
-        or a score.
+        <strong>Usage</strong>. They show on your profile and never feed a rating or a score.
       </p>
 
       <div className="share-lists">
@@ -190,7 +214,8 @@ export function ShareActivity({
             </li>
           </ul>
           <p className="conn-note">
-            Commits count from the day you turn sharing on, and merge commits never count.
+            Commits count from the day collection starts on your machine, and merge commits never
+            count.
           </p>
         </div>
         <div>
@@ -206,11 +231,11 @@ export function ShareActivity({
 
       {!sharing.org_enabled ? (
         <p className="conn-note conn-note-warn" data-state="org-off">
-          <strong>Developer insights are off for this organisation</strong>, so there is nothing to
-          turn on yet.{' '}
+          <strong>Developer insights are off for this organisation</strong>, so nothing is collected
+          from your machine.{' '}
           {canManageOrg ? (
             <>
-              You can turn them on in <a href="/organisation">Organisation</a>.
+              You can turn them on in <a href="/organisation?tab=overview">Organisation</a>.
             </>
           ) : (
             'An owner or admin can turn them on.'
@@ -218,27 +243,23 @@ export function ShareActivity({
         </p>
       ) : (
         <>
-          <div className="share-row">
-            <Switch
-              checked={sharing.enabled}
-              describedBy="share-switch-note"
-              disabled={busy}
-              onChange={(enabled) => {
-                change({ enabled });
-              }}
-            >
-              Share my local activity
-            </Switch>
-            {busy && <Spinner size="sm" />}
-          </div>
-          <p className="conn-note" id="share-switch-note">
-            {sharing.enabled
-              ? 'On. Turning it off stops every machine of yours at once; what is already held stays until you delete it.'
-              : 'Off. Nothing leaves your machine until you turn this on.'}
+          <p className="conn-note share-collects" data-state="org-collects">
+            <strong>Your organisation collects your local activity:</strong> {COLLECTED}.{' '}
+            {collectionAudience(permissions)} can see it, and you can see who looked.{' '}
+            <a href="#share-held">See what the board holds for you</a>, and your own time on{' '}
+            <a href="/my-day">My day</a>.{' '}
+            {canManageOrg ? (
+              <>
+                You can turn Developer insights off in{' '}
+                <a href="/organisation?tab=overview">Organisation</a>.
+              </>
+            ) : (
+              'Only an owner or admin can turn it off.'
+            )}
           </p>
 
           <fieldset className="share-scope" disabled={busy}>
-            <legend className="share-h">Count work in</legend>
+            <legend className="share-h">Count work in {busy && <Spinner size="sm" />}</legend>
             {LOCAL_ACTIVITY_SCOPES.map((scope) => (
               <label key={scope} className="share-scope-option">
                 <input
@@ -315,7 +336,7 @@ export function ShareActivity({
         </>
       )}
 
-      <section className="share-held" aria-labelledby="share-held-title">
+      <section className="share-held" id="share-held" aria-labelledby="share-held-title">
         <h3 className="share-h" id="share-held-title">
           What the board holds for you · last 14 days
         </h3>
@@ -325,40 +346,7 @@ export function ShareActivity({
             {held.oldest_day === null ? ', and nothing older.' : '.'}
           </p>
         ) : (
-          <table className="share-table">
-            <thead>
-              <tr>
-                <th scope="col">Day</th>
-                <th scope="col">Prompts</th>
-                <th scope="col">Sessions</th>
-                <th scope="col">Not pushed</th>
-                <th scope="col">Pushed</th>
-                <th scope="col">Tokens</th>
-              </tr>
-            </thead>
-            <tbody>
-              {held.days.map((day) => {
-                const prompts = (Object.entries(day.prompts_by_agent) as [AgentClient, number][])
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([kind, n]) => `${agentLabel(kind)} ${String(n)}`)
-                  .join(', ');
-                return (
-                  <tr key={day.day}>
-                    <th scope="row">{dayLabel(day.day)}</th>
-                    <td>{prompts === '' ? '0' : prompts}</td>
-                    <td>{day.sessions}</td>
-                    <td>{day.commits_local}</td>
-                    <td>{day.pushed_commits}</td>
-                    <td
-                      title={`${exactTokens(day.tokens)} tokens, ${exactTokens(day.cache_read)} cache reads`}
-                    >
-                      {compactTokens(day.tokens)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <HeldDays held={held} />
         )}
         {held.oldest_day !== null && (
           <p className="conn-note">

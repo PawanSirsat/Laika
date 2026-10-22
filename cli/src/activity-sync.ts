@@ -333,14 +333,16 @@ export async function getSharing(
   if (!response.ok) return failed(response, nowMs);
   try {
     const body = (await response.json()) as Record<string, unknown>;
-    if (typeof body.enabled !== 'boolean' || typeof body.org_enabled !== 'boolean') {
+    // `org_enabled` decides (D-102 amended); `enabled` mirrors it on a board
+    // that has LAI-963, and is kept only as what it last said.
+    if (typeof body.org_enabled !== 'boolean') {
       return { ok: false, status: response.status, message: 'the answer was not activity sharing' };
     }
     return {
       ok: true,
       value: {
         org_enabled: body.org_enabled,
-        enabled: body.enabled,
+        enabled: typeof body.enabled === 'boolean' ? body.enabled : body.org_enabled,
         scope: body.scope === 'laika-repos' ? 'laika-repos' : 'agent-repos',
         min_sync_interval_s: clampInterval(body.min_sync_interval_s),
         ...(Array.isArray(body.usage_days_elsewhere)
@@ -657,16 +659,19 @@ async function syncLocked(
     // effect on the very next sync rather than a day later.
     const sharing = await getSharing(creds, ctx.nowMs(), signal, collectorId(paths));
     if (!sharing.ok) {
-      return fail(`checking whether sharing is on: ${sharing.message}`, sharing.status);
+      return fail(`checking whether collection is on: ${sharing.message}`, sharing.status);
     }
-    if (!(sharing.value.org_enabled && sharing.value.enabled)) {
+    // The organisation's switch alone (D-102 amended, LAI-964): the person's
+    // own is no longer asked. A board without LAI-963 that still holds it off
+    // answers the send with `local_activity_off`, which stops below.
+    if (!sharing.value.org_enabled) {
       save(stopCollecting(paths, state, nowS, sharing.value));
       return { kind: 'off', recheckAt: nowS + DAY_S };
     }
     state = {
       ...state,
       org_enabled: true,
-      enabled: true,
+      enabled: sharing.value.enabled,
       scope: sharing.value.scope,
       min_sync_interval_s: sharing.value.min_sync_interval_s,
       checked_at: nowS,

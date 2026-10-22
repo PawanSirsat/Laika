@@ -1,4 +1,4 @@
-import type { OrgRole, ProjectRole } from '../../api/invites.ts';
+import { ORG_ROLES, type OrgRole, type ProjectRole } from '../../api/invites.ts';
 
 /**
  * What each org role permits, in one line, from **SPEC §3.1** (LAI-077 AC3).
@@ -17,7 +17,7 @@ import type { OrgRole, ProjectRole } from '../../api/invites.ts';
 export const ORG_ROLE_PERMITS: Readonly<Record<OrgRole, string>> = {
   owner: 'Everything, including org settings, deleting org data and transferring ownership.',
   admin:
-    'Invite people, change roles below Owner, create and archive projects, manage org settings and tokens.',
+    'Invite people as members or viewers, create and archive projects, manage org settings and tokens, as the Owner allows. Only the Owner changes roles.',
   member:
     'See the member list, join public projects as a member, and create your own tokens. What you can do inside a project depends on your role there.',
   viewer:
@@ -41,4 +41,17 @@ export const PROJECT_ROLE_PERMITS: Readonly<Record<ProjectRole, string>> = {
  */
 export function orgRoleLabel(role: OrgRole): string {
   return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+/**
+ * The roles this actor may **invite** as, from `can()`'s `user.invite` rule
+ * (D-102 rule 5, LAI-958): the owner as anything but Owner — ownership is
+ * transferred, not invited into — and anyone else as Member or Viewer only.
+ * A mirror of the server's rule, so an admin is never offered a role that
+ * answers `403`.
+ */
+export function invitableRoles(actorRole: string): readonly OrgRole[] {
+  const allowed: readonly OrgRole[] =
+    actorRole === 'owner' ? ORG_ROLES.filter((r) => r !== 'owner') : ['member', 'viewer'];
+  return ORG_ROLES.filter((r) => allowed.includes(r));
 }

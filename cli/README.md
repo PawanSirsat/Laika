@@ -60,14 +60,16 @@ at user scope. It only checks that the entry exists, not that it works.
 ## `laika activity` — local activity for the heatmap (LAI-752)
 
 Counts, on this machine, what the profile heatmap's **Local** and **GitHub**
-colours show, and sends per-day numbers to the board. Nothing is collected
-unless **both** switches are on: the organisation's Developer insights (an owner
-or admin) and the developer's own "Share my local activity" (only from a
-signed-in browser — a token cannot turn it on, so no agent can switch on its own
-reporting).
+colours show, and sends per-day numbers to the board. **Collection is the
+organisation's** (D-102 amended): nothing is collected unless its Developer
+insights is on, and while it is, every connected machine is — there is no
+personal switch. A token cannot turn it on, so no agent can switch on its own
+reporting. `on`, `status` and `sync` each say so plainly: what is collected,
+that the owner and anyone they grant access can see it, and that you can see
+who looked.
 
 ```bash
-laika activity on                 # check both switches, then install the hooks and Claude Code's telemetry
+laika activity on                 # check Developer insights, then install the hooks and Claude Code's telemetry
 laika activity on --agent copilot # also install for an agent not detected
 laika activity status             # the exact JSON the next sync sends, and the last result
 laika activity sync               # send now, if the board's interval allows it
@@ -135,7 +137,7 @@ a second pushed key once force-pushed. Commits whose remote branch was deleted
 after a squash merge are not counted as local again either — provided a sync saw
 them on the remote first (a branch pushed and squash-merged between two syncs is
 counted as local until it is deleted, and only inside the 14-day window).
-**Unpushed work authored before sharing was turned on on this machine is never
+**Unpushed work authored before collection started on this machine is never
 reported**, and pushed work from before then only through the look-back below
 (D-080).
 
@@ -149,7 +151,7 @@ no agent session ran there. Answer no and the automatic look-back will not send
 those repos either, until a later `backfill` is answered yes. If git cannot read
 a repo, it is not marked done: it is tried again later, backing off as a failed
 sync does. Commits a snapshot can count are left to it — those
-authored after sharing went on, on days the repo's snapshots covered — so a
+authored after collection started, on days the repo's snapshots covered — so a
 commit counted local and pushed later is never counted twice; one pushed only
 after its day left every snapshot stays local, as before. Commits under your
 git identity count even if an agent typed them: git cannot tell. Reports stay
@@ -215,7 +217,7 @@ no token counts on the machine, so they have none to send.
 - **Totals replace.** Only days whose totals changed since the board last took
   them are sent, each whole; the board replaces that machine's day, so a retry
   never counts twice.
-- **Since when.** From when you turned sharing on, unless you say yes to the
+- **Since when.** From when collection started on this machine, unless you say yes to the
   last 30 days: `on` asks once (`--yes`/`--no` answer it), and `backfill`
   shows the 30 days it found — tokens per agent, days — and asks before sending
   (`--yes` does not ask). A no is kept until a later `backfill` is answered yes.
@@ -238,7 +240,7 @@ no token counts on the machine, so they have none to send.
   here, the collector id included, and the board keeps what it was sent. So the
   30 days go with the board's answer of which days it already holds tokens for
   from another collector (`usage_days_elsewhere`, dates only): those days send
-  only what came after sharing went on. A day that does carry older tokens goes
+  only what came after collection started. A day that does carry older tokens goes
   marked `backfill` the first time, and the board replaces every collector's
   rows for it — a client that got this wrong still cannot count a day twice.
 - **Codex per-response records** (`token_usage_record`), when a rollout has
@@ -352,8 +354,8 @@ sent to another.
 session-start and session-end hooks — and Claude Code's end of each turn, while
 collection is on — start the sync in the background when it is due, and the sync claims the next slot the moment it starts, so a sync that
 hangs still holds the next one off. Every sync first asks the board whether
-sharing is on and which scope applies, so turning it off or narrowing it to
-`laika-repos` in the web app takes effect on the very next sync, and `status`
+Developer insights is on and which scope applies, so the organisation turning
+it off, or you narrowing it to `laika-repos` in the web app, takes effect on the very next sync, and `status`
 asks too. A 429 waits for `Retry-After`; any failure — an error answer, a board
 that cannot be reached, or a crash in the count — backs off, doubling from the
 interval, to at most 6 hours; a request gives up after 5 s. The board's

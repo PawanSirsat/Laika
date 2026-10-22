@@ -63,6 +63,12 @@ export interface TimelineProps {
   /** An edge dragged, or moved by its arrow keys: one write. */
   readonly onEdge: (block: LaneBlock, edit: Edit) => void;
   readonly busy: boolean;
+  /**
+   * Somebody else's day, read (D-102, LAI-959): no edge drags or moves, and
+   * nothing offers to fill a gap. Picking and hovering still work — they
+   * change nothing.
+   */
+  readonly readOnly?: boolean;
 }
 
 const ZOOMS: readonly (readonly [Zoom, string, string])[] = [
@@ -83,6 +89,9 @@ const KEYS: readonly (readonly [string, string])[] = [
   ['X', 'Not work'],
   ['Esc', 'Clear'],
 ];
+
+/** The keys that only look, for a day read rather than kept. */
+const READ_KEYS = KEYS.filter(([key]) => key === '← →' || key === 'Esc');
 
 /** The glyph on each kind of block, as the design draws it. */
 const ICONS = {
@@ -207,6 +216,7 @@ export function Timeline({
   onSelect,
   onEdge,
   busy,
+  readOnly = false,
 }: TimelineProps) {
   const stage = useRef<HTMLDivElement | null>(null);
   const scroller = useRef<HTMLDivElement | null>(null);
@@ -569,7 +579,7 @@ export function Timeline({
           pillClass: 'gap',
           icon: ICONS.gap,
           label: duration(gap.end - gap.start),
-          title: 'No activity · click to fill',
+          title: readOnly ? 'No activity' : 'No activity · click to fill',
           rows: [
             { k: 'Time', v: rangeOf(gap), mono: true },
             { k: 'Length', v: duration(gap.end - gap.start), mono: true },
@@ -798,7 +808,11 @@ export function Timeline({
                 type="button"
                 className="dayline-total dayline-total-gaps"
                 data-stat="gaps"
-                title={`${String(line.gaps.length)} unaccounted · click to fill the first`}
+                title={
+                  readOnly
+                    ? `${String(line.gaps.length)} unaccounted · click to see the first`
+                    : `${String(line.gaps.length)} unaccounted · click to fill the first`
+                }
                 onClick={() => {
                   const gap = line.gaps[0];
                   if (gap !== undefined) onSelect({ kind: 'gap', start: gap.start, end: gap.end });
@@ -808,7 +822,7 @@ export function Timeline({
                 <span>Gaps</span>
                 <strong>{duration(figures.gaps)}</strong>
                 <span className="dayline-total-note">
-                  {String(line.gaps.length)} unaccounted · click to fill
+                  {String(line.gaps.length)} unaccounted{readOnly ? '' : ' · click to fill'}
                 </span>
               </button>
             )}
@@ -1109,6 +1123,24 @@ export function Timeline({
               )}
 
               <div className="dayline-row">
+                {/* The organisation's breaks (D-101): a shaded band behind
+                    everything, named and timed, and nothing more — never time,
+                    never pressed, never set against what was worked in it. */}
+                {line.scheduled.map((s) => (
+                  <div
+                    key={`scheduled-${String(s.start)}`}
+                    className="dayline-scheduled"
+                    data-scheduled-break={s.start}
+                    style={{ left: x(s.start), width: Math.max(1, x(s.end) - x(s.start)) }}
+                    role="note"
+                    aria-label={`${s.label}, ${rangeOf(s)} — the organisation’s break`}
+                    title={`${s.label}, ${rangeOf(s)} — the organisation’s break`}
+                  >
+                    <span className="dayline-scheduled-label" aria-hidden="true">
+                      <FitLabel options={[s.label, '']} />
+                    </span>
+                  </div>
+                ))}
                 {view.state === 'no_signal' && nothing && (
                   <div className="dayline-nosignal" data-no-signal>
                     <p className="dayline-nosignal-text">
@@ -1186,8 +1218,16 @@ export function Timeline({
                       className={on ? 'dayline-gap dayline-gap-picked' : 'dayline-gap'}
                       data-gap-start={gap.start}
                       style={{ left: left(gap.start, gap.end), width: wide(gap.start, gap.end) }}
-                      aria-label={`Unaccounted ${rangeOf(gap)}, ${duration(minutes)} — add time or mark a break`}
-                      title={`Unaccounted ${rangeOf(gap)} — click to fill`}
+                      aria-label={
+                        readOnly
+                          ? `Unaccounted ${rangeOf(gap)}, ${duration(minutes)}`
+                          : `Unaccounted ${rangeOf(gap)}, ${duration(minutes)} — add time or mark a break`
+                      }
+                      title={
+                        readOnly
+                          ? `Unaccounted ${rangeOf(gap)}`
+                          : `Unaccounted ${rangeOf(gap)} — click to fill`
+                      }
                       aria-pressed={on}
                       onClick={() => {
                         onSelect({ kind: 'gap', start: gap.start, end: gap.end });
@@ -1199,7 +1239,7 @@ export function Timeline({
                           {ICONS.gap}
                         </span>
                         <span className="dayline-block-top">
-                          <FitLabel options={['Add time', '']} />
+                          <FitLabel options={[readOnly ? 'Gap' : 'Add time', '']} />
                         </span>
                       </span>
                       <span className="dayline-block-sub">
@@ -1257,7 +1297,7 @@ export function Timeline({
                   const draft = block.kind === 'drafted' ? drafts.get(block.id) : undefined;
                   const prompts = draft?.signals.prompts ?? 0;
                   const commits = draft?.signals.commits ?? 0;
-                  const editable = selected && !block.locked && !busy;
+                  const editable = selected && !block.locked && !busy && !readOnly;
                   const same = selectedCard !== undefined && card === selectedCard;
                   const dim = selectedCard !== undefined && !same;
                   const icon =
@@ -1473,7 +1513,7 @@ export function Timeline({
 
       <footer className="dayline-foot">
         <ul className="dayline-keys" aria-label="Keys">
-          {KEYS.map(([key, what]) => (
+          {(readOnly ? READ_KEYS : KEYS).map(([key, what]) => (
             <li key={key}>
               <kbd className="myday-kbd">{key}</kbd>
               {what}
@@ -1481,9 +1521,13 @@ export function Timeline({
           ))}
         </ul>
         <span className="dayline-foot-hint" data-foot-hint>
-          {editing === undefined
-            ? 'Hover any block for detail · click a gap to fill it'
-            : `Editing ${editing} below ↓`}
+          {readOnly
+            ? editing === undefined
+              ? 'Hover any block for detail · read only'
+              : `${editing.charAt(0).toUpperCase()}${editing.slice(1)}, below ↓`
+            : editing === undefined
+              ? 'Hover any block for detail · click a gap to fill it'
+              : `Editing ${editing} below ↓`}
         </span>
         {line.untimed > 0 && (
           <span className="dayline-untimed">

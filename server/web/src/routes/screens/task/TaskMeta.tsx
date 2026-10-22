@@ -19,6 +19,7 @@ import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
+import { PersonLink } from '../../../components/PersonLink.tsx';
 import type { DemoAgentBuild, DemoClaimLock } from '../../../demo/agent-runtime.ts';
 import './task-panel.css';
 
@@ -316,6 +317,17 @@ export function TaskMeta({
                   mayAssign={mayAssign}
                   onChanged={onAssigned}
                 />
+                {/* Their profile, for a reader who may open it (LAI-959). */}
+                {assignee !== undefined && task.assignee_id !== null && (
+                  <PersonLink
+                    userId={task.assignee_id}
+                    className="meta-person-link"
+                    label={`${assignee.name}’s profile`}
+                    onlyLink
+                  >
+                    Profile
+                  </PersonLink>
+                )}
               </div>
               {/*
                 **The claim's deadline is invented and the line says so.** The

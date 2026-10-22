@@ -1,10 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
 import { type ActorKind, type ProjectRole } from '../db/enums.ts';
+import { mergeGrants, readStoredGrants } from '../db/org-grants.ts';
 import { projectMemberships, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { type Logger } from '../log.ts';
 import { type Actor, type Principal, type SystemPrincipal } from '../policy/can.ts';
+import { DEFAULT_GRANTS } from '../policy/grants.ts';
 import { type Auth } from './auth.ts';
 import {
   findTokenBySecret,
@@ -266,6 +268,9 @@ export function loadActor(db: Db, userId: string): ResolvedActor | null {
     projectRole: null,
     memberships,
     token: null,
+    // What the owner granted each role (§3, LAI-958), read with the role and
+    // for the same reason: a grant withdrawn after sign-in must not linger.
+    orgGrants: mergeGrants(readStoredGrants(db), DEFAULT_GRANTS),
   };
 }
 

@@ -2202,3 +2202,23 @@
 .sub-status .dd-trigger:disabled {
   opacity: 1;
 }
+
+/* The assignee's profile, beside the picker, for a reader who may open it (LAI-959). */
+.meta-person-link {
+  flex: none;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+}
+
+.meta-person-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.meta-person-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}

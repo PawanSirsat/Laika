@@ -368,7 +368,7 @@ export function describeOtel(check: OtelCheck, board: string): string {
     case 'refused':
       return check.status === 401
         ? `set up, but ${board} refuses the token (401) — run \`laika connect\` or \`laika init\``
-        : `set up, but ${board} refuses it (${String(check.status)}${check.reason === undefined ? '' : ` ${check.reason}`})`;
+        : `set up, but ${board} refuses it (${String(check.status)}${check.reason === undefined ? '' : ` ${check.reason}`})${check.reason === 'local_activity_off' ? ' — Developer insights are off for your organisation' : ''}`;
     case 'unreachable':
       return `set up, but ${board} did not answer: ${check.why}`;
     case 'reaching':

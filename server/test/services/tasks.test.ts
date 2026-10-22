@@ -496,6 +496,8 @@ describe('updateTask (AC2)', () => {
 
   it('records a reassignment as task.assigned, not a status change (§5)', () => {
     const memberId = makeUser('member');
+    // On the project: an assignee who cannot read it is refused (LAI-962).
+    addMember(t.db, actor(adminId), 'laika', memberId, 'member');
     const task = newTask();
 
     updateTask(t.db, actor(adminId), task.id, { assignee_id: memberId });

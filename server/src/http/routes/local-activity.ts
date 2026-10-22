@@ -38,8 +38,9 @@ import { type AppEnv } from '../context.ts';
 import { parseBody, parseQuery, strictObject, z } from '../validation.ts';
 
 /**
- * The developer's side of D-079 (SPEC §6.4, LAI-751): their consent, their
- * collector's reports, and what the server holds for them.
+ * The developer's side of D-079 (SPEC §6.4, LAI-751): what is collected —
+ * the organisation's switch since D-102 (amended) — their collector's reports,
+ * and what the server holds for them.
  *
  * Transport only. Who may do what — a session or a token, which switch must be
  * on — is `services/local-activity.ts` asking `can()`; `session_required`
@@ -221,7 +222,7 @@ const SharingQuery = strictObject({
   collector_id: ReportBody.shape.collector_id.optional(),
 });
 
-const PreviewQuery = strictObject({
+export const PreviewQuery = strictObject({
   days: z.coerce.number().int().min(1).max(OWN_PREVIEW_DAYS_MAX).optional(),
 });
 
@@ -249,8 +250,8 @@ export function localActivityRoutes(options: { db: Db }): Hono<AppEnv> {
 
   app.put('/local-activity', bodyLimit({ maxSize: LOCAL_ACTIVITY_BODY_MAX }), async (c) => {
     const actor = requireActor(c);
-    // `can()` and the two switches before the body is judged: a developer
-    // who stopped sharing is told so even if their collector sent nonsense.
+    // `can()` and the organisation's switch before the body is judged: a
+    // collector is told collection is off even if it sent nonsense.
     assertMaySendLocalActivity(db, actor);
     const json: unknown = await c.req.json().catch(() => null);
     // Marked, not guessed: a look-back is only ever what the sender says it is.

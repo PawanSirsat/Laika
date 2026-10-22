@@ -243,3 +243,33 @@ export function setHideDoneAfter(slug: string, days: number | null): Promise<Pro
     body: { board_hide_done_days: days },
   });
 }
+
+export type ProjectVisibility = Project['visibility'];
+
+/**
+ * The two visibilities, worded once (LAI-961).
+ *
+ * The create form and View settings both offer them, and a space that reads
+ * one way when it is made and another when it is changed invites the question
+ * of whether they are the same setting.
+ */
+export const VISIBILITY_OPTIONS: readonly { value: ProjectVisibility; label: string }[] = [
+  { value: 'private', label: 'Private — invited members only' },
+  { value: 'public', label: 'Public — anyone in the org can join' },
+];
+
+/**
+ * Change who can see and join a space after it exists (LAI-961).
+ *
+ * The same `project.settings.edit` route as {@link setHideDoneAfter}; it has
+ * taken `visibility` since §6.4 was written, and only the create form asked.
+ */
+export function setProjectVisibility(
+  slug: string,
+  visibility: ProjectVisibility,
+): Promise<Project> {
+  return request<Project>(`/projects/${encodeURIComponent(slug)}`, {
+    method: 'PATCH',
+    body: { visibility },
+  });
+}

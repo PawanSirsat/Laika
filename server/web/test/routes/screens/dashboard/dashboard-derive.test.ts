@@ -215,6 +215,19 @@ void describe('the range control', () => {
 });
 
 void describe('describeProjectEvent', () => {
+  void test("the owner's who-can-do-what change reads as that (LAI-960)", () => {
+    assert.equal(
+      describeProjectEvent(
+        event({
+          id: '1',
+          type: 'member.role_changed',
+          payload: { scope: 'org_permissions', from: {}, to: {} },
+        }),
+      ),
+      'changed who can do what',
+    );
+  });
+
   void test('reads as a project feed, not a task panel', () => {
     // `api/activity.ts` says "created this task", correct in a detail panel and
     // wrong in a feed where every row names a different task.

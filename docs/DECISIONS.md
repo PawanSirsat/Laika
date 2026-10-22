@@ -5528,3 +5528,191 @@ line; this entry is its decision record.
 
 Omnigent tells a hook which session dispatched which. Or a second person runs
 builders on a shared machine.
+
+## D-100 — CHIEF's ids run out at LAI-899; CHIEF files from LAI-950 – LAI-999, the unused half of SHELL's third block
+
+**Date:** 2026-10-22 · **By:** CHIEF (Belka), on the owner's instruction to
+finish the owner-visibility and roles work (*"first complete everything"*)
+
+On 2026-10-22 CHIEF needed four ids for the owner-visibility and roles work's
+second half (three screens and one SPEC row) and had none:
+
+- `LAI-800` – `LAI-899` (D-089) is used through `LAI-889`. The board's
+  two-laptop split gives this laptop `LAI-861` – `LAI-889` and the other
+  `LAI-890` – `LAI-899`, which stays theirs.
+- A sweep of every local and `origin` ref, the `.tasks/` history and every
+  commit subject found **no** id in `LAI-900` – `LAI-999` (SHELL's third
+  block, D-068) in use.
+
+1. **CHIEF files from `LAI-950` – `LAI-999`.** SHELL keeps `LAI-900` –
+   `LAI-949`, which is more than SHELL has filed in any block since D-068.
+2. The laptop split is unchanged: `LAI-890` – `LAI-899` stays the other
+   laptop's; this block is Belka's.
+3. CLAUDE.md §3's id table says so. Nothing else moves.
+
+**Why not take `LAI-890` – `LAI-899`:** the board's rule gives it to the other
+laptop, and this session has already collided twice today by reading a range
+as free when it was not. A block nobody has touched is the only safe answer.
+
+## D-101 — The owner sets the organisation's breaks; they are drawn on My day and are never time (LAI-955, LAI-956)
+
+**Date:** 2026-10-22 · **By:** CHIEF (Belka), on the owner's instruction
+
+The owner, 2026-10-22: *"I want to set the timing for the lunch break or other
+breaks so that it reflects in the timeline … a small feature the owner can
+do."*
+
+1. **An organisation-wide break schedule.** A list of windows —
+   `{ label, start: "HH:MM", end: "HH:MM", days: [1..7] }` — kept on
+   `org_time_settings` (§4.45). At most eight; a label of 1–40 characters;
+   start before end; no window crosses midnight; windows do not overlap.
+2. **Wall-clock, no zone.** 13:00 means 13:00 on each person's own day, in
+   that day's zone (D-088 item 12), so one schedule serves people in every
+   zone and on clock-change days.
+3. **Who sets it: whoever may set the organisation's Time** — `org.time.set`,
+   owners and admins, web session only. No new action and no new §3.1 row: it
+   is the same switchboard, and an agent must not set it for the same reason
+   it must not turn drafting on.
+4. **Display only. A scheduled break is never time** (D-088 items 1, 2, 4).
+   It creates, clips and removes no draft and no entry; drafting does not read
+   it; and **nothing anywhere compares a person's actual day against it** — no
+   "long lunch", no "worked through lunch". Work done in the window stays
+   visible and countable like any other.
+5. **The person's own breaks are unchanged.** `time_breaks` (§4.55) stays
+   per person, per day. A per-person opt-out of the schedule is not in this
+   decision.
+
+## D-102 — Owner and admin see what each person sees of their own analytics; only the owner changes roles and permissions (LAI-957 – LAI-960; amends D-079, D-084 item 7, D-088 items 2 and 7)
+
+**Date:** 2026-10-22 · **By:** CHIEF (Belka), on the owner's instruction
+
+The owner, 2026-10-22: *"what an individual can see about their analytics data,
+the same thing can be seen by the owner as well, also the admin — only admin
+can't change the roles and permissions"*, and earlier: *"owner can see
+everything … we need to manage this in RBAC so the owner decides who can see
+that."*
+
+1. **Mirror rule.** Whatever a person can see about their own work and time —
+   My day (drafts, confirmed entries, breaks, signals, agent minutes), their
+   hours, their shared local activity, their activity heatmap, their token
+   usage — an **owner and an admin can see for that person**, read-only, in
+   the same shape. **Amends D-088 item 2** (drafts were the person's alone)
+   and **D-088 item 7** (per-person hours: owners and admins — unchanged —
+   but now drafts and the day too).
+2. **Consent governs collection, not reading.** A person's own switch still
+   decides whether their machine's activity is *collected* (D-079 is kept for
+   collection: no switch, no data). Once collected, it is readable by owner
+   and admin without a further consent check. **Amends D-079 / D-084 item 7**
+   for reading only.
+3. **Every such view is logged and the person sees who looked and when**
+   (D-088 item 7's log is kept and now covers every mirrored read).
+4. **Read-only.** No owner or admin edits another person's time, drafts,
+   breaks or sharing switch.
+5. **Only the owner changes roles and permissions.** Assigning org roles
+   (`user.set_role`) becomes **owner only** — admins lose it. The
+   organisation's permission settings (rule 6) are owner only.
+6. **The owner decides who can see what.** A small, fixed set of capabilities
+   is grantable per org role (admin, member, viewer) by the owner; owner is
+   always on and locked. Defaults reproduce today plus rule 1: admin on,
+   member and viewer off. Never grantable: delete the organisation, transfer
+   ownership, change roles, change these settings. Per-person exceptions are
+   not in this decision.
+7. **Not a score.** D-078 / D-088 item 1 stand: nothing ranks or rates a
+   person from this data.
+
+**Amended the same day (the owner's answers to CHIEF's four questions):**
+*"he can see everything"*; grants by role first; the person sees who looked —
+yes; admins keep today's powers by default — yes.
+
+- **Rule 2 is replaced. Collection follows the organisation's switch alone.**
+  When Developer insights is on, every connected machine's activity is
+  collected and synced; the person's *Share local activity* switch no longer
+  stops it, and the server no longer refuses a sync for want of it. When the
+  organisation's switch is off, nothing is collected, as before. The owner and
+  admin therefore see everything rule 1 lists, drafts and local activity
+  included, for every person. **Amends D-079 and D-084 item 7 for collection
+  as well as reading.**
+- **Never silent.** Wherever the personal switch used to be (Developer access,
+  the Connect wizard) and in the CLI (`laika activity on` / `status`), the
+  person is told plainly that their organisation collects their local
+  activity, what it collects, and who can see it; the person can still see
+  and download their own data and see who looked (rule 3). The person can
+  still delete their own local activity only if the organisation allows it —
+  not in this amendment: deletion stays as it is today.
+- Collection still needs the person's machine to be connected (the hook and
+  `laika activity on`); nothing installs itself.
+
+## D-103 — Spaces get a settings page and a consistent Spaces list; per-space task-creation and agent rules; Done stays a person's (LAI-976 – LAI-980)
+
+**Date:** 2026-10-22 · **By:** CHIEF (Belka), on the owner's designs (six
+screenshots: Spaces grid, Spaces list, and Space settings → General, Members,
+Access, Danger zone) and instruction *"you can take a decision on what is
+needed and what is not."*
+
+1. **Space settings** at `/spaces/<slug>/settings` (tabs General · Members ·
+   Access · Danger zone), editable by whoever holds `project.settings.edit`
+   (a space admin; an org owner or admin through *Open every project*);
+   read-only otherwise. The header says how the reader manages it ("you manage
+   this space as organisation Owner").
+2. **"Space admin" is the screen name for `lead`.** The data and SPEC keep
+   `lead`; only wording changes.
+3. **The key prefix may change; existing tasks keep their keys.** New tasks
+   take the new prefix; every old key keeps resolving everywhere a key is
+   accepted (REST, MCP, links, `external_ref` matching). If that cannot be
+   guaranteed, the change is refused, never half-done.
+4. **Colour** is one of the design's fixed palette entries, stored per space;
+   the letter avatar on cards and settings uses it.
+5. **Leave a space.** Anyone may leave a space they are a member of; the last
+   space admin must hand over first (the existing last-lead rule, now with a
+   message saying so). An org owner or admin who leaves keeps implicit access
+   while they hold *Open every project*, and is told so.
+6. **Who can create tasks:** *Members* (default) or *Space admins only*, per
+   space. Viewers never can. Applies to every path (REST, MCP, imports).
+7. **Agent sessions**, per space, default **on**. Off: agent tokens may read
+   but may not claim, start working, create, update or finish tasks in that
+   space; people are unaffected.
+8. **Person sign-off for Done is not a setting.** Only a person moves a task
+   to Done (Laika's core promise); the Access tab states it, locked on.
+9. **Join without approval** (join requests for public spaces) is deferred to
+   LAI-980; until then public spaces are joined directly, as today, and the
+   toggle is not shown.
+10. **Archive / restore** live in the Danger zone; archived spaces are listed
+    under the Spaces page's *Archived* filter for those allowed to see them.
+11. **Delete a space** is owner only, typed-key confirmation, permanent —
+    LAI-979, after the rest lands; it must say what happens to the activity
+    history (§13: append-only).
+12. **Spaces page** follows the owner's design: search, *All / Yours / Public
+    / Archived* chips with counts, Grid/List toggle, cards of one fixed shape
+    (letter avatar, name, key · repository, access badge, updated, a two-line
+    description or "No description yet.", progress bar, done / active /
+    blocked, member avatars, Context · Members · settings).
+
+## D-104 — People and organisation administration: one owner, offboarding, reset links, more grantable capabilities (LAI-981 – LAI-989)
+
+**Date:** 2026-10-22 · **By:** CHIEF (Belka), on the owner's approval of the
+admin-gap audit (*"do all the A, small bugs, then B, also the C"*), taking
+CHIEF's recommendations on the open questions.
+
+1. **Leaving a space** — as D-103 item 5.
+2. **Exactly one owner, transferable** (SPEC §3 already says so; the code
+   allowed a second). *Owner* leaves the role picker; **Transfer ownership**
+   (owner only, typed confirmation) makes the target owner and the former
+   owner an admin, atomically. Existing extra owners are reported, not
+   demoted silently.
+3. **Deactivation ends access:** deactivating a person revokes every token and
+   session of theirs; reactivation does not bring them back. **Force
+   sign-out** ends all sessions without deactivating.
+4. **Admin-issued reset link:** with no email in Laika, whoever holds *Manage
+   people* may issue a one-time, short-lived password-reset link for another
+   person (never for the owner unless they are the owner), shown once, every
+   issue logged. Using it ends the person's other sessions.
+5. **Offboarding asks.** Removing someone from a space or deactivating them
+   shows their open tasks and asks: unassign (pre-selected) or reassign to a
+   named person; tokens revoked; space memberships removed on deactivation.
+6. **More grantable capabilities** (D-102 rule 6 extended): *Create and
+   archive spaces* (`project.create`, `project.archive`), *Manage anyone's
+   tokens* (`token.list_any`, `token.revoke_any`), and *Manage people* splits
+   into *Invite people* and *Deactivate people and reset access*. Defaults
+   reproduce today's behaviour. Every capability carries a one-line
+   description from the server.
+7. **Organisation name** is editable by *Change organisation settings*.

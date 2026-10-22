@@ -59,7 +59,7 @@ import {
 } from '../../api/board-derive.ts';
 import { useProjectStatuses, useStatusEditor } from '../../api/use-statuses.ts';
 import type { ProjectStatus } from '../../api/statuses.ts';
-import { setHideDoneAfter } from '../../api/projects.ts';
+import { setHideDoneAfter, setProjectVisibility } from '../../api/projects.ts';
 import { BoardInsights } from './board/BoardInsights.tsx';
 import { BoardToolbar } from './board/BoardToolbar.tsx';
 import { DeleteColumnDialog } from './board/DeleteColumnDialog.tsx';
@@ -1101,6 +1101,18 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                   // Take the server's project back rather than patching the
                   // field locally: the same reason moves are not optimistic.
                   void setHideDoneAfter(slug, days).then((updated) => {
+                    setProject(updated);
+                  });
+                },
+              }
+            : {})}
+          visibility={project?.visibility}
+          {...(mayConfigure && slug !== undefined
+            ? {
+                onVisibilityChange: (next: Project['visibility']) => {
+                  // The server's project back, as Hide done does: the panel
+                  // shows what was stored, not what was asked for.
+                  void setProjectVisibility(slug, next).then((updated) => {
                     setProject(updated);
                   });
                 },

@@ -376,6 +376,14 @@ const PAIRS: readonly Pair[] = [
     client: 'OwnLocalActivity',
     clientFile: 'local-activity.ts',
   },
+  {
+    // Who looked at a person's analytics (D-102 rule 3, LAI-957), paired the
+    // moment My day listed it (LAI-959).
+    server: 'WhoLookedView',
+    serverFile: 'services/analytics-views.ts',
+    client: 'WhoLooked',
+    clientFile: 'people-analytics.ts',
+  },
   /*
    * The review gate (D-082, LAI-758), paired the moment the client existed.
    * `ReviewQueueView.tasks` and `TaskRoundsView.rounds` hold the nested
@@ -479,6 +487,27 @@ const PAIRS: readonly Pair[] = [
     serverFile: 'services/org-model-prices.ts',
     client: 'ModelPrices',
     clientFile: 'model-prices.ts',
+  },
+  // Who can do what (LAI-958's endpoint, LAI-960's grid), paired the moment the
+  // mirror existed. The server's census listed all three in UNPAIRED until
+  // then; those three entries are stale from this commit (CLAUDE.md §4.4).
+  {
+    server: 'OrgPermissionsView',
+    serverFile: 'services/org-permissions.ts',
+    client: 'OrgPermissions',
+    clientFile: 'permissions.ts',
+  },
+  {
+    server: 'CapabilityView',
+    serverFile: 'services/org-permissions.ts',
+    client: 'Capability',
+    clientFile: 'permissions.ts',
+  },
+  {
+    server: 'OwnerLockedView',
+    serverFile: 'services/org-permissions.ts',
+    client: 'OwnerLocked',
+    clientFile: 'permissions.ts',
   },
   // A person's own time (LAI-787, D-088), paired the moment the mirror existed.
   {

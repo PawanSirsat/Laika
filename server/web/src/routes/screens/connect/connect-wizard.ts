@@ -257,7 +257,7 @@ export const EXTRAS: readonly Extra[] = [
   {
     id: 'activity',
     name: 'Share local activity',
-    line: 'Your choice: daily counts from your own machine on your profile — counts only, never your work.',
+    line: 'What your organisation collects from your machine for your profile — counts only, never your work.',
   },
   {
     id: 'invite',

@@ -7,7 +7,7 @@ import { reportDiscovery } from '../helpers/discovery.ts';
 import * as schema from '../../src/db/schema.ts';
 import { apiFieldNames, apiPayload, appendActivity, readPayload } from '../../src/db/activity.ts';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
-import { ACTIVITY_TYPES, type OrgRole } from '../../src/db/enums.ts';
+import { ACTIVITY_TYPES, CAPABILITIES, type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
 import {
   activity,
@@ -49,6 +49,7 @@ import {
 import { createToken, revokeOwnToken } from '../../src/services/tokens.ts';
 import { dismissUnlisted, logUnlistedWork, promoteUnlisted } from '../../src/services/unlisted.ts';
 import { setOrgRole, setUserActive } from '../../src/services/users.ts';
+import { setOrgPermissions } from '../../src/services/org-permissions.ts';
 import {
   expireInvites,
   expireMeetingReviews,
@@ -571,6 +572,12 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       setUserActive(t.db, owner(), spare, false);
       setUserActive(t.db, owner(), spare, true);
       setOrgRole(t.db, owner(), spare, 'admin');
+      // LAI-958: the owner's grants ride `member.role_changed` too.
+      setOrgPermissions(t.db, owner(), {
+        admin: Object.fromEntries(CAPABILITIES.map((c) => [c, true])),
+        member: Object.fromEntries(CAPABILITIES.map((c) => [c, c === 'see_org_activity'])),
+        viewer: Object.fromEntries(CAPABILITIES.map((c) => [c, false])),
+      });
 
       // --- jobs/: the four verbs §11.6's cron writes (LAI-431) --------------
       // Driven through the real job functions with an injected clock, not by
