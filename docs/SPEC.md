@@ -128,7 +128,7 @@ organisation's grants for exactly these actions and no others.
 | *See everyone's analytics* | `profile.read`, `profile.activity.read`, `usage.read_people` (and LAI-957's `people.analytics.read`) |
 | *See the organisation's activity history* | `audit_log.export` |
 | *Open every project* | the implicit project role above: `lead` on every project, `viewer` for an org viewer, who stays capped |
-| *Manage people and invites* | `user.invite` (as member or viewer only), `user.deactivate`, `user.sign_out` (somebody else; anyone signs themselves out — LAI-981) |
+| *Manage people and invites* | `user.invite` (as member or viewer only), `user.deactivate`, `user.sign_out` (somebody else; anyone signs themselves out — LAI-981), `user.reset_password` (not for the owner — LAI-983; LAI-985 moves both) |
 | *Change organisation settings, Time and breaks* | `org.settings.edit`, `org.time.set`, `org.developer_insights.set` |
 
 **Never grantable, owner only:** delete the organisation, transfer ownership
@@ -151,6 +151,7 @@ are not part of this.
 | Set what each role may do | ✓ (session only) | — | — | — |
 | Deactivate user | ✓ | ✓ | — | — |
 | Sign a person out everywhere | ✓ | ✓ | ✓ (themselves) | ✓ (themselves) |
+| Issue a password-reset link | ✓ (session only) | ✓ (session only, not for the owner) | — | — |
 | View member list | ✓ | ✓ | ✓ | ✓ |
 | Join a `public` project | ✓ | ✓ | ✓ (as member) | ✓ (as viewer) |
 | Generate, read and revoke own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |
@@ -2186,6 +2187,28 @@ retention, by `viewed_at`).
 Indexes `(subject_id, viewed_at, id)` for the person's list, `(viewer_id)`,
 `(viewed_at)` for retention.
 
+### 4.60 `password_resets`
+
+One-time password-reset links an admin issued for somebody (D-104 item 4,
+LAI-983). Laika sends no email, so whoever holds *Manage people* issues a link
+(§3.1 *Issue a password-reset link*), shown once, and hands it over. **The rows
+are the log** of who issued a link for whom and whether it was used, as
+`analytics_views` is for reads: §4.8 gains no verb. Issuing a link revokes the
+person's earlier unused ones.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `user_id` | FK `users`, cascade — whose password it resets |
+| `token_hash` | SHA-256 of the token, unique; the token itself is never stored (§13.1, as §4.11) |
+| `created_by` | FK `users` — who issued it |
+| `expires_at` | at most 24 hours after `created_at` |
+| `used_at` | nullable — when it set a password; a used link never works again |
+| `revoked_at` | nullable — when a newer link for the same person replaced it unused |
+| `created_at` | |
+
+Indexes: unique `(token_hash)`, `(user_id)`, `(created_by)`.
+
 ## 5. Task lifecycle
 
 ```
@@ -2314,6 +2337,16 @@ table above gives `401` to both a wrong password and an unknown address.
 any account from a foreign origin **without ever submitting a guess** — a cheaper
 denial of service than the one this trade accepts, arrived at by defending
 against the expensive one. A malformed body is not an attempt either.
+
+**A password-reset link is a third way to a password, not a third credential**
+(D-104 item 4, LAI-983). An admin issues it (`POST /users/:id/reset-link`,
+§3.1, session only); `POST /password-resets/consume` is public and the token
+is its whole authority, as an invite's is. It sets the password through
+better-auth's own hasher and **ends every session of that person**. Refused
+links back off by the rule above, on their own counter: keyed on the account
+the link belongs to, and on one shared key for a link that matches nothing,
+so a `429` never says which links exist. A malformed body or a too-short
+password is not an attempt.
 
 ### 6.2 Authorisation
 
@@ -2459,6 +2492,8 @@ GET    /api/v1/users                         ?limit=&cursor=&updated_since=&incl
 PATCH  /api/v1/users/:id                     (role: owner only; deactivate: owner, and admin by default — LAI-958)
                                              org_role 'owner' → 422 reason use_transfer; so is demoting or deactivating the owner orgs.owner_user_id names (LAI-982)
                                              deactivating revokes every token and ends every session; reactivating restores neither (D-104 item 3)
+POST   /api/v1/users/:id/reset-link          → 201 { url, expires_at } — a one-time password-reset link, shown once, ≤ 24 h; revokes their earlier unused links; recorded in §4.60   (owner, and admin by default; never for the owner unless the caller is the owner; session only; LAI-983)
+POST   /api/v1/password-resets/consume       body { token, new_password } → { user_id, sessions_ended } — public; new_password as setup's (12–512); ends every session of theirs; refusals 404 unknown, 409 used / revoked / expired, 403 inactive, 429 throttled like sign-in (§6.1)
 POST   /api/v1/users/:id/sign-out            end every session, not tokens → { user_id, sessions_ended }   (themselves; anyone else: owner, and admin by default; logged — LAI-981)
 GET    /api/v1/users/:id/memberships         → { data: [{ project_id, slug, name, prefix, role, archived, joined_at }] } — membership rows only, narrowed to spaces the caller can read   (viewer+; LAI-981)
 GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind }   (owner, admin; session only)
