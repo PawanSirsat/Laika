@@ -2,11 +2,13 @@
 id: LAI-180
 title: 'SPEC §9.2 writes the branch prefix as letters only'
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p3
 depends-on: []
 discovered-from: LAI-976
-status: backlog
+status: review
+started: 2026-10-22T21:40:50Z
+finished: 2026-10-22T21:40:50Z
 ---
 
 ## Goal
@@ -21,5 +23,10 @@ The SPEC sentence should say the same.
 
 ## Acceptance criteria
 
-- [ ] §9.2 describes the prefix as §4.3's shape: a letter, then one to seven
+- [x] §9.2 describes the prefix as §4.3's shape: a letter, then one to seven
       letters or digits. It also says the prefix may not continue a word.
+
+## Done (2026-10-22T21:40:50Z, CHIEF)
+
+§9.2 now quotes `parseBranchRef`'s pattern and §4.3's shape, and says former
+prefixes resolve too.

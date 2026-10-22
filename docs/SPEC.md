@@ -3933,7 +3933,10 @@ rule that unmatched input degrades and never errors applies here too.
 ### 9.2 Branch names carry task ids
 
 Convention **`lai-<number>-<slug>`** — `lai-42-add-task-crud`. The server matches
-`[a-z]+-(\d+)` case-insensitively against project prefixes, resolves the task, and
+`(?<![A-Za-z0-9])([A-Za-z][A-Za-z0-9]{1,7})-(\d+)` case-insensitively — §4.3's prefix
+shape, a letter then one to seven letters or digits, never starting inside a
+word, so `p0x-12-fix` reads `P0X` (LAI-177) — against project prefixes, current
+and former (D-103 addendum), resolves the task, and
 stores `matched_task_id` on the heartbeat and `branch` on the task.
 
 **Resolution is server-side**, always: the plugin cannot know a deployment's
