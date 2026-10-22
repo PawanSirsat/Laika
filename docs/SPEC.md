@@ -406,7 +406,8 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Apply or remove a task's tags | ✓ | ✓ | — |
 | Rename or delete a tag project-wide | ✓ | — | — |
 | Assign tasks into or out of a sprint | ✓ | ✓ | — |
-| Create / edit / move any task | ✓ | ✓ | — |
+| Create tasks | ✓ | ✓ (unless space admins only) | — |
+| Edit / move any task | ✓ | ✓ | — |
 | Claim a task (`start_working`) | ✓ | ✓ | — |
 | Assign a task to someone else | ✓ | ✓ | — |
 | Add comment | ✓ | ✓ | — |
@@ -418,6 +419,21 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Apply a meeting-diff proposal | ✓ | ✓ | — |
 | Read a project's token totals | ✓ | ✓ | ✓ |
 | Set token budgets | ✓ (session only) | — | — |
+| Leave a project | ✓ | ✓ | ✓ |
+
+**Per-space rules (D-103, LAI-976).** *Create tasks* follows the space's
+`task_create_min_role` (§4.3): `member`, the default, is the cell as written;
+`lead` takes it from members, so only space admins (and org Owners and Admins,
+as implicit leads) create tasks there. A viewer never does. It holds on every
+path that makes a task — REST, MCP, a meeting review and a promoted unlisted
+note — because all of them create through one service that asks `can()`.
+**When a space's `agents_allowed` is off,
+agent tokens may read and nothing else there**: every other row is refused to
+a token in that space, as a `read_only` token's would be, and people on a web
+session are unaffected. A refusal by either rule is `403 forbidden` with
+`details.reason` `task_create_min_role` or `agents_off`. *Leave a project*
+refuses the last lead `409 conflict` with `details.reason: last_lead` — hand
+over first.
 
 ### 3.3 The `can()` module is the only authority
 
@@ -560,6 +576,11 @@ future multi-org becomes a migration rather than a rewrite.
 | `repo` | nullable — `owner/name` of the git repository this project tracks. Maps an incoming heartbeat's `repo` (§9.1) to a project; without it presence cannot be attributed. A full remote URL stored here still matches: §9.1 normalises both sides. |
 | `visibility` | `public` (org members may self-join) \| `private` |
 | `context_md` | text — the shared project brief served to agents (§7.1) |
+| `board_hide_done_days` | nullable integer — finished work older than this many days leaves the board; null never (LAI-266) |
+| `color` | nullable — one of the design's palette, `black` \| `violet` \| `teal` \| `blue` \| `amber` \| `magenta` \| `red` \| `green`; null until one is picked (D-103) |
+| `task_create_min_role` | `member` (default) \| `lead` — who may create tasks (§3.2, D-103) |
+| `agents_allowed` | boolean, default true — off, agent tokens only read here (§3.2, D-103) |
+| `former_prefixes` | JSON array of every prefix the project carried before `prefix`. A task stores its `number`, not its key, so a new prefix re-keys every task; a key resolves against `prefix` first and these second, so every old key keeps naming its task. Unique across the org together with `prefix`, enforced in code (D-103) |
 | `archived_at` | nullable |
 
 ### 4.4 `project_memberships`
@@ -2457,8 +2478,11 @@ GET    /api/v1/invites/:token                unauthenticated preview — org nam
 DELETE /api/v1/invites/:id                   revoke a pending invite (admin+)
 GET    /api/v1/projects                      POST /api/v1/projects   (admin+)
        └ each entry adds five fields §4.3 does not store — see below
+       └ ?archived=include|only — archived projects whole rather than as tombstones, to their members and to `project.archive` holders; absent is unchanged (D-103)
 GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
+       └ PATCH takes { name, description, repo, visibility, color, prefix, task_create_min_role, agents_allowed, board_hide_done_days, archived } (lead+; archived: project.archive). A new prefix keeps every old key resolving; one another project holds is 409 on `prefix`, and one another project held is 409 with `reason: 'former'` (D-103)
 POST   /api/v1/projects/:slug/join           (public projects)
+POST   /api/v1/projects/:slug/leave          any member → { slug, implicit_access, notice }; the last lead 409 `last_lead` (D-103)
 GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
 GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
 GET    /api/v1/projects/:slug/budgets        PUT /api/v1/projects/:slug/budget  body { tokens | null }   (set: lead, session only; LAI-773)

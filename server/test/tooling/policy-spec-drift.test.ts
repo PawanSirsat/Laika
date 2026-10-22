@@ -118,7 +118,8 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ["Apply or remove a task's tags", ['task.write']],
   ['Rename or delete a tag project-wide', ['project.settings.edit']],
   ['Assign tasks into or out of a sprint', ['task.assign_sprint']],
-  ['Create / edit / move any task', ['task.write']],
+  ['Create tasks', ['task.create']],
+  ['Edit / move any task', ['task.write']],
   ['Claim a task (start_working)', ['task.claim']],
   ['Assign a task to someone else', ['task.assign_other']],
   ['Add comment', ['comment.create']],
@@ -130,6 +131,7 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ['Apply a meeting-diff proposal', ['meeting_proposal.apply']],
   ["Read a project's token totals", ['usage.read_project']],
   ['Set token budgets', ['budget.set']],
+  ['Leave a project', ['project.leave']],
 ]);
 
 /**
@@ -167,6 +169,11 @@ const PROSE_RULES: readonly {
     section: ORG_MATRIX,
     phrase: 'Reading the org-wide activity feed follows',
     why: 'Grants no new capability — it routes the org-scoped feed to `audit_log.export`, which the "Export audit log" row already covers. §3.1 says outright that a separate cell is deliberately not added, and `services/events.ts` implements exactly that.',
+  },
+  {
+    section: PROJECT_MATRIX,
+    phrase: 'agent tokens may read and nothing else',
+    why: "D-103 item 7's per-space switch. Not a cell: it narrows every write row for a token, as a `read_only` token's scope does, and `agentsMay` in `can()` implements it. `space-rules.test.ts` holds it against every project action.",
   },
   {
     section: PROJECT_MATRIX,
@@ -330,6 +337,25 @@ const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
         const member = projectActor('member');
         expect(can(member, action, { projectId: 'p', ownerId: 'me' })).toBe(true);
         expect(can(member, action, { projectId: 'p', ownerId: 'someone-else' })).toBe(false);
+      },
+    },
+  ],
+  [
+    'unless space admins only',
+    {
+      why: 'A member creates tasks unless the space has set its minimum to space admins (D-103 item 6, §4.3 `task_create_min_role`); a lead creates either way.',
+      verify: (action: Action) => {
+        const lead = (rule: 'member' | 'lead'): Actor => ({
+          ...projectActor('lead'),
+          projectRules: new Map([['p', { taskCreateMinRole: rule, agentsAllowed: true }]]),
+        });
+        const member = (rule: 'member' | 'lead'): Actor => ({
+          ...projectActor('member'),
+          projectRules: new Map([['p', { taskCreateMinRole: rule, agentsAllowed: true }]]),
+        });
+        expect(can(member('member'), action, { projectId: 'p' })).toBe(true);
+        expect(can(member('lead'), action, { projectId: 'p' })).toBe(false);
+        expect(can(lead('lead'), action, { projectId: 'p' })).toBe(true);
       },
     },
   ],
