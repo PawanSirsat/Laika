@@ -816,29 +816,29 @@ export function MyDayScreen({
       </ScreenHeader>
 
       <div className="myday" data-myday-ready>
+        {/* The Timeline spans the page (LAI-889, the v3 design); the editor, the lists and the side column sit under it. */}
+        {view.state === 'future' ? (
+          <section className="myday-card" aria-label="Timeline">
+            <p className="myday-future">This day has not happened yet.</p>
+          </section>
+        ) : (
+          <Timeline
+            view={view}
+            line={line}
+            nowMs={now}
+            zoom={zoom}
+            onZoom={setZoom}
+            selection={selection}
+            onSelect={(next) => {
+              if (next.kind === 'gap') pickGap(next);
+              else setSelection(next);
+            }}
+            onEdge={onEdge}
+            busy={busy}
+          />
+        )}
         <div className="myday-grid">
           <div className="myday-main">
-            {view.state === 'future' ? (
-              <section className="myday-card" aria-label="Timeline">
-                <p className="myday-future">This day has not happened yet.</p>
-              </section>
-            ) : (
-              <Timeline
-                view={view}
-                line={line}
-                nowMs={now}
-                zoom={zoom}
-                onZoom={setZoom}
-                selection={selection}
-                onSelect={(next) => {
-                  if (next.kind === 'gap') pickGap(next);
-                  else setSelection(next);
-                }}
-                onEdge={onEdge}
-                busy={busy}
-              />
-            )}
-
             {view.state !== 'future' && (
               <Inspector
                 key={

@@ -15,11 +15,10 @@
   margin-right: 1.125rem;
 }
 
-/* One tab's sections, stacked. */
+/* One tab's sections, stacked; the width the page has (LAI-889). */
 .org-body {
   display: grid;
   gap: var(--space-4);
-  max-width: 82rem;
 }
 
 /* The organisation's mark, beside its name in the page header. */
