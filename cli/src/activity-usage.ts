@@ -173,9 +173,10 @@ const EDGE_S = 3600;
  * Changes the meaning of a cached day: every day is counted again. 2: a day
  * carries its sessions' tokens per task (`t`, LAI-787). 3: an automated
  * session's tokens are counted, in rows marked automated (D-091), so a day
- * counted when they were left out is counted again — and sent again.
+ * counted when they were left out is counted again — and sent again. 4: a
+ * day carries its dispatched builders' buckets (`b`, LAI-315).
  */
-const CACHE_V = 3;
+const CACHE_V = 4;
 
 export type UsageAgent = 'claude-code' | 'codex' | 'gemini-cli';
 
@@ -309,17 +310,32 @@ export interface SessionTaskRow {
 }
 
 /**
+ * One builder the owner dispatched through Omnigent, on one day (LAI-315):
+ * the seconds it worked in each five minutes of unix time from bucket `from`
+ * on, read from its replies' times, and the card its marks or branch tie it
+ * to — My day's AGENTS lane, beside the day and never in it.
+ */
+export interface DispatchedRow {
+  key: string;
+  task?: string;
+  from: number;
+  seconds: number[];
+}
+
+/**
  * A day's Claude Code part, as last computed: rows `[model, task, input,
  * output, cache_write, cache_read, automated?]` (`1` for an automated
  * session's, D-091), sessions `[key, model, …the four]`, each
  * session's headline tokens per task `[key, task, tokens]` (LAI-787), the keys
- * of sessions whose replies that day were left out of scope, and whether it
+ * of sessions whose replies that day were left out of scope, each dispatched
+ * builder's buckets `[key, task, from, seconds]` (LAI-315), and whether it
  * holds tokens from before counting began.
  */
 interface ClaudeDay {
   r: [string, string | null, number, number, number, number, 1?][];
   s: [string, string, number, number, number, number][];
   t?: [string, string, number][];
+  b?: [string, string | null, number, number[]][];
   x: string[];
   o?: 1;
 }
@@ -702,9 +718,42 @@ function skipLines(paths: ActivityPaths): Map<string, boolean> {
   return ids;
 }
 
-/** The ids of sessions nobody was typing in, newest last. */
-function skippedSessions(paths: ActivityPaths): string[] {
-  return [...skipLines(paths).keys()];
+/** Replies further apart than this are two stretches of a builder's work, not one (LAI-315). */
+const DISPATCHED_IDLE_S = 15 * 60;
+/** Five minutes of unix time: the board's `agent_time_buckets` (LAI-833). */
+const BUCKET_S = 300;
+
+/**
+ * A dispatched builder's seconds of work per five minutes, from its replies'
+ * times (LAI-315): the time between two replies at most {@link
+ * DISPATCHED_IDLE_S} apart is work, put in the buckets it falls in, and a
+ * longer pause is not. Its subagents' replies carry its session id, so they
+ * fill the same timeline and are counted once.
+ */
+function workedBuckets(times: readonly number[]): { from: number; seconds: number[] } | undefined {
+  const sorted = [...new Set(times)].sort((a, b) => a - b);
+  const per = new Map<number, number>();
+  for (let i = 1; i < sorted.length; i += 1) {
+    const start = sorted[i - 1] ?? 0;
+    const end = sorted[i] ?? 0;
+    if (end - start > DISPATCHED_IDLE_S) continue;
+    for (let at = start; at < end;) {
+      const bucket = Math.floor(at / BUCKET_S);
+      const until = Math.min(end, (bucket + 1) * BUCKET_S);
+      per.set(bucket, (per.get(bucket) ?? 0) + until - at);
+      at = until;
+    }
+  }
+  const worked = [...per].filter(([, seconds]) => Math.round(seconds) > 0).map(([b]) => b);
+  if (worked.length === 0) return undefined;
+  const from = Math.min(...worked);
+  const to = Math.max(...worked);
+  return {
+    from,
+    seconds: Array.from({ length: to - from + 1 }, (_, i) =>
+      Math.min(BUCKET_S, Math.round(per.get(from + i) ?? 0)),
+    ),
+  };
 }
 
 /**
@@ -2047,6 +2096,8 @@ interface Days {
   readonly sessions: Map<string, SessionRow[]>;
   /** Per day, each Claude Code session's headline tokens per task (LAI-787). */
   readonly sessionTasks: Map<string, SessionTaskRow[]>;
+  /** Per day, the builders the owner dispatched through Omnigent (LAI-315). */
+  readonly dispatched: Map<string, DispatchedRow[]>;
   /** Days whose rows include tokens from before counting began — the backfill. */
   readonly older: ReadonlySet<string>;
   /**
@@ -2065,6 +2116,8 @@ const EXCLUDED_MAX = 200;
 const SESSIONS_PER_DAY_MAX = 100;
 /** At most this many session-task rows in a day (LAI-787); more, and the day goes without them. */
 const SESSION_TASKS_PER_DAY_MAX = 200;
+/** At most this many dispatched builders in a day (LAI-315); more, and the day goes without them. */
+const DISPATCHED_PER_DAY_MAX = 50;
 
 /** What a day's Claude Code part is counted under. */
 interface DayRules {
@@ -2075,6 +2128,8 @@ interface DayRules {
   readonly held: ReadonlySet<string> | 'unknown';
   readonly inScope: (cwd: number) => boolean;
   readonly skipped: ReadonlySet<number>;
+  /** Of `skipped`, the builders Omnigent dispatched (LAI-315). */
+  readonly dispatched: ReadonlySet<number>;
   readonly taskOf: (rec: Rec) => string | null;
   readonly keyOf: (session: number) => string | undefined;
 }
@@ -2090,6 +2145,8 @@ function claudeDay(recs: Readonly<Record<string, Rec>>, rules: DayRules): Claude
   const sessions = new Map<string, ClaudeDay['s'][number]>();
   const tasks = new Map<string, [string, string, number]>();
   const excluded = new Set<string>();
+  // Each dispatched builder's reply times, and its tokens per card (LAI-315).
+  const builders = new Map<string, { times: number[]; tasks: Map<string, number> }>();
   let older = false;
   for (const rec of Object.values(recs)) {
     if (rec[0] < rules.firstDay) continue;
@@ -2119,6 +2176,20 @@ function claudeDay(recs: Readonly<Record<string, Rec>>, rules: DayRules): Claude
     row[3] += rec[3];
     row[4] += rec[4];
     row[5] += rec[5];
+    // A builder the owner dispatched (LAI-315): its replies' times draw My
+    // day's AGENTS lane, beside the day — from when counting began, as a
+    // task is tied.
+    if (automated && rules.dispatched.has(session) && rec[6] >= rules.sinceS) {
+      const key = rules.keyOf(session);
+      if (key !== undefined) {
+        const builder = builders.get(key) ?? { times: [], tasks: new Map<string, number>() };
+        builder.times.push(rec[6]);
+        if (task !== null) {
+          builder.tasks.set(task, (builder.tasks.get(task) ?? 0) + rec[2] + rec[3] + rec[4]);
+        }
+        builders.set(key, builder);
+      }
+    }
     // In no session row and no session's split: its telemetry is dropped
     // (`excluded`), and its agent minutes are not the developer's (LAI-787).
     if (automated) continue;
@@ -2147,10 +2218,20 @@ function claudeDay(recs: Readonly<Record<string, Rec>>, rules: DayRules): Claude
   }
   if (rows.size === 0 && excluded.size === 0) return undefined;
   const perTask = [...tasks.values()].filter((t) => t[2] > 0);
+  const lane: NonNullable<ClaudeDay['b']> = [];
+  for (const [key, builder] of [...builders].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const worked = workedBuckets(builder.times);
+    if (worked === undefined) continue;
+    // Its card: the one most of its tokens that day were tied to.
+    const card =
+      [...builder.tasks].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? null;
+    lane.push([key, card, worked.from, worked.seconds]);
+  }
   return {
     r: [...rows.values()],
     s: [...sessions.values()],
     ...(perTask.length > 0 ? { t: perTask } : {}),
+    ...(lane.length > 0 ? { b: lane } : {}),
     x: [...excluded].sort(),
     ...(older ? { o: 1 as const } : {}),
   };
@@ -2203,8 +2284,13 @@ async function daysOf(
   const everything = options.all === true;
   const older = backfill === 'yes' || everything;
   const heldDays = held === 'unknown' ? 'unknown' : new Set(held);
-  const skipIds = skippedSessions(options.paths);
+  const skipLinesNow = skipLines(options.paths);
+  const skipIds = [...skipLinesNow.keys()];
   const skipSet = new Set(skipIds);
+  // A builder Omnigent dispatched (LAI-315), and the cache's record of the
+  // skips with that word, so a session that gains or loses it is counted again.
+  const dispatchedIds = new Set(skipIds.filter((id) => skipLinesNow.get(id) === true));
+  const skipApplied = skipIds.map((id) => (dispatchedIds.has(id) ? `${id} ${DISPATCHED}` : id));
   const starts = sessionStarts(options.paths);
   const startsNow: Record<string, string> = {};
   for (const [id, list] of starts)
@@ -2239,8 +2325,9 @@ async function daysOf(
     }
     const touched = new Set<string>();
     const before = new Set(cache.skip);
-    for (const id of skipIds) if (!before.has(id)) touched.add(id);
-    for (const id of cache.skip) if (!skipSet.has(id)) touched.add(id);
+    const applied = new Set(skipApplied);
+    for (const id of skipApplied) if (!before.has(id)) touched.add(id.split(' ')[0] ?? id);
+    for (const id of cache.skip) if (!applied.has(id)) touched.add(id.split(' ')[0] ?? id);
     for (const [id, sig] of Object.entries(startsNow))
       if (cache.starts[id] !== sig) touched.add(id);
     for (const id of Object.keys(cache.starts)) if (startsNow[id] === undefined) touched.add(id);
@@ -2257,6 +2344,7 @@ async function daysOf(
   for (const day of Object.keys(cache.days)) if (!kept.has(day)) delete cache.days[day];
 
   const skipped = new Set(data.sessions.flatMap((id, i) => (skipSet.has(id) ? [i] : [])));
+  const dispatched = new Set(data.sessions.flatMap((id, i) => (dispatchedIds.has(id) ? [i] : [])));
   const inScope = scope?.inScope ?? (() => true);
   const taskOf = attributor(data, prefixes, starts);
   if (redo.size > 0) {
@@ -2269,6 +2357,7 @@ async function daysOf(
       held: heldDays,
       inScope,
       skipped,
+      dispatched,
       taskOf,
       keyOf: (session) => {
         let key = keys.get(session);
@@ -2288,7 +2377,7 @@ async function daysOf(
     }
   }
   cache.epoch = epoch;
-  cache.skip = skipIds;
+  cache.skip = skipApplied;
   cache.starts = startsNow;
 
   // Codex and Gemini CLI, whole: a few hundred records.
@@ -2366,6 +2455,7 @@ async function daysOf(
   const outRows = new Map<string, UsageRow[]>();
   const outSessions = new Map<string, SessionRow[]>();
   const outTasks = new Map<string, SessionTaskRow[]>();
+  const outDispatched = new Map<string, DispatchedRow[]>();
   const scopeOut: string[] = [];
   for (const day of [...new Set([...Object.keys(cache.days), ...others.keys()])].sort()) {
     const claude = cache.days[day];
@@ -2406,18 +2496,29 @@ async function daysOf(
       .map(([key, task, tokens]) => ({ key, task, tokens: Math.min(tokens, COUNT_MAX) }))
       .sort((a, b) => a.key.localeCompare(b.key) || a.task.localeCompare(b.task));
     if (tasks.length > 0 && rows.length > 0) outTasks.set(day, tasks);
+    const builders = (claude?.b ?? []).map(([key, task, from, seconds]): DispatchedRow => ({
+      key,
+      ...(task === null ? {} : { task }),
+      from,
+      seconds,
+    }));
+    if (builders.length > 0 && rows.length > 0) outDispatched.set(day, builders);
     for (const key of claude?.x ?? []) scopeOut.push(`${day} ${key}`);
   }
   // Automated first, newest first — their tokens are in the rows, marked, and
   // their telemetry is not the developer's (D-091) — then the out-of-scope,
   // newest day first; and none at all unless this machine's Claude Code sends
-  // telemetry here.
+  // telemetry here. A dispatched builder is named in its day's `dispatched`
+  // instead (LAI-315), which drops its telemetry the same.
   const excluded =
     options.telemetry !== true
       ? []
       : [
           ...new Set([
-            ...[...skipIds].reverse().map(sessionKey),
+            ...[...skipIds]
+              .filter((id) => !dispatchedIds.has(id))
+              .reverse()
+              .map(sessionKey),
             ...scopeOut
               .sort()
               .reverse()
@@ -2428,6 +2529,7 @@ async function daysOf(
     rows: outRows,
     sessions: outSessions,
     sessionTasks: outTasks,
+    dispatched: outDispatched,
     older: olderDays,
     excluded,
   };
@@ -2606,6 +2708,8 @@ export function usageReports(options: {
     readonly sessions?: readonly SessionRow[] | undefined;
     /** Each session's headline tokens per task (LAI-787): what agent minutes are split by. */
     readonly sessionTasks?: readonly SessionTaskRow[] | undefined;
+    /** The builders the owner dispatched that day (LAI-315): My day's AGENTS lane. */
+    readonly dispatched?: readonly DispatchedRow[] | undefined;
   }[];
   readonly excluded?: readonly string[] | undefined;
 }): UsageReport[] {
@@ -2633,7 +2737,7 @@ export function usageReports(options: {
   };
   const sorted = [...options.days].sort((a, b) => a.day.localeCompare(b.day));
   const room = MAX_BODY_BYTES - baseBytes;
-  for (const { day, backfill, rows, sessions, sessionTasks } of sorted) {
+  for (const { day, backfill, rows, sessions, sessionTasks, dispatched } of sorted) {
     const whole = {
       day,
       ...(backfill === true ? { backfill } : {}),
@@ -2653,12 +2757,20 @@ export function usageReports(options: {
         ? JSON.stringify({ ...withSessions, session_tasks: sessionTasks })
         : undefined;
     const split = withSessions === undefined ? undefined : JSON.stringify(withSessions);
+    // The dispatched builders ride on whichever of those fits with them
+    // (LAI-315): without them the AGENTS lane misses a builder, never wrong.
+    const lane =
+      dispatched !== undefined &&
+      dispatched.length > 0 &&
+      dispatched.length <= DISPATCHED_PER_DAY_MAX
+        ? `,"dispatched":${JSON.stringify(dispatched)}}`
+        : undefined;
+    const fits = (json: string): boolean => Buffer.byteLength(json) + 1 <= room;
     const entry =
-      withTasks !== undefined && Buffer.byteLength(withTasks) + 1 <= room
-        ? withTasks
-        : split !== undefined && Buffer.byteLength(split) + 1 <= room
-          ? split
-          : JSON.stringify(whole);
+      [withTasks, split, JSON.stringify(whole)]
+        .filter((json): json is string => json !== undefined)
+        .flatMap((json) => (lane === undefined ? [json] : [json.slice(0, -1) + lane, json]))
+        .find(fits) ?? JSON.stringify(whole);
     const cost = Buffer.byteLength(entry) + (entries.length > 0 ? 1 : 0);
     if (bytes + cost > MAX_BODY_BYTES) flush();
     entries.push(entry);
@@ -2738,10 +2850,18 @@ const signature = (
   rows: readonly UsageRow[],
   sessions: readonly SessionRow[] = [],
   tasks: readonly SessionTaskRow[] = [],
+  dispatched: readonly DispatchedRow[] = [],
 ): string =>
   // A day with no session tasks keeps the signature it had before they were
-  // sent (LAI-787), so only the days that carry some go once more.
-  JSON.stringify(tasks.length === 0 ? [rows, sessions] : [rows, sessions, tasks]);
+  // sent (LAI-787), so only the days that carry some go once more; so does a
+  // day with no dispatched builder (LAI-315).
+  JSON.stringify(
+    dispatched.length > 0
+      ? [rows, sessions, tasks, dispatched]
+      : tasks.length === 0
+        ? [rows, sessions]
+        : [rows, sessions, tasks],
+  );
 
 interface DueDay {
   day: string;
@@ -2749,6 +2869,7 @@ interface DueDay {
   rows: UsageRow[];
   sessions: SessionRow[];
   sessionTasks: SessionTaskRow[];
+  dispatched: DispatchedRow[];
 }
 
 /**
@@ -2771,6 +2892,7 @@ function dueDays(index: UsageIndex, days: Days): DueDay[] {
       rows: days.rows.get(day) ?? [],
       sessions: days.sessions.get(day) ?? [],
       sessionTasks: days.sessionTasks.get(day) ?? [],
+      dispatched: days.dispatched.get(day) ?? [],
     };
   };
   for (const day of new Set([...days.rows.keys(), ...Object.keys(index.sent)])) {
@@ -2778,6 +2900,7 @@ function dueDays(index: UsageIndex, days: Days): DueDay[] {
       days.rows.get(day) ?? [],
       days.sessions.get(day) ?? [],
       days.sessionTasks.get(day) ?? [],
+      days.dispatched.get(day) ?? [],
     );
     if ((index.sent[day] ?? signature([])) === now) continue;
     due.push(entry(day));
@@ -2961,7 +3084,12 @@ export async function usageStep(ctx: UsageContext): Promise<UsageOutcome> {
     index.excluded = excludedSignature(days);
     for (const day of report.days) {
       const d = dueOf.get(day);
-      index.sent[day] = signature(d?.rows ?? [], d?.sessions ?? [], d?.sessionTasks ?? []);
+      index.sent[day] = signature(
+        d?.rows ?? [],
+        d?.sessions ?? [],
+        d?.sessionTasks ?? [],
+        d?.dispatched ?? [],
+      );
       if (markedNow.has(day)) index.marked.push(day);
       sentDays += 1;
     }
