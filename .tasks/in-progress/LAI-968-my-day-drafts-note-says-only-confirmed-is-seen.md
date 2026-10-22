@@ -2,11 +2,12 @@
 id: LAI-968
 title: 'My day’s Drafts mode note still says only what a person confirms is ever seen — D-102 rule 1 lets owners and admins read drafts'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-957]
 discovered-from: LAI-967
-status: backlog
+started: 2026-10-22T16:06:40Z
+status: in-progress
 ---
 
 ## Goal
