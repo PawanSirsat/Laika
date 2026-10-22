@@ -15,6 +15,7 @@ import {
   byIdIndex,
   dropNeighbours,
   groupByColumn,
+  heldByBlocker,
   hideOldDone,
   isStale,
   matchesSearch,
@@ -391,6 +392,56 @@ void describe('blockers — which dependency is holding this up (LAI-066)', () =
   void test('no blocked_by means nothing to name', () => {
     const t = task({ id: '1' });
     assert.deepEqual(blockers(t, byIdIndex([t])), []);
+  });
+});
+
+void describe('heldByBlocker — blocked work, as the server counts it (LAI-819)', () => {
+  void test('not ready is not blocked: assigned, moving or in review with nothing holding it', () => {
+    // The board's BLK was `!ready`, which is all three of these.
+    for (const t of [
+      task({ id: '1', status: 'todo', assignee_id: 'u' }),
+      task({ id: '2', status: 'in_progress' }),
+      task({ id: '3', status: 'review' }),
+    ]) {
+      assert.equal(t.ready, false);
+      assert.equal(heldByBlocker(t, byIdIndex([t])), false, t.status);
+    }
+  });
+
+  void test('a dependency that is not done holds it, wherever it sits', () => {
+    const open = task({ id: '1', status: 'in_progress', sprint_id: 'next' });
+    const t = task({ id: '2', status: 'in_progress', sprint_id: 'this', blocked_by: ['1'] });
+    assert.equal(heldByBlocker(t, byIdIndex([open, t])), true);
+  });
+
+  void test('a done dependency does not', () => {
+    const done = task({ id: '1', status: 'done' });
+    const t = task({ id: '2', assignee_id: 'u', blocked_by: ['1'] });
+    assert.equal(heldByBlocker(t, byIdIndex([done, t])), false);
+  });
+
+  void test('a cancelled dependency still does — the server requires done', () => {
+    // `isReady` and the project card's `blocked_count` both read `<> 'done'`.
+    // `blockedState`, the card's, calls it met; a count must match the server.
+    const cancelled = task({ id: '1', status: 'cancelled' });
+    const t = task({ id: '2', blocked_by: ['1'] });
+    const index = byIdIndex([cancelled, t]);
+    assert.equal(heldByBlocker(t, index), true);
+    assert.equal(blockedState(t, index), false, 'the card’s rule is unchanged');
+  });
+
+  void test('finished work is never blocked work', () => {
+    const open = task({ id: '1', status: 'todo' });
+    for (const status of ['done', 'cancelled'] as const) {
+      const t = task({ id: '2', status, blocked_by: ['1'] });
+      assert.equal(heldByBlocker(t, byIdIndex([open, t])), false, status);
+    }
+  });
+
+  void test('a dependency nobody loaded counts, unless `ready` proves it done', () => {
+    const t = task({ id: '1', blocked_by: ['missing'] });
+    assert.equal(heldByBlocker(t, byIdIndex([t])), true);
+    assert.equal(heldByBlocker({ ...t, ready: true }, byIdIndex([t])), false);
   });
 });
 

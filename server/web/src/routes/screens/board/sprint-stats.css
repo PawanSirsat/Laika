@@ -80,6 +80,13 @@
   color: var(--text-muted);
 }
 
+/* The `in` of `STARTS in 14d` (LAI-819): a word beside the figure, not one. */
+.bstats-in {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
 .bstats-partial {
   margin-inline-start: -0.25rem;
   font-size: var(--text-small);
@@ -121,6 +128,7 @@
 }
 
 :root[data-theme='light'] .bstats-of,
+:root[data-theme='light'] .bstats-in,
 :root[data-theme='light'] .bstats-partial {
   color: var(--text-secondary);
 }

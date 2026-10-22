@@ -1,3 +1,4 @@
+import { heldByBlocker } from '../../../api/board-derive.ts';
 import type { Sprint, SprintInput } from '../../../api/sprints.ts';
 import type { TaskSummary } from '../../../api/tasks.ts';
 
@@ -40,7 +41,7 @@ export const MIN_SPRINT_DAYS = 2;
 // The two date-input helpers moved to `api/date-only.ts` (D-066), where the
 // task view shares them; re-exported so every caller here is unchanged.
 export { dateInputToMs, msToDateInput } from '../../../api/date-only.ts';
-import { dateInputToMs, msToDateInput } from '../../../api/date-only.ts';
+import { dateInputToMs, msToDateInput, startOfUtcDay } from '../../../api/date-only.ts';
 
 /**
  * Inclusive day count: a sprint from the 1st to the 14th is 14 days.
@@ -67,6 +68,18 @@ export function daysLeft(endsOn: number, now: number): number {
   const today = new Date(now);
   const midnight = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
   return Math.max(0, Math.round((endsOn - midnight) / DAY) + 1);
+}
+
+/**
+ * Whole days until a sprint's first day — `1` when it starts tomorrow, `0`
+ * once it has started (LAI-819).
+ *
+ * Both sides are taken to their UTC day first, as `daysLeft` does, so the
+ * answer does not change with the hour the page is open — and a start stored
+ * off midnight still counts as its own day.
+ */
+export function daysUntilStart(startsOn: number, now: number): number {
+  return Math.max(0, Math.round((startOfUtcDay(startsOn) - startOfUtcDay(now)) / DAY));
 }
 
 /** `4 Aug – 17 Aug 2026` — one year when they share it, two when they do not. */
@@ -107,6 +120,40 @@ export function progressFor(tasks: readonly TaskSummary[]): SprintProgress {
   const total = counted.length;
 
   return { done, total, percent: total === 0 ? 0 : Math.round((done / total) * 100) };
+}
+
+export interface SprintFigures {
+  /** Open work waiting on an unfinished dependency — `heldByBlocker`, the board's BLK. */
+  readonly blocked: number;
+  /** The in-progress lane. */
+  readonly wip: number;
+  readonly unassigned: number;
+  /**
+   * Subtasks among the work `progressFor` counts. `done/total` includes them —
+   * as the board's DONE and the server's `task_counts` do — so the card says
+   * so rather than reading as top-level work (LAI-819).
+   */
+  readonly subtasks: number;
+}
+
+/**
+ * A sprint card's figures besides progress (LAI-819).
+ *
+ * `byId` is **the whole project**, not the sprint: the lock counted blockers
+ * only among the sprint's own tasks, so a task waiting on work in the next
+ * sprint, or in none, was never counted (`blockedState` answered "cannot
+ * tell", and only `true` was counted).
+ */
+export function sprintFigures(
+  tasks: readonly TaskSummary[],
+  byId: ReadonlyMap<string, TaskSummary>,
+): SprintFigures {
+  return {
+    blocked: tasks.filter((t) => heldByBlocker(t, byId)).length,
+    wip: tasks.filter((t) => t.status === 'in_progress').length,
+    unassigned: tasks.filter((t) => t.assignee_id === null).length,
+    subtasks: tasks.filter((t) => t.parent_task_id !== null && t.status !== 'cancelled').length,
+  };
 }
 
 /** Tasks grouped by the sprint they are in. Unassigned tasks are under `null`. */

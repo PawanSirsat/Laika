@@ -6,17 +6,20 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { canAssignToSprints, canManageSprints, type Sprint } from '../../../api/sprints.ts';
+import type { TaskSummary } from '../../../api/tasks.ts';
 import { listProjects } from '../../../api/projects.ts';
 import { useShell } from '../../../components/shell/shell-context.ts';
 import { useRoute } from '../../use-route.ts';
-import { blockedState, byIdIndex } from '../../../api/board-derive.ts';
 import { AssignTasksPanel } from './AssignTasksPanel.tsx';
 import { SprintCard } from './SprintCard.tsx';
 import { SprintForm } from './SprintForm.tsx';
+import { sprintFigures } from './sprint-derive.ts';
 import { useSprints } from './use-sprints.ts';
 import './sprints.css';
 import { pickProject } from '../../../api/pick-project.ts';
 import { withProjectParam } from '../../nav-url.ts';
+
+const NO_TASKS: ReadonlyMap<string, TaskSummary> = new Map();
 
 /**
  * Sprints (SPEC §4.15, §11.4 — LAI-083).
@@ -136,6 +139,9 @@ export function SprintsScreen() {
       : `${slug} · ${String(sprints.state.rows.length)}${sprints.state.truncated ? '+' : ''} ${
           sprints.state.rows.length === 1 && !sprints.state.truncated ? 'sprint' : 'sprints'
         }`;
+
+  /** The whole project's tasks, which a sprint's lock is judged against (LAI-819). */
+  const projectById = sprints.state.status === 'ready' ? sprints.state.byId : NO_TASKS;
 
   return (
     <div className="sprints">
@@ -268,13 +274,10 @@ export function SprintsScreen() {
             {sprints.state.rows.map((row, index) => {
               /*
                * Counted here rather than in the card, so the card places numbers
-               * and decides none of them — and so `blockedState`'s rule is used
-               * once rather than reimplemented per screen (LAI-215).
+               * and decides none of them — against the whole project's tasks,
+               * so a blocker outside this sprint counts (LAI-819).
                */
-              const byId = byIdIndex(row.tasks);
-              const blocked = row.tasks.filter((t) => blockedState(t, byId) === true).length;
-              const wip = row.tasks.filter((t) => t.status === 'in_progress').length;
-              const unassigned = row.tasks.filter((t) => t.assignee_id === null).length;
+              const figures = sprintFigures(row.tasks, projectById);
 
               return (
                 <li key={row.sprint.id}>
@@ -283,9 +286,10 @@ export function SprintsScreen() {
                     tasks={row.tasks}
                     progress={row.progress}
                     index={index + 1}
-                    blocked={blocked}
-                    wip={wip}
-                    unassigned={unassigned}
+                    blocked={figures.blocked}
+                    wip={figures.wip}
+                    unassigned={figures.unassigned}
+                    subtasks={figures.subtasks}
                     onScope={() => {
                       const next = new URLSearchParams(params);
                       next.set('sprint', row.sprint.id);
