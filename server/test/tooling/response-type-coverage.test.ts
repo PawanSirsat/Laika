@@ -214,6 +214,8 @@ const UNPAIRED = new Map<string, string>([
   // (LAI-988) and People (LAI-987) bring the mirrors.
   ['SignOutView', 'no client type exists'],
   ['MembershipView', 'no client type exists'],
+  // LAI-982's transfer answer; Transfer ownership on People (LAI-987) brings it.
+  ['OwnershipTransferView', 'no client type exists'],
   // The Solidtime bridge (LAI-788) is the CLI's, not the web app's: `laika
   // time push` and `pull` read these, and no screen does. They leave this
   // group the way the rest do, when a screen shows them.

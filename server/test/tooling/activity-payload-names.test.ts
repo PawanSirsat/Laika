@@ -48,7 +48,12 @@ import {
 } from '../../src/services/tasks.ts';
 import { createToken, revokeOwnToken } from '../../src/services/tokens.ts';
 import { dismissUnlisted, logUnlistedWork, promoteUnlisted } from '../../src/services/unlisted.ts';
-import { setOrgRole, setUserActive, signOutEverywhere } from '../../src/services/users.ts';
+import {
+  setOrgRole,
+  setUserActive,
+  signOutEverywhere,
+  transferOwnership,
+} from '../../src/services/users.ts';
 import { setOrgPermissions } from '../../src/services/org-permissions.ts';
 import {
   expireInvites,
@@ -790,6 +795,9 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       // Archiving last: it is the one that takes a project out of active views.
       removeMember(t.db, owner(), 'core', memberId);
       updateProject(t.db, owner(), 'core', { archived: true });
+
+      // Very last, because it takes the owner's role away (LAI-982).
+      transferOwnership(t.db, owner(), { userId: spare, confirm: 'spare@example.test' });
 
       const rows = t.db.select().from(activity).all();
       const forbidden = drizzleOnlyNames();

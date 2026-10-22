@@ -18,11 +18,13 @@ import {
 import { ApiError } from '../../src/errors.ts';
 import { createToken } from '../../src/services/tokens.ts';
 import {
+  extraOwners,
   listMemberships,
   listUsers,
   setOrgRole,
   setUserActive,
   signOutEverywhere,
+  transferOwnership,
 } from '../../src/services/users.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
@@ -59,6 +61,20 @@ function actor(userId: string): ResolvedActor {
   const loaded = loadActor(t.db, userId);
   if (loaded === null) throw new Error('no such user');
   return loaded;
+}
+
+/** `422` with `reason: 'use_transfer'` — the code and the reason, not just a throw. */
+function expectUseTransfer(fn: () => unknown): void {
+  try {
+    fn();
+  } catch (err) {
+    if (!(err instanceof ApiError)) throw err;
+    expect(err.code).toBe('unprocessable');
+    expect(err.status).toBe(422);
+    expect((err.details as { reason?: string }).reason).toBe('use_transfer');
+    return;
+  }
+  throw new Error('Expected 422 use_transfer, but nothing was thrown');
 }
 
 function expectApiError(fn: () => unknown, code: string): void {
@@ -360,11 +376,23 @@ describe('the last active Owner is the invariant, not four rules', () => {
     expect(() => setUserActive(t.db, actor(ownerId), ownerId, false)).toThrow(/last active Owner/i);
   });
 
-  it('allows it once a second Owner exists', () => {
-    const second = makeUser('Second', 'member');
-    setOrgRole(t.db, actor(ownerId), second, 'owner');
+  it('lets the owner demote a second Owner left from before D-104 (LAI-982)', () => {
+    // No write makes a second owner any more; this is the row an older
+    // organisation may already have, and demoting it is how it is put right.
+    const second = makeUser('Second', 'owner');
 
-    expect(setOrgRole(t.db, actor(ownerId), ownerId, 'admin').org_role).toBe('admin');
+    expect(setOrgRole(t.db, actor(ownerId), second, 'admin').org_role).toBe('admin');
+  });
+
+  it('never demotes or deactivates the owner orgs.owner_user_id names, even with a second (LAI-982)', () => {
+    makeUser('Second', 'owner');
+
+    expectUseTransfer(() => setOrgRole(t.db, actor(ownerId), ownerId, 'admin'));
+    expectUseTransfer(() => setUserActive(t.db, actor(ownerId), ownerId, false));
+    expect(t.db.select().from(users).where(eq(users.id, ownerId)).get()).toMatchObject({
+      orgRole: 'owner',
+      isActive: 1,
+    });
   });
 
   it('does not count a deactivated Owner as cover', () => {
@@ -742,5 +770,188 @@ describe("a person's spaces (LAI-981)", () => {
 
     expectApiError(() => listMemberships(t.db, actor(gone), target), 'forbidden');
     expectApiError(() => listMemberships(t.db, actor(ownerId), 'usr_nobody'), 'not_found');
+  });
+});
+
+// ---------------------------------------------- D-104 item 2 (LAI-982)
+
+describe('exactly one owner (LAI-982)', () => {
+  it('refuses to make anybody owner through a role change: 422 use_transfer', () => {
+    const target = makeUser('Grace', 'admin');
+
+    expectUseTransfer(() => setOrgRole(t.db, actor(ownerId), target, 'owner'));
+    expect(t.db.select().from(users).where(eq(users.id, target)).get()?.orgRole).toBe('admin');
+    expect(t.db.select().from(activity).all()).toHaveLength(0);
+  });
+
+  it('refuses an Admin asking it too — forbidden before the rule', () => {
+    const target = makeUser('Grace', 'member');
+    expectApiError(
+      () => setOrgRole(t.db, actor(makeUser('Admin', 'admin')), target, 'owner'),
+      'forbidden',
+    );
+  });
+});
+
+describe('transferring ownership (LAI-982)', () => {
+  function org() {
+    return t.db.select().from(orgs).get()!;
+  }
+
+  function roleOf(id: string): string | undefined {
+    return t.db.select().from(users).where(eq(users.id, id)).get()?.orgRole;
+  }
+
+  it('makes the target owner, the caller admin, and moves owner_user_id', () => {
+    const grace = makeUser('Grace', 'admin', { email: 'grace@example.test' });
+
+    const view = transferOwnership(
+      t.db,
+      actor(ownerId),
+      { userId: grace, confirm: 'grace@example.test' },
+      5000,
+    );
+
+    expect(view.owner).toMatchObject({ id: grace, org_role: 'owner' });
+    expect(view.previous_owner).toMatchObject({ id: ownerId, org_role: 'admin' });
+    expect(roleOf(grace)).toBe('owner');
+    expect(roleOf(ownerId)).toBe('admin');
+    expect(org().ownerUserId).toBe(grace);
+  });
+
+  it('takes a member too', () => {
+    const grace = makeUser('Grace', 'member', { email: 'grace@example.test' });
+    transferOwnership(t.db, actor(ownerId), { userId: grace, confirm: 'grace@example.test' });
+    expect(roleOf(grace)).toBe('owner');
+  });
+
+  it('is logged once, naming both people', () => {
+    const grace = makeUser('Grace', 'member', { email: 'grace@example.test' });
+    transferOwnership(t.db, actor(ownerId), { userId: grace, confirm: 'grace@example.test' }, 5000);
+
+    const rows = t.db.select().from(activity).all();
+    expect(rows.map((r) => [r.type, r.actorId, r.projectId])).toEqual([
+      ['org.ownership_transferred', ownerId, null],
+    ]);
+    expect(readPayload(rows[0]!)).toEqual({
+      from_user_id: ownerId,
+      to_user_id: grace,
+      to_previous_role: 'member',
+    });
+  });
+
+  it('accepts the email typed in another case, with spaces round it', () => {
+    const grace = makeUser('Grace', 'admin', { email: 'grace@example.test' });
+    transferOwnership(t.db, actor(ownerId), { userId: grace, confirm: '  Grace@Example.TEST ' });
+    expect(roleOf(grace)).toBe('owner');
+  });
+
+  function expectRefused(fn: () => unknown, reason: string): void {
+    try {
+      fn();
+    } catch (err) {
+      if (!(err instanceof ApiError)) throw err;
+      expect(err.code).toBe('unprocessable');
+      expect((err.details as { reason?: string }).reason).toBe(reason);
+      return;
+    }
+    throw new Error(`Expected 422 ${reason}, but nothing was thrown`);
+  }
+
+  it('refuses a wrong confirmation, a viewer, a deactivated person and the owner themselves', () => {
+    const grace = makeUser('Grace', 'admin', { email: 'grace@example.test' });
+    const viewer = makeUser('Vic', 'viewer', { email: 'vic@example.test' });
+    const gone = makeUser('Gone', 'admin', { email: 'gone@example.test', isActive: 0 });
+
+    expectRefused(
+      () => transferOwnership(t.db, actor(ownerId), { userId: grace, confirm: 'grace' }),
+      'confirm_mismatch',
+    );
+    expectRefused(
+      () =>
+        transferOwnership(t.db, actor(ownerId), { userId: viewer, confirm: 'vic@example.test' }),
+      'role',
+    );
+    expectRefused(
+      () => transferOwnership(t.db, actor(ownerId), { userId: gone, confirm: 'gone@example.test' }),
+      'inactive',
+    );
+    expectRefused(
+      () =>
+        transferOwnership(t.db, actor(ownerId), {
+          userId: ownerId,
+          confirm: 'ada.lovelace@example.test',
+        }),
+      'self',
+    );
+
+    // Nothing moved.
+    expect(org().ownerUserId).toBe(ownerId);
+    expect(roleOf(ownerId)).toBe('owner');
+    expect(t.db.select().from(activity).all()).toHaveLength(0);
+  });
+
+  it("is the owner's alone: an Admin is forbidden", () => {
+    const admin = makeUser('Admin', 'admin');
+    const grace = makeUser('Grace', 'member', { email: 'grace@example.test' });
+
+    expectApiError(
+      () => transferOwnership(t.db, actor(admin), { userId: grace, confirm: 'grace@example.test' }),
+      'forbidden',
+    );
+  });
+
+  it("is refused to any token, even the owner's full one: session only", () => {
+    const grace = makeUser('Grace', 'member', { email: 'grace@example.test' });
+    const viaToken = {
+      ...actor(ownerId),
+      token: { id: 'tok', scope: 'full' as const, projectIds: null },
+    };
+
+    expectApiError(
+      () => transferOwnership(t.db, viaToken, { userId: grace, confirm: 'grace@example.test' }),
+      'forbidden',
+    );
+  });
+
+  it('404s on a person who does not exist', () => {
+    expectApiError(
+      () => transferOwnership(t.db, actor(ownerId), { userId: 'usr_nobody', confirm: 'x' }),
+      'not_found',
+    );
+  });
+
+  it('writes all three or none: a failure part-way leaves the old owner in place', () => {
+    const grace = makeUser('Grace', 'admin', { email: 'grace@example.test' });
+    // The last of the three writes refuses; the two role changes before it
+    // must roll back with it.
+    t.sqlite.exec(
+      "CREATE TRIGGER orgs_refuse BEFORE UPDATE OF owner_user_id ON orgs BEGIN SELECT RAISE(ABORT, 'refused'); END",
+    );
+
+    expect(() =>
+      transferOwnership(t.db, actor(ownerId), { userId: grace, confirm: 'grace@example.test' }),
+    ).toThrow(/refused/);
+
+    expect(roleOf(grace)).toBe('admin');
+    expect(roleOf(ownerId)).toBe('owner');
+    expect(org().ownerUserId).toBe(ownerId);
+    expect(t.db.select().from(activity).all()).toHaveLength(0);
+  });
+});
+
+describe('extra owners are reported, not demoted (LAI-982)', () => {
+  it('is empty for an organisation with its one owner', () => {
+    expect(extraOwners(t.db)).toEqual([]);
+  });
+
+  it('lists active owners besides the recorded one, and leaves them owners', () => {
+    const second = makeUser('Second', 'owner', { email: 'second@example.test' });
+    makeUser('Gone', 'owner', { isActive: 0 });
+
+    expect(extraOwners(t.db)).toEqual([
+      { id: second, name: 'Second', email: 'second@example.test' },
+    ]);
+    expect(t.db.select().from(users).where(eq(users.id, second)).get()?.orgRole).toBe('owner');
   });
 });

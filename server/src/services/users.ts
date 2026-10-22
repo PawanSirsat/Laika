@@ -4,7 +4,7 @@ import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { type OrgRole, type ProjectRole } from '../db/enums.ts';
 import { requireOrgId } from '../db/orgs.ts';
-import { projectMemberships, projects, sessions, tokens, users } from '../db/schema.ts';
+import { orgs, projectMemberships, projects, sessions, tokens, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { canSeeProject } from './projects.ts';
@@ -250,6 +250,35 @@ function assertAnOwnerRemains(db: Db, target: UserRow, stillOwner: boolean): voi
   );
 }
 
+/** `422 use_transfer`: the one owner changes only through a transfer (LAI-982). */
+function useTransfer(userId: string): ApiError {
+  return new ApiError(
+    'unprocessable',
+    'An organisation has exactly one Owner. Use Transfer ownership to hand it over.',
+    { reason: 'use_transfer', user_id: userId },
+  );
+}
+
+/** Who `orgs.owner_user_id` names — the one owner (§4.2). */
+function recordedOwnerId(db: Db): string {
+  const row = db
+    .select({ ownerUserId: orgs.ownerUserId })
+    .from(orgs)
+    .where(eq(orgs.id, requireOrgId(db)))
+    .get();
+  return row!.ownerUserId;
+}
+
+/**
+ * The owner `orgs.owner_user_id` names is not demoted or deactivated by an
+ * ordinary write (LAI-982): either would leave the organisation recording an
+ * owner who is not one. While a second owner exists from before D-104, the
+ * last-Owner rule alone does not catch that, so this does.
+ */
+function assertNotTheRecordedOwner(db: Db, target: UserRow): void {
+  if (target.id === recordedOwnerId(db)) throw useTransfer(target.id);
+}
+
 function requireUser(db: Db, userId: string): UserRow {
   const row = db.select().from(users).where(eq(users.id, userId)).get();
   if (row === undefined) throw ApiError.notFound(`No user with id "${userId}"`);
@@ -269,7 +298,14 @@ export function setOrgRole(
   // set roles could make a member an admin with every grant the owner gave.
   assertCan(actor, 'user.set_role');
 
-  assertAnOwnerRemains(db, target, role === 'owner');
+  // **Exactly one owner** (§3, D-104 item 2, LAI-982). Making somebody owner
+  // is a transfer, and a transfer also demotes the one who held it; a role
+  // change that only promoted would make a second owner, which is what the
+  // picker used to do.
+  if (role === 'owner') throw useTransfer(userId);
+
+  assertAnOwnerRemains(db, target, false);
+  assertNotTheRecordedOwner(db, target);
 
   if (target.orgRole === role) return viewOf(db, target);
 
@@ -325,6 +361,7 @@ export function setUserActive(
   // one way — but it is the same call, because "still an active Owner after
   // this" is exactly what it asks.
   assertAnOwnerRemains(db, target, active);
+  if (!active) assertNotTheRecordedOwner(db, target);
 
   if ((target.isActive === 1) === active) return viewOf(db, target);
 
@@ -501,4 +538,106 @@ export function listMemberships(db: Db, actor: ResolvedActor, userId: string): M
       archived: row.archivedAt !== null,
       joined_at: row.joinedAt,
     }));
+}
+
+/** What `POST /org/transfer-ownership` answers: the two people it changed. */
+export interface OwnershipTransferView {
+  owner: UserView;
+  previous_owner: UserView;
+}
+
+export interface TransferOwnershipInput {
+  userId: string;
+  /** The new owner's email, typed (D-104 item 2): a slip of the mouse is not a transfer. */
+  confirm: string;
+}
+
+/**
+ * Transfer ownership (§3.1, §6.4, D-104 item 2, LAI-982).
+ *
+ * The owner, signed in, names an **active admin or member**; that person
+ * becomes the owner, the caller becomes an admin, and `orgs.owner_user_id`
+ * moves — **three writes in one transaction**, so there is never a moment with
+ * two owners or with `owner_user_id` naming somebody who is not one.
+ *
+ * A viewer is refused rather than promoted two steps at once: an org viewer
+ * may hold only the project role `viewer` (§3), and making one owner would
+ * lift that silently. Make them a member first, then transfer.
+ *
+ * `confirm` must be the target's email. It is the typed confirmation the
+ * screen asks for, checked where it cannot be skipped.
+ */
+export function transferOwnership(
+  db: Db,
+  actor: ResolvedActor,
+  input: TransferOwnershipInput,
+  now: number = Date.now(),
+): OwnershipTransferView {
+  assertCan(actor, 'org.transfer_ownership');
+  const target = requireUser(db, input.userId);
+
+  const refuse = (reason: string, message: string): never => {
+    throw new ApiError('unprocessable', message, { reason, user_id: target.id });
+  };
+
+  if (target.id === actor.userId) refuse('self', 'You already own this organisation.');
+  if (target.isActive !== 1)
+    refuse('inactive', 'Reactivate them before handing them the organisation.');
+  if (target.orgRole !== 'admin' && target.orgRole !== 'member') {
+    refuse('role', 'Ownership goes to an admin or a member. Make a viewer a member first.');
+  }
+  if (input.confirm.trim().toLowerCase() !== target.email.toLowerCase()) {
+    refuse('confirm_mismatch', "Type the new owner's email to confirm.");
+  }
+
+  db.transaction(() => {
+    db.update(users)
+      .set({ orgRole: 'owner', updatedAt: new Date(now) })
+      .where(eq(users.id, target.id))
+      .run();
+    db.update(users)
+      .set({ orgRole: 'admin', updatedAt: new Date(now) })
+      .where(eq(users.id, actor.userId))
+      .run();
+    db.update(orgs)
+      .set({ ownerUserId: target.id, updatedAt: now })
+      .where(eq(orgs.id, requireOrgId(db)))
+      .run();
+
+    appendActivity(db, {
+      orgId: requireOrgId(db),
+      projectId: null,
+      ...activityActor(actor),
+      type: 'org.ownership_transferred',
+      payload: {
+        from_user_id: actor.userId,
+        to_user_id: target.id,
+        to_previous_role: target.orgRole,
+      },
+      now,
+    });
+  });
+
+  return {
+    owner: viewOf(db, requireUser(db, target.id)),
+    previous_owner: viewOf(db, requireUser(db, actor.userId)),
+  };
+}
+
+/**
+ * Active owners other than the one `orgs.owner_user_id` names (LAI-982).
+ *
+ * D-104 item 2: before it, the role picker could make a second owner, and
+ * some organisations have one. They are **reported, never demoted
+ * silently** — `GET /org` serves this list to the owner, who decides.
+ */
+export function extraOwners(db: Db): { id: string; name: string; email: string }[] {
+  const recorded = recordedOwnerId(db);
+  return db
+    .select({ id: users.id, name: users.name, email: users.email })
+    .from(users)
+    .where(and(eq(users.orgRole, 'owner'), eq(users.isActive, 1)))
+    .orderBy(asc(users.name), asc(users.id))
+    .all()
+    .filter((row) => row.id !== recorded);
 }

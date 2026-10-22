@@ -57,8 +57,8 @@ type CatalogueAction = OrgAction | ProjectAction;
  * the document, as `presence.read` and `capacity.read` did (LAI-953).
  */
 export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
-  'org.delete': 'Delete org data / transfer ownership',
-  'org.transfer_ownership': 'Delete org data / transfer ownership',
+  'org.delete': 'Delete org data',
+  'org.transfer_ownership': 'Transfer ownership',
   'org.settings.edit': 'Org settings (AI provider, SMTP, signup mode)',
   'project.create': 'Create / archive project',
   'project.archive': 'Create / archive project',

@@ -246,7 +246,8 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
   const isAdminUp = orgRole === 'owner' || orgRole === 'admin';
 
   switch (action) {
-    // | Delete org data / transfer ownership | ✓ | — | — | — |
+    // | Delete org data | ✓ | — | — | — |
+    // | Transfer ownership | ✓ (session only) | — | — | — |
     // | Change org roles | ✓ | — | — | — |
     // | Set what each role may do | ✓ (session only) | — | — | — |
     //

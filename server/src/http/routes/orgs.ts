@@ -18,6 +18,7 @@ import {
   getModelPrices,
   setModelPrice,
 } from '../../services/org-model-prices.ts';
+import { type OwnershipTransferView, transferOwnership } from '../../services/users.ts';
 import { type AppEnv } from '../context.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
@@ -92,6 +93,12 @@ export interface OrgRouteOptions {
   publicUrl?: string | undefined;
 }
 
+const TransferBody = strictObject({
+  user_id: z.string().min(1),
+  /** The new owner's email, typed. */
+  confirm: z.string().min(1),
+});
+
 export function orgRoutes(options: OrgRouteOptions): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db, serverSecret } = options;
@@ -126,6 +133,20 @@ export function orgRoutes(options: OrgRouteOptions): Hono<AppEnv> {
     const actor = c.get('actor');
     if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
     return c.json(deleteModelPrice(db, actor, c.req.param('model')));
+  });
+
+  /**
+   * `POST /api/v1/org/transfer-ownership` (§6.4, D-104 item 2, LAI-982): the
+   * owner, signed in, hands the organisation to an active admin or member,
+   * confirming with that person's email, and becomes an admin.
+   */
+  app.post('/transfer-ownership', async (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+    const body = parseBody(TransferBody, await c.req.json().catch(() => null));
+    return c.json<OwnershipTransferView>(
+      transferOwnership(db, actor, { userId: body.user_id, confirm: body.confirm }),
+    );
   });
 
   /**

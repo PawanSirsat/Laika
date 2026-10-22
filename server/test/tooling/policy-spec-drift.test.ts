@@ -55,7 +55,9 @@ const PROJECT_MATRIX = '3.2 Project-level permission matrix';
 // --------------------------------------------------------- the declared link
 
 const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
-  ['Delete org data / transfer ownership', ['org.delete', 'org.transfer_ownership']],
+  // D-104 item 2 (LAI-982) split the row: transferring is session only.
+  ['Delete org data', ['org.delete']],
+  ['Transfer ownership', ['org.transfer_ownership']],
   ['Org settings (AI provider, SMTP, signup mode)', ['org.settings.edit']],
   ['Create / archive project', ['project.create', 'project.archive']],
   // D-102 rule 5 (LAI-958) split the row: inviting stays a grant, roles and

@@ -247,4 +247,8 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // agent's token that could grant its own role a capability would hand its
   // person whatever it was refused.
   'org.permissions.manage',
+  // **Handing the organisation over is the owner's, signed in** (D-104 item 2,
+  // LAI-982): an agent's token that could transfer ownership could give the
+  // whole organisation away in its person's name.
+  'org.transfer_ownership',
 ]);

@@ -31,8 +31,9 @@ function actor(orgRole: OrgRole, projectRole: ProjectRole | null = null): Actor 
 type OrgRow = [OrgAction, boolean, boolean, boolean, boolean];
 
 const ORG_MATRIX: OrgRow[] = [
-  // | Delete org data / transfer ownership | ✓ | — | — | — |
+  // | Delete org data | ✓ | — | — | — |
   ['org.delete', true, false, false, false],
+  // | Transfer ownership | ✓ (session only) | — | — | — |
   ['org.transfer_ownership', true, false, false, false],
   // | Org settings (AI provider, SMTP, signup mode) | ✓ | ✓ | — | — |
   ['org.settings.edit', true, true, false, false],
