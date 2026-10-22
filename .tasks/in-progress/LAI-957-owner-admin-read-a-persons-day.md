@@ -2,11 +2,12 @@
 id: LAI-957
 title: 'An owner or admin cannot see a person''s day, hours, drafts or shared activity the way the person sees them'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-958]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T14:08:19Z
 ---
 
 ## Goal
@@ -39,3 +40,10 @@ who looked.
       switches (test the existing `/me` writes cannot target someone else).
 - [ ] Gate: `pnpm test` / `lint` / `format`; any web drift failure quoted per
       §4.4 (web half LAI-959).
+
+## Notes (CORE)
+
+- **Dependency deviation (§2 step 1).** `depends-on: LAI-958` is in
+  `.tasks/review/`, not `done/`. Claimed on the manager's (Belka/polly)
+  direction, built on `origin/LAI-958-owner-decides-who-sees-what @8cfa36f0`,
+  so this branch carries LAI-958's commits.
