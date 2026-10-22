@@ -28,6 +28,7 @@ import { InsightsScreen } from '../../routes/screens/insights/InsightsScreen.tsx
 import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx';
 import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
 import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
+import { WorkScreen } from '../../routes/screens/work/WorkScreen.tsx';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import {
   INBOX_TABS,
@@ -248,6 +249,25 @@ function MyDayRoute() {
   );
 }
 
+/**
+ * Everyone's work (LAI-952). The filters are the URL, replaced rather than
+ * pushed, as a filter is; a row opens the task in its own space's drawer.
+ */
+function WorkRoute() {
+  const {
+    route: { params, setParams, navigate },
+    me,
+  } = useShell();
+  return (
+    <WorkScreen
+      me={me}
+      params={params}
+      setParams={setParams}
+      onOpenTask={openTaskInItsSpace(navigate)}
+    />
+  );
+}
+
 function ReviewRoute() {
   const {
     route: { navigate },
@@ -374,6 +394,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/projects': { Component: ProjectsRoute, layout: 'plain' },
   '/my-day': { Component: MyDayRoute, layout: 'plain' },
   '/inbox': { Component: InboxRoute, layout: 'plain' },
+  '/work': { Component: WorkRoute, layout: 'plain' },
   '/insights': { Component: InsightsRoute, layout: 'plain' },
   '/organisation': { Component: OrganisationRoute, layout: 'plain' },
   '/developer': { Component: DeveloperRoute, layout: 'plain' },

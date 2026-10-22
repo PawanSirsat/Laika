@@ -77,6 +77,13 @@ const ALLOWED: ReadonlyMap<string, { readonly names: readonly string[]; readonly
       { names: ['listProjects'], why: 'the Projects screen pages on purpose, with Load more' },
     ],
     [
+      'routes/screens/work/WorkScreen.tsx',
+      {
+        names: ['listAllTasks'],
+        why: 'everyone’s work pages on purpose, with Load more (LAI-952)',
+      },
+    ],
+    [
       'api/use-events.ts',
       { names: ['listProjectActivity'], why: 'a deliberate recent window behind the live stream' },
     ],

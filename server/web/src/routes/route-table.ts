@@ -44,7 +44,7 @@ export const GROUP_TITLES: Readonly<Record<NavGroup, string | null>> = {
 };
 
 /** The glyph a sidebar entry wears, in the rail and beside its label. */
-export const NAV_ICONS = ['day', 'inbox', 'insights', 'organisation', 'developer'] as const;
+export const NAV_ICONS = ['day', 'inbox', 'work', 'insights', 'organisation', 'developer'] as const;
 export type NavIconName = (typeof NAV_ICONS)[number];
 
 export interface Route {
@@ -237,6 +237,21 @@ export const ROUTES: readonly Route[] = [
     status: 'ready',
     phase: 'Phase 5',
     icon: 'inbox',
+  },
+  /*
+   * **Work** (LAI-952): everyone's work across every space, from `GET /tasks`
+   * (LAI-887). Not gated — every signed-in role has one; the server decides
+   * which spaces' tasks each reader is sent. Its space filter is `?space=`,
+   * not `?project=`, so it is org-level like the pages beside it.
+   */
+  {
+    orgLevel: true,
+    path: '/work',
+    label: 'Work',
+    group: 'HOME',
+    status: 'ready',
+    phase: 'Phase 2',
+    icon: 'work',
   },
   /*
    * **Insights** (LAI-796): *Capacity* (LAI-754) and *Usage & cost* (D-084,
