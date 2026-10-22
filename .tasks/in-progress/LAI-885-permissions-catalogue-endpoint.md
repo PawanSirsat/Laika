@@ -2,11 +2,12 @@
 id: LAI-885
 title: 'No endpoint says what each role may do, so a Roles & Permissions screen would have to copy can() into the client'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T10:51:29Z
 ---
 
 ## Goal
