@@ -5384,3 +5384,58 @@ The rules live in CLAUDE.md, *Two machines*.
 refused `host:strelka`, because a tag is *"lowercase letters, digits and
 hyphens, starting with a letter or digit, up to 24 characters"*. Nothing else
 changes.
+
+## D-098 — A drafted block may carry a name the person chose for a work folder, and its branch only if they turn that on (LAI-866; amends D-096's closed upload)
+
+**Date:** 2026-10-22 · **By:** CHIEF, on the owner's instruction
+
+A block that no card named reads *"Nothing named a card"*. Nothing on it says
+which work it was, and an Omnigent chat records no folder at all (D-095). The
+person then has to remember, block by block, what each one was for. An
+earlier idea was to link a folder to a project. It was raised with the owner
+and never filed, and this replaces it: the person gives a folder a name of
+their own, and only that name travels.
+
+The owner approved this on 2026-10-22: a drafted time block may carry a name
+the person chose for a work folder, and the branch name only if they turn
+that on.
+
+1. **The person names a work folder, on their machine.** For example, this
+   folder is *"Acme"*. The name is theirs: typed by them, kept in a 0600 file
+   under `~/.laika`, and never filled in from the folder's own name.
+2. **Every block drafted from that folder carries the name.** This holds for
+   a Claude Code session by its working directory, and for an Omnigent chat
+   by the chat's working folder. The folder is read on the machine for that
+   lookup only. An untied block then reads *"Needs a card · Acme"*.
+3. **The branch name is sent only when the person turns that on.** It is
+   off by default.
+4. **If a Laika project the person may read matches the name**, the block
+   goes under that project.
+5. **Drafts stay the person's alone** (D-088 item 3). The name, and the
+   branch when sent, travel with an entry only when the person confirms it,
+   and they can change or clear them before that. Once confirmed, owners and
+   admins see them as they see confirmed hours (D-088 item 7).
+6. **Older boards are never refused.** A collector sends the name only to a
+   board that says, in `GET /me/time-settings`, that it takes it (as D-096
+   item 6).
+
+### What does not change
+
+- **The collector still never sends** a folder's path or real name, file
+  names, prompts, replies or commit messages (D-088 item 4). The chosen name,
+  and the branch name when turned on, are the only text a block may carry.
+  D-096's *"The upload stays a closed schema of numbers, a zone and a
+  key-shaped string"* now reads: and those two strings. Its *"no … branch
+  name … leaves the machine"* now holds unless the person turned the branch
+  on. Nothing else in D-096 changes.
+- **Local-activity reports** (D-079, D-080) are untouched: they still carry
+  no repository or branch name.
+- **Solidtime** is unchanged. Whether the name should reach it is a later
+  question.
+
+SPEC §4.47, §4.48, §6.4, §11.4.2.1 and §13.4 say this when LAI-866 lands.
+
+### Revisit when
+
+A second person shares a machine, so that a folder's name is no longer one
+person's word. Or the owner wants the name in Solidtime too.
