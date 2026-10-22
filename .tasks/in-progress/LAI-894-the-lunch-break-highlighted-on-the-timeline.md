@@ -54,6 +54,20 @@ clips and removes nothing; the schedule is still never time.
       the hatch is over e2's half, and everything else that test asserts holds.
       A fixture with no block in the window says `offline`; one covering it
       says `worked through`.
+- [ ] **Widened on the owner's second message** (*"what if I added the tea
+      break or the coffee break — we need the icon, a manager can add anything
+      … handle the predefined things, and improve the UI/UX"*): a glyph per
+      break kind, picked from the label — meal, cup, rest, walk, people, else a
+      pause — in `routes/screens/break-kinds.ts` with `components/BreakGlyph.tsx`;
+      the pill, the Organisation list and the editor rows all wear it; unit
+      tests on the keyword rule.
+- [ ] The Breaks editor: preset chips (Lunch, Tea break, Coffee break,
+      Stand-up, Walk, Rest) add a window in one click, each with its glyph, a
+      preset already listed is disabled; the row shows the glyph live as the
+      label is typed, the clock as a start–end pair, the days as chips; *Add
+      your own* for anything else. Browser test for the preset path.
+- [ ] D-105 written (amends D-101 item 4); the fact's note no longer says
+      nobody's day is measured against the schedule.
 - [ ] Gate: `pnpm test`, `pnpm lint`, `pnpm format` exit 0.
 
 ## Notes

@@ -31,6 +31,7 @@ var YOU=[
   {id:'b14',state:'drafted',card:'LAI-860',start:1010,end:1025,live:true},
   {id:'b15',state:'future',start:1025,end:1320}
 ];
+var LUNCH={start:720,end:780};
 var GROUP=YOU.filter(function(b){return b.subs;})[0];
 var AGENTS=[
   {id:'a1',agent:'kepler',card:'SKYNET-71',start:675,end:712},
@@ -121,5 +122,5 @@ function suggestions(u,all){
   return out.slice(0,3);
 }
 function counts(c){var p=function(n,w){return n+' '+w+(n===1?'':'s');};return p(c.p,'prompt')+' · '+p(c.c,'commit')+' · '+p(c.m,'mark');}
-window.LaikaTL={counts:counts,DAY0:DAY0,DAY1:DAY1,NOW:NOW,CARDS:CARDS,YOU:YOU,GROUP:GROUP,AGENTS:AGENTS,SIG:SIG,fmt:fmt,rng:rng,dur:dur,hourLabel:hourLabel,sigIn:sigIn,agentsDuring:agentsDuring,evenShares:evenShares,clusters:clusters,pack:pack,concAt:concAt,buildScale:buildScale,styles:function(th){return STY[th];},tokens:TOK,units:units,totals:totals,suggestions:suggestions};
+window.LaikaTL={LUNCH:LUNCH,counts:counts,DAY0:DAY0,DAY1:DAY1,NOW:NOW,CARDS:CARDS,YOU:YOU,GROUP:GROUP,AGENTS:AGENTS,SIG:SIG,fmt:fmt,rng:rng,dur:dur,hourLabel:hourLabel,sigIn:sigIn,agentsDuring:agentsDuring,evenShares:evenShares,clusters:clusters,pack:pack,concAt:concAt,buildScale:buildScale,styles:function(th){return STY[th];},tokens:TOK,units:units,totals:totals,suggestions:suggestions};
 })();
