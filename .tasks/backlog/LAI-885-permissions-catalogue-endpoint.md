@@ -1,5 +1,5 @@
 ---
-id: LAI-873
+id: LAI-885
 title: 'No endpoint says what each role may do, so a Roles & Permissions screen would have to copy can() into the client'
 area: server
 assignee: unclaimed
@@ -45,8 +45,16 @@ drift from policy.
 
 ## Notes
 
-Drives LAI-876 (web: Roles & Permissions screen). Also noted by the
+Drives LAI-888 (web: Roles & Permissions screen). Also noted by the
 investigation: `ACTIONS_WITHOUT_A_ROW` in
 `server/test/tooling/policy-spec-drift.test.ts` still parks `presence.read` /
 `capacity.read` as "LAI-432, in flight" though LAI-432 is done — **out of
 scope here**; file it if still true.
+
+## Renumbered
+
+Filed by CHIEF on 2026-10-22 as `LAI-873`, which collided with a task already on
+`origin/master` (the id sweep ran before `git fetch`). Commit `2274bfc9`
+carries `[LAI-871]` for all five filings, and a claim commit `2c1a7274`
+`[LAI-872]` (pushed as branch `LAI-872-share-activity-switch`) belongs to the
+filing now LAI-884 — **neither is the task that holds that number now.**

@@ -1,5 +1,5 @@
 ---
-id: LAI-872
+id: LAI-884
 title: 'A developer cannot find the switch that shares their local activity — it lives only in the Connect wizard''s Optional step'
 area: web
 assignee: unclaimed
@@ -33,3 +33,11 @@ switch exists only inside the Connect wizard's Optional section
 - [ ] Tests for both org states and for owner vs member wording.
 - [ ] Light and dark, laptop and phone. Gate: `pnpm test`, `pnpm lint`,
       `pnpm format` each exit 0.
+
+## Renumbered
+
+Filed by CHIEF on 2026-10-22 as `LAI-872`, which collided with a task already on
+`origin/master` (the id sweep ran before `git fetch`). Commit `2274bfc9`
+carries `[LAI-871]` for all five filings, and a claim commit `2c1a7274`
+`[LAI-872]` (pushed as branch `LAI-872-share-activity-switch`) belongs to the
+filing now LAI-884 — **neither is the task that holds that number now.**

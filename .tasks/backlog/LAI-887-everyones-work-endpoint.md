@@ -1,5 +1,5 @@
 ---
-id: LAI-875
+id: LAI-887
 title: 'Seeing everyone''s work across all spaces takes one request per project — no cross-project task list'
 area: server
 assignee: unclaimed
@@ -33,4 +33,12 @@ Today the client must call `GET /projects/:slug/tasks` once per project.
 
 ## Notes
 
-Drives LAI-878 (web: Everyone's work view).
+Drives LAI-890 (web: Everyone's work view).
+
+## Renumbered
+
+Filed by CHIEF on 2026-10-22 as `LAI-875`, which collided with a task already on
+`origin/master` (the id sweep ran before `git fetch`). Commit `2274bfc9`
+carries `[LAI-871]` for all five filings, and a claim commit `2c1a7274`
+`[LAI-872]` (pushed as branch `LAI-872-share-activity-switch`) belongs to the
+filing now LAI-884 — **neither is the task that holds that number now.**

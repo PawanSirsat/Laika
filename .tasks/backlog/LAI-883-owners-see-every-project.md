@@ -1,5 +1,5 @@
 ---
-id: LAI-871
+id: LAI-883
 title: 'An owner or admin does not see a private space they are not a member of, on Projects or in My day''s On your plate'
 area: web
 assignee: unclaimed
@@ -44,3 +44,11 @@ returns those projects — but the UI drops them.
 Client mirror of the rule: the existing project helpers in
 `server/web/src/api/tasks.ts` (~355) already model owner/admin implicit lead —
 reuse, do not add a second copy.
+
+## Renumbered
+
+Filed by CHIEF on 2026-10-22 as `LAI-871`, which collided with a task already on
+`origin/master` (the id sweep ran before `git fetch`). Commit `2274bfc9`
+carries `[LAI-871]` for all five filings, and a claim commit `2c1a7274`
+`[LAI-872]` (pushed as branch `LAI-872-share-activity-switch`) belongs to the
+filing now LAI-884 — **neither is the task that holds that number now.**

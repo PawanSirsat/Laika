@@ -1,5 +1,5 @@
 ---
-id: LAI-874
+id: LAI-886
 title: 'An owner has no paginated, filterable history of everything that happened across the organisation'
 area: server
 assignee: unclaimed
@@ -38,4 +38,12 @@ activity is readable per project; org-wide rows exist behind
 
 ## Notes
 
-Drives LAI-877 (web: Organisation → Activity tab).
+Drives LAI-889 (web: Organisation → Activity tab).
+
+## Renumbered
+
+Filed by CHIEF on 2026-10-22 as `LAI-874`, which collided with a task already on
+`origin/master` (the id sweep ran before `git fetch`). Commit `2274bfc9`
+carries `[LAI-871]` for all five filings, and a claim commit `2c1a7274`
+`[LAI-872]` (pushed as branch `LAI-872-share-activity-switch`) belongs to the
+filing now LAI-884 — **neither is the task that holds that number now.**
