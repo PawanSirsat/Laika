@@ -25,6 +25,8 @@ import { ModelPricesSection } from './ModelPricesSection.tsx';
 import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
 import { RolesPermissionsSection } from './RolesPermissionsSection.tsx';
+import { OrgActivity } from './OrgActivity.tsx';
+import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import type { OrgRole } from '../../../api/invites.ts';
 import './organisation.css';
@@ -33,8 +35,16 @@ export interface OrganisationScreenProps {
   readonly me: MeProfile;
   /** The tabs this reader is offered — Security is an owner's or an admin's. */
   readonly tabs: readonly PageTab[];
-  /** The open tab: `overview`, `people`, `roles`, `integrations` or `security`. */
+  /** The open tab: `overview`, `people`, `roles`, `integrations`, `security` or `activity`. */
   readonly tab: string;
+  /**
+   * The address named `tab` and this reader may not open it — the not-allowed
+   * state, rather than another tab (LAI-951, `refusedTab`).
+   */
+  readonly refused?: boolean;
+  /** The address's query — Activity keeps its filters there (LAI-951). */
+  readonly params: URLSearchParams;
+  readonly setParams: (next: URLSearchParams) => void;
   readonly onNavigate: (to: string) => void;
 }
 
@@ -109,8 +119,19 @@ function expiryLabel(expiresAt: number, now: number): string {
  *
  * **Roles & permissions** joined them in LAI-950, once `GET /permissions`
  * served the matrix `can()` computes: it was on that list until then.
+ *
+ * **Activity** (LAI-951) is the admin activity log that reference showed, now
+ * that `GET /activity/history` serves it: an owner's or an admin's.
  */
-export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationScreenProps) {
+export function OrganisationScreen({
+  me,
+  tabs,
+  tab,
+  refused = false,
+  params,
+  setParams,
+  onNavigate,
+}: OrganisationScreenProps) {
   const canManage = canManageOrg(me.org_role);
   const { state, reload } = useOrganisation(canManage);
   const projects = useProjects();
@@ -776,6 +797,22 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
             )}
           </>
         )}
+
+        {tab === 'activity' &&
+          (refused ? (
+            <PermissionDenied
+              resource="the organisation’s activity"
+              requiredRole="admin"
+              scope="organisation"
+            />
+          ) : (
+            <OrgActivity
+              people={state.people}
+              params={params}
+              setParams={setParams}
+              onNavigate={onNavigate}
+            />
+          ))}
 
         {tab === 'security' && canManage && (
           <section className="org-card" aria-labelledby="org-security">

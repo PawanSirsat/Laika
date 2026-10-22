@@ -3,6 +3,7 @@ import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import {
   listOrgActivity,
+  listOrgHistory,
   listProjectActivity,
   type ListActivityOptions,
 } from '../../services/activity.ts';
@@ -26,15 +27,27 @@ function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) 
   return actor;
 }
 
-/** `?since=` — unix-ms, inclusive, and a bad value is an error rather than ignored. */
-function parseSince(raw: string | undefined): number | undefined {
+/**
+ * `?since=` — unix-ms, inclusive, and a bad value is an error rather than ignored.
+ *
+ * Digits alone are not enough: twenty of them parse to a float past
+ * `MAX_SAFE_INTEGER`, which is no instant at all, and was served as an empty
+ * page rather than refused (LAI-886 review).
+ */
+function parseSince(raw: string | undefined, name = 'since'): number | undefined {
   if (raw === undefined || raw === '') return undefined;
 
-  if (!/^\d+$/.test(raw)) {
-    throw ApiError.badRequest('since must be a unix-ms timestamp', { since: raw });
+  const value = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value)) {
+    throw ApiError.badRequest(`${name} must be a unix-ms timestamp`, { [name]: raw });
   }
 
-  return Number(raw);
+  return value;
+}
+
+/** An empty `?actor=` is no filter, as an empty `?task_id=` already is. */
+function present(raw: string | undefined): string | undefined {
+  return raw === undefined || raw === '' ? undefined : raw;
 }
 
 function optionsFrom(query: Record<string, string | undefined>): ListActivityOptions {
@@ -119,6 +132,31 @@ export function activityRoutes(options: ActivityRouteOptions): Hono<AppEnv> {
     const listOptions = optionsFrom(c.req.query());
 
     return c.json(pageOf(listOrgActivity(db, actor, listOptions), listOptions.limit));
+  });
+
+  /**
+   * `GET /api/v1/activity/history` — every row, owner and admin only (LAI-886).
+   * `?actor=&project=&type=&since=&until=`, all optional, all combinable.
+   */
+  app.get('/history', (c) => {
+    const actor = requireActor(c);
+    const query = c.req.query();
+    const { limit, cursor } = parsePageQuery(query);
+
+    return c.json(
+      pageOf(
+        listOrgHistory(db, actor, {
+          limit,
+          cursor,
+          actor: present(query.actor),
+          project: present(query.project),
+          type: present(query.type),
+          since: parseSince(query.since),
+          until: parseSince(query.until, 'until'),
+        }),
+        limit,
+      ),
+    );
   });
 
   return app;

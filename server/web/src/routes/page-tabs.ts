@@ -20,6 +20,11 @@ export interface PageTab {
    * `permissionHolder`, so the client mirrors `policy/can.ts` in one place.
    */
   readonly requires?: 'audit_log.export' | 'token.list_any';
+  /**
+   * An address naming this tab, for a reader not offered it, shows the
+   * not-allowed state rather than the first tab (LAI-951) — see `refusedTab`.
+   */
+  readonly refusedByAddress?: true;
 }
 
 /** Work handed back for a person, then work nobody filed (admin-up, §4.14). */
@@ -38,6 +43,8 @@ export const INSIGHTS_TABS: readonly PageTab[] = [
  * The organisation's settings, grouped. **Security is everyone's tokens**, so
  * it is an owner's or an admin's (§3.1 `token.list_any`); everyone else can
  * read the other three, and each section inside them keeps its own gate.
+ * **Activity is every space's history** (LAI-951), behind the gate
+ * `GET /activity/history` uses, §3.1 `audit_log.export`.
  */
 export const ORGANISATION_TABS: readonly PageTab[] = [
   { id: 'overview', label: 'Overview' },
@@ -46,6 +53,7 @@ export const ORGANISATION_TABS: readonly PageTab[] = [
   { id: 'roles', label: 'Roles & permissions' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'security', label: 'Security', requires: 'token.list_any' },
+  { id: 'activity', label: 'Activity', requires: 'audit_log.export', refusedByAddress: true },
 ];
 
 /**
@@ -73,6 +81,22 @@ export function currentTab(
   const shown = visibleTabs(tabs, holds);
   const asked = params.get('tab');
   return shown.find((tab) => tab.id === asked)?.id ?? shown[0]?.id ?? '';
+}
+
+/**
+ * The tab an address names that this reader may not open, when that tab says
+ * so rather than falling back (`refusedByAddress`). The Organisation's history
+ * is the case: a link to it shared with a member should tell them it is not
+ * theirs, not quietly show them the Overview as if that were what was sent.
+ */
+export function refusedTab(
+  tabs: readonly PageTab[],
+  params: URLSearchParams,
+  holds?: (permission: string) => boolean,
+): PageTab | undefined {
+  const asked = tabs.find((tab) => tab.id === params.get('tab'));
+  if (asked?.refusedByAddress !== true) return undefined;
+  return visibleTabs([asked], holds).length === 0 ? asked : undefined;
 }
 
 /** A tab's address on its page. */
