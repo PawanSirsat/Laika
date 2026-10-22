@@ -24,8 +24,12 @@ import {
   updateEntry,
 } from '../../services/time-entries.ts';
 import {
+  assertCanSetOrgTime,
   assertDrafting,
+  BREAK_LABEL_MAX,
+  BREAK_WINDOWS_MAX,
   getTimeSettings,
+  setOrgBreaks,
   setOrgTimeMode,
   setTimeSettings,
   TIME_MODES,
@@ -90,6 +94,25 @@ const branchName = z.string().max(1000);
 
 const SettingsBody = strictObject({ draft_my_time: z.boolean() });
 const OrgTimeBody = strictObject({ mode: z.enum(TIME_MODES) });
+
+/**
+ * The organisation's break schedule (D-101): each field to its shape here —
+ * a wall-clock `HH:MM`, ISO days 1 (Monday) to 7 — and the rules between
+ * them, start before end and no overlap, in the service.
+ */
+const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'a time is HH:MM, 00:00 to 23:59');
+const OrgBreaksBody = strictObject({
+  breaks: z
+    .array(
+      strictObject({
+        label: z.string().trim().min(1).max(BREAK_LABEL_MAX),
+        start: clock,
+        end: clock,
+        days: z.array(z.number().int().min(1).max(7)).min(1),
+      }),
+    )
+    .max(BREAK_WINDOWS_MAX),
+});
 
 /**
  * A collector's upload. **Nothing in it can hold free text**: numbers, a zone,
@@ -422,7 +445,8 @@ export function meTimeRoutes(options: { db: Db }): Hono<AppEnv> {
 
 /**
  * `PUT /org/time` — the organisation's *Time*, owners and admins on a web
- * session — and the Solidtime bridge's map, people and pull of everyone.
+ * session — its break schedule (D-101), and the Solidtime bridge's map,
+ * people and pull of everyone.
  */
 export function orgTimeRoutes(options: { db: Db }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
@@ -431,6 +455,13 @@ export function orgTimeRoutes(options: { db: Db }): Hono<AppEnv> {
   app.put('/time', async (c) => {
     const actor = requireActor(c);
     return c.json(setOrgTimeMode(db, actor, parseBody(OrgTimeBody, await json(c)).mode));
+  });
+
+  app.put('/time/breaks', async (c) => {
+    const actor = requireActor(c);
+    // Permission before the body: a caller who may not set it is told so.
+    assertCanSetOrgTime(actor);
+    return c.json(setOrgBreaks(db, actor, parseBody(OrgBreaksBody, await json(c)).breaks));
   });
 
   // The Solidtime bridge (LAI-788): an owner's or admin's CLI, signed in.

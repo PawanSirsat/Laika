@@ -1763,6 +1763,7 @@ by an owner or admin on a web session (`org.time.set`, §3.1).
 | `org_id` | primary key, FK `orgs`, cascade |
 | `mode` | `off` \| `manual` \| `drafts` — `manual`: people type their own entries; `drafts`: their collectors may also draft their day |
 | `closed_through` | nullable `YYYY-MM-DD` — the last day of the closed period (LAI-788). On or before it a Solidtime change is flagged, never taken, and nothing is written to Solidtime (D-088 item 6). Set by LAI-789's month close; null until then |
+| `breaks` | nullable JSON text — the organisation's break schedule (D-101, LAI-955): a list of `{ label, start, end, days }`, `start`/`end` wall-clock `HH:MM` with no zone, `days` ISO 1 (Mon) – 7 (Sun). Null is no schedule. Set by `PUT /org/time/breaks`; display only — nothing that drafts or counts time reads it |
 | `updated_at` | |
 
 Leaving `drafts` deletes every draft anybody has not confirmed (§4.47), in the
@@ -2333,6 +2334,7 @@ POST   /api/v1/me/time-breaks                body { day, tz, started_at, ended_a
 POST   /api/v1/me/time-entries               body { day, tz, minutes, task?, project?, note? } → 201   PATCH/DELETE .../:id   (session only)
 GET    /api/v1/me/time-entries/:id/revisions an entry's append-only history   (session only)
 PUT    /api/v1/org/time                      body { mode } — off | manual | drafts   (owner, admin; session only; LAI-787)
+PUT    /api/v1/org/time/breaks               body { breaks } — the organisation's break schedule → the caller's time settings   (owner, admin; session only; LAI-955)
 GET    /api/v1/me/time/solidtime             ?since= — what the person's CLI writes to Solidtime → { closed_through, push, held, projects, taken }   (session only; LAI-788)
 PUT    /api/v1/me/time/solidtime/links       body { member_id, links } — what it wrote → { linked, removed, retired }   (session only)
 PUT    /api/v1/me/time/solidtime/import      body { v, member_id, tz, from, to, complete, entries } → what changed   (session only)
@@ -2969,8 +2971,8 @@ the Max plan?*), not in tokens, so the number is always the developer's.
 parameter names anybody else.
 
 - **The switches.** `GET /me/time-settings` answers `{ org_mode, draft_my_time,
-  drafting, min_sync_interval_s, signal_times, folder_names }` to a session or
-  any token of the person's — a collector asks before it sends.
+  drafting, min_sync_interval_s, signal_times, folder_names, breaks }` to a
+  session or any token of the person's — a collector asks before it sends.
   `signal_times: true` says the board takes a block's `at` (D-096), and
   `folder_names: true` that it takes a block's `folder` and `branch` (D-098
   item 6); a collector sends each only then, so a board that predates it is
@@ -2980,7 +2982,16 @@ parameter names anybody else.
   or `drafts` — from an owner or admin on a web session (`org.time.set`);
   leaving `drafts` deletes everybody's unconfirmed drafts. A confirmed draft
   stays, its evidence blanked (§4.45), and entries are never deleted by a
-  switch.
+  switch. `PUT /org/time/breaks` takes `{ breaks: [{ label, start, end, days
+  }] }` from the same people on the same terms (`org.time.set`, D-101): at
+  most eight windows, a label of 1–40 characters, `start` and `end` as
+  `HH:MM` with start before end, `days` a non-empty list of unique ISO days
+  1–7, and no two windows overlapping on a day they share; a broken rule is
+  `422` with an issue naming the window (`breaks.N…`). An empty list clears
+  the schedule; with no §4.45 row yet one is made with `mode: off`. It answers
+  the caller's time settings, and writes nothing else — no draft, entry or
+  break. `breaks` in the answer above is that schedule, `[]` when there is
+  none: wall-clock windows on each person's own day, display only.
 - **A collector's upload.** `PUT /me/time-drafts` takes `{ v: 1, collector_id,
   tz, days: [{ day, blocks: [{ start, end, minutes, task, signals, at?,
   folder?, branch? }] }] }` —

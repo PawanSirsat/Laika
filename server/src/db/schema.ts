@@ -2153,6 +2153,12 @@ export const orgTimeSettings = sqliteTable(
      * The month close that sets it is LAI-789's.
      */
     closedThrough: text('closed_through'),
+    /**
+     * The organisation's break schedule (D-101, LAI-955): a JSON list of
+     * `{ label, start, end, days }`, wall-clock `HH:MM` with no zone, or null
+     * — no schedule. Display only: nothing that drafts or counts time reads it.
+     */
+    breaks: text('breaks'),
     updatedAt,
   },
   () => [check('org_time_settings_mode_check', oneOf('mode', TIME_MODES))],

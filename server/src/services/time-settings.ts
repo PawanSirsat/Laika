@@ -55,16 +55,32 @@ export interface TimeSettingsView {
    * this says so, as `signal_times` does for `at`.
    */
   folder_names: boolean;
+  /**
+   * The organisation's break schedule (D-101, LAI-955), empty when it has
+   * none: wall-clock windows on the person's own day, in that day's zone.
+   * Display only — never time, and nothing compares a day against it.
+   */
+  breaks: { label: string; start: string; end: string; days: number[] }[];
+}
+
+/** One window of the schedule, as `PUT /org/time/breaks` takes it and the view gives it. */
+type BreakWindow = TimeSettingsView['breaks'][number];
+
+/** D-101 item 1: at most eight windows, a label of 1–40 characters. */
+export const BREAK_WINDOWS_MAX = 8;
+export const BREAK_LABEL_MAX = 40;
+
+function orgRow(db: Db): { mode: TimeMode; breaks: string | null } | undefined {
+  return db
+    .select({ mode: orgTimeSettings.mode, breaks: orgTimeSettings.breaks })
+    .from(orgTimeSettings)
+    .where(eq(orgTimeSettings.orgId, requireOrgId(db)))
+    .get();
 }
 
 /** The organisation's *Time*; `off` when nobody has set it. */
 export function timeMode(db: Db): TimeMode {
-  const row = db
-    .select({ mode: orgTimeSettings.mode })
-    .from(orgTimeSettings)
-    .where(eq(orgTimeSettings.orgId, requireOrgId(db)))
-    .get();
-  return row?.mode ?? 'off';
+  return orgRow(db)?.mode ?? 'off';
 }
 
 /** A person's own *Draft my time*; off when they never turned it on. */
@@ -78,7 +94,8 @@ export function draftMyTime(db: Db, userId: string): boolean {
 }
 
 function viewFor(db: Db, userId: string): TimeSettingsView {
-  const mode = timeMode(db);
+  const row = orgRow(db);
+  const mode = row?.mode ?? 'off';
   const mine = draftMyTime(db, userId);
   return {
     org_mode: mode,
@@ -87,6 +104,8 @@ function viewFor(db: Db, userId: string): TimeSettingsView {
     min_sync_interval_s: MIN_SYNC_INTERVAL_S,
     signal_times: true,
     folder_names: true,
+    // Only `setOrgBreaks` writes it, and only what it has judged.
+    breaks: row?.breaks == null ? [] : (JSON.parse(row.breaks) as BreakWindow[]),
   };
 }
 
@@ -163,6 +182,87 @@ export function setOrgTimeMode(
     if (mode !== 'drafts') forgetDrafts(tx);
   });
   return { mode };
+}
+
+/**
+ * `org.time.set`, asked by the route before it reads the body, so a caller
+ * who may not set the schedule is told so whatever they sent.
+ */
+export function assertCanSetOrgTime(actor: ResolvedActor): void {
+  assertCan(actor, 'org.time.set');
+}
+
+const minuteOf = (clock: string): number => Number(clock.slice(0, 2)) * 60 + Number(clock.slice(3));
+
+/**
+ * D-101 item 1's rules across a window and between windows — each start
+ * before its end, so none crosses midnight; its days unique; no two sharing a
+ * day and overlapping (touching is not overlapping). The route's schema has
+ * already held each field to its shape. A broken rule is `422` with §6.3's
+ * `issues`, its `path` naming the window as the route's schema would.
+ */
+function judgeWindows(windows: BreakWindow[]): void {
+  const issues: { path: string; message: string; code: string }[] = [];
+  windows.forEach((w, i) => {
+    if (minuteOf(w.start) >= minuteOf(w.end)) {
+      issues.push({
+        path: `breaks.${String(i)}.end`,
+        message: 'a break ends after it starts, on the same day',
+        code: 'custom',
+      });
+    }
+    if (new Set(w.days).size !== w.days.length) {
+      issues.push({
+        path: `breaks.${String(i)}.days`,
+        message: 'a day is named once',
+        code: 'custom',
+      });
+    }
+    for (let j = 0; j < i; j += 1) {
+      const other = windows[j];
+      if (
+        other !== undefined &&
+        other.days.some((d) => w.days.includes(d)) &&
+        minuteOf(w.start) < minuteOf(other.end) &&
+        minuteOf(other.start) < minuteOf(w.end)
+      ) {
+        issues.push({
+          path: `breaks.${String(i)}`,
+          message: `overlaps breaks.${String(j)} (${other.label}) on a day they share`,
+          code: 'custom',
+        });
+      }
+    }
+  });
+  if (issues.length > 0) {
+    throw new ApiError('unprocessable', 'Invalid request body', { issues });
+  }
+}
+
+/**
+ * `PUT /org/time/breaks` (D-101): the organisation's break schedule, owners
+ * and admins on a web session. An empty list clears it; with no settings row
+ * yet, one is made with Time `off`. **It writes this column and nothing
+ * else** — no draft, entry or person's break is created, clipped or removed,
+ * which is why it is not on `PUT /org/time`.
+ */
+export function setOrgBreaks(
+  db: Db,
+  actor: ResolvedActor,
+  windows: BreakWindow[],
+  now: number = Date.now(),
+): TimeSettingsView {
+  assertCan(actor, 'org.time.set');
+  judgeWindows(windows);
+  const breaks =
+    windows.length === 0
+      ? null
+      : JSON.stringify(windows.map((w) => ({ ...w, days: [...w.days].sort((a, b) => a - b) })));
+  db.insert(orgTimeSettings)
+    .values({ orgId: requireOrgId(db), mode: 'off', breaks, updatedAt: now })
+    .onConflictDoUpdate({ target: orgTimeSettings.orgId, set: { breaks, updatedAt: now } })
+    .run();
+  return viewFor(db, actor.userId);
 }
 
 /**
