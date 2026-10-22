@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-891
-status: in-progress
+status: review
 started: 2026-10-22T14:19:21Z
+finished: 2026-10-22T14:25:22Z
 ---
 
 ## Goal
@@ -19,19 +20,30 @@ hover, and a *Row height* slider in the YOU box of the lane column.
 
 ## Acceptance criteria
 
-- [ ] A grip band spans the bottom of the YOU row, at least 8px tall, its
+- [x] A grip band spans the bottom of the YOU row, at least 8px tall, its
       handle at least 48px wide and drawn without hovering; the cursor is
       ns-resize over it and a label says *drag to resize rows* on hover.
-- [ ] A slider labelled *Row height* in the YOU box of the lane column sets
+- [x] A slider labelled *Row height* in the YOU box of the lane column sets
       the same height, 80 to 240 in steps of 8, and moves when the band is
       dragged.
-- [ ] The band lies under the blocks, never over one; the lane column, lanes
+- [x] The band lies under the blocks, never over one; the lane column, lanes
       and blocks line up as LAI-891 left them.
-- [ ] The browser test finds the band and the handle drawn, drags the band,
+- [x] The browser test finds the band and the handle drawn, drags the band,
       and steps the slider.
-- [ ] Gate: repo-root `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] Gate: repo-root `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Notes
 
 - Built by CHIEF on the owner's direct instruction in the temporary worktree
   `Laika-myday-rows` on `LAI-892-visible-row-height`. No new dependencies.
+
+## Record
+
+- The grip also ends its drag on a move with no button held and on losing
+  pointer capture, so a button let go outside the window never leaves it
+  dragging. The browser test's own drags stay inside a 1000px viewport: a
+  pointer let go past its edge never reached the grip, which held its limit
+  and read as a stuck slider for three runs.
+- The My day v3 file, signals and agents files green on the branch; the
+  repo-root gate run once, on master after the merge.
+
