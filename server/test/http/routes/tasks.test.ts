@@ -1186,3 +1186,131 @@ describe("GET /api/v1/tasks — everyone's work across projects (LAI-887)", () =
     expect(res.status).toBe(401);
   });
 });
+
+describe('an assignee must be able to read the project (LAI-962)', () => {
+  interface Refusal {
+    error: { code: string; details: Record<string, unknown> };
+  }
+
+  /** A setup write that must land — a broken setup must not satisfy a test. */
+  async function must(res: Response | Promise<Response>, expected: number): Promise<Response> {
+    const answered = await res;
+    expect(answered.status, await answered.clone().text()).toBe(expected);
+    return answered;
+  }
+
+  /** Somebody in the org who is on no project; returns their id. */
+  async function outsider(email: string, orgRole: 'member' | 'admin' = 'member'): Promise<string> {
+    const orgId = h.db.all<{ id: string }>(sql`SELECT id FROM orgs`)[0]!.id;
+    const token = seedInvite(h.db, { orgId, createdBy: ownerUserId(), email, orgRole });
+    await must(signUp(h.app, { email, password: PASSWORD, inviteToken: token }), 200);
+    return h.db.select().from(users).where(eq(users.email, email)).get()!.id;
+  }
+
+  async function secret(): Promise<void> {
+    await must(
+      post('/api/v1/projects', {
+        name: 'secret',
+        slug: 'secret',
+        prefix: 'SEC',
+        visibility: 'private',
+      }),
+      201,
+    );
+  }
+
+  function assigneeOf(key: string): string | null | undefined {
+    const number = Number(key.split('-')[1]);
+    return h.db.all<{ assignee_id: string | null }>(
+      sql`SELECT t.assignee_id FROM tasks t JOIN projects p ON p.id = t.project_id
+            WHERE p.prefix = ${key.split('-')[0]} AND t.number = ${number}`,
+    )[0]?.assignee_id;
+  }
+
+  it('refuses to create SEC-1 assigned to somebody who cannot read secret, and files nothing', async () => {
+    await secret();
+    const stranger = await outsider('stranger@example.test');
+
+    const res = await post('/api/v1/projects/secret/tasks', {
+      title: 'Not theirs',
+      assignee_id: stranger,
+    });
+
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as Refusal).error).toMatchObject({
+      code: 'unprocessable',
+      details: { field: 'assignee_id', reason: 'not_on_project', assignee_id: stranger },
+    });
+    expect(assigneeOf('SEC-1')).toBeUndefined();
+  });
+
+  it('refuses to reassign SEC-1 to them, and leaves its assignee as it was', async () => {
+    await secret();
+    const stranger = await outsider('stranger@example.test');
+    const created = (await (
+      await must(
+        post('/api/v1/projects/secret/tasks', { title: 'Mine', assignee_id: ownerUserId() }),
+        201,
+      )
+    ).json()) as { id: string; key: string };
+    expect(created.key).toBe('SEC-1');
+
+    const res = await req(`/api/v1/tasks/${created.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title: 'Renamed', assignee_id: stranger }),
+    });
+
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as Refusal).error).toMatchObject({
+      code: 'unprocessable',
+      details: { field: 'assignee_id', reason: 'not_on_project', assignee_id: stranger },
+    });
+    expect(assigneeOf('SEC-1')).toBe(ownerUserId());
+  });
+
+  it('refuses an id that names nobody with the same code, not a 500', async () => {
+    await secret();
+
+    const res = await post('/api/v1/projects/secret/tasks', {
+      title: 'Nobody',
+      assignee_id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+    });
+
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as Refusal).error).toMatchObject({
+      code: 'unprocessable',
+      details: { field: 'assignee_id', reason: 'not_on_project' },
+    });
+  });
+
+  it('assigns SEC-1 to them once they are a member', async () => {
+    await secret();
+    const stranger = await outsider('stranger@example.test');
+    await must(post('/api/v1/projects/secret/members', { user_id: stranger, role: 'member' }), 201);
+
+    await must(
+      post('/api/v1/projects/secret/tasks', { title: 'Theirs', assignee_id: stranger }),
+      201,
+    );
+
+    expect(assigneeOf('SEC-1')).toBe(stranger);
+  });
+
+  it('assigns SEC-1 to an org admin with no membership row — implicit access counts (D-006)', async () => {
+    await secret();
+    const admin = await outsider('admin@example.test', 'admin');
+    const created = (await (
+      await must(post('/api/v1/projects/secret/tasks', { title: 'For the admin' }), 201)
+    ).json()) as { id: string };
+
+    await must(
+      req(`/api/v1/tasks/${created.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ assignee_id: admin }),
+      }),
+      200,
+    );
+
+    expect(assigneeOf('SEC-1')).toBe(admin);
+  });
+});
