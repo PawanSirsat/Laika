@@ -221,6 +221,9 @@ const UNPAIRED = new Map<string, string>([
   ['SolidtimeSetup', 'no client type exists'],
   ['ImportResult', 'no client type exists'],
   ['AllImportResult', 'no client type exists'],
+  // `GET /tasks/summary` (LAI-974). The Work page's strip is LAI-975's, which
+  // brings the mirror and with it this entry's expiry.
+  ['TaskCountsView', 'no client type exists'],
 ]);
 
 /**
