@@ -62,7 +62,7 @@ describe('the mapping', () => {
       see_org_activity: ['audit_log.export'],
       open_all_projects: [],
       invite_people: ['user.invite'],
-      deactivate_people: ['user.deactivate', 'user.sign_out'],
+      deactivate_people: ['user.deactivate', 'user.sign_out', 'user.reset_password'],
       create_archive_projects: ['project.create', 'project.archive'],
       manage_any_tokens: ['token.list_any', 'token.revoke_any'],
       change_org_settings: ['org.settings.edit', 'org.time.set', 'org.developer_insights.set'],

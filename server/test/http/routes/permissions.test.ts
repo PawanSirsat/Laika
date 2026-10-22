@@ -205,7 +205,7 @@ describe('/api/v1/org/permissions', () => {
     }
     expect(body.capabilities.find((c) => c.id === 'deactivate_people')).toMatchObject({
       label: 'Deactivate people and reset access',
-      actions: ['user.deactivate', 'user.sign_out'],
+      actions: ['user.deactivate', 'user.sign_out', 'user.reset_password'],
     });
     expect(body.owner_locked.map((o) => o.action)).toEqual([
       'org.delete',
