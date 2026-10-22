@@ -2,12 +2,12 @@
  * The Calendar names each task's status, visibly, coloured by its kind
  * (LAI-739 review round 1).
  *
- * **Source assertions, and why.** The Calendar places tasks on demo due dates
- * (`demo/calendar.ts`), which a production build — the one the browser
- * harness serves — switches off, so no chip is drawn there to look at. What
- * can be pinned is that the chip prints the status's name, as the project
- * calls it, in an element that carries its kind, and that every kind has a
- * colour.
+ * **Source assertions, and why.** They were written when the Calendar placed
+ * tasks on demo due dates, which the browser harness's production build
+ * switches off, so no chip was drawn there to look at. Since LAI-819 it places
+ * them by `due_on` and `test/browser/calendar-due.test.ts` draws one; these
+ * still pin that the chip prints the status's name, as the project calls it,
+ * in an element that carries its kind, and that every kind has a colour.
  */
 
 import assert from 'node:assert/strict';
