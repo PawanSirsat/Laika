@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
@@ -9,6 +9,7 @@ import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { addDays, dayIn, isTimeZone } from './calendar-days.ts';
 import { assertReportDays, latestReportZone } from './local-activity.ts';
+import { canSeeProject } from './projects.ts';
 import { resolveKeys } from './token-usage.ts';
 import {
   assertFitsTheClock,
@@ -43,10 +44,14 @@ import { daySubject, recordUndo, type OnUndo } from './time-undo-log.ts';
  * Start, end, the local day and zone, the minutes, a task key or none, and
  * the **counts** of the signals behind it — prompts, replies, sessions,
  * commits, task claims — with, since D-096, **which five minutes** its prompts
- * and commits fell in, as counts per bucket (`at`). Nothing else can be sent:
- * the body is a closed schema of numbers, a zone and a key-shaped string, and
- * the table has no column that could hold a prompt, a path, a repository or a
- * branch.
+ * and commits fell in, as counts per bucket (`at`). Since D-098 it may also
+ * carry the **name the person gave the work folder** it was drafted in, and
+ * that folder's branch when they turned sending it on — and a block with a
+ * name and no card goes under the project the name matches
+ * ({@link matchingProject}). Nothing else can be sent: the body is a closed
+ * schema of numbers, a zone, a key-shaped string and those two bounded
+ * strings, and the table has no column that could hold a prompt, a path or a
+ * repository.
  *
  * ## An upload replaces its own blocks, and is measured by origin
  *
@@ -92,6 +97,31 @@ export const TIME_DRAFTS_BODY_MAX = 16 * 1024;
 export const SIGNAL_MAX = 100_000;
 
 const MINUTE_MS = 60_000;
+
+/** A work folder's chosen name: this many characters at most (D-098). */
+export const FOLDER_NAME_MAX = 60;
+/** A branch name, as the collector's hook keeps one: this many at most. */
+export const BRANCH_MAX = 255;
+
+/**
+ * A work folder's chosen name (D-098): 1 to {@link FOLDER_NAME_MAX} characters
+ * once trimmed, no control or format character, and no `/` or `\` — a name,
+ * never a path.
+ */
+export function isFolderName(value: string): boolean {
+  const name = value.trim();
+  return (
+    name === value &&
+    name.length >= 1 &&
+    name.length <= FOLDER_NAME_MAX &&
+    !/[\p{Cc}\p{Cf}/\\]/u.test(name)
+  );
+}
+
+/** A branch name as the hook keeps one: `[A-Za-z0-9._/-]`, 1 to {@link BRANCH_MAX}. */
+export function isBranchName(value: string): boolean {
+  return value.length <= BRANCH_MAX && /^[A-Za-z0-9._/-]+$/.test(value);
+}
 
 export const SIGNAL_KINDS = ['prompts', 'replies', 'sessions', 'commits', 'marks'] as const;
 export type SignalKind = (typeof SIGNAL_KINDS)[number];
@@ -141,6 +171,10 @@ export interface TimeDraftView {
   general: boolean;
   signals: Signals;
   note: string | null;
+  /** The name the person gave the work folder it was drafted in (D-098), or null. */
+  folder: string | null;
+  /** That folder's branch, sent only when the person turned it on; null without a name. */
+  branch: string | null;
 }
 
 export interface DraftBlockInput {
@@ -151,6 +185,10 @@ export interface DraftBlockInput {
   signals: Partial<Record<SignalKind, number | undefined>>;
   /** When its prompts and commits happened, by bucket (D-096); a collector may leave it out. */
   at?: SignalBuckets | undefined;
+  /** The work folder's chosen name, from a collector the board said takes it (D-098). */
+  folder?: string | undefined;
+  /** Its branch: only with a name, and only when the person turned it on. */
+  branch?: string | undefined;
 }
 
 export interface TimeDraftsReport {
@@ -254,6 +292,17 @@ function assertBlocks(report: TimeDraftsReport): void {
         invalid('a block holds no more minutes than its span', { day, index });
       }
       assertBuckets(b, day, index);
+      if (b.folder !== undefined && !isFolderName(b.folder)) {
+        invalid(
+          `a folder's name is 1 to ${String(FOLDER_NAME_MAX)} characters, no path separator or control character`,
+          { day, index },
+        );
+      }
+      if (b.branch !== undefined) {
+        if (b.folder === undefined)
+          invalid('a branch goes only with a folder’s name', { day, index });
+        if (!isBranchName(b.branch)) invalid('a branch is a branch name', { day, index });
+      }
       total += b.minutes;
     });
     if (total > 1440) invalid('a day holds at most 1440 minutes', { day });
@@ -411,6 +460,32 @@ function remainders(blocks: readonly DraftBlockInput[], origins: readonly Origin
 const REPORT_WINDOW = { daysBack: DRAFT_DAYS_BACK, maxDays: DRAFT_DAYS_BACK + 1 };
 
 /**
+ * The project a work folder's chosen name puts an untied block under (D-098
+ * item 4, SPEC §6.4): of the live projects the person may read
+ * (`project.read`), the one whose slug is the name in lower case — else the
+ * one, and only one, whose name is the name, case aside. Two whose names both
+ * match, or none, is no project: the board never guesses.
+ */
+export function matchingProject(db: Db, actor: ResolvedActor, name: string): string | null {
+  const wanted = name.trim().toLowerCase();
+  const candidates = db
+    .select({ id: projects.id, slug: projects.slug, name: projects.name })
+    .from(projects)
+    .where(
+      and(
+        isNull(projects.archivedAt),
+        or(eq(projects.slug, wanted), sql`lower(trim(${projects.name})) = ${wanted}`),
+      ),
+    )
+    .all()
+    .filter((p) => canSeeProject(actor, p.id));
+  const bySlug = candidates.filter((p) => p.slug === wanted);
+  if (bySlug.length === 1) return bySlug[0]?.id ?? null;
+  const byName = candidates.filter((p) => p.name.trim().toLowerCase() === wanted);
+  return byName.length === 1 ? (byName[0]?.id ?? null) : null;
+}
+
+/**
  * `PUT /me/time-drafts`: one collector's blocks for the days it carries, each
  * day's own unheld blocks replaced and the new ones measured by origin.
  */
@@ -431,6 +506,12 @@ export function recordTimeDrafts(
     for (const b of day.blocks) if (b.task !== null) keys.add(b.task);
   }
   const resolved = resolveKeys(db, actor, keys);
+  // Each chosen name's project, asked once per upload (D-098 item 4).
+  const matched = new Map<string, string | null>();
+  const projectFor = (name: string): string | null => {
+    if (!matched.has(name)) matched.set(name, matchingProject(db, actor, name));
+    return matched.get(name) ?? null;
+  };
 
   let stored = 0;
   db.transaction((tx) => {
@@ -470,8 +551,11 @@ export function recordTimeDrafts(
           minutes: r.minutes,
           taskKey: b.task !== null && task === undefined ? b.task : null,
           taskId: task?.taskId ?? null,
-          projectId: task?.projectId ?? null,
+          // A card's project is its own; an untied block's, its folder's name's.
+          projectId: task?.projectId ?? (b.folder === undefined ? null : projectFor(b.folder)),
           signals: JSON.stringify(signals),
+          folder: b.folder ?? null,
+          branch: b.folder === undefined ? null : (b.branch ?? null),
           state: 'pending',
           // Its own origin: what a later upload is measured against once the
           // person settles it.
@@ -595,6 +679,8 @@ function draftQuery(db: Db | Tx) {
       general: timeDrafts.general,
       signals: timeDrafts.signals,
       note: timeDrafts.note,
+      folder: timeDrafts.folder,
+      branch: timeDrafts.branch,
       state: timeDrafts.state,
       taskId: tasks.id,
       taskNumber: tasks.number,
@@ -627,6 +713,8 @@ function draftView(r: DraftRow): TimeDraftView {
     general: r.general === 1,
     signals: readSignals(r.signals),
     note: r.note,
+    folder: r.folder,
+    branch: r.branch,
   };
 }
 
@@ -711,6 +799,41 @@ export interface DraftPatch {
   /** A new start or end on the block's own day (LAI-831: an edge dragged), unix ms. */
   started_at?: number | undefined;
   ended_at?: number | undefined;
+  /** The work folder's name changed, or cleared with its branch (D-098 item 5). */
+  folder?: string | null | undefined;
+  /** Its branch changed or cleared; a branch needs a name. */
+  branch?: string | null | undefined;
+}
+
+/** The name and branch a patch leaves a block with, or `undefined` when it touches neither. */
+function patchedFolder(
+  row: typeof timeDrafts.$inferSelect,
+  patch: DraftPatch,
+): { folder: string | null; branch: string | null } | undefined {
+  if (patch.folder === undefined && patch.branch === undefined) return undefined;
+  if (typeof patch.folder === 'string' && !isFolderName(patch.folder)) {
+    throw new ApiError(
+      'unprocessable',
+      `A folder's name is 1 to ${String(FOLDER_NAME_MAX)} characters, no path separator or control character`,
+      { field: 'folder', reason: 'invalid_folder' },
+    );
+  }
+  if (typeof patch.branch === 'string' && !isBranchName(patch.branch)) {
+    throw new ApiError('unprocessable', 'A branch is a branch name', {
+      field: 'branch',
+      reason: 'invalid_branch',
+    });
+  }
+  const folder = patch.folder === undefined ? row.folder : patch.folder;
+  // Clearing the name clears its branch: a branch goes only with a name.
+  const branch = folder === null ? null : patch.branch === undefined ? row.branch : patch.branch;
+  if (folder === null && typeof patch.branch === 'string') {
+    throw new ApiError('unprocessable', 'A branch goes only with a folder’s name', {
+      field: 'branch',
+      reason: 'branch_without_folder',
+    });
+  }
+  return { folder, branch };
 }
 
 /**
@@ -771,6 +894,7 @@ export function updateDraft(
   const undoId = db.transaction((tx) => {
     const row = pendingRow(tx, actor.userId, id);
     const span = patchedSpan(row, patch);
+    const named = patchedFolder(row, patch);
     // A longer or moved block holds no more than its span, and its stretch no
     // more than the clock: confirmed time is never counted twice (review round 2).
     const start = span?.startedAt ?? row.startedAt;
@@ -792,6 +916,7 @@ export function updateDraft(
             }),
         ...(patch.minutes === undefined ? {} : { minutes: patch.minutes }),
         ...(span ?? {}),
+        ...(named ?? {}),
         collectorId: '',
         updatedAt: now,
       })
@@ -905,6 +1030,9 @@ function confirmRow(
     endedAt: row.endedAt,
     minutes: row.minutes,
     note: row.note,
+    // The name and branch go with the entry once confirmed (D-098 item 5).
+    folder: row.folder,
+    branch: row.branch,
   };
   const before = tx
     .select({ id: timeEntries.id })

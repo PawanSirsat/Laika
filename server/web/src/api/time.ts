@@ -33,6 +33,8 @@ export interface TimeSettings {
   readonly min_sync_interval_s: number;
   /** The board keeps when a block's prompts and commits happened (D-096) — the collector's cue. */
   readonly signal_times?: boolean;
+  /** The board keeps a block's work folder name and branch (D-098) — the collector's cue. */
+  readonly folder_names?: boolean;
 }
 
 export interface TaskRef {
@@ -74,6 +76,13 @@ export interface TimeDraft {
   readonly general: boolean;
   readonly signals: TimeSignals;
   readonly note: string | null;
+  /**
+   * The name the person gave the work folder it was drafted in (D-098) — never
+   * the folder's own name or path. Absent from a board that predates it.
+   */
+  readonly folder?: string | null;
+  /** That folder's branch, only when the person turned sending it on. */
+  readonly branch?: string | null;
 }
 
 export type EntrySource = 'draft' | 'manual' | 'import';
@@ -90,6 +99,9 @@ export interface TimeEntry {
   readonly task: TaskRef | null;
   readonly project: ProjectRef | null;
   readonly note: string | null;
+  /** The work folder's chosen name and branch, from the draft it was confirmed from (D-098). */
+  readonly folder?: string | null;
+  readonly branch?: string | null;
   readonly revision: number;
   readonly created_at: number;
   readonly updated_at: number;
@@ -198,6 +210,9 @@ export interface DraftPatch {
   /** An edge moved on the block's own day (LAI-831), unix ms. */
   readonly started_at?: number;
   readonly ended_at?: number;
+  /** The work folder's chosen name (D-098); `null` clears it, and its branch. */
+  readonly folder?: string | null;
+  readonly branch?: string | null;
 }
 
 export interface NewEntry {

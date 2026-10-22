@@ -28,6 +28,7 @@ import { after, describe, test } from 'node:test';
 import { activity, HOOK_SCRIPT, type ActivityIo } from '../src/activity.ts';
 import { type GitRunner } from '../src/activity-census.ts';
 import { codexTomlHasHandlers, MARKER } from '../src/activity-hooks.ts';
+import { otelEnv } from '../src/activity-otel.ts';
 import { activityPaths, readState } from '../src/activity-store.ts';
 import { sync } from '../src/activity-sync.ts';
 import { closeAll, stubBoard, type StubBoard } from './support/stub-board.ts';
@@ -213,7 +214,8 @@ void describe('on, then off: every agent’s file', () => {
         (g) => g.hooks[0]?.command === '/usr/local/bin/my-own-hook',
       ),
     );
-    assert.deepEqual(claude.env, f.claudeBefore.env);
+    // LAI-867: plus Claude Code's telemetry, and no token beyond the one `laika init` left.
+    assert.deepEqual(claude.env, { ...f.claudeBefore.env, ...otelEnv(h.board.url) });
     assert.equal(statSync(f.claude).mode & 0o777, 0o600, 'a file holding the token was widened');
     assert.deepEqual(json(`${f.claude}.bak`), f.claudeBefore);
     assert.equal(statSync(`${f.claude}.bak`).mode & 0o777, 0o600);
@@ -420,7 +422,7 @@ void describe('status, sync, emails', () => {
    * token left as a reference — on stdout alone, for `eval "$(laika activity
    * otel)"`. Nothing it prints holds the token.
    */
-  void test('otel prints the exact variables for this board, the token a reference, and status points at it', async () => {
+  void test('otel prints the exact variables for this board, the token a reference, and status no longer points at it', async () => {
     const h = await harness();
     assert.equal(await h.run('on'), 0);
     h.out.length = 0;
@@ -440,9 +442,10 @@ void describe('status, sync, emails', () => {
 
     h.out.length = 0;
     assert.equal(await h.run('status'), 0);
+    // LAI-867: `on` sets telemetry up in settings.json; no one is sent to a shell line.
     assert.equal(
       h.out.filter((line) => line.includes('laika activity otel')).length,
-      1,
+      0,
       h.out.join('\n'),
     );
   });

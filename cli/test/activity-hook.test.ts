@@ -19,6 +19,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -909,6 +910,64 @@ for (const shell of SHELLS) {
       assert.ok(!existsSync(join(h, '.laika', 'activity', 'repos')), 'a repo was recorded');
     });
 
+    void test('its start keeps the chat’s working folder and branch beside its id, read with builtins, for its blocks’ chosen name (LAI-866)', () => {
+      const lines = (h: string): string[] =>
+        readFileSync(PRIMARY_FILE(h), 'utf8')
+          .trim()
+          .split('\n')
+          .map((l) => l.replace(/^\d+ /, ''));
+      const start = (h: string, cwd: string, env: Record<string, string> = {}) => {
+        const r = run(shell, ['session-start', 'claude-code'], {
+          home: h,
+          cwd,
+          env: { ...OMNI_ORCHESTRATOR, ...env },
+          input: payload('9a1b2c3d-0000-4000-8000-000000000006'),
+        });
+        assert.equal(r.code, 0);
+        assert.equal(r.stdout + r.stderr, '');
+      };
+      // A folder inside a repository on `main`: the branch from its `.git/HEAD`.
+      const repoDir = gitRepo();
+      const inside = join(repoDir, 'apps', 'web');
+      mkdirSync(inside, { recursive: true });
+      // A worktree, whose `.git` is a file naming its own git dir.
+      execFileSync('git', ['-C', repoDir, 'commit', '-q', '--allow-empty', '-m', 'x'], {
+        stdio: 'pipe',
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: 'D',
+          GIT_AUTHOR_EMAIL: 'd@e.test',
+          GIT_COMMITTER_NAME: 'D',
+          GIT_COMMITTER_EMAIL: 'd@e.test',
+        },
+      });
+      const tree = join(dir('laika-actwt-'), 'tree');
+      execFileSync('git', ['-C', repoDir, 'worktree', 'add', '-q', '-b', 'feature/LAI-9-x', tree], {
+        stdio: 'pipe',
+      });
+      const plain = dir('laika-actplain-');
+      const h = home();
+      start(h, inside);
+      start(h, realpathSync(tree));
+      start(h, plain);
+      start(h, plain, { CLAUDE_PROJECT_DIR: inside });
+      assert.deepEqual(lines(h), [
+        `${FAKE_ORCHESTRATOR} main ${inside}`,
+        `${FAKE_ORCHESTRATOR} feature/LAI-9-x ${realpathSync(tree)}`,
+        `${FAKE_ORCHESTRATOR} - ${realpathSync(plain)}`,
+        `${FAKE_ORCHESTRATOR} main ${inside}`,
+      ]);
+      // A reader of the older line still finds the id where it always was.
+      assert.deepEqual(primaries(h), Array(4).fill(FAKE_ORCHESTRATOR));
+      assert.deepEqual(events(h), []);
+      if (ZSH !== undefined && shell[0] === ZSH) {
+        // Under zsh it forks nothing for it: with an empty PATH it is all still there.
+        const bare = home();
+        start(bare, inside, { PATH: '' });
+        assert.deepEqual(lines(bare), [`${FAKE_ORCHESTRATOR} main ${inside}`]);
+      }
+    });
+
     void test('a dispatched sub-agent stays skipped: in a terminal, from the CLI, another agent, another runner', () => {
       for (const env of [
         { ...OMNI_ORCHESTRATOR, OMNIGENT_TERMINAL_LAUNCH_SESSION_ID: FAKE_SUBAGENT },
@@ -1062,6 +1121,101 @@ for (const shell of SHELLS) {
           JSON.stringify(env),
         );
       }
+    });
+  });
+}
+
+/**
+ * LAI-314: the commits of a builder the owner dispatched are ticks on My day's
+ * SIGNALS lane. At such a builder's start the hook keeps its repository — in
+ * `dispatched-repos`, 0600, never sent, and never in `repos`, which the
+ * heatmap counts commits in. Nobody else's start writes it.
+ */
+const DISPATCHED = (h: string): string => join(h, '.laika', 'activity', 'dispatched-repos');
+
+for (const shell of SHELLS) {
+  void describe(`a dispatched builder’s repository is kept apart, under ${shell.join(' ')} (LAI-314)`, () => {
+    void test('its start writes the top level to dispatched-repos, 0600, and nothing to repos', () => {
+      const h = home();
+      const repo = repoOn('LAI-314-x');
+      const r = run(shell, ['session-start', 'claude-code'], {
+        home: h,
+        cwd: repo,
+        env: OMNI_SUBAGENT,
+        input: payload('9a1b2c3d-0000-4000-8000-000000000021'),
+      });
+      assert.equal(r.code, 0);
+      assert.equal(r.stdout + r.stderr, '');
+      assert.match(readFileSync(DISPATCHED(h), 'utf8'), new RegExp(`^\\d{10}\t${repo}\n$`));
+      assert.equal((statSync(DISPATCHED(h)).mode & 0o777).toString(8), '600');
+      assert.ok(!existsSync(join(h, '.laika', 'activity', 'repos')), 'a repo was recorded');
+      assert.deepEqual(events(h), []);
+      // Its end writes nothing more; a second start appends — the drafter
+      // reads it deduped, and the sync prunes it as it prunes `repos`.
+      for (const mode of ['session-end', 'session-start']) {
+        run(shell, [mode, 'claude-code'], {
+          home: h,
+          cwd: repo,
+          env: OMNI_SUBAGENT,
+          input: payload('9a1b2c3d-0000-4000-8000-000000000021'),
+        });
+      }
+      assert.deepEqual(
+        readFileSync(DISPATCHED(h), 'utf8')
+          .trim()
+          .split('\n')
+          .map((line) => line.split('\t')[1]),
+        [repo, repo],
+      );
+    });
+
+    void test('from a directory inside it, or CLAUDE_PROJECT_DIR, the top level; outside a repo, nothing', () => {
+      const h = home();
+      const repo = repoOn('LAI-314-y');
+      const inside = join(repo, 'a', 'b');
+      mkdirSync(inside, { recursive: true });
+      run(shell, ['session-start', 'claude-code'], {
+        home: h,
+        cwd: inside,
+        env: OMNI_SUBAGENT,
+        input: payload('9a1b2c3d-0000-4000-8000-000000000023'),
+      });
+      run(shell, ['session-start', 'claude-code'], {
+        home: h,
+        env: { ...OMNI_SUBAGENT, CLAUDE_PROJECT_DIR: inside },
+        input: payload('9a1b2c3d-0000-4000-8000-000000000024'),
+      });
+      assert.deepEqual(
+        readFileSync(DISPATCHED(h), 'utf8')
+          .trim()
+          .split('\n')
+          .map((line) => line.split('\t')[1]),
+        [repo, repo],
+      );
+      const outside = home();
+      run(shell, ['session-start', 'claude-code'], {
+        home: outside,
+        env: OMNI_SUBAGENT,
+        input: payload('9a1b2c3d-0000-4000-8000-000000000025'),
+      });
+      assert.ok(!existsSync(DISPATCHED(outside)), 'a repo was recorded outside one');
+    });
+
+    void test('a person’s, CI’s, LAIKA_ACTIVITY_SKIP’s or a prompt never writes it', () => {
+      for (const env of [{}, { CI: 'true' }, { LAIKA_ACTIVITY_SKIP: '1' }, OMNI_PRIMARY]) {
+        const h = home();
+        const repo = repoOn('main-x');
+        run(shell, ['session-start', 'claude-code'], {
+          home: h,
+          cwd: repo,
+          env,
+          input: payload('9a1b2c3d-0000-4000-8000-000000000022'),
+        });
+        assert.ok(!existsSync(DISPATCHED(h)), JSON.stringify(env));
+      }
+      const h = home();
+      run(shell, ['prompt', 'claude-code'], { home: h, cwd: repoOn('main-y'), env: OMNI_SUBAGENT });
+      assert.ok(!existsSync(DISPATCHED(h)), 'a prompt wrote it');
     });
   });
 }
@@ -1433,6 +1587,30 @@ void describe('cost of the prompt path', () => {
         textOf(SKIP_FILE(h)),
         /^\d{10} 9a1b2c3d-0000-4000-8000-000000000013 omnigent\n$/,
         'the skipped start forked before it wrote',
+      );
+    },
+  );
+
+  /** LAI-314: and so does finding and keeping its repository. */
+  void test(
+    'under zsh a dispatched sub-agent’s repository is kept with no fork',
+    { skip: ZSH === undefined },
+    () => {
+      const control = forkless([script('/usr/bin/true\nexit 0\n')], home());
+      assert.notEqual(control.code, 0, 'fork() was not refused here — this test proves nothing');
+      const h = home();
+      const repo = repoOn('LAI-314-z');
+      const r = forkless(
+        [HOOK, 'session-start', 'claude-code'],
+        h,
+        { ...OMNI_SUBAGENT, CLAUDE_PROJECT_DIR: repo },
+        payload('9a1b2c3d-0000-4000-8000-000000000026'),
+      );
+      assert.equal(r.code, 0, 'the dispatched start forked');
+      assert.match(
+        textOf(join(h, '.laika', 'activity', 'dispatched-repos')),
+        new RegExp(`^\\d{10}\t${repo}\n$`),
+        'the dispatched start forked before it kept its repository',
       );
     },
   );

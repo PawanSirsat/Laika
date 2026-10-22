@@ -120,6 +120,28 @@ void describe('what an agent writes opens in the rich view and comes back as wri
   void test('an empty document opens rich and writes nothing', () => {
     assert.equal(roundTrips(''), '');
   });
+
+  /*
+   * LAI-868: the editor draws `@name` as a pill. It is a decoration, not a
+   * mark, so the document — and what a save writes — must be exactly what it
+   * was. `task-panel-editing.test.ts` opens the same text in the browser and
+   * leaves it untouched.
+   */
+  void test('a description full of mentions comes back byte for byte (LAI-868)', () => {
+    const mentions = [
+      'Ask @ada, then (@ada) and **@grace**.',
+      '',
+      'Handed to @strelka and @belka.',
+      '',
+      'Not a mention: ada@example.com, or `@ada` in code.',
+      '',
+      'Thanks @Ada Lovelace for the review.',
+      '',
+      'A line that ends in a mention, @ada ',
+      'and the line after it.',
+    ].join('\n');
+    assert.equal(roundTrips(mentions), mentions);
+  });
 });
 
 void describe('what the editor would rewrite opens as Markdown, and says why', () => {

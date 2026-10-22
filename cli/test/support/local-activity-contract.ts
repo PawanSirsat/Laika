@@ -98,6 +98,8 @@ const KEY16 = /^[0-9a-f]{16}$/;
  * a day may carry `sessions`, at most 100, each a 16-hex key, a model id and
  * the four counts; the report may carry `excluded`, at most 200 16-hex keys.
  * LAI-787: a day may carry `session_tasks`, at most 200 `{ key, task, tokens }`.
+ * LAI-315: a day may carry `dispatched`, at most 50 `{ key, task?, from,
+ * seconds }`, `seconds` 1–288 whole numbers of 0–300.
  */
 function usageViolation(b: Record<string, unknown>, now: Date): string | undefined {
   for (const key of Object.keys(b)) {
@@ -129,7 +131,7 @@ function usageViolation(b: Record<string, unknown>, now: Date): string | undefin
     if (typeof entry !== 'object' || entry === null) return 'a day is not an object';
     const d = entry as Record<string, unknown>;
     for (const key of Object.keys(d)) {
-      if (!['day', 'rows', 'backfill', 'sessions', 'session_tasks'].includes(key)) {
+      if (!['day', 'rows', 'backfill', 'sessions', 'session_tasks', 'dispatched'].includes(key)) {
         return `usage day field ${key}`;
       }
     }
@@ -150,6 +152,34 @@ function usageViolation(b: Record<string, unknown>, now: Date): string | undefin
           return 'session task is not a key';
         }
         if (!isInt(r.tokens) || r.tokens > 1e12) return 'session task tokens invalid';
+      }
+    }
+    // LAI-315: `dispatched`, at most 50 builders, each a 16-hex session key,
+    // a task key or none, a bucket, and its seconds per five minutes.
+    if ('dispatched' in d) {
+      if (!Array.isArray(d.dispatched) || d.dispatched.length > 50) return 'dispatched invalid';
+      for (const entry of d.dispatched as unknown[]) {
+        if (typeof entry !== 'object' || entry === null) return 'a dispatched is not an object';
+        const r = entry as Record<string, unknown>;
+        for (const key of Object.keys(r)) {
+          if (!['key', 'task', 'from', 'seconds'].includes(key)) {
+            return `unknown dispatched field ${key}`;
+          }
+        }
+        if (typeof r.key !== 'string' || !KEY16.test(r.key)) return 'dispatched key not 16 hex';
+        if (
+          'task' in r &&
+          (typeof r.task !== 'string' || !/^[A-Z][A-Z0-9_]{0,15}-[0-9]{1,9}$/.test(r.task))
+        ) {
+          return 'dispatched task is not a key';
+        }
+        if (!isInt(r.from)) return 'dispatched from invalid';
+        if (!Array.isArray(r.seconds) || r.seconds.length < 1 || r.seconds.length > 288) {
+          return 'dispatched seconds invalid';
+        }
+        for (const n of r.seconds as unknown[]) {
+          if (!isInt(n) || n > 300) return 'dispatched seconds invalid';
+        }
       }
     }
     if ('sessions' in d) {
@@ -315,9 +345,28 @@ export function timeDraftViolation(raw: string, now: Date): string | undefined {
       if (typeof block !== 'object' || block === null) return 'a block is not an object';
       const k = block as Record<string, unknown>;
       for (const key of Object.keys(k)) {
-        if (!['start', 'end', 'minutes', 'task', 'signals'].includes(key)) {
+        if (!['start', 'end', 'minutes', 'task', 'signals', 'folder', 'branch'].includes(key)) {
           return `unknown block field ${key}`;
         }
+      }
+      // A work folder's chosen name and its branch (D-098): a name, never a path.
+      if (
+        k.folder !== undefined &&
+        (typeof k.folder !== 'string' ||
+          k.folder.length < 1 ||
+          k.folder.length > 60 ||
+          k.folder.trim() !== k.folder ||
+          /[/\\\p{Cc}\p{Cf}]/u.test(k.folder))
+      ) {
+        return 'folder is not a name';
+      }
+      if (
+        k.branch !== undefined &&
+        (k.folder === undefined ||
+          typeof k.branch !== 'string' ||
+          !/^[A-Za-z0-9._/-]{1,255}$/.test(k.branch))
+      ) {
+        return 'branch is not a branch name with a folder';
       }
       if (!isInt(k.start) || !isInt(k.end) || k.end <= k.start) return 'start before end';
       if (dayIn(b.tz, new Date(k.start)) !== d.day) return 'a block starts on another day';

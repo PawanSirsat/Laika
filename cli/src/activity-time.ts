@@ -1,5 +1,5 @@
 import { rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import {
   addDays,
@@ -18,6 +18,7 @@ import {
   type ActivityState,
 } from './activity-store.ts';
 import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-usage.ts';
+import { chatFolders, folderNamer, readWorkFolders, sessionBranches } from './time-folders.ts';
 
 /**
  * Time drafts, built on the developer's own machine (LAI-787, D-088 items 3,
@@ -31,15 +32,22 @@ import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-
  * times of the prompts the person typed (`events.log`), the times an
  * Omnigent-native orchestrator's turns started and ended in the person's
  * primary session (`events.log` too, LAI-792), the Laika marks that
- * start work on a task, the person's own commits in the repos the hook has
- * seen sessions start in (author time, and a key from the subject, which is
- * read and dropped at once), and the reply times and task of each session the
- * hook marked Omnigent-dispatched (D-095). **Only blocks leave**: a start, an
+ * start work on a task, the commits the person made on this machine in the
+ * repos the hook has seen sessions start in (author time, and a key from the
+ * subject, which is read and dropped at once; made here when a reflog says a
+ * commit, amend, cherry-pick or rebase wrote it, or the ledger a sync kept
+ * does — {@link madeHereFile}, LAI-864), the reply times and task of each
+ * session the hook marked Omnigent-dispatched (D-095), and the times of the
+ * commits made here in the repos the hook saw those sessions start in
+ * (LAI-314). **Only blocks leave**: a start, an
  * end, minutes, a task key or `null`, how many of each signal fell in it, and
  * — to a board that takes them — which five minutes its prompts and commits
- * fell in (D-096, {@link blocksToSend}). Never prompt or reply text, paths,
- * repository or branch names, session ids or a commit message — none of them
- * reaches {@link Block}. Which blocks took
+ * fell in (D-096, {@link blocksToSend}) — and, to a board that takes it, the
+ * **name the person gave the work folder** it was drafted in, with its branch
+ * when they turned that on (D-098, {@link nameOf}). Never prompt or reply
+ * text, paths, a folder's own name, repository names, a branch the person did
+ * not turn on, session ids or a commit message — none of them reaches
+ * {@link Block}. Which blocks took
  * a dispatched session's key is said on this machine only ({@link Draft}).
  *
  * ## The rule (design REPORT.md §2.1, measured on the owner's machine)
@@ -52,13 +60,14 @@ import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-
  *   started itself — a sub-agent finishing, a timer, an idle terminal; the
  *   hook's `w` (D-090) — makes no time, and nor does the end that closes it:
  *   each end closes the start before it in its session, and an end with no
- *   start counts nothing. A kept end is a reply; no start is a typed prompt.
+ *   start counts nothing. A kept end is a reply; a kept start is counted as
+ *   a prompt (LAI-314, the owner types only there), though it was not typed.
  * - A **minute** counts once, whatever number of lanes are active in it:
  *   parallel sessions share a person's time and never multiply it.
  * - A minute's **tasks** are the distinct keys of the lanes active in it. A
- *   session's untied minute in a repository takes the key of a commit there
- *   with exactly one key the board serves, authored within
- *   {@link COMMIT_REACH_S} after it. The minute is split equally between its
+ *   session's untied minute in a repository takes the key of a commit made
+ *   there on this machine with exactly one key the board serves, authored
+ *   within {@link COMMIT_REACH_S} after it. The minute is split equally between its
  *   tasks; with none, it is untied (`task: null`).
  * - **A minute none of the person's lanes tied takes the keys of the
  *   sessions Omnigent dispatched that are active in it** (D-095): each such
@@ -66,7 +75,9 @@ import { draftSources, textKeys, toplevelOf, type UsageRoots } from './activity-
  *   between their distinct keys. A minute the person's lanes tied keeps its
  *   keys and gains none.
  * - **Commits and dispatched sessions never make time**: they add a key —
- *   a commit a count too — to minutes the person's lanes already made.
+ *   a commit a count too — to minutes the person's lanes already made. A
+ *   commit in a dispatched builder's repo adds a count and nothing else
+ *   (LAI-314): no key, no minute, and never the heatmap's.
  * - A **stretch** is a run of active minutes, cut at local midnight; it gives
  *   one block per task in it, its minutes by largest remainder so a stretch's
  *   blocks add up to its wall-clock minutes.
@@ -127,6 +138,10 @@ export interface Block {
   readonly signals: Signals;
   /** Absent for a block with no prompt and no commit, and when not sent (`blocksToSend`). */
   readonly at?: SignalTimes;
+  /** The name the person gave the work folder it was drafted in (D-098); absent with none. */
+  readonly folder?: string;
+  /** That folder's branch, only when the person turned it on, and only with a name. */
+  readonly branch?: string;
 }
 
 export interface ReplyEvent {
@@ -136,6 +151,10 @@ export interface ReplyEvent {
   /** Local only: an opaque identity of the repository it was in, or `null`. */
   readonly repo: string | null;
   readonly task: string | null;
+  /** The name the person gave its folder (D-098) — never the folder's path — or `null`. */
+  readonly folder?: string | null;
+  /** Its session's branch, only when the person turned that on. */
+  readonly branch?: string | null;
 }
 
 export interface CommitEvent {
@@ -160,6 +179,10 @@ export interface TurnEvent {
    * (D-090). `end`: a turn's end, whichever started it.
    */
   readonly kind: 'start' | 'wake' | 'end';
+  /** The name the person gave the chat's working folder (D-098), or `null`. */
+  readonly folder?: string | null;
+  /** That folder's branch, only when the person turned that on. */
+  readonly branch?: string | null;
 }
 
 /**
@@ -200,6 +223,11 @@ export interface DraftInputs {
   readonly turns: readonly TurnEvent[];
   /** The replies of sessions Omnigent dispatched: they lend keys, and make no minute. */
   readonly dispatched?: readonly DispatchedEvent[];
+  /**
+   * Epoch seconds of the person's commits in the repos of builders Omnigent
+   * dispatched (LAI-314): counted on the lane, and nothing else.
+   */
+  readonly laneCommits?: readonly number[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -210,6 +238,9 @@ interface LaneMinute {
   readonly task: string | null;
   readonly repo: string | null;
   readonly session: boolean;
+  /** Its folder's chosen name and branch (D-098). */
+  readonly folder: string | null;
+  readonly branch: string | null;
 }
 
 interface MinuteInfo {
@@ -234,6 +265,59 @@ interface Building {
   lent: boolean;
   /** Per bucket, how many prompts and commits it counts there (D-096). */
   at: { prompts: Map<number, number>; commits: Map<number, number> };
+  /** Per chosen name, the lane-minutes behind it, and per branch of it (D-098, {@link nameOf}). */
+  names: Map<string, { minutes: number; branches: Map<string, number> }>;
+}
+
+/** `minutes` lane-minutes of the folder named `name`, on `branch`, into `b`. */
+function voteFor(b: Building, name: string, branch: string | null, minutes = 1): void {
+  const held = b.names.get(name) ?? { minutes: 0, branches: new Map<string, number>() };
+  held.minutes += minutes;
+  if (branch !== null) held.branches.set(branch, (held.branches.get(branch) ?? 0) + minutes);
+  b.names.set(name, held);
+}
+
+/** `from`'s names, into `into`. */
+function mergeNames(into: Building, from: Building): void {
+  for (const [name, held] of from.names) {
+    voteFor(into, name, null, held.minutes);
+    const target = into.names.get(name);
+    for (const [branch, minutes] of held.branches) {
+      target?.branches.set(branch, (target.branches.get(branch) ?? 0) + minutes);
+    }
+  }
+}
+
+/** Of `counts`, the one key with the most, or `undefined` when none or two tie for it. */
+function most(counts: ReadonlyMap<string, number>): string | undefined {
+  let best: string | undefined;
+  let top = 0;
+  let tied = false;
+  for (const [key, n] of counts) {
+    if (n > top) {
+      best = key;
+      top = n;
+      tied = false;
+    } else if (n === top) tied = true;
+  }
+  return tied ? undefined : best;
+}
+
+/**
+ * A block's work folder name (D-098, `cli/README.md`): each minute of it, each
+ * lane active in that minute that went to it votes for its folder's name — a
+ * lane in an unnamed folder, or the typed-prompt lane, votes for none. The
+ * name with the most lane-minutes is the block's; **two names tied** for the
+ * most, and the block carries no name, rather than one picked. Its branch is,
+ * the same way, the one that name's lane-minutes were on most.
+ */
+export function nameOf(
+  names: ReadonlyMap<string, { minutes: number; branches: ReadonlyMap<string, number> }>,
+): { folder?: string; branch?: string } {
+  const folder = most(new Map([...names].map(([name, held]) => [name, held.minutes])));
+  if (folder === undefined) return {};
+  const branch = most(names.get(folder)?.branches ?? new Map<string, number>());
+  return branch === undefined ? { folder } : { folder, branch };
 }
 
 /**
@@ -318,8 +402,9 @@ export function draftDays(
   const dayOf = dayFinder(tz);
 
   // --- lanes -----------------------------------------------------------------
-  const lanes = new Map<string, { at: number; task: string | null; repo: string | null }[]>();
-  const push = (lane: string, event: { at: number; task: string | null; repo: string | null }) => {
+  type LaneEvent = Pick<ReplyEvent, 'at' | 'task' | 'repo' | 'folder' | 'branch'>;
+  const lanes = new Map<string, LaneEvent[]>();
+  const push = (lane: string, event: LaneEvent) => {
     const list = lanes.get(lane) ?? [];
     list.push(event);
     lanes.set(lane, list);
@@ -327,7 +412,15 @@ export function draftDays(
   for (const r of inputs.replies) push(`s:${r.session}`, r);
   for (const at of inputs.prompts) push('p', { at, task: null, repo: null });
   const turns = personTurns(inputs.turns);
-  for (const t of turns) push(`o:${t.session}`, { at: t.at, task: null, repo: null });
+  for (const t of turns) {
+    push(`o:${t.session}`, {
+      at: t.at,
+      task: null,
+      repo: null,
+      folder: t.folder ?? null,
+      branch: t.branch ?? null,
+    });
+  }
 
   // --- each lane's active minutes ---------------------------------------------
   const active = new Map<number, Map<string, LaneMinute>>();
@@ -338,7 +431,13 @@ export function draftDays(
         at = new Map();
         active.set(m, at);
       }
-      at.set(lane, { task: e.task, repo: e.repo, session: lane !== 'p' });
+      at.set(lane, {
+        task: e.task,
+        repo: e.repo,
+        session: lane !== 'p',
+        folder: e.folder ?? null,
+        branch: e.branch ?? null,
+      });
     });
   }
 
@@ -438,12 +537,19 @@ export function draftDays(
             minutes: 0,
             lent: false,
             at: { prompts: new Map(), commits: new Map() },
+            names: new Map(),
           };
           blocks.set(key, b);
         }
         b.last = minute;
         b.share += 1 / keys.length;
         if (at?.lent === true) b.lent = true;
+        // A lane votes for its own key's block; an untied lane, for every
+        // block its minute went to (D-098, nameOf).
+        for (const [lane, on] of active.get(minute) ?? []) {
+          const own = at?.lanes.get(lane) ?? null;
+          if (on.folder !== null && (own === null || own === key)) voteFor(b, on.folder, on.branch);
+        }
       }
     }
     // Largest remainder: whole minutes that add up to the stretch's own.
@@ -491,6 +597,11 @@ export function draftDays(
     const b = laneTarget(Math.floor(t.at / 60), lane);
     if (b === undefined) continue;
     if (t.kind === 'end') b.signals.replies += 1;
+    // A turn the person started is their prompt, on the lane (LAI-314).
+    if (t.kind === 'start') {
+      b.signals.prompts += 1;
+      timeIn(b, 'prompts', Math.floor(t.at / 60));
+    }
     b.sessions.add(lane);
   }
   // A prompt is evidence for every task its minute was split between.
@@ -504,8 +615,11 @@ export function draftDays(
     }
   }
   // A commit lands in the stretch it closes: its own minute, or the active one
-  // before it within reach; in its task's block when the stretch has one.
-  for (const c of inputs.commits) {
+  // before it within reach; in its task's block when the stretch has one. A
+  // dispatched builder's has no task here, so it lands in the stretch's first
+  // block: a count and a bucket, never a minute or a key (LAI-314).
+  const laneCommits = (inputs.laneCommits ?? []).map((at) => ({ at, task: null }));
+  for (const c of [...inputs.commits, ...laneCommits]) {
     let minute = Math.floor(c.at / 60);
     const floor = minute - COMMIT_REACH_S / 60;
     while (minute >= floor && !info.has(minute)) minute -= 1;
@@ -539,6 +653,7 @@ export function draftDays(
         largest.signals[k] += b.signals[k];
       }
       mergeTimes(largest, b);
+      mergeNames(largest, b);
       for (const session of b.sessions) largest.sessions.add(session);
       largest.signals.sessions = largest.sessions.size;
     }
@@ -620,6 +735,7 @@ function capped(blocks: Building[]): Building[] {
       partner.signals[k] += shortest.signals[k];
     }
     mergeTimes(partner, shortest);
+    mergeNames(partner, shortest);
     for (const session of shortest.sessions) partner.sessions.add(session);
     partner.signals.sessions = partner.sessions.size;
   }
@@ -650,6 +766,7 @@ function toBlock(b: Building): Block {
     task: b.task,
     signals,
     ...(Object.keys(at).length > 0 ? { at } : {}),
+    ...nameOf(b.names),
   };
 }
 
@@ -678,6 +795,8 @@ export interface Draft {
   readonly days: Map<string, Block[]>;
   /** Local only, never sent: the blocks that took a key a dispatched session lent (D-095). */
   readonly lent: ReadonlySet<Block>;
+  /** Local only, never sent: the commits made here it read, for the sync's ledger (LAI-864). */
+  readonly made: ReadonlyMap<string, number>;
   /** What the blocks were built from, counted — for `laika time draft`. */
   readonly read: {
     readonly replies: number;
@@ -690,6 +809,8 @@ export interface Draft {
     readonly runtimeTurns: number;
     /** Replies of sessions Omnigent dispatched, read for their keys alone (D-095). */
     readonly dispatched: number;
+    /** The person's commits in dispatched builders' repos, for the lane alone (LAI-314). */
+    readonly laneCommits: number;
   };
 }
 
@@ -734,17 +855,89 @@ function turnTimes(lines: readonly string[], fromS: number): TurnEvent[] {
 
 const COMMON = ['--no-merges', '--no-use-mailmap', '--no-show-signature', '--no-color'];
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+/**
+ * A reflog action that wrote a commit on this machine (LAI-864): a commit,
+ * amend or cherry-pick, a revert, `git am`, and a rebase's replayed commits —
+ * `pull --rebase`'s too, whose action carries its command line. Never a fetch,
+ * pull, merge, reset or checkout: each moves a ref to a commit made elsewhere.
+ */
+const MADE_HERE =
+  /^(?:commit(?: \([a-z-]+\))?|cherry-pick|revert|am|.+ \((?:pick|reword|edit|squash|fixup|continue)\))$/;
+/** The ledger keeps a commit this long after its author time — past any drafted day. */
+const MADE_HERE_KEEP_S = (DRAFT_DAYS + 2) * 86_400;
 
 /**
- * The person's commits since `fromS` in the repos the hook has seen sessions
- * start in (in scope), each with the repo's identity and the one key its
- * subject carries that the board serves. The subject is read here and goes
- * no further than this loop.
+ * The commits made here that a sync has drafted, and their author times
+ * (LAI-864): a reflog ends with its worktree or branch, and CLAUDE.md §4.2
+ * removes both the moment the work is merged. 0600, local; deleted when
+ * drafting is off.
+ */
+export function madeHereFile(paths: ActivityPaths): string {
+  return join(paths.dir, 'made-here');
+}
+
+function readMadeHere(paths: ActivityPaths): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const line of (readText(madeHereFile(paths)) ?? '').split('\n')) {
+    const [at, sha] = line.split(' ');
+    const epoch = Number(at);
+    if (sha !== undefined && SHA.test(sha) && Number.isFinite(epoch)) out.set(sha, epoch);
+  }
+  return out;
+}
+
+/** Add a draft's commits made here to the ledger, and forget the ones past keeping. */
+function rememberMadeHere(
+  paths: ActivityPaths,
+  made: ReadonlyMap<string, number>,
+  nowS: number,
+): void {
+  const held = readMadeHere(paths);
+  const kept = new Map([...held, ...made].filter(([, at]) => at >= nowS - MADE_HERE_KEEP_S));
+  if (kept.size === held.size && [...kept.keys()].every((sha) => held.has(sha))) return;
+  const lines = [...kept].map(([sha, at]) => `${String(at)} ${sha}\n`).join('');
+  if (lines === '') rmSync(madeHereFile(paths), { force: true });
+  else writeFile600(madeHereFile(paths), lines);
+}
+
+/**
+ * The commits the reflogs of a repository — every ref's and every worktree's
+ * `HEAD` — say were made here (LAI-864).
+ */
+async function madeHere(git: GitRunner, repo: string): Promise<Set<string>> {
+  const out = new Set<string>();
+  const log = await git(repo, [
+    'log',
+    '--walk-reflogs',
+    '--all',
+    '--no-color',
+    '--format=%H%x09%gs',
+  ]);
+  for (const line of (log ?? '').split('\n')) {
+    const tab = line.indexOf('\t');
+    const colon = line.indexOf(': ', tab);
+    if (tab < 0 || colon < 0) continue;
+    if (MADE_HERE.test(line.slice(tab + 1, colon))) out.add(line.slice(0, tab));
+  }
+  return out;
+}
+
+/**
+ * The person's commits since `fromS` in `repos`, each with the repo's
+ * identity and the one key its subject carries that the board serves. The
+ * subject is read here and goes no further than this loop. A repository in
+ * `seen`, or a commit in `shas`, was read already and is not counted twice.
+ * Only a commit made on this machine (LAI-864): a reflog says so, or the
+ * ledger (`remembered`) does, and each one kept is added to `made`. One that
+ * arrived by fetch, merge or pull is another machine's, under the same email,
+ * and is left out.
  */
 async function draftCommits(options: {
-  readonly paths: ActivityPaths;
-  readonly state: ActivityState;
-  readonly nowS: number;
+  readonly repos: readonly string[];
+  readonly seen: Set<string>;
+  readonly shas: Set<string>;
+  readonly remembered: ReadonlyMap<string, number>;
+  readonly made: Map<string, number>;
   readonly fromS: number;
   readonly extraEmails: readonly string[];
   readonly git: GitRunner;
@@ -752,13 +945,7 @@ async function draftCommits(options: {
   readonly signal?: AbortSignal;
   readonly stopAt?: number;
 }): Promise<CommitEvent[]> {
-  const { git } = options;
-  const repos = await reposInScope(
-    rememberedRepos(options.paths, options.nowS),
-    options.state.scope,
-  );
-  const seen = new Set<string>();
-  const shas = new Set<string>();
+  const { git, repos, seen, shas, remembered, made } = options;
   const out: CommitEvent[] = [];
   for (const repo of repos) {
     if (
@@ -785,13 +972,16 @@ async function draftCommits(options: {
       `--since=@${String(options.fromS - 86_400)}`,
       '--format=%H%x09%at%x09%ae%x09%s',
     ]);
+    const here = await madeHere(git, repo);
     for (const line of (log ?? '').split('\n')) {
       const [sha, at, email, ...rest] = line.split('\t');
       if (sha === undefined || !SHA.test(sha) || shas.has(sha)) continue;
       const epoch = Number(at);
       if (!Number.isFinite(epoch) || epoch < options.fromS) continue;
       if (!mine.has((email ?? '').trim().toLowerCase())) continue;
+      if (!here.has(sha) && !remembered.has(sha)) continue;
       shas.add(sha);
+      made.set(sha, epoch);
       const keys = [...new Set(textKeys(rest.join('\t')).filter(options.serves))];
       out.push({ at: epoch, repo: gitDir, task: keys.length === 1 ? (keys[0] ?? null) : null });
     }
@@ -828,17 +1018,30 @@ export async function buildDraft(options: DraftOptions): Promise<Draft> {
   const served = sources.prefixes === undefined ? undefined : new Set(sources.prefixes);
   const serves = (key: string): boolean => served?.has(key.slice(0, key.lastIndexOf('-'))) === true;
 
-  const commits = await draftCommits({
-    paths: options.paths,
-    state: options.state,
-    nowS,
-    fromS,
-    extraEmails: options.extraEmails,
-    git: options.git,
-    serves,
-    ...(options.signal === undefined ? {} : { signal: options.signal }),
-    ...(options.stopAt === undefined ? {} : { stopAt: options.stopAt }),
-  });
+  // The repos the hook saw the person's sessions start in, then those of the
+  // builders Omnigent dispatched (LAI-314): a commit the first counted is not
+  // counted again, and the second's only tick the lane. Both count only the
+  // commits made here, and both add to the ledger (LAI-864).
+  const seen = new Set<string>();
+  const shas = new Set<string>();
+  const remembered = readMadeHere(options.paths);
+  const made = new Map<string, number>();
+  const commitsIn = async (file: string): Promise<CommitEvent[]> =>
+    draftCommits({
+      repos: await reposInScope(rememberedRepos(options.paths, nowS, file), options.state.scope),
+      seen,
+      shas,
+      remembered,
+      made,
+      fromS,
+      extraEmails: options.extraEmails,
+      git: options.git,
+      serves,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(options.stopAt === undefined ? {} : { stopAt: options.stopAt }),
+    });
+  const commits = await commitsIn(options.paths.repos);
+  const laneCommits = (await commitsIn(dispatchedReposFile(options.paths))).map((c) => c.at);
 
   // A session's repository, only when a commit could name its task.
   const repoOf = new Map<string, string | null>();
@@ -855,28 +1058,49 @@ export async function buildDraft(options: DraftOptions): Promise<Draft> {
       repoOf.set(cwd, byTop.get(top) ?? null);
     }
   }
-  const replies: ReplyEvent[] = sources.replies.map((r) => ({
-    at: r.at,
-    session: r.session,
-    repo: r.cwd === undefined ? null : (repoOf.get(r.cwd) ?? null),
-    task: r.task,
-  }));
+  // The name the person gave each folder (D-098): the folder is read here,
+  // for the lookup, and only the name goes on. The branch only when they
+  // turned it on, and only for a named folder.
+  const work = readWorkFolders(dirname(dirname(options.paths.dir)));
+  const nameOfFolder = folderNamer(work.folders);
+  const branchOf = work.branch ? sessionBranches(options.paths) : undefined;
+  const chatOf = chatFolders(options.paths);
+  const replies: ReplyEvent[] = sources.replies.map((r) => {
+    const folder = nameOfFolder(r.cwd);
+    return {
+      at: r.at,
+      session: r.session,
+      repo: r.cwd === undefined ? null : (repoOf.get(r.cwd) ?? null),
+      task: r.task,
+      folder,
+      branch: folder === null ? null : (branchOf?.(r.session, r.at) ?? null),
+    };
+  });
   const lines = eventLines(options.paths);
   const prompts = promptTimes(lines, fromS);
-  const turns = turnTimes(lines, fromS);
+  const turns = turnTimes(lines, fromS).map((t): TurnEvent => {
+    const chat = chatOf(t.session, t.at);
+    const folder = nameOfFolder(chat?.folder);
+    return {
+      ...t,
+      folder,
+      branch: folder === null || !work.branch ? null : (chat?.branch ?? null),
+    };
+  });
   const dispatched: DispatchedEvent[] = sources.dispatched.map((r) => ({
     at: r.at,
     session: r.session,
     task: r.task,
   }));
   const drafted = draftDays(
-    { replies, prompts, commits, marks: sources.marks, turns, dispatched },
+    { replies, prompts, commits, marks: sources.marks, turns, dispatched, laneCommits },
     tz,
     days,
   );
   return {
     days: drafted.days,
     lent: drafted.lent,
+    made,
     read: {
       replies: replies.length,
       prompts: prompts.length,
@@ -885,6 +1109,7 @@ export async function buildDraft(options: DraftOptions): Promise<Draft> {
       turns: turns.filter((t) => t.kind === 'start').length,
       runtimeTurns: turns.filter((t) => t.kind === 'wake').length,
       dispatched: dispatched.length,
+      laneCommits: laneCommits.length,
     },
   };
 }
@@ -900,6 +1125,8 @@ export interface TimeSettings {
   readonly drafting: boolean;
   /** The board takes a block's `at` (D-096); a board that predates it does not say so. */
   readonly signal_times?: boolean;
+  /** The board takes a block's folder name and branch (D-098); an older board does not say so. */
+  readonly folder_names?: boolean;
 }
 
 /** A call's answer — `activity-sync.ts`'s `Call`, by shape. */
@@ -934,6 +1161,15 @@ export interface TimeContext extends DraftOptions {
   readonly collectorId: string;
   readonly settings: () => Promise<TimeAnswer<TimeSettings>>;
   readonly send: (body: string) => Promise<TimeAnswer<unknown>>;
+}
+
+/**
+ * Written by the hook at the start of a builder Omnigent dispatched (LAI-314):
+ * its repository's top level, as `repos` is written — 0600, never sent, and
+ * never read by the heatmap's census.
+ */
+export function dispatchedReposFile(paths: ActivityPaths): string {
+  return join(paths.dir, 'dispatched-repos');
 }
 
 /** What the board last took, per day — 0600, local; deleted when drafting is off. */
@@ -980,6 +1216,7 @@ function readMemory(paths: ActivityPaths): Memory {
 
 function forget(paths: ActivityPaths): void {
   rmSync(timeDraftsFile(paths), { force: true });
+  rmSync(madeHereFile(paths), { force: true });
 }
 
 /** The body `PUT /me/time-drafts` takes (SPEC §6.4). */
@@ -993,7 +1230,26 @@ export function timeDraftBody(
 
 /** A block as it goes without its signal times: everything else as it was. */
 function withoutTimes(b: Block): Block {
-  return { start: b.start, end: b.end, minutes: b.minutes, task: b.task, signals: b.signals };
+  return {
+    start: b.start,
+    end: b.end,
+    minutes: b.minutes,
+    task: b.task,
+    signals: b.signals,
+    ...(b.folder === undefined ? {} : { folder: b.folder }),
+    ...(b.branch === undefined ? {} : { branch: b.branch }),
+  };
+}
+
+/**
+ * A block as it goes to a board that does not say it takes a folder's name
+ * (D-098 item 6): without the name and the branch, everything else as it was
+ * — so an older board never refuses an upload over them.
+ */
+export function withoutNames(b: Block): Block {
+  if (b.folder === undefined && b.branch === undefined) return b;
+  const { folder: _folder, branch: _branch, ...rest } = b;
+  return rest;
 }
 
 /**
@@ -1072,15 +1328,23 @@ export async function timeStep(ctx: TimeContext): Promise<TimeOutcome> {
     }
 
     const draft = await buildDraft(ctx);
+    rememberMadeHere(paths, draft.made, nowS);
     const memory = readMemory(paths);
     const first = [...draft.days.keys()][0] ?? '';
     for (const day of Object.keys(memory.sent)) if (day < first) delete memory.sent[day];
     const due: { day: string; blocks: Block[]; signature: string }[] = [];
     const accepts = settings.value.signal_times === true;
+    const named = settings.value.folder_names === true;
     for (const [day, drafted] of draft.days) {
       // Measured as they go: a board that starts taking the times gets each
-      // day again, with them.
-      const blocks = blocksToSend(ctx.collectorId, ctx.tz, day, drafted, accepts);
+      // day again, with them — and the same for folder names (D-098).
+      const blocks = blocksToSend(
+        ctx.collectorId,
+        ctx.tz,
+        day,
+        named ? drafted : drafted.map(withoutNames),
+        accepts,
+      );
       const signature = JSON.stringify(blocks);
       const held = memory.sent[day];
       // An empty day goes only to empty what the board was given for it.

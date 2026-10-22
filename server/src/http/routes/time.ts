@@ -79,12 +79,23 @@ const buckets = z
   .array(z.tuple([z.number().int().min(0), z.number().int().min(1).max(SIGNAL_MAX)]))
   .max(SIGNAL_BUCKETS_MAX);
 
+/**
+ * The name a person gave a work folder, and its branch (D-098): strings, held
+ * here only to a sanity bound. The service judges each — a name, never a
+ * path: bounded, no `/` or `\\`, no control character — and says which rule
+ * it broke (LAI-159).
+ */
+const folderName = z.string().max(1000);
+const branchName = z.string().max(1000);
+
 const SettingsBody = strictObject({ draft_my_time: z.boolean() });
 const OrgTimeBody = strictObject({ mode: z.enum(TIME_MODES) });
 
 /**
- * A collector's upload. **Nothing in it can hold text**: numbers, a zone, a
- * day and a key-shaped task — anything else is an unknown field, refused.
+ * A collector's upload. **Nothing in it can hold free text**: numbers, a zone,
+ * a day, a key-shaped task and — since D-098 — the bounded name the person
+ * gave the block's work folder and its branch; anything else is an unknown
+ * field, refused.
  */
 const DraftsBody = strictObject({
   v: z.literal(1),
@@ -120,6 +131,8 @@ const DraftsBody = strictObject({
             prompts: buckets.optional(),
             commits: buckets.optional(),
           }).optional(),
+          folder: folderName.optional(),
+          branch: branchName.optional(),
         }),
       ),
     }),
@@ -144,6 +157,9 @@ const DraftPatchBody = strictObject({
   // An edge moved on its own day (LAI-831).
   started_at: instantMs.optional(),
   ended_at: instantMs.optional(),
+  // The work folder's name and branch, changed or cleared (D-098 item 5).
+  folder: folderName.nullable().optional(),
+  branch: branchName.nullable().optional(),
 });
 
 const SplitBody = strictObject({ at: z.number().int().min(0) });

@@ -6,6 +6,7 @@ import { ApiError } from '../../../../api/errors.ts';
 import { Dropdown } from '../../../../components/Dropdown.tsx';
 import { Button } from '../../../../components/forms/Button.tsx';
 import type { CardCandidate, MentionCandidate, RichEditorProps } from '../LazyRichEditor.tsx';
+import type { MentionDirectory } from '../mentions.ts';
 import { MARKDOWN_EXTENSIONS } from './extensions.ts';
 import {
   createBridge,
@@ -15,6 +16,7 @@ import {
   UnwritableMarkdown,
   type Opening,
 } from './markdown-bridge.ts';
+import { MentionPills, redrawMentions } from './mention-pills.ts';
 import { reducePastedHtml } from './paste.ts';
 import './rich-editor.css';
 
@@ -216,6 +218,7 @@ export function RichEditor({
   onSubmit,
   onClose,
   people,
+  meId,
   cards,
   compact = false,
   caretAt,
@@ -247,6 +250,9 @@ export function RichEditor({
   const keys = useRef<(event: KeyboardEvent) => boolean>(() => false);
   const onTransaction = useRef<(editor: Editor) => void>(() => undefined);
   const placeCaret = useRef<(editor: Editor, attempt: number) => void>(() => undefined);
+  /** Who the pills are for, read by the decoration on every redraw (LAI-868). */
+  const mentions = useRef<MentionDirectory>({ people, meId });
+  mentions.current = { people, meId };
 
   /*
    * **Built once.** `useEditor` compares its options by reference on every
@@ -258,7 +264,16 @@ export function RichEditor({
    */
   const options = useMemo(
     () => ({
-      extensions: [...MARKDOWN_EXTENSIONS, Placeholder.configure({ placeholder })],
+      /*
+       * The pills are a decoration beside the placeholder, not in
+       * `MARKDOWN_EXTENSIONS`: the bridge's schema, and so what a save writes,
+       * is the same with them as without (LAI-868).
+       */
+      extensions: [
+        ...MARKDOWN_EXTENSIONS,
+        Placeholder.configure({ placeholder }),
+        MentionPills.configure({ directory: () => mentions.current }),
+      ],
       content: opening.kind === 'rich' ? opening.content : null,
       // `style-src-elem 'self'` (LAI-205): an injected <style> would be refused.
       // ProseMirror's own rules are in rich-editor.css instead.
@@ -293,6 +308,12 @@ export function RichEditor({
     [],
   );
   const editor = useEditor(options);
+
+  /* The people list lands after the editor may have opened: draw the pills again. */
+  useEffect(() => {
+    if (editor.isDestroyed) return;
+    editor.view.dispatch(redrawMentions(editor.state.tr));
+  }, [editor, people, meId]);
 
   const state = useEditorState({
     editor,

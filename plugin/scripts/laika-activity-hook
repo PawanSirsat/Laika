@@ -90,9 +90,17 @@
 # `r omnigent <epoch> <session>` its end appends can be dropped, since `Stop`
 # cannot tell the two apart. The session is the runner's primary id.
 # `laika activity sync` drafts only the turns the person started, as the
-# activity of their primary session; none is a typed prompt. At its start
-# that id is kept in primary-sessions; nothing else is: no session-start
-# payload is read, no session start or repo is recorded, nothing is skipped.
+# activity of their primary session; none is a typed prompt on the heatmap,
+# though a time draft counts each as a prompt on its signals lane (LAI-314,
+# the owner's 2026-10-22 decision: they type only there). At its start
+# that id is kept in primary-sessions — with, since LAI-866, the chat's
+# working folder and the branch it is on, `<epoch> <id> <branch|-> <folder>`,
+# so its blocks can carry the name the person gave that folder (D-098). The
+# folder is looked up on this machine and never sent; the branch only when the
+# person turned that on. Both are read with builtins: the branch from
+# `.git/HEAD` with `read`, never `git`. A reader of the older two-field line
+# finds what it always did. Nothing else is: no session-start payload is
+# read, no session start or repo is recorded, nothing is skipped.
 # Omnigent runs it with `--no-session-persistence`, so it writes no transcript
 # and has no tokens to read. One thing this cannot tell: a child session the
 # orchestrator itself defines on the `claude-sdk` harness looks the same, and
@@ -112,6 +120,15 @@
 # label the person's untied minutes; its own time stays out. A `CI` or
 # `LAIKA_ACTIVITY_SKIP` session's line has no word, as every line before it
 # had, and lends nothing.
+#
+# At such a dispatched sub-agent's start, one line more (LAI-314):
+# `<epoch><TAB><top level>` appended to ~/.laika/activity/dispatched-repos,
+# 0600, never sent — and never to `repos`, which the heatmap counts commits
+# in. The time drafter counts the person's commits there as ticks on My
+# day's SIGNALS lane, and nothing else. The top level is the nearest
+# directory above `CLAUDE_PROJECT_DIR` (else the working directory) that
+# holds a `.git`, found with `[` alone: this path forks nothing under zsh, as
+# before. The drafter reads it deduped; the sync prunes it as it does `repos`.
 #
 # ## A person's session start (LAI-770, D-084 item 5)
 #
@@ -136,7 +153,8 @@
 # no fork. It never prints (Claude Code parses `Stop` output) and always
 # exits 0 (exit 2 there keeps Claude from stopping).
 #
-# Owned by SHELL (plugin/). LAI-752, LAI-757, LAI-787, LAI-792, LAI-859.
+# Owned by SHELL (plugin/). LAI-752, LAI-757, LAI-787, LAI-792, LAI-859, LAI-314,
+# LAI-866.
 
 exec >/dev/null 2>&1
 unset USER_PROMPT
@@ -293,6 +311,17 @@ if [ "$AUTOMATED" = yes ]; then
       # One printf, one O_APPEND write; umask 077 makes the file 0600.
       if [ -n "$WHY" ]; then
         printf '%s %s %s\n' "$NOW" "$SID" "$WHY" >>"$HOME/.laika/activity/skip-sessions"
+        # A dispatched builder's repository, for the SIGNALS lane (LAI-314).
+        if [ "$MODE" = session-start ]; then
+          TOP="${CLAUDE_PROJECT_DIR:-$PWD}"
+          case "$TOP" in /*) ;; *) TOP='' ;; esac
+          while [ -n "$TOP" ] && [ ! -e "$TOP/.git" ]; do TOP="${TOP%/*}"; done
+          case "$TOP" in
+            '' | *'	'* | *'
+'*) ;;
+            *) printf '%s\t%s\n' "$NOW" "$TOP" >>"$HOME/.laika/activity/dispatched-repos" ;;
+          esac
+        fi
       else
         printf '%s %s\n' "$NOW" "$SID" >>"$HOME/.laika/activity/skip-sessions"
       fi
@@ -332,7 +361,42 @@ if [ "$ORCHESTRATOR" = yes ]; then
         fi
         ;;
       turn-end) printf 'r omnigent %s %s\n' "$NOW" "$OSID" >>"$DIR/events.log" ;;
-      session-start) printf '%s %s\n' "$NOW" "$OSID" >>"$DIR/primary-sessions" ;;
+      session-start)
+        # The chat's working folder, and the branch its repository is on (LAI-866).
+        NL='
+'
+        FOLDER="${CLAUDE_PROJECT_DIR:-$PWD}"
+        case "$FOLDER" in /*) ;; *) FOLDER='' ;; esac
+        case "$FOLDER" in *"$NL"* | *'	'*) FOLDER='' ;; esac
+        [ "${#FOLDER}" -gt 4096 ] && FOLDER=''
+        OBRANCH=-
+        D="$FOLDER"
+        HEADLINE=''
+        while [ -n "$FOLDER" ]; do
+          if [ -f "$D/.git/HEAD" ]; then
+            IFS= read -r HEADLINE <"$D/.git/HEAD"
+            break
+          elif [ -f "$D/.git" ]; then
+            # A worktree: `.git` names its own git dir.
+            GD=''
+            IFS= read -r GD <"$D/.git"
+            GD="${GD#gitdir: }"
+            case "$GD" in /*) ;; *) GD="$D/$GD" ;; esac
+            [ -f "$GD/HEAD" ] && IFS= read -r HEADLINE <"$GD/HEAD"
+            break
+          fi
+          [ -z "$D" ] && break
+          D="${D%/*}"
+        done
+        case "$HEADLINE" in 'ref: refs/heads/'?*) OBRANCH="${HEADLINE#ref: refs/heads/}" ;; esac
+        case "$OBRANCH" in *[!A-Za-z0-9._/-]*) OBRANCH=- ;; esac
+        [ "${#OBRANCH}" -gt 255 ] && OBRANCH=-
+        if [ -n "$FOLDER" ]; then
+          printf '%s %s %s %s\n' "$NOW" "$OSID" "$OBRANCH" "$FOLDER" >>"$DIR/primary-sessions"
+        else
+          printf '%s %s\n' "$NOW" "$OSID" >>"$DIR/primary-sessions"
+        fi
+        ;;
     esac
   fi
   [ "$MODE" = prompt ] && exit 0

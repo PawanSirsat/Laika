@@ -69,6 +69,9 @@ export interface TimeEntryView {
   task: TaskRef | null;
   project: ProjectRef | null;
   note: string | null;
+  /** The work folder's chosen name and its branch, from the draft it was confirmed from (D-098). */
+  folder: string | null;
+  branch: string | null;
   revision: number;
   created_at: number;
   updated_at: number;
@@ -354,6 +357,12 @@ export interface EntryFields {
   endedAt: number | null;
   minutes: number;
   note: string | null;
+  /**
+   * A confirmed draft's work folder name and branch (D-098, LAI-866). Left
+   * out, an entry keeps what it has: only a draft's confirm sets them.
+   */
+  folder?: string | null | undefined;
+  branch?: string | null | undefined;
 }
 
 function revisionRow(
@@ -411,6 +420,8 @@ export function insertEntry(
       source,
       sourceRef,
       note: fields.note,
+      folder: fields.folder ?? null,
+      branch: fields.folder == null ? null : (fields.branch ?? null),
       revision: 1,
       createdAt: now,
       updatedAt: now,
@@ -435,6 +446,8 @@ const entrySelect = {
   minutes: timeEntries.minutes,
   source: timeEntries.source,
   note: timeEntries.note,
+  folder: timeEntries.folder,
+  branch: timeEntries.branch,
   revision: timeEntries.revision,
   createdAt: timeEntries.createdAt,
   updatedAt: timeEntries.updatedAt,
@@ -488,6 +501,8 @@ function entryView(r: EntryRow): TimeEntryView {
     task: taskRefOf(r.taskId, r.taskNumber, r.taskTitle, r.taskPrefix),
     project: projectRefOf(r.projectId, r.projectSlug, r.projectName),
     note: r.note,
+    folder: r.folder,
+    branch: r.branch,
     revision: r.revision,
     created_at: r.createdAt,
     updated_at: r.updatedAt,
@@ -827,6 +842,12 @@ export function syncEntry(
       endedAt: fields.endedAt,
       minutes: fields.minutes,
       note: fields.note,
+      ...(fields.folder === undefined
+        ? {}
+        : {
+            folder: fields.folder,
+            branch: fields.folder === null ? null : (fields.branch ?? null),
+          }),
       deletedAt: null,
       revision,
       updatedAt: now,

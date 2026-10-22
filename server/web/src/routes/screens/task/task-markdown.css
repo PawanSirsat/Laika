@@ -268,3 +268,42 @@
 .md-comment code {
   font-size: var(--text-body);
 }
+
+/*
+ * A mention that names somebody (LAI-868): a pill over the characters as
+ * written — no text added, so copying, find and a screen reader get `@ada`.
+ * Three looks, from the theme's tokens, filled to outlined:
+ *
+ * - **the reader** — the solid accent, `--on-accent` ink: the one to notice;
+ * - **a person** — the accent's tint, as "this one" is drawn elsewhere;
+ * - **a machine**, `@strelka` or `@belka` (D-097) — no fill, an outline and
+ *   secondary ink: named, but not somebody to answer.
+ *
+ * Not `--chip-purple`: in dark it is the accent exactly, so a pill on it would
+ * read as the reader's. The editor's decorations wear these same classes.
+ */
+.md-mention {
+  padding: 0 var(--space-1);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.md-mention-me {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+.md-mention-person {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+}
+
+.md-mention-machine {
+  color: var(--text-secondary);
+  background: transparent;
+  border-color: var(--border-default);
+  font-weight: var(--weight-medium);
+}

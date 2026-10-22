@@ -7,6 +7,8 @@ import {
   gitRunner,
   ianaTimeZone,
   machineTimeZone,
+  prunedReposFile,
+  rememberedRepos,
   type GitRunner,
   type PendingKey,
   type Snapshot,
@@ -31,7 +33,13 @@ import {
   type Scope,
 } from './activity-store.ts';
 import { lookbackStep, type LookbackOutcome } from './activity-lookback.ts';
-import { DRAFT_DAYS, timeStep, type TimeOutcome, type TimeSettings } from './activity-time.ts';
+import {
+  DRAFT_DAYS,
+  dispatchedReposFile,
+  timeStep,
+  type TimeOutcome,
+  type TimeSettings,
+} from './activity-time.ts';
 import { usageRoots, usageStep, type UsageOutcome } from './activity-usage.ts';
 import { readSettings } from './config.ts';
 import { readEnvFile } from './whoami.ts';
@@ -160,7 +168,7 @@ export function credentialsFor(
 /**
  * Whether Claude Code on this machine sends its metrics to `board` (review):
  * telemetry on, an OTLP metrics exporter, and a metrics endpoint under the
- * board's `/api/v1/otlp/` — the settings `laika activity otel` prints, each
+ * board's `/api/v1/otlp/` — the settings `laika activity on` writes, each
  * read from `~/.claude/settings.json`'s `env` (which Claude Code applies to
  * itself) or else the environment, which a hook-launched sync inherits from
  * Claude Code. Only then does a usage report name the sessions it left out.
@@ -403,6 +411,8 @@ export async function getTimeSettings(
         drafting: body.drafting,
         // Only a board that says so takes a block's `at` (D-096).
         signal_times: body.signal_times === true,
+        // Only a board that says so takes a block's folder name (D-098).
+        folder_names: body.folder_names === true,
       },
     };
   } catch {
@@ -612,10 +622,12 @@ async function syncLocked(
     if (signal.aborted) throw new Abandoned();
     writeState(paths, next);
   };
-  const fail = (message: string, status?: number): SyncOutcome => ({
-    kind: 'error',
-    ...failed_(paths, nowS, message, status),
-  });
+  // A request the deadline aborted comes back as a failure: the deadline has
+  // recorded that one already.
+  const fail = (message: string, status?: number): SyncOutcome => {
+    if (signal.aborted) throw new Abandoned();
+    return { kind: 'error', ...failed_(paths, nowS, message, status) };
+  };
 
   try {
     // Claimed before any work, so a sync that hangs or dies still holds the
@@ -677,6 +689,11 @@ async function syncLocked(
     });
     if (signal.aborted) throw new Abandoned();
     writeFile600(paths.repos, snapshot.prunedRepos);
+    // The hook only appends to this one (LAI-314): expired and gone entries go here.
+    const dispatched = dispatchedReposFile(paths);
+    if (existsSync(dispatched)) {
+      writeFile600(dispatched, await prunedReposFile(rememberedRepos(paths, nowS, dispatched)));
+    }
 
     const answer = await putActivity(creds, JSON.stringify(snapshot.body), ctx.nowMs(), signal);
     if (answer.ok) {
@@ -872,6 +889,12 @@ export function startCollecting(
     checked_at: nowS,
     failures: 0,
     board,
+    // The board's last answer on time drafting, kept with what it was sent
+    // (time-drafts.json): dropped, `status` said "not asked yet" (LAI-314).
+    ...(previous?.drafting === undefined ? {} : { drafting: previous.drafting }),
+    ...(previous?.drafting_checked_at === undefined
+      ? {}
+      : { drafting_checked_at: previous.drafting_checked_at }),
     ...(previous?.last_result === undefined ? {} : { last_result: previous.last_result }),
   });
 }

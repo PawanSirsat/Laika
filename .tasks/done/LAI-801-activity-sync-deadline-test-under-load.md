@@ -2,11 +2,14 @@
 id: LAI-801
 title: 'cli activity-sync "a sync that hangs is abandoned at its deadline" counts two failures under a loaded gate — a 300 ms wall-clock deadline (cli/)'
 area: cli
-assignee: unclaimed
+assignee: strelka
 priority: p2
 depends-on: []
 discovered-from: LAI-788
-status: backlog
+status: done
+started: 2026-10-22T06:53:21Z
+finished: 2026-10-22T06:59:00Z
+accepted: 2026-10-22T09:19:01Z
 ---
 
 ## Goal
@@ -15,11 +18,11 @@ The root gate does not go red because the machine is busy.
 
 ## Acceptance criteria
 
-- [ ] `cli/test/activity-sync.test.ts` "a sync that hangs is abandoned at its
+- [x] `cli/test/activity-sync.test.ts` "a sync that hangs is abandoned at its
       deadline, and writes nothing after" asserts the deadline path without
       depending on how fast a loaded machine answers a 300 ms deadline.
-- [ ] Shown failing under load first (or by a slowed stub), then passing.
-- [ ] Gate: test, lint, format exit 0.
+- [x] Shown failing under load first (or by a slowed stub), then passing.
+- [x] Gate: test, lint, format exit 0.
 
 ## Notes / context
 
@@ -54,3 +57,21 @@ retry, or an edited test. Required:
 - proof that the test fails on today's code.
 
 The review of LAI-768 is checking the diagnosis.
+
+## Builder notes (strelka, 2026-10-22)
+
+- Diagnosis confirmed. The deadline aborts the in-flight sharing GET; the
+  aborted request returns `{ ok: false }`, and `fail()` wrote a second backoff.
+  `fail()` now throws `Abandoned` once the signal is aborted, as `save()` does
+  (`cli/src/activity-sync.ts`).
+- New test "a sync abandoned mid-request records one failure, not two" hangs
+  the GET (no load) and waits for the real state: the abandoned fetch settles,
+  then one `setImmediate`, before reading `failures` and `next_sync_at`. No
+  timeouts raised, and no expected values changed.
+- Red on today's code: `expected: 1, actual: 2`. With the fix the file passes
+  45/45. Removing only the new guard line turns the new test red again
+  (`actual: 2`); restored.
+- The original deadline test is unchanged. Under load the deadline can now
+  land on the GET and still record one failure.
+- Built on `origin/LAI-308-activity-sync-lock-test` (PR #30), which edits the
+  same test file.

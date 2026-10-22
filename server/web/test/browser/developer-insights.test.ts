@@ -220,7 +220,7 @@ void describe('Connect: Share local activity', () => {
     }
   });
 
-  void test('offers OpenTelemetry, metrics only: this board’s address, the token by reference, a copy (LAI-773)', async () => {
+  void test('offers OpenTelemetry, metrics only: this board’s address, no token, a copy (LAI-773, LAI-867)', async () => {
     const state = { org: true, enabled: true, scope: 'agent-repos' };
     const h = await open('/developer/connect', connect(state, { value: HELD }));
     try {
@@ -230,17 +230,24 @@ void describe('Connect: Share local activity', () => {
       // The heading is drawn in capitals; the words are the same.
       assert.match(await block.innerText(), /OpenTelemetry \(optional\)/i);
       assert.match(await block.innerText(), /Metrics only/);
-      assert.match(await block.innerText(), /laika activity otel/);
-      const lines = (await block.locator('pre[data-otel]').innerText()).trim().split('\n');
-      assert.deepEqual(lines, [
-        'export CLAUDE_CODE_ENABLE_TELEMETRY=1',
-        'export OTEL_METRICS_EXPORTER=otlp',
-        'export OTEL_EXPORTER_OTLP_PROTOCOL=http/json',
-        `export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="${h.origin}/api/v1/otlp/v1/metrics"`,
-        'export OTEL_EXPORTER_OTLP_METRICS_HEADERS="Authorization=Bearer $LAIKA_TOKEN"',
-        'export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative',
-        'export OTEL_LOGS_EXPORTER=none',
-      ]);
+      // LAI-867: `laika activity on` writes it; no one is sent to a shell profile.
+      assert.match(await block.innerText(), /laika activity on/);
+      assert.doesNotMatch(await block.innerText(), /laika activity otel|In the shell/);
+      const shown = JSON.parse(await block.locator('pre[data-otel]').innerText()) as {
+        env: Record<string, string>;
+        otelHeadersHelper: string;
+      };
+      assert.deepEqual(shown, {
+        env: {
+          CLAUDE_CODE_ENABLE_TELEMETRY: '1',
+          OTEL_METRICS_EXPORTER: 'otlp',
+          OTEL_EXPORTER_OTLP_PROTOCOL: 'http/json',
+          OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: `${h.origin}/api/v1/otlp/v1/metrics`,
+          OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: 'cumulative',
+          OTEL_LOGS_EXPORTER: 'none',
+        },
+        otelHeadersHelper: '~/.laika/otel-headers',
+      });
       await until(async () => (await block.getByRole('button', { name: /Copy/ }).count()) === 1);
       assert.equal(await block.getByRole('button', { name: /Copy/ }).count(), 1);
     } finally {

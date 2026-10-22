@@ -13,6 +13,7 @@ import {
 import { type TaskSendBack } from '../../../api/tasks.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { InfoTip } from '../profile/InfoTip.tsx';
+import type { MentionCandidate } from './LazyRichEditor.tsx';
 import { TaskMarkdown } from './TaskMarkdown.tsx';
 import '../profile/profile.css';
 import './evidence.css';
@@ -31,6 +32,9 @@ export interface EvidenceSectionProps {
   readonly nameOf: (userId: string) => string;
   /** Draw nothing until the task has been finished at least once. */
   readonly hideWhenEmpty?: boolean | undefined;
+  /** Whose `@` mention in a send-back is a pill, and who is reading (LAI-868). */
+  readonly people?: readonly MentionCandidate[] | undefined;
+  readonly meId?: string | undefined;
 }
 
 /**
@@ -235,10 +239,14 @@ export function SendBackNote({
   sendBack,
   nameOf,
   now,
+  people,
+  meId,
 }: {
   readonly sendBack: TaskSendBack;
   readonly nameOf: (userId: string) => string;
   readonly now: number;
+  readonly people?: readonly MentionCandidate[] | undefined;
+  readonly meId?: string | undefined;
 }) {
   const when = timeLabel(sendBack.created_at, now);
   return (
@@ -253,7 +261,7 @@ export function SendBackNote({
         </time>
       </p>
       <div className="ev-sendback-body">
-        <TaskMarkdown source={sendBack.reason_md} />
+        <TaskMarkdown source={sendBack.reason_md} people={people} meId={meId} />
       </div>
     </div>
   );
@@ -270,6 +278,8 @@ export function EvidenceSection({
   sendBack,
   nameOf,
   hideWhenEmpty,
+  people,
+  meId,
 }: EvidenceSectionProps) {
   const [rounds, setRounds] = useState<TaskRounds | undefined>(undefined);
   const [failed, setFailed] = useState(false);
@@ -305,7 +315,9 @@ export function EvidenceSection({
         <ProofInfo />
       </h3>
 
-      {sendBack !== null && <SendBackNote sendBack={sendBack} nameOf={nameOf} now={now} />}
+      {sendBack !== null && (
+        <SendBackNote sendBack={sendBack} nameOf={nameOf} now={now} people={people} meId={meId} />
+      )}
 
       {failed ? (
         <p className="panel-alert" role="alert">

@@ -1789,9 +1789,12 @@ needs both this and §4.45's `drafts`.
 A person's drafted time (D-088 items 3, 11 and 13, LAI-787): a block their own
 collector drafted on their machine, or an entry an agent proposed. **Read only
 by the person, on a web session** — no token reads one and there is no admin
-read. Counts of the signals behind a block, and which five minutes its prompts
-and commits fell in (D-096), and nothing else: no column can hold a prompt, a
-path, a repository, a branch or a window title.
+read. Counts of the signals behind a block, which five minutes its prompts
+and commits fell in (D-096), and — since D-098 — the **name the person gave
+the work folder** it was drafted in, with that folder's branch only when they
+turned sending it on; nothing else. No column can hold a prompt, a path, a
+folder's own name, a repository or a window title, and the branch only as
+the person chose to send it.
 
 | field | notes |
 | --- | --- |
@@ -1810,6 +1813,8 @@ path, a repository, a branch or a window title.
 | `general` | 0 or 1 — put on no card and no project by the person, on purpose |
 | `signals` | JSON `{ prompts, replies, sessions, commits, marks, at? }` — counts, and `at` `{ prompts?, commits? }`: `[bucket, count]` pairs, a bucket being five minutes of unix time, `floor(ms / 300000)` (D-096, LAI-834). Numbers only |
 | `note` | nullable — an agent's proposal may say what it was for, ≤ 200 characters |
+| `folder` | nullable — the name the person gave the block's work folder on their machine (D-098, LAI-866): 1–60 characters, no `/` or `\`, no control or format character — a name, never a path. Bounded by the service on every way in (the upload and `PATCH`), not by a CHECK, which would rebuild this table |
+| `branch` | nullable — that folder's branch, only when the person turned sending it on (D-098 item 3), and only beside a `folder`; `[A-Za-z0-9._/-]`, 1–255 |
 | `state` | `pending` \| `confirmed` \| `dismissed` |
 | `entry_id` | nullable FK `time_entries`, set null — what a confirmed draft became |
 | `origin_id` | nullable — a collector block's **origin**: the id of the row as first stored, shared by the halves of a split; null for an agent's proposal |
@@ -1861,6 +1866,7 @@ row.
 | `source` | `draft` \| `manual` \| `import` — an `import` came from Solidtime and is read-only here: changed in Solidtime, and taken by the next pull (LAI-788) |
 | `source_ref` | nullable — the draft it came from, or an import's own id (LAI-788); unique per `(user_id, source)` where set |
 | `note` | nullable, ≤ 280 characters |
+| `folder`, `branch` | nullable — a confirmed draft's work folder name and branch (§4.47, D-098 item 5), carried into the entry when the person confirms it and seen with it by owners and admins, as confirmed hours are (D-088 item 7); null for a typed or imported entry. Not part of a revision (§4.49) |
 | `revision` | integer ≥ 1, its newest revision's number |
 | `deleted_at` | nullable — a person's delete keeps the row |
 | `created_at`, `updated_at` | |
@@ -2315,10 +2321,10 @@ GET    /api/v1/me/token-alerts               the caller's own budget and runaway
 GET    /api/v1/me/plan-limit                 PUT .../plan-limit   DELETE → 204 — the developer's own forecast, an estimate   (session only; D-087)
 POST   /api/v1/otlp/v1/metrics               OpenTelemetry metrics, OTLP/HTTP JSON, from the developer's own agents (both switches on; LAI-773)
 GET    /api/v1/me/time-settings              PUT .../time-settings  body { draft_my_time } — the org's Time and the person's own switch   (PUT session only; LAI-787)
-PUT    /api/v1/me/time-drafts                a collector's blocks → { accepted_days, stored_blocks }   (both time switches on; 30/hour)
+PUT    /api/v1/me/time-drafts                a collector's blocks, each with a work folder's chosen name and branch if sent → { accepted_days, stored_blocks }   (both time switches on; 30/hour)
 POST   /api/v1/me/time-drafts                an agent's proposal → 201 { id, minutes, day } (both time switches on; twin of propose_time_entry)
 DELETE /api/v1/me/time-drafts                every draft the caller has not confirmed → 204   (session only)
-PATCH  /api/v1/me/time-drafts/:id            body { task?, project?, general?, minutes?, started_at?, ended_at? }   POST .../split { at }   POST .../dismiss → 204   (session only)
+PATCH  /api/v1/me/time-drafts/:id            body { task?, project?, general?, minutes?, started_at?, ended_at?, folder?, branch? }   POST .../split { at }   POST .../dismiss → 204   (session only)
 POST   /api/v1/me/time-drafts/:id/confirm    → 201, the entry   POST /api/v1/me/time/days/:day/confirm → { entries }   (session only)
 GET    /api/v1/me/time                       ?day=&tz= — My day: drafts, entries, breaks, agent minutes, drafts held, the week   (session only)
 POST   /api/v1/me/time/undo                  body { id } — the change an X-Undo-Id named, taken back → 204   (session only; LAI-831)
@@ -2626,7 +2632,8 @@ reaches SSE, an MCP tool or an export (§4.21).
   `laika-repos` scope (D-079 item 4) — **sent only when Claude Code on that
   machine exports its metrics to this board** (telemetry on, an OTLP metrics
   exporter, an endpoint under `/api/v1/otlp/`, in `~/.claude/settings.json`'s
-  `env` or the environment; review): with none from there, there is nothing
+  `env` — where `laika activity on` writes them (LAI-867) — or the
+  environment; review): with none from there, there is nothing
   of theirs to drop. A key is
   the first 16 hex of `sha256("laika-session:" + session id)`, lower case —
   never the id. Each (person, collector, day) carried replaces
@@ -2813,18 +2820,38 @@ code.claude.com/docs/en/monitoring-usage on 2026-10-18 — the variable names,
 `http/json`, the two metrics and their attributes, `session.id` on by default
 (`OTEL_METRICS_INCLUDE_SESSION_ID`), and the temporality default `delta` with
 `cumulative` allowed. **Not confirmed there**: whether `session.id` arrives
-on the data point or the resource, so both are read. The settings Connect and
-`laika activity otel` print:
+on the data point or the resource, so both are read. **`laika activity on`
+sets it up** (LAI-867), once per laptop, in `~/.claude/settings.json` — which
+every Claude Code reads, one started from the Dock and Omnigent's SDK sessions
+(`--setting-sources=user,project`) included — so no shell-profile line is
+needed. It writes six non-secret variables into `env` and a top-level
+`otelHeadersHelper`, a 0700 script that reads `LAIKA_TOKEN` from
+`~/.laika/env` each time it runs and prints the header as JSON; **the token is
+never written**, into settings.json or the script. It backs up first by the
+`.bak` rule, keeps the file's mode, leaves a key the person set to another
+value and says so, and a second `on` writes nothing. `laika activity off`
+removes only what `on` added, each key only while it still holds `on`'s
+value; `laika activity status` probes this endpoint with a body carrying no
+metric and says whether telemetry reaches the board. Connect shows the same
+settings:
 
-```sh
-export CLAUDE_CODE_ENABLE_TELEMETRY=1
-export OTEL_METRICS_EXPORTER=otlp
-export OTEL_EXPORTER_OTLP_PROTOCOL=http/json
-export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT="$LAIKA_URL/api/v1/otlp/v1/metrics"
-export OTEL_EXPORTER_OTLP_METRICS_HEADERS="Authorization=Bearer $LAIKA_TOKEN"
-export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
-export OTEL_LOGS_EXPORTER=none
+```json
+{
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json",
+    "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "$LAIKA_URL/api/v1/otlp/v1/metrics",
+    "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "cumulative",
+    "OTEL_LOGS_EXPORTER": "none"
+  },
+  "otelHeadersHelper": "~/.laika/otel-headers"
+}
 ```
+
+`laika activity otel` still prints them as `export` lines, with
+`OTEL_EXPORTER_OTLP_METRICS_HEADERS="Authorization=Bearer $LAIKA_TOKEN"`, for
+whoever wants them by hand.
 
 **API-equivalent cost (D-084 item 10, LAI-773)** — what the tokens would cost
 at list price on the vendor's API, priced per model by §4.35, **labelled
@@ -2932,10 +2959,12 @@ the Max plan?*), not in tokens, so the number is always the developer's.
 parameter names anybody else.
 
 - **The switches.** `GET /me/time-settings` answers `{ org_mode, draft_my_time,
-  drafting, min_sync_interval_s, signal_times }` to a session or any token of
-  the person's — a collector asks before it sends. `signal_times: true` says
-  the board takes a block's `at` (D-096); a collector sends it only then, so a
-  board that predates it is never refused an upload over it. `PUT /me/time-settings` takes
+  drafting, min_sync_interval_s, signal_times, folder_names }` to a session or
+  any token of the person's — a collector asks before it sends.
+  `signal_times: true` says the board takes a block's `at` (D-096), and
+  `folder_names: true` that it takes a block's `folder` and `branch` (D-098
+  item 6); a collector sends each only then, so a board that predates it is
+  never refused an upload over it. `PUT /me/time-settings` takes
   `{ draft_my_time }` from a web session only; off deletes every draft the
   person has not confirmed. `PUT /org/time` takes `{ mode }` — `off`, `manual`
   or `drafts` — from an owner or admin on a web session (`org.time.set`);
@@ -2943,13 +2972,24 @@ parameter names anybody else.
   stays, its evidence blanked (§4.45), and entries are never deleted by a
   switch.
 - **A collector's upload.** `PUT /me/time-drafts` takes `{ v: 1, collector_id,
-  tz, days: [{ day, blocks: [{ start, end, minutes, task, signals, at? }] }] }` —
+  tz, days: [{ day, blocks: [{ start, end, minutes, task, signals, at?,
+  folder?, branch? }] }] }` —
   `start` and `end` unix ms, `task` a key or `null`, `signals` the counts
-  `{ prompts?, replies?, sessions?, commits?, marks? }`, and `at` which five
+  `{ prompts?, replies?, sessions?, commits?, marks? }`, `at` which five
   minutes the block's prompts and commits fell in, `{ prompts?, commits? }`,
   each a list of `[bucket, count]` pairs, a bucket `floor(unix ms / 300000)`,
-  a count at least 1 (D-096, LAI-834) — and nothing else: any other field,
-  here or in a block, is `422`. A kind's buckets are in order, each once, inside
+  a count at least 1 (D-096, LAI-834), `folder` the name the person gave the
+  block's work folder on their machine and `branch` that folder's branch,
+  sent only when they turned it on (D-098) — and nothing else: any other field,
+  here or in a block, is `422`. A `folder` is 1–60 characters with no `/`,
+  `\`, control or format character, and a `branch` `[A-Za-z0-9._/-]`, 1–255,
+  only beside a `folder` (`invalid_blocks`). **An untied block with a `folder`
+  goes under the project it matches**: of the live projects the person may
+  read (`project.read`), the one whose `slug` is the name in lower case, else
+  the one — and only one — whose `name` is the name, case and outer spaces
+  aside. Two that match by name, or none, and the block stays untied: the
+  board never guesses. A block whose key names a card the person can read
+  keeps that card's project. A kind's buckets are in order, each once, inside
   the block — its last minute included — and count no more than the block's
   count of that kind (`invalid_blocks`). My day serves them back as
   `signal_times`, `{ prompts, commits }`, each `[bucket start in unix ms,
@@ -2973,7 +3013,9 @@ parameter names anybody else.
 - **My day.** `GET /me/time?day=&tz=` answers `{ day, tz, today, settings,
   drafts, entries, breaks, drafts_held, agent, state, week }`: the pending
   drafts and live entries of the day in the order they happened, each with
-  its task `{ id, key, title }` and project `{ id, slug, name }`; `breaks` —
+  its task `{ id, key, title }` and project `{ id, slug, name }` and its work
+  folder's chosen name and branch, `folder` and `branch`, or `null` (D-098) —
+  a draft's for the person alone, an entry's as confirmed; `breaks` —
   the gaps the person waved away that day (§4.55), each `{ id, day, tz,
   started_at, ended_at }`, in the order they happened, **never counted as
   time**; `drafts_held` — `{ count, minutes }` of the person's pending drafts
@@ -2988,8 +3030,12 @@ parameter names anybody else.
   per section.
 - **The person's hands.** `PATCH /me/time-drafts/:id` puts a block on a card
   (`task`), a project (`project`) or *General* (`general: true`), changes its
-  minutes, or moves its edges — `started_at`, `ended_at`, unix ms, My day's
-  drag and −/+ (LAI-831) — and holds it for them so no sync overwrites it.
+  minutes, moves its edges — `started_at`, `ended_at`, unix ms, My day's
+  drag and −/+ (LAI-831) — or changes or clears its work folder's name and
+  branch (`folder`, `branch`, D-098 item 5; clearing the name clears the
+  branch, and a branch with no name is `422 branch_without_folder`), and holds
+  it for them so no sync overwrites it. Confirming carries the name and branch
+  into the entry (§4.48).
   Refused `422` for an edge on a block with no span (`no_span`), a span that
   does not end after it starts (`invalid_span`) or leaves the block's day in
   its zone (`outside_day` — never moved to the next day), and a timed block
@@ -4119,6 +4165,10 @@ anything missing sends the task back.
   **`@` autocomplete in the comment box fed by `GET /projects/:slug/mentionable`
   — never by the member list**, because who may be mentioned is the server's
   answer and not a filter the client reapplies.
+  A mention that names someone — a handle exactly one person on that list
+  holds — shows as a pill wherever the panel reads or edits the task's text,
+  the reader's own stronger and `@strelka` / `@belka` softer, and the stored
+  text does not change (LAI-868).
 - **Sprints** — sprint list with dates, goal and status; active-sprint emphasis;
   task assignment in and out; counts by status; the one-active and no-overlap
   rules surfaced as errors, not silent failures.
@@ -4175,9 +4225,10 @@ anything missing sends the task back.
   among it, and *Delete my
   local-activity history* with a confirmation. With the organisation's switch
   off it says so and offers nothing to turn on. Beside it, **OpenTelemetry
-  (optional)** (LAI-773): the exact variables of §6.4 with this board's URL
-  filled in and `$LAIKA_TOKEN` left as a reference, a Copy button, and one
-  line saying it is metrics only and fills in what the session files miss.
+  (optional)** (LAI-773, LAI-867): what `laika activity on` writes to
+  `~/.claude/settings.json` (§6.4) with this board's URL filled in and no
+  token, a Copy button, and one line saying `laika activity on` sets it up on
+  each laptop, it is metrics only and fills in what the session files miss.
 - **Capacity** (Insights' first tab, `/insights?tab=capacity`, one page across
   every space, LAI-754; redesigned by LAI-767) — **tiles** that count and
   filter: *Online now*, *Agents running* (sessions), *In progress* (sorts
@@ -4335,7 +4386,12 @@ anything missing sends the task back.
   result where GitHub sent one), and blocked (naming what it waits on), at
   most five of each with the true count and *+N more* where the rest live,
   each opening in its own space — then **Agent minutes**. A card's key and
-  title link to it in its own space wherever the reader can read it.
+  title link to it in its own space wherever the reader can read it. A block
+  from a work folder the person named (D-098, LAI-866) says the name: untied,
+  it reads **Needs a card · Acme** in its row and in the inspector; under the
+  project the name matched, it reads as a space block does, the name beside
+  it; *Drafted from* shows the name, and the branch when sent, and its line
+  then says the name went with the counts; a confirmed entry shows the name.
 - **Member profile** (`/people?user=<id>`, D-078; *My profile* in the user
   menu opens the reader's own, for an owner or an admin) — owners and admins only:
   anyone else sees a permission notice and the profile is never requested.
@@ -4684,9 +4740,13 @@ computed from what the board already holds and shown to the developer alone.
 **Time drafts are inbound too, opt-in twice, and blocks with counts only**
 (D-088, LAI-787): a person's own collector drafts their day on their machine
 and sends only start, end, the local day and zone, a task key or none, the
-counts of the signals behind each block, and which five minutes its prompts and
-commits fell in (D-096) — never prompt text, paths, repository or branch names,
-commit messages or window titles — to a store only they read, signed in.
+counts of the signals behind each block, which five minutes its prompts and
+commits fell in (D-096), and the name the person gave the block's work folder
+on their machine, with its branch only if they turned that on (D-098) — never
+prompt text, paths, a folder's own name, repository names, a branch they did
+not turn on, commit messages or window titles — to a store only they read,
+signed in. The name and branch reach owners and admins only on an entry the
+person confirmed, which they can change or clear before then.
 
 **Solidtime is reached by the person's CLI, never by the board** (D-088 item
 10, LAI-788). The developer's own Solidtime URL and key stay in a `0600` file
