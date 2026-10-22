@@ -176,8 +176,8 @@ describe('using', () => {
     // Both got as far as hashing: the claim, not the checks, decided it.
     expect(hashed).toBe(2);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-    const rejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
-    expect(rejected.reason).toMatchObject({ code: 'conflict', details: { reason: 'used' } });
+    const rejected = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+    expect(rejected?.reason).toMatchObject({ code: 'conflict', details: { reason: 'used' } });
     expect(passwordOf(grace)).toBe('hash:first-long-passphrase');
   });
 
