@@ -265,6 +265,8 @@ export function implicitlyLeads(view: Permissions | undefined, projectId: string
 export interface Capability {
   readonly id: string;
   readonly label: string;
+  /** One line saying what it lets a role do, in the server's words (LAI-985). */
+  readonly description: string;
   /** The §3.1 actions it carries. Empty for one that is a project role. */
   readonly actions: readonly string[];
 }

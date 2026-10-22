@@ -1044,6 +1044,16 @@
   overflow-wrap: anywhere;
 }
 
+/* A capability's one line, under its label (LAI-989). */
+.perm-action-description {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--text-small);
+  font-weight: var(--weight-normal);
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
 .perm-marks {
   display: inline-flex;
   gap: var(--space-1);
@@ -1330,4 +1340,18 @@
 .oh-person:hover {
   color: var(--accent);
   text-decoration-color: currentColor;
+}
+
+/* Organisation → Activity's Export CSV, at the head's right (LAI-989). */
+.oh-export {
+  margin-left: auto;
+  text-decoration: none;
+}
+
+/*
+ * The pulse (LAI-989): the figures above in the same tile, narrower, so the
+ * five sit in one row wide and two to a row on a phone instead of a column.
+ */
+.org-pulse {
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
 }

@@ -155,6 +155,10 @@ export function GrantsCard({ orgRoles, editable, onSaved }: GrantsCardProps) {
             <tr key={capability.id} data-capability={capability.id}>
               <th scope="row" className="perm-action">
                 <span className="perm-action-name">{capability.label}</span>
+                {/* What it lets a role do, in the server's words (LAI-985, LAI-989). */}
+                {capability.description !== '' && (
+                  <span className="perm-action-description">{capability.description}</span>
+                )}
               </th>
               {locked.map((role) => (
                 <td key={role} className="perm-cell" data-role={role} data-holding="yes">
