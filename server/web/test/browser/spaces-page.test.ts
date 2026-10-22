@@ -11,12 +11,14 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import {
   closeBrowser,
+  everSeen,
   open,
   setTheme,
   until,
   type ApiStub,
   type Harness,
   type StubCall,
+  watchFor,
 } from './harness.ts';
 
 const NOW = Date.now();
@@ -413,6 +415,68 @@ void describe('archived', () => {
     try {
       await h.page.locator('[data-space="gone"]').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.getByRole('button', { name: 'Restore' }).count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * A member granted *Create and archive spaces* and not *Open every project*:
+ * the org half of Restore, and the space's own half only where they are its
+ * Space admin (LAI-978 review). The server's `PATCH` asks both.
+ */
+function archiver(gone: { role: string; actions: string[] } | undefined): ApiStub {
+  const base = stub('member');
+  const grants = permissions('member');
+  return {
+    ...base,
+    '/api/v1/permissions': {
+      ...grants,
+      me: {
+        ...grants.me,
+        actions: ['project.create', 'project.archive'],
+        projects: [
+          ...grants.me.projects,
+          ...(gone === undefined ? [] : [{ project_id: 'gone', ...gone }]),
+        ],
+      },
+    },
+  };
+}
+
+void describe('Restore needs both halves', () => {
+  void test('Create and archive spaces alone, as a member of the space: no Restore', async () => {
+    const h = await open(
+      '/projects?filter=archived',
+      archiver({ role: 'member', actions: ['project.read'] }),
+      { before: (page) => watchFor(page, ['[data-space="gone"] [data-action="restore"]']) },
+    );
+    try {
+      await h.page.locator('[data-space="gone"]').waitFor({ timeout: 20_000 });
+      await until(() => h.calls.some((c) => c.path === '/api/v1/permissions'));
+      await h.page.waitForTimeout(400);
+      assert.equal(await h.page.getByRole('button', { name: 'Restore' }).count(), 0);
+      assert.equal(
+        await everSeen(h.page, '[data-space="gone"] [data-action="restore"]'),
+        false,
+        'Restore was drawn for a reader the PATCH would refuse',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Create and archive spaces, and Space admin of it: Restore', async () => {
+    const h = await open(
+      '/projects?filter=archived',
+      archiver({ role: 'lead', actions: ['project.read', 'project.settings.edit'] }),
+    );
+    try {
+      await h.page
+        .locator('[data-space="gone"]')
+        .getByRole('button', { name: 'Restore' })
+        .waitFor({ timeout: 20_000 });
     } finally {
       await h.close();
     }
