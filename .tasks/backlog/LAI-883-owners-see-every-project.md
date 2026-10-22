@@ -1,5 +1,5 @@
 ---
-id: LAI-888
+id: LAI-883
 title: 'An owner or admin does not see a private space they are not a member of, on Projects or in My day''s On your plate'
 area: web
 assignee: unclaimed
@@ -52,9 +52,3 @@ Filed by CHIEF on 2026-10-22 as `LAI-871`, which collided with a task already on
 carries `[LAI-871]` for all five filings, and a claim commit `2c1a7274`
 `[LAI-872]` (pushed as branch `LAI-872-share-activity-switch`) belongs to the
 filing now LAI-884 — **neither is the task that holds that number now.**
-
-**Renumbered again, 2026-10-22:** `LAI-883` was already filed on
-`origin/LAI-883-my-day-v3` (card LAIKA-692) before this filing was pushed, so
-this task is `LAI-888`. Branch `LAI-883-owners-see-every-project` and its
-`[LAI-883]` claim commit belong to this task, not to LAIKA-692; the builder
-continues on `LAI-888-owners-see-every-project`.

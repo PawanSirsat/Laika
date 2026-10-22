@@ -45,7 +45,7 @@ drift from policy.
 
 ## Notes
 
-Drives LAI-889 (web: Roles & Permissions screen). Also noted by the
+Drives LAI-888 (web: Roles & Permissions screen). Also noted by the
 investigation: `ACTIONS_WITHOUT_A_ROW` in
 `server/test/tooling/policy-spec-drift.test.ts` still parks `presence.read` /
 `capacity.read` as "LAI-432, in flight" though LAI-432 is done — **out of
