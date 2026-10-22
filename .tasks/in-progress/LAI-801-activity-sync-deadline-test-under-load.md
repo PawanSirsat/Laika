@@ -2,11 +2,12 @@
 id: LAI-801
 title: 'cli activity-sync "a sync that hangs is abandoned at its deadline" counts two failures under a loaded gate — a 300 ms wall-clock deadline (cli/)'
 area: cli
-assignee: unclaimed
+assignee: strelka
 priority: p2
 depends-on: []
 discovered-from: LAI-788
-status: backlog
+status: in-progress
+started: 2026-10-22T06:53:21Z
 ---
 
 ## Goal
