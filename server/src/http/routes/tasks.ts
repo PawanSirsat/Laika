@@ -285,8 +285,7 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
   const { db, sqlite } = options;
 
   // Everyone's work: every project the caller may read, in the per-project
-  // list's shape and order (LAI-887). An empty filter value reads as absent,
-  // as it does there.
+  // list's shape and order (LAI-887). An empty filter value reads as absent.
   app.get('/', (c) => {
     const actor = requireActor(c);
     const query = parseQuery(AllTasksQuery, c.req.query());

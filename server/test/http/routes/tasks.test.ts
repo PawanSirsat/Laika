@@ -1079,6 +1079,91 @@ describe("GET /api/v1/tasks — everyone's work across projects (LAI-887)", () =
     expect(pages).toBe(3);
   });
 
+  it('reads an empty filter value as absent, not as a value matching nothing', async () => {
+    await project('core', 'COR', 'private');
+    await taskIn('laika', 'Assigned', { assignee_id: ownerUserId() });
+    await taskIn('core', 'Unassigned');
+
+    const all = keys(await page('/api/v1/tasks'));
+    expect(all).toEqual(['COR-1', 'LAI-1']);
+    for (const empty of ['assignee=', 'sprint=', 'status=', 'project=', 'fields=']) {
+      expect(keys(await page(`/api/v1/tasks?${empty}`)), empty).toEqual(all);
+    }
+    expect(keys(await page('/api/v1/tasks?assignee=&sprint=&status=&project='))).toEqual(all);
+  });
+
+  it('pages through tasks sharing one updated_at by id, every task once and in order', async () => {
+    await project('core', 'COR', 'private');
+    for (let i = 0; i < 4; i++) {
+      await taskIn('laika', `L${String(i)}`);
+      await taskIn('core', `C${String(i)}`);
+    }
+    // Every task on one timestamp: only the id tie-breaker orders them, and
+    // every page boundary at limit=3 falls inside the tie.
+    h.db.update(tasks).set({ updatedAt: 1_800_000_000_000 }).run();
+
+    const unpaged = (await page('/api/v1/tasks?limit=200')).data.map((t) => t.id);
+    expect(unpaged).toHaveLength(8);
+    expect(unpaged).toEqual([...unpaged].sort());
+
+    const walked: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const query: string =
+        cursor === null ? '?limit=3' : `?limit=3&cursor=${encodeURIComponent(cursor)}`;
+      const p = await page(`/api/v1/tasks${query}`);
+      walked.push(...p.data.map((t) => t.id));
+      cursor = p.next_cursor;
+      pages++;
+    } while (cursor !== null && pages < 10);
+
+    expect(walked).toEqual(unpaged);
+    expect(pages).toBe(3);
+  });
+
+  describe('through a token', () => {
+    async function mint(body: Record<string, unknown>): Promise<string> {
+      const res = await must(post('/api/v1/tokens', { name: 'Agent', ...body }), 201);
+      return ((await res.json()) as { secret: string }).secret;
+    }
+
+    async function asToken(secret: string, path: string): Promise<ListPage> {
+      const res = await must(
+        h.app.request(path, { headers: jsonHeaders({ Authorization: `Bearer ${secret}` }) }),
+        200,
+      );
+      return (await res.json()) as ListPage;
+    }
+
+    async function projectId(slug: string): Promise<string> {
+      const res = await must(req(`/api/v1/projects/${slug}`), 200);
+      return ((await res.json()) as { id: string }).id;
+    }
+
+    it('a token limited to one project sees only that project’s tasks, by key', async () => {
+      await project('core', 'COR', 'private');
+      await taskIn('laika', 'Here');
+      await taskIn('core', 'There');
+      const secret = await mint({ scope: 'full', project_ids: [await projectId('laika')] });
+
+      const seen = keys(await asToken(secret, '/api/v1/tasks'));
+      expect(seen).toContain('LAI-1');
+      expect(seen).not.toContain('COR-1');
+      // The owner behind it reads both, so the absence is the token's scope.
+      expect(keys(await page('/api/v1/tasks'))).toEqual(['COR-1', 'LAI-1']);
+    });
+
+    it('a read_only token reads it', async () => {
+      await project('core', 'COR', 'private');
+      await taskIn('laika', 'Here');
+      await taskIn('core', 'There');
+      const secret = await mint({ scope: 'read_only' });
+
+      expect(keys(await asToken(secret, '/api/v1/tasks'))).toEqual(['COR-1', 'LAI-1']);
+    });
+  });
+
   it('refuses a bad status 400 and an unknown filter 422, rather than ignoring it', async () => {
     const status = await req('/api/v1/tasks?status=nonsense');
     expect(status.status).toBe(400);
