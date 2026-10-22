@@ -475,7 +475,7 @@ void describe('Members', () => {
       await settled(h);
       const row = h.page.locator('[data-member="u2"]');
       await row.locator('[data-action="remove"]').click();
-      assert.deepEqual(calls, [], 'removed without asking');
+      assert.equal(calls.length, 0, 'removed without asking');
       await row.locator('[data-action="confirm-remove"]').click();
       await until(() => calls.includes('DELETE'));
       await h.page.locator('[data-member="u2"]').waitFor({ state: 'detached' });
