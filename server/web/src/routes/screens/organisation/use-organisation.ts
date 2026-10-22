@@ -43,7 +43,10 @@ export function useOrganisation(canManage: boolean): UseOrganisation {
 
   useEffect(() => {
     const controller = new AbortController();
-    setState({ status: 'loading' });
+    // A re-read after a change keeps the list on screen (LAI-987): dropping to
+    // the loading state unmounted People, and with it the Undo for the change
+    // just made. Only the first read shows the skeleton.
+    setState((previous) => (previous.status === 'ready' ? previous : { status: 'loading' }));
 
     // Not `Promise.all`: the invites half is allowed to fail without taking the
     // people list down with it.

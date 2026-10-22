@@ -119,8 +119,9 @@ export function peopleCounts(people: readonly OrgUser[], query: PeopleQuery): Pe
 }
 
 /** The *Last sign-in* cell: `Never signed in`, `3 h ago`, `14 Oct, 9:12 AM`. */
-export function lastSeenLabel(at: number | null, now: number): TimeLabel {
-  if (at === null)
+export function lastSeenLabel(at: number | null | undefined, now: number): TimeLabel {
+  // Absent as well as null: a server from before LAI-981 does not send it.
+  if (at === null || at === undefined)
     return { text: 'Never signed in', full: 'Never signed in', iso: '', fresh: false };
   return timeLabel(at, now);
 }

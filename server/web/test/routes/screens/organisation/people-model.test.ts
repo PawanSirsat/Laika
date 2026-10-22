@@ -118,6 +118,8 @@ void describe('lastSeenLabel', () => {
   void test('never, relative within a day, then a date', () => {
     const now = new Date(2026, 9, 23, 12, 0).getTime();
     assert.equal(lastSeenLabel(null, now).text, 'Never signed in');
+    // A server from before LAI-981 sends no field; that must not throw.
+    assert.equal(lastSeenLabel(undefined, now).text, 'Never signed in');
     assert.equal(lastSeenLabel(now - 3 * 3_600_000, now).text, '3 h ago');
     assert.match(lastSeenLabel(now - 9 * 86_400_000, now).text, /14 Oct/);
   });

@@ -183,10 +183,10 @@ export function InviteCard({
         </label>
 
         <div className="org-invite-options">
-          <label className="org-invite-field">
+          <label className="org-invite-field org-invite-role">
             <span className="org-field-label">Organisation role</span>
             <Dropdown
-              className="org-invite-role"
+              className="org-invite-role-select"
               noun="roles"
               value={role}
               disabled={busy}
