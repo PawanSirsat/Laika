@@ -210,7 +210,8 @@ export function ShareActivity({
           turn on yet.{' '}
           {canManageOrg ? (
             <>
-              You can turn them on in <a href="/organisation">Organisation</a>.
+              You can turn them on in{' '}
+              <a href="/organisation?tab=overview#org-insights-label">Organisation</a>.
             </>
           ) : (
             'An owner or admin can turn them on.'

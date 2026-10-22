@@ -10,7 +10,15 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, reply, until, type ApiStub, type StubCall } from './harness.ts';
+import {
+  closeBrowser,
+  open,
+  reply,
+  setTheme,
+  until,
+  type ApiStub,
+  type StubCall,
+} from './harness.ts';
 
 const NOW = Date.now();
 const DAY = 86_400_000;
@@ -132,9 +140,10 @@ const NOTHING = { ...HELD, days: [], collectors: 0, oldest_day: null };
 function connect(
   state: { org: boolean; enabled: boolean; scope: string },
   held: { value: unknown },
+  role = 'owner',
 ): ApiStub {
   return {
-    '/api/v1/me': me('owner'),
+    '/api/v1/me': me(role),
     '/api/v1/projects': { data: [], next_cursor: null },
     '/api/v1/tokens': { data: [], next_cursor: null },
     '/api/v1/presence': { enabled: true, present: [] },
@@ -158,6 +167,85 @@ function connect(
   };
 }
 
+void describe('Developer access: Share local activity', () => {
+  for (const [role, guidance] of [
+    ['owner', 'You can turn them on in Organisation.'],
+    ['member', 'An owner or admin can turn them on.'],
+  ] as const) {
+    void test(`${role}: explains who can enable organisation insights`, async () => {
+      const h = await open(
+        '/developer',
+        connect({ org: false, enabled: false, scope: 'agent-repos' }, { value: NOTHING }, role),
+      );
+      try {
+        const section = h.page.locator('.dev-sharing');
+        await section.getByRole('heading', { name: 'Share local activity' }).waitFor({
+          timeout: 20_000,
+        });
+        const notice = section.locator('[data-state="org-off"]');
+        assert.match(await notice.innerText(), /Developer insights are off for this organisation/);
+        assert.match(await notice.innerText(), new RegExp(guidance.replace('.', '\\.')));
+        assert.equal(await section.getByRole('switch').count(), 0);
+        assert.equal(
+          await section.locator('a[href="/organisation?tab=overview#org-insights-label"]').count(),
+          role === 'owner' ? 1 : 0,
+        );
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  void test('a member can turn on their own sharing when organisation insights are on', async () => {
+    const state = { org: true, enabled: false, scope: 'agent-repos' };
+    const h = await open('/developer', connect(state, { value: NOTHING }, 'member'));
+    try {
+      const section = h.page.locator('.dev-sharing');
+      const toggle = section.getByRole('switch', { name: 'Share my local activity' });
+      await toggle.waitFor({ timeout: 20_000 });
+      assert.equal(await toggle.getAttribute('aria-checked'), 'false');
+
+      await toggle.click();
+      await until(async () => (await toggle.getAttribute('aria-checked')) === 'true');
+      assert.deepEqual(
+        h.calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/me/activity-sharing')
+          ?.body,
+        { enabled: true },
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the reused section fits laptop and phone in light and dark', async () => {
+    const h = await open(
+      '/developer',
+      connect({ org: true, enabled: true, scope: 'agent-repos' }, { value: HELD }),
+    );
+    try {
+      const section = h.page.locator('.dev-sharing');
+      await section.getByRole('switch', { name: 'Share my local activity' }).waitFor({
+        timeout: 20_000,
+      });
+      for (const theme of ['light', 'dark']) {
+        await setTheme(h.page, theme);
+        for (const width of [1366, 390]) {
+          await h.page.setViewportSize({ width, height: 900 });
+          assert.equal(
+            await h.page.evaluate(
+              () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            ),
+            0,
+          );
+          assert.equal(await section.isVisible(), true);
+        }
+      }
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('Connect: Share local activity', () => {
   void test('with the organisation’s switch off, says so and offers nothing to turn on', async () => {
     const h = await open(
@@ -170,8 +258,16 @@ void describe('Connect: Share local activity', () => {
       await panel.locator('.share-list').first().waitFor({ timeout: 20_000 });
       assert.match(await panel.innerText(), /Developer insights are off for this organisation/);
       assert.equal(await panel.getByRole('switch').count(), 0);
-      await until(async () => (await panel.locator('a[href="/organisation"]').count()) === 1);
-      assert.equal(await panel.locator('a[href="/organisation"]').count(), 1);
+      await until(
+        async () =>
+          (await panel
+            .locator('a[href="/organisation?tab=overview#org-insights-label"]')
+            .count()) === 1,
+      );
+      assert.equal(
+        await panel.locator('a[href="/organisation?tab=overview#org-insights-label"]').count(),
+        1,
+      );
     } finally {
       await h.close();
     }
