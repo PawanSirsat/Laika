@@ -2,11 +2,12 @@
 id: LAI-304
 title: "sprints.test.ts's 205-task page-size test times out at 5s under gate load"
 area: server
-assignee: unclaimed
+assignee: strelka
 priority: p2
 depends-on: []
 discovered-from: LAI-480
-status: backlog
+status: in-progress
+started: 2026-10-22T06:24:05Z
 ---
 
 ## Goal
