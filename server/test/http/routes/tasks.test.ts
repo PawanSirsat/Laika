@@ -912,6 +912,7 @@ describe("GET /api/v1/tasks — everyone's work across projects (LAI-887)", () =
     status: string;
     assignee_id: string | null;
     sprint_id: string | null;
+    updated_at: number;
   }
   interface ListPage {
     data: Listed[];
@@ -1100,9 +1101,13 @@ describe("GET /api/v1/tasks — everyone's work across projects (LAI-887)", () =
     }
     // Every task on one timestamp: only the id tie-breaker orders them, and
     // every page boundary at limit=3 falls inside the tie.
-    h.db.update(tasks).set({ updatedAt: 1_800_000_000_000 }).run();
+    const TIED = 1_800_000_000_000;
+    const forced = h.db.update(tasks).set({ updatedAt: TIED }).run();
+    expect(forced.changes).toBe(8);
 
-    const unpaged = (await page('/api/v1/tasks?limit=200')).data.map((t) => t.id);
+    const unpagedRows = (await page('/api/v1/tasks?limit=200')).data;
+    expect(unpagedRows.map((t) => t.updated_at)).toEqual(Array<number>(8).fill(TIED));
+    const unpaged = unpagedRows.map((t) => t.id);
     expect(unpaged).toHaveLength(8);
     expect(unpaged).toEqual([...unpaged].sort());
 
