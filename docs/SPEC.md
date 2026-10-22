@@ -142,7 +142,8 @@ are not part of this.
 
 | Action | Owner | Admin | Member | Viewer |
 | --- | :---: | :---: | :---: | :---: |
-| Delete org data / transfer ownership | ✓ | — | — | — |
+| Delete org data | ✓ | — | — | — |
+| Transfer ownership | ✓ (session only) | — | — | — |
 | Org settings (AI provider, SMTP, signup mode) | ✓ | ✓ | — | — |
 | Create / archive project | ✓ | ✓ | — | — |
 | Invite users | ✓ | ✓ (as member or viewer) | — | — |
@@ -744,7 +745,8 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `webhook.commit`, `webhook.received`, `meeting.applied`, `unlisted.logged`,
 `unlisted.promoted`, `unlisted.dismissed`, `project.context_updated`,
 `sprint.created`, `sprint.updated`, `sprint.deleted`, `sprint.tasks_changed`,
-`user.deactivated`, `user.reactivated`, `user.signed_out`, `task.stale_flagged`,
+`user.deactivated`, `user.reactivated`, `user.signed_out`,
+`org.ownership_transferred`, `task.stale_flagged`,
 `heartbeat.pruned`, `invite.expired`, `meeting_review.expired`,
 `meeting_review.discarded`.
 
@@ -2444,6 +2446,8 @@ GET    /api/v1/org/time/solidtime            the map, the people confirmed, and 
 PUT    /api/v1/org/time/solidtime/projects   body { projects } → { projects }   PUT .../people body { people } → { people }   (owner, admin; session only)
 PUT    /api/v1/org/time/solidtime/import     body { v, members, tz, from, to, complete, entries } → what changed, and not_on_laika   (owner, admin; session only)
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only)
+                                             the owner's read adds extra_owners: [{ id, name, email }] — active owners besides orgs.owner_user_id, reported, never demoted silently (D-104 item 2)
+POST   /api/v1/org/transfer-ownership        body { user_id, confirm } — confirm is the target's email; target an active admin or member → { owner, previous_owner }; target becomes owner, caller admin, orgs.owner_user_id moves, one transaction; logged   (owner only; session only; LAI-982)
 POST   /api/v1/org/github-webhook            set or rotate the GitHub webhook secret; answers it once (session only)
 DELETE /api/v1/org/github-webhook            clear it (204; session only)
 GET    /api/v1/org/model-prices              PUT/DELETE .../model-prices/:model — API-equivalent prices (set: owner, admin; session only; LAI-773)
@@ -2453,6 +2457,7 @@ GET    /api/v1/users                         ?limit=&cursor=&updated_since=&incl
                                              cursor is (name, id) — a directory reads alphabetically
                                              each user carries last_seen_at: their latest session activity, or null (LAI-981)
 PATCH  /api/v1/users/:id                     (role: owner only; deactivate: owner, and admin by default — LAI-958)
+                                             org_role 'owner' → 422 reason use_transfer; so is demoting or deactivating the owner orgs.owner_user_id names (LAI-982)
                                              deactivating revokes every token and ends every session; reactivating restores neither (D-104 item 3)
 POST   /api/v1/users/:id/sign-out            end every session, not tokens → { user_id, sessions_ended }   (themselves; anyone else: owner, and admin by default; logged — LAI-981)
 GET    /api/v1/users/:id/memberships         → { data: [{ project_id, slug, name, prefix, role, archived, joined_at }] } — membership rows only, narrowed to spaces the caller can read   (viewer+; LAI-981)
@@ -2465,6 +2470,7 @@ GET    /api/v1/me/analytics-views            ?limit=&cursor= — who looked at t
 GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner / a role granted *See everyone's analytics*; session only; logged, D-102)
 GET    /api/v1/usage                         ?days=1–92&project=&tz= — the Usage page   (owner/admin; a member with ?project=)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
+                                             an invite never grants org_role 'owner' → 422 reason use_transfer (LAI-982)
 GET    /api/v1/invites/:token                unauthenticated preview — org name, inviter, role, expiry
 DELETE /api/v1/invites/:id                   revoke a pending invite (admin+)
 GET    /api/v1/projects                      POST /api/v1/projects   (admin+)
