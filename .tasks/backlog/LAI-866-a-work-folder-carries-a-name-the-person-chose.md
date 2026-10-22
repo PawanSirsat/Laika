@@ -173,7 +173,8 @@ or commit messages.
 
 These notes were appended after the task was claimed, so the criteria above
 were not edited (§2). **Where a note and the text above disagree, the note
-wins.**
+wins.** Each requirement added here is a box. Tick it at finish like any
+criterion.
 
 **B1. Project matching stays, because the owner approved it.**
 
@@ -186,21 +187,21 @@ wins.**
 - The owner replied **"go ahead"** the same day.
 - D-098 now quotes this too.
 
-**The consequence the reviewer raised. Add it as a criterion:**
+**The consequence the reviewer raised.** A block under a matched project is
+confirmed under that project, not as *General*, and that changes where it can
+go in Solidtime:
+- a *General* entry goes there with no project;
+- a space's entry goes to the Solidtime project that `laika time map` set
+  for the space, or is held as `space_not_mapped` (SPEC §6.4, the outbox,
+  `docs/SPEC.md:3076-3092`).
 
-> A block under a matched project is confirmed under that project, not as
-> *General*. That changes where it can go in Solidtime. A *General* entry
-> goes there with no project. A space's entry goes to the Solidtime project
-> that `laika time map` set for the space, or is held as `space_not_mapped`
-> (SPEC §6.4, the outbox, `docs/SPEC.md:3076-3092`).
->
-> So **before confirming, the person sees which project a matched block
-> will be confirmed under**, in the To settle row and in the Inspector. They
-> can change it or clear it there.
->
-> A browser test asserts the project is shown on a matched block before
-> confirm. A server test asserts the block confirms under that project.
-> Both fail today.
+- [ ] **The person sees the project before confirming.** For a matched
+      block, the To settle row and the Inspector show which project it will
+      be confirmed under, and the person can change it or clear it there.
+- [ ] **Test (browser):** a matched block shows its project before confirm.
+      This fails today.
+- [ ] **Test (server):** a matched block confirms under that project, not as
+      General. This fails today.
 
 The Notes line *"Solidtime is unchanged"* now means only that Solidtime's
 code and `describe()` (`cli/src/time-solidtime.ts:638-642`) are unchanged.

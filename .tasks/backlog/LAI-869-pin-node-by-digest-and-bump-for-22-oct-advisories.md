@@ -71,7 +71,8 @@ with the reason it cannot be reached.
 
 ## Acceptance criteria
 
-Each criterion fails today.
+Each criterion fails today, except the two marked otherwise: the local
+`docker run` check, and the release check.
 
 - [ ] **Every `FROM` that names an image carries a digest.** Both `:24` and
       `:92` read
@@ -85,6 +86,10 @@ Each criterion fails today.
 - [ ] **The image runs 22.23.4.** A local build of `docker/Dockerfile`, then
       `docker run --rm <that image> node -p process.version`, prints
       `v22.23.4`. Record both commands and their output here.
+      - This is a **confirmation that pairs with the pin**, not a criterion
+        that fails today. Today's floating tag happens to give 22.23.4 too.
+        The pin is what makes it stay true; the first criterion is the one
+        that fails today.
 - [ ] **No critical or high advisory.** `pnpm audit --prod --json` reports
       0 critical and 0 high. Today it reports 1 and 7.
       - Every advisory left at any level that has no fix in its line is
@@ -119,7 +124,9 @@ Each criterion fails today.
       health check comes back on the new image.
       - A branch never builds the image (`deploy.yml:56`), so this is checked
         on the release, not on the PR.
-      - Strelka records the run id here, or Belka does at review.
+      - **Belka ticks this box** after the master run, and records the run
+        id. Strelka cannot: it never pushes `master`. Strelka submits for
+        review with this one box open, which is expected.
 
 ## Notes
 
