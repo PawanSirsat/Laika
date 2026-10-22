@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { VISIBILITY_OPTIONS, type ProjectVisibility } from '../../../api/projects.ts';
 import { ALWAYS_ON, FIELD_ICONS, FIELD_KEYS, FIELD_LABELS } from './card-fields.ts';
 import { type ColumnWidth, type Density, type ViewPreferences } from './view-preferences.ts';
 import './view-settings.css';
@@ -14,6 +15,13 @@ export interface ViewSettingsProps {
   /** `null` for "never". Project-wide, so it is not in `preferences`. */
   readonly hideDoneAfterDays: number | null;
   readonly onHideDoneChange?: ((days: number | null) => void) | undefined;
+  /**
+   * The space's visibility (LAI-961), `undefined` until the project has loaded.
+   * Project-wide like Hide done, and behind the same lead-only gate: without
+   * `onVisibilityChange` it is read, not offered.
+   */
+  readonly visibility?: ProjectVisibility | undefined;
+  readonly onVisibilityChange?: ((visibility: ProjectVisibility) => void) | undefined;
   readonly group: string;
   readonly onGroupChange: (group: string) => void;
   /**
@@ -86,6 +94,8 @@ export function ViewSettings({
   onClose,
   hideDoneAfterDays,
   onHideDoneChange,
+  visibility,
+  onVisibilityChange,
   group,
   onGroupChange,
   filters,
@@ -95,6 +105,8 @@ export function ViewSettings({
 }: ViewSettingsProps) {
   const panel = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState('');
+  /** Opening a space to the org waits for a yes; closing one does not. */
+  const [confirmingPublic, setConfirmingPublic] = useState(false);
 
   const shown = FIELD_KEYS.filter((key) => preferences.fields[key]);
   const needle = query.trim().toLowerCase();
@@ -121,7 +133,12 @@ export function ViewSettings({
         aria-label="View settings"
         tabIndex={-1}
         ref={panel}
-        style={{ top: `${String(anchor.top)}px`, right: `${String(anchor.right)}px` }}
+        style={
+          {
+            top: `${String(anchor.top)}px`,
+            '--vs-right': `${String(anchor.right)}px`,
+          } as CSSProperties
+        }
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.stopPropagation();
@@ -231,6 +248,80 @@ export function ViewSettings({
             deleted.
           </p>
         </section>
+
+        {visibility !== undefined && (
+          <section className="vs-section vs-visibility">
+            <h3 className="vs-label">Visibility</h3>
+            {onVisibilityChange === undefined ? (
+              <>
+                <p className="vs-value">
+                  {VISIBILITY_OPTIONS.find((option) => option.value === visibility)?.label}
+                </p>
+                <p className="vs-note">Only a project lead can change this.</p>
+              </>
+            ) : (
+              <>
+                <div className="vs-radios vs-radios-stacked">
+                  {VISIBILITY_OPTIONS.map((option) => (
+                    <label key={option.value} className="vs-radio">
+                      <input
+                        type="radio"
+                        name="vs-visibility"
+                        checked={visibility === option.value}
+                        onChange={() => {
+                          if (option.value === 'public') setConfirmingPublic(true);
+                          else {
+                            setConfirmingPublic(false);
+                            onVisibilityChange(option.value);
+                          }
+                        }}
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </div>
+                {/*
+                  **Inline, not `window.confirm`.** A native dialog takes focus
+                  out of the panel, and the panel closes on blur — it would be
+                  gone by the time the answer came back.
+                */}
+                {confirmingPublic && visibility !== 'public' && (
+                  <div
+                    className="vs-confirm"
+                    role="alertdialog"
+                    aria-label="Make this space public?"
+                  >
+                    <p className="vs-confirm-text">
+                      Everyone in the organisation will see this space and its work, and can join
+                      it.
+                    </p>
+                    <div className="vs-confirm-actions">
+                      <button
+                        type="button"
+                        className="vs-confirm-yes"
+                        onClick={() => {
+                          setConfirmingPublic(false);
+                          onVisibilityChange('public');
+                        }}
+                      >
+                        Make public
+                      </button>
+                      <button
+                        type="button"
+                        className="vs-confirm-no"
+                        onClick={() => {
+                          setConfirmingPublic(false);
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+        )}
 
         {!forList && (
           <>
