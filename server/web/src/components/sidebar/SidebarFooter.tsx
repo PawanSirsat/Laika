@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
-import { mayOpenProfiles } from '../../api/profiles.ts';
+import { useGates } from '../../api/permissions.ts';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
 import { useTheme } from '../../theme/use-theme.ts';
@@ -50,9 +50,9 @@ export function SidebarFooter({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const profile = mayOpenProfiles(user.org_role)
-    ? `/people?user=${encodeURIComponent(user.id)}`
-    : undefined;
+  // `profile.read`, as the server reports it (LAI-970) — not the role.
+  const { org } = useGates();
+  const profile = org('profile.read') ? `/people?user=${encodeURIComponent(user.id)}` : undefined;
 
   const items = (): HTMLElement[] => [
     ...(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []),

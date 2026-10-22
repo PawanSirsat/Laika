@@ -9,14 +9,10 @@ import { Dropdown } from '../../components/Dropdown.tsx';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import { useMembers } from '../../api/use-members.ts';
-import {
-  canManageMembers,
-  PROJECT_ROLES,
-  ROLE_SUMMARY,
-  type ProjectRole,
-} from '../../api/members.ts';
+import { PROJECT_ROLES, ROLE_SUMMARY, type ProjectRole } from '../../api/members.ts';
 import { getProject, type Project } from '../../api/projects.ts';
 import type { MeProfile } from '../../api/me.ts';
+import { useGates } from '../../api/permissions.ts';
 import './members.css';
 import { initials } from '../../theme/initials.ts';
 
@@ -36,6 +32,8 @@ export interface MembersScreenProps {
  */
 export function MembersScreen({ slug, me }: MembersScreenProps) {
   const { theme } = useTheme();
+  // `project.members.manage`, as the server reports it (LAI-970).
+  const gates = useGates(me !== undefined);
   const members = useMembers(slug);
   const [project, setProject] = useState<Project | undefined>(undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
@@ -86,10 +84,7 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
     );
   }
 
-  const mayManage =
-    me !== undefined &&
-    project !== undefined &&
-    canManageMembers(me.org_role, project.id, me.memberships);
+  const mayManage = project !== undefined && gates.project(project.id, 'project.members.manage');
 
   return (
     <div className="members">

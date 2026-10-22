@@ -97,10 +97,11 @@ function said(cause: unknown, fallback: string): string {
  * this says so.
  */
 export function ShareActivity({
-  canManageOrg,
+  canSetInsights,
   origin = window.location.origin,
 }: {
-  readonly canManageOrg: boolean;
+  /** `org.developer_insights.set`, as the server reports it — offered the Organisation link. */
+  readonly canSetInsights: boolean;
   /** This board's address, for the OpenTelemetry block (LAI-773). */
   readonly origin?: string;
 }) {
@@ -244,7 +245,7 @@ export function ShareActivity({
         <p className="conn-note conn-note-warn" data-state="org-off">
           <strong>Developer insights are off for this organisation</strong>, so nothing is collected
           from your machine.{' '}
-          {canManageOrg ? (
+          {canSetInsights ? (
             <>
               You can turn them on in <a href="/organisation?tab=overview">Organisation</a>.
             </>
@@ -259,7 +260,7 @@ export function ShareActivity({
             {collectionAudience(permissions)} can see it, and you can see who looked.{' '}
             <a href="#share-held">See what the board holds for you</a>, and your own time on{' '}
             <a href="/my-day">My day</a>.{' '}
-            {canManageOrg ? (
+            {canSetInsights ? (
               <>
                 You can turn Developer insights off in{' '}
                 <a href="/organisation?tab=overview">Organisation</a>.

@@ -7,7 +7,7 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
-import { canManageOrg, createInvite, revokeInvite, ORG_ROLES } from '../../../api/invites.ts';
+import { createInvite, revokeInvite, ORG_ROLES } from '../../../api/invites.ts';
 import { invitableRoles, orgRoleLabel } from '../invite-roles.ts';
 import { getOrg, updateOrg, type Org } from '../../../api/org.ts';
 import { revokeUserToken, type TokenView } from '../../../api/tokens.ts';
@@ -30,7 +30,7 @@ import { OrgActivity } from './OrgActivity.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import type { OrgRole } from '../../../api/invites.ts';
-import { holdsOrgAction, usePermissions } from '../../../api/permissions.ts';
+import { useGates } from '../../../api/permissions.ts';
 import './organisation.css';
 
 export interface OrganisationScreenProps {
@@ -117,15 +117,13 @@ export function OrganisationScreen({
   setParams,
   onNavigate,
 }: OrganisationScreenProps) {
-  const { permissions } = usePermissions();
-  const action = (name: string, fallback: boolean): boolean =>
-    holdsOrgAction(permissions, name) ?? fallback;
-  const roleDefault = canManageOrg(me.org_role);
-  const canInvite = action('user.invite', roleDefault);
-  const canDeactivate = action('user.deactivate', roleDefault);
-  const canSetInsights = action('org.developer_insights.set', roleDefault);
-  const canSetTime = action('org.time.set', roleDefault);
-  const canListTokens = action('token.list_any', roleDefault);
+  // The server's answer, denied until it has one (LAI-970) — never the role.
+  const gates = useGates();
+  const canInvite = gates.org('user.invite');
+  const canDeactivate = gates.org('user.deactivate');
+  const canSetInsights = gates.org('org.developer_insights.set');
+  const canSetTime = gates.org('org.time.set');
+  const canListTokens = gates.org('token.list_any');
   /**
    * Only the owner changes an org role (D-102 rule 5, LAI-958: `user.set_role`
    * is owner-locked). An admin keeps deactivating and inviting, and sees each

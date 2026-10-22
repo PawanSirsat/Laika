@@ -2,6 +2,7 @@ import { createActivityStore } from './activity-store.ts';
 import { listProjectActivityPage } from './activity.ts';
 import { observeStreams } from './event-stream.ts';
 import { sharedCache } from './query-cache.ts';
+import { setPermissionsUser } from './permissions.ts';
 import { createStatusStore } from './status-store.ts';
 import { listStatuses } from './statuses.ts';
 import { createTaskStore } from './task-store.ts';
@@ -118,6 +119,9 @@ observeStreams({
  * cached at all.
  */
 export function setStoreUser(userId: string | undefined): void {
+  // Before the early return: a user the cache already knows may still be new to
+  // the permissions store (a first load), and it is idempotent for the same one.
+  setPermissionsUser(userId);
   if (userId !== undefined && userId === sharedCache.user) return;
   sharedCache.setUser(userId);
   taskStore.reset();

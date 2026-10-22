@@ -18,15 +18,14 @@ import {
   VISIBILITY_OPTIONS,
   type Project,
 } from '../../api/projects.ts';
-import { canEditProjectContext } from '../../api/project-context.ts';
 import { ProjectContextPanel } from './projects/ProjectContextPanel.tsx';
 import type { MeProfile } from '../../api/me.ts';
-import { canConfigureProject, type Member } from '../../api/tasks.ts';
+import { type Member } from '../../api/tasks.ts';
 import { ApiError } from '../../api/errors.ts';
 import { fieldErrors } from '../../api/setup.ts';
 import { required } from '../../components/forms/validation.ts';
 import './projects.css';
-import { implicitlyLeads, usePermissions } from '../../api/permissions.ts';
+import { useGates } from '../../api/permissions.ts';
 
 export interface ProjectsScreenProps {
   /** Open a project's board. `?project=<slug>` is what BoardScreen reads. */
@@ -50,28 +49,28 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
   const [contextFor, setContextFor] = useState<Project | undefined>(undefined);
   const { theme } = useTheme();
   const list = useProjects();
-  const { permissions } = usePermissions(me !== undefined);
+  const gates = useGates(me !== undefined);
   /** The space a join is in flight for, so only its own button says so. */
   const [joining, setJoining] = useState<string | undefined>(undefined);
   const [joinError, setJoinError] = useState<string | undefined>(undefined);
 
   /**
    * Explicit membership from `me.memberships`, never from the summary's
-   * `members`; owner/admin implicit lead from the shared project helper.
+   * `members`; an implicit lead as the server reports it
+   * (`implicit_project_role`, LAI-970) — never from the org role.
    *
    * That array is capped for drawing faces — a space with forty members sends a
    * handful — so testing it would make a space you can already open look
    * joinable once it grew past the cap.
    */
   const isMine = (project: Project): boolean =>
-    me?.memberships.some((m) => m.project_id === project.id) === true ||
-    (me !== undefined &&
-      (implicitlyLeads(permissions, project.id) ??
-        canConfigureProject(me.org_role, project.id, me.memberships)));
+    me?.memberships.some((m) => m.project_id === project.id) === true || gates.leads(project.id);
 
   const mine = list.status === 'ready' ? list.projects.filter(isMine) : [];
+  // Nothing is offered to join until the server has said which spaces the
+  // reader already leads: Join on a space they implicitly lead is a dead control.
   const joinable =
-    list.status === 'ready'
+    list.status === 'ready' && gates.settled
       ? list.projects.filter((p) => !isMine(p) && p.visibility === 'public')
       : [];
 
@@ -426,11 +425,7 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
               projectName={contextFor.name}
               /* Decided here, where the actor's memberships are known. The panel
                  renders read-only rather than offering a Save that answers 403. */
-              mayEdit={
-                me !== undefined &&
-                (implicitlyLeads(permissions, contextFor.id) ??
-                  canEditProjectContext(me.org_role, contextFor.id, me.memberships))
-              }
+              mayEdit={gates.project(contextFor.id, 'project.settings.edit')}
               /* The project summary already carries its members, so naming who
                  last edited the document costs no second request. */
               members={
