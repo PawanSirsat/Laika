@@ -750,7 +750,147 @@ void describe('the description opens a rich editor in place (LAI-827)', () => {
   });
 });
 
+/**
+ * Mentions of every kind (LAI-868), and the same text as
+ * `markdown-bridge.test.ts`'s byte-for-byte case.
+ */
+const MENTIONS = [
+  'Ask @ada, then (@ada) and **@grace**.',
+  '',
+  'Handed to @strelka and @belka.',
+  '',
+  'Not a mention: ada@example.com, or `@ada` in code.',
+  '',
+  'Thanks @Ada Lovelace for the review.',
+  '',
+  'A line that ends in a mention, @ada ',
+  'and the line after it.',
+].join('\n');
+
+/** Each pill in an open editor as `text kind`, in document order (LAI-868). */
+async function editorPills(editor: Locator): Promise<string[]> {
+  return content(editor)
+    .locator('.md-mention')
+    .evaluateAll((els) =>
+      els.map(
+        (el) =>
+          `${el.textContent ?? ''} ${(el.getAttribute('class') ?? '').replace('md-mention ', '')}`,
+      ),
+    );
+}
+
+void describe('the editor draws @name as a pill (LAI-868)', () => {
+  void test('choosing a person from the @ list draws their pill; the text is the handle', async () => {
+    const server: Server = { t3: subject({ description_md: 'Ask' }) };
+    const h = await open(URL, stub(server), { before: fakeStream });
+    try {
+      await description(h).locator('.md p').waitFor({ timeout: 20_000 });
+      const editor = await openEditor(h);
+      await caretAtEnd(h.page, content(editor).locator('p').last());
+      await h.page.keyboard.type(' @gra');
+      const options = h.page.locator('.rich-editor-picker [role="option"]');
+      await until(
+        async () => (await options.allTextContents()).join('|') === 'Grace Hopper @grace',
+      );
+      // Half a handle names nobody: no pill while it is typed.
+      assert.deepEqual(await editorPills(editor), []);
+      await h.page.keyboard.press('Enter');
+      await until(async () => (await editorPills(editor)).length === 1);
+      assert.deepEqual(await editorPills(editor), ['@grace md-mention-person']);
+
+      // The pill is drawn, not written: the save is the handle as text.
+      await editor.getByRole('button', { name: 'Save' }).click();
+      await until(() => patches(h).length > 0, 5_000);
+      assert.deepEqual(patches(h)[0]?.body, { description_md: 'Ask @grace' });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a description opens with every mention’s pill, the reader’s as their own', async () => {
+    const server: Server = { t3: subject({ description_md: MENTIONS }) };
+    const h = await open(URL, stub(server), { before: fakeStream });
+    try {
+      await description(h).locator('.md p').first().waitFor({ timeout: 20_000 });
+      const editor = await openEditor(h);
+      // The reader is Ada (`u1`), so `@ada` is the reader's pill; `@Ada
+      // Lovelace` is `@Ada` by the server's grammar, and so is the pill.
+      await until(async () => (await editorPills(editor)).length === 7);
+      assert.deepEqual(await editorPills(editor), [
+        '@ada md-mention-me',
+        '@ada md-mention-me',
+        '@grace md-mention-person',
+        '@strelka md-mention-machine',
+        '@belka md-mention-machine',
+        '@Ada md-mention-me',
+        '@ada md-mention-me',
+      ]);
+      assert.equal(await content(editor).locator('code .md-mention, a .md-mention').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the acceptance and a comment draw them too, the reader’s as their own', async () => {
+    const server: Server = {
+      t3: subject({ acceptance_md: 'Signed off by @grace and @ada.' }),
+    };
+    const h = await panel(server);
+    try {
+      // The reader is Ada (`u1`).
+      const accepting = await openEditor(h, acceptance(h));
+      await until(async () => (await editorPills(accepting)).length === 2);
+      assert.deepEqual(await editorPills(accepting), [
+        '@grace md-mention-person',
+        '@ada md-mention-me',
+      ]);
+      await h.page.keyboard.press('Escape');
+      await accepting.waitFor({ state: 'detached', timeout: 5_000 });
+
+      await h.page.getByRole('button', { name: /Add a comment/ }).click();
+      const composer = h.page.locator('.panel-composer .rich-editor');
+      await composer.waitFor({ timeout: 10_000 });
+      await content(composer).click();
+      await h.page.keyboard.type('thanks @ada and @strelka ');
+      await until(async () => (await editorPills(composer)).length === 2);
+      assert.deepEqual(await editorPills(composer), [
+        '@ada md-mention-me',
+        '@strelka md-mention-machine',
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('nothing an agent wrote is silently rewritten (LAI-827)', () => {
+  /*
+   * LAI-868: the editor draws mentions as pills, by decoration, which is not
+   * in the document. A guard that passes before and after it: opened and left
+   * untouched, a description full of mentions sends nothing.
+   */
+  void test('a description full of mentions opens rich, and untouched sends nothing (LAI-868)', async () => {
+    const server: Server = { t3: subject({ description_md: MENTIONS }) };
+    const h = await open(URL, stub(server), { before: fakeStream });
+    try {
+      await description(h).locator('.md p').first().waitFor({ timeout: 20_000 });
+      const editor = await openEditor(h);
+      assert.equal(await content(editor).isVisible(), true, 'it opened as Markdown');
+
+      // Save untouched, then open again and leave by Escape: nothing goes out.
+      await editor.getByRole('button', { name: 'Save' }).click();
+      await editor.waitFor({ state: 'detached', timeout: 5_000 });
+      const again = await openEditor(h);
+      await h.page.keyboard.press('Escape');
+      await again.waitFor({ state: 'detached', timeout: 5_000 });
+      await h.page.waitForTimeout(300);
+      assert.equal(patches(h).length, 0, 'leaving without an edit sent a PATCH');
+      assert.equal(server.t3.description_md, MENTIONS, 'the stored text changed');
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('a document the editor cannot write back exactly opens as Markdown and says why', async () => {
     const written = [
       'Notes from the agent:',

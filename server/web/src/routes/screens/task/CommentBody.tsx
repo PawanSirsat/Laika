@@ -1,9 +1,13 @@
 import type { Components, ExtraProps } from 'react-markdown';
+import type { MentionCandidate } from './LazyRichEditor.tsx';
 import { TaskMarkdown } from './TaskMarkdown.tsx';
 import './task-panel.css';
 
 export interface CommentBodyProps {
   readonly body: string;
+  /** Whose `@` mention is a pill, and who is reading (LAI-868). */
+  readonly people?: readonly MentionCandidate[] | undefined;
+  readonly meId?: string | undefined;
 }
 
 /** The fence's tag, from the `language-…` class the renderer puts on `code`. */
@@ -41,7 +45,7 @@ const COMMENT_COMPONENTS: Components = {
  * not apply to a renderer the description already trusts with the same
  * people's text. An unclosed fence still runs to the end, as CommonMark says.
  */
-export function CommentBody({ body }: CommentBodyProps) {
+export function CommentBody({ body, people, meId }: CommentBodyProps) {
   return (
     <div className="panel-comment-body">
       <TaskMarkdown
@@ -49,6 +53,8 @@ export function CommentBody({ body }: CommentBodyProps) {
         className="md-comment md-reading"
         components={COMMENT_COMPONENTS}
         singleHardBreaks
+        people={people}
+        meId={meId}
       />
     </div>
   );

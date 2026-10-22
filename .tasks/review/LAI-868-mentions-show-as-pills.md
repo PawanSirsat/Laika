@@ -6,7 +6,9 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: review
+started: 2026-10-22T07:09:08Z
+finished: 2026-10-22T08:35:03Z
 ---
 
 ## Goal
@@ -82,17 +84,17 @@ and the editor's round-trip guard (LAI-827, LAI-849) is unaffected.
 
 ## Acceptance criteria
 
-- [ ] **One grammar.** The web finds mentions with the server's pattern. A
+- [x] **One grammar.** The web finds mentions with the server's pattern. A
       web test reads `server/src/services/mentions.ts` as text and asserts the
       web pattern's source equals `parseMentionHandles`'s, so the two cannot
       drift. A pill covers exactly the characters that pattern matches.
-- [ ] **Who gets a pill.** A handle gets a pill when it matches exactly one
+- [x] **Who gets a pill.** A handle gets a pill when it matches exactly one
       person in the panel's people list (`/mentionable`, handles as
       `TaskDetailPanel.tsx:212-219` builds them). If two people share the
       handle, or nobody has it, it **stays plain text**, as SPEC §4.19 says.
       `strelka` and `belka`, when no person holds them, get the machine pill.
       Matching is case-insensitive.
-- [ ] **Three looks, existing tokens only.**
+- [x] **Three looks, existing tokens only.**
       - **Viewer:** the matched person's id is `meId`. This is the stronger
         style.
       - **Person:** anyone else.
@@ -103,7 +105,7 @@ and the editor's round-trip guard (LAI-827, LAI-849) is unaffected.
       reads each kind's computed `background-color` and `color`. It asserts
       the three kinds differ pairwise in both themes. It fails today, because
       there is no pill.
-- [ ] **Read-only surfaces.** Pills show in the description, the acceptance
+- [x] **Read-only surfaces.** Pills show in the description, the acceptance
       criteria and comments, through `TaskMarkdown`, so `EvidenceSection`
       gets them too. There are no pills inside inline code, code blocks or
       link text.
@@ -116,17 +118,17 @@ and the editor's round-trip guard (LAI-827, LAI-849) is unaffected.
         - a pill on `@ada`, `(@ada)` and `**@grace**`;
         - none on `ada@example.com`, `` `@ada` `` or an ambiguous handle;
         - the viewer's own handle gets the viewer style.
-- [ ] **A pill adds no text.** The element's text is exactly the source's
+- [x] **A pill adds no text.** The element's text is exactly the source's
       characters, so copying, find and screen readers read what was written.
       `comment-markdown.test.ts:196-204`, which asserts `@Ada Lovelace` in the
       first paragraph's text, passes unedited.
-- [ ] **The rich editor.** Pills show while editing the description,
+- [x] **The rich editor.** Pills show while editing the description,
       acceptance and a comment. They come from a ProseMirror **decoration**
       plugin, added beside `Placeholder` (`RichEditor.tsx:261`), never as a
       mark or node in `MARKDOWN_EXTENSIONS`, which this task does not change.
       A pill appears when a person is chosen from the `@` list. The browser
       test (`task-panel-editing.test.ts`, near `:719`) asserts it.
-- [ ] **Byte-identical round trip.** A new case in `markdown-bridge.test.ts`
+- [x] **Byte-identical round trip.** A new case in `markdown-bridge.test.ts`
       uses `roundTrips` on a description holding:
       - `@ada`, `(@ada)`, `**@grace**`;
       - `@strelka` and `@belka`;
@@ -143,19 +145,24 @@ and the editor's round-trip guard (LAI-827, LAI-849) is unaffected.
       instead of a decoration. The round-trip case goes red. Prove the
       mutation landed with a `grep`, restore the file, and record the run in
       the task file.
-- [ ] **Stored text unchanged.** The composer still posts
+- [x] **Stored text unchanged.** The composer still posts
       `{ body_md: '**Done** for @ada' }` (`task-panel-editing.test.ts:1202`),
       unedited.
-- [ ] **SPEC, a named edit (D-033/D-034):** one sentence in §11.4.2.1's task
+- [x] **SPEC, a named edit (D-033/D-034):** one sentence in §11.4.2.1's task
       panel entry, next to the `@` autocomplete (`docs/SPEC.md:4118-4121`),
       saying a mention that names someone shows as a pill. §4.19's "It
       renders as plain text" stays as written.
-- [ ] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
+- [x] Gate: `pnpm test`, `pnpm lint` and `pnpm format` each exit 0.
 
 ## Notes
 
 - Builds on **Belka** (D-097; board tag `host-belka`). It goes first, before
   LAI-865 (owner's order, 2026-10-22).
+- **Claimed before its filing merged.** CHIEF (Belka) directed this claim
+  against PR #32 (`chief-ops-tasks-1022`, head `6027586d`) before that PR
+  reached `master`, so `depends-on` is empty but the file itself was not yet
+  on `master` at claim time (§2 step 1's deviation, recorded here). The
+  branch merges `origin/master` once PR #32 lands.
 - **Area:** `server/web` only. Files:
   - `server/web/src/routes/screens/task/TaskMarkdown.tsx` and its CSS;
   - a new mention helper beside it (for example
@@ -182,3 +189,157 @@ and the editor's round-trip guard (LAI-827, LAI-849) is unaffected.
   server should stop is not this task.
 - A mention by name, `@Ada Lovelace`, is read by the server as `@Ada`, so
   only `@Ada` can become a pill. That is the grammar, said honestly.
+
+## Build notes (Belka's builder, 2026-10-22)
+
+**PR #32's review notes, folded in.** CHIEF sent two notes from the PR #32
+review after this was claimed. They make two criteria stricter and add
+none.
+
+1. **The mutation must change the parsed document.** Recorded under
+   *Mutation runs* below. It also added a property test.
+2. **The styles are ordered, not only different.** And an org Owner offered
+   by `/mentionable` with no member row (`handle: null`) must, as the reader,
+   still see their own pill. Both browser fixtures use that Owner as the
+   reader.
+
+**Files outside the Notes' list, each named:**
+
+- `server/web/src/routes/screens/BoardScreen.tsx`: one line,
+  `meEmail={me?.email}`. Without it the panel has no email for an Owner with
+  no member row, so that Owner's own `@handle` could not resolve to them
+  (review note 2).
+- `server/web/src/routes/screens/task/LazyRichEditor.tsx`: `meId` on
+  `RichEditorProps`, a type only, so the editor draws the reader's pill.
+- `server/web/src/routes/screens/task/CommentComposer.tsx`: passes `meId` on
+  to the editor.
+- `server/web/src/routes/screens/task/editor/mention-pills.ts`, and its
+  mirror `test/routes/screens/task/editor/mention-pills.test.ts` (CONVENTIONS
+  §4): the decoration plugin. It is its own module, so Node can test which
+  ranges it covers.
+- `server/web/src/routes/screens/task/mentions.ts`, and its mirror
+  `test/routes/screens/task/mentions.test.ts`: the helper the Notes named.
+- `editor/rich-editor.css` is **not** changed. The decorations wear the
+  `.md-mention*` classes from `task-markdown.css`, which the editor's
+  document already uses as `.md`.
+
+**One side effect, said plainly.** The panel builds one people list for the
+`@` picker and for the pills. Now that it knows the reader's handle, an Owner
+reader who picks themselves inserts `@handle` where it used to insert
+`@Full Name`. The server resolves `@handle`. It did not resolve `@Full`.
+
+**`task-markdown-props.test.ts`, the one change.** The plugin assertion
+(`:53`) now reads
+`rehypePlugins={singleHardBreaks ? MENTIONS_AND_SINGLE_HARD_BREAKS : MENTIONS}`,
+because the mention step is always on. Nothing else in that file changed.
+
+**The `@` picker keeps its own pattern** (`RichEditor.tsx`, `findMention`).
+It reads a query half-typed after `@`, which can be letters in any script or
+a name. It does not decide what a mention is. Only the pills use the
+server's grammar.
+
+**The three looks**, all existing tokens:
+
+| Kind | Fill | Ink |
+| --- | --- | --- |
+| Reader | `--accent` | `--on-accent` |
+| Person | `--accent-bg`, `--accent-border` edge | `--accent` |
+| Machine | none, `--border-default` outline | `--text-secondary` |
+
+How the browser test reads "stronger" and "softer": each fill is painted over
+the surface it sits on.
+
+- **Stronger**: the reader's fill has a higher contrast ratio against the
+  surface than a person's, and more chroma (`max − min` of the sRGB channels).
+- **Softer**: a machine's fill has less contrast and less chroma than a
+  person's, and so does its ink.
+
+Measured in dark, from a mutation's failure message:
+
+| Kind | Contrast against the surface | Chroma |
+| --- | --- | --- |
+| Reader | 6.30 | 111 |
+| Person | 1.25 | 19.8 |
+| Machine | 1.00 | 5 |
+
+The machine's ink has chroma 10 and the person's has 111.
+
+**Before and after.** The run against today's code: the `server/web/src`
+files restored by name from `6027586d`, with a grep anchor proving the old
+code was on disk, then put back from `HEAD`. Results:
+
+- 7 of the 8 new browser tests fail. Each one either times out waiting for
+  `.md-mention` or gets an empty pill list.
+- The untouched-description guard passes. It is a guard that passes before
+  and after, as the criterion says.
+- The new bridge round-trip case passes.
+- `mentions.test.ts` and `mention-pills.test.ts` cannot import the modules,
+  which do not exist yet.
+
+### Mutation runs
+
+Each mutant was written by an anchored replace that refuses if the anchor
+does not match. A `grep` proved it landed. A trap restored the file from
+`HEAD`, and a `shasum` proved the restore.
+
+- **The pill as a mark in `MARKDOWN_EXTENSIONS`** (the criterion's
+  mutation, as review note 1 asks): a `MentionMark` with a tokenizer that
+  takes `@handle` and **no Markdown writer**. A probe confirmed that marks
+  really appear in the parsed document both times.
+  - **`@` consumed as the mark's syntax**, as a tokenizer consumes `**`: the
+    parsed marks were `["ada","grace"]`.
+    - `markdown-bridge.test.ts` *a description full of mentions comes back
+      byte for byte* went **red**, with "did not open rich" (`'source' !==
+      'rich'`), exit 1.
+    - `mention-pills.test.ts` *the bridge parses a mention as plain text* went
+      **red** too.
+  - **`@` kept in the mark's text**: the parsed marks were
+    `["@ada","@grace"]`.
+    - The round-trip case stayed **green**, exit 0. A mark that writes every
+      byte back changes no stored text, so the byte-identity guard is right
+      to pass it. That guard cannot see this mutant.
+    - The property test added for exactly this case went **red**:
+      `'@ada|mention'` where it expected plain text, exit 1.
+- **Style ordering.** The first try replaced the reader's or the machine's
+  colours with `--chip-purple*`. In dark those equal the accent tokens, so
+  the pairwise check went red first ("look the same"). That is the dark-mode
+  trap the task names, caught. Two mutants that change the order and keep
+  the pairs distinct:
+  - The reader's pill tinted (`--accent-bg`, `--text-primary` ink): **red**,
+    "the reader's pill is not stronger". Exit 1.
+  - The machine's pill in `--chip-blue` / `--chip-blue-bg`: **red**, "a
+    machine's fill has more colour". Exit 1.
+- **Grammar drift.** Dropping `%` from the web pattern's lookbehind turned
+  `mentions.test.ts` *the web pattern is parseMentionHandles's* **red**,
+  exit 1.
+
+After every run, `git status --porcelain` showed no source file changed.
+
+### Gate
+
+This Mac's load stayed between 25 and 62 for the whole 45-minute wait
+(13:09 to 13:54). Following the brief, the gate then ran anyway: from
+13:54, at `fd775661`, with a load of 32 at the start and 67 to 77 during
+`pnpm test`. Each command's output went to its own file, and each exit code
+was captured on its own line.
+
+| Command | Exit code | Result |
+| --- | --- | --- |
+| `pnpm test` | **1** | web 2790 test cases, 0 failed; cli 553 test cases, 0 failed; **server: 3 failed** of 3421 (10 skipped) |
+| `pnpm lint` | 0 | |
+| `pnpm format` | 0 | |
+
+All three server failures are **timeouts**, in files this task does not
+touch. The diff changes nothing under `server/` outside `server/web/`.
+
+- `test/mcp/project-tools.test.ts` *create_sprint accepts unix-ms*: hook
+  timed out in 10000ms.
+- `test/tooling/activity-payload-names.test.ts` *survives payload shapes
+  that carry no `changed`*: test timed out in 5000ms.
+- `test/http/routes/time-my-day-v2.test.ts` *delete, undone…*: hook timed
+  out in 10000ms.
+
+Re-run alone with `npx vitest run` on those three files: **exit 0**, 81 test
+cases passed. The load was 54 to 68 during that run.
+
+The final gate before the push is reported in the PR and on the card.
