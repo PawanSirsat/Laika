@@ -14,15 +14,8 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import {
-  closeBrowser,
-  open,
-  refuse,
-  reply,
-  until,
-  type Harness,
-  type StubCall,
-} from './harness.ts';
+import { closeBrowser, refuse, reply, until, type Harness, type StubCall } from './harness.ts';
+import { open } from './my-day-clock.ts';
 import {
   ARRIVED,
   BUSY_DAY,

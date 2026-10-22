@@ -19,8 +19,9 @@
  */
 
 import { withHeaders, type ApiStub, type StubCall } from './harness.ts';
+import { TODAY } from './my-day-clock.ts';
 
-export const TODAY = new Date().toISOString().slice(0, 10);
+export { TODAY };
 const MIDNIGHT = Date.parse(`${TODAY}T00:00:00Z`);
 const at = (minutes: number): number => MIDNIGHT + minutes * 60_000;
 

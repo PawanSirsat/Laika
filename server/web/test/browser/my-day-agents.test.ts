@@ -8,7 +8,8 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Locator, Page } from 'playwright';
-import { closeBrowser, open, setTheme, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, setTheme, type ApiStub, type Harness } from './harness.ts';
+import { open } from './my-day-clock.ts';
 import { AGENT, at, TODAY, YESTERDAY, viewOf, weekData, weekStub } from './my-day-week.ts';
 
 const LANE = [
