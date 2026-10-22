@@ -2,11 +2,12 @@
 id: LAI-308
 title: 'activity-sync "a holder that started under another time zone keeps the lock" reads the lock before the holder has written it'
 area: cli
-assignee: unclaimed
+assignee: strelka
 priority: p3
 depends-on: []
 discovered-from: LAI-854
-status: backlog
+status: in-progress
+started: 2026-10-22T06:24:16Z
 ---
 
 ## Goal
