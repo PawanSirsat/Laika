@@ -15,7 +15,6 @@ import { after, describe, test } from 'node:test';
 import type { Locator, Page } from 'playwright';
 import {
   closeBrowser,
-  open,
   reply,
   refuse,
   setTheme,
@@ -25,6 +24,7 @@ import {
   type Harness,
   type StubCall,
 } from './harness.ts';
+import { open } from './my-day-clock.ts';
 import {
   addDays,
   at,

@@ -8,7 +8,8 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, setTheme, until, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './harness.ts';
+import { open } from './my-day-clock.ts';
 import { AGENT, at, TODAY, viewOf, weekData, weekStub } from './my-day-week.ts';
 
 /** The agent at 9:00–9:10 on a card and 9:10–9:15 on none — inside d1 — and at 1 PM. */
