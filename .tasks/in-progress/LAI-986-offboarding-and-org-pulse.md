@@ -2,11 +2,12 @@
 id: LAI-986
 title: 'Removing or deactivating someone leaves their open tasks assigned; the organisation overview has no pulse'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-981]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-22T18:29:20Z
 ---
 
 ## Acceptance criteria (D-104 item 5; audit C5)
