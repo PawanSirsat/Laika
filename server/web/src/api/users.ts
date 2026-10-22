@@ -18,6 +18,11 @@ export interface OrgUser {
   readonly email: string;
   readonly org_role: string;
   readonly is_active: boolean;
+  /**
+   * When they were last seen signed in — the latest activity of any session,
+   * live or ended (LAI-981). `null` for somebody who has never signed in.
+   */
+  readonly last_seen_at: number | null;
   readonly created_at: number;
   readonly updated_at: number;
 }
@@ -115,9 +120,20 @@ export async function listAllUsers(
  * **Deactivation is not deletion.** §4.1 keeps the row so history keeps its
  * author, and the person stays in the list wearing a `DEACTIVATED` chip.
  */
+/**
+ * What happens to a deactivated person's open tasks (D-104 item 5, LAI-986).
+ * The server refuses a deactivation of someone holding open tasks without it
+ * (`409`, `reason: 'open_tasks'`).
+ */
+export type OpenTasksChoice = 'unassign' | { readonly reassign_to: string };
+
 export function updateUser(
   id: string,
-  patch: { readonly org_role?: string; readonly is_active?: boolean },
+  patch: {
+    readonly org_role?: string;
+    readonly is_active?: boolean;
+    readonly open_tasks?: OpenTasksChoice;
+  },
 ): Promise<OrgUser> {
   return request<OrgUser>(`/users/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch });
 }

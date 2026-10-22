@@ -22,6 +22,7 @@ function user(id: string, name: string): OrgUser {
     email: `${name.toLowerCase().replace(/\s+/g, '.')}@example.com`,
     org_role: 'member',
     is_active: true,
+    last_seen_at: null,
     created_at: 0,
     updated_at: 0,
   };

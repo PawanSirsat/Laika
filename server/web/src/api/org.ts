@@ -1,4 +1,5 @@
 import { request } from './client.ts';
+import type { OrgUser } from './users.ts';
 
 /**
  * The organisation (SPEC §6.4, §12; server by LAI-222 and LAI-447).
@@ -76,9 +77,23 @@ export interface Org {
   readonly ai?: OrgAi;
   /** **Absent, not null**, for a caller who may not configure webhooks. */
   readonly github_webhook?: OrgGithubWebhook;
+  /**
+   * Active owners besides the recorded one (D-104 item 2, LAI-982): left over
+   * from before the role picker lost *Owner*. **Absent** for anyone but the
+   * owner, and normally empty for them — reported, never demoted silently.
+   */
+  readonly extra_owners?: readonly OrgOwnerRef[];
+}
+
+export interface OrgOwnerRef {
+  readonly id: string;
+  readonly name: string;
+  readonly email: string;
 }
 
 export interface OrgPatch {
+  /** D-104 item 7 (LAI-984): 1–80 characters; the server trims it. */
+  readonly name?: string;
   readonly presence_enabled?: boolean;
   readonly developer_insights?: boolean;
   /**
@@ -100,6 +115,25 @@ export function getOrg(signal?: AbortSignal): Promise<Org> {
 
 export function updateOrg(patch: OrgPatch): Promise<Org> {
   return request<Org>('/org', { method: 'PATCH', body: patch });
+}
+
+/** What a transfer answers: the two people it changed (LAI-982). */
+export interface OwnershipTransfer {
+  readonly owner: OrgUser;
+  readonly previous_owner: OrgUser;
+}
+
+/**
+ * Hand the organisation to an active admin or member (D-104 item 2). `confirm`
+ * is their email, typed — the server checks it, so a slip of the mouse is
+ * refused there rather than trusted here. Refusals are `422` with a `reason`:
+ * `self`, `inactive`, `role` or `confirm_mismatch`.
+ */
+export function transferOwnership(userId: string, confirm: string): Promise<OwnershipTransfer> {
+  return request<OwnershipTransfer>('/org/transfer-ownership', {
+    method: 'POST',
+    body: { user_id: userId, confirm },
+  });
 }
 
 /** Set or rotate the GitHub webhook secret; the answer is the only time it is shown. */
