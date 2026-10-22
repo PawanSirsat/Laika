@@ -831,3 +831,225 @@
     display: none;
   }
 }
+
+/* --- Roles & permissions (LAI-950) ----------------------------------------- */
+
+/* A role is the server's word, shown as a name. */
+.perm-role {
+  text-transform: capitalize;
+}
+
+.perm-me {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+}
+
+.perm-me-fact dt {
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.perm-me-fact dd {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.perm-subhead {
+  font-size: var(--text-body);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+  margin: var(--space-3) 0 var(--space-2);
+}
+
+.perm-held {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.perm-held li {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  padding: 0.125rem var(--space-2);
+}
+
+.perm-projects {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.perm-project-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.perm-project-name {
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.perm-card .org-card-head {
+  flex-wrap: wrap;
+}
+
+.perm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-body);
+}
+
+.perm-table thead th {
+  text-align: left;
+  padding: 0 var(--space-3) var(--space-2) 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.perm-table tbody th,
+.perm-table td {
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top;
+  text-align: left;
+}
+
+.perm-table tbody tr:last-child th,
+.perm-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.perm-action {
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.perm-marks {
+  display: inline-flex;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+  vertical-align: middle;
+}
+
+.perm-mark[data-mark='session-only'] {
+  color: var(--chip-purple);
+  background: var(--chip-purple-bg);
+  border-color: var(--chip-purple-border);
+}
+
+.perm-mark[data-mark='read-only'] {
+  color: var(--chip-blue);
+  background: var(--chip-blue-bg);
+  border-color: var(--chip-blue-border);
+}
+
+.perm-cell {
+  color: var(--text-secondary);
+}
+
+.perm-cell[data-holding='yes'] .perm-cell-value {
+  color: var(--chip-green);
+  font-weight: var(--weight-bold);
+}
+
+.perm-cell[data-holding='no'] .perm-cell-value,
+.perm-cell[data-holding='absent'] .perm-cell-value {
+  color: var(--text-muted);
+}
+
+.perm-cell[data-holding='conditional'] .perm-cell-value {
+  display: inline-block;
+  font-size: var(--text-small);
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
+  border-radius: var(--radius-chip);
+  padding: 0 var(--space-1);
+}
+
+/* The role a cell answers for: the column head says it on a wide screen. */
+.perm-cell-role {
+  display: none;
+}
+
+.perm-members {
+  margin-top: var(--space-3);
+}
+
+.perm-members .org-head-action {
+  margin-left: 0;
+}
+
+/* On a phone each action is a block with its roles beneath, not a table. */
+@media (max-width: 40rem) {
+  .perm-table thead {
+    display: none;
+  }
+
+  .perm-table,
+  .perm-table tbody,
+  .perm-table tr,
+  .perm-table tbody th,
+  .perm-table td {
+    display: block;
+  }
+
+  .perm-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .perm-table tbody tr:last-child {
+    border-bottom: none;
+  }
+
+  .perm-table tbody th {
+    grid-column: 1 / -1;
+  }
+
+  .perm-table tbody th,
+  .perm-table td {
+    padding: 0;
+    border-bottom: none;
+  }
+
+  .perm-table .perm-cell {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  .perm-cell-role {
+    display: inline;
+    text-transform: capitalize;
+    color: var(--text-muted);
+    font-size: var(--text-small);
+  }
+}

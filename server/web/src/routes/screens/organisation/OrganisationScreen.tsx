@@ -24,6 +24,7 @@ import { GithubWebhookSection } from './GithubWebhookSection.tsx';
 import { ModelPricesSection } from './ModelPricesSection.tsx';
 import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
+import { RolesPermissionsSection } from './RolesPermissionsSection.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import type { OrgRole } from '../../../api/invites.ts';
 import './organisation.css';
@@ -32,7 +33,7 @@ export interface OrganisationScreenProps {
   readonly me: MeProfile;
   /** The tabs this reader is offered — Security is an owner's or an admin's. */
   readonly tabs: readonly PageTab[];
-  /** The open tab: `overview`, `people`, `integrations` or `security`. */
+  /** The open tab: `overview`, `people`, `roles`, `integrations` or `security`. */
   readonly tab: string;
   readonly onNavigate: (to: string) => void;
 }
@@ -104,7 +105,10 @@ function expiryLabel(expiresAt: number, now: number): string {
  * **Security** — everyone's tokens, for an owner or an admin. Nothing moved
  * out of reach and no section gained or lost a control. What the reference
  * showed that Laika has no data for — a plan badge, an admin activity log, a
- * permission matrix, a token lifetime limit, a danger zone — is not drawn.
+ * token lifetime limit, a danger zone — is not drawn.
+ *
+ * **Roles & permissions** joined them in LAI-950, once `GET /permissions`
+ * served the matrix `can()` computes: it was on that list until then.
  */
 export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationScreenProps) {
   const canManage = canManageOrg(me.org_role);
@@ -691,6 +695,14 @@ export function OrganisationScreen({ me, tabs, tab, onNavigate }: OrganisationSc
               </section>
             )}
           </>
+        )}
+
+        {tab === 'roles' && (
+          <RolesPermissionsSection
+            canManage={canManage}
+            projects={projects.projects}
+            onNavigate={onNavigate}
+          />
         )}
 
         {tab === 'integrations' && (

@@ -42,6 +42,8 @@ export const INSIGHTS_TABS: readonly PageTab[] = [
 export const ORGANISATION_TABS: readonly PageTab[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'people', label: 'People' },
+  // Who may do what, for everyone: the endpoint is `org.read` (LAI-950).
+  { id: 'roles', label: 'Roles & permissions' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'security', label: 'Security', requires: 'token.list_any' },
 ];

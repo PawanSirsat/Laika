@@ -34,10 +34,10 @@ void describe('the tabs are the owner’s grouping', () => {
     );
   });
 
-  void test('Organisation is Overview, People, Integrations, Security', () => {
+  void test('Organisation is Overview, People, Roles & permissions, Integrations, Security', () => {
     assert.deepEqual(
       ORGANISATION_TABS.map((t) => t.label),
-      ['Overview', 'People', 'Integrations', 'Security'],
+      ['Overview', 'People', 'Roles & permissions', 'Integrations', 'Security'],
     );
   });
 
@@ -70,6 +70,15 @@ void describe('a gated tab is absent, not disabled', () => {
     assert.ok(
       !visibleTabs(ORGANISATION_TABS, permissionHolder('viewer')).some((t) => t.id === 'security'),
     );
+  });
+
+  void test('Roles & permissions is everyone’s — the endpoint is org.read (LAI-950)', () => {
+    for (const role of ['owner', 'admin', 'member', 'viewer']) {
+      assert.ok(
+        visibleTabs(ORGANISATION_TABS, permissionHolder(role)).some((t) => t.id === 'roles'),
+        `${role} is not offered Roles & permissions`,
+      );
+    }
   });
 
   void test('no predicate hides every gated tab rather than revealing it', () => {
