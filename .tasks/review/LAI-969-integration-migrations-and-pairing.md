@@ -63,3 +63,12 @@ built on 958), LAI-963, LAI-964. Merging 958 conflicts on
   › *no endpoint is served, uncalled and unexplained*, actual
   `['api/v1/me/analytics-views', 'api/v1/people/*/local-activity',
   'api/v1/people/*/time']` — LAI-959's web half. `pnpm lint` 0, `pnpm format` 0.
+
+## Review response (CORE, 2026-10-22)
+
+CHIEF merged LAI-959 into the integration branch (c1f50add) and fast-forwarded
+this branch to it. LAI-959 paired `WhoLookedView`, so under criterion 3 its
+UNPAIRED entry and the two comment lines above it are removed
+(`response-type-coverage.test.ts`); nothing else in that file changed. The
+gate is re-run on the complete integration tree — exit codes in the log
+entry and on PR #62.
