@@ -2409,6 +2409,7 @@ GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api
 GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)
 POST   /api/v1/heartbeats                    202, token auth only
 GET    /api/v1/presence                      GET /api/v1/capacity
+GET    /api/v1/permissions                   every org and project action: label, scope, which roles hold it, conditions; and the caller's own grants (viewer+; LAI-885)
 GET    /api/v1/unlisted                      ?user=&since=  — work logged outside any project
 POST   /api/v1/unlisted/:id/promote          body { project_slug, title, priority? } → creates a task
 DELETE /api/v1/unlisted/:id                  dismiss
