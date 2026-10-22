@@ -2,11 +2,12 @@
 id: LAI-970
 title: 'Web screens still gate on org role, so an owner''s grants are ignored: admins keep controls they lost, grantees never see controls they got'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-958, LAI-960]
 discovered-from: LAI-960
-status: backlog
+status: in-progress
+started: 2026-10-22T16:23:03Z
 ---
 
 ## Goal
