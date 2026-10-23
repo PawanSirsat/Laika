@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-897
-status: in-progress
+status: review
 started: 2026-10-23T10:45:20Z
+finished: 2026-10-23T10:50:33Z
 ---
 
 ## Goal
@@ -21,9 +22,17 @@ same family as LAI-954: a browser test reading the wall clock.
 
 ## Acceptance criteria
 
-- [ ] The capacity stub answers from the clock **at request time**, so a
+- [x] The capacity stub answers from the clock **at request time**, so a
       person seen eighteen minutes ago is eighteen minutes ago whenever the
       page asks.
-- [ ] The file's other uses of `NOW` (the invite expiry and the created
+- [x] The file's other uses of `NOW` (the invite expiry and the created
       date) are checked the same way and moved if they can drift.
-- [ ] `node --test test/browser/organisation-people.test.ts` green; gate.
+- [x] `node --test test/browser/organisation-people.test.ts` green; gate.
+
+## Record
+
+- `CAPACITY` became `capacity(now)` and the stub route calls it with
+  `Date.now()` on every request. The invite fixtures keep the module clock:
+  their words are day-granular (*in 6 days*, *tomorrow*) with an hour of
+  slack either side, so a minute cannot move them.
+
