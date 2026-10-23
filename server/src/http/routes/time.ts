@@ -22,6 +22,7 @@ import {
   deleteEntry,
   listRevisions,
   updateEntry,
+  TIME_ENTRY_KINDS,
 } from '../../services/time-entries.ts';
 import {
   assertCanSetOrgTime,
@@ -198,6 +199,10 @@ const DraftPatchBody = strictObject({
 
 const SplitBody = strictObject({ at: z.number().int().min(0) });
 
+// What the person said an entry was (D-108): a kind from the list, a title, a description.
+const ENTRY_TITLE_MAX = 120;
+const ENTRY_DESCRIPTION_MAX = 2000;
+
 const EntryBody = strictObject({
   day,
   tz: zone,
@@ -205,6 +210,9 @@ const EntryBody = strictObject({
   task: ref.optional(),
   project: slug.optional(),
   note: z.string().max(280).optional(),
+  kind: z.enum(TIME_ENTRY_KINDS).optional(),
+  title: z.string().max(ENTRY_TITLE_MAX).optional(),
+  description: z.string().max(ENTRY_DESCRIPTION_MAX).optional(),
   started_at: z.number().int().min(0).optional(),
   ended_at: z.number().int().min(0).optional(),
 });
@@ -214,6 +222,9 @@ const EntryPatchBody = strictObject({
   task: ref.nullable().optional(),
   project: slug.nullable().optional(),
   note: z.string().max(280).nullable().optional(),
+  kind: z.enum(TIME_ENTRY_KINDS).nullable().optional(),
+  title: z.string().max(ENTRY_TITLE_MAX).nullable().optional(),
+  description: z.string().max(ENTRY_DESCRIPTION_MAX).nullable().optional(),
   day: day.optional(),
   started_at: instantMs.optional(),
   ended_at: instantMs.optional(),

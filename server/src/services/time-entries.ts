@@ -2,7 +2,10 @@ import { and, asc, eq, gt, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
-import { type TimeEntrySource, type TimeRevisionChange } from '../db/enums.ts';
+import { type TimeEntrySource, type TimeRevisionChange, type TimeEntryKind } from '../db/enums.ts';
+
+/** Re-exported so the route validates `kind` without importing `db/` (D-108). */
+export { TIME_ENTRY_KINDS } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { projects, tasks, timeEntries, timeEntryRevisions } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
@@ -69,6 +72,10 @@ export interface TimeEntryView {
   task: TaskRef | null;
   project: ProjectRef | null;
   note: string | null;
+  /** What the person said it was (D-108): a kind, a title, a description — null until they say. */
+  kind: TimeEntryKind | null;
+  title: string | null;
+  description: string | null;
   /** The work folder's chosen name and its branch, from the draft it was confirmed from (D-098). */
   folder: string | null;
   branch: string | null;
@@ -88,6 +95,9 @@ export interface TimeRevisionView {
   task_id: string | null;
   project_id: string | null;
   note: string | null;
+  kind: TimeEntryKind | null;
+  title: string | null;
+  description: string | null;
   started_at: number | null;
   ended_at: number | null;
   created_at: number;
@@ -358,6 +368,14 @@ export interface EntryFields {
   minutes: number;
   note: string | null;
   /**
+   * What the person said it was (D-108, LAI-897). Left out, an entry keeps
+   * what it has — a draft's confirm and a Solidtime pull never own them —
+   * and a new entry gets null.
+   */
+  kind?: TimeEntryKind | null | undefined;
+  title?: string | null | undefined;
+  description?: string | null | undefined;
+  /**
    * A confirmed draft's work folder name and branch (D-098, LAI-866). Left
    * out, an entry keeps what it has: only a draft's confirm sets them.
    */
@@ -387,6 +405,9 @@ function revisionRow(
     endedAt: f.endedAt,
     minutes: f.minutes,
     note: f.note,
+    kind: f.kind ?? null,
+    title: f.title ?? null,
+    description: f.description ?? null,
     createdAt: now,
   };
 }
@@ -420,6 +441,9 @@ export function insertEntry(
       source,
       sourceRef,
       note: fields.note,
+      kind: fields.kind ?? null,
+      title: fields.title ?? null,
+      description: fields.description ?? null,
       folder: fields.folder ?? null,
       branch: fields.folder == null ? null : (fields.branch ?? null),
       revision: 1,
@@ -446,6 +470,9 @@ const entrySelect = {
   minutes: timeEntries.minutes,
   source: timeEntries.source,
   note: timeEntries.note,
+  kind: timeEntries.kind,
+  title: timeEntries.title,
+  description: timeEntries.description,
   folder: timeEntries.folder,
   branch: timeEntries.branch,
   revision: timeEntries.revision,
@@ -501,6 +528,9 @@ function entryView(r: EntryRow): TimeEntryView {
     task: taskRefOf(r.taskId, r.taskNumber, r.taskTitle, r.taskPrefix),
     project: projectRefOf(r.projectId, r.projectSlug, r.projectName),
     note: r.note,
+    kind: r.kind,
+    title: r.title,
+    description: r.description,
     folder: r.folder,
     branch: r.branch,
     revision: r.revision,
@@ -546,13 +576,24 @@ export interface NewEntryInput {
   task?: string | undefined;
   project?: string | undefined;
   note?: string | undefined;
+  kind?: TimeEntryKind | undefined;
+  title?: string | undefined;
+  description?: string | undefined;
   started_at?: number | undefined;
   ended_at?: number | undefined;
 }
 
+/** Trimmed, and nothing becomes null — the one rule for every text a person types. */
+function textOrNull(text: string | null | undefined): string | null {
+  if (text === undefined || text === null) return null;
+  const trimmed = text.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
 /**
  * `POST /me/time-entries`: time the person types — a meeting, a call —
- * on a card, a project or neither. Needs the organisation's *Time* not `off`.
+ * on a card, a project or neither, with what it was (D-108): a kind, a
+ * title, a description. Needs the organisation's *Time* not `off`.
  */
 export function createEntry(
   db: Db,
@@ -571,6 +612,9 @@ export function createEntry(
       field: 'ended_at',
     });
   }
+  // On its own day, as an edit of a span is already held to be (LAI-897).
+  if (startedAt !== null && endedAt !== null)
+    assertSpanOnDay(input.day, input.tz, startedAt, endedAt);
   const target = resolveTarget(db, actor, input);
   const { id, undoId } = db.transaction((tx) => {
     if (startedAt !== null && endedAt !== null) {
@@ -587,7 +631,10 @@ export function createEntry(
         startedAt,
         endedAt,
         minutes: input.minutes,
-        note: input.note?.trim() === '' ? null : (input.note?.trim() ?? null),
+        note: textOrNull(input.note),
+        kind: input.kind ?? null,
+        title: textOrNull(input.title),
+        description: textOrNull(input.description),
       },
       'manual',
       null,
@@ -608,6 +655,9 @@ export interface EntryPatch {
   task?: string | null | undefined;
   project?: string | null | undefined;
   note?: string | null | undefined;
+  kind?: TimeEntryKind | null | undefined;
+  title?: string | null | undefined;
+  description?: string | null | undefined;
   day?: string | undefined;
   /** A new start or end on the same day (LAI-831: an edge dragged), unix ms. */
   started_at?: number | undefined;
@@ -697,12 +747,11 @@ export function updateEntry(
       startedAt,
       endedAt,
       minutes: patch.minutes ?? row.minutes,
-      note:
-        patch.note === undefined
-          ? row.note
-          : patch.note === null || patch.note.trim() === ''
-            ? null
-            : patch.note.trim(),
+      note: patch.note === undefined ? row.note : textOrNull(patch.note),
+      kind: patch.kind === undefined ? row.kind : patch.kind,
+      title: patch.title === undefined ? row.title : textOrNull(patch.title),
+      description:
+        patch.description === undefined ? row.description : textOrNull(patch.description),
     };
     if (patch.day !== undefined) assertEntryDay(next.day, next.tz, now);
     if (
@@ -722,7 +771,10 @@ export function updateEntry(
       next.startedAt === row.startedAt &&
       next.endedAt === row.endedAt &&
       next.minutes === row.minutes &&
-      next.note === row.note;
+      next.note === row.note &&
+      next.kind === row.kind &&
+      next.title === row.title &&
+      next.description === row.description;
     if (same) return;
     assertRoom(tx, actor.userId, next.day, next.minutes, id);
     const revision = row.revision + 1;
@@ -735,6 +787,9 @@ export function updateEntry(
         endedAt: next.endedAt,
         minutes: next.minutes,
         note: next.note,
+        kind: next.kind ?? null,
+        title: next.title ?? null,
+        description: next.description ?? null,
         revision,
         updatedAt: now,
       })
@@ -806,6 +861,9 @@ export function retireEntry(tx: Tx, id: string, changedBy: string, now: number):
           endedAt: row.endedAt,
           minutes: row.minutes,
           note: row.note,
+          kind: row.kind,
+          title: row.title,
+          description: row.description,
         },
         now,
       ),
@@ -832,6 +890,12 @@ export function syncEntry(
   if (row === undefined) throw ApiError.notFound(`No time entry "${id}"`);
   assertRoom(tx, row.userId, fields.day, fields.minutes, id);
   const revision = row.revision + 1;
+  // What the person said it was stays unless the caller says otherwise (D-108).
+  const said = {
+    kind: fields.kind === undefined ? row.kind : fields.kind,
+    title: fields.title === undefined ? row.title : fields.title,
+    description: fields.description === undefined ? row.description : fields.description,
+  };
   tx.update(timeEntries)
     .set({
       taskId: fields.target.taskId,
@@ -842,6 +906,7 @@ export function syncEntry(
       endedAt: fields.endedAt,
       minutes: fields.minutes,
       note: fields.note,
+      ...said,
       ...(fields.folder === undefined
         ? {}
         : {
@@ -855,7 +920,7 @@ export function syncEntry(
     .where(eq(timeEntries.id, id))
     .run();
   tx.insert(timeEntryRevisions)
-    .values(revisionRow(id, revision, 'edited', changedBy, fields, now))
+    .values(revisionRow(id, revision, 'edited', changedBy, { ...fields, ...said }, now))
     .run();
   return revision;
 }
@@ -883,6 +948,9 @@ export function reviveEntry(tx: Tx, id: string, changedBy: string, now: number):
       endedAt: row.endedAt,
       minutes: row.minutes,
       note: row.note,
+      kind: row.kind,
+      title: row.title,
+      description: row.description,
     },
     changedBy,
     now,
@@ -918,6 +986,9 @@ export function listRevisions(db: Db, actor: ResolvedActor, id: string): TimeRev
       task_id: r.taskId,
       project_id: r.projectId,
       note: r.note,
+      kind: r.kind as TimeEntryKind | null,
+      title: r.title,
+      description: r.description,
       started_at: r.startedAt,
       ended_at: r.endedAt,
       created_at: r.createdAt,
