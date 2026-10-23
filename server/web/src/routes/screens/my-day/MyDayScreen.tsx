@@ -336,6 +336,8 @@ export function MyDayScreen({
       }
       if (prev.kind === 'entry') return v.entries.some((e) => e.id === prev.id) ? prev : undefined;
       if (prev.kind === 'break') return v.breaks.some((b) => b.id === prev.id) ? prev : undefined;
+      // A range the person dragged is theirs until they let go of it (LAI-897).
+      if (prev.kind === 'range') return prev;
       if (prev.kind !== 'gap') return prev;
       const gaps = dayLine(v, Date.now()).gaps;
       return gaps.some((g) => g.start === prev.start && g.end === prev.end) ? prev : undefined;
@@ -656,6 +658,25 @@ export function MyDayScreen({
     void write(held, { minutes: edit.minutes, ended_at: instant(edit.end) }, key);
   };
 
+  // One way an entry is added — from the form below or the panel beside the
+  // Timeline (LAI-897) — and the new entry is selected after.
+  const addOne = async (entry: NewEntry, label: string): Promise<boolean> => {
+    const made = await run(
+      'add',
+      [],
+      (onUndo) => addEntry(entry, onUndo),
+      (created) => ({
+        text: `${duration(entry.minutes)} added to ${label} — confirmed as you add it.`,
+        undoable: true,
+        blocks: [created.id],
+      }),
+    );
+    if (made === undefined) return false;
+    setSlot(undefined);
+    setSelection({ kind: 'entry', id: made.id });
+    return true;
+  };
+
   const actions: InspectorActions = {
     confirm: confirmOne,
     dismiss: dismissOne,
@@ -744,10 +765,38 @@ export function MyDayScreen({
         'Note saved. Every edit is kept as a revision.',
       );
     },
-    fill: (gap) => {
-      setSlot(gap);
-      noteRef.current?.scrollIntoView({ block: 'center' });
-      noteRef.current?.focus();
+    add: addOne,
+    letGo: () => {
+      setSelection(undefined);
+    },
+    setKind: (entry, kind) => {
+      void run(
+        `kind:${entry.id}`,
+        [entry.id],
+        () => updateEntry(entry.id, { kind }),
+        kind === null ? 'Kind cleared. Every edit is kept as a revision.' : 'Kind saved.',
+      );
+    },
+    saveDetails: (entry, details) => {
+      const text = (s: string): string | null => (s.trim() === '' ? null : s.trim());
+      const patch: EntryPatch = {};
+      const next = {
+        title: text(details.title),
+        description: text(details.description),
+        note: text(details.note),
+      };
+      if (next.title !== (entry.title ?? null)) Object.assign(patch, { title: next.title });
+      if (next.description !== (entry.description ?? null)) {
+        Object.assign(patch, { description: next.description });
+      }
+      if (next.note !== entry.note) Object.assign(patch, { note: next.note });
+      if (Object.keys(patch).length === 0) return;
+      void run(
+        `details:${entry.id}`,
+        [entry.id],
+        () => updateEntry(entry.id, patch),
+        'Saved. Every edit is kept as a revision.',
+      );
     },
     markBreak: (gap) => {
       const range = span(instant(gap.start), instant(gap.end), view.tz);
@@ -787,6 +836,10 @@ export function MyDayScreen({
       }
       if (slot !== undefined) {
         setSlot(undefined);
+        return true;
+      }
+      if (selection?.kind === 'range') {
+        setSelection(undefined);
         return true;
       }
       return false;
@@ -983,7 +1036,7 @@ export function MyDayScreen({
                     ? 'none'
                     : 'id' in selection
                       ? `${selection.kind}-${selection.id}`
-                      : `gap-${String(selection.start)}`
+                      : `${selection.kind}-${String(selection.start)}`
                 }
                 view={view}
                 line={line}
@@ -1049,22 +1102,7 @@ export function MyDayScreen({
                     busy={pending === 'add'}
                     locked={batching}
                     noteRef={noteRef}
-                    onAdd={async (entry: NewEntry, label: string) => {
-                      const made = await run(
-                        'add',
-                        [],
-                        (onUndo) => addEntry(entry, onUndo),
-                        (created) => ({
-                          text: `${duration(entry.minutes)} added to ${label} — confirmed as you add it.`,
-                          undoable: true,
-                          blocks: [created.id],
-                        }),
-                      );
-                      if (made === undefined) return false;
-                      setSlot(undefined);
-                      setSelection({ kind: 'entry', id: made.id });
-                      return true;
-                    }}
+                    onAdd={addOne}
                   />
                 )}
               </EntryList>

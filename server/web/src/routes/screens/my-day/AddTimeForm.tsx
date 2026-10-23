@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type RefObject } from 'react';
+import { EMPTY_DETAILS, EntryDetailsFields, type EntryDetails } from './EntryDetailsFields.tsx';
 import type { NewEntry, TaskRef } from '../../../api/time.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { duration, span } from './format.ts';
@@ -57,6 +58,7 @@ export function AddTimeForm({
   const [card, setCard] = useState<string>('general');
   const [otherCard, setOtherCard] = useState<string | undefined>(undefined);
   const [note, setNote] = useState('');
+  const [details, setDetails] = useState<EntryDetails>(EMPTY_DETAILS);
   const [error, setError] = useState<string | undefined>(undefined);
 
   // A gap picked starts the length at the gap's — in the same render that
@@ -94,8 +96,11 @@ export function AddTimeForm({
       setError('Type a card’s key, such as LAI-42 — or choose General.');
       return;
     }
+    // The note has always named a General entry here; a title is welcome, not asked for.
+    const title = details.title.trim();
     setError(undefined);
     const text = note.trim();
+    const description = details.description.trim();
     const entry: NewEntry = {
       day,
       tz,
@@ -105,10 +110,14 @@ export function AddTimeForm({
         : { started_at: startMs, ended_at: startMs + minutes * 60_000 }),
       ...(key === 'general' ? {} : { task: key }),
       ...(text === '' ? {} : { note: text }),
+      ...(details.kind === undefined ? {} : { kind: details.kind }),
+      ...(title === '' ? {} : { title }),
+      ...(description === '' ? {} : { description }),
     };
-    void onAdd(entry, key === 'general' ? 'General' : key).then((ok) => {
+    void onAdd(entry, key === 'general' ? (title === '' ? 'General' : title) : key).then((ok) => {
       if (!ok) return;
       setNote('');
+      setDetails(EMPTY_DETAILS);
       setTyped(undefined);
       setOtherCard(undefined);
       setLength(DEFAULT_LENGTH);
@@ -251,6 +260,13 @@ export function AddTimeForm({
         </div>
       </div>
 
+      <EntryDetailsFields
+        value={details}
+        onChange={setDetails}
+        titleRequired={false}
+        idPrefix="add-time"
+        busy={locked}
+      />
       <div className="myday-add-row">
         <input
           ref={noteRef}

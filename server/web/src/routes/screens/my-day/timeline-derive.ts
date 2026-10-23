@@ -565,6 +565,49 @@ export interface Limits {
  * that time twice. A confirmed block that already overlaps it bounds nothing:
  * moving an edge cannot fix that, and the server refuses its confirm.
  */
+/**
+ * The free stretch around minute `at` among the confirmed blocks (LAI-897):
+ * from the end of the last confirmed block before it to the start of the
+ * first after, within the day. `undefined` when `at` lies inside one — there
+ * is no free stretch to make a range in.
+ */
+export function freeAround(
+  at: number,
+  confirmed: readonly Span[],
+  from = 0,
+  length = 1440,
+): Limits | undefined {
+  let lo = from;
+  let hi = length;
+  for (const b of confirmed) {
+    if (b.start <= at && b.end > at) return undefined;
+    if (b.end <= at) lo = Math.max(lo, b.end);
+    if (b.start >= at) hi = Math.min(hi, b.start);
+  }
+  return { lo, hi };
+}
+
+/**
+ * A drag from `anchor` to `to` on the empty track (LAI-897): both ends on the
+ * five-minute step, in order, clipped to the free stretch the anchor sits in.
+ * `undefined` for a drag that starts on a confirmed block or ends up shorter
+ * than one step — nothing to add.
+ */
+export function rangeFromDrag(
+  anchor: number,
+  to: number,
+  confirmed: readonly Span[],
+  from = 0,
+  length = 1440,
+): Span | undefined {
+  const free = freeAround(anchor, confirmed, from, length);
+  if (free === undefined) return undefined;
+  const grid = (m: number): number => Math.round(m / STEP) * STEP;
+  const a = Math.max(free.lo, Math.min(free.hi, grid(Math.min(anchor, to))));
+  const b = Math.max(free.lo, Math.min(free.hi, grid(Math.max(anchor, to))));
+  return b - a < STEP ? undefined : { start: a, end: b };
+}
+
 export function limitsOf(block: Span, confirmed: readonly Span[], length = 1440): Limits {
   let lo = 0;
   let hi = length;

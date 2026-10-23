@@ -10,6 +10,8 @@ import {
   dayFigures,
   dayLine,
   dragEdge,
+  freeAround,
+  rangeFromDrag,
   gapsOf,
   idleEnds,
   limitsOf,
@@ -835,5 +837,32 @@ void describe('workedIn — the organisation’s window set against the day (LAI
       { start: 725, end: 760, worked: true },
       { start: 760, end: 780, worked: false },
     ]);
+  });
+});
+
+void describe('rangeFromDrag and freeAround — a range dragged on the empty track (LAI-897)', () => {
+  const span = (start: number, end: number) => ({ start, end });
+  const confirmed = [span(540, 600), span(780, 840)];
+
+  void test('freeAround is the whole day with nothing confirmed, and the stretch between blocks otherwise', () => {
+    assert.deepEqual(freeAround(700, []), { lo: 0, hi: 1440 });
+    assert.deepEqual(freeAround(700, confirmed), { lo: 600, hi: 780 });
+    assert.deepEqual(freeAround(500, confirmed, 420), { lo: 420, hi: 540 });
+    assert.equal(freeAround(570, confirmed), undefined);
+  });
+
+  void test('both ends land on five minutes, in order, whichever way the drag went', () => {
+    assert.deepEqual(rangeFromDrag(843, 898, []), { start: 845, end: 900 });
+    assert.deepEqual(rangeFromDrag(898, 843, []), { start: 845, end: 900 });
+  });
+
+  void test('a drag into a confirmed block stops at its edge', () => {
+    assert.deepEqual(rangeFromDrag(650, 900, confirmed), { start: 650, end: 780 });
+    assert.deepEqual(rangeFromDrag(650, 300, confirmed), { start: 600, end: 650 });
+  });
+
+  void test('a drag that starts on a confirmed block, or ends up under one step, is nothing', () => {
+    assert.equal(rangeFromDrag(560, 700, confirmed), undefined);
+    assert.equal(rangeFromDrag(650, 652, confirmed), undefined);
   });
 });

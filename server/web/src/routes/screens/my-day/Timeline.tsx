@@ -12,6 +12,7 @@ import {
 import type { MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
 import { BreakGlyph } from '../../../components/BreakGlyph.tsx';
 import { breakKind } from '../break-kinds.ts';
+import { kindGlyph } from './entry-kinds.ts';
 import { placeOf } from '../places.ts';
 import { glyphAt, skyPhases, sunTimes } from './daylight.ts';
 import { FitLabel } from './FitLabel.tsx';
@@ -49,12 +50,15 @@ import {
   type Span,
   type Zoom,
   workedIn,
+  rangeFromDrag,
 } from './timeline-derive.ts';
 
 /** What the reader has in hand: a block, a gap they picked, or a break. */
 export type Selection =
   | { readonly kind: 'draft' | 'entry'; readonly id: string }
   | { readonly kind: 'gap'; readonly start: number; readonly end: number }
+  /** A stretch the person dragged on the empty track (LAI-897), minutes after midnight. */
+  | { readonly kind: 'range'; readonly start: number; readonly end: number }
   | { readonly kind: 'break'; readonly id: string };
 
 export interface TimelineProps {
@@ -158,10 +162,20 @@ function labelOf(
   const e = entries.get(block.id);
   if (e === undefined) return { top: '', title: '', card: undefined };
   if (e.task !== null) return { top: e.task.key, title: e.task.title, card: e.task.key };
+  // What the person called it stands where a key would (D-108); under it
+  // what they said, else their note.
+  const said = e.description ?? e.note ?? null;
+  if (e.title !== undefined && e.title !== null) {
+    return { top: e.title, title: said ?? e.project?.name ?? '', card: undefined };
+  }
   if (e.project !== null)
-    return { top: e.project.name, title: e.note ?? e.folder ?? '', card: undefined };
+    return { top: e.project.name, title: said ?? e.folder ?? '', card: undefined };
   const general = e.folder === undefined || e.folder === null ? 'General' : `General · ${e.folder}`;
-  return { top: e.note === null ? general : `${general} · ${e.note}`, title: '', card: undefined };
+  return {
+    top: e.note === null ? general : `${general} · ${e.note}`,
+    title: e.description ?? '',
+    card: undefined,
+  };
 }
 
 /** `1h 20m`, `45m` — the pill's compact clock, the design's own (LAI-894). */
@@ -276,6 +290,9 @@ export function Timeline({
     null,
   );
   const [preview, setPreview] = useState<{ id: string; edit: Edit } | undefined>(undefined);
+  /** A drag on the empty track (LAI-897): where it began, and the range it is making. */
+  const rangeDrag = useRef<{ anchor: number } | null>(null);
+  const [rangePreview, setRangePreview] = useState<Span | undefined>(undefined);
   const [hover, setHover] = useState<Hover | undefined>(undefined);
   /** The minute at the middle of the view when the scale last changed — kept there (LAI-890). */
   const keep = useRef<number | undefined>(undefined);
@@ -417,6 +434,50 @@ export function Timeline({
     if (box === undefined || box.width === 0) return 0;
     return scale.at(clientX - box.left);
   };
+  // A drag on the empty track makes a range (LAI-897): every handle, grip,
+  // block, gap, break and strip is a button and is left to its own handler;
+  // the no-signal overlay is not, and a day with nothing on it should take a
+  // drag. Snapped to five minutes and clipped to the free stretch between
+  // confirmed blocks; the server's 409 remains the backstop.
+  const confirmedSpans = line.blocks.filter((b) => b.kind === 'confirmed');
+  const rangeHandlers = {
+    onPointerDown: (event: PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0 || (event.target as Element).closest('button') !== null) return;
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      rangeDrag.current = { anchor: minuteAt(event.clientX) };
+      setHover(undefined);
+    },
+    onPointerMove: (event: PointerEvent<HTMLDivElement>) => {
+      const drag = rangeDrag.current;
+      if (drag === null) return;
+      if (event.buttons === 0) {
+        rangeDrag.current = null;
+        setRangePreview(undefined);
+        return;
+      }
+      setRangePreview(
+        rangeFromDrag(drag.anchor, minuteAt(event.clientX), confirmedSpans, from * 60, to * 60),
+      );
+    },
+    onPointerUp: (event: PointerEvent<HTMLDivElement>) => {
+      if (rangeDrag.current === null) return;
+      rangeDrag.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      const made = rangePreview;
+      setRangePreview(undefined);
+      if (made !== undefined) onSelect({ kind: 'range', start: made.start, end: made.end });
+    },
+    onPointerCancel: () => {
+      rangeDrag.current = null;
+      setRangePreview(undefined);
+    },
+  };
+  const shownRange: Span | undefined =
+    rangePreview ??
+    (selection?.kind === 'range' ? { start: selection.start, end: selection.end } : undefined);
 
   const handle = (block: LaneBlock, edge: 'start' | 'end') => ({
     onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
@@ -467,7 +528,7 @@ export function Timeline({
     (kind: Hover['kind'], id: string) =>
     (event: MouseEvent<HTMLElement>): void => {
       const root = stage.current;
-      if (root === null || dragging.current !== null) return;
+      if (root === null || dragging.current !== null || rangeDrag.current !== null) return;
       const s = root.getBoundingClientRect();
       const r = event.currentTarget.getBoundingClientRect();
       setHover({ kind, id, x: r.left - s.left, y: r.top - s.top, w: r.width, h: r.height });
@@ -1288,7 +1349,11 @@ export function Timeline({
                 </div>
               )}
 
-              <div className="dayline-row">
+              <div
+                className="dayline-row"
+                data-dayline-row
+                {...(readOnly || busy ? {} : rangeHandlers)}
+              >
                 {view.state === 'no_signal' && nothing && (
                   <div className="dayline-nosignal" data-no-signal>
                     <p className="dayline-nosignal-text">
@@ -1448,9 +1513,13 @@ export function Timeline({
                   const editable = selected && !block.locked && !busy && !readOnly;
                   const same = selectedCard !== undefined && card === selectedCard;
                   const dim = selectedCard !== undefined && !same;
+                  const entryKind =
+                    block.kind === 'confirmed' ? (entries.get(block.id)?.kind ?? null) : null;
                   const icon =
                     block.kind === 'confirmed'
-                      ? ICONS.confirmed
+                      ? entryKind === null
+                        ? ICONS.confirmed
+                        : kindGlyph(entryKind)
                       : block.needsCard
                         ? ICONS.needsCard
                         : ICONS.drafted;
@@ -1460,6 +1529,7 @@ export function Timeline({
                       className={[
                         'dayline-block',
                         `dayline-${block.kind}`,
+                        entryKind === null ? '' : `dayline-kind-${entryKind}`,
                         block.needsCard ? 'dayline-needs-card' : '',
                         rows > 1 ? 'dayline-stacked' : '',
                         selected ? 'dayline-selected' : '',
@@ -1472,6 +1542,7 @@ export function Timeline({
                       data-block-id={block.id}
                       data-block-key={key}
                       data-kind={block.kind}
+                      data-entry-kind={entryKind ?? undefined}
                       style={
                         {
                           left: left(shape.start, shape.end),
@@ -1583,6 +1654,26 @@ export function Timeline({
                       />,
                     ];
                   }),
+                )}
+
+                {/* The range being dragged, or the one picked (LAI-897): paint over the row, no pointer. */}
+                {shownRange !== undefined && (
+                  <div
+                    className={
+                      rangePreview === undefined
+                        ? 'dayline-range dayline-range-picked'
+                        : 'dayline-range'
+                    }
+                    data-range-start={shownRange.start}
+                    data-range-end={shownRange.end}
+                    aria-hidden="true"
+                    style={{
+                      left: x(shownRange.start),
+                      width: Math.max(2, x(shownRange.end) - x(shownRange.start)),
+                    }}
+                  >
+                    <span className="dayline-range-text">{rangeOf(shownRange)}</span>
+                  </div>
                 )}
 
                 {/* The grip: drag the rows taller or shorter (LAI-891). */}
@@ -1707,7 +1798,7 @@ export function Timeline({
               ? 'Hover any block for detail · read only'
               : `${editing.charAt(0).toUpperCase()}${editing.slice(1)}, below ↓`
             : editing === undefined
-              ? 'Hover any block for detail · click a gap to fill it'
+              ? 'Hover any block for detail · drag an empty stretch or click a gap to add time'
               : `Editing ${editing} below ↓`}
         </span>
         {line.untimed > 0 && (
