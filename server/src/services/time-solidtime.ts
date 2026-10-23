@@ -119,6 +119,8 @@ export interface PushItem {
   /** Where its space's time goes in Solidtime; null for *General*. */
   solidtime_project_id: string | null;
   note: string | null;
+  /** The person's own title for it (D-108); the CLI sends it, else the note. */
+  title: string | null;
   /**
    * An update whose card or space changed in Laika since the two last
    * agreed: only then may the CLI change Solidtime's project and
@@ -341,6 +343,7 @@ const outboxSelect = {
   startedAt: timeEntries.startedAt,
   minutes: timeEntries.minutes,
   note: timeEntries.note,
+  title: timeEntries.title,
   deletedAt: timeEntries.deletedAt,
   projectId: timeEntries.projectId,
   taskId: tasks.id,
@@ -478,6 +481,7 @@ export function solidtimeOutbox(
           : { slug: r.projectSlug, name: r.projectName },
       solidtime_project_id: solidtimeProjectId,
       note: r.note,
+      title: r.title,
       moved: action === 'update' && (r.stTaskId !== r.taskId || r.stProjectId !== r.projectId),
       solidtime:
         r.stId === null || r.stHash === null || r.stStartedAt === null

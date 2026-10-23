@@ -63,6 +63,7 @@ import {
   ANALYTICS_VIEW_KINDS,
   TIME_DRAFT_SOURCES,
   TIME_DRAFT_STATES,
+  TIME_ENTRY_KINDS,
   TIME_ENTRY_SOURCES,
   TIME_MODES,
   TIME_REVISION_CHANGES,
@@ -2370,6 +2371,17 @@ export const timeEntries = sqliteTable(
     sourceRef: text('source_ref'),
     note: text('note'),
     /**
+     * What the person said it was (D-108, LAI-897): a kind from §4.48's
+     * list, a title of up to 120 characters, a description of up to 2000.
+     * Null on a confirmed draft and an import; the person may set them after.
+     * **No CHECK on purpose**: SQLite cannot add one without rebuilding the
+     * table, and this table carries retention triggers and the revisions'
+     * cascade; the API validates every path instead.
+     */
+    kind: text('kind', { enum: TIME_ENTRY_KINDS }),
+    title: text('title'),
+    description: text('description'),
+    /**
      * The work folder's chosen name and its branch, carried from the draft it
      * was confirmed from (D-098 item 5, LAI-866); null for any other entry.
      */
@@ -2437,6 +2449,10 @@ export const timeEntryRevisions = sqliteTable(
     endedAt: integer('ended_at'),
     minutes: integer('minutes').notNull(),
     note: text('note'),
+    /** What the entry said it was then (D-108): copies, no checks. */
+    kind: text('kind'),
+    title: text('title'),
+    description: text('description'),
     createdAt,
   },
   (t) => [

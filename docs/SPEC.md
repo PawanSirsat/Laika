@@ -1963,6 +1963,9 @@ row.
 | `source` | `draft` \| `manual` \| `import` — an `import` came from Solidtime and is read-only here: changed in Solidtime, and taken by the next pull (LAI-788) |
 | `source_ref` | nullable — the draft it came from, or an import's own id (LAI-788); unique per `(user_id, source)` where set |
 | `note` | nullable, ≤ 280 characters |
+| `kind` | nullable — what the person said it was (D-108, LAI-897): `meeting` \| `call` \| `review` \| `planning` \| `learning` \| `support` \| `admin` \| `other` (CHECK). Null on a confirmed draft, an import, and an entry nobody typed a kind for; the Timeline colours a block by it |
+| `title` | nullable, ≤ 120 characters (CHECK) — the person's own name for it, shown where a card's key would be when there is no card |
+| `description` | nullable, ≤ 2000 characters (CHECK) — what it was, in their words; `note` stays the one line Solidtime gets when there is no title |
 | `folder`, `branch` | nullable — a confirmed draft's work folder name and branch (§4.47, D-098 item 5), carried into the entry when the person confirms it and seen with it by owners and admins, as confirmed hours are (D-088 item 7); null for a typed or imported entry. Not part of a revision (§4.49) |
 | `revision` | integer ≥ 1, its newest revision's number |
 | `deleted_at` | nullable — a person's delete keeps the row |
@@ -1990,7 +1993,7 @@ over an existing id, and `DELETE` while its entry exists.
 | `change` | `created` \| `edited` \| `deleted` |
 | `changed_by` | FK `users` |
 | `task_id`, `project_id` | nullable — **copies, no FK**: history says what the entry said, and a deleted task must not rewrite it |
-| `day`, `tz`, `started_at`, `ended_at`, `minutes`, `note` | the entry after the change |
+| `day`, `tz`, `started_at`, `ended_at`, `minutes`, `note`, `kind`, `title`, `description` | the entry after the change |
 | `created_at` | |
 
 ### 4.50 `agent_time_days`
@@ -2502,7 +2505,7 @@ POST   /api/v1/me/time-drafts/:id/confirm    → 201, the entry   POST /api/v1/m
 GET    /api/v1/me/time                       ?day=&tz= — My day: drafts, entries, breaks, agent minutes, drafts held, the week   (session only)
 POST   /api/v1/me/time/undo                  body { id } — the change an X-Undo-Id named, taken back → 204   (session only; LAI-831)
 POST   /api/v1/me/time-breaks                body { day, tz, started_at, ended_at } — a gap waved away → 201   DELETE .../:id → 204   (session only; LAI-831)
-POST   /api/v1/me/time-entries               body { day, tz, minutes, task?, project?, note? } → 201   PATCH/DELETE .../:id   (session only)
+POST   /api/v1/me/time-entries               body { day, tz, minutes, task?, project?, note?, kind?, title?, description?, started_at?, ended_at? } → 201   PATCH/DELETE .../:id   (session only)
 GET    /api/v1/me/time-entries/:id/revisions an entry's append-only history   (session only)
 PUT    /api/v1/org/time                      body { mode } — off | manual | drafts   (owner, admin; session only; LAI-787)
 PUT    /api/v1/org/time/breaks               body { breaks } — the organisation's break schedule → the caller's time settings   (owner, admin; session only; LAI-955)
@@ -3343,6 +3346,12 @@ parameter names anybody else.
   else's is `404`. **A break is never time**: it touches no draft and no
   entry, and no total reads it. Both under `time_drafts.manage_own`, session
   only (§4.55).
+  Since D-108 (LAI-897) a typed entry may say **what it was**: a `kind` from
+  §4.48's list, a `title` of up to 120 characters and a `description` of up
+  to 2000, on a card or on none; `PATCH` takes each, `null` clearing it. A
+  span sent with a create is held to its own day (`422 outside_day`), as an
+  edit's always was. The web app asks for a title only when there is no
+  card; the server does not.
 
 **The Solidtime bridge (D-088 items 6 and 10, LAI-788).** The board never
 calls Solidtime: the person's CLI does, with their own Solidtime key kept on

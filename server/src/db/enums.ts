@@ -398,6 +398,23 @@ export type TimeDraftState = (typeof TIME_DRAFT_STATES)[number];
 export const TIME_ENTRY_SOURCES = ['draft', 'manual', 'import'] as const;
 export type TimeEntrySource = (typeof TIME_ENTRY_SOURCES)[number];
 
+/**
+ * §4.48's `kind` (D-108, LAI-897): what a typed entry was — a meeting, a
+ * call — chosen by the person; null for a confirmed draft, an import, or an
+ * entry nobody typed a kind for. The Timeline colours a block by it.
+ */
+export const TIME_ENTRY_KINDS = [
+  'meeting',
+  'call',
+  'review',
+  'planning',
+  'learning',
+  'support',
+  'admin',
+  'other',
+] as const;
+export type TimeEntryKind = (typeof TIME_ENTRY_KINDS)[number];
+
 /** §4.49's `change` (LAI-787): what a revision of an entry recorded. */
 export const TIME_REVISION_CHANGES = ['created', 'edited', 'deleted'] as const;
 export type TimeRevisionChange = (typeof TIME_REVISION_CHANGES)[number];

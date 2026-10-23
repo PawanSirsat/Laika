@@ -393,6 +393,13 @@
       "when": 1792699763098,
       "tag": "0056_password_resets",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "6",
+      "when": 1792747076556,
+      "tag": "0057_time_entry_kinds",
+      "breakpoints": true
     }
   ]
 }

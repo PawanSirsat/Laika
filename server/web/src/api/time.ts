@@ -112,6 +112,22 @@ export interface TimeDraft {
   readonly branch?: string | null;
 }
 
+/**
+ * What a typed entry was (D-108, LAI-897): the server's `TIME_ENTRY_KINDS`,
+ * held equal by `entry-kinds.test.ts`. The Timeline colours a block by it.
+ */
+export const ENTRY_KINDS = [
+  'meeting',
+  'call',
+  'review',
+  'planning',
+  'learning',
+  'support',
+  'admin',
+  'other',
+] as const;
+export type EntryKind = (typeof ENTRY_KINDS)[number];
+
 export type EntrySource = 'draft' | 'manual' | 'import';
 
 /**
@@ -129,6 +145,10 @@ export interface TimeEntry {
   readonly task: TaskRef | null;
   readonly project: ProjectRef | null;
   readonly note: string | null;
+  /** What the person said it was (D-108): a kind, a title, a description — null until they say. */
+  readonly kind?: EntryKind | null;
+  readonly title?: string | null;
+  readonly description?: string | null;
   /** The work folder's chosen name and branch, from the draft it was confirmed from (D-098). */
   readonly folder?: string | null;
   readonly branch?: string | null;
@@ -148,6 +168,9 @@ export interface TimeRevision {
   readonly task_id: string | null;
   readonly project_id: string | null;
   readonly note: string | null;
+  readonly kind?: EntryKind | null;
+  readonly title?: string | null;
+  readonly description?: string | null;
   readonly started_at: number | null;
   readonly ended_at: number | null;
   readonly created_at: number;
@@ -252,6 +275,9 @@ export interface NewEntry {
   readonly task?: string;
   readonly project?: string;
   readonly note?: string;
+  readonly kind?: EntryKind;
+  readonly title?: string;
+  readonly description?: string;
   readonly started_at?: number;
   readonly ended_at?: number;
 }
@@ -261,6 +287,9 @@ export interface EntryPatch {
   readonly task?: string | null;
   readonly project?: string | null;
   readonly note?: string | null;
+  readonly kind?: EntryKind | null;
+  readonly title?: string | null;
+  readonly description?: string | null;
   readonly day?: string;
   /** An edge moved on the entry's own day (LAI-831): one revision. */
   readonly started_at?: number;

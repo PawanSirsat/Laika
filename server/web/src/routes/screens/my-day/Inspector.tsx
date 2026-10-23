@@ -7,6 +7,8 @@ import {
   type TimeDraft,
   type TimeEntry,
   type TimeRevision,
+  type EntryKind,
+  type NewEntry,
 } from '../../../api/time.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { CardLink } from './CardLink.tsx';
@@ -23,7 +25,10 @@ import {
   type DayLine,
   type LaneBlock,
   type Span,
+  freeAround,
 } from './timeline-derive.ts';
+import { KINDS } from './entry-kinds.ts';
+import { NewEntryPanel } from './NewEntryPanel.tsx';
 import { Understood } from './Understood.tsx';
 
 /** A draft or an entry — the two things −/+ and the card chips act on. */
@@ -42,7 +47,15 @@ export interface InspectorActions {
   readonly split: (draft: TimeDraft) => void;
   readonly remove: (entry: TimeEntry) => void;
   readonly saveNote: (entry: TimeEntry, note: string) => void;
-  readonly fill: (gap: Span) => void;
+  /** A new entry for a range dragged on the Timeline, or a gap (LAI-897). */
+  readonly add: (entry: NewEntry, label: string) => Promise<boolean>;
+  /** Let go of a picked range. */
+  readonly letGo: () => void;
+  readonly setKind: (entry: TimeEntry, kind: EntryKind | null) => void;
+  readonly saveDetails: (
+    entry: TimeEntry,
+    details: { title: string; description: string; note: string },
+  ) => void;
   readonly markBreak: (gap: Span) => void;
   readonly unbreak: (id: string) => void;
 }
@@ -114,7 +127,7 @@ type History =
   | { readonly kind: 'error'; readonly message: string };
 
 /** The card chips, General, and a key typed for any other card. */
-function CardPicker({
+export function CardPicker({
   current,
   general,
   chips,
@@ -268,7 +281,7 @@ function LengthField({
   );
 }
 
-function Stepper({
+export function Stepper({
   minutes,
   canShorten,
   canLengthen,
@@ -339,6 +352,11 @@ export function Inspector({
 }: InspectorProps) {
   const [history, setHistory] = useState<History>({ kind: 'closed' });
   const [note, setNote] = useState<{ id: string; text: string } | undefined>(undefined);
+  /** The gap whose *Add time here* opened the new-entry panel (LAI-897). */
+  const [adding, setAdding] = useState<number | undefined>(undefined);
+  const [details, setDetails] = useState<
+    { id: string; title: string; description: string } | undefined
+  >(undefined);
   const busy = pending !== undefined;
   const at = (m: number): number => (line.midnight === undefined ? 0 : instantOf(line.midnight, m));
   const placed = (id: string): LaneBlock | undefined => line.blocks.find((b) => b.id === id);
@@ -572,6 +590,14 @@ export function Inspector({
       const changeable = !readOnly && canChange(entry);
       const held: Held = { kind: 'entry', entry };
       const typed = note?.id === entry.id ? note.text : (entry.note ?? '');
+      const said =
+        details?.id === entry.id
+          ? details
+          : { id: entry.id, title: entry.title ?? '', description: entry.description ?? '' };
+      const unchanged =
+        typed.trim() === (entry.note ?? '') &&
+        said.title.trim() === (entry.title ?? '') &&
+        said.description.trim() === (entry.description ?? '');
       const hi = block === undefined ? undefined : limitsIn(line, block).hi;
       const toggleHistory = (): void => {
         if (history.kind !== 'closed') {
@@ -730,31 +756,83 @@ export function Inspector({
             {changeable && (
               <form
                 className="inspector-part"
+                data-entry-details
                 onSubmit={(event) => {
                   event.preventDefault();
-                  actions.saveNote(entry, typed);
+                  actions.saveDetails(entry, {
+                    title: said.title,
+                    description: said.description,
+                    note: typed,
+                  });
                 }}
               >
-                <h3 className="inspector-label">
-                  <label htmlFor="inspector-note-field">Note</label>
-                </h3>
-                <input
-                  id="inspector-note-field"
-                  className="input"
-                  value={typed}
-                  maxLength={280}
-                  placeholder="A note on it"
-                  onChange={(event) => {
-                    setNote({ id: entry.id, text: event.target.value });
-                  }}
-                />
+                <h3 className="inspector-label">What it was</h3>
+                {/* The kind saves on its own press (LAI-897); the words below, on Save. */}
+                <div className="myday-kinds" role="group" aria-label="Kind">
+                  {KINDS.map((k) => (
+                    <button
+                      key={k.kind}
+                      type="button"
+                      className="myday-kind"
+                      data-kind-pick={k.kind}
+                      aria-pressed={entry.kind === k.kind}
+                      disabled={busy}
+                      onClick={() => {
+                        actions.setKind(entry, entry.kind === k.kind ? null : k.kind);
+                      }}
+                    >
+                      <span className="myday-kind-glyph" aria-hidden="true">
+                        {k.glyph}
+                      </span>
+                      {k.label}
+                    </button>
+                  ))}
+                </div>
+                <label className="myday-field">
+                  <span className="myday-field-label">Title</span>
+                  <input
+                    id="inspector-title-field"
+                    className="input"
+                    data-entry-title
+                    value={said.title}
+                    maxLength={120}
+                    placeholder="A name for it"
+                    onChange={(event) => {
+                      setDetails({ ...said, title: event.target.value });
+                    }}
+                  />
+                </label>
+                <label className="myday-field">
+                  <span className="myday-field-label">Description</span>
+                  <textarea
+                    id="inspector-description-field"
+                    className="input myday-textarea"
+                    data-entry-description
+                    rows={2}
+                    value={said.description}
+                    maxLength={2000}
+                    placeholder="What happened, in your words"
+                    onChange={(event) => {
+                      setDetails({ ...said, description: event.target.value });
+                    }}
+                  />
+                </label>
+                <label className="myday-field">
+                  <span className="myday-field-label">Note</span>
+                  <input
+                    id="inspector-note-field"
+                    className="input"
+                    value={typed}
+                    maxLength={280}
+                    placeholder="A note on it"
+                    onChange={(event) => {
+                      setNote({ id: entry.id, text: event.target.value });
+                    }}
+                  />
+                </label>
                 <div className="inspector-row">
-                  <button
-                    type="submit"
-                    className="myday-chip"
-                    disabled={busy || typed.trim() === (entry.note ?? '')}
-                  >
-                    Save note
+                  <button type="submit" className="myday-chip" disabled={busy || unchanged}>
+                    Save
                   </button>
                 </div>
               </form>
@@ -763,6 +841,48 @@ export function Inspector({
         </section>
       );
     }
+  }
+
+  if (selection?.kind === 'range' || (selection?.kind === 'gap' && adding === selection.start)) {
+    const range: Span = { start: selection.start, end: selection.end };
+    const free = freeAround(
+      range.start,
+      line.blocks.filter((b) => b.kind === 'confirmed'),
+      line.from * 60,
+      line.to * 60,
+    );
+    return (
+      <section
+        className="myday-card inspector"
+        data-inspector="range"
+        data-inspector-for={`range-${String(range.start)}`}
+        tabIndex={-1}
+        aria-label="A new entry"
+      >
+        <header className="inspector-head">
+          <span className="inspector-kind inspector-kind-gap">
+            <span className="inspector-kind-icon" aria-hidden="true">
+              {ICONS.gap}
+            </span>
+            New entry
+          </span>
+          <span className="inspector-range">{span(at(range.start), at(range.end), view.tz)}</span>
+          <span className="inspector-source">confirmed as you add it</span>
+        </header>
+        <NewEntryPanel
+          view={view}
+          range={range}
+          hi={free?.hi ?? line.to * 60}
+          chips={chipsFor(null)}
+          busy={busy}
+          onAdd={actions.add}
+          onCancel={() => {
+            setAdding(undefined);
+            actions.letGo();
+          }}
+        />
+      </section>
+    );
   }
 
   if (selection?.kind === 'gap') {
@@ -802,8 +922,9 @@ export function Inspector({
               <button
                 type="button"
                 className="myday-chip myday-chip-primary"
+                data-gap-add
                 onClick={() => {
-                  actions.fill(gap);
+                  setAdding(gap.start);
                 }}
               >
                 Add time here
@@ -813,7 +934,7 @@ export function Inspector({
         </header>
         {!readOnly && (
           <p className="inspector-note inspector-pad">
-            Say what it was under Add time, or mark it a break: a break is not time, and stops
+            Add time here, and say what it was; or mark it a break: a break is not time, and stops
             counting as a gap.
           </p>
         )}
