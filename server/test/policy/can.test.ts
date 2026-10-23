@@ -4,6 +4,7 @@ import { type OrgRole, type ProjectRole } from '../../src/db/enums.ts';
 import {
   ALL_ACTIONS,
   isReadAction,
+  type OrgAction,
   ORG_ACTIONS,
   PINNED_TOKEN_ORG_ACTIONS,
   READ_ACTIONS,
@@ -230,9 +231,11 @@ describe('token scope narrows and never widens (SPEC §6.2, §3.3 rule 4)', () =
       expect(PINNED_TOKEN_ORG_ACTIONS.size).toBeLessThan(ORG_ACTIONS.length);
 
       // Invariant 2 — "the org-level reads every member has and its own-record
-      // actions": an entry is either one of §3.1's every-member reads or an
-      // `_own` action. A write that is not the token's own record cannot be
-      // listed, whatever its name.
+      // actions": an entry is either one of §3.1's four every-member reads or
+      // carries the `_own` suffix. The suffix is the naming convention
+      // `ORG_ACTIONS` uses for own-record rows, so this holds the name and not
+      // the semantics: an action named `_own` that acted on somebody else's
+      // record would pass it, and is caught by the matrix tests, not here.
       const everyMemberReads: ReadonlySet<string> = new Set([
         'org.read',
         'presence.read',
@@ -244,6 +247,12 @@ describe('token scope narrows and never widens (SPEC §6.2, §3.3 rule 4)', () =
         expect(isEveryMemberRead || action.endsWith('_own'), action).toBe(true);
         // And every-member means it: a Viewer on a session holds it.
         if (isEveryMemberRead) expect(can(actor('viewer'), action), action).toBe(true);
+      }
+      // Both ways: every every-member read is kept, so dropping one from the
+      // list — which the loop above cannot see, inspecting only what remains —
+      // goes red here.
+      for (const action of everyMemberReads) {
+        expect(PINNED_TOKEN_ORG_ACTIONS.has(action as OrgAction), action).toBe(true);
       }
 
       // Invariant 3 — a session-only action is refused to every token before

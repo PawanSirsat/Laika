@@ -939,7 +939,7 @@ describe('GET /usage by_project — each space’s tokens and cost on the organi
     });
     // Its own space, asked for by ?project=, is read as a member's is…
     const view = getUsage(t.db, pinned, { days: 7, project: 'laika' }, NOW);
-    expect(view.totals.tokens).toBe(LAIKA);
+    expect(view.totals).toMatchObject({ tokens: LAIKA, cache_read: 40_000 });
     expect(JSON.stringify(view)).not.toMatch(/vault|Vault|onroute|Onroute/);
     // …and a space outside the pin is refused as it always was.
     expect(refusal(() => getUsage(t.db, pinned, { days: 7, project: 'vault' }, NOW))).toMatchObject(
