@@ -956,7 +956,7 @@ void describe('a second viewer sees the reorder over SSE (LAI-473)', () => {
     // same task list, so what A writes is what B's next read returns.
     const w = world();
     const a = await open('/board?project=laika-core', w.stub, { before: fakeStream });
-    let closeB: () => Promise<void> = async () => undefined;
+    let closeB: () => Promise<void> = () => Promise.resolve();
     try {
       const b = await open('/board?project=laika-core', w.stub, { before: fakeStream });
       closeB = b.close;
