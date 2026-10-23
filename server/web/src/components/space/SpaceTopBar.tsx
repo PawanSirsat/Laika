@@ -128,7 +128,7 @@ export function SpaceTopBar({
    * board they were two controls for one piece of state.
    *
    * Hidden rather than deleted: a view of a space with no toolbar (the
-   * Calendar) has the bar as its only filtering. A view that reads none of
+   * Calendar) draws these controls nowhere else. A view that reads none of
    * them claims too — the dashboard (LAI-711) and the Timeline (LAI-725). The
    * `Agents` chip stays either way — it carries a live presence count the
    * Filter panel does not, so it is not the same control.
