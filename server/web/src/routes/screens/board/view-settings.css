@@ -189,72 +189,25 @@
   border-color: var(--border-default);
 }
 
-/* ------------------------------------------------ Visibility (LAI-961) */
+/* ---------------------- The space's own settings, a link (LAI-977) */
 
-.vs-radios-stacked {
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.vs-value {
-  margin: 0;
-  font-size: var(--text-body);
-  color: var(--text-primary);
-}
-
-.vs-confirm {
-  margin-top: 0.5rem;
-  padding: 0.5rem 0.625rem;
-  background: var(--bg-column);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-card);
-}
-
-.vs-confirm-text {
-  margin: 0 0 0.5rem;
-  font-size: var(--text-small);
-  line-height: 1.45;
-  color: var(--text-secondary);
-}
-
-.vs-confirm-actions {
-  display: flex;
-  flex-wrap: wrap;
+.vs-settings-link {
+  display: inline-flex;
   gap: 0.375rem;
-}
-
-.vs-confirm-yes,
-.vs-confirm-no {
-  font: inherit;
+  color: var(--accent);
   font-size: var(--text-body);
   font-weight: var(--weight-semibold);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  padding: 0.1875rem 0.625rem;
-  cursor: pointer;
+  text-decoration: none;
 }
 
-/* The `.button-primary` pair, at the popover's size. */
-.vs-confirm-yes {
-  color: var(--bg-card);
-  background: var(--accent);
-  border-color: var(--accent);
+.vs-settings-link:hover {
+  text-decoration: underline;
 }
 
-.vs-confirm-no {
-  color: var(--text-secondary);
-  background: var(--bg-card);
-}
-
-.vs-confirm-no:hover {
-  color: var(--text-primary);
-  border-color: var(--border-default);
-}
-
-.vs-confirm-yes:focus-visible,
-.vs-confirm-no:focus-visible {
+.vs-settings-link:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
 }
 
 /* ------------------------------------ Show fields, as a list (LAI-290) */

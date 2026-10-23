@@ -8,6 +8,7 @@ import { ActivityScreen } from '../../routes/screens/activity/ActivityScreen.tsx
 import { DashboardScreen } from '../../routes/screens/dashboard/DashboardScreen.tsx';
 import { SetupRoute } from '../../routes/screens/SetupRoute.tsx';
 import { InviteRoute } from '../../routes/screens/InviteRoute.tsx';
+import { ResetPasswordRoute } from '../../routes/screens/ResetPasswordRoute.tsx';
 import { LoginRoute } from '../../routes/screens/LoginRoute.tsx';
 import { MeetingReviewScreen } from '../../routes/screens/meeting-review/MeetingReviewScreen.tsx';
 import { MembersScreen } from '../../routes/screens/MembersScreen.tsx';
@@ -26,6 +27,8 @@ import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx
 import { UsageScreen } from '../../routes/screens/usage/UsageScreen.tsx';
 import { MyDayScreen } from '../../routes/screens/my-day/MyDayScreen.tsx';
 import { WorkScreen, type WorkTaskLink } from '../../routes/screens/work/WorkScreen.tsx';
+import { SpaceSettingsScreen } from '../../routes/screens/space-settings/SpaceSettingsScreen.tsx';
+import { routeParams } from '../../routes/route-table.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import {
   INBOX_TABS,
@@ -37,6 +40,9 @@ import {
 } from '../../routes/page-tabs.ts';
 import { StateGallery } from '../StateGallery.tsx';
 import { TokenReference } from '../../theme/TokenReference.tsx';
+import { usePermissions } from '../../api/permissions.ts';
+import { Button } from '../forms/Button.tsx';
+import '../states.css';
 
 /**
  * Which frame a screen mounts into.
@@ -65,22 +71,35 @@ export interface ScreenEntry {
 
 function BoardRoute() {
   const {
-    route: { params, setParams, path },
+    route: { params, setParams, path, navigate },
     me,
   } = useShell();
   // `/board` and `/list` are the same screen in two modes — the design makes
   // them sibling tabs, so the route is what chooses (LAI-270).
-  return <BoardScreen params={params} onParamsChange={setParams} me={me} path={path} />;
+  return (
+    <BoardScreen
+      params={params}
+      onParamsChange={setParams}
+      me={me}
+      path={path}
+      onNavigate={navigate}
+    />
+  );
 }
 
 function ProjectsRoute() {
   const {
-    route: { navigate },
+    route: { navigate, params, setParams },
     me,
   } = useShell();
   return (
     <ProjectsScreen
       me={me}
+      params={params}
+      onParamsChange={setParams}
+      onOpenSettings={(slug) => {
+        navigate(`/spaces/${encodeURIComponent(slug)}/settings`);
+      }}
       onOpen={(slug) => {
         navigate(`/board?project=${encodeURIComponent(slug)}`);
       }}
@@ -305,7 +324,8 @@ function InboxRoute() {
     reviewWaiting,
     unlistedOpen,
   } = useShell();
-  const holds = permissionHolder(me?.org_role);
+  const { permissions } = usePermissions(me !== undefined);
+  const holds = permissionHolder(permissions?.me.actions);
   const tab = currentTab(INBOX_TABS, params, holds);
   return (
     <InboxScreen
@@ -325,7 +345,8 @@ function InsightsRoute() {
     route: { params, navigate },
     me,
   } = useShell();
-  const holds = permissionHolder(me?.org_role);
+  const { permissions } = usePermissions(me !== undefined);
+  const holds = permissionHolder(permissions?.me.actions);
   const tab = currentTab(INSIGHTS_TABS, params, holds);
   return (
     <InsightsScreen tabs={visibleTabs(INSIGHTS_TABS, holds)} current={tab} onNavigate={navigate}>
@@ -348,12 +369,15 @@ function OrganisationRoute() {
     me,
     route: { params, setParams, navigate },
   } = useShell();
+  const { permissions, settled } = usePermissions(me !== undefined);
   // The screen requires a user; the gate has already refused every other
   // session state on this protected route, so this is the frame before a
   // redirect lands rather than a state anyone sits in.
   if (me === undefined) return null;
-  const holds = permissionHolder(me.org_role);
-  const refused = refusedTab(ORGANISATION_TABS, params, holds);
+  const holds = permissionHolder(permissions?.me.actions);
+  // A gated tab is withheld until the server answers, and *refused* only once
+  // it has: before then nobody knows, and "you can't" would be a guess.
+  const refused = settled ? refusedTab(ORGANISATION_TABS, params, holds) : undefined;
   return (
     <OrganisationScreen
       me={me}
@@ -373,6 +397,29 @@ function MembersRoute() {
     me,
   } = useShell();
   return <MembersScreen slug={params.get('project') ?? undefined} me={me} />;
+}
+
+/**
+ * A space's settings (D-103, LAI-977). The slug is in the path; `?tab=` is
+ * the tab, pushed so Back walks the tabs as they were seen.
+ */
+function SpaceSettingsRoute() {
+  const {
+    route: { path, route, params, navigate },
+    me,
+    orgName,
+  } = useShell();
+  const slug = route === undefined ? undefined : routeParams(route.path, path)?.slug;
+  if (slug === undefined || me === undefined) return null;
+  return (
+    <SpaceSettingsScreen
+      slug={slug}
+      me={me}
+      orgName={orgName}
+      tab={params.get('tab') ?? undefined}
+      onNavigate={navigate}
+    />
+  );
 }
 
 function ProfileRoute() {
@@ -430,9 +477,11 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/developer': { Component: DeveloperRoute, layout: 'plain' },
   '/developer/connect': { Component: ConnectRoute, layout: 'plain' },
   '/members': { Component: MembersRoute, layout: 'plain' },
+  '/spaces/:slug/settings': { Component: SpaceSettingsRoute, layout: 'plain' },
   '/people': { Component: ProfileRoute, layout: 'plain' },
   '/login': { Component: LoginRoute, layout: 'plain' },
   '/invite': { Component: InviteRoute, layout: 'plain' },
+  '/reset-password': { Component: ResetPasswordRoute, layout: 'plain' },
   '/setup': { Component: SetupRoute, layout: 'own-chrome' },
   '/design/tokens': { Component: TokenReference, layout: 'plain' },
   '/design/states': { Component: StateGallery, layout: 'plain' },
@@ -453,7 +502,9 @@ export function ScreenOutlet() {
 
   if (route === undefined) return <NotFoundRoute />;
 
-  const entry = SCREENS[path];
+  // By the route's own path, so a parameterised one (`/spaces/:slug/settings`)
+  // finds its entry; for every other route the two are the same string.
+  const entry = SCREENS[route.path] ?? SCREENS[path];
   // A routed path with no registry entry cannot happen — the bijection test
   // fails the build first — but rendering 404 beats rendering nothing if it
   // ever does.
@@ -463,12 +514,42 @@ export function ScreenOutlet() {
   // The space frame belongs to the views of a project, and nothing else gets
   // it — `layout` is the registry's answer, checked against `SPACE_TAB_PATHS`
   // in screen-registry.test.ts.
-  return layout === 'space' ? (
-    <SpaceLayout>
-      <Component />
-    </SpaceLayout>
-  ) : (
-    <Component />
+  return (
+    <>
+      <PermissionsRetry />
+      {layout === 'space' ? (
+        <SpaceLayout>
+          <Component />
+        </SpaceLayout>
+      ) : (
+        <Component />
+      )}
+    </>
+  );
+}
+
+/**
+ * `GET /permissions` failed, so every gated control is withheld (LAI-970) —
+ * say so, once, and offer to ask again, rather than leave somebody wondering
+ * where their controls went.
+ */
+function PermissionsRetry() {
+  const { me } = useShell();
+  const { failed, refresh } = usePermissions(me !== undefined);
+  if (!failed) return null;
+  return (
+    <div className="banner" role="status" aria-live="polite" data-state="permissions-failed">
+      <span className="banner-dot" aria-hidden="true" />
+      <div>
+        <p className="banner-title">Couldn&rsquo;t load what you may do here</p>
+        <p className="banner-body">
+          Controls that need a permission stay hidden until it loads.{' '}
+          <Button variant="secondary" onClick={refresh}>
+            Retry
+          </Button>
+        </p>
+      </div>
+    </div>
   );
 }
 

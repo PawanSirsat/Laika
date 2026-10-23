@@ -134,6 +134,19 @@
   --sun: #fbbf24;
   --moon: #a5b4fc;
 
+  /* ---- space colours (D-103 item 4, LAI-978): the eight a space may be
+     painted, solid under a white letter in both themes, so a space keeps its
+     colour when the theme flips; black lifts to stay a tile on a dark card ---- */
+  --space-black: #3f3f46;
+  --space-violet: #7c3aed;
+  --space-teal: #0f766e;
+  --space-blue: #2158e0;
+  --space-amber: #8f5a08;
+  --space-magenta: #a21caf;
+  --space-red: #c42630;
+  --space-green: #0a6f4c;
+  --on-space: #ffffff;
+
   /* ---- overlays ---- */
   --scrim: rgba(0, 0, 0, 0.55);
   --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.5);
@@ -220,6 +233,16 @@
   --sky-night-body: rgba(79, 91, 184, 0.05);
   --sun: #c27a0a;
   --moon: #4f5bb8;
+
+  --space-black: #171a21;
+  --space-violet: #7c3aed;
+  --space-teal: #0f766e;
+  --space-blue: #2158e0;
+  --space-amber: #8f5a08;
+  --space-magenta: #a21caf;
+  --space-red: #c42630;
+  --space-green: #0a6f4c;
+  --on-space: #ffffff;
 
   --scrim: rgba(24, 24, 27, 0.4);
   --shadow-modal: 0 24px 60px rgba(24, 24, 27, 0.22);

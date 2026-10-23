@@ -57,6 +57,18 @@ export const ORGANISATION_TABS: readonly PageTab[] = [
 ];
 
 /**
+ * A space's settings (D-103, LAI-977), in the owner's order. Every reader of
+ * the space sees all four — read only without `project.settings.edit` — so
+ * none is gated here; the controls inside each are.
+ */
+export const SPACE_SETTINGS_TABS: readonly PageTab[] = [
+  { id: 'general', label: 'General' },
+  { id: 'members', label: 'Members' },
+  { id: 'access', label: 'Access' },
+  { id: 'danger', label: 'Danger zone' },
+];
+
+/**
  * The tabs this reader is offered. **Omitting `holds` hides every gated tab**:
  * a caller that forgets to say who is asking must not publish what the
  * endpoints behind it would refuse — the rule `permitted` keeps for the nav.

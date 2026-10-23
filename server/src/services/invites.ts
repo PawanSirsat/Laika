@@ -30,7 +30,7 @@ import { assertCan } from '../policy/can.ts';
  *
  * **An invite is a role grant with a delay on it**, so creating one passes the
  * role it grants as `targetOrgRole`: only the owner invites an admin or an
- * owner, and whoever else holds *Manage people and invites* invites as member
+ * owner, and whoever else holds *Invite people* (LAI-985) invites as member
  * or viewer. Until LAI-958 this was a second check against `user.set_role`;
  * that action is the owner's alone now, and keeping the check would have
  * refused an admin every invite.
@@ -80,6 +80,16 @@ export { ORG_ROLES, PROJECT_ROLES } from '../db/enums.ts';
 
 export const INVITE_TTL_DAYS = 7;
 export const INVITE_TTL_MS = INVITE_TTL_DAYS * 24 * 60 * 60 * 1000;
+
+/**
+ * The expiries an inviter may choose (LAI-984): a day, the default week, or a
+ * month. A closed list rather than any number, so a link cannot be made to
+ * live for ever by asking for ten thousand days.
+ */
+export const INVITE_EXPIRY_DAYS = [1, INVITE_TTL_DAYS, 30] as const;
+export type InviteExpiryDays = (typeof INVITE_EXPIRY_DAYS)[number];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * 256 bits of `randomBytes`, base64url — 43 characters.
@@ -132,6 +142,8 @@ export interface CreateInviteInput {
   orgRole: OrgRole;
   projectId?: string | null | undefined;
   projectRole?: ProjectRole | null | undefined;
+  /** One of `INVITE_EXPIRY_DAYS`; absent is `INVITE_TTL_DAYS`. */
+  expiresInDays?: InviteExpiryDays | undefined;
   now?: number;
 }
 
@@ -221,6 +233,17 @@ export function createInvite(
   // the owner invites as member or viewer only.
   assertCan(actor, 'user.invite', { targetOrgRole: input.orgRole });
 
+  // **No invite makes an owner** (§3, D-104 item 2, LAI-982): there is exactly
+  // one, and it changes hands by transfer. Accepting an owner invite would
+  // have made a second.
+  if (input.orgRole === 'owner') {
+    throw new ApiError(
+      'unprocessable',
+      'An organisation has exactly one Owner. Invite them as an admin, then use Transfer ownership.',
+      { reason: 'use_transfer' },
+    );
+  }
+
   const now = input.now ?? Date.now();
   const org = requireOrg(db);
   const email =
@@ -263,7 +286,7 @@ export function createInvite(
     projectRole: projectId === null ? null : (projectRole ?? 'member'),
     tokenHash: hashInviteToken(token),
     createdBy: actor.userId,
-    expiresAt: now + INVITE_TTL_MS,
+    expiresAt: now + (input.expiresInDays ?? INVITE_TTL_DAYS) * DAY_MS,
     acceptedBy: null,
     acceptedAt: null,
     createdAt: now,
@@ -361,6 +384,62 @@ export function revokeInvite(db: Db, actor: ResolvedActor, id: string): void {
   db.delete(invites).where(eq(invites.id, id)).run();
 }
 
+export interface ReissueInviteInput {
+  expiresInDays?: InviteExpiryDays | undefined;
+  now?: number;
+}
+
+/**
+ * Revoke a pending or expired invite and issue a new link for the same
+ * address, role and project, in one step (LAI-984, audit B11).
+ *
+ * The old token is dead the moment this returns, and the two never both work:
+ * the delete and the insert are one transaction, so a refusal anywhere —
+ * the role the invite grants, an address that has since got an account —
+ * leaves the old invite exactly as it was.
+ *
+ * **Re-issuing is granting the role again**, so it is asked exactly as
+ * creating was, by `createInvite` itself: an admin cannot re-issue an invite
+ * the owner made for an admin. `user.invite` is asked first on its own so a
+ * member is told `403` rather than learning which ids exist.
+ */
+export function reissueInvite(
+  db: Db,
+  actor: ResolvedActor,
+  id: string,
+  input: ReissueInviteInput = {},
+): CreatedInvite {
+  assertCan(actor, 'user.invite');
+
+  return db.transaction(
+    () => {
+      const row = db.select().from(invites).where(eq(invites.id, id)).get();
+
+      if (row === undefined) throw ApiError.notFound('No such invite', { invite_id: id });
+
+      if (row.acceptedBy !== null) {
+        throw new ApiError(
+          'conflict',
+          'That invite has already been accepted and cannot be re-issued',
+          { invite_id: id },
+        );
+      }
+
+      db.delete(invites).where(eq(invites.id, id)).run();
+
+      return createInvite(db, actor, {
+        email: row.email,
+        orgRole: row.orgRole,
+        projectId: row.projectId,
+        projectRole: row.projectRole,
+        expiresInDays: input.expiresInDays,
+        ...(input.now === undefined ? {} : { now: input.now }),
+      });
+    },
+    { behavior: 'immediate' },
+  );
+}
+
 export interface InvitePreview {
   org_name: string;
   inviter_name: string;
@@ -432,6 +511,42 @@ export function previewInvite(db: Db, token: string, now: number = Date.now()): 
 /** The one wording every accept path refuses with. See `resolveInviteForAccept`. */
 const REFUSED = 'That invite is invalid, expired, or already used';
 
+/**
+ * `422 use_transfer` for an owner invite made before D-104 (LAI-982).
+ *
+ * `createInvite` refuses `owner` now, but a pending invite from before still
+ * names it. Accepting one would make a second owner, so every accept path
+ * refuses it and the invite stays unaccepted: the owner sees it in `GET /org`
+ * (`pendingOwnerInvites`) and revokes or re-issues it.
+ */
+export function ownerInviteRefused(): ApiError {
+  return new ApiError(
+    'unprocessable',
+    'This invite would make a second Owner. Ask the owner for a new invite; ownership changes only by transfer.',
+    { reason: 'use_transfer' },
+  );
+}
+
+/**
+ * Owner invites from before D-104 that could still be accepted — unaccepted
+ * and unexpired (LAI-982). Served to the owner in `GET /org`, beside
+ * `extra_owners`, so nothing that would have made an owner goes unseen.
+ */
+export function pendingOwnerInvites(
+  db: Db,
+  now: number = Date.now(),
+): { id: string; email: string | null; expires_at: number }[] {
+  return db
+    .select({ id: invites.id, email: invites.email, expiresAt: invites.expiresAt })
+    .from(invites)
+    .where(
+      and(eq(invites.orgRole, 'owner'), isNull(invites.acceptedBy), gt(invites.expiresAt, now)),
+    )
+    .orderBy(invites.createdAt, invites.id)
+    .all()
+    .map((row) => ({ id: row.id, email: row.email, expires_at: row.expiresAt }));
+}
+
 export interface AcceptableInvite {
   /** Null for a link invite — the caller must supply an address of their own. */
   email: string | null;
@@ -474,6 +589,7 @@ export function resolveInviteForAccept(
     .get();
 
   if (row === undefined) throw new ApiError('forbidden', REFUSED);
+  if (row.orgRole === 'owner') throw ownerInviteRefused();
 
   return row;
 }
@@ -534,6 +650,8 @@ export function consumeInvite(
     if (row?.acceptedBy !== null || row.expiresAt <= now) {
       throw new ApiError('forbidden', REFUSED);
     }
+    // The backstop every path meets: no invite is ever spent into `owner`.
+    if (row.orgRole === 'owner') throw ownerInviteRefused();
 
     const marked = db
       .update(invites)
@@ -552,6 +670,11 @@ export function consumeInvite(
       .where(eq(users.id, input.userId))
       .run();
 
+    // Named beside the id (LAI-984), as every membership row is.
+    const userName =
+      db.select({ name: users.name }).from(users).where(eq(users.id, input.userId)).get()?.name ??
+      null;
+
     // Org-scoped: `project_id` is null, so §3.1's audit-log cell governs who can
     // read it, which is admin+ (see `visibleTo` in services/events.ts).
     appendActivity(db, {
@@ -561,6 +684,7 @@ export function consumeInvite(
       type: 'member.added',
       payload: {
         user_id: input.userId,
+        user_name: userName,
         org_role: row.orgRole,
         via: 'invite',
         invite_id: row.id,
@@ -591,7 +715,7 @@ export function consumeInvite(
         actorId: input.userId,
         actorKind: 'user',
         type: 'member.added',
-        payload: { user_id: input.userId, role, via: 'invite' },
+        payload: { user_id: input.userId, user_name: userName, role, via: 'invite' },
         now,
       });
     }

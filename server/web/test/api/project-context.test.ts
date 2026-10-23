@@ -9,11 +9,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import {
-  canEditProjectContext,
-  contextBudget,
-  readableContextError,
-} from '../../src/api/project-context.ts';
+import { contextBudget, readableContextError } from '../../src/api/project-context.ts';
 import { ApiError } from '../../src/api/errors.ts';
 
 const LIMIT = 100_000;
@@ -108,37 +104,6 @@ void describe('a refusal names both numbers', () => {
     assert.equal(
       readableContextError(new Error('offline')),
       'Could not save the context document.',
-    );
-  });
-});
-
-void describe('the editor is offered only to someone who may use it', () => {
-  const PROJECT = 'p1';
-  const lead = [{ project_id: PROJECT, role: 'lead' }];
-  const member = [{ project_id: PROJECT, role: 'member' }];
-  const viewer = [{ project_id: PROJECT, role: 'viewer' }];
-
-  void test('org owner and admin may edit without a membership row', () => {
-    // They hold implicit lead — an Admin with no row on the project still edits.
-    assert.equal(canEditProjectContext('owner', PROJECT, []), true);
-    assert.equal(canEditProjectContext('admin', PROJECT, []), true);
-  });
-
-  void test('a project lead may', () => {
-    assert.equal(canEditProjectContext('member', PROJECT, lead), true);
-  });
-
-  void test('a member and a viewer may not', () => {
-    // §7.3: reading follows project read, editing is lead+. Offering them an
-    // editor that answers 403 teaches them the app is broken.
-    assert.equal(canEditProjectContext('member', PROJECT, member), false);
-    assert.equal(canEditProjectContext('member', PROJECT, viewer), false);
-  });
-
-  void test('a lead on another project may not edit this one', () => {
-    assert.equal(
-      canEditProjectContext('member', PROJECT, [{ project_id: 'other', role: 'lead' }]),
-      false,
     );
   });
 });

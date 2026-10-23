@@ -48,7 +48,9 @@ import {
   scopeFor,
   scopeOptions,
   type ScopeProject,
+  type ScopeReader,
 } from './usage-derive.ts';
+import { useGates } from '../../../api/permissions.ts';
 import '../profile/profile.css';
 import './usage.css';
 
@@ -128,25 +130,40 @@ export function UsageScreen({
     };
   }, []);
 
+  // Which scopes the reader may read is the server's answer (LAI-970); no
+  // scope is chosen, so nothing is asked, until it has given one.
+  const gates = useGates(me !== undefined);
+  const reader = useMemo<ScopeReader | undefined>(
+    () =>
+      me === undefined || !gates.settled
+        ? undefined
+        : {
+            readsOrg: gates.org('usage.read_org'),
+            readsSpace: (id) => gates.project(id, 'usage.read_project'),
+          },
+    [me, gates],
+  );
+
   const options = useMemo(
-    () => (me === undefined || projects === undefined ? [] : scopeOptions(me, projects ?? [])),
-    [me, projects],
+    () =>
+      reader === undefined || projects === undefined ? [] : scopeOptions(reader, projects ?? []),
+    [reader, projects],
   );
 
   // The space shown is the address's (LAI-814), once who is reading and which
   // spaces exist are known: so a link to a space opens it, and Back returns.
   const scope = useMemo(
     () =>
-      me === undefined || projects === undefined
+      reader === undefined || projects === undefined
         ? undefined
-        : scopeFor(me, projects ?? [], project),
-    [me, projects, project],
+        : scopeFor(reader, projects ?? [], project),
+    [reader, projects, project],
   );
   // What a By space row may link to: only a space the selector offers, so an
   // archived one — absent from the list — is named, not linked (LAI-814 review).
   const offered = useMemo(
-    () => (me === undefined || projects === undefined ? null : offeredSpaces(me, projects)),
-    [me, projects],
+    () => (reader === undefined || projects === undefined ? null : offeredSpaces(reader, projects)),
+    [reader, projects],
   );
 
   useEffect(() => {
@@ -170,7 +187,7 @@ export function UsageScreen({
 
   const scopeName = options.find((o) => o.value === scope)?.label;
   const context = `${scopeName ?? 'Tokens'} · last ${String(range)} days · at least`;
-  const noSpace = me !== undefined && projects !== undefined && options.length === 0;
+  const noSpace = reader !== undefined && projects !== undefined && options.length === 0;
 
   return (
     <div className="usage-page">

@@ -2,16 +2,19 @@ import { Hono } from 'hono';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import {
+  listMemberships,
   listUsers,
   ORG_ROLES,
   setOrgRole,
   setUserActive,
+  signOutEverywhere,
   type UserView,
 } from '../../services/users.ts';
+import { issueResetLink } from '../../services/password-resets.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseUpdatedSince } from '../updated-since.ts';
-import { parseBody, strictObject, z } from '../validation.ts';
+import { OpenTasksSchema, parseBody, strictObject, z } from '../validation.ts';
 
 /**
  * `GET /api/v1/users` (SPEC §6.4). Transport only — §3.1's cell and §4.1's
@@ -34,6 +37,7 @@ import { parseBody, strictObject, z } from '../validation.ts';
 const UserPatchBody = strictObject({
   org_role: z.enum(ORG_ROLES).optional(),
   is_active: z.boolean().optional(),
+  open_tasks: OpenTasksSchema.optional(),
 });
 
 function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) {
@@ -51,7 +55,19 @@ function parseIncludeInactive(raw: string | undefined): boolean {
   throw ApiError.badRequest('include_inactive must be true or false', { include_inactive: raw });
 }
 
-export function userRoutes(options: { db: Db }): Hono<AppEnv> {
+/** What `POST /users/:id/reset-link` answers, once. */
+export interface ResetLinkView {
+  url: string;
+  expires_at: number;
+}
+
+/** Where the web app's reset page lives (LAI-988), with the token for it. */
+export function resetUrlFor(publicUrl: string | undefined, token: string): string {
+  const base = (publicUrl ?? '').replace(/\/+$/, '');
+  return `${base}/reset-password?token=${encodeURIComponent(token)}`;
+}
+
+export function userRoutes(options: { db: Db; publicUrl?: string | undefined }): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db } = options;
 
@@ -103,10 +119,48 @@ export function userRoutes(options: { db: Db }): Hono<AppEnv> {
     }
 
     let view = body.org_role === undefined ? undefined : setOrgRole(db, actor, id, body.org_role);
-    if (body.is_active !== undefined) view = setUserActive(db, actor, id, body.is_active);
+    if (body.is_active !== undefined) {
+      view = setUserActive(db, actor, id, body.is_active, Date.now(), body.open_tasks);
+    } else if (body.open_tasks !== undefined) {
+      throw new ApiError('unprocessable', 'open_tasks applies only to deactivating someone', {
+        field: 'open_tasks',
+      });
+    }
 
     return c.json(view!);
   });
+
+  /**
+   * `POST /api/v1/users/:id/sign-out` — end every session of a person (§6.4,
+   * D-104 item 3, LAI-981). Their tokens stay; `sessions_ended` says how many
+   * sessions went. No body: there is nothing to choose.
+   */
+  app.post('/:id/sign-out', (c) =>
+    c.json(signOutEverywhere(db, requireActor(c), c.req.param('id'))),
+  );
+
+  /**
+   * `POST /api/v1/users/:id/reset-link` — a one-time password-reset link for
+   * that person, **shown once**: only its hash is kept (§6.4, D-104 item 4,
+   * LAI-983). `201`, because a link exists that did not before.
+   */
+  app.post('/:id/reset-link', (c) => {
+    const issued = issueResetLink(db, requireActor(c), c.req.param('id'));
+    return c.json<ResetLinkView>(
+      { url: resetUrlFor(options.publicUrl, issued.token), expires_at: issued.expiresAt },
+      201,
+    );
+  });
+
+  /**
+   * `GET /api/v1/users/:id/memberships` — the spaces a person belongs to, with
+   * their role in each, narrowed to the spaces the caller can read (§6.4,
+   * LAI-981). One person's memberships are few and are not paged, like a
+   * project's statuses.
+   */
+  app.get('/:id/memberships', (c) =>
+    c.json({ data: listMemberships(db, requireActor(c), c.req.param('id')) }),
+  );
 
   return app;
 }

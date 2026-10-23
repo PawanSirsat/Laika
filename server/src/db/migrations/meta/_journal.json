@@ -358,6 +358,41 @@
       "when": 1792695950468,
       "tag": "0051_user_place",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "6",
+      "when": 1792699759098,
+      "tag": "0052_space_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "6",
+      "when": 1792699760098,
+      "tag": "0053_deactivation_ends_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "6",
+      "when": 1792699761098,
+      "tag": "0054_one_owner",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1792699762098,
+      "tag": "0055_more_grantable_capabilities",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "6",
+      "when": 1792699763098,
+      "tag": "0056_password_resets",
+      "breakpoints": true
     }
   ]
 }

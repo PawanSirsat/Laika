@@ -1,14 +1,15 @@
 /**
- * Changing a space's visibility after it exists (LAI-961).
+ * Changing a space's visibility after it exists (LAI-961; moved by LAI-977).
  *
  * It could only be chosen on the create form, while `PATCH /projects/:slug`
- * has taken `visibility` all along. The control sits beside Hide done in View
- * settings, the board's one other project-wide setting, behind the same
- * `project.settings.edit` gate.
+ * has taken `visibility` all along. LAI-961 put the control in the board's
+ * View settings; D-103 moved it to the space's own settings page, **Access**,
+ * as the owner's two cards — the panel keeps view options and links there.
+ * Same `project.settings.edit` gate, same confirmation before going public.
  *
  * The stub is **stateful**: the PATCH writes the project every GET then reads,
- * so "Projects shows it at once" is measured against what the server would
- * answer, not against a value the page kept for itself.
+ * so the page is measured against what the server would answer, not against
+ * a value it kept for itself.
  */
 
 import assert from 'node:assert/strict';
@@ -32,6 +33,10 @@ const BASE = {
   description: null,
   repo: null,
   visibility: 'private',
+  color: null,
+  task_create_min_role: 'member',
+  agents_allowed: true,
+  former_prefixes: [],
   context_md: '',
   board_hide_done_days: null,
   archived_at: null,
@@ -113,11 +118,18 @@ function stub(
   };
 }
 
-async function openPanel(h: Harness): Promise<void> {
-  await h.page.waitForSelector('.card-title', { timeout: 20_000 });
-  await h.page.locator('.bt-icon[title="View settings"]').click();
-  await h.page.waitForSelector('.view-settings');
+const ACCESS = '/spaces/laika-core/settings?tab=access';
+
+/** The two cards, once the grants are in: buttons for a holder, text for a reader. */
+async function openAccess(h: Harness): Promise<void> {
+  await h.page.locator('[data-visibility="private"]').waitFor({ timeout: 20_000 });
+  await until(async () => (await h.page.locator('.ss-reader').innerText()) !== 'Space settings');
 }
+
+const card = (h: Harness, value: 'private' | 'public') =>
+  h.page.locator(`[data-visibility="${value}"]`);
+const checked = async (h: Harness, value: 'private' | 'public') =>
+  (await card(h, value).getAttribute('aria-checked')) === 'true';
 
 const patches = (h: Harness): StubCall[] =>
   h.calls.filter((c) => c.method === 'PATCH' && c.path === '/api/v1/projects/laika-core');
@@ -127,30 +139,28 @@ after(async () => {
 });
 
 void describe('a lead', () => {
-  void test('makes a private space public after confirming, and Projects shows it', async () => {
+  void test('makes a private space public after confirming, and the page shows the server’s answer', async () => {
     const { stub: api } = stub('lead');
-    const h = await open('/board?project=laika-core', api);
+    const h = await open(ACCESS, api);
     try {
       await h.page.setViewportSize({ width: 1440, height: 900 });
-      await openPanel(h);
+      await openAccess(h);
 
-      const radios = h.page.locator('input[name="vs-visibility"]');
-      assert.equal(await radios.count(), 2, 'a lead is offered both visibilities');
-      // The create form's wording, word for word.
-      const text = await h.page.locator('.vs-visibility').innerText();
-      assert.match(text, /Private — invited members only/);
-      assert.match(text, /Public — anyone in the org can join/);
-      assert.equal(await radios.nth(0).isChecked(), true, 'private is the current value');
+      assert.equal(
+        await h.page.locator('[data-visibility][role="radio"]').count(),
+        2,
+        'a lead is offered both visibilities',
+      );
+      // The owner's design, word for word; no org name in this stub's org.
+      assert.match(await card(h, 'private').innerText(), /Only members can see the board\./);
+      assert.match(await card(h, 'public').innerText(), /can find it and join\./);
+      assert.equal(await checked(h, 'private'), true, 'private is the current value');
 
-      await radios.nth(1).click();
-      const confirm = h.page.locator('.vs-confirm');
+      await card(h, 'public').click();
+      const confirm = h.page.locator('.ss-confirm');
       await confirm.waitFor();
       assert.equal(patches(h).length, 0, 'nothing is sent before the confirmation');
-      assert.equal(
-        await radios.nth(0).isChecked(),
-        true,
-        'the value stays private until confirmed',
-      );
+      assert.equal(await checked(h, 'private'), true, 'the value stays private until confirmed');
 
       await confirm.locator('button', { hasText: 'Make public' }).click();
       await until(() => patches(h).length === 1);
@@ -158,20 +168,11 @@ void describe('a lead', () => {
         patches(h).map((c) => c.body),
         [{ visibility: 'public' }],
       );
-      await until(async () => radios.nth(1).isChecked());
-      assert.equal(await radios.nth(1).isChecked(), true, "the panel shows the server's answer");
+      await until(async () => checked(h, 'public'));
+      assert.equal(await checked(h, 'public'), true, "the cards show the server's answer");
       assert.equal(await confirm.count(), 0, 'the confirmation goes once answered');
-
-      // In-app navigation, not a reload — the router's own popstate path — so
-      // nothing but the Projects list's own read can put PUBLIC there.
-      await h.page.keyboard.press('Escape');
-      await h.page.evaluate(() => {
-        window.history.pushState({}, '', '/projects');
-        window.dispatchEvent(new PopStateEvent('popstate'));
-      });
-      const chip = h.page.locator('.project-card .project-chip').first();
-      await chip.waitFor({ timeout: 10_000 });
-      assert.equal(await chip.innerText(), 'PUBLIC');
+      // And the header's badge with it.
+      assert.equal(await h.page.locator('.ss-badge').first().innerText(), 'PUBLIC');
     } finally {
       await h.close();
     }
@@ -179,14 +180,13 @@ void describe('a lead', () => {
 
   void test('can cancel, and nothing is sent', async () => {
     const { stub: api } = stub('lead');
-    const h = await open('/board?project=laika-core', api);
+    const h = await open(ACCESS, api);
     try {
-      await openPanel(h);
-      const radios = h.page.locator('input[name="vs-visibility"]');
-      await radios.nth(1).click();
-      await h.page.locator('.vs-confirm button', { hasText: 'Cancel' }).click();
-      assert.equal(await h.page.locator('.vs-confirm').count(), 0);
-      assert.equal(await radios.nth(0).isChecked(), true, 'still private');
+      await openAccess(h);
+      await card(h, 'public').click();
+      await h.page.locator('.ss-confirm button', { hasText: 'Cancel' }).click();
+      assert.equal(await h.page.locator('.ss-confirm').count(), 0);
+      assert.equal(await checked(h, 'private'), true, 'still private');
       await h.page.waitForTimeout(200);
       assert.equal(patches(h).length, 0, 'a cancelled change reached the server');
     } finally {
@@ -196,18 +196,17 @@ void describe('a lead', () => {
 
   void test('makes a public space private without being asked twice', async () => {
     const { stub: api } = stub('lead', 'public');
-    const h = await open('/board?project=laika-core', api);
+    const h = await open(ACCESS, api);
     try {
-      await openPanel(h);
-      const radios = h.page.locator('input[name="vs-visibility"]');
-      assert.equal(await radios.nth(1).isChecked(), true);
-      await radios.nth(0).click();
+      await openAccess(h);
+      assert.equal(await checked(h, 'public'), true);
+      await card(h, 'private').click();
       await until(() => patches(h).length === 1);
       assert.deepEqual(
         patches(h).map((c) => c.body),
         [{ visibility: 'private' }],
       );
-      assert.equal(await h.page.locator('.vs-confirm').count(), 0, 'narrowing needs no confirm');
+      assert.equal(await h.page.locator('.ss-confirm').count(), 0, 'narrowing needs no confirm');
     } finally {
       await h.close();
     }
@@ -215,27 +214,26 @@ void describe('a lead', () => {
 
   void test('fits 1440 and 390, light and dark, with the confirmation open', async () => {
     const { stub: api } = stub('lead');
-    const h = await open('/board?project=laika-core', api);
+    const h = await open(ACCESS, api);
     try {
       for (const width of [1440, 390]) {
         for (const theme of ['light', 'dark']) {
           await h.page.setViewportSize({ width: 1440, height: 900 });
-          await h.page.goto(`${h.origin}/board?project=laika-core`);
-          await h.page.waitForSelector('.card-title', { timeout: 20_000 });
+          await h.page.goto(`${h.origin}${ACCESS}`);
+          await openAccess(h);
           await setTheme(h.page, theme);
           await h.page.setViewportSize({ width, height: 844 });
-          await openPanel(h);
-          await h.page.locator('input[name="vs-visibility"]').nth(1).click();
-          const confirm = h.page.locator('.vs-confirm');
+          await card(h, 'public').click();
+          const confirm = h.page.locator('.ss-confirm');
           await confirm.waitFor();
           await confirm.scrollIntoViewIfNeeded();
 
           const label = `${String(width)} ${theme}`;
-          const box = await h.page.locator('.view-settings').boundingBox();
-          assert.ok(box !== null, `${label}: no panel`);
+          const box = await confirm.boundingBox();
+          assert.ok(box !== null, `${label}: no confirmation`);
           assert.ok(
             box.x >= 0 && box.x + box.width <= width + 1,
-            `${label}: panel off-screen ${JSON.stringify(box)}`,
+            `${label}: confirmation off-screen ${JSON.stringify(box)}`,
           );
           const overflow = await h.page.evaluate(
             () => document.documentElement.scrollWidth - window.innerWidth,
@@ -258,7 +256,6 @@ void describe('a lead', () => {
             theme === 'light',
             `${label}: not in that theme`,
           );
-          await h.page.keyboard.press('Escape');
         }
       }
       assert.equal(patches(h).length, 0, 'measuring the confirmation sent a change');
@@ -268,17 +265,39 @@ void describe('a lead', () => {
   });
 });
 
-void describe('a member who is not a lead', () => {
+void describe('a member who is not a space admin', () => {
   void test('reads the visibility and is offered no control', async () => {
     const { stub: api } = stub('member', 'public');
+    const h = await open(ACCESS, api);
+    try {
+      await openAccess(h);
+      assert.equal(await h.page.locator('[data-visibility][role="radio"]').count(), 0);
+      assert.equal(await card(h, 'public').getAttribute('aria-current'), 'true');
+      assert.match(await card(h, 'public').innerText(), /can find it and join/);
+      assert.equal(
+        await h.page.locator('.ss-reader').innerText(),
+        'Space settings · read only — space admins change these',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the board', () => {
+  void test('View settings no longer carries Visibility; it links to the space’s settings', async () => {
+    const { stub: api } = stub('lead');
     const h = await open('/board?project=laika-core', api);
     try {
-      await openPanel(h);
-      const section = h.page.locator('.vs-visibility');
-      await section.waitFor();
-      assert.match(await section.innerText(), /Public — anyone in the org can join/);
+      await h.page.waitForSelector('.card-title', { timeout: 20_000 });
+      await h.page.locator('.bt-icon[title="View settings"]').click();
+      await h.page.waitForSelector('.view-settings');
       assert.equal(await h.page.locator('input[name="vs-visibility"]').count(), 0);
-      assert.match(await section.innerText(), /Only a project lead can change this/);
+      const link = h.page.locator('.vs-settings-link');
+      assert.equal(await link.getAttribute('href'), '/spaces/laika-core/settings');
+      await link.click();
+      await until(() => new URL(h.page.url()).pathname === '/spaces/laika-core/settings');
+      assert.equal(await h.page.locator('.view-settings').count(), 0, 'the panel stayed open');
     } finally {
       await h.close();
     }

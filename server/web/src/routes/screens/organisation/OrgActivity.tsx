@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState, type MouseEvent } from 'react';
 import {
   ACTIVITY_LABELS,
   describeEvent,
+  historyCsvHref,
   pushSummary,
-  shownInFeed,
   statusMoveNames,
   type ActivityEvent,
 } from '../../../api/activity.ts';
@@ -122,6 +122,14 @@ export function OrgActivity({ people, params, setParams, onNavigate }: OrgActivi
     <section className="org-card oh" aria-labelledby="org-activity">
       <header className="org-card-head">
         <h2 id="org-activity">Activity</h2>
+        {/*
+          Export (LAI-989): the same filters as the list, as one file of every
+          matching row — not the pages loaded so far. A link the browser
+          downloads with the session cookie; the server streams it.
+        */}
+        <a className="bar-control oh-export" href={historyCsvHref(query)} download>
+          Export CSV
+        </a>
       </header>
       <p className="org-note">
         Everything that happened in every space, and in the organisation itself, newest first.
@@ -207,7 +215,7 @@ export function OrgActivity({ people, params, setParams, onNavigate }: OrgActivi
       )}
 
       {state.status === 'ready' &&
-        (shownInFeed(state.rows).length === 0 && state.next === null ? (
+        (state.rows.length === 0 && state.next === null ? (
           <EmptyState
             headline="No activity"
             body={
@@ -219,7 +227,7 @@ export function OrgActivity({ people, params, setParams, onNavigate }: OrgActivi
         ) : (
           <>
             <ol className="oh-list">
-              {shownInFeed(state.rows).map((event) => {
+              {state.rows.map((event) => {
                 const space = event.project_id === null ? undefined : spaces.get(event.project_id);
                 const move = statusMoveNames(event);
                 const key = taskKey(event);

@@ -111,6 +111,162 @@ const REVIEW_PATH = '/api/v1/review';
 const TOKEN_ALERTS_PATH = '/api/v1/me/token-alerts';
 
 /**
+ * `GET /permissions` as the server answers it under the **default grants**
+ * (D-102 rule 6), for a stub that does not name it: what `/me` says the
+ * reader is decides what they hold, as it does on a board whose owner changed
+ * nothing.
+ *
+ * **Since LAI-970 every gate denies until this answers**, so a fixture written
+ * before that — about cards, columns, sprints — would otherwise lose every
+ * control it is about. A test about grants names its own.
+ *
+ * Generated from the server's own `permissionsCatalogue()` with
+ * `DEFAULT_GRANTS` (2026-10-22), not written by hand: a hand copy of §3 is the
+ * second source of truth LAI-970 removed from the client.
+ */
+const EVERY_ROLE_ORG = [
+  'org.read',
+  'presence.read',
+  'capacity.read',
+  'member_list.read',
+  'project.join_public',
+  'token.create_own',
+  'token.read_own',
+  'token.revoke_own',
+  'unlisted.log_own',
+  'heartbeat.send_own',
+  'activity_sharing.read_own',
+  'activity_sharing.set_own',
+  'local_activity.send_own',
+  'local_activity.read_own',
+  'local_activity.delete_own',
+  'usage.read_own',
+  'token_alerts.own',
+  'plan_limit.own',
+  'time_settings.read_own',
+  'time_settings.set_own',
+  'time_drafts.send_own',
+  'time_drafts.read_own',
+  'time_drafts.manage_own',
+  'time_entries.read_own',
+  'time_entries.write_own',
+  'time_sync.own',
+  // Everyone may sign themselves out everywhere (LAI-981): conditional, and
+  // `/permissions` lists a conditional action the caller holds about themselves.
+  'user.sign_out',
+] as const;
+const ADMIN_UP_ORG = [
+  'org.settings.edit',
+  'project.create',
+  'project.archive',
+  'user.invite',
+  'user.deactivate',
+  'user.reset_password',
+  'token.list_any',
+  'token.revoke_any',
+  'audit_log.export',
+  'webhook.configure',
+  'profile.read',
+  'profile.set_kind',
+  'profile.rate',
+  'profile.activity.read',
+  'people.analytics.read',
+  'org.developer_insights.set',
+  'usage.read_org',
+  'usage.read_people',
+  'org.model_prices.set',
+  'org.time.set',
+  'time_sync.map',
+  'time_sync.import_all',
+] as const;
+const OWNER_ONLY_ORG = [
+  'org.delete',
+  'org.transfer_ownership',
+  'user.set_role',
+  'org.permissions.manage',
+] as const;
+const PROJECT_ACTIONS_BY_ROLE: Readonly<Record<string, readonly string[]>> = {
+  lead: [
+    'project.members.manage',
+    'project.settings.edit',
+    'sprint.manage',
+    'task.assign_sprint',
+    'task.create',
+    'task.write',
+    'task.claim',
+    'task.assign_other',
+    'comment.create',
+    'comment.edit',
+    'comment.delete',
+    'task.delete',
+    'task.dependency.write',
+    'task.watch',
+    'project.read',
+    'meeting_proposal.apply',
+    'usage.read_project',
+    'budget.set',
+  ],
+  member: [
+    'task.assign_sprint',
+    'task.create',
+    'task.write',
+    'task.claim',
+    'task.assign_other',
+    'comment.create',
+    'comment.edit',
+    'comment.delete',
+    'task.delete',
+    'task.dependency.write',
+    'task.watch',
+    'project.read',
+    'meeting_proposal.apply',
+    'usage.read_project',
+  ],
+  viewer: ['task.watch', 'project.read', 'usage.read_project'],
+};
+// `task.create` (LAI-976) is a lead's and a member's under the default rule,
+// *Members*; a space set to *Space admins only* withholds it from members —
+// a test about that names its own `/permissions` (LAI-178).
+
+interface StubMe {
+  readonly org_role?: unknown;
+  readonly memberships?: readonly { readonly project_id: string; readonly role: string }[];
+}
+
+/** The default-grants answer for this `/me` — see {@link EVERY_ROLE_ORG}. */
+export function defaultPermissions(me: StubMe): unknown {
+  const role = typeof me.org_role === 'string' ? me.org_role : 'viewer';
+  const adminUp = role === 'owner' || role === 'admin';
+  const actions = [
+    ...EVERY_ROLE_ORG,
+    ...(adminUp ? ADMIN_UP_ORG : []),
+    ...(role === 'owner' ? OWNER_ONLY_ORG : []),
+  ];
+  // `effectiveProjectRole`: an implicit lead everywhere, an org viewer capped.
+  const effective = (given: string): string =>
+    adminUp ? 'lead' : role === 'viewer' ? 'viewer' : given;
+  return {
+    org_roles: ['owner', 'admin', 'member', 'viewer'],
+    project_roles: ['lead', 'member', 'viewer'],
+    permissions: [],
+    me: {
+      org_role: role,
+      credential: 'session',
+      project_scope: 'all',
+      implicit_project_role: adminUp ? 'lead' : null,
+      actions,
+      projects: (me.memberships ?? []).map((m) => ({
+        project_id: m.project_id,
+        role: effective(m.role),
+        actions: PROJECT_ACTIONS_BY_ROLE[effective(m.role)] ?? [],
+      })),
+    },
+  };
+}
+const PERMISSIONS_PATH = '/api/v1/permissions';
+const ME_PATH = '/api/v1/me';
+
+/**
  * The task list and one task (LAI-795). **The list is answered as the server
  * answers it**: asked `fields=slim`, the stub leaves out `description_md` and
  * `acceptance_md`, so a fixture written in full still reaches the app as the
@@ -391,6 +547,8 @@ function serve(
 ): Promise<{ server: Server; origin: string }> {
   /** Every task a list has served, in full, by id — see {@link ONE_TASK_PATH}. */
   const listed = new Map<string, unknown>();
+  /** The last `/me` this server answered, for {@link defaultPermissions}. */
+  let lastMe: StubMe | undefined;
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const path = url.pathname;
@@ -455,6 +613,17 @@ function serve(
           return;
         }
 
+        if (
+          chosen === undefined &&
+          req.method === 'GET' &&
+          path === PERMISSIONS_PATH &&
+          lastMe !== undefined
+        ) {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify(defaultPermissions(lastMe)));
+          return;
+        }
+
         if (chosen === undefined) {
           res.writeHead(404, { 'content-type': 'application/json' });
           res.end(JSON.stringify({ error: { code: 'not_found', message: `no stub for ${path}` } }));
@@ -493,6 +662,10 @@ function serve(
           status === 200 &&
           TASK_LIST_PATH.test(path) &&
           url.searchParams.get('fields') === 'slim';
+        // Whose answer `/permissions` defaults to: the user `/me` last named.
+        if (path === ME_PATH && req.method === 'GET') {
+          lastMe = status === 200 && typeof body === 'object' && body !== null ? body : undefined;
+        }
         res.writeHead(status, { 'content-type': 'application/json', ...headers });
         res.end(JSON.stringify(slim ? slimPage(body, listed) : body));
       });
@@ -705,4 +878,50 @@ export async function fakeStream(page: Page): Promise<void> {
       })();
     `,
   });
+}
+
+/**
+ * Record whether any of `selectors` is **ever** in the document, from before
+ * the app boots (LAI-970). Pass as `open(path, stub, { before: (p) =>
+ * watchFor(p, [...]) })`, then ask {@link everSeen}.
+ *
+ * A gate that shows a control for one frame and then withdraws it passes
+ * every "is it there now" check taken after the frame; that frame is the bug
+ * when the reader is somebody the owner withdrew it from. A MutationObserver
+ * sees every frame the DOM had.
+ */
+export async function watchFor(page: Page, selectors: readonly string[]): Promise<void> {
+  await page.addInitScript({
+    content: `
+      (() => {
+        const selectors = ${JSON.stringify(selectors)};
+        const seen = (window.__laikaSeen = {});
+        const check = () => {
+          for (const s of selectors) if (document.querySelector(s)) seen[s] = true;
+        };
+        new MutationObserver(check).observe(document, {
+          subtree: true,
+          childList: true,
+          attributes: true,
+        });
+      })();
+    `,
+  });
+}
+
+/** Whether `selector`, given to {@link watchFor}, was ever in the document. */
+export async function everSeen(page: Page, selector: string): Promise<boolean> {
+  return page.evaluate(
+    (s) =>
+      (window as unknown as { __laikaSeen?: Record<string, boolean> }).__laikaSeen?.[s] === true,
+    selector,
+  );
+}
+
+/** Go to `to` inside the app, as a link would: no reload, so module state survives. */
+export async function navigateInApp(page: Page, to: string): Promise<void> {
+  await page.evaluate((path) => {
+    history.pushState({}, '', path);
+    dispatchEvent(new PopStateEvent('popstate'));
+  }, to);
 }

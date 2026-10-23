@@ -385,8 +385,8 @@ export function Inspector({
                 </>
               ) : (
                 <>
-                  {draft.source === 'agent' ? 'Proposed by an agent' : 'From your collector'} · only
-                  you see it
+                  {draft.source === 'agent' ? 'Proposed by an agent' : 'From your collector'} · not
+                  confirmed — owners and admins can read it
                 </>
               )}
               {draft.note !== null && ` · “${draft.note}”`}

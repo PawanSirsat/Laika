@@ -21,8 +21,6 @@ import type { MeProfile } from '../../../api/me.ts';
 import {
   attemptKey,
   getProfile,
-  mayOpenProfiles,
-  mayRate,
   PROFILE_KINDS,
   rateMember,
   setProfileKind,
@@ -37,7 +35,8 @@ import {
   type ProfileReview,
   type ProfileTask,
 } from '../../../api/profiles.ts';
-import { holdsPeopleAnalytics, useOrgActions } from '../../../api/people-analytics.ts';
+import { PEOPLE_ANALYTICS } from '../../../api/people-analytics.ts';
+import { useGates } from '../../../api/permissions.ts';
 import { dateTime, timeLabel } from '../../../api/time-label.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -45,6 +44,7 @@ import { useTheme } from '../../../theme/use-theme.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { SCREEN_COPY } from '../screen-copy.ts';
 import { ActivityCard } from './ActivityCard.tsx';
+import { AdminPanel } from './AdminPanel.tsx';
 import { InfoTip } from './InfoTip.tsx';
 import { MyDayScreen } from '../my-day/MyDayScreen.tsx';
 import { PersonHours } from './PersonHours.tsx';
@@ -128,9 +128,9 @@ const MEANS = {
   decided30: 'Their accepts and send-backs on work that is not theirs in the last 30 days.',
   decide:
     'Median time from a task’s latest move into Review — or its creation, if it was created there — to their decision on it. Decisions made from outside Review are counted, not measured.',
-  led: 'Projects where their membership role is Lead, not archived.',
+  led: 'Spaces where they are a Space admin, not archived.',
   waiting:
-    'Tasks in Review in the projects they lead that are not theirs — someone else’s, or nobody’s.',
+    'Tasks in Review in the spaces where they are a Space admin that are not theirs — someone else’s, or nobody’s.',
   oldest: 'How long the longest-waiting of those has been in Review.',
 } as const;
 
@@ -190,12 +190,12 @@ export function ProfileScreen({
   onNavigate = () => undefined,
 }: ProfileScreenProps) {
   // *See everyone's analytics* carries the profile and the day alike (§3's
-  // grants, D-102 rule 6): the server's answer once it has one, the default
-  // grants — owner and admin — until then (LAI-959).
-  const { actions, settled } = useOrgActions(me !== undefined);
-  const allowed =
-    actions === undefined ? mayOpenProfiles(me?.org_role) : actions.includes('profile.read');
-  const readsDays = holdsPeopleAnalytics(actions, me?.org_role);
+  // grants, D-102 rule 6): the server's answer, and nothing until it has one
+  // (LAI-970) — a role would show a withdrawn admin what they may not open.
+  const gates = useGates(me !== undefined);
+  const { settled } = gates;
+  const allowed = gates.org('profile.read');
+  const readsDays = gates.org(PEOPLE_ANALYTICS);
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [kindBusy, setKindBusy] = useState(false);
@@ -377,7 +377,7 @@ export function ProfileScreen({
       ratings={profile.ratings}
       total={profile.ratings_total}
       self={me.id === user.id}
-      canRate={mayRate(me, user.id)}
+      canRate={gates.org('profile.rate') && me.id !== user.id}
       now={now}
       buttonRef={rateButton}
       onRate={() => {
@@ -385,6 +385,21 @@ export function ProfileScreen({
       }}
     />
   );
+
+  /**
+   * After the Admin panel changed their role or active state: the profile
+   * again, quietly — the panel stays on screen, so a notice it just showed is
+   * not wiped by a loading state. A failed read is the screen's error.
+   */
+  const refreshProfile = (): void => {
+    getProfile(user.id)
+      .then((next) => {
+        if (shown.current === user.id) setLoad({ kind: 'ready', profile: next });
+      })
+      .catch((cause: unknown) => {
+        if (shown.current === user.id) setLoad({ kind: 'error', error: cause });
+      });
+  };
 
   const manager = user.profile_kind === 'manager';
   const cards: Readonly<Record<ProfileCardId, ReactNode>> = {
@@ -475,11 +490,20 @@ export function ProfileScreen({
 
       {shownTab === 'overview' && (
         <>
+          {/* Managing this person (D-104, LAI-988): drawn only for what the server grants. */}
+          <AdminPanel
+            key={`admin-${user.id}`}
+            user={user}
+            me={me}
+            gates={gates}
+            onChanged={refreshProfile}
+          />
+
           <ActivityCard
             userId={user.id}
             name={user.name}
             viewerId={me.id}
-            canManageOrg={mayOpenProfiles(me.org_role)}
+            canManageOrg={gates.org('org.developer_insights.set')}
             sharing={profile.activity_sharing}
           />
 
@@ -1157,7 +1181,7 @@ function ReviewCard({
             ...(queue === undefined
               ? []
               : ([
-                  ['Projects led', MEANS.led],
+                  ['Spaces as Space admin', MEANS.led],
                   ['Waiting now', MEANS.waiting],
                   ['Oldest waiting', MEANS.oldest],
                 ] satisfies Def[])),

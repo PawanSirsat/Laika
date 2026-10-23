@@ -15,12 +15,14 @@ import type { Page } from 'playwright';
 import { LAIKA, ONROUTE, task } from './capacity-org.ts';
 import {
   closeBrowser,
+  everSeen,
   open,
   refuse,
   setTheme,
   until,
   type ApiStub,
   type Harness,
+  watchFor,
 } from './harness.ts';
 
 const NOW = Date.now();
@@ -112,8 +114,23 @@ function sprintPage(slug: 'laika' | 'onroute') {
   };
 }
 
+/** The figures for the unfiltered page (LAI-974's `GET /tasks/summary`). */
+const SUMMARY = {
+  total: 142,
+  by_status: { backlog: 40, todo: 31, in_progress: 25, review: 12, done: 33, cancelled: 1 },
+  by_assignee: [
+    { user_id: 'u1', name: 'Pawan Sirsat', count: 83 },
+    { user_id: null, name: 'Unassigned', count: 50 },
+    { user_id: 'u2', name: 'Bea Nkosi', count: 9 },
+  ],
+  overdue: 3,
+  blocked: 0,
+  unassigned: 50,
+};
+
 function shell(me: typeof OWNER | typeof MEMBER): Record<string, unknown> {
   return {
+    '/api/v1/tasks/summary': SUMMARY,
     '/api/v1/me': me,
     '/api/v1/projects': {
       data: me.org_role === 'owner' ? [LAIKA, ONROUTE] : [LAIKA],
@@ -137,19 +154,27 @@ const OWNER_STUB: ApiStub = {
  * The stub records paths only; the browser's own request log has the query.
  */
 const ASKED = new WeakMap<Page, URLSearchParams[]>();
+/** The `GET /tasks/summary` reads, the same way. */
+const COUNTED = new WeakMap<Page, URLSearchParams[]>();
 
 function reads(h: Harness): URLSearchParams[] {
   return ASKED.get(h.page) ?? [];
 }
 
+function counts(h: Harness): URLSearchParams[] {
+  return COUNTED.get(h.page) ?? [];
+}
+
 async function track(page: Page): Promise<void> {
   const asked: URLSearchParams[] = [];
+  const counted: URLSearchParams[] = [];
   ASKED.set(page, asked);
+  COUNTED.set(page, counted);
   page.on('request', (request) => {
     const url = new URL(request.url());
-    if (request.method() === 'GET' && url.pathname === '/api/v1/tasks') {
-      asked.push(url.searchParams);
-    }
+    if (request.method() !== 'GET') return;
+    if (url.pathname === '/api/v1/tasks') asked.push(url.searchParams);
+    if (url.pathname === '/api/v1/tasks/summary') counted.push(url.searchParams);
   });
   return Promise.resolve();
 }
@@ -276,25 +301,14 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
     });
     try {
       assert.deepEqual(await keys(h.page), ['LAI-12', 'LAI-15']);
-      assert.equal(await h.page.locator('.work-more').count(), 0, 'Load more with nothing more');
+      assert.ok(
+        await h.page.getByRole('button', { name: 'Next page' }).isDisabled(),
+        'Next with nothing more',
+      );
       const asked = reads(h);
       assert.equal(asked.length, 1);
       // Unfiltered: no project, no assignee — the server's whole answer.
-      assert.deepEqual(Object.fromEntries(asked[0] ?? []), { fields: 'slim', limit: '50' });
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('Load more walks next_cursor and adds the next page under the first', async () => {
-    const h = await openWork('/work', OWNER_STUB);
-    try {
-      await keys(h.page);
-      await h.page.getByRole('button', { name: 'Load more' }).click();
-      await until(async () => (await h.page.locator('.work-row').count()) === 5);
-      assert.deepEqual(await keys(h.page), ['ONR-356', 'LAI-12', 'LAI-15', 'ONR-360', 'LAI-18']);
-      assert.equal(await h.page.locator('.work-more').count(), 0, 'Load more after the last page');
-      assert.equal(reads(h)[1]?.get('cursor'), 'C2');
+      assert.deepEqual(Object.fromEntries(asked[0] ?? []), { fields: 'slim', limit: '25' });
     } finally {
       await h.close();
     }
@@ -317,7 +331,7 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
         status: 'todo',
         project: 'laika',
         sprint: 'none',
-        limit: '50',
+        limit: '25',
       });
 
       // Me: the person filter is the reader, in the URL and in the request.
@@ -504,6 +518,339 @@ void describe('Work: everyone’s work across every space (LAI-952)', () => {
       await h.page.locator('.state-error, [role="alert"]').first().waitFor({ timeout: 10_000 });
       assert.equal(await h.page.locator('.work-row').count(), 0);
       assert.equal(await h.page.locator('.state-empty').count(), 0, 'an error read as empty');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/** `n` served rows, keyed `W-<from>`…, for a list long enough to page. */
+function many(from: number, n: number) {
+  return Array.from({ length: n }, (_, i) =>
+    served(
+      `w${String(from + i)}`,
+      `W-${String(from + i)}`,
+      `Task ${String(from + i)}`,
+      'todo',
+      LAIKA,
+      null,
+      null,
+      'To do',
+    ),
+  );
+}
+
+const PAGED_STUB: ApiStub = {
+  ...shell(OWNER),
+  '/api/v1/tasks/summary': { ...SUMMARY, total: 30 },
+  '/api/v1/tasks?fields=slim': { data: many(1, 25), next_cursor: 'P2' },
+  '/api/v1/tasks?fields=slim&cursor=P2': { data: many(26, 5), next_cursor: null },
+};
+
+async function tile(page: Page, label: string) {
+  const button = page.locator('.work-summary .work-tile').filter({ hasText: label });
+  await button.first().waitFor({ timeout: 10_000 });
+  return button.first();
+}
+
+void describe('Work: the header, the figures and the pages (LAI-975)', () => {
+  void test('the page header the other pages have: title and its sentence', async () => {
+    const h = await openWork('/work', OWNER_STUB);
+    try {
+      await keys(h.page);
+      assert.equal(
+        await h.page.locator('.work .screen-page .screen-page-title').innerText(),
+        'Work',
+      );
+      assert.equal(
+        await h.page.locator('.work .screen-bar').count(),
+        0,
+        'the old band is still drawn',
+      );
+      assert.ok(
+        (await h.page.locator('.work .screen-page-desc').innerText()).includes('every space'),
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the strip draws the server’s figures, and a tile is the status filter', async () => {
+    const h = await openWork('/work', {
+      ...OWNER_STUB,
+      '/api/v1/tasks?fields=slim&status=review': { data: [PAGE_ONE[1]], next_cursor: null },
+    });
+    try {
+      await keys(h.page);
+      for (const [label, figure] of [
+        ['Total', '142'],
+        ['In progress', '25'],
+        ['Review', '12'],
+        ['To do', '31'],
+        ['Backlog', '40'],
+        ['Done', '33'],
+        ['Overdue', '3'],
+      ] as const) {
+        const text = await (await tile(h.page, label)).innerText();
+        assert.ok(text.includes(figure), `${label} reads ${text}, not ${figure}`);
+      }
+      // Blocked is zero, so it is not drawn.
+      assert.equal(
+        await h.page.locator('.work-summary .work-tile').filter({ hasText: 'Blocked' }).count(),
+        0,
+      );
+      // The figures are asked with the page's filters — none here.
+      assert.deepEqual(Object.fromEntries(counts(h)[0] ?? []), {});
+
+      const review = await tile(h.page, 'Review');
+      await review.click();
+      await until(() => new URL(h.page.url()).searchParams.get('status') === 'review');
+      assert.equal(await review.getAttribute('aria-pressed'), 'true');
+      await until(async () => (await keys(h.page)).join() === 'LAI-12');
+      assert.equal(reads(h).at(-1)?.get('status'), 'review');
+      // The pager counts the chosen status: 12, not 142.
+      await until(async () => (await h.page.locator('.work-range').innerText()) === '1–1 of 12');
+
+      // Again clears it.
+      await review.click();
+      await until(() => new URL(h.page.url()).searchParams.get('status') === null);
+      assert.equal(await review.getAttribute('aria-pressed'), 'false');
+      // The figures never carry the status: the tiles stay the breakdown.
+      assert.ok(counts(h).every((q) => q.get('status') === null));
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the figures follow the other filters', async () => {
+    const h = await openWork('/work?space=laika&person=none', {
+      ...OWNER_STUB,
+      '/api/v1/tasks?fields=slim&assignee=none&project=laika': {
+        data: [PAGE_ONE[2]],
+        next_cursor: null,
+      },
+    });
+    try {
+      await keys(h.page);
+      await until(() => counts(h).length > 0);
+      assert.deepEqual(Object.fromEntries(counts(h)[0] ?? []), {
+        assignee: 'none',
+        project: 'laika',
+      });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an owner sees who holds the work, and a name filters to them', async () => {
+    const h = await openWork('/work', {
+      ...OWNER_STUB,
+      // The server's ranking, with everyone past its top ten folded (LAI-974).
+      '/api/v1/tasks/summary': {
+        ...SUMMARY,
+        by_assignee: [...SUMMARY.by_assignee, { user_id: 'others', name: 'Others', count: 4 }],
+      },
+      '/api/v1/tasks?fields=slim&assignee=u2': { data: [PAGE_ONE[1]], next_cursor: null },
+    });
+    try {
+      await keys(h.page);
+      const row = h.page.locator('.work-people');
+      await row.waitFor({ timeout: 10_000 });
+      const names = await row.locator('.work-person-chip').allInnerTexts();
+      assert.deepEqual(
+        names.map((n) => n.replace(/\s+/g, ' ').trim()),
+        ['Pawan Sirsat 83', 'Unassigned 50', 'Bea Nkosi 9', 'Others 4'],
+      );
+      // Others is many people: a figure, not a filter.
+      assert.equal(await row.locator('button').filter({ hasText: 'Others' }).count(), 0);
+      await row.locator('.work-person-chip').filter({ hasText: 'Others' }).click();
+      await h.page.waitForTimeout(200);
+      assert.equal(new URL(h.page.url()).searchParams.get('person'), null);
+
+      await row.locator('.work-person-chip').filter({ hasText: 'Bea Nkosi' }).click();
+      await until(() => new URL(h.page.url()).searchParams.get('person') === 'u2');
+      await until(async () => (await keys(h.page)).join() === 'LAI-12');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a member sees the figures but no “by person” row', async () => {
+    const h = await openWork('/work', {
+      ...shell(MEMBER),
+      '/api/v1/tasks?fields=slim': { data: MEMBER_PAGE, next_cursor: null },
+    });
+    try {
+      await keys(h.page);
+      await tile(h.page, 'Total');
+      await h.page.waitForTimeout(200);
+      assert.equal(await h.page.locator('.work-people').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * The row follows *See everyone's analytics* as the server reports it, not
+   * the org role (LAI-970): the summary itself is served to every reader.
+   */
+  const analytics = (role: string, actions: readonly string[]) => ({
+    org_roles: [],
+    project_roles: [],
+    permissions: [],
+    me: {
+      org_role: role,
+      credential: 'session',
+      project_scope: 'all',
+      implicit_project_role: null,
+      actions,
+      projects: [],
+    },
+  });
+
+  void test('a member the owner granted everyone’s analytics sees the “by person” row', async () => {
+    const h = await openWork('/work', {
+      ...shell(MEMBER),
+      '/api/v1/permissions': analytics('member', ['org.read', 'people.analytics.read']),
+      '/api/v1/tasks?fields=slim': { data: MEMBER_PAGE, next_cursor: null },
+    });
+    try {
+      await keys(h.page);
+      await h.page.locator('.work-people').waitFor({ timeout: 10_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an admin the owner withdrew it from is never shown the row', async () => {
+    const h = await open(
+      '/work',
+      {
+        ...OWNER_STUB,
+        '/api/v1/me': { ...OWNER, org_role: 'admin' },
+        '/api/v1/permissions': analytics('admin', ['org.read', 'member_list.read']),
+      },
+      { before: (page) => watchFor(page, ['.work-people']) },
+    );
+    try {
+      await keys(h.page);
+      await tile(h.page, 'Total');
+      await until(() => h.calls.some((c) => c.path === '/api/v1/permissions'));
+      await h.page.waitForTimeout(400);
+      assert.equal(await everSeen(h.page, '.work-people'), false, 'the admin was shown By person');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Next, then Previous: page two’s rows, then page one’s again, counted', async () => {
+    const h = await openWork('/work', PAGED_STUB);
+    try {
+      assert.equal((await keys(h.page)).length, 25);
+      await until(async () => (await h.page.locator('.work-range').innerText()) === '1–25 of 30');
+      assert.ok(await h.page.getByRole('button', { name: 'Previous page' }).isDisabled());
+
+      await h.page.getByRole('button', { name: 'Next page' }).click();
+      await until(async () => (await keys(h.page))[0] === 'W-26');
+      assert.deepEqual(await keys(h.page), ['W-26', 'W-27', 'W-28', 'W-29', 'W-30']);
+      assert.equal(reads(h).at(-1)?.get('cursor'), 'P2');
+      // The last page: its count, and no Next.
+      assert.equal(await h.page.locator('.work-range').innerText(), '26–30 of 30');
+      assert.ok(await h.page.getByRole('button', { name: 'Next page' }).isDisabled());
+
+      // Previous with the keyboard.
+      await h.page.getByRole('button', { name: 'Previous page' }).focus();
+      await h.page.keyboard.press('Enter');
+      await until(async () => (await keys(h.page))[0] === 'W-1');
+      assert.equal((await keys(h.page)).length, 25);
+      assert.equal(reads(h).at(-1)?.get('cursor'), null);
+      assert.equal(await h.page.locator('.work-range').innerText(), '1–25 of 30');
+      assert.equal(await h.page.getByRole('button', { name: 'Load more' }).count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a filter change goes back to page one; the page size is the URL', async () => {
+    const h = await openWork('/work', {
+      ...PAGED_STUB,
+      '/api/v1/tasks?fields=slim&status=todo': { data: many(1, 25), next_cursor: 'P2' },
+      '/api/v1/tasks?fields=slim&limit=50': { data: many(1, 30), next_cursor: null },
+    });
+    try {
+      await keys(h.page);
+      await h.page.getByRole('button', { name: 'Next page' }).click();
+      await until(async () => (await keys(h.page))[0] === 'W-26');
+
+      await (await tile(h.page, 'To do')).click();
+      await until(() => reads(h).at(-1)?.get('status') === 'todo');
+      await until(async () => (await keys(h.page))[0] === 'W-1');
+      assert.equal(reads(h).at(-1)?.get('cursor'), null, 'a new filter asked for page two');
+
+      await (await tile(h.page, 'To do')).click();
+      await until(() => new URL(h.page.url()).searchParams.get('status') === null);
+      await h.page.getByRole('combobox', { name: 'Per page' }).click();
+      await h.page.getByRole('option', { name: '50' }).click();
+      await until(() => new URL(h.page.url()).searchParams.get('size') === '50');
+      await until(() => reads(h).at(-1)?.get('limit') === '50');
+      await until(async () => (await keys(h.page)).length === 30);
+      assert.equal(await h.page.locator('.work-range').innerText(), '1–30 of 30');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the strip has a loading state, then an empty one', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const h = await open(
+      '/work',
+      {
+        ...shell(OWNER),
+        '/api/v1/tasks/summary': {
+          ...SUMMARY,
+          total: 0,
+          by_status: { backlog: 0, todo: 0, in_progress: 0, review: 0, done: 0, cancelled: 0 },
+          by_assignee: [],
+          overdue: 0,
+          unassigned: 0,
+        },
+        '/api/v1/tasks?fields=slim': { data: [], next_cursor: null },
+      },
+      {
+        before: async (page) => {
+          await track(page);
+          await page.route(/\/api\/v1\/tasks\/summary/, async (route) => {
+            await gate;
+            await route.continue();
+          });
+        },
+      },
+    );
+    try {
+      await h.page
+        .locator('.work-summary[aria-busy="true"]')
+        .waitFor({ state: 'attached', timeout: 20_000 });
+      release();
+      await h.page.locator('.work-summary-empty').waitFor({ timeout: 10_000 });
+      assert.equal(await h.page.locator('.work-summary .work-tile').count(), 0);
+    } finally {
+      release();
+      await h.close();
+    }
+  });
+
+  void test('a failed count leaves the list alone', async () => {
+    const h = await openWork('/work', {
+      ...OWNER_STUB,
+      '/api/v1/tasks/summary': refuse(500, 'internal', 'the database is locked'),
+    });
+    try {
+      assert.deepEqual(await keys(h.page), ['ONR-356', 'LAI-12', 'LAI-15']);
+      await h.page.locator('.work-summary-error').waitFor({ timeout: 10_000 });
+      assert.equal(await h.page.locator('.work-range').innerText(), '1–3');
     } finally {
       await h.close();
     }

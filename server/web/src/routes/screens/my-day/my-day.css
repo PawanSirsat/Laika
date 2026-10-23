@@ -90,6 +90,24 @@
   gap: 0.3125rem;
 }
 
+/* The way to *Who looked at my time* (LAI-968): who reads drafts, then who did. */
+.myday-lock-link {
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.myday-lock-link:hover {
+  text-decoration-thickness: 2px;
+}
+
+.myday-lock-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+
 .myday-lock-icon {
   width: 0.6875rem;
   height: 0.6875rem;

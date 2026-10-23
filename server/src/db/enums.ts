@@ -26,7 +26,12 @@ export const CAPABILITIES = [
   'see_people_analytics',
   'see_org_activity',
   'open_all_projects',
-  'manage_people',
+  // *Manage people* split in two by D-104 item 6 (LAI-985); migration 0055
+  // maps a stored `manage_people` onto both.
+  'invite_people',
+  'deactivate_people',
+  'create_archive_projects',
+  'manage_any_tokens',
   'change_org_settings',
 ] as const;
 export type Capability = (typeof CAPABILITIES)[number];
@@ -44,6 +49,29 @@ export type ProjectRole = (typeof PROJECT_ROLES)[number];
 
 export const PROJECT_VISIBILITIES = ['public', 'private'] as const;
 export type ProjectVisibility = (typeof PROJECT_VISIBILITIES)[number];
+
+/**
+ * A space's colour, the design's fixed palette (D-103 item 4, LAI-976): names,
+ * not hex — the web app owns what each looks like in either theme.
+ */
+export const PROJECT_COLORS = [
+  'black',
+  'violet',
+  'teal',
+  'blue',
+  'amber',
+  'magenta',
+  'red',
+  'green',
+] as const;
+export type ProjectColor = (typeof PROJECT_COLORS)[number];
+
+/**
+ * Who may create tasks in a space (D-103 item 6): its members, or its space
+ * admins (`lead`) only. Viewers never may, so there is no `viewer` here.
+ */
+export const TASK_CREATE_MIN_ROLES = ['member', 'lead'] as const;
+export type TaskCreateMinRole = (typeof TASK_CREATE_MIN_ROLES)[number];
 
 /** SPEC §4.5 and §5. `backlog` is unrefined; `todo` is groomed. */
 export const TASK_STATUSES = [
@@ -157,6 +185,14 @@ export const ACTIVITY_TYPES = [
   // different questions people actually ask separately.
   'user.deactivated',
   'user.reactivated',
+  // D-104 item 3 (LAI-981): every session of a person ended without
+  // deactivating them. Its own verb because "who was signed out, by whom" is
+  // neither a lock-out nor a token being revoked.
+  'user.signed_out',
+  // D-104 item 2 (LAI-982): the one owner handed the organisation to somebody
+  // else. One event for the three writes it makes, because "who owns this,
+  // since when, and who handed it over" is one question.
+  'org.ownership_transferred',
   // LAI-431. §4.8's own D-022 note already named these four as things the
   // in-process cron writes — "heartbeat pruning, stale-task flagging, invite and
   // meeting-review expiry" — while the list below had a verb for none of them.

@@ -26,6 +26,7 @@ import { navHref } from '../../src/routes/nav-url.ts';
 /** Reachable from a screen rather than from the chrome. Each names the screen. */
 const REACHED_FROM: Readonly<Record<string, string>> = {
   '/members': 'the Projects screen — every project card has a Members button',
+  '/spaces/:slug/settings': "a space's ⋯ menu (Space settings) and the gear on its card (LAI-977)",
   '/design/tokens': 'the token reference, linked from `/design/states`',
   '/design/states': 'a development reference, reached by typing the path',
   // The SPACES section is built from the project list rather than from

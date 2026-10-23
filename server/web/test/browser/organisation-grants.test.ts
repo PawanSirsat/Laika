@@ -71,8 +71,20 @@ const catalogue = (org_role: string, actions: readonly string[]) => ({
 const GRANTS = {
   roles: ['admin', 'member', 'steward'],
   capabilities: [
-    { id: 'fly_kites', label: 'Fly the kite', actions: ['kite.fly'] },
-    { id: 'mend_kites', label: 'Mend the kite', actions: ['kite.mend'] },
+    // A description each, as the server sends since LAI-985: words this
+    // client has never seen, so the line on screen is provably the response's.
+    {
+      id: 'fly_kites',
+      label: 'Fly the kite',
+      description: 'Take the kite up on a windy day.',
+      actions: ['kite.fly'],
+    },
+    {
+      id: 'mend_kites',
+      label: 'Mend the kite',
+      description: 'Patch torn sails and retie the string.',
+      actions: ['kite.mend'],
+    },
   ],
   grants: {
     admin: { fly_kites: true, mend_kites: true },
@@ -87,8 +99,15 @@ const GRANTS = {
   updated_by: null,
 };
 
-const OWNER_ACTIONS = ['org.read', 'org.permissions.manage', 'user.set_role', 'kite.fly'];
-const ADMIN_ACTIONS = ['org.read', 'user.invite', 'kite.fly'];
+const OWNER_ACTIONS = [
+  'org.read',
+  'org.permissions.manage',
+  'user.set_role',
+  'user.invite',
+  'user.deactivate',
+  'kite.fly',
+];
+const ADMIN_ACTIONS = ['org.read', 'user.invite', 'user.deactivate', 'kite.fly'];
 
 const stub = (
   id: string,
@@ -243,6 +262,43 @@ void describe('the owner switches capabilities on and off', () => {
       await h.close();
     }
   });
+});
+
+void describe('each capability says what it does (LAI-989)', () => {
+  for (const [who, id, role, actions] of [
+    ['the owner', 'u1', 'owner', OWNER_ACTIONS],
+    ['an admin', 'u3', 'admin', ADMIN_ACTIONS],
+  ] as const) {
+    void test(`${who} reads each description under its label`, async () => {
+      const h = await open('/organisation?tab=roles', stub(id, role, actions));
+      try {
+        await ready(h);
+        const rows = h.page.locator(`${grid} .perm-table tbody tr`);
+        await until(async () => (await rows.count()) === 2);
+        for (const [capability, label, line] of [
+          ['fly_kites', 'Fly the kite', 'Take the kite up on a windy day.'],
+          ['mend_kites', 'Mend the kite', 'Patch torn sails and retie the string.'],
+        ] as const) {
+          const head = h.page.locator(`${grid} tr[data-capability="${capability}"] th`);
+          assert.equal(await head.locator('.perm-action-name').textContent(), label);
+          const description = head.locator('.perm-action-description');
+          assert.equal(await description.textContent(), line);
+          // Under the label, not beside it.
+          const [nameBox, lineBox] = await Promise.all([
+            head.locator('.perm-action-name').boundingBox(),
+            description.boundingBox(),
+          ]);
+          assert.ok(nameBox !== null && lineBox !== null, 'nothing to measure');
+          assert.ok(
+            lineBox.y >= nameBox.y + nameBox.height - 1,
+            `${label}: the line is not under it`,
+          );
+        }
+      } finally {
+        await h.close();
+      }
+    });
+  }
 });
 
 void describe('everyone else reads it', () => {

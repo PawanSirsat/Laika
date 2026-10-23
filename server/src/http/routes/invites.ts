@@ -5,12 +5,14 @@ import { ApiError } from '../../errors.ts';
 import {
   type AcceptableInvite,
   createInvite,
+  INVITE_EXPIRY_DAYS,
   ORG_ROLES,
   PROJECT_ROLES,
   type InvitePreview,
   type InviteView,
   listInvites,
   previewInvite,
+  reissueInvite,
   resolveInviteForAccept,
   revokeInvite,
 } from '../../services/invites.ts';
@@ -35,6 +37,9 @@ import { parseBody, strictObject, z } from '../validation.ts';
  * printing it in the access log would defeat the hashing.
  */
 
+/** 1, 7 or 30 (LAI-984); the closed list is the service's. */
+const ExpiresInDays = z.literal(INVITE_EXPIRY_DAYS);
+
 const CreateInviteBody = strictObject({
   // Null and absent both mean a link invite (§4.11): a token anybody holding it
   // may spend. They are spelled differently so a client that means "no address"
@@ -43,6 +48,12 @@ const CreateInviteBody = strictObject({
   org_role: z.enum(ORG_ROLES),
   project_id: z.string().min(1).max(64).nullish(),
   project_role: z.enum(PROJECT_ROLES).nullish(),
+  expires_in_days: ExpiresInDays.optional(),
+});
+
+/** `POST /invites/:id/reissue` (LAI-984): the body is optional, and so is its one field. */
+const ReissueInviteBody = strictObject({
+  expires_in_days: ExpiresInDays.optional(),
 });
 
 const AcceptInviteBody = strictObject({
@@ -87,6 +98,15 @@ export interface InviteRouteOptions {
 export function acceptUrlFor(publicUrl: string | undefined, token: string): string {
   const base = (publicUrl ?? '').replace(/\/+$/, '');
   return `${base}/invite?token=${encodeURIComponent(token)}`;
+}
+
+/** A body that is not JSON is `null`, which `parseBody` refuses as it refuses any other. */
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) {
@@ -135,6 +155,7 @@ export function inviteRoutes(options: InviteRouteOptions): Hono<AppEnv> {
       orgRole: body.org_role,
       projectId: body.project_id,
       projectRole: body.project_role,
+      expiresInDays: body.expires_in_days,
     });
 
     return c.json<CreatedInviteBody>(
@@ -199,6 +220,31 @@ export function inviteRoutes(options: InviteRouteOptions): Hono<AppEnv> {
         email,
         org_role: invite.orgRole,
         project_id: invite.projectId,
+      },
+      201,
+    );
+  });
+
+  /**
+   * `POST /invites/:id/reissue` (LAI-984): revoke and issue a new link in one
+   * step. `201` and the same body as creating, because a new invite exists —
+   * with a new id — and its token is shown this once.
+   */
+  app.post('/:id/reissue', async (c) => {
+    const actor = requireActor(c);
+    const text = await c.req.text();
+    const raw: unknown = text.trim() === '' ? {} : safeJson(text);
+    const body = parseBody(ReissueInviteBody, raw);
+
+    const created = reissueInvite(db, actor, c.req.param('id'), {
+      expiresInDays: body.expires_in_days,
+    });
+
+    return c.json<CreatedInviteBody>(
+      {
+        invite: created.invite,
+        token: created.token,
+        accept_url: acceptUrlFor(options.publicUrl, created.token),
       },
       201,
     );

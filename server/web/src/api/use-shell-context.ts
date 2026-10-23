@@ -35,6 +35,12 @@ export interface ShellContext {
    */
   readonly spaceName: string | undefined;
   /**
+   * The open project's id, from the same read as its name (LAI-178): the
+   * space bar asks the permissions store about *this* project — whether the
+   * reader may create a task here — and the store is keyed by id.
+   */
+  readonly spaceId: string | undefined;
+  /**
    * The organisation's name, for the sidebar's identity line (LAI-249) —
    * "Kvelld Dynamics" in the prototype is a fixture. `undefined` until
    * `GET /org` answers, and the line renders nothing for it.
@@ -82,6 +88,7 @@ export function useShellContext(slug: string | undefined, enabled: boolean): She
    * (LAI-259).
    */
   const [spaceName, setSpaceName] = useState<string | undefined>(undefined);
+  const [spaceId, setSpaceId] = useState<string | undefined>(undefined);
   /**
    * Bumped whenever the stream says this project changed, which re-runs the
    * count below (LAI-122).
@@ -134,14 +141,20 @@ export function useShellContext(slug: string | undefined, enabled: boolean): She
   useEffect(() => {
     if (!enabled || slug === undefined) {
       setSpaceName(undefined);
+      setSpaceId(undefined);
       return;
     }
 
     const controller = new AbortController();
+    // A new space's id, not the last one's: a gate read against the previous
+    // project's grants for one frame is the LAI-970 bug.
+    setSpaceId(undefined);
 
     getProject(slug, controller.signal)
       .then((project) => {
-        if (!controller.signal.aborted) setSpaceName(project.name);
+        if (controller.signal.aborted) return;
+        setSpaceName(project.name);
+        setSpaceId(project.id);
       })
       .catch(() => {
         // The rail falls back to the listed name and then to the product name;
@@ -198,6 +211,7 @@ export function useShellContext(slug: string | undefined, enabled: boolean): She
 
   return {
     spaceName,
+    spaceId,
     version,
     sprintCount,
     orgName,

@@ -1,22 +1,34 @@
 # A push to master is a release (LAI-714, D-073).
 #
-# Every push, on any branch, runs the gate. On master, a green gate builds the
-# arm64 image, points `latest` at it and restarts production on that exact
-# digest; a deploy that does not come up healthy is rolled back to the image
-# it replaced, and the run goes red.
+# What runs where (LAI-990):
+#
+#   push to master                           gate, then build and deploy
+#   push to integration-*                    gate only
+#   pull request into master/integration-*   gate only, never a deploy
+#   workflow_dispatch, any branch            gate only, never a deploy
+#
+# A push to any other branch runs nothing; a pull request from it into master
+# or an integration-* branch runs the gate.
+# On master, a green gate builds the arm64 image, points `latest` at it and
+# restarts production on that exact digest; a deploy that does not come up
+# healthy is rolled back to the image it replaced, and the run goes red.
 name: CI / Deploy
 
 on:
   push:
-    branches: ['**']
+    branches: [master, 'integration-*']
+  pull_request:
+    branches: [master, 'integration-*']
   workflow_dispatch:
 
 # One deploy at a time on master. A push that lands mid-deploy waits, and a
 # newer push replaces an older one that is still waiting — only the newest
-# commit goes live. Other branches get a group each and never wait on master.
+# commit goes live; a deploy is never cut off. Everything else gets a group per
+# pull request or per branch, never waits on master, and a newer run cancels
+# the older one still in progress.
 concurrency:
-  group: ${{ github.ref == 'refs/heads/master' && 'production' || github.ref }}
-  cancel-in-progress: false
+  group: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') && 'production' || format('ci-{0}', github.event.pull_request.number || github.ref) }}
+  cancel-in-progress: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/master') }}
 
 permissions:
   contents: read
@@ -53,7 +65,8 @@ jobs:
 
   build:
     name: Build — arm64 image
-    if: github.ref == 'refs/heads/master'
+    # A push to master only: a pull request, even one from master, never deploys.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 40
     permissions:
@@ -87,7 +100,8 @@ jobs:
   deploy:
     name: Deploy — production
     needs: [gate, build]
-    if: github.ref == 'refs/heads/master'
+    # A push to master only: a pull request, even one from master, never deploys.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

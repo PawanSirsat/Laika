@@ -5,9 +5,27 @@ import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { type OrgRole } from '../../src/db/enums.ts';
 import { readPayload } from '../../src/db/activity.ts';
 import { newId } from '../../src/db/ids.ts';
-import { activity, orgs, users } from '../../src/db/schema.ts';
+import { findTokenBySecret } from '../../src/auth/tokens.ts';
+import {
+  activity,
+  orgs,
+  projectMemberships,
+  projects,
+  sessions,
+  tokens,
+  users,
+} from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
-import { listUsers, setOrgRole, setUserActive } from '../../src/services/users.ts';
+import { createToken } from '../../src/services/tokens.ts';
+import {
+  extraOwners,
+  listMemberships,
+  listUsers,
+  setOrgRole,
+  setUserActive,
+  signOutEverywhere,
+  transferOwnership,
+} from '../../src/services/users.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 let t: TestDb;
@@ -43,6 +61,20 @@ function actor(userId: string): ResolvedActor {
   const loaded = loadActor(t.db, userId);
   if (loaded === null) throw new Error('no such user');
   return loaded;
+}
+
+/** `422` with `reason: 'use_transfer'` — the code and the reason, not just a throw. */
+function expectUseTransfer(fn: () => unknown): void {
+  try {
+    fn();
+  } catch (err) {
+    if (!(err instanceof ApiError)) throw err;
+    expect(err.code).toBe('unprocessable');
+    expect(err.status).toBe(422);
+    expect((err.details as { reason?: string }).reason).toBe('use_transfer');
+    return;
+  }
+  throw new Error('Expected 422 use_transfer, but nothing was thrown');
 }
 
 function expectApiError(fn: () => unknown, code: string): void {
@@ -106,6 +138,9 @@ describe('the fields a picker needs (AC1)', () => {
       'email',
       'id',
       'is_active',
+      // When they were last seen signed in (LAI-981) — derived from sessions,
+      // not a better-auth field passed through.
+      'last_seen_at',
       'name',
       'org_role',
       'updated_at',
@@ -287,6 +322,7 @@ describe('changing an org role', () => {
     expect(readPayload(row!)).toEqual({
       scope: 'org',
       user_id: target,
+      user_name: 'Grace',
       from: 'member',
       to: 'admin',
     });
@@ -341,11 +377,23 @@ describe('the last active Owner is the invariant, not four rules', () => {
     expect(() => setUserActive(t.db, actor(ownerId), ownerId, false)).toThrow(/last active Owner/i);
   });
 
-  it('allows it once a second Owner exists', () => {
-    const second = makeUser('Second', 'member');
-    setOrgRole(t.db, actor(ownerId), second, 'owner');
+  it('lets the owner demote a second Owner left from before D-104 (LAI-982)', () => {
+    // No write makes a second owner any more; this is the row an older
+    // organisation may already have, and demoting it is how it is put right.
+    const second = makeUser('Second', 'owner');
 
-    expect(setOrgRole(t.db, actor(ownerId), ownerId, 'admin').org_role).toBe('admin');
+    expect(setOrgRole(t.db, actor(ownerId), second, 'admin').org_role).toBe('admin');
+  });
+
+  it('never demotes or deactivates the owner orgs.owner_user_id names, even with a second (LAI-982)', () => {
+    makeUser('Second', 'owner');
+
+    expectUseTransfer(() => setOrgRole(t.db, actor(ownerId), ownerId, 'admin'));
+    expectUseTransfer(() => setUserActive(t.db, actor(ownerId), ownerId, false));
+    expect(t.db.select().from(users).where(eq(users.id, ownerId)).get()).toMatchObject({
+      orgRole: 'owner',
+      isActive: 1,
+    });
   });
 
   it('does not count a deactivated Owner as cover', () => {
@@ -403,5 +451,548 @@ describe('deactivating and reactivating', () => {
     setUserActive(t.db, actor(ownerId), target, true);
 
     expect(t.db.select().from(activity).all()).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------- D-104 item 3 (LAI-981)
+
+/** A better-auth session row, as sign-in writes one. */
+function seedSession(userId: string, updatedAt: number): string {
+  const id = newId();
+  t.db
+    .insert(sessions)
+    .values({
+      id,
+      userId,
+      token: `tok_${id}`,
+      expiresAt: new Date(updatedAt + 7 * 24 * 60 * 60 * 1000),
+      createdAt: new Date(updatedAt),
+      updatedAt: new Date(updatedAt),
+    })
+    .run();
+  return id;
+}
+
+function sessionsOf(userId: string): number {
+  return t.db.select().from(sessions).where(eq(sessions.userId, userId)).all().length;
+}
+
+function mint(userId: string, name: string): { id: string; secret: string } {
+  const { token, secret } = createToken(t.sqlite, t.db, actor(userId), { name, scope: 'full' });
+  return { id: token.id, secret };
+}
+
+function payloadsOf(type: string): Record<string, unknown>[] {
+  return t.db
+    .select()
+    .from(activity)
+    .all()
+    .filter((row) => row.type === type)
+    .map((row) => readPayload(row) as Record<string, unknown>);
+}
+
+describe('deactivation ends access (D-104 item 3, LAI-981)', () => {
+  it('revokes every token and ends every session of the person', () => {
+    const target = makeUser('Grace', 'member');
+    const laptop = mint(target, 'laptop');
+    const agent = mint(target, 'agent');
+    seedSession(target, 1000);
+    seedSession(target, 2000);
+
+    setUserActive(t.db, actor(ownerId), target, false, 5000);
+
+    expect(findTokenBySecret(t.db, laptop.secret, 6000)).toEqual({ ok: false, reason: 'revoked' });
+    expect(findTokenBySecret(t.db, agent.secret, 6000)).toEqual({ ok: false, reason: 'revoked' });
+    expect(sessionsOf(target)).toBe(0);
+
+    const [payload] = payloadsOf('user.deactivated');
+    expect(payload).toMatchObject({ user_id: target, sessions_ended: 2 });
+    expect([...(payload?.token_ids as string[])].sort()).toEqual([laptop.id, agent.id].sort());
+  });
+
+  it("leaves everybody else's tokens and sessions alone", () => {
+    const target = makeUser('Grace', 'member');
+    const bystander = makeUser('Hedy', 'member');
+    mint(target, 'laptop');
+    const theirs = mint(bystander, 'laptop');
+    seedSession(bystander, 1000);
+
+    setUserActive(t.db, actor(ownerId), target, false);
+
+    expect(findTokenBySecret(t.db, theirs.secret, Date.now()).ok).toBe(true);
+    expect(sessionsOf(bystander)).toBe(1);
+  });
+
+  it("keeps an already-revoked token's revoked_at, rather than restamping it", () => {
+    const target = makeUser('Grace', 'member');
+    const old = mint(target, 'old');
+    t.db.update(tokens).set({ revokedAt: 1234 }).where(eq(tokens.id, old.id)).run();
+
+    setUserActive(t.db, actor(ownerId), target, false, 5000);
+
+    expect(t.db.select().from(tokens).where(eq(tokens.id, old.id)).get()?.revokedAt).toBe(1234);
+    expect(payloadsOf('user.deactivated')[0]?.token_ids).toEqual([]);
+  });
+
+  it('restores neither tokens nor sessions on reactivation', () => {
+    const target = makeUser('Grace', 'member');
+    const laptop = mint(target, 'laptop');
+    seedSession(target, 1000);
+
+    setUserActive(t.db, actor(ownerId), target, false, 5000);
+    setUserActive(t.db, actor(ownerId), target, true, 6000);
+
+    expect(findTokenBySecret(t.db, laptop.secret, 7000)).toEqual({ ok: false, reason: 'revoked' });
+    expect(sessionsOf(target)).toBe(0);
+    expect(payloadsOf('user.reactivated')[0]).toEqual({ user_id: target, org_role: 'member' });
+  });
+
+  it('does it in the same transaction as the flag: a refusal leaves all three untouched', () => {
+    // The last Owner cannot be deactivated (409). Nothing of theirs may go.
+    const laptop = mint(ownerId, 'laptop');
+    seedSession(ownerId, 1000);
+
+    expectApiError(() => setUserActive(t.db, actor(ownerId), ownerId, false), 'conflict');
+
+    expect(findTokenBySecret(t.db, laptop.secret, Date.now()).ok).toBe(true);
+    expect(sessionsOf(ownerId)).toBe(1);
+  });
+
+  it('rolls the flag back when ending access fails part-way', () => {
+    const target = makeUser('Grace', 'member');
+    const laptop = mint(target, 'laptop');
+    seedSession(target, 1000);
+    // Fail the last write before the event: the flag and the tokens have
+    // already been written inside the transaction when the sessions refuse.
+    t.sqlite.exec(
+      "CREATE TRIGGER sessions_refuse BEFORE DELETE ON sessions BEGIN SELECT RAISE(ABORT, 'refused'); END",
+    );
+
+    expect(() => setUserActive(t.db, actor(ownerId), target, false)).toThrow(/refused/);
+
+    expect(t.db.select().from(users).where(eq(users.id, target)).get()?.isActive).toBe(1);
+    expect(findTokenBySecret(t.db, laptop.secret, Date.now()).ok).toBe(true);
+    expect(sessionsOf(target)).toBe(1);
+  });
+
+  it('keeps when they were last seen after their sessions are gone', () => {
+    const target = makeUser('Grace', 'member');
+    seedSession(target, 1000);
+    seedSession(target, 3000);
+
+    const view = setUserActive(t.db, actor(ownerId), target, false, 5000);
+
+    expect(view.last_seen_at).toBe(3000);
+  });
+});
+
+describe('signing a person out everywhere (D-104 item 3, LAI-981)', () => {
+  it('ends every session and leaves their tokens', () => {
+    const target = makeUser('Grace', 'member');
+    const laptop = mint(target, 'laptop');
+    seedSession(target, 1000);
+    seedSession(target, 2000);
+
+    expect(signOutEverywhere(t.db, actor(ownerId), target, 5000)).toEqual({
+      user_id: target,
+      sessions_ended: 2,
+    });
+
+    expect(sessionsOf(target)).toBe(0);
+    expect(findTokenBySecret(t.db, laptop.secret, 6000).ok).toBe(true);
+    // And they stay active: this is not a deactivation.
+    expect(t.db.select().from(users).where(eq(users.id, target)).get()?.isActive).toBe(1);
+  });
+
+  it('is logged, naming who and how many', () => {
+    const target = makeUser('Grace', 'member');
+    seedSession(target, 1000);
+
+    signOutEverywhere(t.db, actor(ownerId), target, 5000);
+
+    const rows = t.db.select().from(activity).all();
+    expect(rows.map((r) => [r.type, r.actorId, r.projectId])).toEqual([
+      ['user.signed_out', ownerId, null],
+    ]);
+    expect(payloadsOf('user.signed_out')).toEqual([{ user_id: target, sessions_ended: 1 }]);
+  });
+
+  it('writes no event when there was nothing to end', () => {
+    const target = makeUser('Grace', 'member');
+
+    expect(signOutEverywhere(t.db, actor(ownerId), target).sessions_ended).toBe(0);
+    expect(t.db.select().from(activity).all()).toHaveLength(0);
+  });
+
+  it('lets anyone sign themselves out, a Viewer included', () => {
+    for (const role of ['member', 'viewer'] as const) {
+      const self = makeUser(`Self ${role}`, role);
+      seedSession(self, 1000);
+
+      expect(signOutEverywhere(t.db, actor(self), self).sessions_ended).toBe(1);
+    }
+  });
+
+  it('lets an Admin sign somebody else out, by default', () => {
+    const target = makeUser('Grace', 'member');
+    seedSession(target, 1000);
+
+    expect(signOutEverywhere(t.db, actor(makeUser('Admin', 'admin')), target).sessions_ended).toBe(
+      1,
+    );
+  });
+
+  it('refuses a Member or Viewer signing somebody else out, with forbidden', () => {
+    const target = makeUser('Grace', 'member');
+    seedSession(target, 1000);
+
+    for (const role of ['member', 'viewer'] as const) {
+      expectApiError(
+        () => signOutEverywhere(t.db, actor(makeUser(`Other ${role}`, role)), target),
+        'forbidden',
+      );
+    }
+    expect(sessionsOf(target)).toBe(1);
+  });
+
+  it('404s on a person who does not exist', () => {
+    expectApiError(() => signOutEverywhere(t.db, actor(ownerId), 'usr_nobody'), 'not_found');
+  });
+});
+
+describe('last_seen_at (LAI-981)', () => {
+  it('is null for somebody who never signed in', () => {
+    makeUser('Grace', 'member');
+
+    const grace = listUsers(t.db, actor(ownerId), PAGE).find((u) => u.name === 'Grace');
+    expect(grace?.last_seen_at).toBeNull();
+  });
+
+  it('is the latest activity across their live sessions', () => {
+    const target = makeUser('Grace', 'member');
+    seedSession(target, 1000);
+    seedSession(target, 4000);
+    seedSession(ownerId, 9000);
+
+    const grace = listUsers(t.db, actor(ownerId), PAGE).find((u) => u.id === target);
+    expect(grace?.last_seen_at).toBe(4000);
+  });
+
+  it('survives a forced sign-out, and a later sign-in moves it on', () => {
+    const target = makeUser('Grace', 'member');
+    seedSession(target, 4000);
+    signOutEverywhere(t.db, actor(ownerId), target);
+
+    const find = () => listUsers(t.db, actor(ownerId), PAGE).find((u) => u.id === target);
+    expect(find()?.last_seen_at).toBe(4000);
+
+    seedSession(target, 8000);
+    expect(find()?.last_seen_at).toBe(8000);
+  });
+});
+
+describe("a person's spaces (LAI-981)", () => {
+  function makeProject(name: string, visibility: 'public' | 'private' = 'private'): string {
+    const id = newId();
+    const now = Date.now();
+    const orgId = t.db.select().from(orgs).get()!.id;
+    t.db
+      .insert(projects)
+      .values({
+        id,
+        orgId,
+        name,
+        slug: name.toLowerCase(),
+        prefix: name.slice(0, 3).toUpperCase(),
+        visibility,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    return id;
+  }
+
+  function join(projectId: string, userId: string, role: 'lead' | 'member' | 'viewer'): void {
+    t.db
+      .insert(projectMemberships)
+      .values({ id: newId(), projectId, userId, role, createdAt: 1000 })
+      .run();
+  }
+
+  it('lists each space with the role held there, alphabetically', () => {
+    const target = makeUser('Grace', 'member');
+    const zeta = makeProject('Zeta');
+    const alpha = makeProject('Alpha');
+    join(zeta, target, 'lead');
+    join(alpha, target, 'viewer');
+
+    expect(listMemberships(t.db, actor(ownerId), target)).toEqual([
+      {
+        project_id: alpha,
+        slug: 'alpha',
+        name: 'Alpha',
+        prefix: 'ALP',
+        role: 'viewer',
+        archived: false,
+        joined_at: 1000,
+      },
+      {
+        project_id: zeta,
+        slug: 'zeta',
+        name: 'Zeta',
+        prefix: 'ZET',
+        role: 'lead',
+        archived: false,
+        joined_at: 1000,
+      },
+    ]);
+  });
+
+  it('shows a member only the spaces they can read themselves', () => {
+    const target = makeUser('Grace', 'member');
+    const asker = makeUser('Hedy', 'member');
+    const shared = makeProject('Shared');
+    const secret = makeProject('Secret');
+    join(shared, target, 'member');
+    join(shared, asker, 'member');
+    join(secret, target, 'member');
+
+    expect(listMemberships(t.db, actor(asker), target).map((m) => m.name)).toEqual(['Shared']);
+    // The owner reads every space, so sees both.
+    expect(listMemberships(t.db, actor(ownerId), target).map((m) => m.name)).toEqual([
+      'Secret',
+      'Shared',
+    ]);
+  });
+
+  it('refuses a deactivated caller and 404s an unknown person', () => {
+    const target = makeUser('Grace', 'member');
+    const gone = makeUser('Gone', 'admin', { isActive: 0 });
+
+    expectApiError(() => listMemberships(t.db, actor(gone), target), 'forbidden');
+    expectApiError(() => listMemberships(t.db, actor(ownerId), 'usr_nobody'), 'not_found');
+  });
+});
+
+// ---------------------------------------------- D-104 item 2 (LAI-982)
+
+describe('exactly one owner (LAI-982)', () => {
+  it('refuses to make anybody owner through a role change: 422 use_transfer', () => {
+    const target = makeUser('Grace', 'admin');
+
+    expectUseTransfer(() => setOrgRole(t.db, actor(ownerId), target, 'owner'));
+    expect(t.db.select().from(users).where(eq(users.id, target)).get()?.orgRole).toBe('admin');
+    expect(t.db.select().from(activity).all()).toHaveLength(0);
+  });
+
+  it('refuses an Admin asking it too — forbidden before the rule', () => {
+    const target = makeUser('Grace', 'member');
+    expectApiError(
+      () => setOrgRole(t.db, actor(makeUser('Admin', 'admin')), target, 'owner'),
+      'forbidden',
+    );
+  });
+});
+
+describe('transferring ownership (LAI-982)', () => {
+  function org() {
+    return t.db.select().from(orgs).get()!;
+  }
+
+  function roleOf(id: string): string | undefined {
+    return t.db.select().from(users).where(eq(users.id, id)).get()?.orgRole;
+  }
+
+  it('makes the target owner, the caller admin, and moves owner_user_id', () => {
+    const grace = makeUser('Grace', 'admin', { email: 'grace@example.test' });
+
+    const view = transferOwnership(
+      t.db,
+      actor(ownerId),
+      { userId: grace, confirm: 'grace@example.test' },
+      5000,
+    );
+
+    expect(view.owner).toMatchObject({ id: grace, org_role: 'owner' });
+    expect(view.previous_owner).toMatchObject({ id: ownerId, org_role: 'admin' });
+    expect(roleOf(grace)).toBe('owner');
+    expect(roleOf(ownerId)).toBe('admin');
+    expect(org().ownerUserId).toBe(grace);
+  });
+
+  it('takes a member too', () => {
+    const grace = makeUser('Grace', 'member', { email: 'grace@example.test' });
+    transferOwnership(t.db, actor(ownerId), { userId: grace, confirm: 'grace@example.test' });
+    expect(roleOf(grace)).toBe('owner');
+  });
+
+  it('is logged once, naming both people', () => {
+    const grace = makeUser('Grace', 'member', { email: 'grace@example.test' });
+    transferOwnership(t.db, actor(ownerId), { userId: grace, confirm: 'grace@example.test' }, 5000);
+
+    const rows = t.db.select().from(activity).all();
+    expect(rows.map((r) => [r.type, r.actorId, r.projectId])).toEqual([
+      ['org.ownership_transferred', ownerId, null],
+    ]);
+    expect(readPayload(rows[0]!)).toEqual({
+      from_user_id: ownerId,
+      to_user_id: grace,
+      to_previous_role: 'member',
+    });
+  });
+
+  it('accepts the email typed in another case, with spaces round it', () => {
+    const grace = makeUser('Grace', 'admin', { email: 'grace@example.test' });
+    transferOwnership(t.db, actor(ownerId), { userId: grace, confirm: '  Grace@Example.TEST ' });
+    expect(roleOf(grace)).toBe('owner');
+  });
+
+  function expectRefused(fn: () => unknown, reason: string): void {
+    try {
+      fn();
+    } catch (err) {
+      if (!(err instanceof ApiError)) throw err;
+      expect(err.code).toBe('unprocessable');
+      expect((err.details as { reason?: string }).reason).toBe(reason);
+      return;
+    }
+    throw new Error(`Expected 422 ${reason}, but nothing was thrown`);
+  }
+
+  it('refuses a wrong confirmation, a viewer, a deactivated person and the owner themselves', () => {
+    const grace = makeUser('Grace', 'admin', { email: 'grace@example.test' });
+    const viewer = makeUser('Vic', 'viewer', { email: 'vic@example.test' });
+    const gone = makeUser('Gone', 'admin', { email: 'gone@example.test', isActive: 0 });
+
+    expectRefused(
+      () => transferOwnership(t.db, actor(ownerId), { userId: grace, confirm: 'grace' }),
+      'confirm_mismatch',
+    );
+    expectRefused(
+      () =>
+        transferOwnership(t.db, actor(ownerId), { userId: viewer, confirm: 'vic@example.test' }),
+      'role',
+    );
+    expectRefused(
+      () => transferOwnership(t.db, actor(ownerId), { userId: gone, confirm: 'gone@example.test' }),
+      'inactive',
+    );
+    expectRefused(
+      () =>
+        transferOwnership(t.db, actor(ownerId), {
+          userId: ownerId,
+          confirm: 'ada.lovelace@example.test',
+        }),
+      'self',
+    );
+
+    // Nothing moved.
+    expect(org().ownerUserId).toBe(ownerId);
+    expect(roleOf(ownerId)).toBe('owner');
+    expect(t.db.select().from(activity).all()).toHaveLength(0);
+  });
+
+  it("is the owner's alone: an Admin is forbidden", () => {
+    const admin = makeUser('Admin', 'admin');
+    const grace = makeUser('Grace', 'member', { email: 'grace@example.test' });
+
+    expectApiError(
+      () => transferOwnership(t.db, actor(admin), { userId: grace, confirm: 'grace@example.test' }),
+      'forbidden',
+    );
+  });
+
+  it('is refused to an owner from before D-104 whom owner_user_id does not name', () => {
+    const legacy = makeUser('Legacy', 'owner', { email: 'legacy@example.test' });
+    const grace = makeUser('Grace', 'member', { email: 'grace@example.test' });
+
+    try {
+      transferOwnership(t.db, actor(legacy), { userId: grace, confirm: 'grace@example.test' });
+      throw new Error('Expected 403 not_recorded_owner, but nothing was thrown');
+    } catch (err) {
+      if (!(err instanceof ApiError)) throw err;
+      expect(err.code).toBe('forbidden');
+      expect((err.details as { reason?: string }).reason).toBe('not_recorded_owner');
+    }
+
+    expect(org().ownerUserId).toBe(ownerId);
+    expect(roleOf(grace)).toBe('member');
+    expect(roleOf(legacy)).toBe('owner');
+    expect(t.db.select().from(activity).all()).toHaveLength(0);
+  });
+
+  it('never adds an owner: the recorded owner hands over with an extra owner present', () => {
+    const legacy = makeUser('Legacy', 'owner', { email: 'legacy@example.test' });
+    const grace = makeUser('Grace', 'admin', { email: 'grace@example.test' });
+    const owners = () =>
+      t.db
+        .select()
+        .from(users)
+        .all()
+        .filter((u) => u.orgRole === 'owner')
+        .map((u) => u.id)
+        .sort();
+    expect(owners()).toHaveLength(2);
+
+    transferOwnership(t.db, actor(ownerId), { userId: grace, confirm: 'grace@example.test' });
+
+    expect(org().ownerUserId).toBe(grace);
+    expect(owners()).toEqual([grace, legacy].sort());
+    // The extra owner is still reported, not demoted.
+    expect(extraOwners(t.db).map((o) => o.id)).toEqual([legacy]);
+  });
+
+  it("is refused to any token, even the owner's full one: session only", () => {
+    const grace = makeUser('Grace', 'member', { email: 'grace@example.test' });
+    const viaToken = {
+      ...actor(ownerId),
+      token: { id: 'tok', scope: 'full' as const, projectIds: null },
+    };
+
+    expectApiError(
+      () => transferOwnership(t.db, viaToken, { userId: grace, confirm: 'grace@example.test' }),
+      'forbidden',
+    );
+  });
+
+  it('404s on a person who does not exist', () => {
+    expectApiError(
+      () => transferOwnership(t.db, actor(ownerId), { userId: 'usr_nobody', confirm: 'x' }),
+      'not_found',
+    );
+  });
+
+  it('writes all three or none: a failure part-way leaves the old owner in place', () => {
+    const grace = makeUser('Grace', 'admin', { email: 'grace@example.test' });
+    // The last of the three writes refuses; the two role changes before it
+    // must roll back with it.
+    t.sqlite.exec(
+      "CREATE TRIGGER orgs_refuse BEFORE UPDATE OF owner_user_id ON orgs BEGIN SELECT RAISE(ABORT, 'refused'); END",
+    );
+
+    expect(() =>
+      transferOwnership(t.db, actor(ownerId), { userId: grace, confirm: 'grace@example.test' }),
+    ).toThrow(/refused/);
+
+    expect(roleOf(grace)).toBe('admin');
+    expect(roleOf(ownerId)).toBe('owner');
+    expect(org().ownerUserId).toBe(ownerId);
+    expect(t.db.select().from(activity).all()).toHaveLength(0);
+  });
+});
+
+describe('extra owners are reported, not demoted (LAI-982)', () => {
+  it('is empty for an organisation with its one owner', () => {
+    expect(extraOwners(t.db)).toEqual([]);
+  });
+
+  it('lists active owners besides the recorded one, and leaves them owners', () => {
+    const second = makeUser('Second', 'owner', { email: 'second@example.test' });
+    makeUser('Gone', 'owner', { isActive: 0 });
+
+    expect(extraOwners(t.db)).toEqual([
+      { id: second, name: 'Second', email: 'second@example.test' },
+    ]);
+    expect(t.db.select().from(users).where(eq(users.id, second)).get()?.orgRole).toBe('owner');
   });
 });

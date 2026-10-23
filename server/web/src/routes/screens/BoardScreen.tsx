@@ -36,7 +36,7 @@ import { SprintStats } from './board/SprintStats.tsx';
 import { statsScope } from './board/sprint-stats.ts';
 import { useSprintStats } from './board/use-sprint-stats.ts';
 import { useEvents } from '../../api/use-events.ts';
-import { canAssignToSprints, listSprints, type Sprint } from '../../api/sprints.ts';
+import { listSprints, type Sprint } from '../../api/sprints.ts';
 import { everyPage } from '../../api/every-page.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
@@ -59,7 +59,8 @@ import {
 } from '../../api/board-derive.ts';
 import { useProjectStatuses, useStatusEditor } from '../../api/use-statuses.ts';
 import type { ProjectStatus } from '../../api/statuses.ts';
-import { setHideDoneAfter, setProjectVisibility } from '../../api/projects.ts';
+import { setHideDoneAfter } from '../../api/projects.ts';
+import { spaceSettingsHref } from '../space-settings-url.ts';
 import { BoardInsights } from './board/BoardInsights.tsx';
 import { BoardToolbar } from './board/BoardToolbar.tsx';
 import { DeleteColumnDialog } from './board/DeleteColumnDialog.tsx';
@@ -71,8 +72,6 @@ import { groupNotice, groupSwimlanes, isGroupBy } from './board/group-lanes.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import {
   listMembers,
-  canConfigureProject,
-  canCreateTask,
   type Member,
   type TaskSummary,
   type TaskFilter,
@@ -86,6 +85,7 @@ import './board/board-motion.css';
 import { pickProject } from '../../api/pick-project.ts';
 import { withProjectParam } from '../nav-url.ts';
 import { clockTime } from '../../api/time-label.ts';
+import { useGates } from '../../api/permissions.ts';
 
 export type BoardViewMode = 'kanban' | 'list';
 
@@ -97,6 +97,8 @@ export interface BoardScreenProps {
   readonly onParamsChange: (next: URLSearchParams, options?: { readonly push?: boolean }) => void;
   /** The route being rendered — `/board` or `/list` (LAI-270). */
   readonly path?: string;
+  /** In-app navigation, for View settings' link to Space settings (LAI-977). */
+  readonly onNavigate?: ((to: string) => void) | undefined;
 }
 
 /**
@@ -110,7 +112,15 @@ export interface BoardScreenProps {
 /** How long after a drop a `settled` card counts as carried there by hand. */
 const CARRIED_MS = 1000;
 
-export function BoardScreen({ params, onParamsChange, me, path = '/board' }: BoardScreenProps) {
+export function BoardScreen({
+  params,
+  onParamsChange,
+  me,
+  path = '/board',
+  onNavigate,
+}: BoardScreenProps) {
+  // What the server says the reader may do here — denied until it answers (LAI-970).
+  const gates = useGates(me !== undefined);
   const { theme } = useTheme();
 
   /*
@@ -604,16 +614,17 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
      */
   }, [slug]);
 
-  const mayCreate =
-    me !== undefined &&
-    project !== undefined &&
-    canCreateTask(me.org_role, project.id, me.memberships);
+  /**
+   * **Two questions, not one** (LAI-178). Creating a task is `task.create`,
+   * which a space set to *Space admins only* withholds from members (D-103
+   * item 6, LAI-976); editing, moving and assigning stay `task.write`. One
+   * gate for both offered members a create that answered `403`.
+   */
+  const mayCreate = project !== undefined && gates.project(project.id, 'task.create');
+  const mayWrite = project !== undefined && gates.project(project.id, 'task.write');
 
   /** Lead-only — a narrower rule than creating a task. */
-  const mayConfigure =
-    me !== undefined &&
-    project !== undefined &&
-    canConfigureProject(me.org_role, project.id, me.memberships);
+  const mayConfigure = project !== undefined && gates.project(project.id, 'project.settings.edit');
 
   /*
    * **The add-column tile's gate, one expression for the board and its
@@ -631,9 +642,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    */
   const boardProjectId = project?.id ?? statuses.all[0]?.project_id;
   const mayAddColumn =
-    me !== undefined &&
-    boardProjectId !== undefined &&
-    canConfigureProject(me.org_role, boardProjectId, me.memberships);
+    boardProjectId !== undefined && gates.project(boardProjectId, 'project.settings.edit');
 
   /** `Column 5`, skipping any name already taken. */
 
@@ -1106,18 +1115,19 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                 },
               }
             : {})}
-          visibility={project?.visibility}
-          {...(mayConfigure && slug !== undefined
-            ? {
-                onVisibilityChange: (next: Project['visibility']) => {
-                  // The server's project back, as Hide done does: the panel
-                  // shows what was stored, not what was asked for.
-                  void setProjectVisibility(slug, next).then((updated) => {
-                    setProject(updated);
-                  });
-                },
-              }
-            : {})}
+          {...(slug === undefined
+            ? {}
+            : {
+                spaceSettingsHref: spaceSettingsHref(slug),
+                ...(onNavigate === undefined
+                  ? {}
+                  : {
+                      onOpenSpaceSettings: (href: string) => {
+                        setSettingsAt(undefined);
+                        onNavigate(href);
+                      },
+                    }),
+              })}
           forList={view === 'list'}
           group={group}
           onGroupChange={(next) => {
@@ -1567,11 +1577,9 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               }}
               canAdd={mayCreate}
               // Editing a task is member+ (§3.2), the gate the drawer uses.
-              mayEdit={mayCreate}
+              mayEdit={mayWrite}
               maySetSprint={
-                me !== undefined &&
-                boardProjectId !== undefined &&
-                canAssignToSprints(me.org_role, boardProjectId, me.memberships)
+                boardProjectId !== undefined && gates.project(boardProjectId, 'task.assign_sprint')
               }
               onOpen={openTaskInUrl}
               onAdd={() => {
@@ -1617,8 +1625,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               fields={prefs.preferences.fields}
               // A reader who may not write tasks cannot drag one — the
               // affordance is absent, not refused (LAI-473, LAI-082).
-              cardsDraggable={mayCreate}
-              {...(mayCreate
+              cardsDraggable={mayWrite}
+              {...(mayWrite
                 ? {
                     onPlace: (
                       id: string,
@@ -1697,7 +1705,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         Reuses `board.move` — the same call the drag uses, so a rejected
         transition behaves identically in both places (LAI-056).
 
-        `mayEdit` shares `mayCreate`: editing a task is member+ (§3.2) and that
+        `mayEdit` is `mayWrite`: editing a task is member+ (§3.2) and that
         permission is already resolved. A Viewer sees tags and gets no way to
         change them, rather than a control that answers 403.
       */}
@@ -1729,15 +1737,14 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
              * re-derived here.
              */
             maySetSprint={
-              me !== undefined &&
-              boardProjectId !== undefined &&
-              canAssignToSprints(me.org_role, boardProjectId, me.memberships)
+              boardProjectId !== undefined && gates.project(boardProjectId, 'task.assign_sprint')
             }
             statuses={statuses.all}
             meId={me?.id}
             meEmail={me?.email}
-            mayAssign={mayCreate}
-            mayEdit={mayCreate}
+            mayAssign={mayWrite}
+            mayEdit={mayWrite}
+            mayCreate={mayCreate}
             onTagsChanged={() => {
               refresh();
             }}

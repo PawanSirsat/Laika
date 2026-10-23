@@ -638,3 +638,48 @@
   margin: 0.125rem 0.125rem;
   background: var(--border-default);
 }
+
+/* ---- the space's ⋯ menu (LAI-977): one item, Space settings. Tokens only. */
+
+.space-menu-trigger {
+  width: 32px;
+  justify-content: center;
+  padding: 0;
+  font-size: var(--text-heading-sm);
+  letter-spacing: 0.05em;
+}
+
+.space-menu-catcher {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+.space-menu {
+  position: fixed;
+  z-index: 61;
+  min-width: 12rem;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+}
+
+.space-menu-item {
+  display: block;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--radius-chip);
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+}
+
+.space-menu-item:hover,
+.space-menu-item:focus-visible {
+  background: var(--bg-card-hover);
+  outline: none;
+}

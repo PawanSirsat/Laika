@@ -1,17 +1,28 @@
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
 import { useDialogFocus } from '../../../components/use-dialog-focus.ts';
-import { createInvite, type OrgRole } from '../../../api/invites.ts';
+import { CopyButton } from '../../../components/CopyButton.tsx';
+import { Dropdown } from '../../../components/Dropdown.tsx';
+import {
+  createInvite,
+  INVITE_EXPIRY_DAYS,
+  type InviteExpiryDays,
+  type OrgRole,
+  type ProjectRole,
+} from '../../../api/invites.ts';
+import { projectRoleLabel } from '../../../api/members.ts';
+import type { Project } from '../../../api/projects.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
-import { inviteButtonLabel, parseEmails } from './people-derive.ts';
+import { inviteButtonLabel, parseEmails, rejectedEmails, spaceRolesFor } from './people-derive.ts';
 
 export interface InviteDialogProps {
   /** Where the invite is to: the organisation's name. */
   readonly orgName: string;
   /** The roles this reader may invite as — never Owner; an admin only Member or Viewer (LAI-958). */
   readonly roles: readonly OrgRole[];
+  /** Spaces an invite may also bring them into (LAI-984); none hides the picker. */
+  readonly projects?: readonly Project[];
   /** What the search box held, when the dialog opened from an empty search. */
   readonly initialText?: string;
   readonly onClose: () => void;
@@ -21,11 +32,13 @@ export interface InviteDialogProps {
   readonly restore?: () => HTMLElement | null | undefined;
 }
 
-interface Issued {
-  readonly email: string | null;
-  readonly url: string;
-  readonly emailed: boolean;
-}
+/** One line of a send: its link, or the server's refusal for that address (LAI-999). */
+type Issued =
+  | { readonly email: string | null; readonly url: string; readonly emailed: boolean }
+  | { readonly email: string | null; readonly error: string };
+
+/** The server's default lifetime; sent only when another is chosen. */
+const DEFAULT_EXPIRY: InviteExpiryDays = 7;
 
 /**
  * *Invite people* as the owner's "Laika App v3" design draws it (LAI-893): a
@@ -41,6 +54,7 @@ interface Issued {
 export function InviteDialog({
   orgName,
   roles,
+  projects = [],
   initialText = '',
   onClose,
   onIssued,
@@ -52,41 +66,50 @@ export function InviteDialog({
   const [role, setRole] = useState<OrgRole>(
     roles.includes('member') ? 'member' : (roles[0] ?? 'member'),
   );
+  const [space, setSpace] = useState('');
+  const [spaceRole, setSpaceRole] = useState<ProjectRole>('member');
+  const [expiry, setExpiry] = useState<InviteExpiryDays>(DEFAULT_EXPIRY);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<unknown>(null);
   const [issued, setIssued] = useState<readonly Issued[] | undefined>(undefined);
   const emails = parseEmails(text);
+  const rejected = rejectedEmails(text);
+  const spaceRoles = spaceRolesFor(role);
+  const intoRole = spaceRoles.includes(spaceRole) ? spaceRole : (spaceRoles[0] ?? 'viewer');
 
   const send = (): void => {
-    if (busy) return;
+    if (busy || rejected.length > 0) return;
     setBusy(true);
-    setError(null);
     const targets: (string | null)[] = emails.length === 0 ? [null] : emails;
-    const made: Issued[] = [];
+    const extra = {
+      ...(space === '' ? {} : { project_id: space, project_role: intoRole }),
+      ...(expiry === DEFAULT_EXPIRY ? {} : { expires_in_days: expiry }),
+    };
     void (async () => {
-      try {
-        for (const email of targets) {
-          const created = await createInvite({ email, org_role: role });
+      const made: Issued[] = [];
+      // One at a time, in order, and **each its own answer** (LAI-987): an
+      // address already invited must not cost the links for the rest.
+      for (const email of targets) {
+        try {
+          const created = await createInvite({ email, org_role: role, ...extra });
           made.push({
             email: created.invite.email,
             url: created.accept_url,
             emailed: created.invite.email_sent,
           });
+        } catch (cause: unknown) {
+          made.push({
+            email,
+            error: cause instanceof Error ? cause.message : 'That invite was refused.',
+          });
         }
-        setIssued(made);
-        onIssued();
-      } catch (cause: unknown) {
-        setError(cause);
-        // What was issued before the refusal stands: say so rather than lose the links.
-        if (made.length > 0) {
-          setIssued(made);
-          onIssued();
-        }
-      } finally {
-        setBusy(false);
       }
+      setIssued(made);
+      if (made.some((i) => 'url' in i)) onIssued();
+      setBusy(false);
     })();
   };
+
+  const links = issued?.filter((i): i is Extract<Issued, { url: string }> => 'url' in i) ?? [];
 
   return createPortal(
     <>
@@ -105,7 +128,8 @@ export function InviteDialog({
           } else if (
             event.key === 'Enter' &&
             (event.metaKey || event.ctrlKey) &&
-            issued === undefined
+            issued === undefined &&
+            rejected.length === 0
           ) {
             event.preventDefault();
             send();
@@ -167,18 +191,76 @@ export function InviteDialog({
                   ))}
                 </div>
               </div>
-              <p className="org-dialog-note">
-                Invites expire after 7 days. Links expire after 2 days and are not emailed.
-              </p>
-              {error !== null && (
-                <ApiErrorState error={error} resource="this invite" verb="create" />
+              {rejected.length > 0 && (
+                <p className="org-error org-invite-rejected" role="alert" data-invite-rejected>
+                  Not an email address: {rejected.join(', ')}
+                </p>
               )}
+              {projects.length > 0 && (
+                <div className="org-dialog-row">
+                  <span className="org-dialog-label" id="org-invite-space">
+                    Space
+                  </span>
+                  <Dropdown
+                    className="org-invite-space"
+                    aria-labelledby="org-invite-space"
+                    noun="spaces"
+                    searchable={projects.length > 8}
+                    value={space}
+                    disabled={busy}
+                    onChange={setSpace}
+                    options={[
+                      { value: '', label: 'No space' },
+                      ...projects.map((p) => ({ value: p.id, label: p.name })),
+                    ]}
+                  />
+                  {space !== '' && (
+                    <Dropdown
+                      className="org-invite-space-role"
+                      aria-label="Space role"
+                      noun="roles"
+                      value={intoRole}
+                      disabled={busy || spaceRoles.length === 1}
+                      onChange={setSpaceRole}
+                      options={spaceRoles.map((r) => ({
+                        value: r,
+                        label: r === 'lead' ? 'Space admin' : projectRoleLabel(r),
+                      }))}
+                    />
+                  )}
+                </div>
+              )}
+              <div className="org-dialog-row">
+                <span className="org-dialog-label" id="org-invite-expiry">
+                  Expires
+                </span>
+                <div className="org-segmented" role="group" aria-labelledby="org-invite-expiry">
+                  {INVITE_EXPIRY_DAYS.map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      className="org-segment"
+                      data-invite-expiry={d}
+                      aria-pressed={expiry === d}
+                      disabled={busy}
+                      onClick={() => {
+                        setExpiry(d);
+                      }}
+                    >
+                      {d === 1 ? '1 day' : `${String(d)} days`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="org-dialog-note">
+                Laika sends no email: each link is shown once, to send yourself.
+              </p>
             </div>
             <footer className="org-dialog-foot">
               <Button variant="secondary" disabled={busy} onClick={onClose}>
                 Cancel
               </Button>
-              <Button busy={busy} onClick={send} data-invite-send>
+              <Button busy={busy} disabled={rejected.length > 0} onClick={send} data-invite-send>
                 {inviteButtonLabel(emails.length)}
               </Button>
             </footer>
@@ -188,27 +270,42 @@ export function InviteDialog({
             <div className="org-dialog-body" role="status">
               <p className="org-issued-head">
                 {issued.length === 1
-                  ? issued[0]?.email === null
-                    ? 'Invite link created'
-                    : `Invite created for ${issued[0]?.email ?? ''}`
-                  : `${String(issued.length)} invites created`}
+                  ? 'url' in (issued[0] ?? {})
+                    ? issued[0]?.email === null
+                      ? 'Invite link created'
+                      : `Invite created for ${issued[0]?.email ?? ''}`
+                    : 'The invite was refused'
+                  : `${String(links.length)} of ${String(issued.length)} invites created`}
               </p>
-              <p className="org-issued-body">
-                {issued.every((i) => i.emailed)
-                  ? 'Each link is shown once — the server stores only a hash of it.'
-                  : 'Nothing was emailed: send each link yourself. It is shown once — the server stores only a hash of it. If it is lost, revoke the invite and create another.'}
-              </p>
+              {links.length > 0 && (
+                <p className="org-issued-body">
+                  {links.every((i) => i.emailed)
+                    ? 'Each link is shown once — the server stores only a hash of it.'
+                    : 'Nothing was emailed: send each link yourself. It is shown once — the server stores only a hash of it. If it is lost, Re-issue it from Pending.'}
+                </p>
+              )}
               <ul className="org-issued-list">
-                {issued.map((i) => (
-                  <li key={i.url}>
+                {issued.map((i, index) => (
+                  <li
+                    key={'url' in i ? i.url : `refused-${String(index)}`}
+                    data-issued-ok={'url' in i}
+                  >
                     {i.email !== null && <span className="org-issued-to">{i.email}</span>}
-                    <code className="org-issued-url">{i.url}</code>
+                    {'url' in i ? (
+                      <>
+                        <code className="org-issued-url">{i.url}</code>
+                        <CopyButton
+                          text={i.url}
+                          label="Copy link"
+                          what={`the invite link for ${i.email ?? 'anyone'}`}
+                        />
+                      </>
+                    ) : (
+                      <span className="org-issued-error">{i.error}</span>
+                    )}
                   </li>
                 ))}
               </ul>
-              {error !== null && (
-                <ApiErrorState error={error} resource="the rest of the invites" verb="create" />
-              )}
             </div>
             <footer className="org-dialog-foot">
               <Button onClick={onClose} data-invite-done>

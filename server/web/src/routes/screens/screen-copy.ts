@@ -1,3 +1,5 @@
+import { DRAFT_READERS } from './my-day/my-day-derive.ts';
+
 /**
  * The empty state each screen shows before its endpoints exist.
  *
@@ -86,7 +88,8 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
   },
   '/my-day': {
     headline: 'Nothing on this day yet',
-    body: 'Your day is drafted on your own machine by the Laika collector when Draft my time is on, and only you see it until you confirm it. Add a meeting or a call by hand at any time.',
+    // Who reads drafts, in My day's own words (D-102, LAI-968).
+    body: `Your day is drafted on your own machine by the Laika collector when Draft my time is on. Until you confirm it, it can be read by you and by ${DRAFT_READERS} — and you can see who looked. Add a meeting or a call by hand at any time.`,
   },
   /*
    * Developer access (LAI-796): connecting an agent and your tokens, on one
@@ -98,7 +101,7 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
   },
   '/developer/connect': {
     headline: 'No project to mirror work into',
-    body: 'Setup still works without one — a session can connect and report in. Create a project and this page fills in the block its lead commits.',
+    body: 'Setup still works without one — a session can connect and report in. Create a project and this page fills in the block its space admin commits.',
   },
   /*
    * An empty state, not an "unbuilt" notice — the screen exists (LAI-086).
@@ -125,6 +128,10 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'No project chosen',
     body: 'Open a project from Projects to see who is on it.',
   },
+  '/spaces/:slug/settings': {
+    headline: 'No such space',
+    body: 'Space settings open from a space: its ⋯ menu, or the gear on its card under Spaces.',
+  },
   '/login': {
     headline: 'Sign-in did not load',
     body: 'Reload the page. If it keeps happening the instance may be restarting.',
@@ -132,6 +139,10 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
   '/invite': {
     headline: 'No invite in this link',
     body: 'An invite link carries a token. Ask whoever invited you to send the full link.',
+  },
+  '/reset-password': {
+    headline: 'No reset link here',
+    body: 'A reset link carries a token. Ask whoever sent it for the full link.',
   },
   '/setup': {
     headline: 'First boot did not load',

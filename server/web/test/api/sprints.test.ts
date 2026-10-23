@@ -12,8 +12,6 @@ import { describe, test } from 'node:test';
 import {
   activateSprint,
   addTasksToSprint,
-  canAssignToSprints,
-  canManageSprints,
   countSprints,
   createSprint,
   deleteSprint,
@@ -216,40 +214,6 @@ void describe('the mutations the sprints screen needs (LAI-083)', () => {
 
     assert.equal(sent[0]?.url, '/api/v1/sprints/s1/tasks/t1');
     assert.equal(sent[0]?.method, 'DELETE');
-  });
-});
-
-void describe('who may do what — mirrors policy/can.ts, decides nothing', () => {
-  const lead = [{ project_id: 'p1', role: 'lead' }];
-  const member = [{ project_id: 'p1', role: 'member' }];
-  const viewer = [{ project_id: 'p1', role: 'viewer' }];
-
-  void test('org owner and admin hold implicit lead everywhere (§3)', () => {
-    for (const role of ['owner', 'admin']) {
-      assert.equal(canManageSprints(role, 'p1', []), true, role);
-      assert.equal(canAssignToSprints(role, 'p1', []), true, role);
-    }
-  });
-
-  void test('managing sprints is lead-only', () => {
-    assert.equal(canManageSprints('member', 'p1', lead), true);
-    assert.equal(canManageSprints('member', 'p1', member), false);
-    assert.equal(canManageSprints('member', 'p1', viewer), false);
-    assert.equal(canManageSprints('member', 'p1', []), false);
-  });
-
-  void test('assigning tasks is member and above — a wider cell than managing', () => {
-    // §3.2 separates `sprint.manage` (lead) from `task.assign_sprint` (member+).
-    // Collapsing them into one helper would silently hide assignment from every
-    // Member, which is the more common role on any real board.
-    assert.equal(canAssignToSprints('member', 'p1', member), true);
-    assert.equal(canManageSprints('member', 'p1', member), false);
-    assert.equal(canAssignToSprints('viewer', 'p1', viewer), false);
-  });
-
-  void test('a membership in another project grants nothing here', () => {
-    assert.equal(canManageSprints('member', 'p2', lead), false);
-    assert.equal(canAssignToSprints('member', 'p2', member), false);
   });
 });
 

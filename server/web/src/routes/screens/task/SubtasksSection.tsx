@@ -28,8 +28,13 @@ export interface SubtasksSectionProps {
   readonly byId: ReadonlyMap<string, TaskSummary>;
   readonly members: ReadonlyMap<string, Member>;
   readonly theme: Theme;
-  /** Member+ — adds, detaches, and changes a child's status (§3.2). */
+  /** Member+ — detaches, and changes a child's status (§3.2). */
   readonly mayEdit: boolean;
+  /**
+   * `task.create` in this space — *Add subtask* creates a task, so a space
+   * set to *Space admins only* withholds it from members (LAI-178).
+   */
+  readonly mayCreate: boolean;
   /** `task.assign_other` — changes a child's assignee (§3.2, LAI-700). */
   readonly mayAssign: boolean;
   /** For *(you)* in the assignee picker. */
@@ -63,6 +68,7 @@ export function SubtasksSection({
   members,
   theme,
   mayEdit,
+  mayCreate,
   mayAssign,
   meId,
   statuses,
@@ -143,7 +149,7 @@ export function SubtasksSection({
           </span>
         )}
         <span className="dep-rule" aria-hidden="true" />
-        {mayEdit && !adding && (
+        {mayCreate && !adding && (
           <button
             type="button"
             className="sub-link"
@@ -313,7 +319,7 @@ export function SubtasksSection({
         </ul>
       )}
 
-      {mayEdit && adding && (
+      {mayCreate && adding && (
         <form
           className="dep-add sub-add"
           onSubmit={(event) => {

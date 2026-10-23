@@ -1,4 +1,9 @@
-import type { PendingInvite } from '../../../api/invites.ts';
+import {
+  PROJECT_ROLES,
+  type OrgRole,
+  type PendingInvite,
+  type ProjectRole,
+} from '../../../api/invites.ts';
 import type { CapacityEntry } from '../../../api/presence.ts';
 import type { OrgUser } from '../../../api/users.ts';
 
@@ -9,7 +14,8 @@ import type { OrgUser } from '../../../api/users.ts';
  * an invite. Pure: the clock is passed in.
  */
 
-export type PeopleFilter = 'all' | 'owner' | 'admin' | 'member' | 'viewer' | 'pending';
+/** `off` is Deactivated (LAI-999, from LAI-987). */
+export type PeopleFilter = 'all' | 'owner' | 'admin' | 'member' | 'viewer' | 'off' | 'pending';
 export type PeopleSort = 'active' | 'name' | 'role';
 
 export const SORTS: readonly PeopleSort[] = ['active', 'name', 'role'];
@@ -59,7 +65,12 @@ export function lastActive(
     return { text: '—', tone: 'muted', note: 'Presence is off' };
   if (entry.status === 'online') return { text: 'Active now', tone: 'now' };
   if (entry.last_seen === null) return { text: 'Never', tone: 'muted' };
-  const ago = Math.max(0, now - entry.last_seen);
+  return ago(entry.last_seen, now);
+}
+
+/** *just now*, *18m ago*, *2h ago*, *Yesterday*, *6d ago*, *3w ago*. */
+function ago(at: number, now: number): LastActive {
+  const ago = Math.max(0, now - at);
   if (ago < MINUTE) return { text: 'just now', tone: 'recent' };
   if (ago < HOUR) return { text: `${String(Math.floor(ago / MINUTE))}m ago`, tone: 'recent' };
   if (ago < DAY) return { text: `${String(Math.floor(ago / HOUR))}h ago`, tone: 'recent' };
@@ -68,17 +79,39 @@ export function lastActive(
   return { text: `${String(Math.floor(ago / (7 * DAY)))}w ago`, tone: 'muted' };
 }
 
-/** The people a filter and a search leave: name or email, case aside. */
+/**
+ * When they last signed in — `last_seen_at`, the latest activity of any of
+ * their sessions (LAI-981) — in the tab's own words (LAI-999). Unlike *Last
+ * active* it needs no presence: it is the account's, not the machine's.
+ * Absent reads as never, for a server from before LAI-981.
+ */
+export function lastSignIn(at: number | null | undefined, now: number): LastActive {
+  if (at === null || at === undefined) return { text: 'Never', tone: 'muted' };
+  return ago(at, now);
+}
+
+/** A space to narrow to: its slug, and the slugs each person is in (`GET /capacity`). */
+export interface SpaceFilter {
+  readonly slug: string;
+  /** `undefined` when not known — and unknown is nobody, never everybody. */
+  readonly of: (id: string) => readonly string[] | undefined;
+}
+
+/** The people a filter, a search and a space leave: name or email, case aside. */
 export function filterPeople(
   people: readonly OrgUser[],
   filter: PeopleFilter,
   query: string,
+  space?: SpaceFilter,
 ): OrgUser[] {
   const q = query.trim().toLowerCase();
   return people.filter(
     (p) =>
-      (filter === 'all' || filter === 'pending' || p.org_role === filter) &&
-      (q === '' || `${p.name} ${p.email}`.toLowerCase().includes(q)),
+      (filter === 'all' ||
+        filter === 'pending' ||
+        (filter === 'off' ? !p.is_active : p.org_role === filter)) &&
+      (q === '' || `${p.name} ${p.email}`.toLowerCase().includes(q)) &&
+      (space === undefined || (space.of(p.id)?.includes(space.slug) ?? false)),
   );
 }
 
@@ -120,6 +153,7 @@ export function roleCounts(
     admin: of('admin'),
     member: of('member'),
     viewer: of('viewer'),
+    off: people.length - active.length,
     pending: invites.length,
   };
 }
@@ -180,4 +214,31 @@ export function invitedLabel(createdAt: number, now: number): string {
   if (ago < HOUR) return 'just now';
   if (ago < DAY) return `${String(Math.floor(ago / HOUR))}h ago`;
   return `${String(Math.floor(ago / DAY))}d ago`;
+}
+
+/** What was typed that is not an address — named to the reader, not dropped (LAI-999). */
+export function rejectedEmails(text: string): string[] {
+  return text
+    .split(/[\s,;]+/)
+    .map((part) => part.trim())
+    .filter((part) => part !== '' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(part));
+}
+
+/**
+ * Who the owner may hand the organisation to (D-104 item 2): an active admin
+ * or member other than themselves — never a viewer, whom the server refuses
+ * (`reason: 'role'`). Admins first, then by name.
+ */
+export function newOwnerCandidates(people: readonly OrgUser[], meId: string): OrgUser[] {
+  const rank = (role: string): number => (role === 'admin' ? 0 : 1);
+  return people
+    .filter(
+      (p) => p.id !== meId && p.is_active && (p.org_role === 'admin' || p.org_role === 'member'),
+    )
+    .sort((a, b) => rank(a.org_role) - rank(b.org_role) || a.name.localeCompare(b.name));
+}
+
+/** The space roles an invite may carry for `orgRole` (§3: an org viewer holds only `viewer`). */
+export function spaceRolesFor(orgRole: OrgRole): readonly ProjectRole[] {
+  return orgRole === 'viewer' ? ['viewer'] : PROJECT_ROLES;
 }

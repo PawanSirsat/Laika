@@ -48,6 +48,8 @@ export const STREAM_TYPES: readonly string[] = [
   'unlisted.dismissed',
   'user.deactivated',
   'user.reactivated',
+  'user.signed_out',
+  'org.ownership_transferred',
   'heartbeat.pruned',
   'task.stale_flagged',
   'invite.expired',
