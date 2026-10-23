@@ -440,8 +440,9 @@ function nextListRead(h: Harness): Promise<Response> {
 
 /**
  * The one place a fixed window is the right instrument: a **second** re-read
- * must not happen, and an absence cannot be awaited. 400 ms is longer than the
- * debounce, so a second one would have fired by now had it been set.
+ * must not happen, and an absence cannot be awaited. What this asserts is
+ * exactly that: no additional read was observed during 400 ms — longer than
+ * the debounce, which is where a second one would come from.
  */
 async function noFurtherRead(h: Harness, listsBefore: number): Promise<void> {
   await h.page.waitForTimeout(400);
@@ -825,9 +826,10 @@ void describe('the move reconciles with the stream (LAI-473)', () => {
 
   void test('a frame about another card, mid cross-lane drop, does not pull the card back', async () => {
     /*
-     * The same-lane case above never changes a task body before the answer —
-     * the drop is drawn from `placing` — so a re-read that ignored the write
-     * in flight would still read right. A cross-lane drop **does**: the card
+     * The same-lane case above does not optimistically change the dragged
+     * card's body before the answer — the drop is drawn from `placing` — so a
+     * re-read that ignored the write in flight would still read right. A
+     * cross-lane drop **does** change it: the card
      * is in its new lane locally and its old one on the server until the
      * status lands, and that is the state a re-read has to leave alone.
      */
