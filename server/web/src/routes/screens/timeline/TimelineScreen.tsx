@@ -13,7 +13,7 @@ import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { listProjects } from '../../../api/projects.ts';
 import { useRoute } from '../../use-route.ts';
-import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
+import { SpaceSlot, useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
 import { blockedState, byIdIndex } from '../../../api/board-derive.ts';
 import { statusNameOf } from '../../../api/status-derive.ts';
 import { StatusesById, useProjectStatuses, useStatusesById } from '../../../api/use-statuses.ts';
@@ -102,6 +102,16 @@ function blockedText(tally: { readonly blocked: number; readonly unknown: number
  */
 export function TimelineScreen() {
   const { params, setParams } = useRoute();
+  /*
+   * **The bar's task filters do nothing here** (LAI-725), as on the dashboard
+   * (LAI-711). Search, Priority, Tag, Assignee and Ready-only narrow a list of
+   * cards; the Timeline lists a sprint's tasks only when that sprint is opened
+   * (LAI-721, D-074) and reads none of them — it reads `project`, `zoom` and
+   * `sprint`. Claiming the space's filtering hides the bar's copies instead of
+   * leaving five controls above a screen they never reached; the bar hands
+   * them back the moment the reader leaves for a view that does read them.
+   */
+  useClaimSpaceFilters();
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
 
