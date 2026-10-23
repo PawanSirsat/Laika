@@ -251,12 +251,23 @@ export const STATE_LABELS: Readonly<Record<DayState, string>> = {
   future: '',
 };
 
-/** What the organisation's *Time* setting means, in one line. */
+/**
+ * Who reads a person's drafts besides the person (D-102 rule 1, amended;
+ * LAI-968) — said in these words wherever drafts are described, so no screen
+ * can go on calling them private. The person sees who looked (rule 3).
+ */
+export const DRAFT_READERS = 'owners, admins and anyone the owner lets see everyone’s analytics';
+
+/**
+ * What the organisation's *Time* setting means, in one line. *Draft my time*
+ * is still each person's own switch (D-088 item 5, SPEC §3.1) — D-102's
+ * amendment took the personal switch away from local-activity collection
+ * only — so the first sentence of `drafts` stands.
+ */
 export const MODE_NOTES: Readonly<Record<TimeMode, string>> = {
   off: 'Time is off for this organisation: nothing can be added or drafted.',
   manual: 'People add their own time by hand. Nothing is drafted.',
-  drafts:
-    'Each person may also choose to have their day drafted on their own machine. Only what they confirm is ever seen by anyone else.',
+  drafts: `Each person may also choose to have their day drafted on their own machine. Their drafts can be read by them and by ${DRAFT_READERS} — and they can see who looked.`,
 };
 
 export const MODE_LABELS: Readonly<Record<TimeMode, string>> = {

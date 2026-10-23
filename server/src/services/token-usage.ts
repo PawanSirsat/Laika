@@ -47,7 +47,7 @@ import {
 import { readableByOutsideId } from './outside-ids.ts';
 import { readLogged } from './analytics-views.ts';
 import { recordArrival } from './plan-limit.ts';
-import { requireProjectBySlug } from './projects.ts';
+import { projectIdByKeyPrefix, requireProjectBySlug } from './projects.ts';
 import {
   addCost,
   cacheSaving,
@@ -542,18 +542,18 @@ export function resolveKeys(
   const orgId = keys.size === 0 ? '' : requireOrgId(db);
   for (const key of keys) {
     const dash = key.lastIndexOf('-');
-    const found = db
-      .select({ taskId: tasks.id, projectId: tasks.projectId })
-      .from(tasks)
-      .innerJoin(projects, eq(projects.id, tasks.projectId))
-      .where(
-        and(
-          eq(projects.orgId, orgId),
-          eq(projects.prefix, key.slice(0, dash)),
-          eq(tasks.number, Number(key.slice(dash + 1))),
-        ),
-      )
-      .get();
+    // The current prefix or one the project carried before (D-103).
+    const projectId = projectIdByKeyPrefix(db, key.slice(0, dash), orgId);
+    const found =
+      projectId === undefined
+        ? undefined
+        : db
+            .select({ taskId: tasks.id, projectId: tasks.projectId })
+            .from(tasks)
+            .where(
+              and(eq(tasks.projectId, projectId), eq(tasks.number, Number(key.slice(dash + 1)))),
+            )
+            .get();
     if (found === undefined) {
       const outside = readableByOutsideId(db, actor, key);
       if (outside.length === 1 && outside[0] !== undefined) {

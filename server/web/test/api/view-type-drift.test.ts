@@ -120,6 +120,24 @@ const PAIRS: readonly Pair[] = [
     client: 'Org',
     clientFile: 'org.ts',
   },
+  // The organisation's pulse (LAI-986's endpoint, LAI-989's tiles), paired the
+  // moment the mirror existed. The server's census listed it in UNPAIRED until
+  // then; that entry is stale from this commit (CLAUDE.md §4.4).
+  {
+    server: 'OrgOverviewView',
+    serverFile: 'services/org-overview.ts',
+    client: 'OrgOverview',
+    clientFile: 'org.ts',
+  },
+  // What a transfer of ownership answers (LAI-982), paired by LAI-999 when the
+  // People tab's Transfer ownership started reading it. The server's census
+  // listed it in UNPAIRED until then; that entry goes in the same change.
+  {
+    server: 'OwnershipTransferView',
+    serverFile: 'services/users.ts',
+    client: 'OwnershipTransfer',
+    clientFile: 'org.ts',
+  },
   {
     server: 'OrgAiView',
     serverFile: 'services/orgs.ts',
@@ -234,6 +252,14 @@ const PAIRS: readonly Pair[] = [
     client: 'TaskSummary',
     clientFile: 'tasks.ts',
   },
+  // LAI-975: `GET /tasks/summary`'s figures (LAI-974), which the Work page's
+  // strip draws.
+  {
+    server: 'TaskCountsView',
+    serverFile: 'services/tasks.ts',
+    client: 'TasksSummary',
+    clientFile: 'tasks.ts',
+  },
   // D-085, LAI-771: sizes and forecasts — the size on every task, the task
   // panel's estimate, and the project's accuracy.
   {
@@ -317,6 +343,31 @@ const PAIRS: readonly Pair[] = [
     serverFile: 'services/users.ts',
     client: 'OrgUser',
     clientFile: 'users.ts',
+  },
+  // The person admin panel's reads and writes (D-104, LAI-988).
+  {
+    server: 'MembershipView',
+    serverFile: 'services/users.ts',
+    client: 'PersonMembership',
+    clientFile: 'users.ts',
+  },
+  {
+    server: 'SignOutView',
+    serverFile: 'services/users.ts',
+    client: 'SignOutView',
+    clientFile: 'users.ts',
+  },
+  {
+    server: 'ResetLinkView',
+    serverFile: 'http/routes/users.ts',
+    client: 'ResetLinkView',
+    clientFile: 'users.ts',
+  },
+  {
+    server: 'PasswordResetView',
+    serverFile: 'services/password-resets.ts',
+    client: 'PasswordResetView',
+    clientFile: 'password-resets.ts',
   },
   {
     server: 'CommentView',

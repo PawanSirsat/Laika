@@ -4,6 +4,8 @@ import { ORG_ACTIONS, type OrgAction } from '../../src/policy/actions.ts';
 import { type Actor, can, effectiveProjectRole } from '../../src/policy/can.ts';
 import {
   CAPABILITY_ACTIONS,
+  CAPABILITY_DESCRIPTIONS,
+  CAPABILITY_LABELS,
   DEFAULT_GRANTS,
   type OrgGrants,
   OWNER_LOCKED_ACTIONS,
@@ -49,6 +51,46 @@ function answers(grants: OrgGrants | undefined): Record<string, boolean> {
 }
 
 describe('the mapping', () => {
+  it('carries each action under the capability D-104 item 6 names (LAI-985)', () => {
+    expect(CAPABILITY_ACTIONS).toEqual({
+      see_people_analytics: [
+        'profile.read',
+        'profile.activity.read',
+        'usage.read_people',
+        'people.analytics.read',
+      ],
+      see_org_activity: ['audit_log.export'],
+      open_all_projects: [],
+      invite_people: ['user.invite'],
+      deactivate_people: ['user.deactivate', 'user.sign_out', 'user.reset_password'],
+      create_archive_projects: ['project.create', 'project.archive'],
+      manage_any_tokens: ['token.list_any', 'token.revoke_any'],
+      change_org_settings: ['org.settings.edit', 'org.time.set', 'org.developer_insights.set'],
+    });
+    expect(CAPABILITIES).not.toContain('manage_people');
+  });
+
+  it('labels each capability as a screen shows it', () => {
+    expect(CAPABILITY_LABELS.invite_people).toBe('Invite people');
+    expect(CAPABILITY_LABELS.deactivate_people).toBe('Deactivate people and reset access');
+    expect(CAPABILITY_LABELS.create_archive_projects).toBe('Create and archive spaces');
+    expect(CAPABILITY_LABELS.manage_any_tokens).toBe("Manage anyone's tokens");
+  });
+
+  it('gives every capability a one-line description of its own', () => {
+    const descriptions = CAPABILITIES.map((c) => CAPABILITY_DESCRIPTIONS[c]);
+    for (const [i, text] of descriptions.entries()) {
+      const capability = CAPABILITIES[i]!;
+      expect(typeof text, capability).toBe('string');
+      expect(text.trim(), capability).toBe(text);
+      expect(text.length, capability).toBeGreaterThan(10);
+      expect(text.length, capability).toBeLessThanOrEqual(140);
+      expect(text, capability).not.toMatch(/[\r\n]/);
+      expect(text, capability).not.toBe(CAPABILITY_LABELS[capability]);
+    }
+    expect(new Set(descriptions).size).toBe(descriptions.length);
+  });
+
   it('gives each action to at most one capability', () => {
     const seen = new Map<OrgAction, Capability>();
     const twice: string[] = [];
@@ -117,6 +159,51 @@ describe('a flipped grant changes that role’s answer, and only for that capabi
     expect(can(actor('admin', withdrawn), 'audit_log.export')).toBe(false);
     expect(can(actor('admin', withdrawn), 'user.invite')).toBe(true);
   });
+
+  it('splits people: withdrawing Invite people from admin leaves deactivate and sign-out (LAI-985)', () => {
+    const noInvite: OrgGrants = {
+      ...DEFAULT_GRANTS,
+      admin: DEFAULT_GRANTS.admin.filter((c) => c !== 'invite_people'),
+    };
+    expect(can(actor('admin', noInvite), 'user.invite')).toBe(false);
+    expect(can(actor('admin', noInvite), 'user.deactivate')).toBe(true);
+    expect(can(actor('admin', noInvite), 'user.sign_out', { targetUserId: 'u2' })).toBe(true);
+
+    const noDeactivate: OrgGrants = {
+      ...DEFAULT_GRANTS,
+      admin: DEFAULT_GRANTS.admin.filter((c) => c !== 'deactivate_people'),
+    };
+    expect(can(actor('admin', noDeactivate), 'user.invite')).toBe(true);
+    expect(can(actor('admin', noDeactivate), 'user.deactivate')).toBe(false);
+    expect(can(actor('admin', noDeactivate), 'user.sign_out', { targetUserId: 'u2' })).toBe(false);
+    // Signing yourself out needs no grant.
+    expect(can(actor('admin', noDeactivate), 'user.sign_out', { targetUserId: 'u1' })).toBe(true);
+  });
+
+  it('spaces and tokens are grants now: withdrawn from admin, refused; granted to a member, allowed', () => {
+    const bare: OrgGrants = {
+      ...DEFAULT_GRANTS,
+      admin: DEFAULT_GRANTS.admin.filter(
+        (c) => c !== 'create_archive_projects' && c !== 'manage_any_tokens',
+      ),
+    };
+    for (const action of [
+      'project.create',
+      'project.archive',
+      'token.list_any',
+      'token.revoke_any',
+    ] as const) {
+      expect(can(actor('admin', DEFAULT_GRANTS), action), `admin default ${action}`).toBe(true);
+      expect(can(actor('admin', bare), action), `admin withdrawn ${action}`).toBe(false);
+      expect(can(actor('member', DEFAULT_GRANTS), action), `member default ${action}`).toBe(false);
+    }
+    expect(can(actor('member', only('member', 'create_archive_projects')), 'project.create')).toBe(
+      true,
+    );
+    expect(can(actor('member', only('member', 'manage_any_tokens')), 'token.revoke_any')).toBe(
+      true,
+    );
+  });
 });
 
 describe('owner-locked actions are never granted', () => {
@@ -143,19 +230,19 @@ describe('the credential still narrows after a grant (§3.3 rule 4)', () => {
   });
 
   it('read only: a granted member invites on a full token and not on a read-only one', () => {
-    const grants = only('member', 'manage_people');
+    const grants = only('member', 'invite_people');
     expect(can(actor('member', grants, { token: FULL }), 'user.invite')).toBe(true);
     expect(can(actor('member', grants, { token: READ_ONLY }), 'user.invite')).toBe(false);
   });
 
   it('a viewer’s token stays read only, granted or not', () => {
-    const grants = only('viewer', 'manage_people');
+    const grants = only('viewer', 'invite_people');
     expect(can(actor('viewer', grants), 'user.invite')).toBe(true);
     expect(can(actor('viewer', grants, { token: FULL }), 'user.invite')).toBe(false);
   });
 
   it('a granted member invites as member or viewer, never admin or owner', () => {
-    const member = actor('member', only('member', 'manage_people'));
+    const member = actor('member', only('member', 'invite_people'));
     expect(can(member, 'user.invite', { targetOrgRole: 'viewer' })).toBe(true);
     expect(can(member, 'user.invite', { targetOrgRole: 'member' })).toBe(true);
     expect(can(member, 'user.invite', { targetOrgRole: 'admin' })).toBe(false);

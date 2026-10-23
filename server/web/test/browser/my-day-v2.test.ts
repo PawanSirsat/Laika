@@ -956,7 +956,7 @@ void describe('no mockup data (2)', () => {
       let bundle = '';
       for (const src of scripts) bundle += await (await fetch(`${h.origin}${src}`)).text();
       // The positive control: My day's own words are in it, so the search ran.
-      assert.ok(bundle.includes('Only you see drafts'), 'My day is not in this bundle');
+      assert.ok(bundle.includes('Drafts: you, owners and admins'), 'My day is not in this bundle');
       assert.deepEqual(
         MOCKUP.filter((needle) => bundle.includes(needle)),
         [],

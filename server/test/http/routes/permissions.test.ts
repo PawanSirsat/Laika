@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readPayload } from '../../../src/db/activity.ts';
 import { activity, orgs, users } from '../../../src/db/schema.ts';
 import { ALL_ACTIONS } from '../../../src/policy/actions.ts';
+import { CAPABILITY_DESCRIPTIONS } from '../../../src/policy/grants.ts';
 import { type OrgPermissionsView } from '../../../src/services/org-permissions.ts';
 import { type PermissionsView } from '../../../src/services/permissions.ts';
 import {
@@ -145,7 +146,10 @@ describe('/api/v1/org/permissions', () => {
     see_people_analytics: false,
     see_org_activity: false,
     open_all_projects: false,
-    manage_people: false,
+    invite_people: false,
+    deactivate_people: false,
+    create_archive_projects: false,
+    manage_any_tokens: false,
     change_org_settings: false,
   };
   const ALL_ON = Object.fromEntries(Object.keys(ALL_OFF).map((k) => [k, true]));
@@ -192,7 +196,16 @@ describe('/api/v1/org/permissions', () => {
     expect(body.capabilities.find((c) => c.id === 'see_org_activity')).toEqual({
       id: 'see_org_activity',
       label: "See the organisation's activity history",
+      description: CAPABILITY_DESCRIPTIONS.see_org_activity,
       actions: ['audit_log.export'],
+    });
+    // Every capability carries the server's one-line description (LAI-985).
+    for (const capability of body.capabilities) {
+      expect(capability.description, capability.id).toBe(CAPABILITY_DESCRIPTIONS[capability.id]);
+    }
+    expect(body.capabilities.find((c) => c.id === 'deactivate_people')).toMatchObject({
+      label: 'Deactivate people and reset access',
+      actions: ['user.deactivate', 'user.sign_out', 'user.reset_password'],
     });
     expect(body.owner_locked.map((o) => o.action)).toEqual([
       'org.delete',
@@ -334,13 +347,89 @@ describe('/api/v1/org/permissions', () => {
     }
 
     const notBoolean = await put(
-      { ...DEFAULTS, member: { ...ALL_OFF, manage_people: 'yes' } },
+      { ...DEFAULTS, member: { ...ALL_OFF, invite_people: 'yes' } },
       {
         Cookie: cookie,
       },
     );
     expect(notBoolean.status).toBe(422);
     expect(roleChanges()).toHaveLength(0);
+  });
+
+  it('refuses the retired manage_people by name as not a capability (LAI-985)', async () => {
+    const res = await put(
+      { ...DEFAULTS, member: { ...ALL_OFF, manage_people: true } },
+      { Cookie: cookie },
+    );
+    expect(res.status).toBe(422);
+    expect(await errorOf(res)).toMatchObject({
+      code: 'unprocessable',
+      details: { field: 'grants.member.manage_people' },
+    });
+  });
+
+  it('spaces and tokens follow the grant: withdrawn from admin, the admin is refused 403 (LAI-985)', async () => {
+    const admin = await join('a@example.test', 'admin');
+    const ownerId = h.db.select({ id: users.id }).from(users).get()!.id;
+    const create = (who: string, slug: string) =>
+      h.app.request('/api/v1/projects', {
+        method: 'POST',
+        headers: jsonHeaders({ Cookie: who }),
+        body: JSON.stringify({ name: slug, slug, prefix: slug.toUpperCase().slice(0, 3) }),
+      });
+    const tokensOf = (who: string) =>
+      h.app.request(`/api/v1/users/${ownerId}/tokens`, { headers: jsonHeaders({ Cookie: who }) });
+
+    expect((await create(admin, 'alpha')).status).toBe(201);
+    expect((await tokensOf(admin)).status).toBe(200);
+
+    const withdrawn = {
+      ...DEFAULTS,
+      admin: { ...ALL_ON, create_archive_projects: false, manage_any_tokens: false },
+    };
+    expect((await put(withdrawn, { Cookie: cookie })).status).toBe(200);
+
+    const refusedCreate = await create(admin, 'beta');
+    expect(refusedCreate.status).toBe(403);
+    expect(await errorOf(refusedCreate)).toMatchObject({
+      code: 'forbidden',
+      details: { action: 'project.create' },
+    });
+    const refusedTokens = await tokensOf(admin);
+    expect(refusedTokens.status).toBe(403);
+    expect(await errorOf(refusedTokens)).toMatchObject({
+      code: 'forbidden',
+      details: { action: 'token.list_any' },
+    });
+  });
+
+  it('a member granted Invite people invites, and is still refused deactivating (LAI-985)', async () => {
+    const member = await join('m@example.test', 'member');
+    await join('v@example.test', 'viewer');
+    const viewerId = h.db.select().from(users).where(eq(users.email, 'v@example.test')).get()!.id;
+
+    expect(
+      (await put({ ...DEFAULTS, member: { ...ALL_OFF, invite_people: true } }, { Cookie: cookie }))
+        .status,
+    ).toBe(200);
+
+    const invited = await h.app.request('/api/v1/invites', {
+      method: 'POST',
+      headers: jsonHeaders({ Cookie: member }),
+      body: JSON.stringify({ org_role: 'viewer' }),
+    });
+    expect(invited.status, await invited.clone().text()).toBe(201);
+
+    const deactivate = await h.app.request(`/api/v1/users/${viewerId}`, {
+      method: 'PATCH',
+      headers: jsonHeaders({ Cookie: member }),
+      body: JSON.stringify({ is_active: false }),
+    });
+    expect(deactivate.status).toBe(403);
+    expect(await errorOf(deactivate)).toMatchObject({
+      code: 'forbidden',
+      details: { action: 'user.deactivate' },
+    });
   });
 
   it('writes nothing for a matrix that changes nothing', async () => {

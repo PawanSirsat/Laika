@@ -84,6 +84,19 @@ const FIRST = [
 const SECOND = [row(4, 'sprint.created', { actor_id: null, actor_kind: 'system' })];
 
 const me = (org_role: string) => ({ ...user('u1', 'Ada Lovelace', org_role), memberships: [] });
+const permissions = (org_role: string, actions: readonly string[]) => ({
+  org_roles: [],
+  project_roles: [],
+  permissions: [],
+  me: {
+    org_role,
+    credential: 'session',
+    project_scope: 'all',
+    implicit_project_role: null,
+    actions,
+    projects: [],
+  },
+});
 
 const BASE: ApiStub = {
   '/api/v1/projects': {
@@ -94,6 +107,7 @@ const BASE: ApiStub = {
   '/api/v1/invites': { data: [], next_cursor: null },
   '/api/v1/org': { id: 'o1', name: 'Acme', presence_enabled: true, created_at: 1, updated_at: 2 },
   '/api/v1/me': me('owner'),
+  '/api/v1/permissions': permissions('owner', ['audit_log.export', 'token.list_any']),
   '/api/v1/activity/history?limit=50': { data: FIRST, next_cursor: 'c1' },
   '/api/v1/activity/history?limit=50&cursor=c1': { data: SECOND, next_cursor: null },
 };
@@ -108,7 +122,11 @@ void after(async () => {
 void describe('who is offered it', () => {
   for (const role of ['owner', 'admin']) {
     void test(`an ${role} gets an Activity tab beside the others`, async () => {
-      const h = await open('/organisation', { ...BASE, '/api/v1/me': me(role) });
+      const h = await open('/organisation', {
+        ...BASE,
+        '/api/v1/me': me(role),
+        '/api/v1/permissions': permissions(role, ['audit_log.export', 'token.list_any']),
+      });
       try {
         await h.page.locator('.page-tab[data-tab="activity"]').waitFor({ timeout: 20_000 });
         const tabs = await h.page
@@ -122,7 +140,11 @@ void describe('who is offered it', () => {
   }
 
   void test('a member is not offered it, and its address says they may not see it', async () => {
-    const h = await open('/organisation?tab=activity', { ...BASE, '/api/v1/me': me('member') });
+    const h = await open('/organisation?tab=activity', {
+      ...BASE,
+      '/api/v1/me': me('member'),
+      '/api/v1/permissions': permissions('member', []),
+    });
     try {
       await h.page.locator('.state-forbidden').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.page-tab[data-tab="activity"]').count(), 0);
@@ -131,6 +153,30 @@ void describe('who is offered it', () => {
       assert.equal(historyCalls(h.calls).length, 0, 'asked the server for what it refuses');
     } finally {
       await h.close();
+    }
+  });
+
+  void test('the Activity tab follows the live audit grant, with owner unchanged', async () => {
+    for (const [role, actions, offered] of [
+      ['admin', [], false],
+      ['member', ['audit_log.export'], true],
+      ['owner', ['audit_log.export'], true],
+    ] as const) {
+      const h = await open('/organisation?tab=activity', {
+        ...BASE,
+        '/api/v1/me': me(role),
+        '/api/v1/permissions': permissions(role, actions),
+      });
+      try {
+        if (offered) await h.page.locator('.oh-row').first().waitFor({ timeout: 20_000 });
+        else await h.page.locator('.state-forbidden').waitFor({ timeout: 20_000 });
+        assert.equal(
+          await h.page.locator('.page-tab[data-tab="activity"]').count(),
+          offered ? 1 : 0,
+        );
+      } finally {
+        await h.close();
+      }
     }
   });
 });
@@ -252,6 +298,23 @@ void describe('the filters', () => {
 });
 
 void describe('states', () => {
+  void test('a page containing only reorder rows is still the full audit history', async () => {
+    const h = await open('/organisation?tab=activity', {
+      ...BASE,
+      '/api/v1/activity/history?limit=50': {
+        data: [row(9, 'task.updated', { payload: { field: 'position', key: 'ATL-7' } })],
+        next_cursor: null,
+      },
+    });
+    try {
+      await h.page.locator('.oh-row').waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.oh-row').count(), 1);
+      // And it says what happened: a reorder, not an edit (LAI-970).
+      assert.equal(await h.page.locator('.oh-row .oh-what').innerText(), 'reordered this task');
+    } finally {
+      await h.close();
+    }
+  });
   void test('nothing matching says so, rather than an empty box', async () => {
     const h = await open('/organisation?tab=activity', {
       ...BASE,
@@ -275,6 +338,70 @@ void describe('states', () => {
       await h.page.locator('.org-body[data-tab="activity"] .state').waitFor({ timeout: 20_000 });
       assert.match(await h.page.locator('.org-body').innerText(), /Could not load/i);
       assert.equal(await h.page.locator('.oh-row').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('who and which roles, and the file (LAI-989)', () => {
+  const MEMBERS = [
+    row(1, 'member.added', { payload: { user_id: 'u5', user_name: 'Mia', role: 'member' } }),
+    row(2, 'member.role_changed', {
+      payload: { user_id: 'u6', user_name: 'Adam', from: 'lead', to: 'member' },
+    }),
+    row(3, 'member.role_changed', {
+      project_id: null,
+      payload: { scope: 'org', user_id: 'u6', user_name: 'Adam', from: 'admin', to: 'viewer' },
+    }),
+  ];
+
+  void test('a membership row says who, and the roles in the screen’s words', async () => {
+    const h = await open('/organisation?tab=activity', {
+      ...BASE,
+      '/api/v1/activity/history?limit=50': { data: MEMBERS, next_cursor: null },
+    });
+    try {
+      const what = h.page.locator('.oh-row .oh-what');
+      await until(async () => (await what.count()) === 3);
+      assert.deepEqual(await what.allTextContents(), [
+        'added Mia as Member',
+        // "Space admin" is the screen word for `lead` (D-103 item 2).
+        'changed Adam’s role: Space admin → Member',
+        'changed Adam’s role: Admin → Viewer',
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Export CSV is the history as a file, with the filters on screen', async () => {
+    const h = await open('/organisation?tab=activity&actor=u2&project=atlas&type=task.created', {
+      ...BASE,
+      '/api/v1/activity/history?limit=50&actor=u2&project=atlas&type=task.created': {
+        data: [FIRST[0]],
+        next_cursor: null,
+      },
+    });
+    try {
+      const link = h.page.getByRole('link', { name: 'Export CSV' });
+      await link.waitFor({ timeout: 20_000 });
+      assert.notEqual(await link.getAttribute('download'), null, 'it is not a download');
+      const href = new URL((await link.getAttribute('href')) ?? '', h.origin);
+      assert.equal(href.pathname, '/api/v1/activity/history');
+      assert.equal(href.searchParams.get('format'), 'csv');
+      assert.equal(href.searchParams.get('actor'), 'u2');
+      assert.equal(href.searchParams.get('project'), 'atlas');
+      assert.equal(href.searchParams.get('type'), 'task.created');
+      // The server refuses both beside csv: the file is every row.
+      assert.equal(href.searchParams.has('limit'), false);
+      assert.equal(href.searchParams.has('cursor'), false);
+
+      // A filter chosen on screen reaches the file too.
+      await pick(h.page.locator('#oh-space'), 'borealis');
+      await until(async () =>
+        ((await link.getAttribute('href')) ?? '').includes('project=borealis'),
+      );
     } finally {
       await h.close();
     }

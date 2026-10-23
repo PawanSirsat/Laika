@@ -98,6 +98,7 @@ describe('migrations', () => {
     // LAI-787, D-088: the organisation's Time.
     'org_time_settings',
     'orgs',
+    'password_resets',
     // LAI-773, D-087: a developer's own plan limit.
     'plan_limits',
     'project_memberships',

@@ -129,7 +129,7 @@ export function budgetSource(budget: Pick<Budget, 'scope' | 'source' | 'period'>
     // Plain words, not "p80" (LAI-785): the pessimistic end of the estimate.
     return budget.source === 'forecast'
       ? 'the token estimate’s high end, frozen at claim'
-      : 'set by a lead';
+      : 'set by a space admin';
   }
   const days = budget.period === null ? '' : ` · ${budget.period.from} – ${budget.period.to}`;
   return `${budget.scope === 'project' ? 'this month' : 'the sprint’s days'}${days}`;

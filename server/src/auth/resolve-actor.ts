@@ -1,11 +1,16 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
 import { type ActorKind, type ProjectRole } from '../db/enums.ts';
 import { mergeGrants, readStoredGrants } from '../db/org-grants.ts';
-import { projectMemberships, users } from '../db/schema.ts';
+import { projectMemberships, projects, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { type Logger } from '../log.ts';
-import { type Actor, type Principal, type SystemPrincipal } from '../policy/can.ts';
+import {
+  type Actor,
+  type Principal,
+  type ProjectRules,
+  type SystemPrincipal,
+} from '../policy/can.ts';
 import { DEFAULT_GRANTS } from '../policy/grants.ts';
 import { type Auth } from './auth.ts';
 import {
@@ -271,7 +276,40 @@ export function loadActor(db: Db, userId: string): ResolvedActor | null {
     // What the owner granted each role (§3, LAI-958), read with the role and
     // for the same reason: a grant withdrawn after sign-in must not linger.
     orgGrants: mergeGrants(readStoredGrants(db), DEFAULT_GRANTS),
+    // Each space's own rules (D-103, LAI-976), for the same reason: a space
+    // that turns its agents off must not wait for their tokens to re-resolve.
+    projectRules: loadProjectRules(db),
   };
+}
+
+/**
+ * The spaces whose rules differ from the defaults, by id — `can()` treats an
+ * absent one as the default, so the map holds only what changes an answer and
+ * stays as small as the number of spaces anybody has changed.
+ */
+export function loadProjectRules(db: Db): Map<string, ProjectRules> {
+  const columns = {
+    id: projects.id,
+    taskCreateMinRole: projects.taskCreateMinRole,
+    agentsAllowed: projects.agentsAllowed,
+  };
+  // Two reads rather than one `OR`, so each is a search of `projects_rules_idx`
+  // and neither walks the table: every `lead` space, and the `member` spaces
+  // with agents off.
+  const rows = [
+    ...db.select(columns).from(projects).where(eq(projects.taskCreateMinRole, 'lead')).all(),
+    ...db
+      .select(columns)
+      .from(projects)
+      .where(and(eq(projects.taskCreateMinRole, 'member'), eq(projects.agentsAllowed, false)))
+      .all(),
+  ];
+  return new Map(
+    rows.map((row) => [
+      row.id,
+      { taskCreateMinRole: row.taskCreateMinRole, agentsAllowed: row.agentsAllowed },
+    ]),
+  );
 }
 
 /**

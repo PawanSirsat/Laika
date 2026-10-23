@@ -1,5 +1,3 @@
-import { mayReadOrgUsage } from '../../../api/usage.ts';
-
 /**
  * The Usage page's pure parts (LAI-769): which spaces a reader may choose,
  * where they start, and the trend's scale. Kept out of the component so they
@@ -12,9 +10,14 @@ export interface ScopeProject {
   readonly name: string;
 }
 
+/**
+ * What the reader may read, as `GET /permissions` reports it (LAI-970) — never
+ * their org role: `usage.read_org` for the organisation, `usage.read_project`
+ * per space.
+ */
 export interface ScopeReader {
-  readonly org_role: string;
-  readonly memberships: readonly { readonly project_id: string }[];
+  readonly readsOrg: boolean;
+  readonly readsSpace: (projectId: string) => boolean;
 }
 
 /**
@@ -27,10 +30,9 @@ export function scopeOptions(
   me: ScopeReader,
   projects: readonly ScopeProject[],
 ): { readonly value: string; readonly label: string }[] {
-  const org = mayReadOrgUsage(me.org_role);
-  const mine = new Set(me.memberships.map((m) => m.project_id));
+  const org = me.readsOrg;
   const spaces = projects
-    .filter((p) => org || mine.has(p.id))
+    .filter((p) => me.readsSpace(p.id))
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((p) => ({ value: p.slug, label: p.name }));
   return org ? [{ value: '', label: 'All spaces' }, ...spaces] : spaces;

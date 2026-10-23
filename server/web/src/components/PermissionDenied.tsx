@@ -37,7 +37,9 @@ export function PermissionDenied({
       </div>
       <p className="state-headline">You do not have access to {resource}</p>
       <p className="state-body">
-        This needs at least the <span className="state-role">{requiredRole}</span> role
+        This needs at least the{' '}
+        <span className="state-role">{requiredRole === 'lead' ? 'Space admin' : requiredRole}</span>{' '}
+        role
         {scope === 'project' ? ' on this project' : ' in this organisation'}. Ask an Owner or Admin
         if you should have it.
       </p>

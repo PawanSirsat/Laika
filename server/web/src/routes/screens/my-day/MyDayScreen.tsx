@@ -22,11 +22,8 @@ import {
   type TimeDraft,
 } from '../../../api/time.ts';
 import { everyPage } from '../../../api/every-page.ts';
-import {
-  getPersonDay,
-  holdsPeopleAnalytics,
-  useOrgActions,
-} from '../../../api/people-analytics.ts';
+import { getPersonDay, PEOPLE_ANALYTICS } from '../../../api/people-analytics.ts';
+import { useGates } from '../../../api/permissions.ts';
 import { isProject, listProjects, type Project } from '../../../api/projects.ts';
 import { readerZone } from '../../../api/usage.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
@@ -54,7 +51,7 @@ import {
 import { EntryList } from './EntryList.tsx';
 import { clock, duration, span } from './format.ts';
 import { Inspector, type Held, type InspectorActions } from './Inspector.tsx';
-import { canAddTime, dayIn, isDay } from './my-day-derive.ts';
+import { canAddTime, dayIn, DRAFT_READERS, isDay } from './my-day-derive.ts';
 import { OnYourPlate, usePlate } from './OnYourPlate.tsx';
 import { shortcutFor, type Shortcut } from './shortcuts.ts';
 import { ShortcutSheet } from './ShortcutSheet.tsx';
@@ -200,7 +197,7 @@ function useSpaces(): readonly Project[] | null | undefined {
   return spaces;
 }
 
-/** The padlock beside "Only you see drafts". */
+/** The padlock beside who reads drafts. */
 function Padlock() {
   return (
     <svg className="myday-lock-icon" viewBox="0 0 12 12" aria-hidden="true">
@@ -215,8 +212,10 @@ const ready = (d: TimeDraft): boolean => d.task !== null || d.project !== null |
 /**
  * My day (LAI-787, D-088): the reader's own day, drafted on their own machine
  * from what their collector already holds, confirmed in one click or edited
- * block by block. **Private**: only they read it, signed in — no admin view
- * and no token. Only what they confirm, or type, is ever seen by anyone else.
+ * block by block. **Not the team's**: signed in, no token. Besides them, only
+ * owners, admins and whoever the owner grants *See everyone's analytics* read
+ * it, read only, and every look is listed for them (D-102, LAI-968); what they
+ * confirm, or type, is the time the organisation sees.
  *
  * **Laid out after the owner's "Laika App v2" design** (LAI-831): the week
  * strip and *Draft my time* in the header with *Confirm day*; the day in four
@@ -242,8 +241,8 @@ export function MyDayScreen({
   embedded,
 }: MyDayScreenProps) {
   const tz = readerZone();
-  const { actions: orgActions, settled } = useOrgActions(me !== undefined);
-  const holds = holdsPeopleAnalytics(orgActions, me?.org_role);
+  const { org, settled } = useGates(me !== undefined);
+  const holds = org(PEOPLE_ANALYTICS);
   /** Whose day: somebody else's only by `?user=` naming another person. */
   const subjectId = user !== undefined && user !== '' && user !== me?.id ? user : undefined;
   const readOnly = subjectId !== undefined;
@@ -850,12 +849,34 @@ export function MyDayScreen({
                 {view.day === view.today && ' · today'}
               </span>
               <span className="myday-subtitle-dot" aria-hidden="true" />
-              <span className="myday-lock">
-                <Padlock />
-                {readOnly
-                  ? `Read only · ${subjectName} sees that you looked`
-                  : 'Only you see drafts'}
-              </span>
+              {readOnly ? (
+                <span className="myday-lock">
+                  <Padlock />
+                  {`Read only · ${subjectName} sees that you looked`}
+                </span>
+              ) : (
+                // Who reads drafts, truthfully (D-102, LAI-968), and the way to
+                // the list of every look.
+                <span
+                  className="myday-lock"
+                  title={`Your drafts can be read by you and by ${DRAFT_READERS}.`}
+                >
+                  <Padlock />
+                  Drafts: you, owners and admins ·{' '}
+                  <a
+                    href="#myday-looked"
+                    className="myday-lock-link"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      document
+                        .getElementById('myday-looked')
+                        ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                    }}
+                  >
+                    who looked
+                  </a>
+                </span>
+              )}
             </span>
           }
           below={

@@ -120,10 +120,18 @@ export interface PendingInvite {
   readonly email_sent: boolean;
 }
 
+/** The lifetimes an invite may be given, in days (LAI-984); the server's closed list. */
+export const INVITE_EXPIRY_DAYS = [1, 7, 30] as const;
+export type InviteExpiryDays = (typeof INVITE_EXPIRY_DAYS)[number];
+
 export interface CreateInviteInput {
   /** `null` for a link invite, which anyone holding the URL may spend. */
   readonly email: string | null;
   readonly org_role: OrgRole;
+  /** Into a space as well (LAI-984); both or neither, sent only when set. */
+  readonly project_id?: string | undefined;
+  readonly project_role?: ProjectRole | undefined;
+  readonly expires_in_days?: InviteExpiryDays | undefined;
 }
 
 export interface CreatedInvite {
@@ -150,21 +158,30 @@ export function createInvite(input: CreateInviteInput): Promise<CreatedInvite> {
     // `email: null` is sent explicitly rather than omitted: the schema spells
     // "no address" and "absent" the same way on purpose, and a client that
     // means a link invite should say so.
-    body: { email: input.email, org_role: input.org_role },
+    body: {
+      email: input.email,
+      org_role: input.org_role,
+      ...(input.project_id === undefined ? {} : { project_id: input.project_id }),
+      ...(input.project_role === undefined ? {} : { project_role: input.project_role }),
+      ...(input.expires_in_days === undefined ? {} : { expires_in_days: input.expires_in_days }),
+    },
+  });
+}
+
+/**
+ * Revoke an invite and issue a new link for the same person and roles in one
+ * step (LAI-984). A new invite — a new id — whose link is shown this once.
+ */
+export function reissueInvite(
+  id: string,
+  expiresInDays?: InviteExpiryDays,
+): Promise<CreatedInvite> {
+  return request<CreatedInvite>(`/invites/${encodeURIComponent(id)}/reissue`, {
+    method: 'POST',
+    body: expiresInDays === undefined ? {} : { expires_in_days: expiresInDays },
   });
 }
 
 export function revokeInvite(id: string): Promise<void> {
   return request<void>(`/invites/${encodeURIComponent(id)}`, { method: 'DELETE' });
-}
-
-/**
- * Who may manage invites and see the org's people (SPEC §3.1).
- *
- * *"Invite users / change org roles"* is Owner and Admin. A Member or Viewer
- * gets no controls at all rather than controls that answer `403` — the server
- * refuses either way, and a button that always fails is worse than no button.
- */
-export function canManageOrg(orgRole: string): boolean {
-  return orgRole === 'owner' || orgRole === 'admin';
 }

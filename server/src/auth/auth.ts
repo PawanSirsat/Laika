@@ -5,7 +5,8 @@ import type Database from 'better-sqlite3';
 import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
 import * as schema from '../db/schema.ts';
-import { consumeInvite, removeOrphanedInvitee } from '../services/invites.ts';
+import { ApiError } from '../errors.ts';
+import { consumeInvite, ownerInviteRefused, removeOrphanedInvitee } from '../services/invites.ts';
 import { findUsableInvite, inviteMatchesEmail, isInviteOnly } from './invites.ts';
 import { scrubTelemetryEnv } from './telemetry.ts';
 import { trustedOriginsFor } from './trusted-origins.ts';
@@ -29,6 +30,21 @@ export const SESSION_UPDATE_AGE = 24 * 60 * 60;
 function inviteTokenFrom(body: unknown): string {
   const value = (body as { inviteToken?: unknown } | null | undefined)?.inviteToken;
   return typeof value === 'string' ? value : '';
+}
+
+/** `ownerInviteRefused`, in the shape a better-auth endpoint answers with (LAI-982). */
+function useTransferError(): APIError {
+  return new APIError('UNPROCESSABLE_ENTITY', {
+    code: 'use_transfer',
+    message: ownerInviteRefused().message,
+  });
+}
+
+function isUseTransfer(err: unknown): boolean {
+  return (
+    err instanceof ApiError &&
+    (err.details as { reason?: unknown } | null)?.reason === 'use_transfer'
+  );
 }
 
 export interface CreateAuthOptions {
@@ -240,6 +256,7 @@ export function createAuth(options: CreateAuthOptions) {
         } catch (err) {
           removeOrphanedInvitee(options.db, userId);
 
+          if (isUseTransfer(err)) throw useTransferError();
           throw new APIError('FORBIDDEN', {
             code: 'invite_invalid',
             message: err instanceof Error ? err.message : 'That invite could not be used.',

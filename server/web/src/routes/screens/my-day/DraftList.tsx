@@ -48,7 +48,8 @@ export interface DraftListProps {
 
 /**
  * *To settle* (the owner's design, LAI-831; LAI-810): the day's drafted
- * blocks — only the reader sees them — ten to a page, a box on every row
+ * blocks — the reader's, and read only by owners and admins (D-102,
+ * LAI-968) — ten to a page, a box on every row
  * and a bar that acts on what is ticked. The page of ten is the bound: the
  * list has no scroll of its own, so the wheel always moves the page (LAI-311).
  * Clicking a row puts it in the inspector.

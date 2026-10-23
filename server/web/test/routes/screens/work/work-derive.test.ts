@@ -10,11 +10,18 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
-  ALL_TASKS_PAGE,
   allTasksFilter,
+  DEFAULT_PAGE_SIZE,
+  pageRange,
+  pageTotal,
+  personFilterOf,
   personMode,
+  readPageSize,
   readWorkFilter,
   STATUS_FILTERS,
+  STATUS_TILES,
+  summaryFilter,
+  withPageSize,
   withWorkFilter,
   workRows,
 } from '../../../../src/routes/screens/work/work-derive.ts';
@@ -78,9 +85,10 @@ void describe('the filters in the URL', () => {
   void test('what the server is asked for: person is assignee, space is project', () => {
     assert.deepEqual(
       allTasksFilter({ person: 'none', status: 'done', space: 'laika', sprint: 's1' }),
-      { assignee: 'none', status: 'done', project: 'laika', sprint: 's1', limit: ALL_TASKS_PAGE },
+      { assignee: 'none', status: 'done', project: 'laika', sprint: 's1', limit: 25 },
     );
-    assert.deepEqual(allTasksFilter({}), { limit: ALL_TASKS_PAGE });
+    assert.deepEqual(allTasksFilter({}), { limit: DEFAULT_PAGE_SIZE });
+    assert.deepEqual(allTasksFilter({}, 100), { limit: 100 });
   });
 
   void test('every status filter is a category the server takes', () => {
@@ -163,5 +171,79 @@ void describe('the rows', () => {
     assert.equal(unknown?.space, undefined);
     assert.equal(unknown?.assignee, 'Someone');
     assert.equal(unknown?.sprint, 'A sprint');
+  });
+});
+
+void describe('the summary strip (LAI-975)', () => {
+  const SUMMARY = {
+    total: 142,
+    by_status: { backlog: 40, todo: 30, in_progress: 25, review: 12, done: 33, cancelled: 2 },
+    by_assignee: [
+      { user_id: 'u2', name: 'Bea', count: 9 },
+      { user_id: null, name: 'Unassigned', count: 50 },
+      { user_id: 'u1', name: 'Pawan', count: 83 },
+    ],
+    overdue: 3,
+    blocked: 0,
+    unassigned: 50,
+  };
+
+  void test('asks for every filter but the status: the tiles are the status breakdown', () => {
+    assert.deepEqual(
+      summaryFilter({ person: 'u1', status: 'done', space: 'laika', sprint: 's1' }),
+      {
+        assignee: 'u1',
+        project: 'laika',
+        sprint: 's1',
+      },
+    );
+    assert.deepEqual(summaryFilter({}), {});
+  });
+
+  void test('the tiles, in the order the page names them', () => {
+    assert.deepEqual(
+      STATUS_TILES.map((s) => s.value),
+      ['in_progress', 'review', 'todo', 'backlog', 'done'],
+    );
+  });
+
+  void test('the pager’s total is the served total, or the chosen status’s count', () => {
+    assert.equal(pageTotal(SUMMARY, undefined), 142);
+    assert.equal(pageTotal(SUMMARY, 'review'), 12);
+    assert.equal(pageTotal(undefined, 'review'), undefined);
+  });
+
+  void test('a name is its person filter; unassigned is none; Others is no filter', () => {
+    assert.equal(personFilterOf('u1'), 'u1');
+    assert.equal(personFilterOf(null), 'none');
+    assert.equal(personFilterOf('others'), undefined);
+  });
+});
+
+void describe('pages (LAI-975)', () => {
+  void test('the page size lives in the URL: 25, 50 or 100, 25 otherwise', () => {
+    assert.equal(readPageSize(new URLSearchParams('')), 25);
+    assert.equal(readPageSize(new URLSearchParams('size=50')), 50);
+    assert.equal(readPageSize(new URLSearchParams('size=100')), 100);
+    assert.equal(readPageSize(new URLSearchParams('size=7')), 25);
+    assert.equal(
+      withPageSize(new URLSearchParams('status=todo'), 50).toString(),
+      'status=todo&size=50',
+    );
+    assert.equal(withPageSize(new URLSearchParams('size=50'), 25).toString(), '');
+  });
+
+  void test('the size survives a filter change', () => {
+    assert.equal(
+      withWorkFilter(new URLSearchParams('size=50'), { status: 'todo' }).get('size'),
+      '50',
+    );
+  });
+
+  void test('the range reads first–last of total', () => {
+    assert.equal(pageRange(0, 25, 25, 142), '1–25 of 142');
+    assert.equal(pageRange(5, 25, 17, 142), '126–142 of 142');
+    assert.equal(pageRange(1, 50, 50, undefined), '51–100');
+    assert.equal(pageRange(0, 25, 0, 0), '0 of 0');
   });
 });

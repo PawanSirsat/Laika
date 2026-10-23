@@ -1401,6 +1401,16 @@
   overflow-wrap: anywhere;
 }
 
+/* A capability's one line, under its label (LAI-989). */
+.perm-action-description {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--text-small);
+  font-weight: var(--weight-normal);
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
 .perm-marks {
   display: inline-flex;
   gap: var(--space-1);
@@ -1572,12 +1582,13 @@
 }
 
 .org-people-table {
-  min-width: 54rem;
+  min-width: 60rem;
 }
 
+/* Last active and Last sign-in side by side (LAI-999): presence, and the account. */
 .org-people-row {
   display: grid;
-  grid-template-columns: 1.25rem minmax(0, 2.6fr) minmax(0, 1.1fr) 0.7fr 0.7fr 1fr 9.5rem;
+  grid-template-columns: 1.25rem minmax(0, 2.6fr) minmax(0, 1.1fr) 0.7fr 0.7fr 1fr 1fr 9.5rem;
   align-items: center;
   gap: 0.75rem;
   padding: 0.5625rem var(--space-5);
@@ -2189,4 +2200,138 @@
 .oh-person:hover {
   color: var(--accent);
   text-decoration-color: currentColor;
+}
+
+/* Organisation → Activity's Export CSV, at the head's right (LAI-989). */
+.oh-export {
+  margin-left: auto;
+  text-decoration: none;
+}
+
+/*
+ * The pulse (LAI-989): the figures above in the same tile, narrower, so the
+ * five sit in one row wide and two to a row on a phone instead of a column.
+ */
+.org-pulse {
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+
+/* ------------------------------- LAI-987's features in LAI-893's tab (LAI-999) */
+
+.org-undo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 var(--space-5) var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-card);
+  background: var(--accent-bg);
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.org-undo-btn {
+  margin-left: auto;
+}
+
+.org-people-space {
+  flex: none;
+}
+
+.org-invite-actions {
+  display: inline-flex;
+  flex: none;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+.org-invite-reissue {
+  flex: none;
+  height: 1.75rem;
+  margin: 0;
+  padding: 0 0.5rem;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-small);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.org-invite-reissue:hover {
+  background: var(--accent-bg);
+}
+
+.org-invite-reissue:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.org-issued-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.org-issued-error {
+  font-size: var(--text-small);
+  color: var(--overdue);
+}
+
+.org-confirm-text p {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-body);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.org-confirm-error,
+.org-invite-rejected {
+  margin: 0;
+}
+
+.org-confirm-typed {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.org-transfer-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.org-transfer-pick {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.org-extra-owners {
+  border-color: var(--chip-orange-border);
+}
+
+.org-name-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.org-name-input {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+@media (max-width: 40rem) {
+  .org-undo {
+    margin-left: var(--space-4);
+    margin-right: var(--space-4);
+  }
+
+  .org-invites li {
+    flex-wrap: wrap;
+  }
 }

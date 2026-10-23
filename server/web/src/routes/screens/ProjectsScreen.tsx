@@ -1,8 +1,6 @@
-import { Spinner } from '../../components/Spinner.tsx';
 import { useState } from 'react';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { ScreenHeader } from '../../components/ScreenHeader.tsx';
-import { ProjectStats } from './ProjectStats.tsx';
 import { useTheme } from '../../theme/use-theme.ts';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
@@ -13,27 +11,45 @@ import { useProjects } from '../../api/use-projects.ts';
 import {
   createProject,
   joinProject,
+  setProjectArchived,
   slugify,
   suggestPrefix,
   VISIBILITY_OPTIONS,
   type Project,
 } from '../../api/projects.ts';
-import { canEditProjectContext } from '../../api/project-context.ts';
 import { ProjectContextPanel } from './projects/ProjectContextPanel.tsx';
+import { SpaceCard } from './projects/SpaceCard.tsx';
+import type { SpaceHandlers, SpaceItemProps, SpaceKind } from './projects/SpaceActions.tsx';
+import { SpaceTable } from './projects/SpaceTable.tsx';
+import { SpacesToolbar } from './projects/SpacesToolbar.tsx';
+import {
+  readSpacesQuery,
+  sectionsFor,
+  spaceCounts,
+  splitSpaces,
+  writeSpacesQuery,
+  type SpacesQuery,
+} from './projects/spaces-model.ts';
 import type { MeProfile } from '../../api/me.ts';
-import { canConfigureProject, type Member } from '../../api/tasks.ts';
+import { type Member } from '../../api/tasks.ts';
 import { ApiError } from '../../api/errors.ts';
 import { fieldErrors } from '../../api/setup.ts';
 import { required } from '../../components/forms/validation.ts';
 import './projects.css';
+import { useGates } from '../../api/permissions.ts';
 
 export interface ProjectsScreenProps {
   /** Open a project's board. `?project=<slug>` is what BoardScreen reads. */
   readonly onOpen: (slug: string) => void;
   /** Open its member list — the same `?project=` mechanism (LAI-059). */
   readonly onOpenMembers: (slug: string) => void;
+  /** Open its settings at `/spaces/<slug>/settings` (D-103 item 1, LAI-977). */
+  readonly onOpenSettings: (slug: string) => void;
   /** Who is asking — decides whether the context document is editable. */
   readonly me: MeProfile | undefined;
+  /** The page's own state — chip, view, search — lives in the URL (LAI-978). */
+  readonly params: URLSearchParams;
+  readonly onParamsChange: (next: URLSearchParams) => void;
 }
 
 /**
@@ -43,51 +59,146 @@ export interface ProjectsScreenProps {
  * "active project" anywhere: the URL already carries it, `BoardScreen` already
  * reads it, and it survives a reload for free. A second mechanism would be a
  * second thing to keep in sync.
+ *
+ * The page itself follows the owner's design (D-103 item 12, LAI-978): search,
+ * *All / Yours / Public / Archived* with the server's counts, and a grid of
+ * one fixed card shape or a list. The same three choices live in the URL too.
  */
-export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProps) {
+export function ProjectsScreen({
+  onOpen,
+  onOpenMembers,
+  onOpenSettings,
+  me,
+  params,
+  onParamsChange,
+}: ProjectsScreenProps) {
   /** Which project's context document is open, if any (LAI-412). */
   const [contextFor, setContextFor] = useState<Project | undefined>(undefined);
   const { theme } = useTheme();
   const list = useProjects();
-  /** The space a join is in flight for, so only its own button says so. */
-  const [joining, setJoining] = useState<string | undefined>(undefined);
-  const [joinError, setJoinError] = useState<string | undefined>(undefined);
+  const gates = useGates(me !== undefined);
+  const archivedList = useProjects('only');
+  /**
+   * Who may create, restore and open settings: `can()`'s own answers from
+   * `GET /permissions` through the shared gates (LAI-970), never a role this
+   * client decides grants them. Each denies until the server has answered.
+   */
+  const mayCreate = gates.org('project.create');
+  /**
+   * Restore is the settings `PATCH`, which asks both: the org's
+   * `project.archive` and this space's `project.settings.edit` (LAI-976) —
+   * so *Create and archive spaces* alone, without a way into the space, is
+   * not enough.
+   */
+  const mayRestore = (space: Project): boolean =>
+    gates.org('project.archive') && gates.project(space.id, 'project.settings.edit');
+  /** The space a join or restore is in flight for, so only its own button says so. */
+  const [busy, setBusy] = useState<string | undefined>(undefined);
+  const [actionError, setActionError] = useState<string | undefined>(undefined);
+  const query = readSpacesQuery(params);
+  const changeQuery = (patch: Partial<SpacesQuery>): void => {
+    onParamsChange(writeSpacesQuery(params, patch));
+  };
 
   /**
    * Explicit membership from `me.memberships`, never from the summary's
-   * `members`; owner/admin implicit lead from the shared project helper.
+   * `members`; an implicit lead as the server reports it
+   * (`implicit_project_role`, LAI-970) — never from the org role.
    *
    * That array is capped for drawing faces — a space with forty members sends a
    * handful — so testing it would make a space you can already open look
    * joinable once it grew past the cap.
    */
   const isMine = (project: Project): boolean =>
-    me?.memberships.some((m) => m.project_id === project.id) === true ||
-    (me !== undefined && canConfigureProject(me.org_role, project.id, me.memberships));
+    me?.memberships.some((m) => m.project_id === project.id) === true || gates.leads(project.id);
 
-  const mine = list.status === 'ready' ? list.projects.filter(isMine) : [];
-  const joinable =
-    list.status === 'ready'
-      ? list.projects.filter((p) => !isMine(p) && p.visibility === 'public')
-      : [];
+  const both = splitSpaces(
+    list.status === 'ready' ? list.projects : [],
+    archivedList.status === 'ready' ? archivedList.projects : [],
+    isMine,
+  );
+  // Nothing is offered to join until the server has said which spaces the
+  // reader already leads: Join on a space they implicitly lead is a dead control.
+  const split = gates.settled ? both : { ...both, joinable: [] };
+  const counts = spaceCounts(split);
+  const sections = sectionsFor(split, query.filter, query.q);
 
-  const join = async (slug: string): Promise<void> => {
-    setJoining(slug);
-    setJoinError(undefined);
+  /**
+   * A join or a restore, then a re-read: the lists decide membership and
+   * archiving, so neither is patched locally into a state the server never
+   * confirmed.
+   */
+  const act = async (slug: string, run: () => Promise<unknown>, failed: string): Promise<void> => {
+    setBusy(slug);
+    setActionError(undefined);
     try {
-      await joinProject(slug);
-      // The list decides membership, so it has to be re-read — not patched
-      // locally, which would leave the card in a state the server never
-      // confirmed.
+      await run();
       list.reload();
+      archivedList.reload();
     } catch (cause) {
-      setJoinError(
-        cause instanceof ApiError ? cause.message : 'Could not join that space. Try again.',
-      );
+      setActionError(cause instanceof ApiError ? cause.message : failed);
     } finally {
-      setJoining(undefined);
+      setBusy(undefined);
     }
   };
+
+  const handlers: SpaceHandlers = {
+    onOpen: (space) => {
+      onOpen(space.slug);
+    },
+    onContext: setContextFor,
+    onMembers: (space) => {
+      onOpenMembers(space.slug);
+    },
+    onSettings: (space) => {
+      onOpenSettings(space.slug);
+    },
+    onJoin: (space) => {
+      void act(space.slug, () => joinProject(space.slug), 'Could not join that space. Try again.');
+    },
+    onRestore: (space) => {
+      void act(
+        space.slug,
+        () => setProjectArchived(space.slug, false),
+        'Could not restore that space. Try again.',
+      );
+    },
+  };
+
+  const now = Date.now();
+  const item = (space: Project, kind: SpaceKind): SpaceItemProps => ({
+    space,
+    kind,
+    maySettings: gates.project(space.id, 'project.settings.edit'),
+    mayRestore: mayRestore(space),
+    busy: busy === space.slug,
+    theme,
+    now,
+    handlers,
+  });
+
+  /** One section: its eyebrow and count, then cards or a table. */
+  const section = (title: string, label: string, kind: SpaceKind, spaces: readonly Project[]) =>
+    spaces.length === 0 ? null : (
+      <section className="projects-group" aria-label={label}>
+        <p className="projects-section">
+          <span>{title}</span>
+          <span className="projects-section-count">{spaces.length}</span>
+          <span className="projects-rule" aria-hidden="true" />
+        </p>
+        {query.view === 'grid' ? (
+          <ul className="projects-list">
+            {spaces.map((space) => (
+              <li key={space.id}>
+                <SpaceCard {...item(space, kind)} />
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <SpaceTable spaces={spaces} label={label} row={(space) => item(space, kind)} />
+        )}
+      </section>
+    );
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
@@ -152,27 +263,26 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
           thing is how a reader ends up wondering whether they are different.
           The API's noun stays `project`; the product's noun is `space`.
         */
+        variant="page"
         title="Spaces"
         context={
           list.status === 'ready'
-            ? `${String(list.projects.length)} space${list.projects.length === 1 ? '' : 's'}`
+            ? `${String(counts.all)} space${counts.all === 1 ? '' : 's'}`
             : undefined
         }
-      />
-      <header className="projects-head">
-        <p className="projects-sub">
-          Spaces you can see. Opening one loads its board; the choice lives in the URL.
-        </p>
-        {!creating && (
+        description="Spaces you can see. Opening one loads its board; the choice lives in the URL."
+      >
+        {/* Only for holders of `project.create` (LAI-970's permission source). */}
+        {mayCreate && !creating && (
           <Button
             onClick={() => {
               setCreating(true);
             }}
           >
-            New space
+            + New space
           </Button>
         )}
-      </header>
+      </ScreenHeader>
 
       {creating && (
         <form
@@ -265,11 +375,15 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
           scope="organisation"
           onRetry={list.reload}
         />
-      ) : list.projects.length === 0 ? (
+      ) : counts.all === 0 && counts.archived === 0 ? (
         <EmptyState
           headline="No spaces yet"
-          body="Create the first one and point it at a repo."
-          {...(creating
+          body={
+            mayCreate
+              ? 'Create the first one and point it at a repo.'
+              : 'Nobody has added you to a space yet, and there is no public one to join.'
+          }
+          {...(creating || !mayCreate
             ? {}
             : {
                 action: {
@@ -282,78 +396,9 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
         />
       ) : (
         <>
-          <p className="projects-section">
-            <span>YOUR SPACES</span>
-            <span className="projects-rule" aria-hidden="true" />
-          </p>
+          <SpacesToolbar query={query} counts={counts} onChange={changeQuery} />
 
-          <ul className="projects-list">
-            {mine.map((project) => (
-              <li key={project.id}>
-                <article className="project-card">
-                  <header className="project-card-head">
-                    <h3 className="project-card-name">{project.name}</h3>
-                    <span
-                      className={
-                        project.visibility === 'public'
-                          ? 'project-chip project-chip-public'
-                          : 'project-chip'
-                      }
-                    >
-                      {project.visibility.toUpperCase()}
-                    </span>
-                  </header>
-
-                  {/* The repo the project tracks. Omitted when unset rather than
-                      shown empty — `projects.repo` is nullable. */}
-                  {project.repo !== null && project.repo !== '' && (
-                    <p className="project-repo">{project.repo}</p>
-                  )}
-
-                  {project.description !== null && project.description !== '' && (
-                    <p className="project-card-desc">{project.description}</p>
-                  )}
-
-                  {/* Served with the list by LAI-053 — one request for the
-                      page, not one per card. */}
-                  <ProjectStats project={project} theme={theme} />
-
-                  <footer className="project-card-foot">
-                    <code className="project-key">{project.prefix}-1</code>
-                    <span className="project-slug">{project.slug}</span>
-                    <span className="project-foot-spacer" />
-                    <button
-                      type="button"
-                      className="project-members"
-                      onClick={() => {
-                        setContextFor(project);
-                      }}
-                    >
-                      Context
-                    </button>
-                    <button
-                      type="button"
-                      className="project-members"
-                      onClick={() => {
-                        onOpenMembers(project.slug);
-                      }}
-                    >
-                      Members
-                    </button>
-                    <button
-                      type="button"
-                      className="project-open"
-                      onClick={() => {
-                        onOpen(project.slug);
-                      }}
-                    >
-                      Open board
-                    </button>
-                  </footer>
-                </article>
-              </li>
-            ))}
-          </ul>
+          {section('YOUR SPACES', 'Your spaces', 'yours', sections.yours)}
 
           {/*
             **PUBLIC IN THIS ORG** (prototype line 1345), closing LAI-236.
@@ -366,54 +411,37 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
             `members` array on the summary — a space with forty members would
             otherwise look joinable to someone already in it.
           */}
-          {joinable.length > 0 && (
-            <>
-              <p className="projects-section">
-                <span>PUBLIC IN THIS ORG</span>
-                <span className="projects-rule" aria-hidden="true" />
+          {section('PUBLIC IN THIS ORG', 'Public in this org', 'joinable', sections.joinable)}
+
+          {/* The *Archived* chip's own list (D-103 item 10, LAI-976's
+              `?archived=only`), muted, with Restore for `project.archive` and the space's
+              `project.settings.edit`. */}
+          {query.filter === 'archived' && archivedList.status === 'error' ? (
+            <ApiErrorState
+              error={archivedList.error}
+              resource="archived spaces"
+              scope="organisation"
+              onRetry={archivedList.reload}
+            />
+          ) : (
+            section('ARCHIVED', 'Archived', 'archived', sections.archived)
+          )}
+
+          {sections.yours.length + sections.joinable.length + sections.archived.length === 0 &&
+            !(query.filter === 'archived' && archivedList.status !== 'ready') && (
+              <p className="projects-none">
+                {query.q.trim() === ''
+                  ? query.filter === 'archived'
+                    ? 'No archived spaces.'
+                    : 'No spaces here.'
+                  : `No spaces match “${query.q.trim()}”.`}
               </p>
+            )}
 
-              <ul className="projects-list">
-                {joinable.map((project) => (
-                  <li key={project.id}>
-                    <article className="project-card">
-                      <header className="project-card-head">
-                        <h3 className="project-card-name">{project.name}</h3>
-                        <span className="project-chip project-chip-public">public</span>
-                      </header>
-
-                      <p className="project-card-meta">
-                        <code className="project-card-slug">{project.slug}</code>
-                        <span className="project-card-people">
-                          {project.member_count} {project.member_count === 1 ? 'person' : 'people'}
-                        </span>
-                      </p>
-
-                      <footer className="project-card-foot">
-                        <span className="project-card-keys">{project.prefix}-1</span>
-                        <button
-                          type="button"
-                          className="project-open"
-                          disabled={joining === project.slug}
-                          onClick={() => {
-                            void join(project.slug);
-                          }}
-                        >
-                          {joining === project.slug && <Spinner size="sm" />}
-                          Join
-                        </button>
-                      </footer>
-                    </article>
-                  </li>
-                ))}
-              </ul>
-
-              {joinError !== undefined && (
-                <p className="projects-error" role="alert">
-                  {joinError}
-                </p>
-              )}
-            </>
+          {actionError !== undefined && (
+            <p className="projects-error" role="alert">
+              {actionError}
+            </p>
           )}
 
           {contextFor !== undefined && (
@@ -422,10 +450,7 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
               projectName={contextFor.name}
               /* Decided here, where the actor's memberships are known. The panel
                  renders read-only rather than offering a Save that answers 403. */
-              mayEdit={
-                me !== undefined &&
-                canEditProjectContext(me.org_role, contextFor.id, me.memberships)
-              }
+              mayEdit={gates.project(contextFor.id, 'project.settings.edit')}
               /* The project summary already carries its members, so naming who
                  last edited the document costs no second request. */
               members={

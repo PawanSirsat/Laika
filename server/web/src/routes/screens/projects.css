@@ -1,36 +1,121 @@
-/* Projects home (design 7a). Tokens only. */
+/* The Spaces page (D-103 item 12, LAI-978, the owner's grid and list
+   designs). Tokens only. */
 
 .projects {
   display: flex;
   flex-direction: column;
   min-height: 100%;
+  padding-bottom: var(--space-6);
 }
 
-.projects > :not(.screen-bar) {
+.projects > :not(.screen-page) {
   margin-left: 1.125rem;
   margin-right: 1.125rem;
 }
 
-.projects-head {
+/* ---------------------------------------------------------------- toolbar */
+
+.spaces-toolbar {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  flex-wrap: wrap;
+  gap: var(--space-3);
   margin-top: var(--space-4);
-  margin-bottom: var(--space-3);
 }
 
-.projects-sub {
-  margin: 0;
+.spaces-search {
+  flex: 1 1 20rem;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 2.375rem;
+  padding: 0 var(--space-3);
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  color: var(--text-muted);
+}
+
+.spaces-search:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.spaces-search-input {
   flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  font: inherit;
   font-size: var(--text-body);
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 
-/* Section eyebrow with a rule running to the edge, as the design has it. */
+.spaces-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* A segmented group: the chosen one white on a grey track. */
+.spaces-seg {
+  display: inline-flex;
+  flex: none;
+  max-width: 100%;
+  overflow-x: auto;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+
+.spaces-view {
+  margin-left: auto;
+}
+
+.spaces-seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex: none;
+  padding: 0.3125rem 0.6875rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: none;
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.spaces-seg-btn[aria-pressed='true'] {
+  background: var(--bg-card);
+  border-color: var(--border-subtle);
+  box-shadow: var(--shadow-card);
+  color: var(--text-primary);
+}
+
+.spaces-seg-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.spaces-seg-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------- sections */
+
+/* Section eyebrow, its count, and a hairline running to the edge. */
 .projects-section {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   margin: var(--space-5) 0 var(--space-3);
   font-size: var(--text-small);
   font-weight: var(--weight-heavy);
@@ -38,20 +123,42 @@
   color: var(--text-muted);
 }
 
+.projects-section-count {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0;
+}
+
 .projects-rule {
   flex: 1;
   height: 1px;
+  margin-left: var(--space-2);
   background: var(--border-subtle);
 }
 
-/* Three across, as the design lays them out. */
+.projects-none,
+.projects-error {
+  margin: var(--space-5) 0 0;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+.projects-error {
+  color: var(--overdue);
+}
+
+/* ------------------------------------------------------------------- grid */
+
+/* Three across, and every card in a row the height of the tallest — which,
+   because each card is one fixed shape, is every card's own height. */
 .projects-list {
   list-style: none;
-  margin: 0 1.125rem;
+  margin: 0;
   padding: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.8125rem;
+  grid-auto-rows: 1fr;
+  gap: var(--space-4);
 }
 
 @media (max-width: 1100px) {
@@ -68,27 +175,64 @@
 
 .project-card {
   height: 100%;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-card);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
   padding: var(--space-4) var(--space-4) 0;
   overflow: hidden;
 }
 
+.project-card-archived {
+  opacity: 0.72;
+}
+
 .project-card-head {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  align-items: flex-start;
+  gap: var(--space-3);
   min-width: 0;
+}
+
+.space-avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--on-space);
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+}
+
+.space-avatar-lg {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 0.875rem;
+  font-size: var(--text-heading-md);
+}
+
+.space-avatar-md {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.5625rem;
+  font-size: var(--text-body);
+}
+
+.project-card-titles {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-top: 0.25rem;
 }
 
 .project-card-name {
   margin: 0;
-  flex: 1;
   min-width: 0;
   font-size: var(--text-heading-sm);
   font-weight: var(--weight-heavy);
@@ -99,16 +243,71 @@
   white-space: nowrap;
 }
 
+/* The name opens the board: a link in the type of a heading. */
+.project-card-open {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-card-open:hover {
+  text-decoration: underline;
+}
+
+.project-card-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.project-card-sub,
+.project-card-updated,
+.space-counts,
+.space-cell-sub,
+.space-cell-updated {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.project-card-sub {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-card-meta {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.375rem;
+  padding-top: 0.25rem;
+}
+
+.project-card-updated {
+  white-space: nowrap;
+}
+
 .project-chip {
   flex: none;
   font-size: var(--text-small);
   font-weight: var(--weight-heavy);
   letter-spacing: 0.06em;
-  padding: 0.1875rem 0.3125rem;
+  padding: 0.1875rem 0.375rem;
   border-radius: var(--radius-chip);
-  background: var(--bg-column);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-muted);
+  background: var(--chip-neutral-bg);
+  border: 1px solid var(--chip-neutral-border);
+  color: var(--chip-neutral);
 }
 
 .project-chip-public {
@@ -117,74 +316,347 @@
   color: var(--chip-green);
 }
 
-/* The repo the project tracks. Mono, because it is an identifier. */
-.project-repo {
+/* Two lines, always: clamped when long, held open when short or absent, so a
+   description never changes a card's height. */
+.project-card-desc {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
+  font-size: var(--text-body);
+  line-height: 1.5;
+  min-height: 3em;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.project-card-desc-none {
   color: var(--text-muted);
+}
+
+.project-card-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Done green, in progress amber, review violet; the track is the rest. */
+.spaces-progress {
+  display: flex;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-column);
+  overflow: hidden;
+}
+
+.spaces-progress-done {
+  background: var(--chip-green);
+}
+
+.spaces-progress-active {
+  background: var(--chip-orange);
+}
+
+.spaces-progress-review {
+  background: var(--accent);
+}
+
+.space-counts {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tasks that cannot start — not dependency edges. */
+.space-blocked {
+  color: var(--overdue);
+  font-weight: var(--weight-semibold);
+}
+
+.project-card-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: auto calc(-1 * var(--space-4)) 0;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  min-height: 2.25rem;
+}
+
+.space-card-actions,
+.space-row-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+}
+
+/* Overlapping faces, each ringed in the card's ground so they read as a pile. */
+.space-faces {
+  display: flex;
+  flex: none;
+  min-width: 0;
+}
+
+.space-face {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  box-shadow: 0 0 0 2px var(--bg-card);
+  margin-left: -6px;
+}
+
+.space-face:first-child {
+  margin-left: 0;
+}
+
+.space-face-more {
+  background: var(--bg-column);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.space-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.space-link:hover {
+  color: var(--text-primary);
+}
+
+.space-gear {
+  color: var(--text-muted);
+}
+
+.space-join {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3125rem 0.75rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.space-link:focus-visible,
+.space-join:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+.space-link:disabled,
+.space-join:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* ------------------------------------------------------------------- list */
+
+/* One bordered table per section. Fixed layout: a cell cannot grow into its
+   neighbour, so "4 people" can never run into "2h ago". */
+.spaces-table-wrap {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.spaces-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+/* Space takes what is left; every other column is sized for its content,
+   so nothing is squeezed into its neighbour at the widths the page is used. */
+.spaces-col-access {
+  width: 6.5rem;
+}
+.spaces-col-progress {
+  width: 13rem;
+}
+.spaces-col-blocked {
+  width: 5.5rem;
+}
+.spaces-col-members {
+  width: 15rem;
+}
+.spaces-col-updated {
+  width: 6rem;
+}
+.spaces-col-actions {
+  width: 14.5rem;
+}
+
+.spaces-table th {
+  padding: var(--space-2) var(--space-4);
+  text-align: left;
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.spaces-table td {
+  padding: var(--space-3) var(--space-4);
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+.space-row:last-child td {
+  border-bottom: 0;
+}
+
+.space-row-archived td {
+  opacity: 0.72;
+}
+
+.space-cell-who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.space-cell-names {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.space-cell-name {
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.project-card-desc {
-  margin: 0;
-  font-size: var(--text-body);
-  font-weight: var(--weight-medium);
-  line-height: 1.5;
-  color: var(--text-secondary);
-  text-wrap: pretty;
+.space-cell-sub,
+.space-cell-people {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* The footer strip sits on the page ground, as the design draws it. */
-.project-card-foot {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: auto -1rem 0;
-  padding: var(--space-3) var(--space-4);
-  background: var(--bg-canvas);
-  border-top: 1px solid var(--border-subtle);
-}
-
-.project-key,
-.project-slug {
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
+.space-cell-people {
   color: var(--text-muted);
 }
 
-.project-foot-spacer {
-  flex: 1;
+.space-cell-progress .spaces-progress {
+  margin-bottom: 0.375rem;
 }
 
-.project-members,
-.project-open {
-  font: inherit;
-  font-size: var(--text-body);
-  font-weight: var(--weight-bold);
-  border-radius: var(--radius-card);
-  padding: 0.3125rem 0.625rem;
-  cursor: pointer;
+.space-cell-blocked {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  color: var(--overdue);
 }
 
-.project-members {
-  background: none;
-  border: 1px solid var(--border-default);
-  color: var(--text-secondary);
+.space-cell-blocked-none {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
 }
 
-.project-open {
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  color: var(--bg-card);
+.space-cell-actions .space-row-actions {
+  justify-content: flex-end;
 }
 
-.project-members:focus-visible,
-.project-open:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+/* Phone: each row becomes a block of labelled lines. */
+@media (max-width: 760px) {
+  .spaces-table,
+  .spaces-table tbody,
+  .spaces-table tr,
+  .spaces-table td {
+    display: block;
+    width: auto;
+  }
+
+  .spaces-table thead,
+  .spaces-table colgroup {
+    display: none;
+  }
+
+  .spaces-table tr {
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .space-row:last-child {
+    border-bottom: 0;
+  }
+
+  .spaces-table td {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 0.25rem 0;
+    border-bottom: 0;
+  }
+
+  .spaces-table td[data-label]:not(.space-cell-space)::before {
+    content: attr(data-label);
+    flex: none;
+    width: 5.5rem;
+    font-size: var(--text-small);
+    font-weight: var(--weight-heavy);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .space-cell-progress {
+    flex-wrap: wrap;
+  }
+
+  .space-cell-progress .spaces-progress {
+    flex: 1 1 6rem;
+    margin-bottom: 0;
+  }
+
+  .space-cell-actions .space-row-actions {
+    margin-left: 0;
+    justify-content: flex-start;
+    padding-top: var(--space-2);
+  }
 }
 
 /* ------------------------------------------------------------------ form */
@@ -207,108 +679,4 @@
 
 .projects-more {
   margin: var(--space-4) 1.125rem var(--space-6);
-}
-
-/* ------------------------------------------- card stats (LAI-046, design 7a) */
-
-.project-progress {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-/* Segmented: done, review, in progress — the rest of the bar is what is left. */
-.project-bar {
-  display: flex;
-  height: 6px;
-  border-radius: var(--radius-chip);
-  background: var(--bg-column);
-  overflow: hidden;
-}
-
-.project-bar-done {
-  background: var(--chip-green);
-}
-.project-bar-review {
-  background: var(--chip-orange);
-}
-.project-bar-active {
-  background: var(--accent);
-}
-
-.project-counts {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  color: var(--text-muted);
-  flex-wrap: wrap;
-}
-
-.project-count-main {
-  color: var(--text-secondary);
-  font-weight: var(--weight-semibold);
-}
-
-/* Tasks that cannot start — not dependency edges. */
-.project-blocked {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.1875rem;
-  color: var(--overdue);
-  font-weight: var(--weight-semibold);
-}
-
-.project-blocked svg {
-  width: 0.625rem;
-  height: 0.625rem;
-  stroke: currentColor;
-}
-
-.project-when {
-  margin-left: auto;
-}
-
-.project-people {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-/* Overlapping stack, each face ringed in the page ground so they read as a
-   pile rather than a row. */
-.project-faces {
-  display: flex;
-  flex: none;
-}
-
-.project-face {
-  /* The board toolbar's stack, at the space card's scale (the owner pointed at
-     it as the reference): vivid solid circles, initials that fit, a ring in the
-     card's own ground thick enough to separate the pile. */
-  width: 2.125rem;
-  height: 2.125rem;
-  border-radius: var(--radius-pill);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--text-body);
-  font-weight: var(--weight-heavy);
-  box-shadow: 0 0 0 2.5px var(--bg-card);
-  margin-left: -8px;
-}
-
-.project-face:first-child {
-  margin-left: 0;
-}
-
-.project-people-note {
-  font-size: var(--text-body);
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }

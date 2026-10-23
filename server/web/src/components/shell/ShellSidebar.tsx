@@ -47,6 +47,7 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
     spaces,
     all: allSpaces,
     open: openSpace,
+    togglePin: togglePinnedSpace,
   } = useSpaces(session.status === 'authenticated', projectSlug);
   return (
     <Sidebar
@@ -60,7 +61,7 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
       spaces={spaces}
       allSpaces={allSpaces}
       onOpenSpace={openSpace}
-      orgRole={me?.org_role}
+      onTogglePin={togglePinnedSpace}
       orgName={orgName}
       spaceName={spaceName}
       // Inbox is what waits on its two tabs (LAI-796): the review queue

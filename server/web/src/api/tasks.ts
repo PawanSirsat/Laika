@@ -320,14 +320,57 @@ export function listAllTasks(
   signal?: AbortSignal,
 ): Promise<Page<TaskSummary>> {
   const params = new URLSearchParams({ fields: 'slim' });
-  if (filter.project !== undefined) params.set('project', filter.project);
-  if (filter.status !== undefined) params.set('status', filter.status);
-  if (filter.assignee !== undefined) params.set('assignee', filter.assignee);
-  if (filter.sprint !== undefined) params.set('sprint', filter.sprint);
+  setAllTasksFilters(params, filter);
   if (filter.limit !== undefined) params.set('limit', String(filter.limit));
   if (filter.cursor !== undefined) params.set('cursor', filter.cursor);
   return request<Page<TaskSummary>>(
     `/tasks?${params.toString()}`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
+/** The four filters `GET /tasks` and `GET /tasks/summary` share. */
+function setAllTasksFilters(params: URLSearchParams, filter: AllTasksFilter): void {
+  if (filter.project !== undefined) params.set('project', filter.project);
+  if (filter.status !== undefined) params.set('status', filter.status);
+  if (filter.assignee !== undefined) params.set('assignee', filter.assignee);
+  if (filter.sprint !== undefined) params.set('sprint', filter.sprint);
+}
+
+/**
+ * One share of the counted work, ranked by the server: `user_id` null is
+ * nobody's, and a final `others` entry holds everyone past the top ten.
+ */
+export interface TasksSummaryAssignee {
+  readonly user_id: string | null;
+  readonly name: string;
+  readonly count: number;
+}
+
+/** The figures for everyone's work under a filter (LAI-974). */
+export interface TasksSummary {
+  readonly total: number;
+  readonly by_status: Readonly<Record<TaskStatus, number>>;
+  readonly by_assignee: readonly TasksSummaryAssignee[];
+  readonly overdue: number;
+  readonly blocked: number;
+  readonly unassigned: number;
+}
+
+/**
+ * Counts over the same tasks `listAllTasks` pages through (LAI-974, LAI-975),
+ * so the Work page's figures are the server's and never a sum of rows the
+ * client happens to hold.
+ */
+export function getTasksSummary(
+  filter: Omit<AllTasksFilter, 'limit' | 'cursor'> = {},
+  signal?: AbortSignal,
+): Promise<TasksSummary> {
+  const params = new URLSearchParams();
+  setAllTasksFilters(params, filter);
+  const query = params.toString();
+  return request<TasksSummary>(
+    `/tasks/summary${query === '' ? '' : `?${query}`}`,
     signal === undefined ? {} : { signal },
   );
 }
@@ -364,56 +407,6 @@ export function createTask(slug: string, input: CreateTaskInput): Promise<Task> 
       ...(input.parent_task_id === undefined ? {} : { parent_task_id: input.parent_task_id }),
     },
   });
-}
-
-/**
- * May this actor create a task in this project?
- *
- * `task.write` is `member`-or-`lead` (`policy/can.ts`), and the project role is
- * derived the way `effectiveProjectRole` derives it: org `owner`/`admin` hold
- * implicit lead everywhere, an org `viewer` is capped at `viewer` however their
- * membership row reads (D-006), and everyone else takes their membership.
- *
- * A display decision, not enforcement — the server decides, and if the two ever
- * disagree the server is right and this is the bug. It exists so a Viewer is not
- * shown a button that answers 403, which teaches people the app is broken rather
- * than that they lack permission.
- */
-/**
- * May this actor configure the board's columns? (LAI-266)
- *
- * `project.settings.edit` is **lead-only** (SPEC §3.2, *"Edit project settings
- * and `context_md`"*), with org owner/admin holding implicit lead — a strictly
- * narrower rule than `canCreateTask`, which admits members.
- * Projects and My day also use it as their implicit-lead visibility rule.
- *
- * The same display-only caveat applies as above, and the same consequence: the
- * grip, the `⋯` and the `+ Add column` tile are **absent** for anyone this
- * returns `false` for, not disabled. A control that answers 403 teaches people
- * the app is broken rather than that they lack permission (LAI-082).
- */
-export function canConfigureProject(
-  orgRole: string,
-  projectId: string,
-  memberships: readonly { readonly project_id: string; readonly role: string }[],
-): boolean {
-  if (orgRole === 'owner' || orgRole === 'admin') return true;
-  if (orgRole === 'viewer') return false;
-
-  return memberships.find((m) => m.project_id === projectId)?.role === 'lead';
-}
-
-export function canCreateTask(
-  orgRole: string,
-  projectId: string,
-  memberships: readonly { readonly project_id: string; readonly role: string }[],
-): boolean {
-  if (orgRole === 'owner' || orgRole === 'admin') return true;
-  if (orgRole === 'viewer') return false;
-
-  const membership = memberships.find((m) => m.project_id === projectId);
-  if (membership === undefined) return false;
-  return membership.role === 'lead' || membership.role === 'member';
 }
 
 /**
@@ -472,20 +465,6 @@ export function claimWinner(cause: unknown): string | undefined {
   if (typeof details !== 'object' || details === null) return undefined;
   const id = (details as { readonly assignee_id?: unknown }).assignee_id;
   return typeof id === 'string' ? id : undefined;
-}
-
-/**
- * May this actor assign a task to **someone else**?
- *
- * `task.assign_other` is member-or-lead (§3.2). Claiming for yourself is a
- * different action and a Viewer cannot do that either, since it writes.
- */
-export function canAssignOthers(
-  orgRole: string,
-  projectId: string,
-  memberships: readonly { readonly project_id: string; readonly role: string }[],
-): boolean {
-  return canCreateTask(orgRole, projectId, memberships);
 }
 
 /**

@@ -123,11 +123,14 @@ is loud rather than repeated.
 ## Local activity (LAI-752)
 
 `scripts/laika-activity-hook` counts prompts and agent sessions on this machine
-for the profile's activity heatmap. **It is opt-in twice over**: an owner or
-admin turns on Developer insights for the organisation, and the developer turns
-on "Share my local activity" from a signed-in browser — a token cannot. Then
-`laika activity on` installs the hook into each agent's own config (see
-`cli/README.md`), and `laika activity off` removes it.
+for the profile's activity heatmap. **Collection is the organisation's**
+(D-102 amended): nothing is collected unless its Developer insights is on, and
+while it is, every connected machine is — there is no personal switch. A token
+cannot turn it on, so no agent can switch on its own reporting. `laika activity
+on` installs the hook into each agent's own config (see `cli/README.md`) and
+says plainly what is collected, that the owner and anyone they grant access can
+see it, and that you can see who looked; `laika activity off` removes it from
+this machine.
 
 It is **not** in `hooks/hooks.json`. Claude Code runs a plugin's hooks and the
 settings file's hooks both, so registering it here as well would count every
@@ -161,9 +164,9 @@ What it never does:
   the prompt path forks nothing — zsh's own `EPOCHSECONDS` and `sysread` — and
   measures about 4 ms against about 3 ms for the bare interpreter. Under
   `/bin/sh` it takes one `cat` and one `date`. No network, git or node.
-- **Count anything while sharing is off.** Every mode is a no-op unless
-  `~/.laika/activity/state.json` says `"collect":true`, which only the sync
-  writes, from the board's answer.
+- **Count anything while Developer insights are off for your organisation.**
+  Every mode is a no-op unless `~/.laika/activity/state.json` says
+  `"collect":true`, which only the sync writes, from the board's answer.
 - **Count Devin CLI as Claude Code.** Devin CLI also runs the hooks in
   `~/.claude/settings.json`; it sets `DEVIN_PROJECT_DIR`, and the hook counts
   nothing for `claude-code` when that is set.

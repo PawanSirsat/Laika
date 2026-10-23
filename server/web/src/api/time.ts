@@ -114,7 +114,10 @@ export interface TimeDraft {
 
 export type EntrySource = 'draft' | 'manual' | 'import';
 
-/** A confirmed entry: the only time anybody else can ever see. */
+/**
+ * A confirmed entry: the time the organisation sees. Drafts are read only by
+ * the person and by owners and admins (D-102, LAI-968).
+ */
 export interface TimeEntry {
   readonly id: string;
   readonly day: string;

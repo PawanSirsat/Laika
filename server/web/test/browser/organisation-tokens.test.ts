@@ -22,6 +22,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import {
   closeBrowser,
+  defaultPermissions,
   open,
   refuse,
   until,
@@ -241,6 +242,27 @@ void describe('what the panel shows', () => {
       // The live ones still do, or the assertion above is vacuous.
       await until(async () => (await row.locator('.tok-revoke').count()) === 2);
       assert.equal(await row.locator('.tok-revoke').count(), 2);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('listing without token.revoke_any shows the tokens and offers no Revoke', async () => {
+    // Two §3.1 actions, asked separately: the list is `token.list_any`, the
+    // button `token.revoke_any` (LAI-970 review).
+    const grants = defaultPermissions(me('u1', 'owner')) as { me: { actions: string[] } };
+    const h = await open('/organisation?tab=security', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/permissions': {
+        ...grants,
+        me: { ...grants.me, actions: grants.me.actions.filter((a) => a !== 'token.revoke_any') },
+      },
+    });
+    try {
+      const row = await openPanel(h, 'Tomas Nel');
+      await until(async () => (await row.locator('.tok-row').count()) === 3);
+      assert.equal(await row.locator('.tok-revoke').count(), 0, 'offered Revoke without the grant');
     } finally {
       await h.close();
     }

@@ -31,8 +31,9 @@ function actor(orgRole: OrgRole, projectRole: ProjectRole | null = null): Actor 
 type OrgRow = [OrgAction, boolean, boolean, boolean, boolean];
 
 const ORG_MATRIX: OrgRow[] = [
-  // | Delete org data / transfer ownership | ✓ | — | — | — |
+  // | Delete org data | ✓ | — | — | — |
   ['org.delete', true, false, false, false],
+  // | Transfer ownership | ✓ (session only) | — | — | — |
   ['org.transfer_ownership', true, false, false, false],
   // | Org settings (AI provider, SMTP, signup mode) | ✓ | ✓ | — | — |
   ['org.settings.edit', true, true, false, false],
@@ -49,6 +50,13 @@ const ORG_MATRIX: OrgRow[] = [
   ['org.permissions.manage', true, false, false, false],
   // | Deactivate user | ✓ | ✓ | — | — |
   ['user.deactivate', true, true, false, false],
+  // | Sign a person out everywhere | ✓ | ✓ | ✓ (themselves) | ✓ (themselves) |
+  // Asked about somebody else, so the cell's tick is the grant's; the
+  // themselves half is asserted in policy-spec-drift's qualifier (LAI-981).
+  ['user.sign_out', true, true, false, false],
+  // | Issue a password-reset link | ✓ (session only) | ✓ (session only, not for the owner) | — | — |
+  // No target named; the owner half is the qualifier's, in policy-spec-drift.
+  ['user.reset_password', true, true, false, false],
   // | View the organisation | ✓ | ✓ | ✓ | ✓ |
   // Its own row rather than folded into `member_list.read` (LAI-222): the
   // response also carries the AI provider block, which is gated field-level on
@@ -238,7 +246,10 @@ const PROJECT_MATRIX: ProjectRow[] = [
   // Every role, including viewer — and **not** in `READ_ACTIONS`, which is what
   // refuses a `read_only` token (D-047). See `can.test.ts` for the pair.
   ['task.watch', true, true, true],
-  // | Create / edit / move any task | ✓ | ✓ | — |
+  // | Create tasks | ✓ | ✓ (unless space admins only) | — |
+  // The default; the space's other answer is `space-rules.test.ts` (D-103).
+  ['task.create', true, true, false],
+  // | Edit / move any task | ✓ | ✓ | — |
   ['task.write', true, true, false],
   // | Claim a task (start_working) | ✓ | ✓ | — |
   ['task.claim', true, true, false],
@@ -258,6 +269,9 @@ const PROJECT_MATRIX: ProjectRow[] = [
   // | Set token budgets | ✓ (session only) | — | — |
   // LAI-773: a lead, on a web session; soft, so it refuses nothing to anyone.
   ['budget.set', true, false, false],
+  // | Leave a project | ✓ | ✓ | ✓ |
+  // D-103 item 5; the last lead is the service's 409, not a cell.
+  ['project.leave', true, true, true],
 ];
 
 /** An org `member` so the org role never grants implicit lead. */

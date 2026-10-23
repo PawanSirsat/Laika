@@ -1,4 +1,5 @@
 import { request } from './client.ts';
+import type { OrgUser } from './users.ts';
 
 /**
  * The organisation (SPEC §6.4, §12; server by LAI-222 and LAI-447).
@@ -76,9 +77,37 @@ export interface Org {
   readonly ai?: OrgAi;
   /** **Absent, not null**, for a caller who may not configure webhooks. */
   readonly github_webhook?: OrgGithubWebhook;
+  /**
+   * Active owners besides the recorded one (D-104 item 2, LAI-982): left over
+   * from before the role picker lost *Owner*. **Absent** for anyone but the
+   * owner, and normally empty for them — reported, never demoted silently.
+   */
+  readonly extra_owners?: readonly OrgOwnerRef[];
+  /**
+   * Owner invites from before D-104, unaccepted and unexpired (LAI-982's
+   * review response): accepting one is refused `use_transfer`, so the owner
+   * sees them here to revoke. **Absent** for anyone but the owner, as
+   * `extra_owners` is.
+   */
+  readonly owner_invites_pending?: readonly OrgOwnerInvite[];
+}
+
+/** One pending pre-D-104 owner invite. `email` is `null` for a link made without one. */
+export interface OrgOwnerInvite {
+  readonly id: string;
+  readonly email: string | null;
+  readonly expires_at: number;
+}
+
+export interface OrgOwnerRef {
+  readonly id: string;
+  readonly name: string;
+  readonly email: string;
 }
 
 export interface OrgPatch {
+  /** D-104 item 7 (LAI-984): 1–80 characters; the server trims it. */
+  readonly name?: string;
   readonly presence_enabled?: boolean;
   readonly developer_insights?: boolean;
   /**
@@ -102,6 +131,25 @@ export function updateOrg(patch: OrgPatch): Promise<Org> {
   return request<Org>('/org', { method: 'PATCH', body: patch });
 }
 
+/** What a transfer answers: the two people it changed (LAI-982). */
+export interface OwnershipTransfer {
+  readonly owner: OrgUser;
+  readonly previous_owner: OrgUser;
+}
+
+/**
+ * Hand the organisation to an active admin or member (D-104 item 2). `confirm`
+ * is their email, typed — the server checks it, so a slip of the mouse is
+ * refused there rather than trusted here. Refusals are `422` with a `reason`:
+ * `self`, `inactive`, `role` or `confirm_mismatch`.
+ */
+export function transferOwnership(userId: string, confirm: string): Promise<OwnershipTransfer> {
+  return request<OwnershipTransfer>('/org/transfer-ownership', {
+    method: 'POST',
+    body: { user_id: userId, confirm },
+  });
+}
+
 /** Set or rotate the GitHub webhook secret; the answer is the only time it is shown. */
 export function rotateGithubWebhookSecret(): Promise<GithubWebhookSecret> {
   return request<GithubWebhookSecret>('/org/github-webhook', { method: 'POST' });
@@ -110,4 +158,33 @@ export function rotateGithubWebhookSecret(): Promise<GithubWebhookSecret> {
 /** Clear it: every delivery from GitHub is refused until a new one is set. */
 export function clearGithubWebhookSecret(): Promise<void> {
   return request<void>('/org/github-webhook', { method: 'DELETE' });
+}
+
+/**
+ * The organisation's pulse (`GET /org/overview`, LAI-986; the tiles are
+ * LAI-989). Every number is the server's: tasks are counted over the spaces
+ * the caller can open, so a private space they cannot see is in no figure.
+ * Mirrors `OrgOverviewView` in `server/src/services/org-overview.ts`, paired in
+ * `test/api/view-type-drift.test.ts`.
+ */
+export interface OrgOverview {
+  readonly people: {
+    /** Active people in the organisation. */
+    readonly active: number;
+    /** Of those, seen signed in at or after `since`. */
+    readonly seen_this_week: number;
+    /** Unix-ms: the start of the last seven days, not of the calendar week. */
+    readonly since: number;
+  };
+  readonly tasks: {
+    /** Not done and not cancelled. */
+    readonly open: number;
+    readonly in_review: number;
+    readonly blocked: number;
+    readonly overdue: number;
+  };
+}
+
+export function getOrgOverview(signal?: AbortSignal): Promise<OrgOverview> {
+  return request<OrgOverview>('/org/overview', signal === undefined ? {} : { signal });
 }

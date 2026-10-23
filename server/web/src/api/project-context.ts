@@ -43,24 +43,6 @@ export function updateProjectContext(slug: string, contextMd: string): Promise<P
   });
 }
 
-/**
- * May this person edit the document? `lead`+ (SPEC §3.2, §7.3).
- *
- * Same shape as `canManageMembers` and `canManageSprints`, and named for what it
- * authorises rather than shared with them, because these are three separate
- * server rules that happen to agree today. **It hides the editor rather than
- * offering one that answers `403`** — a display decision, not enforcement. The
- * server decides; if the two disagree the server is right and this is the bug.
- */
-export function canEditProjectContext(
-  orgRole: string,
-  projectId: string,
-  memberships: readonly { readonly project_id: string; readonly role: string }[],
-): boolean {
-  if (orgRole === 'owner' || orgRole === 'admin') return true;
-  return memberships.some((m) => m.project_id === projectId && m.role === 'lead');
-}
-
 /** How close the document is to the cap, and how loudly to say so. */
 export type BudgetTone = 'ok' | 'near' | 'over';
 

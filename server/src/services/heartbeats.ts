@@ -5,7 +5,7 @@ import { newId } from '../db/ids.ts';
 import { presenceEnabled } from '../db/orgs.ts';
 import { heartbeats, projects, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan } from '../policy/can.ts';
+import { agentsMay, assertCan } from '../policy/can.ts';
 
 /**
  * Presence (SPEC §9.1, §4.10, D-005, D-023).
@@ -204,7 +204,9 @@ function fold(value: string): string | null {
  * `lai-42-add-task-crud` → `lai`. Anything else → `null`, and the caller
  * degrades rather than erroring (§9.2).
  *
- * **Deliberately §9.2's regex and not a stricter one.** Unanchored, so
+ * **§9.2's convention, with §4.3's prefix shape** (LAI-177). §9.2 writes the
+ * prefix as `[a-z]+`, which cannot read `WEB2` or `P0X` — prefixes §4.3 and
+ * `PATCH` accept — and read `p0x-12` as `x`. Still unanchored, so
  * `feature/lai-42-x` resolves like `lai-42-x` does — the two commonest branch
  * shapes, and anchoring would silently drop one of them. The cost is that a
  * branch like `add-2fa-support` yields `add`, which narrows nothing unless a
@@ -224,6 +226,14 @@ export interface BranchRef {
 }
 
 /**
+ * A key in a branch name: a prefix of the shape §4.3 accepts — a letter, then
+ * one to seven letters or digits, as `routes/projects.ts`'s `Prefix` — a
+ * hyphen, and the number (LAI-177). The prefix may not continue a word, so
+ * `p0x-12-fix` is `P0X` and never `X`, and `web2-1-fix` is `WEB2`.
+ */
+const BRANCH_REF = /(?<![A-Za-z0-9])([A-Za-z][A-Za-z0-9]{1,7})-(\d+)/;
+
+/**
  * §9.2's convention parsed **once**, for both of the things that read it.
  *
  * `branchProjectPrefix` narrows an ambiguous repo (LAI-116); `resolveBranchTask`
@@ -231,7 +241,7 @@ export interface BranchRef {
  * that two implementations of one rule is one implementation and one bug.
  */
 export function parseBranchRef(branch: string): BranchRef | null {
-  const match = /([A-Za-z]+)-(\d+)/.exec(branch.trim());
+  const match = BRANCH_REF.exec(branch.trim());
   if (match === null) return null;
 
   const number = Number(match[2]);
@@ -259,7 +269,12 @@ export function resolveRepoProjects(db: Db, repo: string, branch: string): RepoP
   if (wanted === null) return { projectIds: [], attribution: 'none' };
 
   const matches = db
-    .select({ id: projects.id, repo: projects.repo, prefix: projects.prefix })
+    .select({
+      id: projects.id,
+      repo: projects.repo,
+      prefix: projects.prefix,
+      formerPrefixes: projects.formerPrefixes,
+    })
     .from(projects)
     .all()
     .filter((row) => row.repo !== null && fold(row.repo) === wanted);
@@ -272,7 +287,11 @@ export function resolveRepoProjects(db: Db, repo: string, branch: string): RepoP
     // At most one within an org — `projects_org_prefix_unique` (§4.13) — but the
     // check is on the result rather than on that index, so a second org could
     // never make this quietly pick one of two.
-    const narrowed = matches.filter((row) => row.prefix.toLowerCase() === prefix);
+    // A branch named under a prefix the project carried before still counts
+    // (D-103): it was cut when that was the key.
+    const narrowed = matches.filter((row) =>
+      keyPrefixesOf(row).some((held) => held.toLowerCase() === prefix),
+    );
     if (narrowed.length === 1) return { projectIds: [narrowed[0]!.id], attribution: 'branch' };
   }
 
@@ -331,11 +350,16 @@ export function resolveBranchTask(
   // without consulting the branch at all — so `web-42` on a repo tracked only by
   // `LAI` arrives here with a project that does not own that prefix.
   const project = db
-    .select({ id: projects.id, prefix: projects.prefix })
+    .select({ id: projects.id, prefix: projects.prefix, formerPrefixes: projects.formerPrefixes })
     .from(projects)
     .where(eq(projects.id, projectId))
     .get();
-  if (project?.prefix.toLowerCase() !== ref.prefix) return null;
+  if (
+    project === undefined ||
+    !keyPrefixesOf(project).some((held) => held.toLowerCase() === ref.prefix)
+  ) {
+    return null;
+  }
 
   const task = db
     .select({ id: tasks.id })
@@ -359,7 +383,7 @@ export function resolveBranchTask(
  * has an opinion about it.
  */
 export { REPO_MAX_LENGTH } from './projects.ts';
-import { REPO_MAX_LENGTH } from './projects.ts';
+import { keyPrefixesOf, REPO_MAX_LENGTH } from './projects.ts';
 export const BRANCH_MAX_LENGTH = 255;
 
 export interface HeartbeatInput {
@@ -465,7 +489,10 @@ export function recordHeartbeat(
 
   db.insert(heartbeats).values(row).run();
 
-  if (matched !== null) {
+  // The beat is the token's own and always lands; the branch it writes onto a
+  // task is a change in that task's space, so a space whose agents are off
+  // keeps it (D-103 item 7, LAI-976 review).
+  if (matched !== null && agentsMay(actor, 'task.write', { projectId: matched.projectId })) {
     // §9.2 stores the branch on the task as well. **Last seen, not a history** —
     // overwriting is correct, and the history is `activity`. No activity row: a
     // heartbeat is presence, not an audited action, and an agent beating every

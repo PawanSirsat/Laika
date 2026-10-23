@@ -5687,6 +5687,15 @@ needed and what is not."*
     description or "No description yet.", progress bar, done / active /
     blocked, member avatars, Context · Members · settings).
 
+**Addendum, same day (LAI-976's finding).** Task keys are not stored per
+task: a key is the space's current prefix plus the task's number. So after a
+prefix change, existing tasks keep their **numbers** and are *shown* under the
+new prefix (`COR-1` reads `ENG-1`), and **every former key keeps resolving**
+(`projects.former_prefixes`; REST, MCP, time, branch names, the collector). A
+prefix another space holds now or held before is refused, so an old key never
+names two tasks. CHIEF accepts this as item 3's meaning; storing a prefix on
+every task is not worth its cost.
+
 ## D-104 — People and organisation administration: one owner, offboarding, reset links, more grantable capabilities (LAI-981 – LAI-989)
 
 **Date:** 2026-10-22 · **By:** CHIEF (Belka), on the owner's approval of the
@@ -5789,3 +5798,23 @@ different — think about this and implement that."*
 5. **An owner or admin reading someone's day** (D-102) sees that person's
    sky, from that person's place, and cannot change it.
 
+## D-107 — The released People tab (LAI-893) is the layout; LAI-987's admin features move into it (LAI-998, LAI-999)
+
+**Date:** 2026-10-23 · **By:** CHIEF (Belka). Written as D-105; renumbered
+D-107 the same night because `master` already held D-105 (LAI-894) and D-106
+(LAI-895) from another session — the first filing wins.
+
+Two redesigns of Organisation → People met at release-2 integration: another
+session's LAI-893 (released to `master`: v3 table, filters, bulk bar, pending
+list, invite dialog) and this session's LAI-987 (search, chips, last sign-in,
+confirmations with Undo, transfer ownership, extra owners, bulk invite,
+re-issue/copy, invite expiry and space, org rename, grant-following gates).
+
+1. **What is live stays the layout.** LAI-893's table, filters, bulk bar,
+   pending list and invite dialog are kept.
+2. **No capability is lost.** Every LAI-987 feature LAI-893 lacks is ported
+   into LAI-893's components (LAI-999); where both have a feature, LAI-893's
+   presentation wins and LAI-987's behaviour (server refusals, confirmations,
+   D-104 owner rules) is kept.
+3. **Gates follow the server's permissions** (LAI-970), never the org role,
+   except D-104 item 2's owner-only role picker and transfer.

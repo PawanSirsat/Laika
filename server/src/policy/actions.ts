@@ -21,6 +21,11 @@ export const ORG_ACTIONS = [
   // D-102 rule 5 (LAI-958): what each org role may do — the owner's alone.
   'org.permissions.manage',
   'user.deactivate',
+  // D-104 item 3 (LAI-981): end every session of a person without
+  // deactivating them.
+  'user.sign_out',
+  // D-104 item 4 (LAI-983): issue somebody a one-time password-reset link.
+  'user.reset_password',
   'org.read',
   'presence.read',
   'capacity.read',
@@ -81,6 +86,9 @@ export const PROJECT_ACTIONS = [
   'project.settings.edit',
   'sprint.manage',
   'task.assign_sprint',
+  // D-103 item 6 (LAI-976): creating is `task.write`'s, narrowed by the
+  // space's own minimum role — so it is its own action.
+  'task.create',
   'task.write',
   'task.claim',
   'task.assign_other',
@@ -95,6 +103,8 @@ export const PROJECT_ACTIONS = [
   'usage.read_project',
   // LAI-773: soft token budgets on a task, a sprint or the project.
   'budget.set',
+  // D-103 item 5 (LAI-976): any member may leave a space.
+  'project.leave',
 ] as const;
 
 /**
@@ -244,4 +254,11 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // agent's token that could grant its own role a capability would hand its
   // person whatever it was refused.
   'org.permissions.manage',
+  // **Handing the organisation over is the owner's, signed in** (D-104 item 2,
+  // LAI-982): an agent's token that could transfer ownership could give the
+  // whole organisation away in its person's name.
+  'org.transfer_ownership',
+  // **A reset link is the person's account** (D-104 item 4, LAI-983): an
+  // agent's token that could mint one could sign in as anybody it named.
+  'user.reset_password',
 ]);

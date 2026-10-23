@@ -14,6 +14,7 @@ import { ViewTabs } from './ViewTabs.tsx';
 import type { TaskPriority } from '../../api/tasks.ts';
 import { isPriority, isTagName } from '../../api/task-filter.ts';
 import './space.css';
+import { useGates, usePermissions } from '../../api/permissions.ts';
 
 /**
  * The bar shows only values the board applies (LAI-724): a refused
@@ -57,7 +58,7 @@ export function SpaceLayout({ children }: SpaceLayoutProps) {
         params={params}
         setParams={setParams}
         navigate={navigate}
-        orgRole={me?.org_role}
+        signedIn={me !== undefined}
       >
         {children}
       </SpaceFrame>
@@ -71,7 +72,7 @@ interface SpaceFrameProps {
   readonly params: URLSearchParams;
   readonly setParams: (next: URLSearchParams, options?: { readonly push?: boolean }) => void;
   readonly navigate: (to: string) => void;
-  readonly orgRole: string | undefined;
+  readonly signedIn: boolean;
   readonly children: ReactNode;
 }
 
@@ -81,9 +82,13 @@ function SpaceFrame({
   params,
   setParams,
   navigate,
-  orgRole,
+  signedIn,
   children,
 }: SpaceFrameProps) {
+  const { permissions } = usePermissions(signedIn);
+  // Whether Create is drawn: this space's `task.create`, as the server says (LAI-178).
+  const gates = useGates(signedIn);
+  const { spaceId } = useShell();
   /**
    * The space's display name.
    *
@@ -203,15 +208,19 @@ function SpaceFrame({
               onReady={(value) => {
                 setParam('ready', value ? 'true' : undefined);
               }}
-              onCreate={() => {
-                // The board owns task creation; Create from any view goes there
-                // with the form open rather than duplicating it per screen.
-                navigate(
-                  slug === undefined
-                    ? '/board?new=task'
-                    : `/board?project=${encodeURIComponent(slug)}&new=task`,
-                );
-              }}
+              {...(spaceId !== undefined && gates.project(spaceId, 'task.create')
+                ? {
+                    onCreate: () => {
+                      // The board owns task creation; Create from any view goes
+                      // there with the form open rather than duplicating it.
+                      navigate(
+                        slug === undefined
+                          ? '/board?new=task'
+                          : `/board?project=${encodeURIComponent(slug)}&new=task`,
+                      );
+                    },
+                  }
+                : {})}
             />
 
             <ViewTabs
@@ -219,7 +228,7 @@ function SpaceFrame({
               projectSlug={slug}
               params={params}
               onNavigate={navigate}
-              holds={permissionHolder(orgRole)}
+              holds={permissionHolder(permissions?.me.actions)}
               counts={{ '/meeting-review': pendingReviews }}
             />
           </div>

@@ -5,8 +5,8 @@ import { useProjects } from '../../../api/use-projects.ts';
 import type { PageTab } from '../../page-tabs.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
-import { canManageOrg } from '../../../api/invites.ts';
 import { invitableRoles } from '../invite-roles.ts';
+import { revokeInvite } from '../../../api/invites.ts';
 import { getOrg, updateOrg, type Org } from '../../../api/org.ts';
 import { revokeUserToken, type TokenView } from '../../../api/tokens.ts';
 import { Switch } from '../../../components/Switch.tsx';
@@ -22,11 +22,18 @@ import { BreakScheduleFact } from './BreakScheduleFact.tsx';
 import { TimeModeFact } from './TimeModeFact.tsx';
 import { OrgSpaces } from './OrgSpaces.tsx';
 import { PeopleTab } from './PeopleTab.tsx';
+import { ExtraOwners } from './ExtraOwners.tsx';
+import { OwnerInvites } from './OwnerInvites.tsx';
+import { TransferOwnership } from './TransferOwnership.tsx';
+import { OrgNameFact } from './OrgNameFact.tsx';
+import type { OpenTasksChoice } from '../../../api/offboarding.ts';
 import { InviteDialog } from './InviteDialog.tsx';
 import { RolesPermissionsSection } from './RolesPermissionsSection.tsx';
 import { OrgActivity } from './OrgActivity.tsx';
+import { OrgPulse } from './OrgPulse.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import type { MeProfile } from '../../../api/me.ts';
+import { useGates } from '../../../api/permissions.ts';
 import './organisation.css';
 
 export interface OrganisationScreenProps {
@@ -102,14 +109,24 @@ export function OrganisationScreen({
   setParams,
   onNavigate,
 }: OrganisationScreenProps) {
-  const canManage = canManageOrg(me.org_role);
+  // The server's answer, denied until it has one (LAI-970) — never the role.
+  const gates = useGates();
+  const canInvite = gates.org('user.invite');
+  const canDeactivate = gates.org('user.deactivate');
+  const canSetInsights = gates.org('org.developer_insights.set');
+  const canSetTime = gates.org('org.time.set');
+  const canListTokens = gates.org('token.list_any');
+  /** Listing and revoking are two §3.1 actions; Revoke asks its own (LAI-970 review). */
+  const canRevokeTokens = gates.org('token.revoke_any');
+  /** D-104 item 7: the name is *Change organisation settings*'. */
+  const canEditOrg = gates.org('org.settings.edit');
   /**
    * Only the owner changes an org role (D-102 rule 5, LAI-958: `user.set_role`
    * is owner-locked). An admin keeps deactivating and inviting, and sees each
    * role as text. A mirror of the server's rule, not one invented here.
    */
   const canChangeRoles = me.org_role === 'owner';
-  const { state, reload } = useOrganisation(canManage);
+  const { state, reload } = useOrganisation(canInvite);
   const projects = useProjects();
   /** *Invite people* (LAI-893): the dialog, and what its field opens with. */
   const [invite, setInvite] = useState<{ readonly text: string } | undefined>(undefined);
@@ -191,15 +208,21 @@ export function OrganisationScreen({
       });
   };
 
-  const change = (id: string, patch: { org_role?: string; is_active?: boolean }): Promise<void> => {
+  /** `true` when the server took it — People offers Undo only then (LAI-999). */
+  const change = (
+    id: string,
+    patch: { org_role?: string; is_active?: boolean; open_tasks?: OpenTasksChoice },
+  ): Promise<boolean> => {
     setChanging(id);
     setRoleError(undefined);
     return updateUser(id, patch)
       .then(() => {
         reload();
+        return true;
       })
       .catch((cause: unknown) => {
         setRoleError(cause instanceof Error ? cause.message : 'That change was refused.');
+        return false;
       })
       .finally(() => {
         setChanging(undefined);
@@ -233,7 +256,7 @@ export function OrganisationScreen({
       description={context}
       below={tabStrip}
     >
-      {canManage && (
+      {canInvite && (
         <button
           ref={inviteButton}
           type="button"
@@ -308,6 +331,9 @@ export function OrganisationScreen({
       <div className="org-body" data-tab={tab}>
         {tab === 'overview' && (
           <>
+            {/* This week's pulse (LAI-989): `GET /org/overview`'s figures. */}
+            <OrgPulse />
+
             {/* The figures (LAI-796) — each a count the page already holds. */}
             <dl className="org-stats">
               <div className="org-stat">
@@ -340,7 +366,7 @@ export function OrganisationScreen({
                   </span>
                 </dd>
               </div>
-              {canManage && (
+              {canInvite && (
                 <div className="org-stat">
                   <dt>Pending invites</dt>
                   <dd>
@@ -358,6 +384,9 @@ export function OrganisationScreen({
                 </header>
 
                 <dl className="org-facts">
+                  {/* D-104 item 7 (LAI-999, from LAI-987). */}
+                  <OrgNameFact org={org} canEdit={canEditOrg} onSaved={setOrg} />
+
                   <div className="org-fact">
                     <dt>Presence</dt>
                     <dd>
@@ -376,7 +405,7 @@ export function OrganisationScreen({
                   <div className="org-fact" data-fact="developer-insights">
                     <dt id="org-insights-label">Developer insights</dt>
                     <dd>
-                      {canManage ? (
+                      {canSetInsights ? (
                         <Switch
                           checked={org.developer_insights}
                           labelledBy="org-insights-label"
@@ -408,12 +437,12 @@ export function OrganisationScreen({
                   {/* D-088 (LAI-787): the organisation's half of time — off, typed
                       entries only, or drafts too. Controls for an owner or admin, a
                       word for everyone else, as Developer insights above. */}
-                  <TimeModeFact canManage={canManage} />
+                  <TimeModeFact canManage={canSetTime} />
 
                   {/* D-101 (LAI-956): the organisation's breaks, drawn on every
                       person's My day. Editable by whoever sets Time; read by
                       everyone else, and absent when there are none. */}
-                  <BreakScheduleFact canManage={canManage} />
+                  <BreakScheduleFact canManage={canSetTime} />
                 </dl>
               </section>
             )}
@@ -432,8 +461,11 @@ export function OrganisationScreen({
               invites={state.invites}
               invitesError={state.invitesError}
               capacity={state.capacity}
-              canManage={canManage}
+              canInvite={canInvite}
+              canDeactivate={canDeactivate}
+              canListTokens={canListTokens}
               canChangeRoles={canChangeRoles}
+              projects={projects.projects}
               changing={changing}
               roleError={roleError}
               onChange={change}
@@ -447,10 +479,42 @@ export function OrganisationScreen({
               }}
               onReload={reload}
             />
+            {canChangeRoles && (org?.extra_owners ?? []).length > 0 && (
+              <ExtraOwners
+                owners={org?.extra_owners ?? []}
+                onMakeAdmin={(id) => change(id, { org_role: 'admin' })}
+              />
+            )}
+            {/* Served to the owner alone, so its presence is the gate (LAI-181). */}
+            {(org?.owner_invites_pending ?? []).length > 0 && (
+              <OwnerInvites
+                invites={org?.owner_invites_pending ?? []}
+                onRevoke={(id) =>
+                  revokeInvite(id).then(() => {
+                    setOrg((current) =>
+                      current?.owner_invites_pending === undefined
+                        ? current
+                        : {
+                            ...current,
+                            owner_invites_pending: current.owner_invites_pending.filter(
+                              (invite) => invite.id !== id,
+                            ),
+                          },
+                    );
+                    reload();
+                  })
+                }
+              />
+            )}
+
+            {/* D-104 item 2: the owner's, by role, not a grant. */}
+            {canChangeRoles && <TransferOwnership me={me} people={state.people} />}
+
             {invite !== undefined && (
               <InviteDialog
                 orgName={org?.name ?? 'this organisation'}
                 roles={invitableRoles(me.org_role)}
+                projects={projects.projects.filter((p) => p.archived_at === null)}
                 initialText={invite.text}
                 onClose={() => {
                   setInvite(undefined);
@@ -558,7 +622,7 @@ export function OrganisationScreen({
             />
           ))}
 
-        {tab === 'security' && canManage && (
+        {tab === 'security' && canListTokens && (
           <section className="org-card" aria-labelledby="org-security">
             <header className="org-card-head">
               <h2 id="org-security">Tokens by person</h2>
@@ -658,9 +722,13 @@ export function OrganisationScreen({
                                 key={token.id}
                                 token={token}
                                 now={now}
-                                onRevoke={(revoked) => {
-                                  revoke(person, revoked);
-                                }}
+                                onRevoke={
+                                  canRevokeTokens
+                                    ? (revoked) => {
+                                        revoke(person, revoked);
+                                      }
+                                    : undefined
+                                }
                               />
                             ))}
                           </ul>

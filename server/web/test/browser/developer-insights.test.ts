@@ -14,10 +14,12 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import {
   closeBrowser,
+  everSeen,
   open,
   reply,
   setTheme,
   until,
+  watchFor,
   type ApiStub,
   type StubCall,
 } from './harness.ts';
@@ -46,6 +48,20 @@ const org = (developer_insights: boolean) => ({
   developer_insights,
   created_at: 1,
   updated_at: 2,
+});
+
+const permissions = (org_role: string, actions: readonly string[]) => ({
+  org_roles: [],
+  project_roles: [],
+  permissions: [],
+  me: {
+    org_role,
+    credential: 'session',
+    project_scope: 'all',
+    implicit_project_role: null,
+    actions,
+    projects: [],
+  },
 });
 
 void after(async () => {
@@ -112,6 +128,31 @@ void describe('Organisation: Developer insights', () => {
       await h.close();
     }
   });
+
+  void test('the editor follows the live grant for admin, member and owner', async () => {
+    for (const [role, actions, editable] of [
+      ['admin', [], false],
+      ['member', ['org.developer_insights.set'], true],
+      ['owner', ['org.developer_insights.set'], true],
+    ] as const) {
+      const h = await open('/organisation', {
+        '/api/v1/me': me(role),
+        '/api/v1/permissions': permissions(role, actions),
+        '/api/v1/projects': { data: [], next_cursor: null },
+        '/api/v1/users': { data: [user('u1', 'Ada Lovelace', role)], next_cursor: null },
+        '/api/v1/invites': { data: [], next_cursor: null },
+        '/api/v1/org': org(true),
+      });
+      try {
+        const fact = h.page.locator('[data-fact="developer-insights"]');
+        await fact.waitFor({ timeout: 20_000 });
+        await until(async () => (await fact.getByRole('switch').count()) === (editable ? 1 : 0));
+        assert.equal(await fact.getByRole('switch').count(), editable ? 1 : 0);
+      } finally {
+        await h.close();
+      }
+    }
+  });
 });
 
 const HELD = {
@@ -151,16 +192,24 @@ const COLLECTS =
 const NOTICE = `${COLLECTS} The owner and admins can see it, and you can see who looked.`;
 
 /** `GET /api/v1/org/permissions` (LAI-958), the capability that decides the audience. */
-const orgPermissions = (analytics: Readonly<Record<string, boolean>>) => ({
+const orgPermissions = (
+  analytics: Readonly<Record<string, boolean>>,
+  settings: Readonly<Record<string, boolean>> = { admin: true },
+) => ({
   roles: ['admin', 'member', 'viewer'],
   capabilities: [
     { id: 'see_people_analytics', label: 'See everyone’s analytics', actions: [] },
     { id: 'manage_people', label: 'Manage people', actions: [] },
+    { id: 'change_org_settings', label: 'Change organisation settings', actions: [] },
   ],
   grants: Object.fromEntries(
     ['admin', 'member', 'viewer'].map((role) => [
       role,
-      { see_people_analytics: analytics[role] ?? false, manage_people: role === 'admin' },
+      {
+        see_people_analytics: analytics[role] ?? false,
+        manage_people: role === 'admin',
+        change_org_settings: settings[role] ?? false,
+      },
     ]),
   ),
   owner_locked: [],
@@ -175,9 +224,16 @@ function connect(
   held: { value: unknown },
   role = 'owner',
   analytics: Readonly<Record<string, boolean>> | null = DEFAULT_GRANTS,
+  settings: Readonly<Record<string, boolean>> = { admin: true },
+  actions: readonly string[] = role === 'owner' || role === 'admin'
+    ? ['org.developer_insights.set', 'user.invite']
+    : [],
 ): ApiStub {
   return {
-    ...(analytics === null ? {} : { '/api/v1/org/permissions': orgPermissions(analytics) }),
+    ...(analytics === null
+      ? {}
+      : { '/api/v1/org/permissions': orgPermissions(analytics, settings) }),
+    '/api/v1/permissions': permissions(role, actions),
     '/api/v1/me': me(role),
     '/api/v1/projects': { data: [], next_cursor: null },
     '/api/v1/tokens': { data: [], next_cursor: null },
@@ -217,7 +273,7 @@ void describe('Developer access: Share local activity', () => {
   for (const [role, guidance] of [
     ['owner', 'You can turn them on in Organisation.'],
     ['admin', 'You can turn them on in Organisation.'],
-    ['member', 'An owner or admin can turn them on.'],
+    ['member', 'Only the owner and admins can turn them on.'],
   ] as const) {
     void test(`${role}: explains who can enable organisation insights`, async () => {
       const h = await open(
@@ -246,7 +302,7 @@ void describe('Developer access: Share local activity', () => {
   for (const [role, guidance, organisationLink] of [
     ['owner', 'You can turn Developer insights off in Organisation.', 1],
     ['admin', 'You can turn Developer insights off in Organisation.', 1],
-    ['member', 'Only an owner or admin can turn it off.', 0],
+    ['member', 'Only the owner and admins can turn it off.', 0],
   ] as const) {
     void test(`${role}: with organisation insights on, is told plainly — no switch of their own (D-102)`, async () => {
       // `enabled: false` is what this person last chose under D-079; it no longer decides anything.
@@ -378,6 +434,49 @@ void describe('Share local activity: who can see it follows the owner’s grants
       }
     });
   }
+
+  void test('turn-off guidance follows withdrawn and granted change-org-settings permissions', async () => {
+    for (const [role, settings, actions, guidance, linked] of [
+      ['admin', { admin: false }, [], 'Only the owner can turn it off.', false],
+      [
+        'member',
+        { member: true },
+        ['org.developer_insights.set'],
+        'You can turn Developer insights off in Organisation.',
+        true,
+      ],
+      [
+        'owner',
+        { admin: false },
+        ['org.developer_insights.set'],
+        'You can turn Developer insights off in Organisation.',
+        true,
+      ],
+    ] as const) {
+      const h = await open(
+        '/developer',
+        connect(
+          { org: true, enabled: true, scope: 'agent-repos' },
+          { value: HELD },
+          role,
+          DEFAULT_GRANTS,
+          settings,
+          actions,
+        ),
+      );
+      try {
+        const notice = h.page.locator('.dev-sharing [data-state="org-collects"]');
+        await notice.waitFor({ timeout: 20_000 });
+        assert.match(await notice.innerText(), new RegExp(guidance.replace(/[.]/g, '\\.'), 'i'));
+        assert.equal(
+          await notice.locator('a[href="/organisation?tab=overview"]').count(),
+          linked ? 1 : 0,
+        );
+      } finally {
+        await h.close();
+      }
+    }
+  });
 });
 
 void describe('Connect: Share local activity', () => {
@@ -563,4 +662,60 @@ void describe('Connect: Share local activity', () => {
       await h.close();
     }
   });
+});
+
+/**
+ * Connect and Developer access draw the same Share local activity, and must
+ * ask it the same question (LAI-970): Connect passed `user.invite` where
+ * Developer access asked `org.developer_insights.set`, so an admin who kept
+ * people and lost settings was offered the Organisation link on one page and
+ * not the other.
+ */
+void describe('Connect and Developer access agree on who may turn insights on', () => {
+  const LINK = 'a[href="/organisation?tab=overview"]';
+  for (const [who, role, actions, linked] of [
+    [
+      'an admin who keeps people and loses settings',
+      'admin',
+      ['user.invite', 'user.deactivate'],
+      false,
+    ],
+    [
+      'a member granted settings only',
+      'member',
+      ['org.developer_insights.set', 'org.time.set'],
+      true,
+    ],
+  ] as const) {
+    void test(who, async () => {
+      const state = { org: false, enabled: false, scope: 'agent-repos' };
+      const counts: number[] = [];
+      for (const path of ['/developer', '/developer/connect']) {
+        const h = await open(
+          path,
+          connect(state, { value: NOTHING }, role, DEFAULT_GRANTS, { admin: true }, actions),
+          { before: (page) => watchFor(page, [`.share-activity ${LINK}`]) },
+        );
+        try {
+          if (path === '/developer/connect') {
+            await h.page.locator('.conn-rail-extra', { hasText: 'Share local activity' }).click();
+          }
+          const panel = h.page.locator('.share-activity');
+          await panel.locator('[data-state="org-off"]').waitFor({ timeout: 20_000 });
+          await until(() => h.calls.some((c) => c.path === '/api/v1/permissions'));
+          if (linked) await panel.locator(LINK).waitFor({ timeout: 10_000 });
+          else await new Promise((resolve) => setTimeout(resolve, 600));
+          counts.push(await panel.locator(LINK).count());
+          assert.equal(
+            await everSeen(h.page, `.share-activity ${LINK}`),
+            linked,
+            `${path} ${linked ? 'never offered' : 'offered'} the Organisation link`,
+          );
+        } finally {
+          await h.close();
+        }
+      }
+      assert.deepEqual(counts, linked ? [1, 1] : [0, 0], 'the two pages disagree');
+    });
+  }
 });

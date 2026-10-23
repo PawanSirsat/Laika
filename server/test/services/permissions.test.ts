@@ -109,6 +109,10 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'user.set_role': 'YNNN',
   'org.permissions.manage': 'YNNN',
   'user.deactivate': 'YYNN',
+  // LAI-981: anyone signs themselves out; somebody else is the deactivate grant's.
+  'user.sign_out': 'YYCC',
+  // LAI-983: an admin issues a link for anybody but the owner.
+  'user.reset_password': 'YCNN',
   'org.read': 'YYYY',
   'presence.read': 'YYYY',
   'capacity.read': 'YYYY',
@@ -156,6 +160,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'project.settings.edit': 'YNN',
   'sprint.manage': 'YNN',
   'task.assign_sprint': 'YYN',
+  'task.create': 'YYN',
   'task.write': 'YYN',
   'task.claim': 'YYN',
   'task.assign_other': 'YYN',
@@ -169,6 +174,7 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'meeting_proposal.apply': 'YYN',
   'usage.read_project': 'YYY',
   'budget.set': 'YNN',
+  'project.leave': 'YYY',
 };
 
 const LETTER = { yes: 'Y', no: 'N', conditional: 'C' } as const;
@@ -371,8 +377,11 @@ describe('the catalogue follows the organisation’s grants', () => {
     expect(cells(view, 'audit_log.export')).toBe('YNNN');
     expect(cells(view, 'user.invite')).toBe('YNNN');
     expect(cells(view, 'org.time.set')).toBe('YNNN');
+    // Grantable since LAI-985: *Create and archive spaces*, *Manage anyone's tokens*.
+    expect(cells(view, 'project.create')).toBe('YNNN');
+    expect(cells(view, 'token.revoke_any')).toBe('YNNN');
     // Not a capability's, so not the grant's to withdraw.
-    expect(cells(view, 'project.create')).toBe('YYNN');
+    expect(cells(view, 'webhook.configure')).toBe('YYNN');
   });
 
   it('changes the caller’s own actions with their role’s grant', () => {

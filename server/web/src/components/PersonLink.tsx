@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { holdsPeopleAnalytics, useOrgActions } from '../api/people-analytics.ts';
+import { PEOPLE_ANALYTICS } from '../api/people-analytics.ts';
+import { useGates } from '../api/permissions.ts';
 import { profileHref } from '../api/profiles.ts';
 import { useShell } from './shell/shell-context.ts';
 
@@ -23,7 +24,7 @@ export interface PersonLinkProps {
  *
  * **A link only for a reader who holds *See everyone's analytics*** — the
  * owner, and whichever roles the owner granted it (D-102 rule 6), by
- * `GET /permissions` rather than by role (`holdsPeopleAnalytics`). Everyone
+ * `GET /permissions` rather than by role (`useGates`, LAI-970). Everyone
  * else gets the name as plain text: absent, not disabled, as the rest of the
  * app treats what `can()` refuses (LAI-082). The server refuses them
  * regardless.
@@ -39,8 +40,8 @@ export function PersonLink({
   onlyLink = false,
 }: PersonLinkProps) {
   const { me, route } = useShell();
-  const { actions } = useOrgActions(me !== undefined);
-  if (!holdsPeopleAnalytics(actions, me?.org_role)) return onlyLink ? null : <>{children}</>;
+  const { org } = useGates(me !== undefined);
+  if (!org(PEOPLE_ANALYTICS)) return onlyLink ? null : <>{children}</>;
 
   const href = profileHref(userId);
   return (
