@@ -5818,3 +5818,44 @@ re-issue/copy, invite expiry and space, org rename, grant-following gates).
    D-104 owner rules) is kept.
 3. **Gates follow the server's permissions** (LAI-970), never the org role,
    except D-104 item 2's owner-only role picker and transfer.
+
+## D-108 — A typed entry says what it was: a kind, a title, a description; a range is dragged on the Timeline; the block wears the kind's colour (LAI-897)
+
+**Date:** 2026-10-23 · **By:** CHIEF (Belka), on the owner's instruction
+
+The owner, 2026-10-23: *"one feature where I don't need a card: we can also
+manually, in the timeline, by selecting the time, add [an entry]; also we
+can add the title and description for those we don't have a card; also we
+can add the card in that if we want. Also we need the type, like meetings
+and other types, and depending on that the timeline card colour and theme
+change."* Asked, the owner chose eight types and the form beside the
+Timeline.
+
+1. **Eight kinds**, one list on the server (`TIME_ENTRY_KINDS`) mirrored by
+   the web and held equal by a test: `meeting`, `call`, `review`,
+   `planning`, `learning`, `support`, `admin`, `other`. A block on the
+   Timeline is coloured by its kind, in both themes, from tokens named for
+   the kind. A kind is never inferred: a confirmed draft, an import and an
+   entry nobody typed a kind for carry `null` and keep today's look.
+2. **A title and a description** are the person's own words for an entry,
+   120 and 2000 characters; `note` stays as it is, so nothing already
+   written moves. With no card the title stands where the key would be and
+   the description under it; with a card the key stays on top and the
+   colour follows the kind. The web asks for a title only when there is no
+   card; the server does not require one, so the CLI and older bodies still
+   work.
+3. **A drag on an empty stretch of the You row makes a range**, snapped to
+   five minutes and clipped to the free stretch between confirmed blocks
+   (the same bound an edge drag has); a drag that starts on a confirmed
+   block makes nothing. The server's `409 overlaps_confirmed` remains the
+   backstop and is shown as the server said it. A range is never time until
+   the person adds the entry.
+4. **The form opens beside the Timeline**, in the editor panel, with the
+   range in view; a gap's *Add time here* opens the same form. The Add time
+   form under the list carries the same fields.
+5. **Solidtime gets the title, else the note**, for an entry with no card;
+   a card's entry stays `KEY title`. The kind is not sent: Solidtime has no
+   field for it.
+6. **Revisions copy all three**, and a confirmed draft re-confirmed or a
+   Solidtime pull leaves them as they are: those paths never owned them.
+
