@@ -832,7 +832,7 @@ export function Inspector({
                 </label>
                 <div className="inspector-row">
                   <button type="submit" className="myday-chip" disabled={busy || unchanged}>
-                    Save note
+                    Save
                   </button>
                 </div>
               </form>
