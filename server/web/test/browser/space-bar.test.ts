@@ -453,8 +453,10 @@ void describe('the bar does not draw filters a view already owns', () => {
 
   void test('a view with no toolbar keeps the bar’s own filters', async () => {
     // The regression the obvious fix would have caused: deleting the four from
-    // `SpaceTopBar` strips filtering from the Calendar, which has nowhere else
-    // to put it. Measured on the timeline until LAI-725 hid them there.
+    // `SpaceTopBar` takes the filter controls off the Calendar, which has no
+    // toolbar of its own. What is asserted is that the controls are drawn
+    // there — not what the Calendar does with them. Measured on the timeline
+    // until LAI-725 hid them there.
     const h = await open('/calendar?project=laika-core', STUB);
     try {
       await h.page.locator('.space-bar').waitFor({ timeout: 20_000 });
@@ -478,9 +480,10 @@ void describe('the bar does not draw filters a view already owns', () => {
   /*
    * **The Timeline reads none of the bar's filters, so the bar shows none
    * there** (LAI-725). It lists a sprint's tasks only when that sprint is
-   * opened (LAI-721, D-074), and that request names the sprint and nothing
-   * else — Search, Priority, Tag, Assignee and Ready-only sat above it writing
-   * URL params nothing read. Same shape as the dashboard (LAI-711).
+   * opened (LAI-721, D-074); Search, Priority, Tag, Assignee and Ready-only
+   * sat above it writing URL params nothing read. Same shape as the dashboard
+   * (LAI-711). This test reads the DOM only — `timeline-sprints.test.ts`
+   * asserts what the opened sprint's request carries.
    *
    * Read only once the bar has named the space, so a zero is a hidden control
    * and not a bar that has not rendered yet.

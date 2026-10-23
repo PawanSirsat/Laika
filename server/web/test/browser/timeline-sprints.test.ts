@@ -309,17 +309,17 @@ void describe('the Timeline is one row per sprint (LAI-721)', () => {
   });
 
   /*
-   * **A bar filter in the URL reaches no request** (LAI-725). The Timeline
-   * reads `project`, `zoom` and `sprint`; `q`, `priority`, `tag`, `assignee`
-   * and `ready` are the space bar's, and the Timeline hides those controls
-   * because it never read them. The guard that it stays that way: arrive with
-   * every one of them set, open a sprint, and the one task request still names
-   * the sprint and nothing else. (The query-keyed stub would refuse a request
-   * carrying more, which is the second net under the same property.)
+   * **A bar filter in the URL reaches no task request** (LAI-725). The
+   * Timeline reads `project`, `zoom` and `sprint`; `q`, `priority`, `tag`,
+   * `assignee` and `ready` are the space bar's, and the Timeline hides those
+   * controls because it never read them. The guard that it stays that way:
+   * arrive with all five set, open a sprint, and every task request the page
+   * makes names `sprint=s2` and carries none of the five. What else the
+   * request carries — `fields`, `limit` — is the client's and is not asserted.
    */
   void test('the bar’s filters in the URL change no task request', async () => {
     const h = await open(
-      '/timeline?project=laika-core&q=up&priority=p1&tag=infra&assignee=u1&ready=1',
+      '/timeline?project=laika-core&q=up&priority=p1&tag=infra&assignee=u1&ready=true',
       STUB,
     );
     const asked = taskRequests(h);
