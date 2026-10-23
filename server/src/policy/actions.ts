@@ -194,7 +194,7 @@ export function isReadAction(action: Action): boolean {
  * never needs an entry here — it is refused to every token before this list
  * is reached.
  *
- * **Three reads are deliberately not here.** `audit_log.export` and
+ * **Three actions are deliberately not here.** `audit_log.export` and
  * `usage.read_org` are org-wide — the whole organisation's history and
  * figures, the opposite of a pin — and `project.join_public` changes a
  * membership outside the pin. A pinned token reads its projects' usage with
