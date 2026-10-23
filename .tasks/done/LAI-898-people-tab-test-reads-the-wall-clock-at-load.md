@@ -6,9 +6,10 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-897
-status: review
+status: done
 started: 2026-10-23T10:45:20Z
 finished: 2026-10-23T10:50:33Z
+accepted: 2026-10-23T10:50:36Z
 ---
 
 ## Goal
