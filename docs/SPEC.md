@@ -2389,6 +2389,15 @@ Token scope narrows afterwards: `read_only` permits every `GET` the user's role
 allows and nothing else; `project_ids_json`, when set, restricts the token to
 those projects. A Viewer's token can never write, whatever its scope says.
 
+**A token pinned to projects is refused org-wide admin actions** (audit H4).
+When `project_ids_json` is set, the token keeps only the org-level reads every
+member has and its own-record actions (its own tokens, heartbeats, unlisted
+work, activity sharing, time settings and drafts); every other org-scoped
+action — settings, projects, invites, members, other people's tokens,
+org-wide history and usage — is refused, whatever the user's role. The pin
+narrows, exactly as §3.3 says a token only ever can; a project-scoped
+credential is not an org credential with a project filter.
+
 ### 6.3 Conventions
 
 - **Pagination**: `?limit=` (default 50, max 200) and `?cursor=` (opaque,
