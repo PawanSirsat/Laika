@@ -24,10 +24,19 @@
  * **The keyboard path is keyboard alone** — focus and `Alt+Arrow`, no drag
  * events at all (D-060.6).
  *
+ * **The stream is the harness's fake, driven by hand** (LAI-707's
+ * `fakeStream`). The frames below are emitted by the test, shaped as
+ * `eventView` ships them — the event named by its §4.8 type, the activity row
+ * as data, no task body — so what they prove is what the **client** does with
+ * a `task.updated` frame about a reorder: a second viewer redraws without a
+ * reload, and a viewer mid-drop is not fought by one.
+ *
  * ## What it does not prove
  *
- * The real server's key arithmetic — LAI-472 has its own tests — and the SSE
- * path a second viewer sees, which needs a stream this harness does not serve.
+ * The real server's key arithmetic — LAI-472 has its own tests — and that the
+ * server **sends** that frame: `server/test/services/tasks.test.ts` proves the
+ * `task.updated` row a reorder writes, and `events.test.ts` the wire shape of a
+ * row and who it reaches. Nothing here opens a real `EventSource`.
  */
 
 import assert from 'node:assert/strict';
@@ -35,6 +44,7 @@ import { after, describe, test } from 'node:test';
 import {
   applyStatusWrite,
   closeBrowser,
+  fakeStream,
   open,
   refuse,
   setTheme,
@@ -312,6 +322,86 @@ async function pickUp(h: Harness, from: string, to: string, half: 'upper' | 'low
 
 async function drop(h: Harness): Promise<void> {
   await h.page.mouse.up();
+}
+
+/** How many times the page has read `path` — the board's list, or `/me`. */
+const reads = (h: Harness, path: string): number =>
+  h.calls.filter((c) => c.method === 'GET' && c.path === path).length;
+
+const TASK_LIST = '/api/v1/projects/laika-core/tasks';
+
+/**
+ * Hold every request matching `glob` in the browser until the returned
+ * release is called. Held requests never reach the stub, so `writes()` stays
+ * at zero while the hold is on — which is what makes "before the answer" a
+ * fact and not a race.
+ */
+async function hold(h: Harness, glob: string): Promise<() => void> {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await h.page.route(glob, async (route) => {
+    await held;
+    await route.continue();
+  });
+  return release;
+}
+
+/** A page marked by a test, to tell a redraw from a reload. */
+type Marked = Window & { __t3?: Element | null; __viewer?: boolean };
+
+/**
+ * A live frame as `/api/v1/events` sends one: the event is named by its §4.8
+ * type and the data is the activity row — `eventView`, with the payload the
+ * service wrote and **no task body**. A reorder's is `task.updated` with
+ * `{ field: 'position', from, to }` (D-060.4); the client reads nothing from
+ * the payload and re-walks the list instead.
+ */
+async function frame(
+  h: Harness,
+  type: string,
+  taskId: string,
+  payload: Record<string, unknown>,
+  seq: number,
+): Promise<void> {
+  await h.page.evaluate(
+    (f) => {
+      (
+        window as unknown as {
+          __laikaStream: { emit: (type: string, data: unknown, id: string) => void };
+        }
+      ).__laikaStream.emit(
+        f.type,
+        {
+          id: `e${String(f.seq)}`,
+          seq: f.seq,
+          type: f.type,
+          project_id: 'p1',
+          task_id: f.taskId,
+          actor_id: 'u2',
+          actor_kind: 'user',
+          actor_token_id: null,
+          payload: f.payload,
+          created_at: Date.now(),
+        },
+        String(f.seq),
+      );
+    },
+    { type, taskId, payload, seq },
+  );
+}
+
+/**
+ * Wait for the re-walk a frame causes — past the store's 300 ms debounce and
+ * the read it then makes — and assert it was **one** read, no more: a frame
+ * that caused none proves nothing, and one that caused two is a loop.
+ */
+async function reWalked(h: Harness, listsBefore: number): Promise<void> {
+  await until(() => reads(h, TASK_LIST) > listsBefore);
+  // Long enough for a second debounce to have fired, had one been set.
+  await h.page.waitForTimeout(400);
+  assert.equal(reads(h, TASK_LIST), listsBefore + 1, 'the frame did not cause exactly one re-read');
 }
 
 void after(async () => {
@@ -619,6 +709,226 @@ void describe('the drop line in both themes (CLAUDE.md §5.1)', () => {
       assert.deepEqual(writes(h), [], 'a no-op drop sent a write');
     } finally {
       await h.close();
+    }
+  });
+});
+
+void describe('the move reconciles with the stream (LAI-473)', () => {
+  void test('an echo arriving before the answer does not snap the card back', async () => {
+    const w = world();
+    const h = await open('/board?project=laika-core', w.stub, { before: fakeStream });
+    let release: () => void = () => undefined;
+    try {
+      await ready(h);
+      assert.deepEqual(await order(h, LANE.todo), ['t1', 't2', 't3']);
+      await h.page.evaluate(() => {
+        (window as Marked).__t3 = document.querySelector('article.card[data-task-id="t3"]');
+      });
+      release = await hold(h, '**/api/v1/tasks/*/reorder');
+
+      await pickUp(h, 't3', 't2', 'upper');
+      await drop(h);
+      await until(async () => (await order(h, LANE.todo)).join() === 't1,t3,t2');
+      assert.equal(writes(h).length, 0, 'the request was not held — this proves nothing');
+
+      // The server's echo of this very move, as another tab would hear it —
+      // arriving while the answer is still on its way. The stub has not been
+      // asked yet, so the re-walk it causes reads the lane **as it was**.
+      const listsBefore = reads(h, TASK_LIST);
+      await frame(h, 'task.updated', 't3', { field: 'position', from: key(3), to: key(1.5) }, 1);
+      await reWalked(h, listsBefore);
+      assert.equal(
+        writes(h).length,
+        0,
+        'the answer arrived before the re-read — this proves nothing',
+      );
+      assert.deepEqual(
+        await order(h, LANE.todo),
+        ['t1', 't3', 't2'],
+        'a re-read older than the drop snapped the card back',
+      );
+
+      release();
+      await settled(h, 1);
+      assert.deepEqual(await order(h, LANE.todo), ['t1', 't3', 't2'], 'the answer moved it again');
+      assert.deepEqual(writes(h), [
+        { path: '/api/v1/tasks/t3/reorder', body: { after_task_id: 't1', before_task_id: 't2' } },
+      ]);
+      const same = await h.page.evaluate(() => {
+        const marked = window as Marked;
+        return (
+          marked.__t3?.isConnected === true &&
+          marked.__t3 === document.querySelector('article.card[data-task-id="t3"]')
+        );
+      });
+      assert.equal(same, true, 'the card was rebuilt rather than moved');
+    } finally {
+      release();
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('a frame about another card, mid cross-lane drop, does not pull the card back', async () => {
+    /*
+     * The same-lane case above never changes a task body before the answer —
+     * the drop is drawn from `placing` — so a re-read that ignored the write
+     * in flight would still read right. A cross-lane drop **does**: the card
+     * is in its new lane locally and its old one on the server until the
+     * status lands, and that is the state a re-read has to leave alone.
+     */
+    const w = world();
+    const h = await open('/board?project=laika-core', w.stub, { before: fakeStream });
+    let release: () => void = () => undefined;
+    try {
+      await ready(h);
+      release = await hold(h, '**/api/v1/tasks/*/status');
+
+      await pickUp(h, 't1', 't5', 'upper');
+      await drop(h);
+      await until(async () => (await order(h, LANE.doing)).join() === 't4,t1,t5');
+      assert.equal(writes(h).length, 0, 'the request was not held — this proves nothing');
+
+      // Another viewer renames LAI-2; the server tells everyone.
+      const t2 = w.tasks.find((t) => t.id === 't2')!;
+      t2.title = 'Task two';
+      const listsBefore = reads(h, TASK_LIST);
+      await frame(h, 'task.updated', 't2', { field: 'title', from: 'Task 2', to: 'Task two' }, 2);
+      await reWalked(h, listsBefore);
+      assert.equal(
+        writes(h).length,
+        0,
+        'the answer arrived before the re-read — this proves nothing',
+      );
+      // The re-read was applied — the rename shows — and the drop survived it.
+      assert.equal(await cardAt(h, 't2').locator('.card-title').innerText(), 'Task two');
+      assert.deepEqual(
+        await order(h, LANE.doing),
+        ['t4', 't1', 't5'],
+        'the re-read pulled the card back to its old lane',
+      );
+      assert.deepEqual(await order(h, LANE.todo), ['t2', 't3']);
+
+      release();
+      await settled(h, 2);
+      assert.deepEqual(await order(h, LANE.doing), ['t4', 't1', 't5'], 'the answer moved it again');
+      assert.deepEqual(writes(h), [
+        { path: '/api/v1/tasks/t1/status', body: { status_id: 'st-in_progress' } },
+        { path: '/api/v1/tasks/t1/reorder', body: { after_task_id: 't4', before_task_id: 't5' } },
+      ]);
+    } finally {
+      release();
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test("another viewer's change during the drop lands beside the dropped card", async () => {
+    /*
+     * The other viewer moves LAI-5 into To do, at the end — not LAI-1 or
+     * LAI-2, which are the drop's neighbours: a neighbour that leaves the lane
+     * makes the held reorder stale, and the server (and the stub) answers
+     * `409` to that, which is the rollback test above and not this one.
+     */
+    const w = world();
+    const h = await open('/board?project=laika-core', w.stub, { before: fakeStream });
+    let release: () => void = () => undefined;
+    try {
+      await ready(h);
+      release = await hold(h, '**/api/v1/tasks/*/reorder');
+
+      await pickUp(h, 't3', 't2', 'upper');
+      await drop(h);
+      await until(async () => (await order(h, LANE.todo)).join() === 't1,t3,t2');
+      assert.equal(writes(h).length, 0, 'the request was not held — this proves nothing');
+
+      const t5 = w.tasks.find((t) => t.id === 't5')!;
+      applyStatusWrite(t5, { status_id: 'st-todo' }, STATUSES);
+      t5.position = key(4);
+      const listsBefore = reads(h, TASK_LIST);
+      await frame(h, 'task.status_changed', 't5', { from: 'in_progress', to: 'todo' }, 3);
+      await reWalked(h, listsBefore);
+      assert.equal(
+        writes(h).length,
+        0,
+        'the answer arrived before the re-read — this proves nothing',
+      );
+      assert.deepEqual(
+        await order(h, LANE.todo),
+        ['t1', 't3', 't2', 't5'],
+        "the other viewer's card is not beside the dropped one",
+      );
+      assert.deepEqual(await order(h, LANE.doing), ['t4']);
+
+      release();
+      await settled(h, 1);
+      assert.deepEqual(
+        await order(h, LANE.todo),
+        ['t1', 't3', 't2', 't5'],
+        'the answer moved it again',
+      );
+      assert.deepEqual(writes(h), [
+        { path: '/api/v1/tasks/t3/reorder', body: { after_task_id: 't1', before_task_id: 't2' } },
+      ]);
+    } finally {
+      release();
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+});
+
+void describe('a second viewer sees the reorder over SSE (LAI-473)', () => {
+  void test('redraws the lane on the frame, without a reload', async () => {
+    // One world, two browsers: each `open` runs its own stub server over the
+    // same task list, so what A writes is what B's next read returns.
+    const w = world();
+    const a = await open('/board?project=laika-core', w.stub, { before: fakeStream });
+    const b = await open('/board?project=laika-core', w.stub, { before: fakeStream });
+    try {
+      await ready(a);
+      await ready(b);
+      assert.deepEqual(await order(b, LANE.todo), ['t1', 't2', 't3']);
+      await b.page.evaluate(() => {
+        (window as Marked).__viewer = true;
+      });
+      const meBefore = reads(b, '/api/v1/me');
+
+      await pickUp(a, 't3', 't2', 'upper');
+      await drop(a);
+      await settled(a, 1);
+      assert.deepEqual(await order(a, LANE.todo), ['t1', 't3', 't2']);
+      // Nothing has told B yet — the stub is not a stream — so the frame below
+      // is the only thing that can move its lane.
+      assert.deepEqual(
+        await order(b, LANE.todo),
+        ['t1', 't2', 't3'],
+        'the second viewer moved before any frame — this proves nothing',
+      );
+
+      const moved = w.tasks.find((t) => t.id === 't3')!;
+      await frame(
+        b,
+        'task.updated',
+        't3',
+        { field: 'position', from: key(3), to: moved.position },
+        4,
+      );
+      await until(async () => (await order(b, LANE.todo)).join() === 't1,t3,t2');
+      assert.deepEqual(
+        await order(b, LANE.todo),
+        ['t1', 't3', 't2'],
+        'the second viewer did not see the reorder',
+      );
+      assert.equal(reads(b, '/api/v1/me'), meBefore, 'the second viewer reloaded');
+      assert.equal(
+        await b.page.evaluate(() => (window as Marked).__viewer === true),
+        true,
+        'the page was reloaded',
+      );
+    } finally {
+      await b.close();
+      await a.close();
     }
   });
 });
