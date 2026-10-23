@@ -2440,7 +2440,8 @@ credential is not an org credential with a project filter.
 
   **A finer reason travels in `details.reason`, never as a new code** (D-079):
   `session_required` when a token is refused only because §3.1 says *session
-  only*; `local_activity_off`, `day_out_of_range` and `invalid_tz` on a local
+  only*; `project_pinned` when a token pinned to projects is refused an
+  org-wide action it does not keep (§6.2, H4); `local_activity_off`, `day_out_of_range` and `invalid_tz` on a local
   activity report (§6.4); `token_required` on a heartbeat (§9.1);
   `protobuf_not_supported` and `otlp_invalid` on OpenTelemetry metrics
   (LAI-773). The status
