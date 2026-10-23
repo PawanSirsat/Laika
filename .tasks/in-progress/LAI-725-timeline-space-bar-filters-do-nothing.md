@@ -2,11 +2,12 @@
 id: LAI-725
 title: 'Timeline: the space bar''s Priority, tag, Anyone and Ready filters show there and filter nothing'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p3
 depends-on: []
 discovered-from: LAI-721
-status: backlog
+status: in-progress
+started: 2026-10-23T10:00:37Z
 ---
 
 ## Goal
