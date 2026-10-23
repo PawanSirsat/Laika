@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../../src/errors.ts';
 import { type OrgRole, type ProjectRole } from '../../src/db/enums.ts';
-import { ALL_ACTIONS, isReadAction } from '../../src/policy/actions.ts';
+import {
+  ALL_ACTIONS,
+  isReadAction,
+  ORG_ACTIONS,
+  PINNED_TOKEN_ORG_ACTIONS,
+  READ_ACTIONS,
+  SESSION_ONLY_ACTIONS,
+} from '../../src/policy/actions.ts';
 import {
   type Actor,
   assertCan,
@@ -110,11 +117,149 @@ describe('token scope narrows and never widens (SPEC §6.2, §3.3 rule 4)', () =
     expect(can(pinned, 'project.read', { projectId: 'p2' })).toBe(false);
   });
 
-  it('leaves org-scoped actions alone when a token is project-pinned', () => {
-    const pinned = actor('admin', null, { id: 'tok_pinned', scope: 'full', projectIds: ['p1'] });
+  /**
+   * SPEC §6.2 (audit H4): a token pinned to projects is refused org-wide admin
+   * actions, whatever the user's role. Until H4 this file asserted the
+   * opposite — *"leaves org-scoped actions alone when a token is
+   * project-pinned"* — and an Admin's token pinned to one project invited,
+   * created projects and edited the organisation.
+   *
+   * A table over the real `ORG_ACTIONS` export, every entry, for a pinned
+   * Owner and a pinned Admin — and the same actors unpinned, so the refusal is
+   * provably the pin's and not the role's or the token's.
+   */
+  describe('a project-pinned token is refused org-wide admin actions (§6.2, H4)', () => {
+    const pinnedToken: TokenContext = { id: 'tok_pinned', scope: 'full', projectIds: ['p1'] };
+    const unpinnedToken: TokenContext = { id: 'tok_full', scope: 'full', projectIds: null };
+    // A resource every own-record and conditional org row holds against, and
+    // no project — so the org branch is the one under test.
+    const ownAndHolding = {
+      ownerId: 'u1',
+      visibility: 'public' as const,
+      targetOrgRole: 'member' as const,
+      targetUserId: 'u2',
+    };
 
-    expect(can(pinned, 'member_list.read')).toBe(true);
-    expect(can(pinned, 'user.invite')).toBe(true);
+    for (const role of ['owner', 'admin'] as const) {
+      it(`${role}: every ORG_ACTION, pinned against unpinned`, () => {
+        let refusedByThePin = 0;
+
+        for (const action of ORG_ACTIONS) {
+          const session = can(actor(role), action, ownAndHolding);
+          const unpinned = can(actor(role, null, unpinnedToken), action, ownAndHolding);
+          const pinned = can(actor(role, null, pinnedToken), action, ownAndHolding);
+
+          // Today's answer for an unpinned full token: the role's, less §3.1's
+          // session-only cells — unchanged by H4.
+          expect(unpinned, `${role} / ${action} / unpinned`).toBe(
+            session && !SESSION_ONLY_ACTIONS.has(action),
+          );
+          // The pin keeps the allow-list and refuses the rest.
+          expect(pinned, `${role} / ${action} / pinned`).toBe(
+            unpinned && PINNED_TOKEN_ORG_ACTIONS.has(action),
+          );
+
+          if (unpinned && !pinned) refusedByThePin += 1;
+        }
+
+        // Not vacuous: the pin refuses something the same token unpinned may do.
+        expect(refusedByThePin).toBeGreaterThan(0);
+      });
+    }
+
+    it('names the admin actions the audit found: invite, create a project, edit the org', () => {
+      const admin = actor('admin', null, pinnedToken);
+      const unpinnedAdmin = actor('admin', null, unpinnedToken);
+
+      for (const action of ['user.invite', 'project.create', 'org.settings.edit'] as const) {
+        expect(can(unpinnedAdmin, action, ownAndHolding), `${action} unpinned`).toBe(true);
+        expect(can(admin, action, ownAndHolding), `${action} pinned`).toBe(false);
+      }
+      // The decided refusals: org-wide reads, and a membership change outside the pin.
+      for (const action of ['audit_log.export', 'usage.read_org', 'project.join_public'] as const) {
+        expect(can(unpinnedAdmin, action, ownAndHolding), `${action} unpinned`).toBe(true);
+        expect(can(admin, action, ownAndHolding), `${action} pinned`).toBe(false);
+      }
+      // And what it keeps: the every-member read and its own record.
+      expect(can(admin, 'member_list.read')).toBe(true);
+      expect(can(admin, 'token.read_own', { ownerId: 'u1' })).toBe(true);
+    });
+
+    it('is told why: project_pinned, as session_required is said', () => {
+      const admin = actor('admin', null, pinnedToken);
+
+      expect(() => assertCan(admin, 'user.invite', { targetOrgRole: 'member' })).toThrowError(
+        ApiError,
+      );
+      try {
+        assertCan(admin, 'user.invite', { targetOrgRole: 'member' });
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).code).toBe('forbidden');
+        expect((error as ApiError).details).toMatchObject({
+          action: 'user.invite',
+          reason: 'project_pinned',
+        });
+      }
+
+      // The reason is the pin's alone: a pinned `read_only` token refused a
+      // write is refused by its scope, and told no reason.
+      const readOnlyPinned = actor('admin', null, { ...pinnedToken, scope: 'read_only' });
+      try {
+        assertCan(readOnlyPinned, 'user.invite', { targetOrgRole: 'member' });
+        expect.unreachable('should have thrown');
+      } catch (error) {
+        expect((error as ApiError).details).toEqual({ action: 'user.invite' });
+      }
+      // And a Member's pinned token refused `user.invite` is refused by the
+      // role, which the pin did not do.
+      try {
+        assertCan(actor('member', null, pinnedToken), 'user.invite', { targetOrgRole: 'member' });
+        expect.unreachable('should have thrown');
+      } catch (error) {
+        expect((error as ApiError).details).toEqual({ action: 'user.invite' });
+      }
+    });
+
+    it('the allow-list is a strict subset of ORG_ACTIONS holding no write beyond own-record', () => {
+      // Invariant 1 — every entry is an org action, and not all of them are.
+      const org: ReadonlySet<string> = new Set(ORG_ACTIONS);
+      for (const action of PINNED_TOKEN_ORG_ACTIONS) {
+        expect(org.has(action), action).toBe(true);
+      }
+      expect(PINNED_TOKEN_ORG_ACTIONS.size).toBeLessThan(ORG_ACTIONS.length);
+
+      // Invariant 2 — "the org-level reads every member has and its own-record
+      // actions": an entry is either one of §3.1's every-member reads or an
+      // `_own` action. A write that is not the token's own record cannot be
+      // listed, whatever its name.
+      const everyMemberReads: ReadonlySet<string> = new Set([
+        'org.read',
+        'presence.read',
+        'capacity.read',
+        'member_list.read',
+      ]);
+      for (const action of PINNED_TOKEN_ORG_ACTIONS) {
+        const isEveryMemberRead = everyMemberReads.has(action) && READ_ACTIONS.has(action);
+        expect(isEveryMemberRead || action.endsWith('_own'), action).toBe(true);
+        // And every-member means it: a Viewer on a session holds it.
+        if (isEveryMemberRead) expect(can(actor('viewer'), action), action).toBe(true);
+      }
+
+      // Invariant 3 — a session-only action is refused to every token before
+      // this list is reached, so listing one would be a claim nothing enforces.
+      for (const action of PINNED_TOKEN_ORG_ACTIONS) {
+        expect(SESSION_ONLY_ACTIONS.has(action), action).toBe(false);
+      }
+
+      // Invariant 4 — the sentence's other half: every own-record org action a
+      // token may use at all is one a pinned token keeps.
+      for (const action of ORG_ACTIONS) {
+        if (action.endsWith('_own') && !SESSION_ONLY_ACTIONS.has(action)) {
+          expect(PINNED_TOKEN_ORG_ACTIONS.has(action), action).toBe(true);
+        }
+      }
+    });
   });
 
   it('applies scope after the role decision, never instead of it', () => {
