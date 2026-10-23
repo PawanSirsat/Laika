@@ -218,24 +218,25 @@ void describe('search and the faces are in exactly one place per view', () => {
     }
   });
 
-  void test('the timeline keeps them in the bar — it has no row', async () => {
+  void test('the calendar keeps them in the bar — it has no row', async () => {
     // The half that stops the move becoming a deletion: a view with no toolbar
-    // has nowhere else to put them.
-    const h = await open('/timeline?project=laika-core', STUB);
+    // has nowhere else to put them. Measured on the timeline until LAI-725,
+    // which hides them there because the Timeline never read them.
+    const h = await open('/calendar?project=laika-core', STUB);
     try {
       await h.page.setViewportSize({ width: 1600, height: 1000 });
       await h.page.locator('.space-bar-row').waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(500);
 
-      assert.equal(await h.page.locator('.board-bar').count(), 0, 'the timeline grew a board row');
+      assert.equal(await h.page.locator('.board-bar').count(), 0, 'the calendar grew a board row');
 
       await until(async () => {
         const now = await geometry(h.page);
         return now.search === 1 && now.members === 1;
       });
       const g = await geometry(h.page);
-      assert.equal(g.search, 1, 'the timeline lost its search');
-      assert.equal(g.members, 1, 'the timeline lost its assignee filter');
+      assert.equal(g.search, 1, 'the calendar lost its search');
+      assert.equal(g.members, 1, 'the calendar lost its assignee filter');
     } finally {
       await h.close();
     }

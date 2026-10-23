@@ -115,8 +115,10 @@ const FiltersClaimContext = createContext<{
  *
  * **Deleting them from the bar was the wrong fix**, and it is worth writing
  * down: `SpaceLayout` renders the bar for *every* view, and only the board has
- * a toolbar. Timeline, Calendar and Capacity would have lost filtering
- * altogether — the bar is the only place they have.
+ * a toolbar. The Calendar would have lost the filter controls altogether — the
+ * bar is the only place it draws them. (The Timeline claims too, since
+ * LAI-725: it reads none of the bar's filters, so it hides them as the
+ * dashboard does.)
  *
  * **A claim, not a path check.** `SpaceLayout` already branches on
  * `path === '/board'` for the presence strip, and copying that here would say
@@ -135,7 +137,7 @@ export function SpaceFilterClaim({ children }: { readonly children: ReactNode })
 /**
  * Claim the space's filtering for as long as the calling view is mounted.
  *
- * Releases on unmount, so switching from the board to Timeline hands the bar's
+ * Releases on unmount, so switching from the board to Calendar hands the bar's
  * own controls straight back.
  */
 export function useClaimSpaceFilters(): void {
