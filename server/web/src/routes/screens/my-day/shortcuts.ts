@@ -12,7 +12,17 @@
  */
 
 export type Shortcut =
-  'confirm' | 'general' | 'dismiss' | 'next' | 'prev' | 'right' | 'left' | 'help' | 'close';
+  | 'confirm'
+  | 'general'
+  | 'dismiss'
+  | 'next'
+  | 'prev'
+  | 'right'
+  | 'left'
+  | 'help'
+  | 'close'
+  | 'add'
+  | 'timer';
 
 /** What a key event carries that matters here — a real one, or a test's. */
 export interface KeyLike {
@@ -50,6 +60,8 @@ const LETTERS: Readonly<Record<string, Shortcut>> = {
   x: 'dismiss',
   j: 'next',
   k: 'prev',
+  n: 'add',
+  t: 'timer',
 };
 
 export function shortcutFor(event: KeyLike): Shortcut | undefined {
@@ -68,6 +80,8 @@ export function shortcutFor(event: KeyLike): Shortcut | undefined {
 
 /** The sheet's rows, in the order the design's hint row gives them. */
 export const SHORTCUT_SHEET: readonly (readonly [string, string])[] = [
+  ['N', 'Add time'],
+  ['T', 'Start or stop the timer'],
   ['↵', 'Confirm the selected draft'],
   ['G', 'Put it on General'],
   ['X', 'Mark it not work'],

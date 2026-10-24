@@ -86,3 +86,12 @@ void describe('shortcutFor', () => {
     assert.equal(shortcutFor(key('ArrowDown')), undefined);
   });
 });
+
+void describe('the header’s keys (LAI-502)', () => {
+  void test('N adds time and T starts or stops the timer; neither while typing', () => {
+    assert.equal(shortcutFor(key('n')), 'add');
+    assert.equal(shortcutFor(key('T')), 'timer');
+    assert.equal(shortcutFor(key('n', { tagName: 'INPUT', type: 'text' })), undefined);
+    assert.equal(shortcutFor(key('t', { tagName: 'TEXTAREA' })), undefined);
+  });
+});

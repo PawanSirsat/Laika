@@ -149,8 +149,9 @@ const WRITE_CONTROLS = [
   '[data-confirm-day]',
   '.inspector-confirm',
   '.myday-check',
-  '.myday-switch',
-  'form.myday-add',
+  '[data-day-settings]',
+  '[data-add-time]',
+  '[data-timer-start]',
 ];
 
 after(async () => {
@@ -303,6 +304,12 @@ void describe('who looked at my time (D-102 rule 3)', () => {
     const me = { ...GRACE };
     const h = await openAt(`/my-day?day=${TODAY}`, stub(me, ['local_activity.read_own']));
     try {
+      // Who looked is a header button since LAI-502: the eye, with how many looks.
+      const eye = h.page.locator('[data-who-looked] > button');
+      await eye.waitFor({ timeout: 20_000 });
+      await until(async () => (await h.page.locator('[data-looked-count]').count()) === 1);
+      assert.equal(await h.page.locator('[data-looked-count]').innerText(), '2');
+      await eye.click();
       await h.page.locator('[data-looked]').first().waitFor({ timeout: 20_000 });
       const rows = await h.page.locator('[data-looked]').allInnerTexts();
       assert.equal(rows.length, 2);
@@ -329,7 +336,7 @@ void describe('who reads drafts is said on the person’s own day (D-102, LAI-96
         stub({ ...GRACE }, ['local_activity.read_own']),
       );
       try {
-        await h.page.locator('[data-looked]').first().waitFor({ timeout: 20_000 });
+        await h.page.locator('[data-who-looked] > button').waitFor({ timeout: 20_000 });
         await setTheme(h.page, theme);
         const lock = h.page.locator('.screen-page .myday-lock');
         assert.match(await lock.innerText(), /Drafts: you, owners and admins/);
@@ -343,12 +350,10 @@ void describe('who reads drafts is said on the person’s own day (D-102, LAI-96
         const ink = await link.evaluate((el) => getComputedStyle(el).color);
         const ground = await h.page.evaluate(() => getComputedStyle(document.body).backgroundColor);
         assert.notEqual(ink, ground);
+        // The link opens Who looked (LAI-502), where the side card used to be scrolled to.
         await link.click();
+        await h.page.locator('[data-looked]').first().waitFor({ timeout: 20_000 });
         const looked = h.page.locator('[data-who-looked]');
-        await until(async () => {
-          const box = await looked.boundingBox();
-          return box !== null && box.y >= 0 && box.y < 900;
-        });
         const box = await looked.boundingBox();
         assert.ok(box !== null && box.y >= 0 && box.y < 900, `who looked is at ${String(box?.y)}`);
         assert.deepEqual(writes(h), []);
@@ -471,13 +476,14 @@ void describe('both themes, both widths', () => {
           width,
         );
         try {
-          await own.page.locator('[data-looked]').first().waitFor({ timeout: 20_000 });
+          await own.page.locator('[data-who-looked] > button').waitFor({ timeout: 20_000 });
           await setTheme(own.page, theme);
           const overflow = await own.page.evaluate(
             () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
           );
           assert.ok(overflow <= 0, `the page scrolls sideways by ${String(overflow)}px`);
-          await own.page.locator('[data-who-looked]').scrollIntoViewIfNeeded();
+          await own.page.locator('[data-who-looked] > button').click();
+          await own.page.locator('[data-looked]').first().waitFor({ timeout: 20_000 });
           await shoot(own.page, `member-who-looked-${theme}-${String(width)}`);
         } finally {
           await own.close();

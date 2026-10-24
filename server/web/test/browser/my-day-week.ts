@@ -219,6 +219,8 @@ export function viewOf(day: string, data: Map<string, DayData> = weekData()): un
         state: stateOf(d, w),
       };
     }),
+    timer: null,
+    day_note: null,
   };
 }
 

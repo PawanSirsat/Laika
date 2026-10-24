@@ -3656,3 +3656,380 @@ p.inspector-length {
 .myday-add .myday-details {
   margin: 0.25rem 0;
 }
+
+/* ------------------------------------------- the header's controls (LAI-502) */
+
+/* A control with a panel under it: the timer, Day settings, Who looked. */
+.myday-pop {
+  position: relative;
+  display: inline-flex;
+}
+
+.myday-pop-panel {
+  position: absolute;
+  top: calc(100% + 0.375rem);
+  right: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-modal);
+  text-align: left;
+}
+
+.myday-pop-narrow {
+  width: 15rem;
+}
+
+.myday-pop-wide {
+  width: min(21.25rem, calc(100vw - 2rem));
+}
+
+.myday-pop-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.myday-pop-title {
+  font-size: var(--text-body);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.myday-pop-label {
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.myday-pop-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.myday-pop-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.myday-pop-input {
+  min-height: 2.25rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  background: var(--bg-input);
+  font: inherit;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.myday-pop-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.myday-pop-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.myday-pop-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.25rem 0;
+}
+
+.myday-pop-row + .myday-pop-row {
+  border-top: 1px solid var(--border-card);
+  padding-top: 0.75rem;
+}
+
+.myday-pop-column {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.myday-pop-words {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.myday-pop-text {
+  margin: 0;
+  padding: 0 0.125rem;
+}
+
+.myday-pop .myday-switch-bare {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.myday-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.myday-pop .myday-place {
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
+/* The header's buttons: a chip the height of the design's 34px controls. */
+.myday-head-button,
+.myday-head-icon {
+  min-height: 2.125rem;
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+}
+
+.myday-head-icon {
+  width: 2.125rem;
+  padding: 0;
+  justify-content: center;
+}
+
+.myday-kbd-hint {
+  margin-left: 0.125rem;
+  font-size: var(--text-small);
+  line-height: 1;
+  padding: 0.0625rem 0.25rem;
+}
+
+.myday-figure strong {
+  color: var(--text-primary);
+  font-weight: var(--weight-heavy);
+}
+
+/* Who looked: the eye, with how many looks. */
+.myday-looked-button {
+  position: relative;
+}
+
+.myday-looked-count {
+  position: absolute;
+  top: -0.375rem;
+  right: -0.375rem;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.25rem;
+  border-radius: 0.5rem;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  line-height: 1rem;
+  text-align: center;
+}
+
+.myday-pop .myday-looked-list {
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+/* The running timer: a pill with a pulsing dot, the clock, and its buttons. */
+.myday-timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.125rem;
+  padding: 0 0.1875rem 0 0.6875rem;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-control);
+  background: var(--accent-bg);
+  color: var(--text-primary);
+}
+
+.myday-timer-paused {
+  border-color: var(--chip-orange-border);
+  background: var(--chip-orange-bg);
+}
+
+.myday-timer-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: myday-pulse 1.6s ease-in-out infinite;
+}
+
+.myday-timer-paused .myday-timer-dot {
+  background: var(--chip-orange);
+  animation: none;
+}
+
+@keyframes myday-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+}
+
+.myday-timer-label {
+  max-width: 7.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+}
+
+.myday-timer-clock {
+  min-width: 3.5rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.myday-timer-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.625rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.myday-timer-button:hover:not(:disabled) {
+  background: var(--bg-card);
+  border-color: var(--border-card);
+}
+
+.myday-timer-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.myday-timer-discard {
+  color: var(--text-muted);
+  font-size: var(--text-body);
+}
+
+/* Draft my time is off: a banner in the viewing banner's shape, amber. */
+.myday-draft-off {
+  border-color: var(--chip-orange-border);
+  background: var(--chip-orange-bg);
+}
+
+.myday-draft-off strong {
+  color: var(--chip-orange);
+}
+
+.myday-draft-off .myday-linkish {
+  margin-left: 0.25rem;
+  font-weight: var(--weight-semibold);
+}
+
+/* Under the title: the day nav is a phone's; the week strip everybody's. */
+.myday-below {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.myday-daynav {
+  display: none;
+}
+
+.myday-week-letter {
+  display: none;
+}
+
+@container myday (max-width: 34rem) {
+  .myday-daynav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .myday-daynav-title {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+    text-align: center;
+    font-size: var(--text-body);
+  }
+
+  /* A letter a day, and the week fits a phone without scrolling. */
+  .myday-week-letter {
+    display: inline;
+    font-weight: var(--weight-bold);
+    color: var(--text-primary);
+  }
+
+  .myday-week-selected .myday-week-letter {
+    color: var(--accent);
+  }
+
+  .myday-week-weekday,
+  .myday-week-date {
+    display: none;
+  }
+
+  .myday-week-days {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    overflow-x: visible;
+  }
+
+  .myday-week-days > li {
+    flex: 1 1 auto;
+  }
+
+  /* The header's buttons keep their icons and lose their words. */
+  .myday-head-text,
+  .myday-kbd-hint,
+  .myday-timer-label {
+    display: none;
+  }
+
+  .myday-head-button {
+    width: 2.125rem;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .myday-pop-panel {
+    right: auto;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+}

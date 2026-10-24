@@ -133,6 +133,10 @@ export function WeekStrip({ week, selected, today, locked = false, onPick }: Wee
                 }}
               >
                 <span className="myday-week-name">
+                  {/* A phone shows one letter a day (LAI-502); the width decides, in CSS. */}
+                  <span className="myday-week-letter" aria-hidden="true">
+                    {tile.name.slice(0, 1)}
+                  </span>
                   <span className="myday-week-weekday">{tile.name}</span>{' '}
                   <span className="myday-week-date">{tile.date}</span>
                   {tile.isToday && (

@@ -75,6 +75,8 @@ const DAY = {
   // LAI-831: no gap waved away; the one draft held is today's.
   breaks: [],
   drafts_held: { count: 1, minutes: 95 },
+  timer: null,
+  day_note: null,
   agent: { minutes: 54, keyboard_minutes: 12, by_task: [], unattributed_minutes: 0 },
   state: 'drafted',
   week: Array.from({ length: 7 }, (_, i) => {
@@ -295,17 +297,15 @@ void describe('My day after the reference', () => {
       }
       assert.ok(drafted.x < confirmed.x, '08:40 is drawn after 11:30');
 
-      // To settle, then Confirmed, then Add time — the lists the lane pictures.
+      // To settle, then Confirmed — the lists the lane pictures. Add time is
+      // the header's since LAI-502.
       const order = await h.page
         .locator('.myday-main')
         .evaluate((el: Element) => el.textContent ?? '');
       const drafts = order.indexOf('To settle');
       const confirmedAt = order.indexOf('Confirmed', drafts + 1);
-      const add = order.indexOf('Add time', confirmedAt + 1);
-      assert.ok(
-        drafts > -1 && confirmedAt > drafts && add > confirmedAt,
-        'the lists are out of order',
-      );
+      assert.ok(drafts > -1 && confirmedAt > drafts, 'the lists are out of order');
+      assert.equal(await h.page.locator('[data-add-time]').count(), 1, 'no Add time in the header');
     } finally {
       await h.close();
     }
@@ -549,11 +549,16 @@ void describe('times and durations say their units (LAI-830)', () => {
   void test('a typed length says what it understood before anything is saved', async () => {
     const h = await open('/my-day', { ...STUB, '/api/v1/me/time': OWNER_DAY });
     try {
-      const add = h.page.locator('form[aria-label="Add time"]');
-      await add.waitFor({ timeout: 20_000 });
-      // The chips are one click; any other length is typed, and read back.
-      await add.getByRole('button', { name: 'Other…' }).click();
-      const howLong = add.getByLabel('How long, typed');
+      // The inspector names the block on the 12-hour clock (LAI-831: Split in
+      // two cuts at the middle, so no time is typed for it), and its length,
+      // typed, is read back before anything is saved (the form under the list
+      // went with LAI-502).
+      await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-select="d1"]').click();
+      const panel = h.page.locator('[data-inspector-for="d1"]');
+      await panel.waitFor({ timeout: 10_000 });
+      assert.match(await panel.locator('.inspector-range').innerText(), /^8:40–10:15 AM$/);
+      const howLong = panel.getByLabel('Length, typed');
       for (const [typed, read] of [
         ['45', '45 min'],
         ['45m', '45 min'],
@@ -562,18 +567,11 @@ void describe('times and durations say their units (LAI-830)', () => {
       ] as const) {
         await howLong.fill(typed);
         assert.equal(
-          await add.locator('[data-understood]').innerText(),
+          await panel.locator('[data-understood]').innerText(),
           `Reads as ${read}`,
           `"${typed}" is not shown as understood`,
         );
       }
-      // The inspector names the block on the 12-hour clock (LAI-831: Split in
-      // two cuts at the middle, so no time is typed for it).
-      await h.page.locator('[data-select="d1"]').click();
-      assert.match(
-        await h.page.locator('[data-inspector-for="d1"] .inspector-range').innerText(),
-        /^8:40–10:15 AM$/,
-      );
       // Nothing was sent while typing.
       assert.equal(h.calls.filter((c) => c.method !== 'GET').length, 0, 'typing saved something');
     } finally {
