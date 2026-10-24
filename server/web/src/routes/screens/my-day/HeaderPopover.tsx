@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 export interface HeaderPopoverProps {
   /** The trigger's content. */
@@ -8,7 +8,13 @@ export interface HeaderPopoverProps {
   readonly className?: string | undefined;
   readonly triggerClassName?: string | undefined;
   readonly disabled?: boolean | undefined;
-  readonly width?: 'narrow' | 'wide';
+  readonly width?: 'narrow' | 'wide' | 'who';
+  /**
+   * Which edge of the trigger the panel hangs from (LAI-513). `right` is the
+   * header's; a panel that would run off the page's left edge hangs from the
+   * left instead, and the other way round — the design clips its own.
+   */
+  readonly align?: 'left' | 'right';
   /** A data attribute for tests, on the trigger. */
   readonly dataAttr?: string | undefined;
   readonly children: ReactNode;
@@ -31,6 +37,7 @@ export function HeaderPopover({
   triggerClassName,
   disabled = false,
   width = 'narrow',
+  align = 'right',
   dataAttr,
   children,
   open: controlled,
@@ -43,7 +50,22 @@ export function HeaderPopover({
     onOpenChange?.(next);
   };
   const root = useRef<HTMLDivElement | null>(null);
+  const panel = useRef<HTMLDivElement | null>(null);
+  const [side, setSide] = useState<'left' | 'right'>(align);
   const id = useId();
+
+  // Never clipped by the page's edge: measured once drawn, before it is seen.
+  useLayoutEffect(() => {
+    if (!open) {
+      setSide(align);
+      return;
+    }
+    const el = panel.current;
+    if (el === null) return;
+    const r = el.getBoundingClientRect();
+    if (align === 'right' && r.left < 8) setSide('left');
+    else if (align === 'left' && r.right > window.innerWidth - 8) setSide('right');
+  }, [open, align]);
 
   useEffect(() => {
     if (!open) return;
@@ -99,8 +121,9 @@ export function HeaderPopover({
       </button>
       {open && (
         <div
+          ref={panel}
           id={id}
-          className={`myday-pop-panel myday-pop-${width}`}
+          className={`myday-pop-panel myday-pop-${width}${side === 'left' ? ' myday-pop-left' : ''}`}
           role="region"
           aria-label={label}
         >
