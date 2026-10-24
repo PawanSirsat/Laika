@@ -2,11 +2,12 @@
 id: LAI-505
 title: 'My day: tabs below the Timeline — Overview (Day and Week), To review and Confirmed grouped by time of day, no paging; the No set time tray'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-897
-status: backlog
+status: in-progress
+started: 2026-10-24T12:27:19Z
 ---
 
 ## Goal
