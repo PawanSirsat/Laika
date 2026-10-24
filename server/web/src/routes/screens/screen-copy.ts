@@ -93,15 +93,11 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
   },
   /*
    * Developer access (LAI-796): connecting an agent and your tokens, on one
-   * page. The wizard keeps the copy Connect had.
+   * page — four tabs since LAI-997, the wizard the first of them.
    */
   '/developer': {
     headline: 'No tokens yet',
     body: 'A personal access token lets an agent read and write this board as you. It is shown once when created; Connect an agent makes one for you, step by step.',
-  },
-  '/developer/connect': {
-    headline: 'No project to mirror work into',
-    body: 'Setup still works without one — a session can connect and report in. Create a project and this page fills in the block its space admin commits.',
   },
   /*
    * An empty state, not an "unbuilt" notice — the screen exists (LAI-086).

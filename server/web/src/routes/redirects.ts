@@ -3,9 +3,11 @@
  *
  * The owner's reorganisation folded six pages into three: Review and Unlisted
  * work are the tabs of **Inbox**, Capacity and Usage the tabs of **Insights**,
- * and Connect and Tokens are **Developer access** — the wizard keeping its own
- * address under it. A bookmark, a link an agent printed or a URL a teammate
- * pasted still names the old page, so each answers with its new home.
+ * and Connect and Tokens are **Developer access**. The wizard kept its own
+ * address under it until LAI-997 made it Developer access's first tab, so
+ * `/developer/connect` moved too. A bookmark, a link an agent printed or a
+ * URL a teammate pasted still names the old page, so each answers with its
+ * new home.
  *
  * **The query travels with it.** `?agent=` on Connect is how a lead sends the
  * page already set to the team's agent (LAI-737); dropping it would land the
@@ -30,8 +32,9 @@ export const REDIRECTS: Readonly<Record<string, Redirect>> = {
   '/unlisted': { to: '/inbox', tab: 'unlisted' },
   '/capacity': { to: '/insights', tab: 'capacity', drop: ['project'] },
   '/usage': { to: '/insights', tab: 'usage' },
-  '/tokens': { to: '/developer' },
-  '/connect': { to: '/developer/connect' },
+  '/tokens': { to: '/developer', tab: 'tokens' },
+  '/connect': { to: '/developer', tab: 'connect' },
+  '/developer/connect': { to: '/developer', tab: 'connect' },
 };
 
 /**
