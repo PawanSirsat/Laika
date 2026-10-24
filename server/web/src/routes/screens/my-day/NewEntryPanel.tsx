@@ -2,8 +2,11 @@ import { useState } from 'react';
 import type { EntryKind, MyDay, NewEntry, TaskRef } from '../../../api/time.ts';
 import { EMPTY_DETAILS, EntryDetailsFields, type EntryDetails } from './EntryDetailsFields.tsx';
 import { duration, span } from './format.ts';
-import { CardPicker, Stepper } from './Inspector.tsx';
-import { STEP, type Span } from './timeline-derive.ts';
+import { EditorWhen } from './EditorWhen.tsx';
+import { CardPicker } from './Inspector.tsx';
+import { PRESETS } from './presets.ts';
+import { TaskSearch } from './TaskSearch.tsx';
+import { type Span } from './timeline-derive.ts';
 
 export interface NewEntryPanelProps {
   readonly view: MyDay;
@@ -22,8 +25,10 @@ export interface NewEntryPanelProps {
         readonly title?: string | undefined;
       }
     | undefined;
-  /** The furthest the end may go: the next confirmed block, or the day's end. */
-  readonly hi: number;
+  /** How far the span may reach: the confirmed time either side. */
+  readonly limits: { readonly lo: number; readonly hi: number };
+  /** Now, in minutes after midnight, when the day is today: for *Ends now*. */
+  readonly now?: number | undefined;
   readonly chips: readonly TaskRef[];
   readonly busy: boolean;
   readonly onAdd: (entry: NewEntry, label: string) => Promise<boolean>;
@@ -41,15 +46,18 @@ export function NewEntryPanel({
   range,
   untimed: startUntimed = false,
   prefill,
-  hi,
+  limits,
+  now,
   chips,
   busy,
   onAdd,
   onCancel,
 }: NewEntryPanelProps) {
-  const [end, setEnd] = useState(range.end);
+  const [placed, setPlaced] = useState<Span>(range);
   const [untimed, setUntimed] = useState(startUntimed);
   const [minutes, setMinutes] = useState(range.end - range.start);
+  const start = placed.start;
+  const end = placed.end;
   const [details, setDetails] = useState<EntryDetails>({
     ...EMPTY_DETAILS,
     ...(prefill?.kind === undefined ? {} : { kind: prefill.kind }),
@@ -72,8 +80,8 @@ export function NewEntryPanel({
     const entry: NewEntry = {
       day: view.day,
       tz: view.tz,
-      minutes: untimed ? minutes : end - range.start,
-      ...(untimed ? {} : { started_at: at(range.start), ended_at: at(end) }),
+      minutes: untimed ? minutes : end - start,
+      ...(untimed ? {} : { started_at: at(start), ended_at: at(end) }),
       ...(card === 'general' ? {} : { task: card }),
       ...(details.kind === undefined ? {} : { kind: details.kind }),
       ...(title === '' ? {} : { title }),
@@ -88,32 +96,26 @@ export function NewEntryPanel({
     <div className="inspector-body" data-new-entry>
       <div className="inspector-part">
         <h3 className="inspector-label">When</h3>
-        <div className="inspector-row">
-          <span className="inspector-range" data-new-entry-range>
-            {untimed ? 'No set time' : span(at(range.start), at(end), view.tz)}
-          </span>
-          {untimed ? (
-            <Stepper
-              minutes={minutes}
-              canShorten={minutes > STEP}
-              canLengthen={minutes + STEP <= 1440}
-              busy={busy}
-              onStep={(by) => {
-                setMinutes((m) => Math.max(STEP, Math.min(1440, m + by)));
-              }}
-            />
-          ) : (
-            <Stepper
-              minutes={end - range.start}
-              canShorten={end - range.start > STEP}
-              canLengthen={end + STEP <= hi}
-              busy={busy}
-              onStep={(by) => {
-                setEnd((e) => Math.max(range.start + STEP, Math.min(hi, e + by)));
-              }}
-            />
-          )}
-        </div>
+        <p className="inspector-range" data-new-entry-range>
+          {untimed ? 'No set time' : span(at(start), at(end), view.tz)}
+        </p>
+        <EditorWhen
+          span={untimed ? undefined : { start, end }}
+          minutes={untimed ? minutes : end - start}
+          midnight={midnight}
+          tz={view.tz}
+          limits={limits}
+          busy={busy}
+          chips
+          now={now}
+          onSpan={(next) => {
+            setPlaced(next);
+            setUntimed(false);
+          }}
+          onLength={(m) => {
+            setMinutes(m);
+          }}
+        />
         <label className="myday-check inspector-row">
           <input
             type="checkbox"
@@ -128,6 +130,27 @@ export function NewEntryPanel({
         </label>
       </div>
       <div className="inspector-part">
+        <h3 className="inspector-label">Off-screen work</h3>
+        <p className="inspector-note">Time Laika can’t see. One tap sets the kind and title.</p>
+        <div className="inspector-chips">
+          {PRESETS.map((preset) => (
+            <button
+              key={preset.title}
+              type="button"
+              className="myday-cardchip"
+              data-preset={preset.title}
+              aria-pressed={details.title === preset.title && details.kind === preset.kind}
+              disabled={busy}
+              onClick={() => {
+                setDetails({ ...details, title: preset.title, kind: preset.kind });
+              }}
+            >
+              {preset.title}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="inspector-part">
         <h3 className="inspector-label">What it was</h3>
         <EntryDetailsFields
           value={details}
@@ -138,7 +161,8 @@ export function NewEntryPanel({
         />
       </div>
       <div className="inspector-part">
-        <h3 className="inspector-label">Card</h3>
+        <h3 className="inspector-label">Task</h3>
+        <TaskSearch busy={busy} onPick={setCard} />
         <CardPicker
           current={card === 'general' ? undefined : card}
           general={card === 'general'}
@@ -160,7 +184,7 @@ export function NewEntryPanel({
           disabled={busy}
           onClick={submit}
         >
-          Add {duration(untimed ? minutes : end - range.start)}
+          Add {duration(untimed ? minutes : end - start)}
         </button>
         <button type="button" className="myday-chip" disabled={busy} onClick={onCancel}>
           Cancel

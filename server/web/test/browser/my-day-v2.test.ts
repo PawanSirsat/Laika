@@ -474,7 +474,7 @@ void describe('the inspector (5)', () => {
       assert.ok(await confirm.isDisabled());
       assert.match(
         await inspector.locator('[data-card-warning]').innerText(),
-        /Nothing named a card/,
+        /Nothing named a task/,
       );
       await inspector.locator('[data-card="LAI-12"]').click();
       await until(() => writes(h).length > 0);
@@ -542,7 +542,10 @@ void describe('split, −/+ and drag (5, C)', () => {
     const h = await openDay(TODAY);
     try {
       await select(h, 'd1');
+      // Split… opens the time, filled with the middle (LAI-504); Split cuts there.
       await h.page.getByRole('button', { name: 'Split in two' }).click();
+      assert.equal(await h.page.locator('[data-split-at]').inputValue(), '9:30 AM');
+      await h.page.locator('[data-split-go]').click();
       await until(() => writes(h).length === 1);
       // 8:40–10:15 is 95 minutes: half is 47.5, to five minutes 50 → 9:30.
       assert.deepEqual(writes(h)[0], {

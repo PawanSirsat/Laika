@@ -78,16 +78,39 @@ export function shortcutFor(event: KeyLike): Shortcut | undefined {
   return LETTERS[event.key.toLowerCase()];
 }
 
-/** The sheet's rows, in the order the design's hint row gives them. */
-export const SHORTCUT_SHEET: readonly (readonly [string, string])[] = [
-  ['N', 'Add time'],
-  ['T', 'Start or stop the timer'],
-  ['↵', 'Confirm the selected draft'],
-  ['G', 'Put it on General'],
-  ['X', 'Mark it not work'],
-  ['← →', 'Previous and next block on the Timeline'],
-  ['J', 'Next draft'],
-  ['K', 'Previous draft'],
-  ['?', 'Show these keys'],
-  ['Esc', 'Close this, or the editor'],
+/** The sheet's groups, as the design names them (LAI-504). */
+export const SHORTCUT_GROUPS: readonly {
+  readonly name: string;
+  readonly rows: readonly (readonly [string, string])[];
+}[] = [
+  {
+    name: 'Anywhere on My day',
+    rows: [
+      ['N', 'Add time'],
+      ['T', 'Start or stop the timer'],
+      ['J K', 'Next or previous to review'],
+      ['Esc', 'Close the editor or a menu'],
+      ['?', 'This sheet'],
+    ],
+  },
+  {
+    name: 'On a selected entry',
+    rows: [
+      ['↵', 'Confirm'],
+      ['G', 'Set task to General'],
+      ['X', 'Mark as not work time'],
+    ],
+  },
+  {
+    name: 'On the Timeline',
+    rows: [
+      ['← →', 'Move between blocks'],
+      ['← → on an edge', 'Move that edge 5 min'],
+    ],
+  },
 ];
+
+/** The sheet's rows, flat, for whoever reads them that way. */
+export const SHORTCUT_SHEET: readonly (readonly [string, string])[] = SHORTCUT_GROUPS.flatMap(
+  (g) => g.rows,
+);

@@ -447,7 +447,8 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
         await editor.locator('[data-agent-line]').innerText(),
         /^During this time an agent worked 11 min, 9 min of it on a card\./,
       );
-      assert.match(await editor.locator('.inspector-kind').innerText(), /Drafted/);
+      // The pill reads *Draft*, as the design has it (LAI-504).
+      assert.match(await editor.locator('.inspector-kind').innerText(), /Draft/);
       // A block no agent ran in says so.
       await h.page.locator('[data-block-select="d4"]').click();
       await until(async () => (await h.page.locator('[data-inspector-for="d4"]').count()) === 1);
@@ -457,7 +458,7 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
         await d4.locator('[data-agent-line]').innerText(),
         /^No agent ran in this time\./,
       );
-      assert.match(await d4.locator('.inspector-kind').innerText(), /Needs a card/);
+      assert.match(await d4.locator('.inspector-kind').innerText(), /No task yet/);
     } finally {
       await h.close();
     }

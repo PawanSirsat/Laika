@@ -61,7 +61,7 @@ import { EntryList } from './EntryList.tsx';
 import { OverviewTab } from './OverviewTab.tsx';
 import { UntimedTray } from './UntimedTray.tsx';
 import { clock, duration, span } from './format.ts';
-import { Inspector, type Held, type InspectorActions } from './Inspector.tsx';
+import { Inspector, type DraftSaid, type Held, type InspectorActions } from './Inspector.tsx';
 import { addDays, canAddTime, dayIn, dayTotals, DRAFT_READERS, isDay } from './my-day-derive.ts';
 import { OnYourPlate, usePlate } from './OnYourPlate.tsx';
 import { shortcutFor, type Shortcut } from './shortcuts.ts';
@@ -650,16 +650,24 @@ export function MyDayScreen({
     }
   };
 
-  const confirmOne = (draft: TimeDraft): void => {
+  const confirmOne = (draft: TimeDraft, said?: DraftSaid): void => {
     if (!ready(draft)) {
       say('Pick a card or General first, then confirm.', 'warn');
       return;
     }
     const where = draft.task?.key ?? draft.project?.name ?? 'General';
+    const words =
+      said === undefined || Object.keys(said).length === 0
+        ? undefined
+        : {
+            ...(said.kind === undefined ? {} : { kind: said.kind }),
+            ...(said.title === undefined ? {} : { title: said.title }),
+            ...(said.description === undefined ? {} : { description: said.description }),
+          };
     void run(
       `confirm:${draft.id}`,
       [draft.id],
-      (onUndo) => confirmDraft(draft.id, onUndo),
+      (onUndo) => confirmDraft(draft.id, onUndo, words),
       (entry) => ({
         text: `${duration(draft.minutes)} confirmed to ${where} — your organisation can see it now.`,
         undoable: true,
@@ -798,6 +806,37 @@ export function MyDayScreen({
 
   const actions: InspectorActions = {
     confirm: confirmOne,
+    setSpan: (held, next) => {
+      const item = held.kind === 'draft' ? held.draft : held.entry;
+      const placed = block(item.id);
+      // Only the edge that moved goes, as a drag's does; a block with no span
+      // gets both. The minutes follow the span.
+      const patch: { started_at?: number; ended_at?: number; minutes: number } = {
+        minutes: next.end - next.start,
+      };
+      if (next.start !== placed?.start) patch.started_at = instant(next.start);
+      if (next.end !== placed?.end) patch.ended_at = instant(next.end);
+      void write(held, patch, `span:${item.id}`);
+    },
+    splitAt: (draft, at) => {
+      void run(
+        `split:${draft.id}`,
+        [draft.id],
+        (onUndo) => splitDraft(draft.id, at, onUndo),
+        (result) => {
+          const [a, b] = result.drafts;
+          if (a !== undefined) setSelection({ kind: 'draft', id: a.id });
+          return {
+            text:
+              a === undefined || b === undefined
+                ? `Split at ${clock(at, view.tz)}.`
+                : `Split at ${clock(at, view.tz)} into ${duration(a.minutes)} and ${duration(b.minutes)}.`,
+            undoable: true,
+            blocks: result.drafts.map((d) => d.id),
+          };
+        },
+      );
+    },
     dismiss: dismissOne,
     setCard: (held, card) => {
       if (held.kind === 'draft') {
@@ -1390,6 +1429,22 @@ export function MyDayScreen({
                 actions={actions}
                 onNavigate={onNavigate}
                 readOnly={readOnly}
+                position={
+                  selection.kind === 'draft' && view.drafts.length > 0
+                    ? {
+                        index: Math.max(
+                          0,
+                          view.drafts.findIndex((d) => d.id === selection.id),
+                        ),
+                        total: view.drafts.length,
+                      }
+                    : undefined
+                }
+                onPrev={() => onShortcut.current('prev')}
+                onNext={() => onShortcut.current('next')}
+                onClose={() => {
+                  setSelection(undefined);
+                }}
               />
             ) : (
               <>
