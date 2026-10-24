@@ -2,11 +2,12 @@
 id: LAI-504
 title: 'My day: the editor from the design — typed Start / End / Length with chips and Ends now, a free-stretch bar, off-screen presets, task search, kind and words on a draft, split at a time, the untimed picker'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-500]
 discovered-from: LAI-897
-status: backlog
+status: in-progress
+started: 2026-10-24T12:51:53Z
 ---
 
 ## Goal
