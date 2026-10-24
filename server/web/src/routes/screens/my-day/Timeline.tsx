@@ -9,7 +9,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from 'react';
-import type { MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
+import type { EntryKind, MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
 import { BreakGlyph } from '../../../components/BreakGlyph.tsx';
 import { breakKind } from '../break-kinds.ts';
 import { kindGlyph } from './entry-kinds.ts';
@@ -57,8 +57,27 @@ import {
 export type Selection =
   | { readonly kind: 'draft' | 'entry'; readonly id: string }
   | { readonly kind: 'gap'; readonly start: number; readonly end: number }
-  /** A stretch the person dragged on the empty track (LAI-897), minutes after midnight. */
-  | { readonly kind: 'range'; readonly start: number; readonly end: number }
+  /**
+   * A stretch the person dragged on the empty track (LAI-897), minutes after
+   * midnight — or the header's *Add time* (LAI-502): `untimed` when the day
+   * has no free stretch, `prefill` and `fromTimer` after a timer's stop was
+   * refused, so the panel carries what the timer said and the timer is
+   * discarded once the entry is saved.
+   */
+  | {
+      readonly kind: 'range';
+      readonly start: number;
+      readonly end: number;
+      readonly untimed?: boolean | undefined;
+      readonly prefill?:
+        | {
+            readonly task?: string | undefined;
+            readonly kind?: EntryKind | undefined;
+            readonly title?: string | undefined;
+          }
+        | undefined;
+      readonly fromTimer?: boolean | undefined;
+    }
   | { readonly kind: 'break'; readonly id: string };
 
 export interface TimelineProps {
@@ -477,7 +496,9 @@ export function Timeline({
   };
   const shownRange: Span | undefined =
     rangePreview ??
-    (selection?.kind === 'range' ? { start: selection.start, end: selection.end } : undefined);
+    (selection?.kind === 'range' && selection.untimed !== true
+      ? { start: selection.start, end: selection.end }
+      : undefined);
 
   const handle = (block: LaneBlock, edge: 'start' | 'end') => ({
     onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {

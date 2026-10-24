@@ -872,6 +872,8 @@ export function Inspector({
         <NewEntryPanel
           view={view}
           range={range}
+          untimed={selection.kind === 'range' ? selection.untimed : undefined}
+          prefill={selection.kind === 'range' ? selection.prefill : undefined}
           hi={free?.hi ?? line.to * 60}
           chips={chipsFor(null)}
           busy={busy}

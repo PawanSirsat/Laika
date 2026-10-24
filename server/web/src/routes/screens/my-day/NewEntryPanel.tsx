@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { MyDay, NewEntry, TaskRef } from '../../../api/time.ts';
+import type { EntryKind, MyDay, NewEntry, TaskRef } from '../../../api/time.ts';
 import { EMPTY_DETAILS, EntryDetailsFields, type EntryDetails } from './EntryDetailsFields.tsx';
 import { duration, span } from './format.ts';
 import { CardPicker, Stepper } from './Inspector.tsx';
@@ -9,6 +9,19 @@ export interface NewEntryPanelProps {
   readonly view: MyDay;
   /** Minutes after the day's midnight: the range dragged, or the gap picked. */
   readonly range: Span;
+  /**
+   * Starts with no set time (LAI-502, the header's *Add time* when the day
+   * has no free stretch): a length alone, posted without a span.
+   */
+  readonly untimed?: boolean | undefined;
+  /** What a stopped timer already said (LAI-502): its card, kind and title. */
+  readonly prefill?:
+    | {
+        readonly task?: string | undefined;
+        readonly kind?: EntryKind | undefined;
+        readonly title?: string | undefined;
+      }
+    | undefined;
   /** The furthest the end may go: the next confirmed block, or the day's end. */
   readonly hi: number;
   readonly chips: readonly TaskRef[];
@@ -26,6 +39,8 @@ export interface NewEntryPanelProps {
 export function NewEntryPanel({
   view,
   range,
+  untimed: startUntimed = false,
+  prefill,
   hi,
   chips,
   busy,
@@ -33,8 +48,14 @@ export function NewEntryPanel({
   onCancel,
 }: NewEntryPanelProps) {
   const [end, setEnd] = useState(range.end);
-  const [details, setDetails] = useState<EntryDetails>(EMPTY_DETAILS);
-  const [card, setCard] = useState<string>('general');
+  const [untimed, setUntimed] = useState(startUntimed);
+  const [minutes, setMinutes] = useState(range.end - range.start);
+  const [details, setDetails] = useState<EntryDetails>({
+    ...EMPTY_DETAILS,
+    ...(prefill?.kind === undefined ? {} : { kind: prefill.kind }),
+    ...(prefill?.title === undefined ? {} : { title: prefill.title }),
+  });
+  const [card, setCard] = useState<string>(prefill?.task ?? 'general');
   const [error, setError] = useState<string | undefined>(undefined);
   const midnight = Date.parse(`${view.day}T00:00:00Z`);
   const at = (minute: number): number => midnight + minute * 60_000;
@@ -51,9 +72,8 @@ export function NewEntryPanel({
     const entry: NewEntry = {
       day: view.day,
       tz: view.tz,
-      minutes: end - range.start,
-      started_at: at(range.start),
-      ended_at: at(end),
+      minutes: untimed ? minutes : end - range.start,
+      ...(untimed ? {} : { started_at: at(range.start), ended_at: at(end) }),
       ...(card === 'general' ? {} : { task: card }),
       ...(details.kind === undefined ? {} : { kind: details.kind }),
       ...(title === '' ? {} : { title }),
@@ -70,18 +90,42 @@ export function NewEntryPanel({
         <h3 className="inspector-label">When</h3>
         <div className="inspector-row">
           <span className="inspector-range" data-new-entry-range>
-            {span(at(range.start), at(end), view.tz)}
+            {untimed ? 'No set time' : span(at(range.start), at(end), view.tz)}
           </span>
-          <Stepper
-            minutes={end - range.start}
-            canShorten={end - range.start > STEP}
-            canLengthen={end + STEP <= hi}
-            busy={busy}
-            onStep={(by) => {
-              setEnd((e) => Math.max(range.start + STEP, Math.min(hi, e + by)));
+          {untimed ? (
+            <Stepper
+              minutes={minutes}
+              canShorten={minutes > STEP}
+              canLengthen={minutes + STEP <= 1440}
+              busy={busy}
+              onStep={(by) => {
+                setMinutes((m) => Math.max(STEP, Math.min(1440, m + by)));
+              }}
+            />
+          ) : (
+            <Stepper
+              minutes={end - range.start}
+              canShorten={end - range.start > STEP}
+              canLengthen={end + STEP <= hi}
+              busy={busy}
+              onStep={(by) => {
+                setEnd((e) => Math.max(range.start + STEP, Math.min(hi, e + by)));
+              }}
+            />
+          )}
+        </div>
+        <label className="myday-check inspector-row">
+          <input
+            type="checkbox"
+            checked={untimed}
+            disabled={busy}
+            data-new-entry-untimed
+            onChange={(event) => {
+              setUntimed(event.target.checked);
             }}
           />
-        </div>
+          No set time — a length alone, listed below the Timeline
+        </label>
       </div>
       <div className="inspector-part">
         <h3 className="inspector-label">What it was</h3>
@@ -116,7 +160,7 @@ export function NewEntryPanel({
           disabled={busy}
           onClick={submit}
         >
-          Add {duration(end - range.start)}
+          Add {duration(untimed ? minutes : end - range.start)}
         </button>
         <button type="button" className="myday-chip" disabled={busy} onClick={onCancel}>
           Cancel

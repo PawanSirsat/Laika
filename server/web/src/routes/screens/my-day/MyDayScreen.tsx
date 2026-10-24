@@ -20,6 +20,13 @@ import {
   type TaskRef,
   type OnUndo,
   type TimeDraft,
+  discardTimer,
+  pauseTimer,
+  resumeTimer,
+  setDraftMyTime,
+  startTimer,
+  stopTimer,
+  type TimerStart,
 } from '../../../api/time.ts';
 import { everyPage } from '../../../api/every-page.ts';
 import { getPersonDay, PEOPLE_ANALYTICS } from '../../../api/people-analytics.ts';
@@ -33,12 +40,11 @@ import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import type { ReviewQueueItem } from '../../../api/review.ts';
-import { AddTimeForm } from './AddTimeForm.tsx';
 import { AgentStrip } from './AgentStrip.tsx';
 import { cardChips } from './card-chips.ts';
 import { DraftList, type Batch } from './DraftList.tsx';
-import { DraftMyTime } from './DraftMyTime.tsx';
-import { WhereYouAre } from './WhereYouAre.tsx';
+import { DaySettings } from './DaySettings.tsx';
+import { TimerControl } from './TimerControl.tsx';
 import {
   confirmPlan,
   needCardLine,
@@ -51,7 +57,7 @@ import {
 import { EntryList } from './EntryList.tsx';
 import { clock, duration, span } from './format.ts';
 import { Inspector, type Held, type InspectorActions } from './Inspector.tsx';
-import { canAddTime, dayIn, DRAFT_READERS, isDay } from './my-day-derive.ts';
+import { addDays, canAddTime, dayIn, dayTotals, DRAFT_READERS, isDay } from './my-day-derive.ts';
 import { OnYourPlate, usePlate } from './OnYourPlate.tsx';
 import { shortcutFor, type Shortcut } from './shortcuts.ts';
 import { ShortcutSheet } from './ShortcutSheet.tsx';
@@ -69,6 +75,8 @@ import {
   type LaneBlock,
   type Span,
   type Zoom,
+  freeAround,
+  STEP,
 } from './timeline-derive.ts';
 import { Toast, type ToastState } from './Toast.tsx';
 import { usePeople, ViewingSwitch } from './ViewingSwitch.tsx';
@@ -262,11 +270,12 @@ export function MyDayScreen({
   const [slot, setSlot] = useState<Span | undefined>(undefined);
   const [toast, setToast] = useState<ToastState | undefined>(undefined);
   const [sheet, setSheet] = useState(false);
+  const [lookedOpen, setLookedOpen] = useState(false);
+  const [timerOpen, setTimerOpen] = useState(false);
   const [zoom, setZoom] = useState<Zoom>('1');
   const [now, setNow] = useState(() => Date.now());
   const spaces = useSpaces();
   const plate = usePlate(readOnly ? undefined : me, spaces);
-  const noteRef = useRef<HTMLInputElement | null>(null);
   const toastSeq = useRef(0);
   const lastDraftIndex = useRef(0);
   const batching = pending !== undefined && BATCHES.has(pending);
@@ -569,6 +578,8 @@ export function MyDayScreen({
 
   const { settings } = view;
   const addable = canAddTime(settings);
+  const totals = dayTotals(view);
+  const draftOff = !readOnly && settings.org_mode === 'drafts' && !settings.draft_my_time;
   const dayPlan = confirmPlan(view.drafts);
   const readyMinutes = dayPlan.ready.reduce((sum, d) => sum + d.minutes, 0);
   const busy = pending !== undefined;
@@ -672,9 +683,90 @@ export function MyDayScreen({
       }),
     );
     if (made === undefined) return false;
+    // A timer whose stop the clock refused (LAI-502) is done once its time is in by hand.
+    if (selection?.kind === 'range' && selection.fromTimer === true && view.timer !== null) {
+      await discardTimer().catch(() => undefined);
+      reload();
+    }
     setSlot(undefined);
     setSelection({ kind: 'entry', id: made.id });
     return true;
+  };
+
+  // The timer (D-110 item 1, LAI-502): each action one write, the day re-read after.
+  const timerStart = (input: TimerStart): void => {
+    void run(
+      'timer',
+      [],
+      () => startTimer(input),
+      input.task === undefined ? 'Timer started.' : `Timer started on ${input.task}.`,
+    );
+  };
+  const timerStop = async (): Promise<void> => {
+    const timer = view.timer;
+    if (timer === null) return;
+    setPending('timer');
+    let undoId: string | undefined;
+    try {
+      const stopped = await stopTimer((id) => {
+        undoId = id;
+      });
+      reload();
+      say(
+        stopped.crossed_midnight
+          ? `${duration(stopped.entry.minutes)} saved on ${dayLong(stopped.entry.day)} with no set time — the timer ran past midnight.`
+          : `${duration(stopped.entry.minutes)} saved from the timer — confirmed as you stop it.`,
+        'info',
+        undoId === undefined ? [] : [{ undoId, blocks: [stopped.entry.id] }],
+      );
+      if (stopped.entry.day === view.day) setSelection({ kind: 'entry', id: stopped.entry.id });
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.code === 'conflict' && line.midnight !== undefined) {
+        // Over confirmed time: the timer stays, and its span opens beside the
+        // Timeline with what it said, for the person to adjust and add.
+        const minute = (ms: number): number =>
+          Math.max(0, Math.min(1440, Math.round((ms - line.midnight!) / 60_000 / STEP) * STEP));
+        const start = minute(timer.started_at);
+        const end = Math.max(start + STEP, minute(timer.paused_at ?? Date.now()));
+        say(`${cause.message} Adjust the time beside the Timeline, then add it.`, 'warn');
+        setSelection({
+          kind: 'range',
+          start,
+          end,
+          prefill: {
+            ...(timer.task === null ? {} : { task: timer.task.key }),
+            ...(timer.kind === null ? {} : { kind: timer.kind }),
+            ...(timer.title === null ? {} : { title: timer.title }),
+          },
+          fromTimer: true,
+        });
+      } else {
+        say(messageOf(cause), 'error');
+      }
+    } finally {
+      setPending(undefined);
+    }
+  };
+
+  // *Add time* (LAI-502): the last free half hour before now, or no set time.
+  const addTime = (): void => {
+    if (readOnly || !addable || busy) return;
+    const confirmed = line.blocks.filter((b) => b.kind === 'confirmed');
+    const nowMinute =
+      view.day === view.today && line.midnight !== undefined
+        ? Math.floor((Date.now() - line.midnight) / 60_000)
+        : 17 * 60;
+    const anchor = Math.max(STEP, Math.min(1440, Math.floor(nowMinute / STEP) * STEP));
+    const free = freeAround(anchor - 1, confirmed, line.from * 60, line.to * 60);
+    if (free !== undefined) {
+      const end = Math.min(anchor, free.hi);
+      const start = Math.max(free.lo, end - 30);
+      if (end - start >= STEP) {
+        setSelection({ kind: 'range', start, end });
+        return;
+      }
+    }
+    setSelection({ kind: 'range', start: anchor - 30, end: anchor, untimed: true });
   };
 
   const actions: InspectorActions = {
@@ -845,6 +937,17 @@ export function MyDayScreen({
       return false;
     }
     if (dialog !== null || busy) return false;
+    if (shortcut === 'add') {
+      if (readOnly || !addable) return false;
+      addTime();
+      return true;
+    }
+    if (shortcut === 'timer') {
+      if (readOnly || !addable) return false;
+      if (view.timer === null) setTimerOpen(true);
+      else void timerStop();
+      return true;
+    }
     if (shortcut === 'left' || shortcut === 'right') {
       // ← → walk every placed block, as the Timeline's ‹ › do (LAI-888).
       const blocks = line.blocks;
@@ -897,6 +1000,17 @@ export function MyDayScreen({
           title={title}
           description={
             <span className="myday-subtitle">
+              {totals.confirmed + totals.drafted > 0 && (
+                <>
+                  <span className="myday-figure" data-day-total>
+                    <strong>{duration(totals.confirmed + totals.drafted)}</strong>
+                    {' · '}
+                    {duration(totals.confirmed)} confirmed
+                    {totals.drafted > 0 && ` · ${duration(totals.drafted)} to review`}
+                  </span>
+                  <span className="myday-subtitle-dot" aria-hidden="true" />
+                </>
+              )}
               <span>
                 {dayLong(view.day)}
                 {view.day === view.today && ' · today'}
@@ -921,9 +1035,7 @@ export function MyDayScreen({
                     className="myday-lock-link"
                     onClick={(event) => {
                       event.preventDefault();
-                      document
-                        .getElementById('myday-looked')
-                        ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                      setLookedOpen(true);
                     }}
                   >
                     who looked
@@ -933,63 +1045,155 @@ export function MyDayScreen({
             </span>
           }
           below={
-            <WeekStrip
-              week={view.week}
-              selected={view.day}
-              today={view.today}
-              locked={batching}
-              onPick={onDay}
-            />
+            <div className="myday-below">
+              {/* A phone walks the days one at a time (LAI-502); the width decides, in CSS. */}
+              <div className="myday-daynav" data-day-nav>
+                <button
+                  type="button"
+                  className="myday-week-step"
+                  aria-label="Previous day"
+                  disabled={batching}
+                  onClick={() => {
+                    onDay(addDays(view.day, -1));
+                  }}
+                >
+                  <span aria-hidden="true">‹</span>
+                </button>
+                <span className="myday-daynav-title">
+                  <strong>{dayLong(view.day)}</strong>
+                  {totals.confirmed + totals.drafted > 0 && (
+                    <span className="myday-quiet">
+                      {duration(totals.confirmed + totals.drafted)}
+                      {totals.drafted > 0 && ` · ${duration(totals.drafted)} to review`}
+                    </span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  className="myday-week-step"
+                  aria-label="Next day"
+                  disabled={batching || view.day >= view.today}
+                  onClick={() => {
+                    onDay(addDays(view.day, 1));
+                  }}
+                >
+                  <span aria-hidden="true">›</span>
+                </button>
+              </div>
+              <WeekStrip
+                week={view.week}
+                selected={view.day}
+                today={view.today}
+                locked={batching}
+                onPick={onDay}
+              />
+            </div>
           }
         >
           {switcher}
-          {!readOnly && (
+          {!readOnly && addable && (
             <>
-              <DraftMyTime
-                settings={settings}
-                held={view.drafts_held}
-                pending={pending}
-                run={(key, writeIt, said) =>
-                  run(key, [], () => writeIt(), said).then((r) => r !== undefined)
-                }
-              />
-              <WhereYouAre
-                settings={settings}
+              <TimerControl
+                timer={view.timer}
                 tz={view.tz}
-                pending={pending}
-                run={(key, writeIt, said) =>
-                  run(key, [], () => writeIt(), said).then((r) => r !== undefined)
-                }
+                chips={chipsFor(null)}
+                busy={busy}
+                open={timerOpen}
+                onOpenChange={setTimerOpen}
+                onStart={timerStart}
+                onPause={() => {
+                  void run('timer', [], () => pauseTimer(), 'Timer paused.');
+                }}
+                onResume={() => {
+                  void run('timer', [], () => resumeTimer(), 'Timer running.');
+                }}
+                onStop={() => {
+                  void timerStop();
+                }}
+                onDiscard={() => {
+                  void run('timer', [], () => discardTimer(), 'Timer discarded — nothing saved.');
+                }}
               />
-              {view.drafts.length > 0 && (
-                <button
-                  type="button"
-                  className="myday-chip myday-chip-primary myday-confirm-day"
-                  data-confirm-day
-                  disabled={busy || dayPlan.ready.length === 0}
-                  title={
-                    dayPlan.needCard.length > 0
-                      ? `${needCardLine(dayPlan.needCard.length)} first — left out`
-                      : `Confirm every drafted block of ${dayLong(view.day)}`
-                  }
-                  onClick={() => {
-                    void runBatch(
-                      'confirm-day',
-                      'Confirming',
-                      view.day,
-                      view.drafts.map((d) => d.id),
-                      (api, progress) => runConfirmDay(view.drafts, view.day, api, progress),
-                    );
-                  }}
-                >
-                  {pending === 'confirm-day' && <Spinner size="sm" label="Confirming the day" />}
-                  {dayPlan.needCard.length === 0
-                    ? `Confirm day · ${duration(readyMinutes)}`
-                    : `Confirm ${String(dayPlan.ready.length)} ready · ${duration(readyMinutes)}`}
-                </button>
-              )}
+              <button
+                type="button"
+                className="myday-chip myday-head-button"
+                data-add-time
+                title="Add time (N)"
+                aria-label="Add time"
+                disabled={busy || batching}
+                onClick={addTime}
+              >
+                <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+                  <path
+                    d="M6 1.5v9M1.5 6h9"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <span className="myday-head-text">Add time</span>
+                <kbd className="myday-kbd myday-kbd-hint">N</kbd>
+              </button>
             </>
           )}
+          {!readOnly && view.drafts.length > 0 && (
+            <button
+              type="button"
+              className="myday-chip myday-chip-primary myday-confirm-day"
+              data-confirm-day
+              disabled={busy || dayPlan.ready.length === 0}
+              title={
+                dayPlan.needCard.length > 0
+                  ? `${needCardLine(dayPlan.needCard.length)} first — left out`
+                  : `Confirm every drafted block of ${dayLong(view.day)}`
+              }
+              onClick={() => {
+                void runBatch(
+                  'confirm-day',
+                  'Confirming',
+                  view.day,
+                  view.drafts.map((d) => d.id),
+                  (api, progress) => runConfirmDay(view.drafts, view.day, api, progress),
+                );
+              }}
+            >
+              {pending === 'confirm-day' && <Spinner size="sm" label="Confirming the day" />}
+              {dayPlan.needCard.length === 0
+                ? `Confirm day · ${duration(readyMinutes)}`
+                : `Confirm ${String(dayPlan.ready.length)} ready · ${duration(readyMinutes)}`}
+            </button>
+          )}
+          {!readOnly && (
+            <DaySettings
+              settings={settings}
+              held={view.drafts_held}
+              tz={view.tz}
+              pending={pending}
+              run={(key, writeIt, said) =>
+                run(key, [], () => writeIt(), said).then((r) => r !== undefined)
+              }
+            />
+          )}
+          {!readOnly && (
+            <WhoLooked
+              tz={view.tz}
+              today={view.today}
+              open={lookedOpen}
+              onOpenChange={setLookedOpen}
+            />
+          )}
+          <button
+            type="button"
+            className="myday-chip myday-head-icon"
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts (?)"
+            data-shortcuts-button
+            onClick={() => {
+              setSheet(true);
+            }}
+          >
+            ?
+          </button>
         </ScreenHeader>
       ) : (
         <div className="myday-embed-head">
@@ -1003,6 +1207,27 @@ export function MyDayScreen({
         </div>
       )}
       {banner}
+      {draftOff && (
+        <p className="myday-viewing-banner myday-draft-off" role="status" data-draft-off>
+          <strong>Draft my time is off.</strong> Laika isn’t drafting from your activity. Time you
+          add or record with a timer still counts.{' '}
+          <button
+            type="button"
+            className="myday-linkish"
+            disabled={busy}
+            onClick={() => {
+              void run(
+                'switch',
+                [],
+                () => setDraftMyTime(true),
+                'Draft my time is on. Your collector drafts from its next sync.',
+              );
+            }}
+          >
+            Turn on
+          </button>
+        </p>
+      )}
 
       <div className="myday" data-myday-ready>
         {/* The Timeline spans the page (LAI-889, the v3 design); the editor, the lists and the side column sit under it. */}
@@ -1086,26 +1311,7 @@ export function MyDayScreen({
                   setSelection({ kind: 'entry', id: entry.id });
                 }}
                 onNavigate={onNavigate}
-              >
-                {addable && !readOnly && (
-                  <AddTimeForm
-                    day={view.day}
-                    tz={view.tz}
-                    slot={slot}
-                    midnight={line.midnight}
-                    onClearSlot={() => {
-                      setSlot(undefined);
-                      if (selection?.kind === 'gap') setSelection(undefined);
-                    }}
-                    onBreakSlot={actions.markBreak}
-                    chips={cardChips(null, inProgress, onTheDay)}
-                    busy={pending === 'add'}
-                    locked={batching}
-                    noteRef={noteRef}
-                    onAdd={addOne}
-                  />
-                )}
-              </EntryList>
+              />
             )}
           </div>
 
@@ -1125,7 +1331,6 @@ export function MyDayScreen({
                 onNavigate={onNavigate}
               />
             )}
-            {!readOnly && <WhoLooked tz={view.tz} today={view.today} />}
           </aside>
         </div>
       </div>
