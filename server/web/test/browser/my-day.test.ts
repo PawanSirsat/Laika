@@ -300,12 +300,12 @@ void describe('My day after the reference', () => {
       }
       assert.ok(drafted.x < confirmed.x, '08:40 is drawn after 11:30');
 
-      // To settle, then Confirmed — the lists the lane pictures. Add time is
-      // the header's since LAI-502.
+      // To review, then Confirmed — the tabs the lane pictures (LAI-505). Add
+      // time is the header's since LAI-502.
       const order = await h.page
         .locator('.myday-main')
         .evaluate((el: Element) => el.textContent ?? '');
-      const drafts = order.indexOf('To settle');
+      const drafts = order.indexOf('To review');
       const confirmedAt = order.indexOf('Confirmed', drafts + 1);
       assert.ok(drafts > -1 && confirmedAt > drafts, 'the lists are out of order');
       assert.equal(await h.page.locator('[data-add-time]').count(), 1, 'no Add time in the header');
@@ -509,6 +509,8 @@ void describe('times and durations say their units (LAI-830)', () => {
   void test('a 12-hour clock with AM/PM, and minutes and hours in words', async () => {
     const h = await open('/my-day', { ...STUB, '/api/v1/me/time': OWNER_DAY });
     try {
+      await h.page.locator('[data-day-tab="confirmed"]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-day-tab="confirmed"]').click();
       const confirmed = h.page.locator('.myday-entries');
       await confirmed.locator('[data-entry="o1"]').waitFor({ timeout: 20_000 });
       const row = (id: string) => confirmed.locator(`[data-entry="${id}"]`);
@@ -527,7 +529,9 @@ void describe('times and durations say their units (LAI-830)', () => {
       );
 
       // The drafted list, Confirm day, the week strip and the bar say the same.
+      await h.page.locator('[data-day-tab="review"]').click();
       const drafted = h.page.locator('[data-draft="d1"]');
+      await drafted.waitFor({ timeout: 5_000 });
       assert.equal(await drafted.locator('.myday-row-time').innerText(), '8:40–10:15 AM');
       assert.equal(await drafted.locator('.myday-row-minutes').innerText(), '1 h 35 min');
       assert.match(

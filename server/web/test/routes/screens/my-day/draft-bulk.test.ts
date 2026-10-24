@@ -15,7 +15,6 @@ import {
   minutesOf,
   nameBlocks,
   needCardLine,
-  pageOf,
   placed,
   runBulk,
   runConfirmDay,
@@ -112,25 +111,6 @@ function fakeApi(
   };
   return { api, sent };
 }
-
-void describe('paging', () => {
-  const rows = Array.from({ length: 37 }, (_, i) => i + 1);
-
-  void test('ten a page, said as a range of the whole', () => {
-    assert.equal(pageOf(rows, 0).label, '1–10 of 37');
-    assert.deepEqual(pageOf(rows, 0).items, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-    assert.equal(pageOf(rows, 1).label, '11–20 of 37');
-    assert.equal(pageOf(rows, 3).label, '31–37 of 37');
-    assert.equal(pageOf(rows, 0).pages, 4);
-  });
-
-  void test('a page past the end shows the last one — the list shrank under it', () => {
-    const shrunk = pageOf(rows.slice(0, 12), 3);
-    assert.equal(shrunk.page, 1);
-    assert.equal(shrunk.label, '11–12 of 12');
-    assert.equal(pageOf([], 2).label, '0 of 0');
-  });
-});
 
 void describe('selecting', () => {
   const ids = ['a', 'b', 'c', 'd', 'e', 'f'];

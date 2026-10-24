@@ -45,6 +45,11 @@ async function openDay(): Promise<Harness> {
 }
 
 async function select(h: Harness, row: string): Promise<Locator> {
+  // The lists live on tabs (LAI-505): a row is reached on its own tab.
+  const tab = h.page.locator(`[data-day-tab="${row.startsWith('e') ? 'confirmed' : 'review'}"]`);
+  if ((await tab.count()) === 1 && (await tab.getAttribute('aria-current')) !== 'page') {
+    await tab.click();
+  }
   await h.page.locator(`[data-select="${row}"]`).click();
   const inspector = h.page.locator(`[data-inspector-for="${row}"]`);
   await inspector.waitFor({ timeout: 5_000 });
@@ -122,6 +127,7 @@ void describe('a work folder’s chosen name on My day (LAI-866)', () => {
         await visible(inspector.locator('[data-drafted-folder]'), 'the folder under Drafted from');
 
         // The confirmed entry shows the name.
+        await h.page.locator('[data-day-tab="confirmed"]').click();
         const entry = h.page.locator('[data-ledger-row="e1"]');
         assert.equal((await entry.locator('[data-entry-folder]').innerText()).trim(), 'Acme');
         await visible(entry.locator('[data-entry-folder]'), 'the entry’s folder');

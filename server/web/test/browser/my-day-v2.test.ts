@@ -150,7 +150,16 @@ async function openDay(
 
 const writes = (h: Harness): StubCall[] => h.calls.filter((c) => c.method !== 'GET');
 
+/** The lists live on tabs (LAI-505): a row is reached on its own tab. */
+async function onTab(h: Harness, row: string): Promise<void> {
+  const tab = h.page.locator(`[data-day-tab="${row.startsWith('e') ? 'confirmed' : 'review'}"]`);
+  if ((await tab.count()) === 1 && (await tab.getAttribute('aria-current')) !== 'page') {
+    await tab.click();
+  }
+}
+
 async function select(h: Harness, row: string): Promise<void> {
+  await onTab(h, row);
   await h.page.locator(`[data-select="${row}"]`).click();
   await h.page.locator(`[data-inspector-for="${row}"]`).waitFor({ timeout: 5_000 });
 }
@@ -434,7 +443,7 @@ void describe('confirming leaves out what needs a card (1, 6)', () => {
   void test('a bulk Confirm leaves out what needs a card, keeps it checked and says so', async () => {
     const h = await openDay(TODAY);
     try {
-      await h.page.getByRole('checkbox', { name: 'Select every block on this page' }).check();
+      await h.page.getByRole('checkbox', { name: 'Select every drafted block' }).check();
       await h.page.locator('.myday-bulk').getByRole('button', { name: 'Confirm' }).click();
       await h.page.locator('[data-toast]').waitFor({ timeout: 5_000 });
       assert.deepEqual(
@@ -981,6 +990,26 @@ void describe('no mockup data (2)', () => {
   });
 });
 
+/** Each list drawn: its label, whether it has rows, what is cut, and where its columns start. */
+async function readLists(h: Harness) {
+  return h.page.evaluate(() =>
+    [...document.querySelectorAll('.myday-blocks')].map((list) => {
+      const rows = [...list.querySelectorAll(':scope > li:not(.myday-group-head)')];
+      const edge = (row: Element, sel: string): number =>
+        Math.round(row.querySelector(sel)?.getBoundingClientRect().left ?? -1);
+      return {
+        label: list.getAttribute('aria-label') ?? '',
+        rows: rows.length,
+        cut: [...list.querySelectorAll('.myday-row-select, .myday-row-time, .myday-row-minutes')]
+          .filter((el) => el.scrollWidth > el.clientWidth + 1)
+          .map((el) => `${el.className}: ${(el.textContent ?? '').trim()}`),
+        lengths: [...new Set(rows.map((row) => edge(row, '.myday-row-minutes')))],
+        cards: [...new Set(rows.map((row) => edge(row, '.myday-row-target')))],
+      };
+    }),
+  );
+}
+
 void describe('a phone, and both themes (I)', () => {
   void test('390 px: the week and the timeline scroll on their own, the column moves below, the page never sideways', async () => {
     const h = await openDay(TODAY);
@@ -1123,26 +1152,13 @@ void describe('a phone, and both themes (I)', () => {
       for (const width of [1440, 1024]) {
         for (const folded of [false, true]) {
           await layOut(h, width, folded);
-          const lists = await h.page.evaluate(() =>
-            [...document.querySelectorAll('.myday-blocks')].map((list) => {
-              const rows = [...list.querySelectorAll(':scope > li')];
-              const edge = (row: Element, sel: string): number =>
-                Math.round(row.querySelector(sel)?.getBoundingClientRect().left ?? -1);
-              return {
-                label: list.getAttribute('aria-label') ?? '',
-                rows: rows.length,
-                cut: [
-                  ...list.querySelectorAll(
-                    '.myday-row-select, .myday-row-time, .myday-row-minutes',
-                  ),
-                ]
-                  .filter((el) => el.scrollWidth > el.clientWidth + 1)
-                  .map((el) => `${el.className}: ${(el.textContent ?? '').trim()}`),
-                lengths: [...new Set(rows.map((row) => edge(row, '.myday-row-minutes')))],
-                cards: [...new Set(rows.map((row) => edge(row, '.myday-row-target')))],
-              };
-            }),
-          );
+          // One list per tab (LAI-505): read each on its own tab.
+          const lists = [];
+          for (const tab of ['review', 'confirmed']) {
+            await h.page.locator(`[data-day-tab="${tab}"]`).click();
+            await h.page.locator('.myday-blocks').waitFor({ timeout: 5_000 });
+            lists.push(...(await readLists(h)));
+          }
           const at = `${String(width)} folded=${String(folded)}`;
           assert.deepEqual(
             lists.map((l) => [l.label, l.rows > 1]),

@@ -1,23 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TimeDraft } from '../../../api/time.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
-import {
-  effectiveSelection,
-  pageState,
-  selectAll,
-  togglePage,
-  NO_SELECTION,
-} from '../list/list-select.ts';
+import { effectiveSelection, pageState, togglePage, NO_SELECTION } from '../list/list-select.ts';
+import { groupByPart } from './day-groups.ts';
 import { DraftRow } from './DraftRow.tsx';
-import {
-  PAGE_SIZE,
-  minutesOf,
-  needCardLine,
-  needsCard,
-  pageOf,
-  selectRange,
-  type BulkKind,
-} from './draft-bulk.ts';
+import { minutesOf, needCardLine, needsCard, selectRange, type BulkKind } from './draft-bulk.ts';
 import { duration } from './format.ts';
 
 /** A batch in flight, on the day it runs on. Its last word is the page's toast. */
@@ -75,13 +62,13 @@ export function DraftList({
 }: DraftListProps) {
   const [checked, setChecked] = useState<ReadonlySet<string>>(NO_SELECTION);
   const [anchor, setAnchor] = useState<string | undefined>(undefined);
-  const [page, setPage] = useState(0);
   const head = useRef<HTMLInputElement | null>(null);
 
   const live = effectiveSelection(checked, drafts);
-  const paged = pageOf(drafts, page);
-  const pageIds = paged.items.map((d) => d.id);
-  const headState = pageState(live, pageIds);
+  // One list, grouped by the part of the day (LAI-505): the box takes it all.
+  const allIds = drafts.map((d) => d.id);
+  const headState = pageState(live, allIds);
+  const groups = groupByPart(drafts);
   const busy = pending !== undefined;
   const chosen = drafts.filter((d) => live.has(d.id));
   const chosenNeedCard = chosen.filter(needsCard).length;
@@ -91,16 +78,6 @@ export function DraftList({
   useEffect(() => {
     if (head.current !== null) head.current.indeterminate = headState === 'some';
   }, [headState]);
-
-  // The selected block's page is the page shown: J and K walk every page.
-  const selectedAt = selected === undefined ? -1 : drafts.findIndex((d) => d.id === selected);
-  useEffect(() => {
-    if (selectedAt >= 0) setPage(Math.floor(selectedAt / PAGE_SIZE));
-  }, [selectedAt]);
-
-  const go = (to: number): void => {
-    setPage(to);
-  };
 
   const act = (kind: BulkKind): void => {
     void onBulk(kind, chosen).then((keep) => {
@@ -119,31 +96,19 @@ export function DraftList({
             className="myday-check"
             checked={headState === 'all'}
             disabled={busy}
-            aria-label="Select every block on this page"
+            aria-label="Select every drafted block"
             onChange={() => {
-              setChecked(togglePage(live, pageIds));
+              setChecked(togglePage(live, allIds));
               setAnchor(undefined);
             }}
           />
         )}
         <h2 className="myday-card-title" id="myday-drafts-title">
-          To settle
+          To review
         </h2>
         <span className="myday-card-figure" data-drafted-caption>
           {drafts.length} {drafts.length === 1 ? 'block' : 'blocks'} · {duration(total)}
         </span>
-        {headState === 'all' && live.size < drafts.length && (
-          <button
-            type="button"
-            className="myday-linkish"
-            disabled={busy}
-            onClick={() => {
-              setChecked(selectAll(drafts));
-            }}
-          >
-            Select all {drafts.length} drafted
-          </button>
-        )}
         <span className="myday-card-head-gap" />
         {live.size === 0 && (
           <span className="myday-card-caption" data-settle-hint>
@@ -215,71 +180,49 @@ export function DraftList({
         </p>
       )}
 
-      <div className="myday-scroll" role="region" aria-label={`Drafted blocks, ${paged.label}`}>
+      <div className="myday-scroll" role="region" aria-label="Drafted blocks">
         <ol
           className={readOnly ? 'myday-blocks myday-blocks-read' : 'myday-blocks'}
           aria-label="Drafted blocks"
         >
-          {paged.items.map((draft, i) => (
-            <DraftRow
-              key={draft.id}
-              draft={draft}
-              position={paged.page * PAGE_SIZE + i + 1}
-              count={drafts.length}
-              busy={busy}
-              checkable={!readOnly}
-              checked={live.has(draft.id)}
-              selected={draft.id === selected}
-              onSelect={() => {
-                onSelect(draft);
-              }}
-              onCheck={(on, range) => {
-                setChecked(
-                  range
-                    ? selectRange(
-                        live,
-                        drafts.map((d) => d.id),
-                        anchor,
-                        draft.id,
-                        on,
-                      )
-                    : selectRange(live, [draft.id], undefined, draft.id, on),
-                );
-                setAnchor(draft.id);
-              }}
-              onNavigate={onNavigate}
-            />
-          ))}
+          {groups.flatMap((group) => [
+            <li
+              key={`head-${group.key}`}
+              className="myday-group-head"
+              data-group={group.key}
+              aria-label={`${group.name}: ${String(group.items.length)} blocks, ${duration(group.minutes)}`}
+            >
+              <span className="myday-group-name">{group.name}</span>
+              <span className="myday-group-count">{group.items.length}</span>
+              <span className="myday-group-sum">{duration(group.minutes)}</span>
+            </li>,
+            ...group.items.map((draft) => (
+              <DraftRow
+                key={draft.id}
+                draft={draft}
+                position={drafts.findIndex((d) => d.id === draft.id) + 1}
+                count={drafts.length}
+                busy={busy}
+                checkable={!readOnly}
+                checked={live.has(draft.id)}
+                selected={draft.id === selected}
+                onSelect={() => {
+                  onSelect(draft);
+                }}
+                onCheck={(on, range) => {
+                  setChecked(
+                    range
+                      ? selectRange(live, allIds, anchor, draft.id, on)
+                      : selectRange(live, [draft.id], undefined, draft.id, on),
+                  );
+                  setAnchor(draft.id);
+                }}
+                onNavigate={onNavigate}
+              />
+            )),
+          ])}
         </ol>
       </div>
-
-      {paged.pages > 1 && (
-        <nav className="myday-pager" aria-label="Drafted pages">
-          <button
-            type="button"
-            className="myday-chip"
-            disabled={paged.page === 0}
-            onClick={() => {
-              go(paged.page - 1);
-            }}
-          >
-            ‹ Prev
-          </button>
-          <span className="myday-pager-label" aria-live="polite" data-pager-label>
-            {paged.label}
-          </span>
-          <button
-            type="button"
-            className="myday-chip"
-            disabled={paged.page >= paged.pages - 1}
-            onClick={() => {
-              go(paged.page + 1);
-            }}
-          >
-            Next ›
-          </button>
-        </nav>
-      )}
     </section>
   );
 }

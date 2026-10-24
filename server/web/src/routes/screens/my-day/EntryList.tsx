@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { TimeEntry } from '../../../api/time.ts';
+import { groupByPart } from './day-groups.ts';
 import { EntryRow } from './EntryRow.tsx';
-import { PAGE_SIZE, pageOf } from './draft-bulk.ts';
 import { duration } from './format.ts';
 
 export interface EntryListProps {
@@ -10,30 +10,19 @@ export interface EntryListProps {
   readonly selected: string | undefined;
   readonly onSelect: (entry: TimeEntry) => void;
   readonly onNavigate: (to: string) => void;
-  /** *Add time*, at the foot of the list, as the design has it. */
   readonly children?: ReactNode;
 }
 
 /**
- * *Confirmed* (the owner's design, LAI-831; LAI-810): the day's confirmed
+ * *Confirmed* (the owner's design, LAI-505; LAI-810): the day's confirmed
  * time — **the time the organisation sees**; drafts only owners and admins
- * read (D-102, LAI-968) — ten to a page, with no
- * scroll of its own so the wheel always moves the page (LAI-311), and *Add
- * time* at its foot. Clicking a row puts it in the inspector.
+ * read (D-102, LAI-968) — grouped by the part of the day, with no scroll of
+ * its own so the wheel always moves the page (LAI-311). Clicking a row puts
+ * it in the editor.
  */
 export function EntryList({ entries, selected, onSelect, onNavigate, children }: EntryListProps) {
-  const [page, setPage] = useState(0);
-  const paged = pageOf(entries, page);
   const total = entries.reduce((sum, e) => sum + e.minutes, 0);
-
-  const selectedAt = selected === undefined ? -1 : entries.findIndex((e) => e.id === selected);
-  useEffect(() => {
-    if (selectedAt >= 0) setPage(Math.floor(selectedAt / PAGE_SIZE));
-  }, [selectedAt]);
-
-  const go = (to: number): void => {
-    setPage(to);
-  };
+  const groups = groupByPart(entries);
 
   return (
     <section className="myday-card myday-entries" aria-labelledby="myday-entries-title">
@@ -55,51 +44,36 @@ export function EntryList({ entries, selected, onSelect, onNavigate, children }:
           id="myday-entries-list"
           className="myday-scroll"
           role="region"
-          aria-label={`Confirmed entries, ${paged.label}`}
+          aria-label="Confirmed entries"
         >
           <ol className="myday-blocks" aria-label="Confirmed entries">
-            {paged.items.map((entry, i) => (
-              <EntryRow
-                key={entry.id}
-                entry={entry}
-                position={paged.page * PAGE_SIZE + i + 1}
-                count={entries.length}
-                selected={entry.id === selected}
-                onSelect={() => {
-                  onSelect(entry);
-                }}
-                onNavigate={onNavigate}
-              />
-            ))}
+            {groups.flatMap((group) => [
+              <li
+                key={`head-${group.key}`}
+                className="myday-group-head"
+                data-group={group.key}
+                aria-label={`${group.name}: ${String(group.items.length)} entries, ${duration(group.minutes)}`}
+              >
+                <span className="myday-group-name">{group.name}</span>
+                <span className="myday-group-count">{group.items.length}</span>
+                <span className="myday-group-sum">{duration(group.minutes)}</span>
+              </li>,
+              ...group.items.map((entry) => (
+                <EntryRow
+                  key={entry.id}
+                  entry={entry}
+                  position={entries.findIndex((e) => e.id === entry.id) + 1}
+                  count={entries.length}
+                  selected={entry.id === selected}
+                  onSelect={() => {
+                    onSelect(entry);
+                  }}
+                  onNavigate={onNavigate}
+                />
+              )),
+            ])}
           </ol>
         </div>
-      )}
-      {paged.pages > 1 && (
-        <nav className="myday-pager" aria-label="Confirmed pages">
-          <button
-            type="button"
-            className="myday-chip"
-            disabled={paged.page === 0}
-            onClick={() => {
-              go(paged.page - 1);
-            }}
-          >
-            ‹ Prev
-          </button>
-          <span className="myday-pager-label" aria-live="polite">
-            {paged.label}
-          </span>
-          <button
-            type="button"
-            className="myday-chip"
-            disabled={paged.page >= paged.pages - 1}
-            onClick={() => {
-              go(paged.page + 1);
-            }}
-          >
-            Next ›
-          </button>
-        </nav>
       )}
       {children}
     </section>

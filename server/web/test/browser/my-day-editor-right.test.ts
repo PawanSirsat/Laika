@@ -52,6 +52,7 @@ void describe('the right column (LAI-508)', () => {
         assert.equal(await h.page.locator('[data-inspector]').count(), 0);
 
         // A confirmed block, from the list.
+        await h.page.locator('[data-day-tab="confirmed"]').click();
         await h.page.locator('[data-select="e1"]').click();
         await side.locator('[data-inspector-for="e1"]').waitFor({ timeout: 5_000 });
         assert.equal(await side.getAttribute('data-side'), 'editor');
