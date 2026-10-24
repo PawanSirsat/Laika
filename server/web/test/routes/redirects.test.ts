@@ -66,7 +66,7 @@ void describe('every old address has a new home', () => {
 void describe('the query travels with the redirect', () => {
   void test('Connect keeps ?agent=, which a lead sends to set the page to the team’s agent', () => {
     assert.equal(redirectFor('/connect', '?agent=codex'), '/developer?tab=connect&agent=codex');
-    // The wizard's own old address keeps the step as well (LAI-997).
+    // The wizard's own old address keeps the step as well (LAI-507).
     assert.equal(
       redirectFor('/developer/connect', '?agent=codex&step=2'),
       '/developer?tab=connect&agent=codex&step=2',

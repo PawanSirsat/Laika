@@ -93,7 +93,7 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
   },
   /*
    * Developer access (LAI-796): connecting an agent and your tokens, on one
-   * page — four tabs since LAI-997, the wizard the first of them.
+   * page — four tabs since LAI-507, the wizard the first of them.
    */
   '/developer': {
     headline: 'No tokens yet',

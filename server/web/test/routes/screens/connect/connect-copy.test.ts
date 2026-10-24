@@ -23,7 +23,7 @@ const ORIGIN = 'http://board.example.test:9999';
 const SECRET = 'lai_ThisIsTheWholeSecretAndMustNotEscape';
 const PROJECT = { slug: 'onroute', prefix: 'ONR', name: 'OnRoute' };
 
-void describe('the machine prompt (LAI-997; was the setup prompt)', () => {
+void describe('the machine prompt (LAI-507; was the setup prompt)', () => {
   const ON = { origin: ORIGIN, secret: SECRET, insightsOn: true };
   const OFF = { origin: ORIGIN, secret: SECRET, insightsOn: false };
 
@@ -94,7 +94,7 @@ void describe('the machine prompt (LAI-997; was the setup prompt)', () => {
   });
 });
 
-void describe('the project prompt (LAI-997)', () => {
+void describe('the project prompt (LAI-507)', () => {
   const block = projectBlock(ORIGIN, PROJECT);
   const prompt = projectPrompt({ origin: ORIGIN, project: PROJECT, path: 'CLAUDE.md', block });
 

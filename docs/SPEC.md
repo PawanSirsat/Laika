@@ -4365,8 +4365,8 @@ the decision currently governing it rather than the table naming one for all.
 | a space's tabs | two groups with a hairline between — *Board, List, Timeline, Calendar* \| *Sprints, Dashboard, Activity, Meeting review* — and *Agents* and *Create* on the right | **LAI-796** |
 | Task detail | a **centred modal over a dimmed board**, dismissed by the scrim or Escape — not a screen, and not a right-hand drawer | D-059.2, amended by **D-063** |
 | Timeline, Calendar, Dashboard, Meeting review | **tabs across the top of a space** | **D-059.3** |
-| Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is four tabs since LAI-997 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
-| old addresses | each redirects, in place and keeping its query, to its new home: `/review` → `/inbox?tab=review`, `/unlisted` → `/inbox?tab=unlisted`, `/capacity` → `/insights?tab=capacity` (dropping a `?project=` from when it was a space tab), `/usage` → `/insights?tab=usage`, `/tokens` → `/developer?tab=tokens`, `/connect` and `/developer/connect` → `/developer?tab=connect` (keeping `?agent=` and `?step=`) | **LAI-796**; **LAI-997** |
+| Inbox, Insights, Developer access | **one page each, across every space the reader can see**, no space bar: **Inbox** (`/inbox`) is *Review* and *Unlisted work* as tabs, each with its count; **Insights** (`/insights`) is *Capacity* and *Usage & cost*, the page's period chosen in its header where the screen has one; **Developer access** (`/developer`) is four tabs since LAI-507 — *Connect* (the wizard), *Projects*, *Activity*, *Tokens*. A tab is `?tab=` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"*; regrouped by **LAI-796** |
+| old addresses | each redirects, in place and keeping its query, to its new home: `/review` → `/inbox?tab=review`, `/unlisted` → `/inbox?tab=unlisted`, `/capacity` → `/insights?tab=capacity` (dropping a `?project=` from when it was a space tab), `/usage` → `/insights?tab=usage`, `/tokens` → `/developer?tab=tokens`, `/connect` and `/developer/connect` → `/developer?tab=connect` (keeping `?agent=` and `?step=`) | **LAI-796**; **LAI-507** |
 | Organisation | four tabs — **Overview** (members, spaces and pending invites counted; *Presence*, *Developer insights*, *Time*; the spaces), **People** (members and invites), **Integrations** (GitHub webhook, model prices, AI provider), **Security** (everyone's tokens, owners and admins) | **LAI-796** |
 
 Checked against `docs/design/Laika Prototype.dc.html` — **which is dated 24 August
@@ -4394,7 +4394,7 @@ call MCP; agents do.
 | **My day** *(sidebar, the reader's own)* | 8 | `GET /me/time`, `GET/PUT /me/time-settings`, `PATCH /me/time-drafts/:id`, `POST /me/time-drafts/:id/split`, `POST /me/time-drafts/:id/dismiss`, `POST /me/time-drafts/:id/confirm`, `DELETE /me/time-drafts`, `POST /me/time/days/:day/confirm`, `POST /me/time-entries`, `PATCH/DELETE /me/time-entries/:id`, `GET /me/time-entries/:id/revisions`; *On your plate* (LAI-796): `GET /projects`, `GET /projects/:slug/tasks?assignee=&status=` (slim), `GET /tasks/:id` (an outside blocker), and the review queue the sidebar's badge already read | `propose_time_entry` | ✅ D-088, LAI-796 |
 | **Tokens** *(on Developer access)* | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
 | **Organisation** *(four tabs, LAI-796)* | 1 basic / 6 LLM | `GET /projects` (Overview's spaces), `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET /org/model-prices`, `PUT/DELETE /org/model-prices/:model` (LAI-773), `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
-| **Connect** *(Developer access's first tab, `/developer?tab=connect`; not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET /me/activity-sharing` (whether the organisation collects, so the machine prompt turns the collector on), `GET /projects` (the Projects tab), `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` (the Activity tab) | — | ✅ D-079, D-084, D-087, LAI-997 |
+| **Connect** *(Developer access's first tab, `/developer?tab=connect`; not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET /me/activity-sharing` (whether the organisation collects, so the machine prompt turns the collector on), `GET /projects` (the Projects tab), `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` (the Activity tab) | — | ✅ D-079, D-084, D-087, LAI-507 |
 | **Capacity** *(Insights' first tab, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects` (no task is read — LAI-992), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
 | **Review** *(Inbox's first tab, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
 | **Unlisted work** *(Inbox's tab, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
@@ -4518,7 +4518,7 @@ anything missing sends the task back.
   in a tooltip on hover and on keyboard focus; the user menu opening from the
   person at the foot, reachable and closable from the keyboard (arrows, Home,
   End, Escape) and by a click outside.
-- **Developer access** (`/developer`, LAI-796; four tabs since LAI-997,
+- **Developer access** (`/developer`, LAI-796; four tabs since LAI-507,
   D-111) — a sentence on what a token is, then **Connect · Projects ·
   Activity · Tokens**, in the order a new developer meets them. *Connect* is
   the four-step wizard below, embedded: its header gives up its band and hands
@@ -4566,7 +4566,7 @@ anything missing sends the task back.
 - **Connect** (`/developer?tab=connect`; `?agent=` sets the agent and
   `?step=2` opens on the token) — the four-step wizard: choose the agent, mint
   a token, add Laika to the agent, check it connected. **Everything in it is
-  once per machine** (LAI-997): the Claude Code *Set up this machine* prompt
+  once per machine** (LAI-507): the Claude Code *Set up this machine* prompt
   clones or pulls the plugin, runs the installer on stdin, checks
   `GET /api/v1/me` answers, and — only when `GET /me/activity-sharing` says the
   organisation collects — runs `laika activity on --yes`; it says to skip the

@@ -39,7 +39,7 @@ export interface ProjectsTabProps {
 }
 
 /**
- * Projects (LAI-997): what is **once per project**, and nothing else.
+ * Projects (LAI-507): what is **once per project**, and nothing else.
  *
  * The machine was set up on Connect; this adds one repository to the board.
  * Pick the project and the agent, and the tab gives the block for that

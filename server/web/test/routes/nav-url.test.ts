@@ -68,7 +68,7 @@ void describe('it does not attach a project where there is none', () => {
   void test('org-level destinations stay bare', () => {
     assert.equal(navHref('/organisation', SLUG), '/organisation');
     // Connect and Tokens became Developer access (LAI-796; one page of four
-    // tabs since LAI-997), org-level as they were (LAI-622). Without this line
+    // tabs since LAI-507), org-level as they were (LAI-622). Without this line
     // its `orgLevel` flag is untested and a later removal would be silent.
     assert.equal(navHref('/developer', SLUG), '/developer');
     // The rest of the rail is about the reader or the organisation too.

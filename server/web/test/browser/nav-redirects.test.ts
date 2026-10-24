@@ -45,7 +45,7 @@ const MOVES: readonly (readonly [string, string, string, string, string | null])
   ['/unlisted', '/inbox', '?tab=unlisted', 'Inbox', 'Unlisted work'],
   ['/capacity', '/insights', '?tab=capacity', 'Insights', 'Capacity'],
   ['/usage', '/insights', '?tab=usage', 'Insights', 'Usage & cost'],
-  // Developer access is four tabs since LAI-997: Tokens is one of them.
+  // Developer access is four tabs since LAI-507: Tokens is one of them.
   ['/tokens', '/developer', '?tab=tokens', 'Developer access', 'Tokens'],
 ];
 
@@ -78,7 +78,7 @@ void describe('a bookmark to an old page opens its new home', () => {
   void test('Connect keeps ?agent=, and opens the wizard set to it', async () => {
     const h = await open('/connect?agent=codex', STUB);
     try {
-      // The wizard is Developer access's first tab since LAI-997.
+      // The wizard is Developer access's first tab since LAI-507.
       await h.page.waitForURL(
         (url) => url.pathname === '/developer' && url.search === '?tab=connect&agent=codex',
         { timeout: 10_000 },

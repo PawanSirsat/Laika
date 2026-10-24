@@ -660,7 +660,7 @@
   grid-template-columns: 17.5rem minmax(0, 1fr);
   /* LAI-741: exactly the page's height. The card spans both rows; the rail's
      steps take what they need, scrolling only on a screen too short for them.
-     The second row held the rail's Optional group until LAI-997. */
+     The second row held the rail's Optional group until LAI-507. */
   grid-template-rows: minmax(0, auto) minmax(0, 1fr);
   gap: var(--space-3) var(--space-5);
   align-items: stretch;
@@ -1476,7 +1476,7 @@
   min-width: 0;
 }
 
-/* What agents can do, folded under step 4 (LAI-997). */
+/* What agents can do, folded under step 4 (LAI-507). */
 .conn-tools-ref .conn-reference {
   display: flex;
   flex-direction: column;

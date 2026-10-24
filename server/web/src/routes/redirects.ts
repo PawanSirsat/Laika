@@ -4,7 +4,7 @@
  * The owner's reorganisation folded six pages into three: Review and Unlisted
  * work are the tabs of **Inbox**, Capacity and Usage the tabs of **Insights**,
  * and Connect and Tokens are **Developer access**. The wizard kept its own
- * address under it until LAI-997 made it Developer access's first tab, so
+ * address under it until LAI-507 made it Developer access's first tab, so
  * `/developer/connect` moved too. A bookmark, a link an agent printed or a
  * URL a teammate pasted still names the old page, so each answers with its
  * new home.

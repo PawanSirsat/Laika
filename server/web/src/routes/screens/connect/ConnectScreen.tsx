@@ -87,12 +87,12 @@ import './connect.css';
  * shell: the header and the rail never move, and the card's body is the one
  * scroller, with its *Back / Continue* footer pinned below it.
  *
- * ## Once per machine, and nothing else (LAI-997)
+ * ## Once per machine, and nothing else (LAI-507)
  *
  * Every block here sets up the **machine**: the plugin, the token, the
  * collector when the organisation wants it. The rail's *Optional* group —
  * the project block, the tool reference, local activity, the invite — went
- * with LAI-997: the first three are Developer access's other tabs, and an
+ * with LAI-507: the first three are Developer access's other tabs, and an
  * invite is Organisation → People's. *What agents can do* stayed, folded under
  * step 4, because it is about the connection just made. The screen is now
  * Developer access's first tab and renders embedded: its header hands the
@@ -150,7 +150,7 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
   const [mintError, setMintError] = useState<string | undefined>(undefined);
   /*
    * Whether the organisation collects local activity (D-102 amended), so the
-   * setup blocks end by turning the collector on (LAI-997). Unknown until the
+   * setup blocks end by turning the collector on (LAI-507). Unknown until the
    * board answers, and a refusal reads as *off*: a step that would fail is
    * worse than one left out.
    */
@@ -826,7 +826,7 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
                       </div>
                     )}
 
-                    {/* What the connection just made can do (LAI-741's reference, folded here by LAI-997). */}
+                    {/* What the connection just made can do (LAI-741's reference, folded here by LAI-507). */}
                     <details className="conn-alt conn-tools-ref">
                       <summary>What agents can do</summary>
                       <div className="conn-reference" data-extra="tools">

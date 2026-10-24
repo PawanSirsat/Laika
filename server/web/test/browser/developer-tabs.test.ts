@@ -1,5 +1,5 @@
 /**
- * Developer access as one page of four tabs (LAI-997, D-111): Connect — the
+ * Developer access as one page of four tabs (LAI-507, D-111): Connect — the
  * wizard — then Projects, Activity, Tokens. And the two prompts that replaced
  * the one: the machine prompt installs and, when the organisation collects
  * local activity, turns the collector on, never touching a repository; the
@@ -83,7 +83,7 @@ after(async () => {
 const tabs = async (h: Awaited<ReturnType<typeof open>>) =>
   (await h.page.locator('.page-tab').allInnerTexts()).map((t) => t.trim());
 
-void describe('four tabs (LAI-997)', () => {
+void describe('four tabs (LAI-507)', () => {
   void test('/developer opens on Connect, and the four tabs are the four', async () => {
     const h = await open('/developer', stub(false));
     try {

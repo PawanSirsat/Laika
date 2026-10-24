@@ -5940,7 +5940,7 @@ The owner's design is `MyDay.dc.html` in the design project (with
     LAI-501 day note (server), LAI-502 header, LAI-503 confirm summary,
     LAI-504 editor, LAI-505 lists and overview, LAI-506 phone drawer.
 
-## D-111 — Developer onboarding is one page and two prompts: a machine prompt and a project prompt (LAI-997)
+## D-111 — Developer onboarding is one page and two prompts: a machine prompt and a project prompt (LAI-507)
 
 **Date:** 2026-10-24 · **By:** CHIEF (Belka), on the owner's decisions after
 the onboarding analysis of the same day
@@ -5972,7 +5972,8 @@ once per machine and what was once per project.
    switch (profile, the `Switch` doc, the root README, SPEC §8 and §11.4.2.1)
    is corrected: the organisation's switch alone decides (D-102 amended).
 
-**Why one task:** CHIEF built it on the owner's instruction with one id left
-in its block (LAI-997; D-109 moves CHIEF to `LAI-500` – `LAI-599` from here),
-so the web, docs and README halves are named edits of one task rather than
-four files for four halves.
+**Why one task:** CHIEF built it on the owner's instruction, and the web, docs
+and README halves are named edits of one task rather than four files for four
+halves. Filed as LAI-997, the last id of D-100's block; renumbered to LAI-507
+the same day when `master` turned out to hold another session's LAI-997 —
+the first id used from D-109's block.

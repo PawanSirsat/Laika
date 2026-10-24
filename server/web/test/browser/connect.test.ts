@@ -19,7 +19,7 @@ import { pick } from './dropdown.ts';
 import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
 
 /*
- * The wizard is Developer access's first tab since LAI-997: every `open` of
+ * The wizard is Developer access's first tab since LAI-507: every `open` of
  * `/developer/connect` below lands on `/developer?tab=connect` by redirect,
  * which is itself the thing the first test under *review follow-ups* proves.
  * The rail's Optional entries went with it — the project block is the
@@ -267,7 +267,7 @@ void describe('minting fills the page in', () => {
     const h = await open('/developer/connect', stub(MINTS));
     try {
       await mint(h);
-      // The block is the Projects tab's since LAI-997 — a tab away from the
+      // The block is the Projects tab's since LAI-507 — a tab away from the
       // minted secret, on the same page.
       await h.page.locator('.page-tab', { hasText: 'Projects' }).click();
       await h.page.locator('.conn-project-block').waitFor({ timeout: 20_000 });
@@ -637,7 +637,7 @@ void describe('the agent picker (LAI-737)', () => {
         await h.page.getByRole('radio', { name: 'Gemini CLI', exact: true }).isChecked(),
         true,
       );
-      // The Projects tab opens on the agent just chosen (LAI-997).
+      // The Projects tab opens on the agent just chosen (LAI-507).
       await h.page.locator('.page-tab', { hasText: 'Projects' }).click();
       await h.page.locator('.conn-project-block').waitFor({ timeout: 20_000 });
       assert.match(await h.page.locator('.conn-project-block').innerText(), /Laika/);
@@ -767,7 +767,7 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
       await h.page.locator('.conn-wizard-card').waitFor({ timeout: 20_000 });
       const measure = () =>
         h.page.evaluate(() => ({
-          // Embedded since LAI-997: the page header is Developer access's.
+          // Embedded since LAI-507: the page header is Developer access's.
           bar: document.querySelector('.screen-page')?.getBoundingClientRect().width ?? 0,
           main: document.querySelector('.shell-main')?.clientWidth ?? -1,
           page: document.querySelector('.conn-page')?.getBoundingClientRect().width ?? 0,
@@ -820,7 +820,7 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
       await mint(h);
       // Each where it now lives (LAI-740): the header on every step, the token
       // on step 2, the setup on step 3, the start on 4. The project block's is
-      // the Projects tab's (developer-tabs.test.ts, LAI-997).
+      // the Projects tab's (developer-tabs.test.ts, LAI-507).
       const where: readonly [1 | 2 | 3 | 4, string, string?][] = [
         [2, 'Copy the board URL'],
         [2, 'Copy the token'],
@@ -1245,7 +1245,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
       }));
       assert.deepEqual(outside.page, ['conn-wizard']);
       // The rail is the steps, and the card is the card: the Optional group
-      // that used to follow them went with LAI-997.
+      // that used to follow them went with LAI-507.
       assert.deepEqual(outside.wizard, ['conn-rail', 'conn-card conn-wizard-card']);
       const body = await h.page.locator('.connect').innerText();
       assert.doesNotMatch(body, /Eighteen tools|You can add people|Invite a teammate/);
@@ -1255,7 +1255,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
     }
   });
 
-  void test('nobody is offered an invite here, whatever their role (LAI-997)', async () => {
+  void test('nobody is offered an invite here, whatever their role (LAI-507)', async () => {
     for (const role of ['owner', 'member'] as const) {
       const h = await open('/developer/connect', stub({ '/api/v1/me': { ...ME, org_role: role } }));
       try {
@@ -1634,7 +1634,7 @@ void describe('the LAI-741 review notes (LAI-742)', () => {
       });
       const at = await phone();
       assert.ok(at.steps > 0 && at.steps <= at.card, 'the four steps are not above the card');
-      // Under Developer access's header and tabs now (LAI-997), so the bar is
+      // Under Developer access's header and tabs now (LAI-507), so the bar is
       // 60% rather than LAI-742's half; the page's description and the rail's
       // intro make way on a phone to keep it there.
       assert.ok(

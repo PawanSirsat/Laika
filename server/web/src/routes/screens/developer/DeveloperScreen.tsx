@@ -22,7 +22,7 @@ export interface DeveloperScreenProps {
 
 /**
  * Developer access (LAI-796): connecting an agent and your own tokens, on one
- * page — four tabs since LAI-997, in the order a new developer meets them.
+ * page — four tabs since LAI-507, in the order a new developer meets them.
  *
  * - **Connect** is the wizard itself (LAI-740), embedded: its header gives up
  *   its band and hands the board's address to this page's header, as every

@@ -279,7 +279,7 @@ export const ROUTES: readonly Route[] = [
   /*
    * **Developer access** (LAI-796): connecting an agent and the reader's own
    * tokens on one page — what Connect (LAI-622) and Tokens were. Since
-   * LAI-997 the wizard is its first tab (`?tab=connect`), beside Projects,
+   * LAI-507 the wizard is its first tab (`?tab=connect`), beside Projects,
    * Activity and Tokens; `/developer/connect` redirects there.
    */
   {

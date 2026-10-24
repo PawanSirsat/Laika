@@ -1,5 +1,5 @@
 ---
-id: LAI-997
+id: LAI-507
 title: 'Developer access: one page with four tabs, a machine prompt and a project prompt, and the personal-switch wording gone'
 area: web
 assignee: chief
@@ -23,7 +23,8 @@ wording that still describes a personal "Share my local activity" switch
 (gone since D-102 amended, LAI-963/964) fixed in the same family.
 
 One task for the three areas because CHIEF builds it on the owner's
-instruction and CHIEF's id block has one number left (see the log); the
+instruction (D-109 gives CHIEF `LAI-500` – `LAI-599`; this was filed as
+LAI-997 and renumbered the same day, see the log); the
 docs half (SPEC §11.4.2, §11.4.2.1, §8; a decision) and the plugin README
 line are named cross-area edits (D-033).
 
@@ -71,5 +72,6 @@ line are named cross-area edits (D-033).
 ## Notes
 
 Built by CHIEF in worktree `Laika-developer` on branch
-`LAI-997-developer-tabs`. Plan file:
+`LAI-507-developer-tabs` (was `LAI-997-developer-tabs`; the commits before the
+renumber were rewritten to carry the new id, being unpushed and CHIEF's own).
 `~/.claude/plans/we-have-to-work-curious-crystal.md`.

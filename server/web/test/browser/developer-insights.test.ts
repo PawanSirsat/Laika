@@ -479,7 +479,7 @@ void describe('Share local activity: who can see it follows the owner’s grants
   });
 });
 
-void describe('Activity tab: Share local activity (the wizard’s Optional entry until LAI-997)', () => {
+void describe('Activity tab: Share local activity (the wizard’s Optional entry until LAI-507)', () => {
   void test('with the organisation’s switch off, says so and offers nothing to turn on', async () => {
     const h = await open(
       '/developer?tab=activity',
@@ -666,7 +666,7 @@ void describe('Activity tab: Share local activity (the wizard’s Optional entry
  * people and lost settings was offered the Organisation link on one page and
  * not the other.
  */
-void describe('the Activity tab says who may turn insights on (one panel since LAI-997)', () => {
+void describe('the Activity tab says who may turn insights on (one panel since LAI-507)', () => {
   const LINK = 'a[href="/organisation?tab=overview"]';
   for (const [who, role, actions, linked] of [
     [

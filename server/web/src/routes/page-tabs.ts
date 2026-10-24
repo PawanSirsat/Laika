@@ -57,7 +57,7 @@ export const ORGANISATION_TABS: readonly PageTab[] = [
 ];
 
 /**
- * Developer access (LAI-997): connecting an agent — the four-step wizard —
+ * Developer access (LAI-507): connecting an agent — the four-step wizard —
  * then what is once per project, what the organisation collects from the
  * machine, and the reader's tokens. Nothing is gated: every tab is about the
  * reader. The order is the order a new developer meets them.

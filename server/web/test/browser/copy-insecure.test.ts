@@ -234,7 +234,7 @@ void describe('Copy on the Connect screen, served over plain HTTP', () => {
   });
 
   void test('the Share local activity command block copies the command', async () => {
-    // The panel is Developer access's Activity tab since LAI-997.
+    // The panel is Developer access's Activity tab since LAI-507.
     const h = await open('/developer?tab=activity', CONNECT, { insecure: true });
     const clip = await clipboardOf(h.page);
     try {

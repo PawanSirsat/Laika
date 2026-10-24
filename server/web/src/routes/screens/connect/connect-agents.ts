@@ -234,7 +234,7 @@ export interface GuideContext {
   readonly secret: string | undefined;
   /**
    * The organisation collects local activity (D-102 amended): the automatic
-   * blocks end by turning the collector on for this machine (LAI-997).
+   * blocks end by turning the collector on for this machine (LAI-507).
    * Absent or `false`, they do not.
    */
   readonly insightsOn?: boolean | undefined;
@@ -340,7 +340,7 @@ const VSCODE_HOSTED =
 
 /**
  * Step 3 for one agent: what to put where. **Once per machine**, every block
- * of it (LAI-997): nothing here writes into a repository; the project block is
+ * of it (LAI-507): nothing here writes into a repository; the project block is
  * the Projects tab's.
  *
  * Grouped as the page shows them — *recommended*, *by hand*, *alternatives* —

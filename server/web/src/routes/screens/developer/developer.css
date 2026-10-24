@@ -44,7 +44,7 @@
   color: var(--text-primary);
 }
 
-/* The Connect tab is the wizard itself (LAI-997): the page is as tall as the
+/* The Connect tab is the wizard itself (LAI-507): the page is as tall as the
    shell's content area so the wizard's card is the one scroller, as it was on
    its own page (LAI-741). The other tabs scroll as any page does. */
 .dev-page-connect {
@@ -78,7 +78,7 @@
   min-width: 0;
 }
 
-/* Once per machine / once per project, said beside every block (LAI-997). */
+/* Once per machine / once per project, said beside every block (LAI-507). */
 .conn-chip-scope {
   border-color: var(--chip-blue-border);
   background: var(--chip-blue-bg);
@@ -94,7 +94,7 @@
 
 /* A phone: the page's sentence and the rail's intro make way, so the wizard's
    card still starts high on the screen under the tabs (LAI-742's rule, kept
-   by LAI-997). The tabs say where the reader is. */
+   by LAI-507). The tabs say where the reader is. */
 @media (max-width: 600px) {
   .dev-page-connect .screen-page-desc,
   .dev-page-connect .conn-rail-intro {

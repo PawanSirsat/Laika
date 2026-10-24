@@ -19,7 +19,7 @@
  *    absence rather than trusting this paragraph. {@link projectPrompt} wraps
  *    it for an agent to write, and carries no token either.
  *
- * ## Two prompts, two scopes (LAI-997)
+ * ## Two prompts, two scopes (LAI-507)
  *
  * The machine prompt is **once per machine**: it installs, checks the board
  * answers, and — when the organisation collects local activity — turns the
@@ -116,7 +116,7 @@ export interface MachinePromptInput {
 export const ACTIVITY_ON = `${PLUGIN_HOME}/cli/bin/laika activity on --yes`;
 
 /**
- * The one paste that sets a **machine** up (LAI-997; was `setupPrompt`,
+ * The one paste that sets a **machine** up (LAI-507; was `setupPrompt`,
  * which also wrote the project block).
  *
  * Ordered so the first thing that can fail, fails first and alone — and it ends
@@ -204,7 +204,7 @@ export interface ProjectPromptInput {
 export const BLOCK_MARKER = 'This project is tracked on a Laika board.';
 
 /**
- * The short paste that adds **one project** (LAI-997): it writes the block
+ * The short paste that adds **one project** (LAI-507): it writes the block
  * into the agent's instructions file in the repo it is run in, and nothing
  * else. No install, no token, no check — the machine prompt did those once.
  */
