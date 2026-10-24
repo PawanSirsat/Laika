@@ -156,6 +156,11 @@ export function PersonHours({ userId, name, day, onDay }: PersonHoursProps) {
           </tr>
         </tfoot>
       </table>
+      {view.day_note !== null && (
+        <p className="prof-hours-daynote" data-hours-note>
+          <strong>Their note for {dayLong(view.day)}:</strong> {view.day_note.note}
+        </p>
+      )}
       <p className="prof-hours-note">
         Confirmed time is what {name} settled; drafted is what their own machine drafted and they
         have not confirmed yet. Read only — {name} sees that you looked.
