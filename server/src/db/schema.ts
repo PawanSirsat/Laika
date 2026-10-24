@@ -2564,6 +2564,35 @@ export const timeTimers = sqliteTable(
   ],
 );
 
+// ------------------------------------------------- §4.62 time_day_notes
+
+/**
+ * A person's note on one of their days — the design's *Note for your manager*
+ * (§4.62, D-110 item 2, LAI-501): written with *Confirm day* or alone, one
+ * per person per day, 500 characters; read by the person, and by owners and
+ * admins with the day (`GET /people/:id/time`, D-102). Prose, not time: no
+ * total reads it, and Undo of a confirm leaves it. Pruned with the entries.
+ */
+export const timeDayNotes = sqliteTable(
+  'time_day_notes',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** `YYYY-MM-DD`, the person's local day, as an entry's. */
+    day: text('day').notNull(),
+    note: text('note').notNull(),
+    createdAt,
+    updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.day] }),
+    // §11.6's retention deletes by day alone.
+    index('time_day_notes_day_idx').on(t.day),
+    check('time_day_notes_note_check', sql.raw('length(note) BETWEEN 1 AND 500')),
+  ],
+);
+
 // ---------------------------------------------------- §4.50 agent_time_days
 
 /**
