@@ -229,8 +229,8 @@ void describe('My day after the reference', () => {
       await head.locator('.myday-week').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.screen-page-title').innerText(), 'My day');
       // Who reads drafts, said truthfully (D-102, LAI-968), and the way to who looked.
-      assert.match(await head.innerText(), /Drafts: you, owners and admins/);
-      assert.equal(await head.getByRole('link', { name: 'who looked' }).count(), 1);
+      assert.match(await head.innerText(), /Who can see this/);
+      assert.equal(await head.getByRole('link', { name: 'Who can see this' }).count(), 1);
       assert.match(
         await head.locator('.myday-chip-primary').innerText(),
         /Confirm day · 1 h 35 min/,
