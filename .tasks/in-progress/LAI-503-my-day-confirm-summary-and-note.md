@@ -2,11 +2,12 @@
 id: LAI-503
 title: 'My day: Confirm day opens 'Where the day went' — the split by type, off-screen time, a note for your manager; owners and admins see the note'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-501]
 discovered-from: LAI-897
-status: backlog
+status: in-progress
+started: 2026-10-24T11:42:05Z
 ---
 
 ## Goal
