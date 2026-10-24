@@ -610,6 +610,13 @@ const PAIRS: readonly Pair[] = [
     client: 'MyDayWeekDay',
     clientFile: 'time.ts',
   },
+  // The day's note (LAI-501), served in the day and by `PUT /me/time/days/:day/note`.
+  {
+    server: 'DayNoteView',
+    serverFile: 'services/time-day-notes.ts',
+    client: 'DayNote',
+    clientFile: 'time.ts',
+  },
   // The running timer (LAI-500), served in the day and by `POST /me/time/timer`.
   {
     server: 'TimerView',

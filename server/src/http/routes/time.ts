@@ -60,6 +60,7 @@ import {
   stopTimer,
   TIMER_TITLE_MAX,
 } from '../../services/time-timer.ts';
+import { DAY_NOTE_MAX, dayNoteOn, setDayNote } from '../../services/time-day-notes.ts';
 import { undoChange } from '../../services/time-undo.ts';
 import { UNDO_HEADER } from '../../services/time-undo-log.ts';
 import { TASK_KEY_PATTERN } from '../../services/token-usage.ts';
@@ -246,6 +247,10 @@ const ConfirmDraftBody = strictObject({
   description: z.string().max(ENTRY_DESCRIPTION_MAX).optional(),
 });
 
+// The note for the day (§4.62, LAI-501): with the confirm, or on its own.
+const ConfirmDayBody = strictObject({ note: z.string().max(DAY_NOTE_MAX).optional() });
+const DayNoteBody = strictObject({ note: z.string().max(DAY_NOTE_MAX).nullable() });
+
 // A timer's start (§4.61, LAI-500): its zone, and what it is for — all optional.
 const TimerStartBody = strictObject({
   tz: zone,
@@ -414,10 +419,19 @@ export function meTimeRoutes(options: { db: Db }): Hono<AppEnv> {
     return c.json(confirmDraft(db, actor, id, Date.now(), undoable(c), said), 201);
   });
 
-  app.post('/time/days/:day/confirm', (c) => {
+  app.post('/time/days/:day/confirm', async (c) => {
     const actor = requireActor(c);
     const { day: on } = parseParams(DayParams, c.req.param());
-    return c.json({ entries: confirmDay(db, actor, on, Date.now(), undoable(c)) });
+    const { note } = parseBody(ConfirmDayBody, (await json(c)) ?? {});
+    const entries = confirmDay(db, actor, on, Date.now(), undoable(c), note);
+    return c.json({ entries, day_note: dayNoteOn(db, actor.userId, on) });
+  });
+
+  app.put('/time/days/:day/note', async (c) => {
+    const actor = requireActor(c);
+    const { day: on } = parseParams(DayParams, c.req.param());
+    const { note } = parseBody(DayNoteBody, await json(c));
+    return c.json({ day_note: setDayNote(db, actor, on, note) });
   });
 
   app.get('/time', (c) => {

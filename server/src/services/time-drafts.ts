@@ -27,6 +27,7 @@ import {
   type TimeEntryView,
   type Tx,
 } from './time-entries.ts';
+import { writeDayNote } from './time-day-notes.ts';
 import { assertDrafting, assertTimeOn } from './time-settings.ts';
 import { daySubject, recordUndo, type OnUndo } from './time-undo-log.ts';
 
@@ -1117,11 +1118,16 @@ export function confirmDay(
   day: string,
   now: number = Date.now(),
   onUndo?: OnUndo,
+  note?: string | null,
 ): TimeEntryView[] {
   assertCan(actor, 'time_drafts.manage_own');
   assertCan(actor, 'time_entries.write_own');
   assertTimeOn(db);
   const { ids, undoId } = db.transaction((tx) => {
+    // The note for the day goes with the confirm (D-110 item 2, LAI-501), in
+    // the same transaction, so a day refused by the clock keeps no note; Undo
+    // of the confirm leaves it — prose, not time.
+    if (note !== undefined) writeDayNote(tx, actor.userId, day, note, now);
     const rows = tx
       .select()
       .from(timeDrafts)
