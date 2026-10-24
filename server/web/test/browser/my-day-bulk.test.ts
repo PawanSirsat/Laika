@@ -420,7 +420,7 @@ void describe('confirming in bulk', () => {
       await h.page.setViewportSize({ width: 1440, height: 900 });
       const button = h.page.locator('.screen-page .myday-chip-primary');
       await button.waitFor({ timeout: 30_000 });
-      assert.equal(await button.innerText(), 'Confirm day · 10 h 8 min');
+      assert.match(await button.innerText(), /^Confirm day\s+10 h 8 min$/);
       const reads = dayReads(h);
       // Confirm day opens the summary first (LAI-503); its Confirm sends the day.
       await button.click();
@@ -446,7 +446,7 @@ void describe('confirming in bulk', () => {
     const h = await busy();
     try {
       const button = h.page.locator('.screen-page .myday-chip-primary');
-      assert.equal(await button.innerText(), 'Confirm 36 ready · 10 h 8 min');
+      assert.match(await button.innerText(), /^Confirm day\s+36 ready · 10 h 8 min$/);
       await button.click();
       await h.page.locator('[data-summary-confirm]').click();
       await said(h).waitFor({ timeout: 60_000 });

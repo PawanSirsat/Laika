@@ -170,6 +170,8 @@ void describe('an owner reads a member’s day (D-102, LAI-959)', () => {
     const h = await openAt(`/my-day?day=${TODAY}`, stub(ADA, HOLDS));
     try {
       await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      // Nothing is in hand on load (LAI-511): the first block, picked.
+      await h.page.locator('[data-block-select]').first().click();
       await h.page.locator('[data-inspector="draft"]').waitFor({ timeout: 10_000 });
       for (const selector of WRITE_CONTROLS) {
         assert.ok((await h.page.locator(selector).count()) > 0, `${selector} is not drawn`);
@@ -190,7 +192,10 @@ void describe('an owner reads a member’s day (D-102, LAI-959)', () => {
         (await h.page.locator('[data-viewing-banner]').innerText()).includes('Grace Hopper'),
       );
       const banner = await h.page.locator('[data-viewing-banner]').innerText();
-      assert.match(banner, /Viewing Grace Hopper’s day — read only/);
+      assert.match(
+        banner,
+        /Read-only\. You’re viewing Grace Hopper’s day\. Grace can see that you looked/,
+      );
       // Her note for the day, under the banner (LAI-503).
       assert.match(
         await h.page.locator('[data-day-note]').innerText(),
@@ -358,14 +363,21 @@ void describe('who reads drafts is said on the person’s own day (D-102, LAI-96
           (await lock.getAttribute('title')) ?? '',
           /owners, admins and anyone the owner lets see everyone’s analytics/,
         );
-        const link = h.page.locator('.screen-page').getByRole('link', { name: 'Who can see this' });
+        // A popover since LAI-513: the design's grid of who sees what.
+        const link = h.page
+          .locator('.screen-page')
+          .getByRole('button', { name: 'Who can see this' });
         assert.equal(await link.count(), 1);
         // Readable in both themes: a colour, and not the page's own background.
         const ink = await link.evaluate((el) => getComputedStyle(el).color);
         const ground = await h.page.evaluate(() => getComputedStyle(document.body).backgroundColor);
         assert.notEqual(ink, ground);
-        // The link opens Who looked (LAI-502), where the side card used to be scrolled to.
+        // The popover's *Who looked* opens Who looked (LAI-502, LAI-513).
         await link.click();
+        const region = h.page.getByRole('region', { name: 'Who can see this' });
+        await region.waitFor({ timeout: 5_000 });
+        assert.match(await region.innerText(), /Drafts[\s\S]*Confirmed[\s\S]*Agent time/);
+        await region.getByRole('button', { name: 'Who looked' }).click();
         await h.page.locator('[data-looked]').first().waitFor({ timeout: 20_000 });
         const looked = h.page.locator('[data-who-looked]');
         const box = await looked.boundingBox();
@@ -420,7 +432,7 @@ void describe('a member’s profile: Day and Hours (LAI-959)', () => {
       await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
       assert.match(
         await h.page.locator('[data-viewing-banner]').innerText(),
-        /Viewing Grace Hopper’s day — read only/,
+        /Read-only\. You’re viewing Grace Hopper’s day/,
       );
       assert.equal(await h.page.locator('[data-confirm-day], .myday-check').count(), 0);
       await h.page

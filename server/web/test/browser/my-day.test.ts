@@ -230,10 +230,10 @@ void describe('My day after the reference', () => {
       assert.equal(await h.page.locator('.screen-page-title').innerText(), 'My day');
       // Who reads drafts, said truthfully (D-102, LAI-968), and the way to who looked.
       assert.match(await head.innerText(), /Who can see this/);
-      assert.equal(await head.getByRole('link', { name: 'Who can see this' }).count(), 1);
+      assert.equal(await head.getByRole('button', { name: 'Who can see this' }).count(), 1);
       assert.match(
         await head.locator('.myday-chip-primary').innerText(),
-        /Confirm day · 1 h 35 min/,
+        /Confirm day\s+1 h 35 min/,
         'Confirm day does not say what it confirms',
       );
       await until(
@@ -548,7 +548,7 @@ void describe('times and durations say their units (LAI-830)', () => {
       assert.equal(await drafted.locator('.myday-row-minutes').innerText(), '1 h 35 min');
       assert.match(
         await h.page.locator('.screen-page .myday-chip-primary').innerText(),
-        /Confirm day · 1 h 35 min/,
+        /Confirm day\s+1 h 35 min/,
       );
       // Today's cell: 75 confirmed and 95 drafted, was `2:50`.
       assert.equal(
