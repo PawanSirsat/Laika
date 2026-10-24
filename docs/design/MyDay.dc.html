@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="timeline-core.js"></script>
+<style>body{margin:0}button,input,textarea,select{font-family:inherit}a{color:#6d28d9}a:hover{color:#5b21b6}@keyframes lkPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.75)}}</style>
+</helmet>
+<div ref="{{ rootRef }}" tabIndex="-1" onKeyDown="{{ onKey }}" onMouseDown="{{ onRootDown }}" style="font-family:'Plus Jakarta Sans',system-ui,sans-serif;font-size:14px;-webkit-font-smoothing:antialiased;height:{{ rootH }};display:flex;flex-direction:{{ lay.dir }};background:{{ c.page }};color:{{ c.ink }};position:relative;overflow:hidden;outline:none">
+
+<sc-if value="{{ lay.side }}" hint-placeholder-val="{{ true }}">
+<aside style="width:232px;flex-shrink:0;background:{{ c.card }};border-right:1px solid {{ c.line }};display:flex;flex-direction:column">
+  <div style="display:flex;align-items:center;gap:10px;padding:14px;border-bottom:1px solid {{ c.line2 }}">
+    <div style="width:30px;height:30px;border-radius:8px;background:{{ c.logo }};display:flex;align-items:center;justify-content:center"><div style="width:8px;height:8px;border-radius:50%;border:1.5px solid {{ c.logoInk }}"></div></div>
+    <div style="display:flex;flex-direction:column;min-width:0;flex:1"><span style="font-weight:700;font-size:15px;line-height:18px">Laika</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ c.muted }}">Kvell Dynamics</span></div>
+    <span style="width:26px;height:26px;border:1px solid {{ c.btnLine }};border-radius:7px;color:{{ c.muted }};font-size:11px;display:flex;align-items:center;justify-content:center">⌘K</span>
+  </div>
+  <nav style="flex:1;overflow:auto;padding:12px 8px;display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;flex-direction:column;gap:1px">
+      <div style="display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:8px;background:{{ c.accSoft }};color:{{ c.accInk }};font-weight:600"><div style="width:3px;height:14px;border-radius:2px;background:{{ c.acc }}"></div><span style="flex:1">My day</span></div>
+      <div style="display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:8px;color:{{ c.ink2 }}"><div style="width:3px"></div><span style="flex:1">Inbox</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:1px 7px;border-radius:10px;background:{{ c.kbd }};color:{{ c.muted }}">99+</span></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:1px">
+      <div style="padding:0 10px 6px;font-size:11px;font-weight:700;letter-spacing:.09em;color:{{ c.muted }}">SPACES</div>
+      <div style="display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;color:{{ c.ink2 }}"><div style="width:3px"></div><span style="width:16px;height:16px;border-radius:4px;background:#1f6f78;color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">O</span>OnRoute</div>
+      <div style="display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;color:{{ c.ink2 }}"><div style="width:3px"></div><span style="width:16px;height:16px;border-radius:4px;background:#7c3aed;color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">L</span>Laika</div>
+      <div style="display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;color:{{ c.ink2 }}"><div style="width:3px"></div><span style="width:16px;height:16px;border-radius:4px;background:#c42630;color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center">S</span>SynQ</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;height:30px;padding:0 10px 0 21px;color:{{ c.muted }};font-size:13px;white-space:nowrap"><span>All spaces</span><span>›</span></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:1px">
+      <div style="padding:0 10px 6px;font-size:11px;font-weight:700;letter-spacing:.09em;color:{{ c.muted }}">ORGANISATION</div>
+      <div style="display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;color:{{ c.ink2 }}"><div style="width:3px"></div>Insights</div>
+      <div style="display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;color:{{ c.ink2 }}"><div style="width:3px"></div>Organisation</div>
+      <div style="display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;color:{{ c.ink2 }}"><div style="width:3px"></div>Developer access</div>
+    </div>
+  </nav>
+  <div style="border-top:1px solid {{ c.line2 }};padding:8px">
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 8px">
+      <div style="width:30px;height:30px;border-radius:50%;background:#c42630;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">PS</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;line-height:16px">Pawan Sirsat</div><div style="font-size:11px;font-weight:700;letter-spacing:.06em;color:{{ c.red }}">OWNER</div></div>
+    </div>
+  </div>
+</aside>
+</sc-if>
+
+<sc-if value="{{ lay.page }}" hint-placeholder-val="{{ true }}">
+<div style="flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;position:relative">
+
+  <sc-if value="{{ lay.phone }}">
+    <div style="height:48px;flex-shrink:0;display:flex;align-items:center;gap:10px;padding:0 12px;position:relative;z-index:30;background:{{ c.card }};border-bottom:1px solid {{ c.line2 }}">
+      <span style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-size:18px;color:{{ c.ink2 }}">☰</span>
+      <div style="width:24px;height:24px;border-radius:7px;background:{{ c.logo }};display:flex;align-items:center;justify-content:center"><div style="width:7px;height:7px;border-radius:50%;border:1.5px solid {{ c.logoInk }}"></div></div>
+      <span style="font-weight:700;font-size:15px;flex:1">Laika</span>
+      <sc-if value="{{ hd.showLooked }}">
+        <div data-pop="looked" style="position:static">
+          <button onClick="{{ pp.toggleLooked }}" aria-label="Who looked at your day" title="Who looked" aria-expanded="{{ pp.looked }}" style="width:32px;height:32px;border:1px solid {{ pp.lookBd }};border-radius:8px;background:{{ pp.lookBg }};color:{{ pp.lookInk }};cursor:pointer;display:flex;align-items:center;justify-content:center;position:relative;flex-shrink:0;padding:0"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"></path><circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.4"></circle></svg><span style="position:absolute;top:-5px;right:-5px;min-width:16px;height:16px;border-radius:8px;background:{{ c.acc }};color:{{ c.onAcc }};font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;line-height:16px;text-align:center;padding:0 4px;box-sizing:border-box">{{ lookedN }}</span></button>
+          <sc-if value="{{ pp.looked }}">
+                  <div style="position:absolute;top:calc(100% + 4px);right:8px;width:280px;max-width:calc(100% - 16px);box-sizing:border-box;z-index:60;background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;box-shadow:{{ c.pop }};padding:12px 6px 6px;display:flex;flex-direction:column;gap:2px;color:{{ c.ink }}">
+                    <div style="display:flex;align-items:baseline;justify-content:space-between;padding:0 10px 6px"><span style="font-size:13.5px;font-weight:700">Who looked</span><span style="font-size:11.5px;color:{{ c.muted }}">This week</span></div>
+                    <sc-for list="{{ looked }}" as="r" hint-placeholder-count="2">
+                      <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px"><span style="width:28px;height:28px;border-radius:50%;background:{{ r.color }};color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ r.ini }}</span><div style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:13px;font-weight:600">{{ r.name }}</span><span style="font-size:11.5px;color:{{ c.muted }}">{{ r.role }}</span></div><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:{{ c.muted }};white-space:nowrap">{{ r.when }}</span></div>
+                    </sc-for>
+                    <div style="padding:8px 10px 6px;border-top:1px solid {{ c.line2 }};margin-top:2px;font-size:11.5px;line-height:16px;color:{{ c.muted }};text-wrap:pretty">Owners and admins who opened your day. Counts only, never what you typed.</div>
+                  </div>
+                </sc-if>
+        </div>
+      </sc-if>
+      <div data-pop="view" style="position:relative">
+        <button onClick="{{ pp.toggleView }}" style="height:32px;padding:0 10px;border:1px solid {{ c.btnLine }};border-radius:8px;background:{{ c.btn }};color:{{ c.ink }};font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap"><span style="color:{{ c.muted }};font-weight:500">Viewing</span>{{ hd.viewShort }} ▾</button>
+        <sc-if value="{{ pp.view }}">
+          <div style="position:absolute;top:calc(100% + 6px);right:0;width:280px;z-index:60;background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;box-shadow:{{ c.pop }};padding:6px;display:flex;flex-direction:column;gap:2px">
+            <sc-for list="{{ people }}" as="p" hint-placeholder-count="4">
+              <div onClick="{{ p.go }}" style="display:flex;align-items:center;gap:10px;padding:8px;border-radius:7px;cursor:pointer;background:{{ p.bg }}"><span style="width:26px;height:26px;border-radius:50%;background:{{ p.color }};color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ p.ini }}</span><div style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:13px;font-weight:600">{{ p.name }}</span><span style="font-size:11.5px;color:{{ c.muted }}">{{ p.role }}</span></div><sc-if value="{{ p.on }}"><span style="color:{{ c.accInk }};font-size:13px">✓</span></sc-if></div>
+            </sc-for>
+            <div style="padding:8px 8px 4px;border-top:1px solid {{ c.line2 }};font-size:11.5px;line-height:16px;color:{{ c.muted }}">Owners and admins can open anyone’s day, read-only. The person sees that you looked.</div>
+          </div>
+        </sc-if>
+      </div>
+      <div style="width:30px;height:30px;border-radius:50%;background:#c42630;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">PS</div>
+    </div>
+  </sc-if>
+
+  <div ref="{{ scRef }}" style="flex:1;min-height:0;overflow:auto;position:relative;scrollbar-width:thin">
+
+    <sc-if value="{{ lay.desk }}" hint-placeholder-val="{{ true }}">
+      <div style="position:sticky;top:0;z-index:20;background:{{ c.card }};box-shadow:0 1px 0 {{ c.line }}">
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:12px 16px;padding:14px 32px">
+          <div style="flex:1 1 300px;min-width:0;display:flex;flex-direction:column;gap:3px">
+            <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+              <span style="font-size:22px;font-weight:700;letter-spacing:-.01em;white-space:nowrap">{{ hd.title }}</span>
+              <sc-if value="{{ hd.showTotal }}"><span style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600;white-space:nowrap">{{ hd.total }}</span><span style="font-size:12.5px;color:{{ c.muted }};white-space:nowrap">{{ hd.totalSub }}</span></sc-if>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:{{ c.muted }}">
+              <span style="white-space:nowrap">{{ hd.date }}</span>
+              <span style="width:3px;height:3px;border-radius:50%;background:{{ c.faint }}"></span>
+              <div data-pop="who" style="position:relative">
+                <button onClick="{{ pp.toggleWho }}" style="border:0;background:transparent;padding:0;color:{{ c.accInk }};font-size:13px;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap"><svg width="13" height="13" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.6" fill="none" stroke="currentColor" stroke-width="1.3"></circle><path d="M7 6.2v3.6M7 4.2v.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg>Who can see this</button>
+                <sc-if value="{{ pp.who }}">
+                  <div style="position:absolute;top:calc(100% + 8px);left:0;width:320px;z-index:60;background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;box-shadow:{{ c.pop }};padding:14px 16px;display:flex;flex-direction:column;gap:10px;color:{{ c.ink }}">
+                    <span style="font-size:13px;font-weight:700">Who can see this</span>
+                    <div style="display:grid;grid-template-columns:92px minmax(0,1fr);gap:8px 10px;font-size:12.5px;line-height:17px"><span style="color:{{ c.muted }}">Drafts</span><span>Only you</span><span style="color:{{ c.muted }}">Confirmed</span><span>You, and owners and admins of Kvell Dynamics</span><span style="color:{{ c.muted }}">Agent time</span><span>Anyone on the space, never counted as yours</span></div>
+                    <span style="font-size:12px;line-height:17px;color:{{ c.muted }};text-wrap:pretty">When an owner or admin opens your day, it shows under Who looked. Counts only, never what you typed.</span>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px">
+            <div data-pop="view" style="position:relative">
+              <button onClick="{{ pp.toggleView }}" style="height:34px;padding:0 10px 0 12px;border:1px solid {{ hd.viewBd }};border-radius:9px;background:{{ hd.viewBg }};color:{{ c.ink }};font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap"><span style="color:{{ c.muted }};font-weight:500">Viewing:</span>{{ hd.viewShort }}<span style="color:{{ c.muted }};font-size:10px">▾</span></button>
+              <sc-if value="{{ pp.view }}">
+                <div style="position:absolute;top:calc(100% + 6px);right:0;width:300px;z-index:60;background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;box-shadow:{{ c.pop }};padding:6px;display:flex;flex-direction:column;gap:2px">
+                  <div style="padding:4px 4px 6px"><input placeholder="Find a person" style="width:100%;box-sizing:border-box;height:32px;border:1px solid {{ c.fieldLine }};border-radius:7px;background:{{ c.field }};color:{{ c.ink }};padding:0 10px;font-size:13px;outline:none"></div>
+                  <sc-for list="{{ people }}" as="p" hint-placeholder-count="4">
+                    <div onClick="{{ p.go }}" style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:7px;cursor:pointer;background:{{ p.bg }}" style-hover="background:{{ c.hover }}"><span style="width:26px;height:26px;border-radius:50%;background:{{ p.color }};color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ p.ini }}</span><div style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:13px;font-weight:600">{{ p.name }}</span><span style="font-size:11.5px;color:{{ c.muted }}">{{ p.role }}</span></div><sc-if value="{{ p.on }}"><span style="color:{{ c.accInk }};font-size:13px">✓</span></sc-if></div>
+                  </sc-for>
+                  <div style="padding:8px 8px 4px;border-top:1px solid {{ c.line2 }};margin-top:2px;font-size:11.5px;line-height:16px;color:{{ c.muted }}">Owners and admins can open anyone’s day, read-only. The person sees that you looked.</div>
+                </div>
+              </sc-if>
+            </div>
+            <sc-if value="{{ hd.own }}" hint-placeholder-val="{{ true }}">
+              <span style="width:1px;height:20px;background:{{ c.line }};margin:0 4px"></span>
+              <sc-if value="{{ tm.idle }}" hint-placeholder-val="{{ true }}">
+                <div data-pop="timer" style="position:relative">
+                  <button onClick="{{ pp.toggleTimer }}" title="Start a timer (T)" style="height:34px;padding:0 12px;border:1px solid {{ c.btnLine }};border-radius:9px;background:{{ c.btn }};color:{{ c.ink }};font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap" style-hover="border-color:{{ c.accLine }}"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2.5 1.2v7.6L8.8 5z" fill="currentColor"></path></svg>Start timer</button>
+                  <sc-if value="{{ pp.timer }}">
+                    <div style="position:absolute;top:calc(100% + 6px);right:0;width:340px;z-index:60;background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;box-shadow:{{ c.pop }};padding:14px;display:flex;flex-direction:column;gap:12px">
+                      <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font-size:13.5px;font-weight:700">Start a timer</span><span style="font-size:11.5px;color:{{ c.muted }}">Both optional</span></div>
+                      <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">TASK</span>
+                        <div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{ tm.opts }}" as="o" hint-placeholder-count="4"><button onClick="{{ o.go }}" style="height:28px;padding:0 9px;border-radius:4px;border:1px solid {{ o.bd }};background:{{ o.bg }};color:{{ o.color }};font-family:{{ o.font }};font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">{{ o.label }}</button></sc-for></div>
+                      </div>
+                      <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">KIND</span><div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{ tm.kinds }}" as="o" hint-placeholder-count="3"><button onClick="{{ o.go }}" style="height:28px;padding:0 10px;border-radius:4px;border:1px solid {{ o.bd }};background:{{ o.bg }};color:{{ o.color }};font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap">{{ o.label }}</button></sc-for></div></div>
+                      <input value="{{ tm.title }}" onChange="{{ tm.setTitle }}" placeholder="What are you working on?" style="height:36px;border:1px solid {{ c.fieldLine }};border-radius:8px;background:{{ c.field }};color:{{ c.ink }};padding:0 12px;font-size:13.5px;outline:none">
+                      <div style="display:flex;align-items:center;gap:8px"><span style="flex:1;font-size:11.5px;line-height:16px;color:{{ c.muted }}">One timer at a time. Stopping saves it as confirmed time.</span><button onClick="{{ tm.start }}" style="height:34px;padding:0 14px;border:0;border-radius:9px;background:{{ c.acc }};color:{{ c.onAcc }};font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:7px"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2.5 1.2v7.6L8.8 5z" fill="currentColor"></path></svg>Start</button></div>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-if>
+              <sc-if value="{{ tm.on }}">
+                <div role="timer" aria-label="{{ tm.aria }}" style="height:34px;box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:0 3px 0 11px;border:1px solid {{ tm.bd }};background:{{ tm.bg }};border-radius:9px">
+                  {{ tmDot }}
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:{{ c.accInk }};white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis;flex-shrink:0">{{ tm.label }}</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;min-width:62px;color:{{ c.ink }}">{{ tmClock }}</span>
+                  <button onClick="{{ tm.pause }}" aria-label="{{ tm.pauseAria }}" title="{{ tm.pauseAria }}" style="width:28px;height:26px;border:0;border-radius:6px;background:transparent;color:{{ c.ink2 }};cursor:pointer;display:flex;align-items:center;justify-content:center" style-hover="background:{{ c.hover }}"><sc-if value="{{ tm.paused }}"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M2.5 1.2v7.6L8.8 5z" fill="currentColor"></path></svg></sc-if><sc-if value="{{ tm.running }}"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1.8" y="1.4" width="2.3" height="7.2" rx=".6" fill="currentColor"></rect><rect x="5.9" y="1.4" width="2.3" height="7.2" rx=".6" fill="currentColor"></rect></svg></sc-if></button>
+                  <button onClick="{{ tm.stop }}" aria-label="Stop timer and save" title="Stop and save (T)" style="width:28px;height:26px;border:0;border-radius:6px;background:transparent;color:{{ c.ink2 }};cursor:pointer;display:flex;align-items:center;justify-content:center" style-hover="background:{{ c.hover }}"><svg width="10" height="10" viewBox="0 0 10 10"><rect x="1.6" y="1.6" width="6.8" height="6.8" rx="1.2" fill="currentColor"></rect></svg></button>
+                </div>
+              </sc-if>
+              <button onClick="{{ hd.add }}" title="Add time (N)" style="height:34px;padding:0 12px;border:1px solid {{ c.btnLine }};border-radius:9px;background:{{ c.btn }};color:{{ c.ink }};font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap" style-hover="border-color:{{ c.accLine }}"><svg width="11" height="11" viewBox="0 0 12 12"><path d="M6 1.5v9M1.5 6h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>Add time<span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:{{ c.muted }};border:1px solid {{ c.btnLine }};border-radius:4px;padding:0 4px;line-height:15px">N</span></button>
+              <sc-if value="{{ hd.hasGaps }}">
+                <button onClick="{{ hd.fillGaps }}" title="Walk through each gap and fill it with a task" style="height:34px;padding:0 12px;border:1px dashed {{ c.accLine }};border-radius:9px;background:{{ c.btn }};color:{{ c.accInk }};font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px;cursor:pointer;white-space:nowrap">Fill gaps<span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:600;color:{{ c.muted }}">{{ hd.gapSub }}</span></button>
+              </sc-if>
+              <button onClick="{{ hd.confirm }}" title="{{ hd.confirmTitle }}" disabled="{{ hd.confirmDis }}" style="height:34px;padding:0 14px;border:0;border-radius:9px;background:{{ hd.confirmBg }};color:{{ hd.confirmInk }};font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;cursor:pointer;white-space:nowrap">{{ hd.confirmLabel }}<sc-if value="{{ hd.hasConfirmSub }}"><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;opacity:.85">{{ hd.confirmSub }}</span></sc-if></button>
+              <div data-pop="settings" style="position:relative">
+                <button onClick="{{ pp.toggleSettings }}" aria-label="Day settings" title="Day settings" style="width:34px;height:34px;border:1px solid {{ c.btnLine }};border-radius:9px;background:{{ c.btn }};color:{{ c.ink2 }};cursor:pointer;display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 16 16"><path d="M2 4.5h7M12.5 4.5H14M2 11.5h2.5M8 11.5h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path><circle cx="10.7" cy="4.5" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"></circle><circle cx="6.2" cy="11.5" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"></circle></svg></button>
+                <sc-if value="{{ pp.settings }}">
+                  <div style="position:absolute;top:calc(100% + 6px);right:0;width:320px;z-index:60;background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;box-shadow:{{ c.pop }};display:flex;flex-direction:column">
+                    <div onClick="{{ st2.toggleDraft }}" style="padding:14px 16px;display:flex;gap:12px;cursor:pointer;border-bottom:1px solid {{ c.line2 }}">
+                      <div style="flex:1;display:flex;flex-direction:column;gap:3px"><span style="font-size:13px;font-weight:600">Draft my time</span><span style="font-size:12px;line-height:17px;color:{{ c.muted }};text-wrap:pretty">Your collector drafts blocks from prompts, commits and agent sessions. Only you see drafts.</span></div>
+                      <div style="width:32px;height:18px;border-radius:10px;background:{{ st2.swBg }};position:relative;flex-shrink:0;margin-top:2px"><div style="position:absolute;top:2px;left:{{ st2.swLeft }};width:14px;height:14px;border-radius:50%;background:#fff"></div></div>
+                    </div>
+                    <div style="padding:14px 16px;display:flex;flex-direction:column;gap:8px">
+                      <span style="font-size:13px;font-weight:600">Where you are</span>
+                      <select value="{{ st2.where }}" onChange="{{ st2.setWhere }}" style="height:34px;border:1px solid {{ c.fieldLine }};border-radius:8px;background:{{ c.field }};color:{{ c.ink }};padding:0 8px;font-size:13px"><option>Cape Town · SAST, UTC+2</option><option>Johannesburg · SAST, UTC+2</option><option>London · BST, UTC+1</option><option>Follow my laptop</option></select>
+                      <span style="font-size:12px;line-height:17px;color:{{ c.muted }}">Sets where your day starts and ends, and your organisation’s Lunch band.</span>
+                    </div>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-if>
+            <sc-if value="{{ hd.showLooked }}" hint-placeholder-val="{{ true }}">
+              <div data-pop="looked" style="position:relative">
+                <button onClick="{{ pp.toggleLooked }}" aria-label="Who looked at your day" title="Who looked" aria-expanded="{{ pp.looked }}" style="width:34px;height:34px;border:1px solid {{ pp.lookBd }};border-radius:9px;background:{{ pp.lookBg }};color:{{ pp.lookInk }};cursor:pointer;display:flex;align-items:center;justify-content:center;position:relative;flex-shrink:0;padding:0"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"></path><circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.4"></circle></svg><span style="position:absolute;top:-5px;right:-5px;min-width:16px;height:16px;border-radius:8px;background:{{ c.acc }};color:{{ c.onAcc }};font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;line-height:16px;text-align:center;padding:0 4px;box-sizing:border-box">{{ lookedN }}</span></button>
+                <sc-if value="{{ pp.looked }}">
+                  <div style="position:absolute;top:calc(100% + 6px);right:0;width:300px;z-index:60;background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;box-shadow:{{ c.pop }};padding:12px 6px 6px;display:flex;flex-direction:column;gap:2px;color:{{ c.ink }}">
+                    <div style="display:flex;align-items:baseline;justify-content:space-between;padding:0 10px 6px"><span style="font-size:13.5px;font-weight:700">Who looked</span><span style="font-size:11.5px;color:{{ c.muted }}">This week</span></div>
+                    <sc-for list="{{ looked }}" as="r" hint-placeholder-count="2">
+                      <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px"><span style="width:28px;height:28px;border-radius:50%;background:{{ r.color }};color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ r.ini }}</span><div style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:13px;font-weight:600">{{ r.name }}</span><span style="font-size:11.5px;color:{{ c.muted }}">{{ r.role }}</span></div><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:{{ c.muted }};white-space:nowrap">{{ r.when }}</span></div>
+                    </sc-for>
+                    <div style="padding:8px 10px 6px;border-top:1px solid {{ c.line2 }};margin-top:2px;font-size:11.5px;line-height:16px;color:{{ c.muted }};text-wrap:pretty">Owners and admins who opened your day. Counts only, never what you typed.</div>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-if>
+            <button onClick="{{ keys.open }}" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" style="width:34px;height:34px;border:1px solid {{ c.btnLine }};border-radius:9px;background:{{ c.btn }};color:{{ c.ink2 }};font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;cursor:pointer">?</button>
+          </div>
+        </div>
+      </div>
+      <sc-if value="{{ hd.showWeek }}" hint-placeholder-val="{{ true }}">
+        <div style="background:{{ c.card }};border-bottom:1px solid {{ c.line }};padding:10px 32px 14px;display:flex;align-items:center;gap:12px">
+          <div style="display:flex;height:32px;border:1px solid {{ c.btnLine }};border-radius:8px;overflow:hidden;flex-shrink:0">
+            <button onClick="{{ hd.prevWeek }}" aria-label="Previous week" style="width:30px;border:0;background:{{ c.btn }};color:{{ c.ink }};font-size:15px;cursor:pointer">‹</button>
+            <button onClick="{{ hd.goToday }}" style="padding:0 10px;border:0;border-left:1px solid {{ c.btnLine }};border-right:1px solid {{ c.btnLine }};background:{{ c.btn }};color:{{ c.ink }};font-size:12.5px;font-weight:600;cursor:pointer">Today</button>
+            <button onClick="{{ hd.nextWeek }}" aria-label="Next week" style="width:30px;border:0;background:{{ c.btn }};color:{{ c.ink }};font-size:15px;cursor:pointer">›</button>
+          </div>
+          <div style="flex:1;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px">
+            <sc-for list="{{ wk }}" as="d" hint-placeholder-count="7">
+              <div onClick="{{ d.go }}" role="button" aria-label="{{ d.aria }}" style="border:1px solid {{ d.bd }};background:{{ d.bg }};opacity:{{ d.op }};border-radius:8px;padding:6px 10px 7px;display:flex;flex-direction:column;gap:5px;min-width:0;cursor:pointer;overflow:hidden">
+                <div style="display:flex;align-items:baseline;column-gap:6px;flex-wrap:wrap;min-width:0;height:16px;overflow:hidden">
+                  <span style="font-size:12px;font-weight:600;color:{{ d.nameInk }}">{{ d.name }}</span>
+                  <span style="font-size:12px;color:{{ c.muted }}">{{ d.date }}</span>
+                  <span style="flex:1"></span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:600;white-space:nowrap;color:{{ d.figInk }}">{{ d.fig }}</span>
+                </div>
+                <div style="height:4px;border-radius:2px;background:{{ d.track }};display:flex;overflow:hidden"><div style="width:{{ d.cW }};background:{{ c.acc }}"></div><div style="width:{{ d.dW }};background:{{ d.dBg }}"></div></div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+    </sc-if>
+
+    <sc-if value="{{ lay.phone }}">
+      <div style="position:sticky;top:0;z-index:20;background:{{ c.card }};box-shadow:0 1px 0 {{ c.line }}">
+        <div style="display:flex;align-items:center;gap:6px;padding:8px 12px 8px 6px">
+          <button onClick="{{ hd.prevDay }}" aria-label="Previous day" style="width:36px;height:40px;border:0;background:transparent;color:{{ c.ink2 }};font-size:18px;cursor:pointer">‹</button>
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column"><span style="font-size:17px;font-weight:700;line-height:21px;white-space:nowrap">{{ hd.phoneTitle }}</span><span style="font-size:12px;color:{{ c.muted }};white-space:nowrap">{{ hd.phoneSub }}</span></div>
+          <button onClick="{{ hd.nextDay }}" aria-label="Next day" style="width:36px;height:40px;border:0;background:transparent;color:{{ c.ink2 }};font-size:18px;cursor:pointer">›</button>
+          <sc-if value="{{ hd.own }}" hint-placeholder-val="{{ true }}">
+            <sc-if value="{{ tm.idle }}" hint-placeholder-val="{{ true }}"><button onClick="{{ pp.toggleTimer }}" aria-label="Start a timer" style="width:40px;height:40px;border:1px solid {{ c.btnLine }};border-radius:10px;background:{{ c.btn }};color:{{ c.ink }};display:flex;align-items:center;justify-content:center"><svg width="11" height="11" viewBox="0 0 10 10"><path d="M2.5 1.2v7.6L8.8 5z" fill="currentColor"></path></svg></button></sc-if>
+            <sc-if value="{{ tm.on }}">
+              <div role="timer" aria-label="{{ tm.aria }}" style="height:40px;box-sizing:border-box;display:flex;align-items:center;gap:6px;padding:0 2px 0 10px;border:1px solid {{ tm.bd }};background:{{ tm.bg }};border-radius:10px">
+                {{ tmDot }}<span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;min-width:58px">{{ tmClock }}</span>
+                <button onClick="{{ tm.stop }}" aria-label="Stop timer and save" style="width:34px;height:34px;border:0;border-radius:8px;background:transparent;color:{{ c.ink2 }};display:flex;align-items:center;justify-content:center"><svg width="11" height="11" viewBox="0 0 10 10"><rect x="1.6" y="1.6" width="6.8" height="6.8" rx="1.2" fill="currentColor"></rect></svg></button>
+              </div>
+            </sc-if>
+            <button onClick="{{ hd.add }}" aria-label="Add time" style="width:40px;height:40px;border:1px solid {{ c.btnLine }};border-radius:10px;background:{{ c.btn }};color:{{ c.ink }};display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 12 12"><path d="M6 1.5v9M1.5 6h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button>
+            <div data-pop="settings" style="position:relative">
+              <button onClick="{{ pp.toggleSettings }}" aria-label="Day settings" style="width:40px;height:40px;border:1px solid {{ c.btnLine }};border-radius:10px;background:{{ c.btn }};color:{{ c.ink2 }};display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 16 16"><path d="M2 4.5h7M12.5 4.5H14M2 11.5h2.5M8 11.5h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path><circle cx="10.7" cy="4.5" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"></circle><circle cx="6.2" cy="11.5" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"></circle></svg></button>
+              <sc-if value="{{ pp.settings }}">
+                <div style="position:absolute;top:calc(100% + 6px);right:0;width:300px;z-index:60;background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;box-shadow:{{ c.pop }};display:flex;flex-direction:column">
+                  <div onClick="{{ st2.toggleDraft }}" style="padding:14px 16px;display:flex;gap:12px;border-bottom:1px solid {{ c.line2 }}"><div style="flex:1;display:flex;flex-direction:column;gap:3px"><span style="font-size:13px;font-weight:600">Draft my time</span><span style="font-size:12px;line-height:17px;color:{{ c.muted }}">Drafts from your activity. Only you see them.</span></div><div style="width:32px;height:18px;border-radius:10px;background:{{ st2.swBg }};position:relative;flex-shrink:0;margin-top:2px"><div style="position:absolute;top:2px;left:{{ st2.swLeft }};width:14px;height:14px;border-radius:50%;background:#fff"></div></div></div>
+                  <div style="padding:14px 16px;display:flex;flex-direction:column;gap:8px"><span style="font-size:13px;font-weight:600">Where you are</span><select value="{{ st2.where }}" onChange="{{ st2.setWhere }}" style="height:40px;border:1px solid {{ c.fieldLine }};border-radius:8px;background:{{ c.field }};color:{{ c.ink }};padding:0 8px;font-size:14px"><option>Cape Town · SAST, UTC+2</option><option>Johannesburg · SAST, UTC+2</option><option>London · BST, UTC+1</option><option>Follow my laptop</option></select></div>
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+        </div>
+        <sc-if value="{{ hd.showWeek }}" hint-placeholder-val="{{ true }}">
+          <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));padding:0 8px 8px">
+            <sc-for list="{{ wk }}" as="d" hint-placeholder-count="7">
+              <div onClick="{{ d.go }}" role="button" aria-label="{{ d.aria }}" style="display:flex;flex-direction:column;align-items:center;gap:5px;padding:5px 0 6px;border-radius:8px;background:{{ d.pBg }};opacity:{{ d.op }};cursor:pointer">
+                <span style="font-size:11px;font-weight:600;color:{{ d.nameInk }}">{{ d.letter }}</span>
+                <span style="width:10px;height:10px;border-radius:50%;box-sizing:border-box;background:{{ d.dot }};border:{{ d.dotBd }}"></span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+      <sc-if value="{{ hd.phoneSummary }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px 16px 4px">
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px"><span style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;line-height:22px">{{ hd.total }}</span><span style="font-size:12px;color:{{ c.muted }}">{{ hd.totalSub }}</span></div>
+          <sc-if value="{{ hd.own }}" hint-placeholder-val="{{ true }}"><button onClick="{{ hd.confirm }}" disabled="{{ hd.confirmDis }}" style="height:44px;padding:0 16px;border:0;border-radius:10px;background:{{ hd.confirmBg }};color:{{ hd.confirmInk }};font-size:14px;font-weight:600;white-space:nowrap">{{ hd.confirmLabel }}</button></sc-if>
+        </div>
+      </sc-if>
+    </sc-if>
+
+    <sc-if value="{{ bn.view }}">
+      <div style="margin:{{ lay.bnM }};padding:10px 14px;border-radius:9px;background:{{ c.bluSoft }};border:1px solid {{ c.bluLine }};color:{{ c.ink }};display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;line-height:18px">
+        <svg width="16" height="16" viewBox="0 0 16 16" style="flex-shrink:0;color:{{ c.blu }}"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.4"></path><circle cx="8" cy="8" r="2" fill="currentColor"></circle></svg>
+        <span style="flex:1;min-width:200px"><b style="font-weight:700">Read-only.</b> You’re viewing Dana Okafor’s day. Dana can see that you looked.</span>
+        <button onClick="{{ bn.back }}" style="height:30px;padding:0 12px;border:1px solid {{ c.bluLine }};border-radius:8px;background:{{ c.card }};color:{{ c.ink }};font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap">Back to my day</button>
+      </div>
+    </sc-if>
+    <sc-if value="{{ bn.draftOff }}">
+      <div style="margin:{{ lay.bnM }};padding:10px 14px;border-radius:9px;background:{{ c.card }};border:1px solid {{ c.line }};display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;line-height:18px">
+        <span style="width:8px;height:8px;border-radius:50%;background:{{ c.faint }};flex-shrink:0"></span>
+        <span style="flex:1;min-width:200px"><b style="font-weight:700">Draft my time is off.</b> Laika isn’t drafting from your activity. Time you add or record with a timer still counts.</span>
+        <button onClick="{{ st2.toggleDraft }}" style="height:30px;padding:0 12px;border:1px solid {{ c.btnLine }};border-radius:8px;background:{{ c.btn }};color:{{ c.ink }};font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap">Turn on</button>
+      </div>
+    </sc-if>
+
+    <div style="padding:{{ lay.bodyP }};display:flex;flex-direction:column;gap:{{ lay.gap }}">
+
+      <sc-if value="{{ bd.loading }}">
+        <div aria-busy="true" style="background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;padding:16px 20px;display:flex;flex-direction:column;gap:14px">
+          <div style="display:flex;align-items:center;gap:12px"><span style="font-size:16px;font-weight:700">Timeline</span><span style="font-size:12.5px;color:{{ c.muted }}">Loading your day…</span></div>
+          <div style="height:22px;border-radius:4px;background:{{ c.skel }}"></div>
+          <div style="display:grid;grid-template-columns:148px minmax(0,1fr);gap:12px"><div style="height:220px;border-radius:6px;background:{{ c.skel }};opacity:.6"></div><div style="display:flex;flex-direction:column;gap:10px"><div style="height:60px;border-radius:6px;background:{{ c.skel }};opacity:.6"></div><div style="display:flex;gap:6px"><div style="flex:3;height:80px;border-radius:8px;background:{{ c.skel }}"></div><div style="flex:1;height:80px;border-radius:8px;background:{{ c.skel }}"></div><div style="flex:2;height:80px;border-radius:8px;background:{{ c.skel }}"></div><div style="flex:4;height:80px;border-radius:8px;background:{{ c.skel }}"></div></div><div style="height:60px;border-radius:6px;background:{{ c.skel }};opacity:.6"></div></div></div>
+        </div>
+        <div style="background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;padding:16px 20px;display:flex;flex-direction:column;gap:12px;max-width:760px">
+          <div style="width:120px;height:14px;border-radius:4px;background:{{ c.skel }}"></div>
+          <div style="height:12px;border-radius:4px;background:{{ c.skel }};opacity:.7"></div><div style="height:12px;border-radius:4px;background:{{ c.skel }};opacity:.7;width:80%"></div><div style="height:12px;border-radius:4px;background:{{ c.skel }};opacity:.7;width:90%"></div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ bd.error }}">
+        <div role="alert" style="background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;padding:32px 24px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">
+          <span style="width:36px;height:36px;border-radius:50%;background:{{ c.redSoft }};color:{{ c.red }};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px">!</span>
+          <span style="font-size:16px;line-height:22px;font-weight:700">Couldn’t load Thursday</span>
+          <span style="font-size:13px;line-height:19px;color:{{ c.muted }};max-width:440px;text-wrap:pretty">The request timed out after 10 seconds. Your collector keeps drafting in the meantime, so nothing is lost.</span>
+          <button onClick="{{ bd.retry }}" style="margin-top:6px;height:36px;padding:0 16px;border:0;border-radius:9px;background:{{ c.acc }};color:{{ c.onAcc }};font-size:13px;font-weight:600;cursor:pointer">Retry</button>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ c.faint }}">GET /api/day/2026-10-22 · 504</span>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ bd.orgOff }}">
+        <div style="background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;padding:48px 24px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">
+          <span style="width:40px;height:40px;border-radius:10px;background:{{ c.kbd }};display:flex;align-items:center;justify-content:center;color:{{ c.muted }}"><svg width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"></circle><path d="M9 5.5V9l2.5 1.5M3 15L15 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg></span>
+          <span style="font-size:16px;line-height:22px;font-weight:700;text-wrap:balance">Time tracking is off for Kvell Dynamics</span>
+          <span style="font-size:13px;line-height:19px;color:{{ c.muted }};max-width:460px;text-wrap:pretty">Nothing is collected or drafted while it’s off, and My day stays empty. Owners and admins can turn it on in Organisation settings.</span>
+          <button onClick="{{ hd.orgSettings }}" style="margin-top:6px;height:36px;padding:0 16px;border:1px solid {{ c.btnLine }};border-radius:9px;background:{{ c.btn }};color:{{ c.ink }};font-size:13px;font-weight:600;cursor:pointer">Open Organisation settings</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ bd.emptyTl }}">
+        <div style="background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;overflow:hidden">
+          <div style="display:flex;align-items:baseline;gap:10px;padding:16px 20px 14px"><span style="font-size:16px;font-weight:700">Timeline</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:{{ c.muted }}">{{ emp.date }}</span></div>
+          <div style="position:relative;border-top:1px solid {{ c.line2 }};height:{{ emp.h }}">
+            <div style="position:absolute;left:0;right:0;top:0;height:28px;display:flex">
+              <sc-for list="{{ emp.hours }}" as="h" hint-placeholder-count="8"><div style="flex:1;min-width:0;background:{{ h.bg }};border-left:1px solid {{ c.line2 }};font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ c.muted }};padding:7px 0 0 5px;white-space:nowrap;overflow:hidden">{{ h.label }}</div></sc-for>
+            </div>
+            <div style="position:absolute;left:0;right:0;top:28px;bottom:0;display:flex;border-top:1px solid {{ c.line2 }}">
+              <sc-for list="{{ emp.hours }}" as="h" hint-placeholder-count="8"><div style="flex:1;border-left:1px solid {{ c.line2 }};background:{{ h.body }}"></div></sc-for>
+            </div>
+            <div style="position:absolute;left:0;right:0;top:28px;bottom:0;display:flex;align-items:center;justify-content:center;padding:16px">
+              <div style="background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;padding:18px 20px;max-width:440px;display:flex;flex-direction:column;gap:8px;box-shadow:{{ c.pop }}">
+                <span style="font-size:15px;font-weight:700">{{ emp.title }}</span>
+                <span style="font-size:13px;line-height:19px;color:{{ c.muted }};text-wrap:pretty">{{ emp.body }}</span>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+                  <sc-for list="{{ emp.acts }}" as="a" hint-placeholder-count="2"><button onClick="{{ a.go }}" style="height:34px;padding:0 13px;border:1px solid {{ a.bd }};border-radius:9px;background:{{ a.bg }};color:{{ a.ink }};font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">{{ a.label }}</button></sc-for>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ bd.tl }}" hint-placeholder-val="{{ true }}">
+        <dc-import name="TimelineV2" theme="{{ tl.theme }}" zoom="1x" scroll-to="{{ tl.scrollTo }}" no-footer="{{ true }}" ov="{{ tl.ov }}" sel="{{ tl.sel }}" preview="{{ tl.preview }}" on-preview="{{ tl.onPreview }}" added="{{ tl.added }}" timer="{{ tl.timer }}" read-only="{{ tl.ro }}" force-drag="{{ tl.forceDrag }}" force-hover="{{ tl.forceHover }}" force-focus="{{ tl.forceFocus }}" on-change="{{ tl.onChange }}" on-commit="{{ tl.onCommit }}" on-range="{{ tl.onRange }}" on-drop-entry="{{ tl.onDropEntry }}" on-timer-click="{{ tl.onTimerClick }}" hint-size="100%,396px"></dc-import>
+      </sc-if>
+      <sc-if value="{{ bd.tlPhone }}">
+        <dc-import name="TimelineMobileV2" theme="{{ tl.theme }}" max-h="{{ 340 }}" scroll-to="{{ tl.scrollToM }}" no-footer="{{ true }}" ov="{{ tl.ov }}" sel="{{ tl.sel }}" on-pick="{{ tl.onPick }}" hint-size="100%,520px"></dc-import>
+      </sc-if>
+
+      <sc-if value="{{ tray.show }}">
+        <div style="background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;padding:10px 12px 10px 16px;display:flex;align-items:center;gap:10px 14px;flex-wrap:wrap">
+          <div style="display:flex;flex-direction:column;gap:1px"><span style="font-size:13px;font-weight:700">No set time</span><span style="font-size:12px;color:{{ c.muted }}">{{ tray.hint }}</span></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;flex:1">
+            <sc-for list="{{ tray.items }}" as="r" hint-placeholder-count="1">
+              <div draggable="{{ r.draggable }}" onDragStart="{{ r.onDragStart }}" onDragEnd="{{ r.onDragEnd }}" onClick="{{ r.go }}" style="display:flex;align-items:center;gap:10px;height:36px;padding:0 12px 0 8px;border:{{ r.bd }};border-radius:8px;background:{{ r.bg }};cursor:{{ r.cursor }};box-shadow:{{ r.sh }};opacity:{{ r.op }}">
+                <span style="color:{{ c.faint }};font-size:12px;letter-spacing:-2px">⋮⋮</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:{{ c.ink }}">{{ r.len }}</span>
+                <span style="font-size:13px;color:{{ c.ink2 }};white-space:nowrap">{{ r.title }}</span>
+                <span style="font-size:11px;color:{{ c.muted }};border:1px solid {{ c.line }};border-radius:4px;padding:1px 6px;white-space:nowrap">{{ r.kind }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ bd.cols }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-wrap:wrap;gap:{{ lay.gap }};align-items:flex-start">
+          <sc-if value="{{ bd.listCol }}" hint-placeholder-val="{{ true }}">
+          <div style="flex:999 1 480px;min-width:0;display:flex;flex-direction:column;gap:{{ lay.gap }}">
+
+            <div role="tablist" aria-label="Day sections" style="display:flex;align-items:center;gap:2px;border-bottom:1px solid {{ c.line }};overflow-x:auto;scrollbar-width:none">
+              <sc-for list="{{ tabs.items }}" as="t" hint-placeholder-count="5">
+                <button role="tab" aria-selected="{{ t.on }}" onClick="{{ t.go }}" style="height:40px;padding:0 12px;border:0;background:transparent;color:{{ t.ink }};font-size:13.5px;font-weight:{{ t.w }};cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:6px;box-shadow:{{ t.bar }};flex-shrink:0">{{ t.label }}<sc-if value="{{ t.hasN }}"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:1px 6px;border-radius:9px;background:{{ t.nBg }};color:{{ t.nInk }}">{{ t.n }}</span></sc-if></button>
+              </sc-for>
+            </div>
+
+            <sc-if value="{{ tabs.ov }}">
+              <section aria-label="Overview" style="background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;padding:16px;display:flex;flex-direction:column;gap:20px">
+                <div style="display:flex;align-items:center;gap:8px 10px;flex-wrap:wrap">
+                  <div style="display:flex;flex-direction:column;gap:1px;flex:1 1 160px;min-width:0"><span style="font-size:14px;font-weight:700">Overview</span><span style="font-size:12px;color:{{ c.muted }}">{{ ovw.range }}</span></div>
+                  <div role="radiogroup" aria-label="Scope" style="display:flex;gap:2px;padding:2px;background:{{ c.kbd }};border:1px solid {{ c.line }};border-radius:8px">
+                    <sc-for list="{{ ovw.scopes }}" as="o" hint-placeholder-count="3"><button role="radio" aria-checked="{{ o.on }}" onClick="{{ o.go }}" style="height:26px;padding:0 10px;border:0;border-radius:6px;background:{{ o.bg }};color:{{ o.ink }};box-shadow:{{ o.sh }};font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap">{{ o.label }}</button></sc-for>
+                  </div>
+                  <sc-if value="{{ ovw.isRange }}">
+                    <div style="display:flex;align-items:center;gap:6px">
+                      <select value="{{ ovw.rFrom }}" onChange="{{ ovw.setFrom }}" aria-label="From" style="height:30px;border:1px solid {{ c.fieldLine }};border-radius:7px;background:{{ c.field }};color:{{ c.ink }};padding:0 6px;font-size:12.5px"><sc-for list="{{ ovw.opts }}" as="o" hint-placeholder-count="7"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select>
+                      <span style="color:{{ c.muted }}">–</span>
+                      <select value="{{ ovw.rTo }}" onChange="{{ ovw.setTo }}" aria-label="To" style="height:30px;border:1px solid {{ c.fieldLine }};border-radius:7px;background:{{ c.field }};color:{{ c.ink }};padding:0 6px;font-size:12.5px"><sc-for list="{{ ovw.opts }}" as="o" hint-placeholder-count="7"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select>
+                    </div>
+                  </sc-if>
+                </div>
+                <sc-if value="{{ ovw.none }}"><div style="font-size:13px;color:{{ c.muted }}">Nothing tracked in this range.</div></sc-if>
+                <sc-if value="{{ ovw.some }}">
+                  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px">
+                    <sc-for list="{{ ovw.stats }}" as="x" hint-placeholder-count="4">
+                      <div style="border:1px solid {{ c.line2 }};border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:11.5px;color:{{ c.muted }}">{{ x.k }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600;white-space:nowrap">{{ x.v }}</span><span style="font-size:11.5px;color:{{ c.muted }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ x.sub }}</span></div>
+                    </sc-for>
+                  </div>
+                  <sc-if value="{{ ovw.multi }}">
+                    <div style="display:flex;flex-direction:column;gap:8px">
+                      <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">BY DAY</span>
+                      <div style="display:grid;grid-template-columns:repeat({{ ovw.nDays }},minmax(0,1fr));gap:8px;height:132px">
+                        <sc-for list="{{ ovw.days }}" as="d" hint-placeholder-count="7">
+                          <div onClick="{{ d.go }}" role="button" aria-label="{{ d.aria }}" style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%;cursor:pointer;min-width:0">
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:{{ c.ink2 }};white-space:nowrap">{{ d.fig }}</span>
+                            <div style="width:100%;max-width:44px;height:{{ d.h }};display:flex;flex-direction:column-reverse;border-radius:4px;overflow:hidden;background:{{ c.line2 }}"><div style="height:{{ d.cH }};background:{{ c.acc }}"></div><div style="height:{{ d.dH }};background:{{ d.dBg }}"></div></div>
+                            <span style="font-size:11.5px;font-weight:600;color:{{ d.ink }}">{{ d.name }}</span>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </div>
+                  </sc-if>
+                  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px 28px">
+                    <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+                      <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">BY KIND</span>
+                      <div style="height:10px;border-radius:5px;overflow:hidden;display:flex;gap:2px"><sc-for list="{{ ovw.kinds }}" as="g" hint-placeholder-count="3"><div style="width:{{ g.w }};background:{{ g.c }}"></div></sc-for></div>
+                      <sc-for list="{{ ovw.kinds }}" as="g" hint-placeholder-count="3"><div style="display:flex;align-items:center;gap:8px;font-size:12.5px"><span style="width:8px;height:8px;border-radius:2px;background:{{ g.c }};flex-shrink:0"></span><span style="flex:1;color:{{ c.ink2 }}">{{ g.label }}</span><span style="font-family:'JetBrains Mono',monospace;font-weight:600">{{ g.val }}</span><span style="font-family:'JetBrains Mono',monospace;color:{{ c.muted }};width:36px;text-align:right">{{ g.pct }}</span></div></sc-for>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+                      <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">BY TASK</span>
+                      <sc-for list="{{ ovw.tasks }}" as="t" hint-placeholder-count="4">
+                        <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+                          <div style="display:flex;align-items:baseline;gap:8px;font-size:12.5px;min-width:0"><span style="font-family:{{ t.font }};font-size:12px;font-weight:600;white-space:nowrap">{{ t.key }}</span><span style="flex:1;min-width:0;color:{{ c.muted }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.title }}</span><span style="font-family:'JetBrains Mono',monospace;font-weight:600;white-space:nowrap">{{ t.val }}</span></div>
+                          <div style="height:4px;border-radius:2px;background:{{ c.line2 }}"><div style="height:100%;width:{{ t.w }};border-radius:2px;background:{{ c.accLine }}"></div></div>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-if>
+              </section>
+            </sc-if>
+
+            <sc-if value="{{ tabs.cal }}">
+              <section aria-label="From your calendar" style="background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;overflow:hidden">
+                <div style="padding:12px 16px;display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap">
+                  <span style="font-size:14px;font-weight:700">From your calendar</span>
+                  <span style="font-size:12px;color:{{ c.muted }}">{{ cal.sub }}</span>
+                  <span style="flex:1"></span>
+                  <sc-if value="{{ cal.canAll }}"><button onClick="{{ cal.logAll }}" style="height:30px;padding:0 12px;border:1px solid {{ c.btnLine }};border-radius:8px;background:{{ c.btn }};color:{{ c.ink }};font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap">{{ cal.allLabel }}</button></sc-if>
+                </div>
+                <sc-for list="{{ cal.rows }}" as="r" hint-placeholder-count="4">
+                  <div style="display:flex;align-items:center;gap:12px;padding:8px 16px;min-height:52px;box-sizing:border-box;border-top:1px solid {{ c.line2 }};opacity:{{ r.op }}">
+                    <span style="width:3px;height:32px;border-radius:2px;background:{{ r.bar }};flex-shrink:0"></span>
+                    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:13px;font-weight:600">{{ r.title }}</span><span style="font-size:12px;line-height:16px;color:{{ c.muted }};text-wrap:pretty">{{ r.meta }}</span></div>
+                    <sc-if value="{{ r.isOpen }}">
+                      <div style="display:flex;gap:6px;flex-shrink:0">
+                        <button onClick="{{ r.skip }}" style="height:30px;padding:0 10px;border:0;border-radius:7px;background:transparent;color:{{ c.muted }};font-size:12.5px;font-weight:600;cursor:pointer">Skip</button>
+                        <button onClick="{{ r.log }}" style="height:30px;padding:0 12px;border:1px solid {{ c.accLine }};border-radius:7px;background:{{ c.accSoft }};color:{{ c.accInk }};font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap">Log meeting</button>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ r.hasTag }}"><span style="font-size:11px;font-weight:600;color:{{ r.tagInk }};background:{{ r.tagBg }};border-radius:4px;padding:2px 7px;white-space:nowrap;flex-shrink:0">{{ r.tag }}</span></sc-if>
+                  </div>
+                </sc-for>
+              </section>
+            </sc-if>
+
+            <sc-if value="{{ tabs.rv }}" hint-placeholder-val="{{ true }}">
+              <section aria-label="To review" style="background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;overflow:hidden">
+                <div style="padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                  <sc-if value="{{ rv.canCheck }}" hint-placeholder-val="{{ true }}"><div onClick="{{ rv.toggleAll }}" role="checkbox" aria-checked="{{ rv.allOn }}" aria-label="Select all" style="width:16px;height:16px;border-radius:4px;border:1.5px solid {{ rv.allBd }};background:{{ rv.allBg }};color:{{ c.onAcc }};font-size:11px;line-height:13px;text-align:center;cursor:pointer;box-sizing:border-box;flex-shrink:0">{{ rv.allMark }}</div></sc-if>
+                  <span style="font-size:15px;font-weight:700">To review</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:{{ c.muted }};white-space:nowrap">{{ rv.count }}</span>
+                  <span style="flex:1"></span>
+                  <span style="font-size:12.5px;color:{{ rv.hintInk }}">{{ rv.hint }}</span>
+                </div>
+                <sc-for list="{{ rv.groups }}" as="g" hint-placeholder-count="2">
+                  <div style="display:flex;align-items:center;gap:8px;padding:8px 16px 6px;border-top:1px solid {{ c.line2 }};background:{{ c.col }}">
+                    <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">{{ g.name }}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ c.muted }}">{{ g.n }}</span>
+                    <span style="flex:1"></span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ c.muted }}">{{ g.sum }}</span>
+                  </div>
+                  <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="3">
+                    <div onClick="{{ r.go }}" role="button" aria-label="{{ r.aria }}" style="display:flex;align-items:center;gap:12px;padding:8px 16px;min-height:44px;box-sizing:border-box;border-top:1px solid {{ c.line2 }};background:{{ r.bg }};box-shadow:{{ r.bar }};cursor:pointer" style-hover="background:{{ r.hov }}">
+                      <sc-if value="{{ rv.canCheck }}" hint-placeholder-val="{{ true }}"><div onClick="{{ r.toggle }}" role="checkbox" aria-checked="{{ r.ck }}" style="width:16px;height:16px;border-radius:4px;border:1.5px solid {{ r.ckBd }};background:{{ r.ckBg }};color:{{ c.onAcc }};font-size:11px;line-height:13px;text-align:center;box-sizing:border-box;flex-shrink:0">{{ r.ckMark }}</div></sc-if>
+                      <span style="width:14px;height:11px;border-radius:3px;box-sizing:border-box;background:{{ r.swBg }};border:{{ r.swBd }};flex-shrink:0"></span>
+                      <sc-if value="{{ lay.desk }}" hint-placeholder-val="{{ true }}"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:{{ c.muted }};width:116px;flex-shrink:0;white-space:nowrap">{{ r.range }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:600;width:72px;flex-shrink:0;white-space:nowrap">{{ r.len }}</span></sc-if>
+                      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                        <div style="display:flex;align-items:baseline;gap:8px;min-width:0"><span style="font-family:{{ r.lFont }};font-size:12.5px;font-weight:600;color:{{ r.lInk }};white-space:nowrap">{{ r.label }}</span><span style="font-size:12.5px;color:{{ c.muted }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.title }}</span></div>
+                        <sc-if value="{{ lay.phone }}"><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:{{ c.muted }};white-space:nowrap">{{ r.range }} · {{ r.len }}</span></sc-if>
+                      </div>
+                      <sc-if value="{{ lay.desk }}" hint-placeholder-val="{{ true }}"><span style="font-size:11px;font-weight:600;color:{{ r.srcInk }};background:{{ r.srcBg }};border-radius:4px;padding:2px 7px;white-space:nowrap;flex-shrink:0">{{ r.src }}</span></sc-if>
+                    </div>
+                  </sc-for>
+                </sc-for>
+                <sc-if value="{{ rv.empty }}"><div style="padding:14px 16px;border-top:1px solid {{ c.line2 }};font-size:13px;color:{{ c.muted }}">{{ rv.emptyText }}</div></sc-if>
+              </section>
+            </sc-if>
+
+            <sc-if value="{{ tabs.cf }}" hint-placeholder-val="{{ true }}">
+              <section aria-label="Confirmed" style="background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;overflow:hidden">
+                <div style="padding:12px 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                  <span style="font-size:15px;font-weight:700">Confirmed</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:{{ c.muted }};white-space:nowrap">{{ cf.count }}</span>
+                  <span style="flex:1"></span>
+                  <span style="font-size:12.5px;color:{{ c.muted }}">{{ cf.hint }}</span>
+                </div>
+                <sc-for list="{{ cf.groups }}" as="g" hint-placeholder-count="2">
+                  <div style="display:flex;align-items:center;gap:8px;padding:8px 16px 6px;border-top:1px solid {{ c.line2 }};background:{{ c.col }}">
+                    <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">{{ g.name }}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ c.muted }}">{{ g.n }}</span>
+                    <span style="flex:1"></span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ c.muted }}">{{ g.sum }}</span>
+                  </div>
+                  <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="2">
+                    <div onClick="{{ r.go }}" role="button" aria-label="{{ r.aria }}" style="display:flex;align-items:center;gap:12px;padding:8px 16px;min-height:44px;box-sizing:border-box;border-top:1px solid {{ c.line2 }};background:{{ r.bg }};box-shadow:{{ r.bar }};cursor:pointer" style-hover="background:{{ r.hov }}">
+                      <span style="width:14px;height:11px;border-radius:3px;box-sizing:border-box;background:{{ r.swBg }};border:{{ r.swBd }};flex-shrink:0"></span>
+                      <sc-if value="{{ lay.desk }}" hint-placeholder-val="{{ true }}"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:{{ c.muted }};width:116px;flex-shrink:0;white-space:nowrap">{{ r.range }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:600;width:72px;flex-shrink:0;white-space:nowrap">{{ r.len }}</span></sc-if>
+                      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:1px">
+                        <div style="display:flex;align-items:baseline;gap:8px;min-width:0"><span style="font-family:{{ r.lFont }};font-size:12.5px;font-weight:600;white-space:nowrap">{{ r.label }}</span><span style="font-size:12.5px;color:{{ c.muted }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.title }}</span></div>
+                        <sc-if value="{{ lay.phone }}"><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:{{ c.muted }};white-space:nowrap">{{ r.range }} · {{ r.len }}</span></sc-if>
+                      </div>
+                      <sc-if value="{{ lay.desk }}" hint-placeholder-val="{{ true }}"><span style="font-size:11px;font-weight:600;color:{{ r.srcInk }};background:{{ r.srcBg }};border-radius:4px;padding:2px 7px;white-space:nowrap;flex-shrink:0">{{ r.src }}</span></sc-if>
+                    </div>
+                  </sc-for>
+                </sc-for>
+                <sc-if value="{{ cf.empty }}"><div style="padding:14px 16px;border-top:1px solid {{ c.line2 }};font-size:13px;color:{{ c.muted }}">Nothing confirmed yet. Confirmed time is the only time anyone else can see.</div></sc-if>
+              </section>
+            </sc-if>
+          </div>
+          </sc-if>
+
+        </div>
+      </sc-if>
+    </div>
+
+    <sc-if value="{{ bulk.show }}">
+      <div style="position:sticky;bottom:{{ lay.bulkB }};z-index:25;display:flex;justify-content:center;padding:0 16px;pointer-events:none">
+        <div role="toolbar" aria-label="Bulk actions" style="pointer-events:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 8px 8px 14px;background:{{ c.card }};border:1px solid {{ c.line }};border-radius:12px;box-shadow:{{ c.pop }};max-width:100%;box-sizing:border-box">
+          <span style="font-size:13px;font-weight:600;white-space:nowrap">{{ bulk.n }} selected</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:{{ c.muted }};white-space:nowrap">{{ bulk.sum }}</span>
+          <span style="width:1px;height:20px;background:{{ c.line }};margin:0 4px"></span>
+          <button onClick="{{ bulk.confirm }}" style="height:34px;padding:0 13px;border:0;border-radius:9px;background:{{ c.acc }};color:{{ c.onAcc }};font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">{{ bulk.confirmLabel }}</button>
+          <div data-pop="assign" style="position:relative">
+            <button onClick="{{ pp.toggleAssign }}" style="height:34px;padding:0 12px;border:1px solid {{ c.btnLine }};border-radius:9px;background:{{ c.btn }};color:{{ c.ink }};font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Assign task ▾</button>
+            <sc-if value="{{ pp.assign }}">
+              <div style="position:absolute;bottom:calc(100% + 6px);left:0;width:300px;z-index:60;background:{{ c.card }};border:1px solid {{ c.line }};border-radius:9px;box-shadow:{{ c.pop }};padding:6px;display:flex;flex-direction:column;gap:1px">
+                <sc-for list="{{ bulk.tasks }}" as="o" hint-placeholder-count="5"><div onClick="{{ o.go }}" style="display:flex;gap:8px;align-items:baseline;padding:8px;border-radius:6px;cursor:pointer" style-hover="background:{{ c.hover }}"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;white-space:nowrap">{{ o.key }}</span><span style="font-size:12.5px;color:{{ c.muted }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ o.title }}</span></div></sc-for>
+              </div>
+            </sc-if>
+          </div>
+          <button onClick="{{ bulk.notWork }}" style="height:34px;padding:0 12px;border:1px solid {{ c.btnLine }};border-radius:9px;background:{{ c.btn }};color:{{ c.ink }};font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">Not work time</button>
+          <button onClick="{{ bulk.clear }}" aria-label="Clear selection" style="width:34px;height:34px;border:0;border-radius:9px;background:transparent;color:{{ c.muted }};font-size:16px;cursor:pointer">×</button>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+
+  <sc-if value="{{ toast.show }}">
+    <div role="status" aria-live="polite" style="position:absolute;left:50%;bottom:{{ lay.toastB }};transform:translateX(-50%);z-index:70;display:flex;align-items:center;gap:12px;padding:0 6px 0 14px;height:40px;border-radius:10px;background:{{ c.toast }};color:{{ c.toastInk }};font-size:13px;box-shadow:0 10px 28px rgba(0,0,0,.25);white-space:nowrap;max-width:calc(100% - 24px);box-sizing:border-box">
+      <span style="overflow:hidden;text-overflow:ellipsis">{{ toast.msg }}</span>
+      <sc-if value="{{ toast.canUndo }}"><button onClick="{{ toast.undo }}" style="height:28px;padding:0 10px;border:0;border-radius:6px;background:transparent;color:{{ c.toastAcc }};font-size:13px;font-weight:700;cursor:pointer">Undo</button></sc-if>
+      <button onClick="{{ toast.close }}" aria-label="Dismiss" style="width:28px;height:28px;border:0;background:transparent;color:{{ c.toastMuted }};font-size:15px;cursor:pointer">×</button>
+    </div>
+  </sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ dr.scrim }}"><div onClick="{{ dr.close }}" style="position:absolute;inset:0;background:{{ c.scrim }};z-index:40"></div></sc-if>
+<sc-if value="{{ dr.show }}" hint-placeholder-val="{{ false }}">
+  <div ref="{{ drRef }}" role="dialog" aria-label="{{ ed.aria }}" tabIndex="-1" style="position:{{ dr.pos }};left:{{ dr.l }};right:{{ dr.r }};bottom:{{ dr.b }};width:{{ dr.w }};height:{{ dr.h }};max-height:{{ dr.mh }};border-radius:{{ dr.rad }};border-left:{{ dr.bl }};box-shadow:{{ dr.sh }};z-index:50;flex-shrink:0;background:{{ c.card }};display:flex;flex-direction:column;outline:none;box-sizing:border-box;overflow:hidden">
+    <sc-if value="{{ dr.grab }}"><div style="display:flex;justify-content:center;padding:8px 0 0"><div style="width:36px;height:4px;border-radius:2px;background:{{ c.line }}"></div></div></sc-if>
+    <div style="padding:14px 20px 14px;border-bottom:1px solid {{ c.line2 }};display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:8px;min-height:28px">
+        <span style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;padding:3px 8px 3px 5px;border-radius:4px;background:{{ ed.pBg }};border:{{ ed.pBd }};color:{{ ed.pInk }};white-space:nowrap"><span style="width:12px;text-align:center">{{ ed.pIcon }}</span>{{ ed.pName }}</span>
+        <sc-if value="{{ ed.showSaved }}"><span style="display:flex;align-items:center;gap:5px;font-size:12px;color:{{ c.grn }};white-space:nowrap"><svg width="11" height="11" viewBox="0 0 12 12"><path d="M2 6.3l2.6 2.5L10 3.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path></svg>{{ ed.saved }}</span><sc-if value="{{ ed.canUndo }}"><button onClick="{{ toast.undo }}" style="border:0;background:transparent;padding:0 2px;color:{{ c.accInk }};font-size:12px;font-weight:600;cursor:pointer">Undo</button></sc-if></sc-if>
+        <span style="flex:1"></span>
+        <sc-if value="{{ ed.hasNav }}"><div style="display:flex;align-items:center;gap:2px"><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:{{ c.muted }};margin-right:4px">{{ ed.pos }}</span><button onClick="{{ ed.prev }}" aria-label="Previous to review (K)" style="width:28px;height:28px;border:1px solid {{ c.btnLine }};border-radius:7px;background:{{ c.btn }};color:{{ c.ink }};cursor:pointer">‹</button><button onClick="{{ ed.next }}" aria-label="Next to review (J)" style="width:28px;height:28px;border:1px solid {{ c.btnLine }};border-radius:7px;background:{{ c.btn }};color:{{ c.ink }};cursor:pointer">›</button></div></sc-if>
+        <button onClick="{{ dr.close }}" aria-label="Close (Esc)" style="width:30px;height:30px;border:0;border-radius:7px;background:transparent;color:{{ c.muted }};font-size:18px;cursor:pointer" style-hover="background:{{ c.hover }}">×</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <span style="font-size:17px;font-weight:700;line-height:22px;text-wrap:pretty"><sc-if value="{{ ed.hasKey }}"><span style="font-family:'JetBrains Mono',monospace;font-size:15px;margin-right:8px">{{ ed.key }}</span></sc-if>{{ ed.head }}</span>
+        <span style="font-size:12.5px;color:{{ c.muted }};line-height:17px">{{ ed.sub }}</span>
+      </div>
+    </div>
+    <sc-if value="{{ ed.hasBanner }}"><div style="margin:12px 20px 0;padding:10px 12px;border-radius:8px;background:{{ ed.bnBg }};border:1px solid {{ ed.bnBd }};color:{{ c.ink }};font-size:12.5px;line-height:18px;text-wrap:pretty">{{ ed.banner }}</div></sc-if>
+
+    <div style="flex:1;min-height:0;overflow:auto;padding:0 20px 8px;display:flex;flex-direction:column">
+      <sc-if value="{{ ed.hasInsight }}">
+        <div style="margin-top:16px;border:1px solid {{ c.accLine }};background:{{ c.accSoft }};border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+          <span style="font-size:10.5px;font-weight:700;letter-spacing:.08em;color:{{ c.accInk }}">{{ ed.inTag }}</span>
+          <span style="font-size:13px;line-height:18px;color:{{ c.ink }};text-wrap:pretty">{{ ed.inText }}</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ ed.inActs }}" as="a" hint-placeholder-count="1"><button onClick="{{ a.go }}" style="height:30px;padding:0 12px;border:0;border-radius:7px;background:{{ c.acc }};color:{{ c.onAcc }};font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap">{{ a.label }}</button></sc-for></div>
+        </div>
+      </sc-if>
+      <div style="padding:16px 0;border-bottom:1px solid {{ c.line2 }};display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }};flex:1">WHEN</span>
+          <sc-if value="{{ ed.showUntimed }}"><label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:{{ c.ink2 }};cursor:pointer"><input type="checkbox" checked="{{ ed.untimed }}" onChange="{{ ed.toggleUntimed }}" style="accent-color:#7c3aed;margin:0">No set time</label></sc-if>
+        </div>
+        <sc-if value="{{ ed.isGapC }}">
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:600">{{ ed.gapRange }}</span>
+            <span style="font-size:12px;line-height:17px;color:{{ c.muted }};text-wrap:pretty">{{ ed.gapHint }}</span>
+            <sc-if value="{{ ed.gapChanged }}"><button onClick="{{ ed.gapReset }}" style="align-self:flex-start;border:0;background:transparent;padding:2px 0;color:{{ c.accInk }};font-size:12.5px;font-weight:600;cursor:pointer">Reset to the whole gap</button></sc-if>
+          </div>
+        </sc-if>
+        <sc-if value="{{ ed.showDates }}">
+          <div role="radiogroup" aria-label="Date" style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px">
+            <sc-for list="{{ ed.dates }}" as="d" hint-placeholder-count="7">
+              <button onClick="{{ d.go }}" disabled="{{ d.dis }}" title="{{ d.tip }}" style="height:44px;border-radius:7px;border:1px solid {{ d.bd }};background:{{ d.bg }};color:{{ d.ink }};opacity:{{ d.op }};cursor:{{ d.cur }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0;min-width:0">
+                <span style="font-size:10.5px;font-weight:600">{{ d.name }}</span>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700">{{ d.date }}</span>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+        <div style="display:grid;grid-template-columns:{{ ed.fCols }};gap:8px">
+          <sc-for list="{{ ed.fields }}" as="f" hint-placeholder-count="3">
+            <label style="display:flex;flex-direction:column;gap:4px;min-width:0">
+              <span style="font-size:11.5px;color:{{ c.muted }}">{{ f.label }}</span>
+              <input ref="{{ f.ref }}" value="{{ f.val }}" readOnly="{{ ed.ro }}" onFocus="{{ f.onFocus }}" onChange="{{ f.onChange }}" onBlur="{{ f.onBlur }}" onKeyDown="{{ f.onKeyDown }}" aria-label="{{ f.aria }}" inputMode="text" style="height:36px;min-width:0;box-sizing:border-box;border:1px solid {{ f.bd }};border-radius:7px;background:{{ ed.fBg }};color:{{ c.ink }};padding:0 10px;font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:600;outline:none">
+            </label>
+          </sc-for>
+        </div>
+        <sc-if value="{{ ed.showPick }}">
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <sc-for list="{{ ed.lenChips }}" as="o" hint-placeholder-count="6"><button onClick="{{ o.go }}" style="height:28px;padding:0 9px;border-radius:6px;border:1px solid {{ o.bd }};background:{{ o.bg }};color:{{ o.ink }};font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">{{ o.label }}</button></sc-for>
+            <sc-if value="{{ ed.showEndsNow }}"><button onClick="{{ ed.endsNow }}" style="white-space:nowrap;height:28px;padding:0 10px;border-radius:6px;border:1px solid {{ c.btnLine }};background:{{ c.btn }};color:{{ c.ink }};font-size:12px;font-weight:600;cursor:pointer">Ends now</button></sc-if>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">
+            <div onPointerDown="{{ ed.barDown }}" role="slider" aria-label="Time range" style="position:relative;height:30px;border-radius:7px;background:{{ c.kbd }};cursor:pointer;touch-action:none;overflow:hidden;user-select:none">
+              <sc-for list="{{ ed.busy }}" as="b" hint-placeholder-count="0"><div title="{{ b.tip }}" style="position:absolute;top:8px;bottom:8px;left:{{ b.l }}%;width:{{ b.w }}%;border-radius:3px;background:{{ b.bg }}"></div></sc-for>
+              <sc-if value="{{ ed.showNow }}"><div style="position:absolute;top:0;bottom:0;left:{{ ed.nowL }}%;width:2px;background:{{ c.red }}"></div></sc-if>
+              <div style="position:absolute;top:2px;bottom:2px;left:{{ ed.selL }}%;width:{{ ed.selW }}%;min-width:6px;border-radius:5px;background:{{ ed.selBg }};border:1.5px solid {{ ed.selBd }};box-sizing:border-box;cursor:grab"></div>
+            </div>
+            <div style="position:relative;height:14px">
+              <sc-for list="{{ ed.barTicks }}" as="k" hint-placeholder-count="0"><span style="position:absolute;left:{{ k.l }}%;transform:translateX(-50%);font-family:'JetBrains Mono',monospace;font-size:10px;color:{{ c.muted }};white-space:nowrap">{{ k.label }}</span></sc-for>
+            </div>
+            <span style="font-size:11.5px;line-height:16px;color:{{ c.muted }}">{{ ed.barHint }}</span>
+          </div>
+        </sc-if>
+        <sc-if value="{{ ed.hasErr }}"><div role="alert" style="font-size:12.5px;line-height:17px;color:{{ c.red }}">{{ ed.err }}</div></sc-if>
+        <sc-if value="{{ ed.hasFHint }}"><div style="font-size:11.5px;line-height:16px;color:{{ c.muted }}">{{ ed.fHint }}</div></sc-if>
+      </div>
+
+      <sc-if value="{{ ed.isCompose }}">
+        <div style="padding:16px 0;border-bottom:1px solid {{ c.line2 }};display:flex;flex-direction:column;gap:8px">
+          <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">OFF-SCREEN WORK</span>
+          <span style="font-size:12px;line-height:17px;color:{{ c.muted }};text-wrap:pretty">Time Laika can’t see. One tap sets the kind and title.</span>
+          <div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{ ed.presets }}" as="o" hint-placeholder-count="6"><button onClick="{{ o.go }}" style="height:28px;padding:0 10px;border-radius:14px;border:1px solid {{ o.bd }};background:{{ o.bg }};color:{{ o.ink }};font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap">{{ o.label }}</button></sc-for></div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ ed.showTask }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:16px 0;border-bottom:1px solid {{ c.line2 }};display:flex;flex-direction:column;gap:10px">
+          <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">TASK</span>
+          <sc-if value="{{ ed.hasTask }}"><div style="display:flex;align-items:baseline;gap:8px;font-size:13px;line-height:18px"><span style="font-family:'JetBrains Mono',monospace;font-weight:600;white-space:nowrap">{{ ed.taskKey }}</span><span style="color:{{ c.ink2 }}">{{ ed.taskTitle }}</span></div></sc-if>
+          <sc-if value="{{ ed.noTask }}"><div style="font-size:12.5px;line-height:18px;color:{{ c.ink }};background:{{ c.orgSoft }};border:1px solid {{ c.orgLine }};border-radius:7px;padding:8px 10px;text-wrap:pretty"><b style="color:{{ c.org }};font-weight:700">No task yet.</b> {{ ed.noTaskWhy }}</div></sc-if>
+          <sc-if value="{{ ed.canTask }}" hint-placeholder-val="{{ true }}">
+            <div style="position:relative">
+              <input value="{{ ed.q }}" onChange="{{ ed.setQ }}" placeholder="Search tasks, or type a new one" aria-label="Search tasks" style="width:100%;box-sizing:border-box;height:36px;border:1px solid {{ c.fieldLine }};border-radius:7px;background:{{ c.field }};color:{{ c.ink }};padding:0 10px 0 30px;font-size:13px;outline:none">
+              <svg width="13" height="13" viewBox="0 0 14 14" style="position:absolute;left:10px;top:12px;color:{{ c.muted }}"><circle cx="6" cy="6" r="4.2" fill="none" stroke="currentColor" stroke-width="1.4"></circle><path d="M9.2 9.2L12.5 12.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg>
+            </div>
+            <sc-if value="{{ ed.hasResults }}">
+              <div style="border:1px solid {{ c.line }};border-radius:7px;display:flex;flex-direction:column;overflow:hidden">
+                <sc-for list="{{ ed.results }}" as="o" hint-placeholder-count="3"><div onClick="{{ o.go }}" style="display:flex;gap:8px;align-items:baseline;padding:8px 10px;cursor:pointer;border-top:1px solid {{ c.line2 }}" style-hover="background:{{ c.hover }}"><span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;white-space:nowrap">{{ o.key }}</span><span style="font-size:12.5px;color:{{ c.muted }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ o.title }}</span></div></sc-for>
+              </div>
+            </sc-if>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              <sc-for list="{{ ed.sugg }}" as="o" hint-placeholder-count="3">
+                <button onClick="{{ o.go }}" title="{{ o.title }}" style="display:flex;align-items:center;gap:6px;height:28px;padding:0 9px;border-radius:4px;border:1px solid {{ o.bd }};background:{{ o.bg }};color:{{ o.ink }};cursor:pointer;white-space:nowrap"><span style="font-family:{{ o.font }};font-size:12px;font-weight:600">{{ o.label }}</span><sc-if value="{{ o.hasWhy }}"><span style="font-size:11px;color:{{ c.muted }}">{{ o.why }}</span></sc-if></button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ ed.showKind }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:16px 0;border-bottom:1px solid {{ c.line2 }};display:flex;flex-direction:column;gap:10px">
+          <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">KIND</span>
+          <div role="radiogroup" aria-label="Kind" style="display:flex;flex-wrap:wrap;gap:6px">
+            <sc-for list="{{ ed.kinds }}" as="k" hint-placeholder-count="6"><button role="radio" aria-checked="{{ k.on }}" onClick="{{ k.go }}" style="height:28px;padding:0 10px;border-radius:4px;border:1px solid {{ k.bd }};background:{{ k.bg }};color:{{ k.ink }};font-size:12.5px;font-weight:{{ k.w }};cursor:{{ k.cursor }}">{{ k.label }}</button></sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ ed.showWhat }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:16px 0;border-bottom:1px solid {{ c.line2 }};display:flex;flex-direction:column;gap:8px">
+          <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">WHAT IT WAS</span>
+          <input value="{{ ed.title }}" readOnly="{{ ed.ro }}" onFocus="{{ ed.txFocus }}" onChange="{{ ed.setTitle }}" onBlur="{{ ed.txBlur }}" placeholder="{{ ed.titlePh }}" aria-label="What it was" style="height:36px;box-sizing:border-box;border:1px solid {{ ed.txBd }};border-radius:7px;background:{{ ed.fBg }};color:{{ c.ink }};padding:0 10px;font-size:13.5px;font-weight:600;outline:none">
+          <sc-if value="{{ ed.showDesc }}" hint-placeholder-val="{{ true }}"><textarea value="{{ ed.desc }}" readOnly="{{ ed.ro }}" onFocus="{{ ed.txFocus }}" onChange="{{ ed.setDesc }}" onBlur="{{ ed.txBlur }}" placeholder="{{ ed.descPh }}" aria-label="Description" rows="2" style="box-sizing:border-box;border:1px solid {{ ed.txBd }};border-radius:7px;background:{{ ed.fBg }};color:{{ c.ink }};padding:8px 10px;font-size:13px;line-height:18px;outline:none;resize:vertical;min-height:56px"></textarea></sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ ed.splitOpen }}">
+        <div style="padding:16px 0;border-bottom:1px solid {{ c.line2 }};display:flex;flex-direction:column;gap:8px">
+          <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">SPLIT</span>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:13px">Split at</span><input value="{{ ed.splitVal }}" onChange="{{ ed.setSplit }}" aria-label="Split at time" style="width:96px;height:34px;box-sizing:border-box;border:1px solid {{ c.fieldLine }};border-radius:7px;background:{{ c.field }};color:{{ c.ink }};padding:0 10px;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;outline:none"><button onClick="{{ ed.doSplit }}" style="height:34px;padding:0 12px;border:1px solid {{ c.btnLine }};border-radius:8px;background:{{ c.btn }};color:{{ c.ink }};font-size:12.5px;font-weight:600;cursor:pointer">Split</button><button onClick="{{ ed.cancelSplit }}" style="height:34px;padding:0 8px;border:0;background:transparent;color:{{ c.muted }};font-size:12.5px;cursor:pointer">Cancel</button></div>
+          <span style="font-size:11.5px;color:{{ c.muted }}">{{ ed.splitHint }}</span>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ ed.showEv }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:16px 0;border-bottom:1px solid {{ c.line2 }};display:flex;flex-direction:column;gap:10px">
+          <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">{{ ed.evLabel }}</span>
+          <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px">
+            <sc-for list="{{ ed.stats }}" as="s" hint-placeholder-count="4"><div style="background:{{ c.col }};border-radius:6px;padding:6px 8px;min-width:0"><div style="font-family:'JetBrains Mono',monospace;font-size:15px;font-weight:600">{{ s.v }}</div><div style="font-size:11px;color:{{ c.muted }}">{{ s.l }}</div></div></sc-for>
+          </div>
+          <span style="font-size:12px;color:{{ c.muted }};line-height:17px;text-wrap:pretty">{{ ed.agentLine }}</span>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ ed.hasNote }}"><div style="padding:16px 0;border-bottom:1px solid {{ c.line2 }};font-size:12.5px;line-height:18px;color:{{ c.ink2 }};text-wrap:pretty">{{ ed.note }}</div></sc-if>
+
+      <sc-if value="{{ ed.showHist }}">
+        <div style="padding:16px 0;display:flex;flex-direction:column;gap:8px">
+          <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">HISTORY</span>
+          <sc-for list="{{ ed.hist }}" as="h" hint-placeholder-count="3">
+            <div style="display:grid;grid-template-columns:68px minmax(0,1fr);gap:10px;font-size:12.5px;line-height:17px"><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:{{ c.muted }}">{{ h.t }}</span><span><span style="color:{{ c.ink }}">{{ h.what }}</span><span style="color:{{ c.muted }}"> · {{ h.who }}</span></span></div>
+          </sc-for>
+        </div>
+      </sc-if>
+    </div>
+
+    <sc-if value="{{ ed.hasFoot }}" hint-placeholder-val="{{ true }}">
+      <div style="padding:12px 20px {{ dr.footPB }};border-top:1px solid {{ c.line2 }};display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <sc-if value="{{ ed.hasPrimary }}" hint-placeholder-val="{{ true }}"><button onClick="{{ ed.primary }}" disabled="{{ ed.primaryDis }}" style="height:{{ dr.btnH }};padding:0 14px;border:0;border-radius:9px;background:{{ ed.primaryBg }};color:{{ ed.primaryInk }};font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:8px">{{ ed.primaryLabel }}<sc-if value="{{ ed.primaryKbd }}"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;opacity:.8">↵</span></sc-if></button></sc-if>
+        <sc-for list="{{ ed.acts }}" as="a" hint-placeholder-count="2"><button onClick="{{ a.go }}" style="height:{{ dr.btnH }};padding:0 12px;border:1px solid {{ a.bd }};border-radius:9px;background:{{ c.btn }};color:{{ a.ink }};font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">{{ a.label }}</button></sc-for>
+        <sc-if value="{{ ed.hasLink }}"><a href="#" style="font-size:12.5px;font-weight:600;color:{{ c.accInk }};text-decoration:none">{{ ed.link }}</a></sc-if>
+      </div>
+    </sc-if>
+  </div>
+</sc-if>
+
+<sc-if value="{{ sm.show }}">
+  <div onClick="{{ sm.cancel }}" style="position:absolute;inset:0;background:{{ c.scrim }};z-index:80;display:flex;align-items:center;justify-content:center;padding:16px">
+    <div role="dialog" aria-label="{{ sm.title }}" onClick="{{ sm.stop }}" style="width:100%;max-width:520px;max-height:100%;overflow:auto;background:{{ c.card }};border:1px solid {{ c.line }};border-radius:12px;box-shadow:{{ c.pop }};display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;padding:14px 20px;border-bottom:1px solid {{ c.line2 }}"><span style="font-size:15px;font-weight:700;flex:1">{{ sm.title }}</span><button onClick="{{ sm.cancel }}" aria-label="Close" style="width:30px;height:30px;border:0;background:transparent;color:{{ c.muted }};font-size:18px;cursor:pointer">×</button></div>
+      <div style="padding:18px 20px;display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;flex-direction:column;gap:4px"><span style="font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:600;letter-spacing:-.01em">{{ sm.total }}</span><span style="font-size:12.5px;line-height:18px;color:{{ c.muted }}">{{ sm.sub }}</span></div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">WHERE THE DAY WENT</span>
+          <div style="height:10px;border-radius:5px;overflow:hidden;display:flex;gap:2px"><sc-for list="{{ sm.segs }}" as="g" hint-placeholder-count="3"><div style="width:{{ g.w }};background:{{ g.c }}"></div></sc-for></div>
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 16px">
+            <sc-for list="{{ sm.segs }}" as="g" hint-placeholder-count="3"><div style="display:flex;align-items:center;gap:8px;font-size:12.5px"><span style="width:8px;height:8px;border-radius:2px;background:{{ g.c }};flex-shrink:0"></span><span style="flex:1;color:{{ c.ink2 }}">{{ g.label }}</span><span style="font-family:'JetBrains Mono',monospace;font-weight:600">{{ g.val }}</span><span style="font-family:'JetBrains Mono',monospace;color:{{ c.muted }};width:34px;text-align:right">{{ g.pct }}</span></div></sc-for>
+          </div>
+        </div>
+        <sc-if value="{{ sm.hasOff }}">
+          <div style="display:flex;flex-direction:column;gap:6px;border:1px solid {{ c.line }};border-radius:8px;padding:10px 12px">
+            <span style="font-size:12.5px;font-weight:700">{{ sm.offHead }}</span>
+            <sc-for list="{{ sm.offs }}" as="o" hint-placeholder-count="2"><div style="display:flex;gap:8px;font-size:12.5px;align-items:baseline"><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:{{ c.muted }};width:110px;flex-shrink:0;white-space:nowrap">{{ o.r }}</span><span style="flex:1;min-width:0">{{ o.t }}</span><span style="font-size:11px;color:{{ c.muted }}">{{ o.k }}</span></div></sc-for>
+          </div>
+        </sc-if>
+        <label style="display:flex;flex-direction:column;gap:6px">
+          <span style="font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">NOTE FOR YOUR MANAGER</span>
+          <textarea value="{{ sm.note }}" onChange="{{ sm.setNote }}" rows="3" placeholder="Optional. What moved, what’s blocked, what took thinking." style="border:1px solid {{ c.fieldLine }};border-radius:8px;background:{{ c.field }};color:{{ c.ink }};padding:8px 10px;font-size:13px;line-height:19px;resize:vertical;outline:none"></textarea>
+          <span style="font-size:11.5px;color:{{ c.muted }}">Shared with owners and admins next to your confirmed time.</span>
+        </label>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 20px;border-top:1px solid {{ c.line2 }}">
+        <button onClick="{{ sm.cancel }}" style="height:36px;padding:0 14px;border:1px solid {{ c.btnLine }};border-radius:9px;background:{{ c.btn }};color:{{ c.ink }};font-size:13px;font-weight:600;cursor:pointer">Cancel</button>
+        <button onClick="{{ sm.go }}" disabled="{{ sm.goDis }}" style="height:36px;padding:0 16px;border:0;border-radius:9px;background:{{ c.acc }};color:{{ c.onAcc }};font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">{{ sm.goLabel }}</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+<sc-if value="{{ keys.show }}">
+  <div onClick="{{ keys.close }}" style="position:absolute;inset:0;background:{{ c.scrim }};z-index:80;display:flex;align-items:center;justify-content:center;padding:16px">
+    <div role="dialog" aria-label="Keyboard shortcuts" onClick="{{ keys.stop }}" style="width:100%;max-width:480px;background:{{ c.card }};border:1px solid {{ c.line }};border-radius:12px;box-shadow:{{ c.pop }};overflow:hidden">
+      <div style="display:flex;align-items:center;padding:14px 20px;border-bottom:1px solid {{ c.line2 }}"><span style="font-size:15px;font-weight:700;flex:1">Keyboard shortcuts</span><button onClick="{{ keys.close }}" aria-label="Close" style="width:30px;height:30px;border:0;background:transparent;color:{{ c.muted }};font-size:18px;cursor:pointer">×</button></div>
+      <sc-for list="{{ keys.groups }}" as="g" hint-placeholder-count="3">
+        <div style="padding:12px 20px 4px;font-size:11px;font-weight:700;letter-spacing:.08em;color:{{ c.muted }}">{{ g.name }}</div>
+        <sc-for list="{{ g.rows }}" as="r" hint-placeholder-count="3">
+          <div style="display:flex;align-items:center;gap:12px;padding:6px 20px;font-size:13px"><span style="flex:1;color:{{ c.ink2 }}">{{ r.v }}</span><span style="display:flex;gap:4px"><sc-for list="{{ r.k }}" as="k" hint-placeholder-count="1"><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:600;min-width:14px;text-align:center;padding:2px 6px;border-radius:4px;border:1px solid {{ c.btnLine }};background:{{ c.kbd }}">{{ k }}</span></sc-for></span></div>
+        </sc-for>
+      </sc-for>
+      <div style="height:12px"></div>
+    </div>
+  </div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;'light'|'dark'&quot;},&quot;device&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;auto&quot;,&quot;desktop&quot;,&quot;phone&quot;],&quot;default&quot;:&quot;auto&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;scenario&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;own&quot;,&quot;viewing&quot;,&quot;empty&quot;,&quot;future&quot;,&quot;draftOff&quot;,&quot;orgOff&quot;,&quot;loading&quot;,&quot;error&quot;],&quot;default&quot;:&quot;own&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;open&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;&quot;,&quot;draft&quot;,&quot;needs&quot;,&quot;confirmed&quot;,&quot;imported&quot;,&quot;break&quot;,&quot;notwork&quot;,&quot;shared&quot;,&quot;compose&quot;,&quot;composeFilled&quot;,&quot;range&quot;,&quot;gap&quot;,&quot;timerStop&quot;,&quot;split&quot;,&quot;err&quot;],&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;timer&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;idle&quot;,&quot;picking&quot;,&quot;running&quot;,&quot;paused&quot;],&quot;default&quot;:&quot;idle&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;drag&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;&quot;,&quot;hover&quot;,&quot;move&quot;,&quot;resize&quot;,&quot;invalid&quot;,&quot;dropped&quot;,&quot;untimed&quot;,&quot;range&quot;,&quot;kbd&quot;],&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;bulk&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;pop&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;&quot;,&quot;who&quot;,&quot;view&quot;,&quot;settings&quot;,&quot;timer&quot;,&quot;keys&quot;,&quot;assign&quot;],&quot;default&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;part&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;page&quot;,&quot;drawer&quot;],&quot;default&quot;:&quot;page&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;embedded&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;boolean&quot;},&quot;scrollTo&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;number&quot;},&quot;scrollY&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;number&quot;},&quot;q&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;string&quot;},&quot;toast&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  static Clock = function (p) {
+    const [, f] = React.useState(0);
+    React.useEffect(() => { if (p.paused) return; const i = setInterval(() => f(x => x + 1), 1000); return () => clearInterval(i); }, [p.paused]);
+    const s = Math.max(0, Math.floor(p.acc + (p.paused ? 0 : (Date.now() - p.t0) / 1000)));
+    return React.createElement('span', null, Math.floor(s / 3600) + ':' + String(Math.floor(s % 3600 / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'));
+  };
+  rootRef = React.createRef(); scRef = React.createRef(); drRef = React.createRef(); fRefs = [React.createRef(), React.createRef(), React.createRef()];
+  state = this.init();
+
+  init() {
+    const P = this.props, sc = P.scenario || 'own';
+    const ov = { b10: { imported: true } };
+    const added = [{ id: 'm1', start: 555, end: 570, card: 'GENERAL', title: 'Standup', kind: 'Meeting', state: 'confirmed', src: 'You added' }];
+    const untimed = [{ id: 'u1', len: 20, card: 'GENERAL', title: 'Call with Andrea', kind: 'Meeting' }];
+    const s = { ready: !!window.LaikaTL, W: 0, ov, added, untimed, sel: '', compose: null, checked: [], toast: null, saved: '', timer: null, pop: P.pop && P.pop !== 'keys' ? P.pop : '', keys: P.pop === 'keys',
+      draftOn: sc !== 'draftOff', where: 'Cape Town · SAST, UTC+2', viewing: sc === 'viewing' ? 'dana' : 'me', q: P.q || '', fk: null, fv: '', fErr: '', split: null, side: {}, seq: 1, other: {}, customs: [], fillRun: false, cal: {}, tab: 'overview', scope: 'day', rFrom: '19', rTo: '22', tmKind: 'Work', dayNote: '', sum: false, noteSent: '', scenario: sc, day: sc === 'future' ? '23' : '22', baseScen: sc === 'future' ? 'own' : sc, tmCard: 'LAI-867', tmTitle: '', stopped: '', ticks: 0 };
+    const tm = P.timer;
+    if (tm === 'running' || tm === 'paused') s.timer = { start: 1025, t0: Date.now(), acc: 2533, paused: tm === 'paused', card: 'LAI-867', title: 'Zoom presets: keyboard steps' };
+    if (tm === 'picking') { s.pop = 'timer'; s.tmTitle = 'Zoom presets: keyboard steps'; }
+    const o = P.open || '', map = { draft: 'b8', needs: 'b1', confirmed: 'b3', imported: 'b10', break: 'b2', notwork: 'b11', shared: 's2' };
+    if (map[o]) s.sel = map[o];
+    if (o === 'compose') s.compose = this.blank({ start: 995, end: 1025, src: 'button' });
+    if (o === 'range') s.compose = this.blank({ start: 510, end: 555, src: 'range' });
+    if (o === 'gap') s.compose = this.blank({ start: 990, end: 1010, src: 'gap', gapId: 'b13' });
+    if (o === 'composeFilled') s.compose = { ...this.blank({ start: 960, end: 990, src: 'button' }), card: 'GENERAL', kind: 'Meeting', title: 'Sprint planning', desc: 'With Andrea and Dana, for sprint 12' };
+    if (o === 'timerStop') { s.added = [...added, { id: 't1', start: 1025, end: 1067, card: 'LAI-867', title: 'Zoom presets: keyboard steps', kind: 'Work', state: 'confirmed', src: 'Timer', revs: [{ t: '5:47 PM', what: 'Stopped the timer · 42 min', who: 'You' }, { t: '5:05 PM', what: 'Started a timer', who: 'You' }] }]; s.sel = 't1'; s.stopped = 't1'; }
+    if (o === 'split') { s.sel = 'b12'; s.split = '3:55 PM'; }
+    if (o === 'err') { s.sel = 'b3'; s.fk = 'E'; s.fv = '12:40'; s.fErr = 'Overlaps LAI-860, 12:30–1:30 PM. Confirmed time can’t overlap.'; }
+    const d = P.drag || '';
+    if (d === 'dropped') { s.ov = { ...ov, b12: { start: 940, end: 1010 } }; s.toast = { msg: 'Moved LAI-307 to 3:40–4:50 PM', undo: { ov, added: s.added, untimed, timer: null }, sticky: true }; }
+    if (P.bulk) s.checked = ['b7', 'b8', 'b12'];
+    if (P.toast) s.toast = { msg: P.toast, undo: { ov, added: s.added, untimed, timer: s.timer }, sticky: true };
+    return s;
+  }
+  DN = { 19: ['Monday', 'Mon'], 20: ['Tuesday', 'Tue'], 21: ['Wednesday', 'Wed'], 22: ['Thursday', 'Thu'], 23: ['Friday', 'Fri'], 24: ['Saturday', 'Sat'], 25: ['Sunday', 'Sun'] };
+  note(msg) { this.setState({ toast: { msg } }, () => this.arm()); }
+  goDay = d => {
+    const st = this.state; d = String(d);
+    if (!this.DN[d]) return this.note('Sample data covers this week only.');
+    if (d === '19' || d === '21') return this.note(`${this.DN[d][0]} ${d} Oct is confirmed · ${d === '19' ? '6 h 40 min' : '7 h 5 min'}. Sample data covers Thursday only.`);
+    const keep = st.day === '22' && !['future', 'empty'].includes(st.scenario) ? st.scenario : st.baseScen;
+    const scen = d === '22' ? keep : d === '20' ? 'empty' : 'future';
+    this.setState({ baseScen: keep, day: d, scenario: scen, sel: '', compose: null, pop: '', checked: [], fErr: '' });
+    if (this.scRef.current) this.scRef.current.scrollTop = 0;
+  };
+  stepDay(n) { let d = +this.state.day + n; if (d === 19 || d === 21) d += n; this.goDay(d); }
+  blank(p) { return { start: p.start, end: p.end, src: p.src, gapId: p.gapId || '', untimed: false, len: p.end - p.start, card: '', kind: 'Meeting', title: '', desc: '' }; }
+
+  componentDidMount() {
+    if (!this.state.ready) this._poll = setInterval(() => { if (window.LaikaTL) { clearInterval(this._poll); this.setState({ ready: true }); } }, 40);
+    this._ro = new ResizeObserver(() => { const el = this.rootRef.current; if (el && Math.abs(el.clientWidth - this.state.W) > 1) this.setState({ W: el.clientWidth }); });
+    if (this.rootRef.current) this._ro.observe(this.rootRef.current);
+    this._tick = setInterval(() => { if (this.state.timer && !this.state.timer.paused) this.setState({ ticks: this.state.ticks + 1 }); }, 20000);
+    if (this.props.scrollY) [300, 900, 1800, 3000].forEach(ms => setTimeout(() => { const el = this.scRef.current; if (el && el.scrollTop < this.props.scrollY - 2) el.scrollTop = this.props.scrollY; }, ms));
+  }
+  componentWillUnmount() { clearInterval(this._poll); clearInterval(this._tick); clearTimeout(this._tt); this._ro && this._ro.disconnect(); }
+  componentDidUpdate(pp, ps) {
+    if (pp.scenario !== this.props.scenario || pp.resetKey !== this.props.resetKey) { clearTimeout(this._tt); this.setState({ ...this.init(), ready: !!window.LaikaTL, W: this.state.W }); return; }
+    const k = this.state.compose ? 'compose:' + this.state.compose.src + this.state.compose.start : this.state.sel;
+    if (k !== this._lastOpen) {
+      const was = this._lastOpen; this._lastOpen = k;
+      if (was !== undefined && k) setTimeout(() => { const r = this.drRef.current; if (!r) return; const f = r.querySelector('input:not([readonly]),button'); (f || r).focus({ preventScroll: true }); }, 30);
+    }
+  }
+
+  tok(th) {
+    return th === 'dark'
+      ? { theme: 'dark', page: '#0c0c0f', card: '#1b1b20', col: '#141418', ink: '#ececf2', ink2: '#c9c9d3', muted: '#9d9daa', faint: '#6c6c78', line: '#2a2a31', line2: '#232329', hover: '#222228', sel: '#241e36', acc: '#a78bfa', onAcc: '#140f24', accInk: '#c4b5fd', accSoft: '#261f3d', accLine: '#4c3d7a', org: '#f0b45a', orgSoft: '#2b2111', orgLine: '#5c4419', grn: '#4ccf98', grnSoft: '#12271d', blu: '#7fa6ff', bluSoft: '#161e33', bluLine: '#2c3a5e', red: '#ff6b73', redSoft: '#2e1517', redLine: '#5e262b', btn: '#1f1f25', btnLine: '#33333c', field: '#141418', fieldLine: '#34343d', kbd: '#26262d', toast: '#f4f4f8', toastInk: '#16161d', toastMuted: '#55555f', toastAcc: '#6d28d9', scrim: 'rgba(0,0,0,.55)', pop: '0 16px 40px rgba(0,0,0,.5)', skel: '#24242a', logo: '#ececf2', logoInk: '#0c0c0f', dis: '#2a2a31', disInk: '#6c6c78' }
+      : { theme: 'light', page: '#eef0f6', card: '#ffffff', col: '#e7e9f1', ink: '#16161d', ink2: '#3f3f4a', muted: '#62626e', faint: '#9696a2', line: '#e1e3ec', line2: '#eceef4', hover: '#f6f7fa', sel: '#f5f0ff', acc: '#7c3aed', onAcc: '#ffffff', accInk: '#6d28d9', accSoft: '#f3eefe', accLine: '#c9b5fb', org: '#8f5a08', orgSoft: '#fff6e5', orgLine: '#ecc98a', grn: '#0a6f4c', grnSoft: '#e3f3ea', blu: '#2158e0', bluSoft: '#edf2fd', bluLine: '#c6d5f8', red: '#c42630', redSoft: '#fdecee', redLine: '#f0b8be', btn: '#ffffff', btnLine: '#dcdfe8', field: '#ffffff', fieldLine: '#d6d9e3', kbd: '#f1f2f7', toast: '#16161d', toastInk: '#f4f4f8', toastMuted: '#a9a9b6', toastAcc: '#c4b5fd', scrim: 'rgba(22,22,29,.32)', pop: '0 16px 40px rgba(22,22,29,.14)', skel: '#e4e6ee', logo: '#16161d', logoInk: '#ffffff', dis: '#e7e9f1', disInk: '#8d8d99' };
+  }
+  phone() { const d = this.props.device; return d === 'phone' || (d !== 'desktop' && this.state.W > 0 && this.state.W < 760); }
+  fr(a, b) { const L = window.LaikaTL; return (a >= 720) === (b >= 720) ? L.fmt(a, false) + '–' + L.fmt(b) : L.fmt(a) + '–' + L.fmt(b); }
+  fd(m) { m = Math.round(m); const h = Math.floor(m / 60), r = m % 60; return h ? (r ? h + ' h ' + r + ' min' : h + ' h') : r + ' min'; }
+  parseT(s) {
+    s = String(s).trim().toLowerCase().replace(/\s+/g, '').replace(/\./g, ':');
+    const m = s.match(/^(\d{1,2})(?::?(\d{2}))?(a|am|p|pm)?$/); if (!m) return null;
+    let h = +m[1]; const mi = m[2] ? +m[2] : 0, ap = m[3]; if (mi > 59) return null;
+    if (ap) { if (h < 1 || h > 12) return null; h = h % 12 + (ap[0] === 'p' ? 12 : 0); } else { if (h > 23) return null; if (h >= 1 && h < 7) h += 12; }
+    return h * 60 + mi;
+  }
+  parseL(s) {
+    s = String(s).trim().toLowerCase(); let m;
+    if ((m = s.match(/^(\d+):(\d{2})$/))) return +m[1] * 60 + +m[2];
+    if ((m = s.match(/^(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?\s*(?:(\d+)\s*(?:m|min|mins|minutes?)?)?$/))) return Math.round(+m[1] * 60 + (m[2] ? +m[2] : 0));
+    if ((m = s.match(/^(\d+)\s*(?:m|min|mins|minutes?)?$/))) return +m[1];
+    return null;
+  }
+  ro() { return this.state.viewing !== 'me'; }
+  all() {
+    const L = window.LaikaTL, st = this.state, sc = st.scenario;
+    if (sc === 'empty' || sc === 'future' || sc === 'draftOff' || sc === 'orgOff' || sc === 'loading' || sc === 'error') return [];
+    return [...L.units(st.ov), ...st.added];
+  }
+  snap() { const s = this.state; return { ov: s.ov, added: s.added, untimed: s.untimed, timer: s.timer, other: s.other }; }
+  commit(patch, msg, undo) { this.setState({ ...patch, toast: msg ? { msg, undo: undo || this.snap() } : this.state.toast, saved: 'Saved' }); if (msg) this.arm(); }
+  arm() { clearTimeout(this._tt); this._tt = setTimeout(() => this.setState({ toast: null }), 6000); }
+  undo = () => { const t = this.state.toast; if (!t || !t.undo) return; this.setState({ ...t.undo, toast: { msg: 'Undone' }, saved: 'Undone', fErr: '' }); this.arm(); };
+  isAdded(id) { return this.state.added.some(a => a.id === id); }
+  upd(u, p, what) {
+    const s = this.state, rev = what ? { revs: [{ t: 'Just now', what, who: 'You' }, ...((u.revs) || [])] } : {};
+    if (this.isAdded(u.id)) return { added: s.added.map(a => a.id === u.id ? { ...a, ...p, ...rev } : a) };
+    return { ov: { ...s.ov, [u.id]: { ...(s.ov[u.id] || {}), ...p, ...rev } } };
+  }
+  lbl(u) { return u.card ? (u.card === 'GENERAL' ? (u.kind || 'Work') : u.card) : ({ needs: 'No task yet', drafted: 'Draft', gap: 'Gap', break: 'Break', notwork: 'Not work time', confirmed: 'Confirmed' })[u.state] || ''; }
+  hint(u) { return (u.hint || '').replace(/\bcard\b/g, 'task'); }
+  ttl(u) { const L = window.LaikaTL; return u.title || (u.card && u.card !== 'GENERAL' ? L.CARDS[u.card] : u.card === 'GENERAL' ? 'General work, no task' : this.hint(u)); }
+  conflict(id, a, b) { return this.all().find(u => u.id !== id && u.state === 'confirmed' && u.start < b && u.end > a); }
+  review() { return this.all().filter(u => u.state === 'drafted' || u.state === 'needs').sort((p, q) => p.start - q.start); }
+
+  open(id) { this.setState({ sel: id, compose: null, fk: null, fErr: '', q: '', split: null, pop: '', stopped: this.state.stopped === id ? id : '', saved: '' }); }
+  close = () => this.setState({ fillRun: false, sel: '', compose: null, fk: null, fErr: '', split: null, stopped: '' });
+  openCompose(p) {
+    if (this.ro()) return;
+    const L = window.LaikaTL, d = +this.state.day <= 22 ? this.state.day : '22', past = d !== '22';
+    const c = { ...this.blank({ start: p.start ?? (past ? 540 : L.NOW - 30), end: p.end ?? (past ? 570 : L.NOW), src: p.src, gapId: p.gapId }), day: d };
+    this.setState({ compose: c, sel: '', fk: null, fErr: '', q: '', pop: '', saved: '' });
+  }
+  CAL = [
+    { id: 'c1', start: 510, end: 540, title: 'Design review', who: 'Andrea, Dana', why: 'Before your first signal, so nothing drafted it' },
+    { id: 'c2', start: 555, end: 570, title: 'Standup', who: 'Team', done: true },
+    { id: 'c3', start: 990, end: 1010, title: '1:1 with Sam', who: 'Sam Ruiz', gap: 'b13', why: 'Lines up with the 4:30 PM gap' },
+    { id: 'c4', start: 1050, end: 1095, title: 'Sprint planning', who: 'Andrea, Dana, Ash' }
+  ];
+  calState(e) { const L = window.LaikaTL, v = this.state.cal[e.id]; return e.done || v === 'logged' ? 'logged' : v === 'skipped' ? 'skipped' : e.start >= L.NOW ? 'upcoming' : 'open'; }
+  logCal(list) {
+    const st = this.state; let added = st.added, ov = st.ov, cal = { ...st.cal }, seq = st.seq, n = 0, m = 0, clash = '';
+    list.forEach(e => { const cf = this.conflict('', e.start, e.end); if (cf) { clash = `${e.title} overlaps ${this.lbl(cf)}`; return; }
+      added = [...added, { id: 'cal' + seq, start: e.start, end: e.end, card: 'GENERAL', title: e.title, desc: 'With ' + e.who, kind: 'Meeting', state: 'confirmed', src: 'Calendar' }]; seq++;
+      if (e.gap) ov = { ...ov, [e.gap]: { ...(ov[e.gap] || {}), state: 'covered' } }; cal[e.id] = 'logged'; n++; m += e.end - e.start; });
+    if (!n) return this.note(clash || 'Nothing to log');
+    this.commit({ added, ov, cal, seq }, (n === 1 ? `Logged ${list[0].title}` : `Logged ${n} meetings`) + ` · ${this.fd(m)}` + (clash ? ` · ${clash}` : ''));
+  }
+  gaps() { const L = window.LaikaTL; return this.all().filter(u => u.state === 'gap' && u.end - u.start >= 5 && u.start < L.NOW).sort((p, q) => p.start - q.start); }
+  openGap(g) { this.openCompose({ start: g.start, end: Math.min(g.end, window.LaikaTL.NOW), src: 'gap', gapId: g.id }); }
+  addCustom(name, setCard) { const L = window.LaikaTL, k = name.slice(0, 40); if (!k) return; if (!L.CARDS[k]) L.CARDS[k] = 'Custom task'; this.setState(s => ({ customs: s.customs.includes(k) ? s.customs : [...s.customs, k] })); setCard(k); }
+  setCompRange(a, b) {
+    const c = this.state.compose; if (!c) return;
+    a = Math.max(0, a); b = Math.min(1440, b);
+    const today = (c.day || '22') === '22', bad = b - a < 5 ? 'An entry needs at least 5 min.' : today && b > window.LaikaTL.NOW + 1 ? 'That runs past now. Use the timer for time still going.' : null, cf = !bad && today && this.conflict('', a, b);
+    this.setState({ compose: { ...c, start: a, end: b, len: b - a }, fk: null, fErr: bad || (cf ? `Overlaps ${this.lbl(cf)}, ${this.fr(cf.start, cf.end)}. Pick another time.` : '') });
+  }
+  setTimes(u, a, b) {
+    if (b - a < 5) return this.setState({ fErr: 'An entry needs at least 5 min.' });
+    if (a < 0 || b > 1440) return this.setState({ fErr: 'An entry can’t cross midnight. Split it at 12:00 AM.' });
+    if (u.group) return this.setState({ fErr: 'Shared hours follow the split on the Timeline.' });
+    if (u.state === 'confirmed') { const c = this.conflict(u.id, a, b); if (c) return this.setState({ fErr: `Overlaps ${this.lbl(c)}, ${this.fr(c.start, c.end)}. Confirmed time can’t overlap.` }); }
+    if (a === u.start && b === u.end) return this.setState({ fErr: '' });
+    this.commit({ ...this.upd(u, { start: a, end: b }, `Time ${this.fr(u.start, u.end)} → ${this.fr(a, b)}`), fErr: '' }, `Changed ${this.lbl(u)} to ${this.fr(a, b)}`);
+  }
+  fieldCommit(k, target) {
+    const v = this.state.fv; let a = target.start, b = target.end;
+    if (k === 'L') { const m = this.parseL(v); if (!m) return this.setState({ fk: null, fErr: 'Use a length like 45 min, 1h 15 or 1:15.' }); b = a + m; }
+    else { const t = this.parseT(v); if (t == null) return this.setState({ fk: null, fErr: 'Use a time like 14:15 or 2:15pm.' }); if (k === 'S') a = t; else b = t; }
+    this.setState({ fk: null });
+    if (target.isCompose) {
+      const c = this.state.compose; if (c.untimed) { this.setState({ compose: { ...c, len: b - a }, fErr: '' }); return; }
+      this.setCompRange(a, b);
+    } else this.setTimes(target, a, b);
+  }
+  confirm1(u, next) {
+    if (!u || u.state === 'confirmed') return;
+    if (!u.card) return this.setState({ toast: { msg: 'Pick a task or a kind first, then confirm.' } }, () => this.arm());
+    const rv = this.review(), i = rv.findIndex(x => x.id === u.id), rest = rv.filter(x => x.id !== u.id), nx = next && rest.length ? rest[Math.min(Math.max(i, 0), rest.length - 1)].id : '';
+    this.commit({ ...this.upd(u, { state: 'confirmed' }, 'Confirmed'), sel: next ? nx : this.state.sel, checked: this.state.checked.filter(x => x !== u.id), fErr: '' }, `Confirmed ${this.fd(u.end - u.start)} to ${this.lbl(u)}`);
+  }
+  confirmMany(ids) {
+    const all = this.all(); let ov = { ...this.state.ov }, added = this.state.added, n = 0, m = 0, left = 0;
+    ids.forEach(id => { const u = all.find(x => x.id === id); if (!u || u.state === 'confirmed') return; if (!u.card) { left++; return; } n++; m += u.end - u.start;
+      if (this.isAdded(id)) added = added.map(a => a.id === id ? { ...a, state: 'confirmed' } : a); else ov[id] = { ...(ov[id] || {}), state: 'confirmed' }; });
+    this.commit({ ov, added, checked: [] }, (n ? `Confirmed ${n} · ${this.fd(m)}` : 'Nothing confirmed') + (left ? ` · ${left} still need${left === 1 ? 's' : ''} a task` : ''));
+  }
+  setTask(u, card) { this.commit({ ...this.upd(u, { card, state: u.state === 'needs' ? 'drafted' : u.state }, `Task → ${card === 'GENERAL' ? 'none' : card}`), q: '' }, card === 'GENERAL' ? 'Task cleared' : `Task set to ${card}`); }
+  notWork(u) { const rv = this.review().filter(x => x.id !== u.id); this.commit({ ...this.upd(u, { state: 'notwork', card: null }, 'Marked not work time'), sel: rv.length ? rv[0].id : '' }, `Marked ${this.fr(u.start, u.end)} as not work time`); }
+  stopTimer() {
+    const t = this.state.timer; if (!t) return;
+    const sec = t.acc + (t.paused ? 0 : (Date.now() - t.t0) / 1000), min = Math.max(1, Math.round(sec / 60)), id = 't' + this.state.seq;
+    const e = { id, start: t.start, end: t.start + min, card: t.card || 'GENERAL', title: t.title, kind: t.kind || 'Work', state: 'confirmed', src: 'Timer', revs: [{ t: window.LaikaTL.fmt(t.start + min), what: 'Stopped the timer · ' + this.fd(min), who: 'You' }, { t: window.LaikaTL.fmt(t.start), what: 'Started a timer', who: 'You' }] };
+    this.commit({ timer: null, added: [...this.state.added, e], seq: this.state.seq + 1, sel: id, compose: null, stopped: id, pop: '' }, `Timer stopped · ${this.fd(min)} added`);
+  }
+  startTimer() {
+    if (this.state.timer || this.ro()) return;
+    const L = window.LaikaTL;
+    this.commit({ timer: { start: L.NOW, t0: Date.now(), acc: 0, paused: false, card: this.state.tmCard, title: this.state.tmTitle, kind: this.state.tmKind }, pop: '' }, 'Timer started' + (this.state.tmCard ? ' on ' + this.state.tmCard : ''));
+  }
+  pauseTimer = () => { const t = this.state.timer; if (!t) return; this.setState({ timer: t.paused ? { ...t, paused: false, t0: Date.now() } : { ...t, paused: true, acc: t.acc + (Date.now() - t.t0) / 1000 } }); };
+  step(d) { const rv = this.review(); if (!rv.length) return; const i = rv.findIndex(x => x.id === this.state.sel); this.open(rv[(i + d + rv.length) % rv.length].id); }
+
+  onKey = e => {
+    const st = this.state, k = e.key, tag = (e.target.tagName || '').toLowerCase(), typing = tag === 'input' || tag === 'textarea' || tag === 'select';
+    if (k === 'Escape') { if (st.keys) this.setState({ keys: false }); else if (st.pop) this.setState({ pop: '' }); else if (st.sel || st.compose) this.close(); return; }
+    if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+    const inTl = e.target.closest && e.target.closest('[role="application"]');
+    if (k === '?') { this.setState({ keys: true }); return; }
+    if (this.ro()) return;
+    if (k === 'n' || k === 'N') { e.preventDefault(); this.openCompose({ src: 'button' }); return; }
+    if (k === 't' || k === 'T') { if (st.timer) this.stopTimer(); else this.setState({ pop: 'timer' }); return; }
+    if (inTl) return;
+    const u = this.all().find(x => x.id === st.sel);
+    if (k === 'j' || k === 'J') this.step(1); else if (k === 'k' || k === 'K') this.step(-1);
+    else if (k === 'Enter' && u) this.confirm1(u, true);
+    else if ((k === 'g' || k === 'G') && u && u.state !== 'confirmed') this.setTask(u, 'GENERAL');
+    else if ((k === 'x' || k === 'X') && u && u.state !== 'confirmed') this.notWork(u);
+  };
+  onRootDown = e => { if (this.state.pop && !(e.target.closest && e.target.closest('[data-pop]'))) this.setState({ pop: '' }); };
+
+  renderVals() {
+    const L = window.LaikaTL, P = this.props, st = this.state, c = this.tok(P.theme === 'dark' ? 'dark' : 'light');
+    const phone = this.phone(), desk = !phone, part = P.part === 'drawer', ro = this.ro(), sc = st.scenario;
+    const base = { rootRef: this.rootRef, scRef: this.scRef, drRef: this.drRef, onKey: this.onKey, onRootDown: this.onRootDown, c, rootH: P.embedded ? '100%' : '100vh' };
+    if (!st.ready || !L) return { ...base, lay: { dir: 'row', side: false, page: false }, dr: { show: false }, keys: { show: false } };
+    const mono = "'JetBrains Mono',monospace", sans = "'Plus Jakarta Sans',sans-serif";
+    const S = L.styles(c.theme), sw = u => u.imported ? (c.theme === 'dark' ? { bg: '#2a2540', bd: '1px solid #55497e' } : { bg: '#ebe7f5', bd: '1px solid #b8acd8' }) : { bg: (S[u.state] || S.gap).bg, bd: (S[u.state] || S.gap).border };
+    const all = this.all(), find = id => all.find(u => u.id === id);
+    const shares = L.evenShares(L.GROUP), lenOf = u => u.group ? shares[u.id] : u.end - u.start, sum = a => a.reduce((n, u) => n + lenOf(u), 0);
+    const rv = this.review(), conf = all.filter(u => u.state === 'confirmed').sort((p, q) => p.start - q.start);
+    const ready = rv.filter(u => u.card), noTask = rv.filter(u => !u.card);
+    const totWork = sum(all.filter(u => ['confirmed', 'drafted', 'needs'].includes(u.state))), totRv = sum(rv);
+    const emptyish = ['empty', 'future', 'draftOff', 'orgOff'].includes(sc);
+    const set = p => this.setState(p);
+    const IDS = ['LAI-867', 'LAI-864', 'LAI-307', 'LAI-866', 'LAI-860', 'SKYNET-71'];
+
+    // layout
+    const drawerOpen = !!(st.sel || st.compose);
+    const tight = desk && drawerOpen && st.W > 0 && st.W < 1280;
+    const lay = { dir: phone ? 'column' : 'row', side: desk && !part && !tight, page: !part, phone: phone && !part, desk: desk && !part,
+      bodyP: phone ? '12px 12px 96px' : tight ? '16px 20px 48px' : '20px 32px 48px', gap: phone ? '12px' : '20px', bnM: phone ? '12px 12px 0' : '16px 32px 0',
+      sideMax: phone || emptyish ? '100%' : '320px', sideCols: desk && emptyish ? 'repeat(2,minmax(0,1fr))' : 'minmax(0,1fr)', sideOrder: phone ? -1 : 0, sideGap: phone ? '8px' : '16px', bulkB: phone ? '12px' : '20px', toastB: phone ? (st.checked.length ? '84px' : '20px') : (st.checked.length ? '92px' : '24px') };
+
+    // header
+    const ownDay = !ro && !['orgOff', 'loading'].includes(sc) && sc !== 'future';
+    const confirmDis = !ready.length;
+    const hd = {
+      title: ro ? 'Dana Okafor’s day' : 'My day', viewShort: ro ? 'Dana' : 'Me', viewBg: ro ? c.bluSoft : c.btn, viewBd: ro ? c.bluLine : c.btnLine,
+      date: `${this.DN[st.day][0]} ${st.day} October` + (st.day === '22' ? ' · today' : st.day === '23' ? ' · tomorrow' : ''),
+      phoneTitle: (ro ? 'Dana · ' : '') + `${this.DN[st.day][1]} ${st.day} Oct`, phoneSub: st.day === '22' ? (ro ? 'Read-only' : 'Today') : st.day === '23' ? 'Tomorrow' : +st.day > 22 ? 'Upcoming' : 'Past',
+      prevDay: () => this.stepDay(-1), nextDay: () => this.stepDay(1), goToday: () => this.goDay('22'), prevWeek: () => this.note('Sample data covers this week only.'), nextWeek: () => this.note('Sample data covers this week only.'),
+      orgSettings: () => this.note('Opens Organisation settings › Time tracking.'),
+      showTotal: !['orgOff', 'loading', 'error'].includes(sc), total: this.fd(totWork), totalSub: sc === 'future' ? 'not started' : totRv ? `${this.fd(totRv)} to review` : totWork ? 'all confirmed' : 'nothing yet',
+      own: ownDay, showWeek: sc !== 'orgOff', phoneSummary: !['orgOff', 'loading', 'error'].includes(sc),
+      confirmLabel: confirmDis ? (rv.length ? 'Confirm day' : 'Day confirmed') : (phone ? 'Confirm ' + this.fd(sum(ready)) : 'Confirm day'), confirmSub: noTask.length ? `${ready.length} ready · ${this.fd(sum(ready))}` : this.fd(sum(ready)), hasConfirmSub: !confirmDis && desk,
+      confirmTitle: noTask.length ? `${noTask.length} without a task stay in To review` : 'Confirm every draft on this day (Enter on a single item)', confirmDis,
+      confirmBg: confirmDis ? c.dis : c.acc, confirmInk: confirmDis ? c.disInk : c.onAcc,
+      confirm: () => set({ sum: true, pop: '' }), add: () => this.openCompose({ src: 'button' }),
+      showLooked: !ro, hasGaps: ownDay && st.day === '22' && this.gaps().length > 0, gapSub: `${this.gaps().length} · ${this.fd(this.gaps().reduce((n, g) => n + g.end - g.start, 0))}`,
+      fillGaps: () => { const g = this.gaps()[0]; if (g) { this.openGap(g); this.setState({ fillRun: true }); } }
+    };
+    const tgl = k => () => set({ pop: st.pop === k ? '' : k });
+    const pp = { who: st.pop === 'who', view: st.pop === 'view', timer: st.pop === 'timer', settings: st.pop === 'settings', assign: st.pop === 'assign',
+      toggleWho: tgl('who'), toggleView: tgl('view'), toggleTimer: tgl('timer'), toggleSettings: tgl('settings'), toggleAssign: tgl('assign'), looked: st.pop === 'looked', toggleLooked: tgl('looked'),
+      lookBg: st.pop === 'looked' ? c.accSoft : c.btn, lookBd: st.pop === 'looked' ? c.accLine : c.btnLine, lookInk: st.pop === 'looked' ? c.accInk : c.ink2 };
+    const looked = [{ ini: 'AC', name: 'Andrea Costa', role: 'Owner', when: 'Today 9:12 AM', color: '#a8329b' }, { ini: 'SR', name: 'Sam Ruiz', role: 'Admin', when: 'Tue 4:40 PM', color: '#1f6f78' }];
+    const people = [['me', 'PS', 'Pawan Sirsat', 'You · Owner', '#c42630'], ['dana', 'DO', 'Dana Okafor', 'Developer', '#1f6f78'], ['andrea', 'AC', 'Andrea Costa', 'Owner', '#a8329b'], ['ash', 'AR', 'Ashutosh Rao', 'Developer', '#2158e0'], ['sakshi', 'SG', 'Sakshi Gupta', 'Designer', '#8f5a08']]
+      .map(([id, ini, name, role, color]) => ({ ini, name, role, color, on: st.viewing === id, bg: st.viewing === id ? c.accSoft : 'transparent', go: () => this.setState({ viewing: id === 'me' ? 'me' : 'dana', pop: '', sel: '', compose: null, checked: [] }) }));
+    const st2 = { swBg: st.draftOn ? c.acc : c.faint, swLeft: st.draftOn ? '16px' : '2px', where: st.where, setWhere: e => set({ where: e.target.value }),
+      toggleDraft: () => this.setState({ draftOn: !st.draftOn, scenario: st.draftOn ? 'draftOff' : (sc === 'draftOff' ? 'own' : sc), toast: { msg: st.draftOn ? 'Draft my time is off. Confirmed time stays.' : 'Draft my time is on. Drafts appear from the next sync.' } }, () => this.arm()) };
+
+    // timer
+    const T = st.timer, tSec = T ? T.acc + (T.paused ? 0 : (Date.now() - T.t0) / 1000) : 0;
+    const tm = { idle: !T, on: !!T, running: !!T && !T.paused, paused: !!T && T.paused, label: T ? (T.card && T.card !== 'GENERAL' ? T.card : (T.title || (T.kind === 'Work' ? 'Building' : T.kind) || 'Timer')) : '',
+      bg: T && T.paused ? c.orgSoft : c.accSoft, bd: T && T.paused ? c.orgLine : c.accLine, pauseAria: T && T.paused ? 'Resume timer' : 'Pause timer', aria: T ? `Timer ${T.paused ? 'paused' : 'running'}, ${this.fd(tSec / 60)}` : '',
+      pause: this.pauseTimer, stop: () => this.stopTimer(), start: () => this.startTimer(), title: st.tmTitle, setTitle: e => set({ tmTitle: e.target.value }),
+      opts: ['LAI-867', 'LAI-864', 'LAI-307'].map(k => { const on = st.tmCard === k; return { label: k === 'GENERAL' ? 'General' : k, font: k === 'GENERAL' ? sans : mono, bg: on ? c.accSoft : c.btn, bd: on ? c.accLine : c.btnLine, color: on ? c.accInk : c.ink, go: () => set({ tmCard: on ? '' : k }) }; }),
+      kinds: [['Work', 'Building'], ['Meeting', 'Meeting'], ['Thinking', 'Thinking']].map(([k, label]) => { const on = st.tmKind === k; return { label, bg: on ? c.accSoft : c.btn, bd: on ? c.accLine : c.btnLine, color: on ? c.accInk : c.ink, go: () => set({ tmKind: k }) }; }) };
+    const tmClock = T ? React.createElement(Component.Clock, { key: T.t0 + ':' + T.paused, t0: T.t0, acc: T.acc, paused: T.paused }) : null;
+    const tmDot = T ? React.createElement('span', { style: { width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: T.paused ? c.org : c.acc, animation: T.paused ? 'none' : 'lkPulse 1.6s ease-in-out infinite' } }) : null;
+
+    // week
+    const wkD = [['Mon', 'M', '19', 400, 0, 'settled'], ['Tue', 'T', '20', 0, 0, 'nosig'], ['Wed', 'W', '21', 425, 0, 'settled'], ['Thu', 'T', '22', sum(conf), totRv, 'today'], ['Fri', 'F', '23', 0, 0, 'future'], ['Sat', 'S', '24', 0, 0, 'future'], ['Sun', 'S', '25', 0, 0, 'future']];
+    const wk = wkD.map(([name, letter, date, cm, dm, k]) => { const ex = (st.other[date] || []).reduce((a, e) => a + e.end - e.start, 0); cm += ex; if (ex && k === 'nosig') k = 'settled'; const on = date === st.day, settled = k === 'settled' || (k === 'today' && !dm && cm);
+      return { name, letter, date, go: () => this.goDay(date), aria: `${name} ${date} October`, fig: k === 'future' ? '' : k === 'nosig' ? '—' : (sc === 'empty' && k === 'today') ? '0 min' : this.fd(cm + dm), figInk: k === 'nosig' ? c.faint : c.ink,
+        cW: Math.min(100, cm / 480 * 100) + '%', dW: Math.min(100, dm / 480 * 100) + '%', dBg: c.theme === 'dark' ? 'repeating-linear-gradient(90deg,#7c5fd0 0 3px,#3a2f5c 3px 5px)' : 'repeating-linear-gradient(90deg,#b49af3 0 3px,#e6dcfc 3px 5px)',
+        track: k === 'nosig' ? `repeating-linear-gradient(135deg,${c.line} 0 2px,transparent 2px 5px)` : c.line2,
+        bd: on ? c.acc : c.line, bg: on ? c.accSoft : c.card, nameInk: on ? c.accInk : c.ink, op: k === 'future' && !on ? 0.55 : 1, pBg: on ? c.accSoft : 'transparent',
+        dot: settled ? c.acc : k === 'today' && sc !== 'empty' ? `linear-gradient(90deg,${c.acc} 50%,transparent 50%)` : 'transparent', dotBd: settled ? 'none' : k === 'today' ? `1.5px solid ${c.acc}` : k === 'nosig' ? `1.5px dashed ${c.faint}` : `1.5px solid ${c.line}` }; });
+
+    // banners & body
+    const bn = { view: ro && !part, draftOff: sc === 'draftOff' && !ro && !part, back: () => this.setState({ viewing: 'me', sel: '', compose: null }) };
+    const bd = { loading: sc === 'loading', error: sc === 'error', orgOff: sc === 'orgOff', emptyTl: ['empty', 'future', 'draftOff'].includes(sc), tl: desk && !emptyish && !['loading', 'error'].includes(sc), tlPhone: phone && !emptyish && !['loading', 'error'].includes(sc),
+      cols: !['loading', 'error', 'orgOff'].includes(sc), listCol: !['empty', 'future'].includes(sc), retry: () => { this.setState({ scenario: 'loading' }); setTimeout(() => this.setState({ scenario: 'own' }), 1200); } };
+    const hrs = []; for (let h = 7; h < 22; h += phone ? 3 : 1) { const day = h < 17, dusk = h === 17; hrs.push({ label: L.hourLabel(h), bg: c.theme === 'dark' ? (day ? 'rgba(251,191,36,.08)' : 'rgba(129,140,248,.16)') : (day ? '#fff6df' : dusk ? '#f3eef0' : '#e6e9fa'), body: !day && !dusk ? (c.theme === 'dark' ? 'rgba(129,140,248,.06)' : 'rgba(79,91,184,.05)') : 'transparent' }); }
+    const startT = () => set({ pop: 'timer' });
+    const btnP = (label, go) => ({ label, go, bg: c.acc, bd: c.acc, ink: c.onAcc }), btnS = (label, go) => ({ label, go, bg: c.btn, bd: c.btnLine, ink: c.ink });
+    const emp = { date: `${this.DN[st.day][1]} ${st.day} Oct`, h: phone ? '300px' : '260px', hours: hrs,
+      title: sc === 'future' ? `${this.DN[st.day][0]} hasn’t started` : sc === 'draftOff' ? 'Nothing drafted' : st.day === '22' ? 'Nothing yet today' : `Nothing recorded on ${this.DN[st.day][0]}`,
+      body: sc === 'future' ? 'Time appears here once the day begins. Nothing can be confirmed ahead of time.' : sc === 'draftOff' ? 'Draft my time is off, so Laika only shows time you add or record with a timer.' : 'As you work, your collector drafts time from prompts, commits and agent sessions. You can also start a timer or add time yourself.',
+      acts: sc === 'future' ? [btnS('Back to today', () => this.goDay('22'))] : sc === 'draftOff' ? [btnP('Turn drafting on', st2.toggleDraft), btnS('Add time', hd.add)] : st.day !== '22' ? [btnS('Back to today', () => this.goDay('22')), btnS('Add time', hd.add)] : [btnP('Start timer', startT), btnS('Add time', hd.add)] };
+
+    // timeline
+    const FD = { move: { id: 'b12', kind: 'move', o0: 920, o1: 990, start: 940, end: 1010 }, resize: { id: 'b12', kind: 'end', o0: 920, o1: 990, start: 920, end: 1005 }, invalid: { id: 'b3', kind: 'move', o0: 670, o1: 719, start: 735, end: 784 },
+      untimed: { id: 'u1', ext: true, kind: 'ext', label: 'Call with Andrea', start: 990, end: 1010 }, range: { id: 'range', kind: 'range', range: true, start: 510, end: 555 }, kbd: { id: 'b8', kind: 'move', kbd: true, o0: 825, o1: 865, start: 835, end: 875 } };
+    const selU = find(st.sel), dg = P.drag || '';
+    const tl = { theme: c.theme, ov: st.ov, preview: st.compose && !st.compose.untimed && (st.compose.day || '22') === '22' ? { start: st.compose.start, end: st.compose.end, bad: !!st.fErr } : null, sel: dg === 'kbd' ? 'b8' : (selU ? st.sel : ''), added: st.added, ro, timer: T ? { start: T.start, min: Math.floor(tSec / 60), card: T.card || 'GENERAL', kind: T.kind, paused: T.paused } : null,
+      forceDrag: FD[dg] || null, forceHover: dg === 'hover' ? 'b12' : '', forceFocus: dg === 'kbd' ? 'b8' : '',
+      scrollTo: P.scrollTo ?? (selU ? Math.max(420, selU.start - 100) : st.compose ? Math.max(420, st.compose.start - 100) : 790), scrollToM: P.scrollTo ?? (selU ? selU.start - 60 : 900),
+      onChange: p => {
+        if ('ov' in p) { const ch = Object.keys(p.ov).find(k => p.ov[k] !== st.ov[k]), u = ch && find(ch), nv = ch && p.ov[ch];
+          this.commit({ ov: p.ov }, u ? (nv.state === 'confirmed' ? `Confirmed ${this.lbl({ ...u, ...nv })}` : nv.state === 'notwork' ? 'Marked as not work time' : 'Saved') : 'Saved'); }
+        if ('sel' in p) { if (p.sel && find(p.sel) && find(p.sel).state === 'gap') { const g = find(p.sel); this.openCompose({ start: g.start, end: g.end, src: 'gap', gapId: g.id }); } else if (p.sel) this.open(p.sel); else this.close(); }
+      },
+      onPick: id => { const g = find(id); if (g && g.state === 'gap') this.openCompose({ start: g.start, end: g.end, src: 'gap', gapId: g.id }); else this.open(id); },
+      onCommit: d => { const u = find(d.id); if (!u) return; const verb = d.kind === 'move' ? 'Moved' : 'Changed'; this.commit(this.upd(u, { start: d.start, end: d.end }, `${verb} ${this.fr(d.o0, d.o1)} → ${this.fr(d.start, d.end)}`), `${verb} ${this.lbl(u)} to ${this.fr(d.start, d.end)}`); },
+      onRange: d => this.openCompose({ start: d.start, end: d.end, src: 'range' }),
+      onDropEntry: d => { const x = st.untimed.find(y => y.id === d.id); if (!x) return; this.commit({ untimed: st.untimed.filter(y => y.id !== d.id), added: [...st.added, { ...x, start: d.start, end: d.end, state: 'confirmed', src: 'You added' }] }, `Placed ${x.title} at ${this.fr(d.start, d.end)}`); },
+      onTimerClick: () => set({ pop: 'timer' }), onPreview: p => this.setCompRange(p.start, p.end) };
+
+    // tray
+    const untimed = emptyish ? [] : st.untimed;
+    const tray = { show: untimed.length > 0 && !['loading', 'error'].includes(sc), hint: ro ? 'Added without a time' : desk ? 'Drag onto the Timeline to give it a time' : 'Tap to set a time',
+      items: untimed.map(x => { const dragging = dg === 'untimed' && x.id === 'u1';
+        return { len: this.fd(x.len), title: x.title, kind: x.kind, draggable: desk && !ro ? 'true' : 'false', cursor: desk && !ro ? 'grab' : 'pointer', bd: dragging ? `1.5px dashed ${c.acc}` : `1px solid ${c.line}`, bg: dragging ? c.accSoft : c.card, sh: 'none', op: dragging ? 0.6 : 1,
+          onDragStart: e => { window.__laikaDrag = { id: x.id, len: x.len, label: x.title }; try { e.dataTransfer.setData('text/plain', x.id); e.dataTransfer.effectAllowed = 'move'; } catch (_) {} },
+          onDragEnd: () => { window.__laikaDrag = null; }, go: () => this.open(x.id) }; }) };
+
+    // lists
+    const part3 = u => u.start < 720 ? 0 : u.start < 1020 ? 1 : 2, GN = ['MORNING', 'AFTERNOON', 'EVENING'];
+    const groups = (arr, mkRow) => [0, 1, 2].map(i => { const g = arr.filter(u => part3(u) === i); return g.length ? { name: GN[i], n: g.length, sum: this.fd(sum(g)), rows: g.map(mkRow) } : null; }).filter(Boolean);
+    const canCheck = !ro;
+    const rowBase = u => { const on = st.sel === u.id, s0 = sw(u); return { range: this.fr(u.start, u.end), len: this.fd(lenOf(u)), swBg: s0.bg, swBd: s0.bd, bg: on ? c.sel : 'transparent', hov: on ? c.sel : c.hover, bar: on ? `inset 3px 0 0 ${c.acc}` : 'none', go: () => this.open(u.id) }; };
+    const srcOf = u => u.group ? ['Shared hour', c.accInk, c.accSoft] : u.src === 'Split' ? ['Split', c.ink2, c.kbd] : u.live ? ['Live', c.grn, c.grnSoft] : ['Collector', c.ink2, c.kbd];
+    const rvRows = u => { const ck = st.checked.includes(u.id), [src, si, sb] = srcOf(u);
+      return { ...rowBase(u), label: this.lbl(u), lFont: u.card && u.card !== 'GENERAL' ? mono : sans, lInk: u.card ? c.ink : c.org, title: this.ttl(u), src, srcInk: si, srcBg: sb, aria: `${this.lbl(u)}, ${this.fr(u.start, u.end)}`,
+        ck, ckBg: ck ? c.acc : 'transparent', ckBd: ck ? c.acc : c.faint, ckMark: ck ? '✓' : '', toggle: e => { e.stopPropagation(); set({ checked: ck ? st.checked.filter(i => i !== u.id) : [...st.checked, u.id] }); } }; };
+    const allOn = rv.length && st.checked.length === rv.length;
+    const rvM = { show: !['empty', 'future', 'orgOff'].includes(sc) && (rv.length > 0 || sc === 'draftOff' || !ro), canCheck, count: `${rv.length} · ${this.fd(totRv)}`, groups: groups(rv, rvRows), empty: !rv.length,
+      emptyText: sc === 'draftOff' ? 'Nothing to review. Drafting is off.' : 'All reviewed. Nothing waiting on you.',
+      hint: noTask.length ? `${noTask.length} with no task yet` : rv.length ? 'All ready to confirm' : '', hintInk: noTask.length ? c.org : c.muted,
+      allOn: !!allOn, allBg: allOn ? c.acc : 'transparent', allBd: st.checked.length ? c.acc : c.faint, allMark: allOn ? '✓' : st.checked.length ? '–' : '', toggleAll: () => set({ checked: allOn ? [] : rv.map(u => u.id) }) };
+    const cfRows = u => { const [src, si, sb] = u.imported ? ['Solidtime', c.blu, c.bluSoft] : u.src === 'Timer' ? ['Timer', c.accInk, c.accSoft] : u.src === 'You added' ? ['You added', c.ink2, c.kbd] : u.group ? ['Shared hour', c.accInk, c.accSoft] : ['From draft', c.ink2, c.kbd];
+      return { ...rowBase(u), label: this.lbl(u), lFont: u.card && u.card !== 'GENERAL' ? mono : sans, title: u.card === 'GENERAL' ? (u.title || '') : this.ttl(u), src, srcInk: si, srcBg: sb, aria: `Confirmed ${this.lbl(u)}, ${this.fr(u.start, u.end)}` }; };
+    const cfM = { show: sc !== 'orgOff' && !['empty', 'future'].includes(sc), count: `${conf.length} · ${this.fd(sum(conf))}`, groups: groups(conf, cfRows), empty: !conf.length, hint: ro ? 'What Dana confirmed' : 'Visible to owners and admins' };
+
+    // side
+    const byCard = {}; L.AGENTS.forEach(a => { const v = byCard[a.card] || (byCard[a.card] = { m: 0, who: [] }); v.m += a.end - a.start; if (!v.who.includes(a.agent)) v.who.push(a.agent); });
+    const agMax = Math.max(...Object.values(byCard).map(v => v.m)), agSum = L.AGENTS.reduce((n, a) => n + a.end - a.start, 0);
+    const selCard = selU && selU.card;
+    const sideDef = [
+      { k: 'agents', title: 'Agent time', meta: emptyish ? '0 min' : this.fd(agSum), metaFont: mono, note: 'Claude Code builders you dispatched. Shown beside your day, never added to it.',
+        rows: emptyish ? [] : Object.entries(byCard).sort((p, q) => q[1].m - p[1].m).map(([k, v]) => ({ isRow: true, key: k, title: L.CARDS[k], val: this.fd(v.m), hasVal: true, hasBar: true, pct: Math.round(v.m / agMax * 100) + '%', hasSub: true, sub: '›_ ' + v.who.join(', '), subInk: c.muted, subFont: mono, bg: selCard === k ? c.accSoft : 'transparent' })) },
+      { k: 'plate', title: 'On your plate', meta: '3 in progress', metaFont: sans, rows: [
+        { isHead: true, label: 'IN PROGRESS', n: 3, dot: c.blu }, ...['LAI-864', 'LAI-867', 'LAI-307'].map(k => ({ isRow: true, key: k, title: L.CARDS[k], bg: 'transparent' })),
+        { isHead: true, label: 'WAITING ON YOUR REVIEW', n: 2, dot: c.org }, { isRow: true, key: 'LAI-866', title: L.CARDS['LAI-866'], hasSub: true, sub: 'Proof confirmed by CI · 22 min ago', subInk: c.grn, subFont: sans, bg: 'transparent' }, { isRow: true, key: 'SKYNET-71', title: L.CARDS['SKYNET-71'], hasSub: true, sub: 'Proof failed · 3 h ago', subInk: c.red, subFont: sans, bg: 'transparent' },
+        { isHead: true, label: 'BLOCKED', n: 1, dot: c.red }, { isRow: true, key: 'LAI-860', title: L.CARDS['LAI-860'], hasSub: true, sub: 'Waiting on LAI-866', subInk: c.red, subFont: sans, bg: 'transparent' }] }
+    ];
+    if (emptyish) sideDef.shift();
+    if (!ro) sideDef.push({ k: 'who', title: 'Who looked', meta: phone ? 'Andrea · 9:12 AM' : '2 this week', metaFont: sans, note: 'Owners and admins who opened your day.', rows: [
+      { isPerson: true, ini: 'AC', name: 'Andrea Costa', role: 'Owner', when: 'Today 9:12 AM', color: '#a8329b' }, { isPerson: true, ini: 'SR', name: 'Sam Ruiz', role: 'Admin', when: 'Tue 4:40 PM', color: '#1f6f78' }] });
+    const sd = sideDef.map(d => { const open = desk || !!st.side[d.k]; return { ...d, open, hasNote: !!d.note, chev: phone, chevMark: open ? '▴' : '▾', role: phone ? 'button' : 'heading', cursor: phone ? 'pointer' : 'default', toggle: phone ? () => set({ side: { ...st.side, [d.k]: !st.side[d.k] } }) : null }; });
+
+    // bulk
+    const chk = rv.filter(u => st.checked.includes(u.id)), chkReady = chk.filter(u => u.card);
+    const bulk = { show: !ro && chk.length > 0 && bd.cols, n: chk.length, sum: this.fd(sum(chk)), confirmLabel: chkReady.length === chk.length ? 'Confirm' : `Confirm ${chkReady.length}`,
+      confirm: () => this.confirmMany(chk.map(u => u.id)), clear: () => set({ checked: [] }),
+      notWork: () => { let ov = { ...st.ov }, added = st.added; chk.forEach(u => { if (this.isAdded(u.id)) added = added.map(a => a.id === u.id ? { ...a, state: 'notwork', card: null } : a); else ov[u.id] = { ...(ov[u.id] || {}), state: 'notwork', card: null }; }); this.commit({ ov, added, checked: [] }, `${chk.length} marked as not work time`); },
+      tasks: [...IDS, 'GENERAL'].map(k => ({ key: k === 'GENERAL' ? 'No task' : k, title: k === 'GENERAL' ? 'Shows as its kind' : L.CARDS[k], go: () => { let ov = { ...st.ov }, added = st.added; chk.forEach(u => { const p = { card: k, state: u.state === 'needs' ? 'drafted' : u.state }; if (this.isAdded(u.id)) added = added.map(a => a.id === u.id ? { ...a, ...p } : a); else ov[u.id] = { ...(ov[u.id] || {}), ...p }; }); this.commit({ ov, added, pop: '' }, (k === 'GENERAL' ? `${chk.length} set to no task` : `${chk.length} assigned to ${k}`)); } })) };
+
+    // editor
+    const ed = this.editor({ L, c, st, ro, find, all, mono, sans, S, sw, lenOf, rv, IDS, phone });
+    const drShow = part || drawerOpen;
+    const dr = { show: drShow, scrim: phone && drawerOpen && !part, close: this.close, grab: phone && !part, footPB: phone ? '16px' : '12px', btnH: phone ? '44px' : '36px',
+      pos: part ? 'relative' : phone ? 'absolute' : 'relative', l: phone && !part ? '0' : 'auto', r: phone && !part ? '0' : 'auto', b: phone && !part ? '0' : 'auto',
+      w: part ? '100%' : phone ? 'auto' : '400px', h: part ? '100%' : phone ? 'auto' : '100%', mh: phone && !part ? '86%' : 'none', rad: phone && !part ? '16px 16px 0 0' : '0',
+      bl: desk && !part ? `1px solid ${c.line}` : 'none', sh: phone && !part ? '0 -12px 32px rgba(0,0,0,.18)' : 'none' };
+
+    const toast = { show: !!st.toast && !part, msg: st.toast ? st.toast.msg : '', canUndo: !!(st.toast && st.toast.undo), undo: this.undo, close: () => set({ toast: null }) };
+    const keys = { show: st.keys, open: () => set({ keys: true }), close: () => set({ keys: false }), stop: e => e.stopPropagation(), groups: [
+      { name: 'ANYWHERE ON MY DAY', rows: [{ v: 'Add time', k: ['N'] }, { v: 'Start or stop the timer', k: ['T'] }, { v: 'Next or previous to review', k: ['J', 'K'] }, { v: 'Close the editor or a menu', k: ['Esc'] }, { v: 'This sheet', k: ['?'] }] },
+      { name: 'ON A SELECTED ENTRY', rows: [{ v: 'Confirm', k: ['↵'] }, { v: 'Set task to General', k: ['G'] }, { v: 'Mark as not work time', k: ['X'] }] },
+      { name: 'ON THE TIMELINE', rows: [{ v: 'Move between blocks', k: ['←', '→'] }, { v: 'Move the focused block 5 min', k: ['Alt', '←', '→'] }, { v: 'Move it 15 min', k: ['Alt', 'Shift', '←'] }, { v: 'Save the move', k: ['↵'] }] }] };
+
+    const calRows = this.CAL.map(e => { const k = this.calState(e), open = k === 'open';
+      return { title: e.title, meta: `${this.fr(e.start, e.end)} · ${e.who}` + (open && e.why ? ' · ' + e.why : ''), isOpen: open, hasTag: !open, tag: { logged: 'Logged', skipped: 'Skipped', upcoming: 'Later today' }[k] || '',
+        tagInk: k === 'logged' ? c.grn : c.muted, tagBg: k === 'logged' ? c.grnSoft : c.kbd, op: k === 'skipped' ? 0.55 : 1, bar: k === 'logged' ? c.grn : k === 'upcoming' ? c.line : c.blu,
+        log: () => this.logCal([e]), skip: () => this.commit({ cal: { ...st.cal, [e.id]: 'skipped' } }, 'Skipped ' + e.title) }; });
+    const calOpen = this.CAL.filter(e => this.calState(e) === 'open');
+    const cal = { show: !ro && st.day === '22' && !emptyish && !['loading', 'error', 'orgOff'].includes(sc), rows: calRows, sub: `Google Calendar · ${this.CAL.length} today`, canAll: calOpen.length > 1, allLabel: `Log ${calOpen.length} meetings`, logAll: () => this.logCal(calOpen) };
+    const sm = this.summary({ c, st, conf, ready, lenOf, rv });
+    const calOpenN = calOpen.length;
+    const tabDefs = [['overview', 'Overview', ''], ['rv', 'To review', rvM.show ? rv.length : ''], ['cf', 'Confirmed', cfM.show ? conf.length : ''], ...(cal.show ? [['cal', 'Calendar', calOpenN || '']] : []), ['all', 'All', '']];
+    const tab = tabDefs.some(t => t[0] === st.tab) ? st.tab : 'overview', inT = k => tab === k || tab === 'all';
+    const tabs = { items: tabDefs.map(([k, label, n]) => { const on = tab === k; return { label, on, hasN: n !== '' && n !== 0, n, go: () => set({ tab: k }), ink: on ? c.ink : c.muted, w: on ? 700 : 600, bar: on ? `inset 0 -2px 0 ${c.acc}` : 'none', nBg: on ? c.accSoft : c.kbd, nInk: on ? c.accInk : c.muted }; }),
+      ov: inT('overview'), rv: rvM.show && inT('rv'), cf: cfM.show && inT('cf'), cal: cal.show && inT('cal') };
+    const ovw = this.overview({ c, st, conf, rv, lenOf });
+    return { ...base, cal, sm, tabs, ovw, lay, hd, pp, looked, lookedN: looked.length, people, st2, tm, tmClock, tmDot, wk, bn, bd, emp, tl, tray, rv: rvM, cf: cfM, sd, bulk, ed, dr, toast, keys };
+  }
+
+  kindColors(c) { return { Work: ['Building', c.acc], Meeting: ['Meetings', c.blu], Thinking: ['Thinking', c.grn], Research: ['Research', c.org], Pairing: ['Pairing', c.accLine], Review: ['Review', c.red], Support: ['Support', c.bluLine], Admin: ['Admin', c.faint] }; }
+  recs(d, conf, rv, lenOf) {
+    const SAMPLE = { 19: [['LAI-860', 'Work', 180], ['LAI-864', 'Work', 110], ['GENERAL', 'Meeting', 70], ['LAI-866', 'Thinking', 40]], 21: [['LAI-307', 'Work', 200], ['LAI-864', 'Work', 100], ['GENERAL', 'Meeting', 85], ['SKYNET-71', 'Review', 40]] };
+    let out = [];
+    if (d === '22') out = [...conf.map(u => ({ card: u.card, kind: u.kind || 'Work', m: lenOf(u), conf: true, manual: this.isAdded(u.id) })), ...rv.map(u => ({ card: u.card, kind: u.kind || 'Work', m: lenOf(u), conf: false, manual: this.isAdded(u.id) }))];
+    else if (SAMPLE[d]) out = SAMPLE[d].map(([card, kind, m]) => ({ card, kind, m, conf: true, manual: false }));
+    return [...out, ...(this.state.other[d] || []).map(e => ({ card: e.card, kind: e.kind || 'Work', m: e.end - e.start, conf: true, manual: true }))];
+  }
+  overview(x) {
+    const { c, st, conf, rv, lenOf } = x, L = window.LaikaTL, set = p => this.setState(p), K = Object.keys(this.DN);
+    const scope = st.scope, a = scope === 'day' ? st.day : scope === 'week' ? '19' : (+st.rFrom <= +st.rTo ? st.rFrom : st.rTo), b = scope === 'day' ? st.day : scope === 'week' ? '25' : (+st.rFrom <= +st.rTo ? st.rTo : st.rFrom);
+    const days = K.filter(d => +d >= +a && +d <= +b), byDay = days.map(d => ({ d, r: this.recs(d, conf, rv, lenOf) })), all = byDay.flatMap(x => x.r), S = arr => arr.reduce((n, r) => n + r.m, 0);
+    const tot = S(all), cf = S(all.filter(r => r.conf)), dr = tot - cf, meet = S(all.filter(r => r.kind === 'Meeting')), man = S(all.filter(r => r.manual)), active = byDay.filter(x => x.r.length).length, pc = m => tot ? Math.round(m / tot * 100) + '%' : '0%';
+    const KC = this.kindColors(c), bk = {}; all.forEach(r => { const k = KC[r.kind] ? r.kind : 'Work'; bk[k] = (bk[k] || 0) + r.m; });
+    const kinds = Object.keys(KC).filter(k => bk[k]).map(k => ({ label: KC[k][0], c: KC[k][1], val: this.fd(bk[k]), pct: pc(bk[k]), w: (bk[k] / (tot || 1) * 100) + '%' }));
+    const bt = {}; all.forEach(r => { const k = r.card || ''; bt[k] = (bt[k] || 0) + r.m; });
+    const tmax = Math.max(1, ...Object.values(bt)), tasks = Object.entries(bt).sort((p, q) => q[1] - p[1]).slice(0, 6).map(([k, m]) => ({ key: k === 'GENERAL' ? 'No task' : k || 'No task yet', font: k && k !== 'GENERAL' && !st.customs.includes(k) ? "'JetBrains Mono',monospace" : "'Plus Jakarta Sans',sans-serif", title: k === 'GENERAL' ? 'logged by kind' : k ? (L.CARDS[k] || '') : '', val: this.fd(m), w: (m / tmax * 100) + '%' }));
+    const dmax = Math.max(60, ...byDay.map(x => S(x.r)));
+    const dBg = c.theme === 'dark' ? 'repeating-linear-gradient(0deg,#7c5fd0 0 3px,#3a2f5c 3px 5px)' : 'repeating-linear-gradient(0deg,#b49af3 0 3px,#e6dcfc 3px 5px)';
+    const dayBars = byDay.map(({ d, r }) => { const t = S(r), cm = S(r.filter(y => y.conf)), on = d === st.day;
+      return { name: this.DN[d][1] + ' ' + d, fig: t ? this.fd(t) : +d > 22 ? '' : '—', h: Math.max(3, t / dmax * 96) + 'px', cH: t ? (cm / t * 100) + '%' : '0%', dH: t ? ((t - cm) / t * 100) + '%' : '0%', dBg, ink: on ? c.accInk : c.ink2, aria: `${this.DN[d][0]} ${d} October, ${this.fd(t)}`, go: () => this.goDay(d) }; });
+    const stats = [{ k: 'Tracked', v: this.fd(tot), sub: `${this.fd(cf)} confirmed` }, { k: 'To review', v: this.fd(dr), sub: dr ? 'drafts waiting' : 'nothing waiting' }, { k: 'Meetings', v: this.fd(meet), sub: pc(meet) + ' of tracked' }, { k: 'Off-screen', v: this.fd(man), sub: 'added by you' }];
+    if (days.length > 1) stats.push({ k: 'Per active day', v: this.fd(active ? tot / active : 0), sub: `${active} of ${days.length} days` });
+    const sh = c.theme === 'dark' ? 'none' : '0 1px 2px rgba(22,22,29,.08)';
+    return { range: days.length > 1 ? `${this.DN[a][1]} ${a} – ${this.DN[b][1]} ${b} October` : `${this.DN[a][0]} ${a} October`,
+      scopes: [['day', 'Day'], ['week', 'Week'], ['range', 'Range']].map(([k, label]) => { const on = scope === k; return { label, on, go: () => set({ scope: k }), bg: on ? c.card : 'transparent', ink: on ? c.ink : c.muted, sh: on ? sh : 'none' }; }),
+      isRange: scope === 'range', rFrom: st.rFrom, rTo: st.rTo, opts: K.map(d => ({ v: d, label: this.DN[d][1] + ' ' + d })), setFrom: e => set({ rFrom: e.target.value }), setTo: e => set({ rTo: e.target.value }),
+      none: !tot, some: !!tot, stats, multi: days.length > 1, nDays: days.length, days: dayBars, kinds, tasks };
+  }
+  summary(x) {
+    const { c, st, conf, ready, lenOf, rv } = x;
+    if (!st.sum) return { show: false, segs: [], offs: [] };
+    const items = [...conf, ...ready], tot = items.reduce((n, u) => n + lenOf(u), 0) || 1, rdy = ready.reduce((n, u) => n + lenOf(u), 0);
+    const KC = this.kindColors(c);
+    const by = {}; items.forEach(u => { const k = KC[u.kind] ? u.kind : 'Work'; by[k] = (by[k] || 0) + lenOf(u); });
+    const segs = Object.keys(KC).filter(k => by[k]).map(k => ({ label: KC[k][0], c: KC[k][1], val: this.fd(by[k]), pct: Math.round(by[k] / tot * 100) + '%', w: (by[k] / tot * 100) + '%' }));
+    const offU = items.filter(u => this.isAdded(u.id)), offM = offU.reduce((n, u) => n + lenOf(u), 0), left = rv.length - ready.length;
+    return { show: true, title: `Confirm ${this.DN[st.day][0]}`, total: this.fd(tot), sub: [`${this.fd(rdy)} to confirm`, conf.length ? `${this.fd(items.reduce((n, u) => n + lenOf(u), 0) - rdy)} already confirmed` : '', left ? `${left} without a task stay in To review` : ''].filter(Boolean).join(' · '),
+      segs, hasOff: offU.length > 0, offHead: `${this.fd(offM)} Laika couldn’t see, added by you`, offs: offU.map(u => ({ t: u.title || u.kind || 'Entry', k: u.kind || 'Work', r: this.fr(u.start, u.end) })),
+      note: st.dayNote, setNote: e => this.setState({ dayNote: e.target.value }), stop: e => e.stopPropagation(), cancel: () => this.setState({ sum: false }),
+      goLabel: `Confirm ${this.fd(rdy)}`, goDis: !ready.length,
+      go: () => { if (!ready.length) return; const note = st.dayNote.trim(); this.confirmMany(ready.map(u => u.id)); this.setState({ sum: false, noteSent: note }); if (note) setTimeout(() => this.setState(s => ({ toast: s.toast ? { ...s.toast, msg: s.toast.msg + ' · note shared' } : s.toast })), 0); } };
+  }
+  insight(cm) {
+    const L = window.LaikaTL; if (!cm || cm.src !== 'gap') return null;
+    const ev = this.CAL.find(e => e.gap === cm.gapId && this.calState(e) !== 'logged');
+    if (ev) return { tag: 'ON YOUR CALENDAR', text: `${ev.title} · ${ev.who}, ${this.fr(ev.start, ev.end)}.`, acts: [{ label: 'Use this meeting', go: () => this.setState({ compose: { ...this.state.compose, card: 'GENERAL', kind: 'Meeting', title: ev.title, desc: 'With ' + ev.who, calId: ev.id } }) }] };
+    const all = this.all().filter(u => !['gap', 'covered'].includes(u.state)).sort((p, q) => p.start - q.start);
+    const nx0 = all.find(u => u.start >= cm.end - 1), nx = nx0 && nx0.start - cm.end <= 5 && nx0.card && nx0.card !== 'GENERAL' && !nx0.group ? nx0 : null;
+    if (!nx) return null;
+    return { tag: 'LIKELY THINKING TIME', text: `No signals for ${this.fd(cm.end - cm.start)}, then ${nx.card} started at ${L.fmt(nx.start)}. Time spent working something out often looks like this.`,
+      acts: [{ label: 'Thinking on ' + nx.card, go: () => this.setState({ compose: { ...this.state.compose, card: nx.card, kind: 'Thinking', title: 'Thinking through ' + (L.CARDS[nx.card] || nx.card) } }) }] };
+  }
+  picker(x, cm) {
+    const { L, c, st, find } = x;
+    if (!cm) return { dates: [], showPick: false, lenChips: [], busy: [], barTicks: [] };
+    const day = cm.day || '22', today = day === '22', len = cm.end - cm.start, A = 420, SP = 900, pc = t => Math.max(0, Math.min(100, (t - A) / SP * 100));
+    const dates = Object.keys(this.DN).map(d => { const on = d === day, fut = +d > 22;
+      return { name: this.DN[d][1], date: d, dis: fut, tip: fut ? 'You can’t add time ahead of the day' : d === '22' ? 'Today' : '', bd: on ? c.acc : c.btnLine, bg: on ? c.accSoft : c.btn, ink: on ? c.accInk : c.ink, op: fut ? 0.4 : 1, cur: fut ? 'not-allowed' : 'pointer',
+        go: fut || on ? null : () => this.setState({ compose: { ...this.state.compose, day: d } }, () => this.setCompRange(this.state.compose.start, this.state.compose.end)) }; });
+    const anchorEnd = cm.src === 'button';
+    const lenChips = [[15, '15m'], [30, '30m'], [45, '45m'], [60, '1h'], [90, '1h 30'], [120, '2h']].map(([m, label]) => { const on = len === m;
+      return { label, bd: on ? c.accLine : c.btnLine, bg: on ? c.accSoft : c.btn, ink: on ? c.accInk : c.ink, go: () => anchorEnd ? this.setCompRange(cm.end - m, cm.end) : this.setCompRange(cm.start, cm.start + m) }; });
+    const src = today ? this.all() : (st.other[day] || []);
+    const busy = src.filter(u => ['confirmed', 'drafted', 'needs'].includes(u.state) && u.end > A && u.start < A + SP && u.id !== cm.gapId).map(u => ({ l: pc(u.start), w: Math.max(0.6, pc(u.end) - pc(u.start)), bg: u.state === 'confirmed' ? c.faint : c.line, tip: this.lbl(u) + ' · ' + this.fr(u.start, u.end) }));
+    const bad = !!st.fErr;
+    return { dates, showPick: !cm.untimed && (cm.src !== 'gap' || x.phone), lenChips, busy, showEndsNow: today && cm.end !== L.NOW, endsNow: () => this.setCompRange(L.NOW - len, L.NOW),
+      selL: pc(cm.start), selW: Math.max(0.8, pc(cm.end) - pc(cm.start)), selBg: c.theme === 'dark' ? 'rgba(167,139,250,.30)' : 'rgba(124,58,237,.20)', selBd: bad ? c.red : c.acc,
+      showNow: today, nowL: pc(L.NOW), barTicks: [8, 10, 12, 14, 16, 18, 20].map(h => ({ l: pc(h * 60), label: L.hourLabel(h) })),
+      barHint: today ? 'Drag the violet range, or click to place it. Grey is time already logged.' : `Nothing is logged on ${this.DN[day][0]} yet in this sample.`,
+      barDown: e => {
+        const el = e.currentTarget, r = el.getBoundingClientRect(), at = px => Math.round((A + (px - r.left) / r.width * SP) / 5) * 5, c0 = this.state.compose; if (!c0) return;
+        const ln = c0.end - c0.start, t0 = at(e.clientX), off = t0 >= c0.start && t0 <= c0.end ? t0 - c0.start : Math.round(ln / 10) * 5;
+        e.preventDefault();
+        const mv = ev => { const a = Math.max(0, Math.min(1440 - ln, at(ev.clientX) - off)); const cur = this.state.compose; if (cur && cur.start !== a) this.setCompRange(a, a + ln); };
+        mv(e); const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); };
+        window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+      } };
+  }
+  editor(x) {
+    const { L, c, st, ro, find, mono, sans, S, sw, lenOf, rv, IDS, phone } = x;
+    const set = p => this.setState(p), cm = st.compose, uRaw = !cm && st.sel ? (find(st.sel) || st.untimed.find(y => y.id === st.sel)) : null;
+    const empty = { aria: '', fields: [], kinds: [], sugg: [], results: [], stats: [], hist: [], acts: [] };
+    if (!cm && !uRaw) return empty;
+    const u = uRaw ? (uRaw.start == null ? { ...uRaw, untimedEntry: true, start: 0, end: uRaw.len, state: 'confirmed' } : uRaw) : null;
+    const isC = !!cm, kind = isC ? (cm.src === 'gap' ? 'gap' : 'compose') : ro ? 'readonly' : u.imported ? 'imported' : u.state;
+    const roF = ro || kind === 'imported' || (u && u.group) || (u && u.untimedEntry && false);
+    const tgt = isC ? { ...cm, isCompose: true } : u;
+    const untimedMode = (isC && cm.untimed) || (u && u.untimedEntry);
+    const fmtT = t => L.fmt(t), len = isC ? (cm.untimed ? cm.len : cm.end - cm.start) : u.end - u.start;
+    const fval = (k, def) => st.fk === k ? st.fv : def;
+    const fieldDefs = untimedMode ? [['L', 'Length', this.fd(len)]] : [['S', 'Start', fmtT(tgt.start)], ['E', 'End', fmtT(tgt.end)], ['L', 'Length', this.fd(len)]];
+    const fields = (isC && cm.src === 'gap' ? [] : fieldDefs).map(([k, label, def], i) => ({ label, aria: label + (k === 'L' ? '' : ' time'), ref: this.fRefs[i], val: fval(k, def), bd: st.fErr && st.fk == null && (k === 'E' || k === 'L') ? c.red : st.fk === k ? c.acc : roF ? 'transparent' : c.fieldLine,
+      onFocus: e => { if (roF) return; set({ fk: k, fv: def, fErr: '' }); setTimeout(() => e.target.select && e.target.select(), 0); }, onChange: e => set({ fv: e.target.value }),
+      onBlur: () => { if (this._esc) { this._esc = false; set({ fk: null }); return; } if (st.fk !== k && this.state.fk !== k) return; if (u && u.untimedEntry) { const m = this.parseL(this.state.fv); set({ fk: null }); if (m) this.commit({ untimed: st.untimed.map(y => y.id === u.id ? { ...y, len: m } : y) }, `Length set to ${this.fd(m)}`); return; } this.fieldCommit(k, tgt); },
+      onKeyDown: e => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } if (e.key === 'Escape') { this._esc = true; e.stopPropagation(); e.target.blur(); } } }));
+
+    const s0 = isC ? null : (u.imported ? { bg: sw(u).bg, border: sw(u).bd, color: c.theme === 'dark' ? '#e4dcff' : '#33255c', icon: '⇣', name: 'Imported' } : (S[u.state] || S.gap));
+    const pillName = isC ? (cm.src === 'gap' ? 'Gap' : 'New entry') : u.untimedEntry ? 'No set time' : ({ drafted: 'Draft', needs: 'No task yet', confirmed: 'Confirmed', break: 'Personal break', notwork: 'Not work time', gap: 'Gap' })[u.state] || s0.name;
+    const pill = isC ? (cm.src === 'gap' ? { bg: S.gap.bg, border: S.gap.border, color: S.gap.color, icon: '+' } : { bg: c.accSoft, border: `1px solid ${c.accLine}`, color: c.accInk, icon: '+' }) : s0;
+    const card = isC ? cm.card : u.card, hasCard = !!card;
+    const sugg0 = isC ? ['LAI-867', 'LAI-864', 'LAI-307'].map(k => ({ card: k, why: 'In progress' })) : L.suggestions(u, rv.length ? [...L.units(st.ov)] : []);
+    const setCard = k => isC ? set({ compose: { ...cm, card: k }, q: '' }) : this.setTask(u, k);
+    const chip = (k, why) => { const on = card === k; return { label: k === 'GENERAL' ? 'General' : k, font: k === 'GENERAL' || st.customs.includes(k) ? sans : mono, why, hasWhy: !!why && !phone, title: k === 'GENERAL' ? 'No task, on purpose' : L.CARDS[k], bg: on ? c.accSoft : c.btn, bd: on ? c.accLine : c.btnLine, ink: on ? c.accInk : c.ink, go: () => setCard(k) }; };
+    const sugg = [...sugg0.filter(s => s.card !== 'GENERAL').slice(0, 3).map(s => chip(s.card, s.why)), ...st.customs.slice(-2).map(k => chip(k, 'Custom'))];
+    const q = st.q.trim().toLowerCase(), pool = [...IDS, ...st.customs], r0 = q ? pool.filter(k => k.toLowerCase().includes(q) || L.CARDS[k].toLowerCase().includes(q)).slice(0, 5).map(k => ({ key: k, title: L.CARDS[k], go: () => setCard(k) })) : [];
+    const results = q && !pool.some(k => k.toLowerCase() === q) ? [...r0, { key: '+ New', title: `Use “${st.q.trim()}” as a custom task`, go: () => this.addCustom(st.q.trim(), setCard) }] : r0;
+    const KINDS = ['Work', 'Meeting', 'Thinking', 'Research', 'Pairing', 'Review', 'Support', 'Admin'], curKind = isC ? cm.kind : (u.kind || 'Work');
+    const kinds = KINDS.map(k => { const on = curKind === k && (isC || !!u.card || !!u.kind); return { label: k, on, bg: on ? c.accSoft : c.btn, bd: on ? c.accLine : c.btnLine, ink: on ? c.accInk : c.ink, w: on ? 600 : 500, cursor: roF ? 'default' : 'pointer',
+      go: roF || on ? null : () => isC ? set({ compose: { ...cm, kind: k } }) : u.untimedEntry ? this.commit({ untimed: st.untimed.map(y => y.id === u.id ? { ...y, kind: k } : y) }, 'Kind set to ' + k) : this.commit(this.upd(u, u.card ? { kind: k } : { kind: k, card: 'GENERAL', state: u.state === 'needs' ? 'drafted' : u.state }, 'Kind → ' + k), u.card ? 'Kind set to ' + k : `Logged as ${k}, no task needed`) }; });
+    const txt = (key, v) => isC ? set({ compose: { ...cm, [key]: v } }) : u.untimedEntry ? set({ untimed: st.untimed.map(y => y.id === u.id ? { ...y, [key]: v } : y), saved: 'Saving…' }) : set({ ...this.upd(u, { [key]: v }), saved: 'Saving…' });
+    const c0 = !isC && !u.untimedEntry ? L.sigIn(u.start, u.end) : { p: 0, c: 0, m: 0 }, ags = !isC && !u.untimedEntry ? L.agentsDuring(u.start, u.end) : [];
+    const showEv = !isC && !u.untimedEntry && !u.manual && !this.isAdded(u.id) && ['drafted', 'needs', 'confirmed', 'notwork'].includes(u.state) && !u.imported;
+    const hist = !isC && u.state === 'confirmed' ? [...(u.revs || []), ...(u.id === 'b3' ? [{ t: '12:02 PM', what: 'Length 55 min → 49 min', who: 'You' }, { t: '11:59 AM', what: 'Confirmed', who: 'You' }, { t: '11:10 AM', what: `Drafted from ${L.counts(c0)}`, who: 'Collector' }] : this.isAdded(u.id) || u.untimedEntry ? (u.src === 'Timer' ? [] : [{ t: 'Today', what: 'Added by hand', who: 'You' }]) : u.imported ? [] : [{ t: L.fmt(u.end), what: 'Confirmed', who: 'You' }, { t: L.fmt(u.start), what: 'Drafted by the collector', who: 'Collector' }])] : [];
+    const rvIdx = rv.findIndex(y => y.id === (u && u.id));
+    const gl = isC && cm.src === 'gap' ? this.gaps() : [], gi = gl.findIndex(g => g.id === cm.gapId);
+    const range = isC ? (cm.untimed ? 'No set time · ' + this.fd(cm.len) : this.fr(cm.start, cm.end) + ' · ' + this.fd(cm.end - cm.start)) : u.untimedEntry ? 'No set time · ' + this.fd(u.len) : this.fr(u.start, u.end) + ' · ' + this.fd(lenOf(u));
+    const srcLine = { compose: { button: 'From Add time · saved as confirmed', range: 'From the range you dragged on the Timeline', timer: '' }[cm && cm.src] || '', gap: 'Nothing reached Laika in this time',
+      drafted: 'Drafted by your collector · only you see it', needs: 'Drafted by your collector · only you see it', confirmed: 'Confirmed · owners and admins can see it', imported: 'Imported from Solidtime · read-only here',
+      break: 'Personal break · not counted in your hours', notwork: 'Not work time · not counted', readonly: 'Read-only · Dana’s entry' }[kind] || '';
+    const headTitle = isC ? (cm.title || (cm.src === 'gap' ? 'Fill this gap' : 'Add time')) : u.state === 'gap' ? 'Gap' : u.state === 'break' ? (u.label ? u.label + ' break' : 'Break') : u.state === 'notwork' ? 'Not work time' : (u.title || (u.card && u.card !== 'GENERAL' ? L.CARDS[u.card] : u.card === 'GENERAL' ? (u.kind || 'Work') : 'No task yet'));
+    const keyShow = !isC && u.card && u.card !== 'GENERAL';
+
+    let banner = '', bnBg = c.accSoft, bnBd = c.accLine;
+    if (!isC && st.stopped === u.id) banner = `Timer stopped. ${this.fd(u.end - u.start)} saved as confirmed time. Check the task and title, then close.`;
+    else if (kind === 'imported') { banner = 'This entry came from Solidtime. Change it there; the next import updates it here.'; bnBg = c.bluSoft; bnBd = c.bluLine; }
+    else if (ro) { banner = 'Read-only. You can see this because you’re an owner.'; bnBg = c.bluSoft; bnBd = c.bluLine; }
+    else if (u && u.group) { banner = `Part of a shared hour: ${this.fr(L.GROUP.start, L.GROUP.end)} split across 3 tasks. Your share here is ${this.fd(lenOf(u))}. Change the split on the Timeline.`; }
+
+    // footer actions
+    const act = (label, go, danger) => ({ label, go, bd: danger ? c.redLine : c.btnLine, ink: danger ? c.red : c.ink });
+    let primaryLabel = '', primary = null, primaryDis = false, primaryKbd = false, acts = [], link = '';
+    const nextAfter = () => { const r = rv.filter(y => y.id !== u.id); return r.length ? r[0].id : ''; };
+    if (kind === 'compose' || kind === 'gap') {
+      const bad = !!st.fErr; primaryLabel = cm.untimed ? `Add ${this.fd(cm.len)}, no set time` : `Add ${this.fd(cm.end - cm.start)}`; primaryDis = bad; primaryKbd = true;
+      primary = () => { if (bad) return; const id = 'm' + (st.seq + 1), e = { id, card: cm.card || 'GENERAL', title: cm.title.trim() || (cm.kind + (cm.card && cm.card !== 'GENERAL' ? '' : '')), desc: cm.desc, kind: cm.kind, src: 'You added' };
+        const dd = cm.day || '22';
+        if (dd !== '22' && !cm.untimed) { this.commit({ other: { ...st.other, [dd]: [...(st.other[dd] || []), { ...e, start: cm.start, end: cm.end, state: 'confirmed' }] }, compose: null, seq: st.seq + 1 }, `Added ${this.fd(cm.end - cm.start)} to ${this.DN[dd][1]} ${dd} Oct · ${this.fr(cm.start, cm.end)}`); return; }
+        if (cm.untimed) this.commit({ untimed: [...st.untimed, { ...e, len: cm.len }], compose: null, seq: st.seq + 1 }, `Added ${this.fd(cm.len)} with no set time`);
+        else { const p = { added: [...st.added, { ...e, start: cm.start, end: cm.end, state: 'confirmed' }], compose: null, seq: st.seq + 1 }; if (cm.gapId) p.ov = { ...st.ov, [cm.gapId]: { ...(st.ov[cm.gapId] || {}), state: 'covered' } }; if (cm.calId) p.cal = { ...st.cal, [cm.calId]: 'logged' }; this.commit(p, `Added ${this.fd(cm.end - cm.start)} at ${this.fr(cm.start, cm.end)}`);
+          if (cm.gapId && st.fillRun) setTimeout(() => { const nx = this.gaps().find(g => g.start > cm.start) || this.gaps()[0]; if (nx) { this.openGap(nx); this.setState({ fillRun: true }); } else this.setState({ fillRun: false, toast: { msg: 'All gaps filled', undo: this.state.toast && this.state.toast.undo } }); }, 0); } };
+      acts = kind === 'gap' ? [act('Mark as break', () => this.commit({ ov: { ...st.ov, [cm.gapId]: { ...(st.ov[cm.gapId] || {}), state: 'break' } }, compose: null }, `Marked ${this.fr(cm.start, cm.end)} as a break`))] : [act('Cancel', this.close)];
+    } else if (kind === 'drafted' || kind === 'needs') {
+      primaryLabel = hasCard ? `Confirm ${this.fd(lenOf(u))}` : 'Pick a task or kind'; primaryDis = !hasCard; primaryKbd = hasCard; primary = () => this.confirm1(u, true);
+      acts = [...(u.group ? [] : [act('Split…', () => set({ split: L.fmt(Math.round((u.start + u.end) / 10) * 5) }))]), act('Not work time', () => this.notWork(u))];
+    } else if (kind === 'confirmed') {
+      acts = u.untimedEntry ? [act('Delete', () => this.commit({ untimed: st.untimed.filter(y => y.id !== u.id), sel: '' }, `Deleted ${u.title}`), true)]
+        : [act('Delete entry', () => this.commit(this.isAdded(u.id) ? { added: st.added.filter(a => a.id !== u.id), sel: '' } : { ov: { ...st.ov, [u.id]: { ...(st.ov[u.id] || {}), state: 'gap', card: null } }, sel: '' }, `Deleted ${this.lbl(u)} · ${this.fr(u.start, u.end)}`), true)];
+    } else if (kind === 'break') {
+      acts = [act('Turn into work time', () => this.commit({ ...this.upd(u, { state: 'needs' }, 'Turned into work time') }, 'Break turned into work time, now in To review')), act('Remove break', () => this.commit({ ...this.upd(u, { state: 'gap' }), sel: '' }, 'Break removed'))];
+    } else if (kind === 'notwork') {
+      acts = [act('Back to review', () => this.commit(this.upd(u, { state: 'needs' }, 'Back to review'), 'Moved back to To review'))];
+    } else if (kind === 'imported') link = 'Open in Solidtime ↗';
+
+    const evAgent = ags.length ? 'During this time: ' + ags.map(a => `${a.agent} on ${a.card} (${this.fd(a.ov)})`).join(', ') + '. Counts only, never what you typed.' : 'No agents ran in this time. Counts only, never what you typed.';
+    const splitT = st.split != null ? this.parseT(st.split) : null, splitOk = u && splitT != null && splitT > u.start + 4 && splitT < u.end - 4;
+    const noteFor = { break: 'A break you took. It isn’t counted, and it doesn’t block work: time you drag over it shows hatched.', notwork: 'Not counted in your hours. A later sync won’t bring it back as a draft.', gap: '' };
+
+    return {
+      aria: isC ? 'Add time' : `Edit ${this.lbl(u)}, ${this.fr(u.start, u.end)}`, ro: roF, fBg: roF ? c.col : c.field, txBd: roF ? 'transparent' : c.fieldLine,
+      pBg: pill.bg, pBd: pill.border, pInk: pill.color, pIcon: pill.icon, pName: pillName, showSaved: !isC && !!st.saved && !ro, saved: st.saved, canUndo: !!(st.toast && st.toast.undo) && st.saved !== 'Undone',
+      ...(gl.length > 1 ? { hasNav: true, pos: `Gap ${gi + 1} of ${gl.length}`, prev: () => this.openGap(gl[(gi - 1 + gl.length) % gl.length]), next: () => this.openGap(gl[(gi + 1) % gl.length]) }
+        : { hasNav: !isC && rvIdx >= 0 && rv.length > 1, pos: `${rvIdx + 1} of ${rv.length}`, prev: () => this.step(-1), next: () => this.step(1) }),
+      hasKey: !!keyShow, key: keyShow ? u.card : '', head: headTitle, sub: (isC && (cm.day || '22') !== '22' ? `${this.DN[cm.day][1]} ${cm.day} Oct · ` : '') + range + (srcLine ? ' · ' + srcLine : ''),
+      hasBanner: !!banner, banner, bnBg, bnBd,
+      isCompose: isC, untimed: !!(isC && cm.untimed), ...this.picker(x, cm),
+      ...(() => { const gp = isC && cm.src === 'gap', g0 = gp ? find(cm.gapId) : null, gEnd = g0 ? Math.min(g0.end, L.NOW) : 0;
+        return { isGapC: gp, showDates: isC && !gp, showUntimed: isC && !gp, gapRange: gp ? `${this.fr(cm.start, cm.end)} · ${this.fd(cm.end - cm.start)}` : '',
+          gapHint: gp ? (phone ? 'Found on your Timeline. Drag the range below to change it.' : 'Found on your Timeline. Drag its edges there to use more or less of it.') : '',
+          gapChanged: !!g0 && (cm.start !== g0.start || cm.end !== gEnd), gapReset: () => g0 && this.setCompRange(g0.start, gEnd) }; })(),
+      ...(() => { const ins = this.insight(cm); return { hasInsight: !!ins, inTag: ins ? ins.tag : '', inText: ins ? ins.text : '', inActs: ins ? ins.acts : [] }; })(),
+      presets: isC ? [['Brainstorm', 'Thinking'], ['Whiteboarding', 'Thinking'], ['Reading docs', 'Research'], ['Planning', 'Thinking'], ['Helping a teammate', 'Support'], ['Interview', 'Meeting']].map(([t, k]) => { const on = cm.title === t; return { label: t, bg: on ? c.accSoft : c.btn, bd: on ? c.accLine : c.btnLine, ink: on ? c.accInk : c.ink, go: () => set({ compose: { ...cm, title: t, kind: k, card: cm.card || 'GENERAL' } }) }; }) : [], toggleUntimed: () => set({ compose: { ...cm, untimed: !cm.untimed }, fErr: '' }),
+      fields, fCols: fields.length === 1 ? 'minmax(0,140px)' : 'repeat(3,minmax(0,1fr))', hasErr: !!st.fErr, err: st.fErr,
+      hasFHint: !roF && !st.fErr && !(isC && cm.src === 'gap') && (isC || ['drafted', 'needs', 'confirmed', 'break'].includes(kind)), fHint: untimedMode ? 'Type 45m, 1h 15 or 1:15.' : 'Type 14:15 or 2:15pm. Changing one updates the others; it saves when you leave the field.',
+      showTask: ['compose', 'gap', 'drafted', 'needs', 'confirmed', 'imported', 'readonly'].includes(kind) && !(u && u.state === 'break'), hasTask: hasCard, noTask: !hasCard && !isC, noTaskWhy: u ? (this.hint(u) ? this.hint(u) + '.' : 'Nothing named a task.') + ' Pick one, or just pick a kind below.' : '',
+      taskKey: card === 'GENERAL' ? 'No task' : card || '', taskTitle: card === 'GENERAL' ? `Shows as ${curKind} on the Timeline` : card ? L.CARDS[card] : '', canTask: !roF, q: st.q, setQ: e => set({ q: e.target.value }), hasResults: results.length > 0, results, sugg,
+      showKind: ['compose', 'gap', 'drafted', 'needs', 'confirmed', 'imported', 'readonly'].includes(kind), kinds,
+      showWhat: ['compose', 'gap', 'drafted', 'needs', 'confirmed', 'imported', 'readonly'].includes(kind), title: isC ? cm.title : (u.title || ''), desc: isC ? cm.desc : (u.desc || ''), showDesc: !roF || !!(isC ? cm.desc : u.desc),
+      titlePh: roF ? 'No title' : isC ? 'e.g. Sprint planning with Andrea' : 'e.g. ' + (u.card && u.card !== 'GENERAL' ? L.CARDS[u.card] : 'Code review for the onboarding epic'), descPh: roF ? '' : 'Add a description (optional)',
+      setTitle: e => txt('title', e.target.value), setDesc: e => txt('desc', e.target.value),
+      txFocus: () => { this._tsnap = this.snap(); }, txBlur: () => { if (isC || !this._tsnap) return; const s = this._tsnap; this._tsnap = null; if (s.ov !== this.state.ov || s.added !== this.state.added || s.untimed !== this.state.untimed) { this.setState({ toast: { msg: 'Saved “What it was”', undo: s }, saved: 'Saved' }); this.arm(); } },
+      splitOpen: st.split != null && !!u, splitVal: st.split || '', setSplit: e => set({ split: e.target.value }), cancelSplit: () => set({ split: null }),
+      splitHint: u ? (splitOk ? `${this.fr(u.start, splitT)} and ${this.fr(splitT, u.end)}, both stay drafts.` : `Pick a time between ${L.fmt(u.start + 5)} and ${L.fmt(u.end - 5)}.`) : '',
+      doSplit: () => { if (!splitOk) return; const id = 'sp' + st.seq; this.commit({ ...this.upd(u, { end: splitT }, 'Split at ' + L.fmt(splitT)), added: [...st.added, { id, start: splitT, end: u.end, card: u.card, state: u.state, hint: u.hint, src: 'Split' }], seq: st.seq + 1, split: null }, `Split ${this.lbl(u)} at ${L.fmt(splitT)}`); },
+      showEv, evLabel: u && u.state === 'confirmed' ? 'BUILT FROM' : 'DRAFTED FROM', stats: [['prompts', c0.p], ['commits', c0.c], ['marks', c0.m], ['agents', ags.length]].map(([l, v]) => ({ l, v })), agentLine: evAgent,
+      hasNote: !!noteFor[kind], note: noteFor[kind] || '',
+      showHist: hist.length > 0, hist,
+      hasFoot: !!primary || acts.length > 0 || !!link, hasPrimary: !!primary, primary, primaryLabel, primaryDis, primaryKbd, primaryBg: primaryDis ? c.dis : c.acc, primaryInk: primaryDis ? c.disInk : c.onAcc, acts, hasLink: !!link, link
+    };
+  }
+}
+</script>
+</body>
+</html>
