@@ -45,7 +45,8 @@ const MOVES: readonly (readonly [string, string, string, string, string | null])
   ['/unlisted', '/inbox', '?tab=unlisted', 'Inbox', 'Unlisted work'],
   ['/capacity', '/insights', '?tab=capacity', 'Insights', 'Capacity'],
   ['/usage', '/insights', '?tab=usage', 'Insights', 'Usage & cost'],
-  ['/tokens', '/developer', '', 'Developer access', null],
+  // Developer access is four tabs since LAI-997: Tokens is one of them.
+  ['/tokens', '/developer', '?tab=tokens', 'Developer access', 'Tokens'],
 ];
 
 void describe('a bookmark to an old page opens its new home', () => {
