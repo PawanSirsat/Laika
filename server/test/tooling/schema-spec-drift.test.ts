@@ -575,7 +575,8 @@ describe('the parser itself', () => {
     // of agent time, and a session's split between tasks. LAI-788's are keyed
     // by what Solidtime names — a project, a member, an entry — because the
     // point of each row is to be found again by that id on the next pull.
-    // LAI-833's is a session's five minutes of agent time.
+    // LAI-833's is a session's five minutes of agent time. LAI-500's timer
+    // is keyed by its person: one per person, and the row *is* the timer.
     const withoutId = [...specTables.entries()]
       .filter(([, fields]) => !fields.includes('id'))
       .map(([table]) => table)
@@ -600,6 +601,7 @@ describe('the parser itself', () => {
       'task_dependencies',
       'task_round_github',
       'task_tags',
+      'time_timers',
       'token_alert_dismissals',
       'token_arrivals',
       'token_session_days',

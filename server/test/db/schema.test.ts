@@ -132,6 +132,8 @@ describe('migrations', () => {
     'time_drafts',
     'time_entries',
     'time_entry_revisions',
+    // LAI-500, D-110: a person's running timer, one row while it runs (§4.61).
+    'time_timers',
     // LAI-831: what Undo puts back, for minutes; SPEC §4 is LAI-836.
     'time_undo',
     // LAI-773: budgets and their alerts, the telemetry match, the arrival rate.
