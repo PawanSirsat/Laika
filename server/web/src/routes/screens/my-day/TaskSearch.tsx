@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { everyPage } from '../../../api/every-page.ts';
 import { listAllTasks, type TaskSummary } from '../../../api/tasks.ts';
 import { matchTasks } from './task-match.ts';
 
@@ -6,18 +7,13 @@ import { matchTasks } from './task-match.ts';
 let cache: Promise<readonly TaskSummary[]> | undefined;
 
 const PAGE = 100;
-const PAGES = 5;
 
+/** Every readable task, through the shared pager (LAI-703): its cap is the bound. */
 async function loadAll(): Promise<readonly TaskSummary[]> {
-  const all: TaskSummary[] = [];
-  let cursor: string | undefined;
-  for (let i = 0; i < PAGES; i += 1) {
-    const page = await listAllTasks({ limit: PAGE, ...(cursor === undefined ? {} : { cursor }) });
-    all.push(...page.data);
-    if (page.next_cursor === null) break;
-    cursor = page.next_cursor;
-  }
-  return all;
+  const all = await everyPage((cursor) =>
+    listAllTasks({ limit: PAGE, ...(cursor === undefined ? {} : { cursor }) }),
+  );
+  return all.items;
 }
 
 export function readableTasks(): Promise<readonly TaskSummary[]> {
