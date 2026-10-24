@@ -2284,6 +2284,29 @@ are what is known, and a span over two days is not one entry. The entry's
 making, and no new action would distinguish anything. No retention: a row
 lives as long as its timer.
 
+### 4.62 `time_day_notes`
+
+A person's note on one of their days (D-110 item 2, LAI-501): the design's
+*Note for your manager*, written with *Confirm day* or on its own, one per
+person per day. **Prose, not time**: no total, report or export reads it, and
+Undo of the confirm it came with leaves it where it is. Read by the person
+with their day, and by owners and admins — whoever holds `people.analytics.read`
+— with `GET /people/:id/time`, which answers them the person's own view
+(D-102); never a plain member's.
+
+| field | notes |
+| --- | --- |
+| `user_id` | FK `users`, cascade — with `day`, the primary key: one note per person per day |
+| `day` | `YYYY-MM-DD`, the person's local day, as an entry's |
+| `note` | 1 to 500 characters (CHECK), trimmed; nothing to say removes the row |
+| `created_at` | |
+| `updated_at` | |
+
+Indexes: the primary key `(user_id, day)`, and `(day)` for retention. Written
+behind `time_entries.write_own`, session only (§3.1): the note is the person's
+own account of their own time. §11.6 prunes it with the entries, after three
+years.
+
 ## 5. Task lifecycle
 
 ```
@@ -2539,8 +2562,9 @@ PUT    /api/v1/me/time-drafts                a collector's blocks, each with a w
 POST   /api/v1/me/time-drafts                an agent's proposal → 201 { id, minutes, day } (both time switches on; twin of propose_time_entry)
 DELETE /api/v1/me/time-drafts                every draft the caller has not confirmed → 204   (session only)
 PATCH  /api/v1/me/time-drafts/:id            body { task?, project?, general?, minutes?, started_at?, ended_at?, folder?, branch? }   POST .../split { at }   POST .../dismiss → 204   (session only)
-POST   /api/v1/me/time-drafts/:id/confirm    body { kind?, title?, description? }, optional → 201, the entry   POST /api/v1/me/time/days/:day/confirm → { entries }   (session only)
-GET    /api/v1/me/time                       ?day=&tz= — My day: drafts, entries, breaks, agent minutes, drafts held, the week, the timer   (session only)
+POST   /api/v1/me/time-drafts/:id/confirm    body { kind?, title?, description? }, optional → 201, the entry   POST /api/v1/me/time/days/:day/confirm  body { note? }, optional → { entries, day_note }   (session only)
+PUT    /api/v1/me/time/days/:day/note        body { note } — the person's note on the day, null removes it → { day_note }   (session only; §4.62, LAI-501)
+GET    /api/v1/me/time                       ?day=&tz= — My day: drafts, entries, breaks, agent minutes, drafts held, the week, the timer, the day's note   (session only)
 POST   /api/v1/me/time/timer                 body { tz, task?, kind?, title? } — start the person's one timer → 201   POST .../pause   POST .../resume   POST .../stop → 201 { entry, crossed_midnight }   DELETE → 204   (session only; §4.61, LAI-500)
 POST   /api/v1/me/time/undo                  body { id } — the change an X-Undo-Id named, taken back → 204   (session only; LAI-831)
 POST   /api/v1/me/time-breaks                body { day, tz, started_at, ended_at } — a gap waved away → 201   DELETE .../:id → 204   (session only; LAI-831)
@@ -2578,7 +2602,7 @@ GET    /api/v1/users/:id/memberships         → { data: [{ project_id, slug, na
 GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind }   (owner, admin; session only)
 POST   /api/v1/users/:id/ratings             body { score, note } → 201   (owner, admin; session only; not yourself)
 GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, or a role granted *See everyone's analytics*; session only; logged, D-102)
-GET    /api/v1/people/:id/time               ?day=&tz= — that person's GET /me/time answer, drafts and timer included; logged   (owner, admin by default; session only; not yourself; LAI-957)
+GET    /api/v1/people/:id/time               ?day=&tz= — that person's GET /me/time answer, drafts, timer and day note included; logged   (owner, admin by default; session only; not yourself; LAI-957)
 GET    /api/v1/people/:id/local-activity     ?days=1–14 — that person's GET /me/local-activity answer; logged   (owner, admin by default; session only; not yourself)
 GET    /api/v1/me/analytics-views            ?limit=&cursor= — who looked at the caller → { data: [{ id, viewer: { id, name }, kind, day, viewed_at }], next_cursor }, newest first   (session only)
 GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner / a role granted *See everyone's analytics*; session only; logged, D-102)
@@ -3283,7 +3307,7 @@ parameter names anybody else.
   no draft, its own proposal included. The same rules and switches as §7.1's
   `propose_time_entry`, its twin.
 - **My day.** `GET /me/time?day=&tz=` answers `{ day, tz, today, settings,
-  drafts, entries, breaks, drafts_held, agent, state, week, timer }`: the pending
+  drafts, entries, breaks, drafts_held, agent, state, week, timer, day_note }`: the pending
   drafts and live entries of the day in the order they happened, each with
   its task `{ id, key, title }` and project `{ id, slug, name }` and its work
   folder's chosen name and branch, `folder` and `branch`, or `null` (D-098) —
@@ -3299,7 +3323,9 @@ parameter names anybody else.
   shown as zero hours) or `future`; and `week`, Monday to Sunday, each
   `{ day, confirmed_minutes, drafted_minutes, state }`; and `timer` — the
   person's running timer (§4.61), `{ started_at, resumed_at, paused_at,
-  accumulated_ms, tz, task, kind, title }`, whatever day is open, or `null`.
+  accumulated_ms, tz, task, kind, title }`, whatever day is open, or `null`;
+  and `day_note` — the person's note on the day (§4.62), `{ day, note,
+  updated_at }`, or `null`.
   Without `tz`, the zone of the person's drafts; without `day`, today there.
   One indexed query per section.
 - **The timer (§4.61, LAI-500).** `POST /me/time/timer` `{ tz, task?, kind?,
@@ -3328,7 +3354,12 @@ parameter names anybody else.
   block was, said at the confirm (D-110), written onto the entry; left out,
   the entry carries nulls as before.
   `POST /me/time/days/:day/confirm` confirms the day's pending drafts in one
-  transaction, an untied one as *General*, answering `{ entries }`. A block
+  transaction, an untied one as *General*, answering `{ entries, day_note }`;
+  its optional body `{ note? }` is the person's note on the day (§4.62,
+  D-110 item 2), written in the same transaction — so a day the clock refuses
+  keeps no note — and left in place by Undo. `PUT /me/time/days/:day/note`
+  `{ note }` sets the note alone, 500 characters, trimmed; `null` or nothing
+  but spaces removes it; answers `{ day_note }`. A block
   has **one entry for as long as it is kept**: confirmed again after Undo
   took its entry back, the same entry is live again as its next `edited`
   revision, never a second (`source_ref`, §4.48).
