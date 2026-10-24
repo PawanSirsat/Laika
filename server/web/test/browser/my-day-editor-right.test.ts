@@ -71,15 +71,11 @@ void describe('the drawer beside the page (LAI-511)', () => {
         await until(async () => (await drawerCount(h)) === 0);
 
         // A gap on the Timeline, then its Add time, then Cancel.
+        // A gap on the Timeline: Add time, with the gap as its range (LAI-515).
         await h.page.locator('.dayline-gap').first().click();
-        await drawer.locator('[data-inspector="gap"]').waitFor({ timeout: 5_000 });
-        await drawer.locator('[data-gap-add]').click();
-        await drawer.locator('[data-inspector="range"]').waitFor({ timeout: 5_000 });
+        await drawer.locator('[data-inspector="gap"] [data-new-entry]').waitFor({ timeout: 5_000 });
         assert.equal(await drawer.getAttribute('aria-label'), 'Add time');
-        await drawer
-          .locator('[data-inspector="range"]')
-          .getByRole('button', { name: 'Cancel' })
-          .click();
+        await drawer.locator('.inspector-close').first().click();
         await until(async () => (await drawerCount(h)) === 0);
       } finally {
         await h.close();

@@ -170,6 +170,9 @@ void describe('an owner reads a member’s day (D-102, LAI-959)', () => {
     const h = await openAt(`/my-day?day=${TODAY}`, stub(ADA, HOLDS));
     try {
       await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      // Nothing is open on load (LAI-511): the editor's controls are drawn
+      // once a block is picked.
+      await h.page.locator('[data-select="d1"]').click();
       await h.page.locator('[data-inspector="draft"]').waitFor({ timeout: 10_000 });
       for (const selector of WRITE_CONTROLS) {
         assert.ok((await h.page.locator(selector).count()) > 0, `${selector} is not drawn`);
@@ -204,7 +207,13 @@ void describe('an owner reads a member’s day (D-102, LAI-959)', () => {
       for (const selector of WRITE_CONTROLS) {
         assert.equal(await h.page.locator(selector).count(), 0, `${selector} is drawn`);
       }
-      for (const word of ['Mark as break', 'Add time here', 'Not work', 'Split in two', 'Undo']) {
+      for (const word of [
+        'Mark as break',
+        'Not work time',
+        'Split in two',
+        'Delete entry',
+        'Undo',
+      ]) {
         assert.equal(
           await h.page.getByRole('button', { name: word, exact: true }).count(),
           0,
