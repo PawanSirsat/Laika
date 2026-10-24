@@ -230,6 +230,22 @@ export interface MyDayWeekDay {
   readonly state: DayState;
 }
 
+/**
+ * The person's running timer (SPEC §4.61, LAI-500). Mirrors
+ * `services/time-timer.ts`' `TimerView`. The time run is `accumulated_ms`
+ * plus, while `paused_at` is null, now minus `resumed_at`.
+ */
+export interface Timer {
+  readonly started_at: number;
+  readonly resumed_at: number;
+  readonly paused_at: number | null;
+  readonly accumulated_ms: number;
+  readonly tz: string;
+  readonly task: TaskRef | null;
+  readonly kind: EntryKind | null;
+  readonly title: string | null;
+}
+
 /** `GET /me/time?day=&tz=` — My day. */
 export interface MyDay {
   readonly day: string;
@@ -251,6 +267,8 @@ export interface MyDay {
   readonly state: DayState;
   /** Monday to Sunday of the week holding `day`. */
   readonly week: readonly MyDayWeekDay[];
+  /** The running timer, whatever day is open; null when none (LAI-500). */
+  readonly timer: Timer | null;
 }
 
 export interface DraftPatch {
@@ -388,11 +406,53 @@ export function dismissDraft(id: string, onUndo?: OnUndo): Promise<void> {
   });
 }
 
-export function confirmDraft(id: string, onUndo?: OnUndo): Promise<TimeEntry> {
+/** What a confirmed draft was, said at the confirm (LAI-500): an entry's three words. */
+export interface ConfirmSaid {
+  readonly kind?: EntryKind;
+  readonly title?: string;
+  readonly description?: string;
+}
+
+export function confirmDraft(id: string, onUndo?: OnUndo, said?: ConfirmSaid): Promise<TimeEntry> {
   return request<TimeEntry>(`/me/time-drafts/${encodeURIComponent(id)}/confirm`, {
     method: 'POST',
+    ...(said === undefined ? {} : { body: said }),
     ...undoable(onUndo),
   });
+}
+
+/** `POST /me/time/timer` (SPEC §4.61, LAI-500): the person's one timer, started. */
+export interface TimerStart {
+  readonly tz: string;
+  readonly task?: string;
+  readonly kind?: EntryKind;
+  readonly title?: string;
+}
+
+export function startTimer(input: TimerStart): Promise<Timer> {
+  return request<Timer>('/me/time/timer', { method: 'POST', body: input });
+}
+
+export function pauseTimer(): Promise<Timer> {
+  return request<Timer>('/me/time/timer/pause', { method: 'POST' });
+}
+
+export function resumeTimer(): Promise<Timer> {
+  return request<Timer>('/me/time/timer/resume', { method: 'POST' });
+}
+
+/** What a stop answers: the entry, and whether the timer ran past midnight (then untimed). */
+export interface TimerStopped {
+  readonly entry: TimeEntry;
+  readonly crossed_midnight: boolean;
+}
+
+export function stopTimer(onUndo?: OnUndo): Promise<TimerStopped> {
+  return request<TimerStopped>('/me/time/timer/stop', { method: 'POST', ...undoable(onUndo) });
+}
+
+export function discardTimer(): Promise<void> {
+  return request<void>('/me/time/timer', { method: 'DELETE' });
 }
 
 /** Confirm day: every unconfirmed block of it, in one click. */

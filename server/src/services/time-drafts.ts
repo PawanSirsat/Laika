@@ -2,7 +2,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle
 import { alias } from 'drizzle-orm/sqlite-core';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
-import { type TimeDraftSource } from '../db/enums.ts';
+import { type TimeDraftSource, type TimeEntryKind } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { projects, tasks, timeDrafts, timeEntries, timeUndo } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
@@ -1009,12 +1009,26 @@ export function dismissDraft(
  * confirmed again after an Undo took its entry back (LAI-831), the same entry
  * is live again as the next revision rather than a second one made.
  */
+/** What a confirmed draft was, said at the confirm (D-110, LAI-500): an entry's three words. */
+export interface ConfirmSaid {
+  kind?: TimeEntryKind | undefined;
+  title?: string | undefined;
+  description?: string | undefined;
+}
+
+/** Trimmed, and nothing becomes null — as `createEntry` treats every text a person types. */
+function saidOrNull(text: string | undefined): string | null {
+  const trimmed = text?.trim() ?? '';
+  return trimmed === '' ? null : trimmed;
+}
+
 function confirmRow(
   tx: Tx,
   userId: string,
   row: typeof timeDrafts.$inferSelect,
   now: number,
   judge = true,
+  said?: ConfirmSaid,
 ): string {
   // Confirmed time is never counted twice, by the clock (review round 2).
   // *Confirm day* judges the day once, when every block of it is in.
@@ -1033,6 +1047,15 @@ function confirmRow(
     // The name and branch go with the entry once confirmed (D-098 item 5).
     folder: row.folder,
     branch: row.branch,
+    // What it was, if the person said so now (D-110); otherwise the entry
+    // keeps what it has — a re-confirm after Undo never owned the words.
+    ...(said === undefined
+      ? {}
+      : {
+          kind: said.kind ?? null,
+          title: saidOrNull(said.title),
+          description: saidOrNull(said.description),
+        }),
   };
   const before = tx
     .select({ id: timeEntries.id })
@@ -1066,13 +1089,14 @@ export function confirmDraft(
   id: string,
   now: number = Date.now(),
   onUndo?: OnUndo,
+  said?: ConfirmSaid,
 ): TimeEntryView {
   assertCan(actor, 'time_drafts.manage_own');
   assertCan(actor, 'time_entries.write_own');
   assertTimeOn(db);
   const { entryId, undoId } = db.transaction((tx) => {
     const row = pendingRow(tx, actor.userId, id);
-    const made = confirmRow(tx, actor.userId, row, now);
+    const made = confirmRow(tx, actor.userId, row, now, true, said);
     return {
       entryId: made,
       undoId: recordUndo(tx, actor.userId, id, { drafts: [row], entriesMade: [made] }, now),

@@ -7,6 +7,7 @@ import { assertCan } from '../policy/can.ts';
 import { agentDay, type AgentDayView } from './agent-time.ts';
 import { addDays, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
 import { breaksOn, type TimeBreakView } from './time-breaks.ts';
+import { timerOf, type TimerView } from './time-timer.ts';
 import {
   draftsOn,
   draftZone,
@@ -86,6 +87,8 @@ export interface MyDayView {
   state: DayState;
   /** Monday to Sunday around `day`. */
   week: WeekDayView[];
+  /** The person's running timer (§4.61, LAI-500), whatever day is open; null when none. */
+  timer: TimerView | null;
 }
 
 function stateOf(day: string, today: string, confirmed: number, drafted: number): DayState {
@@ -148,6 +151,7 @@ export function dayOf(
   const signalTimes = signalTimesOn(db, userId, day);
   const held = heldDrafts(db, userId);
   const agent = agentDay(db, userId, day, tz);
+  const timer = timerOf(db, userId);
 
   const monday = mondayOf(day);
   const sunday = addDays(monday, 6);
@@ -215,5 +219,6 @@ export function dayOf(
       drafts.reduce((n, d) => n + d.minutes, 0),
     ),
     week,
+    timer,
   };
 }

@@ -5859,3 +5859,83 @@ Timeline.
 6. **Revisions copy all three**, and a confirmed draft re-confirmed or a
    Solidtime pull leaves them as they are: those paths never owned them.
 
+
+## D-109 — CHIEF's ids run out at LAI-999; CHIEF files from LAI-500 – LAI-599, CORE's second block, which CORE never used
+
+**Date:** 2026-10-24 · **By:** CHIEF (Belka), on the owner's instruction to
+build the My day redesign (D-110)
+
+The sweep CLAUDE.md §3 prescribes — every local and `origin` ref, the
+`.tasks/` history, every commit subject — found all fifty of `LAI-950` –
+`LAI-999` (D-100) in use on 2026-10-24, two days after D-100 granted them, and
+found **no** id in `LAI-500` – `LAI-599` anywhere. CORE's second block (D-036)
+was never drawn on: CORE's first block stops at `LAI-181`, and the CORE
+worktree was removed on 2026-10-08.
+
+1. **CHIEF files from `LAI-500` – `LAI-599`.** CORE keeps `LAI-100` –
+   `LAI-199`, eighteen of which are free, which is more than CORE has filed
+   since September.
+2. The laptop split is unchanged: Strelka's `LAI-300` – `LAI-399` stays
+   Strelka's; this block is Belka's.
+3. CLAUDE.md §3's id table says so. Nothing else moves.
+
+**Why not four digits:** every id in the repo is three digits, and the
+tooling guards read `LAI-\d{3}` (`schema-spec-drift.test.ts`,
+`policy-spec-drift.test.ts`). A block that exists beats a format change.
+
+## D-110 — My day is rebuilt to the owner's `MyDay.dc.html`: a server-backed timer, a note for your manager, an overview, typed time fields, tabs, a tray, a phone drawer; what was simplified away (LAI-500 – LAI-506)
+
+**Date:** 2026-10-24 · **By:** CHIEF (Belka), on the owner's instruction:
+*"implement this in My day, but first go through the whole page; before
+taking any decision ask me all questions; I want all the features; I already
+simplified things but you simplify more."*
+
+The owner's design is `MyDay.dc.html` in the design project (with
+`support.js` and `timeline-core.js`). Asked twelve questions, the owner chose:
+
+1. **A timer is server-backed** (LAI-500): start with a task, a kind and a
+   title, all optional; pause; resume; stop. One per person, kept in
+   `time_timers` (§4.61), so it survives a reload and shows on every device.
+   Stopping writes a confirmed entry through the same path as `POST
+   /me/time-entries`, `source: 'manual'` — `time_entries.source` carries a
+   CHECK that SQLite cannot widen without a rebuild, and the title and kind
+   already say what it was. A timer that ran past midnight in the person's
+   zone saves as an **untimed** entry on the day it started, the minutes it
+   ran, and the answer says so: the minutes are what is known; a span over
+   two days is not one entry. A stop whose span overlaps confirmed time is
+   refused `409 overlaps_confirmed` and the timer stays; the person edits
+   or discards. Under a minute → `422 timer_too_short`, timer kept. The
+   timer's actions are behind `time_entries.write_own`: a timer is nothing
+   but an own entry in the making, and a new action would distinguish
+   nothing.
+2. **A note for your manager** (LAI-501): one per person per day,
+   `time_day_notes` (§4.62), 500 characters, written with *Confirm day* or
+   alone; read by the person, and by owners and admins through
+   `GET /people/:id/time`, which already answers them the person's own view.
+   Never a plain member's.
+3. **No calendar.** The design's Calendar tab and "On your calendar" hint
+   wait for a calendar source; a later task.
+4. **Overview is Day and Week** from the data the screen already loads; no
+   Range scope and no range endpoint. By type and by task are Day only,
+   because the week payload carries minutes, not kinds, and the tab says so.
+5. **The eight kinds stay** (D-108). The design's off-screen presets map onto
+   them: Brainstorm and Whiteboarding → planning, Reading docs → learning,
+   Helping a teammate → support, Interview → meeting, Call → call.
+6. **Tabs below the Timeline**: Overview · To review · Confirmed, rows
+   grouped Morning / Afternoon / Evening, no paging.
+7. **The task field searches existing tasks** by key or title, over the
+   tasks the person may read, filtered in the browser as the board does; no
+   task is created from the time editor.
+8. **Entries with no set time sit in a tray**; tapping one opens the
+   editor's time picker. No drag-and-drop.
+9. **Typed Start / End / Length**, length chips, *Ends now*, and a
+   free-stretch bar in the editor's WHEN section.
+10. **On a phone** the editor is a bottom drawer and the header is ‹ day ›
+    with a letter week strip; the horizontal Timeline stays.
+11. **Simplified away**, the owner agreeing to each: the *Fill gaps* button
+    (the Gaps figure already opens the first gap), the "Likely thinking time"
+    hint, the *Who can see this* popover (the header's one line stays), and
+    bulk *Assign task* (General stays the one bulk target).
+12. **One task per piece, released as each lands**: LAI-500 timer (server),
+    LAI-501 day note (server), LAI-502 header, LAI-503 confirm summary,
+    LAI-504 editor, LAI-505 lists and overview, LAI-506 phone drawer.

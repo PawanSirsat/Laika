@@ -2246,6 +2246,44 @@ person's earlier unused ones.
 
 Indexes: unique `(token_hash)`, `(user_id)`, `(created_by)`.
 
+### 4.61 `time_timers`
+
+A person's running timer (D-110 item 1, LAI-500): the design's *Start timer*
+— a task, a kind and a title, all optional; pause; resume; stop. **One row per
+person while it runs, none when it does not**: start inserts, stop and discard
+delete, so the row's existence is the timer's. Kept on the server so a reload
+or another device shows the same clock. The time run is `accumulated_ms` plus,
+while `paused_at` is null, now minus `resumed_at`.
+
+| field | notes |
+| --- | --- |
+| `user_id` | PK, FK `users`, cascade — one timer per person |
+| `task_id` | nullable FK `tasks`, set null — what it is for, if a card |
+| `kind` | nullable, one of §4.48's kinds (CHECK) |
+| `title` | nullable, at most 120 characters (CHECK) |
+| `tz` | the zone it was started in: its entry's day is the start's day there |
+| `started_at` | the first start, unix ms — the entry's span begins here; never moves |
+| `resumed_at` | the start of the current running segment; `started_at` until the first resume (CHECK `>= started_at`) |
+| `paused_at` | nullable — set while paused, null while running |
+| `accumulated_ms` | running milliseconds banked before the current segment (CHECK `>= 0`) |
+| `updated_at` | |
+
+**Stopping is `POST /me/time-entries` with the clock filled in** (§6.4): the
+entry is written by the same code, `source: 'manual'` (`time_entries.source`'s
+CHECK cannot be widened without rebuilding the table, and the title and kind
+already say what it was), spanning `started_at` to the stop — or to
+`paused_at`, when stopped paused — with the minutes run, and the row is
+deleted. Every refusal that path makes leaves the timer standing: over
+confirmed time `409 overlaps_confirmed`; a day that would hold more than a day
+`422 day_full`; under a minute `422 timer_too_short`. A timer that ran past
+midnight in `tz` saves as an **untimed** entry on the day it started, the
+minutes it ran, and the answer carries `crossed_midnight: true` — the minutes
+are what is known, and a span over two days is not one entry. The entry's
+`X-Undo-Id` undoes the entry only; the timer is not revived. Behind
+`time_entries.write_own`, session only (§3.1): a timer is an own entry in the
+making, and no new action would distinguish anything. No retention: a row
+lives as long as its timer.
+
 ## 5. Task lifecycle
 
 ```
@@ -2501,8 +2539,9 @@ PUT    /api/v1/me/time-drafts                a collector's blocks, each with a w
 POST   /api/v1/me/time-drafts                an agent's proposal → 201 { id, minutes, day } (both time switches on; twin of propose_time_entry)
 DELETE /api/v1/me/time-drafts                every draft the caller has not confirmed → 204   (session only)
 PATCH  /api/v1/me/time-drafts/:id            body { task?, project?, general?, minutes?, started_at?, ended_at?, folder?, branch? }   POST .../split { at }   POST .../dismiss → 204   (session only)
-POST   /api/v1/me/time-drafts/:id/confirm    → 201, the entry   POST /api/v1/me/time/days/:day/confirm → { entries }   (session only)
-GET    /api/v1/me/time                       ?day=&tz= — My day: drafts, entries, breaks, agent minutes, drafts held, the week   (session only)
+POST   /api/v1/me/time-drafts/:id/confirm    body { kind?, title?, description? }, optional → 201, the entry   POST /api/v1/me/time/days/:day/confirm → { entries }   (session only)
+GET    /api/v1/me/time                       ?day=&tz= — My day: drafts, entries, breaks, agent minutes, drafts held, the week, the timer   (session only)
+POST   /api/v1/me/time/timer                 body { tz, task?, kind?, title? } — start the person's one timer → 201   POST .../pause   POST .../resume   POST .../stop → 201 { entry, crossed_midnight }   DELETE → 204   (session only; §4.61, LAI-500)
 POST   /api/v1/me/time/undo                  body { id } — the change an X-Undo-Id named, taken back → 204   (session only; LAI-831)
 POST   /api/v1/me/time-breaks                body { day, tz, started_at, ended_at } — a gap waved away → 201   DELETE .../:id → 204   (session only; LAI-831)
 POST   /api/v1/me/time-entries               body { day, tz, minutes, task?, project?, note?, kind?, title?, description?, started_at?, ended_at? } → 201   PATCH/DELETE .../:id   (session only)
@@ -2539,7 +2578,7 @@ GET    /api/v1/users/:id/memberships         → { data: [{ project_id, slug, na
 GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind }   (owner, admin; session only)
 POST   /api/v1/users/:id/ratings             body { score, note } → 201   (owner, admin; session only; not yourself)
 GET    /api/v1/people/:id/activity           ?range=12w|52w — the profile's heatmap by day   (owner, or a role granted *See everyone's analytics*; session only; logged, D-102)
-GET    /api/v1/people/:id/time               ?day=&tz= — that person's GET /me/time answer, drafts included; logged   (owner, admin by default; session only; not yourself; LAI-957)
+GET    /api/v1/people/:id/time               ?day=&tz= — that person's GET /me/time answer, drafts and timer included; logged   (owner, admin by default; session only; not yourself; LAI-957)
 GET    /api/v1/people/:id/local-activity     ?days=1–14 — that person's GET /me/local-activity answer; logged   (owner, admin by default; session only; not yourself)
 GET    /api/v1/me/analytics-views            ?limit=&cursor= — who looked at the caller → { data: [{ id, viewer: { id, name }, kind, day, viewed_at }], next_cursor }, newest first   (session only)
 GET    /api/v1/users/:id/usage               one person's tokens, 12 weeks   (themselves, or owner / a role granted *See everyone's analytics*; session only; logged, D-102)
@@ -3244,7 +3283,7 @@ parameter names anybody else.
   no draft, its own proposal included. The same rules and switches as §7.1's
   `propose_time_entry`, its twin.
 - **My day.** `GET /me/time?day=&tz=` answers `{ day, tz, today, settings,
-  drafts, entries, breaks, drafts_held, agent, state, week }`: the pending
+  drafts, entries, breaks, drafts_held, agent, state, week, timer }`: the pending
   drafts and live entries of the day in the order they happened, each with
   its task `{ id, key, title }` and project `{ id, slug, name }` and its work
   folder's chosen name and branch, `folder` and `branch`, or `null` (D-098) —
@@ -3258,9 +3297,19 @@ parameter names anybody else.
   minutes }], unattributed_minutes }`, **agent minutes, never hours**;
   `state` — `drafted`, `confirmed`, `no_signal` (nothing reached Laika: never
   shown as zero hours) or `future`; and `week`, Monday to Sunday, each
-  `{ day, confirmed_minutes, drafted_minutes, state }`. Without `tz`, the
-  zone of the person's drafts; without `day`, today there. One indexed query
-  per section.
+  `{ day, confirmed_minutes, drafted_minutes, state }`; and `timer` — the
+  person's running timer (§4.61), `{ started_at, resumed_at, paused_at,
+  accumulated_ms, tz, task, kind, title }`, whatever day is open, or `null`.
+  Without `tz`, the zone of the person's drafts; without `day`, today there.
+  One indexed query per section.
+- **The timer (§4.61, LAI-500).** `POST /me/time/timer` `{ tz, task?, kind?,
+  title? }` starts the person's one timer, `201`; a second start is `409
+  timer_running`. `POST …/pause` banks the running segment (`409 timer_paused`
+  when paused already); `POST …/resume` opens a new one (`409 timer_running`
+  when running); `DELETE /me/time/timer` discards it, `204`; each is `404
+  no_timer` with none. `POST …/stop` writes the entry as §4.61 says and
+  answers `201 { entry, crossed_midnight }` with the entry's `X-Undo-Id`. All
+  session only, behind `time_entries.write_own`.
 - **The person's hands.** `PATCH /me/time-drafts/:id` puts a block on a card
   (`task`), a project (`project`) or *General* (`general: true`), changes its
   minutes, moves its edges — `started_at`, `ended_at`, unix ms, My day's
@@ -3275,6 +3324,9 @@ parameter names anybody else.
   given more minutes than its span (`minutes_over_span`). `…/split` `{ at }`
   cuts one at a minute inside it into two, each with its share; `…/dismiss`
   puts it away for good, but for Undo; `…/confirm` makes it an entry (`201`);
+  `…/confirm` takes an optional `{ kind?, title?, description? }` — what the
+  block was, said at the confirm (D-110), written onto the entry; left out,
+  the entry carries nulls as before.
   `POST /me/time/days/:day/confirm` confirms the day's pending drafts in one
   transaction, an untied one as *General*, answering `{ entries }`. A block
   has **one entry for as long as it is kept**: confirmed again after Undo
