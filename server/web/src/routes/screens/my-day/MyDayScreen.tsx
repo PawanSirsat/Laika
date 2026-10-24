@@ -930,7 +930,8 @@ export function MyDayScreen({
         setSlot(undefined);
         return true;
       }
-      if (selection?.kind === 'range') {
+      if (selection !== undefined) {
+        // Esc closes the editor (LAI-508): the column shows the cards again.
         setSelection(undefined);
         return true;
       }
@@ -1254,27 +1255,6 @@ export function MyDayScreen({
         )}
         <div className="myday-grid">
           <div className="myday-main">
-            {view.state !== 'future' && (
-              <Inspector
-                key={
-                  selection === undefined
-                    ? 'none'
-                    : 'id' in selection
-                      ? `${selection.kind}-${selection.id}`
-                      : `${selection.kind}-${String(selection.start)}`
-                }
-                view={view}
-                line={line}
-                selection={selection}
-                chipsFor={chipsFor}
-                agentsIn={(span) => agentsDuring(line.agents, span)}
-                pending={pending}
-                actions={actions}
-                onNavigate={onNavigate}
-                readOnly={readOnly}
-              />
-            )}
-
             {view.drafts.length > 0 && (
               <DraftList
                 // A new day starts with nothing ticked and on its first page.
@@ -1315,21 +1295,48 @@ export function MyDayScreen({
             )}
           </div>
 
+          {/*
+            The right column (the owner's design, LAI-508): the editor whenever
+            something is in hand — a block, a gap, a range, a break — and Agent
+            time with On your plate only while nothing is.
+          */}
           <aside
             className="myday-side"
             aria-label={readOnly ? `Beside ${subjectName}’s day` : 'Beside your day'}
             data-myday-side
+            data-side={selection === undefined || view.state === 'future' ? 'cards' : 'editor'}
           >
-            <AgentStrip agent={view.agent} spaces={spaces} onNavigate={onNavigate} />
-            {!readOnly && (
-              <OnYourPlate
-                me={me}
-                spaces={spaces}
-                load={plate}
-                queue={queue}
-                reviewCapped={queueCapped}
+            {view.state !== 'future' && selection !== undefined ? (
+              <Inspector
+                key={
+                  'id' in selection
+                    ? `${selection.kind}-${selection.id}`
+                    : `${selection.kind}-${String(selection.start)}`
+                }
+                view={view}
+                line={line}
+                selection={selection}
+                chipsFor={chipsFor}
+                agentsIn={(span) => agentsDuring(line.agents, span)}
+                pending={pending}
+                actions={actions}
                 onNavigate={onNavigate}
+                readOnly={readOnly}
               />
+            ) : (
+              <>
+                <AgentStrip agent={view.agent} spaces={spaces} onNavigate={onNavigate} />
+                {!readOnly && (
+                  <OnYourPlate
+                    me={me}
+                    spaces={spaces}
+                    load={plate}
+                    queue={queue}
+                    reviewCapped={queueCapped}
+                    onNavigate={onNavigate}
+                  />
+                )}
+              </>
             )}
           </aside>
         </div>

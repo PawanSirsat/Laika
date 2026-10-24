@@ -28,7 +28,8 @@
 
 .myday-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(17rem, 22rem);
+  /* The right column holds the editor (LAI-508): wide enough for its fields. */
+  grid-template-columns: minmax(0, 1fr) minmax(19rem, 24rem);
   align-items: start;
   gap: 1.25rem;
 }
@@ -4032,4 +4033,19 @@ p.inspector-length {
     left: 50%;
     transform: translateX(-50%);
   }
+}
+
+/* ------------------------------- the editor in the right column (LAI-508) */
+
+/* One column of parts beside the lists, whatever the page's width. */
+.myday-side .inspector-parts {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.myday-side .inspector-part {
+  border-right: none;
+}
+
+.myday-side .inspector {
+  flex: none;
 }

@@ -89,5 +89,5 @@ export const SHORTCUT_SHEET: readonly (readonly [string, string])[] = [
   ['J', 'Next draft'],
   ['K', 'Previous draft'],
   ['?', 'Show these keys'],
-  ['Esc', 'Close this, or let go of a picked gap or range'],
+  ['Esc', 'Close this, or the editor'],
 ];
