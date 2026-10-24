@@ -2,11 +2,12 @@
 id: LAI-997
 title: 'Developer access: one page with four tabs, a machine prompt and a project prompt, and the personal-switch wording gone'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-24T09:51:31Z
 ---
 
 ## Why
