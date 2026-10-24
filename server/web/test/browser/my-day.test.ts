@@ -579,7 +579,11 @@ void describe('times and durations say their units (LAI-830)', () => {
       await h.page.locator('[data-select="d1"]').click();
       const panel = h.page.locator('[data-inspector-for="d1"]');
       await panel.waitFor({ timeout: 10_000 });
-      assert.match(await panel.locator('.inspector-range').innerText(), /^8:40–10:15 AM$/);
+      // The head's line (LAI-504): when, how long, where from.
+      assert.match(
+        await panel.locator('.inspector-source').innerText(),
+        /^8:40–10:15 AM · 1 h 35 min/,
+      );
       const howLong = panel.getByLabel('Length, typed');
       for (const [typed, read] of [
         ['45', '45 min'],
