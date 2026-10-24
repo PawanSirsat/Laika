@@ -2,11 +2,12 @@
 id: LAI-500
 title: 'My day: a server-backed timer — start with a task, a kind and a title, pause, resume, stop into a confirmed entry; one per person, kept across reloads'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-897
-status: backlog
+status: in-progress
+started: 2026-10-24T09:26:08Z
 ---
 
 ## Goal
