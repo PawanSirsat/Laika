@@ -166,7 +166,7 @@ describe('the timer over HTTP', () => {
 
     for (const body of [
       { tz: 'UTC', colour: 'violet' },
-      { tz: 'UTC', kind: 'thinking' },
+      { tz: 'UTC', kind: 'daydreaming' },
       { tz: 'UTC', title: 'x'.repeat(121) },
       {},
     ]) {

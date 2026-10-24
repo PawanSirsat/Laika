@@ -414,6 +414,13 @@
       "when": 1792835676609,
       "tag": "0059_time_day_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1792870006508,
+      "tag": "0060_time_entry_kinds_design",
+      "breakpoints": true
     }
   ]
 }
