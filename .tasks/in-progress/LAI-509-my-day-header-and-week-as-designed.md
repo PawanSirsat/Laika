@@ -2,11 +2,12 @@
 id: LAI-509
 title: 'My day: the header and the week strip look as the design draws them — figures beside the title, the date line, the toolbar row, a compact week of seven tiles with a bar each'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-502]
 discovered-from: LAI-502
-status: backlog
+status: in-progress
+started: 2026-10-24T12:11:59Z
 ---
 
 ## Goal
