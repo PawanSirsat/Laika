@@ -439,7 +439,9 @@ void describe('confirming in bulk', () => {
       await button.waitFor({ timeout: 30_000 });
       assert.equal(await button.innerText(), 'Confirm day · 10 h 8 min');
       const reads = dayReads(h);
+      // Confirm day opens the summary first (LAI-503); its Confirm sends the day.
       await button.click();
+      await h.page.locator('[data-summary-confirm]').click();
       await said(h).waitFor({ timeout: 20_000 });
       assert.deepEqual(posts(h, '/confirm'), [`/api/v1/me/time/days/${TODAY}/confirm`]);
       assert.equal(await said(h).getAttribute('role'), 'alert');
@@ -463,6 +465,7 @@ void describe('confirming in bulk', () => {
       const button = h.page.locator('.screen-page .myday-chip-primary');
       assert.equal(await button.innerText(), 'Confirm 36 ready · 10 h 8 min');
       await button.click();
+      await h.page.locator('[data-summary-confirm]').click();
       await said(h).waitFor({ timeout: 60_000 });
       const sent = posts(h, '/confirm');
       assert.equal(sent.length, 36);
@@ -495,6 +498,7 @@ void describe('confirming in bulk', () => {
     );
     try {
       await h.page.locator('.screen-page .myday-chip-primary').click();
+      await h.page.locator('[data-summary-confirm]').click();
       await said(h).waitFor({ timeout: 60_000 });
       // d01–d19 less the three on nothing, then d20; nothing after it is sent.
       assert.equal(posts(h, '/confirm').length, 17);

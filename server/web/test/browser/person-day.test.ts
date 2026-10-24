@@ -99,7 +99,14 @@ function stub(me: typeof ADA, actions: readonly string[]): ApiStub {
     const day = new Date(Date.parse(`${TODAY}T00:00:00Z`) + i * 86_400_000)
       .toISOString()
       .slice(0, 10);
-    routes[`/api/v1/people/u2/time?day=${day}`] = () => viewOf(day, data);
+    routes[`/api/v1/people/u2/time?day=${day}`] = () => ({
+      ...(viewOf(day, data) as Record<string, unknown>),
+      // Grace's note for the day (LAI-503), for whoever reads it.
+      day_note:
+        day === TODAY
+          ? { day, note: 'Two meetings ran long; the rest was heads-down.', updated_at: 1 }
+          : null,
+    });
   }
   routes['/api/v1/people/u2/local-activity'] = {
     start: YESTERDAY,
@@ -184,6 +191,11 @@ void describe('an owner reads a member’s day (D-102, LAI-959)', () => {
       );
       const banner = await h.page.locator('[data-viewing-banner]').innerText();
       assert.match(banner, /Viewing Grace Hopper’s day — read only/);
+      // Her note for the day, under the banner (LAI-503).
+      assert.match(
+        await h.page.locator('[data-day-note]').innerText(),
+        /Grace Hopper’s note for .*Two meetings ran long/,
+      );
       assert.match(await h.page.locator('h1').first().innerText(), /Grace Hopper’s day/);
 
       // Her drafts are there to read …
@@ -427,6 +439,7 @@ void describe('a member’s profile: Day and Hours (LAI-959)', () => {
     try {
       await h.page.locator('[data-hours]').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('[data-hours-day]').count(), 7);
+      assert.match(await h.page.locator('[data-hours-note]').innerText(), /Two meetings ran long/);
       const week = viewOf(TODAY) as {
         week: { confirmed_minutes: number; drafted_minutes: number }[];
       };

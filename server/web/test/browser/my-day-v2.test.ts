@@ -415,6 +415,14 @@ void describe('confirming leaves out what needs a card (1, 6)', () => {
       assert.equal((await button.innerText()).trim(), `Confirm 3 ready · ${dur(95 + 110 + 25)}`);
       assert.match((await button.getAttribute('title')) ?? '', /2 need a card .*left out/);
       await button.click();
+      // The summary first (LAI-503): what confirms, what stays, then Confirm.
+      const summary = h.page.locator('[data-confirm-summary]');
+      await summary.waitFor({ timeout: 5_000 });
+      assert.match(
+        await summary.locator('[data-summary-sub]').innerText(),
+        /2 without a card stay/,
+      );
+      await summary.locator('[data-summary-confirm]').click();
       await until(() => writes(h).length >= 3);
       assert.deepEqual(
         writes(h).map((c) => c.path),
