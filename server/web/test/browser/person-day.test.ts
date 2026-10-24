@@ -350,13 +350,15 @@ void describe('who reads drafts is said on the person’s own day (D-102, LAI-96
       try {
         await h.page.locator('[data-who-looked] > button').waitFor({ timeout: 20_000 });
         await setTheme(h.page, theme);
+        // The design's one link (LAI-509): its words say who reads drafts.
         const lock = h.page.locator('.screen-page .myday-lock');
-        assert.match(await lock.innerText(), /Drafts: you, owners and admins/);
+        assert.match(await lock.innerText(), /Who can see this/);
+        assert.match((await lock.getAttribute('title')) ?? '', /Drafts: you, owners and admins/);
         assert.match(
           (await lock.getAttribute('title')) ?? '',
           /owners, admins and anyone the owner lets see everyone’s analytics/,
         );
-        const link = lock.getByRole('link', { name: 'who looked' });
+        const link = h.page.locator('.screen-page').getByRole('link', { name: 'Who can see this' });
         assert.equal(await link.count(), 1);
         // Readable in both themes: a colour, and not the page's own background.
         const ink = await link.evaluate((el) => getComputedStyle(el).color);

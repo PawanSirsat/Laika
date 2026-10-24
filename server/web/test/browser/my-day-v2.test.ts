@@ -32,7 +32,6 @@ import {
   QUIET,
   TODAY,
   TOMORROW,
-  YESTERDAY,
   weekData,
   weekStub,
   type Break,
@@ -271,19 +270,20 @@ void describe('the week strip (2, E)', () => {
     try {
       const tile = (day: string) => h.page.locator(`.myday-week-day[data-day="${day}"]`);
       assert.equal(await h.page.locator('.myday-week-day').count(), 7);
-      assert.equal(await h.page.locator('[data-today-dot]').count(), 1);
-      assert.equal(await tile(TODAY).locator('[data-today-dot]').count(), 1);
+      // The design's tile (LAI-509): weekday, date and figure on one line; today marked.
+      assert.equal(await h.page.locator('[data-today]').count(), 1);
+      assert.equal(await tile(TODAY).locator('[data-today]').count(), 0);
+      assert.equal(await tile(TODAY).getAttribute('data-today'), '');
       assert.equal(
-        (await tile(TODAY).locator('.myday-week-state').innerText()).trim(),
-        `${dur(95 + 40 + 110 + 40 + 25)} to settle`,
+        (await tile(TODAY).locator('.myday-week-figure').innerText()).trim(),
+        dur(30 + 30 + 95 + 40 + 110 + 40 + 25),
       );
-      for (const [day, label] of [
-        [YESTERDAY, 'Settled'],
-        [QUIET, 'No signal'],
-        [TOMORROW, 'Not yet'],
+      for (const [day, figure] of [
+        [QUIET, '—'],
+        [TOMORROW, ''],
       ] as const) {
         if (mondayOf(day) !== mondayOf(TODAY)) continue;
-        assert.equal((await tile(day).locator('.myday-week-state').innerText()).trim(), label);
+        assert.equal((await tile(day).locator('.myday-week-figure').innerText()).trim(), figure);
       }
       // Two parts, from the server's own figures: confirmed solid, drafted striped.
       const width = async (day: string, part: string) =>
@@ -294,8 +294,6 @@ void describe('the week strip (2, E)', () => {
         const opacity = await tile(TOMORROW).evaluate((el) => getComputedStyle(el).opacity);
         assert.ok(Number(opacity) < 1, 'a day not yet happened is not faded');
       }
-      const total = await h.page.locator('[data-week-total]').innerText();
-      assert.match(total, /week/i);
       // Never a target or a score (Organisation → Time): no percent, no goal.
       assert.doesNotMatch(await h.page.locator('.myday-week').innerText(), /%|target|goal|score/i);
     } finally {

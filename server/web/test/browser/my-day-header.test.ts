@@ -217,9 +217,10 @@ void describe('the header (LAI-502)', () => {
     const writes: StubCall[] = [];
     const h = await myDay({ writes });
     try {
-      // Today’s drafts come to 5 h 10 min, its two confirmed entries to 1 h.
+      // Today’s drafts come to 5 h 10 min, its two confirmed entries to 1 h:
+      // the total beside the title, and what is still to review (LAI-509).
       const figures = await h.page.locator('[data-day-total]').innerText();
-      assert.match(figures, /1 h confirmed/);
+      assert.match(figures, /6 h 10 min/);
       assert.match(figures, /5 h 10 min to review/);
 
       await h.page.locator('[data-timer-start] > button').click();
