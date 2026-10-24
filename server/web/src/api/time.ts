@@ -246,6 +246,16 @@ export interface Timer {
   readonly title: string | null;
 }
 
+/**
+ * The person's note on a day (SPEC §4.62, LAI-501) — the design's *Note for
+ * your manager*. Mirrors `services/time-day-notes.ts`' `DayNoteView`.
+ */
+export interface DayNote {
+  readonly day: string;
+  readonly note: string;
+  readonly updated_at: number;
+}
+
 /** `GET /me/time?day=&tz=` — My day. */
 export interface MyDay {
   readonly day: string;
@@ -269,6 +279,8 @@ export interface MyDay {
   readonly week: readonly MyDayWeekDay[];
   /** The running timer, whatever day is open; null when none (LAI-500). */
   readonly timer: Timer | null;
+  /** The person's note on the day; null when none (LAI-501). */
+  readonly day_note: DayNote | null;
 }
 
 export interface DraftPatch {
@@ -456,14 +468,25 @@ export function discardTimer(): Promise<void> {
 }
 
 /** Confirm day: every unconfirmed block of it, in one click. */
-export function confirmDay(
-  day: string,
-  onUndo?: OnUndo,
-): Promise<{ readonly entries: readonly TimeEntry[] }> {
-  return request<{ readonly entries: readonly TimeEntry[] }>(
-    `/me/time/days/${encodeURIComponent(day)}/confirm`,
-    { method: 'POST', ...undoable(onUndo) },
-  );
+export interface DayConfirmed {
+  readonly entries: readonly TimeEntry[];
+  readonly day_note: DayNote | null;
+}
+
+export function confirmDay(day: string, onUndo?: OnUndo, note?: string): Promise<DayConfirmed> {
+  return request<DayConfirmed>(`/me/time/days/${encodeURIComponent(day)}/confirm`, {
+    method: 'POST',
+    ...(note === undefined ? {} : { body: { note } }),
+    ...undoable(onUndo),
+  });
+}
+
+/** `PUT /me/time/days/:day/note` (LAI-501): the note alone; `null` removes it. */
+export function setDayNote(day: string, note: string | null): Promise<DayNote | null> {
+  return request<{ readonly day_note: DayNote | null }>(
+    `/me/time/days/${encodeURIComponent(day)}/note`,
+    { method: 'PUT', body: { note } },
+  ).then((r) => r.day_note);
 }
 
 /** Every unconfirmed draft of mine, gone. Confirmed entries stay. */
