@@ -75,6 +75,8 @@ const DAY = {
   // LAI-831: no gap waved away; the one draft held is today's.
   breaks: [],
   drafts_held: { count: 1, minutes: 95 },
+  timer: null,
+  day_note: null,
   agent: { minutes: 54, keyboard_minutes: 12, by_task: [], unattributed_minutes: 0 },
   state: 'drafted',
   week: Array.from({ length: 7 }, (_, i) => {

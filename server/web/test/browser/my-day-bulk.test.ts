@@ -63,16 +63,18 @@ void describe('the column beside the day', () => {
             .locator('[data-myday-side] > section')
             .evaluateAll((els: Element[]) => els.map((el) => el.className))
         ).map((c) => c.split(' ').find((k: string) => k !== 'myday-card'));
-      // Wait for every section, not just the plate (LAI-715) — *Who looked at
-      // my time* last, under the plate (LAI-959).
-      await until(async () => (await sides()).join('|') === 'myday-agent|myday-plate|myday-looked');
-      assert.deepEqual(await sides(), ['myday-agent', 'myday-plate', 'myday-looked']);
-      // Draft my time sits in the header, as the owner's design has it (LAI-831).
+      // Wait for every section, not just the plate (LAI-715). *Who looked* moved
+      // to the header (LAI-502), so two sections stand here.
+      await until(async () => (await sides()).join('|') === 'myday-agent|myday-plate');
+      assert.deepEqual(await sides(), ['myday-agent', 'myday-plate']);
+      // Draft my time sits in the header's Day settings, as the owner's design has it (LAI-502).
+      await h.page.locator('[data-day-settings] > button').click();
       const draftSwitch = h.page
         .locator('.screen-page')
         .getByRole('switch', { name: 'Draft my time' });
       await until(async () => (await draftSwitch.count()) === 1);
       assert.equal(await draftSwitch.count(), 1);
+      await h.page.keyboard.press('Escape');
       // One drafted card, one confirmed — never drawn twice.
       await until(async () => (await h.page.locator('.myday-entries').count()) === 1);
       assert.equal(await h.page.locator('.myday-drafts').count(), 1);
@@ -579,7 +581,7 @@ void describe('while a batch runs', () => {
       const progress = h.page.locator('.myday-bulk-progress');
       await progress.waitFor({ timeout: 10_000 });
 
-      const add = h.page.locator('[data-add-submit]');
+      const add = h.page.locator('[data-add-time]');
       const previous = h.page.getByRole('button', { name: 'Previous week' });
       // An earlier day of this week, when there is one (there is none on a Monday).
       const earlier = h.page.locator('.myday-week-day.myday-week-confirmed');

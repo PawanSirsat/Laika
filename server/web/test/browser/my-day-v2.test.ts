@@ -641,8 +641,11 @@ void describe('Undo (B)', () => {
         .click();
       await h.page.locator('[data-toast]').getByRole('button', { name: 'Undo' }).click();
       await until(() => writes(h).some((c) => c.path === '/api/v1/me/time/undo'));
-      await h.page.locator('[data-length="15"]').click();
-      await h.page.locator('[data-add-submit]').click();
+      // Add time from the header (LAI-502): the last free half hour before now.
+      await h.page.locator('[data-add-time]').click();
+      await h.page.locator('[data-inspector="range"]').waitFor({ timeout: 5_000 });
+      await h.page.locator('[data-entry-title]').fill('A call');
+      await h.page.locator('[data-range-add]').click();
       await until(() => writes(h).some((c) => c.path === '/api/v1/me/time-entries'));
       await until(async () =>
         /added/i.test(
@@ -673,6 +676,7 @@ void describe('the off switch asks first (F)', () => {
   void test('turning Draft my time off says what it deletes, and Keep drafting sends nothing', async () => {
     const h = await openDay(TODAY);
     try {
+      await h.page.locator('[data-day-settings] > button').click();
       const toggle = h.page.getByRole('switch', { name: 'Draft my time' });
       await toggle.click();
       const dialog = h.page.getByRole('dialog');
@@ -702,12 +706,15 @@ void describe('Add time into a picked gap (7)', () => {
     const h = await openDay(EARLIER);
     try {
       await h.page.locator('.dayline-gap').nth(1).click();
-      const slot = h.page.locator('[data-slot]');
-      await slot.waitFor({ timeout: 5_000 });
-      assert.equal(await h.page.locator('[data-length="45"]').getAttribute('aria-pressed'), 'true');
-      await h.page.locator('[data-add-card="LAI-11"]').click();
-      await h.page.getByPlaceholder(/What it was/).fill('Pairing on search');
-      await h.page.locator('[data-add-submit]').click();
+      await h.page.locator('[data-inspector="gap"]').waitFor({ timeout: 5_000 });
+      // The gap's *Add time here* opens the new-entry panel on the gap (LAI-897, LAI-502).
+      await h.page.locator('[data-gap-add]').click();
+      const panel = h.page.locator('[data-inspector="range"]');
+      await panel.waitFor({ timeout: 5_000 });
+      assert.match(await panel.locator('[data-new-entry-range]').innerText(), /12:45.*1:30/);
+      await panel.locator('[data-card="LAI-11"]').click();
+      await panel.locator('[data-entry-title]').fill('Pairing on search');
+      await panel.locator('[data-range-add]').click();
       await until(() => writes(h).length > 0);
       assert.deepEqual(writes(h)[0], {
         method: 'POST',
@@ -719,7 +726,7 @@ void describe('Add time into a picked gap (7)', () => {
           started_at: at(EARLIER, 12, 45),
           ended_at: at(EARLIER, 13, 30),
           task: 'LAI-11',
-          note: 'Pairing on search',
+          title: 'Pairing on search',
         },
       });
     } finally {
@@ -985,7 +992,8 @@ void describe('a phone, and both themes (I)', () => {
             over: el.scrollWidth > el.clientWidth,
             auto: ['auto', 'scroll'].includes(getComputedStyle(el).overflowX),
           }));
-        assert.deepEqual(await scrolls('.myday-week-days'), { over: true, auto: true });
+        // A phone shows a letter a day, and the week fits without scrolling (LAI-502).
+        assert.equal((await scrolls('.myday-week-days')).over, false, 'the week overflows');
         assert.deepEqual(await scrolls('[data-dayline-scroller]'), { over: true, auto: true });
         const main = await h.page.locator('.myday-main').boundingBox();
         const side = await h.page.locator('[data-myday-side]').boundingBox();
