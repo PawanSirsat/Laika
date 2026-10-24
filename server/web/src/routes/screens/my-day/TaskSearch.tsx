@@ -32,6 +32,12 @@ export function forgetTasks(): void {
 export interface TaskSearchProps {
   readonly busy: boolean;
   readonly onPick: (key: string) => void;
+  /**
+   * The typed words name no task (the design's *type a new one*, LAI-515):
+   * they become the entry's title, on General — no task is made (D-110
+   * item 7). Absent, the row is not offered.
+   */
+  readonly onCustom?: ((title: string) => void) | undefined;
 }
 
 /**
@@ -40,7 +46,7 @@ export interface TaskSearchProps {
  * person may read, as the board does. Picking one puts the block on it. No
  * task is made here.
  */
-export function TaskSearch({ busy, onPick }: TaskSearchProps) {
+export function TaskSearch({ busy, onPick, onCustom }: TaskSearchProps) {
   const [q, setQ] = useState('');
   const [all, setAll] = useState<readonly TaskSummary[] | undefined>(undefined);
   const [failed, setFailed] = useState(false);
@@ -60,41 +66,67 @@ export function TaskSearch({ busy, onPick }: TaskSearchProps) {
     };
   }, [q, all]);
 
+  const typed = q.trim();
   const results = all === undefined ? [] : matchTasks(all, q);
+  const exact = results.some((t) => t.key.toLowerCase() === typed.toLowerCase());
+  const custom = onCustom !== undefined && typed !== '' && all !== undefined && !exact;
 
   return (
-    <div className="myday-task-search">
-      <input
-        type="search"
-        className="input myday-task-search-field"
-        placeholder="Search tasks"
-        aria-label="Search tasks"
-        value={q}
-        disabled={busy}
-        data-task-search
-        onChange={(event) => {
-          setQ(event.target.value);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && results[0] !== undefined) {
+    <div className="editor-search">
+      <div className="editor-search-box">
+        <svg
+          className="editor-search-icon"
+          width="13"
+          height="13"
+          viewBox="0 0 14 14"
+          aria-hidden="true"
+        >
+          <circle cx="6" cy="6" r="4.2" fill="none" stroke="currentColor" strokeWidth="1.4" />
+          <path
+            d="M9.2 9.2L12.5 12.5"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+          />
+        </svg>
+        <input
+          type="search"
+          className="input editor-input editor-search-field"
+          placeholder={onCustom === undefined ? 'Search tasks' : 'Search tasks, or type a new one'}
+          aria-label="Search tasks"
+          value={q}
+          disabled={busy}
+          data-task-search
+          onChange={(event) => {
+            setQ(event.target.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return;
             event.preventDefault();
-            onPick(results[0].key);
-            setQ('');
-          }
-        }}
-      />
-      {q.trim() !== '' && (
-        <ul className="myday-task-results" aria-label="Matching tasks">
-          {all === undefined && !failed && <li className="myday-quiet">Reading your tasks…</li>}
-          {failed && <li className="myday-quiet">Your tasks could not be read.</li>}
-          {all !== undefined && results.length === 0 && (
-            <li className="myday-quiet">No task matches.</li>
+            if (results[0] !== undefined) {
+              onPick(results[0].key);
+              setQ('');
+            } else if (custom && onCustom !== undefined) {
+              onCustom(typed);
+              setQ('');
+            }
+          }}
+        />
+      </div>
+      {typed !== '' && (
+        <ul className="editor-results" aria-label="Matching tasks">
+          {all === undefined && !failed && (
+            <li className="editor-result-quiet">Reading your tasks…</li>
+          )}
+          {failed && <li className="editor-result-quiet">Your tasks could not be read.</li>}
+          {all !== undefined && results.length === 0 && !custom && (
+            <li className="editor-result-quiet">No task matches.</li>
           )}
           {results.map((t) => (
             <li key={t.id}>
               <button
                 type="button"
-                className="myday-task-result"
+                className="editor-result"
                 data-task-result={t.key}
                 disabled={busy}
                 onClick={() => {
@@ -102,11 +134,28 @@ export function TaskSearch({ busy, onPick }: TaskSearchProps) {
                   setQ('');
                 }}
               >
-                <span className="myday-ov-key">{t.key}</span>
-                <span className="myday-task-result-title">{t.title}</span>
+                <span className="editor-result-key">{t.key}</span>
+                <span className="editor-result-title">{t.title}</span>
               </button>
             </li>
           ))}
+          {custom && (
+            <li>
+              <button
+                type="button"
+                className="editor-result"
+                data-task-custom
+                disabled={busy}
+                onClick={() => {
+                  onCustom?.(typed);
+                  setQ('');
+                }}
+              >
+                <span className="editor-result-key">+ New</span>
+                <span className="editor-result-title">Use “{typed}” as the title, on no task</span>
+              </button>
+            </li>
+          )}
         </ul>
       )}
     </div>
