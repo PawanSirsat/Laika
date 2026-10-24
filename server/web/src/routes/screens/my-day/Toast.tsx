@@ -1,3 +1,5 @@
+import './toast.css';
+
 /** What the page last said, and what Undo would take back (LAI-831). */
 export interface ToastState {
   /** Changes with every new toast, so its timer starts again. */
@@ -26,17 +28,19 @@ export interface ToastProps {
 }
 
 /**
- * The page's last word (LAI-831, the owner's design): one dark line at the
- * foot of the screen for every action, with a close button — and **Undo**
- * for about ten seconds wherever the server can put the change back exactly
- * (CHIEF's addition B). An error stays until it is closed.
+ * The page's last word (LAI-831; laid out as the owner's `MyDay.dc.html` by
+ * LAI-517): a dark pill at the bottom centre of the page, its sentence, then
+ * **Undo** in the accent for about ten seconds wherever the server can put
+ * the change back exactly (CHIEF's addition B), then ×. Anything else goes
+ * after six seconds; an error stays until it is closed, and says so with a
+ * dot. A long sentence wraps rather than losing its end.
  */
 export function Toast({ toast, busy, onUndo, onClose }: ToastProps) {
   return (
     <div className="myday-toasts">
       {toast !== undefined && (
         <div key={toast.id} className={`myday-toast myday-toast-${toast.tone}`} data-toast>
-          <span className="myday-toast-dot" aria-hidden="true" />
+          {toast.tone !== 'info' && <span className="myday-toast-dot" aria-hidden="true" />}
           {/* The sentence alone is announced: an alert when it did not all
               go as asked (LAI-810), never "Undo ×" read out with it. */}
           <span
