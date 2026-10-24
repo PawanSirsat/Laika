@@ -277,7 +277,7 @@ void describe('Developer access: Share local activity', () => {
   ] as const) {
     void test(`${role}: explains who can enable organisation insights`, async () => {
       const h = await open(
-        '/developer',
+        '/developer?tab=activity',
         connect({ org: false, enabled: false, scope: 'agent-repos' }, { value: NOTHING }, role),
       );
       try {
@@ -307,7 +307,7 @@ void describe('Developer access: Share local activity', () => {
     void test(`${role}: with organisation insights on, is told plainly — no switch of their own (D-102)`, async () => {
       // `enabled: false` is what this person last chose under D-079; it no longer decides anything.
       const state = { org: true, enabled: false, scope: 'agent-repos' };
-      const h = await open('/developer', connect(state, { value: HELD }, role));
+      const h = await open('/developer?tab=activity', connect(state, { value: HELD }, role));
       try {
         const section = h.page.locator('.dev-sharing');
         const notice = section.locator('[data-state="org-collects"]');
@@ -347,7 +347,7 @@ void describe('Developer access: Share local activity', () => {
 
   void test('the reused section fits laptop and phone in light and dark', async () => {
     const h = await open(
-      '/developer',
+      '/developer?tab=activity',
       connect({ org: true, enabled: true, scope: 'agent-repos' }, { value: HELD }),
     );
     try {
@@ -405,7 +405,7 @@ void describe('Share local activity: who can see it follows the owner’s grants
   ] as const) {
     void test(`${name}: “${audience}”`, async () => {
       const h = await open(
-        '/developer',
+        '/developer?tab=activity',
         connect(
           { org: true, enabled: true, scope: 'agent-repos' },
           { value: HELD },
@@ -454,7 +454,7 @@ void describe('Share local activity: who can see it follows the owner’s grants
       ],
     ] as const) {
       const h = await open(
-        '/developer',
+        '/developer?tab=activity',
         connect(
           { org: true, enabled: true, scope: 'agent-repos' },
           { value: HELD },
@@ -479,14 +479,13 @@ void describe('Share local activity: who can see it follows the owner’s grants
   });
 });
 
-void describe('Connect: Share local activity', () => {
+void describe('Activity tab: Share local activity (the wizard’s Optional entry until LAI-997)', () => {
   void test('with the organisation’s switch off, says so and offers nothing to turn on', async () => {
     const h = await open(
-      '/developer/connect',
+      '/developer?tab=activity',
       connect({ org: false, enabled: false, scope: 'agent-repos' }, { value: NOTHING }),
     );
     try {
-      await h.page.locator('.conn-rail-extra', { hasText: 'Share local activity' }).click();
       const panel = h.page.locator('.share-activity');
       await panel.locator('.share-list').first().waitFor({ timeout: 20_000 });
       assert.match(await panel.innerText(), /Developer insights are off for this organisation/);
@@ -505,9 +504,8 @@ void describe('Connect: Share local activity', () => {
 
   void test('says the organisation collects, narrows the scope, shows the command, what is sent and never sent', async () => {
     const state = { org: true, enabled: false, scope: 'agent-repos' };
-    const h = await open('/developer/connect', connect(state, { value: HELD }, 'member'));
+    const h = await open('/developer?tab=activity', connect(state, { value: HELD }, 'member'));
     try {
-      await h.page.locator('.conn-rail-extra', { hasText: 'Share local activity' }).click();
       const panel = h.page.locator('.share-activity');
       const notice = panel.locator('[data-state="org-collects"]');
       await notice.waitFor({ timeout: 20_000 });
@@ -546,9 +544,8 @@ void describe('Connect: Share local activity', () => {
 
   void test('offers OpenTelemetry, metrics only: this board’s address, no token, a copy (LAI-773, LAI-867)', async () => {
     const state = { org: true, enabled: true, scope: 'agent-repos' };
-    const h = await open('/developer/connect', connect(state, { value: HELD }));
+    const h = await open('/developer?tab=activity', connect(state, { value: HELD }));
     try {
-      await h.page.locator('.conn-rail-extra', { hasText: 'Share local activity' }).click();
       const block = h.page.locator('.share-activity [data-block="otel"]');
       await block.waitFor({ timeout: 20_000 });
       // The heading is drawn in capitals; the words are the same.
@@ -584,14 +581,13 @@ void describe('Connect: Share local activity', () => {
     const old = new Date(NOW - 370 * DAY);
     const oldest = old.toISOString().slice(0, 10);
     const h = await open(
-      '/developer/connect',
+      '/developer?tab=activity',
       connect(
         { org: true, enabled: true, scope: 'agent-repos' },
         { value: { ...HELD, oldest_day: oldest } },
       ),
     );
     try {
-      await h.page.locator('.conn-rail-extra', { hasText: 'Share local activity' }).click();
       const note = h.page.locator('.share-activity .conn-note', { hasText: 'Held since' });
       await note.waitFor({ timeout: 20_000 });
       const day = old.toLocaleDateString('en-GB', {
@@ -615,11 +611,10 @@ void describe('Connect: Share local activity', () => {
   void test('previews what is held, by agent name, and deletes it after a confirmation', async () => {
     const held = { value: HELD as unknown };
     const h = await open(
-      '/developer/connect',
+      '/developer?tab=activity',
       connect({ org: true, enabled: true, scope: 'agent-repos' }, held),
     );
     try {
-      await h.page.locator('.conn-rail-extra', { hasText: 'Share local activity' }).click();
       const panel = h.page.locator('.share-activity');
       const table = panel.locator('table.share-table');
       await table.waitFor({ timeout: 20_000 });
@@ -671,7 +666,7 @@ void describe('Connect: Share local activity', () => {
  * people and lost settings was offered the Organisation link on one page and
  * not the other.
  */
-void describe('Connect and Developer access agree on who may turn insights on', () => {
+void describe('the Activity tab says who may turn insights on (one panel since LAI-997)', () => {
   const LINK = 'a[href="/organisation?tab=overview"]';
   for (const [who, role, actions, linked] of [
     [
@@ -690,16 +685,13 @@ void describe('Connect and Developer access agree on who may turn insights on', 
     void test(who, async () => {
       const state = { org: false, enabled: false, scope: 'agent-repos' };
       const counts: number[] = [];
-      for (const path of ['/developer', '/developer/connect']) {
+      for (const path of ['/developer?tab=activity']) {
         const h = await open(
           path,
           connect(state, { value: NOTHING }, role, DEFAULT_GRANTS, { admin: true }, actions),
           { before: (page) => watchFor(page, [`.share-activity ${LINK}`]) },
         );
         try {
-          if (path === '/developer/connect') {
-            await h.page.locator('.conn-rail-extra', { hasText: 'Share local activity' }).click();
-          }
           const panel = h.page.locator('.share-activity');
           await panel.locator('[data-state="org-off"]').waitFor({ timeout: 20_000 });
           await until(() => h.calls.some((c) => c.path === '/api/v1/permissions'));
@@ -715,7 +707,7 @@ void describe('Connect and Developer access agree on who may turn insights on', 
           await h.close();
         }
       }
-      assert.deepEqual(counts, linked ? [1, 1] : [0, 0], 'the two pages disagree');
+      assert.deepEqual(counts, linked ? [1] : [0]);
     });
   }
 });

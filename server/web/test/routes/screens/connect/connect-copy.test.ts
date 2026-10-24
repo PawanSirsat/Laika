@@ -10,27 +10,33 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { describe, test } from 'node:test';
 import {
-  projectBlock,
+  ACTIVITY_ON,
+  BLOCK_MARKER,
+  machinePrompt,
   manualCommands,
   PLACEHOLDER_TOKEN,
-  setupPrompt,
+  projectBlock,
+  projectPrompt,
 } from '../../../../src/routes/screens/connect/connect-copy.ts';
 
 const ORIGIN = 'http://board.example.test:9999';
 const SECRET = 'lai_ThisIsTheWholeSecretAndMustNotEscape';
 const PROJECT = { slug: 'onroute', prefix: 'ONR', name: 'OnRoute' };
 
-void describe('the setup prompt', () => {
+void describe('the machine prompt (LAI-997; was the setup prompt)', () => {
+  const ON = { origin: ORIGIN, secret: SECRET, insightsOn: true };
+  const OFF = { origin: ORIGIN, secret: SECRET, insightsOn: false };
+
   void test('it was built at all', () => {
     // Vacuity guard: every assertion below is a `match` on this string, and a
     // `match` against an empty string fails in a way that reads like a content
     // problem rather than an empty return.
-    const prompt = setupPrompt({ origin: ORIGIN, secret: SECRET, project: PROJECT });
+    const prompt = machinePrompt(ON);
     assert.ok(prompt.length > 800, `the prompt is ${String(prompt.length)} characters`);
   });
 
   void test('it names the board this reader is actually on', () => {
-    const prompt = setupPrompt({ origin: ORIGIN, secret: SECRET, project: PROJECT });
+    const prompt = machinePrompt(ON);
     assert.ok(prompt.includes(ORIGIN), 'the prompt does not name the board');
     // The owner's deployment, and the prototype's fixture host. Either one
     // appearing means something was hardcoded instead of read from the page.
@@ -39,20 +45,33 @@ void describe('the setup prompt', () => {
   });
 
   void test('the installer is fed the URL first and the token second', () => {
-    const prompt = setupPrompt({ origin: ORIGIN, secret: SECRET, project: PROJECT });
+    const prompt = machinePrompt(ON);
     const heredoc = /<<'LAIKA_SETUP'\n(.+)\n(.+)\nLAIKA_SETUP/.exec(prompt);
     assert.ok(heredoc !== null, 'no heredoc in the prompt');
     assert.equal(heredoc[1], ORIGIN, 'the first answer is not the board URL');
     assert.equal(heredoc[2], SECRET, 'the second answer is not the token');
   });
 
-  void test('it does every job the page promises', () => {
-    const prompt = setupPrompt({ origin: ORIGIN, secret: SECRET, project: PROJECT });
+  void test('it does the machine’s jobs, and never a project’s', () => {
+    const prompt = machinePrompt(ON);
     assert.match(prompt, /git clone/, 'it never fetches the plugin');
     assert.match(prompt, /install\.sh/, 'it never runs the installer');
     assert.match(prompt, /\/api\/v1\/me/, 'it never checks the board answers');
-    assert.match(prompt, /CLAUDE\.md/, 'it never writes the project block');
     assert.match(prompt, /Report back/, 'it never reports');
+    // Once per machine (D-111): the project block is the Projects tab's.
+    assert.doesNotMatch(prompt, /--- begin block ---/, 'it writes the project block');
+    assert.doesNotMatch(prompt, /Add the Laika block/, 'it still offers to write CLAUDE.md');
+    assert.match(prompt, /once per machine, not per project/);
+  });
+
+  void test('it turns on local activity only when the organisation collects', () => {
+    assert.ok(machinePrompt(ON).includes(ACTIVITY_ON), 'the collector is not turned on');
+    assert.ok(!machinePrompt(OFF).includes(ACTIVITY_ON), 'the collector is turned on anyway');
+    assert.match(machinePrompt(OFF), /does not collect local activity/);
+  });
+
+  void test('a machine already set up skips the install', () => {
+    assert.match(machinePrompt(ON), /laika whoami.*already answers[\s\S]*skip\n1 and 2/);
   });
 
   void test('it tells Claude not to use the tools it has just installed', () => {
@@ -61,12 +80,11 @@ void describe('the setup prompt', () => {
      * session that ran the install. Without this line that session spends ten
      * minutes calling a tool that is not there and reports the setup broken.
      */
-    const prompt = setupPrompt({ origin: ORIGIN, secret: SECRET, project: PROJECT });
-    assert.match(prompt, /loads plugins at startup/);
+    assert.match(machinePrompt(ON), /loads plugins at startup/);
   });
 
   void test('CONTROL: with no token it shows a placeholder, never `undefined`', () => {
-    const prompt = setupPrompt({ origin: ORIGIN, secret: undefined, project: PROJECT });
+    const prompt = machinePrompt({ origin: ORIGIN, secret: undefined, insightsOn: true });
     assert.ok(prompt.includes(PLACEHOLDER_TOKEN), 'no placeholder for the missing token');
     // Word-bounded: the clone line legitimately contains `2>/dev/null`, and an
     // assertion that cannot tell that from a leaked value is one that has to be
@@ -74,11 +92,38 @@ void describe('the setup prompt', () => {
     assert.doesNotMatch(prompt, /\bundefined\b/, 'a missing token leaked as `undefined`');
     assert.match(prompt, /Token: {2}lai_/, 'the token line lost its placeholder');
   });
+});
 
-  void test('with no project it skips the block rather than inventing one', () => {
-    const prompt = setupPrompt({ origin: ORIGIN, secret: SECRET, project: undefined });
-    assert.match(prompt, /Skip this step/);
-    assert.doesNotMatch(prompt, /--- begin block ---/);
+void describe('the project prompt (LAI-997)', () => {
+  const block = projectBlock(ORIGIN, PROJECT);
+  const prompt = projectPrompt({ origin: ORIGIN, project: PROJECT, path: 'CLAUDE.md', block });
+
+  void test('it writes the block into the named file, and nothing else', () => {
+    assert.match(prompt, /CLAUDE\.md/);
+    assert.ok(prompt.includes(block), 'the block is not in the prompt');
+    assert.match(prompt, /once per project/);
+    assert.match(prompt, /Change nothing else/);
+    assert.match(prompt, /do not commit/);
+  });
+
+  void test('it looks for the marker line before writing, so a second paste is a no-op', () => {
+    assert.ok(prompt.includes(BLOCK_MARKER));
+    assert.ok(
+      block.includes(BLOCK_MARKER),
+      'the block does not carry the marker it is looked up by',
+    );
+  });
+
+  void test('CONTROL: it installs nothing and carries no token', () => {
+    assert.doesNotMatch(prompt, /install\.sh|git clone|LAIKA_SETUP/);
+    assert.doesNotMatch(prompt, /lai_/);
+    assert.ok(!prompt.includes(SECRET));
+  });
+
+  void test('it follows the agent’s file', () => {
+    const agents = projectPrompt({ origin: ORIGIN, project: PROJECT, path: 'AGENTS.md', block });
+    assert.match(agents, /AGENTS\.md/);
+    assert.doesNotMatch(agents, /CLAUDE\.md/);
   });
 });
 
