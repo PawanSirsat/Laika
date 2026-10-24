@@ -2,11 +2,12 @@
 id: LAI-508
 title: 'My day: the editor lives in the right column — tapping any block, gap or stretch opens it there; Agent time and On your plate show there only while nothing is selected'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-502]
 discovered-from: LAI-502
-status: backlog
+status: in-progress
+started: 2026-10-24T11:22:01Z
 ---
 
 ## Goal
