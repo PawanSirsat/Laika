@@ -52,6 +52,14 @@ import {
   type SolidtimeOutbox,
   type SolidtimeSetup,
 } from '../../services/time-solidtime.ts';
+import {
+  discardTimer,
+  pauseTimer,
+  resumeTimer,
+  startTimer,
+  stopTimer,
+  TIMER_TITLE_MAX,
+} from '../../services/time-timer.ts';
 import { undoChange } from '../../services/time-undo.ts';
 import { UNDO_HEADER } from '../../services/time-undo-log.ts';
 import { TASK_KEY_PATTERN } from '../../services/token-usage.ts';
@@ -230,6 +238,22 @@ const EntryPatchBody = strictObject({
   ended_at: instantMs.optional(),
 });
 
+// What a confirmed draft was (D-110, LAI-500): the same three words an entry
+// takes, said at the moment of confirming; left out, the entry gets nulls.
+const ConfirmDraftBody = strictObject({
+  kind: z.enum(TIME_ENTRY_KINDS).optional(),
+  title: z.string().max(ENTRY_TITLE_MAX).optional(),
+  description: z.string().max(ENTRY_DESCRIPTION_MAX).optional(),
+});
+
+// A timer's start (§4.61, LAI-500): its zone, and what it is for — all optional.
+const TimerStartBody = strictObject({
+  tz: zone,
+  task: ref.optional(),
+  kind: z.enum(TIME_ENTRY_KINDS).optional(),
+  title: z.string().max(TIMER_TITLE_MAX).optional(),
+});
+
 // A gap waved away (LAI-831): a span on the person's own day, and nothing else.
 const BreakBody = strictObject({ day, tz: zone, started_at: instantMs, ended_at: instantMs });
 
@@ -383,10 +407,11 @@ export function meTimeRoutes(options: { db: Db }): Hono<AppEnv> {
     return c.body(null, 204);
   });
 
-  app.post('/time-drafts/:id/confirm', (c) => {
+  app.post('/time-drafts/:id/confirm', async (c) => {
     const actor = requireActor(c);
     const { id } = parseParams(IdParams, c.req.param());
-    return c.json(confirmDraft(db, actor, id, Date.now(), undoable(c)), 201);
+    const said = parseBody(ConfirmDraftBody, (await json(c)) ?? {});
+    return c.json(confirmDraft(db, actor, id, Date.now(), undoable(c), said), 201);
   });
 
   app.post('/time/days/:day/confirm', (c) => {
@@ -398,6 +423,26 @@ export function meTimeRoutes(options: { db: Db }): Hono<AppEnv> {
   app.get('/time', (c) => {
     const actor = requireActor(c);
     return c.json(getMyDay(db, actor, parseQuery(MyDayQuery, c.req.query())));
+  });
+
+  // The timer (§4.61, LAI-500): one per person, kept here so it survives a reload.
+  app.post('/time/timer', async (c) => {
+    const actor = requireActor(c);
+    return c.json(startTimer(db, actor, parseBody(TimerStartBody, await json(c))), 201);
+  });
+
+  app.post('/time/timer/pause', (c) => c.json(pauseTimer(db, requireActor(c))));
+
+  app.post('/time/timer/resume', (c) => c.json(resumeTimer(db, requireActor(c))));
+
+  app.post('/time/timer/stop', (c) => {
+    const actor = requireActor(c);
+    return c.json(stopTimer(db, actor, Date.now(), undoable(c)), 201);
+  });
+
+  app.delete('/time/timer', (c) => {
+    discardTimer(db, requireActor(c));
+    return c.body(null, 204);
   });
 
   app.post('/time/undo', async (c) => {
