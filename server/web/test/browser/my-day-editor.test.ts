@@ -131,6 +131,8 @@ void describe('the editor (LAI-504)', () => {
       const h = await myDay(writes);
       try {
         await setTheme(h.page, theme);
+        // Nothing is in hand on load (LAI-511): the first draft, picked.
+        await select(h, 'd1');
         const editor = h.page.locator('[data-inspector="draft"]');
         await editor.waitFor({ timeout: 10_000 });
         assert.equal(await editor.locator('[data-inspector-position]').innerText(), '1 of 5');

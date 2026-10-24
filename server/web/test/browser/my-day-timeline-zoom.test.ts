@@ -308,8 +308,19 @@ async function onTopAtCentre(page: Page, id: string): Promise<string | undefined
   });
 }
 
+/**
+ * Let go of whatever is in hand (LAI-511): on a phone the editor is a sheet
+ * over the page, and a tap on the page behind it closes it instead.
+ */
+async function dismiss(page: Page): Promise<void> {
+  if ((await page.locator('[data-myday-drawer]').count()) === 0) return;
+  await page.keyboard.press('Escape');
+  await page.locator('[data-myday-drawer]').waitFor({ state: 'detached', timeout: 5_000 });
+}
+
 /** Click block `id` at its centre as drawn; whether that selected it. */
 async function clickCentre(page: Page, id: string): Promise<boolean> {
+  await dismiss(page);
   const el = page.locator(`[data-block-id="${id}"]`);
   await el.scrollIntoViewIfNeeded();
   const box = await el.boundingBox();
@@ -354,6 +365,7 @@ void describe('the Timeline at Fit, 1× and 2× (LAI-860)', () => {
           await setTheme(h.page, theme);
           for (const zoom of ['fit', '1', '2']) {
             const where = `${String(width)} px, ${theme}, zoom ${zoom}`;
+            await dismiss(h.page);
             await h.page.locator(`[data-zoom="${zoom}"]`).click();
 
             // Seen and picked out: each block is the one on top at its own centre.

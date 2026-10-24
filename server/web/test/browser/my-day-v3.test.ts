@@ -122,17 +122,11 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
     }
   });
 
-  void test('the card spans the page above the editor, and today opens with now in view (LAI-889)', async () => {
+  void test('the card spans the page beside the drawer, and today opens with now in view (LAI-889, LAI-511)', async () => {
     const h = await openToday();
     try {
-      const card = await h.page.locator('[data-dayline]').boundingBox();
-      const grid = await h.page.locator('.myday-grid').boundingBox();
-      const side = await h.page.locator('[data-myday-side]').boundingBox();
-      assert.ok(card !== null && grid !== null && side !== null);
-      assert.ok(card.y + card.height <= grid.y + 0.5, 'the Timeline is not above the grid');
-      assert.ok(card.width >= grid.width - 1, 'the Timeline is narrower than the page');
-      assert.ok(side.y >= card.y + card.height - 0.5, 'the side column is not below the Timeline');
-      // At 1×, now sits about three fifths of the way across the scroller.
+      // At 1×, now sits about three fifths of the way across the scroller —
+      // measured before anything is picked, as the day opens (LAI-511).
       const seen = await h.page.locator('[data-dayline-scroller]').evaluate((el) => ({
         left: el.scrollLeft,
         width: el.clientWidth,
@@ -145,6 +139,16 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
         Math.abs(now - seen.left - seen.width * 0.6) <= 2,
         `now at ${String(now - seen.left)} of ${String(seen.width)}`,
       );
+      await h.page.locator('[data-block-select]').first().click();
+      const drawer = h.page.locator('[data-myday-drawer]');
+      await drawer.waitFor({ timeout: 5_000 });
+      const card = await h.page.locator('[data-dayline]').boundingBox();
+      const main = await h.page.locator('.myday-main').boundingBox();
+      const side = await drawer.boundingBox();
+      assert.ok(card !== null && main !== null && side !== null);
+      assert.ok(card.y + card.height <= main.y + 0.5, 'the Timeline is not above the lists');
+      assert.ok(card.width >= main.width - 1, 'the Timeline is narrower than the page');
+      assert.ok(side.x >= card.x + card.width - 0.5, 'the drawer is not beside the Timeline');
     } finally {
       await h.close();
     }
@@ -375,8 +379,6 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
   void test('hovering a block, a gap or an agent run says what it is, when and how long — counts only', async () => {
     const h = await openToday();
     try {
-      // The column holds the editor while a block is in hand (LAI-508): Esc lets go.
-      await h.page.keyboard.press('Escape');
       await hoverOnTrack(h, '[data-block-id="d1"]');
       const tip = h.page.locator('[role="tooltip"]');
       await tip.waitFor({ timeout: 5_000 });
@@ -398,7 +400,7 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
       assert.match(await tip.innerText(), /Agent working[\s\S]*Not counted/);
 
       // Off the card, it goes.
-      await h.page.locator('.myday-plate').hover();
+      await h.page.locator('.myday-tabs').hover();
       await until(async () => (await tip.count()) === 0);
     } finally {
       await h.close();

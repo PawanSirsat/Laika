@@ -56,14 +56,14 @@ void describe('the column beside the day', () => {
   void test('Agent minutes, then On your plate — bounded, scrolling on its own; the switch in the header', async () => {
     const h = await busy();
     try {
-      // The column holds the editor while a block is in hand (LAI-508): Esc
-      // lets go, and the two cards stand there.
-      await h.page.keyboard.press('Escape');
+      // The two cards live in the drawer (LAI-511): the header's button opens
+      // them.
+      await h.page.locator('[data-beside-button]').click();
       await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
       const sides = async () =>
         (
           await h.page
-            .locator('[data-myday-side] > section')
+            .locator('[data-myday-drawer] .myday-drawer-cards > section')
             .evaluateAll((els: Element[]) => els.map((el) => el.className))
         ).map((c) => c.split(' ').find((k: string) => k !== 'myday-card'));
       // *Who looked* is the header's (LAI-502): two cards stand here.
@@ -87,69 +87,61 @@ void describe('the column beside the day', () => {
       await h.page.locator('.myday-drafts').waitFor({ timeout: 5_000 });
 
       const laptop = await h.page.evaluate(() => {
-        const side = document.querySelector<HTMLElement>('[data-myday-side]');
-        const grid = document.querySelector('.myday-grid')?.getBoundingClientRect();
-        const main = document.querySelector('.myday-main')?.getBoundingClientRect();
+        const drawer = document.querySelector<HTMLElement>('[data-myday-drawer]');
+        const side = document.querySelector<HTMLElement>('[data-myday-drawer] .myday-drawer-body');
         const scroller = document.querySelector<HTMLElement>('.shell-main');
-        if (side === null || grid === undefined || main === undefined || scroller === null) {
-          return null;
-        }
-        const before = side.getBoundingClientRect();
+        if (drawer === null || side === null || scroller === null) return null;
+        const before = drawer.getBoundingClientRect();
         scroller.scrollTop = scroller.scrollHeight;
-        const scrolled = side.getBoundingClientRect();
+        const scrolled = drawer.getBoundingClientRect();
         side.scrollTop = side.scrollHeight;
         return {
           height: before.height,
           scrollHeight: side.scrollHeight,
           clientHeight: side.clientHeight,
           ownScroll: side.scrollTop,
-          gridHeight: grid.height,
-          mainHeight: main.height,
           scrolledTop: scrolled.top,
           scrolledBottom: scrolled.bottom,
-          position: getComputedStyle(side).position,
+          position: getComputedStyle(drawer).position,
           overflowY: getComputedStyle(side).overflowY,
         };
       });
       assert.ok(laptop !== null);
-      assert.ok(laptop.height <= 900 - 32 + 1, `the column is ${String(laptop.height)}px tall`);
+      assert.ok(laptop.height <= 900 + 1, `the drawer is ${String(laptop.height)}px tall`);
       // A scroll of its own whenever it is taller than that: overflow, not the page.
-      assert.equal(laptop.overflowY, 'auto', 'the column does not scroll on its own');
+      assert.equal(laptop.overflowY, 'auto', 'the drawer does not scroll on its own');
       if (laptop.scrollHeight > laptop.clientHeight + 1) {
-        assert.ok(laptop.ownScroll > 0, 'the column is taller than it shows, and does not scroll');
+        assert.ok(laptop.ownScroll > 0, 'the drawer is taller than it shows, and does not scroll');
       }
-      assert.ok(
-        laptop.gridHeight - laptop.mainHeight < 2,
-        `the column runs the page on: ${String(laptop.gridHeight)} > ${String(laptop.mainHeight)}`,
-      );
       assert.equal(laptop.position, 'sticky');
       assert.ok(
         laptop.scrolledTop >= -1 && laptop.scrolledBottom <= 900 + 1,
-        `scrolled to the foot of the page, the column left the viewport: ${JSON.stringify(laptop)}`,
+        `scrolled to the foot of the page, the drawer left the viewport: ${JSON.stringify(laptop)}`,
       );
 
       await h.page.setViewportSize({ width: 390, height: 844 });
       await h.page.waitForFunction(() => document.documentElement.clientWidth === 390);
       const phone = await h.page.evaluate(() => {
-        const side = document.querySelector<HTMLElement>('[data-myday-side]');
-        const main = document.querySelector('.myday-main')?.getBoundingClientRect();
-        if (side === null || main === undefined) return null;
-        const box = side.getBoundingClientRect();
+        const drawer = document.querySelector<HTMLElement>('[data-myday-drawer]');
+        const side = document.querySelector<HTMLElement>('[data-myday-drawer] .myday-drawer-body');
+        if (drawer === null || side === null) return null;
+        const box = drawer.getBoundingClientRect();
         return {
-          top: box.top,
+          bottom: Math.round(box.bottom),
           height: box.height,
-          mainBottom: main.bottom,
+          position: getComputedStyle(drawer).position,
           overflowY: getComputedStyle(side).overflowY,
           sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
         };
       });
       assert.ok(phone !== null);
-      assert.ok(phone.top >= phone.mainBottom - 1, 'on a phone the column is not under the day');
+      assert.equal(phone.position, 'fixed', 'on a phone the drawer is not a sheet');
+      assert.equal(phone.bottom, 844, 'on a phone the sheet is not at the bottom');
       assert.ok(
-        phone.height <= 844 * 0.8 + 1,
-        `on a phone the column is ${String(phone.height)}px`,
+        phone.height <= 844 * 0.86 + 1,
+        `on a phone the sheet is ${String(phone.height)}px`,
       );
-      assert.equal(phone.overflowY, 'auto', 'on a phone the column is not bounded');
+      assert.equal(phone.overflowY, 'auto', 'on a phone the sheet is not bounded');
       assert.equal(phone.sideways, 0, 'the page scrolls sideways on a phone');
     } finally {
       await h.close();
@@ -159,7 +151,7 @@ void describe('the column beside the day', () => {
   void test('On your plate: five of each, the true count, and +N more where the rest live', async () => {
     const h = await busy();
     try {
-      await h.page.keyboard.press('Escape');
+      await h.page.locator('[data-beside-button]').click();
       const plate = h.page.locator('.myday-plate');
       await plate.locator('.plate-groups').waitFor({ timeout: 20_000 });
       const group = (id: string) => plate.locator(`[data-plate="${id}"]`);
@@ -666,7 +658,9 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
       );
       assert.match(await entry('e02').innerText(), /Solidtime/);
       assert.equal(await entry('e03').locator('a').count(), 0, 'General is a link');
-      // Agent minutes: a link only to a card the reader can read, in its space.
+      // Agent minutes: a link only to a card the reader can read, in its space
+      // — in the drawer, from the header's button (LAI-511).
+      await h.page.locator('[data-beside-button]').click();
       const agent = h.page.locator('.myday-agent');
       assert.equal(
         await agent.locator('a.myday-cardlink').first().getAttribute('href'),

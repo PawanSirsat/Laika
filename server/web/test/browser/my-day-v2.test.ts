@@ -764,7 +764,11 @@ void describe('keyboard shortcuts (H)', () => {
       await note.click();
       await h.page.keyboard.type('xgjk?');
       assert.equal(await note.inputValue(), 'xgjk?');
-      assert.equal(await h.page.getByRole('dialog').count(), 0, 'the sheet opened while typing');
+      assert.equal(
+        await h.page.getByRole('dialog', { name: 'Keyboard shortcuts' }).count(),
+        0,
+        'the sheet opened while typing',
+      );
       assert.deepEqual(
         writes(h).filter((c) => c.path.startsWith('/api/v1/me/time-drafts')),
         [],
@@ -1034,14 +1038,20 @@ void describe('a phone, and both themes (I)', () => {
         // A phone shows a letter a day, and the week fits without scrolling (LAI-502).
         assert.equal((await scrolls('.myday-week-days')).over, false, 'the week overflows');
         assert.deepEqual(await scrolls('[data-dayline-scroller]'), { over: true, auto: true });
-        const main = await h.page.locator('.myday-main').boundingBox();
-        const side = await h.page.locator('[data-myday-side]').boundingBox();
-        assert.ok(main !== null && side !== null);
-        assert.ok(side.y >= main.y + main.height - 1, 'the column is not below the day');
+        // The editor is a bottom sheet on a phone (LAI-511).
+        const sheet = await h.page.locator('[data-myday-drawer]').evaluate((el) => ({
+          position: getComputedStyle(el).position,
+          bottom: Math.round(el.getBoundingClientRect().bottom),
+        }));
+        assert.equal(sheet.position, 'fixed', 'the editor is not a sheet');
+        assert.equal(sheet.bottom, 844, 'the sheet is not at the bottom');
         // The inspector's three parts stack.
         const parts = h.page.locator('[data-inspector="draft"] .inspector-part');
         const xs = await parts.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().x));
         assert.ok(xs.length >= 3 && new Set(xs.map(Math.round)).size === 1, 'not stacked');
+        // The sheet is modal (LAI-511): let go before the next theme's pick.
+        await h.page.keyboard.press('Escape');
+        await until(async () => (await h.page.locator('[data-myday-drawer]').count()) === 0);
       }
     } finally {
       await h.close();
