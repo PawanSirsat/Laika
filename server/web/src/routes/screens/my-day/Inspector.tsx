@@ -14,30 +14,43 @@ import { Spinner } from '../../../components/Spinner.tsx';
 import { CardLink } from './CardLink.tsx';
 import { folderOf, needsACard } from './folder.ts';
 import { agentDuration, clock, duration, span } from './format.ts';
-import { canChange, dayIn, dayLabel, minutesUnderstood, parseMinutes } from './my-day-derive.ts';
+import { canChange, dayIn, dayLabel } from './my-day-derive.ts';
 import type { Selection } from './Timeline.tsx';
 import {
   instantOf,
   limitsIn,
   splitPoint,
-  stepEnd,
-  stepMinutes,
   type DayLine,
   type LaneBlock,
   type Span,
   freeAround,
+  stepEnd,
+  stepMinutes,
 } from './timeline-derive.ts';
+import { EditorWhen } from './EditorWhen.tsx';
 import { KINDS } from './entry-kinds.ts';
+import { TaskSearch } from './TaskSearch.tsx';
+import { splitAt, splitUnderstood } from './my-day-derive.ts';
 import { NewEntryPanel } from './NewEntryPanel.tsx';
-import { Understood } from './Understood.tsx';
 
 /** A draft or an entry — the two things −/+ and the card chips act on. */
 export type Held =
   | { readonly kind: 'draft'; readonly draft: TimeDraft }
   | { readonly kind: 'entry'; readonly entry: TimeEntry };
 
+/** What a draft was, said before its confirm (LAI-504): the entry's three words. */
+export interface DraftSaid {
+  readonly kind?: EntryKind | undefined;
+  readonly title?: string | undefined;
+  readonly description?: string | undefined;
+}
+
 export interface InspectorActions {
-  readonly confirm: (draft: TimeDraft) => void;
+  readonly confirm: (draft: TimeDraft, said?: DraftSaid) => void;
+  /** A span typed in the editor (LAI-504): minutes after midnight. */
+  readonly setSpan: (held: Held, span: { readonly start: number; readonly end: number }) => void;
+  /** A split at a typed instant (LAI-504), unix ms. */
+  readonly splitAt: (draft: TimeDraft, at: number) => void;
   readonly dismiss: (draft: TimeDraft) => void;
   /** A card's key, or `general`. */
   readonly setCard: (held: Held, card: string) => void;
@@ -85,6 +98,11 @@ export interface InspectorProps {
    * own entries).
    */
   readonly readOnly?: boolean;
+  /** Where the block stands among the drafts, for the head's ‹ n of N › (LAI-504). */
+  readonly position?: { readonly index: number; readonly total: number } | undefined;
+  readonly onPrev?: (() => void) | undefined;
+  readonly onNext?: (() => void) | undefined;
+  readonly onClose?: (() => void) | undefined;
 }
 
 /** The tiles under *Drafted from*, in the design's order; *agents* is the lane's. */
@@ -125,6 +143,73 @@ type History =
   | { readonly kind: 'loading' }
   | { readonly kind: 'ready'; readonly revisions: readonly TimeRevision[] }
   | { readonly kind: 'error'; readonly message: string };
+
+/**
+ * The editor's head (the owner's design, LAI-504): the pill, ‹ n of N › for a
+ * draft, and the close.
+ */
+function EditorHead({
+  pill,
+  pillClass,
+  icon,
+  position,
+  onPrev,
+  onNext,
+  onClose,
+}: {
+  readonly pill: string;
+  readonly pillClass: string;
+  readonly icon: string;
+  readonly position?: { readonly index: number; readonly total: number } | undefined;
+  readonly onPrev?: (() => void) | undefined;
+  readonly onNext?: (() => void) | undefined;
+  readonly onClose?: (() => void) | undefined;
+}) {
+  return (
+    <header className="inspector-head">
+      <span className={`inspector-kind ${pillClass}`}>
+        <span className="inspector-kind-icon" aria-hidden="true">
+          {icon}
+        </span>
+        {pill}
+      </span>
+      <span className="inspector-head-gap" />
+      {position !== undefined && (
+        <span className="inspector-nav">
+          <span className="myday-quiet" data-inspector-position>
+            {String(position.index + 1)} of {String(position.total)}
+          </span>
+          <button
+            type="button"
+            className="myday-week-step"
+            aria-label="Previous to review (K)"
+            onClick={onPrev}
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            className="myday-week-step"
+            aria-label="Next to review (J)"
+            onClick={onNext}
+          >
+            ›
+          </button>
+        </span>
+      )}
+      {onClose !== undefined && (
+        <button
+          type="button"
+          className="myday-week-step inspector-close"
+          aria-label="Close (Esc)"
+          onClick={onClose}
+        >
+          ×
+        </button>
+      )}
+    </header>
+  );
+}
 
 /** The card chips, General, and a key typed for any other card. */
 export function CardPicker({
@@ -226,61 +311,6 @@ export function CardPicker({
   );
 }
 
-/**
- * A length typed for the block (review round 1): LAI-830's parser — `45`,
- * `45m`, `1h 30m`, `1:30` — and its *Reads as …* line under the field before
- * anything is saved. Enter sets it.
- */
-function LengthField({
-  minutes,
-  busy,
-  onSet,
-}: {
-  readonly minutes: number;
-  readonly busy: boolean;
-  readonly onSet: (minutes: number) => void;
-}) {
-  const [text, setText] = useState('');
-  const [error, setError] = useState<string | undefined>(undefined);
-  return (
-    <form
-      className="inspector-length-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const read = parseMinutes(text);
-        if (read === undefined) {
-          setError('A length as 45, 45m, 1h 30m or 1:30 — up to a day.');
-          return;
-        }
-        setError(undefined);
-        if (read !== minutes) onSet(read);
-        setText('');
-      }}
-    >
-      <input
-        className="input inspector-length-input"
-        value={text}
-        placeholder={duration(minutes)}
-        aria-label="Length, typed"
-        disabled={busy}
-        onChange={(event) => {
-          setText(event.target.value);
-          setError(undefined);
-        }}
-      />
-      <button type="submit" className="myday-chip" disabled={busy || text.trim() === ''}>
-        Set
-      </button>
-      <Understood text={minutesUnderstood(text)} />
-      {error !== undefined && (
-        <p className="myday-error" role="alert">
-          {error}
-        </p>
-      )}
-    </form>
-  );
-}
-
 export function Stepper({
   minutes,
   canShorten,
@@ -349,8 +379,18 @@ export function Inspector({
   actions,
   onNavigate,
   readOnly = false,
+  position,
+  onPrev,
+  onNext,
+  onClose,
 }: InspectorProps) {
   const [history, setHistory] = useState<History>({ kind: 'closed' });
+  /** What a draft was, typed before its confirm (LAI-504). */
+  const [draftWords, setDraftWords] = useState<
+    { id: string; kind: EntryKind | undefined; title: string; description: string } | undefined
+  >(undefined);
+  /** *Split…*: the time typed, for the draft it is open on. */
+  const [splitting, setSplitting] = useState<{ id: string; text: string } | undefined>(undefined);
   const [note, setNote] = useState<{ id: string; text: string } | undefined>(undefined);
   /** The gap whose *Add time here* opened the new-entry panel (LAI-897). */
   const [adding, setAdding] = useState<number | undefined>(undefined);
@@ -371,8 +411,21 @@ export function Inspector({
       const block = placed(draft.id);
       const ready = draft.task !== null || draft.project !== null || draft.general;
       const held: Held = { kind: 'draft', draft };
-      // −/+ only where there is room: a step of span, and never into confirmed time.
-      const hi = block === undefined ? undefined : limitsIn(line, block).hi;
+      const limits =
+        block === undefined ? { lo: line.from * 60, hi: line.to * 60 } : limitsIn(line, block);
+      const spanOf = block === undefined ? undefined : { start: block.start, end: block.end };
+      const words =
+        draftWords?.id === draft.id
+          ? draftWords
+          : { id: draft.id, kind: undefined, title: '', description: '' };
+      const said: DraftSaid = {
+        ...(words.kind === undefined ? {} : { kind: words.kind }),
+        ...(words.title.trim() === '' ? {} : { title: words.title }),
+        ...(words.description.trim() === '' ? {} : { description: words.description }),
+      };
+      const splitText = splitting?.id === draft.id ? splitting.text : undefined;
+      const splitInstant = splitText === undefined ? undefined : splitAt(draft, splitText);
+      const name = draft.task?.title ?? draft.project?.name ?? (ready ? 'General' : 'No task yet');
       return (
         <section
           className="myday-card inspector"
@@ -381,81 +434,65 @@ export function Inspector({
           tabIndex={-1}
           aria-label="The selected drafted block"
         >
-          <header className="inspector-head">
-            <span
-              className={
-                ready
-                  ? 'inspector-kind inspector-kind-drafted'
-                  : 'inspector-kind inspector-kind-needs'
-              }
-            >
-              <span className="inspector-kind-icon" aria-hidden="true">
-                {ready ? ICONS.drafted : ICONS.needs}
-              </span>
-              {ready ? 'Drafted' : 'Needs a card'}
-            </span>
-            <span className="inspector-range">{whenOf(draft)}</span>
-            <span className="inspector-source">
-              {readOnly ? (
-                <>
-                  {draft.source === 'agent' ? 'Proposed by an agent' : 'From their collector'} · not
-                  confirmed
-                </>
-              ) : (
-                <>
-                  {draft.source === 'agent' ? 'Proposed by an agent' : 'From your collector'} · not
-                  confirmed — owners and admins can read it
-                </>
-              )}
-              {draft.note !== null && ` · “${draft.note}”`}
-            </span>
-            <span className="inspector-head-gap" />
-            {!readOnly && (
-              <>
-                <button
-                  type="button"
-                  className="myday-chip"
-                  disabled={busy}
-                  onClick={() => {
-                    actions.dismiss(draft);
+          <EditorHead
+            pill={ready ? 'Draft' : 'No task yet'}
+            pillClass={ready ? 'inspector-kind-drafted' : 'inspector-kind-needs'}
+            icon={ready ? ICONS.drafted : ICONS.needs}
+            position={position}
+            onPrev={onPrev}
+            onNext={onNext}
+            onClose={onClose}
+          />
+          <div className="inspector-title">
+            {draft.task !== null && <span className="inspector-key">{draft.task.key}</span>}
+            <span className="inspector-name">{name}</span>
+          </div>
+          <p className="inspector-source">
+            {whenOf(draft)} · {duration(draft.minutes)} ·{' '}
+            {draft.source === 'agent' ? 'proposed by an agent' : 'drafted by your collector'} ·{' '}
+            {readOnly ? 'not confirmed' : 'only you and the owners see it'}
+            {draft.note !== null && ` · “${draft.note}”`}
+          </p>
+          <div className="inspector-body">
+            <section className="inspector-part">
+              <h3 className="inspector-label">When</h3>
+              <EditorWhen
+                span={spanOf}
+                minutes={draft.minutes}
+                midnight={line.midnight}
+                tz={view.tz}
+                limits={limits}
+                busy={busy}
+                readOnly={readOnly}
+                onSpan={(next) => {
+                  actions.setSpan(held, next);
+                }}
+                onLength={(minutes) => {
+                  actions.setLength(held, minutes);
+                }}
+              />
+              {!readOnly && (
+                <Stepper
+                  minutes={draft.minutes}
+                  canShorten={
+                    block === undefined
+                      ? stepMinutes(draft.minutes, -5) !== undefined
+                      : stepEnd(block, -5) !== undefined
+                  }
+                  canLengthen={
+                    block === undefined
+                      ? stepMinutes(draft.minutes, 5) !== undefined
+                      : stepEnd(block, 5, limits.hi) !== undefined
+                  }
+                  busy={busy}
+                  onStep={(by) => {
+                    actions.step(held, by);
                   }}
-                >
-                  Not work
-                </button>
-                <button
-                  type="button"
-                  className="myday-chip myday-chip-primary inspector-confirm"
-                  data-inspector-confirm
-                  disabled={busy || !ready}
-                  onClick={() => {
-                    actions.confirm(draft);
-                  }}
-                >
-                  {pending === `confirm:${draft.id}` && <Spinner size="sm" label="Confirming" />}
-                  {ready ? `Confirm ${duration(draft.minutes)}` : 'Needs a card'}
-                </button>
-              </>
-            )}
-          </header>
-          <div className="inspector-parts">
-            <div className="inspector-part">
-              <h3 className="inspector-label">Card</h3>
-              {!ready && readOnly && (
-                <p className="inspector-card" data-card-warning>
-                  {draft.task_key !== null
-                    ? `${draft.task_key} was named — a card you can’t read.`
-                    : 'Nothing named a card yet.'}
-                </p>
+                />
               )}
-              {!ready && !readOnly && (
-                <p className="inspector-warn" data-card-warning>
-                  {draft.task_key !== null
-                    ? `${draft.task_key} was named, but it is a card you can’t read. Pick one of yours, or General.`
-                    : draft.folder !== undefined && draft.folder !== null
-                      ? `${needsACard(draft)}. Pick one, or General if it was general work.`
-                      : 'Nothing named a card. Pick one, or General if it was general work.'}
-                </p>
-              )}
+            </section>
+            <section className="inspector-part">
+              <h3 className="inspector-label">Task</h3>
               {draft.task !== null && (
                 <p className="inspector-card">
                   <CardLink task={draft.task} slug={draft.project?.slug} onNavigate={onNavigate} />
@@ -467,72 +504,95 @@ export function Inspector({
                   {draft.folder !== undefined && draft.folder !== null && ` · ${draft.folder}`}
                 </p>
               )}
-              {draft.general && draft.task === null && draft.project === null && readOnly && (
+              {draft.general && draft.task === null && draft.project === null && (
                 <p className="inspector-card">General</p>
               )}
-              {!readOnly && (
-                <CardPicker
-                  current={draft.task?.key}
-                  general={draft.general}
-                  chips={chipsFor(draft.task)}
-                  busy={busy}
-                  onPick={(card) => {
-                    actions.setCard(held, card);
-                  }}
-                />
+              {!ready && (
+                <p className={readOnly ? 'inspector-card' : 'inspector-warn'} data-card-warning>
+                  {draft.task_key !== null
+                    ? `${draft.task_key} was named — a card you can’t read.`
+                    : draft.folder !== undefined && draft.folder !== null
+                      ? `${needsACard(draft)}.`
+                      : 'Nothing named a task.'}
+                  {!readOnly && ' Pick one, or General if it was general work.'}
+                </p>
               )}
-            </div>
-            {readOnly ? (
-              <div className="inspector-part">
-                <h3 className="inspector-label">Length</h3>
-                <p className="inspector-length">{duration(draft.minutes)}</p>
-              </div>
-            ) : (
-              <div className="inspector-part">
-                <h3 className="inspector-label">Length</h3>
-                <div className="inspector-row">
-                  <Stepper
-                    minutes={draft.minutes}
-                    canShorten={
-                      block === undefined
-                        ? stepMinutes(draft.minutes, -5) !== undefined
-                        : stepEnd(block, -5) !== undefined
-                    }
-                    canLengthen={
-                      block === undefined
-                        ? stepMinutes(draft.minutes, 5) !== undefined
-                        : stepEnd(block, 5, hi) !== undefined
-                    }
+              {!readOnly && (
+                <>
+                  <TaskSearch
                     busy={busy}
-                    onStep={(by) => {
-                      actions.step(held, by);
+                    onPick={(card) => {
+                      actions.setCard(held, card);
                     }}
                   />
-                  <button
-                    type="button"
-                    className="myday-chip"
-                    disabled={busy || block === undefined || splitPoint(block) === undefined}
-                    onClick={() => {
-                      actions.split(draft);
+                  <CardPicker
+                    current={draft.task?.key}
+                    general={draft.general}
+                    chips={chipsFor(draft.task)}
+                    busy={busy}
+                    onPick={(card) => {
+                      actions.setCard(held, card);
                     }}
-                  >
-                    Split in two
-                  </button>
+                  />
+                </>
+              )}
+            </section>
+            {!readOnly && (
+              <section className="inspector-part" data-draft-words>
+                <h3 className="inspector-label">Kind</h3>
+                <div className="myday-kinds" role="group" aria-label="Kind">
+                  {KINDS.map((k) => (
+                    <button
+                      key={k.kind}
+                      type="button"
+                      className="myday-kind"
+                      data-kind-pick={k.kind}
+                      aria-pressed={words.kind === k.kind}
+                      disabled={busy}
+                      onClick={() => {
+                        setDraftWords({
+                          ...words,
+                          kind: words.kind === k.kind ? undefined : k.kind,
+                        });
+                      }}
+                    >
+                      <span className="myday-kind-glyph" aria-hidden="true">
+                        {k.glyph}
+                      </span>
+                      {k.label}
+                    </button>
+                  ))}
                 </div>
-                <LengthField
-                  minutes={draft.minutes}
-                  busy={busy}
-                  onSet={(minutes) => {
-                    actions.setLength(held, minutes);
+                <h3 className="inspector-label">What it was</h3>
+                <input
+                  className="input"
+                  data-draft-title
+                  value={words.title}
+                  maxLength={120}
+                  placeholder="A name for it — optional"
+                  aria-label="Title"
+                  disabled={busy}
+                  onChange={(event) => {
+                    setDraftWords({ ...words, title: event.target.value });
                   }}
                 />
-                <p className="inspector-note">
-                  5-minute steps, or type a length. Confirming makes this visible to your
-                  organisation.
-                </p>
-              </div>
+                <textarea
+                  className="input myday-textarea"
+                  data-draft-description
+                  rows={2}
+                  value={words.description}
+                  maxLength={2000}
+                  placeholder="Add a description (optional)"
+                  aria-label="Description"
+                  disabled={busy}
+                  onChange={(event) => {
+                    setDraftWords({ ...words, description: event.target.value });
+                  }}
+                />
+                <p className="inspector-note">Saved with the entry when you confirm.</p>
+              </section>
             )}
-            <div className="inspector-part">
+            <section className="inspector-part">
               <h3 className="inspector-label">Drafted from</h3>
               <dl className="inspector-counts">
                 {COUNTS.map((kind) => (
@@ -568,15 +628,103 @@ export function Inspector({
                       ? 'Counts, the name you gave this folder and its branch — never what you typed, file names or commit messages.'
                       : 'Counts and the name you gave this folder — never what you typed, file names or commit messages.'}
               </p>
-            </div>
+            </section>
+            {splitText !== undefined && block !== undefined && (
+              <section className="inspector-part" data-split>
+                <h3 className="inspector-label">Split</h3>
+                <div className="inspector-row">
+                  <label className="myday-when-field">
+                    <span className="myday-when-label">Split at</span>
+                    <input
+                      className="input myday-when-input"
+                      value={splitText}
+                      aria-label="Split at time"
+                      data-split-at
+                      // Opened by the reader's own click, so the field is where focus goes.
+                      autoFocus
+                      disabled={busy}
+                      onChange={(event) => {
+                        setSplitting({ id: draft.id, text: event.target.value });
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="myday-chip myday-chip-primary"
+                    data-split-go
+                    disabled={busy || splitInstant === undefined}
+                    onClick={() => {
+                      if (splitInstant !== undefined) {
+                        actions.splitAt(draft, splitInstant);
+                        setSplitting(undefined);
+                      }
+                    }}
+                  >
+                    Split
+                  </button>
+                  <button
+                    type="button"
+                    className="myday-chip"
+                    onClick={() => {
+                      setSplitting(undefined);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <p className="inspector-note" data-split-hint>
+                  {splitUnderstood(draft, splitText) ??
+                    `Pick a time between ${clock(at(block.start + 5), view.tz)} and ${clock(at(block.end - 5), view.tz)}. Both halves stay drafts.`}
+                </p>
+              </section>
+            )}
           </div>
           {!readOnly && (
-            <p className="inspector-keys">
-              <kbd className="myday-kbd">↵</kbd> confirm <kbd className="myday-kbd">G</kbd> general{' '}
-              <kbd className="myday-kbd">X</kbd> not work <kbd className="myday-kbd">← →</kbd> move
-              on the timeline <kbd className="myday-kbd">J</kbd> <kbd className="myday-kbd">K</kbd>{' '}
-              move in the list <kbd className="myday-kbd">?</kbd> all keys
-            </p>
+            <footer className="inspector-foot">
+              <button
+                type="button"
+                className="myday-chip myday-chip-primary inspector-confirm"
+                data-inspector-confirm
+                disabled={busy || !ready}
+                onClick={() => {
+                  actions.confirm(draft, said);
+                }}
+              >
+                {pending === `confirm:${draft.id}` && <Spinner size="sm" label="Confirming" />}
+                {ready ? `Confirm ${duration(draft.minutes)}` : 'Needs a card'}
+              </button>
+              <kbd className="myday-kbd" title="Enter confirms">
+                ↵
+              </kbd>
+              <button
+                type="button"
+                className="myday-chip"
+                aria-label="Split in two"
+                disabled={busy || block === undefined || splitPoint(block) === undefined}
+                onClick={() => {
+                  const middle = block === undefined ? undefined : splitPoint(block);
+                  if (middle !== undefined) {
+                    setSplitting({ id: draft.id, text: clock(at(middle), view.tz) });
+                  }
+                }}
+              >
+                Split…
+              </button>
+              <button
+                type="button"
+                className="myday-chip"
+                disabled={busy}
+                onClick={() => {
+                  actions.dismiss(draft);
+                }}
+              >
+                Not work time
+              </button>
+              <span className="inspector-head-gap" />
+              <span className="inspector-keys-hint">
+                <kbd className="myday-kbd">?</kbd> all keys
+              </span>
+            </footer>
           )}
         </section>
       );
@@ -598,7 +746,10 @@ export function Inspector({
         typed.trim() === (entry.note ?? '') &&
         said.title.trim() === (entry.title ?? '') &&
         said.description.trim() === (entry.description ?? '');
-      const hi = block === undefined ? undefined : limitsIn(line, block).hi;
+      const limits =
+        block === undefined ? { lo: line.from * 60, hi: line.to * 60 } : limitsIn(line, block);
+      const spanOf = block === undefined ? undefined : { start: block.start, end: block.end };
+      const name = entry.title ?? entry.task?.title ?? entry.project?.name ?? 'General';
       const toggleHistory = (): void => {
         if (history.kind !== 'closed') {
           setHistory({ kind: 'closed' });
@@ -616,6 +767,13 @@ export function Inspector({
             });
           });
       };
+      const saveWords = (): void => {
+        actions.saveDetails(entry, {
+          title: said.title,
+          description: said.description,
+          note: typed,
+        });
+      };
       return (
         <section
           className="myday-card inspector"
@@ -624,91 +782,58 @@ export function Inspector({
           tabIndex={-1}
           aria-label="The selected confirmed entry"
         >
-          <header className="inspector-head">
-            <span className="inspector-kind inspector-kind-confirmed">
-              <span className="inspector-kind-icon" aria-hidden="true">
-                {ICONS.confirmed}
-              </span>
-              Confirmed
-            </span>
-            <span className="inspector-range">{whenOf(entry)}</span>
-            <span className="inspector-source">
-              {readOnly
-                ? SOURCES[entry.source].replace('by you', 'by them')
-                : SOURCES[entry.source]}{' '}
-              · others can see it · rev {String(entry.revision)}
-              {!readOnly && !changeable && ' · change it in Solidtime'}
-            </span>
-            <span className="inspector-head-gap" />
-            {changeable && (
-              <button
-                type="button"
-                className="myday-chip myday-chip-danger"
-                disabled={busy}
-                onClick={() => {
-                  actions.remove(entry);
+          <EditorHead
+            pill={entry.source === 'import' ? 'Imported' : 'Confirmed'}
+            pillClass="inspector-kind-confirmed"
+            icon={ICONS.confirmed}
+            onClose={onClose}
+          />
+          <div className="inspector-title">
+            {entry.task !== null && <span className="inspector-key">{entry.task.key}</span>}
+            <span className="inspector-name">{name}</span>
+          </div>
+          <p className="inspector-source">
+            {whenOf(entry)} · {duration(entry.minutes)} ·{' '}
+            {readOnly ? SOURCES[entry.source].replace('by you', 'by them') : SOURCES[entry.source]}{' '}
+            · others can see it · rev {String(entry.revision)}
+            {!readOnly && !changeable && ' · change it in Solidtime'}
+          </p>
+          <div className="inspector-body">
+            <section className="inspector-part">
+              <h3 className="inspector-label">When</h3>
+              <EditorWhen
+                span={spanOf}
+                minutes={entry.minutes}
+                midnight={line.midnight}
+                tz={view.tz}
+                limits={limits}
+                busy={busy}
+                readOnly={!changeable}
+                onSpan={(next) => {
+                  actions.setSpan(held, next);
                 }}
-              >
-                Delete
-              </button>
-            )}
-          </header>
-          <div className="inspector-parts">
-            <div className="inspector-part">
-              <h3 className="inspector-label">Card</h3>
-              <p className="inspector-card">
-                {entry.task !== null ? (
-                  <CardLink task={entry.task} slug={entry.project?.slug} onNavigate={onNavigate} />
-                ) : (
-                  (entry.project?.name ?? 'General')
-                )}
-                {folderOf(entry) !== undefined && (
-                  <span data-entry-folder>{` · ${folderOf(entry) ?? ''}`}</span>
-                )}
-              </p>
+                onLength={(minutes) => {
+                  actions.setLength(held, minutes);
+                }}
+              />
               {changeable && (
-                <CardPicker
-                  current={entry.task?.key}
-                  general={entry.task === null && entry.project === null}
-                  chips={chipsFor(entry.task)}
+                <Stepper
+                  minutes={entry.minutes}
+                  canShorten={
+                    block === undefined
+                      ? stepMinutes(entry.minutes, -5) !== undefined
+                      : stepEnd(block, -5) !== undefined
+                  }
+                  canLengthen={
+                    block === undefined
+                      ? stepMinutes(entry.minutes, 5) !== undefined
+                      : stepEnd(block, 5, limits.hi) !== undefined
+                  }
                   busy={busy}
-                  onPick={(card) => {
-                    actions.setCard(held, card);
+                  onStep={(by) => {
+                    actions.step(held, by);
                   }}
                 />
-              )}
-            </div>
-            <div className="inspector-part">
-              <h3 className="inspector-label">Length</h3>
-              {changeable ? (
-                <>
-                  <Stepper
-                    minutes={entry.minutes}
-                    canShorten={
-                      block === undefined
-                        ? stepMinutes(entry.minutes, -5) !== undefined
-                        : stepEnd(block, -5) !== undefined
-                    }
-                    canLengthen={
-                      block === undefined
-                        ? stepMinutes(entry.minutes, 5) !== undefined
-                        : stepEnd(block, 5, hi) !== undefined
-                    }
-                    busy={busy}
-                    onStep={(by) => {
-                      actions.step(held, by);
-                    }}
-                  />
-                  <LengthField
-                    minutes={entry.minutes}
-                    busy={busy}
-                    onSet={(minutes) => {
-                      actions.setLength(held, minutes);
-                    }}
-                  />
-                </>
-              ) : (
-                <p className="inspector-length">{duration(entry.minutes)}</p>
               )}
               {!readOnly && (
                 <p className="inspector-note">
@@ -738,9 +863,41 @@ export function Inspector({
                   ))}
                 </ol>
               )}
-            </div>
+            </section>
+            <section className="inspector-part">
+              <h3 className="inspector-label">Task</h3>
+              <p className="inspector-card">
+                {entry.task !== null ? (
+                  <CardLink task={entry.task} slug={entry.project?.slug} onNavigate={onNavigate} />
+                ) : (
+                  (entry.project?.name ?? 'General')
+                )}
+                {folderOf(entry) !== undefined && (
+                  <span data-entry-folder>{` · ${folderOf(entry) ?? ''}`}</span>
+                )}
+              </p>
+              {changeable && (
+                <>
+                  <TaskSearch
+                    busy={busy}
+                    onPick={(card) => {
+                      actions.setCard(held, card);
+                    }}
+                  />
+                  <CardPicker
+                    current={entry.task?.key}
+                    general={entry.task === null && entry.project === null}
+                    chips={chipsFor(entry.task)}
+                    busy={busy}
+                    onPick={(card) => {
+                      actions.setCard(held, card);
+                    }}
+                  />
+                </>
+              )}
+            </section>
             {block !== undefined && agentsIn !== undefined && (
-              <div className="inspector-part">
+              <section className="inspector-part">
                 <h3 className="inspector-label">Built from</h3>
                 <dl className="inspector-counts inspector-counts-one">
                   <div className="inspector-count">
@@ -751,7 +908,7 @@ export function Inspector({
                 <p className="inspector-note" data-agent-line>
                   {agentLine(agentsIn(block), readOnly ? 'they' : 'you')}
                 </p>
-              </div>
+              </section>
             )}
             {changeable && (
               <form
@@ -759,14 +916,10 @@ export function Inspector({
                 data-entry-details
                 onSubmit={(event) => {
                   event.preventDefault();
-                  actions.saveDetails(entry, {
-                    title: said.title,
-                    description: said.description,
-                    note: typed,
-                  });
+                  saveWords();
                 }}
               >
-                <h3 className="inspector-label">What it was</h3>
+                <h3 className="inspector-label">Kind</h3>
                 {/* The kind saves on its own press (LAI-897); the words below, on Save. */}
                 <div className="myday-kinds" role="group" aria-label="Kind">
                   {KINDS.map((k) => (
@@ -788,6 +941,7 @@ export function Inspector({
                     </button>
                   ))}
                 </div>
+                <h3 className="inspector-label">What it was</h3>
                 <label className="myday-field">
                   <span className="myday-field-label">Title</span>
                   <input
@@ -838,6 +992,32 @@ export function Inspector({
               </form>
             )}
           </div>
+          {changeable && (
+            <footer className="inspector-foot">
+              <button
+                type="button"
+                className="myday-chip myday-chip-primary"
+                disabled={busy || unchanged}
+                onClick={saveWords}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                className="myday-chip myday-chip-danger"
+                disabled={busy}
+                onClick={() => {
+                  actions.remove(entry);
+                }}
+              >
+                Delete
+              </button>
+              <span className="inspector-head-gap" />
+              <span className="inspector-keys-hint">
+                <kbd className="myday-kbd">?</kbd> all keys
+              </span>
+            </footer>
+          )}
         </section>
       );
     }
@@ -859,22 +1039,27 @@ export function Inspector({
         tabIndex={-1}
         aria-label="A new entry"
       >
-        <header className="inspector-head">
-          <span className="inspector-kind inspector-kind-gap">
-            <span className="inspector-kind-icon" aria-hidden="true">
-              {ICONS.gap}
-            </span>
-            New entry
-          </span>
-          <span className="inspector-range">{span(at(range.start), at(range.end), view.tz)}</span>
-          <span className="inspector-source">confirmed as you add it</span>
-        </header>
+        <EditorHead
+          pill="New entry"
+          pillClass="inspector-kind-gap"
+          icon={ICONS.gap}
+          onClose={() => {
+            setAdding(undefined);
+            actions.letGo();
+          }}
+        />
+        <p className="inspector-source">confirmed as you add it</p>
         <NewEntryPanel
           view={view}
           range={range}
           untimed={selection.kind === 'range' ? selection.untimed : undefined}
           prefill={selection.kind === 'range' ? selection.prefill : undefined}
-          hi={free?.hi ?? line.to * 60}
+          limits={{ lo: free?.lo ?? line.from * 60, hi: free?.hi ?? line.to * 60 }}
+          now={
+            view.day === view.today && line.midnight !== undefined
+              ? Math.floor((Date.now() - line.midnight) / 60_000 / 5) * 5
+              : undefined
+          }
           chips={chipsFor(null)}
           busy={busy}
           onAdd={actions.add}
