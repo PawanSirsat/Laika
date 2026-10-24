@@ -230,6 +230,22 @@ export interface MyDayWeekDay {
   readonly state: DayState;
 }
 
+/**
+ * The person's running timer (SPEC §4.61, LAI-500). Mirrors
+ * `services/time-timer.ts`' `TimerView`. The time run is `accumulated_ms`
+ * plus, while `paused_at` is null, now minus `resumed_at`.
+ */
+export interface Timer {
+  readonly started_at: number;
+  readonly resumed_at: number;
+  readonly paused_at: number | null;
+  readonly accumulated_ms: number;
+  readonly tz: string;
+  readonly task: TaskRef | null;
+  readonly kind: EntryKind | null;
+  readonly title: string | null;
+}
+
 /** `GET /me/time?day=&tz=` — My day. */
 export interface MyDay {
   readonly day: string;
@@ -251,6 +267,8 @@ export interface MyDay {
   readonly state: DayState;
   /** Monday to Sunday of the week holding `day`. */
   readonly week: readonly MyDayWeekDay[];
+  /** The running timer, whatever day is open; null when none (LAI-500). */
+  readonly timer: Timer | null;
 }
 
 export interface DraftPatch {

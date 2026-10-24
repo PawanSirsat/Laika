@@ -610,6 +610,13 @@ const PAIRS: readonly Pair[] = [
     client: 'MyDayWeekDay',
     clientFile: 'time.ts',
   },
+  // The running timer (LAI-500), served in the day and by `POST /me/time/timer`.
+  {
+    server: 'TimerView',
+    serverFile: 'services/time-timer.ts',
+    client: 'Timer',
+    clientFile: 'time.ts',
+  },
   // A gap waved away (LAI-831), served in the day and by `POST /me/time-breaks`.
   {
     server: 'TimeBreakView',
