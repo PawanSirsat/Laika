@@ -2,11 +2,12 @@
 id: LAI-502
 title: 'My day: the header from the design — Start timer, Add time, Day settings menu with Follow my laptop, Who looked and ? buttons, the Draft-off banner, the phone header'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-500]
 discovered-from: LAI-897
-status: backlog
+status: in-progress
+started: 2026-10-24T10:09:46Z
 ---
 
 ## Goal
