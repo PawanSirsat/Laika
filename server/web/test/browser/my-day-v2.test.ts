@@ -427,7 +427,7 @@ void describe('confirming leaves out what needs a card (1, 6)', () => {
       await summary.waitFor({ timeout: 5_000 });
       assert.match(
         await summary.locator('[data-summary-sub]').innerText(),
-        /2 without a card stay/,
+        /2 without a task stay/,
       );
       await summary.locator('[data-summary-confirm]').click();
       await until(() => writes(h).length >= 3);

@@ -6,6 +6,7 @@ import {
   noteOf,
   offScreen,
   splitKeyOf,
+  weekdayOf,
 } from '../../../../src/routes/screens/my-day/summary-derive.ts';
 
 /**
@@ -97,5 +98,12 @@ void describe('offScreen and noteOf', () => {
       noteOf({ day_note: { day: '2026-10-22', note: 'Long day', updated_at: 1 } }),
       'Long day',
     );
+  });
+});
+
+void describe('weekdayOf', () => {
+  void test('the title names the day by its weekday, whatever the reader’s zone', () => {
+    assert.equal(weekdayOf('2026-10-22'), 'Thursday');
+    assert.equal(weekdayOf('2026-10-25'), 'Sunday');
   });
 });
