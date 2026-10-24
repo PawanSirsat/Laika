@@ -5939,3 +5939,41 @@ The owner's design is `MyDay.dc.html` in the design project (with
 12. **One task per piece, released as each lands**: LAI-500 timer (server),
     LAI-501 day note (server), LAI-502 header, LAI-503 confirm summary,
     LAI-504 editor, LAI-505 lists and overview, LAI-506 phone drawer.
+
+## D-111 — Developer onboarding is one page and two prompts: a machine prompt and a project prompt (LAI-507)
+
+**Date:** 2026-10-24 · **By:** CHIEF (Belka), on the owner's decisions after
+the onboarding analysis of the same day
+
+The owner could not explain the Connect flow to a new developer: a Developer
+access page with a card that previewed a wizard on another address, four
+*optional* entries beside the steps, and one prompt that both installed the
+machine and wrote a block into whatever repo it was pasted in — so every new
+project looked like a fresh install, and nothing on the page said what was
+once per machine and what was once per project.
+
+1. **Developer access is four tabs**: Connect · Projects · Activity · Tokens.
+   The wizard is the Connect tab, embedded; `/developer/connect` and
+   `/connect` redirect to it keeping `?agent=` and `?step=`. The compact card
+   and the wizard's *Optional* rail go.
+2. **Two prompts.** *Set up this machine* installs, checks the board answers,
+   and turns on local activity when the organisation collects it (D-102
+   amended); it writes into no repository and skips the install when `laika
+   whoami` already answers. *Add this project* writes the project block into
+   the agent's instructions file and nothing else. Every block says which it
+   is: *Once per machine* or *Once per project*.
+3. **The project block stays optional.** The board sends the working rules to
+   every agent as MCP instructions; the block adds the project, the key
+   prefix and branch naming. It is required only for the `laika-repos`
+   activity scope.
+4. **Invite a teammate leaves Developer access.** It is Organisation →
+   People's. *What agents can do* folds under the wizard's last step.
+5. The wording that still described a personal *Share my local activity*
+   switch (profile, the `Switch` doc, the root README, SPEC §8 and §11.4.2.1)
+   is corrected: the organisation's switch alone decides (D-102 amended).
+
+**Why one task:** CHIEF built it on the owner's instruction, and the web, docs
+and README halves are named edits of one task rather than four files for four
+halves. Filed as LAI-997, the last id of D-100's block; renumbered to LAI-507
+the same day when `master` turned out to hold another session's LAI-997 —
+the first id used from D-109's block.

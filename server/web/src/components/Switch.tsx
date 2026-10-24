@@ -15,8 +15,9 @@ export interface SwitchProps {
 /**
  * An on/off setting (LAI-751): a real `<button role="switch">`, so Space and
  * Enter flip it, a screen reader hears its name and its state, and nothing is
- * re-implemented from a `div`. Used for D-079's two switches — the
- * organisation's on Organisation and the developer's on Connect.
+ * re-implemented from a `div`. Used for the organisation's *Developer
+ * insights* switch on Organisation — the one switch local activity has since
+ * D-102 (amended) — and for *Draft my time* on My day.
  */
 export function Switch({
   checked,

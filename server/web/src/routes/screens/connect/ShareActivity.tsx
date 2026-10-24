@@ -65,7 +65,7 @@ const SCOPES: Readonly<Record<LocalActivityScope, { label: string; hint: string 
   },
   'laika-repos': {
     label: 'Only repos set up for Laika',
-    hint: 'Only repositories carrying the project block from “Share with your project”.',
+    hint: 'Only repositories carrying the project block from Developer access’s Projects tab.',
   },
 };
 

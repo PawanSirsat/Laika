@@ -17,6 +17,15 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { pick } from './dropdown.ts';
 import { closeBrowser, open, setTheme, until, type ApiStub } from './harness.ts';
+
+/*
+ * The wizard is Developer access's first tab since LAI-507: every `open` of
+ * `/developer/connect` below lands on `/developer?tab=connect` by redirect,
+ * which is itself the thing the first test under *review follow-ups* proves.
+ * The rail's Optional entries went with it — the project block is the
+ * Projects tab's (`developer-tabs.test.ts`), local activity the Activity tab's
+ * (`developer-insights.test.ts`), and *What agents can do* folds under step 4.
+ */
 import { setupBlocks } from '../../src/routes/screens/connect/connect-agents.ts';
 
 const SECRET = 'lai_ThisIsTheWholeSecretAndMustNotRenderTwice';
@@ -166,19 +175,11 @@ async function bring(h: H): Promise<void> {
   await h.page.getByRole('button', { name: 'Use a token I already have' }).click();
 }
 
-/** Open one of the rail's optional entries in the card (LAI-741). */
-async function openExtra(h: H, name: string): Promise<void> {
-  await h.page.locator('.conn-rail-extra', { hasText: name }).click();
-  await h.page.locator('.conn-wizard-card[data-extra]').waitFor({ timeout: 20_000 });
-}
-
 /** The setup prompt exactly as `connect-agents.ts` builds it for this page. */
 function promptText(origin: string, secret: string | undefined): string {
-  const block = setupBlocks('claude-code', {
-    origin,
-    secret,
-    project: { slug: ONROUTE.slug, prefix: ONROUTE.prefix, name: ONROUTE.name },
-  }).find((b) => b.key === 'claude-prompt');
+  const block = setupBlocks('claude-code', { origin, secret, insightsOn: false }).find(
+    (b) => b.key === 'claude-prompt',
+  );
   assert.ok(block !== undefined, 'no claude-prompt block');
   return block.text;
 }
@@ -266,7 +267,10 @@ void describe('minting fills the page in', () => {
     const h = await open('/developer/connect', stub(MINTS));
     try {
       await mint(h);
-      await openExtra(h, 'Share with your project');
+      // The block is the Projects tab's since LAI-507 — a tab away from the
+      // minted secret, on the same page.
+      await h.page.locator('.page-tab', { hasText: 'Projects' }).click();
+      await h.page.locator('.conn-project-block').waitFor({ timeout: 20_000 });
       const block = await h.page.locator('.conn-project-block').innerText();
       assert.ok(!block.includes(SECRET), 'the secret reached the committed block');
       assert.doesNotMatch(block, /lai_/, 'a token shape reached the committed block');
@@ -292,11 +296,10 @@ void describe('minting fills the page in', () => {
   });
 
   void test('the block follows the project picker', async () => {
-    const h = await open('/developer/connect', stub(MINTS));
+    const h = await open('/developer?tab=projects', stub(MINTS));
     try {
-      await openExtra(h, 'Share with your project');
       await h.page.locator('.conn-project-block').waitFor({ timeout: 20_000 });
-      await pick(h.page.locator('#conn-project'), 'skynet');
+      await pick(h.page.locator('#dev-project'), 'skynet');
       await h.page.waitForFunction(
         () => (document.querySelector('.conn-project-block')?.textContent ?? '').includes('skynet'),
         undefined,
@@ -634,9 +637,12 @@ void describe('the agent picker (LAI-737)', () => {
         await h.page.getByRole('radio', { name: 'Gemini CLI', exact: true }).isChecked(),
         true,
       );
-      await openExtra(h, 'Share with your project');
+      // The Projects tab opens on the agent just chosen (LAI-507).
+      await h.page.locator('.page-tab', { hasText: 'Projects' }).click();
+      await h.page.locator('.conn-project-block').waitFor({ timeout: 20_000 });
       assert.match(await h.page.locator('.conn-project-block').innerText(), /Laika/);
-      assert.match(await h.page.locator('.conn-extra').first().innerText(), /GEMINI\.md/);
+      // The label is drawn in capitals by CSS, and innerText reports it so.
+      assert.match(await h.page.locator('#dev-project-block-label').innerText(), /GEMINI\.md/i);
 
       await h.page.goto(`${h.origin}/developer/connect`);
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
@@ -738,12 +744,15 @@ void describe('review round 1', () => {
   void test('Claude Desktop is told to paste the block into its UI, not to commit a file', async () => {
     const h = await open('/developer/connect?agent=claude-desktop', stub());
     try {
-      await openExtra(h, 'Share with your project');
-      const lead = h.page.locator('.conn-extra').first();
+      await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
+      await h.page.locator('.page-tab', { hasText: 'Projects' }).click();
+      const lead = h.page.locator('.dev-projects');
       await lead.locator('.conn-project-block').waitFor({ timeout: 20_000 });
       const text = await lead.innerText();
       assert.doesNotMatch(text, /Commit this/);
       assert.match(text, /Project instructions/);
+      // No instructions file, so no prompt that would write one.
+      assert.equal(await lead.locator('.conn-project-prompt').count(), 0);
     } finally {
       await h.close();
     }
@@ -758,7 +767,8 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
       await h.page.locator('.conn-wizard-card').waitFor({ timeout: 20_000 });
       const measure = () =>
         h.page.evaluate(() => ({
-          bar: document.querySelector('.connect .screen-bar')?.getBoundingClientRect().width ?? 0,
+          // Embedded since LAI-507: the page header is Developer access's.
+          bar: document.querySelector('.screen-page')?.getBoundingClientRect().width ?? 0,
           main: document.querySelector('.shell-main')?.clientWidth ?? -1,
           page: document.querySelector('.conn-page')?.getBoundingClientRect().width ?? 0,
         }));
@@ -809,14 +819,8 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
     try {
       await mint(h);
       // Each where it now lives (LAI-740): the header on every step, the token
-      // on step 2, the setup on step 3, the start on 4 — and the lead's block
-      // behind *Share with your project* since LAI-741.
-      await openExtra(h, 'Share with your project');
-      assert.equal(
-        await h.page.getByRole('button', { name: 'Copy the CLAUDE.md block', exact: true }).count(),
-        1,
-        'no button named "Copy the CLAUDE.md block"',
-      );
+      // on step 2, the setup on step 3, the start on 4. The project block's is
+      // the Projects tab's (developer-tabs.test.ts, LAI-507).
       const where: readonly [1 | 2 | 3 | 4, string, string?][] = [
         [2, 'Copy the board URL'],
         [2, 'Copy the token'],
@@ -1159,7 +1163,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
         doc: document.documentElement.scrollHeight,
         viewport: window.innerHeight,
         mainOver: main === null ? -1 : main.scrollHeight - main.clientHeight,
-        bar: top('.connect .screen-bar'),
+        bar: top('.screen-page'),
         rail: top('.conn-rail'),
         foot: document.querySelector('.conn-card-foot')?.getBoundingClientRect().bottom ?? -1,
         cardOver: scroller === null ? -1 : scroller.scrollHeight - scroller.clientHeight,
@@ -1231,70 +1235,6 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
     }
   });
 
-  void test('the optional entries open in the card, uncounted, and Back to steps returns', async () => {
-    const h = await open('/developer/connect', stub(MINTS));
-    try {
-      await mint(h);
-      await goTo(h, 3);
-      const rows = h.page.locator('.conn-rail-extra');
-      assert.deepEqual(await rows.allInnerTexts(), [
-        'Share with your project',
-        'What agents can do',
-        'Share local activity',
-        'Invite a teammate',
-      ]);
-      // Never numbered, never locked, and the four steps are still four.
-      assert.equal(await h.page.locator('.conn-optional .conn-step-n').count(), 0);
-      assert.equal(await h.page.locator('.conn-steps > .conn-step').count(), 4);
-
-      const card = h.page.locator('.conn-wizard-card');
-      const expect: readonly [string, RegExp][] = [
-        ['Share with your project', /For the space admin|Commit this to CLAUDE\.md/],
-        [
-          'What agents can do',
-          /Eighteen tools[\s\S]*Find work[\s\S]*Three rules the board enforces/i,
-        ],
-        ['Share local activity', /What is sent, per day[\s\S]*Never sent/i],
-        ['Invite a teammate', /Organisation issues an invite link/],
-      ];
-      for (const [name, body] of expect) {
-        await openExtra(h, name);
-        assert.equal((await card.getAttribute('data-extra')) !== null, true);
-        assert.equal(await h.page.locator('.conn-eyebrow').innerText(), 'OPTIONAL');
-        assert.equal(await h.page.locator('#conn-step-title').innerText(), name);
-        // Share local activity loads before it draws (LAI-751); reading during
-        // its spinner read an empty card, on master too (found on LAI-760).
-        await h.page
-          .locator('.conn-card-body [aria-busy="true"]')
-          .waitFor({ state: 'detached', timeout: 10_000 });
-        assert.match(await h.page.locator('.conn-card-body').innerText(), body);
-        assert.equal(
-          await h.page.locator('.conn-rail-extra[aria-current]').innerText(),
-          name,
-          'the open entry is not marked current',
-        );
-        assert.equal(
-          await h.page.locator('.conn-rail-step[aria-current="step"]').count(),
-          0,
-          'a step still claims to be current',
-        );
-        assert.equal(await h.page.locator('.conn-continue').count(), 0);
-        assert.equal(
-          await h.page.evaluate(() => document.activeElement?.id),
-          'conn-step-title',
-          'focus did not follow to the opened entry',
-        );
-      }
-
-      await h.page.getByRole('button', { name: 'Back to steps' }).click();
-      assert.equal(await card.getAttribute('data-step'), '3', 'Back to steps lost the step');
-      assert.match(await h.page.locator('.conn-eyebrow').innerText(), /step 3 of 4/i);
-      assert.equal(await card.getAttribute('data-extra'), null);
-    } finally {
-      await h.close();
-    }
-  });
-
   void test('nothing sits on the page outside the rail and the card', async () => {
     const h = await open('/developer/connect', stub());
     try {
@@ -1304,38 +1244,37 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
         wizard: [...document.querySelectorAll('.conn-wizard > *')].map((el) => el.className),
       }));
       assert.deepEqual(outside.page, ['conn-wizard']);
-      // The rail is the steps and its Optional group, which follows the card in
-      // the document so that it follows it on a phone too (LAI-742).
-      assert.deepEqual(outside.wizard, [
-        'conn-rail',
-        'conn-card conn-wizard-card',
-        'conn-optional',
-      ]);
+      // The rail is the steps, and the card is the card: the Optional group
+      // that used to follow them went with LAI-507.
+      assert.deepEqual(outside.wizard, ['conn-rail', 'conn-card conn-wizard-card']);
       const body = await h.page.locator('.connect').innerText();
-      assert.doesNotMatch(body, /Eighteen tools|You can add people/, 'an optional section is out');
+      assert.doesNotMatch(body, /Eighteen tools|You can add people|Invite a teammate/);
+      assert.equal(await h.page.locator('.conn-optional, .conn-rail-extra').count(), 0);
     } finally {
       await h.close();
     }
   });
 
-  void test('a viewer who cannot invite sees no Invite entry', async () => {
-    const h = await open(
-      '/developer/connect',
-      stub({ '/api/v1/me': { ...ME, org_role: 'member' } }),
-    );
-    try {
-      const extras = h.page.locator('.conn-rail-extra');
-      await extras.first().waitFor({ timeout: 20_000 });
-      const want = ['Share with your project', 'What agents can do', 'Share local activity'];
-      // Wait for the list it asserts, not the first row (LAI-715).
-      await until(async () => (await extras.allInnerTexts()).join('|') === want.join('|'));
-      assert.deepEqual(await extras.allInnerTexts(), want);
-    } finally {
-      await h.close();
+  void test('nobody is offered an invite here, whatever their role (LAI-507)', async () => {
+    for (const role of ['owner', 'member'] as const) {
+      const h = await open('/developer/connect', stub({ '/api/v1/me': { ...ME, org_role: role } }));
+      try {
+        await h.page.locator('.conn-wizard-card').waitFor({ timeout: 20_000 });
+        await h.page.locator('.page-tabs').waitFor({ timeout: 20_000 });
+        const page = await h.page.locator('.dev-page').innerText();
+        assert.doesNotMatch(page, /Invite a teammate/, `${role}: an invite entry is drawn`);
+        assert.deepEqual(
+          (await h.page.locator('.page-tab').allInnerTexts()).map((t) => t.trim()),
+          ['Connect', 'Projects', 'Activity', 'Tokens'],
+          role,
+        );
+      } finally {
+        await h.close();
+      }
     }
   });
 
-  void test('connected, step 4 offers Share with your project as the next thing', async () => {
+  void test('connected, step 4 offers Add this project as the next thing', async () => {
     const h = await open(
       '/developer/connect?agent=codex',
       stub(mints({ last_mcp_at: MINTED_AT + 5_000, last_client: 'codex' })),
@@ -1344,13 +1283,13 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
       await mint(h);
       await goTo(h, 4);
       await h.page.locator('.conn-live-pill').waitFor({ timeout: 20_000 });
-      await h.page
+      const next = h.page
         .locator('.conn-done-actions')
-        .getByRole('button', { name: 'Share with your project' })
-        .click();
-      assert.equal(await h.page.locator('.conn-wizard-card').getAttribute('data-extra'), 'share');
-      await h.page.getByRole('button', { name: 'Back to steps' }).click();
-      assert.equal(await h.page.locator('.conn-wizard-card').getAttribute('data-step'), '4');
+        .getByRole('link', { name: 'Add this project' });
+      assert.equal(await next.getAttribute('href'), '/developer?tab=projects');
+      await next.click();
+      await h.page.locator('.dev-projects .conn-project-block').waitFor({ timeout: 20_000 });
+      assert.match(await h.page.locator('.page-tab-active').innerText(), /Projects/);
     } finally {
       await h.close();
     }
@@ -1498,7 +1437,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
       assert.equal(await order('claude-prompt'), 'above');
       assert.match(
         await h.page.locator('.conn-intro').first().innerText(),
-        /^Open Claude Code in your project folder/,
+        /^Open Claude Code anywhere/,
       );
       await h.page.getByRole('button', { name: 'By hand', exact: true }).click();
       assert.equal(await order('claude-manual'), 'below');
@@ -1667,19 +1606,12 @@ void describe('the LAI-741 review notes (LAI-742)', () => {
       await toBottom('step 3');
       await goTo(h, 1);
       await atTop('step 3 → step 1');
-
-      // An optional entry is the same change. Every entry fits the card at this
-      // size, so this half holds by clamping too; the step change above is the
-      // half that can fail.
-      await toBottom('step 1');
-      await openExtra(h, 'What agents can do');
-      await atTop('step 1 → What agents can do');
     } finally {
       await h.close();
     }
   });
 
-  void test('6: on a phone the card follows the steps, and Optional follows the card', async () => {
+  void test('6: on a phone the card follows the steps', async () => {
     const h = await open('/developer/connect', stub());
     try {
       await h.page.setViewportSize({ width: 390, height: 844 });
@@ -1692,60 +1624,33 @@ void describe('the LAI-741 review notes (LAI-742)', () => {
             steps: rect('.conn-steps')?.bottom ?? -1,
             card: rect('.conn-wizard-card')?.top ?? -1,
             cardBottom: rect('.conn-wizard-card')?.bottom ?? -1,
-            optional: rect('.conn-optional')?.top ?? -1,
             viewport: window.innerHeight,
           };
         });
       // Wait for the layout it asserts at the new size (LAI-715).
       await until(async () => {
         const p = await phone();
-        return (
-          p.steps > 0 && p.steps <= p.card && p.cardBottom <= p.optional && p.card <= p.viewport / 2
-        );
+        return p.steps > 0 && p.steps <= p.card && p.card <= p.viewport * 0.6;
       });
       const at = await phone();
       assert.ok(at.steps > 0 && at.steps <= at.card, 'the four steps are not above the card');
-      assert.ok(at.cardBottom <= at.optional, 'Optional is not after the card');
+      // Under Developer access's header and tabs now (LAI-507), so the bar is
+      // 60% rather than LAI-742's half; the page's description and the rail's
+      // intro make way on a phone to keep it there.
       assert.ok(
-        at.card <= at.viewport / 2,
+        at.card <= at.viewport * 0.6,
         `the card starts ${String(Math.round(at.card))}px down a ${String(at.viewport)}px screen`,
       );
 
-      // The desktop is unchanged: Optional sits in the rail's column, under the steps.
+      // The desktop: the card sits to the right of the steps, nothing under them.
       await h.page.setViewportSize({ width: 1366, height: 768 });
       await h.page.waitForTimeout(200);
-      const desktop = () =>
-        h.page.evaluate(() => {
-          const rect = (sel: string) => document.querySelector(sel)?.getBoundingClientRect();
-          return {
-            steps: rect('.conn-steps'),
-            step: rect('.conn-steps .conn-rail-step'),
-            optional: rect('.conn-optional'),
-            extra: rect('.conn-rail-extra'),
-            card: rect('.conn-wizard-card'),
-          };
-        });
-      await until(async () => {
-        const d = await desktop();
-        return (
-          d.steps !== undefined &&
-          d.step !== undefined &&
-          d.optional !== undefined &&
-          d.extra !== undefined &&
-          d.card !== undefined &&
-          d.optional.top >= d.steps.bottom &&
-          d.optional.right <= d.card.left &&
-          Math.round(d.optional.left) === Math.round(d.steps.left) &&
-          Math.round(d.extra.width) === Math.round(d.step.width)
-        );
+      const desk = await h.page.evaluate(() => {
+        const rect = (sel: string) => document.querySelector(sel)?.getBoundingClientRect();
+        return { steps: rect('.conn-steps'), card: rect('.conn-wizard-card') };
       });
-      const desk = await desktop();
-      const { steps, step, optional, extra, card } = desk;
-      assert.ok(steps && step && optional && extra && card, 'a part of the wizard is missing');
-      assert.ok(optional.top >= steps.bottom, 'Optional is not under the steps');
-      assert.ok(optional.right <= card.left, 'Optional left the rail’s column');
-      assert.equal(Math.round(optional.left), Math.round(steps.left), 'Optional is out of line');
-      assert.equal(Math.round(extra.width), Math.round(step.width), 'its rows are not the steps’');
+      assert.ok(desk.steps && desk.card, 'a part of the wizard is missing');
+      assert.ok(desk.steps.right <= desk.card.left, 'the card is not beside the steps');
     } finally {
       await h.close();
     }
