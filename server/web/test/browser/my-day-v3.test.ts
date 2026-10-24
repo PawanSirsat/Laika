@@ -375,6 +375,8 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
   void test('hovering a block, a gap or an agent run says what it is, when and how long — counts only', async () => {
     const h = await openToday();
     try {
+      // The column holds the editor while a block is in hand (LAI-508): Esc lets go.
+      await h.page.keyboard.press('Escape');
       await hoverOnTrack(h, '[data-block-id="d1"]');
       const tip = h.page.locator('[role="tooltip"]');
       await tip.waitFor({ timeout: 5_000 });

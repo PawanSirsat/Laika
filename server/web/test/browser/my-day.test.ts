@@ -256,6 +256,9 @@ void describe('My day after the reference', () => {
     const none = { minutes: 0, keyboard_minutes: 0, by_task: [], unattributed_minutes: 0 };
     const h = await open('/my-day', { ...STUB, '/api/v1/me/time': { ...DAY, agent: none } });
     try {
+      // The column holds the editor while a block is in hand (LAI-508): Esc lets go.
+      await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.keyboard.press('Escape');
       const hint = h.page.locator('.myday-agent [data-agent-hint]');
       await hint.waitFor({ timeout: 20_000 });
       const text = await hint.innerText();
@@ -314,6 +317,9 @@ void describe('My day after the reference', () => {
   void test('On your plate: in progress, waiting on your review, blocked — each a link', async () => {
     const h = await open('/my-day', STUB);
     try {
+      // The column holds the editor while a block is in hand (LAI-508): Esc lets go.
+      await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.keyboard.press('Escape');
       const plate = h.page.locator('.myday-plate');
       await plate.locator('.plate-groups').waitFor({ timeout: 20_000 });
       const group = (id: string) => plate.locator(`[data-plate="${id}"]`);
@@ -347,6 +353,9 @@ void describe('My day after the reference', () => {
     for (const role of ['owner', 'admin'] as const) {
       const h = await open('/my-day', privatePlateStub(role));
       try {
+        // The column holds the editor while a block is in hand (LAI-508): Esc lets go.
+        await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+        await h.page.keyboard.press('Escape');
         const progress = h.page.locator('[data-plate="progress"]');
         await progress.getByText('Private Observatory migration', { exact: true }).waitFor({
           timeout: 20_000,
@@ -366,6 +375,9 @@ void describe('My day after the reference', () => {
     for (const role of ['member', 'viewer'] as const) {
       const h = await open('/my-day', privatePlateStub(role));
       try {
+        // The column holds the editor while a block is in hand (LAI-508): Esc lets go.
+        await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+        await h.page.keyboard.press('Escape');
         await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
         assert.equal(
           await h.page.getByText('Private Observatory migration', { exact: true }).count(),
@@ -392,6 +404,9 @@ void describe('My day after the reference', () => {
     ] as const) {
       const h = await open('/my-day', privatePlateStub(role, implicit));
       try {
+        // The column holds the editor while a block is in hand (LAI-508): Esc lets go.
+        await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+        await h.page.keyboard.press('Escape');
         await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
         if (shown) {
           await h.page
@@ -411,6 +426,9 @@ void describe('My day after the reference', () => {
   void test('two columns on a laptop, one on a phone, in both themes, never sideways', async () => {
     const h = await open('/my-day', STUB);
     try {
+      // The column holds the editor while a block is in hand (LAI-508): Esc lets go.
+      await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.keyboard.press('Escape');
       await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
       for (const theme of ['Light', 'Dark']) {
         await h.page.setViewportSize({ width: 1440, height: 900 });

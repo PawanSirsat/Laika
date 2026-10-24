@@ -56,6 +56,9 @@ void describe('the column beside the day', () => {
   void test('Agent minutes, then On your plate — bounded, scrolling on its own; the switch in the header', async () => {
     const h = await busy();
     try {
+      // The column holds the editor while a block is in hand (LAI-508): Esc
+      // lets go, and the two cards stand there.
+      await h.page.keyboard.press('Escape');
       await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
       const sides = async () =>
         (
@@ -63,8 +66,7 @@ void describe('the column beside the day', () => {
             .locator('[data-myday-side] > section')
             .evaluateAll((els: Element[]) => els.map((el) => el.className))
         ).map((c) => c.split(' ').find((k: string) => k !== 'myday-card'));
-      // Wait for every section, not just the plate (LAI-715). *Who looked* moved
-      // to the header (LAI-502), so two sections stand here.
+      // *Who looked* is the header's (LAI-502): two cards stand here.
       await until(async () => (await sides()).join('|') === 'myday-agent|myday-plate');
       assert.deepEqual(await sides(), ['myday-agent', 'myday-plate']);
       // Draft my time sits in the header's Day settings, as the owner's design has it (LAI-502).
@@ -153,6 +155,7 @@ void describe('the column beside the day', () => {
   void test('On your plate: five of each, the true count, and +N more where the rest live', async () => {
     const h = await busy();
     try {
+      await h.page.keyboard.press('Escape');
       const plate = h.page.locator('.myday-plate');
       await plate.locator('.plate-groups').waitFor({ timeout: 20_000 });
       const group = (id: string) => plate.locator(`[data-plate="${id}"]`);
@@ -640,6 +643,8 @@ void describe('names a screen reader can tell apart', () => {
 void describe('every row is connected to its card (LAI-810, the owner)', () => {
   void test('a known card is a link to it in its own space; one the reader cannot see is not', async () => {
     const h = await busy();
+    // Agent time stands in the column only while nothing is in hand (LAI-508).
+    await h.page.keyboard.press('Escape');
     try {
       const link = row(h, 'd01').locator('.myday-row-target a.myday-cardlink');
       assert.equal(await link.getAttribute('href'), '/board?project=atlas&task=t1');
