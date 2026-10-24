@@ -47,7 +47,7 @@ function stub(opts: { writes?: StubCall[]; refuse?: boolean; typed?: boolean } =
         task: null,
         project: null,
         note: null,
-        kind: 'call',
+        kind: 'support',
         title: 'Customer call',
         description: 'Renewal',
         revision: 1,
@@ -289,13 +289,13 @@ void describe('a range dragged on the Timeline (LAI-897)', () => {
       await until(async () =>
         (await block.locator('.dayline-block-top').innerText()).includes('Customer call'),
       );
-      assert.equal(await block.getAttribute('data-entry-kind'), 'call');
+      assert.equal(await block.getAttribute('data-entry-kind'), 'support');
       assert.match(await block.locator('.dayline-block-top').innerText(), /Customer call/);
       await block.locator('.dayline-block-body').click();
       const panel = h.page.locator('[data-inspector="entry"]');
       await panel.waitFor();
       assert.equal(
-        await panel.locator('[data-kind-pick="call"]').getAttribute('aria-pressed'),
+        await panel.locator('[data-kind-pick="support"]').getAttribute('aria-pressed'),
         'true',
       );
       assert.equal(await panel.locator('[data-entry-title]').inputValue(), 'Customer call');

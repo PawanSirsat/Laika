@@ -38,7 +38,7 @@ function stub(writes: StubCall[]): ApiStub {
         task: null,
         project: null,
         note: null,
-        kind: 'call',
+        kind: 'support',
         title: 'Call with the bank',
         description: null,
         revision: 1,
@@ -269,7 +269,7 @@ void describe('the editor (LAI-504)', () => {
       await panel.locator('[data-preset="Reading docs"]').click();
       assert.equal(await panel.locator('[data-entry-title]').inputValue(), 'Reading docs');
       assert.equal(
-        await panel.locator('[data-kind-pick="learning"]').getAttribute('aria-pressed'),
+        await panel.locator('[data-kind-pick="research"]').getAttribute('aria-pressed'),
         'true',
       );
       await panel.locator('[data-range-add]').click();
@@ -280,7 +280,7 @@ void describe('the editor (LAI-504)', () => {
         minutes: 45,
         started_at: at(TODAY, 14, 15),
         ended_at: at(TODAY, 15, 0),
-        kind: 'learning',
+        kind: 'research',
         title: 'Reading docs',
       });
     } finally {
