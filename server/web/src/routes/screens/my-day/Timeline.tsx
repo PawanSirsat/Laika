@@ -1825,7 +1825,7 @@ export function Timeline({
         {line.untimed > 0 && (
           <span className="dayline-untimed">
             {line.untimed === 1 ? '1 block has' : `${String(line.untimed)} blocks have`} no set time
-            — listed below only
+            — in the tray under the Timeline
           </span>
         )}
       </footer>

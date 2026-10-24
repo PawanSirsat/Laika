@@ -43,6 +43,7 @@ import type { MeProfile } from '../../../api/me.ts';
 import type { ReviewQueueItem } from '../../../api/review.ts';
 import { AgentStrip } from './AgentStrip.tsx';
 import { cardChips } from './card-chips.ts';
+import { DayTabs, type DayTab } from './DayTabs.tsx';
 import { DraftList, type Batch } from './DraftList.tsx';
 import { ConfirmDaySummary } from './ConfirmDaySummary.tsx';
 import { DaySettings } from './DaySettings.tsx';
@@ -57,6 +58,8 @@ import {
   type BulkResult,
 } from './draft-bulk.ts';
 import { EntryList } from './EntryList.tsx';
+import { OverviewTab } from './OverviewTab.tsx';
+import { UntimedTray } from './UntimedTray.tsx';
 import { clock, duration, span } from './format.ts';
 import { Inspector, type Held, type InspectorActions } from './Inspector.tsx';
 import { addDays, canAddTime, dayIn, dayTotals, DRAFT_READERS, isDay } from './my-day-derive.ts';
@@ -276,6 +279,24 @@ export function MyDayScreen({
   const [lookedOpen, setLookedOpen] = useState(false);
   const [timerOpen, setTimerOpen] = useState(false);
   const [summary, setSummary] = useState(false);
+  // The tab under the Timeline (LAI-505): remembered per browser; a day with
+  // drafts opens on To review, one without on Overview.
+  const [tab, setTab] = useState<DayTab | undefined>(() => {
+    try {
+      const kept = localStorage.getItem('laika.my-day.tab');
+      return kept === 'overview' || kept === 'review' || kept === 'confirmed' ? kept : undefined;
+    } catch {
+      return undefined;
+    }
+  });
+  const pickTab = (next: DayTab): void => {
+    setTab(next);
+    try {
+      localStorage.setItem('laika.my-day.tab', next);
+    } catch {
+      // A private window keeps nothing; the tab still changes.
+    }
+  };
   const confirmButton = useRef<HTMLButtonElement | null>(null);
   const [zoom, setZoom] = useState<Zoom>('1');
   const [now, setNow] = useState(() => Date.now());
@@ -584,6 +605,7 @@ export function MyDayScreen({
   const { settings } = view;
   const addable = canAddTime(settings);
   const totals = dayTotals(view);
+  const shownTab: DayTab = tab ?? (view.drafts.length > 0 ? 'review' : 'overview');
   const draftOff = !readOnly && settings.org_mode === 'drafts' && !settings.draft_my_time;
   const dayPlan = confirmPlan(view.drafts);
   const readyMinutes = dayPlan.ready.reduce((sum, d) => sum + d.minutes, 0);
@@ -1284,9 +1306,27 @@ export function MyDayScreen({
         )}
         <div className="myday-grid">
           <div className="myday-main">
-            {view.drafts.length > 0 && (
+            {view.state !== 'future' && (
+              <UntimedTray
+                drafts={view.drafts}
+                entries={view.entries}
+                selected={selectedId}
+                onPick={(item) => {
+                  setSelection(item);
+                }}
+              />
+            )}
+            {view.state !== 'future' && (
+              <DayTabs
+                current={shownTab}
+                counts={{ review: view.drafts.length, confirmed: view.entries.length }}
+                onPick={pickTab}
+              />
+            )}
+            {view.state !== 'future' && shownTab === 'overview' && <OverviewTab view={view} />}
+            {view.state !== 'future' && shownTab === 'review' && (
               <DraftList
-                // A new day starts with nothing ticked and on its first page.
+                // A new day starts with nothing ticked.
                 key={`drafts-${view.day}`}
                 drafts={view.drafts}
                 pending={pending}
@@ -1310,8 +1350,7 @@ export function MyDayScreen({
                 }
               />
             )}
-
-            {view.state !== 'future' && (
+            {view.state !== 'future' && shownTab === 'confirmed' && (
               <EntryList
                 key={`entries-${view.day}`}
                 entries={view.entries}

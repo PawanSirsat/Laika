@@ -30,29 +30,6 @@ import { draftTarget, rangeLabel } from './my-day-derive.ts';
  */
 
 /** About ten rows a page: a morning's worth, few enough to read. */
-export const PAGE_SIZE = 10;
-
-export interface Paged<T> {
-  readonly items: readonly T[];
-  /** 0-based, clamped into range — a page that emptied shows the last one. */
-  readonly page: number;
-  readonly pages: number;
-  /** `1–10 of 37`. */
-  readonly label: string;
-}
-
-export function pageOf<T>(all: readonly T[], page: number, size: number = PAGE_SIZE): Paged<T> {
-  const pages = Math.max(1, Math.ceil(all.length / size));
-  const at = Math.min(Math.max(0, page), pages - 1);
-  const start = at * size;
-  const items = all.slice(start, start + size);
-  const label =
-    items.length === 0
-      ? `0 of ${String(all.length)}`
-      : `${String(start + 1)}–${String(start + items.length)} of ${String(all.length)}`;
-  return { items, page: at, pages, label };
-}
-
 /**
  * Shift-click: every row from the one clicked last (`anchor`) to this one
  * takes this one's new state, `on`. Without an anchor still in the list it is

@@ -4275,3 +4275,367 @@ p.inspector-length {
     display: none;
   }
 }
+
+/* ------------------------- the tray, the tabs, the groups (LAI-505) */
+
+.myday-tray {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  padding: 0.75rem 1.125rem;
+}
+
+.myday-tray-words {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.myday-tray-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.myday-tray-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.375rem 0.75rem 0.375rem 0.5rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  font: inherit;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.myday-tray-item:hover {
+  border-color: var(--accent-border);
+}
+
+.myday-tray-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.myday-tray-item-selected {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.myday-tray-grip {
+  color: var(--text-muted);
+  letter-spacing: -0.2em;
+  font-size: var(--text-small);
+}
+
+.myday-tray-length {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+}
+
+.myday-tray-kind {
+  padding: 0.0625rem 0.375rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+/* The tabs sit on the page, their rule under them, as the design has them. */
+.myday-tabs {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.myday-tabs .page-tab {
+  margin: 0;
+  background: transparent;
+  border-top: 0;
+  border-left: 0;
+  border-right: 0;
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.myday-tabs .page-tab-active {
+  font-weight: var(--weight-bold);
+}
+
+/* A group of rows: Morning, Afternoon, Evening, No set time. */
+.myday-group-head {
+  grid-column: 1 / -1;
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.375rem 1.125rem;
+  background: var(--bg-column);
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.myday-group-count {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.myday-group-sum {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-primary);
+}
+
+.myday-blocks > .myday-group-head:first-child {
+  border-top: 0;
+}
+
+/* ------------------------------------------------- Overview (LAI-505) */
+
+.myday-ov {
+  gap: 1rem;
+}
+
+.myday-ov-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.myday-ov-head > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.myday-ov-stats {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+}
+
+.myday-ov-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+}
+
+.myday-ov-stat-label {
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.myday-ov-stat-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-heading-md);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.myday-ov-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 1.25rem 2rem;
+}
+
+.myday-ov-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.myday-ov-bar {
+  display: flex;
+  gap: 2px;
+  height: 0.5rem;
+  border-radius: 0.25rem;
+  overflow: hidden;
+  background: var(--bg-column);
+}
+
+.myday-ov-bar .myday-summary-fill {
+  border-radius: 0;
+}
+
+.myday-ov-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.myday-ov-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--text-small);
+  color: var(--text-primary);
+}
+
+.myday-ov-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.myday-ov-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.myday-ov-figure {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.myday-ov-pct {
+  min-width: 2.5rem;
+  text-align: right;
+  font-family: var(--font-mono);
+}
+
+.myday-ov-task {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: var(--text-small);
+}
+
+.myday-ov-task-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.myday-ov-key {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.myday-ov-key-none {
+  font-family: inherit;
+  color: var(--chip-orange);
+}
+
+.myday-ov-task-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.myday-ov-track {
+  display: block;
+  height: 0.25rem;
+  border-radius: 0.125rem;
+  background: var(--bg-column);
+  overflow: hidden;
+}
+
+.myday-ov-task-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent-border);
+}
+
+.myday-ov-days {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.5rem;
+  align-items: end;
+}
+
+.myday-ov-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: var(--text-small);
+}
+
+.myday-ov-day-figure {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.myday-ov-day-bar {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 5rem;
+  border-radius: 0.25rem;
+  background: var(--bg-column);
+  overflow: hidden;
+}
+
+.myday-ov-day-fill {
+  position: relative;
+  display: block;
+  width: 100%;
+  background: var(--accent);
+}
+
+.myday-ov-day-drafted {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: block;
+  background: repeating-linear-gradient(90deg, var(--accent) 0 3px, var(--accent-bg) 3px 5px);
+}
+
+.myday-ov-day-name {
+  color: var(--text-muted);
+}
+
+.myday-ov-day-open .myday-ov-day-name {
+  color: var(--accent);
+  font-weight: var(--weight-bold);
+}
