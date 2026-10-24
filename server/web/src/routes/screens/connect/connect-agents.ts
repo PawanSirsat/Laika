@@ -1,11 +1,11 @@
 import type { AgentClient } from '../../../api/agent-clients.ts';
 import {
+  ACTIVITY_ON,
   PLACEHOLDER_TOKEN,
   PLUGIN_HOME,
   PLUGIN_REPO,
-  setupPrompt,
+  machinePrompt,
   manualCommands,
-  type ProjectRef,
 } from './connect-copy.ts';
 
 /**
@@ -232,8 +232,12 @@ export interface GuideContext {
   readonly origin: string;
   /** The minted secret, or `undefined` before one exists. */
   readonly secret: string | undefined;
-  /** For Claude Code's prompt, which also writes the project block. */
-  readonly project?: ProjectRef | undefined;
+  /**
+   * The organisation collects local activity (D-102 amended): the automatic
+   * blocks end by turning the collector on for this machine (LAI-997).
+   * Absent or `false`, they do not.
+   */
+  readonly insightsOn?: boolean | undefined;
 }
 
 // ------------------------------------------------------------------ pieces
@@ -335,14 +339,32 @@ const VSCODE_HOSTED =
 // ------------------------------------------------------------------ blocks
 
 /**
- * Step 2 for one agent: what to put where.
+ * Step 3 for one agent: what to put where. **Once per machine**, every block
+ * of it (LAI-997): nothing here writes into a repository; the project block is
+ * the Projects tab's.
  *
  * Grouped as the page shows them — *recommended*, *by hand*, *alternatives* —
- * and ordered within each group as a person would do them.
+ * and ordered within each group as a person would do them. When the
+ * organisation collects local activity, every `cli` block (the CLI route for
+ * Codex, Cursor, …) gains `laika activity on` as its last line, the same way
+ * the Claude Code prompt gains it as a step.
  */
-export function setupBlocks(
+export function setupBlocks(id: AgentChoice, context: GuideContext): readonly SetupBlock[] {
+  const insightsOn = context.insightsOn === true;
+  return rawBlocks(id, context).map((block) =>
+    block.key === 'cli' && insightsOn
+      ? {
+          ...block,
+          text: `${block.text}\n${ACTIVITY_ON}`,
+          note: `${block.note ?? ''} The last line turns on local activity for this machine, which your organisation collects (counts only, never the work).`.trim(),
+        }
+      : block,
+  );
+}
+
+function rawBlocks(
   id: AgentChoice,
-  { origin, secret, project }: GuideContext,
+  { origin, secret, insightsOn }: GuideContext,
 ): readonly SetupBlock[] {
   const token = secret ?? PLACEHOLDER_TOKEN;
   const url = `${origin}/mcp`;
@@ -357,8 +379,8 @@ export function setupBlocks(
           what: 'the setup prompt',
           lang: 'text',
           token: 'secret',
-          text: setupPrompt({ origin, secret, project }),
-          note: 'Open Claude Code in your project folder — plain `claude` is fine, nothing is installed yet — and paste this. It installs the Laika plugin, checks the board answers, and writes the Laika block into this project’s CLAUDE.md.',
+          text: machinePrompt({ origin, secret, insightsOn: insightsOn === true }),
+          note: 'Open Claude Code anywhere — plain `claude` is fine, nothing is installed yet — and paste this. It installs the Laika plugin and checks the board answers; it writes into no repository. Adding a project is the Projects tab.',
         },
         {
           key: 'claude-manual',
@@ -368,7 +390,7 @@ export function setupBlocks(
           lang: 'sh',
           token: 'none',
           text: manualCommands(),
-          note: `The same thing by hand. The installer asks for the board URL — ${origin} — and the token from step 1.`,
+          note: `The same thing by hand. The installer asks for the board URL — ${origin} — and the token from step 2.`,
         },
         {
           key: 'claude-mcp-add',
@@ -673,7 +695,7 @@ headers:
           token: 'none',
           text: `hermes mcp add laika --url ${url} --auth header
 hermes mcp test laika`,
-          note: 'Hermes asks for the token itself and keeps it in ~/.hermes/.env. Paste the one from step 1.',
+          note: 'Hermes asks for the token itself and keeps it in ~/.hermes/.env. Paste the one from step 2.',
         },
         envBlock(origin, token),
         {
@@ -999,7 +1021,7 @@ laika whoami`,
   }
 }
 
-// ------------------------------------------------------------ step 3
+// ------------------------------------------------------------ step 4: start
 
 export function startGuide(id: AgentChoice): StartGuide {
   switch (id) {
@@ -1104,7 +1126,7 @@ export function startGuide(id: AgentChoice): StartGuide {
   }
 }
 
-// ------------------------------------------------------------ step 4
+// ------------------------------------------------------------ step 4: when it is slow
 
 const UNSET =
   'LAIKA_TOKEN is not set in the environment the agent started from — open a new terminal after adding it, and start the agent from there. The board’s 401 then says it received an empty Bearer or an unexpanded variable placeholder.';
