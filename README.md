@@ -94,7 +94,13 @@ connect.**
 git clone https://github.com/PawanSirsat/Laika.git ~/laika
 ~/laika/plugin/scripts/install.sh      # asks for your board URL and YOUR token → ~/.laika/env (chmod 600)
 laika connect codex                    # or cursor, gemini-cli, opencode, … — `laika connect --list`
+laika activity on                      # if your organisation collects local activity (Developer insights)
 ```
+
+All of that is **once per machine**. **Once per project**, commit the block the
+board's *Developer access → Projects* tab gives you to the repo's `CLAUDE.md`
+(or `AGENTS.md`, `GEMINI.md`, … per agent): it names the project and carries no
+token.
 
 `laika connect` merges into the agent's existing config (backing it up to
 `<file>.bak` once), refuses a file it cannot parse, and references
@@ -200,7 +206,6 @@ Laika was built by a small team of Claude Code sessions coordinating through fil
 - [x] Meeting transcript → review screen
 - [ ] Published Docker image & versioned releases
 - [ ] Plugin in the Claude Code marketplace
-- [ ] `npx laika init`
 - [ ] GitHub webhook (push / PR → board)
 
 Full plan: [`docs/ROADMAP.md`](docs/ROADMAP.md) · Spec: [`docs/SPEC.md`](docs/SPEC.md) · Vision: [`docs/VISION.md`](docs/VISION.md)
