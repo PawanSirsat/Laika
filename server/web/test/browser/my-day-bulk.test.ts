@@ -33,7 +33,7 @@ void after(async () => {
 const row = (h: Harness, id: string) => h.page.locator(`li[data-draft="${id}"]`);
 const tick = (h: Harness, id: string) => row(h, id).locator('input.myday-check');
 const pageBox = (h: Harness) =>
-  h.page.getByRole('checkbox', { name: 'Select every block on this page' });
+  h.page.getByRole('checkbox', { name: 'Select every drafted block' });
 const count = (h: Harness) => h.page.locator('[data-bulk-count]');
 const said = (h: Harness) => h.page.locator('[data-bulk-said]');
 /** The selection bar's Confirm (LAI-831: *Confirm*, as the owner's design names it). */
@@ -43,7 +43,7 @@ const confirmSelected = (h: Harness) =>
 async function busy(writes?: (call: StubCall) => unknown): Promise<Harness> {
   const h = await open('/my-day', busyStub(writes));
   await h.page.setViewportSize({ width: 1440, height: 900 });
-  await h.page.locator('.myday-drafts [data-pager-label]').waitFor({ timeout: 30_000 });
+  await h.page.locator('.myday-drafts [data-settle-row]').first().waitFor({ timeout: 30_000 });
   return h;
 }
 
@@ -77,10 +77,14 @@ void describe('the column beside the day', () => {
       await until(async () => (await draftSwitch.count()) === 1);
       assert.equal(await draftSwitch.count(), 1);
       await h.page.keyboard.press('Escape');
-      // One drafted card, one confirmed — never drawn twice.
-      await until(async () => (await h.page.locator('.myday-entries').count()) === 1);
+      // One drafted card on its tab, one confirmed on its — never drawn twice (LAI-505).
       assert.equal(await h.page.locator('.myday-drafts').count(), 1);
+      assert.equal(await h.page.locator('.myday-entries').count(), 0);
+      await h.page.locator('[data-day-tab="confirmed"]').click();
+      await until(async () => (await h.page.locator('.myday-entries').count()) === 1);
       assert.equal(await h.page.locator('.myday-entries').count(), 1);
+      await h.page.locator('[data-day-tab="review"]').click();
+      await h.page.locator('.myday-drafts').waitFor({ timeout: 5_000 });
 
       const laptop = await h.page.evaluate(() => {
         const side = document.querySelector<HTMLElement>('[data-myday-side]');
@@ -206,39 +210,25 @@ void describe('the column beside the day', () => {
 });
 
 void describe('the drafted blocks', () => {
-  void test('page ten at a time, with no scroll of their own; the confirmed ones too', async () => {
+  void test('every block listed, grouped by the part of the day, with no scroll of their own; the confirmed ones too', async () => {
     const h = await busy();
     try {
       const card = h.page.locator('.myday-drafts');
-      const label = card.locator('[data-pager-label]');
-      const prev = card.getByRole('button', { name: '‹ Prev' });
-      const next = card.getByRole('button', { name: 'Next ›' });
       const ids = () =>
         card
           .locator('li[data-draft]')
           .evaluateAll((els) => els.map((el) => el.getAttribute('data-draft')));
-
-      assert.equal(await label.innerText(), '1–10 of 42');
+      // All 42, in the day's order, under their groups (LAI-505).
       assert.deepEqual(
         await ids(),
-        DRAFTS.slice(0, 10).map((d) => d.id),
+        DRAFTS.map((d) => d.id),
       );
-      assert.equal(await prev.isDisabled(), true);
+      const groups = await card
+        .locator('[data-group]')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('data-group')));
+      assert.deepEqual(groups, ['morning', 'afternoon', 'evening']);
 
-      await next.click();
-      await until(async () => (await label.innerText()) === '11–20 of 42');
-      assert.equal(await label.innerText(), '11–20 of 42');
-      assert.deepEqual(
-        await ids(),
-        DRAFTS.slice(10, 20).map((d) => d.id),
-      );
-
-      for (let i = 0; i < 3; i += 1) await next.click();
-      await until(async () => (await label.innerText()) === '41–42 of 42');
-      assert.equal(await label.innerText(), '41–42 of 42');
-      assert.equal(await next.isDisabled(), true);
-
-      // The page of ten is the bound; a scroll of its own kept the wheel from the page (LAI-311).
+      // No scroll of its own: the wheel always moves the page (LAI-311).
       const area = await card.locator('.myday-scroll').evaluate((el) => ({
         overflow: getComputedStyle(el).overflowY,
         hidden: el.scrollHeight - el.clientHeight,
@@ -246,32 +236,28 @@ void describe('the drafted blocks', () => {
       assert.equal(area.overflow, 'visible', 'the drafted list scrolls on its own');
       assert.ok(area.hidden <= 1, `the drafted list hides ${String(area.hidden)}px`);
 
-      // Fourteen confirmed entries, a page of ten — the owner's design lists them.
+      // Fourteen confirmed entries, on their tab.
+      await h.page.locator('[data-day-tab="confirmed"]').click();
       const entries = h.page.locator('.myday-entries');
+      await entries.waitFor({ timeout: 5_000 });
       assert.equal(
         await entries.locator('[data-confirmed-caption]').innerText(),
         '14 entries · 1 h 52 min',
       );
-      assert.equal(await entries.locator('li[data-entry]').count(), 10);
-      assert.equal(await entries.locator('.myday-pager-label').innerText(), '1–10 of 14');
+      assert.equal(await entries.locator('li[data-entry]').count(), 14);
     } finally {
       await h.close();
     }
   });
 
-  void test('select-all takes the page, then offers every page; Shift selects a run; Space ticks one', async () => {
+  void test('the header box takes every block; Shift selects a run; Space ticks one', async () => {
     const h = await busy();
     try {
       await pageBox(h).click();
       await count(h).waitFor({ timeout: 5_000 });
-      // d01–d10 are 15 to 19 minutes, twice over.
-      assert.equal(await count(h).innerText(), '10 selected · 2 h 50 min');
-
-      const everyPage = h.page.getByRole('button', { name: 'Select all 42 drafted' });
-      await everyPage.click();
+      // The box takes the whole list (LAI-505): no pages to offer.
       await until(async () => (await count(h).innerText()).startsWith('42'));
       assert.equal(await count(h).innerText(), '42 selected · 11 h 51 min');
-      assert.equal(await everyPage.count(), 0, 'every page is selected, and it is still offered');
 
       await h.page.getByRole('button', { name: 'Clear' }).click();
       await until(async () => (await count(h).count()) === 0);
@@ -309,7 +295,9 @@ void describe('confirming in bulk', () => {
   void test('Confirm selected leaves out a block on nothing, names it, and re-reads the day once', async () => {
     const h = await busy();
     try {
-      await pageBox(h).click();
+      // The first ten, as the page of ten used to be (LAI-505): a run of rows.
+      await tick(h, 'd01').click();
+      await tick(h, 'd10').click({ modifiers: ['Shift'] });
       assert.equal(
         await h.page.locator('[data-bulk-needcard]').innerText(),
         '1 needs a card or General — left out of Confirm',
@@ -353,7 +341,9 @@ void describe('confirming in bulk', () => {
         : defaultWrites(call),
     );
     try {
-      await pageBox(h).click();
+      // The first ten, as the page of ten used to be (LAI-505): a run of rows.
+      await tick(h, 'd01').click();
+      await tick(h, 'd10').click({ modifiers: ['Shift'] });
       await confirmSelected(h).click();
       await said(h).waitFor({ timeout: 20_000 });
       assert.equal(await said(h).getAttribute('role'), 'alert');
@@ -384,7 +374,6 @@ void describe('confirming in bulk', () => {
       await h.page.setViewportSize({ width: 1440, height: 900 });
       await pageBox(h).waitFor({ timeout: 30_000 });
       await pageBox(h).click();
-      await h.page.getByRole('button', { name: 'Select all 36 drafted' }).click();
       await until(async () => (await count(h).innerText()).startsWith('36 '));
       await confirmSelected(h).click();
       await said(h).waitFor({ timeout: 60_000 });
@@ -409,7 +398,9 @@ void describe('confirming in bulk', () => {
         : defaultWrites(call),
     );
     try {
-      await pageBox(h).click();
+      // The first ten, as the page of ten used to be (LAI-505): a run of rows.
+      await tick(h, 'd01').click();
+      await tick(h, 'd10').click({ modifiers: ['Shift'] });
       await confirmSelected(h).click();
       await said(h).waitFor({ timeout: 20_000 });
       assert.equal(
@@ -656,13 +647,13 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
       // On nothing: words, never a dead link.
       assert.equal(await row(h, 'd04').locator('.myday-row-target a').count(), 0);
 
-      await h.page.locator('.myday-drafts').getByRole('button', { name: 'Next ›' }).click();
       const hidden = row(h, 'd11').locator('.myday-row-target');
       await hidden.waitFor({ timeout: 5_000 });
       assert.equal(await hidden.locator('a').count(), 0, 'a card the reader cannot see is a link');
       assert.match(await hidden.innerText(), /LAI-758 was named — a card you can’t read/);
 
       // Confirmed entries — imported from Solidtime too — and agent minutes.
+      await h.page.locator('[data-day-tab="confirmed"]').click();
       const entry = (id: string) => h.page.locator(`li[data-entry="${id}"]`);
       await entry('e01').waitFor({ timeout: 5_000 });
       assert.equal(
@@ -688,8 +679,8 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
       assert.match(await secret.innerText(), /SEC-9 \(not a card you can see\)/);
       assert.doesNotMatch(await agent.innerText(), /Secret plan/);
 
-      // By keyboard, as a link is.
-      await h.page.locator('.myday-drafts').getByRole('button', { name: '‹ Prev' }).click();
+      // By keyboard, as a link is — back on the To review tab (LAI-505).
+      await h.page.locator('[data-day-tab="review"]').click();
       await link.focus();
       await h.page.keyboard.press('Enter');
       await h.page.waitForURL(
@@ -732,6 +723,7 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
       );
 
       // LAI-788: an entry from Solidtime is read here and changed there.
+      await h.page.locator('[data-day-tab="confirmed"]').click();
       await h.page.locator('[data-select="e02"]').click();
       const imported = h.page.locator('[data-inspector-for="e02"]');
       await imported.waitFor({ timeout: 5_000 });

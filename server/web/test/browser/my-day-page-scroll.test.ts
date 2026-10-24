@@ -23,10 +23,17 @@ void after(async () => {
 });
 
 const BOXES = [
-  { name: 'To settle', css: '.myday-drafts .myday-scroll' },
-  { name: 'Confirmed', css: '.myday-entries .myday-scroll' },
-  { name: 'the column beside the day', css: '[data-myday-side]' },
+  { name: 'To review', css: '.myday-drafts .myday-scroll', tab: 'review' },
+  { name: 'Confirmed', css: '.myday-entries .myday-scroll', tab: 'confirmed' },
+  { name: 'the column beside the day', css: '[data-myday-side]', tab: undefined },
 ] as const;
+
+/** The lists live on tabs (LAI-505): a box is reached on its own tab. */
+async function showTab(h: Harness, tab: string | undefined): Promise<void> {
+  if (tab === undefined) return;
+  const button = h.page.locator(`[data-day-tab="${tab}"]`);
+  if ((await button.getAttribute('aria-current')) !== 'page') await button.click();
+}
 
 const WIDTHS = [
   { width: 1440, height: 900 },
@@ -71,8 +78,7 @@ void describe('My day: the wheel scrolls the page wherever the pointer is', () =
     const stuck: string[] = [];
     try {
       await h.page.setViewportSize({ width: 1440, height: 900 });
-      await h.page.locator('.myday-drafts [data-pager-label]').waitFor({ timeout: 30_000 });
-      await h.page.locator('.myday-entries li[data-entry]').first().waitFor();
+      await h.page.locator('.myday-drafts [data-settle-row]').first().waitFor({ timeout: 30_000 });
       for (const size of WIDTHS) {
         await h.page.setViewportSize(size);
         await h.page.waitForFunction((w) => document.documentElement.clientWidth === w, size.width);
@@ -80,6 +86,7 @@ void describe('My day: the wheel scrolls the page wherever the pointer is', () =
           await setTheme(h.page, theme);
           for (const box of BOXES) {
             const where = `${box.name} at ${String(size.width)}, ${theme}`;
+            await showTab(h, box.tab);
             const at = await aim(h, box.css);
             assert.ok(at !== null, `${where}: not on the page`);
             assert.ok(at.visible > 20, `${where}: not in view to wheel over`);
@@ -108,8 +115,7 @@ void describe('My day: the wheel scrolls the page wherever the pointer is', () =
     const stuck: string[] = [];
     try {
       await h.page.setViewportSize({ width: 1440, height: 900 });
-      await h.page.locator('.myday-drafts [data-pager-label]').waitFor({ timeout: 30_000 });
-      await h.page.locator('.myday-entries li[data-entry]').first().waitFor();
+      await h.page.locator('.myday-drafts [data-settle-row]').first().waitFor({ timeout: 30_000 });
       for (const size of WIDTHS) {
         await h.page.setViewportSize(size);
         await h.page.waitForFunction((w) => document.documentElement.clientWidth === w, size.width);
@@ -117,6 +123,7 @@ void describe('My day: the wheel scrolls the page wherever the pointer is', () =
           await setTheme(h.page, theme);
           for (const card of ['.myday-drafts', '.myday-entries']) {
             const where = `${card} at ${String(size.width)}, ${theme}`;
+            await showTab(h, card === '.myday-drafts' ? 'review' : 'confirmed');
             // Wheel the list first, as the owner did: the row must not be left under the head.
             const at = await aim(h, `${card} .myday-scroll`);
             assert.ok(at !== null, `${where}: no list`);
