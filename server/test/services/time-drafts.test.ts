@@ -206,6 +206,19 @@ describe('a collector’s upload', () => {
     ]);
   });
 
+  it('confirmed with its words, the entry carries them; without, nulls as before (LAI-500)', () => {
+    send([block(AT(9), AT(10)), block(AT(11), AT(12))]);
+    const [first, second] = pending();
+    const said = confirmDraft(t.db, bea, first?.id ?? '', NOW, undefined, {
+      kind: 'planning',
+      title: '  Sprint shape  ',
+      description: '',
+    });
+    expect(said).toMatchObject({ kind: 'planning', title: 'Sprint shape', description: null });
+    const plain = confirmDraft(t.db, bea, second?.id ?? '', NOW);
+    expect(plain).toMatchObject({ kind: null, title: null, description: null });
+  });
+
   it('never brings a dismissed block back', () => {
     send([block(AT(9), AT(10))]);
     dismissDraft(t.db, bea, pending()[0]?.id ?? '', NOW);
