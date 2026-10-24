@@ -740,7 +740,9 @@ void describe('keyboard shortcuts (H)', () => {
     const h = await openDay(TODAY);
     try {
       await select(h, 'd2');
-      const note = h.page.getByPlaceholder(/What it was/);
+      // A field in the header's Start timer popover (LAI-502) keeps every key.
+      await h.page.locator('[data-timer-start] > button').click();
+      const note = h.page.locator('[data-timer-title]');
       await note.click();
       await h.page.keyboard.type('xgjk?');
       assert.equal(await note.inputValue(), 'xgjk?');
@@ -751,9 +753,8 @@ void describe('keyboard shortcuts (H)', () => {
         'a shortcut fired while typing',
       );
 
-      await note.evaluate((el) => {
-        el.blur();
-      });
+      await h.page.keyboard.press('Escape');
+      await until(async () => (await note.count()) === 0);
       await h.page.keyboard.press('Shift+?');
       const sheet = h.page.getByRole('dialog', { name: 'Keyboard shortcuts' });
       await sheet.waitFor({ timeout: 5_000 });

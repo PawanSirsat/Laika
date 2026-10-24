@@ -149,8 +149,9 @@ const WRITE_CONTROLS = [
   '[data-confirm-day]',
   '.inspector-confirm',
   '.myday-check',
-  '.myday-switch',
-  'form.myday-add',
+  '[data-day-settings]',
+  '[data-add-time]',
+  '[data-timer-start]',
 ];
 
 after(async () => {
