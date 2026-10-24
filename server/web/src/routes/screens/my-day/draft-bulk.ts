@@ -190,7 +190,12 @@ export async function eachBlock(
 /** The writes a batch makes — the real client in the page, a fake in a test. */
 export interface BulkApi {
   readonly confirmDraft: (id: string) => Promise<unknown>;
-  readonly confirmDay: (day: string) => Promise<{ readonly entries: readonly TimeEntry[] }>;
+  readonly confirmDay: (
+    day: string,
+    note?: string,
+  ) => Promise<{ readonly entries: readonly TimeEntry[] }>;
+  /** The note alone (LAI-503), when the day confirms block by block. */
+  readonly setDayNote?: (day: string, note: string | null) => Promise<unknown>;
   readonly dismissDraft: (id: string) => Promise<unknown>;
   readonly toGeneral: (id: string) => Promise<unknown>;
 }
@@ -381,15 +386,18 @@ export async function runConfirmDay(
   day: string,
   api: BulkApi,
   onProgress: (done: number, total: number) => void = () => undefined,
+  note?: string,
 ): Promise<BulkResult> {
   const plan = confirmPlan(all);
+  const shared = note !== undefined && note.trim() !== '' ? ' · note shared' : '';
 
   if (plan.needCard.length === 0) {
     onProgress(0, all.length);
     try {
-      const { entries } = await api.confirmDay(day);
+      const { entries } = await api.confirmDay(day, note);
       onProgress(all.length, all.length);
-      return { keep: [], ...dayReport(all, entries) };
+      const report = dayReport(all, entries);
+      return { keep: [], ...report, text: report.text + shared };
     } catch (cause) {
       onProgress(all.length, all.length);
       const clash = clashOf(cause, all);
@@ -408,6 +416,16 @@ export async function runConfirmDay(
     api.confirmDraft,
     onProgress,
   );
+  // Block by block, the note goes on its own (LAI-503); a note that fails to
+  // save is said with the rest, never silently dropped.
+  let noteSaid = shared;
+  if (note !== undefined && api.setDayNote !== undefined) {
+    try {
+      await api.setDayNote(day, note.trim() === '' ? null : note);
+    } catch {
+      noteSaid = ' · the note was not saved';
+    }
+  }
   const stale = pass.refused.filter((r) => r.why === 'stale');
   const full = pass.refused.filter((r) => r.why === 'full');
   const other = pass.refused.filter((r) => r.why === 'other');
@@ -435,7 +453,7 @@ export async function runConfirmDay(
   const left = all.length - pass.done.length;
   return {
     keep: [],
-    text: `Confirmed ${String(pass.done.length)} of ${blocks(all.length)}; ${String(left)} left drafted — ${reasons.join('; ')}.`,
+    text: `Confirmed ${String(pass.done.length)} of ${blocks(all.length)}; ${String(left)} left drafted — ${reasons.join('; ')}.${noteSaid}`,
     ok: false,
   };
 }

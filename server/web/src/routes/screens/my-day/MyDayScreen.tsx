@@ -27,6 +27,7 @@ import {
   startTimer,
   stopTimer,
   type TimerStart,
+  setDayNote,
 } from '../../../api/time.ts';
 import { everyPage } from '../../../api/every-page.ts';
 import { getPersonDay, PEOPLE_ANALYTICS } from '../../../api/people-analytics.ts';
@@ -43,6 +44,7 @@ import type { ReviewQueueItem } from '../../../api/review.ts';
 import { AgentStrip } from './AgentStrip.tsx';
 import { cardChips } from './card-chips.ts';
 import { DraftList, type Batch } from './DraftList.tsx';
+import { ConfirmDaySummary } from './ConfirmDaySummary.tsx';
 import { DaySettings } from './DaySettings.tsx';
 import { TimerControl } from './TimerControl.tsx';
 import {
@@ -151,7 +153,8 @@ function recording(made: Made[], day: readonly string[]): BulkApi {
     };
   return {
     confirmDraft: (id) => confirmDraft(id, keep([id])),
-    confirmDay: (on) => confirmDay(on, keep(day)),
+    confirmDay: (on, note) => confirmDay(on, keep(day), note),
+    setDayNote: (on, note) => setDayNote(on, note),
     dismissDraft: (id) => dismissDraft(id, keep([id])),
     toGeneral: (id) => updateDraft(id, { task: null, project: null, general: true }, keep([id])),
   };
@@ -272,6 +275,8 @@ export function MyDayScreen({
   const [sheet, setSheet] = useState(false);
   const [lookedOpen, setLookedOpen] = useState(false);
   const [timerOpen, setTimerOpen] = useState(false);
+  const [summary, setSummary] = useState(false);
+  const confirmButton = useRef<HTMLButtonElement | null>(null);
   const [zoom, setZoom] = useState<Zoom>('1');
   const [now, setNow] = useState(() => Date.now());
   const spaces = useSpaces();
@@ -1142,6 +1147,7 @@ export function MyDayScreen({
               type="button"
               className="myday-chip myday-chip-primary myday-confirm-day"
               data-confirm-day
+              ref={confirmButton}
               disabled={busy || dayPlan.ready.length === 0}
               title={
                 dayPlan.needCard.length > 0
@@ -1149,19 +1155,28 @@ export function MyDayScreen({
                   : `Confirm every drafted block of ${dayLong(view.day)}`
               }
               onClick={() => {
-                void runBatch(
-                  'confirm-day',
-                  'Confirming',
-                  view.day,
-                  view.drafts.map((d) => d.id),
-                  (api, progress) => runConfirmDay(view.drafts, view.day, api, progress),
-                );
+                setSummary(true);
               }}
             >
               {pending === 'confirm-day' && <Spinner size="sm" label="Confirming the day" />}
               {dayPlan.needCard.length === 0
                 ? `Confirm day · ${duration(readyMinutes)}`
                 : `Confirm ${String(dayPlan.ready.length)} ready · ${duration(readyMinutes)}`}
+            </button>
+          )}
+          {!readOnly && addable && view.drafts.length === 0 && view.state !== 'future' && (
+            <button
+              type="button"
+              className="myday-chip myday-head-button"
+              data-day-note-button
+              title="A note for whoever reads your day"
+              onClick={() => {
+                setSummary(true);
+              }}
+            >
+              <span className="myday-head-text">
+                {view.day_note === null ? 'Day note' : 'Edit day note'}
+              </span>
             </button>
           )}
           {!readOnly && (
@@ -1208,6 +1223,14 @@ export function MyDayScreen({
         </div>
       )}
       {banner}
+      {readOnly && view.day_note !== null && (
+        <p className="myday-viewing-banner myday-day-note" data-day-note>
+          <strong>
+            {subjectName}’s note for {dayLong(view.day)}:
+          </strong>{' '}
+          {view.day_note.note}
+        </p>
+      )}
       {draftOff && (
         <p className="myday-viewing-banner myday-draft-off" role="status" data-draft-off>
           <strong>Draft my time is off.</strong> Laika isn’t drafting from your activity. Time you
@@ -1350,6 +1373,42 @@ export function MyDayScreen({
           setToast(undefined);
         }}
       />
+      {summary && (
+        <ConfirmDaySummary
+          view={view}
+          ready={dayPlan.ready}
+          needCard={dayPlan.needCard}
+          busy={busy}
+          restore={() => confirmButton.current}
+          onClose={() => {
+            setSummary(false);
+          }}
+          onConfirm={(note) => {
+            setSummary(false);
+            // The note goes only when it changed: an untouched field sends nothing.
+            const changed = note.trim() !== (view.day_note?.note ?? '').trim();
+            void runBatch(
+              'confirm-day',
+              'Confirming',
+              view.day,
+              view.drafts.map((d) => d.id),
+              (api, progress) =>
+                runConfirmDay(view.drafts, view.day, api, progress, changed ? note : undefined),
+            );
+          }}
+          onSaveNote={(note) => {
+            setSummary(false);
+            void run(
+              'note',
+              [],
+              () => setDayNote(view.day, note.trim() === '' ? null : note),
+              note.trim() === ''
+                ? 'Note removed.'
+                : 'Note saved — shared with whoever reads your day.',
+            );
+          }}
+        />
+      )}
       {sheet && (
         <ShortcutSheet
           onClose={() => {
