@@ -170,6 +170,8 @@ void describe('an owner reads a member’s day (D-102, LAI-959)', () => {
     const h = await openAt(`/my-day?day=${TODAY}`, stub(ADA, HOLDS));
     try {
       await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      // Nothing is in hand on load (LAI-511): the first block, picked.
+      await h.page.locator('[data-block-select]').first().click();
       await h.page.locator('[data-inspector="draft"]').waitFor({ timeout: 10_000 });
       for (const selector of WRITE_CONTROLS) {
         assert.ok((await h.page.locator(selector).count()) > 0, `${selector} is not drawn`);
