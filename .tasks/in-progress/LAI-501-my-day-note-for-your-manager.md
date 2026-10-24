@@ -2,11 +2,12 @@
 id: LAI-501
 title: 'My day: a note for your manager, one per day, written with Confirm day or alone; owners and admins read it'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-897
-status: backlog
+status: in-progress
+started: 2026-10-24T09:54:05Z
 ---
 
 ## Goal
