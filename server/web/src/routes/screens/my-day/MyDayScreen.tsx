@@ -1004,19 +1004,22 @@ export function MyDayScreen({
         <ScreenHeader
           variant="page"
           title={title}
+          context={
+            totals.confirmed + totals.drafted > 0 ? (
+              <span className="myday-figure" data-day-total>
+                <span className="myday-figure-total">
+                  {duration(totals.confirmed + totals.drafted)}
+                </span>
+                <span className="myday-figure-sub">
+                  {totals.drafted > 0
+                    ? `${duration(totals.drafted)} to review`
+                    : `${duration(totals.confirmed)} confirmed`}
+                </span>
+              </span>
+            ) : undefined
+          }
           description={
             <span className="myday-subtitle">
-              {totals.confirmed + totals.drafted > 0 && (
-                <>
-                  <span className="myday-figure" data-day-total>
-                    <strong>{duration(totals.confirmed + totals.drafted)}</strong>
-                    {' · '}
-                    {duration(totals.confirmed)} confirmed
-                    {totals.drafted > 0 && ` · ${duration(totals.drafted)} to review`}
-                  </span>
-                  <span className="myday-subtitle-dot" aria-hidden="true" />
-                </>
-              )}
               <span>
                 {dayLong(view.day)}
                 {view.day === view.today && ' · today'}
@@ -1028,25 +1031,20 @@ export function MyDayScreen({
                   {`Read only · ${subjectName} sees that you looked`}
                 </span>
               ) : (
-                // Who reads drafts, truthfully (D-102, LAI-968), and the way to
-                // the list of every look.
-                <span
-                  className="myday-lock"
-                  title={`Your drafts can be read by you and by ${DRAFT_READERS}.`}
+                // Who reads drafts, truthfully (D-102, LAI-968): the design's one
+                // link, its words in the tooltip, and the way to every look.
+                <a
+                  href="#myday-looked"
+                  className="myday-lock myday-lock-link"
+                  title={`Drafts: you, owners and admins. Your drafts can be read by you and by ${DRAFT_READERS}. Every look is listed under Who looked.`}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    setLookedOpen(true);
+                  }}
                 >
                   <Padlock />
-                  Drafts: you, owners and admins ·{' '}
-                  <a
-                    href="#myday-looked"
-                    className="myday-lock-link"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      setLookedOpen(true);
-                    }}
-                  >
-                    who looked
-                  </a>
-                </span>
+                  Who can see this
+                </a>
               )}
             </span>
           }
@@ -1097,6 +1095,9 @@ export function MyDayScreen({
           }
         >
           {switcher}
+          {switcher !== undefined && !readOnly && (
+            <span className="myday-head-divider" aria-hidden="true" />
+          )}
           {!readOnly && addable && (
             <>
               <TimerControl
@@ -1159,9 +1160,14 @@ export function MyDayScreen({
               }}
             >
               {pending === 'confirm-day' && <Spinner size="sm" label="Confirming the day" />}
-              {dayPlan.needCard.length === 0
-                ? `Confirm day · ${duration(readyMinutes)}`
-                : `Confirm ${String(dayPlan.ready.length)} ready · ${duration(readyMinutes)}`}
+              <span className="myday-confirm-label">
+                {dayPlan.needCard.length === 0 ? 'Confirm day' : 'Confirm'}
+                <span className="myday-confirm-sub">
+                  {dayPlan.needCard.length === 0
+                    ? ` · ${duration(readyMinutes)}`
+                    : ` ${String(dayPlan.ready.length)} ready · ${duration(readyMinutes)}`}
+                </span>
+              </span>
             </button>
           )}
           {!readOnly && addable && view.drafts.length === 0 && view.state !== 'future' && (
