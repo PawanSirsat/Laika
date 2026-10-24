@@ -2523,6 +2523,47 @@ export const timeUndo = sqliteTable(
   ],
 );
 
+// ---------------------------------------------------- §4.61 time_timers
+
+/**
+ * A person's running timer (§4.61, D-110 item 1, LAI-500): one row while it
+ * runs, none when it does not — start inserts, stop and discard delete. The
+ * span the entry will have begins at `started_at` and never moves; the time
+ * counted is `accumulated_ms` plus, while running, now minus `resumed_at`.
+ * Stopping writes a confirmed entry through `insertEntry`, `source: 'manual'`
+ * (`time_entries.source`'s CHECK cannot be widened without a rebuild, and the
+ * title and kind already say what it was). The person's own, on a web
+ * session (`time_entries.write_own`); owners and admins see it with the day.
+ */
+export const timeTimers = sqliteTable(
+  'time_timers',
+  {
+    userId: text('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    kind: text('kind', { enum: TIME_ENTRY_KINDS }),
+    title: text('title'),
+    /** The zone the timer was started in: its entry's day is the start's day there. */
+    tz: text('tz').notNull(),
+    /** The first start — the entry's span begins here. Never moves. */
+    startedAt: integer('started_at').notNull(),
+    /** The start of the current running segment; `started_at` until the first resume. */
+    resumedAt: integer('resumed_at').notNull(),
+    /** Set while paused, null while running. */
+    pausedAt: integer('paused_at'),
+    /** Running milliseconds banked before the current segment. */
+    accumulatedMs: integer('accumulated_ms').notNull().default(0),
+    updatedAt,
+  },
+  () => [
+    check('time_timers_kind_check', oneOfOrNull('kind', TIME_ENTRY_KINDS)),
+    check('time_timers_title_check', sql.raw('title IS NULL OR length(title) <= 120')),
+    check('time_timers_accumulated_check', sql.raw('accumulated_ms >= 0')),
+    check('time_timers_segment_check', sql.raw('resumed_at >= started_at')),
+  ],
+);
+
 // ---------------------------------------------------- §4.50 agent_time_days
 
 /**
