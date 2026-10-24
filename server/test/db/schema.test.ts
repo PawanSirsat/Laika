@@ -128,6 +128,8 @@ describe('migrations', () => {
     'tasks',
     // LAI-831: a gap a person waved away; SPEC §4 is LAI-836.
     'time_breaks',
+    // LAI-501, D-110: a person's note on a day (§4.62).
+    'time_day_notes',
     // LAI-787, D-088: drafts, confirmed entries and their history.
     'time_drafts',
     'time_entries',

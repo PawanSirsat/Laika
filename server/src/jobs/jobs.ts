@@ -23,6 +23,7 @@ import {
   solidtimeEntries,
   timeBreaks,
   timeDrafts,
+  timeDayNotes,
   timeEntries,
   timeUndo,
 } from '../db/schema.ts';
@@ -261,11 +262,20 @@ export function pruneTime(db: Db, now: number): JobResult {
       .where(lt(timeUndo.createdAt, now - UNDO_WINDOW_MS))
       .run();
     const entries = tx.delete(timeEntries).where(lt(timeEntries.day, entryCutoff)).run();
+    // A day's note goes with its entries (LAI-501).
+    const notes = tx.delete(timeDayNotes).where(lt(timeDayNotes.day, entryCutoff)).run();
     const elsewhere = tx
       .delete(solidtimeEntries)
       .where(and(isNull(solidtimeEntries.entryId), lt(solidtimeEntries.day, entryCutoff)))
       .run();
-    return drafts.changes + breaks.changes + undo.changes + entries.changes + elsewhere.changes;
+    return (
+      drafts.changes +
+      breaks.changes +
+      undo.changes +
+      entries.changes +
+      notes.changes +
+      elsewhere.changes
+    );
   });
   return { changed };
 }

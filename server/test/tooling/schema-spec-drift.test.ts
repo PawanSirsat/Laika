@@ -577,6 +577,7 @@ describe('the parser itself', () => {
     // point of each row is to be found again by that id on the next pull.
     // LAI-833's is a session's five minutes of agent time. LAI-500's timer
     // is keyed by its person: one per person, and the row *is* the timer.
+    // LAI-501's note is keyed by the person's day: one note per day.
     const withoutId = [...specTables.entries()]
       .filter(([, fields]) => !fields.includes('id'))
       .map(([table]) => table)
@@ -601,6 +602,7 @@ describe('the parser itself', () => {
       'task_dependencies',
       'task_round_github',
       'task_tags',
+      'time_day_notes',
       'time_timers',
       'token_alert_dismissals',
       'token_arrivals',

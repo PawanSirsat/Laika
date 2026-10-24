@@ -156,7 +156,7 @@ describe('the work it does', () => {
     // of the drafts, every state), the drafts held on every day (LAI-831: one
     // grouped count, bounded by the drafts' 30 days), its agent seconds,
     // when the agent worked (LAI-833: one range of buckets) and their split, the week's drafts and its entries, the timer (LAI-500: one primary-key
-    // read) — and nothing that grows with the history.
+    // read), the day's note (LAI-501: one more) — and nothing that grows with the history.
     const sections = {
       org: statements.filter((s) => s.includes('from "orgs"')).length,
       switches: statements.filter((s) => /from "(org|user)_time_settings"/.test(s)).length,
@@ -168,6 +168,8 @@ describe('the work it does', () => {
       ).length,
       // The running timer (LAI-500): one primary-key read, whatever day is open.
       timer: statements.filter((s) => s.includes('from "time_timers"')).length,
+      // The day's note (LAI-501): one primary-key read.
+      day_note: statements.filter((s) => s.includes('from "time_day_notes"')).length,
     };
     expect(sections).toEqual({
       org: 1,
@@ -177,8 +179,9 @@ describe('the work it does', () => {
       breaks: 1,
       agent: 3,
       timer: 1,
+      day_note: 1,
     });
-    expect(statements).toHaveLength(14);
+    expect(statements).toHaveLength(15);
   });
 
   it('reads the same number of rows for a day whatever came before it', () => {
