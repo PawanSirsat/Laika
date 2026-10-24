@@ -45,7 +45,8 @@ const MOVES: readonly (readonly [string, string, string, string, string | null])
   ['/unlisted', '/inbox', '?tab=unlisted', 'Inbox', 'Unlisted work'],
   ['/capacity', '/insights', '?tab=capacity', 'Insights', 'Capacity'],
   ['/usage', '/insights', '?tab=usage', 'Insights', 'Usage & cost'],
-  ['/tokens', '/developer', '', 'Developer access', null],
+  // Developer access is four tabs since LAI-507: Tokens is one of them.
+  ['/tokens', '/developer', '?tab=tokens', 'Developer access', 'Tokens'],
 ];
 
 void describe('a bookmark to an old page opens its new home', () => {
@@ -77,12 +78,16 @@ void describe('a bookmark to an old page opens its new home', () => {
   void test('Connect keeps ?agent=, and opens the wizard set to it', async () => {
     const h = await open('/connect?agent=codex', STUB);
     try {
+      // The wizard is Developer access's first tab since LAI-507.
       await h.page.waitForURL(
-        (url) => url.pathname === '/developer/connect' && url.search === '?agent=codex',
+        (url) => url.pathname === '/developer' && url.search === '?tab=connect&agent=codex',
         { timeout: 10_000 },
       );
-      await h.page.locator('.screen-bar-title').waitFor({ timeout: 20_000 });
-      assert.match(await h.page.locator('.screen-bar-title').innerText(), /Connect/);
+      await h.page.locator('.screen-page-title').waitFor({ timeout: 20_000 });
+      assert.match(await h.page.locator('.screen-page-title').innerText(), /Developer access/);
+      assert.match(await h.page.locator('.page-tab-active').innerText(), /Connect/);
+      await h.page.locator('.conn-wizard-card').waitFor({ timeout: 20_000 });
+      assert.match(await h.page.locator('.conn-rail-sub').first().innerText(), /Codex/);
       // The page Connect is reached from is the one the rail lights.
       assert.equal(
         (await h.page.locator('#sidebar .sidebar-link-active').innerText()).trim(),

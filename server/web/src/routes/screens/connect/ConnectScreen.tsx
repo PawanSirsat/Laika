@@ -1,17 +1,13 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { Dropdown } from '../../../components/Dropdown.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { CopyButton } from '../../../components/CopyButton.tsx';
-import { EmptyState } from '../../../components/EmptyState.tsx';
-import { LoadingState } from '../../../components/LoadingState.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { everyPage } from '../../../api/every-page.ts';
-import { useGates } from '../../../api/permissions.ts';
+import { getActivitySharing } from '../../../api/local-activity.ts';
 import { getOrg } from '../../../api/org.ts';
 import { getPresence, hasLocation } from '../../../api/presence.ts';
-import { pickProject } from '../../../api/pick-project.ts';
 import {
   createToken,
   forcedTokenScope,
@@ -19,12 +15,10 @@ import {
   mayChooseScope,
   type CreatedToken,
 } from '../../../api/tokens.ts';
-import { useProjects } from '../../../api/use-projects.ts';
 import type { MeProfile } from '../../../api/me.ts';
 import {
   AGENT_GUIDES,
   guideFor,
-  instructionsTarget,
   likelyCauses,
   setupBlocks,
   startGuide,
@@ -32,7 +26,6 @@ import {
   type AgentGuide,
   type SetupBlock,
 } from './connect-agents.ts';
-import { projectBlock, type ProjectRef } from './connect-copy.ts';
 import {
   connectedLabel,
   connectedNote,
@@ -46,7 +39,6 @@ import { suggestTokenName } from './connect-token-name.ts';
 import {
   canContinue,
   commandLines,
-  extrasFor,
   footerHint,
   groupedAgents,
   noteAbove,
@@ -55,11 +47,9 @@ import {
   setupModes,
   stepOpen,
   WIZARD_STEPS,
-  type ExtraId,
   type SetupMode,
   type WizardStep,
 } from './connect-wizard.ts';
-import { ShareActivity } from './ShareActivity.tsx';
 import './connect.css';
 
 /**
@@ -95,9 +85,18 @@ import './connect.css';
  *
  * On a desktop the screen is exactly as tall as the space under the app
  * shell: the header and the rail never move, and the card's body is the one
- * scroller, with its *Back / Continue* footer pinned below it. What used to
- * sit under the wizard — the lead's block, the tool reference, the invite —
- * is a second group on the rail, opened in the same card.
+ * scroller, with its *Back / Continue* footer pinned below it.
+ *
+ * ## Once per machine, and nothing else (LAI-507)
+ *
+ * Every block here sets up the **machine**: the plugin, the token, the
+ * collector when the organisation wants it. The rail's *Optional* group —
+ * the project block, the tool reference, local activity, the invite — went
+ * with LAI-507: the first three are Developer access's other tabs, and an
+ * invite is Organisation → People's. *What agents can do* stayed, folded under
+ * step 4, because it is about the connection just made. The screen is now
+ * Developer access's first tab and renders embedded: its header hands the
+ * board's address up to the page header.
  */
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
@@ -137,8 +136,6 @@ interface MintedRef {
 }
 
 export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenProps) {
-  const projects = useProjects();
-
   const [agentId, setAgentId] = useState<AgentChoice>(
     () => guideFor(params?.get('agent') ?? storedAgent()).id,
   );
@@ -151,7 +148,13 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
   const [minted, setMinted] = useState<MintedRef | undefined>(undefined);
   const [pending, setPending] = useState(false);
   const [mintError, setMintError] = useState<string | undefined>(undefined);
-  const [slug, setSlug] = useState<string | undefined>(undefined);
+  /*
+   * Whether the organisation collects local activity (D-102 amended), so the
+   * setup blocks end by turning the collector on (LAI-507). Unknown until the
+   * board answers, and a refusal reads as *off*: a step that would fail is
+   * worse than one left out.
+   */
+  const [insightsOn, setInsightsOn] = useState(false);
   const [live, setLive] = useState<LiveState>({ kind: 'idle' });
   /*
    * **Remembered, not derived.** `forget()` blanks the secret and then drops
@@ -162,7 +165,6 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
    */
   const [forgotten, setForgotten] = useState(false);
   const ticks = useRef(0);
-  const blockRef = useRef<HTMLPreElement | null>(null);
 
   /*
    * The wizard's own state (LAI-740). None of it holds the secret.
@@ -177,12 +179,25 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
   const [query, setQuery] = useState('');
   const [setupMode, setSetupMode] = useState<SetupMode>('auto');
   const moved = useRef(false);
+
+  useEffect(() => {
+    if (me === undefined) return;
+    const controller = new AbortController();
+    getActivitySharing(controller.signal)
+      .then((sharing) => {
+        setInsightsOn(sharing.org_enabled);
+      })
+      .catch(() => {
+        setInsightsOn(false);
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [me]);
   const titleRef = useRef<HTMLHeadingElement | null>(null);
   /** The card's scroller and its head: a step change starts both at the top (LAI-742). */
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const headRef = useRef<HTMLElement | null>(null);
-  /** An optional entry open in the card (LAI-741); `step` is where *Back to steps* returns. */
-  const [extra, setExtra] = useState<ExtraId | undefined>(undefined);
   /*
    * The minted-token box is an alert once, on the mint (LAI-741). As a
    * standing `role="alert"` it was announced again on every return to step 2.
@@ -251,15 +266,8 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
   };
 
   const secret = revealed?.secret === '' ? undefined : revealed?.secret;
-  const chosen = pickProject(projects.projects, slug);
-  const project: ProjectRef | undefined =
-    chosen === undefined
-      ? undefined
-      : { slug: chosen.slug, prefix: chosen.prefix, name: chosen.name };
 
-  const blocks = setupBlocks(guide.id, { origin, secret, project });
-  const target = instructionsTarget(guide.id);
-  const block = project === undefined ? undefined : target.wrap(projectBlock(origin, project));
+  const blocks = setupBlocks(guide.id, { origin, secret, insightsOn });
   const start = startGuide(guide.id);
 
   const mint = (): void => {
@@ -393,25 +401,8 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
     if (!stepOpen(target, ready)) return;
     moved.current = true;
     setFreshMint(false);
-    setExtra(undefined);
     setStep(target);
   };
-
-  /** Open an optional entry in the card; *Back to steps* closes it. */
-  const openExtra = (id: ExtraId | undefined): void => {
-    moved.current = true;
-    setFreshMint(false);
-    setExtra(id);
-  };
-
-  // Two questions, two actions — the server's answers, denied until it has
-  // them (LAI-970). Inviting is `user.invite`; the insights switch is
-  // `org.developer_insights.set`, as Developer access asks it.
-  const gates = useGates(me !== undefined);
-  const canInvite = gates.org('user.invite');
-  const canSetInsights = gates.org('org.developer_insights.set');
-  const extras = extrasFor(canInvite);
-  const openedExtra = extras.find((e) => e.id === extra);
 
   /*
    * A step change moves focus to the new card's title, so a keyboard or
@@ -431,7 +422,7 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
     if (scrollRef.current !== null) scrollRef.current.scrollTop = 0;
     titleRef.current?.focus({ preventScroll: true });
     headRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [step, extra]);
+  }, [step]);
 
   /*
    * *Use a token I already have* removes itself, and focus would fall to
@@ -517,7 +508,7 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
             <ol className="conn-steps">
               {WIZARD_STEPS.map((n) => {
                 const open = stepOpen(n, ready);
-                const here = n === step && openedExtra === undefined;
+                const here = n === step;
                 const state = here ? 'current' : done[n] ? 'done' : 'todo';
                 return (
                   <li key={n} className="conn-step" data-state={state} data-locked={!open}>
@@ -552,26 +543,20 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
           <section
             className="conn-card conn-wizard-card"
             aria-labelledby="conn-step-title"
-            {...(openedExtra === undefined
-              ? { 'data-step': step }
-              : { 'data-extra': openedExtra.id })}
+            data-step={step}
           >
             {/* The one scroller on a desktop (LAI-741); the footer stays below it. */}
             <div className="conn-card-scroll" ref={scrollRef}>
               <header className="conn-card-head" ref={headRef}>
-                <p className="conn-eyebrow">
-                  {openedExtra === undefined ? `Step ${String(step)} of 4` : 'Optional'}
-                </p>
+                <p className="conn-eyebrow">Step {String(step)} of 4</p>
                 <h2 className="conn-card-title" id="conn-step-title" tabIndex={-1} ref={titleRef}>
-                  {openedExtra === undefined ? stepName(step) : openedExtra.name}
+                  {stepName(step)}
                 </h2>
-                <p className="conn-card-line">
-                  {openedExtra === undefined ? stepLine[step] : openedExtra.line}
-                </p>
+                <p className="conn-card-line">{stepLine[step]}</p>
               </header>
 
               <div className="conn-card-body">
-                {openedExtra === undefined && step === 1 && (
+                {step === 1 && (
                   <AgentPicker
                     value={guide.id}
                     onChange={choose}
@@ -580,7 +565,7 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
                   />
                 )}
 
-                {openedExtra === undefined && step === 2 && (
+                {step === 2 && (
                   <>
                     {viewerOnly && (
                       <p className="conn-note conn-note-warn">
@@ -692,7 +677,7 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
                   </>
                 )}
 
-                {openedExtra === undefined && step === 3 && (
+                {step === 3 && (
                   <div className="conn-setup-step">
                     {guide.beta !== undefined && (
                       <p className="conn-note conn-note-warn conn-beta">{guide.beta}</p>
@@ -726,6 +711,7 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
                         </span>
                       )}
                       <ul className="conn-chips" aria-label="What this needs">
+                        <li className="conn-chip conn-chip-scope">Once per machine</li>
                         {requirementChips(shown, guide.via).map((chip) => (
                           <li key={chip} className="conn-chip">
                             {chip}
@@ -778,7 +764,7 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
                   </div>
                 )}
 
-                {openedExtra === undefined && step === 4 && (
+                {step === 4 && (
                   <>
                     <div className="conn-start">
                       <h3 className="conn-sub-title">Start {guide.name}</h3>
@@ -831,253 +817,102 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
                         <button type="button" className="conn-outline" onClick={again}>
                           Connect another agent
                         </button>
-                        <button
-                          type="button"
+                        <a
                           className="conn-link-button conn-next-share"
-                          onClick={() => {
-                            openExtra('share');
-                          }}
+                          href="/developer?tab=projects"
                         >
-                          Share with your project
-                        </button>
+                          Add this project
+                        </a>
                       </div>
                     )}
-                  </>
-                )}
 
-                {openedExtra?.id === 'share' && (
-                  <div className="conn-extra" data-extra="share">
-                    {target.committable ? (
-                      <p className="conn-body">
-                        Commit this to <code>{target.path}</code> in the project, and every{' '}
-                        {guide.name} session that opens the repo works the board without being told
-                        how. It carries no token. The same rules reach every agent from the board
-                        itself when it connects; this adds the project they belong to.
-                      </p>
-                    ) : (
-                      <p className="conn-body">
-                        {guide.name} has no instructions file. Paste this into the Project
-                        instructions of the project you work in, and every chat there works the
-                        board without being told how. It carries no token.
-                      </p>
-                    )}
-                    {target.note !== undefined && <p className="conn-note">{target.note}</p>}
-
-                    {projects.status === 'loading' ? (
-                      <LoadingState shape="row" count={1} label="Loading your projects" />
-                    ) : projects.status === 'error' ? (
-                      <ApiErrorState
-                        error={projects.error}
-                        resource="your projects"
-                        scope="organisation"
-                      />
-                    ) : block === undefined || project === undefined ? (
-                      <EmptyState
-                        headline="No project to mirror work into"
-                        body="Setup still works without one — a session can connect and report in. Create a project and this block fills in with its slug."
-                      />
-                    ) : (
-                      <>
-                        <div className="conn-field">
-                          <label className="conn-label" htmlFor="conn-project">
-                            Project
-                          </label>
-                          {/* The product's own picker, not a native <select> (LAI-726). */}
-                          <Dropdown
-                            id="conn-project"
-                            variant="bare"
-                            className="conn-select"
-                            noun="projects"
-                            value={project.slug}
-                            options={projects.projects
-                              .filter((row): row is typeof row & { slug: string } => 'slug' in row)
-                              .map((row) => ({ value: row.slug, label: row.name }))}
-                            onChange={(next) => {
-                              setSlug(next);
-                            }}
-                          />
-                        </div>
-
-                        <div className="conn-block">
-                          <div className="conn-block-bar">
-                            <span className="conn-block-label" id="conn-project-block-label">
-                              {target.path} — carries no token
-                            </span>
-                            <CopyButton
-                              text={block}
-                              selects={blockRef}
-                              what={`the ${target.path} block`}
-                            />
+                    {/* What the connection just made can do (LAI-741's reference, folded here by LAI-507). */}
+                    <details className="conn-alt conn-tools-ref">
+                      <summary>What agents can do</summary>
+                      <div className="conn-reference" data-extra="tools">
+                        <p className="conn-body">
+                          Eighteen tools, served by this board at <code>{origin}/mcp</code> over
+                          Streamable HTTP with a bearer token, under the same permissions you have
+                          in the browser.
+                        </p>
+                        <dl className="conn-tools">
+                          <div className="conn-tool-row">
+                            <dt>Find work</dt>
+                            <dd>
+                              <code>laika_whoami</code> <code>list_projects</code>{' '}
+                              <code>get_project_context</code> <code>list_ready_tasks</code>{' '}
+                              <code>get_task_context</code> <code>list_sprints</code>{' '}
+                              <code>list_members</code>
+                            </dd>
                           </div>
-                          <pre
-                            className="conn-pre conn-project-block"
-                            ref={blockRef}
-                            tabIndex={0}
-                            aria-labelledby="conn-project-block-label"
-                          >
-                            <CommandText text={block} />
-                          </pre>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {openedExtra?.id === 'tools' && (
-                  <div className="conn-extra conn-reference" data-extra="tools">
-                    <p className="conn-body">
-                      Eighteen tools, served by this board at <code>{origin}/mcp</code> over
-                      Streamable HTTP with a bearer token, under the same permissions you have in
-                      the browser.
-                    </p>
-                    <dl className="conn-tools">
-                      <div className="conn-tool-row">
-                        <dt>Find work</dt>
-                        <dd>
-                          <code>laika_whoami</code> <code>list_projects</code>{' '}
-                          <code>get_project_context</code> <code>list_ready_tasks</code>{' '}
-                          <code>get_task_context</code> <code>list_sprints</code>{' '}
-                          <code>list_members</code>
-                        </dd>
+                          <div className="conn-tool-row">
+                            <dt>Do work</dt>
+                            <dd>
+                              <code>create_task</code> <code>start_working</code>{' '}
+                              <code>update_status</code> <code>update_task</code>{' '}
+                              <code>set_task_sprint</code> <code>add_comment</code>{' '}
+                              <code>finish_task</code>
+                            </dd>
+                          </div>
+                          <div className="conn-tool-row">
+                            <dt>Run the board</dt>
+                            <dd>
+                              <code>create_sprint</code> <code>update_sprint</code>{' '}
+                              <code>update_project_context</code> <code>log_unlisted_work</code>
+                            </dd>
+                          </div>
+                        </dl>
+                        <p className="conn-note">
+                          Three rules the board enforces rather than suggests: claiming a task is
+                          first-come, so a refusal means somebody already has it;{' '}
+                          <code>finish_task</code> moves work to <strong>review</strong>, never to
+                          done, because a human closes it; and a read-only token reads every one of
+                          these tools and writes none.
+                        </p>
                       </div>
-                      <div className="conn-tool-row">
-                        <dt>Do work</dt>
-                        <dd>
-                          <code>create_task</code> <code>start_working</code>{' '}
-                          <code>update_status</code> <code>update_task</code>{' '}
-                          <code>set_task_sprint</code> <code>add_comment</code>{' '}
-                          <code>finish_task</code>
-                        </dd>
-                      </div>
-                      <div className="conn-tool-row">
-                        <dt>Run the board</dt>
-                        <dd>
-                          <code>create_sprint</code> <code>update_sprint</code>{' '}
-                          <code>update_project_context</code> <code>log_unlisted_work</code>
-                        </dd>
-                      </div>
-                    </dl>
-                    <p className="conn-note">
-                      Three rules the board enforces rather than suggests: claiming a task is
-                      first-come, so a refusal means somebody already has it;{' '}
-                      <code>finish_task</code> moves work to <strong>review</strong>, never to done,
-                      because a human closes it; and a read-only token reads every one of these
-                      tools and writes none.
-                    </p>
-                  </div>
-                )}
-
-                {openedExtra?.id === 'activity' && (
-                  <ShareActivity canSetInsights={canSetInsights} origin={origin} />
-                )}
-
-                {openedExtra?.id === 'invite' && (
-                  <div className="conn-extra" data-extra="invite">
-                    <p className="conn-body">
-                      You can add people. <a href="/organisation">Organisation</a> issues an invite
-                      link; they accept it, mint their own token on this page, and appear on
-                      Capacity beside you. Tokens are personal — the board attributes every action
-                      and every live session to whoever owns the token, so a shared one makes the
-                      board lie about who did what.
-                    </p>
-                  </div>
+                    </details>
+                  </>
                 )}
               </div>
             </div>
 
             <footer className="conn-card-foot">
-              {openedExtra !== undefined ? (
-                <>
+              <>
+                <button
+                  type="button"
+                  className="conn-outline conn-back"
+                  disabled={step === 1}
+                  onClick={() => {
+                    go(step - 1);
+                  }}
+                >
+                  Back
+                </button>
+                <p className="conn-foot-hint">
+                  {footerHint(step, {
+                    ready,
+                    mintedHere,
+                    copied,
+                    connected,
+                    agentName: guide.name,
+                  })}
+                </p>
+                {step < 4 && (
                   <button
                     type="button"
-                    className="conn-outline conn-back-steps"
+                    className="conn-continue"
+                    ref={continueRef}
+                    disabled={!canContinue(step, ready)}
                     onClick={() => {
-                      openExtra(undefined);
+                      go(step + 1);
                     }}
                   >
-                    <span aria-hidden="true">←</span> Back to steps
+                    Continue <span aria-hidden="true">→</span>
                   </button>
-                  <p className="conn-foot-hint">Optional — you were on step {step} of 4</p>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="conn-outline conn-back"
-                    disabled={step === 1}
-                    onClick={() => {
-                      go(step - 1);
-                    }}
-                  >
-                    Back
-                  </button>
-                  <p className="conn-foot-hint">
-                    {footerHint(step, {
-                      ready,
-                      mintedHere,
-                      copied,
-                      connected,
-                      agentName: guide.name,
-                    })}
-                  </p>
-                  {step < 4 && (
-                    <button
-                      type="button"
-                      className="conn-continue"
-                      ref={continueRef}
-                      disabled={!canContinue(step, ready)}
-                      onClick={() => {
-                        go(step + 1);
-                      }}
-                    >
-                      Continue <span aria-hidden="true">→</span>
-                    </button>
-                  )}
-                </>
-              )}
+                )}
+              </>
             </footer>
           </section>
-
-          {/*
-            The optional entries (LAI-741) follow the card in the document
-            (LAI-742): stacked on a phone they come after it, in reading and
-            focus order alike. On a desktop the grid puts them back in the
-            rail's column, under the steps.
-          */}
-          <nav className="conn-optional" aria-labelledby="conn-optional-label">
-            <p className="conn-optional-label" id="conn-optional-label">
-              Optional
-            </p>
-            <ul className="conn-optional-list" aria-labelledby="conn-optional-label">
-              {extras.map((e) => {
-                const here = e.id === openedExtra?.id;
-                return (
-                  <li
-                    key={e.id}
-                    className="conn-step conn-optional-row"
-                    data-state={here ? 'current' : 'todo'}
-                  >
-                    <button
-                      type="button"
-                      className="conn-rail-step conn-rail-extra"
-                      data-extra={e.id}
-                      {...(here ? { 'aria-current': 'page' as const } : {})}
-                      onClick={() => {
-                        openExtra(e.id);
-                      }}
-                    >
-                      <span className="conn-optional-icon" aria-hidden="true">
-                        <ExtraIcon id={e.id} />
-                      </span>
-                      <span className="conn-rail-text">
-                        <span className="conn-rail-name">{e.name}</span>
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </nav>
         </div>
       </div>
     </div>
@@ -1377,109 +1212,6 @@ function CheckIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-    </svg>
-  );
-}
-
-/** The rail's optional entries carry an icon where a step carries its number. */
-function ExtraIcon({ id }: { readonly id: ExtraId }) {
-  return (
-    <svg className="conn-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-      {id === 'share' ? (
-        <path
-          d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 013.6 3.6L10.5 8M9 11.5l-1.2 1.2a2.6 2.6 0 01-3.6-3.6L5.5 8"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-        />
-      ) : id === 'tools' ? (
-        <path
-          d="M2.5 4h11M2.5 8h11M2.5 12h7"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-        />
-      ) : id === 'activity' ? (
-        // A little grid of days, three of them filled.
-        <>
-          <rect x="2" y="2" width="3.5" height="3.5" rx="0.8" fill="currentColor" />
-          <rect
-            x="6.25"
-            y="2"
-            width="3.5"
-            height="3.5"
-            rx="0.8"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.2"
-          />
-          <rect x="10.5" y="2" width="3.5" height="3.5" rx="0.8" fill="currentColor" />
-          <rect
-            x="2"
-            y="6.25"
-            width="3.5"
-            height="3.5"
-            rx="0.8"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.2"
-          />
-          <rect x="6.25" y="6.25" width="3.5" height="3.5" rx="0.8" fill="currentColor" />
-          <rect
-            x="10.5"
-            y="6.25"
-            width="3.5"
-            height="3.5"
-            rx="0.8"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.2"
-          />
-          <rect
-            x="2"
-            y="10.5"
-            width="3.5"
-            height="3.5"
-            rx="0.8"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.2"
-          />
-          <rect
-            x="6.25"
-            y="10.5"
-            width="3.5"
-            height="3.5"
-            rx="0.8"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.2"
-          />
-          <rect
-            x="10.5"
-            y="10.5"
-            width="3.5"
-            height="3.5"
-            rx="0.8"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.2"
-          />
-        </>
-      ) : (
-        <>
-          <circle cx="6.5" cy="5.5" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
-          <path
-            d="M2 13.5c.6-2.3 2.4-3.5 4.5-3.5s3.9 1.2 4.5 3.5M12.5 5v4M10.5 7h4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-          />
-        </>
-      )}
     </svg>
   );
 }

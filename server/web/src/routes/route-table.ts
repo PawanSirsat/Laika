@@ -278,9 +278,9 @@ export const ROUTES: readonly Route[] = [
   },
   /*
    * **Developer access** (LAI-796): connecting an agent and the reader's own
-   * tokens on one page — what Connect (LAI-622) and Tokens were. The full
-   * Connect wizard, every agent and every step, keeps its own address below
-   * and is opened from here.
+   * tokens on one page — what Connect (LAI-622) and Tokens were. Since
+   * LAI-507 the wizard is its first tab (`?tab=connect`), beside Projects,
+   * Activity and Tokens; `/developer/connect` redirects there.
    */
   {
     orgLevel: true,
@@ -290,15 +290,6 @@ export const ROUTES: readonly Route[] = [
     status: 'ready',
     phase: 'Phase 4',
     icon: 'developer',
-  },
-  {
-    orgLevel: true,
-    path: '/developer/connect',
-    label: 'Connect an agent',
-    group: null /* opened from Developer access */,
-    section: '/developer',
-    status: 'ready',
-    phase: 'Phase 4',
   },
 
   /*

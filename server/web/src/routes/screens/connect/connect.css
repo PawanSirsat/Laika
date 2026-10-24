@@ -659,8 +659,8 @@
   display: grid;
   grid-template-columns: 17.5rem minmax(0, 1fr);
   /* LAI-741: exactly the page's height. The card spans both rows; the rail's
-     steps take what they need, scrolling only on a screen too short for them,
-     and its Optional group sits under them (LAI-742). */
+     steps take what they need, scrolling only on a screen too short for them.
+     The second row held the rail's Optional group until LAI-507. */
   grid-template-rows: minmax(0, auto) minmax(0, 1fr);
   gap: var(--space-3) var(--space-5);
   align-items: stretch;
@@ -796,59 +796,6 @@
   white-space: nowrap;
   font-size: var(--text-small);
   color: var(--text-muted);
-}
-
-/* The optional entries (LAI-741): set apart from the steps, never numbered.
-   After the card in the document (LAI-742); on a desktop, back in the rail's
-   column under the steps. */
-.conn-optional {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  grid-column: 1;
-  grid-row: 2;
-  align-self: start;
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
-}
-
-.conn-optional-label {
-  margin: 0;
-  padding: 0 var(--space-3) var(--space-1);
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
-.conn-optional-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.conn-optional-icon {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  width: 2rem;
-  height: 2rem;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-pill);
-  background: var(--bg-column);
-  color: var(--text-secondary);
-}
-
-.conn-optional-row[data-state='current'] .conn-optional-icon {
-  border-color: var(--accent);
-  background: var(--accent-bg);
-  color: var(--accent);
 }
 
 /* ------------------------------------------------------------------ card */
@@ -1459,8 +1406,7 @@
   /* In document order (LAI-742): the steps, the card, then Optional — so the
      current step starts near the top of a phone. */
   .conn-rail,
-  .conn-wizard-card,
-  .conn-optional {
+  .conn-wizard-card {
     grid-column: auto;
     grid-row: auto;
   }
@@ -1528,4 +1474,12 @@
   flex-direction: column;
   gap: var(--space-2);
   min-width: 0;
+}
+
+/* What agents can do, folded under step 4 (LAI-507). */
+.conn-tools-ref .conn-reference {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
 }
