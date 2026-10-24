@@ -3569,34 +3569,40 @@ p.inspector-length {
 /* ------------------------------------------- typed entries (LAI-897, D-108) */
 
 /* A block wears its kind: ink, fill and border from the kind's tokens. */
+.dayline-confirmed.dayline-kind-work .dayline-block-body {
+  background: var(--kind-work-bg);
+  border-color: var(--kind-work-border);
+  color: var(--kind-work);
+}
+
 .dayline-confirmed.dayline-kind-meeting .dayline-block-body {
   background: var(--kind-meeting-bg);
   border-color: var(--kind-meeting-border);
   color: var(--kind-meeting);
 }
 
-.dayline-confirmed.dayline-kind-call .dayline-block-body {
-  background: var(--kind-call-bg);
-  border-color: var(--kind-call-border);
-  color: var(--kind-call);
+.dayline-confirmed.dayline-kind-thinking .dayline-block-body {
+  background: var(--kind-thinking-bg);
+  border-color: var(--kind-thinking-border);
+  color: var(--kind-thinking);
+}
+
+.dayline-confirmed.dayline-kind-research .dayline-block-body {
+  background: var(--kind-research-bg);
+  border-color: var(--kind-research-border);
+  color: var(--kind-research);
+}
+
+.dayline-confirmed.dayline-kind-pairing .dayline-block-body {
+  background: var(--kind-pairing-bg);
+  border-color: var(--kind-pairing-border);
+  color: var(--kind-pairing);
 }
 
 .dayline-confirmed.dayline-kind-review .dayline-block-body {
   background: var(--kind-review-bg);
   border-color: var(--kind-review-border);
   color: var(--kind-review);
-}
-
-.dayline-confirmed.dayline-kind-planning .dayline-block-body {
-  background: var(--kind-planning-bg);
-  border-color: var(--kind-planning-border);
-  color: var(--kind-planning);
-}
-
-.dayline-confirmed.dayline-kind-learning .dayline-block-body {
-  background: var(--kind-learning-bg);
-  border-color: var(--kind-learning-border);
-  color: var(--kind-learning);
 }
 
 .dayline-confirmed.dayline-kind-support .dayline-block-body {
@@ -3609,12 +3615,6 @@ p.inspector-length {
   background: var(--kind-admin-bg);
   border-color: var(--kind-admin-border);
   color: var(--kind-admin);
-}
-
-.dayline-confirmed.dayline-kind-other .dayline-block-body {
-  background: var(--kind-other-bg);
-  border-color: var(--kind-other-border);
-  color: var(--kind-other);
 }
 
 /* The range being dragged, then the one picked: paint over the row, no pointer. */
@@ -4191,24 +4191,28 @@ p.inspector-length {
   background: var(--text-muted);
 }
 
+.myday-summary-fill-work {
+  background: var(--kind-work);
+}
+
 .myday-summary-fill-meeting {
   background: var(--kind-meeting);
 }
 
-.myday-summary-fill-call {
-  background: var(--kind-call);
+.myday-summary-fill-thinking {
+  background: var(--kind-thinking);
+}
+
+.myday-summary-fill-research {
+  background: var(--kind-research);
+}
+
+.myday-summary-fill-pairing {
+  background: var(--kind-pairing);
 }
 
 .myday-summary-fill-review {
   background: var(--kind-review);
-}
-
-.myday-summary-fill-planning {
-  background: var(--kind-planning);
-}
-
-.myday-summary-fill-learning {
-  background: var(--kind-learning);
 }
 
 .myday-summary-fill-support {
@@ -4217,10 +4221,6 @@ p.inspector-length {
 
 .myday-summary-fill-admin {
   background: var(--kind-admin);
-}
-
-.myday-summary-fill-other {
-  background: var(--kind-other);
 }
 
 .myday-summary-figure {

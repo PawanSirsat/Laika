@@ -20,11 +20,9 @@ export function share(part: number, of: number): number {
   return of <= 0 ? 0 : Math.round((part / of) * 100);
 }
 
-/** Meetings: the entries of kind meeting or call. */
+/** Meetings: the entries of kind meeting. */
 export function meetingMinutes(entries: readonly TimeEntry[]): number {
-  return entries
-    .filter((e) => e.kind === 'meeting' || e.kind === 'call')
-    .reduce((n, e) => n + e.minutes, 0);
+  return entries.filter((e) => e.kind === 'meeting').reduce((n, e) => n + e.minutes, 0);
 }
 
 export function dayStats(view: Pick<MyDay, 'drafts' | 'entries'>): readonly Stat[] {
