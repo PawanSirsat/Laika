@@ -12,10 +12,24 @@
  */
 
 .myday-page {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 100%;
+}
+
+/*
+ * The page's own column (LAI-511): the container the queries below measure,
+ * so the week, the lists and the rows reflow for the width the drawer leaves
+ * them — not for the window.
+ */
+.myday-column {
   container: myday / inline-size;
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  min-width: 0;
 }
 
 .myday {
@@ -26,46 +40,130 @@
   gap: 1rem;
 }
 
-.myday-grid {
-  display: grid;
-  /* The right column holds the editor (LAI-508): wide enough for its fields. */
-  grid-template-columns: minmax(0, 1fr) minmax(19rem, 24rem);
-  align-items: start;
-  gap: 1.25rem;
-}
-
-.myday-main,
-.myday-side {
+.myday-main {
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
 
+/* ------------------------------------------------------------- the drawer */
+
 /*
- * Beside the editor and the lists — the Timeline spans the page above them
- * (LAI-889) — and never longer than the viewport (LAI-810): sticky in
- * `.shell-main`, the one scroller, and scrolling on its own past that. At
- * either end it hands the wheel back to the page — no `overscroll-behavior:
- * contain`, which kept it and left the page stuck under the pointer (LAI-311).
+ * The drawer (the owner's `MyDay.dc.html`, LAI-511): the design's 400px
+ * column beside the whole page, the height of the window, a rule at its left,
+ * its own scroll — sticky in `.shell-main`, the one scroller, so the page
+ * scrolls under it. On the page only while something is in it.
  */
-.myday-side {
+.myday-drawer {
   position: sticky;
-  top: 1rem;
-  max-height: calc(100dvh - 2rem);
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  top: 0;
+  align-self: flex-start;
+  flex: 0 0 25rem;
+  width: 25rem;
+  height: 100dvh;
+  box-sizing: border-box;
+  background: var(--bg-card);
+  border-left: 1px solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  outline: none;
+  z-index: 5;
 }
 
-@container myday (max-width: 62rem) {
-  .myday-grid {
-    grid-template-columns: minmax(0, 1fr);
+.myday-drawer-grab {
+  display: none;
+}
+
+.myday-drawer-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* The editor fills the drawer: the drawer is its card. */
+.myday-drawer-body > .inspector {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* The two cards from the header's button, under a head of their own. */
+.myday-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.myday-drawer-title {
+  flex: 1;
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.myday-drawer-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem 1.25rem 1.5rem;
+}
+
+.myday-scrim {
+  display: none;
+}
+
+/* With the drawer open under 1280px the body closes in (the design's `tight`). */
+@media (max-width: 1279px) {
+  .myday-page[data-drawer-open='true'] .myday {
+    padding: 1rem 1.25rem 3rem;
+  }
+}
+
+/*
+ * Under 900px — where the shell's sidebar is off-canvas — the drawer is the
+ * design's bottom sheet: a handle, a scrim, 86% of the height at most.
+ */
+@media (max-width: 900px) {
+  .myday-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: var(--scrim);
   }
 
-  /* Below the day on a narrow screen, and still bounded (LAI-810). */
-  .myday-side {
-    position: static;
-    max-height: min(44rem, 80dvh);
+  .myday-drawer {
+    position: fixed;
+    inset: auto 0 0 0;
+    flex: none;
+    width: auto;
+    height: auto;
+    max-height: 86dvh;
+    border-left: 0;
+    border-radius: 1rem 1rem 0 0;
+    box-shadow: var(--shadow-modal);
+    z-index: 50;
+  }
+
+  .myday-drawer-grab {
+    display: flex;
+    justify-content: center;
+    padding: 0.5rem 0 0;
+  }
+
+  .myday-drawer-grab > span {
+    width: 2.25rem;
+    height: 0.25rem;
+    border-radius: var(--radius-pill);
+    background: var(--border-default);
   }
 }
 
@@ -2192,7 +2290,10 @@
 
 .dayline-foot-hint {
   margin-left: auto;
-  white-space: nowrap;
+  /* With nothing in hand the hint is a sentence (LAI-511): it wraps rather
+     than pushing the page sideways on a phone. */
+  min-width: 0;
+  text-align: right;
 }
 
 .dayline-untimed {
@@ -4010,18 +4111,18 @@ p.inspector-length {
   }
 }
 
-/* ------------------------------- the editor in the right column (LAI-508) */
+/* -------------------------------- the editor in the drawer (LAI-508, LAI-511) */
 
-/* One column of parts beside the lists, whatever the page's width. */
-.myday-side .inspector-parts {
+/* One column of parts in the drawer, whatever the page's width. */
+.myday-drawer-body .inspector-parts {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.myday-side .inspector-part {
+.myday-drawer-body .inspector-part {
   border-right: none;
 }
 
-.myday-side .inspector {
+.myday-drawer-body .inspector {
   flex: none;
 }
 
