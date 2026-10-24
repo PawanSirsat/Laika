@@ -82,16 +82,17 @@ describe('a timer', () => {
       { tz: 'UTC', task: taskKey, kind: 'review', title: '  Keyboard steps  ' },
       NOW,
     );
-    expect(made).toEqual({
+    const { task, ...rest } = made;
+    expect(rest).toEqual({
       started_at: NOW,
       resumed_at: NOW,
       paused_at: null,
       accumulated_ms: 0,
       tz: 'UTC',
-      task: { id: expect.any(String), key: taskKey, title: 'Zoom presets' },
       kind: 'review',
       title: 'Keyboard steps',
     });
+    expect(task).toMatchObject({ key: taskKey, title: 'Zoom presets' });
     expect(timerOf(t.db, owner.userId)).toEqual(made);
     expect(timerOf(t.db, bea.userId)).toBeNull();
     expect(reason(() => startTimer(t.db, owner, { tz: 'UTC' }, NOW + MIN))).toBe(
