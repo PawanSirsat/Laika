@@ -3,6 +3,7 @@ import { after, describe, test } from 'node:test';
 import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 import { open, TODAY } from './my-day-clock.ts';
 import { at, weekData, weekStub, type DayData } from './my-day-week.ts';
+import { offered, pick } from './dropdown.ts';
 
 /**
  * The tabs under the Timeline (the owner's design, D-110, LAI-505): Overview
@@ -223,25 +224,30 @@ void describe('the tabs (LAI-505)', () => {
       const ov = h.page.locator('[data-overview]');
       await ov.waitFor({ timeout: 10_000 });
       await ov.locator('[data-ov-scope="range"]').click();
-      const days = await ov
-        .locator('[data-ov-from] option')
-        .evaluateAll((els) => els.map((el) => (el as HTMLOptionElement).value));
-      assert.equal(days.length, 7);
+      const fromBox = ov.getByRole('combobox', { name: 'From' });
+      const toBox = ov.getByRole('combobox', { name: 'To' });
+      assert.equal((await offered(fromBox)).length, 7);
+      await h.page.keyboard.press('Escape');
+      const days = Array.from({ length: 7 }, (_, i) => {
+        const monday = new Date(`${TODAY}T00:00:00Z`);
+        monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7) + i);
+        return monday.toISOString().slice(0, 10);
+      });
       // The days ending today, which the fixture fills (yesterday and today at least).
       const idx = days.indexOf(TODAY);
       assert.ok(idx >= 0, 'today is not in the week');
       const from = days[Math.max(0, idx - 2)] ?? '';
       const to = TODAY;
       const span = idx - Math.max(0, idx - 2) + 1;
-      await ov.locator('[data-ov-from]').selectOption(from);
-      await ov.locator('[data-ov-to]').selectOption(to);
+      await pick(fromBox, from);
+      await pick(toBox, to);
       await until(async () => (await ov.locator('[data-ov-day]').count()) === span);
       assert.equal(await ov.locator('[data-ov-day]').count(), span);
       assert.equal(await ov.locator('[data-ov-stat="per-day"]').count(), 1);
       if (span > 1) assert.match(await ov.locator('[data-ov-range]').innerText(), / – /);
       // Picked the other way round, the same three days.
-      await ov.locator('[data-ov-from]').selectOption(to);
-      await ov.locator('[data-ov-to]').selectOption(from);
+      await pick(fromBox, to);
+      await pick(toBox, from);
       await until(async () => (await ov.locator('[data-ov-day]').count()) === span);
       assert.equal(await ov.locator('[data-ov-day]').count(), span);
     } finally {

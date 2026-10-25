@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { MyDay } from '../../../api/time.ts';
+import { Dropdown } from '../../../components/Dropdown.tsx';
 import { kindGlyph } from './entry-kinds.ts';
 import { duration } from './format.ts';
 import { weekdayShort } from './my-day-derive.ts';
@@ -50,6 +51,7 @@ export function OverviewTab({ view }: OverviewTabProps) {
   const last = days.at(-1) ?? view.day;
   const [from, setFrom] = useState(first);
   const [to, setTo] = useState(view.day);
+  const dayOptions = days.map((d) => ({ value: d, label: shortOf(d) }));
   const kinds = daySplit(view.entries, view.drafts);
   const tasks = byTask(view.entries, view.drafts);
   // The range, in the week's order whichever end was picked first.
@@ -102,37 +104,21 @@ export function OverviewTab({ view }: OverviewTabProps) {
         </div>
         {scope === 'range' && (
           <div className="myday-ov-pick">
-            <select
-              className="myday-ov-select"
-              aria-label="From"
+            <Dropdown
               value={from}
-              data-ov-from
-              onChange={(event) => {
-                setFrom(event.target.value);
-              }}
-            >
-              {days.map((d) => (
-                <option key={d} value={d}>
-                  {shortOf(d)}
-                </option>
-              ))}
-            </select>
-            <span className="myday-quiet">–</span>
-            <select
+              options={dayOptions}
+              onChange={setFrom}
+              aria-label="From"
               className="myday-ov-select"
-              aria-label="To"
+            />
+            <span className="myday-quiet">–</span>
+            <Dropdown
               value={to}
-              data-ov-to
-              onChange={(event) => {
-                setTo(event.target.value);
-              }}
-            >
-              {days.map((d) => (
-                <option key={d} value={d}>
-                  {shortOf(d)}
-                </option>
-              ))}
-            </select>
+              options={dayOptions}
+              onChange={setTo}
+              aria-label="To"
+              className="myday-ov-select"
+            />
           </div>
         )}
       </header>
