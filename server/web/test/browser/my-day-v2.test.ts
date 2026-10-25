@@ -380,7 +380,7 @@ void describe('gaps and breaks (4, D)', () => {
       assert.ok(breakShows(await drawn.innerText()), 'the break shows something else');
 
       await h.page.locator('.dayline-break').click();
-      await h.page.getByRole('button', { name: 'Not a break' }).click();
+      await h.page.getByRole('button', { name: 'Remove break' }).click();
       await until(async () => (await h.page.locator('.dayline-gap').count()) === 2);
       assert.ok(
         writes(h).some(
@@ -432,7 +432,7 @@ void describe('confirming leaves out what needs a card (1, 6)', () => {
       await summary.waitFor({ timeout: 5_000 });
       assert.match(
         await summary.locator('[data-summary-sub]').innerText(),
-        /2 without a card stay/,
+        /2 without a task stay/,
       );
       await summary.locator('[data-summary-confirm]').click();
       await until(() => writes(h).length >= 3);
@@ -476,7 +476,7 @@ void describe('the inspector (5)', () => {
       await select(h, 'd2');
       const inspector = h.page.locator('[data-inspector="draft"]');
       const confirm = inspector.locator('[data-inspector-confirm]');
-      assert.equal((await confirm.innerText()).trim(), 'Needs a card');
+      assert.equal((await confirm.innerText()).trim(), 'Pick a task or kind');
       assert.ok(await confirm.isDisabled());
       assert.match(
         await inspector.locator('[data-card-warning]').innerText(),
@@ -513,14 +513,13 @@ void describe('the inspector (5)', () => {
     }
   });
 
-  void test('a confirmed entry: its source and revision, Delete, and every edit kept', async () => {
+  void test('a confirmed entry: HISTORY and Delete entry (LAI-515)', async () => {
     const h = await openDay(TODAY);
     try {
       await select(h, 'e2');
       const inspector = h.page.locator('[data-inspector="entry"]');
-      assert.match(await inspector.innerText(), /rev 2/);
-      assert.match(await inspector.innerText(), /Every edit is kept as a revision\./);
-      assert.equal(await inspector.getByRole('button', { name: 'Delete' }).count(), 1);
+      assert.equal(await inspector.locator('[data-entry-history]').count(), 1);
+      assert.equal(await inspector.getByRole('button', { name: 'Delete entry' }).count(), 1);
     } finally {
       await h.close();
     }
@@ -528,15 +527,18 @@ void describe('the inspector (5)', () => {
 });
 
 void describe('split, −/+ and drag (5, C)', () => {
-  void test('−/+ move the end and the length by five minutes', async () => {
+  void test('a length typed moves the end by five minutes (the design has no stepper, LAI-515)', async () => {
     const h = await openDay(TODAY);
     try {
       await select(h, 'd1');
-      await h.page.getByRole('button', { name: 'Longer by 5 minutes' }).click();
+      const length = h.page.locator('[data-inspector-for="d1"]').getByLabel('Length, typed');
+      await length.fill('1h 40');
+      await length.press('Enter');
       await until(() => writes(h).length === 1);
       assert.deepEqual(writes(h)[0]?.body, { minutes: 100, ended_at: at(TODAY, 10, 20) });
       await h.page.locator('[data-inspector-for="d1"]').waitFor();
-      await h.page.getByRole('button', { name: 'Shorter by 5 minutes' }).click();
+      await length.fill('1h 30');
+      await length.press('Enter');
       await until(() => writes(h).length === 2);
       assert.deepEqual(writes(h)[1]?.body, { minutes: 90, ended_at: at(TODAY, 10, 10) });
     } finally {
@@ -766,11 +768,9 @@ void describe('Add time into a picked gap (7)', () => {
     const h = await openDay(EARLIER);
     try {
       await h.page.locator('.dayline-gap').nth(1).click();
-      await h.page.locator('[data-inspector="gap"]').waitFor({ timeout: 5_000 });
-      // The gap's *Add time here* opens the new-entry panel on the gap (LAI-897, LAI-502).
-      await h.page.locator('[data-gap-add]').click();
-      const panel = h.page.locator('[data-inspector="range"]');
-      await panel.waitFor({ timeout: 5_000 });
+      // A gap is Add time with the gap as its range (LAI-897, LAI-515).
+      const panel = h.page.locator('[data-inspector="gap"]');
+      await panel.locator('[data-new-entry]').waitFor({ timeout: 5_000 });
       assert.match(await panel.locator('[data-new-entry-range]').innerText(), /12:45.*1:30/);
       await panel.locator('[data-card="LAI-11"]').click();
       await panel.locator('[data-entry-title]').fill('Pairing on search');
@@ -879,7 +879,9 @@ void describe('review round 1', () => {
       await h.page.locator('[data-inspector="draft"] [data-card="general"]').click();
       const toast = h.page.locator('[data-toast]');
       await toast.getByRole('button', { name: 'Undo' }).waitFor({ timeout: 5_000 });
-      await h.page.getByRole('button', { name: 'Longer by 5 minutes' }).click();
+      const length = h.page.locator('[data-inspector-for="d2"]').getByLabel('Length, typed');
+      await length.fill('45m');
+      await length.press('Enter');
       await until(() => writes(h).length === 2);
       await until(async () => (await toast.getByRole('button', { name: 'Undo' }).count()) === 0);
       assert.equal(
@@ -1088,7 +1090,7 @@ void describe('a phone, and both themes (I)', () => {
         assert.equal(sheet.position, 'fixed', 'the editor is not a sheet');
         assert.equal(sheet.bottom, 844, 'the sheet is not at the bottom');
         // The inspector's three parts stack.
-        const parts = h.page.locator('[data-inspector="draft"] .inspector-part');
+        const parts = h.page.locator('[data-inspector="draft"] .editor-section');
         const xs = await parts.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().x));
         assert.ok(xs.length >= 3 && new Set(xs.map(Math.round)).size === 1, 'not stacked');
         // The sheet is modal (LAI-511): let go before the next theme's pick.

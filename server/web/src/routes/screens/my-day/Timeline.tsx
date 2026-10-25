@@ -77,6 +77,8 @@ export type Selection =
           }
         | undefined;
       readonly fromTimer?: boolean | undefined;
+      /** Where it came from, for the editor's sub line (LAI-515): the header's button, a drag, the timer. */
+      readonly from?: 'button' | 'drag' | 'timer' | 'gap' | undefined;
     }
   | { readonly kind: 'break'; readonly id: string };
 

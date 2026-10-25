@@ -69,3 +69,11 @@ export function offScreen(entries: readonly TimeEntry[]): readonly TimeEntry[] {
 export function noteOf(view: Pick<MyDay, 'day_note'>): string {
   return view.day_note?.note ?? '';
 }
+
+/** The day's weekday, as the summary's title says it: *Confirm Thursday* (LAI-517). */
+export function weekdayOf(day: string): string {
+  return new Date(`${day}T00:00:00Z`).toLocaleDateString('en-GB', {
+    timeZone: 'UTC',
+    weekday: 'long',
+  });
+}

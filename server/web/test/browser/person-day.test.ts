@@ -214,7 +214,13 @@ void describe('an owner reads a member’s day (D-102, LAI-959)', () => {
       for (const selector of WRITE_CONTROLS) {
         assert.equal(await h.page.locator(selector).count(), 0, `${selector} is drawn`);
       }
-      for (const word of ['Mark as break', 'Add time here', 'Not work', 'Split in two', 'Undo']) {
+      for (const word of [
+        'Mark as break',
+        'Not work time',
+        'Split in two',
+        'Delete entry',
+        'Undo',
+      ]) {
         assert.equal(
           await h.page.getByRole('button', { name: word, exact: true }).count(),
           0,

@@ -153,7 +153,7 @@ void describe('a range dragged on the Timeline (LAI-897)', () => {
       const panel = h.page.locator('[data-inspector="range"]');
       await panel.waitFor();
       assert.match(await panel.locator('[data-new-entry-range]').innerText(), /4:15.*4:50/);
-      assert.equal(await panel.locator('[data-range-add]').innerText(), 'Add 35 min');
+      assert.match(await panel.locator('[data-range-add]').innerText(), /^Add 35 min/);
     } finally {
       await h.close();
     }
@@ -269,10 +269,8 @@ void describe('a range dragged on the Timeline (LAI-897)', () => {
     const h = await myDay();
     try {
       await h.page.locator('[data-gap-start="750"]').click();
-      await h.page.locator('[data-inspector="gap"]').waitFor({ timeout: 10_000 });
-      await h.page.locator('[data-gap-add]').click();
-      const panel = h.page.locator('[data-inspector="range"]');
-      await panel.waitFor();
+      const panel = h.page.locator('[data-inspector="gap"]');
+      await panel.locator('[data-new-entry]').waitFor({ timeout: 10_000 });
       assert.match(await panel.locator('[data-new-entry-range]').innerText(), /12:30.*1:00/);
     } finally {
       await h.close();

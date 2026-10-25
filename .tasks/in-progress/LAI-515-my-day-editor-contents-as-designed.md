@@ -6,7 +6,8 @@ assignee: chief
 priority: p1
 depends-on: [LAI-511]
 discovered-from: LAI-888
-status: backlog
+status: in-progress
+started: 2026-10-25T01:20:00Z
 ---
 
 ## Goal
@@ -25,22 +26,22 @@ the *No set time* label wraps vertically into OFF-SCREEN WORK.
       sub line `1:45–2:25 PM · 40 min · Drafted by your collector · only you
       see it` (confirmed: *owners and admins can see it*; break: *not counted
       in your hours*; not work: *not counted*; read-only: *Dana's entry*).
-- [ ] Section order WHEN · OFF-SCREEN WORK (Add time only) · TASK · KIND ·
+- [x] Section order WHEN · OFF-SCREEN WORK (Add time only) · TASK · KIND ·
       WHAT IT WAS · SPLIT · DRAFTED FROM / BUILT FROM · note · HISTORY; the
       footer fixed at the bottom. The length stepper, *? all keys* and the
       second *Counts only* line go.
-- [ ] WHEN: Start / End / Length mono fields with the design's hint; on a
+- [x] WHEN: Start / End / Length mono fields with the design's hint; on a
       typed End that overlaps confirmed time the field turns red with
       *Overlaps LAI-860, 12:30–1:30 PM. Confirmed time can't overlap.*
-- [ ] Add time: *No set time* checkbox at the right of WHEN; seven date
+- [x] Add time: *No set time* checkbox at the right of WHEN; seven date
       tiles (weekday + mono date; future days disabled with their tip; a
       past day adds a confirmed entry on that day); chips 15m 30m 45m 1h
       1h 30 2h and *Ends now*; the time-range bar 8 AM–8 PM with the day's
       busy time in grey, the now line in red, the violet range that drags
       and places by click; the two hints. The *No set time* defect is gone.
-- [ ] OFF-SCREEN WORK: *Time Laika can't see. One tap sets the kind and
+- [x] OFF-SCREEN WORK: *Time Laika can't see. One tap sets the kind and
       title.* and the six pill presets (14px radius).
-- [ ] TASK: the current task line (mono key + title, or *Shows as Meeting on
+- [x] TASK: the current task line (mono key + title, or *Shows as Meeting on
       the Timeline* for General); the orange *No task yet.* box with the
       reason on a draft with none; the search field with its icon and
       *Search tasks, or type a new one* — results in a bordered list; a typed
@@ -49,21 +50,21 @@ the *No set time* label wraps vertically into OFF-SCREEN WORK.
       progress*, *kepler was building it*, *Card before*, *Card after*).
 - [ ] KIND: the chips as LAI-516's eight, 28px, 4px radius, the current one
       accent-soft.
-- [ ] WHAT IT WAS: title and description with the design's placeholders
+- [x] WHAT IT WAS: title and description with the design's placeholders
       (*e.g. Timeline zoom presets* / *Add a description (optional)*),
       read-only fields flat on a read-only entry.
-- [ ] SPLIT inline (*Split at [3:55 PM] Split Cancel* and the hint).
+- [x] SPLIT inline (*Split at [3:55 PM] Split Cancel* and the hint).
 - [ ] DRAFTED FROM / BUILT FROM: the four tiles (figure over word) and one
       agent line. HISTORY on a confirmed entry (time · what · who) from the
       revisions. The timer-stopped banner after a stop. Break: the note and
       *Turn into work time* / *Remove break*. Not work: *Back to review*.
-- [ ] Gap: *Fill this gap*, the big mono range with *Found on your Timeline.
+- [x] Gap: *Fill this gap*, the big mono range with *Found on your Timeline.
       Drag its edges there…*, *Reset to the whole gap* after a change, and
       the footer *Add 20 min ↵* / *Mark as break*.
-- [ ] Footer: *Confirm 40 min ↵* / *Split…* / *Not work time* on a draft;
+- [x] Footer: *Confirm 40 min ↵* / *Split…* / *Not work time* on a draft;
       *Pick a task or kind* disabled when none; *Add 30 min ↵* / Cancel on a
       new entry; *Delete entry* (red outline) on a confirmed entry.
-- [ ] Both themes; `my-day-editor`, `my-day-v2`, `my-day` re-aimed; new
+- [x] Both themes; `my-day-editor`, `my-day-v2`, `my-day` re-aimed; new
       browser tests for the date tiles, the bar, the search reasons, HISTORY
       and the overlap error.
 
@@ -72,3 +73,26 @@ the *No set time* label wraps vertically into OFF-SCREEN WORK.
 Design: `MyDay.dc.html` — `editor()`, `picker()`, `insight()`. The *On your
 calendar* insight waits for a calendar source (D-110 item 3) and is not
 built. Depends on LAI-511 for where the editor lives.
+
+## Build notes (2026-10-25)
+
+Three criteria stay unticked:
+
+- **Head.** Everything but *× Not work time* is built. A block marked not
+  work leaves `GET /me/day`, so there is nothing to select and no pill to
+  show. The draft's sub line says *only you and the owners see it*, not the
+  design's *only you see it*: an owner can read a member's day (D-102).
+- **KIND.** The chips have the design's size, radius and accent-soft current
+  one, but list today's `ENTRY_KINDS`. LAI-516 changes the enum to the
+  design's eight in its own branch.
+- **DRAFTED FROM / BUILT FROM.** All of it is built except *Not work: Back to
+  review*. There is no dismissed-draft view and no un-dismiss endpoint; both
+  are CORE's.
+
+Two deviations inside ticked criteria:
+
+- The agent's chip reason reads *Agent worked on it*, from `agent.by_task`.
+  The day view carries no agent names, so *kepler was building it* cannot be
+  said.
+- The head uses the type scale's steps (16, 14 and 12 px), not the design's
+  17, 15 and 12.5 px. `type-floor.test.ts` refuses a size off the scale.

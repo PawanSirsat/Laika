@@ -1,12 +1,18 @@
 import { useRef, useState } from 'react';
 import type { MyDay, TimeDraft } from '../../../api/time.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
-import { kindGlyph } from './entry-kinds.ts';
 import { duration } from './format.ts';
 import { MyDayDialog } from './MyDayDialog.tsx';
 import { rangeLabel } from './my-day-derive.ts';
-import { daySplit, noteOf, offScreen } from './summary-derive.ts';
-import { dayLong } from './week-derive.ts';
+import {
+  daySplit,
+  noteOf,
+  offScreen,
+  splitKeyOf,
+  splitLabel,
+  weekdayOf,
+} from './summary-derive.ts';
+import './summary.css';
 
 export const DAY_NOTE_MAX = 500;
 
@@ -24,11 +30,12 @@ export interface ConfirmDaySummaryProps {
 }
 
 /**
- * *Where the day went* (the owner's design, D-110 item 2, LAI-503): before
- * *Confirm day*, the day's total, its split by kind as bars, the time Laika
- * could not see, how much confirms and what stays, and a note for whoever
- * reads the day — owners and admins (§4.62). Confirm sends the note with the
- * day; with nothing to confirm the note saves alone.
+ * *Confirm Thursday* (the owner's `MyDay.dc.html`, `summary()`; LAI-503, laid
+ * out as designed by LAI-517): the total, what confirms and what stays, *Where
+ * the day went* as one segmented bar over a two-column legend, the time Laika
+ * could not see, and a note for whoever reads the day — owners and admins
+ * (§4.62). Confirm sends the note with the day; with nothing to confirm the
+ * note saves alone, which the design has no case for.
  */
 export function ConfirmDaySummary({
   view,
@@ -52,7 +59,7 @@ export function ConfirmDaySummary({
     ready.length > 0 ? `${duration(readyMinutes)} to confirm` : 'Nothing left to confirm',
     confirmedMinutes > 0 ? `${duration(confirmedMinutes)} already confirmed` : '',
     needCard.length > 0
-      ? `${String(needCard.length)} without a card ${needCard.length === 1 ? 'stays' : 'stay'} in To review`
+      ? `${String(needCard.length)} without a task ${needCard.length === 1 ? 'stays' : 'stay'} in To review`
       : '',
   ]
     .filter((s) => s !== '')
@@ -61,86 +68,98 @@ export function ConfirmDaySummary({
 
   return (
     <MyDayDialog
-      title={`Confirm ${dayLong(view.day)}`}
+      title={`Confirm ${weekdayOf(view.day)}`}
+      framed
+      className="myday-summary-dialog"
       onClose={onClose}
       {...(restore === undefined ? {} : { restore })}
     >
       <div className="myday-summary" data-confirm-summary>
-        <p className="myday-summary-total">
-          <strong data-summary-total>{duration(total)}</strong>
-          <span className="myday-quiet" data-summary-sub>
-            {subtitle}
-          </span>
-        </p>
-        {segments.length > 0 && (
-          <ol className="myday-summary-split" aria-label="Where the day went">
-            {segments.map((seg) => (
-              <li key={seg.key} className="myday-summary-row" data-summary-kind={seg.key}>
-                <span className="myday-summary-name">
-                  {seg.key !== 'building' && seg.key !== 'general' && (
-                    <span aria-hidden="true">{kindGlyph(seg.key)} </span>
-                  )}
-                  {seg.label}
-                </span>
-                <span className="myday-summary-bar" aria-hidden="true">
-                  <span
-                    className={`myday-summary-fill myday-summary-fill-${seg.key}`}
-                    style={{ width: `${String(seg.pct)}%` }}
-                  />
-                </span>
-                <span className="myday-summary-figure">
-                  {duration(seg.minutes)} <span className="myday-quiet">{seg.pct}%</span>
-                </span>
-              </li>
-            ))}
-          </ol>
-        )}
-        {off.length > 0 && (
-          <div className="myday-summary-off" data-summary-off>
-            <p className="myday-summary-head">
-              {duration(offMinutes)} Laika couldn’t see, added by you
-            </p>
-            <ul className="myday-summary-list">
-              {off.map((e) => (
-                <li key={e.id}>
-                  <span>{e.title ?? e.task?.key ?? 'Entry'}</span>
-                  {e.kind !== undefined && e.kind !== null && (
-                    <span className="myday-quiet"> · {e.kind}</span>
-                  )}
-                  {rangeLabel(e) !== '' && <span className="myday-quiet"> · {rangeLabel(e)}</span>}
-                </li>
-              ))}
-            </ul>
+        <div className="myday-summary-body">
+          <div className="myday-summary-total">
+            <strong data-summary-total>{duration(total)}</strong>
+            <span data-summary-sub>{subtitle}</span>
           </div>
-        )}
-        <label className="myday-summary-note">
-          <span className="myday-summary-head">Note for your manager</span>
-          <textarea
-            ref={field}
-            className="myday-pop-input myday-summary-field"
-            rows={3}
-            maxLength={DAY_NOTE_MAX}
-            placeholder="Anything they should know about today — optional"
-            value={note}
-            disabled={busy}
-            data-summary-note
-            onChange={(event) => {
-              setNote(event.target.value);
-            }}
-          />
-          <span className="myday-quiet">
-            Shared with owners and admins who open your day. {String(note.length)}/
-            {String(DAY_NOTE_MAX)}
-          </span>
-        </label>
-        <div className="myday-dialog-actions">
-          <button type="button" className="myday-chip" disabled={busy} onClick={onClose}>
+          {segments.length > 0 && (
+            <section className="myday-summary-went" aria-labelledby="myday-summary-went">
+              <h3 className="myday-summary-label" id="myday-summary-went">
+                Where the day went
+              </h3>
+              <div className="myday-summary-segments" aria-hidden="true">
+                {segments.map((seg) => (
+                  <span
+                    key={seg.key}
+                    className={`myday-summary-fill myday-summary-fill-${seg.key} myday-summary-segment`}
+                    style={{ flexGrow: seg.minutes }}
+                  />
+                ))}
+              </div>
+              <ul className="myday-summary-legend">
+                {segments.map((seg) => (
+                  <li key={seg.key} className="myday-summary-key" data-summary-kind={seg.key}>
+                    <span
+                      className={`myday-summary-fill myday-summary-fill-${seg.key} myday-summary-swatch`}
+                      aria-hidden="true"
+                    />
+                    <span className="myday-summary-name">{seg.label}</span>
+                    <span className="myday-summary-value">{duration(seg.minutes)}</span>
+                    <span className="myday-summary-pct">{seg.pct}%</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {off.length > 0 && (
+            <div className="myday-summary-off" data-summary-off>
+              <p className="myday-summary-off-head">
+                {duration(offMinutes)} Laika couldn’t see, added by you
+              </p>
+              <ul className="myday-summary-off-list">
+                {off.map((e) => {
+                  const kind = splitLabel(splitKeyOf(e));
+                  return (
+                    <li key={e.id} className="myday-summary-off-row">
+                      <span className="myday-summary-off-range">
+                        {rangeLabel(e) === '' ? 'No set time' : rangeLabel(e)}
+                      </span>
+                      <span className="myday-summary-off-title">
+                        {e.title ?? e.note ?? e.task?.key ?? 'Entry'}
+                      </span>
+                      <span className="myday-summary-off-kind">{kind}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+          <label className="myday-summary-note">
+            <span className="myday-summary-label">Note for your manager</span>
+            <textarea
+              ref={field}
+              className="myday-pop-input myday-summary-field"
+              rows={3}
+              maxLength={DAY_NOTE_MAX}
+              placeholder="Optional. What moved, what’s blocked, what took thinking."
+              value={note}
+              disabled={busy}
+              data-summary-note
+              onChange={(event) => {
+                setNote(event.target.value);
+              }}
+            />
+            <span className="myday-summary-hint">
+              Shared with owners and admins next to your confirmed time.
+            </span>
+          </label>
+        </div>
+        <div className="myday-summary-foot">
+          <button type="button" className="myday-summary-button" disabled={busy} onClick={onClose}>
             Cancel
           </button>
           {ready.length === 0 ? (
             <button
               type="button"
-              className="myday-chip myday-chip-primary"
+              className="myday-summary-button myday-summary-primary"
               disabled={busy || !noteChanged}
               data-summary-save-note
               onClick={() => {
@@ -152,7 +171,7 @@ export function ConfirmDaySummary({
           ) : (
             <button
               type="button"
-              className="myday-chip myday-chip-primary"
+              className="myday-summary-button myday-summary-primary"
               disabled={busy}
               data-summary-confirm
               onClick={() => {

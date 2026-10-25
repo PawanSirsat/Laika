@@ -715,37 +715,28 @@ void describe('every row is connected to its card (LAI-810, the owner)', () => {
       const inspector = h.page.locator('[data-inspector-for="d01"]');
       await inspector.waitFor({ timeout: 5_000 });
       assert.match(await inspector.innerText(), /6:00–6:15 AM/);
-      for (const name of [
-        'Not work',
-        'Shorter by 5 minutes',
-        'Longer by 5 minutes',
-        'Split in two',
-      ]) {
+      for (const name of ['Not work time', 'Split in two']) {
         await until(async () => (await inspector.getByRole('button', { name }).count()) === 1);
         assert.equal(await inspector.getByRole('button', { name }).count(), 1, name);
       }
-      // Other card… opens the field, and focus is in it.
-      await inspector.getByRole('button', { name: 'Other card…' }).focus();
-      await h.page.keyboard.press('Enter');
-      await until(() => h.page.evaluate(() => document.activeElement?.tagName === 'INPUT'));
-      assert.equal(
-        await h.page.evaluate(() => document.activeElement?.getAttribute('aria-label')),
-        'Another card’s key',
-      );
+      // Any other card is found by the search (LAI-504, LAI-515).
+      assert.equal(await inspector.locator('[data-task-search]').count(), 1);
 
       // LAI-788: an entry from Solidtime is read here and changed there.
       await h.page.locator('[data-day-tab="confirmed"]').click();
       await h.page.locator('[data-select="e02"]').click();
       const imported = h.page.locator('[data-inspector-for="e02"]');
       await imported.waitFor({ timeout: 5_000 });
-      assert.match(await imported.innerText(), /change it in Solidtime/);
-      assert.equal(await imported.getByRole('button', { name: 'Delete' }).count(), 0);
-      assert.equal(await imported.getByRole('button', { name: 'Longer by 5 minutes' }).count(), 0);
+      assert.match(await imported.innerText(), /Change it there/);
+      assert.equal(await imported.getByRole('button', { name: 'Delete entry' }).count(), 0);
+      assert.equal(await imported.locator('[data-task-search]').count(), 0);
       await h.page.locator('[data-select="e01"]').click();
       const own = h.page.locator('[data-inspector-for="e01"]');
       await own.waitFor({ timeout: 5_000 });
-      await until(async () => (await own.getByRole('button', { name: 'Delete' }).count()) === 1);
-      assert.equal(await own.getByRole('button', { name: 'Delete' }).count(), 1);
+      await until(
+        async () => (await own.getByRole('button', { name: 'Delete entry' }).count()) === 1,
+      );
+      assert.equal(await own.getByRole('button', { name: 'Delete entry' }).count(), 1);
     } finally {
       await h.close();
     }

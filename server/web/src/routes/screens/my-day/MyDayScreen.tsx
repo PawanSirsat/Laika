@@ -41,7 +41,7 @@ import { Spinner } from '../../../components/Spinner.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import type { ReviewQueueItem } from '../../../api/review.ts';
 import { AgentStrip } from './AgentStrip.tsx';
-import { cardChips } from './card-chips.ts';
+import { CHIP_CAP, cardChips, cardChipsWhy } from './card-chips.ts';
 import { DayTabs, type DayTab } from './DayTabs.tsx';
 import { DraftList, type Batch } from './DraftList.tsx';
 import { ConfirmDaySummary } from './ConfirmDaySummary.tsx';
@@ -285,7 +285,6 @@ export function MyDayScreen({
   const [batch, setBatch] = useState<Batch>({ kind: 'idle' });
   const [tick, setTick] = useState(0);
   const [selection, setSelection] = useState<Selection | undefined>(undefined);
-  const [slot, setSlot] = useState<Span | undefined>(undefined);
   const [toast, setToast] = useState<ToastState | undefined>(undefined);
   const [sheet, setSheet] = useState(false);
   const [lookedOpen, setLookedOpen] = useState(false);
@@ -298,6 +297,8 @@ export function MyDayScreen({
   const besideButton = useRef<HTMLButtonElement | null>(null);
   // Fill gaps (LAI-513): walking the day's gaps, one add after another.
   const [fillRun, setFillRun] = useState(false);
+  /** The entry a timer just stopped into (LAI-515): its editor says so once. */
+  const [justStopped, setJustStopped] = useState<string | undefined>(undefined);
   // The tab under the Timeline (LAI-505): remembered per browser; Overview
   // until one is picked, as the design opens (LAI-514).
   const [tab, setTab] = useState<DayTab | undefined>(() => {
@@ -367,10 +368,16 @@ export function MyDayScreen({
     };
   }, []);
 
+  // The timer's word in the editor goes with the selection that carried it (LAI-515).
+  useEffect(() => {
+    if (selection?.kind !== 'entry' || selection.id !== justStopped) {
+      setJustStopped(undefined);
+    }
+  }, [selection, justStopped]);
+
   // A new day, or somebody else's, starts with nothing in hand.
   useEffect(() => {
     setSelection(undefined);
-    setSlot(undefined);
     setBatch({ kind: 'idle' });
     setToast(undefined);
   }, [selectedDay, subjectId]);
@@ -731,12 +738,12 @@ export function MyDayScreen({
   const assignOptions: TaskRef[] = [...onTheDay, ...inProgress].filter(
     (t, at, all) => all.findIndex((o) => o.key === t.key) === at,
   );
+  const byAgent: TaskRef[] = view.agent.by_task.filter((t) => t.minutes > 0).map((t) => t.task);
   const chipsFor = (own: TaskRef | null): readonly TaskRef[] =>
     cardChips(own, inProgress, onTheDay);
 
   const pickGap = (gap: Span): void => {
     setSelection({ kind: 'gap', start: gap.start, end: gap.end });
-    setSlot(gap);
   };
 
   const write = (held: Held, patch: DraftPatch & EntryPatch, key: string, said?: string) =>
@@ -831,7 +838,6 @@ export function MyDayScreen({
       await discardTimer().catch(() => undefined);
       reload();
     }
-    setSlot(undefined);
     // Fill gaps (LAI-513): the next gap, until there is none.
     if (fillRun && selection?.kind === 'gap') {
       const filled = selection.start;
@@ -873,7 +879,10 @@ export function MyDayScreen({
         'info',
         undoId === undefined ? [] : [{ undoId, blocks: [stopped.entry.id] }],
       );
-      if (stopped.entry.day === view.day) setSelection({ kind: 'entry', id: stopped.entry.id });
+      if (stopped.entry.day === view.day) {
+        setSelection({ kind: 'entry', id: stopped.entry.id });
+        setJustStopped(stopped.entry.id);
+      }
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === 'conflict' && line.midnight !== undefined) {
         // Over confirmed time: the timer stays, and its span opens beside the
@@ -916,11 +925,11 @@ export function MyDayScreen({
       const end = Math.min(anchor, free.hi);
       const start = Math.max(free.lo, end - 30);
       if (end - start >= STEP) {
-        setSelection({ kind: 'range', start, end });
+        setSelection({ kind: 'range', start, end, from: 'button' });
         return;
       }
     }
-    setSelection({ kind: 'range', start: anchor - 30, end: anchor, untimed: true });
+    setSelection({ kind: 'range', start: anchor - 30, end: anchor, untimed: true, from: 'button' });
   };
 
   const turnDraftingOn = (): void => {
@@ -1125,7 +1134,6 @@ export function MyDayScreen({
             ended_at: instant(gap.end),
           }),
         (made) => {
-          setSlot(undefined);
           setSelection({ kind: 'break', id: made.id });
           return { text: `${range} is a break — not time, and not a gap.` };
         },
@@ -1133,6 +1141,17 @@ export function MyDayScreen({
     },
     unbreak: (id) => {
       void run('unbreak', [], () => removeBreak(id), 'Not a break — it counts as a gap again.');
+    },
+    pickGap,
+    workFromBreak: (b) => {
+      // The break goes, and its span opens as Add time (the design's *Turn into work time*).
+      void run('unbreak', [], () => removeBreak(b.id), 'Not a break — add what it was.').then(
+        (made) => {
+          if (made !== undefined) {
+            setSelection({ kind: 'range', start: b.start, end: b.end, from: 'gap' });
+          }
+        },
+      );
     },
   };
 
@@ -1146,10 +1165,6 @@ export function MyDayScreen({
     if (shortcut === 'close') {
       if (sheet) {
         setSheet(false);
-        return true;
-      }
-      if (slot !== undefined) {
-        setSlot(undefined);
         return true;
       }
       if (selection !== undefined) {
@@ -1691,7 +1706,7 @@ export function MyDayScreen({
               ? readOnly
                 ? `Beside ${subjectName}’s day`
                 : 'Beside your day'
-              : selection?.kind === 'range' || (selection?.kind === 'gap' && slot !== undefined)
+              : selection?.kind === 'range' || selection?.kind === 'gap'
                 ? 'Add time'
                 : 'Edit this time'
           }
@@ -1707,8 +1722,17 @@ export function MyDayScreen({
               view={view}
               line={line}
               selection={selection}
-              chipsFor={chipsFor}
+              chipsFor={(own) => cardChipsWhy(own, inProgress, onTheDay, CHIP_CAP, byAgent)}
               agentsIn={(span) => agentsDuring(line.agents, span)}
+              subject={subjectName}
+              stopped={justStopped}
+              undo={
+                toast?.undo === undefined || busy
+                  ? undefined
+                  : () => {
+                      if (toast.undo !== undefined) runUndo(toast.undo);
+                    }
+              }
               pending={pending}
               actions={actions}
               onNavigate={onNavigate}

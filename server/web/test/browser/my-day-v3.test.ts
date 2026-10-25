@@ -442,7 +442,7 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
       await h.page.locator('[data-block-select="d1"]').click();
       const editor = h.page.locator('[data-inspector-for="d1"]');
       await editor.waitFor({ timeout: 5_000 });
-      const tiles = await editor.locator('.inspector-count dt').allInnerTexts();
+      const tiles = await editor.locator('.editor-tile span').allInnerTexts();
       assert.deepEqual(tiles, ['prompts', 'commits', 'marks', 'agents']);
       assert.equal((await editor.locator('[data-count="agents"]').innerText()).trim(), '2');
       assert.match(

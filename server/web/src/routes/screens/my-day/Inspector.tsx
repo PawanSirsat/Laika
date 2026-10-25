@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import {
   getRevisions,
@@ -11,29 +11,31 @@ import {
   type NewEntry,
 } from '../../../api/time.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
+import type { CardChip, ChipWhy } from './card-chips.ts';
 import { CardLink } from './CardLink.tsx';
+import { EditorFrame, type EditorNav } from './EditorFrame.tsx';
+import { EditorWhen, type BusySpan, type Conflict } from './EditorWhen.tsx';
+import { KINDS, kindLabel } from './entry-kinds.ts';
 import { folderOf, needsACard } from './folder.ts';
 import { agentDuration, clock, duration, span } from './format.ts';
-import { canChange, dayIn, dayLabel } from './my-day-derive.ts';
+import { canChange, splitAt, splitUnderstood } from './my-day-derive.ts';
+import { NewEntryPanel, type NewEntryFrom } from './NewEntryPanel.tsx';
+import { TaskChips } from './TaskChips.tsx';
+import { TaskSearch } from './TaskSearch.tsx';
 import type { Selection } from './Timeline.tsx';
 import {
+  freeAround,
   instantOf,
   limitsIn,
   splitPoint,
+  type BreakSpan,
   type DayLine,
   type LaneBlock,
   type Span,
-  freeAround,
-  stepEnd,
-  stepMinutes,
 } from './timeline-derive.ts';
-import { EditorWhen } from './EditorWhen.tsx';
-import { KINDS } from './entry-kinds.ts';
-import { TaskSearch } from './TaskSearch.tsx';
-import { splitAt, splitUnderstood } from './my-day-derive.ts';
-import { NewEntryPanel } from './NewEntryPanel.tsx';
+import './editor.css';
 
-/** A draft or an entry — the two things −/+ and the card chips act on. */
+/** A draft or an entry — the two things the editor's writes act on. */
 export type Held =
   | { readonly kind: 'draft'; readonly draft: TimeDraft }
   | { readonly kind: 'entry'; readonly entry: TimeEntry };
@@ -71,6 +73,10 @@ export interface InspectorActions {
   ) => void;
   readonly markBreak: (gap: Span) => void;
   readonly unbreak: (id: string) => void;
+  /** Another gap, from the gap editor's ‹ › (LAI-515). */
+  readonly pickGap: (gap: Span) => void;
+  /** A break turned back into work time (LAI-515): removed, and its span opens as Add time. */
+  readonly workFromBreak: (b: BreakSpan) => void;
 }
 
 /** How long the agent worked inside a span, and on how many runs (LAI-888). */
@@ -84,8 +90,8 @@ export interface InspectorProps {
   readonly view: MyDay;
   readonly line: DayLine;
   readonly selection: Selection | undefined;
-  /** The chips for a block whose own card is `own`. */
-  readonly chipsFor: (own: TaskRef | null) => readonly TaskRef[];
+  /** The chips for a block whose own card is `own`, each with why it is offered. */
+  readonly chipsFor: (own: TaskRef | null) => readonly CardChip[];
   /** The AGENTS lane inside a span — the editor's fourth tile and its line. */
   readonly agentsIn?: (span: Span) => AgentsIn;
   readonly pending: string | undefined;
@@ -98,45 +104,59 @@ export interface InspectorProps {
    * own entries).
    */
   readonly readOnly?: boolean;
+  /** Whose day, when read-only: the sub line names them. */
+  readonly subject?: string | undefined;
   /** Where the block stands among the drafts, for the head's ‹ n of N › (LAI-504). */
   readonly position?: { readonly index: number; readonly total: number } | undefined;
   readonly onPrev?: (() => void) | undefined;
   readonly onNext?: (() => void) | undefined;
   readonly onClose?: (() => void) | undefined;
+  /** The entry a timer just stopped into (LAI-515): the head says so once. */
+  readonly stopped?: string | undefined;
+  /** The last change can be taken back: *Undo* beside *Saved ✓*. */
+  readonly undo?: (() => void) | undefined;
 }
 
 /** The tiles under *Drafted from*, in the design's order; *agents* is the lane's. */
 const COUNTS = ['prompts', 'commits', 'marks'] as const;
 
-/** The design's glyph for each kind, as the Timeline draws it. */
-const ICONS = { drafted: '✎', needs: '?', confirmed: '✓', gap: '+', break: '‖' } as const;
+/** The design's glyph for each state, as the Timeline draws it. */
+const ICONS = {
+  drafted: '✎',
+  needs: '?',
+  confirmed: '✓',
+  gap: '+',
+  break: '‖',
+  imported: '⇣',
+} as const;
 
 const agentMinutes = (seconds: number): number => Math.max(1, Math.round(seconds / 60));
 
 /** What the agent did inside a block, in one line — minutes, never what it typed. */
 function agentLine(during: AgentsIn | undefined, who: 'you' | 'they' = 'you'): string {
   if (during === undefined || during.runs === 0) {
-    return `No agent ran in this time. Counts only, never what ${who} typed.`;
+    return `No agent ran in this time. Counts only — never what ${who} typed, file names or commit messages.`;
   }
   const worked = agentDuration(agentMinutes(during.seconds));
   const onCard =
     during.onCardSeconds > 0
       ? `, ${agentDuration(agentMinutes(during.onCardSeconds))} of it on a card`
-      : ', on no card';
-  return `During this time an agent worked ${worked}${onCard}. Counts only, never what ${who} typed.`;
+      : '';
+  return `During this time an agent worked ${worked}${onCard}. Counts only — never what ${who} typed, file names or commit messages.`;
 }
 
-const SOURCES: Readonly<Record<TimeEntry['source'], string>> = {
-  draft: 'From a draft',
-  manual: 'Typed by you',
-  import: 'From Solidtime',
-};
-
-const CHANGES: Readonly<Record<TimeRevision['change'], string>> = {
-  created: 'Created',
-  edited: 'Edited',
-  deleted: 'Deleted',
-};
+/** What a revision did, in the design's words. */
+function revisionWords(r: TimeRevision, source: TimeEntry['source'], first: boolean): string {
+  if (r.change === 'deleted') return 'Deleted';
+  if (r.change === 'created' || first) {
+    return source === 'import'
+      ? 'Imported from Solidtime'
+      : source === 'manual'
+        ? `Added by hand · ${duration(r.minutes)}`
+        : `Confirmed · ${duration(r.minutes)}`;
+  }
+  return `Edited · ${duration(r.minutes)}`;
+}
 
 type History =
   | { readonly kind: 'closed' }
@@ -145,229 +165,21 @@ type History =
   | { readonly kind: 'error'; readonly message: string };
 
 /**
- * The editor's head (the owner's design, LAI-504): the pill, ‹ n of N › for a
- * draft, and the close.
- */
-function EditorHead({
-  pill,
-  pillClass,
-  icon,
-  position,
-  onPrev,
-  onNext,
-  onClose,
-}: {
-  readonly pill: string;
-  readonly pillClass: string;
-  readonly icon: string;
-  readonly position?: { readonly index: number; readonly total: number } | undefined;
-  readonly onPrev?: (() => void) | undefined;
-  readonly onNext?: (() => void) | undefined;
-  readonly onClose?: (() => void) | undefined;
-}) {
-  return (
-    <header className="inspector-head">
-      <span className={`inspector-kind ${pillClass}`}>
-        <span className="inspector-kind-icon" aria-hidden="true">
-          {icon}
-        </span>
-        {pill}
-      </span>
-      <span className="inspector-head-gap" />
-      {position !== undefined && (
-        <span className="inspector-nav">
-          <span className="myday-quiet" data-inspector-position>
-            {String(position.index + 1)} of {String(position.total)}
-          </span>
-          <button
-            type="button"
-            className="myday-week-step"
-            aria-label="Previous to review (K)"
-            onClick={onPrev}
-          >
-            ‹
-          </button>
-          <button
-            type="button"
-            className="myday-week-step"
-            aria-label="Next to review (J)"
-            onClick={onNext}
-          >
-            ›
-          </button>
-        </span>
-      )}
-      {onClose !== undefined && (
-        <button
-          type="button"
-          className="myday-week-step inspector-close"
-          aria-label="Close (Esc)"
-          onClick={onClose}
-        >
-          ×
-        </button>
-      )}
-    </header>
-  );
-}
-
-/** The card chips, General, and a key typed for any other card. */
-export function CardPicker({
-  current,
-  general,
-  chips,
-  busy,
-  onPick,
-}: {
-  readonly current: string | undefined;
-  readonly general: boolean;
-  readonly chips: readonly TaskRef[];
-  readonly busy: boolean;
-  readonly onPick: (card: string) => void;
-}) {
-  const [typing, setTyping] = useState(false);
-  const [key, setKey] = useState('');
-  const submit = (event: FormEvent): void => {
-    event.preventDefault();
-    const typed = key.trim();
-    if (typed === '') return;
-    onPick(typed);
-    setTyping(false);
-    setKey('');
-  };
-  return (
-    <>
-      <div className="inspector-chips">
-        {chips.map((chip) => (
-          <button
-            key={chip.key}
-            type="button"
-            className="myday-cardchip"
-            data-card={chip.key}
-            aria-pressed={current === chip.key}
-            title={chip.title}
-            disabled={busy}
-            onClick={() => {
-              if (current !== chip.key) onPick(chip.key);
-            }}
-          >
-            {chip.key}
-          </button>
-        ))}
-        <button
-          type="button"
-          className="myday-cardchip"
-          data-card="general"
-          aria-pressed={general}
-          title="No card, on purpose"
-          disabled={busy}
-          onClick={() => {
-            if (!general) onPick('general');
-          }}
-        >
-          General
-        </button>
-        {!typing && (
-          <button
-            type="button"
-            className="myday-linkish"
-            disabled={busy}
-            onClick={() => {
-              setTyping(true);
-            }}
-          >
-            Other card…
-          </button>
-        )}
-      </div>
-      {typing && (
-        <form className="inspector-other" onSubmit={submit}>
-          <input
-            className="input"
-            value={key}
-            placeholder="LAI-42"
-            aria-label="Another card’s key"
-            // Opened by the reader's own click, so the field is where focus goes.
-            autoFocus
-            onChange={(event) => {
-              setKey(event.target.value);
-            }}
-          />
-          <button type="submit" className="myday-chip myday-chip-primary" disabled={busy}>
-            Put it there
-          </button>
-          <button
-            type="button"
-            className="myday-chip"
-            onClick={() => {
-              setTyping(false);
-            }}
-          >
-            Cancel
-          </button>
-        </form>
-      )}
-    </>
-  );
-}
-
-export function Stepper({
-  minutes,
-  canShorten,
-  canLengthen,
-  busy,
-  onStep,
-}: {
-  readonly minutes: number;
-  readonly canShorten: boolean;
-  readonly canLengthen: boolean;
-  readonly busy: boolean;
-  readonly onStep: (by: number) => void;
-}) {
-  return (
-    <div className="inspector-stepper">
-      <button
-        type="button"
-        aria-label="Shorter by 5 minutes"
-        disabled={busy || !canShorten}
-        onClick={() => {
-          onStep(-5);
-        }}
-      >
-        <span aria-hidden="true">−</span>
-      </button>
-      <span className="inspector-length" aria-live="polite">
-        {duration(minutes)}
-      </span>
-      <button
-        type="button"
-        aria-label="Longer by 5 minutes"
-        disabled={busy || !canLengthen}
-        onClick={() => {
-          onStep(5);
-        }}
-      >
-        <span aria-hidden="true">+</span>
-      </button>
-    </div>
-  );
-}
-
-/**
- * The selected block, in full (LAI-831, the owner's design): beside the day
- * and its lists, everything there is to do to one block in one place.
+ * The editor (the owner's `MyDay.dc.html`, LAI-515; LAI-831, LAI-504): one
+ * block in full, in the drawer beside the page — a head with the state pill,
+ * *Saved ✓*, ‹ n of N › and ×; the title and its sub line; then WHEN, TASK,
+ * KIND, WHAT IT WAS, SPLIT, DRAFTED FROM or BUILT FROM and HISTORY, in the
+ * design's order; and a footer fixed at the bottom with what the block can
+ * become.
  *
- * - **Drafted**: when, where it came from, *Not work* and *Confirm length* —
- *   which reads *Needs a card* and does nothing until a card or General is
- *   chosen; the card, with a warning when nothing named one or the named one
- *   is a card the reader cannot read; its length, −/+ in five minutes, and
- *   *Split in two*; and **the counts it was drafted from — never what was
- *   typed, a file name or a commit message**, which the server never has.
- * - **Confirmed**: when, from where, its revision; *Delete*, its card and its
- *   length, every edit kept as a revision (one from Solidtime is changed
- *   there).
- * - **A gap**: add time into it, or mark it a break (CHIEF's addition D).
- * - **A break**: not time, and not a gap; *Not a break* counts it again.
+ * - **Drafted**: confirm it, with the kind and words typed here; split it at
+ *   a time; mark it not work time; put it on a task found or offered, or on
+ *   General; and **the counts it was drafted from — never what was typed, a
+ *   file name or a commit message**, which the server never has.
+ * - **Confirmed**: its task, kind and words, each change a revision listed
+ *   under HISTORY; *Delete entry*. One from Solidtime is changed there.
+ * - **A gap** fills with Add time, or becomes a break.
+ * - **A break** turns back into work time, or goes.
  */
 export function Inspector({
   view,
@@ -379,10 +191,13 @@ export function Inspector({
   actions,
   onNavigate,
   readOnly = false,
+  subject = 'This person',
   position,
   onPrev,
   onNext,
   onClose,
+  stopped,
+  undo,
 }: InspectorProps) {
   const [history, setHistory] = useState<History>({ kind: 'closed' });
   /** What a draft was, typed before its confirm (LAI-504). */
@@ -391,19 +206,144 @@ export function Inspector({
   >(undefined);
   /** *Split…*: the time typed, for the draft it is open on. */
   const [splitting, setSplitting] = useState<{ id: string; text: string } | undefined>(undefined);
-  const [note, setNote] = useState<{ id: string; text: string } | undefined>(undefined);
-  /** The gap whose *Add time here* opened the new-entry panel (LAI-897). */
-  const [adding, setAdding] = useState<number | undefined>(undefined);
   const [details, setDetails] = useState<
     { id: string; title: string; description: string } | undefined
   >(undefined);
   const busy = pending !== undefined;
+  const selectedId =
+    selection !== undefined && (selection.kind === 'draft' || selection.kind === 'entry')
+      ? selection.id
+      : undefined;
+
+  // *Saved ✓* for a few seconds after a write to the block in hand lands.
+  const lastPending = useRef(pending);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    const before = lastPending.current;
+    lastPending.current = pending;
+    if (
+      before === undefined ||
+      pending !== undefined ||
+      selectedId === undefined ||
+      !before.endsWith(`:${selectedId}`)
+    ) {
+      return undefined;
+    }
+    setSaved(true);
+    const timer = setTimeout(() => {
+      setSaved(false);
+    }, 6_000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [pending, selectedId]);
+
+  // HISTORY, read as a confirmed entry opens (a `/me` read: the reader's own).
+  const entryId = selection?.kind === 'entry' ? selection.id : undefined;
+  useEffect(() => {
+    if (entryId === undefined || readOnly) {
+      setHistory({ kind: 'closed' });
+      return undefined;
+    }
+    let live = true;
+    setHistory({ kind: 'loading' });
+    getRevisions(entryId)
+      .then(({ revisions }) => {
+        if (live) setHistory({ kind: 'ready', revisions });
+      })
+      .catch((cause: unknown) => {
+        if (live) {
+          setHistory({
+            kind: 'error',
+            message: cause instanceof ApiError ? cause.message : 'The history could not be read.',
+          });
+        }
+      });
+    return () => {
+      live = false;
+    };
+  }, [entryId, readOnly]);
+
   const at = (m: number): number => (line.midnight === undefined ? 0 : instantOf(line.midnight, m));
   const placed = (id: string): LaneBlock | undefined => line.blocks.find((b) => b.id === id);
   const whenOf = (item: TimeDraft | TimeEntry): string =>
     item.started_at === null || item.ended_at === null
       ? 'No set time'
       : span(item.started_at, item.ended_at, item.tz);
+  /** A placed block's name, for a refusal that names what is in the way. */
+  const labelOf = (b: LaneBlock): string => {
+    const entry = view.entries.find((e) => e.id === b.id);
+    if (entry !== undefined) {
+      return entry.task?.key ?? entry.title ?? entry.project?.name ?? 'General';
+    }
+    const draft = view.drafts.find((d) => d.id === b.id);
+    return draft?.task?.key ?? draft?.project?.name ?? 'a draft';
+  };
+  const keyOf = (b: LaneBlock | undefined): string | undefined =>
+    b === undefined
+      ? undefined
+      : (view.entries.find((e) => e.id === b.id)?.task?.key ??
+        view.drafts.find((d) => d.id === b.id)?.task?.key);
+  const conflictsAround = (id: string | undefined): Conflict[] =>
+    line.blocks
+      .filter((b) => b.kind === 'confirmed' && b.id !== id)
+      .map((b) => ({ start: b.start, end: b.end, label: labelOf(b) }));
+  const busySpans = (): BusySpan[] =>
+    line.blocks.map((b) => ({
+      start: b.start,
+      end: b.end,
+      confirmed: b.kind === 'confirmed',
+      label: labelOf(b),
+    }));
+  /** The chips, with *Card before* and *Card after* for the neighbours on the track. */
+  const chipsAround = (own: TaskRef | null, id: string): readonly CardChip[] => {
+    const ordered = [...line.blocks].sort((a, b) => a.start - b.start);
+    const i = ordered.findIndex((b) => b.id === id);
+    const before = i > 0 ? keyOf(ordered[i - 1]) : undefined;
+    const after = i >= 0 ? keyOf(ordered[i + 1]) : undefined;
+    return chipsFor(own).map((chip) => {
+      const why: ChipWhy | undefined =
+        chip.task.key === own?.key
+          ? undefined
+          : chip.task.key === before
+            ? 'Card before'
+            : chip.task.key === after
+              ? 'Card after'
+              : chip.why;
+      return { task: chip.task, why };
+    });
+  };
+  const kindChips = (
+    current: EntryKind | undefined,
+    canPick: boolean,
+    onPick: (kind: EntryKind) => void,
+  ) => (
+    <div className="editor-kinds" role="radiogroup" aria-label="Kind">
+      {KINDS.map((k) => (
+        <button
+          key={k.kind}
+          type="button"
+          role="radio"
+          className="editor-kind"
+          data-kind-pick={k.kind}
+          aria-checked={current === k.kind}
+          aria-pressed={current === k.kind}
+          aria-disabled={canPick ? undefined : true}
+          disabled={busy}
+          onClick={() => {
+            if (canPick) onPick(k.kind);
+          }}
+        >
+          {k.label}
+        </button>
+      ))}
+    </div>
+  );
+  const nowMinute =
+    view.day === view.today && line.midnight !== undefined
+      ? Math.floor((Date.now() - line.midnight) / 60_000 / 5) * 5
+      : undefined;
+  const who = readOnly ? 'they' : 'you';
 
   if (selection?.kind === 'draft') {
     const draft = view.drafts.find((d) => d.id === selection.id);
@@ -425,308 +365,289 @@ export function Inspector({
       };
       const splitText = splitting?.id === draft.id ? splitting.text : undefined;
       const splitInstant = splitText === undefined ? undefined : splitAt(draft, splitText);
-      const name = draft.task?.title ?? draft.project?.name ?? (ready ? 'General' : 'No task yet');
+      const name =
+        draft.task?.title ?? draft.project?.name ?? (draft.general ? 'General' : 'No task yet');
+      const nav: EditorNav | undefined =
+        position === undefined || position.total < 2 || onPrev === undefined || onNext === undefined
+          ? undefined
+          : {
+              text: `${String(position.index + 1)} of ${String(position.total)}`,
+              prevLabel: 'Previous to review (K)',
+              nextLabel: 'Next to review (J)',
+              onPrev,
+              onNext,
+            };
+      const why =
+        draft.task_key !== null
+          ? `${draft.task_key} was named — a card you can’t read.`
+          : draft.folder !== undefined && draft.folder !== null
+            ? `${needsACard(draft)}.`
+            : 'Nothing named a task.';
+      const foot = readOnly ? undefined : (
+        <>
+          <button
+            type="button"
+            className="editor-primary inspector-confirm"
+            data-inspector-confirm
+            disabled={busy || !ready}
+            onClick={() => {
+              actions.confirm(draft, said);
+            }}
+          >
+            {pending === `confirm:${draft.id}` && <Spinner size="sm" label="Confirming" />}
+            {ready ? `Confirm ${duration(draft.minutes)}` : 'Pick a task or kind'}
+            {ready && <kbd className="editor-kbd">↵</kbd>}
+          </button>
+          <button
+            type="button"
+            className="editor-act"
+            aria-label="Split in two"
+            disabled={busy || block === undefined || splitPoint(block) === undefined}
+            onClick={() => {
+              const middle = block === undefined ? undefined : splitPoint(block);
+              if (middle !== undefined) {
+                setSplitting({ id: draft.id, text: clock(at(middle), view.tz) });
+              }
+            }}
+          >
+            Split…
+          </button>
+          <button
+            type="button"
+            className="editor-act"
+            disabled={busy}
+            onClick={() => {
+              actions.dismiss(draft);
+            }}
+          >
+            Not work time
+          </button>
+        </>
+      );
       return (
-        <section
-          className="myday-card inspector"
-          data-inspector="draft"
-          data-inspector-for={draft.id}
-          tabIndex={-1}
-          aria-label="The selected drafted block"
+        <EditorFrame
+          kind="draft"
+          forId={draft.id}
+          label="The selected drafted block"
+          pill={ready ? 'Draft' : 'No task yet'}
+          pillClass={ready ? 'inspector-kind-drafted' : 'inspector-kind-needs'}
+          icon={ready ? ICONS.drafted : ICONS.needs}
+          saved={saved && !readOnly}
+          onUndo={undo}
+          nav={nav}
+          onClose={onClose}
+          keyText={draft.task?.key}
+          title={name}
+          sub={`${whenOf(draft)} · ${duration(draft.minutes)} · ${
+            draft.source === 'agent' ? 'Proposed by an agent' : 'Drafted by your collector'
+          } · ${readOnly ? `Read-only · ${subject}’s draft` : 'only you and the owners see it'}${
+            draft.note !== null ? ` · “${draft.note}”` : ''
+          }`}
+          banner={
+            readOnly
+              ? 'Read-only. You can see this because you may read everyone’s day.'
+              : undefined
+          }
+          bannerTone="blue"
+          foot={foot}
         >
-          <EditorHead
-            pill={ready ? 'Draft' : 'No task yet'}
-            pillClass={ready ? 'inspector-kind-drafted' : 'inspector-kind-needs'}
-            icon={ready ? ICONS.drafted : ICONS.needs}
-            position={position}
-            onPrev={onPrev}
-            onNext={onNext}
-            onClose={onClose}
-          />
-          <div className="inspector-title">
-            {draft.task !== null && <span className="inspector-key">{draft.task.key}</span>}
-            <span className="inspector-name">{name}</span>
-          </div>
-          <p className="inspector-source">
-            {whenOf(draft)} · {duration(draft.minutes)} ·{' '}
-            {draft.source === 'agent' ? 'proposed by an agent' : 'drafted by your collector'} ·{' '}
-            {readOnly ? 'not confirmed' : 'only you and the owners see it'}
-            {draft.note !== null && ` · “${draft.note}”`}
-          </p>
-          <div className="inspector-body">
-            <section className="inspector-part">
-              <h3 className="inspector-label">When</h3>
-              <EditorWhen
-                span={spanOf}
-                minutes={draft.minutes}
-                midnight={line.midnight}
-                tz={view.tz}
-                limits={limits}
-                busy={busy}
-                readOnly={readOnly}
-                onSpan={(next) => {
-                  actions.setSpan(held, next);
-                }}
-                onLength={(minutes) => {
-                  actions.setLength(held, minutes);
-                }}
-              />
-              {!readOnly && (
-                <Stepper
-                  minutes={draft.minutes}
-                  canShorten={
-                    block === undefined
-                      ? stepMinutes(draft.minutes, -5) !== undefined
-                      : stepEnd(block, -5) !== undefined
-                  }
-                  canLengthen={
-                    block === undefined
-                      ? stepMinutes(draft.minutes, 5) !== undefined
-                      : stepEnd(block, 5, limits.hi) !== undefined
-                  }
-                  busy={busy}
-                  onStep={(by) => {
-                    actions.step(held, by);
-                  }}
-                />
-              )}
-            </section>
-            <section className="inspector-part">
-              <h3 className="inspector-label">Task</h3>
-              {draft.task !== null && (
-                <p className="inspector-card">
-                  <CardLink task={draft.task} slug={draft.project?.slug} onNavigate={onNavigate} />
-                </p>
-              )}
-              {draft.task === null && draft.project !== null && (
-                <p className="inspector-card">
+          <section className="editor-section">
+            <h3 className="editor-label">When</h3>
+            <EditorWhen
+              span={spanOf}
+              minutes={draft.minutes}
+              midnight={line.midnight}
+              tz={view.tz}
+              limits={limits}
+              conflicts={conflictsAround(draft.id)}
+              busy={busy}
+              readOnly={readOnly}
+              onSpan={(next) => {
+                actions.setSpan(held, next);
+              }}
+              onLength={(minutes) => {
+                actions.setLength(held, minutes);
+              }}
+            />
+          </section>
+          <section className="editor-section">
+            <h3 className="editor-label">Task</h3>
+            {draft.task !== null && (
+              <p className="editor-task-line inspector-card">
+                <CardLink task={draft.task} slug={draft.project?.slug} onNavigate={onNavigate} />
+              </p>
+            )}
+            {draft.task === null && draft.project !== null && (
+              <p className="editor-task-line inspector-card">
+                <span className="editor-task-title">
                   {draft.project.name}
                   {draft.folder !== undefined && draft.folder !== null && ` · ${draft.folder}`}
-                </p>
-              )}
-              {draft.general && draft.task === null && draft.project === null && (
-                <p className="inspector-card">General</p>
-              )}
-              {!ready && (
-                <p className={readOnly ? 'inspector-card' : 'inspector-warn'} data-card-warning>
-                  {draft.task_key !== null
-                    ? `${draft.task_key} was named — a card you can’t read.`
-                    : draft.folder !== undefined && draft.folder !== null
-                      ? `${needsACard(draft)}.`
-                      : 'Nothing named a task.'}
-                  {!readOnly && ' Pick one, or General if it was general work.'}
-                </p>
-              )}
-              {!readOnly && (
-                <>
-                  <TaskSearch
-                    busy={busy}
-                    onPick={(card) => {
-                      actions.setCard(held, card);
-                    }}
-                  />
-                  <CardPicker
-                    current={draft.task?.key}
-                    general={draft.general}
-                    chips={chipsFor(draft.task)}
-                    busy={busy}
-                    onPick={(card) => {
-                      actions.setCard(held, card);
-                    }}
-                  />
-                </>
-              )}
-            </section>
-            {!readOnly && (
-              <section className="inspector-part" data-draft-words>
-                <h3 className="inspector-label">Kind</h3>
-                <div className="myday-kinds" role="group" aria-label="Kind">
-                  {KINDS.map((k) => (
-                    <button
-                      key={k.kind}
-                      type="button"
-                      className="myday-kind"
-                      data-kind-pick={k.kind}
-                      aria-pressed={words.kind === k.kind}
-                      disabled={busy}
-                      onClick={() => {
-                        setDraftWords({
-                          ...words,
-                          kind: words.kind === k.kind ? undefined : k.kind,
-                        });
-                      }}
-                    >
-                      <span className="myday-kind-glyph" aria-hidden="true">
-                        {k.glyph}
-                      </span>
-                      {k.label}
-                    </button>
-                  ))}
-                </div>
-                <h3 className="inspector-label">What it was</h3>
-                <input
-                  className="input"
-                  data-draft-title
-                  value={words.title}
-                  maxLength={120}
-                  placeholder="A name for it — optional"
-                  aria-label="Title"
-                  disabled={busy}
-                  onChange={(event) => {
-                    setDraftWords({ ...words, title: event.target.value });
-                  }}
-                />
-                <textarea
-                  className="input myday-textarea"
-                  data-draft-description
-                  rows={2}
-                  value={words.description}
-                  maxLength={2000}
-                  placeholder="Add a description (optional)"
-                  aria-label="Description"
-                  disabled={busy}
-                  onChange={(event) => {
-                    setDraftWords({ ...words, description: event.target.value });
-                  }}
-                />
-                <p className="inspector-note">Saved with the entry when you confirm.</p>
-              </section>
+                </span>
+              </p>
             )}
-            <section className="inspector-part">
-              <h3 className="inspector-label">Drafted from</h3>
-              <dl className="inspector-counts">
-                {COUNTS.map((kind) => (
-                  <div key={kind} className="inspector-count">
-                    <dd data-count={kind}>{String(draft.signals[kind])}</dd>
-                    <dt>{kind}</dt>
-                  </div>
-                ))}
-                <div className="inspector-count">
-                  <dd data-count="agents">
-                    {String(block === undefined ? 0 : (agentsIn?.(block).runs ?? 0))}
-                  </dd>
-                  <dt>agents</dt>
-                </div>
-              </dl>
-              {folderOf(draft) !== undefined && (
-                <p className="inspector-card" data-drafted-folder>
-                  {folderOf(draft)}
-                </p>
-              )}
-              <p className="inspector-note" data-agent-line>
-                {agentLine(
-                  block === undefined ? undefined : agentsIn?.(block),
-                  readOnly ? 'they' : 'you',
+            {draft.general && draft.task === null && draft.project === null && (
+              <p className="editor-task-line inspector-card">
+                <span className="editor-task-key">No task</span>
+                <span className="editor-task-title">
+                  Shows as {words.kind === undefined ? 'General' : kindLabel(words.kind)} on the
+                  Timeline
+                </span>
+              </p>
+            )}
+            {!ready && (
+              <p className={readOnly ? 'inspector-card' : 'editor-notask'} data-card-warning>
+                {readOnly ? (
+                  why
+                ) : (
+                  <>
+                    <b>No task yet.</b> {why} Pick one, or just pick a kind below.
+                  </>
                 )}
               </p>
-              <p className="inspector-note">
-                {readOnly
-                  ? 'Counts only — never what they typed, file names or commit messages.'
-                  : folderOf(draft) === undefined
-                    ? 'Counts only — never what you typed, file names or commit messages.'
-                    : draft.branch !== undefined && draft.branch !== null
-                      ? 'Counts, the name you gave this folder and its branch — never what you typed, file names or commit messages.'
-                      : 'Counts and the name you gave this folder — never what you typed, file names or commit messages.'}
+            )}
+            {!readOnly && (
+              <>
+                <TaskSearch
+                  busy={busy}
+                  onPick={(card) => {
+                    actions.setCard(held, card);
+                  }}
+                  onCustom={(text) => {
+                    setDraftWords({ ...words, title: text });
+                    if (!draft.general) actions.setCard(held, 'general');
+                  }}
+                />
+                <TaskChips
+                  current={draft.task?.key}
+                  general={draft.general}
+                  chips={chipsAround(draft.task, draft.id)}
+                  busy={busy}
+                  onPick={(card) => {
+                    actions.setCard(held, card);
+                  }}
+                />
+              </>
+            )}
+          </section>
+          <section className="editor-section" data-draft-words>
+            <h3 className="editor-label">Kind</h3>
+            {kindChips(words.kind, !readOnly, (kind) => {
+              setDraftWords({ ...words, kind: words.kind === kind ? undefined : kind });
+              // A kind on a draft with no task logs it as that kind, on General (the design).
+              if (!ready) actions.setCard(held, 'general');
+            })}
+          </section>
+          <section className="editor-section">
+            <h3 className="editor-label">What it was</h3>
+            <input
+              className="input editor-input editor-words"
+              data-draft-title
+              value={words.title}
+              maxLength={120}
+              placeholder={`e.g. ${draft.task?.title ?? 'Code review for the onboarding epic'}`}
+              aria-label="What it was"
+              readOnly={readOnly}
+              disabled={busy}
+              onChange={(event) => {
+                setDraftWords({ ...words, title: event.target.value });
+              }}
+            />
+            {!readOnly && (
+              <textarea
+                className="input editor-textarea"
+                data-draft-description
+                rows={2}
+                value={words.description}
+                maxLength={2000}
+                placeholder="Add a description (optional)"
+                aria-label="Description"
+                disabled={busy}
+                onChange={(event) => {
+                  setDraftWords({ ...words, description: event.target.value });
+                }}
+              />
+            )}
+          </section>
+          {splitText !== undefined && block !== undefined && (
+            <section className="editor-section" data-split>
+              <h3 className="editor-label">Split</h3>
+              <div className="editor-split">
+                <span>Split at</span>
+                <input
+                  className="input editor-input editor-split-field"
+                  value={splitText}
+                  aria-label="Split at time"
+                  data-split-at
+                  // Opened by the reader's own click, so the field is where focus goes.
+                  autoFocus
+                  disabled={busy}
+                  onChange={(event) => {
+                    setSplitting({ id: draft.id, text: event.target.value });
+                  }}
+                />
+                <button
+                  type="button"
+                  className="editor-act"
+                  data-split-go
+                  disabled={busy || splitInstant === undefined}
+                  onClick={() => {
+                    if (splitInstant !== undefined) {
+                      actions.splitAt(draft, splitInstant);
+                      setSplitting(undefined);
+                    }
+                  }}
+                >
+                  Split
+                </button>
+                <button
+                  type="button"
+                  className="editor-link"
+                  onClick={() => {
+                    setSplitting(undefined);
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+              <p className="editor-hint" data-split-hint>
+                {splitUnderstood(draft, splitText) ??
+                  `Pick a time between ${clock(at(block.start + 5), view.tz)} and ${clock(at(block.end - 5), view.tz)}. Both halves stay drafts.`}
               </p>
             </section>
-            {splitText !== undefined && block !== undefined && (
-              <section className="inspector-part" data-split>
-                <h3 className="inspector-label">Split</h3>
-                <div className="inspector-row">
-                  <label className="myday-when-field">
-                    <span className="myday-when-label">Split at</span>
-                    <input
-                      className="input myday-when-input"
-                      value={splitText}
-                      aria-label="Split at time"
-                      data-split-at
-                      // Opened by the reader's own click, so the field is where focus goes.
-                      autoFocus
-                      disabled={busy}
-                      onChange={(event) => {
-                        setSplitting({ id: draft.id, text: event.target.value });
-                      }}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="myday-chip myday-chip-primary"
-                    data-split-go
-                    disabled={busy || splitInstant === undefined}
-                    onClick={() => {
-                      if (splitInstant !== undefined) {
-                        actions.splitAt(draft, splitInstant);
-                        setSplitting(undefined);
-                      }
-                    }}
-                  >
-                    Split
-                  </button>
-                  <button
-                    type="button"
-                    className="myday-chip"
-                    onClick={() => {
-                      setSplitting(undefined);
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-                <p className="inspector-note" data-split-hint>
-                  {splitUnderstood(draft, splitText) ??
-                    `Pick a time between ${clock(at(block.start + 5), view.tz)} and ${clock(at(block.end - 5), view.tz)}. Both halves stay drafts.`}
-                </p>
-              </section>
-            )}
-          </div>
-          {!readOnly && (
-            <footer className="inspector-foot">
-              <button
-                type="button"
-                className="myday-chip myday-chip-primary inspector-confirm"
-                data-inspector-confirm
-                disabled={busy || !ready}
-                onClick={() => {
-                  actions.confirm(draft, said);
-                }}
-              >
-                {pending === `confirm:${draft.id}` && <Spinner size="sm" label="Confirming" />}
-                {ready ? `Confirm ${duration(draft.minutes)}` : 'Needs a card'}
-              </button>
-              <kbd className="myday-kbd" title="Enter confirms">
-                ↵
-              </kbd>
-              <button
-                type="button"
-                className="myday-chip"
-                aria-label="Split in two"
-                disabled={busy || block === undefined || splitPoint(block) === undefined}
-                onClick={() => {
-                  const middle = block === undefined ? undefined : splitPoint(block);
-                  if (middle !== undefined) {
-                    setSplitting({ id: draft.id, text: clock(at(middle), view.tz) });
-                  }
-                }}
-              >
-                Split…
-              </button>
-              <button
-                type="button"
-                className="myday-chip"
-                disabled={busy}
-                onClick={() => {
-                  actions.dismiss(draft);
-                }}
-              >
-                Not work time
-              </button>
-              <span className="inspector-head-gap" />
-              <span className="inspector-keys-hint">
-                <kbd className="myday-kbd">?</kbd> all keys
-              </span>
-            </footer>
           )}
-        </section>
+          <section className="editor-section editor-section-last">
+            <h3 className="editor-label">Drafted from</h3>
+            <div className="editor-tiles">
+              {COUNTS.map((kind) => (
+                <div key={kind} className="editor-tile">
+                  <strong data-count={kind}>{String(draft.signals[kind])}</strong>
+                  <span>{kind}</span>
+                </div>
+              ))}
+              <div className="editor-tile">
+                <strong data-count="agents">
+                  {String(block === undefined ? 0 : (agentsIn?.(block).runs ?? 0))}
+                </strong>
+                <span>agents</span>
+              </div>
+            </div>
+            {folderOf(draft) !== undefined && (
+              <p className="editor-hint" data-drafted-folder>
+                {folderOf(draft)}
+              </p>
+            )}
+            <p className="editor-hint" data-agent-line>
+              {agentLine(block === undefined ? undefined : agentsIn?.(block), who)}
+            </p>
+            {folderOf(draft) !== undefined && (
+              <p className="editor-hint">
+                {draft.branch !== undefined && draft.branch !== null
+                  ? 'Counts, the name you gave this folder and its branch — never what you typed, file names or commit messages.'
+                  : 'Counts and the name you gave this folder — never what you typed, file names or commit messages.'}
+              </p>
+            )}
+          </section>
+        </EditorFrame>
       );
     }
   }
@@ -735,295 +656,271 @@ export function Inspector({
     const entry = view.entries.find((e) => e.id === selection.id);
     if (entry !== undefined) {
       const block = placed(entry.id);
+      const imported = entry.source === 'import';
       const changeable = !readOnly && canChange(entry);
+      const untimedEntry = entry.started_at === null || entry.ended_at === null;
       const held: Held = { kind: 'entry', entry };
-      const typed = note?.id === entry.id ? note.text : (entry.note ?? '');
       const said =
         details?.id === entry.id
           ? details
           : { id: entry.id, title: entry.title ?? '', description: entry.description ?? '' };
-      const unchanged =
-        typed.trim() === (entry.note ?? '') &&
-        said.title.trim() === (entry.title ?? '') &&
-        said.description.trim() === (entry.description ?? '');
+      const changed =
+        said.title.trim() !== (entry.title ?? '') ||
+        said.description.trim() !== (entry.description ?? '');
       const limits =
         block === undefined ? { lo: line.from * 60, hi: line.to * 60 } : limitsIn(line, block);
       const spanOf = block === undefined ? undefined : { start: block.start, end: block.end };
       const name = entry.title ?? entry.task?.title ?? entry.project?.name ?? 'General';
-      const toggleHistory = (): void => {
-        if (history.kind !== 'closed') {
-          setHistory({ kind: 'closed' });
-          return;
-        }
-        setHistory({ kind: 'loading' });
-        getRevisions(entry.id)
-          .then(({ revisions }) => {
-            setHistory({ kind: 'ready', revisions });
-          })
-          .catch((cause: unknown) => {
-            setHistory({
-              kind: 'error',
-              message: cause instanceof ApiError ? cause.message : 'The history could not be read.',
-            });
-          });
-      };
       const saveWords = (): void => {
+        if (!changeable || !changed) return;
         actions.saveDetails(entry, {
           title: said.title,
           description: said.description,
-          note: typed,
+          note: entry.note ?? '',
         });
       };
+      const banner =
+        stopped === entry.id
+          ? `Timer stopped. ${duration(entry.minutes)} saved as confirmed time. Check the task and title, then close.`
+          : imported
+            ? 'This entry came from Solidtime. Change it there; the next import updates it here.'
+            : readOnly
+              ? 'Read-only. You can see this because you may read everyone’s day.'
+              : undefined;
       return (
-        <section
-          className="myday-card inspector"
-          data-inspector="entry"
-          data-inspector-for={entry.id}
-          tabIndex={-1}
-          aria-label="The selected confirmed entry"
-        >
-          <EditorHead
-            pill={entry.source === 'import' ? 'Imported' : 'Confirmed'}
-            pillClass="inspector-kind-confirmed"
-            icon={ICONS.confirmed}
-            onClose={onClose}
-          />
-          <div className="inspector-title">
-            {entry.task !== null && <span className="inspector-key">{entry.task.key}</span>}
-            <span className="inspector-name">{name}</span>
-          </div>
-          <p className="inspector-source">
-            {whenOf(entry)} · {duration(entry.minutes)} ·{' '}
-            {readOnly ? SOURCES[entry.source].replace('by you', 'by them') : SOURCES[entry.source]}{' '}
-            · others can see it · rev {String(entry.revision)}
-            {!readOnly && !changeable && ' · change it in Solidtime'}
-          </p>
-          <div className="inspector-body">
-            <section className="inspector-part">
-              <h3 className="inspector-label">When</h3>
-              <EditorWhen
-                span={spanOf}
-                minutes={entry.minutes}
-                midnight={line.midnight}
-                tz={view.tz}
-                limits={limits}
-                busy={busy}
-                readOnly={!changeable}
-                onSpan={(next) => {
-                  actions.setSpan(held, next);
-                }}
-                onLength={(minutes) => {
-                  actions.setLength(held, minutes);
-                }}
-              />
-              {changeable && (
-                <Stepper
-                  minutes={entry.minutes}
-                  canShorten={
-                    block === undefined
-                      ? stepMinutes(entry.minutes, -5) !== undefined
-                      : stepEnd(block, -5) !== undefined
-                  }
-                  canLengthen={
-                    block === undefined
-                      ? stepMinutes(entry.minutes, 5) !== undefined
-                      : stepEnd(block, 5, limits.hi) !== undefined
-                  }
-                  busy={busy}
-                  onStep={(by) => {
-                    actions.step(held, by);
-                  }}
-                />
-              )}
-              {!readOnly && (
-                <p className="inspector-note">
-                  Every edit is kept as a revision.{' '}
-                  <button
-                    type="button"
-                    className="myday-linkish"
-                    aria-expanded={history.kind !== 'closed'}
-                    onClick={toggleHistory}
-                  >
-                    {history.kind === 'closed' ? 'History' : 'Hide history'}
-                  </button>
-                </p>
-              )}
-              {history.kind === 'loading' && <Spinner size="sm" label="Reading the history" />}
-              {history.kind === 'error' && <p className="myday-error">{history.message}</p>}
-              {history.kind === 'ready' && (
-                <ol className="myday-history" aria-label="Revisions">
-                  {history.revisions.map((r) => (
-                    <li key={r.revision}>
-                      <span className="myday-history-n">{String(r.revision)}</span>
-                      {CHANGES[r.change]} · {duration(r.minutes)} ·{' '}
-                      <time dateTime={new Date(r.created_at).toISOString()}>
-                        {dayLabel(dayIn(view.tz, r.created_at))} {clock(r.created_at, view.tz)}
-                      </time>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </section>
-            <section className="inspector-part">
-              <h3 className="inspector-label">Task</h3>
-              <p className="inspector-card">
-                {entry.task !== null ? (
-                  <CardLink task={entry.task} slug={entry.project?.slug} onNavigate={onNavigate} />
-                ) : (
-                  (entry.project?.name ?? 'General')
-                )}
-                {folderOf(entry) !== undefined && (
-                  <span data-entry-folder>{` · ${folderOf(entry) ?? ''}`}</span>
-                )}
-              </p>
-              {changeable && (
-                <>
-                  <TaskSearch
-                    busy={busy}
-                    onPick={(card) => {
-                      actions.setCard(held, card);
-                    }}
-                  />
-                  <CardPicker
-                    current={entry.task?.key}
-                    general={entry.task === null && entry.project === null}
-                    chips={chipsFor(entry.task)}
-                    busy={busy}
-                    onPick={(card) => {
-                      actions.setCard(held, card);
-                    }}
-                  />
-                </>
-              )}
-            </section>
-            {block !== undefined && agentsIn !== undefined && (
-              <section className="inspector-part">
-                <h3 className="inspector-label">Built from</h3>
-                <dl className="inspector-counts inspector-counts-one">
-                  <div className="inspector-count">
-                    <dd data-count="agents">{String(agentsIn(block).runs)}</dd>
-                    <dt>agents</dt>
-                  </div>
-                </dl>
-                <p className="inspector-note" data-agent-line>
-                  {agentLine(agentsIn(block), readOnly ? 'they' : 'you')}
-                </p>
-              </section>
-            )}
-            {changeable && (
-              <form
-                className="inspector-part"
-                data-entry-details
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  saveWords();
-                }}
-              >
-                <h3 className="inspector-label">Kind</h3>
-                {/* The kind saves on its own press (LAI-897); the words below, on Save. */}
-                <div className="myday-kinds" role="group" aria-label="Kind">
-                  {KINDS.map((k) => (
-                    <button
-                      key={k.kind}
-                      type="button"
-                      className="myday-kind"
-                      data-kind-pick={k.kind}
-                      aria-pressed={entry.kind === k.kind}
-                      disabled={busy}
-                      onClick={() => {
-                        actions.setKind(entry, entry.kind === k.kind ? null : k.kind);
-                      }}
-                    >
-                      <span className="myday-kind-glyph" aria-hidden="true">
-                        {k.glyph}
-                      </span>
-                      {k.label}
-                    </button>
-                  ))}
-                </div>
-                <h3 className="inspector-label">What it was</h3>
-                <label className="myday-field">
-                  <span className="myday-field-label">Title</span>
-                  <input
-                    id="inspector-title-field"
-                    className="input"
-                    data-entry-title
-                    value={said.title}
-                    maxLength={120}
-                    placeholder="A name for it"
-                    onChange={(event) => {
-                      setDetails({ ...said, title: event.target.value });
-                    }}
-                  />
-                </label>
-                <label className="myday-field">
-                  <span className="myday-field-label">Description</span>
-                  <textarea
-                    id="inspector-description-field"
-                    className="input myday-textarea"
-                    data-entry-description
-                    rows={2}
-                    value={said.description}
-                    maxLength={2000}
-                    placeholder="What happened, in your words"
-                    onChange={(event) => {
-                      setDetails({ ...said, description: event.target.value });
-                    }}
-                  />
-                </label>
-                <label className="myday-field">
-                  <span className="myday-field-label">Note</span>
-                  <input
-                    id="inspector-note-field"
-                    className="input"
-                    value={typed}
-                    maxLength={280}
-                    placeholder="A note on it"
-                    onChange={(event) => {
-                      setNote({ id: entry.id, text: event.target.value });
-                    }}
-                  />
-                </label>
-                <div className="inspector-row">
-                  <button type="submit" className="myday-chip" disabled={busy || unchanged}>
-                    Save
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-          {changeable && (
-            <footer className="inspector-foot">
+        <EditorFrame
+          kind="entry"
+          forId={entry.id}
+          label="The selected confirmed entry"
+          pill={imported ? 'Imported' : untimedEntry ? 'No set time' : 'Confirmed'}
+          pillClass={imported ? 'inspector-kind-imported' : 'inspector-kind-confirmed'}
+          icon={imported ? ICONS.imported : ICONS.confirmed}
+          saved={saved && changeable}
+          onUndo={undo}
+          onClose={onClose}
+          keyText={entry.task?.key}
+          title={name}
+          sub={`${whenOf(entry)} · ${duration(entry.minutes)} · ${
+            imported
+              ? 'Imported from Solidtime · read-only here'
+              : readOnly
+                ? `Read-only · ${subject}’s entry`
+                : 'Confirmed · owners and admins can see it'
+          }${entry.note !== null ? ` · “${entry.note}”` : ''}`}
+          banner={banner}
+          bannerTone={stopped === entry.id ? 'accent' : 'blue'}
+          foot={
+            changeable ? (
               <button
                 type="button"
-                className="myday-chip myday-chip-primary"
-                disabled={busy || unchanged}
-                onClick={saveWords}
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                className="myday-chip myday-chip-danger"
+                className="editor-act editor-act-danger"
+                data-entry-delete
                 disabled={busy}
                 onClick={() => {
                   actions.remove(entry);
                 }}
               >
-                Delete
+                Delete entry
               </button>
-              <span className="inspector-head-gap" />
-              <span className="inspector-keys-hint">
-                <kbd className="myday-kbd">?</kbd> all keys
-              </span>
-            </footer>
+            ) : undefined
+          }
+        >
+          <section className="editor-section">
+            <h3 className="editor-label">When</h3>
+            <EditorWhen
+              span={spanOf}
+              minutes={entry.minutes}
+              midnight={line.midnight}
+              tz={view.tz}
+              limits={limits}
+              conflicts={conflictsAround(entry.id)}
+              busy={busy}
+              readOnly={!changeable}
+              onSpan={(next) => {
+                actions.setSpan(held, next);
+              }}
+              onLength={(minutes) => {
+                actions.setLength(held, minutes);
+              }}
+            />
+          </section>
+          <section className="editor-section">
+            <h3 className="editor-label">Task</h3>
+            <p className="editor-task-line inspector-card">
+              {entry.task !== null ? (
+                <CardLink task={entry.task} slug={entry.project?.slug} onNavigate={onNavigate} />
+              ) : entry.project !== null ? (
+                <span className="editor-task-title">{entry.project.name}</span>
+              ) : (
+                <>
+                  <span className="editor-task-key">No task</span>
+                  <span className="editor-task-title">
+                    Shows as{' '}
+                    {entry.kind === undefined || entry.kind === null
+                      ? 'General'
+                      : kindLabel(entry.kind)}{' '}
+                    on the Timeline
+                  </span>
+                </>
+              )}
+              {folderOf(entry) !== undefined && (
+                <span className="editor-task-title" data-entry-folder>
+                  {` · ${folderOf(entry) ?? ''}`}
+                </span>
+              )}
+            </p>
+            {changeable && (
+              <>
+                <TaskSearch
+                  busy={busy}
+                  onPick={(card) => {
+                    actions.setCard(held, card);
+                  }}
+                  onCustom={(text) => {
+                    actions.saveDetails(entry, {
+                      title: text,
+                      description: said.description,
+                      note: entry.note ?? '',
+                    });
+                    if (entry.task !== null || entry.project !== null) {
+                      actions.setCard(held, 'general');
+                    }
+                  }}
+                />
+                <TaskChips
+                  current={entry.task?.key}
+                  general={entry.task === null && entry.project === null}
+                  chips={chipsAround(entry.task, entry.id)}
+                  busy={busy}
+                  onPick={(card) => {
+                    actions.setCard(held, card);
+                  }}
+                />
+              </>
+            )}
+          </section>
+          <section className="editor-section" data-entry-details>
+            <h3 className="editor-label">Kind</h3>
+            {kindChips(entry.kind ?? undefined, changeable, (kind) => {
+              actions.setKind(entry, entry.kind === kind ? null : kind);
+            })}
+          </section>
+          <section
+            className={
+              block !== undefined && agentsIn !== undefined && !readOnly
+                ? 'editor-section'
+                : 'editor-section editor-section-last'
+            }
+          >
+            <h3 className="editor-label">What it was</h3>
+            <input
+              className="input editor-input editor-words"
+              data-entry-title
+              value={said.title}
+              maxLength={120}
+              placeholder={
+                changeable
+                  ? `e.g. ${entry.task?.title ?? 'Code review for the onboarding epic'}`
+                  : 'No title'
+              }
+              aria-label="What it was"
+              readOnly={!changeable}
+              disabled={busy}
+              onChange={(event) => {
+                setDetails({ ...said, title: event.target.value });
+              }}
+              onBlur={saveWords}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                }
+              }}
+            />
+            {(changeable || said.description !== '') && (
+              <textarea
+                className="input editor-textarea"
+                data-entry-description
+                rows={2}
+                value={said.description}
+                maxLength={2000}
+                placeholder="Add a description (optional)"
+                aria-label="Description"
+                readOnly={!changeable}
+                disabled={busy}
+                onChange={(event) => {
+                  setDetails({ ...said, description: event.target.value });
+                }}
+                onBlur={saveWords}
+              />
+            )}
+          </section>
+          {block !== undefined && agentsIn !== undefined && (
+            <section className={readOnly ? 'editor-section editor-section-last' : 'editor-section'}>
+              <h3 className="editor-label">Built from</h3>
+              <div className="editor-tiles editor-tiles-one">
+                <div className="editor-tile">
+                  <strong data-count="agents">{String(agentsIn(block).runs)}</strong>
+                  <span>agents</span>
+                </div>
+              </div>
+              <p className="editor-hint" data-agent-line>
+                {agentLine(agentsIn(block), who)}
+              </p>
+            </section>
           )}
-        </section>
+          {!readOnly && (
+            <section className="editor-section editor-section-last" data-entry-history>
+              <h3 className="editor-label">History</h3>
+              {history.kind === 'loading' && <Spinner size="sm" label="Reading the history" />}
+              {history.kind === 'error' && <p className="editor-error">{history.message}</p>}
+              {history.kind === 'ready' && (
+                <ol className="editor-history" aria-label="Revisions">
+                  {[...history.revisions].reverse().map((r, i, all) => (
+                    <li key={r.revision} className="editor-history-row">
+                      <span className="editor-history-time">
+                        <time dateTime={new Date(r.created_at).toISOString()}>
+                          {clock(r.created_at, view.tz)}
+                        </time>
+                      </span>
+                      <span>
+                        {revisionWords(r, entry.source, i === all.length - 1)}
+                        <span className="editor-history-who"> · You</span>
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+          )}
+        </EditorFrame>
       );
     }
   }
 
-  if (selection?.kind === 'range' || (selection?.kind === 'gap' && adding === selection.start)) {
+  if (selection?.kind === 'gap' && readOnly) {
+    // Somebody else's gap (LAI-959): what it is, and nothing to fill it with.
+    const g: Span = { start: selection.start, end: selection.end };
+    return (
+      <EditorFrame
+        kind="gap"
+        forId={`gap-${String(g.start)}`}
+        label="The picked gap"
+        pill="Gap"
+        pillClass="inspector-kind-gap"
+        icon={ICONS.gap}
+        onClose={onClose}
+        title="Gap"
+        sub={`${span(at(g.start), at(g.end), view.tz)} · ${duration(g.end - g.start)} · Nothing reached Laika in this time`}
+      >
+        <section className="editor-section editor-section-last">
+          <p className="editor-note">Nothing on {subject}’s day covers this time.</p>
+        </section>
+      </EditorFrame>
+    );
+  }
+
+  if (selection?.kind === 'range' || selection?.kind === 'gap') {
     const range: Span = { start: selection.start, end: selection.end };
     const free = freeAround(
       range.start,
@@ -1031,139 +928,123 @@ export function Inspector({
       line.from * 60,
       line.to * 60,
     );
+    const gaps = line.gaps;
+    const gapIndex =
+      selection.kind === 'gap' ? gaps.findIndex((g) => g.start === selection.start) : -1;
+    const from: NewEntryFrom =
+      selection.kind === 'gap'
+        ? 'gap'
+        : (selection.from ?? (selection.fromTimer === true ? 'timer' : 'drag'));
     return (
-      <section
-        className="myday-card inspector"
-        data-inspector="range"
-        data-inspector-for={`range-${String(range.start)}`}
-        tabIndex={-1}
-        aria-label="A new entry"
-      >
-        <EditorHead
-          pill="New entry"
-          pillClass="inspector-kind-gap"
-          icon={ICONS.gap}
-          onClose={() => {
-            setAdding(undefined);
-            actions.letGo();
-          }}
-        />
-        <p className="inspector-source">confirmed as you add it</p>
-        <NewEntryPanel
-          view={view}
-          range={range}
-          untimed={selection.kind === 'range' ? selection.untimed : undefined}
-          prefill={selection.kind === 'range' ? selection.prefill : undefined}
-          limits={{ lo: free?.lo ?? line.from * 60, hi: free?.hi ?? line.to * 60 }}
-          now={
-            view.day === view.today && line.midnight !== undefined
-              ? Math.floor((Date.now() - line.midnight) / 60_000 / 5) * 5
-              : undefined
-          }
-          chips={chipsFor(null)}
-          busy={busy}
-          onAdd={actions.add}
-          onCancel={() => {
-            setAdding(undefined);
-            actions.letGo();
-          }}
-        />
-      </section>
-    );
-  }
-
-  if (selection?.kind === 'gap') {
-    const gap: Span = { start: selection.start, end: selection.end };
-    return (
-      <section
-        className="myday-card inspector"
-        data-inspector="gap"
-        data-inspector-for={`gap-${String(gap.start)}`}
-        tabIndex={-1}
-        aria-label="The picked gap"
-      >
-        <header className="inspector-head">
-          <span className="inspector-kind inspector-kind-gap">
-            <span className="inspector-kind-icon" aria-hidden="true">
-              {ICONS.gap}
-            </span>
-            Gap
-          </span>
-          <span className="inspector-range">{span(at(gap.start), at(gap.end), view.tz)}</span>
-          <span className="inspector-source">
-            {duration(gap.end - gap.start)} nothing on {readOnly ? 'their' : 'your'} day covers
-          </span>
-          <span className="inspector-head-gap" />
-          {!readOnly && (
-            <>
-              <button
-                type="button"
-                className="myday-chip"
-                disabled={busy}
-                onClick={() => {
-                  actions.markBreak(gap);
-                }}
-              >
-                Mark as break
-              </button>
-              <button
-                type="button"
-                className="myday-chip myday-chip-primary"
-                data-gap-add
-                onClick={() => {
-                  setAdding(gap.start);
-                }}
-              >
-                Add time here
-              </button>
-            </>
-          )}
-        </header>
-        {!readOnly && (
-          <p className="inspector-note inspector-pad">
-            Add time here, and say what it was; or mark it a break: a break is not time, and stops
-            counting as a gap.
-          </p>
-        )}
-      </section>
+      <NewEntryPanel
+        key={`${selection.kind}-${String(selection.start)}`}
+        view={view}
+        range={range}
+        from={from}
+        gap={selection.kind === 'gap' ? range : undefined}
+        gapNav={
+          selection.kind === 'gap' && gaps.length > 1 && gapIndex >= 0
+            ? {
+                index: gapIndex,
+                total: gaps.length,
+                onPrev: () => {
+                  const g = gaps[(gapIndex - 1 + gaps.length) % gaps.length];
+                  if (g !== undefined) actions.pickGap(g);
+                },
+                onNext: () => {
+                  const g = gaps[(gapIndex + 1) % gaps.length];
+                  if (g !== undefined) actions.pickGap(g);
+                },
+              }
+            : undefined
+        }
+        untimed={selection.kind === 'range' ? selection.untimed : undefined}
+        prefill={selection.kind === 'range' ? selection.prefill : undefined}
+        limits={{ lo: free?.lo ?? line.from * 60, hi: free?.hi ?? line.to * 60 }}
+        conflicts={conflictsAround(undefined)}
+        busySpans={busySpans()}
+        now={nowMinute}
+        chips={chipsFor(null)}
+        busy={busy}
+        onAdd={actions.add}
+        onCancel={actions.letGo}
+        onBreak={
+          selection.kind === 'gap' && !readOnly
+            ? () => {
+                actions.markBreak(range);
+              }
+            : undefined
+        }
+        onClose={onClose ?? actions.letGo}
+      />
     );
   }
 
   if (selection?.kind === 'break') {
     const b = line.breaks.find((x) => x.id === selection.id);
     if (b !== undefined) {
+      const range = span(at(b.start), at(b.end), view.tz);
       return (
-        <section
-          className="myday-card inspector"
-          data-inspector="break"
-          data-inspector-for={b.id}
-          tabIndex={-1}
-          aria-label="The picked break"
+        <EditorFrame
+          kind="break"
+          forId={b.id}
+          label="The picked break"
+          pill="Personal break"
+          pillClass="inspector-kind-break"
+          icon={ICONS.break}
+          onClose={onClose}
+          title="Break"
+          sub={`${range} · ${duration(b.end - b.start)} · Personal break · not counted in ${who === 'you' ? 'your' : 'their'} hours`}
+          foot={
+            readOnly ? undefined : (
+              <>
+                <button
+                  type="button"
+                  className="editor-act"
+                  data-break-work
+                  disabled={busy}
+                  onClick={() => {
+                    actions.workFromBreak(b);
+                  }}
+                >
+                  Turn into work time
+                </button>
+                <button
+                  type="button"
+                  className="editor-act"
+                  data-break-remove
+                  disabled={busy}
+                  onClick={() => {
+                    actions.unbreak(b.id);
+                  }}
+                >
+                  Remove break
+                </button>
+              </>
+            )
+          }
         >
-          <header className="inspector-head">
-            <span className="inspector-kind inspector-kind-break">
-              <span className="inspector-kind-icon" aria-hidden="true">
-                {ICONS.break}
-              </span>
-              Break
-            </span>
-            <span className="inspector-range">{span(at(b.start), at(b.end), view.tz)}</span>
-            <span className="inspector-source">not time, and not a gap</span>
-            <span className="inspector-head-gap" />
-            {!readOnly && (
-              <button
-                type="button"
-                className="myday-chip"
-                disabled={busy}
-                onClick={() => {
-                  actions.unbreak(b.id);
-                }}
-              >
-                Not a break
-              </button>
-            )}
-          </header>
-        </section>
+          <section className="editor-section">
+            <h3 className="editor-label">When</h3>
+            <EditorWhen
+              span={{ start: b.start, end: b.end }}
+              minutes={b.end - b.start}
+              midnight={line.midnight}
+              tz={view.tz}
+              limits={{ lo: 0, hi: 1440 }}
+              busy={busy}
+              readOnly
+              onSpan={() => undefined}
+              onLength={() => undefined}
+            />
+          </section>
+          <section className="editor-section editor-section-last">
+            <p className="editor-note">
+              A break {who === 'you' ? 'you' : 'they'} took. It isn’t counted, and it doesn’t block
+              work: time dragged over it shows hatched.
+            </p>
+          </section>
+        </EditorFrame>
       );
     }
   }
