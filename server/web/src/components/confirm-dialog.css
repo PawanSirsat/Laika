@@ -111,6 +111,24 @@
   overflow-wrap: anywhere;
 }
 
+/* A summary's two lines: what it is, then when and how long, muted. */
+.confirm-detail-main,
+.confirm-detail-sub {
+  display: block;
+}
+
+.confirm-detail-main strong {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  margin-right: 0.25rem;
+}
+
+.confirm-detail-sub {
+  margin-top: 0.125rem;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
 .confirm-field {
   display: flex;
   flex-direction: column;

@@ -946,7 +946,10 @@ export function MyDayScreen({
       danger: true,
       detail: (
         <span data-confirm-timer>
-          {what} · {minutes < 1 ? 'under a minute' : duration(minutes)} run
+          <span className="confirm-detail-main">{what}</span>
+          <span className="confirm-detail-sub">
+            {minutes < 1 ? 'Under a minute' : duration(minutes)} run, not saved
+          </span>
         </span>
       ),
     });
@@ -1166,10 +1169,9 @@ export function MyDayScreen({
           ? 'No set time'
           : span(entry.started_at, entry.ended_at, entry.tz);
       const what =
-        entry.task !== null
-          ? `${entry.task.key} ${entry.task.title}`
-          : (entry.title ??
-            (entry.kind === undefined || entry.kind === null ? 'General' : kindLabel(entry.kind)));
+        entry.task?.title ??
+        entry.title ??
+        (entry.kind === undefined || entry.kind === null ? 'General' : kindLabel(entry.kind));
       void confirm({
         title: 'Delete this entry?',
         body: 'It comes off your confirmed time and the hours your organisation sees. Its history keeps a record, and Undo brings it back for a moment after.',
@@ -1177,7 +1179,12 @@ export function MyDayScreen({
         danger: true,
         detail: (
           <span data-confirm-entry>
-            {when} · {what} · {duration(entry.minutes)}
+            <span className="confirm-detail-main">
+              {entry.task !== null && <strong>{entry.task.key}</strong>} {what}
+            </span>
+            <span className="confirm-detail-sub">
+              {when} · {duration(entry.minutes)}
+            </span>
           </span>
         ),
       }).then((yes) => {

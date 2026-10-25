@@ -57,7 +57,7 @@ void describe('the confirmation (LAI-522)', () => {
       await dialog.waitFor({ timeout: 5_000 });
       assert.equal(await dialog.getAttribute('role'), 'alertdialog');
       assert.match(await dialog.innerText(), /Discard the timer\?/);
-      assert.match(await dialog.innerText(), /LAI-11 · 42 min run/);
+      assert.match(await dialog.innerText(), /LAI-11\s+42 min run, not saved/);
       // Focus starts on Cancel, the safe answer.
       const onCancel = () =>
         dialog.evaluate(
