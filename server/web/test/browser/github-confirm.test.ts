@@ -16,6 +16,7 @@
  *   — and a class asserted in a source test is not a colour on a screen.
  */
 
+import { answerConfirm } from './confirm.ts';
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
@@ -166,14 +167,9 @@ void describe('the GitHub webhook card (LAI-753)', () => {
       assert.match(await card.innerText(), /secret set/);
 
       // Rotate asks first; the new secret replaces the old.
-      let asked = '';
-      h.page.once('dialog', (dialog) => {
-        asked = dialog.message();
-        void dialog.accept();
-      });
       await card.getByRole('button', { name: 'Rotate secret' }).click();
+      assert.match(await answerConfirm(h.page, true), /stops working at once/);
       await secret.waitFor({ timeout: 10_000 });
-      assert.match(asked, /stops working at once/);
       assert.equal(await secret.innerText(), SECOND);
       assert.doesNotMatch(await h.page.locator('body').innerText(), new RegExp(FIRST));
 
@@ -197,13 +193,13 @@ void describe('the GitHub webhook card (LAI-753)', () => {
       const card = h.page.locator('[data-section="github"]');
       await card.waitFor({ timeout: 20_000 });
 
-      h.page.once('dialog', (dialog) => void dialog.dismiss());
       await card.getByRole('button', { name: 'Rotate secret' }).click();
+      await answerConfirm(h.page, false);
       assert.equal(await card.locator('[data-secret]').count(), 0);
       assert.deepEqual(s.calls(), []);
 
-      h.page.once('dialog', (dialog) => void dialog.accept());
       await card.getByRole('button', { name: 'Clear' }).click();
+      await answerConfirm(h.page, true);
       await card.getByRole('button', { name: 'Set secret' }).waitFor({ timeout: 10_000 });
       assert.deepEqual(
         s.calls().map((c) => c.method),

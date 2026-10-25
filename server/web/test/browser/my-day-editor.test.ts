@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { answerConfirm } from './confirm.ts';
 import { after, describe, test } from 'node:test';
 import {
   closeBrowser,
@@ -502,9 +503,25 @@ void describe('the editor as designed (LAI-515)', () => {
       assert.match(await rows.nth(1).innerText(), /12:36 PM[\s\S]*Confirmed · 35 min · You/);
       assert.equal(await editor.locator('.inspector-stepper').count(), 0, 'the stepper is drawn');
       assert.equal(await editor.locator('.inspector-keys-hint').count(), 0, '? all keys is drawn');
+      // Delete asks first (LAI-522), naming the entry; Cancel keeps it.
       await editor.locator('[data-entry-delete]').click();
+      const asked = await answerConfirm(h.page, false);
+      assert.match(asked, /^Delete this entry\?/);
+      assert.match(asked, /LAI-12/);
+      await h.page.waitForTimeout(300);
+      assert.equal(
+        writes.some((w) => w.method === 'DELETE'),
+        false,
+        'deleted without asking',
+      );
+      await editor.locator('[data-entry-delete]').click();
+      await answerConfirm(h.page, true);
       await until(() =>
         writes.some((w) => w.method === 'DELETE' && w.path === '/api/v1/me/time-entries/e2'),
+      );
+      assert.equal(
+        writes.some((w) => w.method === 'DELETE' && w.path === '/api/v1/me/time-entries/e2'),
+        true,
       );
     } finally {
       await h.close();

@@ -10,6 +10,7 @@
  * only changed its own colour fails.
  */
 
+import { answerConfirm } from './confirm.ts';
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import {
@@ -626,19 +627,14 @@ void describe('Activity tab: Share local activity (the wizard’s Optional entry
       // Token counts are named in what is held (D-084 item 4), cache reads apart.
       assert.match(rows[0] ?? '', /\b4\s+1\.23M$/);
 
-      // Declining the confirmation deletes nothing.
-      h.page.once('dialog', (dialog) => {
-        void dialog.dismiss();
-      });
+      // Declining the confirmation deletes nothing (LAI-522: the app's own dialog).
       await panel.getByRole('button', { name: 'Delete my local-activity history' }).click();
+      await answerConfirm(h.page, false);
       await h.page.waitForTimeout(150);
       assert.equal(h.calls.filter((c) => c.method === 'DELETE').length, 0);
 
-      h.page.once('dialog', (dialog) => {
-        assert.match(dialog.message(), /cannot be undone/);
-        void dialog.accept();
-      });
       await panel.getByRole('button', { name: 'Delete my local-activity history' }).click();
+      assert.match(await answerConfirm(h.page, true), /cannot be undone/);
       await panel.locator('[data-state="nothing-held"]').waitFor();
       assert.equal(
         h.calls.filter((c) => c.method === 'DELETE' && c.path === '/api/v1/me/local-activity')
