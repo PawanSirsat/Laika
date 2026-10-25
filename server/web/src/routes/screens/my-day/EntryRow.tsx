@@ -1,5 +1,6 @@
 import type { TimeEntry } from '../../../api/time.ts';
 import { CardLink } from './CardLink.tsx';
+import { kindLabel } from './entry-kinds.ts';
 import { folderOf } from './folder.ts';
 import { duration, span } from './format.ts';
 
@@ -13,17 +14,19 @@ export interface EntryRowProps {
   readonly onNavigate: (to: string) => void;
 }
 
+/** The source pill, as the design names it: where the entry came from. */
 const SOURCES: Readonly<Record<TimeEntry['source'], string>> = {
   draft: 'From draft',
-  manual: 'Typed',
+  manual: 'You added',
   import: 'Solidtime',
 };
 
 /**
- * One confirmed entry (LAI-787; the owner's design, LAI-831): when, how long,
- * its card — a link to it — or General, its note, where it came from and its
- * revision. **The row selects it**: Delete, its card, its length and its
- * history are in the inspector, every change a revision kept beside it.
+ * One confirmed entry (LAI-787; the owner's design, LAI-514): a swatch,
+ * when, how long, its card — a link to it — or its kind on General, with its
+ * title or note beside it, and where it came from as a pill at the right.
+ * **The row selects it**: Delete, its card, its length and its history are in
+ * the editor, every change a revision kept there.
  */
 export function EntryRow({
   entry,
@@ -41,7 +44,17 @@ export function EntryRow({
     when === 'No set time'
       ? `entry ${String(position)} of ${String(count)}, no set time, ${duration(entry.minutes)}`
       : when;
-  const label = entry.task?.key ?? entry.project?.name ?? 'General';
+  // On General the kind is the label, as the design draws it; the title or
+  // the note is the line beside.
+  const kind = entry.kind === undefined || entry.kind === null ? undefined : kindLabel(entry.kind);
+  const label = entry.task?.key ?? entry.project?.name ?? kind ?? 'General';
+  const mono = entry.task !== null;
+  const folder = folderOf(entry);
+  const line =
+    entry.task?.title ??
+    entry.title ??
+    entry.note ??
+    (entry.project === null ? '' : 'A space, no card');
 
   return (
     <li
@@ -67,22 +80,22 @@ export function EntryRow({
         <span className="myday-row-minutes">{duration(entry.minutes)}</span>
       </button>
       <span className="myday-row-target">
-        <span className="myday-row-key">
+        <span className={mono ? 'myday-row-key myday-row-key-mono' : 'myday-row-key'}>
           {entry.task === null ? (
             label
           ) : (
             <CardLink task={entry.task} slug={entry.project?.slug} onNavigate={onNavigate} />
           )}
-          {entry.note !== null && <span className="myday-row-note"> · {entry.note}</span>}
         </span>
-        {folderOf(entry) !== undefined && (
-          <span className="myday-row-line" data-entry-folder>
-            {folderOf(entry)}
+        {line !== '' && <span className="myday-row-line">{line}</span>}
+        {/* The name the person gave the folder (D-098, LAI-866). */}
+        {folder !== undefined && (
+          <span className="myday-row-line myday-row-folder" data-entry-folder>
+            {folder}
           </span>
         )}
       </span>
-      <span className="myday-source">{SOURCES[entry.source]}</span>
-      <span className="myday-rev">rev {String(entry.revision)}</span>
+      <span className={`myday-source myday-source-${entry.source}`}>{SOURCES[entry.source]}</span>
     </li>
   );
 }

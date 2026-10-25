@@ -7,7 +7,7 @@ import { byTask, dayStats, weekStats, type Stat } from './overview-derive.ts';
 import { daySplit } from './summary-derive.ts';
 import { dayLong } from './week-derive.ts';
 
-export type OverviewScope = 'day' | 'week';
+export type OverviewScope = 'day' | 'week' | 'range';
 
 export interface OverviewTabProps {
   readonly view: MyDay;
@@ -32,25 +32,44 @@ function Stats({ stats }: { readonly stats: readonly Stat[] }) {
   );
 }
 
+/** `Mon 19` — a day of the week's strip, as the selects name it. */
+const shortOf = (day: string): string => `${weekdayShort(day)} ${String(Number(day.slice(8)))}`;
+
 /**
- * *Overview* (the owner's design, D-110 item 4, LAI-505): the day, or the
- * week around it — Tracked, To review, Meetings and Off-screen for the day,
- * Per active day for the week — then where the time went: by kind and by
- * task for the day, by day for the week. The week knows minutes and not
- * kinds (the strip's figures), and says so rather than fetching seven days.
+ * *Overview* (the owner's design, D-110 item 4, LAI-505; LAI-514): the day,
+ * the week around it, or a range of its days — Tracked, To review, Meetings
+ * and Off-screen for the day, Per active day over several — then where the
+ * time went: by kind and by task for the day, by day over several. The week
+ * knows minutes and not kinds (the strip's figures), and says so rather than
+ * fetching seven days.
  */
 export function OverviewTab({ view }: OverviewTabProps) {
   const [scope, setScope] = useState<OverviewScope>('day');
-  const first = view.week[0]?.day ?? view.day;
-  const last = view.week.at(-1)?.day ?? view.day;
+  const days = view.week.map((d) => d.day);
+  const first = days[0] ?? view.day;
+  const last = days.at(-1) ?? view.day;
+  const [from, setFrom] = useState(first);
+  const [to, setTo] = useState(view.day);
   const kinds = daySplit(view.entries, view.drafts);
   const tasks = byTask(view.entries, view.drafts);
-  const week = weekStats(view.week);
+  // The range, in the week's order whichever end was picked first.
+  const lo = from <= to ? from : to;
+  const hi = from <= to ? to : from;
+  const span = scope === 'week' ? view.week : view.week.filter((d) => d.day >= lo && d.day <= hi);
+  const multi = weekStats(span);
   const tracked =
     scope === 'day'
       ? view.entries.reduce((n, e) => n + e.minutes, 0) +
         view.drafts.reduce((n, d) => n + d.minutes, 0)
-      : (week.stats[0]?.value ?? 0);
+      : (multi.stats[0]?.value ?? 0);
+  const range =
+    scope === 'day'
+      ? dayLong(view.day)
+      : scope === 'week'
+        ? `${dayLong(first)} – ${dayLong(last)}`
+        : lo === hi
+          ? dayLong(lo)
+          : `${dayLong(lo)} – ${dayLong(hi)}`;
 
   return (
     <section className="myday-card myday-ov" aria-labelledby="myday-ov-title" data-overview>
@@ -60,29 +79,66 @@ export function OverviewTab({ view }: OverviewTabProps) {
             Overview
           </h2>
           <span className="myday-quiet" data-ov-range>
-            {scope === 'day' ? dayLong(view.day) : `${dayLong(first)} – ${dayLong(last)}`}
+            {range}
           </span>
         </div>
-        <div className="myday-segments" role="group" aria-label="Scope">
-          {(['day', 'week'] as const).map((s) => (
+        <div className="myday-segments" role="radiogroup" aria-label="Scope">
+          {(['day', 'week', 'range'] as const).map((s) => (
             <button
               key={s}
               type="button"
+              role="radio"
               className={scope === s ? 'myday-segment myday-segment-on' : 'myday-segment'}
+              aria-checked={scope === s}
               aria-pressed={scope === s}
               data-ov-scope={s}
               onClick={() => {
                 setScope(s);
               }}
             >
-              {s === 'day' ? 'Day' : 'Week'}
+              {s === 'day' ? 'Day' : s === 'week' ? 'Week' : 'Range'}
             </button>
           ))}
         </div>
+        {scope === 'range' && (
+          <div className="myday-ov-pick">
+            <select
+              className="myday-ov-select"
+              aria-label="From"
+              value={from}
+              data-ov-from
+              onChange={(event) => {
+                setFrom(event.target.value);
+              }}
+            >
+              {days.map((d) => (
+                <option key={d} value={d}>
+                  {shortOf(d)}
+                </option>
+              ))}
+            </select>
+            <span className="myday-quiet">–</span>
+            <select
+              className="myday-ov-select"
+              aria-label="To"
+              value={to}
+              data-ov-to
+              onChange={(event) => {
+                setTo(event.target.value);
+              }}
+            >
+              {days.map((d) => (
+                <option key={d} value={d}>
+                  {shortOf(d)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </header>
       {tracked === 0 ? (
         <p className="myday-quiet myday-pad" data-ov-empty>
-          Nothing tracked {scope === 'day' ? 'on this day' : 'this week'}.
+          Nothing tracked in this range.
         </p>
       ) : scope === 'day' ? (
         <>
@@ -150,11 +206,17 @@ export function OverviewTab({ view }: OverviewTabProps) {
         </>
       ) : (
         <>
-          <Stats stats={week.stats} />
+          <Stats stats={multi.stats} />
           <div className="myday-ov-column">
             <h3 className="myday-summary-head">By day</h3>
-            <ol className="myday-ov-days" aria-label="By day">
-              {week.days.map((d) => (
+            <ol
+              className="myday-ov-days"
+              aria-label="By day"
+              style={{
+                gridTemplateColumns: `repeat(${String(multi.days.length)}, minmax(0, 1fr))`,
+              }}
+            >
+              {multi.days.map((d) => (
                 <li
                   key={d.day}
                   className={d.day === view.day ? 'myday-ov-day myday-ov-day-open' : 'myday-ov-day'}

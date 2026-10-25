@@ -175,6 +175,8 @@ export interface BulkApi {
   readonly setDayNote?: (day: string, note: string | null) => Promise<unknown>;
   readonly dismissDraft: (id: string) => Promise<unknown>;
   readonly toGeneral: (id: string) => Promise<unknown>;
+  /** *Assign task* (the design, LAI-514): the block onto a card, by its key. */
+  readonly toCard?: (id: string, card: string) => Promise<unknown>;
 }
 
 export interface BulkResult {
@@ -187,12 +189,13 @@ export interface BulkResult {
 
 /* ------------------------------------------------------ the selection's bar */
 
-export type BulkKind = 'confirm' | 'general' | 'dismiss';
+export type BulkKind = 'confirm' | 'general' | 'dismiss' | 'assign';
 
-const DONE: Readonly<Record<BulkKind, (n: number) => string>> = {
+const DONE: Readonly<Record<BulkKind, (n: number, card?: string) => string>> = {
   confirm: (n) => `Confirmed ${blocks(n)}.`,
   general: (n) => `Moved ${blocks(n)} to General.`,
   dismiss: (n) => `Marked ${blocks(n)} as not work.`,
+  assign: (n, card) => `Put ${blocks(n)} on ${card ?? 'the task'}.`,
 };
 
 function pick(drafts: readonly TimeDraft[], ids: readonly string[]): TimeDraft[] {
@@ -209,15 +212,16 @@ export function selectionReport(
   chosen: readonly TimeDraft[],
   pass: Pass,
   left: readonly TimeDraft[],
+  card?: string,
 ): string {
   const stale = pass.refused.filter((r) => r.why === 'stale');
   const full = pass.refused.filter((r) => r.why === 'full');
   const other = pass.refused.filter((r) => r.why === 'other');
   const parts: string[] = [];
 
-  if (pass.done.length > 0) parts.push(DONE[kind](pass.done.length));
+  if (pass.done.length > 0) parts.push(DONE[kind](pass.done.length, card));
   else if (pass.refused.length === 0) {
-    parts.push(left.length > 0 ? 'Nothing confirmed.' : DONE[kind](0));
+    parts.push(left.length > 0 ? 'Nothing confirmed.' : DONE[kind](0, card));
   }
   if (full.length > 0) {
     const n = full.length + pass.untried.length;
@@ -259,6 +263,7 @@ export async function runBulk(
   chosen: readonly TimeDraft[],
   api: BulkApi,
   onProgress?: (done: number, total: number) => void,
+  card?: string,
 ): Promise<BulkResult> {
   let ids: readonly string[];
   let left: readonly TimeDraft[] = [];
@@ -273,6 +278,14 @@ export async function runBulk(
     // General on a block already on General is not a change; it is not sent.
     ids = chosen.filter((d) => !d.general).map((d) => d.id);
     write = api.toGeneral;
+  } else if (kind === 'assign') {
+    // The card on a block already on it is not a change; it is not sent.
+    const toCard = api.toCard;
+    if (card === undefined || toCard === undefined) {
+      return { keep: chosen.map((d) => d.id), text: 'No task was picked.', ok: false };
+    }
+    ids = chosen.filter((d) => d.task?.key !== card).map((d) => d.id);
+    write = (id) => toCard(id, card);
   } else {
     ids = chosen.map((d) => d.id);
     write = api.dismissDraft;
@@ -282,7 +295,7 @@ export async function runBulk(
   const kept = pass.refused.filter((r) => r.why !== 'stale').map((r) => r.id);
   return {
     keep: [...kept, ...pass.untried, ...left.map((d) => d.id)],
-    text: selectionReport(kind, chosen, pass, left),
+    text: selectionReport(kind, chosen, pass, left, card),
     ok: pass.refused.length === 0 && left.length === 0,
   };
 }

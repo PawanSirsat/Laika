@@ -7,14 +7,24 @@ export interface UntimedTrayProps {
   readonly entries: readonly TimeEntry[];
   readonly selected: string | undefined;
   readonly onPick: (item: { readonly kind: 'draft' | 'entry'; readonly id: string }) => void;
+  /** Somebody else's day (LAI-959): nothing here can be given a time. */
+  readonly readOnly?: boolean;
 }
 
 /**
- * *No set time* (the owner's design, D-110 item 8, LAI-505): the day's blocks
- * with a length and no place on the Timeline, each a chip — how long, what,
- * its kind. Tapping one opens it beside the lists, where its time is set.
+ * *No set time* (the owner's design, D-110 item 8, LAI-505; LAI-514): the
+ * day's blocks with a length and no place on the Timeline, each a chip — a
+ * grip, how long, what, its kind. Tapping one opens it in the drawer, where
+ * its time is set; on a desktop it can also be dragged onto the Timeline
+ * (LAI-512 takes the drop). The hint says which, by the width, in CSS.
  */
-export function UntimedTray({ drafts, entries, selected, onPick }: UntimedTrayProps) {
+export function UntimedTray({
+  drafts,
+  entries,
+  selected,
+  onPick,
+  readOnly = false,
+}: UntimedTrayProps) {
   const items = [
     ...drafts
       .filter((d) => d.started_at === null)
@@ -42,7 +52,16 @@ export function UntimedTray({ drafts, entries, selected, onPick }: UntimedTrayPr
         <h2 className="myday-card-title" id="myday-tray-title">
           No set time
         </h2>
-        <span className="myday-quiet">Tap to set a time</span>
+        {readOnly ? (
+          <span className="myday-quiet">Added without a time</span>
+        ) : (
+          <>
+            <span className="myday-quiet myday-tray-hint-desk">
+              Drag onto the Timeline to give it a time
+            </span>
+            <span className="myday-quiet myday-tray-hint-phone">Tap to set a time</span>
+          </>
+        )}
       </div>
       <ul className="myday-tray-items">
         {items.map((item) => (
@@ -55,6 +74,8 @@ export function UntimedTray({ drafts, entries, selected, onPick }: UntimedTrayPr
                   : 'myday-tray-item'
               }
               data-tray-item={item.id}
+              data-tray-kind={item.kind}
+              data-tray-minutes={item.minutes}
               aria-pressed={selected === item.id}
               onClick={() => {
                 onPick({ kind: item.kind, id: item.id });

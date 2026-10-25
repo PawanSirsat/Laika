@@ -10,19 +10,31 @@ export interface EntryListProps {
   readonly selected: string | undefined;
   readonly onSelect: (entry: TimeEntry) => void;
   readonly onNavigate: (to: string) => void;
+  /** Somebody else's day (LAI-959): the hint says whose. */
+  readonly readOnly?: boolean;
+  readonly subjectName?: string | undefined;
   readonly children?: ReactNode;
 }
 
 /**
- * *Confirmed* (the owner's design, LAI-505; LAI-810): the day's confirmed
- * time — **the time the organisation sees**; drafts only owners and admins
- * read (D-102, LAI-968) — grouped by the part of the day, with no scroll of
- * its own so the wheel always moves the page (LAI-311). Clicking a row puts
- * it in the editor.
+ * *Confirmed* (the owner's design, LAI-505; LAI-514): the day's confirmed
+ * time — **the time the organisation sees** — grouped by the part of the
+ * day, with the count and the sum in the head and a hint at the right, and
+ * no scroll of its own so the wheel always moves the page (LAI-311).
+ * Clicking a row puts it in the editor.
  */
-export function EntryList({ entries, selected, onSelect, onNavigate, children }: EntryListProps) {
+export function EntryList({
+  entries,
+  selected,
+  onSelect,
+  onNavigate,
+  readOnly = false,
+  subjectName,
+  children,
+}: EntryListProps) {
   const total = entries.reduce((sum, e) => sum + e.minutes, 0);
   const groups = groupByPart(entries);
+  const first = (subjectName ?? '').split(' ')[0] ?? subjectName ?? '';
 
   return (
     <section className="myday-card myday-entries" aria-labelledby="myday-entries-title">
@@ -31,14 +43,18 @@ export function EntryList({ entries, selected, onSelect, onNavigate, children }:
           Confirmed
         </h2>
         <span className="myday-card-figure" data-confirmed-caption>
-          {entries.length} {entries.length === 1 ? 'entry' : 'entries'} · {duration(total)}
+          {entries.length} · {duration(total)}
         </span>
         <span className="myday-card-head-gap" />
-        <span className="myday-card-caption">the time your organisation sees</span>
+        <span className="myday-card-caption">
+          {readOnly && first !== '' ? `What ${first} confirmed` : 'Visible to owners and admins'}
+        </span>
       </header>
 
       {entries.length === 0 ? (
-        <p className="myday-quiet myday-pad">Nothing confirmed yet.</p>
+        <p className="myday-quiet myday-list-empty" data-confirmed-empty>
+          Nothing confirmed yet. Confirmed time is the time your organisation sees.
+        </p>
       ) : (
         <div
           id="myday-entries-list"

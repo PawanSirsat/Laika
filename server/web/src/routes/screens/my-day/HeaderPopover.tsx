@@ -15,6 +15,8 @@ export interface HeaderPopoverProps {
    * left instead, and the other way round — the design clips its own.
    */
   readonly align?: 'left' | 'right';
+  /** Under the trigger (the header's), or above it (a bar at the foot of the page). */
+  readonly placement?: 'below' | 'above';
   /** A data attribute for tests, on the trigger. */
   readonly dataAttr?: string | undefined;
   readonly children: ReactNode;
@@ -38,6 +40,7 @@ export function HeaderPopover({
   disabled = false,
   width = 'narrow',
   align = 'right',
+  placement = 'below',
   dataAttr,
   children,
   open: controlled,
@@ -123,7 +126,7 @@ export function HeaderPopover({
         <div
           ref={panel}
           id={id}
-          className={`myday-pop-panel myday-pop-${width}${side === 'left' ? ' myday-pop-left' : ''}`}
+          className={`myday-pop-panel myday-pop-${width}${side === 'left' ? ' myday-pop-left' : ''}${placement === 'above' ? ' myday-pop-up' : ''}`}
           role="region"
           aria-label={label}
         >

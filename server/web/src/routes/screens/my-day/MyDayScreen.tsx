@@ -97,6 +97,8 @@ import { WhoLooked } from './WhoLooked.tsx';
 import { WeekStrip } from './WeekStrip.tsx';
 import { dayLong } from './week-derive.ts';
 import './my-day.css';
+// The lists as designed (LAI-514), after `my-day.css` so its rules win.
+import './lists.css';
 
 export interface MyDayScreenProps {
   /** `?day=` — a calendar day in the reader's zone; today when absent. */
@@ -133,6 +135,7 @@ const RUNNING: Readonly<Record<BulkKind, string>> = {
   confirm: 'Confirming',
   general: 'Moving to General',
   dismiss: 'Marking not work',
+  assign: 'Assigning',
 };
 
 /** The keys a batch runs under: the bar's, and the header's *Confirm day*. */
@@ -168,6 +171,7 @@ function recording(made: Made[], day: readonly string[]): BulkApi {
     setDayNote: (on, note) => setDayNote(on, note),
     dismissDraft: (id) => dismissDraft(id, keep([id])),
     toGeneral: (id) => updateDraft(id, { task: null, project: null, general: true }, keep([id])),
+    toCard: (id, card) => updateDraft(id, { task: card }, keep([id])),
   };
 }
 
@@ -294,12 +298,14 @@ export function MyDayScreen({
   const besideButton = useRef<HTMLButtonElement | null>(null);
   // Fill gaps (LAI-513): walking the day's gaps, one add after another.
   const [fillRun, setFillRun] = useState(false);
-  // The tab under the Timeline (LAI-505): remembered per browser; a day with
-  // drafts opens on To review, one without on Overview.
+  // The tab under the Timeline (LAI-505): remembered per browser; Overview
+  // until one is picked, as the design opens (LAI-514).
   const [tab, setTab] = useState<DayTab | undefined>(() => {
     try {
       const kept = localStorage.getItem('laika.my-day.tab');
-      return kept === 'overview' || kept === 'review' || kept === 'confirmed' ? kept : undefined;
+      return kept === 'overview' || kept === 'review' || kept === 'confirmed' || kept === 'all'
+        ? kept
+        : undefined;
     } catch {
       return undefined;
     }
@@ -683,7 +689,8 @@ export function MyDayScreen({
   const { settings } = view;
   const addable = canAddTime(settings);
   const totals = dayTotals(view);
-  const shownTab: DayTab = tab ?? (view.drafts.length > 0 ? 'review' : 'overview');
+  const shownTab: DayTab = tab ?? 'overview';
+  const inTab = (t: DayTab): boolean => shownTab === t || shownTab === 'all';
   const draftOff = !readOnly && settings.org_mode === 'drafts' && !settings.draft_my_time;
   // The designed page states (LAI-513): time tracking off for the
   // organisation, a day not begun, a day with nothing on it.
@@ -719,6 +726,11 @@ export function MyDayScreen({
   const onTheDay: TaskRef[] = [...view.drafts, ...view.entries]
     .map((x) => x.task)
     .filter((t): t is TaskRef => t !== null);
+  // What *Assign task* offers (the design, LAI-514): the day's cards, then the
+  // person's in progress, each once.
+  const assignOptions: TaskRef[] = [...onTheDay, ...inProgress].filter(
+    (t, at, all) => all.findIndex((o) => o.key === t.key) === at,
+  );
   const chipsFor = (own: TaskRef | null): readonly TaskRef[] =>
     cardChips(own, inProgress, onTheDay);
 
@@ -1221,16 +1233,19 @@ export function MyDayScreen({
               orgOff ? undefined : (
                 <span className="myday-figure" data-day-total>
                   <span className="myday-figure-total">
-                    {duration(totals.confirmed + totals.drafted)}
+                    {/* A past day nothing reached is no signal, never 0 min (LAI-831). */}
+                    {emptyKind === 'past' ? '—' : duration(totals.confirmed + totals.drafted)}
                   </span>
                   <span className="myday-figure-sub">
                     {view.state === 'future'
                       ? 'not started'
-                      : totals.drafted > 0
-                        ? `${duration(totals.drafted)} to review`
-                        : totals.confirmed > 0
-                          ? `${duration(totals.confirmed)} confirmed`
-                          : 'nothing yet'}
+                      : emptyKind === 'past'
+                        ? 'no signal'
+                        : totals.drafted > 0
+                          ? `${duration(totals.drafted)} to review`
+                          : totals.confirmed > 0
+                            ? `${duration(totals.confirmed)} confirmed`
+                            : 'nothing yet'}
                   </span>
                 </span>
               )
@@ -1595,6 +1610,7 @@ export function MyDayScreen({
                 drafts={view.drafts}
                 entries={view.entries}
                 selected={selectedId}
+                readOnly={readOnly}
                 onPick={(item) => {
                   setSelection(item);
                 }}
@@ -1607,8 +1623,8 @@ export function MyDayScreen({
                 onPick={pickTab}
               />
             )}
-            {showLists && shownTab === 'overview' && <OverviewTab view={view} />}
-            {showLists && shownTab === 'review' && (
+            {showLists && inTab('overview') && <OverviewTab view={view} />}
+            {showLists && inTab('review') && (
               <DraftList
                 // A new day starts with nothing ticked.
                 key={`drafts-${view.day}`}
@@ -1623,22 +1639,26 @@ export function MyDayScreen({
                 }}
                 onNavigate={onNavigate}
                 readOnly={readOnly}
-                onBulk={(kind, chosen) =>
+                draftOff={draftOff}
+                assignOptions={assignOptions}
+                onBulk={(kind, chosen, card) =>
                   runBatch(
                     'bulk',
-                    RUNNING[kind],
+                    kind === 'assign' && card !== undefined ? `Putting on ${card}` : RUNNING[kind],
                     view.day,
                     chosen.map((d) => d.id),
-                    (api, progress) => runBulk(kind, chosen, api, progress),
+                    (api, progress) => runBulk(kind, chosen, api, progress, card),
                   )
                 }
               />
             )}
-            {showLists && shownTab === 'confirmed' && (
+            {showLists && inTab('confirmed') && (
               <EntryList
                 key={`entries-${view.day}`}
                 entries={view.entries}
                 selected={selectedId}
+                readOnly={readOnly}
+                subjectName={subjectName}
                 onSelect={(entry) => {
                   setSelection({ kind: 'entry', id: entry.id });
                 }}
