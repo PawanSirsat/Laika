@@ -21,6 +21,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { open } from './my-day-clock.ts';
+import { zoomTo } from './my-day-zoom.ts';
 import { SETTINGS, TODAY, viewOf, weekData, weekStub, YESTERDAY } from './my-day-week.ts';
 
 /** Today's ISO weekday, 1 (Monday) – 7: the schedule names today and no other day. */
@@ -125,7 +126,7 @@ void describe('My day: the organisation’s breaks on the Timeline', () => {
       // (D-105): e2 is 12:00–12:30, half the window.
       assert.equal(await band.evaluate((el) => getComputedStyle(el).pointerEvents), 'none');
       assert.equal(await band.locator('button, a, [tabindex]').count(), 0);
-      await h.page.locator('[data-zoom="1"]').click();
+      await zoomTo(h.page, 1);
       const pill = band.locator('[data-scheduled-pill]');
       await until(async () => (await pill.locator('[data-scheduled-worked]').count()) === 1);
       assert.equal(await pill.getAttribute('data-worked'), '30');
@@ -171,7 +172,7 @@ void describe('My day: the organisation’s breaks on the Timeline', () => {
       { label: 'Stand-up', start: '13:00', end: '13:45', days: [ISO_TODAY] },
     ]);
     try {
-      await h.page.locator('[data-zoom="2"]').click();
+      await zoomTo(h.page, 2);
       const tea = h.page.locator('[data-scheduled-break="990"] [data-scheduled-pill]');
       await until(async () => (await tea.locator('[data-scheduled-worked]').count()) === 1);
       assert.equal(await tea.locator('[data-scheduled-worked]').innerText(), 'offline');

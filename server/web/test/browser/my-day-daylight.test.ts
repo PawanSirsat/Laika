@@ -3,6 +3,7 @@ import { after, describe, test } from 'node:test';
 import { pick } from './dropdown.ts';
 import { closeBrowser, until, type ApiStub, type Harness, type StubCall } from './harness.ts';
 import { open, TODAY } from './my-day-clock.ts';
+import { zoomTo } from './my-day-zoom.ts';
 import { SETTINGS, viewOf, weekData, weekStub } from './my-day-week.ts';
 
 /**
@@ -46,7 +47,7 @@ void describe('the sky on the Timeline', () => {
   void test('with a place set: day and night phases, a sun on 9 AM and a moon on 4 PM', async () => {
     const h = await myDay('Asia/Kolkata');
     try {
-      await h.page.locator('[data-zoom="1"]').click();
+      await zoomTo(h.page, 1);
       await until(async () => (await h.page.locator('[data-sky="day"]').count()) === 1);
       assert.equal(await h.page.locator('[data-sky="day"]').count(), 1);
       assert.ok((await h.page.locator('[data-sky="night"]').count()) >= 1, 'no night');

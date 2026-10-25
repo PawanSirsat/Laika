@@ -15,8 +15,9 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { closeBrowser, setTheme, type Harness } from './harness.ts';
+import { closeBrowser, setTheme, until, type Harness } from './harness.ts';
 import { open } from './my-day-clock.ts';
+import { zoomTo } from './my-day-zoom.ts';
 import {
   ATLAS,
   CARD_A,
@@ -72,8 +73,13 @@ const atOnce = (prefix: string, h: number, m: number, n: number): Draft[] =>
     block(`${prefix}${String(i + 1)}`, h, m + i, 60, CARDS[i % 4] ?? null, i + 1, n - i),
   );
 
-/** Eight at once is past the rule's floor: each keeps its own row, below 10px. */
-const PAST_THE_FLOOR = new Set(atOnce('g', 13, 30, 8).map((d) => d.id));
+/**
+ * Five and eight at once were past LAI-860's floor: rows of 10px and less.
+ * Since D-113 each is a group, and open each block has a readable lane.
+ */
+const GROUPED = new Set([...atOnce('f', 12, 0, 5), ...atOnce('g', 13, 30, 8)].map((d) => d.id));
+/** The least a lane is drawn (`LANE_MIN_PX`, D-113). */
+const LANE_MIN = 24;
 
 /**
  * The owner's screen, in shape: five-minute blocks two minutes apart (z1–z3),
@@ -348,7 +354,7 @@ void after(async () => {
   await closeBrowser();
 });
 
-void describe('the Timeline at Fit, 1× and 2× (LAI-860)', () => {
+void describe('the Timeline at Fit, 1× and 2× (LAI-860), every group open (D-113)', () => {
   void test('short blocks close together and at the same time: no chip, block, label or outline is drawn over another', async () => {
     const h = await openZoomDay();
     // Every combination is measured before anything is asserted, so a failure
@@ -368,7 +374,12 @@ void describe('the Timeline at Fit, 1× and 2× (LAI-860)', () => {
           for (const zoom of ['fit', '1', '2']) {
             const where = `${String(width)} px, ${theme}, zoom ${zoom}`;
             await dismiss(h.page);
-            await h.page.locator(`[data-zoom="${zoom}"]`).click();
+            await zoomTo(h.page, zoom === 'fit' ? 'fit' : Number(zoom));
+            // Every group open (D-113), so every block is drawn to be measured;
+            // Fit day closed them all.
+            const expand = h.page.locator('[data-expand-all]');
+            if ((await expand.getAttribute('aria-expanded')) !== 'true') await expand.click();
+            await until(async () => (await h.page.locator('[data-group]').count()) === 0);
 
             // Seen and picked out: each block is the one on top at its own centre.
             // Chrome hit-tests up to about a pixel off the boxes it reports (measured:
@@ -400,8 +411,9 @@ void describe('the Timeline at Fit, 1× and 2× (LAI-860)', () => {
               `${where}: the last click is not the selection`,
             );
             for (const b of blocks) {
-              // The rule's floor: up to five at once, a row is 10px or more.
-              const floor = PAST_THE_FLOOR.has(b.id) ? 3 : 9.5;
+              // LAI-860's floor: up to three at once, a row is 10px or more — and an
+              // open group's lane is never under the readable minimum (D-113).
+              const floor = GROUPED.has(b.id) ? LANE_MIN : 9.5;
               check(b.box.b - b.box.t >= floor, `${where}: ${b.id} is too short to see`);
               for (const other of blocks) {
                 if (other.id <= b.id) continue;
@@ -473,15 +485,18 @@ void describe('the Timeline at Fit, 1× and 2× (LAI-860)', () => {
             if (zoom === '2') {
               check(named('z10')?.label === CARD_A.key, `${where}: z10 lost its label`);
             }
-            // Past the floor, only the block is drawn: its own row, clicked above.
-            for (const id of PAST_THE_FLOOR) {
+            // Past LAI-860's floor, open in lanes (D-113): each block has its label
+            // where an hour has room for it, and the picked one its edges.
+            for (const id of GROUPED) {
               const g = named(id);
-              check(g?.label === '', `${where}: ${id}, past the floor, draws a label`);
-              check(g?.chip === null, `${where}: ${id}, past the floor, draws a chip`);
+              check(g?.chip === null, `${where}: ${id}, in a group, draws a chip`);
+              if (zoom !== 'fit') {
+                check((g?.label ?? '') !== '', `${where}: ${id}, open in its lane, draws no label`);
+              }
             }
             check(
-              named('g8')?.edges.every((e) => !e.drawn) === true,
-              `${where}: g8, past the floor, draws its edges`,
+              named('g8')?.edges.every((e) => e.drawn) === true,
+              `${where}: g8, open in its lane, does not draw its edges`,
             );
             check(await clickCentre(h.page, 'z10'), `${where}: a click on z10 did not select it`);
             const roomy = (await measure(h.page)).blocks.find((b) => b.id === 'z10');

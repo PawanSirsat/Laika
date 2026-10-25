@@ -11,6 +11,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { open, NOW, TODAY } from './my-day-clock.ts';
+import { zoomTo } from './my-day-zoom.ts';
 import { AGENT, at, CARD_A, weekData, weekStub } from './my-day-week.ts';
 
 /**
@@ -65,7 +66,7 @@ async function myDay(
   });
   await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
   await h.page.locator('[data-block-id]').first().waitFor({ timeout: 10_000 });
-  await h.page.locator('[data-zoom="1"]').click();
+  await zoomTo(h.page, 1);
   return h;
 }
 
@@ -119,7 +120,7 @@ after(async () => {
 });
 
 void describe('the Timeline card as TimelineV2 draws it (LAI-512)', () => {
-  void test('one header row, a 16px card, the zoom controls in one group, Marks in the column, nothing in it cut, no footer', async () => {
+  void test('one header row, a 16px card, the D-113 zoom controls, Marks in the column, nothing in it cut, no footer', async () => {
     const writes: StubCall[] = [];
     // With every lane the column names: SIGNALS (the server's times), YOU, AGENTS.
     const h = await myDay(writes, null, {
@@ -141,11 +142,21 @@ void describe('the Timeline card as TimelineV2 draws it (LAI-512)', () => {
         await h.page.locator('[data-dayline]').evaluate((el) => getComputedStyle(el).borderRadius),
         '16px',
       );
-      // The zoom controls in one group beside ‹ Now ›: the stepper, the slider and the three presets.
+      // The zoom controls beside ‹ Now › (D-113, LAI-300): the Time zoom slider,
+      // Fit day and one Expand all toggle — the stepper, the three presets, the
+      // row-height slider and its grip are gone.
       const zooms = h.page.locator('.dayline-zooms');
-      assert.equal(await zooms.locator('[data-zoom-step]').count(), 2);
-      assert.equal(await zooms.locator('[data-zoom-slider]').count(), 1);
-      assert.equal(await zooms.locator('[data-zoom]').count(), 3);
+      assert.equal(await zooms.getByRole('slider', { name: 'Time zoom' }).count(), 1);
+      assert.deepEqual(
+        await zooms.getByRole('button').evaluateAll((els) => els.map((el) => el.textContent)),
+        ['Fit day', 'Expand all'],
+      );
+      assert.equal(
+        await h.page
+          .locator('[data-zoom-step], [data-zoom], [data-row-slider], [data-row-grip]')
+          .count(),
+        0,
+      );
       assert.equal((await h.page.locator('[data-mark-total]').innerText()).trim(), '1');
       assert.equal(await h.page.locator('[data-agent-work]').innerText(), '9 min');
       // Nothing in the lane column is cut at 1440: no cell's words run past

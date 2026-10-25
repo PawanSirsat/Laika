@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 import { open } from './my-day-clock.ts';
+import { zoomLevel, zoomTo } from './my-day-zoom.ts';
 import { AGENT, at, TODAY, viewOf, weekData, weekStub } from './my-day-week.ts';
 
 /** The agent at 9:00–9:10 on a card and 9:10–9:15 on none — inside d1 — and at 1 PM. */
@@ -180,7 +181,7 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
       // Wide enough that the morning before 8:40 makes room when folded: a
       // fold narrower than its stretch would be stays open (`buildScale`).
       await h.page.setViewportSize({ width: 1600, height: 900 });
-      await h.page.locator('[data-zoom="fit"]').click();
+      await zoomTo(h.page, 'fit');
       await until(async () => (await h.page.locator('[data-fold]').count()) >= 1);
       const track = h.page.locator('[data-dayline-track]');
       const from = Number(await track.getAttribute('data-from-hour'));
@@ -206,7 +207,7 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
       await h.page.locator('[data-block-select="d1"]').click();
       assert.equal(await pressed(h, 'd1'), true);
       // 1× is linear again: nothing folded, and 160 px an hour.
-      await h.page.locator('[data-zoom="1"]').click();
+      await zoomTo(h.page, 1);
       await until(async () => (await h.page.locator('[data-fold]').count()) === 0);
       const to = Number(await track.getAttribute('data-to-hour'));
       const width = await track.evaluate((el) => el.getBoundingClientRect().width);
@@ -216,7 +217,9 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
     }
   });
 
-  void test('− and + step the scale from 0.5× to 5×, keeping the middle of the view (LAI-890)', async () => {
+  // D-113 replaced LAI-890's − and + and the Fit · 1× · 2× presets with one
+  // Time zoom slider: its keys walk the same levels, and Fit is its least value.
+  void test('the Time zoom slider walks the scale from Fit to 5× by its keys, keeping the middle of the view (LAI-890, D-113)', async () => {
     const h = await openToday();
     try {
       const track = h.page.locator('[data-dayline-track]');
@@ -224,60 +227,105 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
         Number(await track.getAttribute('data-to-hour')) -
         Number(await track.getAttribute('data-from-hour'));
       const widthOf = () => track.evaluate((el) => el.getBoundingClientRect().width);
-      const level = () => h.page.locator('[data-zoom-level]').getAttribute('data-zoom-level');
       const middle = () =>
         h.page.locator('[data-dayline-scroller]').evaluate((el) => {
           const box = el.getBoundingClientRect();
           const rail = el.querySelector('[data-dayline-track]')?.getBoundingClientRect();
           return rail === undefined ? 0 : (box.left + box.width / 2 - rail.left) / rail.width;
         });
-      assert.equal(await level(), '1');
+      const slider = h.page.getByRole('slider', { name: 'Time zoom' });
+      assert.equal(await zoomLevel(h.page), '1');
+      assert.equal(await slider.inputValue(), '0');
+      // Nothing selected is in view at now, so the slider keeps the middle.
       const before = await middle();
-      await h.page.locator('[data-zoom-step="in"]').click();
-      await until(async () => (await level()) === '1.5');
+      await slider.focus();
+      await h.page.keyboard.press('ArrowRight');
+      await until(async () => (await zoomLevel(h.page)) === '1.5');
       assert.equal(Math.round(await widthOf()), hours * 240);
       // The minute at the middle stayed: the same share of the day, within a minute or two.
       assert.ok(Math.abs((await middle()) - before) * hours * 60 <= 2, 'the middle moved');
-      // 2× lights the preset; past 5× there is no further in.
-      await h.page.locator('[data-zoom-step="in"]').click();
-      await until(async () => (await level()) === '2');
-      assert.equal(await h.page.locator('[data-zoom="2"]').getAttribute('aria-pressed'), 'true');
-      for (let i = 0; i < 3; i += 1) await h.page.locator('[data-zoom-step="in"]').click();
-      await until(async () => (await level()) === '5');
-      assert.equal(await h.page.locator('[data-zoom-step="in"]').isDisabled(), true);
+      // The slider shows the scale: a hundredth of a doubling, so 1.5× is 58.
+      assert.equal(await slider.inputValue(), String(Math.round(Math.log2(1.5) * 100)));
+      assert.equal(await slider.getAttribute('aria-valuetext'), '1.5×');
+      await h.page.keyboard.press('ArrowRight');
+      await until(async () => (await zoomLevel(h.page)) === '2');
+      assert.equal(await slider.inputValue(), '100');
+      // End is 5×, and past it there is no further in.
+      await h.page.keyboard.press('End');
+      await until(async () => (await zoomLevel(h.page)) === '5');
       assert.equal(Math.round(await widthOf()), hours * 800);
-      // Out, all the way: 0.5× and no further.
-      for (let i = 0; i < 7; i += 1) await h.page.locator('[data-zoom-step="out"]').click();
-      await until(async () => (await level()) === '0.5');
-      assert.equal(await h.page.locator('[data-zoom-step="out"]').isDisabled(), true);
-      assert.equal(Math.round(await widthOf()), hours * 80);
-      // From Fit, + is 1× and − does nothing.
-      await h.page.locator('[data-zoom="fit"]').click();
-      await until(async () => (await level()) === 'fit');
-      assert.equal(await h.page.locator('[data-zoom-step="out"]').isDisabled(), true);
-      await h.page.locator('[data-zoom-step="in"]').click();
-      await until(async () => (await level()) === '1');
-      assert.equal(await h.page.locator('[data-zoom="1"]').getAttribute('aria-pressed'), 'true');
+      await h.page.keyboard.press('ArrowRight');
+      assert.equal(await zoomLevel(h.page), '5');
+      assert.equal(await slider.inputValue(), await slider.getAttribute('max'));
+      // ← walks back the same levels.
+      await h.page.keyboard.press('ArrowLeft');
+      await until(async () => (await zoomLevel(h.page)) === '4');
+      // Home is Fit: the slider's least value, the whole day in its box, and the button says so.
+      await h.page.keyboard.press('Home');
+      await until(async () => (await zoomLevel(h.page)) === 'fit');
+      assert.equal(await slider.inputValue(), await slider.getAttribute('min'));
+      assert.equal(await slider.getAttribute('aria-valuetext'), 'Fit day');
+      assert.equal(await h.page.locator('[data-fit-day]').getAttribute('aria-pressed'), 'true');
+      const over = await h.page
+        .locator('[data-dayline-scroller]')
+        .evaluate((el) => el.scrollWidth - el.clientWidth);
+      assert.ok(over <= 1, `Fit overflows by ${String(over)}px`);
+      // From Fit, ← does nothing and → is the first step past it.
+      await h.page.keyboard.press('ArrowLeft');
+      assert.equal(await zoomLevel(h.page), 'fit');
+      await h.page.keyboard.press('ArrowRight');
+      await until(async () => (await zoomLevel(h.page)) !== 'fit');
+      // Fit day from anywhere.
+      await zoomTo(h.page, 2);
+      await zoomTo(h.page, 'fit');
+      assert.equal(await h.page.locator('[data-fit-day]').getAttribute('aria-pressed'), 'true');
     } finally {
       await h.close();
     }
   });
 
-  void test('the slider sets the scale, and the grip drags the rows taller up to a limit (LAI-891)', async () => {
+  void test('the slider keeps a selected block where it is on screen while it is in view (D-113)', async () => {
     const h = await openToday();
     try {
-      const level = () => h.page.locator('[data-zoom-level]').getAttribute('data-zoom-level');
-      const slider = h.page.locator('[data-zoom-slider]');
-      await slider.focus();
-      await h.page.keyboard.press('ArrowRight');
-      await until(async () => (await level()) === '1.5');
-      await h.page.keyboard.press('ArrowRight');
-      await until(async () => (await level()) === '2');
-      assert.equal(await slider.inputValue(), String(['0.5', '0.75', '1', '1.5', '2'].length - 1));
-      await h.page.locator('[data-zoom="1"]').click();
-      await until(async () => (await slider.inputValue()) === '2');
+      // d3 1:00–2:50 PM, picked; in view at now (3 PM, three fifths across).
+      await h.page.locator('[data-block-select="d3"]').click();
+      await h.page.locator('[data-myday-drawer]').waitFor({ timeout: 5_000 });
+      assert.equal(await pressed(h, 'd3'), true);
+      // The drawer beside the day narrows the Timeline: measure once it has.
+      await h.page.evaluate(async () => {
+        await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+        await Promise.all(
+          document
+            .getAnimations()
+            .filter((a) => a.effect?.getComputedTiming().endTime !== Infinity)
+            .map((a) => a.finished),
+        );
+      });
+      const leftOf = async () =>
+        (await h.page.locator('[data-block-id="d3"]').boundingBox())?.x ?? Number.NaN;
+      const centreOf = async () => {
+        const box = await h.page.locator('[data-block-id="d3"]').boundingBox();
+        return box === null ? Number.NaN : box.x + box.width / 2;
+      };
+      assert.ok(Number.isFinite(await leftOf()), 'd3 is not drawn');
+      const before = await centreOf();
+      await zoomTo(h.page, 2);
+      assert.ok(Math.abs((await centreOf()) - before) <= 2, 'the selected block moved on screen');
+      await zoomTo(h.page, 1.5);
+      assert.ok(Math.abs((await centreOf()) - before) <= 2, 'the selected block moved on screen');
+    } finally {
+      await h.close();
+    }
+  });
 
-      // Box heights: the row is 28 above the blocks, the blocks, and 8 under, its rule inside.
+  // D-113 took away LAI-891's grip and the column's row-height slider: the row
+  // is as tall as what it holds, and the column still follows it.
+  void test('the row is as tall as it needs, with no grip and no row-height slider, the column beside it rule for rule (D-113)', async () => {
+    const h = await openToday();
+    try {
+      assert.equal(await h.page.locator('[data-row-grip], [data-row-slider]').count(), 0);
+      assert.equal(await h.page.getByText('drag to resize rows').count(), 0);
+      // Box heights: the row is 28 above the blocks, the blocks, and 14 under, its rule inside.
       const rowH = () =>
         h.page.locator('.dayline-row').evaluate((el) => el.getBoundingClientRect().height);
       const blockH = (id: string) =>
@@ -286,111 +334,19 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
           .evaluate((el) => el.getBoundingClientRect().height);
       assert.equal(Math.round(await rowH()), 122);
       assert.equal(Math.round(await blockH('d1')), 80);
-
-      // Every drag stays inside the viewport: a pointer let go outside it never
-      // reaches the grip, and the grip then holds its last height.
-      await h.page.setViewportSize({ width: 1280, height: 1000 });
-      const grip = h.page.locator('[data-row-grip]');
-      await grip.scrollIntoViewIfNeeded();
-      const box = await grip.boundingBox();
-      assert.ok(box !== null);
-      const x = box.x + box.width / 2;
-      const y = box.y + box.height / 2;
-      // Dragged 60px down: the row, its label in the column and every block grow by 60.
-      await h.page.mouse.move(x, y);
-      await h.page.mouse.down();
-      await h.page.mouse.move(x, y + 30);
-      await h.page.mouse.move(x, y + 60);
-      await h.page.mouse.up();
-      await until(async () => Math.round(await rowH()) === 182);
-      // The column's label is exactly as tall as the row, rule for rule.
-      const rowBox = await h.page
-        .locator('.dayline-row')
-        .evaluate((el) => el.getBoundingClientRect().height);
-      const labelBox = await h.page
+      assert.equal(Math.round(await blockH('e2')), 80, 'a confirmed block is not the row’s height');
+      const labelH = await h.page
         .locator('.dayline-label-you')
         .evaluate((el) => el.getBoundingClientRect().height);
       assert.ok(
-        Math.abs(rowBox - labelBox) <= 0.5,
-        `the column did not follow: ${String(labelBox)} vs ${String(rowBox)}`,
+        Math.abs((await rowH()) - labelH) <= 0.5,
+        `the column did not follow: ${String(labelH)} vs ${String(await rowH())}`,
       );
-      assert.equal(Math.round(await blockH('d1')), 140);
-      assert.equal(Math.round(await blockH('e2')), 140, 'a confirmed block did not follow');
-      // The label is still there, whole.
-      assert.equal(
-        (await h.page.locator('[data-block-id="d1"] .dayline-block-top').innerText()).trim(),
-        'LAI-11',
-      );
-      // Far past the limit: 240 and no further; far back up: 80 and no less.
-      const after = await grip.boundingBox();
-      assert.ok(after !== null);
-      await h.page.mouse.move(x, after.y + after.height / 2);
-      await h.page.mouse.down();
-      await h.page.mouse.move(x, Math.min(after.y + 180, 980));
-      await h.page.mouse.up();
-      await until(async () => Math.round(await rowH()) === 282);
-      assert.equal(await grip.getAttribute('aria-valuenow'), '240');
-      const top = await grip.boundingBox();
-      assert.ok(top !== null);
-      await h.page.mouse.move(x, top.y + top.height / 2);
-      await h.page.mouse.down();
-      await h.page.mouse.move(x, Math.max(1, top.y - 300));
-      await h.page.mouse.up();
-      await until(async () => Math.round(await rowH()) === 122);
-      // ↓ on the grip is 8px.
-      await grip.focus();
-      await h.page.keyboard.press('ArrowDown');
-      await until(async () => Math.round(await rowH()) === 130);
-      // The band and its handle are drawn without hovering, and the column's
-      // slider reads the same height and sets it (LAI-892).
-      const band = await grip.evaluate((el) => {
-        const r = el.getBoundingClientRect();
-        const bar = el.querySelector('.dayline-grip-bar')?.getBoundingClientRect();
-        const s = getComputedStyle(el);
-        return {
-          height: r.height,
-          cursor: s.cursor,
-          barWidth: bar?.width ?? 0,
-          barOpacity:
-            bar === undefined
-              ? 0
-              : parseFloat(getComputedStyle(el.querySelector('.dayline-grip-bar')!).opacity),
-        };
-      });
-      assert.ok(band.height >= 8, `the band is ${String(band.height)}px tall`);
-      assert.equal(band.cursor, 'ns-resize');
-      assert.ok(band.barWidth >= 48 && band.barOpacity > 0, 'the handle is not drawn');
-      const rowSlider = h.page.locator('[data-row-slider]');
-      const seen = await h.page.evaluate(() =>
-        [...document.querySelectorAll<HTMLInputElement>('[data-row-slider]')].map((el) => ({
-          value: el.value,
-          attr: el.getAttribute('value'),
-          min: el.min,
-          max: el.max,
-          step: el.step,
-          now: document.querySelector('[data-row-grip]')?.getAttribute('aria-valuenow'),
-        })),
-      );
-      assert.equal(await rowSlider.inputValue(), '88', JSON.stringify(seen));
-      await rowSlider.focus();
-      await h.page.keyboard.press('ArrowRight');
-      await until(async () => Math.round(await rowH()) === 138);
-      assert.equal(await grip.getAttribute('aria-valuenow'), '96');
-      // Nothing overflowed the card and no block lies over another.
-      const boxes = await h.page.locator('[data-block-id]').evaluateAll((els) =>
-        els.map((el) => {
-          const r = el.getBoundingClientRect();
-          return { l: r.left, r: r.right, t: r.top, b: r.bottom };
-        }),
-      );
-      for (const [i, a] of boxes.entries()) {
-        for (const b of boxes.slice(i + 1)) {
-          const over =
-            Math.min(a.r, b.r) - Math.max(a.l, b.l) > 0.5 &&
-            Math.min(a.b, b.b) - Math.max(a.t, b.t) > 0.5;
-          assert.equal(over, false, 'two blocks overlap after the drag');
-        }
-      }
+      // Nothing scrolls down on a day this short: the lanes fit their box.
+      const down = await h.page
+        .locator('[data-dayline-grid]')
+        .evaluate((el) => el.scrollHeight - el.clientHeight);
+      assert.ok(down <= 1, `the lanes scroll down by ${String(down)}px`);
     } finally {
       await h.close();
     }

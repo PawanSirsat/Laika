@@ -11,6 +11,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { open, TODAY } from './my-day-clock.ts';
+import { zoomTo } from './my-day-zoom.ts';
 import { SETTINGS, weekData, weekStub } from './my-day-week.ts';
 
 /**
@@ -100,7 +101,7 @@ async function myDay(opts: Parameters<typeof stub>[0] = {}): Promise<Harness> {
   await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
   await h.page.locator('[data-block-id]').first().waitFor({ timeout: 10_000 });
   await h.page.setViewportSize({ width: 1440, height: 900 });
-  await h.page.locator('[data-zoom="1"]').click();
+  await zoomTo(h.page, 1);
   return h;
 }
 
@@ -285,7 +286,7 @@ void describe('a range dragged on the Timeline (LAI-897)', () => {
       const block = h.page.locator('[data-block-id="k1"]');
       await block.waitFor({ timeout: 10_000 });
       // Wide enough for its name to fit whole.
-      await h.page.locator('[data-zoom="2"]').click();
+      await zoomTo(h.page, 2);
       await until(async () =>
         (await block.locator('.dayline-block-top').innerText()).includes('Customer call'),
       );

@@ -25,6 +25,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { open } from './my-day-clock.ts';
+import { zoomTo } from './my-day-zoom.ts';
 import {
   addDays,
   at,
@@ -585,7 +586,7 @@ void describe('split, −/+ and drag (5, C)', () => {
   void test('a dragged edge snaps to five minutes, and a confirmed block is one revision', async () => {
     const h = await openDay(TODAY);
     try {
-      await h.page.locator('[data-zoom="2"]').click();
+      await zoomTo(h.page, 2);
       await select(h, 'e2');
       const handle = h.page.locator('[data-block-id="e2"] [data-edge="end"]');
       const from = await centre(handle);
@@ -945,7 +946,7 @@ void describe('review round 1', () => {
   void test('a draft’s dragged edge runs over confirmed time — the design lets a draft lie anywhere (LAI-510)', async () => {
     const h = await openDay(TODAY);
     try {
-      await h.page.locator('[data-zoom="2"]').click();
+      await zoomTo(h.page, 2);
       await select(h, 'd2');
       // 10:40–11:20 drafted; confirmed time starts at 11:30, and the edge goes past it.
       const handle = h.page.locator('[data-block-id="d2"] [data-edge="end"]');
@@ -1216,7 +1217,7 @@ void describe('a phone, and both themes (I)', () => {
         }
       }
       // The positive control: with room, a gap says how long it is.
-      await h.page.locator('[data-zoom="2"]').click();
+      await zoomTo(h.page, 2);
       const gaps = await h.page
         .locator('.dayline-gap')
         .evaluateAll((els) =>
