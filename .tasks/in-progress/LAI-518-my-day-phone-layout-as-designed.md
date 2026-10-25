@@ -6,7 +6,8 @@ assignee: chief
 priority: p1
 depends-on: [LAI-511, LAI-512]
 discovered-from: LAI-888
-status: backlog
+status: in-progress
+started: 2026-10-25T02:05:00Z
 ---
 
 ## Goal

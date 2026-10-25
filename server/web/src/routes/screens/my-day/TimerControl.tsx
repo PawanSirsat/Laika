@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { EntryKind, TaskRef, Timer, TimerStart } from '../../../api/time.ts';
-import { KINDS } from './entry-kinds.ts';
+import { kindChartLabel, TIMER_KINDS } from './entry-kinds.ts';
 import { HeaderPopover } from './HeaderPopover.tsx';
 
 export interface TimerControlProps {
@@ -38,8 +38,7 @@ export function timerClock(seconds: number): string {
 export function timerLabel(timer: Timer): string {
   if (timer.task !== null) return timer.task.key;
   if (timer.title !== null) return timer.title;
-  const kind = KINDS.find((k) => k.kind === timer.kind);
-  return kind === undefined ? 'Timer' : kind.label;
+  return timer.kind === null ? 'Timer' : kindChartLabel(timer.kind);
 }
 
 const Play = () => (
@@ -206,7 +205,7 @@ export function TimerControl({
       <div className="myday-pop-group">
         <span className="myday-pop-label">Kind</span>
         <div className="myday-pop-chips">
-          {KINDS.map((k) => (
+          {TIMER_KINDS.map((k) => (
             <button
               key={k.kind}
               type="button"

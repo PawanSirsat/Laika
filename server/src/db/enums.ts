@@ -399,19 +399,22 @@ export const TIME_ENTRY_SOURCES = ['draft', 'manual', 'import'] as const;
 export type TimeEntrySource = (typeof TIME_ENTRY_SOURCES)[number];
 
 /**
- * §4.48's `kind` (D-108, LAI-897): what a typed entry was — a meeting, a
- * call — chosen by the person; null for a confirmed draft, an import, or an
- * entry nobody typed a kind for. The Timeline colours a block by it.
+ * §4.48's `kind` (D-108, LAI-897; the design's eight since LAI-516): what a
+ * typed entry was — building, a meeting, thinking — chosen by the person;
+ * null for a confirmed draft, an import, or an entry nobody typed a kind
+ * for. The Timeline colours a block by it. `work` is what the design calls
+ * *Building*. Migration 0060 mapped the first list onto this one: call →
+ * meeting, planning → thinking, learning → research, other → work.
  */
 export const TIME_ENTRY_KINDS = [
+  'work',
   'meeting',
-  'call',
+  'thinking',
+  'research',
+  'pairing',
   'review',
-  'planning',
-  'learning',
   'support',
   'admin',
-  'other',
 ] as const;
 export type TimeEntryKind = (typeof TIME_ENTRY_KINDS)[number];
 

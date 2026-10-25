@@ -117,14 +117,14 @@ export interface TimeDraft {
  * held equal by `entry-kinds.test.ts`. The Timeline colours a block by it.
  */
 export const ENTRY_KINDS = [
+  'work',
   'meeting',
-  'call',
+  'thinking',
+  'research',
+  'pairing',
   'review',
-  'planning',
-  'learning',
   'support',
   'admin',
-  'other',
 ] as const;
 export type EntryKind = (typeof ENTRY_KINDS)[number];
 

@@ -6,7 +6,8 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-888
-status: backlog
+status: in-progress
+started: 2026-10-25T01:20:00Z
 ---
 
 ## Goal
@@ -20,29 +21,29 @@ is a table rebuild, and the web side mirrors the list.
 
 ## Acceptance criteria
 
-- [ ] `time_entries.kind` accepts exactly `work | meeting | thinking |
+- [x] `time_entries.kind` accepts exactly `work | meeting | thinking |
       research | pairing | review | support | admin`; the timer's `kind` and
       the day-confirm's per-draft `kind` take the same set; anything else is
       `422`.
-- [ ] A migration rebuilds the table with the new CHECK and maps existing
+- [x] A migration rebuilds the table with the new CHECK and maps existing
       rows: call → meeting, planning → thinking, learning → research, other →
       work; meeting, review, support, admin unchanged. Every row survives —
       the migration runs with foreign keys handled the way
       `runMigrations` already does (see the memory on the Drizzle migrator)
       and a test proves a seeded entry of each old kind is still there with
       its new kind after the migration.
-- [ ] SPEC §4's `time_entries.kind` row and §11's My day wording name the
+- [x] SPEC §4's `time_entries.kind` row and §11's My day wording name the
       new eight (a named cross-area edit by this task).
-- [ ] `server/web/src/api/time.ts` `ENTRY_KINDS` mirrors the list and the
+- [x] `server/web/src/api/time.ts` `ENTRY_KINDS` mirrors the list and the
       drift check stays green; `entry-kinds.ts` carries the design's labels
       and the Timeline colours by kind: Work accent, Meeting blue, Thinking
       green, Research orange, Pairing accent-line, Review red, Support
       blue-line, Admin faint (`kindColors` in the design).
-- [ ] The timer popover's kinds are *Building · Meeting · Thinking* (Work,
+- [x] The timer popover's kinds are *Building · Meeting · Thinking* (Work,
       Meeting, Thinking); the off-screen presets map Brainstorm,
       Whiteboarding, Planning → thinking; Reading docs → research; Helping a
       teammate → support; Interview → meeting.
-- [ ] Server tests and web tests green; the CLI's `laika time` wording, if it
+- [x] Server tests and web tests green; the CLI's `laika time` wording, if it
       names a kind, follows.
 
 ## Notes / context

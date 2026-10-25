@@ -54,7 +54,7 @@ void describe('the day', () => {
     const stats = dayStats({
       entries: [
         entry({ id: 'a', minutes: 60, kind: 'meeting', source: 'manual' }),
-        entry({ id: 'b', minutes: 30, kind: 'call' }),
+        entry({ id: 'b', minutes: 30, kind: 'meeting' }),
         entry({ id: 'c', minutes: 30, task: LAI1 }),
       ],
       drafts: [draft({ id: 'd', minutes: 80 })],

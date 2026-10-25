@@ -135,30 +135,33 @@
   --moon: #a5b4fc;
 
   /* ---- a typed entry's kind on the Timeline (D-108, LAI-897): ink, fill, border ---- */
-  --kind-meeting: #7fb8ff;
-  --kind-meeting-bg: rgba(59, 130, 246, 0.2);
-  --kind-meeting-border: rgba(59, 130, 246, 0.55);
-  --kind-call: #5fd3c6;
-  --kind-call-bg: rgba(20, 184, 166, 0.2);
-  --kind-call-border: rgba(20, 184, 166, 0.55);
-  --kind-review: #f49ac0;
-  --kind-review-bg: rgba(236, 72, 153, 0.18);
-  --kind-review-border: rgba(236, 72, 153, 0.5);
-  --kind-planning: #e8a978;
-  --kind-planning-bg: rgba(194, 110, 54, 0.22);
-  --kind-planning-border: rgba(194, 110, 54, 0.55);
-  --kind-learning: #b5d46a;
-  --kind-learning-bg: rgba(132, 174, 36, 0.2);
-  --kind-learning-border: rgba(132, 174, 36, 0.55);
-  --kind-support: #6fd6e8;
-  --kind-support-bg: rgba(6, 182, 212, 0.18);
-  --kind-support-border: rgba(6, 182, 212, 0.5);
-  --kind-admin: #a9b7cc;
-  --kind-admin-bg: rgba(100, 116, 139, 0.26);
-  --kind-admin-border: rgba(100, 116, 139, 0.6);
-  --kind-other: #b4b4be;
-  --kind-other-bg: rgba(120, 120, 134, 0.22);
-  --kind-other-border: rgba(120, 120, 134, 0.55);
+  /* The design's `kindColors` (LAI-516): Work the accent, Meeting blue,
+     Thinking green, Research orange, Pairing the accent's line, Review red,
+     Support blue's line, Admin faint — each with the design's soft fill. */
+  --kind-work: #a78bfa;
+  --kind-work-bg: #261f3d;
+  --kind-work-border: #4c3d7a;
+  --kind-meeting: #7fa6ff;
+  --kind-meeting-bg: #161e33;
+  --kind-meeting-border: #2c3a5e;
+  --kind-thinking: #4ccf98;
+  --kind-thinking-bg: #12271d;
+  --kind-thinking-border: #1f4a35;
+  --kind-research: #f0b45a;
+  --kind-research-bg: #2b2111;
+  --kind-research-border: #5c4419;
+  --kind-pairing: #c4b5fd;
+  --kind-pairing-bg: #2a2342;
+  --kind-pairing-border: #5a4a8f;
+  --kind-review: #ff6b73;
+  --kind-review-bg: #2e1517;
+  --kind-review-border: #5e262b;
+  --kind-support: #9fb6ff;
+  --kind-support-bg: #1b2440;
+  --kind-support-border: #35466f;
+  --kind-admin: #9d9daa;
+  --kind-admin-bg: #232329;
+  --kind-admin-border: #34343d;
 
   /* ---- space colours (D-103 item 4, LAI-978): the eight a space may be
      painted, solid under a white letter in both themes, so a space keeps its
@@ -261,30 +264,31 @@
   --moon: #4f5bb8;
 
   /* ---- a typed entry's kind on the Timeline (D-108, LAI-897): ink, fill, border ---- */
-  --kind-meeting: #1d4ed8;
-  --kind-meeting-bg: #e3edff;
-  --kind-meeting-border: #9cbcf6;
-  --kind-call: #0f766e;
-  --kind-call-bg: #dcf5f1;
-  --kind-call-border: #86d2c6;
-  --kind-review: #be185d;
-  --kind-review-bg: #fde7f0;
-  --kind-review-border: #f2a3c3;
-  --kind-planning: #9a4a12;
-  --kind-planning-bg: #fbe9db;
-  --kind-planning-border: #e6b48d;
-  --kind-learning: #4d7c0f;
-  --kind-learning-bg: #ecf5d8;
-  --kind-learning-border: #b7d47f;
-  --kind-support: #0e7490;
-  --kind-support-bg: #dff4f9;
-  --kind-support-border: #8dd1e1;
-  --kind-admin: #475569;
-  --kind-admin-bg: #e9edf3;
-  --kind-admin-border: #b3bfcf;
-  --kind-other: #52525b;
-  --kind-other-bg: #ececef;
-  --kind-other-border: #c3c3cc;
+  /* The design's `kindColors` (LAI-516), light. */
+  --kind-work: #7c3aed;
+  --kind-work-bg: #f3eefe;
+  --kind-work-border: #c9b5fb;
+  --kind-meeting: #2158e0;
+  --kind-meeting-bg: #edf2fd;
+  --kind-meeting-border: #c6d5f8;
+  --kind-thinking: #0a6f4c;
+  --kind-thinking-bg: #e3f3ea;
+  --kind-thinking-border: #a9dcc2;
+  --kind-research: #8f5a08;
+  --kind-research-bg: #fff6e5;
+  --kind-research-border: #ecc98a;
+  --kind-pairing: #6d28d9;
+  --kind-pairing-bg: #ede6fe;
+  --kind-pairing-border: #d4c4fc;
+  --kind-review: #c42630;
+  --kind-review-bg: #fdecee;
+  --kind-review-border: #f0b8be;
+  --kind-support: #4a6fcf;
+  --kind-support-bg: #e8eefc;
+  --kind-support-border: #c6d5f8;
+  --kind-admin: #62626e;
+  --kind-admin-bg: #eceef4;
+  --kind-admin-border: #d6d9e3;
 
   --space-black: #171a21;
   --space-violet: #7c3aed;

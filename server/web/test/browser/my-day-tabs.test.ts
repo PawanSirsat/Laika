@@ -28,7 +28,7 @@ function stub(): { routes: ApiStub; data: Map<string, DayData> } {
         task: null,
         project: null,
         note: null,
-        kind: 'call',
+        kind: 'thinking',
         title: 'Call with the bank',
         description: null,
         revision: 1,
@@ -123,21 +123,21 @@ void describe('the tabs (LAI-505)', () => {
       await h.page.locator('[data-day-tab="overview"]').click();
       const ov = h.page.locator('[data-overview]');
       await ov.waitFor({ timeout: 5_000 });
-      // Confirmed 30 + 30 + 20 + 30 = 1 h 50 min; drafted 5 h 10 min; meetings call 20 + meeting 30.
+      // Confirmed 30 + 30 + 20 + 30 = 1 h 50 min; drafted 5 h 10 min; meetings: the one meeting, 30.
       assert.match(await ov.locator('[data-ov-stat="tracked"]').innerText(), /7 h\s/);
       assert.match(
         await ov.locator('[data-ov-stat="tracked"]').innerText(),
         /1 h 50 min confirmed/,
       );
       assert.match(await ov.locator('[data-ov-stat="review"]').innerText(), /5 h 10 min/);
-      assert.match(await ov.locator('[data-ov-stat="meetings"]').innerText(), /50 min/);
-      assert.match(await ov.locator('[data-ov-stat="meetings"]').innerText(), /12% of tracked/);
+      assert.match(await ov.locator('[data-ov-stat="meetings"]').innerText(), /30 min/);
+      assert.match(await ov.locator('[data-ov-stat="meetings"]').innerText(), /7% of tracked/);
       // e1 and e2 are typed too: 30 + 30 + 20 + 30 off-screen.
       assert.match(await ov.locator('[data-ov-stat="off"]').innerText(), /1 h 20 min/);
       const kinds = await ov
         .locator('[data-ov-kind]')
         .evaluateAll((els) => els.map((el) => el.getAttribute('data-ov-kind')));
-      assert.ok(kinds.includes('meeting') && kinds.includes('call'), kinds.join(','));
+      assert.ok(kinds.includes('meeting') && kinds.includes('thinking'), kinds.join(','));
       const tasks = await ov
         .locator('[data-ov-task]')
         .evaluateAll((els) => els.map((el) => el.getAttribute('data-ov-task')));
