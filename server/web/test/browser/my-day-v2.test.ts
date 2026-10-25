@@ -61,20 +61,27 @@ const mondayOf = (day: string): string => {
  * range and length on a line of their own — each only where it fits as drawn,
  * so any of them may be left out, and nothing else is ever shown.
  */
+/**
+ * A length as a name says it (`1 h 35 min`) in the short form the track
+ * draws, the design's (`1h 35m`, LAI-510).
+ */
+const short = (length: string): string =>
+  length.replace(/(\d+) h/, '$1h').replace(/(\d+) min/, '$1m');
+
 const gapShows = (text: string, length: string): boolean => {
   const rest = text.replace(/\s+/g, ' ').trim();
-  const len = length.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const len = short(length).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`^(\\+ ?)?(Add time ?)?((\\S.* · )?${len})?$`).test(rest);
 };
 
 /** A break shows its glyph, the word, and its range and length — or less, never more. */
 const breakShows = (text: string): boolean =>
-  /^(‖ ?)?(Break ?)?((\S.* · )?\d+ (?:min|h)( \d+ min)?)?$/.test(text.replace(/\s+/g, ' ').trim());
+  /^(‖ ?)?(Break ?)?((\S.* · )?\d+(?:m|h)( \d+m)?)?$/.test(text.replace(/\s+/g, ' ').trim());
 
 /** What a block's second line may show, by the same measure: both, the length, or nothing. */
 const subForms = (range: string, length: string): readonly string[] => [
-  `${range} · ${length}`,
-  length,
+  `${range} · ${short(length)}`,
+  short(length),
   '',
 ];
 
@@ -331,17 +338,18 @@ void describe('the week strip (2, E)', () => {
 });
 
 void describe('gaps and breaks (4, D)', () => {
-  void test('gaps of 20 minutes or more are counted, drawn and fillable; shorter ones are not', async () => {
+  void test('every gap of five minutes or more is counted, drawn and fillable', async () => {
     const h = await openDay(EARLIER);
     try {
-      // 11:30–12:00 and 12:45–1:30 count; 4:30–4:45 is a breath.
-      assert.equal(await h.page.locator('.dayline-gap').count(), 2);
+      // 11:30–12:00, 12:45–1:30 and 4:30–4:45: the design counts five minutes
+      // and up (LAI-510); a shorter one is a breath (timeline-derive's test).
+      assert.equal(await h.page.locator('.dayline-gap').count(), 3);
       // The legend's compact figure, and the count in the button's title (LAI-512).
       const stat = await h.page.locator('[data-stat="gaps"]').innerText();
-      assert.match(stat, /1h 15m/);
+      assert.match(stat, /1h 30m/);
       assert.match(
         (await h.page.locator('[data-stat="gaps"]').getAttribute('title')) ?? '',
-        /2 unaccounted/,
+        /3 unaccounted/,
       );
       // Which gap, and how long, is in its name whatever fits on the line:
       // CI's fonts draw "+ 30 min" wider than this Mac's, and it is a "+".
@@ -351,10 +359,11 @@ void describe('gaps and breaks (4, D)', () => {
         [
           `Unaccounted 11:30 AM–12:00 PM, ${dur(30)} — add time or mark a break`,
           `Unaccounted 12:45–1:30 PM, ${dur(45)} — add time or mark a break`,
+          `Unaccounted 4:30–4:45 PM, ${dur(15)} — add time or mark a break`,
         ],
       );
       const shown = await gaps.allInnerTexts();
-      for (const [i, minutes] of [30, 45].entries()) {
+      for (const [i, minutes] of [30, 45, 15].entries()) {
         assert.ok(gapShows(shown[i] ?? '?', dur(minutes)), `gap ${String(i)}: "${shown[i] ?? ''}"`);
       }
     } finally {
@@ -377,10 +386,10 @@ void describe('gaps and breaks (4, D)', () => {
         started_at: at(EARLIER, 11, 30),
         ended_at: at(EARLIER, 12, 0),
       });
-      assert.equal(await h.page.locator('.dayline-gap').count(), 1);
+      assert.equal(await h.page.locator('.dayline-gap').count(), 2);
       assert.match(
         (await h.page.locator('[data-stat="gaps"]').getAttribute('title')) ?? '',
-        /1 unaccounted/,
+        /2 unaccounted/,
       );
       const drawn = h.page.locator('.dayline-break');
       assert.equal(await drawn.getAttribute('aria-label'), 'Break 11:30 AM–12:00 PM — not counted');
@@ -388,7 +397,7 @@ void describe('gaps and breaks (4, D)', () => {
 
       await h.page.locator('.dayline-break').click();
       await h.page.getByRole('button', { name: 'Remove break' }).click();
-      await until(async () => (await h.page.locator('.dayline-gap').count()) === 2);
+      await until(async () => (await h.page.locator('.dayline-gap').count()) === 3);
       assert.ok(
         writes(h).some(
           (c) => c.method === 'DELETE' && c.path.startsWith('/api/v1/me/time-breaks/'),
@@ -865,12 +874,17 @@ void describe('keyboard shortcuts (H)', () => {
 });
 
 void describe('honest signals (G)', () => {
-  void test('a block shows its counts as a badge, and nothing is spread along it', async () => {
+  void test('a block’s counts are in its tooltip, as the design keeps them — never a pill on it, nothing spread along it', async () => {
     const h = await openDay(TODAY);
     try {
-      const badge = h.page.locator('[data-block-id="d1"] .dayline-signals');
-      assert.equal(await badge.count(), 1);
-      assert.match((await badge.getAttribute('title')) ?? '', /18 prompts.*3 commits/);
+      const block = h.page.locator('[data-block-id="d1"]');
+      assert.equal(await block.locator('.dayline-signals').count(), 0);
+      assert.doesNotMatch(await block.innerText(), /\d+p \d+c/);
+      await block.scrollIntoViewIfNeeded();
+      await block.hover();
+      const tip = h.page.locator('[role="tooltip"]');
+      await tip.waitFor({ timeout: 5_000 });
+      assert.match(await tip.innerText(), /18 prompts · 3 commits/);
       assert.equal(await h.page.locator('[data-signal-dot], [data-signal-tick]').count(), 0);
     } finally {
       await h.close();
@@ -1000,12 +1014,12 @@ void describe('review round 1', () => {
   void test('today’s gaps are between its blocks — nothing runs to now', async () => {
     const h = await openDay(TODAY);
     try {
-      // 10:15–10:40, 12:30–1:00 and 2:50–3:30; never 4:10 PM onward.
+      // 10:15–10:40, 11:20–11:30, 12:30–1:00 and 2:50–3:30; never 4:10 PM onward.
       const stat = await h.page.locator('[data-stat="gaps"]').innerText();
-      assert.match(stat, /1h 35m/);
+      assert.match(stat, /1h 45m/);
       assert.match(
         (await h.page.locator('[data-stat="gaps"]').getAttribute('title')) ?? '',
-        /3 unaccounted/,
+        /4 unaccounted/,
       );
     } finally {
       await h.close();
@@ -1203,7 +1217,8 @@ void describe('a phone, and both themes (I)', () => {
         );
       assert.ok(gaps.length > 0, 'no gap to look at');
       for (const [px, text] of gaps) {
-        if (px >= 160) assert.match(text, / min$| h$/, `a ${String(px)}px gap says only "${text}"`);
+        if (px >= 160)
+          assert.match(text, /\d+m$|\d+h$/, `a ${String(px)}px gap says only "${text}"`);
       }
     } finally {
       await h.close();

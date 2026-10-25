@@ -34,7 +34,6 @@ import {
   idleEnds,
   instantOf,
   limitsIn,
-  placeChips,
   signalsDuring,
   stackOf,
   FOLD_MIN,
@@ -48,8 +47,6 @@ import {
   clampBlockHeight,
   zoomLabel,
   zoomStep,
-  type Box,
-  type ChipPlace,
   type DayLine,
   type Edit,
   type LaneBlock,
@@ -367,7 +364,18 @@ export function Timeline({
   /** What a drag just did, for a screen reader. */
   const [live, setLive] = useState('');
   /** A drag on the empty track (LAI-897): where it began, and the range it is making. */
-  const rangeDrag = useRef<{ anchor: number } | null>(null);
+  /**
+   * A range being drawn. One begun on a gap waits for the pointer to move
+   * four pixels — the design's threshold — so a click still picks the gap.
+   */
+  const rangeDrag = useRef<{
+    anchor: number;
+    x0: number;
+    gap: boolean;
+    waiting: boolean;
+  } | null>(null);
+  /** When a drag that began on a gap ended, so that gap's click is not also a pick. */
+  const rangedFromGap = useRef(0);
   const [rangePreview, setRangePreview] = useState<Span | undefined>(undefined);
   const [hover, setHover] = useState<Hover | undefined>(undefined);
   /** The minute at the middle of the view when the scale last changed — kept there (LAI-890). */
@@ -375,7 +383,6 @@ export function Timeline({
   /** The block height, dragged by the grip under the YOU row (LAI-891). */
   const [blockPx, setBlockPx] = useState<number>(BLOCK_MIN_PX);
   const gripDrag = useRef<{ y: number; px: number } | null>(null);
-  const [chips, setChips] = useState<ReadonlyMap<string, ChipPlace>>(() => new Map());
   const [, setFonts] = useState(0);
 
   const { from, to } = line;
@@ -423,30 +430,6 @@ export function Timeline({
       document.fonts.removeEventListener('loadingdone', again);
     };
   }, []);
-
-  // After every render, each badge's place from the boxes as drawn (`placeChips`).
-  useLayoutEffect(() => {
-    const root = track.current;
-    if (root === null) return;
-    const boxOf = (el: Element): Box => {
-      const r = el.getBoundingClientRect();
-      return { l: r.left, r: r.right, t: r.top, b: r.bottom };
-    };
-    const blocks = new Map(
-      [...root.querySelectorAll<HTMLElement>('[data-block-key]')].map((el) => [
-        el.dataset.blockKey ?? '',
-        boxOf(el),
-      ]),
-    );
-    const sizes = [...root.querySelectorAll<HTMLElement>('[data-chip-for]')].map((el) => {
-      const r = el.getBoundingClientRect();
-      return { id: el.dataset.chipFor ?? '', width: r.width, top: r.top, bottom: r.bottom };
-    });
-    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
-    const next = placeChips(sizes, blocks, boxOf(root), rem * 0.25);
-    const same = next.size === chips.size && [...next].every(([id, p]) => chips.get(id) === p);
-    if (!same) setChips(next);
-  });
 
   useLayoutEffect(() => {
     const box = scroller.current;
@@ -518,18 +501,24 @@ export function Timeline({
     if (box === undefined || box.width === 0) return 0;
     return scale.at(clientX - box.left);
   };
-  // A drag on the empty track makes a range (LAI-897): every handle, grip,
-  // block, gap, break and strip is a button and is left to its own handler;
-  // the no-signal overlay is not, and a day with nothing on it should take a
+  // A drag on the empty track makes a range (LAI-897), and so does one begun
+  // on a gap (the design's `down`, LAI-510): every other handle, grip,
+  // block, break and strip is a button and is left to its own handler; the
+  // no-signal overlay is not, and a day with nothing on it should take a
   // drag. Snapped to five minutes and clipped to the free stretch between
   // confirmed blocks; the server's 409 remains the backstop.
   const confirmedSpans = line.blocks.filter((b) => b.kind === 'confirmed');
   const rangeHandlers = {
     onPointerDown: (event: PointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0 || (event.target as Element).closest('button') !== null) return;
-      event.preventDefault();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      rangeDrag.current = { anchor: minuteAt(event.clientX) };
+      if (event.button !== 0) return;
+      const on = (event.target as Element).closest('button');
+      const gap = on?.classList.contains('dayline-gap') === true;
+      if (on !== null && !gap) return;
+      if (!gap) {
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
+      rangeDrag.current = { anchor: minuteAt(event.clientX), x0: event.clientX, gap, waiting: gap };
       setHover(undefined);
     },
     onPointerMove: (event: PointerEvent<HTMLDivElement>) => {
@@ -540,13 +529,22 @@ export function Timeline({
         setRangePreview(undefined);
         return;
       }
+      if (drag.waiting) {
+        if (Math.abs(event.clientX - drag.x0) < 4) return;
+        drag.waiting = false;
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
       setRangePreview(
         rangeFromDrag(drag.anchor, minuteAt(event.clientX), confirmedSpans, from * 60, to * 60),
       );
     },
     onPointerUp: (event: PointerEvent<HTMLDivElement>) => {
-      if (rangeDrag.current === null) return;
+      const drag = rangeDrag.current;
+      if (drag === null) return;
       rangeDrag.current = null;
+      // A press on a gap that never moved is that gap's click, not a range.
+      if (drag.waiting) return;
+      if (drag.gap) rangedFromGap.current = Date.now();
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
@@ -1724,6 +1722,8 @@ export function Timeline({
                       }
                       aria-pressed={on}
                       onClick={() => {
+                        // The click a drag begun here ends with, in a browser that sends one.
+                        if (Date.now() - rangedFromGap.current < 300) return;
                         onSelect({ kind: 'gap', start: gap.start, end: gap.end });
                       }}
                       onMouseEnter={enter('gap', String(gap.start))}
@@ -1738,7 +1738,7 @@ export function Timeline({
                       </span>
                       <span className="dayline-block-sub">
                         <FitLabel
-                          options={[`${rangeOf(gap)} · ${duration(minutes)}`, duration(minutes)]}
+                          options={[`${rangeOf(gap)} · ${compact(minutes)}`, compact(minutes)]}
                         />
                       </span>
                     </button>
@@ -1772,8 +1772,8 @@ export function Timeline({
                     <span className="dayline-block-sub">
                       <FitLabel
                         options={[
-                          `${rangeOf(b)} · ${duration(b.end - b.start)}`,
-                          duration(b.end - b.start),
+                          `${rangeOf(b)} · ${compact(b.end - b.start)}`,
+                          compact(b.end - b.start),
                         ]}
                       />
                     </span>
@@ -1788,9 +1788,6 @@ export function Timeline({
                   const { top, title, card } = labelOf(block, drafts, entries);
                   const px = (shape.end - shape.start) * pxPerMinute;
                   const range = rangeOf(shape);
-                  const draft = block.kind === 'drafted' ? drafts.get(block.id) : undefined;
-                  const prompts = draft?.signals.prompts ?? 0;
-                  const commits = draft?.signals.commits ?? 0;
                   const draggable = canDrag(block);
                   const hovered = hover?.kind === 'block' && hover.id === block.id;
                   const moving = drag?.id === block.id;
@@ -1890,24 +1887,13 @@ export function Timeline({
                           <span className="dayline-block-sub">
                             <FitLabel
                               options={[
-                                `${range} · ${duration(shape.minutes)}`,
-                                duration(shape.minutes),
+                                `${range} · ${compact(shape.minutes)}`,
+                                compact(shape.minutes),
                               ]}
                             />
                           </span>
                         </button>
                       </div>
-                      {/* Drawn only where it clears every other block and badge (`placeChips`). */}
-                      {prompts + commits > 0 && (
-                        <span
-                          className="dayline-signals"
-                          data-chip-for={key}
-                          data-chip-place={chips.get(key) ?? 'none'}
-                          title={`${String(prompts)} prompts, ${String(commits)} commits — counted for the block; when in it is not known`}
-                        >
-                          {String(prompts)}p {String(commits)}c
-                        </span>
-                      )}
                       {editable && (
                         <>
                           <button

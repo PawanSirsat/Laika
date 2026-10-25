@@ -85,20 +85,20 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
   void test('its header carries the day in minutes, the hours run along the top, and the column names each lane with its figure', async () => {
     const h = await openToday();
     try {
-      // Confirmed 30 + 30; drafted on a card 95 + 110 + 25; on nothing 40 + 40; gaps 25 + 30 + 40.
+      // Confirmed 30 + 30; drafted on a card 95 + 110 + 25; on nothing 40 + 40; gaps 25 + 10 + 30 + 40.
       const figure = async (stat: string): Promise<string> =>
         (await h.page.locator(`[data-stat="${stat}"] strong`).innerText()).trim();
       assert.equal(await figure('confirmed'), cmp(60));
       assert.equal(await figure('drafted'), cmp(230));
       assert.equal(await figure('needs-card'), cmp(80));
-      assert.equal(await figure('gaps'), cmp(95));
+      assert.equal(await figure('gaps'), cmp(105));
       // The legend's words are the design's; the gaps' count is in the button's title (LAI-512).
       const legend = await h.page.locator('.dayline-totals').innerText();
       assert.match(legend, /Confirmed[\s\S]*Drafted[\s\S]*No task yet[\s\S]*Gaps/);
       assert.doesNotMatch(legend, /unaccounted|Needs a card/);
       assert.match(
         (await h.page.locator('[data-stat="gaps"]').getAttribute('title')) ?? '',
-        /3 unaccounted/,
+        /4 unaccounted/,
       );
 
       const axis = await h.page.locator('.dayline-axis').boundingBox();

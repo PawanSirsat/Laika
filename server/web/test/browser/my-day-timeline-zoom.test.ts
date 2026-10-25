@@ -456,21 +456,20 @@ void describe('the Timeline at Fit, 1× and 2× (LAI-860)', () => {
             };
             for (const b of picked) selection(b, false);
 
-            // The positive controls: where there is room, chips, labels and edges are drawn.
-            const named = (id: string): Drawn | undefined => blocks.find((b) => b.id === id);
+            // No block draws a count pill: the design keeps a block's counts in
+            // its tooltip (LAI-510), so nothing can run into anything here.
             check(
-              named('zl')?.chipText === '4p 2c',
-              `${where}: the short block standing alone lost its chip`,
+              blocks.every((b) => b.chip === null),
+              `${where}: a block draws a count pill: ${blocks.find((b) => b.chip !== null)?.chipText ?? ''}`,
             );
+            // The positive controls: where there is room, labels and edges are drawn.
+            const named = (id: string): Drawn | undefined => blocks.find((b) => b.id === id);
             if (zoom !== 'fit') {
               check(named('h1')?.label === CARD_B.key, `${where}: the hour lost its label`);
               check(named('k1')?.label === CARD_A.key, `${where}: three at once lost k1's label`);
             }
             if (zoom === '2') {
-              check(named('z10')?.chipText === '12p 2c', `${where}: z10 lost its chip`);
               check(named('z10')?.label === CARD_A.key, `${where}: z10 lost its label`);
-              check(named('z7')?.chipText === '3p 0c', `${where}: z7, with room, lost its chip`);
-              check(named('f1')?.chipText === '1p 5c', `${where}: f1, with room, lost its chip`);
             }
             // Past the floor, only the block is drawn: its own row, clicked above.
             for (const id of PAST_THE_FLOOR) {

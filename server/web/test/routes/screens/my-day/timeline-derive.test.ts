@@ -17,7 +17,6 @@ import {
   idleEnds,
   limitsOf,
   moveBlock,
-  placeChips,
   setLength,
   signalsDuring,
   snap,
@@ -34,7 +33,6 @@ import {
   zoomLabel,
   zoomStep,
   type AgentRun,
-  type Box,
   type LaneBlock,
   type SignalMark,
 } from '../../../../src/routes/screens/my-day/timeline-derive.ts';
@@ -101,13 +99,13 @@ const view = (
 });
 
 void describe('gapsOf — unaccounted time between blocks', () => {
-  void test('twenty minutes or more is a gap; less is a breath', () => {
+  void test('five minutes or more is a gap; less is a breath (the My Day design, LAI-510)', () => {
     const blocks = [
       { start: min(9), end: min(10) },
-      { start: min(10, 19), end: min(11) },
-      { start: min(11, 20), end: min(12) },
+      { start: min(10, 4), end: min(11) },
+      { start: min(11, 5), end: min(12) },
     ];
-    assert.deepEqual(gapsOf(blocks, []), [{ start: min(11), end: min(11, 20) }]);
+    assert.deepEqual(gapsOf(blocks, []), [{ start: min(11), end: min(11, 5) }]);
   });
 
   void test('only between blocks — nothing before the first, nothing after the last (review round 1)', () => {
@@ -129,8 +127,8 @@ void describe('gapsOf — unaccounted time between blocks', () => {
       { start: min(9), end: min(10) },
       { start: min(11), end: min(12) },
     ];
-    // 10:00–11:00, less 10:10–10:45: 10 minutes (a breath) and 15 (a breath).
-    assert.deepEqual(gapsOf(blocks, [{ start: min(10, 10), end: min(10, 45) }]), []);
+    // 10:00–11:00, less 10:03–10:56: 3 minutes (a breath) and 4 (a breath).
+    assert.deepEqual(gapsOf(blocks, [{ start: min(10, 3), end: min(10, 56) }]), []);
     // Less 10:00–10:30: 10:30–11:00 is still a gap.
     assert.deepEqual(gapsOf(blocks, [{ start: min(10), end: min(10, 30) }]), [
       { start: min(10, 30), end: min(11) },
@@ -175,7 +173,11 @@ void describe('dayLine — the day placed on its lane', () => {
     );
     assert.equal(line.untimed, 1);
     assert.equal(line.now, undefined, 'a past day has no now');
-    assert.deepEqual(line.gaps, [{ start: min(10, 15), end: min(10, 40) }]);
+    // 10:15–10:40, and the ten minutes before e1: five and up is a gap (LAI-510).
+    assert.deepEqual(line.gaps, [
+      { start: min(10, 15), end: min(10, 40) },
+      { start: min(11, 20), end: min(11, 30) },
+    ]);
   });
 
   void test('on today the axis widens to hold now, and no gap runs to it', () => {
@@ -437,86 +439,6 @@ void describe('stackOf — blocks at the same time share the lane (LAI-860)', ()
   });
 });
 
-void describe('placeChips — a badge only where it clears everything (LAI-860)', () => {
-  const box = (l: number, r: number, t = 10, b = 60): Box => ({ l, r, t, b });
-  const TRACK = { l: 0, r: 1000 };
-  // A badge as drawn: 50 px wide, from 8 px above its block to 11 px into it.
-  const chip = (id: string, top = 2, bottom = 21) => ({ id, width: 50, top, bottom });
-
-  void test('inside its block’s end where it fits, the inset from that end', () => {
-    const places = placeChips([chip('a')], new Map([['a', box(0, 200)]]), TRACK, 4);
-    assert.deepEqual([...places], [['a', 'end']]);
-    // 50 px and 4 px either side need 58: one pixel less is centred over it.
-    const tight = placeChips([chip('a')], new Map([['a', box(0, 57)]]), TRACK, 4);
-    assert.deepEqual([...tight], [['a', 'centre']]);
-  });
-
-  void test('a short block standing alone keeps its badge, centred over it', () => {
-    const places = placeChips([chip('a')], new Map([['a', box(100, 110)]]), TRACK, 4);
-    assert.deepEqual([...places], [['a', 'centre']]);
-  });
-
-  void test('not drawn where it would lie over another block; touching is not lying over', () => {
-    // Centred over a: 80–130.
-    const near = new Map([
-      ['a', box(100, 110)],
-      ['b', box(120, 140)],
-    ]);
-    assert.deepEqual([...placeChips([chip('a')], near, TRACK, 4)], []);
-    const touching = new Map([
-      ['a', box(100, 110)],
-      ['b', box(130, 140)],
-    ]);
-    assert.deepEqual([...placeChips([chip('a')], touching, TRACK, 4)], [['a', 'centre']]);
-  });
-
-  void test('of two badges that would meet, the longer block’s is drawn', () => {
-    // Badges above the blocks, so only they can meet: a's 80–130, b's 120–170.
-    const blocks = new Map([
-      ['a', box(100, 110)],
-      ['b', box(135, 155)],
-    ]);
-    const above = (id: string) => chip(id, 0, 9);
-    assert.deepEqual(
-      [...placeChips([above('a'), above('b')], blocks, TRACK, 4)],
-      [['b', 'centre']],
-    );
-    // As long as each other: the one further left.
-    const even = new Map([
-      ['a', box(100, 110)],
-      ['b', box(140, 150)],
-    ]);
-    assert.deepEqual([...placeChips([above('b'), above('a')], even, TRACK, 4)], [['a', 'centre']]);
-  });
-
-  void test('not drawn past either end of the track', () => {
-    const first = placeChips([chip('a')], new Map([['a', box(0, 10)]]), TRACK, 4);
-    const last = placeChips([chip('a')], new Map([['a', box(990, 1000)]]), TRACK, 4);
-    assert.deepEqual([...first, ...last], []);
-  });
-
-  void test('in a stack, a lower row’s badge lies over the row above and is not drawn', () => {
-    // Rows of 10 px, 2 px apart: the top row's badge ends above the next row.
-    const two = new Map([
-      ['a', box(0, 200, 10, 20)],
-      ['b', box(0, 200, 22, 32)],
-    ]);
-    const chips = [chip('a', 2, 21), chip('b', 14, 33)];
-    assert.deepEqual([...placeChips(chips, two, TRACK, 4)], [['a', 'end']]);
-    // Rows of 8 px: it reaches 1 px into the next, so neither is drawn.
-    const deep = new Map([
-      ['a', box(0, 200, 10, 18)],
-      ['b', box(0, 200, 20, 28)],
-    ]);
-    const deepChips = [chip('a', 2, 21), chip('b', 12, 31)];
-    assert.deepEqual([...placeChips(deepChips, deep, TRACK, 4)], []);
-  });
-
-  void test('a badge whose block is not drawn is left out', () => {
-    assert.deepEqual([...placeChips([chip('gone')], new Map(), TRACK, 4)], []);
-  });
-});
-
 void describe('the organisation’s breaks on the day (D-101, LAI-956)', () => {
   // 2026-10-20 is a Tuesday: ISO day 2.
   const LUNCH = { label: 'Lunch', start: '12:00', end: '13:00', days: [1, 2, 3, 4, 5] };
@@ -565,9 +487,9 @@ void describe('the organisation’s breaks on the day (D-101, LAI-956)', () => {
     );
     // 12:00–13:30, less lunch: 13:00–13:30 is still a gap.
     assert.deepEqual(line.gaps, [{ start: min(13), end: min(13, 30) }]);
-    // And what is left is held to the same twenty minutes.
+    // And what is left is held to the same five minutes: 13:00–13:03 is a breath.
     const short = dayLine(
-      withSchedule([LUNCH], { drafts: [draft('a', at(10), 120), draft('b', at(13, 15), 60)] }),
+      withSchedule([LUNCH], { drafts: [draft('a', at(10), 120), draft('b', at(13, 3), 60)] }),
       0,
     );
     assert.deepEqual(short.gaps, []);

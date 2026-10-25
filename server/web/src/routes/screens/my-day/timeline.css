@@ -1468,39 +1468,6 @@
   opacity: 0.8;
 }
 
-/*
- * G: a block's counts, as a badge — never dots spread where nothing says.
- * `placeChips` puts it inside its block's end, or centred over a block too
- * narrow for it, and only where it clears every other block and badge; it
- * is not drawn anywhere else (LAI-860). A click on it is a click on its block.
- */
-.dayline-signals[data-chip-place='none'] {
-  visibility: hidden;
-}
-
-.dayline-signals[data-chip-place='centre'] {
-  right: auto;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.dayline-signals {
-  position: absolute;
-  top: -0.5rem;
-  right: 0.25rem;
-  z-index: 1;
-  padding: 0 0.25rem;
-  border: 1px solid var(--border-card);
-  border-radius: var(--radius-chip);
-  background: var(--bg-card);
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  line-height: 1.4;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  pointer-events: none;
-}
-
 /* The AGENTS lane (LAI-833): when the agent worked, slate on a card, grey on none. */
 .dayline-agents-lane {
   position: relative;

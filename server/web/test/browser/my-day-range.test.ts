@@ -162,6 +162,8 @@ void describe('a range dragged on the Timeline (LAI-897)', () => {
   void test('a drag into a confirmed block stops at its edge; one that starts on it makes nothing', async () => {
     const h = await myDay();
     try {
+      // Begun inside the 11:20–11:30 gap: a drag on a gap draws a range, as the
+      // design's does (LAI-510); a click on it still picks it (my-day-v2).
       await drag(h, 11 * 60 + 23, 11 * 60 + 50);
       const picked = h.page.locator('.dayline-range-picked');
       await picked.waitFor({ timeout: 10_000 });
