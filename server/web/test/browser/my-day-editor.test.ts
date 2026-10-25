@@ -158,6 +158,67 @@ after(async () => {
 
 void describe('the editor (LAI-504)', () => {
   for (const theme of ['light', 'dark'] as const) {
+    void test(`${theme}: a field opens the time wheel — a minute picked writes the field, Done saves it, a length picked too`, async () => {
+      const writes: StubCall[] = [];
+      const h = await myDay(writes);
+      try {
+        await setTheme(h.page, theme);
+        await select(h, 'd1');
+        const editor = h.page.locator('[data-inspector="draft"]');
+        await editor.waitFor({ timeout: 10_000 });
+        // d1 8:40–10:15: the wheel stands on 8, 40, AM.
+        const start = editor.locator('[data-when-start]');
+        await start.click();
+        const wheel = editor.locator('[data-wheel]');
+        await wheel.waitFor({ timeout: 5_000 });
+        assert.equal(await wheel.getAttribute('aria-label'), 'Start');
+        assert.equal(await wheel.locator('[data-wheel-col]').count(), 3);
+        for (const [col, value] of [
+          ['Hour', '8'],
+          ['Minute', '40'],
+          ['AM or PM', 'AM'],
+        ] as const) {
+          assert.equal(
+            await wheel.locator(`[data-wheel-col="${col}"] .wheel-item-on`).innerText(),
+            value,
+            col,
+          );
+        }
+        // The rows above and below the band fade: the band sits in the middle row.
+        const band = await wheel.locator('.wheel-band').boundingBox();
+        const on = await wheel.locator('[data-wheel-col="Minute"] .wheel-item-on').boundingBox();
+        assert.ok(band !== null && on !== null);
+        assert.ok(Math.abs(band.y + band.height / 2 - (on.y + on.height / 2)) <= 2, 'off the band');
+        // 55, picked: the field says so and nothing is saved yet; the field keeps the focus.
+        await wheel.locator('[data-wheel-col="Minute"] [data-wheel-value="55"]').click();
+        await until(async () => (await start.inputValue()) === '8:55 AM');
+        assert.equal(await start.inputValue(), '8:55 AM');
+        assert.equal(writes.length, 0);
+        assert.equal(await start.evaluate((el) => el === document.activeElement), true);
+        await editor.locator('[data-wheel-done]').click();
+        await until(() => writes.length === 1);
+        assert.deepEqual(writes[0]?.body, { started_at: at(TODAY, 8, 55), minutes: 80 });
+        assert.equal(await editor.locator('[data-wheel]').count(), 0);
+
+        // The length: hours and minutes, a word after each.
+        const length = editor.locator('[data-when-length]');
+        await length.click();
+        await wheel.waitFor({ timeout: 5_000 });
+        assert.equal(await wheel.getAttribute('aria-label'), 'Length');
+        assert.match(await wheel.innerText(), /h[\s\S]*min/);
+        await wheel.locator('[data-wheel-col="Hours"] [data-wheel-value="2"]').click();
+        await until(async () => (await length.inputValue()).startsWith('2 h'));
+        await length.press('Enter');
+        await until(() => writes.length === 2);
+        // The stub keeps d1 at 8:40–10:15, 1 h 35: two hours and the 35 is 2 h 35.
+        assert.deepEqual(writes[1]?.body, { minutes: 155, ended_at: at(TODAY, 11, 15) });
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  for (const theme of ['light', 'dark'] as const) {
     void test(`${theme}: the head walks the drafts; a start, an end and a length typed each save one edge`, async () => {
       const writes: StubCall[] = [];
       const h = await myDay(writes);

@@ -1,0 +1,123 @@
+/*
+ * The time wheel (the owner's ask, 2026-10-25): an iPhone's picker — five
+ * rows a column, snapping, the middle row in a band, the rest fading to the
+ * card. Tokens only; the rows are 2.25rem, the band is the middle one.
+ */
+
+.wheel {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  background: var(--bg-card);
+  overflow: hidden;
+  user-select: none;
+  touch-action: pan-y;
+}
+
+/* The rows above and below the band fade into the card. */
+.wheel::before,
+.wheel::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 4.5rem;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.wheel::before {
+  top: 0;
+  background: linear-gradient(var(--bg-card), transparent);
+}
+
+.wheel::after {
+  bottom: 0;
+  background: linear-gradient(transparent, var(--bg-card));
+}
+
+.wheel-band {
+  position: absolute;
+  top: 4.5rem;
+  left: 0.375rem;
+  right: 0.375rem;
+  height: 2.25rem;
+  border-radius: var(--radius-control);
+  background: var(--bg-column);
+  pointer-events: none;
+}
+
+.wheel-col-wrap {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+}
+
+.wheel-col {
+  height: 11.25rem;
+  min-width: 3.5rem;
+  overflow-y: auto;
+  scroll-snap-type: y mandatory;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  cursor: grab;
+}
+
+.wheel-col::-webkit-scrollbar {
+  display: none;
+}
+
+.wheel-col:active {
+  cursor: grabbing;
+}
+
+.wheel-pad {
+  height: 4.5rem;
+}
+
+.wheel-item {
+  height: 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  scroll-snap-align: center;
+  font-size: var(--text-heading-md);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  transition: var(--transition);
+}
+
+.wheel-item-on {
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+}
+
+.wheel-unit {
+  padding-left: 0.25rem;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+}
+
+.wheel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.5rem;
+  font-size: var(--text-small);
+  color: var(--text-muted);
+}
+
+.wheel-done {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  cursor: pointer;
+}

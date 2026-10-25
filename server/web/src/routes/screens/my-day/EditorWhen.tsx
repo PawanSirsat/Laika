@@ -4,6 +4,19 @@ import { minutesUnderstood } from './my-day-derive.ts';
 import { Understood } from './Understood.tsx';
 import { hourName } from './format.ts';
 import { clockMinute, lengthMinutes, WHEN_WORDS, whenFrom, type WhenSpan } from './when-parse.ts';
+import { usePhone } from './use-phone.ts';
+import { Wheel, type WheelColumn } from './Wheel.tsx';
+import {
+  clockFrom,
+  clockIndexes,
+  clockText,
+  lengthFrom,
+  lengthIndexes,
+  WHEEL_HOURS,
+  WHEEL_LENGTH_HOURS,
+  WHEEL_MINUTES,
+  WHEEL_PERIODS,
+} from './wheel-derive.ts';
 
 /** A confirmed block the span may not cross, named for the refusal. */
 export interface Conflict extends WhenSpan {
@@ -111,6 +124,8 @@ export function EditorWhen({
       : spanLabel(midnight + s.start * 60_000, midnight + s.end * 60_000, tz);
   const shown = (field: 'start' | 'end' | 'length', fallback: string): string =>
     typed?.field === field ? typed.text : fallback;
+  // On a phone the wheel is the way in, as an iPhone's is: no keyboard over it.
+  const phone = usePhone();
 
   // A compose's range on the bar may sit over confirmed time until it is moved: said, and Add waits.
   const standing = span === undefined ? undefined : overlapping(span, conflicts);
@@ -210,7 +225,7 @@ export function EditorWhen({
         aria-invalid={
           refused?.field === name || (name === 'end' && standing !== undefined) ? true : undefined
         }
-        inputMode="text"
+        inputMode={phone ? 'none' : 'text'}
         readOnly={readOnly}
         disabled={busy}
         {...attr}
@@ -241,6 +256,80 @@ export function EditorWhen({
       />
     </label>
   );
+
+  /**
+   * The wheel's columns for `name`, standing on what the field says now —
+   * typed, wheeled or saved — and writing what is picked back into it, as
+   * typing would; leaving the field saves it.
+   */
+  const wheelColumns = (name: 'start' | 'end' | 'length'): readonly WheelColumn[] => {
+    if (name === 'length') {
+      const read = typed?.field === 'length' ? lengthMinutes(typed.text) : undefined;
+      const pos = lengthIndexes(read ?? minutes);
+      const write = (m: number): void => {
+        setTyped({ field: 'length', text: duration(m) });
+        setRefused(undefined);
+      };
+      return [
+        {
+          key: 'hours',
+          label: 'Hours',
+          items: WHEEL_LENGTH_HOURS,
+          index: pos.hours,
+          unit: 'h',
+          onPick: (i) => {
+            write(lengthFrom({ ...pos, hours: i }));
+          },
+        },
+        {
+          key: 'minutes',
+          label: 'Minutes',
+          items: WHEEL_MINUTES,
+          index: pos.minutes,
+          unit: 'min',
+          onPick: (i) => {
+            write(lengthFrom({ ...pos, minutes: i }));
+          },
+        },
+      ];
+    }
+    const near = span === undefined ? (now ?? 9 * 60) : name === 'start' ? span.start : span.end;
+    const read = typed?.field === name ? clockMinute(typed.text, near) : undefined;
+    const pos = clockIndexes(read ?? near);
+    const write = (m: number): void => {
+      setTyped({ field: name, text: midnight === undefined ? clockText(m) : at(m) });
+      setRefused(undefined);
+    };
+    return [
+      {
+        key: 'hour',
+        label: 'Hour',
+        items: WHEEL_HOURS,
+        index: pos.hour,
+        onPick: (i) => {
+          write(clockFrom({ ...pos, hour: i }));
+        },
+      },
+      {
+        key: 'minute',
+        label: 'Minute',
+        items: WHEEL_MINUTES,
+        index: pos.minute,
+        onPick: (i) => {
+          write(clockFrom({ ...pos, minute: i }));
+        },
+      },
+      {
+        key: 'period',
+        label: 'AM or PM',
+        items: WHEEL_PERIODS,
+        index: pos.period,
+        onPick: (i) => {
+          write(clockFrom({ ...pos, period: i }));
+        },
+      },
+    ];
+  };
 
   // The design's bar: the violet range drags along it, or lands where the bar is clicked.
   const barDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
@@ -279,6 +368,33 @@ export function EditorWhen({
         {field('length', 'Length', duration(minutes), { 'data-when-length': '' })}
       </div>
       {typed?.field === 'length' && <Understood text={minutesUnderstood(typed.text)} />}
+      {typed !== undefined && !readOnly && !busy && (
+        <>
+          <div className="wheel-head">
+            <span>
+              {typed.field === 'start' ? 'Start' : typed.field === 'end' ? 'End' : 'Length'}
+            </span>
+            <button
+              type="button"
+              className="wheel-done"
+              data-wheel-done
+              onMouseDown={(event) => {
+                event.preventDefault();
+              }}
+              onClick={() => {
+                // Leaving the field is what saves it, as Enter does.
+                (document.activeElement as HTMLElement | null)?.blur();
+              }}
+            >
+              Done
+            </button>
+          </div>
+          <Wheel
+            label={typed.field === 'length' ? 'Length' : typed.field === 'start' ? 'Start' : 'End'}
+            columns={wheelColumns(typed.field)}
+          />
+        </>
+      )}
       {span === undefined && !readOnly && (
         <div className="editor-fields editor-fields-two">
           {field('start', 'Start at', '', { 'data-when-start': '' })}
