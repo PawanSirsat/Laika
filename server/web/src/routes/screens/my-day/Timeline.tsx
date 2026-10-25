@@ -25,9 +25,16 @@ import {
   axisMarks,
   buildScale,
   checkDrop,
+  clampZoom,
   dayFigures,
   dragEdge,
+  keepAt,
+  layoutRow,
   moveBlock,
+  pxPerHour,
+  sliderMax,
+  sliderMin,
+  sliderValue,
   timerSpan,
   trayDropSpan,
   type DropCheck,
@@ -35,16 +42,15 @@ import {
   instantOf,
   limitsIn,
   signalsDuring,
-  stackOf,
+  wheelAction,
+  zoomFactor,
+  zoomFloor,
+  zoomOfSlider,
+  BLOCK_PX,
   FOLD_MIN,
-  PX_PER_HOUR,
   SIGNAL_MINUTES,
   STEP,
-  BLOCK_MAX_PX,
-  BLOCK_MIN_PX,
-  BLOCK_STEP_PX,
-  ZOOM_STEPS,
-  clampBlockHeight,
+  ZOOM_MAX,
   zoomLabel,
   zoomStep,
   type DayLine,
@@ -116,20 +122,41 @@ export interface TimelineProps {
   readonly readOnly?: boolean;
 }
 
-const ZOOMS: readonly (readonly [Zoom, string, string])[] = [
-  ['fit', 'Fit', 'The whole day in view, idle hours folded'],
-  ['1', '1×', '160 px an hour'],
-  ['2', '2×', '320 px an hour'],
-];
-
-/** What a stepped level is, for its tooltip. */
-const pxAnHour = (zoom: Zoom): string =>
-  zoom === 'fit' ? 'The whole day in view' : `${String(PX_PER_HOUR[zoom] ?? 0)} px an hour`;
-
 /** A pointer that moved less than this is a click, not a drag (the design's 4px). */
 const DRAG_SLACK = 4;
 /** A refused drop says why, then goes, after this long (the design's 1.6s). */
 const BOUNCE_MS = 1600;
+/** The YOU row's px above its blocks (the strip) and under them, as `--you-top` and the design draw it. */
+const YOU_TOP_PX = 28;
+const YOU_BOTTOM_PX = 14;
+
+/**
+ * The groups open on a day (D-113): kept for the tab, so a reload of the day
+ * — a write, a refresh — leaves an open group open. A private window keeps
+ * nothing and starts with every group closed.
+ */
+const openKey = (day: string): string => `laika.my-day.open-groups.${day}`;
+function readOpen(day: string): ReadonlySet<string> {
+  try {
+    const saved: unknown = JSON.parse(sessionStorage.getItem(openKey(day)) ?? '[]');
+    return new Set(
+      Array.isArray(saved) ? saved.filter((v): v is string => typeof v === 'string') : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
+function writeOpen(day: string, open: ReadonlySet<string>): void {
+  try {
+    sessionStorage.setItem(openKey(day), JSON.stringify([...open]));
+  } catch {
+    // Kept nowhere; the groups stay open for as long as the page does.
+  }
+}
+
+/** The reader asked for less motion: every scroll and change is instant. */
+const reducedMotion = (): boolean =>
+  typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /** A block being moved or resized by the pointer or the keys (LAI-512). */
 interface Drag {
@@ -306,9 +333,12 @@ const agentMinutes = (seconds: number): number => Math.max(1, Math.round(seconds
  *
  * **Fit folds the idle hours** at either end of the day — before the first
  * thing placed, after the last or after now — into a hatched stretch that
- * says so, so a day's work fills the width; 1× and 2× are 160 and 320 px an
- * hour and scroll sideways. ‹ and › step the selection along the blocks, Now
- * scrolls to the clock, and the footer's ← → do what ‹ › do. Hovering a block,
+ * says so, so a day's work fills the width; any other scale is a multiple of
+ * 160 px an hour and scrolls sideways. One *Time zoom* slider, pinch and
+ * Ctrl/Cmd + wheel set it, *Fit day* goes back, and a crowded stretch is a
+ * group that opens into lanes, the Timeline growing and scrolling down under
+ * its ruler (D-113, LAI-300). ‹ and › step the selection along the blocks, Now
+ * scrolls to the clock, and the page's ← → do what ‹ › do. Hovering a block,
  * a gap, a break, a signal bucket or an agent run shows what it is, when, how
  * long and what it was drafted from — **counts only**, never a prompt's text.
  * Picking a block on a card lifts every block on that card and dims the rest.
@@ -329,7 +359,8 @@ export function Timeline({
   busy,
   readOnly = false,
 }: TimelineProps) {
-  const stage = useRef<HTMLDivElement | null>(null);
+  const root = useRef<HTMLElement | null>(null);
+  const grid = useRef<HTMLDivElement | null>(null);
   const scroller = useRef<HTMLDivElement | null>(null);
   const track = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
@@ -337,10 +368,16 @@ export function Timeline({
   const [drag, setDrag] = useState<Drag | undefined>(undefined);
   const dragRef = useRef<Drag | undefined>(undefined);
   dragRef.current = drag;
+  /**
+   * A block under the pointer: where on the track it was taken, and where the
+   * pointer is now — so a scroll mid-drag moves it as a pointer move does
+   * (D-113 item 5).
+   */
   const blockDrag = useRef<{
-    id: string;
+    block: LaneBlock;
     kind: Drag['kind'];
-    x0: number;
+    trackX0: number;
+    clientX: number;
     started: boolean;
   } | null>(null);
   const suppressClick = useRef(false);
@@ -355,14 +392,15 @@ export function Timeline({
   extRef.current = ext;
   /** What a drag just did, for a screen reader. */
   const [live, setLive] = useState('');
-  /** A drag on the empty track (LAI-897): where it began, and the range it is making. */
   /**
-   * A range being drawn. One begun on a gap waits for the pointer to move
-   * four pixels — the design's threshold — so a click still picks the gap.
+   * A range being drawn on the empty track (LAI-897). One begun on a gap
+   * waits for the pointer to move four pixels — the design's threshold — so
+   * a click still picks the gap.
    */
   const rangeDrag = useRef<{
     anchor: number;
     x0: number;
+    clientX: number;
     gap: boolean;
     waiting: boolean;
   } | null>(null);
@@ -370,15 +408,28 @@ export function Timeline({
   const rangedFromGap = useRef(0);
   const [rangePreview, setRangePreview] = useState<Span | undefined>(undefined);
   const [hover, setHover] = useState<Hover | undefined>(undefined);
-  /** The minute at the middle of the view when the scale last changed — kept there (LAI-890). */
-  const keep = useRef<number | undefined>(undefined);
-  /** The block height, dragged by the grip under the YOU row (LAI-891). */
-  const [blockPx, setBlockPx] = useState<number>(BLOCK_MIN_PX);
-  const gripDrag = useRef<{ y: number; px: number } | null>(null);
+  /**
+   * The minute a change of scale keeps where it was on screen (LAI-890,
+   * D-113): `offset` px into the view. The pointer's for a pinch, the
+   * selected block's or the middle's for the slider.
+   */
+  const keep = useRef<{ minute: number; offset: number } | undefined>(undefined);
+  /** The scale last asked for: a pinch's next event builds on it before it is drawn. */
+  const asked = useRef<Zoom>(zoom);
+  /** A pinch's events in one frame, one zoom: where it is going and what it keeps. */
+  const pinch = useRef<{ zoom: Zoom; minute: number; offset: number } | null>(null);
+  /** The groups open (D-113 item 3), by their stable ids; any number at once. */
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => readOpen(view.day));
+  const openDay = useRef(view.day);
+  /** Where the keyboard goes once a group opens or closes under it. */
+  const focusNext = useRef<string | undefined>(undefined);
+  /** Where a press on a group began: a group dragged across is not a group clicked. */
+  const groupDown = useRef<{ x: number; y: number } | null>(null);
   const [, setFonts] = useState(0);
 
   const { from, to } = line;
-  const pph = PX_PER_HOUR[zoom];
+  const pph = pxPerHour(zoom);
+  const floor = zoomFloor(from, to, width);
   const scale = buildScale(from, to, zoom, width, zoom === 'fit' ? idleEnds(line) : []);
   // Only the stretches the scale folded: one that would make no room stays open.
   const folds: Span[] = scale.segments
@@ -390,7 +441,6 @@ export function Timeline({
   const inset = (a: number, b: number): number => (x(b) - x(a) >= 16 ? 1 : 0);
   const left = (a: number, b: number): number => x(a) + inset(a, b);
   const wide = (a: number, b: number): number => Math.max(1, x(b) - x(a) - 2 * inset(a, b));
-  const pxPerMinute = scale.total / Math.max(1, (to - from) * 60);
 
   const drafts = new Map(view.drafts.map((d) => [d.id, d]));
   const entries = new Map(view.entries.map((e) => [e.id, e]));
@@ -398,7 +448,9 @@ export function Timeline({
   const rangeOf = (s: Span): string => spanOf(at(s.start), at(s.end), view.tz);
   // From the blocks as drawn, a dragged edge or a moved block included.
   const shaped = line.blocks.map((b) => (drag?.id === b.id ? { ...b, ...drag.edit } : b));
-  const stacks = stackOf(shaped);
+  // Lanes and groups from the blocks as they are — never as a drag has them —
+  // so the row holds still under a block in hand (D-113 item 5).
+  const row = layoutRow(line.blocks, x, open, [...line.gaps, ...line.breaks]);
   const figures = dayFigures(view, line.gaps);
   // No signal is not zero hours: a quiet day, or one to come, has no figure.
   const quiet = view.state === 'no_signal' || view.state === 'future';
@@ -437,27 +489,62 @@ export function Timeline({
     };
   }, []);
 
-  /** A new scale, with the minute at the middle of the view remembered (LAI-890). */
-  const changeZoom = (next: Zoom): void => {
+  // Another day has its own open groups; this one's are kept as they change.
+  if (openDay.current !== view.day) {
+    openDay.current = view.day;
+    setOpen(readOpen(view.day));
+  }
+  useEffect(() => {
+    writeOpen(openDay.current, open);
+  }, [open]);
+  useEffect(() => {
+    const id = focusNext.current;
+    focusNext.current = undefined;
+    if (id === undefined) return;
+    root.current
+      ?.querySelector<HTMLElement>(`[data-group="${id}"], [data-group-toggle="${id}"]`)
+      ?.focus({ preventScroll: true });
+  }, [open]);
+
+  /**
+   * A block, a range or a tray item in hand (D-113 item 5): until it is let
+   * go, nothing zooms and no group opens or closes, so nothing moves under it.
+   */
+  const inDrag = (): boolean =>
+    blockDrag.current?.started === true ||
+    dragRef.current !== undefined ||
+    (rangeDrag.current !== null && !rangeDrag.current.waiting) ||
+    extRef.current !== undefined;
+
+  /** The middle of the view, kept by a zoom with nothing better to keep. */
+  const middle = (): { minute: number; offset: number } | undefined => {
     const box = scroller.current;
-    keep.current =
-      box === null || pph === undefined
-        ? undefined
-        : scale.at(box.scrollLeft + box.clientWidth / 2);
-    onZoom(next);
+    if (box === null) return undefined;
+    return { minute: scale.at(box.scrollLeft + box.clientWidth / 2), offset: box.clientWidth / 2 };
   };
 
+  /** Every zoom ends here (D-113 item 2): one scale, one minute kept where it was. */
+  const zoomTo = (next: Zoom, anchor = middle()): void => {
+    if (inDrag() || next === asked.current) return;
+    asked.current = next;
+    keep.current = anchor;
+    onZoom(next);
+  };
+  useLayoutEffect(() => {
+    asked.current = zoom;
+  }, [zoom]);
+
   // Open at now on today (LAI-889), else on the day's first block — at every
-  // zoom but the one that fits it all. A change of scale keeps the middle of
-  // the view where it was (LAI-890).
+  // zoom but the one that fits it all. A change of scale keeps its minute
+  // where it was on screen (LAI-890, D-113), before the frame is drawn.
   const first = line.blocks[0]?.start;
-  useEffect(() => {
+  useLayoutEffect(() => {
     const box = scroller.current;
     const kept = keep.current;
     keep.current = undefined;
     if (box === null || pph === undefined) return;
     if (kept !== undefined) {
-      box.scrollLeft = Math.max(0, x(kept) - box.clientWidth / 2);
+      box.scrollLeft = keepAt(scale, kept.minute, kept.offset, box.clientWidth);
       return;
     }
     box.scrollLeft =
@@ -468,9 +555,10 @@ export function Timeline({
   }, [view.day, zoom]);
 
   // Follow the selection: a block picked in a list is brought into view —
-  // when the reader moves from one block to another. The first selection is
-  // the page's own (its first draft), and following it would undo opening at
-  // now (LAI-889); a zoom change re-opens the day instead.
+  // when the reader moves from one block to another — and the group it is in
+  // opens. The first selection is the page's own (its first draft), and
+  // following it would undo opening at now (LAI-889); a zoom change re-opens
+  // the day instead.
   const selectedBlock =
     selection !== undefined && (selection.kind === 'draft' || selection.kind === 'entry')
       ? line.blocks.find((b) => b.id === selection.id)
@@ -480,13 +568,169 @@ export function Timeline({
     const box = scroller.current;
     const before = followed.current;
     followed.current = selectedBlock?.id;
-    if (box === null || pph === undefined || selectedBlock === undefined) return;
+    if (box === null || selectedBlock === undefined) return;
     if (before === undefined || before === selectedBlock.id) return;
+    const placed = row.placed.get(selectedBlock.id);
+    if (placed?.hidden === true && placed.group !== undefined && !inDrag()) {
+      const id = placed.group;
+      setOpen((cur) => new Set([...cur, id]));
+    }
+    if (pph === undefined) return;
     const a = x(selectedBlock.start);
     const b = x(selectedBlock.end);
     if (a >= box.scrollLeft && b <= box.scrollLeft + box.clientWidth) return;
     box.scrollLeft = Math.max(0, (a + b) / 2 - box.clientWidth / 2);
   }, [selectedBlock?.id, zoom]);
+
+  /**
+   * The wheel over the Timeline (D-113 item 2), on a listener that may cancel
+   * it: pinch and Ctrl/Cmd + wheel zoom around the pointer's minute, Shift +
+   * wheel pans while there is room, and the rest is the browser's own. Every
+   * event in a frame is one zoom, built on the last one asked for.
+   */
+  const onWheel = useRef<(event: WheelEvent) => void>(() => undefined);
+  onWheel.current = (event) => {
+    const box = scroller.current;
+    if (box === null) return;
+    const action = wheelAction(event, {
+      left: box.scrollLeft,
+      right: box.scrollWidth - box.clientWidth - box.scrollLeft,
+    });
+    if (action.kind === 'native') return;
+    event.preventDefault();
+    if (action.kind === 'pan') {
+      box.scrollLeft += action.dx;
+      return;
+    }
+    const r = box.getBoundingClientRect();
+    const offset =
+      event.clientX >= r.left && event.clientX <= r.right
+        ? event.clientX - r.left
+        : box.clientWidth / 2;
+    pinchTo((factor) => clampZoom(factor * action.by, floor), offset);
+  };
+  /** A pinch's target, from the scale it was last asked for; drawn on the next frame. */
+  const pinchTo = (target: (factor: number) => Zoom, offset: number): void => {
+    if (inDrag()) return;
+    const box = scroller.current;
+    if (box === null) return;
+    const held = pinch.current;
+    const next = target(zoomFactor(held?.zoom ?? asked.current, floor));
+    if (held !== null) {
+      held.zoom = next;
+      return;
+    }
+    pinch.current = { zoom: next, minute: scale.at(box.scrollLeft + offset), offset };
+    requestAnimationFrame(() => {
+      const p = pinch.current;
+      pinch.current = null;
+      if (p !== null) applyPinch.current(p);
+    });
+  };
+  const applyPinch = useRef<(p: { zoom: Zoom; minute: number; offset: number }) => void>(
+    () => undefined,
+  );
+  applyPinch.current = (p) => {
+    zoomTo(p.zoom, { minute: p.minute, offset: p.offset });
+  };
+  /** Safari's pinch: gesture events with a scale, not a wheel. */
+  const gesture = useRef<{ base: number; offset: number } | null>(null);
+  const onGesture = useRef<(kind: string, event: Event) => void>(() => undefined);
+  onGesture.current = (kind, event) => {
+    const box = scroller.current;
+    if (box === null) return;
+    event.preventDefault();
+    const e = event as Event & { readonly scale?: number; readonly clientX?: number };
+    if (kind === 'gesturestart') {
+      const r = box.getBoundingClientRect();
+      const cx = e.clientX ?? r.left + r.width / 2;
+      gesture.current = {
+        base: zoomFactor(asked.current, floor),
+        offset: Math.max(0, Math.min(box.clientWidth, cx - r.left)),
+      };
+      return;
+    }
+    const g = gesture.current;
+    if (kind === 'gestureend') {
+      gesture.current = null;
+      return;
+    }
+    if (g === null || e.scale === undefined) return;
+    pinchTo(() => clampZoom(g.base * (e.scale ?? 1), floor), g.offset);
+  };
+  useEffect(() => {
+    const el = grid.current;
+    if (el === null) return;
+    const wheel = (event: WheelEvent): void => {
+      onWheel.current(event);
+    };
+    const gestures = ['gesturestart', 'gesturechange', 'gestureend'] as const;
+    const handlers = gestures.map((kind) => {
+      const handler = (event: Event): void => {
+        onGesture.current(kind, event);
+      };
+      el.addEventListener(kind, handler, { passive: false });
+      return [kind, handler] as const;
+    });
+    el.addEventListener('wheel', wheel, { passive: false });
+    return () => {
+      el.removeEventListener('wheel', wheel);
+      for (const [kind, handler] of handlers) el.removeEventListener(kind, handler);
+    };
+  }, []);
+
+  /**
+   * The slider's zoom keeps the selected block where it is on screen while
+   * it is in view, and otherwise the middle of the view (D-113 item 2).
+   */
+  const sliderAnchor = (): { minute: number; offset: number } | undefined => {
+    const box = scroller.current;
+    if (box === null) return undefined;
+    if (selectedBlock !== undefined && row.placed.get(selectedBlock.id)?.hidden !== true) {
+      const minute = (selectedBlock.start + selectedBlock.end) / 2;
+      const offset = x(minute) - box.scrollLeft;
+      if (offset >= 0 && offset <= box.clientWidth) return { minute, offset };
+    }
+    return middle();
+  };
+
+  /** Open or close one group, the rest left as they are. */
+  const toggleGroup = (id: string, nowOpen: boolean): void => {
+    if (inDrag()) return;
+    focusNext.current = id;
+    setOpen((cur) => {
+      const next = new Set(cur);
+      if (nowOpen) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+  const allOpen = row.groups.length > 0 && row.groups.every((g) => g.open);
+  /** Fit day (D-113): the whole day, every group closed; the selection and the data as they were. */
+  const fitDay = (): void => {
+    if (inDrag()) return;
+    setOpen(new Set());
+    zoomTo('fit');
+  };
+  /** A press on a group that moved four pixels or more is a drag, not a click (D-113 item 5). */
+  const groupHandlers = (id: string, nowOpen: boolean) => ({
+    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
+      groupDown.current = { x: event.clientX, y: event.clientY };
+    },
+    onClick: (event: MouseEvent<HTMLButtonElement>) => {
+      const down = groupDown.current;
+      groupDown.current = null;
+      // A keyboard's click has no pointer: Enter and Space always toggle.
+      if (
+        event.detail > 0 &&
+        down !== null &&
+        Math.max(Math.abs(event.clientX - down.x), Math.abs(event.clientY - down.y)) >= DRAG_SLACK
+      ) {
+        return;
+      }
+      toggleGroup(id, nowOpen);
+    },
+  });
 
   const minuteAt = (clientX: number): number => {
     const box = track.current?.getBoundingClientRect();
@@ -494,8 +738,9 @@ export function Timeline({
     return scale.at(clientX - box.left);
   };
   // A drag on the empty track makes a range (LAI-897), and so does one begun
-  // on a gap (the design's `down`, LAI-510): every other handle, grip,
-  // block, break and strip is a button and is left to its own handler; the
+  // on a gap (the design's `down`, LAI-510): every other handle, group,
+  // block, break and strip is a button — or a block's wider target — and is
+  // left to its own handler; the
   // no-signal overlay is not, and a day with nothing on it should take a
   // drag. Snapped to five minutes and clipped to the free stretch between
   // confirmed blocks; the server's 409 remains the backstop.
@@ -503,14 +748,21 @@ export function Timeline({
   const rangeHandlers = {
     onPointerDown: (event: PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;
-      const on = (event.target as Element).closest('button');
+      // A narrow block's wider target is the block's, though it is not a button.
+      const on = (event.target as Element).closest('button, .dayline-hit');
       const gap = on?.classList.contains('dayline-gap') === true;
       if (on !== null && !gap) return;
       if (!gap) {
         event.preventDefault();
         event.currentTarget.setPointerCapture(event.pointerId);
       }
-      rangeDrag.current = { anchor: minuteAt(event.clientX), x0: event.clientX, gap, waiting: gap };
+      rangeDrag.current = {
+        anchor: minuteAt(event.clientX),
+        x0: event.clientX,
+        clientX: event.clientX,
+        gap,
+        waiting: gap,
+      };
       setHover(undefined);
     },
     onPointerMove: (event: PointerEvent<HTMLDivElement>) => {
@@ -526,6 +778,7 @@ export function Timeline({
         drag.waiting = false;
         event.currentTarget.setPointerCapture(event.pointerId);
       }
+      drag.clientX = event.clientX;
       setRangePreview(
         rangeFromDrag(drag.anchor, minuteAt(event.clientX), confirmedSpans, from * 60, to * 60),
       );
@@ -630,7 +883,7 @@ export function Timeline({
    * follows the pointer itself, so it lands where it is let go.
    */
   const pointer = (block: LaneBlock, edge?: 'start' | 'end') => ({
-    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
+    onPointerDown: (event: PointerEvent<HTMLElement>) => {
       if (event.button !== 0 || !canDrag(block)) return;
       let kind: Drag['kind'] = 'move';
       if (edge !== undefined) {
@@ -639,34 +892,37 @@ export function Timeline({
         event.preventDefault();
         event.stopPropagation();
       } else {
-        const rect = event.currentTarget.getBoundingClientRect();
+        // Measured on the block as drawn: a narrow block's wider target is not its edges.
+        const el = event.currentTarget.closest('[data-block-id]') ?? event.currentTarget;
+        const rect = el.getBoundingClientRect();
         const ox = event.clientX - rect.left;
         if (rect.width >= 24 && ox < 9) kind = 'start';
         else if (rect.width >= 24 && ox > rect.width - 9) kind = 'end';
       }
-      blockDrag.current = { id: block.id, kind, x0: event.clientX, started: false };
+      blockDrag.current = {
+        block,
+        kind,
+        trackX0: trackX(event.clientX),
+        clientX: event.clientX,
+        started: false,
+      };
       event.currentTarget.setPointerCapture(event.pointerId);
     },
-    onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
+    onPointerMove: (event: PointerEvent<HTMLElement>) => {
       const d = blockDrag.current;
-      if (d?.id !== block.id) return;
+      if (d?.block.id !== block.id) return;
       if (event.buttons === 0) {
         blockDrag.current = null;
         setDrag(undefined);
         return;
       }
-      const dx = event.clientX - d.x0;
-      if (!d.started && Math.abs(dx) < DRAG_SLACK) return;
+      d.clientX = event.clientX;
+      if (!d.started && Math.abs(trackX(event.clientX) - d.trackX0) < DRAG_SLACK) return;
       d.started = true;
-      const edit =
-        d.kind === 'move'
-          ? (moveBlock(block, scale.at(x(block.start) + dx)) ?? unchanged(block))
-          : (dragEdge(block, d.kind, minuteAt(event.clientX), limitsIn(line, block)) ??
-            unchanged(block));
-      setDrag({ id: block.id, kind: d.kind, kbd: false, o0: block.start, o1: block.end, edit });
+      follow(d);
       setHover(undefined);
     },
-    onPointerUp: (event: PointerEvent<HTMLButtonElement>) => {
+    onPointerUp: (event: PointerEvent<HTMLElement>) => {
       const d = blockDrag.current;
       blockDrag.current = null;
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -681,6 +937,36 @@ export function Timeline({
       setDrag(undefined);
     },
   });
+  /** Px along the track under `clientX`, wherever the track is scrolled to now. */
+  const trackX = (clientX: number): number =>
+    clientX - (track.current?.getBoundingClientRect().left ?? 0);
+  /**
+   * The block in hand, where the pointer has it (D-113 item 5): moved by as
+   * many px of track as the pointer has crossed since it was taken — counted
+   * on the track, so a scroll under a still pointer moves it too — or its
+   * edge at the pointer's minute.
+   */
+  const follow = (d: NonNullable<typeof blockDrag.current>): void => {
+    const { block } = d;
+    const edit =
+      d.kind === 'move'
+        ? (moveBlock(block, scale.at(x(block.start) + trackX(d.clientX) - d.trackX0)) ??
+          unchanged(block))
+        : (dragEdge(block, d.kind, minuteAt(d.clientX), limitsIn(line, block)) ?? unchanged(block));
+    setDrag({ id: block.id, kind: d.kind, kbd: false, o0: block.start, o1: block.end, edit });
+  };
+  /** The track scrolled under a drag: what is in hand follows, as if the pointer had moved. */
+  const onTrackScroll = (): void => {
+    setHover(undefined);
+    const d = blockDrag.current;
+    if (d?.started === true) follow(d);
+    const r = rangeDrag.current;
+    if (r !== null && !r.waiting) {
+      setRangePreview(
+        rangeFromDrag(r.anchor, minuteAt(r.clientX), confirmedSpans, from * 60, to * 60),
+      );
+    }
+  };
   const mover = (block: LaneBlock) => ({
     ...pointer(block),
     onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -750,10 +1036,20 @@ export function Timeline({
       setExt(undefined);
     },
     onDrop: (event: DragEvent<HTMLDivElement>) => {
-      const cur = extRef.current;
-      if (cur === undefined) return;
+      const shown = extRef.current;
+      if (shown === undefined) return;
       event.preventDefault();
       setExt(undefined);
+      // Where it is let go, from the drop itself — never the last preview, which a
+      // scroll since the last dragover may have left behind (D-113 item 5).
+      const item = trayDrag();
+      const span =
+        item?.id === shown.id ? trayDropSpan(minuteAt(event.clientX), item.minutes) : shown.span;
+      const cur: Ext = {
+        ...shown,
+        span,
+        check: checkDrop(span, line.blocks, undefined, line.length),
+      };
       if (!cur.check.ok) {
         const reason = reasonOf(cur.check);
         bounce(
@@ -773,11 +1069,11 @@ export function Timeline({
   const enter =
     (kind: Hover['kind'], id: string) =>
     (event: MouseEvent<HTMLElement>): void => {
-      const root = stage.current;
-      if (root === null || rangeDrag.current !== null || blockDrag.current?.started === true) {
+      const card = root.current;
+      if (card === null || rangeDrag.current !== null || blockDrag.current?.started === true) {
         return;
       }
-      const s = root.getBoundingClientRect();
+      const s = card.getBoundingClientRect();
       const r = event.currentTarget.getBoundingClientRect();
       setHover({ kind, id, x: r.left - s.left, y: r.top - s.top, w: r.width, h: r.height });
     };
@@ -841,7 +1137,10 @@ export function Timeline({
   const goNow = (): void => {
     const box = scroller.current;
     if (box === null || line.now === undefined) return;
-    box.scrollTo({ left: Math.max(0, x(line.now) - box.clientWidth * 0.6), behavior: 'smooth' });
+    box.scrollTo({
+      left: Math.max(0, x(line.now) - box.clientWidth * 0.6),
+      behavior: reducedMotion() ? 'auto' : 'smooth',
+    });
   };
 
   // The hours along the top: each where it really falls, labelled where there
@@ -868,7 +1167,7 @@ export function Timeline({
     glyph: 'sun' | 'moon' | undefined;
   }[] = [];
   let lastLabel = -Infinity;
-  for (const mark of axisMarks(line, '1')) {
+  for (const mark of axisMarks(line, 1)) {
     if (scale.folded(mark.minute)) continue;
     const px = x(mark.minute);
     const label = hourName(mark.hour);
@@ -897,7 +1196,7 @@ export function Timeline({
   }
   const hourSums: { x: number; prompts: number; commits: number }[] = [];
   if (hasSignals) {
-    for (const mark of axisMarks(line, '1')) {
+    for (const mark of axisMarks(line, 1)) {
       const a = mark.minute;
       const b = Math.min(a + 60, to * 60);
       if (scale.folded(a + 1)) continue;
@@ -1047,56 +1346,18 @@ export function Timeline({
       }
     }
   }
-  const stageW = stage.current?.clientWidth ?? width;
+  const stageW = root.current?.clientWidth ?? width;
   const tipLeft = hover === undefined ? 0 : clamp(6, Math.max(6, stageW - TIP_W - 6), hover.x);
   const tipTop =
     hover === undefined ? 0 : tip?.above === true ? hover.y - 8 : hover.y + hover.h + 8;
 
   const lanes = hasSignals || hasAgents;
-  /** The row's px from the dragged block height: the strip above, the blocks, a margin under. */
+  /** The row's px: the strip above, the blocks — taller while a group is open — and a margin under. */
   const rowStyle = {
-    '--block-h': `${String(blockPx)}px`,
-    '--you-h': `${String(28 + blockPx + 14)}px`,
+    '--block-h': `${String(BLOCK_PX)}px`,
+    '--you-top': `${String(YOU_TOP_PX)}px`,
+    '--you-h': `${String(YOU_TOP_PX + row.height + YOU_BOTTOM_PX)}px`,
   } as CSSProperties;
-  const grip = {
-    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      gripDrag.current = { y: event.clientY, px: blockPx };
-    },
-    onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
-      const drag = gripDrag.current;
-      if (drag === null) return;
-      // A move with no button held is not a drag: the button was let go where
-      // no pointerup reached us — outside the window, say.
-      if (event.buttons === 0) {
-        gripDrag.current = null;
-        return;
-      }
-      setBlockPx(clampBlockHeight(drag.px + (event.clientY - drag.y)));
-    },
-    onPointerUp: (event: PointerEvent<HTMLButtonElement>) => {
-      gripDrag.current = null;
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-    },
-    onPointerCancel: () => {
-      gripDrag.current = null;
-    },
-    onLostPointerCapture: () => {
-      gripDrag.current = null;
-    },
-    onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => {
-      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-      event.preventDefault();
-      event.stopPropagation();
-      setBlockPx((px) =>
-        clampBlockHeight(px + (event.key === 'ArrowDown' ? BLOCK_STEP_PX : -BLOCK_STEP_PX)),
-      );
-    },
-  };
-  const sliderAt = zoom === 'fit' ? ZOOM_STEPS.indexOf('1') : ZOOM_STEPS.indexOf(zoom);
   const laneTotals = (): ReactNode => (
     <>
       <div className="dayline-axis-note" data-axis-note>
@@ -1128,23 +1389,6 @@ export function Timeline({
           {legend(figures.confirmed + figures.drafted + figures.needsCard)}
         </strong>
         <span className="dayline-lane-sub">of work · {compact(figures.confirmed)} confirmed</span>
-        <label className="dayline-row-height">
-          <span className="dayline-row-height-name">Row height</span>
-          <input
-            type="range"
-            className="dayline-row-height-slider"
-            data-row-slider
-            min={BLOCK_MIN_PX}
-            max={BLOCK_MAX_PX}
-            step={BLOCK_STEP_PX}
-            value={blockPx}
-            aria-valuetext={`${String(blockPx)} px`}
-            title="Drag to make the rows taller or shorter"
-            onChange={(event) => {
-              setBlockPx(clampBlockHeight(Number(event.target.value)));
-            }}
-          />
-        </label>
       </div>
       {hasAgents && (
         <div className="dayline-lane-label dayline-label-agents">
@@ -1169,7 +1413,13 @@ export function Timeline({
   );
 
   return (
-    <section className="myday-card dayline" aria-label="Timeline" data-dayline style={rowStyle}>
+    <section
+      ref={root}
+      className="myday-card dayline"
+      aria-label="Timeline"
+      data-dayline
+      style={rowStyle}
+    >
       <header className="dayline-head">
         <div className="dayline-head-title">
           <h2 className="dayline-title">Timeline</h2>
@@ -1258,88 +1508,83 @@ export function Timeline({
               <span aria-hidden="true">›</span>
             </button>
           </div>
+          {/* D-113: one Time zoom slider, Fit day, and Expand all — nothing else zooms. */}
           <div className="dayline-zooms">
-            <div
-              className="dayline-steps dayline-zoom-steps"
-              role="group"
-              aria-label="Zoom in steps"
+            <label
+              className="dayline-zoom-control"
+              title={`Time zoom: ${zoom === 'fit' ? 'Fit day' : zoomLabel(zoom)} · pinch, or Ctrl/⌘ + scroll, to zoom`}
             >
-              <button
-                type="button"
-                className="dayline-tool"
-                data-zoom-step="out"
-                aria-label="Zoom out"
-                title={
-                  zoomStep(zoom, -1) === undefined
-                    ? 'As far out as it goes'
-                    : pxAnHour(zoomStep(zoom, -1) ?? zoom)
-                }
-                disabled={zoomStep(zoom, -1) === undefined}
-                onClick={() => {
-                  const next = zoomStep(zoom, -1);
-                  if (next !== undefined) changeZoom(next);
-                }}
-              >
-                <span aria-hidden="true">−</span>
-              </button>
-              <span className="dayline-zoom-level" data-zoom-level={zoom} title={pxAnHour(zoom)}>
-                {zoomLabel(zoom)}
-              </span>
+              <span className="dayline-zoom-name">Time zoom</span>
               <input
                 type="range"
-                className={
-                  zoom === 'fit'
-                    ? 'dayline-zoom-slider dayline-zoom-slider-fit'
-                    : 'dayline-zoom-slider'
-                }
+                className="dayline-zoom-slider"
                 data-zoom-slider
-                min={0}
-                max={ZOOM_STEPS.length - 1}
+                data-zoom-level={zoom === 'fit' ? 'fit' : String(zoom)}
+                min={sliderMin(floor)}
+                max={sliderMax()}
                 step={1}
-                value={sliderAt}
-                aria-label="Zoom, from half to five times"
-                aria-valuetext={zoomLabel(zoom)}
-                title="Drag to zoom"
+                value={sliderValue(zoom, floor)}
+                aria-valuetext={zoom === 'fit' ? 'Fit day' : zoomLabel(zoom)}
                 onChange={(event) => {
-                  const next = ZOOM_STEPS[Number(event.target.value)];
-                  if (next !== undefined && next !== zoom) changeZoom(next);
+                  zoomTo(zoomOfSlider(Number(event.target.value), floor), sliderAnchor());
+                }}
+                onKeyDown={(event) => {
+                  // The slider's own keys walk LAI-890's steps; a hundredth of a
+                  // doubling a key would take a hundred presses to get anywhere.
+                  const by =
+                    event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'PageUp'
+                      ? 1
+                      : event.key === 'ArrowLeft' ||
+                          event.key === 'ArrowDown' ||
+                          event.key === 'PageDown'
+                        ? -1
+                        : 0;
+                  const next =
+                    event.key === 'Home'
+                      ? 'fit'
+                      : event.key === 'End'
+                        ? ZOOM_MAX
+                        : by === 0
+                          ? undefined
+                          : zoomStep(zoom, by, floor);
+                  if (by === 0 && next === undefined) return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (next !== undefined) zoomTo(next, sliderAnchor());
                 }}
               />
+            </label>
+            <div className="dayline-steps" role="group" aria-label="Fit and groups">
               <button
                 type="button"
-                className="dayline-tool"
-                data-zoom-step="in"
-                aria-label="Zoom in"
+                className="dayline-tool dayline-tool-text"
+                data-fit-day
+                aria-pressed={zoom === 'fit'}
+                title="The whole day in view, every group closed"
+                onClick={fitDay}
+              >
+                Fit day
+              </button>
+              <button
+                type="button"
+                className="dayline-tool dayline-tool-text dayline-tool-split"
+                data-expand-all
+                aria-expanded={allOpen}
+                disabled={row.groups.length === 0}
                 title={
-                  zoomStep(zoom, 1) === undefined
-                    ? 'As far in as it goes'
-                    : pxAnHour(zoomStep(zoom, 1) ?? zoom)
+                  row.groups.length === 0
+                    ? 'Nothing on this day is crowded enough to group'
+                    : allOpen
+                      ? 'Close every group'
+                      : 'Open every group into lanes'
                 }
-                disabled={zoomStep(zoom, 1) === undefined}
                 onClick={() => {
-                  const next = zoomStep(zoom, 1);
-                  if (next !== undefined) changeZoom(next);
+                  if (inDrag()) return;
+                  setOpen(allOpen ? new Set() : new Set([...open, ...row.groups.map((g) => g.id)]));
                 }}
               >
-                <span aria-hidden="true">+</span>
+                {allOpen ? 'Collapse all' : 'Expand all'}
               </button>
-            </div>
-            <div className="dayline-zoom" role="group" aria-label="Zoom">
-              {ZOOMS.map(([key, label, title]) => (
-                <button
-                  key={key}
-                  type="button"
-                  className="dayline-zoom-option"
-                  data-zoom={key}
-                  aria-pressed={zoom === key}
-                  title={title}
-                  onClick={() => {
-                    changeZoom(key);
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
             </div>
           </div>
         </div>
@@ -1357,16 +1602,24 @@ export function Timeline({
         ]
           .filter((c) => c !== '')
           .join(' ')}
+        ref={grid}
+        data-dayline-grid
+        onScroll={(event) => {
+          // The ruler and the lane column's corner stay at the top while the
+          // lanes scroll under them (D-113 item 3), on the compositor's transform.
+          const el = event.currentTarget;
+          el.style.setProperty('--ruler-y', `${String(el.scrollTop)}px`);
+          el.toggleAttribute('data-scrolled-y', el.scrollTop > 0);
+          setHover(undefined);
+        }}
       >
         <div className="dayline-labels">{laneTotals()}</div>
-        <div className="dayline-stage" ref={stage} onMouseLeave={leave}>
+        <div className="dayline-stage" onMouseLeave={leave}>
           <div
             className="dayline-scroller"
             ref={scroller}
             data-dayline-scroller
-            onScroll={() => {
-              setHover(undefined);
-            }}
+            onScroll={onTrackScroll}
           >
             <div
               ref={track}
@@ -1660,38 +1913,128 @@ export function Timeline({
                     </div>
                   );
                 })}
-                {/* A stretch of blocks at the same time is named above them. */}
-                {(() => {
-                  const strips: { start: number; end: number; n: number; id: string }[] = [];
-                  shaped.forEach((b, i) => {
-                    const s = stacks[i];
-                    if (s === undefined || s.rows < 2) return;
-                    const last = strips.at(-1);
-                    if (last !== undefined && b.start < last.end) {
-                      last.end = Math.max(last.end, b.end);
-                      last.n = Math.max(last.n, s.rows);
-                    } else strips.push({ start: b.start, end: b.end, n: s.rows, id: b.id });
-                  });
-                  return strips.map((s) => (
+                {/* A stretch of blocks at the same time the row holds is named above them. */}
+                {row.strips.map((s) => (
+                  <button
+                    key={`strip-${s.id}`}
+                    type="button"
+                    className="dayline-strip"
+                    data-strip={s.id}
+                    style={{ left: left(s.start, s.end), width: wide(s.start, s.end) }}
+                    aria-label={`${String(s.n)} blocks at once, ${rangeOf(s)}`}
+                    onClick={() => {
+                      const b = line.blocks.find((k) => k.id === s.id);
+                      if (b !== undefined)
+                        onSelect({ kind: b.kind === 'drafted' ? 'draft' : 'entry', id: b.id });
+                    }}
+                  >
+                    <span className="dayline-strip-n">{String(s.n)}</span>
+                    <span className="dayline-strip-text">at once</span>
+                    <span className="dayline-strip-rule" aria-hidden="true" />
+                  </button>
+                ))}
+                {/*
+                 * A crowded stretch (D-113 item 3): closed, one rounded marker with
+                 * its count and a faint bar for each block where it falls; open, its
+                 * blocks in lanes below a Collapse control where the strip would be.
+                 */}
+                {row.groups.map((g) => {
+                  const n = g.ids.length;
+                  const range = rangeOf(g);
+                  const gx = x(g.start);
+                  const gw = Math.max(1, x(g.end) - gx);
+                  const picked = selectedBlock !== undefined && g.ids.includes(selectedBlock.id);
+                  const total = g.ids.reduce(
+                    (m, id) => m + (line.blocks.find((b) => b.id === id)?.minutes ?? 0),
+                    0,
+                  );
+                  if (g.open) {
+                    return [
+                      <div
+                        key={`frame-${g.id}`}
+                        className="dayline-group-frame"
+                        data-group-frame={g.id}
+                        aria-hidden="true"
+                        style={{ left: gx, width: gw, height: g.height }}
+                      />,
+                      <button
+                        key={`toggle-${g.id}`}
+                        type="button"
+                        className="dayline-group-collapse"
+                        data-group-toggle={g.id}
+                        aria-expanded={true}
+                        aria-label={`${plural(n, 'task', 'tasks')} at once, ${range}. Collapse`}
+                        title={`${plural(n, 'task', 'tasks')} at once · ${range} · click to collapse`}
+                        style={{ left: Math.max(0, Math.min(gx, scale.total - 40)) }}
+                        {...groupHandlers(g.id, false)}
+                      >
+                        <span className="dayline-group-collapse-n">{String(n)}</span>
+                        <span className="dayline-group-collapse-text">tasks</span>
+                        <span className="dayline-group-collapse-word">Collapse</span>
+                        <span className="dayline-group-chevron" aria-hidden="true">
+                          ▴
+                        </span>
+                      </button>,
+                    ];
+                  }
+                  return (
                     <button
-                      key={`strip-${s.id}`}
+                      key={`group-${g.id}`}
                       type="button"
-                      className="dayline-strip"
-                      data-strip={s.id}
-                      style={{ left: left(s.start, s.end), width: wide(s.start, s.end) }}
-                      aria-label={`${String(s.n)} blocks at once, ${rangeOf(s)}`}
-                      onClick={() => {
-                        const b = line.blocks.find((k) => k.id === s.id);
-                        if (b !== undefined)
-                          onSelect({ kind: b.kind === 'drafted' ? 'draft' : 'entry', id: b.id });
-                      }}
+                      className={picked ? 'dayline-group dayline-group-picked' : 'dayline-group'}
+                      data-group={g.id}
+                      data-group-count={n}
+                      aria-expanded={false}
+                      aria-label={`${plural(n, 'task', 'tasks')} at once, ${range}, ${duration(total)}. Expand`}
+                      title={`${plural(n, 'task', 'tasks')} at once · ${range} · click to open into lanes`}
+                      style={{ left: gx, width: gw }}
+                      {...groupHandlers(g.id, true)}
                     >
-                      <span className="dayline-strip-n">{String(s.n)}</span>
-                      <span className="dayline-strip-text">at once</span>
-                      <span className="dayline-strip-rule" aria-hidden="true" />
+                      <span className="dayline-group-clip">
+                        <span className="dayline-group-head">
+                          <FitLabel
+                            options={[
+                              `${String(n)} tasks · ${compact(total)}`,
+                              `${String(n)} tasks`,
+                              String(n),
+                              '',
+                            ]}
+                          />
+                        </span>
+                        <span className="dayline-group-preview" aria-hidden="true">
+                          {g.preview.map((p) => {
+                            const b = line.blocks.find((k) => k.id === p.id);
+                            const tone =
+                              b === undefined || b.kind === 'confirmed'
+                                ? 'confirmed'
+                                : b.needsCard
+                                  ? 'needs-card'
+                                  : 'drafted';
+                            return (
+                              <span
+                                key={p.id}
+                                className={`dayline-group-bar dayline-group-bar-${tone}`}
+                                style={{
+                                  left: x(p.start) - gx,
+                                  width: Math.max(1, x(p.end) - x(p.start)),
+                                  top: `${String((p.lane / g.lanes) * 100)}%`,
+                                  height: `max(1px, calc(${String(100 / g.lanes)}% - 1px))`,
+                                }}
+                              />
+                            );
+                          })}
+                        </span>
+                      </span>
+                      {g.hit !== undefined && (
+                        <span
+                          className="dayline-hit"
+                          aria-hidden="true"
+                          style={{ left: g.hit.l - gx, width: g.hit.r - g.hit.l }}
+                        />
+                      )}
                     </button>
-                  ));
-                })()}
+                  );
+                })}
                 {line.gaps.map((gap) => {
                   const on = pickedGap?.start === gap.start;
                   const minutes = gap.end - gap.start;
@@ -1772,13 +2115,17 @@ export function Timeline({
                   </button>
                 ))}
                 {line.blocks.map((block, i) => {
-                  const { row, rows } = stacks[i] ?? { row: 0, rows: 1 };
+                  const placed = row.placed.get(block.id);
+                  // In a closed group the group stands for it (D-113).
+                  if (placed === undefined || placed.hidden) return null;
+                  const rows = placed.lanes;
+                  const inGroup = placed.group !== undefined;
                   const key = `${block.kind}-${block.id}`;
                   const shape = shaped[i] ?? block;
                   const kind = block.kind === 'drafted' ? 'draft' : 'entry';
                   const selected = isSelected(kind, block.id);
                   const { top, title, card } = labelOf(block, drafts, entries);
-                  const px = (shape.end - shape.start) * pxPerMinute;
+                  const px = x(shape.end) - x(shape.start);
                   const range = rangeOf(shape);
                   const draggable = canDrag(block);
                   const hovered = hover?.kind === 'block' && hover.id === block.id;
@@ -1819,6 +2166,7 @@ export function Timeline({
                         entryKind === null ? '' : `dayline-kind-${entryKind}`,
                         block.needsCard ? 'dayline-needs-card' : '',
                         rows > 1 ? 'dayline-stacked' : '',
+                        inGroup ? 'dayline-in-group' : '',
                         selected ? 'dayline-selected' : '',
                         same && !selected ? 'dayline-same-card' : '',
                         dim ? 'dayline-dimmed' : '',
@@ -1833,14 +2181,13 @@ export function Timeline({
                       data-block-key={key}
                       data-kind={block.kind}
                       data-entry-kind={entryKind ?? undefined}
-                      style={
-                        {
-                          left: left(shape.start, shape.end),
-                          width: wide(shape.start, shape.end),
-                          '--row': String(row),
-                          '--rows': String(rows),
-                        } as CSSProperties
-                      }
+                      data-lane={placed.lane}
+                      style={{
+                        left: left(shape.start, shape.end),
+                        width: wide(shape.start, shape.end),
+                        top: YOU_TOP_PX + placed.top,
+                        height: placed.height,
+                      }}
                       onMouseEnter={enter('block', block.id)}
                     >
                       {/* Clipped to the block: at Fit a short block is narrower than its body. */}
@@ -1867,13 +2214,25 @@ export function Timeline({
                               {icon}
                             </span>
                             <span className="dayline-block-top">
-                              {/* A row's height changes with how many share it: try again. */}
-                              <FitLabel key={rows} options={cutsOf(top)} />
+                              {/* A row's height changes with how many share it: try again.
+                                  In an open group's lane its length rides on the one line. */}
+                              <FitLabel
+                                key={`${String(rows)}-${String(placed.height)}`}
+                                options={
+                                  inGroup
+                                    ? [`${top} · ${compact(shape.minutes)}`, ...cutsOf(top)]
+                                    : cutsOf(top)
+                                }
+                              />
                             </span>
                           </span>
                           {px > 110 && title !== '' && (
                             <span className="dayline-block-title">
-                              <FitLabel key={rows} options={[title]} ellipsis />
+                              <FitLabel
+                                key={`${String(rows)}-${String(placed.height)}`}
+                                options={[title]}
+                                ellipsis
+                              />
                             </span>
                           )}
                           <span className="dayline-block-sub">
@@ -1886,6 +2245,27 @@ export function Timeline({
                           </span>
                         </button>
                       </div>
+                      {/* A narrow block's wider target (D-113 item 4): drawn nowhere, it
+                          takes the pointer as the block does, held off its neighbours. */}
+                      {placed.hit !== undefined && (
+                        <span
+                          className="dayline-hit"
+                          data-block-hit={block.id}
+                          aria-hidden="true"
+                          style={{
+                            left: placed.hit.l - x(block.start),
+                            width: placed.hit.r - placed.hit.l,
+                          }}
+                          onClick={() => {
+                            if (suppressClick.current) {
+                              suppressClick.current = false;
+                              return;
+                            }
+                            onSelect({ kind, id: block.id });
+                          }}
+                          {...pointer(block)}
+                        />
+                      )}
                       {editable && (
                         <>
                           <button
@@ -1914,7 +2294,8 @@ export function Timeline({
                   line.blocks.flatMap((block, i) => {
                     const shape = shaped[i] ?? block;
                     if (shape.start >= s.end || shape.end <= s.start) return [];
-                    const { row, rows } = stacks[i] ?? { row: 0, rows: 1 };
+                    const placed = row.placed.get(block.id);
+                    if (placed === undefined || placed.hidden) return [];
                     const bx0 = left(shape.start, shape.end);
                     const bx1 = bx0 + wide(shape.start, shape.end);
                     const x0 = Math.max(x(s.start), bx0);
@@ -1928,14 +2309,12 @@ export function Timeline({
                         data-scheduled-bite={block.id}
                         data-kind={block.kind}
                         aria-hidden="true"
-                        style={
-                          {
-                            left: x0,
-                            width: x1 - x0,
-                            '--row': String(row),
-                            '--rows': String(rows),
-                          } as CSSProperties
-                        }
+                        style={{
+                          left: x0,
+                          width: x1 - x0,
+                          top: YOU_TOP_PX + placed.top,
+                          height: placed.height,
+                        }}
                       />,
                     ];
                   }),
@@ -2077,28 +2456,6 @@ export function Timeline({
                     <span className="dayline-range-text">{rangeOf(shownRange)}</span>
                   </div>
                 )}
-
-                {/* The grip: drag the rows taller or shorter (LAI-891). */}
-                <button
-                  type="button"
-                  className="dayline-grip"
-                  data-row-grip
-                  role="slider"
-                  aria-label="Row height: drag, or ↑ and ↓"
-                  aria-valuemin={BLOCK_MIN_PX}
-                  aria-valuemax={BLOCK_MAX_PX}
-                  aria-valuenow={blockPx}
-                  aria-orientation="vertical"
-                  title="Drag to make the rows taller or shorter"
-                  {...grip}
-                >
-                  <span className="dayline-grip-bar" aria-hidden="true">
-                    <span className="dayline-grip-dots" aria-hidden="true" />
-                  </span>
-                  <span className="dayline-grip-label" aria-hidden="true">
-                    ↕ drag to resize rows
-                  </span>
-                </button>
               </div>
 
               {hasAgents && (
@@ -2157,35 +2514,36 @@ export function Timeline({
               )}
             </div>
           </div>
-          {tip !== undefined && hover !== undefined && (
-            <div
-              role="tooltip"
-              className={tip.above ? 'dayline-tip dayline-tip-above' : 'dayline-tip'}
-              data-dayline-tip={hover.kind}
-              style={{ left: tipLeft, top: tipTop, width: TIP_W }}
-            >
-              <div className="dayline-tip-head">
-                <span className={`dayline-pill dayline-pill-${tip.pillClass}`}>
-                  <span className="dayline-pill-icon" aria-hidden="true">
-                    {tip.icon}
-                  </span>
-                  {tip.pill}
-                </span>
-                <span className="dayline-tip-label">{tip.label}</span>
-              </div>
-              {tip.title !== '' && <div className="dayline-tip-title">{tip.title}</div>}
-              <dl className="dayline-tip-rows">
-                {tip.rows.map((row) => (
-                  <div key={row.k} className="dayline-tip-row">
-                    <dt>{row.k}</dt>
-                    <dd className={row.mono === true ? 'dayline-tip-mono' : undefined}>{row.v}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          )}
         </div>
       </div>
+      {/* Over the card, not inside the lanes that scroll, so it is never clipped. */}
+      {tip !== undefined && hover !== undefined && (
+        <div
+          role="tooltip"
+          className={tip.above ? 'dayline-tip dayline-tip-above' : 'dayline-tip'}
+          data-dayline-tip={hover.kind}
+          style={{ left: tipLeft, top: tipTop, width: TIP_W }}
+        >
+          <div className="dayline-tip-head">
+            <span className={`dayline-pill dayline-pill-${tip.pillClass}`}>
+              <span className="dayline-pill-icon" aria-hidden="true">
+                {tip.icon}
+              </span>
+              {tip.pill}
+            </span>
+            <span className="dayline-tip-label">{tip.label}</span>
+          </div>
+          {tip.title !== '' && <div className="dayline-tip-title">{tip.title}</div>}
+          <dl className="dayline-tip-rows">
+            {tip.rows.map((r) => (
+              <div key={r.k} className="dayline-tip-row">
+                <dt>{r.k}</dt>
+                <dd className={r.mono === true ? 'dayline-tip-mono' : undefined}>{r.v}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
     </section>
   );
 }
