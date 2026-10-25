@@ -1,12 +1,19 @@
+import type { DragEvent } from 'react';
 import type { TimeDraft, TimeEntry } from '../../../api/time.ts';
 import { kindLabel } from './entry-kinds.ts';
 import { duration } from './format.ts';
+import { endTrayDrag, startTrayDrag } from './tray-drag.ts';
 
 export interface UntimedTrayProps {
   readonly drafts: readonly TimeDraft[];
   readonly entries: readonly TimeEntry[];
   readonly selected: string | undefined;
   readonly onPick: (item: { readonly kind: 'draft' | 'entry'; readonly id: string }) => void;
+  /**
+   * Items may be dragged onto the Timeline to be given a time (the owner's
+   * design, LAI-512): on a desktop, on the person's own day.
+   */
+  readonly draggable?: boolean;
 }
 
 /**
@@ -14,7 +21,13 @@ export interface UntimedTrayProps {
  * with a length and no place on the Timeline, each a chip — how long, what,
  * its kind. Tapping one opens it beside the lists, where its time is set.
  */
-export function UntimedTray({ drafts, entries, selected, onPick }: UntimedTrayProps) {
+export function UntimedTray({
+  drafts,
+  entries,
+  selected,
+  onPick,
+  draggable = false,
+}: UntimedTrayProps) {
   const items = [
     ...drafts
       .filter((d) => d.started_at === null)
@@ -55,7 +68,21 @@ export function UntimedTray({ drafts, entries, selected, onPick }: UntimedTrayPr
                   : 'myday-tray-item'
               }
               data-tray-item={item.id}
+              data-tray-draggable={draggable ? 'true' : undefined}
               aria-pressed={selected === item.id}
+              draggable={draggable}
+              onDragStart={(event: DragEvent<HTMLButtonElement>) => {
+                if (!draggable) return;
+                startTrayDrag({
+                  kind: item.kind,
+                  id: item.id,
+                  minutes: item.minutes,
+                  label: item.title,
+                });
+                event.dataTransfer.setData('text/plain', item.id);
+                event.dataTransfer.effectAllowed = 'move';
+              }}
+              onDragEnd={endTrayDrag}
               onClick={() => {
                 onPick({ kind: item.kind, id: item.id });
               }}
