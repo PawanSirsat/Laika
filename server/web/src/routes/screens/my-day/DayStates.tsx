@@ -152,6 +152,10 @@ export function DayOff({ onOpenSettings }: { readonly onOpenSettings: () => void
 
 export type EmptyKind = 'today' | 'past' | 'future' | 'draftOff';
 
+/** What a past day with nothing on it says: no signal is not zero hours (LAI-831). */
+export const NO_SIGNAL =
+  'No signal — nothing reached Laika from your machine. That is not zero hours: you can still add time you worked.';
+
 export interface EmptyAction {
   readonly label: string;
   readonly primary?: boolean;
@@ -190,7 +194,9 @@ export function DayEmpty({
       ? 'Time appears here once the day begins. Nothing can be confirmed ahead of time.'
       : kind === 'draftOff'
         ? 'Draft my time is off, so Laika only shows time you add or record with a timer.'
-        : 'As you work, your collector drafts time from prompts, commits and agent sessions. You can also start a timer or add time yourself.';
+        : kind === 'past'
+          ? NO_SIGNAL
+          : 'As you work, your collector drafts time from prompts, commits and agent sessions. You can also start a timer or add time yourself.';
   return (
     <section className="myday-card dstate-empty" aria-label="Timeline" data-day-empty={kind}>
       <div className="dstate-empty-head">
@@ -213,7 +219,9 @@ export function DayEmpty({
         <div className="dstate-empty-centre">
           <div className="dstate-empty-card">
             <h2 className="dstate-empty-title">{title}</h2>
-            <p className="dstate-body">{body}</p>
+            <p className="dstate-body" data-no-signal={kind === 'past' ? '' : undefined}>
+              {body}
+            </p>
             <div className="dstate-actions">
               {actions.map((a) => (
                 <button
