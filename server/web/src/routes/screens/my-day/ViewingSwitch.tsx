@@ -68,7 +68,10 @@ export function ViewingSwitch({ meId, subjectId, people, onPick }: ViewingSwitch
         className="myday-chip myday-viewing-trigger"
         display={
           <>
-            <span className="myday-viewing-label">Viewing:</span> {current?.label ?? 'Me'}
+            <span className="myday-viewing-label">
+              Viewing<span className="myday-viewing-colon">:</span>
+            </span>{' '}
+            {current?.label ?? 'Me'}
           </>
         }
         onChange={(value) => {

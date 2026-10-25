@@ -387,7 +387,8 @@ void describe('the header (LAI-502)', () => {
 
         await h.page.setViewportSize({ width: 390, height: 844 });
         await until(async () => h.page.locator('[data-day-nav]').isVisible());
-        assert.equal(await h.page.locator('.myday-week-letter').first().isVisible(), true);
+        // The phone's own day row (LAI-518): a letter a day, the desktop's week gone.
+        assert.equal(await h.page.locator('.myday-phone-letter').first().isVisible(), true);
         assert.equal(await h.page.locator('.myday-week-weekday').first().isVisible(), false);
         assert.equal(await h.page.locator('[data-add-time] .myday-head-text').isVisible(), false);
         assert.equal(await h.page.locator('.myday-timer-label').isVisible(), false);
