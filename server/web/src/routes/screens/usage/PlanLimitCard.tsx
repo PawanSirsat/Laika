@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { ApiError } from '../../../api/errors.ts';
 import { parseTokens } from '../../../api/budgets.ts';
 import { minuteClock } from '../../../api/time-label.ts';
@@ -44,6 +45,7 @@ type Load =
  * number is the developer's.
  */
 export function PlanLimitCard() {
+  const confirm = useConfirm();
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -119,6 +121,17 @@ export function PlanLimitCard() {
   };
 
   const clear = (): void => {
+    void confirm({
+      title: 'Clear your plan limit?',
+      body: 'Laika stops estimating when you reach it until you set one again. Your usage itself is untouched.',
+      confirmLabel: 'Clear limit',
+      icon: 'warning',
+    }).then((yes) => {
+      if (yes) clearNow();
+    });
+  };
+
+  const clearNow = (): void => {
     setBusy(true);
     setError(undefined);
     clearPlanLimit()

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { PageTabs } from '../../../components/PageTabs.tsx';
 import { useProjects } from '../../../api/use-projects.ts';
@@ -109,6 +110,7 @@ export function OrganisationScreen({
   setParams,
   onNavigate,
 }: OrganisationScreenProps) {
+  const confirm = useConfirm();
   // The server's answer, denied until it has one (LAI-970) — never the role.
   const gates = useGates();
   const canInvite = gates.org('user.invite');
@@ -184,16 +186,18 @@ export function OrganisationScreen({
   }, []);
 
   const revoke = (owner: { id: string; name: string }, token: TokenView): void => {
-    if (
-      !window.confirm(
-        `Revoke “${token.name}” for ${owner.name}? Anything using it — an agent, a script, ` +
-          `their editor — stops working immediately, and the token cannot be restored. ` +
-          `They can mint a new one themselves.`,
-      )
-    ) {
-      return;
-    }
+    void confirm({
+      title: `Revoke “${token.name}”?`,
+      body: `It is ${owner.name}’s. Anything using it — an agent, a script, their editor — stops working immediately, and the token cannot be restored. They can mint a new one themselves.`,
+      confirmLabel: 'Revoke token',
+      danger: true,
+      icon: 'warning',
+    }).then((yes) => {
+      if (yes) revokeNow(owner, token);
+    });
+  };
 
+  const revokeNow = (owner: { id: string; name: string }, token: TokenView): void => {
     setTokenError(undefined);
     // **The owner's id, not just the token's.** The service refuses a token that
     // does not belong to the user in the path, which is what stops an admin

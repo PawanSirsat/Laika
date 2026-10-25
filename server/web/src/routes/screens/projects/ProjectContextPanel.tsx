@@ -1,4 +1,5 @@
 import { Spinner } from '../../../components/Spinner.tsx';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -44,6 +45,7 @@ export function ProjectContextPanel({
   members,
   onClose,
 }: ProjectContextPanelProps) {
+  const confirm = useConfirm();
   const [loaded, setLoaded] = useState<ProjectContext | undefined>(undefined);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [draft, setDraft] = useState('');
@@ -92,8 +94,20 @@ export function ProjectContextPanel({
 
   const close = (): void => {
     // In-app closing is ours to guard, and the browser's prompt cannot reach it.
-    if (dirty && !window.confirm('Close without saving? Your changes will be lost.')) return;
-    onClose();
+    if (!dirty) {
+      onClose();
+      return;
+    }
+    void confirm({
+      title: 'Close without saving?',
+      body: 'Your changes to this project’s context will be lost.',
+      confirmLabel: 'Discard changes',
+      cancelLabel: 'Keep editing',
+      danger: true,
+      icon: 'warning',
+    }).then((yes) => {
+      if (yes) onClose();
+    });
   };
 
   const save = (): void => {

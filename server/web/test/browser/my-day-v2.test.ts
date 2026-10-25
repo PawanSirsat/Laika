@@ -10,6 +10,7 @@
  * asserted, so a screen that sent the wrong thing cannot pass.
  */
 
+import { answerConfirm } from './confirm.ts';
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Locator, Page } from 'playwright';
@@ -717,6 +718,8 @@ void describe('Undo (B)', () => {
         .locator('[data-inspector="entry"]')
         .getByRole('button', { name: 'Delete' })
         .click();
+      // Delete asks first (LAI-522).
+      await answerConfirm(h.page, true);
       await h.page.locator('[data-toast]').getByRole('button', { name: 'Undo' }).click();
       await until(() => writes(h).some((c) => c.path === '/api/v1/me/time/undo'));
       // Add time from the header (LAI-502): the last free half hour before now.
