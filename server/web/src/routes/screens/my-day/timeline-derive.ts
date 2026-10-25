@@ -16,8 +16,11 @@ import { addDays, atClock } from './my-day-derive.ts';
  * Pure: the clock is passed in.
  */
 
-/** A gap shorter than this is a breath, not unaccounted time (the owner's design). */
-export const GAP_MIN = 20;
+/**
+ * A gap shorter than this is a breath, not unaccounted time: the owner's My
+ * Day design counts every gap of five minutes or more (`gaps()`, LAI-510).
+ */
+export const GAP_MIN = 5;
 /** Edges move, and lengths change, in steps of this many minutes. */
 export const STEP = 5;
 /** The working day the axis shows when nothing falls outside it: 6 AM to 10 PM. */
@@ -477,69 +480,6 @@ export function stackOf(blocks: readonly Span[]): Stack[] {
   return stacks;
 }
 
-/** A box on the screen, in px. */
-export interface Box {
-  readonly l: number;
-  readonly r: number;
-  readonly t: number;
-  readonly b: number;
-}
-
-/** A count badge inside its block's end, or centred over a block too narrow for it. */
-export type ChipPlace = 'end' | 'centre';
-
-/** A badge as drawn: the key of its block, its width, and its top and bottom. */
-export interface ChipSize {
-  readonly id: string;
-  readonly width: number;
-  readonly top: number;
-  readonly bottom: number;
-}
-
-/** Two boxes share more than half a pixel each way: one would be drawn over the other. */
-const crosses = (a: Box, b: Box): boolean =>
-  Math.min(a.r, b.r) - Math.max(a.l, b.l) > 0.5 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > 0.5;
-
-/**
- * Where each block's count badge goes, from the boxes as drawn (LAI-860):
- * inside the block's end, `inset` from it, where it fits; centred over the
- * block where it does not. A badge is drawn only when that box clears every
- * other block, every badge already placed and both ends of the track, so a
- * short block with room around it keeps its badge and one among neighbours
- * goes without. Longer blocks are placed first. `blocks` is keyed as the
- * badges are; a badge whose block is not there is left out.
- */
-export function placeChips(
-  chips: readonly ChipSize[],
-  blocks: ReadonlyMap<string, Box>,
-  track: Pick<Box, 'l' | 'r'>,
-  inset: number,
-): Map<string, ChipPlace> {
-  const across = (id: string): number => {
-    const b = blocks.get(id);
-    return b === undefined ? 0 : b.r - b.l;
-  };
-  const order = [...chips].sort(
-    (a, b) =>
-      across(b.id) - across(a.id) || (blocks.get(a.id)?.l ?? 0) - (blocks.get(b.id)?.l ?? 0),
-  );
-  const places = new Map<string, ChipPlace>();
-  const drawn: Box[] = [];
-  for (const chip of order) {
-    const own = blocks.get(chip.id);
-    if (own === undefined) continue;
-    const place: ChipPlace = chip.width <= own.r - own.l - 2 * inset ? 'end' : 'centre';
-    const l = place === 'end' ? own.r - inset - chip.width : (own.l + own.r - chip.width) / 2;
-    const box = { l, r: l + chip.width, t: chip.top, b: chip.bottom };
-    if (box.l < track.l - 0.5 || box.r > track.r + 0.5) continue;
-    if ([...blocks].some(([id, b]) => id !== chip.id && crosses(box, b))) continue;
-    if (drawn.some((d) => crosses(box, d))) continue;
-    places.set(chip.id, place);
-    drawn.push(box);
-  }
-  return places;
-}
-
 /** The nearest step on the clock: 8:42 → 8:40, 8:43 → 8:45. */
 export const snap = (minute: number): number => Math.round(minute / STEP) * STEP;
 
@@ -618,11 +558,17 @@ export function limitsOf(block: Span, confirmed: readonly Span[], length = 1440)
   return { lo, hi };
 }
 
-/** {@link limitsOf} a placed block, among the day's other confirmed blocks. */
+/**
+ * {@link limitsOf} a placed block, among the day's other confirmed blocks — a
+ * confirmed block's edges stop at its neighbours; a draft's run the whole
+ * day, as the design's do (LAI-510).
+ */
 export function limitsIn(line: Pick<DayLine, 'blocks' | 'length'>, block: LaneBlock): Limits {
   return limitsOf(
     block,
-    line.blocks.filter((b) => b.kind === 'confirmed' && b.id !== block.id),
+    block.kind === 'confirmed'
+      ? line.blocks.filter((b) => b.kind === 'confirmed' && b.id !== block.id)
+      : [],
     line.length,
   );
 }
@@ -874,4 +820,95 @@ export function dayFigures(
     needsCard: view.drafts.reduce((n, d) => n + (needsCard(d) ? d.minutes : 0), 0),
     gaps: gaps.reduce((n, g) => n + g.end - g.start, 0),
   };
+}
+
+/* ------------------------------------------------------- drag (LAI-512) */
+
+/**
+ * A block moved whole (the owner's `TimelineV2.dc.html`, LAI-512): its start
+ * lands on the nearest {@link STEP} of the clock and its span comes with it;
+ * its minutes do not change — a block that held less than its span keeps
+ * that. **Never pinned to the day:** a move past midnight goes there, so
+ * {@link checkDrop} can refuse it and the block goes back, as the design's
+ * `check` does. `undefined` when nothing would move.
+ */
+export function moveBlock(block: Shape, toStart: number): Edit | undefined {
+  const span = block.end - block.start;
+  const start = snap(toStart);
+  if (start === block.start) return undefined;
+  return { start, end: start + span, minutes: block.minutes };
+}
+
+/** Why a drop was refused, and the confirmed block it would have lain over. */
+export type DropCheck =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly why: 'midnight' }
+  | { readonly ok: false; readonly why: 'overlap'; readonly over: LaneBlock };
+
+/**
+ * Whether `span` may land where it is (the design's `check`): on the day,
+ * and — for a confirmed block, or a tray item (`selfId` undefined) — over no
+ * other confirmed block, whose time would count twice (review round 1 of
+ * LAI-831). **A draft may lie anywhere** (the design, LAI-510): confirming
+ * it there is what the server refuses.
+ */
+export function checkDrop(
+  span: Span,
+  blocks: readonly LaneBlock[],
+  selfId: string | undefined,
+  length = 1440,
+): DropCheck {
+  if (span.start < 0 || span.end > length) return { ok: false, why: 'midnight' };
+  const self = selfId === undefined ? undefined : blocks.find((b) => b.id === selfId);
+  if (self !== undefined && self.kind !== 'confirmed') return { ok: true };
+  const over = blocks.find(
+    (b) => b.kind === 'confirmed' && b.id !== selfId && b.start < span.end && b.end > span.start,
+  );
+  return over === undefined ? { ok: true } : { ok: false, why: 'overlap', over };
+}
+
+/**
+ * Where a tray item dropped at minute `at` lands: centred on the pointer, on
+ * the five-minute grid, at least a step long. Like {@link moveBlock}, never
+ * pinned to the day: one that would cross midnight is {@link checkDrop}'s to
+ * refuse (the design's `onExtOver` and `check`).
+ */
+export function trayDropSpan(at: number, minutes: number): Span {
+  const len = Math.max(STEP, minutes);
+  const start = snap(at - len / 2);
+  return { start, end: start + len };
+}
+
+/** The running timer as a block on the day (LAI-512): where it started and how far it has run. */
+export interface TimerSpan extends Span {
+  /** Minutes it has run, paused time left out. */
+  readonly minutes: number;
+  readonly paused: boolean;
+}
+
+/**
+ * The timer drawn on the track (the design's `S.timer`): from the minute it
+ * started to now — three minutes wide at least, so it can be seen and
+ * clicked — only on the day it started. `undefined` on any other day, or
+ * when there is none.
+ */
+export function timerSpan(
+  timer: {
+    readonly started_at: number;
+    readonly resumed_at: number;
+    readonly paused_at: number | null;
+    readonly accumulated_ms: number;
+  } | null,
+  midnight: number | undefined,
+  length: number,
+  nowMs: number,
+): TimerSpan | undefined {
+  if (timer === null || midnight === undefined) return undefined;
+  const start = Math.round((timer.started_at - midnight) / 60_000);
+  if (start < 0 || start >= length) return undefined;
+  const paused = timer.paused_at !== null;
+  const ran = timer.accumulated_ms + (paused ? 0 : Math.max(0, nowMs - timer.resumed_at));
+  const minutes = Math.floor(ran / 60_000);
+  const end = Math.min(length, start + Math.max(minutes, 3));
+  return { start, end, minutes, paused };
 }

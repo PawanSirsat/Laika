@@ -25,12 +25,23 @@ void after(async () => {
 const BOXES = [
   { name: 'To review', css: '.myday-drafts .myday-scroll', tab: 'review' },
   { name: 'Confirmed', css: '.myday-entries .myday-scroll', tab: 'confirmed' },
-  { name: 'the column beside the day', css: '[data-myday-side]', tab: undefined },
+  {
+    name: 'the drawer beside the day',
+    css: '[data-myday-drawer] .myday-drawer-body',
+    tab: undefined,
+  },
 ] as const;
 
 /** The lists live on tabs (LAI-505): a box is reached on its own tab. */
 async function showTab(h: Harness, tab: string | undefined): Promise<void> {
-  if (tab === undefined) return;
+  if (tab === undefined) {
+    // The drawer (LAI-511): opened from the header's button when it is not.
+    if ((await h.page.locator('[data-myday-drawer]').count()) === 0) {
+      await h.page.locator('[data-beside-button]').click();
+      await h.page.locator('[data-myday-drawer]').waitFor({ timeout: 5_000 });
+    }
+    return;
+  }
   const button = h.page.locator(`[data-day-tab="${tab}"]`);
   if ((await button.getAttribute('aria-current')) !== 'page') await button.click();
 }
@@ -54,7 +65,7 @@ async function aim(h: Harness, css: string) {
     const main = document.querySelector<HTMLElement>('.shell-main');
     const box = document.querySelector<HTMLElement>(sel);
     if (main === null || box === null) return null;
-    for (const el of document.querySelectorAll<HTMLElement>('.myday-scroll, [data-myday-side]')) {
+    for (const el of document.querySelectorAll<HTMLElement>('.myday-scroll, .myday-drawer-body')) {
       el.scrollTop = 0;
     }
     main.scrollTop += box.getBoundingClientRect().top - 120;
@@ -78,13 +89,21 @@ void describe('My day: the wheel scrolls the page wherever the pointer is', () =
     const stuck: string[] = [];
     try {
       await h.page.setViewportSize({ width: 1440, height: 900 });
+      await h.page.locator('[data-day-tab="review"]').click();
       await h.page.locator('.myday-drafts [data-settle-row]').first().waitFor({ timeout: 30_000 });
       for (const size of WIDTHS) {
         await h.page.setViewportSize(size);
         await h.page.waitForFunction((w) => document.documentElement.clientWidth === w, size.width);
+        // Whatever the last width opened in the drawer is let go of (LAI-511).
+        if ((await h.page.locator('[data-myday-drawer]').count()) > 0) {
+          await h.page.keyboard.press('Escape');
+          await until(async () => (await h.page.locator('[data-myday-drawer]').count()) === 0);
+        }
         for (const theme of ['light', 'dark']) {
           await setTheme(h.page, theme);
           for (const box of BOXES) {
+            // On a phone the drawer is a modal sheet (LAI-511): the wheel is its, never the page's.
+            if (box.tab === undefined && size.width <= 900) continue;
             const where = `${box.name} at ${String(size.width)}, ${theme}`;
             await showTab(h, box.tab);
             const at = await aim(h, box.css);
@@ -115,6 +134,7 @@ void describe('My day: the wheel scrolls the page wherever the pointer is', () =
     const stuck: string[] = [];
     try {
       await h.page.setViewportSize({ width: 1440, height: 900 });
+      await h.page.locator('[data-day-tab="review"]').click();
       await h.page.locator('.myday-drafts [data-settle-row]').first().waitFor({ timeout: 30_000 });
       for (const size of WIDTHS) {
         await h.page.setViewportSize(size);

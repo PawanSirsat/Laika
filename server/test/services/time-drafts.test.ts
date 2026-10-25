@@ -210,11 +210,11 @@ describe('a collector’s upload', () => {
     send([block(AT(9), AT(10)), block(AT(11), AT(12))]);
     const [first, second] = pending();
     const said = confirmDraft(t.db, bea, first?.id ?? '', NOW, undefined, {
-      kind: 'planning',
+      kind: 'thinking',
       title: '  Sprint shape  ',
       description: '',
     });
-    expect(said).toMatchObject({ kind: 'planning', title: 'Sprint shape', description: null });
+    expect(said).toMatchObject({ kind: 'thinking', title: 'Sprint shape', description: null });
     const plain = confirmDraft(t.db, bea, second?.id ?? '', NOW);
     expect(plain).toMatchObject({ kind: null, title: null, description: null });
   });

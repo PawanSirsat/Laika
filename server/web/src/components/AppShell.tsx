@@ -19,6 +19,16 @@ import './app-shell.css';
 /** Below this the sidebar is off-canvas, and the rail has no meaning (app-shell.css). */
 const OFF_CANVAS_QUERY = '(max-width: 900px)';
 
+/**
+ * My day's drawer (LAI-511) is a 400px column beside the page. Under 1280px
+ * the owner's design folds the sidebar away while it is open, so the page
+ * keeps its width; here that is the icon rail. The screen says so on `<html>`
+ * — a screen cannot reach the shell's state, and the attribute is the one
+ * thing both can see.
+ */
+const DRAWER_ATTR = 'data-myday-drawer-open';
+const DRAWER_TIGHT_QUERY = '(max-width: 1279px)';
+
 /** Local storage, or nothing — reading the property itself can throw. */
 function storage(): Storage | undefined {
   try {
@@ -43,6 +53,23 @@ function useMedia(query: string): boolean {
     };
   }, [query]);
   return matches;
+}
+
+/** Whether a screen has set {@link DRAWER_ATTR} on `<html>`, kept live. */
+function useDrawerOpen(): boolean {
+  const [open, setOpen] = useState(() => document.documentElement.hasAttribute(DRAWER_ATTR));
+  useEffect(() => {
+    const root = document.documentElement;
+    const observer = new MutationObserver(() => {
+      setOpen(root.hasAttribute(DRAWER_ATTR));
+    });
+    observer.observe(root, { attributes: true, attributeFilter: [DRAWER_ATTR] });
+    setOpen(root.hasAttribute(DRAWER_ATTR));
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+  return open;
 }
 
 /**
@@ -110,7 +137,13 @@ function AppFrame() {
   const [navOpen, setNavOpen] = useState(false);
   // The icon rail (LAI-796), toggled in the sidebar's head and remembered.
   // Inert below 900px, where the sidebar is off-canvas at full width.
-  const { collapsed: navCollapsed, toggle: toggleRailState } = useRail();
+  const { collapsed: remembered, toggle: toggleRailState } = useRail();
+  // My day's drawer takes the rail's room under 1280px (LAI-511); off-canvas
+  // there is no rail to fold.
+  const drawerOpen = useDrawerOpen();
+  const tight = useMedia(DRAWER_TIGHT_QUERY);
+  const offCanvas = useMedia(OFF_CANVAS_QUERY);
+  const navCollapsed = remembered || (drawerOpen && tight && !offCanvas);
 
   // Escape closes the off-canvas nav. Anything that traps focus on a narrow
   // screen needs a way out that is not a mouse.

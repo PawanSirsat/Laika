@@ -3,6 +3,7 @@ import { after, describe, test } from 'node:test';
 import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 import { open, TODAY } from './my-day-clock.ts';
 import { at, weekData, weekStub, type DayData } from './my-day-week.ts';
+import { offered, pick } from './dropdown.ts';
 
 /**
  * The tabs under the Timeline (the owner's design, D-110, LAI-505): Overview
@@ -28,7 +29,7 @@ function stub(): { routes: ApiStub; data: Map<string, DayData> } {
         task: null,
         project: null,
         note: null,
-        kind: 'call',
+        kind: 'thinking',
         title: 'Call with the bank',
         description: null,
         revision: 1,
@@ -71,19 +72,21 @@ after(async () => {
 
 void describe('the tabs (LAI-505)', () => {
   for (const theme of ['light', 'dark'] as const) {
-    void test(`${theme}: a day with drafts opens on To review, grouped; Confirmed is grouped too; the tray lists the untimed`, async () => {
+    void test(`${theme}: the day opens on Overview (LAI-514); To review is grouped; Confirmed is grouped too; the tray lists the untimed`, async () => {
       const h = await myDay();
       try {
         await setTheme(h.page, theme);
         const tabs = h.page.locator('[data-day-tab]');
         assert.deepEqual(
           (await tabs.allInnerTexts()).map((t) => t.replace(/\s+/g, ' ')),
-          ['Overview', 'To review 5', 'Confirmed 4'],
+          ['Overview', 'To review 5', 'Confirmed 4', 'All'],
         );
         assert.equal(
-          await h.page.locator('[data-day-tab="review"]').getAttribute('aria-current'),
+          await h.page.locator('[data-day-tab="overview"]').getAttribute('aria-current'),
           'page',
         );
+        await h.page.locator('[data-day-tab="review"]').click();
+        await h.page.locator('.myday-drafts').waitFor({ timeout: 5_000 });
         const groups = await h.page
           .locator('.myday-drafts [data-group]')
           .evaluateAll((els) => els.map((el) => el.getAttribute('data-group')));
@@ -121,26 +124,38 @@ void describe('the tabs (LAI-505)', () => {
       await h.page.locator('[data-day-tab="overview"]').click();
       const ov = h.page.locator('[data-overview]');
       await ov.waitFor({ timeout: 5_000 });
-      // Confirmed 30 + 30 + 20 + 30 = 1 h 50 min; drafted 5 h 10 min; meetings call 20 + meeting 30.
+      // Confirmed 30 + 30 + 20 + 30 = 1 h 50 min; drafted 5 h 10 min; meetings: the one meeting, 30.
       assert.match(await ov.locator('[data-ov-stat="tracked"]').innerText(), /7 h\s/);
       assert.match(
         await ov.locator('[data-ov-stat="tracked"]').innerText(),
         /1 h 50 min confirmed/,
       );
       assert.match(await ov.locator('[data-ov-stat="review"]').innerText(), /5 h 10 min/);
-      assert.match(await ov.locator('[data-ov-stat="meetings"]').innerText(), /50 min/);
-      assert.match(await ov.locator('[data-ov-stat="meetings"]').innerText(), /12% of tracked/);
+      assert.match(await ov.locator('[data-ov-stat="meetings"]').innerText(), /30 min/);
+      assert.match(await ov.locator('[data-ov-stat="meetings"]').innerText(), /7% of tracked/);
       // e1 and e2 are typed too: 30 + 30 + 20 + 30 off-screen.
       assert.match(await ov.locator('[data-ov-stat="off"]').innerText(), /1 h 20 min/);
       const kinds = await ov
         .locator('[data-ov-kind]')
         .evaluateAll((els) => els.map((el) => el.getAttribute('data-ov-kind')));
-      assert.ok(kinds.includes('meeting') && kinds.includes('call'), kinds.join(','));
+      assert.ok(kinds.includes('meeting') && kinds.includes('thinking'), kinds.join(','));
       const tasks = await ov
         .locator('[data-ov-task]')
         .evaluateAll((els) => els.map((el) => el.getAttribute('data-ov-task')));
-      assert.equal(tasks.at(-1), 'No task yet');
       assert.ok(tasks.includes('LAI-11'), tasks.join(','));
+      // Ranked by their time whatever they are, No task yet among them (LAI-510).
+      assert.ok(tasks.includes('No task yet'), tasks.join(','));
+      const figures = await ov.locator('[data-ov-task] .myday-ov-figure').allInnerTexts();
+      const minutes = figures.map((f) => {
+        const h = /(\d+) h/.exec(f)?.[1] ?? '0';
+        const m = /(\d+) min/.exec(f)?.[1] ?? '0';
+        return Number(h) * 60 + Number(m);
+      });
+      assert.deepEqual(
+        minutes,
+        [...minutes].sort((a, b) => b - a),
+        `not largest first: ${figures.join(', ')}`,
+      );
 
       await ov.locator('[data-ov-scope="week"]').click();
       await ov.locator('[data-ov-stat="per-day"]').waitFor({ timeout: 5_000 });
@@ -161,6 +176,92 @@ void describe('the tabs (LAI-505)', () => {
         await h.page.locator('[data-day-tab="overview"]').getAttribute('aria-current'),
         'page',
       );
+    } finally {
+      await h.close();
+    }
+  });
+  void test('All stacks Overview, To review and Confirmed; the tray says to drag on a desktop; the head says how many have no task', async () => {
+    const h = await myDay();
+    try {
+      await h.page.locator('[data-day-tab="all"]').click();
+      await h.page.locator('.myday-drafts').waitFor({ timeout: 5_000 });
+      const order = await h.page
+        .locator('.myday-main > section')
+        .evaluateAll((els) =>
+          els.map((el) =>
+            [...el.classList].find((c) => c.startsWith('myday-') && c !== 'myday-card'),
+          ),
+        );
+      assert.deepEqual(order.slice(-3), ['myday-ov', 'myday-drafts', 'myday-entries']);
+      assert.match(
+        await h.page.locator('[data-untimed-tray] .myday-tray-hint-desk').innerText(),
+        /Drag onto the Timeline to give it a time/,
+      );
+      assert.equal(
+        await h.page.locator('[data-untimed-tray] .myday-tray-hint-phone').isVisible(),
+        false,
+      );
+      assert.match(
+        await h.page.locator('.myday-drafts [data-settle-hint]').innerText(),
+        /^2 with no task yet$/,
+      );
+      // Rows carry where they came from, as the design names it.
+      assert.equal(
+        await h.page.locator('[data-settle-row="d1"] .myday-source').innerText(),
+        'Collector',
+      );
+      assert.equal(
+        await h.page.locator('[data-settle-row="d5"] .myday-source').innerText(),
+        'Agent',
+      );
+      assert.equal(
+        await h.page.locator('[data-ledger-row="e1"] .myday-source').innerText(),
+        'You added',
+      );
+      // The range and length keep the design's widths at least.
+      const widths = await h.page.locator('[data-settle-row="d1"]').evaluate((row) => ({
+        time: row.querySelector('.myday-row-time')?.getBoundingClientRect().width ?? 0,
+        len: row.querySelector('.myday-row-minutes')?.getBoundingClientRect().width ?? 0,
+      }));
+      assert.ok(widths.time >= 115, `the range is ${String(widths.time)}px`);
+      assert.ok(widths.len >= 71, `the length is ${String(widths.len)}px`);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Overview’s Range: two days of the week picked, the figures and the bars cover them', async () => {
+    const h = await myDay();
+    try {
+      const ov = h.page.locator('[data-overview]');
+      await ov.waitFor({ timeout: 10_000 });
+      await ov.locator('[data-ov-scope="range"]').click();
+      const fromBox = ov.getByRole('combobox', { name: 'From' });
+      const toBox = ov.getByRole('combobox', { name: 'To' });
+      assert.equal((await offered(fromBox)).length, 7);
+      await h.page.keyboard.press('Escape');
+      const days = Array.from({ length: 7 }, (_, i) => {
+        const monday = new Date(`${TODAY}T00:00:00Z`);
+        monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7) + i);
+        return monday.toISOString().slice(0, 10);
+      });
+      // The days ending today, which the fixture fills (yesterday and today at least).
+      const idx = days.indexOf(TODAY);
+      assert.ok(idx >= 0, 'today is not in the week');
+      const from = days[Math.max(0, idx - 2)] ?? '';
+      const to = TODAY;
+      const span = idx - Math.max(0, idx - 2) + 1;
+      await pick(fromBox, from);
+      await pick(toBox, to);
+      await until(async () => (await ov.locator('[data-ov-day]').count()) === span);
+      assert.equal(await ov.locator('[data-ov-day]').count(), span);
+      assert.equal(await ov.locator('[data-ov-stat="per-day"]').count(), 1);
+      if (span > 1) assert.match(await ov.locator('[data-ov-range]').innerText(), / – /);
+      // Picked the other way round, the same three days.
+      await pick(fromBox, to);
+      await pick(toBox, from);
+      await until(async () => (await ov.locator('[data-ov-day]').count()) === span);
+      assert.equal(await ov.locator('[data-ov-day]').count(), span);
     } finally {
       await h.close();
     }

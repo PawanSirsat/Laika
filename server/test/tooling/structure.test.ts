@@ -93,6 +93,10 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   ['api/errors.ts', 'covered by test/api.test.ts — the envelope and the wrapper are one subject'],
   ['api/me.ts', 'a single typed GET; asserted through the client in api.test.ts'],
   ['api/use-session.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  [
+    'routes/screens/my-day/use-phone.ts',
+    'a React hook on a media query — no renderer in this package (CONVENTIONS §4); my-day-phone.test.ts drives it in a browser',
+  ],
   ['api/use-setup-status.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-board.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-statuses.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],

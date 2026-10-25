@@ -20,11 +20,9 @@ export function share(part: number, of: number): number {
   return of <= 0 ? 0 : Math.round((part / of) * 100);
 }
 
-/** Meetings: the entries of kind meeting or call. */
+/** Meetings: the entries of kind meeting. */
 export function meetingMinutes(entries: readonly TimeEntry[]): number {
-  return entries
-    .filter((e) => e.kind === 'meeting' || e.kind === 'call')
-    .reduce((n, e) => n + e.minutes, 0);
+  return entries.filter((e) => e.kind === 'meeting').reduce((n, e) => n + e.minutes, 0);
 }
 
 export function dayStats(view: Pick<MyDay, 'drafts' | 'entries'>): readonly Stat[] {
@@ -102,26 +100,40 @@ export interface TaskRow {
   readonly width: number;
 }
 
-/** Minutes by card, largest first, the blocks on no card last as *No task yet*. */
+/** The rows *By task* shows: the design's six (LAI-510). */
+export const TASK_ROWS = 6;
+
+/**
+ * Minutes by card, largest first, as the owner's My Day design ranks them
+ * (LAI-510): a block on a space alone under the space's name, time typed on
+ * no task as *No task* (logged by kind), and drafted time nobody has put
+ * anywhere yet as *No task yet* — ranked with the rest, the busiest six.
+ */
 export function byTask(
   entries: readonly TimeEntry[],
   drafts: readonly TimeDraft[],
 ): readonly TaskRow[] {
   const rows = new Map<string, { title: string; minutes: number }>();
-  for (const block of [...entries, ...drafts]) {
-    const key = block.task?.key ?? block.project?.name ?? 'No task yet';
-    const title = block.task?.title ?? (block.project === null ? '' : 'General');
+  const add = (key: string, title: string, minutes: number): void => {
     const row = rows.get(key);
-    if (row === undefined) rows.set(key, { title, minutes: block.minutes });
-    else row.minutes += block.minutes;
+    if (row === undefined) rows.set(key, { title, minutes });
+    else row.minutes += minutes;
+  };
+  for (const e of entries) {
+    if (e.task !== null) add(e.task.key, e.task.title, e.minutes);
+    else if (e.project !== null) add(e.project.name, 'General', e.minutes);
+    else add('No task', 'logged by kind', e.minutes);
+  }
+  for (const d of drafts) {
+    if (d.task !== null) add(d.task.key, d.task.title, d.minutes);
+    else if (d.project !== null) add(d.project.name, 'General', d.minutes);
+    else if (d.general) add('No task', 'logged by kind', d.minutes);
+    else add('No task yet', '', d.minutes);
   }
   const list = [...rows.entries()].map(([key, r]) => ({ key, ...r }));
   const busiest = Math.max(0, ...list.map((r) => r.minutes));
   return list
-    .sort((a, b) => {
-      if (a.key === 'No task yet') return 1;
-      if (b.key === 'No task yet') return -1;
-      return b.minutes - a.minutes || a.key.localeCompare(b.key);
-    })
+    .sort((a, b) => b.minutes - a.minutes || a.key.localeCompare(b.key))
+    .slice(0, TASK_ROWS)
     .map((r) => ({ ...r, width: busiest === 0 ? 0 : r.minutes / busiest }));
 }

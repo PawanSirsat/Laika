@@ -896,14 +896,14 @@ export function updateDraft(
     const row = pendingRow(tx, actor.userId, id);
     const span = patchedSpan(row, patch);
     const named = patchedFolder(row, patch);
-    // A longer or moved block holds no more than its span, and its stretch no
-    // more than the clock: confirmed time is never counted twice (review round 2).
+    // A longer or moved block holds no more than its span. It may lie over
+    // confirmed time while it is a draft — the owner's My Day design lets a
+    // draft be dragged anywhere (LAI-510) — and confirming it there is what
+    // is refused: confirmed time is never counted twice (review round 2).
     const start = span?.startedAt ?? row.startedAt;
     const end = span?.endedAt ?? row.endedAt;
     if (start !== null && end !== null && (span !== undefined || patch.minutes !== undefined)) {
-      const minutes = patch.minutes ?? row.minutes;
-      assertWithinSpan(start, end, minutes);
-      assertFitsTheClock(tx, actor.userId, start, end, minutes);
+      assertWithinSpan(start, end, patch.minutes ?? row.minutes);
     }
     tx.update(timeDrafts)
       .set({

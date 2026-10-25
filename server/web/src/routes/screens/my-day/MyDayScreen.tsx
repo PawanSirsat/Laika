@@ -35,14 +35,13 @@ import { useGates } from '../../../api/permissions.ts';
 import { isProject, listProjects, type Project } from '../../../api/projects.ts';
 import { readerZone } from '../../../api/usage.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
-import { LoadingState } from '../../../components/LoadingState.tsx';
 import { PermissionDenied } from '../../../components/PermissionDenied.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import type { MeProfile } from '../../../api/me.ts';
 import type { ReviewQueueItem } from '../../../api/review.ts';
 import { AgentStrip } from './AgentStrip.tsx';
-import { cardChips } from './card-chips.ts';
+import { CHIP_CAP, cardChips, cardChipsWhy } from './card-chips.ts';
 import { DayTabs, type DayTab } from './DayTabs.tsx';
 import { DraftList, type Batch } from './DraftList.tsx';
 import { ConfirmDaySummary } from './ConfirmDaySummary.tsx';
@@ -50,7 +49,6 @@ import { DaySettings } from './DaySettings.tsx';
 import { TimerControl } from './TimerControl.tsx';
 import {
   confirmPlan,
-  needCardLine,
   runBulk,
   runConfirmDay,
   type BulkApi,
@@ -62,6 +60,19 @@ import { OverviewTab } from './OverviewTab.tsx';
 import { UntimedTray } from './UntimedTray.tsx';
 import { clock, duration, span } from './format.ts';
 import { Inspector, type DraftSaid, type Held, type InspectorActions } from './Inspector.tsx';
+import { MyDayDrawer, type DrawerMode } from './MyDayDrawer.tsx';
+import { DayEmpty, type EmptyAction, type EmptyKind } from './DayEmpty.tsx';
+import { DayError } from './DayError.tsx';
+import { DayOff } from './DayOff.tsx';
+import { DaySkeleton } from './DaySkeleton.tsx';
+import { HeaderPopover } from './HeaderPopover.tsx';
+import { MyDayPhoneBar } from './MyDayPhoneBar.tsx';
+import { MyDayPhoneHead } from './MyDayPhoneHead.tsx';
+import { TimelineMobile } from './TimelineMobile.tsx';
+import { usePhone } from './use-phone.ts';
+import { initials } from '../../../theme/initials.ts';
+import { avatarColorSolid } from '../../../theme/avatar-color.ts';
+import { useTheme } from '../../../theme/use-theme.ts';
 import { addDays, canAddTime, dayIn, dayTotals, DRAFT_READERS, isDay } from './my-day-derive.ts';
 import { OnYourPlate, usePlate } from './OnYourPlate.tsx';
 import { shortcutFor, type Shortcut } from './shortcuts.ts';
@@ -89,6 +100,10 @@ import { WhoLooked } from './WhoLooked.tsx';
 import { WeekStrip } from './WeekStrip.tsx';
 import { dayLong } from './week-derive.ts';
 import './my-day.css';
+// The lists as designed (LAI-514), after `my-day.css` so its rules win.
+import './lists.css';
+// After my-day.css: the phone's rules (LAI-518) win at equal specificity.
+import './phone.css';
 
 export interface MyDayScreenProps {
   /** `?day=` — a calendar day in the reader's zone; today when absent. */
@@ -125,6 +140,7 @@ const RUNNING: Readonly<Record<BulkKind, string>> = {
   confirm: 'Confirming',
   general: 'Moving to General',
   dismiss: 'Marking not work',
+  assign: 'Assigning',
 };
 
 /** The keys a batch runs under: the bar's, and the header's *Confirm day*. */
@@ -160,6 +176,7 @@ function recording(made: Made[], day: readonly string[]): BulkApi {
     setDayNote: (on, note) => setDayNote(on, note),
     dismissDraft: (id) => dismissDraft(id, keep([id])),
     toGeneral: (id) => updateDraft(id, { task: null, project: null, general: true }, keep([id])),
+    toCard: (id, card) => updateDraft(id, { task: card }, keep([id])),
   };
 }
 
@@ -212,6 +229,16 @@ function useSpaces(): readonly Project[] | null | undefined {
 }
 
 /** The padlock beside who reads drafts. */
+/** The design's mark beside *Who can see this*: an i in a ring (LAI-513). */
+function InfoMark() {
+  return (
+    <svg className="myday-lock-icon myday-info-icon" viewBox="0 0 14 14" aria-hidden="true">
+      <circle cx="7" cy="7" r="5.6" />
+      <path d="M7 6.2v3.6M7 4.2v.1" />
+    </svg>
+  );
+}
+
 function Padlock() {
   return (
     <svg className="myday-lock-icon" viewBox="0 0 12 12" aria-hidden="true">
@@ -273,18 +300,28 @@ export function MyDayScreen({
   const [batch, setBatch] = useState<Batch>({ kind: 'idle' });
   const [tick, setTick] = useState(0);
   const [selection, setSelection] = useState<Selection | undefined>(undefined);
-  const [slot, setSlot] = useState<Span | undefined>(undefined);
   const [toast, setToast] = useState<ToastState | undefined>(undefined);
   const [sheet, setSheet] = useState(false);
   const [lookedOpen, setLookedOpen] = useState(false);
   const [timerOpen, setTimerOpen] = useState(false);
   const [summary, setSummary] = useState(false);
-  // The tab under the Timeline (LAI-505): remembered per browser; a day with
-  // drafts opens on To review, one without on Overview.
+  // The drawer beside the page (LAI-511): the editor while something is in
+  // hand, or Agent time and On your plate from the header's button, and
+  // nothing on load.
+  const [beside, setBeside] = useState(false);
+  const besideButton = useRef<HTMLButtonElement | null>(null);
+  // Fill gaps (LAI-513): walking the day's gaps, one add after another.
+  const [fillRun, setFillRun] = useState(false);
+  /** The entry a timer just stopped into (LAI-515): its editor says so once. */
+  const [justStopped, setJustStopped] = useState<string | undefined>(undefined);
+  // The tab under the Timeline (LAI-505): remembered per browser; Overview
+  // until one is picked, as the design opens (LAI-514).
   const [tab, setTab] = useState<DayTab | undefined>(() => {
     try {
       const kept = localStorage.getItem('laika.my-day.tab');
-      return kept === 'overview' || kept === 'review' || kept === 'confirmed' ? kept : undefined;
+      return kept === 'overview' || kept === 'review' || kept === 'confirmed' || kept === 'all'
+        ? kept
+        : undefined;
     } catch {
       return undefined;
     }
@@ -302,6 +339,9 @@ export function MyDayScreen({
   const [now, setNow] = useState(() => Date.now());
   const spaces = useSpaces();
   const plate = usePlate(readOnly ? undefined : me, spaces);
+  // The owner's phone page (LAI-518): its own head, bar and Timeline.
+  const phone = usePhone();
+  const { theme } = useTheme();
   const toastSeq = useRef(0);
   const lastDraftIndex = useRef(0);
   const batching = pending !== undefined && BATCHES.has(pending);
@@ -346,10 +386,16 @@ export function MyDayScreen({
     };
   }, []);
 
+  // The timer's word in the editor goes with the selection that carried it (LAI-515).
+  useEffect(() => {
+    if (selection?.kind !== 'entry' || selection.id !== justStopped) {
+      setJustStopped(undefined);
+    }
+  }, [selection, justStopped]);
+
   // A new day, or somebody else's, starts with nothing in hand.
   useEffect(() => {
     setSelection(undefined);
-    setSlot(undefined);
     setBatch({ kind: 'idle' });
     setToast(undefined);
   }, [selectedDay, subjectId]);
@@ -360,10 +406,8 @@ export function MyDayScreen({
     if (load.kind !== 'ready') return;
     const v = load.view;
     setSelection((prev) => {
-      if (prev === undefined) {
-        const first = v.drafts[0];
-        return first === undefined ? undefined : { kind: 'draft', id: first.id };
-      }
+      // Nothing is in hand until the person picks something (LAI-511).
+      if (prev === undefined) return undefined;
       if (prev.kind === 'draft') {
         if (v.drafts.some((d) => d.id === prev.id)) return prev;
         const next = v.drafts[Math.min(lastDraftIndex.current, v.drafts.length - 1)];
@@ -395,6 +439,31 @@ export function MyDayScreen({
 
   const view = load.kind === 'ready' ? load.view : undefined;
   const line = useMemo(() => (view === undefined ? undefined : dayLine(view, now)), [view, now]);
+
+  // What the drawer holds, if anything (LAI-511). A day not yet begun has no
+  // Timeline to pick from, so nothing to edit.
+  const drawerMode: DrawerMode | undefined =
+    view !== undefined && view.state !== 'future' && selection !== undefined
+      ? 'editor'
+      : beside
+        ? 'cards'
+        : undefined;
+  const closeDrawer = useCallback(() => {
+    setSelection(undefined);
+    setBeside(false);
+    setFillRun(false);
+  }, []);
+
+  // The shell reads this to give the drawer room under 1280px (LAI-511):
+  // `AppShell` folds the sidebar to its rail while it is set.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (drawerMode !== undefined) root.setAttribute('data-myday-drawer-open', '');
+    else root.removeAttribute('data-myday-drawer-open');
+    return () => {
+      root.removeAttribute('data-myday-drawer-open');
+    };
+  }, [drawerMode]);
 
   useEffect(() => {
     if (view === undefined || selection?.kind !== 'draft') return;
@@ -555,10 +624,36 @@ export function MyDayScreen({
     holds && embedded === undefined && me !== undefined && onUser !== undefined ? (
       <ViewingSwitch meId={me.id} subjectId={subjectId} people={people} onPick={onUser} />
     ) : undefined;
+  // The read-only banner as the design draws it (LAI-513): the eye, one
+  // sentence, and the way back.
+  const firstName = subjectName.split(' ')[0] ?? subjectName;
   const banner = readOnly && (
-    <p className="myday-viewing-banner" role="status" data-viewing-banner>
-      <strong>Viewing {subjectName}’s day — read only.</strong> Nothing here can be changed, and{' '}
-      {subjectName} can see that you looked.
+    <p className="myday-viewing-banner myday-viewing-read" role="status" data-viewing-banner>
+      <svg className="myday-viewing-eye" viewBox="0 0 16 16" aria-hidden="true">
+        <path
+          d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+        />
+        <circle cx="8" cy="8" r="2" fill="currentColor" />
+      </svg>
+      <span className="myday-viewing-words">
+        <strong>Read-only.</strong> You’re viewing {subjectName}’s day. {firstName} can see that you
+        looked.
+      </span>
+      {onUser !== undefined && embedded === undefined && (
+        <button
+          type="button"
+          className="myday-chip myday-viewing-back"
+          data-back-to-my-day
+          onClick={() => {
+            onUser(undefined);
+          }}
+        >
+          Back to my day
+        </button>
+      )}
     </p>
   );
   const shell = (body: ReactNode) =>
@@ -584,20 +679,34 @@ export function MyDayScreen({
   }
 
   if (load.kind === 'loading' || view === undefined || line === undefined || !asking) {
+    // The designed states (LAI-513): a refused read is still the permission
+    // card; anything else is the day's own error card; loading is the
+    // Timeline's shape in skeleton.
     return shell(
       load.kind === 'error' ? (
-        <ApiErrorState
-          error={load.error}
-          resource={readOnly ? `${subjectName}’s day` : 'your day'}
-          {...(readOnly ? { requiredRole: 'admin' as const, scope: 'organisation' as const } : {})}
-          onRetry={reload}
-        />
+        load.error instanceof ApiError && load.error.code === 'forbidden' ? (
+          <ApiErrorState
+            error={load.error}
+            resource={readOnly ? `${subjectName}’s day` : 'your day'}
+            {...(readOnly
+              ? { requiredRole: 'admin' as const, scope: 'organisation' as const }
+              : {})}
+            onRetry={reload}
+          />
+        ) : (
+          <DayError
+            day={selectedDay}
+            error={load.error}
+            request={
+              subjectId === undefined
+                ? `GET /api/v1/me/time?day=${selectedDay}`
+                : `GET /api/v1/people/${subjectId}/time?day=${selectedDay}`
+            }
+            onRetry={reload}
+          />
+        )
       ) : (
-        <LoadingState
-          shape="card"
-          count={3}
-          label={readOnly ? `Reading ${subjectName}’s day` : 'Reading your day'}
-        />
+        <DaySkeleton label={readOnly ? `Reading ${subjectName}’s day` : 'Loading your day'} />
       ),
     );
   }
@@ -605,8 +714,27 @@ export function MyDayScreen({
   const { settings } = view;
   const addable = canAddTime(settings);
   const totals = dayTotals(view);
-  const shownTab: DayTab = tab ?? (view.drafts.length > 0 ? 'review' : 'overview');
+  const shownTab: DayTab = tab ?? 'overview';
+  const inTab = (t: DayTab): boolean => shownTab === t || shownTab === 'all';
   const draftOff = !readOnly && settings.org_mode === 'drafts' && !settings.draft_my_time;
+  // The designed page states (LAI-513): time tracking off for the
+  // organisation, a day not begun, a day with nothing on it.
+  const orgOff = settings.org_mode === 'off';
+  const nothingOn =
+    view.drafts.length === 0 && view.entries.length === 0 && view.breaks.length === 0;
+  const emptyKind: EmptyKind | undefined =
+    view.state === 'future'
+      ? 'future'
+      : nothingOn
+        ? draftOff
+          ? 'draftOff'
+          : view.day === view.today
+            ? 'today'
+            : 'past'
+        : undefined;
+  const showLists = !orgOff && (emptyKind === undefined || emptyKind === 'draftOff');
+  const nowMinute = line.now;
+  const gapsBeforeNow = nowMinute === undefined ? [] : line.gaps.filter((g) => g.start < nowMinute);
   const dayPlan = confirmPlan(view.drafts);
   const readyMinutes = dayPlan.ready.reduce((sum, d) => sum + d.minutes, 0);
   const busy = pending !== undefined;
@@ -623,12 +751,17 @@ export function MyDayScreen({
   const onTheDay: TaskRef[] = [...view.drafts, ...view.entries]
     .map((x) => x.task)
     .filter((t): t is TaskRef => t !== null);
+  // What *Assign task* offers (the design, LAI-514): the day's cards, then the
+  // person's in progress, each once.
+  const assignOptions: TaskRef[] = [...onTheDay, ...inProgress].filter(
+    (t, at, all) => all.findIndex((o) => o.key === t.key) === at,
+  );
+  const byAgent: TaskRef[] = view.agent.by_task.filter((t) => t.minutes > 0).map((t) => t.task);
   const chipsFor = (own: TaskRef | null): readonly TaskRef[] =>
     cardChips(own, inProgress, onTheDay);
 
   const pickGap = (gap: Span): void => {
     setSelection({ kind: 'gap', start: gap.start, end: gap.end });
-    setSlot(gap);
   };
 
   const write = (held: Held, patch: DraftPatch & EntryPatch, key: string, said?: string) =>
@@ -636,18 +769,66 @@ export function MyDayScreen({
       ? run(key, [held.draft.id], (onUndo) => updateDraft(held.draft.id, patch, onUndo), said)
       : run(key, [held.entry.id], () => updateEntry(held.entry.id, patch), said);
 
-  const onEdge = (lane: LaneBlock, edit: Edit): void => {
+  /** What a placed block is called in a toast: its card, its space, its title, or General. */
+  const nameOf = (kind: 'drafted' | 'confirmed', id: string): string => {
+    if (kind === 'drafted') {
+      const d = view.drafts.find((x) => x.id === id);
+      return d === undefined
+        ? 'the block'
+        : (d.task?.key ?? d.project?.name ?? (d.general ? 'General' : 'No task yet'));
+    }
+    const e = view.entries.find((x) => x.id === id);
+    return e === undefined
+      ? 'the entry'
+      : (e.task?.key ??
+          (e.title !== null && e.title !== undefined && e.title !== ''
+            ? e.title
+            : (e.project?.name ?? 'General')));
+  };
+
+  // An edge dragged or stepped, or a block moved or resized by its body
+  // (LAI-512): one write of the edges that moved; a drag says so, with Undo
+  // where the server offers it.
+  const onEdge = (lane: LaneBlock, edit: Edit, how?: 'move' | 'resize'): void => {
     if (readOnly) return;
     const patch: { started_at?: number; ended_at?: number; minutes: number } = {
       minutes: edit.minutes,
     };
     if (edit.start !== lane.start) patch.started_at = instant(edit.start);
     if (edit.end !== lane.end) patch.ended_at = instant(edit.end);
+    const said =
+      how === undefined
+        ? undefined
+        : () => ({
+            text: `${how === 'move' ? 'Moved' : 'Changed'} ${nameOf(lane.kind, lane.id)} to ${span(instant(edit.start), instant(edit.end), view.tz)}.`,
+            undoable: lane.kind === 'drafted',
+          });
     if (lane.kind === 'drafted') {
-      void run(`edge:${lane.id}`, [lane.id], (onUndo) => updateDraft(lane.id, patch, onUndo));
+      void run(`edge:${lane.id}`, [lane.id], (onUndo) => updateDraft(lane.id, patch, onUndo), said);
     } else {
-      void run(`edge:${lane.id}`, [lane.id], () => updateEntry(lane.id, patch));
+      void run(`edge:${lane.id}`, [lane.id], () => updateEntry(lane.id, patch), said);
     }
+  };
+
+  // A tray item dropped on the track (LAI-512): the time it landed on, one write.
+  const onDropEntry = (
+    item: { readonly kind: 'draft' | 'entry'; readonly id: string },
+    s: Span,
+  ): void => {
+    if (readOnly) return;
+    const patch = { started_at: instant(s.start), ended_at: instant(s.end) };
+    const text = `Placed ${nameOf(item.kind === 'draft' ? 'drafted' : 'confirmed', item.id)} at ${span(patch.started_at, patch.ended_at, view.tz)}.`;
+    if (item.kind === 'draft') {
+      void run(
+        `place:${item.id}`,
+        [item.id],
+        (onUndo) => updateDraft(item.id, patch, onUndo),
+        () => ({ text, undoable: true }),
+      );
+    } else {
+      void run(`place:${item.id}`, [item.id], () => updateEntry(item.id, patch), text);
+    }
+    setSelection({ kind: item.kind, id: item.id });
   };
 
   const confirmOne = (draft: TimeDraft, said?: DraftSaid): void => {
@@ -723,7 +904,17 @@ export function MyDayScreen({
       await discardTimer().catch(() => undefined);
       reload();
     }
-    setSlot(undefined);
+    // Fill gaps (LAI-513): the next gap, until there is none.
+    if (fillRun && selection?.kind === 'gap') {
+      const filled = selection.start;
+      const next = gapsBeforeNow.find((g) => g.start > filled);
+      if (next !== undefined) {
+        pickGap(next);
+        return true;
+      }
+      setFillRun(false);
+      say('All gaps filled.');
+    }
     setSelection({ kind: 'entry', id: made.id });
     return true;
   };
@@ -754,7 +945,10 @@ export function MyDayScreen({
         'info',
         undoId === undefined ? [] : [{ undoId, blocks: [stopped.entry.id] }],
       );
-      if (stopped.entry.day === view.day) setSelection({ kind: 'entry', id: stopped.entry.id });
+      if (stopped.entry.day === view.day) {
+        setSelection({ kind: 'entry', id: stopped.entry.id });
+        setJustStopped(stopped.entry.id);
+      }
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === 'conflict' && line.midnight !== undefined) {
         // Over confirmed time: the timer stays, and its span opens beside the
@@ -797,12 +991,49 @@ export function MyDayScreen({
       const end = Math.min(anchor, free.hi);
       const start = Math.max(free.lo, end - 30);
       if (end - start >= STEP) {
-        setSelection({ kind: 'range', start, end });
+        setSelection({ kind: 'range', start, end, from: 'button' });
         return;
       }
     }
-    setSelection({ kind: 'range', start: anchor - 30, end: anchor, untimed: true });
+    setSelection({ kind: 'range', start: anchor - 30, end: anchor, untimed: true, from: 'button' });
   };
+
+  const turnDraftingOn = (): void => {
+    void run(
+      'switch',
+      [],
+      () => setDraftMyTime(true),
+      'Draft my time is on. Your collector drafts from its next sync.',
+    );
+  };
+
+  // What an empty Timeline offers (LAI-513), by why it is empty.
+  const emptyActions: readonly EmptyAction[] = readOnly
+    ? emptyKind === 'future' || emptyKind === 'past'
+      ? [{ label: 'Back to today', go: () => onDay(view.today) }]
+      : []
+    : emptyKind === 'future'
+      ? [{ label: 'Back to today', go: () => onDay(view.today) }]
+      : emptyKind === 'draftOff'
+        ? [
+            { label: 'Turn drafting on', primary: true, go: turnDraftingOn },
+            { label: 'Add time', go: addTime },
+          ]
+        : emptyKind === 'past'
+          ? [
+              { label: 'Back to today', go: () => onDay(view.today) },
+              { label: 'Add time', go: addTime },
+            ]
+          : [
+              {
+                label: 'Start timer',
+                primary: true,
+                go: () => {
+                  setTimerOpen(true);
+                },
+              },
+              { label: 'Add time', go: addTime },
+            ];
 
   const actions: InspectorActions = {
     confirm: confirmOne,
@@ -969,7 +1200,6 @@ export function MyDayScreen({
             ended_at: instant(gap.end),
           }),
         (made) => {
-          setSlot(undefined);
           setSelection({ kind: 'break', id: made.id });
           return { text: `${range} is a break — not time, and not a gap.` };
         },
@@ -977,6 +1207,17 @@ export function MyDayScreen({
     },
     unbreak: (id) => {
       void run('unbreak', [], () => removeBreak(id), 'Not a break — it counts as a gap again.');
+    },
+    pickGap,
+    workFromBreak: (b) => {
+      // The break goes, and its span opens as Add time (the design's *Turn into work time*).
+      void run('unbreak', [], () => removeBreak(b.id), 'Not a break — add what it was.').then(
+        (made) => {
+          if (made !== undefined) {
+            setSelection({ kind: 'range', start: b.start, end: b.end, from: 'gap' });
+          }
+        },
+      );
     },
   };
 
@@ -992,13 +1233,13 @@ export function MyDayScreen({
         setSheet(false);
         return true;
       }
-      if (slot !== undefined) {
-        setSlot(undefined);
+      if (selection !== undefined) {
+        // Esc closes the editor (LAI-508, LAI-511): the drawer goes.
+        setSelection(undefined);
         return true;
       }
-      if (selection !== undefined) {
-        // Esc closes the editor (LAI-508): the column shows the cards again.
-        setSelection(undefined);
+      if (beside) {
+        setBeside(false);
         return true;
       }
       return false;
@@ -1059,311 +1300,631 @@ export function MyDayScreen({
       ? selection.id
       : undefined;
 
+  // The phone's page (the owner's `MyDay.dc.html`, LAI-518): the day row, the
+  // letter week and the summary in place of the desktop header; the eye, the
+  // switch and the avatar in the shell's top bar.
+  const own = !readOnly && addable;
+  const phoneBeside = (
+    <button
+      type="button"
+      className="myday-chip myday-head-icon"
+      ref={besideButton}
+      aria-label={readOnly ? `Beside ${subjectName}’s day` : 'Beside your day'}
+      title={readOnly ? 'Agent time' : 'Agent time and On your plate'}
+      aria-expanded={drawerMode === 'cards'}
+      data-beside-button
+      onClick={() => {
+        if (selection !== undefined) {
+          setSelection(undefined);
+          setBeside(true);
+        } else {
+          setBeside((open) => !open);
+        }
+      }}
+    >
+      <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+        <rect
+          x="1.5"
+          y="2"
+          width="13"
+          height="5"
+          rx="1.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+        />
+        <rect
+          x="1.5"
+          y="9.5"
+          width="13"
+          height="4.5"
+          rx="1.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+        />
+      </svg>
+    </button>
+  );
+  const avatar =
+    me === undefined ? null : (
+      <span
+        className="myday-bar-avatar"
+        aria-hidden="true"
+        style={{
+          background: avatarColorSolid(me.id, theme).background,
+          color: avatarColorSolid(me.id, theme).foreground,
+        }}
+      >
+        {initials(me.name)}
+      </span>
+    );
+  const phoneBar =
+    phone && embedded === undefined ? (
+      <MyDayPhoneBar>
+        {/* Not in the design's bar, which has no other way to Agent time and On your plate. */}
+        {phoneBeside}
+        {!readOnly && (
+          <WhoLooked
+            tz={view.tz}
+            today={view.today}
+            open={lookedOpen}
+            onOpenChange={setLookedOpen}
+          />
+        )}
+        {switcher}
+        {avatar}
+      </MyDayPhoneBar>
+    ) : null;
+  const phoneHead =
+    phone && embedded === undefined ? (
+      <MyDayPhoneHead
+        view={view}
+        readOnly={readOnly}
+        subjectName={subjectName}
+        locked={batching}
+        onDay={onDay}
+        {...(own
+          ? {
+              tools: (
+                <>
+                  <TimerControl
+                    timer={view.timer}
+                    tz={view.tz}
+                    chips={chipsFor(null)}
+                    busy={busy}
+                    open={timerOpen}
+                    onOpenChange={setTimerOpen}
+                    onStart={timerStart}
+                    onPause={() => {
+                      void run('timer', [], () => pauseTimer(), 'Timer paused.');
+                    }}
+                    onResume={() => {
+                      void run('timer', [], () => resumeTimer(), 'Timer running.');
+                    }}
+                    onStop={() => {
+                      void timerStop();
+                    }}
+                    onDiscard={() => {
+                      void run(
+                        'timer',
+                        [],
+                        () => discardTimer(),
+                        'Timer discarded — nothing saved.',
+                      );
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="myday-chip myday-head-icon"
+                    data-add-time
+                    title="Add time (N)"
+                    aria-label="Add time"
+                    disabled={busy || batching}
+                    onClick={addTime}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 12 12" aria-hidden="true">
+                      <path
+                        d="M6 1.5v9M1.5 6h9"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
+                  <DaySettings
+                    settings={settings}
+                    held={view.drafts_held}
+                    tz={view.tz}
+                    pending={pending}
+                    run={(key, writeIt, said) =>
+                      run(key, [], () => writeIt(), said).then((r) => r !== undefined)
+                    }
+                  />
+                </>
+              ),
+            }
+          : {})}
+        {...(readOnly
+          ? {}
+          : view.drafts.length > 0
+            ? {
+                action: (
+                  <button
+                    type="button"
+                    className="myday-chip myday-chip-primary myday-phone-confirm"
+                    data-confirm-day
+                    ref={confirmButton}
+                    disabled={busy || dayPlan.ready.length === 0}
+                    title={
+                      dayPlan.needCard.length > 0
+                        ? `${String(dayPlan.needCard.length)} without a task stay in To review`
+                        : `Confirm every drafted block of ${dayLong(view.day)}`
+                    }
+                    onClick={() => {
+                      setSummary(true);
+                    }}
+                  >
+                    {pending === 'confirm-day' && <Spinner size="sm" label="Confirming the day" />}
+                    {dayPlan.ready.length === 0
+                      ? 'Confirm day'
+                      : `Confirm ${duration(readyMinutes)}`}
+                  </button>
+                ),
+              }
+            : addable && view.state !== 'future'
+              ? {
+                  action: (
+                    <button
+                      type="button"
+                      className="myday-chip myday-head-button"
+                      data-day-note-button
+                      title="A note for whoever reads your day"
+                      onClick={() => {
+                        setSummary(true);
+                      }}
+                    >
+                      {view.day_note === null ? 'Day note' : 'Edit day note'}
+                    </button>
+                  ),
+                }
+              : {})}
+      />
+    ) : undefined;
+
   return (
-    <div className={embedded === undefined ? 'myday-page' : 'myday-page myday-embedded'}>
-      {embedded === undefined ? (
-        <ScreenHeader
-          variant="page"
-          title={title}
-          context={
-            totals.confirmed + totals.drafted > 0 ? (
-              <span className="myday-figure" data-day-total>
-                <span className="myday-figure-total">
-                  {duration(totals.confirmed + totals.drafted)}
+    <div
+      className={embedded === undefined ? 'myday-page' : 'myday-page myday-embedded'}
+      data-drawer-open={drawerMode === undefined ? undefined : 'true'}
+      // `phone.css` keys its rules for the page's shared markup on this (LAI-518).
+      data-phone={phone ? '' : undefined}
+    >
+      <div className="myday-column">
+        {phoneBar}
+        {phoneHead}
+        {embedded === undefined && phoneHead === undefined ? (
+          <ScreenHeader
+            variant="page"
+            title={title}
+            context={
+              orgOff ? undefined : (
+                <span className="myday-figure" data-day-total>
+                  <span className="myday-figure-total">
+                    {/* A past day nothing reached is no signal, never 0 min (LAI-831). */}
+                    {emptyKind === 'past' ? '—' : duration(totals.confirmed + totals.drafted)}
+                  </span>
+                  <span className="myday-figure-sub">
+                    {view.state === 'future'
+                      ? 'not started'
+                      : emptyKind === 'past'
+                        ? 'no signal'
+                        : totals.drafted > 0
+                          ? `${duration(totals.drafted)} to review`
+                          : totals.confirmed > 0
+                            ? `${duration(totals.confirmed)} confirmed`
+                            : 'nothing yet'}
+                  </span>
                 </span>
-                <span className="myday-figure-sub">
-                  {totals.drafted > 0
-                    ? `${duration(totals.drafted)} to review`
-                    : `${duration(totals.confirmed)} confirmed`}
+              )
+            }
+            description={
+              <span className="myday-subtitle">
+                <span>
+                  {dayLong(view.day)}
+                  {view.day === view.today && ' · today'}
                 </span>
+                <span className="myday-subtitle-dot" aria-hidden="true" />
+                {readOnly ? (
+                  <span className="myday-lock">
+                    <Padlock />
+                    {`Read only · ${subjectName} sees that you looked`}
+                  </span>
+                ) : (
+                  // Who reads what, truthfully (D-102, LAI-968): the design's
+                  // popover (LAI-513), its words in the tooltip too, and the
+                  // way to every look.
+                  <HeaderPopover
+                    trigger={
+                      <>
+                        <InfoMark />
+                        Who can see this
+                      </>
+                    }
+                    label="Who can see this"
+                    title={`Drafts: you, owners and admins. Your drafts can be read by you and by ${DRAFT_READERS}. Every look is listed under Who looked.`}
+                    triggerClassName="myday-lock myday-lock-link myday-who-trigger"
+                    width="who"
+                    align="left"
+                    dataAttr="data-who-can-see"
+                  >
+                    <span className="myday-pop-title">Who can see this</span>
+                    <dl className="myday-who-grid">
+                      <dt>Drafts</dt>
+                      <dd>You, and {DRAFT_READERS}</dd>
+                      <dt>Confirmed</dt>
+                      <dd>The same readers — the time your organisation sees</dd>
+                      <dt>Agent time</dt>
+                      <dd>Anyone on the space, never counted as yours</dd>
+                    </dl>
+                    <p className="myday-quiet myday-pop-text">
+                      When an owner or admin opens your day, it shows under{' '}
+                      <button
+                        type="button"
+                        className="myday-linkish"
+                        onClick={() => {
+                          setLookedOpen(true);
+                        }}
+                      >
+                        Who looked
+                      </button>
+                      . Counts only, never what you typed.
+                    </p>
+                  </HeaderPopover>
+                )}
               </span>
-            ) : undefined
-          }
-          description={
-            <span className="myday-subtitle">
+            }
+            below={
+              orgOff ? undefined : (
+                <div className="myday-below">
+                  {/* A phone walks the days one at a time (LAI-502); the width decides, in CSS. */}
+                  <div className="myday-daynav" data-day-nav>
+                    <button
+                      type="button"
+                      className="myday-week-step"
+                      aria-label="Previous day"
+                      disabled={batching}
+                      onClick={() => {
+                        onDay(addDays(view.day, -1));
+                      }}
+                    >
+                      <span aria-hidden="true">‹</span>
+                    </button>
+                    <span className="myday-daynav-title">
+                      <strong>{dayLong(view.day)}</strong>
+                      {totals.confirmed + totals.drafted > 0 && (
+                        <span className="myday-quiet">
+                          {duration(totals.confirmed + totals.drafted)}
+                          {totals.drafted > 0 && ` · ${duration(totals.drafted)} to review`}
+                        </span>
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      className="myday-week-step"
+                      aria-label="Next day"
+                      disabled={batching || view.day >= view.today}
+                      onClick={() => {
+                        onDay(addDays(view.day, 1));
+                      }}
+                    >
+                      <span aria-hidden="true">›</span>
+                    </button>
+                  </div>
+                  <WeekStrip
+                    week={view.week}
+                    selected={view.day}
+                    today={view.today}
+                    locked={batching}
+                    onPick={onDay}
+                  />
+                </div>
+              )
+            }
+          >
+            {switcher}
+            {switcher !== undefined && !readOnly && (
+              <span className="myday-head-divider" aria-hidden="true" />
+            )}
+            {!readOnly && addable && (
+              <>
+                <TimerControl
+                  timer={view.timer}
+                  tz={view.tz}
+                  chips={chipsFor(null)}
+                  busy={busy}
+                  open={timerOpen}
+                  onOpenChange={setTimerOpen}
+                  onStart={timerStart}
+                  onPause={() => {
+                    void run('timer', [], () => pauseTimer(), 'Timer paused.');
+                  }}
+                  onResume={() => {
+                    void run('timer', [], () => resumeTimer(), 'Timer running.');
+                  }}
+                  onStop={() => {
+                    void timerStop();
+                  }}
+                  onDiscard={() => {
+                    void run('timer', [], () => discardTimer(), 'Timer discarded — nothing saved.');
+                  }}
+                />
+                <button
+                  type="button"
+                  className="myday-chip myday-head-button"
+                  data-add-time
+                  title="Add time (N)"
+                  aria-label="Add time"
+                  disabled={busy || batching}
+                  onClick={addTime}
+                >
+                  <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
+                    <path
+                      d="M6 1.5v9M1.5 6h9"
+                      stroke="currentColor"
+                      strokeWidth="1.6"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <span className="myday-head-text">Add time</span>
+                  <kbd className="myday-kbd myday-kbd-hint">N</kbd>
+                </button>
+                {/* Fill gaps (the design, LAI-513): today's gaps before now, one after another. */}
+                {view.day === view.today && gapsBeforeNow.length > 0 && (
+                  <button
+                    type="button"
+                    className="myday-chip myday-head-button myday-fill-gaps"
+                    data-fill-gaps
+                    title="Walk through each gap and fill it with a task"
+                    disabled={busy || batching}
+                    onClick={() => {
+                      const first = gapsBeforeNow[0];
+                      if (first !== undefined) {
+                        pickGap(first);
+                        setFillRun(true);
+                      }
+                    }}
+                  >
+                    <span className="myday-head-text">Fill gaps</span>
+                    <span className="myday-fill-gaps-sub">
+                      {String(gapsBeforeNow.length)} ·{' '}
+                      {duration(gapsBeforeNow.reduce((sum, g) => sum + g.end - g.start, 0))}
+                    </span>
+                  </button>
+                )}
+              </>
+            )}
+            {!readOnly && addable && view.state !== 'future' && (
+              <button
+                type="button"
+                className="myday-chip myday-chip-primary myday-confirm-day"
+                data-confirm-day
+                ref={confirmButton}
+                disabled={busy || dayPlan.ready.length === 0}
+                title={
+                  dayPlan.needCard.length > 0
+                    ? `${String(dayPlan.needCard.length)} without a task stay in To review`
+                    : 'Confirm every draft on this day (Enter on a single item)'
+                }
+                onClick={() => {
+                  setSummary(true);
+                }}
+              >
+                {pending === 'confirm-day' && <Spinner size="sm" label="Confirming the day" />}
+                <span className="myday-confirm-label">
+                  {view.drafts.length === 0 ? 'Day confirmed' : 'Confirm day'}
+                  {dayPlan.ready.length > 0 && (
+                    <span className="myday-confirm-sub">
+                      {dayPlan.needCard.length > 0
+                        ? ` ${String(dayPlan.ready.length)} ready · ${duration(readyMinutes)}`
+                        : ` ${duration(readyMinutes)}`}
+                    </span>
+                  )}
+                </span>
+              </button>
+            )}
+            {!readOnly && addable && view.drafts.length === 0 && view.state !== 'future' && (
+              <button
+                type="button"
+                className="myday-chip myday-head-button"
+                data-day-note-button
+                title="A note for whoever reads your day"
+                onClick={() => {
+                  setSummary(true);
+                }}
+              >
+                <span className="myday-head-text">
+                  {view.day_note === null ? 'Day note' : 'Edit day note'}
+                </span>
+              </button>
+            )}
+            {!readOnly && !orgOff && (
+              <DaySettings
+                settings={settings}
+                held={view.drafts_held}
+                tz={view.tz}
+                pending={pending}
+                run={(key, writeIt, said) =>
+                  run(key, [], () => writeIt(), said).then((r) => r !== undefined)
+                }
+              />
+            )}
+            {!readOnly && (
+              <WhoLooked
+                tz={view.tz}
+                today={view.today}
+                open={lookedOpen}
+                onOpenChange={setLookedOpen}
+              />
+            )}
+            <button
+              type="button"
+              className="myday-chip myday-head-icon"
+              ref={besideButton}
+              aria-label={readOnly ? `Beside ${subjectName}’s day` : 'Beside your day'}
+              title={readOnly ? 'Agent time' : 'Agent time and On your plate'}
+              aria-expanded={drawerMode === 'cards'}
+              data-beside-button
+              onClick={() => {
+                if (selection !== undefined) {
+                  setSelection(undefined);
+                  setBeside(true);
+                } else {
+                  setBeside((open) => !open);
+                }
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+                <rect
+                  x="1.5"
+                  y="2"
+                  width="13"
+                  height="5"
+                  rx="1.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                />
+                <rect
+                  x="1.5"
+                  y="9.5"
+                  width="13"
+                  height="4.5"
+                  rx="1.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="myday-chip myday-head-icon"
+              aria-label="Keyboard shortcuts"
+              title="Keyboard shortcuts (?)"
+              data-shortcuts-button
+              onClick={() => {
+                setSheet(true);
+              }}
+            >
+              ?
+            </button>
+          </ScreenHeader>
+        ) : embedded === undefined ? null : (
+          <div className="myday-embed-head">
+            <p className="myday-subtitle">
               <span>
                 {dayLong(view.day)}
                 {view.day === view.today && ' · today'}
               </span>
-              <span className="myday-subtitle-dot" aria-hidden="true" />
-              {readOnly ? (
-                <span className="myday-lock">
-                  <Padlock />
-                  {`Read only · ${subjectName} sees that you looked`}
-                </span>
-              ) : (
-                // Who reads drafts, truthfully (D-102, LAI-968): the design's one
-                // link, its words in the tooltip, and the way to every look.
-                <a
-                  href="#myday-looked"
-                  className="myday-lock myday-lock-link"
-                  title={`Drafts: you, owners and admins. Your drafts can be read by you and by ${DRAFT_READERS}. Every look is listed under Who looked.`}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    setLookedOpen(true);
-                  }}
-                >
-                  <Padlock />
-                  Who can see this
-                </a>
-              )}
-            </span>
-          }
-          below={
-            <div className="myday-below">
-              {/* A phone walks the days one at a time (LAI-502); the width decides, in CSS. */}
-              <div className="myday-daynav" data-day-nav>
-                <button
-                  type="button"
-                  className="myday-week-step"
-                  aria-label="Previous day"
-                  disabled={batching}
-                  onClick={() => {
-                    onDay(addDays(view.day, -1));
-                  }}
-                >
-                  <span aria-hidden="true">‹</span>
-                </button>
-                <span className="myday-daynav-title">
-                  <strong>{dayLong(view.day)}</strong>
-                  {totals.confirmed + totals.drafted > 0 && (
-                    <span className="myday-quiet">
-                      {duration(totals.confirmed + totals.drafted)}
-                      {totals.drafted > 0 && ` · ${duration(totals.drafted)} to review`}
-                    </span>
-                  )}
-                </span>
-                <button
-                  type="button"
-                  className="myday-week-step"
-                  aria-label="Next day"
-                  disabled={batching || view.day >= view.today}
-                  onClick={() => {
-                    onDay(addDays(view.day, 1));
-                  }}
-                >
-                  <span aria-hidden="true">›</span>
-                </button>
-              </div>
-              <WeekStrip
-                week={view.week}
-                selected={view.day}
-                today={view.today}
-                locked={batching}
-                onPick={onDay}
-              />
-            </div>
-          }
-        >
-          {switcher}
-          {switcher !== undefined && !readOnly && (
-            <span className="myday-head-divider" aria-hidden="true" />
-          )}
-          {!readOnly && addable && (
-            <>
-              <TimerControl
-                timer={view.timer}
-                tz={view.tz}
-                chips={chipsFor(null)}
-                busy={busy}
-                open={timerOpen}
-                onOpenChange={setTimerOpen}
-                onStart={timerStart}
-                onPause={() => {
-                  void run('timer', [], () => pauseTimer(), 'Timer paused.');
-                }}
-                onResume={() => {
-                  void run('timer', [], () => resumeTimer(), 'Timer running.');
-                }}
-                onStop={() => {
-                  void timerStop();
-                }}
-                onDiscard={() => {
-                  void run('timer', [], () => discardTimer(), 'Timer discarded — nothing saved.');
-                }}
-              />
-              <button
-                type="button"
-                className="myday-chip myday-head-button"
-                data-add-time
-                title="Add time (N)"
-                aria-label="Add time"
-                disabled={busy || batching}
-                onClick={addTime}
-              >
-                <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true">
-                  <path
-                    d="M6 1.5v9M1.5 6h9"
-                    stroke="currentColor"
-                    strokeWidth="1.6"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <span className="myday-head-text">Add time</span>
-                <kbd className="myday-kbd myday-kbd-hint">N</kbd>
-              </button>
-            </>
-          )}
-          {!readOnly && view.drafts.length > 0 && (
-            <button
-              type="button"
-              className="myday-chip myday-chip-primary myday-confirm-day"
-              data-confirm-day
-              ref={confirmButton}
-              disabled={busy || dayPlan.ready.length === 0}
-              title={
-                dayPlan.needCard.length > 0
-                  ? `${needCardLine(dayPlan.needCard.length)} first — left out`
-                  : `Confirm every drafted block of ${dayLong(view.day)}`
-              }
-              onClick={() => {
-                setSummary(true);
-              }}
-            >
-              {pending === 'confirm-day' && <Spinner size="sm" label="Confirming the day" />}
-              <span className="myday-confirm-label">
-                {dayPlan.needCard.length === 0 ? 'Confirm day' : 'Confirm'}
-                <span className="myday-confirm-sub">
-                  {dayPlan.needCard.length === 0
-                    ? ` · ${duration(readyMinutes)}`
-                    : ` ${String(dayPlan.ready.length)} ready · ${duration(readyMinutes)}`}
-                </span>
-              </span>
-            </button>
-          )}
-          {!readOnly && addable && view.drafts.length === 0 && view.state !== 'future' && (
-            <button
-              type="button"
-              className="myday-chip myday-head-button"
-              data-day-note-button
-              title="A note for whoever reads your day"
-              onClick={() => {
-                setSummary(true);
-              }}
-            >
-              <span className="myday-head-text">
-                {view.day_note === null ? 'Day note' : 'Edit day note'}
-              </span>
-            </button>
-          )}
-          {!readOnly && (
-            <DaySettings
-              settings={settings}
-              held={view.drafts_held}
-              tz={view.tz}
-              pending={pending}
-              run={(key, writeIt, said) =>
-                run(key, [], () => writeIt(), said).then((r) => r !== undefined)
-              }
-            />
-          )}
-          {!readOnly && (
-            <WhoLooked
-              tz={view.tz}
-              today={view.today}
-              open={lookedOpen}
-              onOpenChange={setLookedOpen}
-            />
-          )}
-          <button
-            type="button"
-            className="myday-chip myday-head-icon"
-            aria-label="Keyboard shortcuts"
-            title="Keyboard shortcuts (?)"
-            data-shortcuts-button
-            onClick={() => {
-              setSheet(true);
-            }}
-          >
-            ?
-          </button>
-        </ScreenHeader>
-      ) : (
-        <div className="myday-embed-head">
-          <p className="myday-subtitle">
-            <span>
-              {dayLong(view.day)}
-              {view.day === view.today && ' · today'}
-            </span>
-          </p>
-          <WeekStrip week={view.week} selected={view.day} today={view.today} onPick={onDay} />
-        </div>
-      )}
-      {banner}
-      {readOnly && view.day_note !== null && (
-        <p className="myday-viewing-banner myday-day-note" data-day-note>
-          <strong>
-            {subjectName}’s note for {dayLong(view.day)}:
-          </strong>{' '}
-          {view.day_note.note}
-        </p>
-      )}
-      {draftOff && (
-        <p className="myday-viewing-banner myday-draft-off" role="status" data-draft-off>
-          <strong>Draft my time is off.</strong> Laika isn’t drafting from your activity. Time you
-          add or record with a timer still counts.{' '}
-          <button
-            type="button"
-            className="myday-linkish"
-            disabled={busy}
-            onClick={() => {
-              void run(
-                'switch',
-                [],
-                () => setDraftMyTime(true),
-                'Draft my time is on. Your collector drafts from its next sync.',
-              );
-            }}
-          >
-            Turn on
-          </button>
-        </p>
-      )}
-
-      <div className="myday" data-myday-ready>
-        {/* The Timeline spans the page (LAI-889, the v3 design); the editor, the lists and the side column sit under it. */}
-        {view.state === 'future' ? (
-          <section className="myday-card" aria-label="Timeline">
-            <p className="myday-future">This day has not happened yet.</p>
-          </section>
-        ) : (
-          <Timeline
-            view={view}
-            line={line}
-            nowMs={now}
-            zoom={zoom}
-            onZoom={setZoom}
-            selection={selection}
-            onSelect={(next) => {
-              if (next.kind === 'gap') pickGap(next);
-              else setSelection(next);
-            }}
-            onEdge={onEdge}
-            busy={busy}
-            readOnly={readOnly}
-          />
+            </p>
+            <WeekStrip week={view.week} selected={view.day} today={view.today} onPick={onDay} />
+          </div>
         )}
-        <div className="myday-grid">
+        {banner}
+        {readOnly && view.day_note !== null && (
+          <p className="myday-viewing-banner myday-day-note" data-day-note>
+            <strong>
+              {subjectName}’s note for {dayLong(view.day)}:
+            </strong>{' '}
+            {view.day_note.note}
+          </p>
+        )}
+        {draftOff && (
+          <p className="myday-viewing-banner myday-draft-off" role="status" data-draft-off>
+            <strong>Draft my time is off.</strong> Laika isn’t drafting from your activity. Time you
+            add or record with a timer still counts.{' '}
+            <button
+              type="button"
+              className="myday-linkish"
+              disabled={busy}
+              onClick={turnDraftingOn}
+            >
+              Turn on
+            </button>
+          </p>
+        )}
+
+        <div className="myday" data-myday-ready>
+          {/* The Timeline spans the page (LAI-889, the v3 design); the tray, the tabs and the lists sit under it, and the editor beside the page (LAI-511). */}
+          {orgOff ? (
+            <DayOff
+              onOpenSettings={() => {
+                onNavigate('/organisation');
+              }}
+            />
+          ) : emptyKind !== undefined ? (
+            <DayEmpty day={view.day} kind={emptyKind} actions={emptyActions} />
+          ) : phone ? (
+            <TimelineMobile
+              view={view}
+              line={line}
+              selection={selection}
+              onSelect={(next) => {
+                if (next.kind === 'gap') pickGap(next);
+                else setSelection(next);
+              }}
+              onAgent={() => {
+                // An agent's bar opens Agent time in the sheet, as the header's button does.
+                setSelection(undefined);
+                setBeside(true);
+              }}
+              readOnly={readOnly}
+            />
+          ) : (
+            <Timeline
+              view={view}
+              line={line}
+              nowMs={now}
+              zoom={zoom}
+              onZoom={setZoom}
+              selection={selection}
+              onSelect={(next) => {
+                if (next.kind === 'gap') pickGap(next);
+                else setSelection(next);
+              }}
+              onEdge={onEdge}
+              onDropEntry={onDropEntry}
+              onTimerClick={() => {
+                // The running timer's controls are the header's pill: a click
+                // on its block hands the keyboard to them.
+                document.querySelector<HTMLElement>('[data-timer] button')?.focus();
+              }}
+              busy={busy}
+              readOnly={readOnly}
+            />
+          )}
           <div className="myday-main">
-            {view.state !== 'future' && (
+            {showLists && (
               <UntimedTray
                 drafts={view.drafts}
                 entries={view.entries}
                 selected={selectedId}
+                readOnly={readOnly}
+                draggable={!readOnly && addable && !busy}
                 onPick={(item) => {
                   setSelection(item);
                 }}
               />
             )}
-            {view.state !== 'future' && (
+            {showLists && (
               <DayTabs
                 current={shownTab}
                 counts={{ review: view.drafts.length, confirmed: view.entries.length }}
                 onPick={pickTab}
               />
             )}
-            {view.state !== 'future' && shownTab === 'overview' && <OverviewTab view={view} />}
-            {view.state !== 'future' && shownTab === 'review' && (
+            {showLists && inTab('overview') && <OverviewTab view={view} />}
+            {showLists && inTab('review') && (
               <DraftList
                 // A new day starts with nothing ticked.
                 key={`drafts-${view.day}`}
@@ -1378,22 +1939,26 @@ export function MyDayScreen({
                 }}
                 onNavigate={onNavigate}
                 readOnly={readOnly}
-                onBulk={(kind, chosen) =>
+                draftOff={draftOff}
+                assignOptions={assignOptions}
+                onBulk={(kind, chosen, card) =>
                   runBatch(
                     'bulk',
-                    RUNNING[kind],
+                    kind === 'assign' && card !== undefined ? `Putting on ${card}` : RUNNING[kind],
                     view.day,
                     chosen.map((d) => d.id),
-                    (api, progress) => runBulk(kind, chosen, api, progress),
+                    (api, progress) => runBulk(kind, chosen, api, progress, card),
                   )
                 }
               />
             )}
-            {view.state !== 'future' && shownTab === 'confirmed' && (
+            {showLists && inTab('confirmed') && (
               <EntryList
                 key={`entries-${view.day}`}
                 entries={view.entries}
                 selected={selectedId}
+                readOnly={readOnly}
+                subjectName={subjectName}
                 onSelect={(entry) => {
                   setSelection({ kind: 'entry', id: entry.id });
                 }}
@@ -1401,53 +1966,93 @@ export function MyDayScreen({
               />
             )}
           </div>
+        </div>
 
-          {/*
-            The right column (the owner's design, LAI-508): the editor whenever
-            something is in hand — a block, a gap, a range, a break — and Agent
-            time with On your plate only while nothing is.
-          */}
-          <aside
-            className="myday-side"
-            aria-label={readOnly ? `Beside ${subjectName}’s day` : 'Beside your day'}
-            data-myday-side
-            data-side={selection === undefined || view.state === 'future' ? 'cards' : 'editor'}
-          >
-            {view.state !== 'future' && selection !== undefined ? (
-              <Inspector
-                key={
-                  'id' in selection
-                    ? `${selection.kind}-${selection.id}`
-                    : `${selection.kind}-${String(selection.start)}`
-                }
-                view={view}
-                line={line}
-                selection={selection}
-                chipsFor={chipsFor}
-                agentsIn={(span) => agentsDuring(line.agents, span)}
-                pending={pending}
-                actions={actions}
-                onNavigate={onNavigate}
-                readOnly={readOnly}
-                position={
-                  selection.kind === 'draft' && view.drafts.length > 0
-                    ? {
-                        index: Math.max(
-                          0,
-                          view.drafts.findIndex((d) => d.id === selection.id),
-                        ),
-                        total: view.drafts.length,
-                      }
-                    : undefined
-                }
-                onPrev={() => onShortcut.current('prev')}
-                onNext={() => onShortcut.current('next')}
-                onClose={() => {
-                  setSelection(undefined);
-                }}
-              />
-            ) : (
-              <>
+        <Toast
+          toast={toast}
+          busy={busy}
+          onUndo={runUndo}
+          onClose={() => {
+            setToast(undefined);
+          }}
+        />
+      </div>
+
+      {/*
+        The drawer (the owner's design, LAI-511): the editor whenever something
+        is in hand — a block, a gap, a range, a break, a tray item — or Agent
+        time and On your plate from the header's button; nothing on load.
+      */}
+      {drawerMode !== undefined && (
+        <MyDayDrawer
+          mode={drawerMode}
+          label={
+            drawerMode === 'cards'
+              ? readOnly
+                ? `Beside ${subjectName}’s day`
+                : 'Beside your day'
+              : selection?.kind === 'range' || selection?.kind === 'gap'
+                ? 'Add time'
+                : 'Edit this time'
+          }
+          onClose={closeDrawer}
+        >
+          {drawerMode === 'editor' && selection !== undefined ? (
+            <Inspector
+              key={
+                'id' in selection
+                  ? `${selection.kind}-${selection.id}`
+                  : `${selection.kind}-${String(selection.start)}`
+              }
+              view={view}
+              line={line}
+              selection={selection}
+              chipsFor={(own) => cardChipsWhy(own, inProgress, onTheDay, CHIP_CAP, byAgent)}
+              agentsIn={(span) => agentsDuring(line.agents, span)}
+              subject={subjectName}
+              stopped={justStopped}
+              undo={
+                toast?.undo === undefined || busy
+                  ? undefined
+                  : () => {
+                      if (toast.undo !== undefined) runUndo(toast.undo);
+                    }
+              }
+              pending={pending}
+              actions={actions}
+              onNavigate={onNavigate}
+              readOnly={readOnly}
+              position={
+                selection.kind === 'draft' && view.drafts.length > 0
+                  ? {
+                      index: Math.max(
+                        0,
+                        view.drafts.findIndex((d) => d.id === selection.id),
+                      ),
+                      total: view.drafts.length,
+                    }
+                  : undefined
+              }
+              onPrev={() => onShortcut.current('prev')}
+              onNext={() => onShortcut.current('next')}
+              onClose={closeDrawer}
+            />
+          ) : (
+            <>
+              <header className="myday-drawer-head">
+                <h2 className="myday-drawer-title">
+                  {readOnly ? `Beside ${subjectName}’s day` : 'Beside your day'}
+                </h2>
+                <button
+                  type="button"
+                  className="myday-week-step inspector-close"
+                  aria-label="Close (Esc)"
+                  onClick={closeDrawer}
+                >
+                  ×
+                </button>
+              </header>
+              <div className="myday-drawer-cards">
                 <AgentStrip agent={view.agent} spaces={spaces} onNavigate={onNavigate} />
                 {!readOnly && (
                   <OnYourPlate
@@ -1459,20 +2064,11 @@ export function MyDayScreen({
                     onNavigate={onNavigate}
                   />
                 )}
-              </>
-            )}
-          </aside>
-        </div>
-      </div>
-
-      <Toast
-        toast={toast}
-        busy={busy}
-        onUndo={runUndo}
-        onClose={() => {
-          setToast(undefined);
-        }}
-      />
+              </div>
+            </>
+          )}
+        </MyDayDrawer>
+      )}
       {summary && (
         <ConfirmDaySummary
           view={view}

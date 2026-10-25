@@ -138,7 +138,7 @@ describe('a typed entry says what it was', () => {
     const made = (await (
       await ok(
         '/me/time-entries',
-        post({ day: today(), tz: 'UTC', minutes: 20, kind: 'call', title: 'Customer call' }),
+        post({ day: today(), tz: 'UTC', minutes: 20, kind: 'support', title: 'Customer call' }),
         201,
       )
     ).json()) as Entry;
@@ -173,7 +173,7 @@ describe('a typed entry says what it was', () => {
       await ok(`/me/time-entries/${made.id}/revisions`, {}, 200)
     ).json()) as { revisions: Revision[] };
     expect(revisions.map((r) => [r.revision, r.kind, r.title])).toEqual([
-      [1, 'call', 'Customer call'],
+      [1, 'support', 'Customer call'],
       [2, 'support', 'Support call'],
       [3, null, null],
     ]);

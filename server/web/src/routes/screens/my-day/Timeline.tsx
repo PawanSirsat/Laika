@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type DragEvent,
   type KeyboardEvent,
   type MouseEvent,
   type PointerEvent,
@@ -17,18 +18,22 @@ import { placeOf } from '../places.ts';
 import { glyphAt, skyPhases, sunTimes } from './daylight.ts';
 import { FitLabel } from './FitLabel.tsx';
 import { needsACard } from './folder.ts';
-import { agentDuration, clock, duration, hourName, span as spanOf } from './format.ts';
+import { agentDuration, clock, compact, duration, hourName, span as spanOf } from './format.ts';
 import { dayLabel, plural } from './my-day-derive.ts';
 import {
   agentsDuring,
   axisMarks,
   buildScale,
+  checkDrop,
   dayFigures,
   dragEdge,
+  moveBlock,
+  timerSpan,
+  trayDropSpan,
+  type DropCheck,
   idleEnds,
   instantOf,
   limitsIn,
-  placeChips,
   signalsDuring,
   stackOf,
   FOLD_MIN,
@@ -42,8 +47,6 @@ import {
   clampBlockHeight,
   zoomLabel,
   zoomStep,
-  type Box,
-  type ChipPlace,
   type DayLine,
   type Edit,
   type LaneBlock,
@@ -52,6 +55,8 @@ import {
   workedIn,
   rangeFromDrag,
 } from './timeline-derive.ts';
+import { trayDrag } from './tray-drag.ts';
+import './timeline.css';
 
 /** What the reader has in hand: a block, a gap they picked, or a break. */
 export type Selection =
@@ -77,6 +82,8 @@ export type Selection =
           }
         | undefined;
       readonly fromTimer?: boolean | undefined;
+      /** Where it came from, for the editor's sub line (LAI-515): the header's button, a drag, the timer. */
+      readonly from?: 'button' | 'drag' | 'timer' | 'gap' | undefined;
     }
   | { readonly kind: 'break'; readonly id: string };
 
@@ -88,8 +95,18 @@ export interface TimelineProps {
   readonly onZoom: (zoom: Zoom) => void;
   readonly selection: Selection | undefined;
   readonly onSelect: (selection: Selection) => void;
-  /** An edge dragged, or moved by its arrow keys: one write. */
-  readonly onEdge: (block: LaneBlock, edit: Edit) => void;
+  /**
+   * An edge dragged, or moved by its arrow keys: one write. `how` says the
+   * block was moved whole or resized by a drag (LAI-512), for a word with Undo.
+   */
+  readonly onEdge: (block: LaneBlock, edit: Edit, how?: 'move' | 'resize') => void;
+  /** A tray item dropped onto the track (LAI-512): give it that time. */
+  readonly onDropEntry?: (
+    item: { readonly kind: 'draft' | 'entry'; readonly id: string },
+    span: Span,
+  ) => void;
+  /** The running timer's block clicked: open the timer. */
+  readonly onTimerClick?: () => void;
   readonly busy: boolean;
   /**
    * Somebody else's day, read (D-102, LAI-959): no edge drags or moves, and
@@ -109,17 +126,30 @@ const ZOOMS: readonly (readonly [Zoom, string, string])[] = [
 const pxAnHour = (zoom: Zoom): string =>
   zoom === 'fit' ? 'The whole day in view' : `${String(PX_PER_HOUR[zoom] ?? 0)} px an hour`;
 
-/** The keys the footer lists, in the design's order. */
-const KEYS: readonly (readonly [string, string])[] = [
-  ['← →', 'Move'],
-  ['↵', 'Confirm'],
-  ['G', 'General'],
-  ['X', 'Not work'],
-  ['Esc', 'Clear'],
-];
+/** A pointer that moved less than this is a click, not a drag (the design's 4px). */
+const DRAG_SLACK = 4;
+/** A refused drop says why, then goes, after this long (the design's 1.6s). */
+const BOUNCE_MS = 1600;
 
-/** The keys that only look, for a day read rather than kept. */
-const READ_KEYS = KEYS.filter(([key]) => key === '← →' || key === 'Esc');
+/** A block being moved or resized by the pointer or the keys (LAI-512). */
+interface Drag {
+  readonly id: string;
+  readonly kind: 'move' | 'start' | 'end';
+  readonly kbd: boolean;
+  /** Where it was. */
+  readonly o0: number;
+  readonly o1: number;
+  readonly edit: Edit;
+}
+
+/** A tray item over the track, where it would land (LAI-512). */
+interface Ext {
+  readonly kind: 'draft' | 'entry';
+  readonly id: string;
+  readonly label: string;
+  readonly span: Span;
+  readonly check: DropCheck;
+}
 
 /** The glyph on each kind of block, as the design draws it. */
 const ICONS = {
@@ -176,7 +206,11 @@ function labelOf(
     if (d === undefined) return { top: '', title: '', card: undefined };
     if (d.task !== null) return { top: d.task.key, title: d.task.title, card: d.task.key };
     if (d.project !== null) return { top: d.project.name, title: d.folder ?? '', card: undefined };
-    return { top: d.general ? 'General' : needsACard(d), title: '', card: undefined };
+    return {
+      top: d.general ? 'General' : needsACard(d).replace(/^Needs a card/, 'No task yet'),
+      title: '',
+      card: undefined,
+    };
   }
   const e = entries.get(block.id);
   if (e === undefined) return { top: '', title: '', card: undefined };
@@ -195,14 +229,6 @@ function labelOf(
     title: e.description ?? '',
     card: undefined,
   };
-}
-
-/** `1h 20m`, `45m` — the pill's compact clock, the design's own (LAI-894). */
-function compact(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h === 0) return `${String(m)}m`;
-  return m === 0 ? `${String(h)}h` : `${String(h)}h ${String(m)}m`;
 }
 
 /** `30m worked`, `worked through`, or `offline` — the window's own word (LAI-894). */
@@ -298,6 +324,8 @@ export function Timeline({
   selection,
   onSelect,
   onEdge,
+  onDropEntry,
+  onTimerClick,
   busy,
   readOnly = false,
 }: TimelineProps) {
@@ -305,12 +333,41 @@ export function Timeline({
   const scroller = useRef<HTMLDivElement | null>(null);
   const track = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
-  const dragging = useRef<{ id: string; edge: 'start' | 'end'; edit: Edit | undefined } | null>(
-    null,
-  );
-  const [preview, setPreview] = useState<{ id: string; edit: Edit } | undefined>(undefined);
+  /** A block moved or resized by the pointer or the keys (LAI-512), until it is let go. */
+  const [drag, setDrag] = useState<Drag | undefined>(undefined);
+  const dragRef = useRef<Drag | undefined>(undefined);
+  dragRef.current = drag;
+  const blockDrag = useRef<{
+    id: string;
+    kind: Drag['kind'];
+    x0: number;
+    started: boolean;
+  } | null>(null);
+  const suppressClick = useRef(false);
+  /** A drop the day refused: its words stay a moment where it would have gone. */
+  const [refused, setRefused] = useState<
+    { readonly label: string; readonly x: number; readonly overId: string | undefined } | undefined
+  >(undefined);
+  const bounceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  /** A tray item over the track (LAI-512). */
+  const [ext, setExt] = useState<Ext | undefined>(undefined);
+  const extRef = useRef<Ext | undefined>(undefined);
+  extRef.current = ext;
+  /** What a drag just did, for a screen reader. */
+  const [live, setLive] = useState('');
   /** A drag on the empty track (LAI-897): where it began, and the range it is making. */
-  const rangeDrag = useRef<{ anchor: number } | null>(null);
+  /**
+   * A range being drawn. One begun on a gap waits for the pointer to move
+   * four pixels — the design's threshold — so a click still picks the gap.
+   */
+  const rangeDrag = useRef<{
+    anchor: number;
+    x0: number;
+    gap: boolean;
+    waiting: boolean;
+  } | null>(null);
+  /** When a drag that began on a gap ended, so that gap's click is not also a pick. */
+  const rangedFromGap = useRef(0);
   const [rangePreview, setRangePreview] = useState<Span | undefined>(undefined);
   const [hover, setHover] = useState<Hover | undefined>(undefined);
   /** The minute at the middle of the view when the scale last changed — kept there (LAI-890). */
@@ -318,7 +375,6 @@ export function Timeline({
   /** The block height, dragged by the grip under the YOU row (LAI-891). */
   const [blockPx, setBlockPx] = useState<number>(BLOCK_MIN_PX);
   const gripDrag = useRef<{ y: number; px: number } | null>(null);
-  const [chips, setChips] = useState<ReadonlyMap<string, ChipPlace>>(() => new Map());
   const [, setFonts] = useState(0);
 
   const { from, to } = line;
@@ -340,13 +396,21 @@ export function Timeline({
   const entries = new Map(view.entries.map((e) => [e.id, e]));
   const at = (m: number): number => (line.midnight === undefined ? 0 : instantOf(line.midnight, m));
   const rangeOf = (s: Span): string => spanOf(at(s.start), at(s.end), view.tz);
-  // From the blocks as drawn, a dragged edge included: it never lies over a neighbour.
-  const shaped = line.blocks.map((b) => (preview?.id === b.id ? { ...b, ...preview.edit } : b));
+  // From the blocks as drawn, a dragged edge or a moved block included.
+  const shaped = line.blocks.map((b) => (drag?.id === b.id ? { ...b, ...drag.edit } : b));
   const stacks = stackOf(shaped);
   const figures = dayFigures(view, line.gaps);
   // No signal is not zero hours: a quiet day, or one to come, has no figure.
   const quiet = view.state === 'no_signal' || view.state === 'future';
-  const figure = (minutes: number): string => (quiet ? '—' : duration(minutes));
+  /** The legend's and the YOU column's figure, compact as the design's: `2h 10m`, `35m`. */
+  const legend = (minutes: number): string => (quiet ? '—' : compact(minutes));
+
+  useEffect(
+    () => () => {
+      if (bounceTimer.current !== undefined) clearTimeout(bounceTimer.current);
+    },
+    [],
+  );
 
   // A font that finishes loading changes how wide each badge is drawn.
   useEffect(() => {
@@ -358,30 +422,6 @@ export function Timeline({
       document.fonts.removeEventListener('loadingdone', again);
     };
   }, []);
-
-  // After every render, each badge's place from the boxes as drawn (`placeChips`).
-  useLayoutEffect(() => {
-    const root = track.current;
-    if (root === null) return;
-    const boxOf = (el: Element): Box => {
-      const r = el.getBoundingClientRect();
-      return { l: r.left, r: r.right, t: r.top, b: r.bottom };
-    };
-    const blocks = new Map(
-      [...root.querySelectorAll<HTMLElement>('[data-block-key]')].map((el) => [
-        el.dataset.blockKey ?? '',
-        boxOf(el),
-      ]),
-    );
-    const sizes = [...root.querySelectorAll<HTMLElement>('[data-chip-for]')].map((el) => {
-      const r = el.getBoundingClientRect();
-      return { id: el.dataset.chipFor ?? '', width: r.width, top: r.top, bottom: r.bottom };
-    });
-    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
-    const next = placeChips(sizes, blocks, boxOf(root), rem * 0.25);
-    const same = next.size === chips.size && [...next].every(([id, p]) => chips.get(id) === p);
-    if (!same) setChips(next);
-  });
 
   useLayoutEffect(() => {
     const box = scroller.current;
@@ -453,18 +493,24 @@ export function Timeline({
     if (box === undefined || box.width === 0) return 0;
     return scale.at(clientX - box.left);
   };
-  // A drag on the empty track makes a range (LAI-897): every handle, grip,
-  // block, gap, break and strip is a button and is left to its own handler;
-  // the no-signal overlay is not, and a day with nothing on it should take a
+  // A drag on the empty track makes a range (LAI-897), and so does one begun
+  // on a gap (the design's `down`, LAI-510): every other handle, grip,
+  // block, break and strip is a button and is left to its own handler; the
+  // no-signal overlay is not, and a day with nothing on it should take a
   // drag. Snapped to five minutes and clipped to the free stretch between
   // confirmed blocks; the server's 409 remains the backstop.
   const confirmedSpans = line.blocks.filter((b) => b.kind === 'confirmed');
   const rangeHandlers = {
     onPointerDown: (event: PointerEvent<HTMLDivElement>) => {
-      if (event.button !== 0 || (event.target as Element).closest('button') !== null) return;
-      event.preventDefault();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      rangeDrag.current = { anchor: minuteAt(event.clientX) };
+      if (event.button !== 0) return;
+      const on = (event.target as Element).closest('button');
+      const gap = on?.classList.contains('dayline-gap') === true;
+      if (on !== null && !gap) return;
+      if (!gap) {
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
+      rangeDrag.current = { anchor: minuteAt(event.clientX), x0: event.clientX, gap, waiting: gap };
       setHover(undefined);
     },
     onPointerMove: (event: PointerEvent<HTMLDivElement>) => {
@@ -475,13 +521,22 @@ export function Timeline({
         setRangePreview(undefined);
         return;
       }
+      if (drag.waiting) {
+        if (Math.abs(event.clientX - drag.x0) < 4) return;
+        drag.waiting = false;
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
       setRangePreview(
         rangeFromDrag(drag.anchor, minuteAt(event.clientX), confirmedSpans, from * 60, to * 60),
       );
     },
     onPointerUp: (event: PointerEvent<HTMLDivElement>) => {
-      if (rangeDrag.current === null) return;
+      const drag = rangeDrag.current;
+      if (drag === null) return;
       rangeDrag.current = null;
+      // A press on a gap that never moved is that gap's click, not a range.
+      if (drag.waiting) return;
+      if (drag.gap) rangedFromGap.current = Date.now();
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
@@ -501,33 +556,8 @@ export function Timeline({
       : undefined);
 
   const handle = (block: LaneBlock, edge: 'start' | 'end') => ({
-    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.currentTarget.setPointerCapture(event.pointerId);
-      dragging.current = { id: block.id, edge, edit: undefined };
-      setHover(undefined);
-    },
-    onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
-      const drag = dragging.current;
-      if (drag?.id !== block.id || drag.edge !== edge) return;
-      // Never over a confirmed neighbour: that time would count twice (review round 1).
-      drag.edit = dragEdge(block, edge, minuteAt(event.clientX), limitsIn(line, block));
-      setPreview(drag.edit === undefined ? undefined : { id: block.id, edit: drag.edit });
-    },
-    onPointerUp: (event: PointerEvent<HTMLButtonElement>) => {
-      const drag = dragging.current;
-      dragging.current = null;
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }
-      setPreview(undefined);
-      if (drag?.edit !== undefined) onEdge(block, drag.edit);
-    },
-    onPointerCancel: () => {
-      dragging.current = null;
-      setPreview(undefined);
-    },
+    // The pointer: the block's own drag, held on this edge (LAI-512).
+    ...pointer(block, edge),
     onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => {
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
       // The handle's own ← →: never also the page's, which step the selection.
@@ -544,12 +574,209 @@ export function Timeline({
     },
   });
 
+  /** A block the pointer or the keys may move: not read, not busy, not an import. */
+  const canDrag = (block: LaneBlock): boolean => !readOnly && !busy && !block.locked;
+  const unchanged = (block: LaneBlock): Edit => ({
+    start: block.start,
+    end: block.end,
+    minutes: block.minutes,
+  });
+  const reasonOf = (check: DropCheck): string =>
+    check.ok
+      ? ''
+      : check.why === 'midnight'
+        ? 'Can’t cross midnight'
+        : `Overlaps ${labelOf(check.over, drafts, entries).top}, ${rangeOf(check.over)}`;
+  const dragCheck =
+    drag === undefined ? undefined : checkDrop(drag.edit, line.blocks, drag.id, line.length);
+  const bounce = (label: string, mid: number, overId: string | undefined): void => {
+    if (bounceTimer.current !== undefined) clearTimeout(bounceTimer.current);
+    setRefused({ label, x: mid, overId });
+    bounceTimer.current = setTimeout(() => {
+      setRefused(undefined);
+    }, BOUNCE_MS);
+  };
+  /** Let go of the block in hand: saved where it is, or bounced back with its reason. */
+  const drop = (): void => {
+    const d = dragRef.current;
+    if (d === undefined) return;
+    setDrag(undefined);
+    const block = line.blocks.find((b) => b.id === d.id);
+    if (block === undefined) return;
+    const check = checkDrop(d.edit, line.blocks, d.id, line.length);
+    if (!check.ok) {
+      const reason = reasonOf(check);
+      bounce(
+        `${reason} · moved back`,
+        x((d.edit.start + d.edit.end) / 2),
+        check.why === 'overlap' ? check.over.id : undefined,
+      );
+      setLive(`${reason}. Moved back.`);
+      return;
+    }
+    if (d.edit.start === d.o0 && d.edit.end === d.o1) return;
+    setLive(`Saved, ${rangeOf(d.edit)}`);
+    onEdge(block, d.edit, d.kind === 'move' ? 'move' : 'resize');
+  };
+  /**
+   * The design's drag on a block (LAI-512): its body moves it whole, 9px at
+   * either end — or its edge handle, `edge` — resizes that edge; under four
+   * pixels it is a click, which the button's own handler takes. Snapped to
+   * five minutes as it goes.
+   *
+   * **A move bounces; an edge stops.** A block moved over confirmed time is
+   * refused and goes back (the design's `check`); an edge dragged towards it
+   * stops at it, as LAI-831 made it — that time would count twice. An edge
+   * follows the pointer itself, so it lands where it is let go.
+   */
+  const pointer = (block: LaneBlock, edge?: 'start' | 'end') => ({
+    onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
+      if (event.button !== 0 || !canDrag(block)) return;
+      let kind: Drag['kind'] = 'move';
+      if (edge !== undefined) {
+        kind = edge;
+        // The handle is the row's too: never also a range dragged on the track.
+        event.preventDefault();
+        event.stopPropagation();
+      } else {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const ox = event.clientX - rect.left;
+        if (rect.width >= 24 && ox < 9) kind = 'start';
+        else if (rect.width >= 24 && ox > rect.width - 9) kind = 'end';
+      }
+      blockDrag.current = { id: block.id, kind, x0: event.clientX, started: false };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
+      const d = blockDrag.current;
+      if (d?.id !== block.id) return;
+      if (event.buttons === 0) {
+        blockDrag.current = null;
+        setDrag(undefined);
+        return;
+      }
+      const dx = event.clientX - d.x0;
+      if (!d.started && Math.abs(dx) < DRAG_SLACK) return;
+      d.started = true;
+      const edit =
+        d.kind === 'move'
+          ? (moveBlock(block, scale.at(x(block.start) + dx)) ?? unchanged(block))
+          : (dragEdge(block, d.kind, minuteAt(event.clientX), limitsIn(line, block)) ??
+            unchanged(block));
+      setDrag({ id: block.id, kind: d.kind, kbd: false, o0: block.start, o1: block.end, edit });
+      setHover(undefined);
+    },
+    onPointerUp: (event: PointerEvent<HTMLButtonElement>) => {
+      const d = blockDrag.current;
+      blockDrag.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      if (d?.started !== true) return;
+      if (edge === undefined) suppressClick.current = true;
+      drop();
+    },
+    onPointerCancel: () => {
+      blockDrag.current = null;
+      setDrag(undefined);
+    },
+  });
+  const mover = (block: LaneBlock) => ({
+    ...pointer(block),
+    onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => {
+      const held = dragRef.current;
+      const mine = held?.kbd === true && held.id === block.id;
+      if (event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+        if (!canDrag(block)) return;
+        // The block's own Alt+← →: never also the page's ← →, which step the selection.
+        event.preventDefault();
+        event.stopPropagation();
+        const by = (event.shiftKey ? 15 : STEP) * (event.key === 'ArrowRight' ? 1 : -1);
+        const from = mine ? held.edit : unchanged(block);
+        // Not pinned to the day: past midnight, the words say so and Enter bounces it (the design).
+        const start = from.start + by;
+        const edit: Edit = { start, end: start + from.end - from.start, minutes: block.minutes };
+        setDrag({ id: block.id, kind: 'move', kbd: true, o0: block.start, o1: block.end, edit });
+        const check = checkDrop(edit, line.blocks, block.id, line.length);
+        setLive(
+          `${rangeOf(edit)}. ${check.ok ? '' : `${reasonOf(check)}. `}Enter to save, Escape to cancel.`,
+        );
+        return;
+      }
+      if (!mine) return;
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        event.stopPropagation();
+        drop();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        setDrag(undefined);
+        setLive('Move cancelled');
+      }
+    },
+  });
+  /**
+   * A tray item over the track (LAI-512): the browser's own drag, the item
+   * read from `tray-drag.ts`, landing centred on the pointer on the grid.
+   */
+  const extHandlers = {
+    onDragOver: (event: DragEvent<HTMLDivElement>) => {
+      const item = trayDrag();
+      if (item === null || readOnly || busy) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      const span = trayDropSpan(minuteAt(event.clientX), item.minutes);
+      setExt((cur) =>
+        cur?.id === item.id && cur.span.start === span.start
+          ? cur
+          : {
+              kind: item.kind,
+              id: item.id,
+              label: item.label,
+              span,
+              check: checkDrop(span, line.blocks, undefined, line.length),
+            },
+      );
+      setHover(undefined);
+    },
+    onDragLeave: (event: DragEvent<HTMLDivElement>) => {
+      if (
+        event.relatedTarget instanceof Node &&
+        event.currentTarget.contains(event.relatedTarget)
+      ) {
+        return;
+      }
+      setExt(undefined);
+    },
+    onDrop: (event: DragEvent<HTMLDivElement>) => {
+      const cur = extRef.current;
+      if (cur === undefined) return;
+      event.preventDefault();
+      setExt(undefined);
+      if (!cur.check.ok) {
+        const reason = reasonOf(cur.check);
+        bounce(
+          `${reason} · moved back`,
+          x((cur.span.start + cur.span.end) / 2),
+          cur.check.why === 'overlap' ? cur.check.over.id : undefined,
+        );
+        setLive(`${reason}. Moved back.`);
+        return;
+      }
+      setLive(`Placed at ${rangeOf(cur.span)}`);
+      onDropEntry?.({ kind: cur.kind, id: cur.id }, cur.span);
+    },
+  };
+
   /** Where a hovered element sits on the stage, for the tooltip. */
   const enter =
     (kind: Hover['kind'], id: string) =>
     (event: MouseEvent<HTMLElement>): void => {
       const root = stage.current;
-      if (root === null || dragging.current !== null || rangeDrag.current !== null) return;
+      if (root === null || rangeDrag.current !== null || blockDrag.current?.started === true) {
+        return;
+      }
       const s = root.getBoundingClientRect();
       const r = event.currentTarget.getBoundingClientRect();
       setHover({ kind, id, x: r.left - s.left, y: r.top - s.top, w: r.width, h: r.height });
@@ -570,6 +797,14 @@ export function Timeline({
     line.signals.reduce((n, m) => (m.kind === kind ? n + m.count : n), 0);
   const promptCount = countOf('prompt');
   const commitCount = countOf('commit');
+  const markCount = view.drafts.reduce((n, d) => n + d.signals.marks, 0);
+  // The running timer on the track (LAI-512), on the day it started.
+  const timer = timerSpan(view.timer, line.midnight, line.length, nowMs);
+  const timerLabel =
+    view.timer === null
+      ? ''
+      : (view.timer.task?.key ??
+        (view.timer.title !== null && view.timer.title !== '' ? view.timer.title : 'Timer'));
 
   // The selected block's card: every block on it is lifted, the rest dimmed.
   const selectedCard =
@@ -609,11 +844,14 @@ export function Timeline({
     box.scrollTo({ left: Math.max(0, x(line.now) - box.clientWidth * 0.6), behavior: 'smooth' });
   };
 
-  // The hours along the top: each where it really falls, labelled where there is room.
-  const nowX = line.now === undefined ? undefined : x(line.now);
+  // The hours along the top: each where it really falls, labelled where there
+  // is room. The now line stands at the timer's end while one runs past it.
+  const nowMinute =
+    line.now === undefined ? undefined : Math.max(line.now, timer === undefined ? 0 : timer.end);
+  const nowX = nowMinute === undefined ? undefined : x(nowMinute);
   // The sky (LAI-895, D-106): the day's sun at the person's place — set by
   // them, else the day's own zone when the list knows it — and nothing where
-  // neither names a place.
+  // neither names a place: a sun drawn for no place would be a claim.
   const place = placeOf(view.settings.place ?? view.tz);
   const sun = place === undefined ? undefined : sunTimes(view.day, place.lat, place.lng, view.tz);
   const sky = sun === undefined ? [] : skyPhases(sun, from * 60, to * 60);
@@ -814,12 +1052,6 @@ export function Timeline({
   const tipTop =
     hover === undefined ? 0 : tip?.above === true ? hover.y - 8 : hover.y + hover.h + 8;
 
-  const selectedLabel =
-    selectedBlock === undefined ? undefined : labelOf(selectedBlock, drafts, entries).top;
-  const editing: string | undefined =
-    selectedLabel ??
-    (selection?.kind === 'gap' ? 'the gap' : selection?.kind === 'break' ? 'the break' : undefined);
-
   const lanes = hasSignals || hasAgents;
   /** The row's px from the dragged block height: the strip above, the blocks, a margin under. */
   const rowStyle = {
@@ -868,7 +1100,7 @@ export function Timeline({
   const laneTotals = (): ReactNode => (
     <>
       <div className="dayline-axis-note" data-axis-note>
-        {zoom === 'fit' ? (folds.length > 0 ? 'Idle hours folded' : '') : 'scroll sideways'}
+        {zoom === 'fit' && folds.length > 0 ? 'Idle hours folded' : ''}
       </div>
       {hasSignals && (
         <div className="dayline-lane-label dayline-label-signals">
@@ -883,14 +1115,19 @@ export function Timeline({
             <span className="dayline-lane-row-name">Commits</span>
             <strong data-commit-total>{String(commitCount)}</strong>
           </span>
+          <span className="dayline-lane-row">
+            <span className="dayline-key-mark" aria-hidden="true" />
+            <span className="dayline-lane-row-name">Marks</span>
+            <strong data-mark-total>{String(markCount)}</strong>
+          </span>
         </div>
       )}
       <div className="dayline-lane-label dayline-label-you">
         <span className="dayline-lane-name">You</span>
         <strong className="dayline-lane-figure" data-you-work>
-          {figure(figures.confirmed + figures.drafted + figures.needsCard)}
+          {legend(figures.confirmed + figures.drafted + figures.needsCard)}
         </strong>
-        <span className="dayline-lane-sub">of work · {duration(figures.confirmed)} confirmed</span>
+        <span className="dayline-lane-sub">of work · {compact(figures.confirmed)} confirmed</span>
         <label className="dayline-row-height">
           <span className="dayline-row-height-name">Row height</span>
           <input
@@ -911,15 +1148,21 @@ export function Timeline({
       </div>
       {hasAgents && (
         <div className="dayline-lane-label dayline-label-agents">
-          <span className="dayline-lane-name">Agents</span>
-          <strong className="dayline-lane-figure dayline-lane-figure-sm" data-agent-work>
-            {agentDuration(agentMinutes(agentSeconds))}
-          </strong>
+          {/* The design's head row, its figure where the design's Expand sits:
+              the server sends one lane, not one per agent (LAI-833), so there
+              is nothing to expand into and no count of agents to give. */}
+          <span className="dayline-lane-head">
+            <span className="dayline-lane-name">Agents</span>
+            <strong className="dayline-lane-figure dayline-lane-figure-sm" data-agent-work>
+              {agentDuration(agentMinutes(agentSeconds))}
+            </strong>
+          </span>
           <span className="dayline-lane-on-card" data-agent-on-card>
             {onCardSeconds > 0
-              ? `${agentDuration(agentMinutes(onCardSeconds))} on a card · never your hours`
-              : 'on no card · never your hours'}
+              ? `${agentDuration(agentMinutes(onCardSeconds))} on a card`
+              : 'on no card'}
           </span>
+          <span className="dayline-lane-sub">Beside your day. Never added to your hours.</span>
         </div>
       )}
     </>
@@ -936,24 +1179,24 @@ export function Timeline({
           <li data-stat="confirmed">
             <span className="dayline-key dayline-key-confirmed" aria-hidden="true" />
             <span>Confirmed</span>
-            <strong>{figure(figures.confirmed)}</strong>
+            <strong>{legend(figures.confirmed)}</strong>
           </li>
           <li data-stat="drafted">
             <span className="dayline-key dayline-key-drafted" aria-hidden="true" />
             <span>Drafted</span>
-            <strong>{figure(figures.drafted)}</strong>
+            <strong>{legend(figures.drafted)}</strong>
           </li>
           <li data-stat="needs-card">
             <span className="dayline-key dayline-key-needs-card" aria-hidden="true" />
-            <span>Needs a card</span>
-            <strong>{figure(figures.needsCard)}</strong>
+            <span>No task yet</span>
+            <strong>{legend(figures.needsCard)}</strong>
           </li>
           <li>
             {line.gaps[0] === undefined ? (
               <span className="dayline-total" data-stat="gaps">
                 <span className="dayline-key dayline-key-gap" aria-hidden="true" />
                 <span>Gaps</span>
-                <strong>{figure(figures.gaps)}</strong>
+                <strong>{legend(figures.gaps)}</strong>
               </span>
             ) : (
               <button
@@ -972,10 +1215,7 @@ export function Timeline({
               >
                 <span className="dayline-key dayline-key-gap" aria-hidden="true" />
                 <span>Gaps</span>
-                <strong>{duration(figures.gaps)}</strong>
-                <span className="dayline-total-note">
-                  {String(line.gaps.length)} unaccounted{readOnly ? '' : ' · click to fill'}
-                </span>
+                <strong>{compact(figures.gaps)}</strong>
               </button>
             )}
           </li>
@@ -1018,86 +1258,95 @@ export function Timeline({
               <span aria-hidden="true">›</span>
             </button>
           </div>
-          <div className="dayline-steps dayline-zoom-steps" role="group" aria-label="Zoom in steps">
-            <button
-              type="button"
-              className="dayline-tool"
-              data-zoom-step="out"
-              aria-label="Zoom out"
-              title={
-                zoomStep(zoom, -1) === undefined
-                  ? 'As far out as it goes'
-                  : pxAnHour(zoomStep(zoom, -1) ?? zoom)
-              }
-              disabled={zoomStep(zoom, -1) === undefined}
-              onClick={() => {
-                const next = zoomStep(zoom, -1);
-                if (next !== undefined) changeZoom(next);
-              }}
+          <div className="dayline-zooms">
+            <div
+              className="dayline-steps dayline-zoom-steps"
+              role="group"
+              aria-label="Zoom in steps"
             >
-              <span aria-hidden="true">−</span>
-            </button>
-            <span className="dayline-zoom-level" data-zoom-level={zoom} title={pxAnHour(zoom)}>
-              {zoomLabel(zoom)}
-            </span>
-            <input
-              type="range"
-              className={
-                zoom === 'fit'
-                  ? 'dayline-zoom-slider dayline-zoom-slider-fit'
-                  : 'dayline-zoom-slider'
-              }
-              data-zoom-slider
-              min={0}
-              max={ZOOM_STEPS.length - 1}
-              step={1}
-              value={sliderAt}
-              aria-label="Zoom, from half to five times"
-              aria-valuetext={zoomLabel(zoom)}
-              title="Drag to zoom"
-              onChange={(event) => {
-                const next = ZOOM_STEPS[Number(event.target.value)];
-                if (next !== undefined && next !== zoom) changeZoom(next);
-              }}
-            />
-            <button
-              type="button"
-              className="dayline-tool"
-              data-zoom-step="in"
-              aria-label="Zoom in"
-              title={
-                zoomStep(zoom, 1) === undefined
-                  ? 'As far in as it goes'
-                  : pxAnHour(zoomStep(zoom, 1) ?? zoom)
-              }
-              disabled={zoomStep(zoom, 1) === undefined}
-              onClick={() => {
-                const next = zoomStep(zoom, 1);
-                if (next !== undefined) changeZoom(next);
-              }}
-            >
-              <span aria-hidden="true">+</span>
-            </button>
-          </div>
-          <div className="dayline-zoom" role="group" aria-label="Zoom">
-            {ZOOMS.map(([key, label, title]) => (
               <button
-                key={key}
                 type="button"
-                className="dayline-zoom-option"
-                data-zoom={key}
-                aria-pressed={zoom === key}
-                title={title}
+                className="dayline-tool"
+                data-zoom-step="out"
+                aria-label="Zoom out"
+                title={
+                  zoomStep(zoom, -1) === undefined
+                    ? 'As far out as it goes'
+                    : pxAnHour(zoomStep(zoom, -1) ?? zoom)
+                }
+                disabled={zoomStep(zoom, -1) === undefined}
                 onClick={() => {
-                  changeZoom(key);
+                  const next = zoomStep(zoom, -1);
+                  if (next !== undefined) changeZoom(next);
                 }}
               >
-                {label}
+                <span aria-hidden="true">−</span>
               </button>
-            ))}
+              <span className="dayline-zoom-level" data-zoom-level={zoom} title={pxAnHour(zoom)}>
+                {zoomLabel(zoom)}
+              </span>
+              <input
+                type="range"
+                className={
+                  zoom === 'fit'
+                    ? 'dayline-zoom-slider dayline-zoom-slider-fit'
+                    : 'dayline-zoom-slider'
+                }
+                data-zoom-slider
+                min={0}
+                max={ZOOM_STEPS.length - 1}
+                step={1}
+                value={sliderAt}
+                aria-label="Zoom, from half to five times"
+                aria-valuetext={zoomLabel(zoom)}
+                title="Drag to zoom"
+                onChange={(event) => {
+                  const next = ZOOM_STEPS[Number(event.target.value)];
+                  if (next !== undefined && next !== zoom) changeZoom(next);
+                }}
+              />
+              <button
+                type="button"
+                className="dayline-tool"
+                data-zoom-step="in"
+                aria-label="Zoom in"
+                title={
+                  zoomStep(zoom, 1) === undefined
+                    ? 'As far in as it goes'
+                    : pxAnHour(zoomStep(zoom, 1) ?? zoom)
+                }
+                disabled={zoomStep(zoom, 1) === undefined}
+                onClick={() => {
+                  const next = zoomStep(zoom, 1);
+                  if (next !== undefined) changeZoom(next);
+                }}
+              >
+                <span aria-hidden="true">+</span>
+              </button>
+            </div>
+            <div className="dayline-zoom" role="group" aria-label="Zoom">
+              {ZOOMS.map(([key, label, title]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className="dayline-zoom-option"
+                  data-zoom={key}
+                  aria-pressed={zoom === key}
+                  title={title}
+                  onClick={() => {
+                    changeZoom(key);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </header>
+      <div className="dayline-live" aria-live="polite" data-dayline-live>
+        {live}
+      </div>
 
       <div
         className={[
@@ -1374,6 +1623,7 @@ export function Timeline({
                 className="dayline-row"
                 data-dayline-row
                 {...(readOnly || busy ? {} : rangeHandlers)}
+                {...extHandlers}
               >
                 {view.state === 'no_signal' && nothing && (
                   <div className="dayline-nosignal" data-no-signal>
@@ -1464,6 +1714,8 @@ export function Timeline({
                       }
                       aria-pressed={on}
                       onClick={() => {
+                        // The click a drag begun here ends with, in a browser that sends one.
+                        if (Date.now() - rangedFromGap.current < 300) return;
                         onSelect({ kind: 'gap', start: gap.start, end: gap.end });
                       }}
                       onMouseEnter={enter('gap', String(gap.start))}
@@ -1478,7 +1730,7 @@ export function Timeline({
                       </span>
                       <span className="dayline-block-sub">
                         <FitLabel
-                          options={[`${rangeOf(gap)} · ${duration(minutes)}`, duration(minutes)]}
+                          options={[`${rangeOf(gap)} · ${compact(minutes)}`, compact(minutes)]}
                         />
                       </span>
                     </button>
@@ -1512,8 +1764,8 @@ export function Timeline({
                     <span className="dayline-block-sub">
                       <FitLabel
                         options={[
-                          `${rangeOf(b)} · ${duration(b.end - b.start)}`,
-                          duration(b.end - b.start),
+                          `${rangeOf(b)} · ${compact(b.end - b.start)}`,
+                          compact(b.end - b.start),
                         ]}
                       />
                     </span>
@@ -1528,12 +1780,26 @@ export function Timeline({
                   const { top, title, card } = labelOf(block, drafts, entries);
                   const px = (shape.end - shape.start) * pxPerMinute;
                   const range = rangeOf(shape);
-                  const draft = block.kind === 'drafted' ? drafts.get(block.id) : undefined;
-                  const prompts = draft?.signals.prompts ?? 0;
-                  const commits = draft?.signals.commits ?? 0;
-                  const editable = selected && !block.locked && !busy && !readOnly;
+                  const draggable = canDrag(block);
+                  const hovered = hover?.kind === 'block' && hover.id === block.id;
+                  const moving = drag?.id === block.id;
+                  // The edges, to drag: on the selected block and under the pointer (the
+                  // design) — and on the block in hand. A drag's first move clears the
+                  // hover; an edge that went with it took the pointer's capture along,
+                  // and every move after it landed on the track (LAI-512).
+                  const editable = draggable && (selected || hovered || moving);
                   const same = selectedCard !== undefined && card === selectedCard;
                   const dim = selectedCard !== undefined && !same;
+                  const bad = moving && dragCheck !== undefined && !dragCheck.ok;
+                  const conflict =
+                    (dragCheck !== undefined &&
+                      !dragCheck.ok &&
+                      dragCheck.why === 'overlap' &&
+                      dragCheck.over.id === block.id) ||
+                    (ext?.check.ok === false &&
+                      ext.check.why === 'overlap' &&
+                      ext.check.over.id === block.id) ||
+                    refused?.overId === block.id;
                   const entryKind =
                     block.kind === 'confirmed' ? (entries.get(block.id)?.kind ?? null) : null;
                   const icon =
@@ -1556,7 +1822,10 @@ export function Timeline({
                         selected ? 'dayline-selected' : '',
                         same && !selected ? 'dayline-same-card' : '',
                         dim ? 'dayline-dimmed' : '',
-                        preview?.id === block.id ? 'dayline-dragging' : '',
+                        draggable ? 'dayline-draggable' : '',
+                        drag?.id === block.id ? 'dayline-dragging' : '',
+                        bad ? 'dayline-drag-bad' : '',
+                        conflict ? 'dayline-conflict' : '',
                       ]
                         .filter((c) => c !== '')
                         .join(' ')}
@@ -1584,8 +1853,14 @@ export function Timeline({
                           aria-label={`${range}, ${top}, ${duration(shape.minutes)}`}
                           title={`${range} · ${top}${title === '' ? '' : ` ${title}`}`}
                           onClick={() => {
+                            // A drag that just ended is not a click.
+                            if (suppressClick.current) {
+                              suppressClick.current = false;
+                              return;
+                            }
                             onSelect({ kind, id: block.id });
                           }}
+                          {...mover(block)}
                         >
                           <span className="dayline-block-line">
                             <span className="dayline-icon" aria-hidden="true">
@@ -1604,24 +1879,13 @@ export function Timeline({
                           <span className="dayline-block-sub">
                             <FitLabel
                               options={[
-                                `${range} · ${duration(shape.minutes)}`,
-                                duration(shape.minutes),
+                                `${range} · ${compact(shape.minutes)}`,
+                                compact(shape.minutes),
                               ]}
                             />
                           </span>
                         </button>
                       </div>
-                      {/* Drawn only where it clears every other block and badge (`placeChips`). */}
-                      {prompts + commits > 0 && (
-                        <span
-                          className="dayline-signals"
-                          data-chip-for={key}
-                          data-chip-place={chips.get(key) ?? 'none'}
-                          title={`${String(prompts)} prompts, ${String(commits)} commits — counted for the block; when in it is not known`}
-                        >
-                          {String(prompts)}p {String(commits)}c
-                        </span>
-                      )}
                       {editable && (
                         <>
                           <button
@@ -1675,6 +1939,123 @@ export function Timeline({
                       />,
                     ];
                   }),
+                )}
+
+                {/* The running timer (LAI-512): from where it started to now, striped; a click opens it. */}
+                {timer !== undefined && (
+                  <button
+                    type="button"
+                    className={
+                      timer.paused ? 'dayline-timer dayline-timer-paused' : 'dayline-timer'
+                    }
+                    data-timer-block
+                    data-timer-state={timer.paused ? 'paused' : 'running'}
+                    style={{
+                      left: left(timer.start, timer.end),
+                      width: wide(timer.start, timer.end),
+                    }}
+                    aria-label={`Timer ${timer.paused ? 'paused' : 'running'}, ${duration(timer.minutes)}`}
+                    title={`Timer ${timer.paused ? 'paused' : 'running'} · ${duration(timer.minutes)}`}
+                    onClick={onTimerClick}
+                  >
+                    <span className="dayline-block-line">
+                      <span className="dayline-icon" aria-hidden="true">
+                        ●
+                      </span>
+                      <span className="dayline-block-top">
+                        <FitLabel options={[timerLabel, '']} />
+                      </span>
+                    </span>
+                    <span className="dayline-block-sub">
+                      <FitLabel
+                        options={[
+                          `${compact(timer.minutes)} · ${timer.paused ? 'paused' : 'running'}`,
+                          compact(timer.minutes),
+                        ]}
+                      />
+                    </span>
+                  </button>
+                )}
+
+                {/* A block in hand (LAI-512): where it was, dashed; and where it is, in words. */}
+                {drag !== undefined &&
+                  (drag.edit.start !== drag.o0 || drag.edit.end !== drag.o1) && (
+                    <div
+                      className="dayline-ghost"
+                      data-drag-ghost
+                      aria-hidden="true"
+                      style={{
+                        left: x(drag.o0) + 1,
+                        width: Math.max(2, x(drag.o1) - x(drag.o0) - 2),
+                      }}
+                    />
+                  )}
+                {drag !== undefined && (
+                  <div
+                    className={
+                      dragCheck?.ok === false
+                        ? 'dayline-drag-label dayline-drag-label-bad'
+                        : 'dayline-drag-label'
+                    }
+                    data-drag-label
+                    aria-hidden="true"
+                    style={{
+                      left: clamp(
+                        90,
+                        Math.max(90, scale.total - 90),
+                        x((drag.edit.start + drag.edit.end) / 2),
+                      ),
+                    }}
+                  >
+                    {dragCheck?.ok === false
+                      ? reasonOf(dragCheck)
+                      : `${rangeOf(drag.edit)} · ${duration(drag.edit.end - drag.edit.start)}`}
+                  </div>
+                )}
+                {refused !== undefined && drag === undefined && (
+                  <div
+                    className="dayline-drag-label dayline-drag-label-bad"
+                    data-drag-label
+                    data-drag-refused
+                    aria-hidden="true"
+                    style={{ left: clamp(90, Math.max(90, scale.total - 90), refused.x) }}
+                  >
+                    {refused.label}
+                  </div>
+                )}
+                {/* A tray item over the track (LAI-512): where it would land. */}
+                {ext !== undefined && (
+                  <>
+                    <div
+                      className={ext.check.ok ? 'dayline-ext' : 'dayline-ext dayline-ext-bad'}
+                      data-ext-preview={ext.id}
+                      aria-hidden="true"
+                      style={{
+                        left: x(ext.span.start) + 1,
+                        width: Math.max(4, x(ext.span.end) - x(ext.span.start) - 2),
+                      }}
+                    />
+                    <div
+                      className={
+                        ext.check.ok
+                          ? 'dayline-drag-label'
+                          : 'dayline-drag-label dayline-drag-label-bad'
+                      }
+                      data-drag-label
+                      aria-hidden="true"
+                      style={{
+                        left: clamp(
+                          90,
+                          Math.max(90, scale.total - 90),
+                          x((ext.span.start + ext.span.end) / 2),
+                        ),
+                      }}
+                    >
+                      {ext.check.ok
+                        ? `${ext.label} · ${rangeOf(ext.span)} · ${duration(ext.span.end - ext.span.start)}`
+                        : reasonOf(ext.check)}
+                    </div>
+                  </>
                 )}
 
                 {/* The range being dragged, or the one picked (LAI-897): paint over the row, no pointer. */}
@@ -1767,9 +2148,11 @@ export function Timeline({
                 </div>
               )}
 
-              {line.now !== undefined && nowX !== undefined && (
+              {nowMinute !== undefined && nowX !== undefined && line.midnight !== undefined && (
                 <div className="dayline-now" data-now style={{ left: nowX }}>
-                  <span className="dayline-now-label">{clock(nowMs, view.tz)}</span>
+                  <span className="dayline-now-label">
+                    {clock(instantOf(line.midnight, nowMinute), view.tz)}
+                  </span>
                 </div>
               )}
             </div>
@@ -1803,32 +2186,6 @@ export function Timeline({
           )}
         </div>
       </div>
-
-      <footer className="dayline-foot">
-        <ul className="dayline-keys" aria-label="Keys">
-          {(readOnly ? READ_KEYS : KEYS).map(([key, what]) => (
-            <li key={key}>
-              <kbd className="myday-kbd">{key}</kbd>
-              {what}
-            </li>
-          ))}
-        </ul>
-        <span className="dayline-foot-hint" data-foot-hint>
-          {readOnly
-            ? editing === undefined
-              ? 'Hover any block for detail · read only'
-              : `${editing.charAt(0).toUpperCase()}${editing.slice(1)}, below ↓`
-            : editing === undefined
-              ? 'Hover any block for detail · drag an empty stretch or click a gap to add time'
-              : `Editing ${editing} below ↓`}
-        </span>
-        {line.untimed > 0 && (
-          <span className="dayline-untimed">
-            {line.untimed === 1 ? '1 block has' : `${String(line.untimed)} blocks have`} no set time
-            — in the tray under the Timeline
-          </span>
-        )}
-      </footer>
     </section>
   );
 }

@@ -81,6 +81,8 @@ void describe('a work folder’s chosen name on My day (LAI-866)', () => {
       const h = await openDay();
       try {
         await setTheme(h.page, theme);
+        // To review is a tab (LAI-505); the day opens on Overview (LAI-514).
+        await h.page.locator('[data-day-tab="review"]').click();
 
         // To settle: the untied block says the name.
         const untied = h.page.locator('[data-settle-row="d2"]');
@@ -114,7 +116,7 @@ void describe('a work folder’s chosen name on My day (LAI-866)', () => {
         const inspector = await select(h, 'd2');
         assert.match(
           await inspector.locator('[data-card-warning]').innerText(),
-          /^Needs a card · Acme\. Pick one, or General if it was general work\.$/,
+          /^No task yet\. Needs a card · Acme\. Pick one, or just pick a kind below\.$/,
         );
         assert.equal(
           (await inspector.locator('[data-drafted-folder]').innerText()).trim(),

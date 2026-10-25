@@ -61,20 +61,27 @@ const mondayOf = (day: string): string => {
  * range and length on a line of their own — each only where it fits as drawn,
  * so any of them may be left out, and nothing else is ever shown.
  */
+/**
+ * A length as a name says it (`1 h 35 min`) in the short form the track
+ * draws, the design's (`1h 35m`, LAI-510).
+ */
+const short = (length: string): string =>
+  length.replace(/(\d+) h/, '$1h').replace(/(\d+) min/, '$1m');
+
 const gapShows = (text: string, length: string): boolean => {
   const rest = text.replace(/\s+/g, ' ').trim();
-  const len = length.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const len = short(length).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`^(\\+ ?)?(Add time ?)?((\\S.* · )?${len})?$`).test(rest);
 };
 
 /** A break shows its glyph, the word, and its range and length — or less, never more. */
 const breakShows = (text: string): boolean =>
-  /^(‖ ?)?(Break ?)?((\S.* · )?\d+ (?:min|h)( \d+ min)?)?$/.test(text.replace(/\s+/g, ' ').trim());
+  /^(‖ ?)?(Break ?)?((\S.* · )?\d+(?:m|h)( \d+m)?)?$/.test(text.replace(/\s+/g, ' ').trim());
 
 /** What a block's second line may show, by the same measure: both, the length, or nothing. */
 const subForms = (range: string, length: string): readonly string[] => [
-  `${range} · ${length}`,
-  length,
+  `${range} · ${short(length)}`,
+  short(length),
   '',
 ];
 
@@ -331,14 +338,19 @@ void describe('the week strip (2, E)', () => {
 });
 
 void describe('gaps and breaks (4, D)', () => {
-  void test('gaps of 20 minutes or more are counted, drawn and fillable; shorter ones are not', async () => {
+  void test('every gap of five minutes or more is counted, drawn and fillable', async () => {
     const h = await openDay(EARLIER);
     try {
-      // 11:30–12:00 and 12:45–1:30 count; 4:30–4:45 is a breath.
-      assert.equal(await h.page.locator('.dayline-gap').count(), 2);
+      // 11:30–12:00, 12:45–1:30 and 4:30–4:45: the design counts five minutes
+      // and up (LAI-510); a shorter one is a breath (timeline-derive's test).
+      assert.equal(await h.page.locator('.dayline-gap').count(), 3);
+      // The legend's compact figure, and the count in the button's title (LAI-512).
       const stat = await h.page.locator('[data-stat="gaps"]').innerText();
-      assert.match(stat, new RegExp(dur(75)));
-      assert.match(stat, /2 unaccounted/);
+      assert.match(stat, /1h 30m/);
+      assert.match(
+        (await h.page.locator('[data-stat="gaps"]').getAttribute('title')) ?? '',
+        /3 unaccounted/,
+      );
       // Which gap, and how long, is in its name whatever fits on the line:
       // CI's fonts draw "+ 30 min" wider than this Mac's, and it is a "+".
       const gaps = h.page.locator('.dayline-gap');
@@ -347,10 +359,11 @@ void describe('gaps and breaks (4, D)', () => {
         [
           `Unaccounted 11:30 AM–12:00 PM, ${dur(30)} — add time or mark a break`,
           `Unaccounted 12:45–1:30 PM, ${dur(45)} — add time or mark a break`,
+          `Unaccounted 4:30–4:45 PM, ${dur(15)} — add time or mark a break`,
         ],
       );
       const shown = await gaps.allInnerTexts();
-      for (const [i, minutes] of [30, 45].entries()) {
+      for (const [i, minutes] of [30, 45, 15].entries()) {
         assert.ok(gapShows(shown[i] ?? '?', dur(minutes)), `gap ${String(i)}: "${shown[i] ?? ''}"`);
       }
     } finally {
@@ -373,15 +386,18 @@ void describe('gaps and breaks (4, D)', () => {
         started_at: at(EARLIER, 11, 30),
         ended_at: at(EARLIER, 12, 0),
       });
-      assert.equal(await h.page.locator('.dayline-gap').count(), 1);
-      assert.match(await h.page.locator('[data-stat="gaps"]').innerText(), /1 unaccounted/);
+      assert.equal(await h.page.locator('.dayline-gap').count(), 2);
+      assert.match(
+        (await h.page.locator('[data-stat="gaps"]').getAttribute('title')) ?? '',
+        /2 unaccounted/,
+      );
       const drawn = h.page.locator('.dayline-break');
       assert.equal(await drawn.getAttribute('aria-label'), 'Break 11:30 AM–12:00 PM — not counted');
       assert.ok(breakShows(await drawn.innerText()), 'the break shows something else');
 
       await h.page.locator('.dayline-break').click();
-      await h.page.getByRole('button', { name: 'Not a break' }).click();
-      await until(async () => (await h.page.locator('.dayline-gap').count()) === 2);
+      await h.page.getByRole('button', { name: 'Remove break' }).click();
+      await until(async () => (await h.page.locator('.dayline-gap').count()) === 3);
       assert.ok(
         writes(h).some(
           (c) => c.method === 'DELETE' && c.path.startsWith('/api/v1/me/time-breaks/'),
@@ -395,19 +411,17 @@ void describe('gaps and breaks (4, D)', () => {
 });
 
 void describe('no signal is not zero hours (3, 4)', () => {
-  void test('a day with no signal says so on its lane and gives no figure, never 0 min', async () => {
+  void test('a day with no signal says so on its card and gives no figure, never 0 min', async () => {
     const h = await openDay(QUIET);
     try {
+      // The designed empty Timeline (LAI-513) carries the no-signal line.
       assert.match(
-        await h.page.locator('[data-no-signal]').innerText(),
+        await h.page.locator('[data-day-empty="past"] [data-no-signal]').innerText(),
         /No signal — nothing reached Laika from your machine\. That is not zero hours/,
       );
-      // The Timeline's header (LAI-888) and its You column give no figure either.
-      for (const stat of ['confirmed', 'drafted', 'needs-card', 'gaps']) {
-        const figure = await h.page.locator(`[data-stat="${stat}"] strong`).innerText();
-        assert.equal(figure, '—', `${stat} reads ${figure}`);
-      }
-      assert.equal(await h.page.locator('[data-you-work]').innerText(), '—');
+      // The header gives no figure either.
+      assert.match(await h.page.locator('[data-day-total]').innerText(), /^—\s+no signal$/);
+      assert.doesNotMatch(await h.page.locator('.screen-page').innerText(), /\b0 min\b/);
     } finally {
       await h.close();
     }
@@ -419,15 +433,22 @@ void describe('confirming leaves out what needs a card (1, 6)', () => {
     const h = await openDay(TODAY);
     try {
       const button = h.page.locator('[data-confirm-day]');
-      assert.equal((await button.innerText()).trim(), `Confirm 3 ready · ${dur(95 + 110 + 25)}`);
-      assert.match((await button.getAttribute('title')) ?? '', /2 need a card .*left out/);
+      // The design's label (LAI-513): Confirm day, and what is ready in mono.
+      assert.match(
+        (await button.innerText()).trim(),
+        new RegExp(`^Confirm day\\s+3 ready · ${dur(95 + 110 + 25)}$`),
+      );
+      assert.match(
+        (await button.getAttribute('title')) ?? '',
+        /2 without a task stay in To review/,
+      );
       await button.click();
       // The summary first (LAI-503): what confirms, what stays, then Confirm.
       const summary = h.page.locator('[data-confirm-summary]');
       await summary.waitFor({ timeout: 5_000 });
       assert.match(
         await summary.locator('[data-summary-sub]').innerText(),
-        /2 without a card stay/,
+        /2 without a task stay/,
       );
       await summary.locator('[data-summary-confirm]').click();
       await until(() => writes(h).length >= 3);
@@ -443,6 +464,7 @@ void describe('confirming leaves out what needs a card (1, 6)', () => {
   void test('a bulk Confirm leaves out what needs a card, keeps it checked and says so', async () => {
     const h = await openDay(TODAY);
     try {
+      await onTab(h, 'd1');
       await h.page.getByRole('checkbox', { name: 'Select every drafted block' }).check();
       await h.page.locator('.myday-bulk').getByRole('button', { name: 'Confirm' }).click();
       await h.page.locator('[data-toast]').waitFor({ timeout: 5_000 });
@@ -470,7 +492,7 @@ void describe('the inspector (5)', () => {
       await select(h, 'd2');
       const inspector = h.page.locator('[data-inspector="draft"]');
       const confirm = inspector.locator('[data-inspector-confirm]');
-      assert.equal((await confirm.innerText()).trim(), 'Needs a card');
+      assert.equal((await confirm.innerText()).trim(), 'Pick a task or kind');
       assert.ok(await confirm.isDisabled());
       assert.match(
         await inspector.locator('[data-card-warning]').innerText(),
@@ -507,14 +529,13 @@ void describe('the inspector (5)', () => {
     }
   });
 
-  void test('a confirmed entry: its source and revision, Delete, and every edit kept', async () => {
+  void test('a confirmed entry: HISTORY and Delete entry (LAI-515)', async () => {
     const h = await openDay(TODAY);
     try {
       await select(h, 'e2');
       const inspector = h.page.locator('[data-inspector="entry"]');
-      assert.match(await inspector.innerText(), /rev 2/);
-      assert.match(await inspector.innerText(), /Every edit is kept as a revision\./);
-      assert.equal(await inspector.getByRole('button', { name: 'Delete' }).count(), 1);
+      assert.equal(await inspector.locator('[data-entry-history]').count(), 1);
+      assert.equal(await inspector.getByRole('button', { name: 'Delete entry' }).count(), 1);
     } finally {
       await h.close();
     }
@@ -522,15 +543,18 @@ void describe('the inspector (5)', () => {
 });
 
 void describe('split, −/+ and drag (5, C)', () => {
-  void test('−/+ move the end and the length by five minutes', async () => {
+  void test('a length typed moves the end by five minutes (the design has no stepper, LAI-515)', async () => {
     const h = await openDay(TODAY);
     try {
       await select(h, 'd1');
-      await h.page.getByRole('button', { name: 'Longer by 5 minutes' }).click();
+      const length = h.page.locator('[data-inspector-for="d1"]').getByLabel('Length, typed');
+      await length.fill('1h 40');
+      await length.press('Enter');
       await until(() => writes(h).length === 1);
       assert.deepEqual(writes(h)[0]?.body, { minutes: 100, ended_at: at(TODAY, 10, 20) });
       await h.page.locator('[data-inspector-for="d1"]').waitFor();
-      await h.page.getByRole('button', { name: 'Shorter by 5 minutes' }).click();
+      await length.fill('1h 30');
+      await length.press('Enter');
       await until(() => writes(h).length === 2);
       assert.deepEqual(writes(h)[1]?.body, { minutes: 90, ended_at: at(TODAY, 10, 10) });
     } finally {
@@ -621,9 +645,45 @@ void describe('Undo (B)', () => {
     }
   });
 
+  void test('Assign task puts every ticked block on the picked card, one write each (LAI-514)', async () => {
+    const h = await openDay(TODAY);
+    try {
+      await onTab(h, 'd2');
+      await h.page.locator('[data-settle-row="d2"] .myday-check').check();
+      await h.page.locator('[data-settle-row="d4"] .myday-check').check();
+      // Both have no task: Confirm takes none of them.
+      assert.equal(
+        await h.page.locator('.myday-bulk [data-bulk-confirm]').innerText(),
+        'Confirm 0',
+      );
+      await h.page.locator('.myday-bulk').getByRole('button', { name: 'Assign task' }).click();
+      const offered = await h.page
+        .locator('[data-bulk-assign-task]')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('data-bulk-assign-task')));
+      // The day's cards, then the person's in progress, each once; No task last.
+      assert.ok(offered.includes('LAI-11'), offered.join(','));
+      assert.equal(offered.at(-1), 'general');
+      assert.equal(new Set(offered).size, offered.length, 'a card is offered twice');
+      await h.page.locator('[data-bulk-assign-task="LAI-11"]').click();
+      await until(() => writes(h).length === 2);
+      assert.deepEqual(
+        writes(h).map((c) => [c.method, c.path, c.body]),
+        [
+          ['PATCH', '/api/v1/me/time-drafts/d2', { task: 'LAI-11' }],
+          ['PATCH', '/api/v1/me/time-drafts/d4', { task: 'LAI-11' }],
+        ],
+      );
+      await h.page.locator('[data-toast]').waitFor({ timeout: 5_000 });
+      assert.match(await h.page.locator('[data-toast]').innerText(), /Put 2 blocks on LAI-11\./);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('a bulk Not work is undone block by block, newest first', async () => {
     const h = await openDay(TODAY);
     try {
+      await onTab(h, 'd1');
       await h.page.locator('[data-settle-row="d1"] .myday-check').check();
       await h.page.locator('[data-settle-row="d2"] .myday-check').check();
       await h.page.locator('.myday-bulk').getByRole('button', { name: 'Not work' }).click();
@@ -724,11 +784,9 @@ void describe('Add time into a picked gap (7)', () => {
     const h = await openDay(EARLIER);
     try {
       await h.page.locator('.dayline-gap').nth(1).click();
-      await h.page.locator('[data-inspector="gap"]').waitFor({ timeout: 5_000 });
-      // The gap's *Add time here* opens the new-entry panel on the gap (LAI-897, LAI-502).
-      await h.page.locator('[data-gap-add]').click();
-      const panel = h.page.locator('[data-inspector="range"]');
-      await panel.waitFor({ timeout: 5_000 });
+      // A gap is Add time with the gap as its range (LAI-897, LAI-515).
+      const panel = h.page.locator('[data-inspector="gap"]');
+      await panel.locator('[data-new-entry]').waitFor({ timeout: 5_000 });
       assert.match(await panel.locator('[data-new-entry-range]').innerText(), /12:45.*1:30/);
       await panel.locator('[data-card="LAI-11"]').click();
       await panel.locator('[data-entry-title]').fill('Pairing on search');
@@ -764,7 +822,11 @@ void describe('keyboard shortcuts (H)', () => {
       await note.click();
       await h.page.keyboard.type('xgjk?');
       assert.equal(await note.inputValue(), 'xgjk?');
-      assert.equal(await h.page.getByRole('dialog').count(), 0, 'the sheet opened while typing');
+      assert.equal(
+        await h.page.getByRole('dialog', { name: 'Keyboard shortcuts' }).count(),
+        0,
+        'the sheet opened while typing',
+      );
       assert.deepEqual(
         writes(h).filter((c) => c.path.startsWith('/api/v1/me/time-drafts')),
         [],
@@ -812,12 +874,17 @@ void describe('keyboard shortcuts (H)', () => {
 });
 
 void describe('honest signals (G)', () => {
-  void test('a block shows its counts as a badge, and nothing is spread along it', async () => {
+  void test('a block’s counts are in its tooltip, as the design keeps them — never a pill on it, nothing spread along it', async () => {
     const h = await openDay(TODAY);
     try {
-      const badge = h.page.locator('[data-block-id="d1"] .dayline-signals');
-      assert.equal(await badge.count(), 1);
-      assert.match((await badge.getAttribute('title')) ?? '', /18 prompts.*3 commits/);
+      const block = h.page.locator('[data-block-id="d1"]');
+      assert.equal(await block.locator('.dayline-signals').count(), 0);
+      assert.doesNotMatch(await block.innerText(), /\d+p \d+c/);
+      await block.scrollIntoViewIfNeeded();
+      await block.hover();
+      const tip = h.page.locator('[role="tooltip"]');
+      await tip.waitFor({ timeout: 5_000 });
+      assert.match(await tip.innerText(), /18 prompts · 3 commits/);
       assert.equal(await h.page.locator('[data-signal-dot], [data-signal-tick]').count(), 0);
     } finally {
       await h.close();
@@ -833,7 +900,9 @@ void describe('review round 1', () => {
       await h.page.locator('[data-inspector="draft"] [data-card="general"]').click();
       const toast = h.page.locator('[data-toast]');
       await toast.getByRole('button', { name: 'Undo' }).waitFor({ timeout: 5_000 });
-      await h.page.getByRole('button', { name: 'Longer by 5 minutes' }).click();
+      const length = h.page.locator('[data-inspector-for="d2"]').getByLabel('Length, typed');
+      await length.fill('45m');
+      await length.press('Enter');
       await until(() => writes(h).length === 2);
       await until(async () => (await toast.getByRole('button', { name: 'Undo' }).count()) === 0);
       assert.equal(
@@ -873,12 +942,12 @@ void describe('review round 1', () => {
     }
   });
 
-  void test('a dragged edge stops at the next confirmed block', async () => {
+  void test('a draft’s dragged edge runs over confirmed time — the design lets a draft lie anywhere (LAI-510)', async () => {
     const h = await openDay(TODAY);
     try {
       await h.page.locator('[data-zoom="2"]').click();
       await select(h, 'd2');
-      // 10:40–11:20 drafted; confirmed time starts at 11:30.
+      // 10:40–11:20 drafted; confirmed time starts at 11:30, and the edge goes past it.
       const handle = h.page.locator('[data-block-id="d2"] [data-edge="end"]');
       const from = await centre(handle);
       await h.page.mouse.move(from.x, from.y);
@@ -890,7 +959,7 @@ void describe('review round 1', () => {
         {
           method: 'PATCH',
           path: '/api/v1/me/time-drafts/d2',
-          body: { ended_at: at(TODAY, 11, 30), minutes: 50 },
+          body: { ended_at: at(TODAY, 11, 50), minutes: 70 },
         },
       ]);
     } finally {
@@ -945,10 +1014,13 @@ void describe('review round 1', () => {
   void test('today’s gaps are between its blocks — nothing runs to now', async () => {
     const h = await openDay(TODAY);
     try {
-      // 10:15–10:40, 12:30–1:00 and 2:50–3:30; never 4:10 PM onward.
+      // 10:15–10:40, 11:20–11:30, 12:30–1:00 and 2:50–3:30; never 4:10 PM onward.
       const stat = await h.page.locator('[data-stat="gaps"]').innerText();
-      assert.match(stat, new RegExp(dur(25 + 30 + 40)));
-      assert.match(stat, /3 unaccounted/);
+      assert.match(stat, /1h 45m/);
+      assert.match(
+        (await h.page.locator('[data-stat="gaps"]').getAttribute('title')) ?? '',
+        /4 unaccounted/,
+      );
     } finally {
       await h.close();
     }
@@ -1031,17 +1103,30 @@ void describe('a phone, and both themes (I)', () => {
             over: el.scrollWidth > el.clientWidth,
             auto: ['auto', 'scroll'].includes(getComputedStyle(el).overflowX),
           }));
-        // A phone shows a letter a day, and the week fits without scrolling (LAI-502).
-        assert.equal((await scrolls('.myday-week-days')).over, false, 'the week overflows');
-        assert.deepEqual(await scrolls('[data-dayline-scroller]'), { over: true, auto: true });
-        const main = await h.page.locator('.myday-main').boundingBox();
-        const side = await h.page.locator('[data-myday-side]').boundingBox();
-        assert.ok(main !== null && side !== null);
-        assert.ok(side.y >= main.y + main.height - 1, 'the column is not below the day');
+        // A phone shows a letter a day, and the week fits without scrolling (LAI-502, LAI-518).
+        assert.equal((await scrolls('[data-phone-week]')).over, false, 'the week overflows');
+        // The Timeline is the vertical one, and scrolls down on its own (LAI-518).
+        assert.deepEqual(
+          await h.page.locator('[data-timeline-mobile-scroller]').evaluate((el) => ({
+            over: el.scrollHeight > el.clientHeight,
+            auto: ['auto', 'scroll'].includes(getComputedStyle(el).overflowY),
+          })),
+          { over: true, auto: true },
+        );
+        // The editor is a bottom sheet on a phone (LAI-511).
+        const sheet = await h.page.locator('[data-myday-drawer]').evaluate((el) => ({
+          position: getComputedStyle(el).position,
+          bottom: Math.round(el.getBoundingClientRect().bottom),
+        }));
+        assert.equal(sheet.position, 'fixed', 'the editor is not a sheet');
+        assert.equal(sheet.bottom, 844, 'the sheet is not at the bottom');
         // The inspector's three parts stack.
-        const parts = h.page.locator('[data-inspector="draft"] .inspector-part');
+        const parts = h.page.locator('[data-inspector="draft"] .editor-section');
         const xs = await parts.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().x));
         assert.ok(xs.length >= 3 && new Set(xs.map(Math.round)).size === 1, 'not stacked');
+        // The sheet is modal (LAI-511): let go before the next theme's pick.
+        await h.page.keyboard.press('Escape');
+        await until(async () => (await h.page.locator('[data-myday-drawer]').count()) === 0);
       }
     } finally {
       await h.close();
@@ -1139,7 +1224,8 @@ void describe('a phone, and both themes (I)', () => {
         );
       assert.ok(gaps.length > 0, 'no gap to look at');
       for (const [px, text] of gaps) {
-        if (px >= 160) assert.match(text, / min$| h$/, `a ${String(px)}px gap says only "${text}"`);
+        if (px >= 160)
+          assert.match(text, /\d+m$|\d+h$/, `a ${String(px)}px gap says only "${text}"`);
       }
     } finally {
       await h.close();

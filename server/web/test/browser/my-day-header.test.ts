@@ -199,7 +199,7 @@ const RUNNING: TimerRow = {
   accumulated_ms: 0,
   tz: 'UTC',
   task: null,
-  kind: 'review',
+  kind: 'thinking',
   title: 'Keyboard steps',
 };
 
@@ -224,14 +224,15 @@ void describe('the header (LAI-502)', () => {
       assert.match(figures, /5 h 10 min to review/);
 
       await h.page.locator('[data-timer-start] > button').click();
-      await h.page.locator('[data-timer-kind="review"]').click();
+      // The design's timer offers Building, Meeting and Thinking (LAI-516).
+      await h.page.locator('[data-timer-kind="thinking"]').click();
       await h.page.locator('[data-timer-title]').fill('Keyboard steps');
       await h.page.locator('[data-timer-go]').click();
       await until(() => writes.some((w) => w.path === '/api/v1/me/time/timer'));
       assert.deepEqual(writes[0], {
         method: 'POST',
         path: '/api/v1/me/time/timer',
-        body: { tz: 'UTC', kind: 'review', title: 'Keyboard steps' },
+        body: { tz: 'UTC', kind: 'thinking', title: 'Keyboard steps' },
       });
       const pill = h.page.locator('[data-timer]');
       await pill.waitFor({ timeout: 10_000 });
@@ -273,7 +274,7 @@ void describe('the header (LAI-502)', () => {
       assert.match(await panel.locator('[data-new-entry-range]').innerText(), /2:35.*3:00/);
       assert.equal(await panel.locator('[data-entry-title]').inputValue(), 'Keyboard steps');
       assert.equal(
-        await panel.locator('[data-kind-pick="review"]').getAttribute('aria-pressed'),
+        await panel.locator('[data-kind-pick="thinking"]').getAttribute('aria-pressed'),
         'true',
       );
       // The timer stands until the time is in by hand.
@@ -291,7 +292,7 @@ void describe('the header (LAI-502)', () => {
         minutes: 25,
         started_at: at(TODAY, 14, 35),
         ended_at: at(TODAY, 15, 0),
-        kind: 'review',
+        kind: 'thinking',
         title: 'Keyboard steps',
       });
     } finally {
@@ -386,7 +387,8 @@ void describe('the header (LAI-502)', () => {
 
         await h.page.setViewportSize({ width: 390, height: 844 });
         await until(async () => h.page.locator('[data-day-nav]').isVisible());
-        assert.equal(await h.page.locator('.myday-week-letter').first().isVisible(), true);
+        // The phone's own day row (LAI-518): a letter a day, the desktop's week gone.
+        assert.equal(await h.page.locator('.myday-phone-letter').first().isVisible(), true);
         assert.equal(await h.page.locator('.myday-week-weekday').first().isVisible(), false);
         assert.equal(await h.page.locator('[data-add-time] .myday-head-text').isVisible(), false);
         assert.equal(await h.page.locator('.myday-timer-label').isVisible(), false);

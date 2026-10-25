@@ -6,6 +6,7 @@ import {
   noteOf,
   offScreen,
   splitKeyOf,
+  weekdayOf,
 } from '../../../../src/routes/screens/my-day/summary-derive.ts';
 
 /**
@@ -50,19 +51,19 @@ const draft = (over: Partial<TimeDraft>): TimeDraft =>
   }) as TimeDraft;
 
 void describe('splitKeyOf', () => {
-  void test('a kind wins; a card with none is Building; nothing is General', () => {
+  void test('a kind wins; a block with none is Building’s, as the design counts it (LAI-510)', () => {
     assert.equal(
       splitKeyOf(entry({ kind: 'meeting', task: { key: 'LAI-1' } as never })),
       'meeting',
     );
-    assert.equal(splitKeyOf(entry({ task: { key: 'LAI-1' } as never })), 'building');
-    assert.equal(splitKeyOf(entry({ project: { slug: 'atlas' } as never })), 'building');
-    assert.equal(splitKeyOf(entry({})), 'general');
+    assert.equal(splitKeyOf(entry({ task: { key: 'LAI-1' } as never })), 'work');
+    assert.equal(splitKeyOf(entry({ project: { slug: 'atlas' } as never })), 'work');
+    assert.equal(splitKeyOf(entry({})), 'work');
   });
 });
 
 void describe('daySplit', () => {
-  void test('groups by kind, largest first, with rounded shares that read back the total', () => {
+  void test('groups by kind in the design’s order of kinds, with its words and rounded shares', () => {
     const split = daySplit(
       [
         entry({ id: 'a', minutes: 60, kind: 'meeting' }),
@@ -74,9 +75,8 @@ void describe('daySplit', () => {
     assert.deepEqual(
       split.map((s) => [s.key, s.label, s.minutes, s.pct]),
       [
-        ['meeting', 'Meeting', 90, 60],
-        ['building', 'Building', 45, 30],
-        ['general', 'General', 15, 10],
+        ['work', 'Building', 60, 40],
+        ['meeting', 'Meetings', 90, 60],
       ],
     );
   });
@@ -97,5 +97,12 @@ void describe('offScreen and noteOf', () => {
       noteOf({ day_note: { day: '2026-10-22', note: 'Long day', updated_at: 1 } }),
       'Long day',
     );
+  });
+});
+
+void describe('weekdayOf', () => {
+  void test('the title names the day by its weekday, whatever the reader’s zone', () => {
+    assert.equal(weekdayOf('2026-10-22'), 'Thursday');
+    assert.equal(weekdayOf('2026-10-25'), 'Sunday');
   });
 });

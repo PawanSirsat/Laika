@@ -230,10 +230,10 @@ void describe('My day after the reference', () => {
       assert.equal(await h.page.locator('.screen-page-title').innerText(), 'My day');
       // Who reads drafts, said truthfully (D-102, LAI-968), and the way to who looked.
       assert.match(await head.innerText(), /Who can see this/);
-      assert.equal(await head.getByRole('link', { name: 'Who can see this' }).count(), 1);
+      assert.equal(await head.getByRole('button', { name: 'Who can see this' }).count(), 1);
       assert.match(
         await head.locator('.myday-chip-primary').innerText(),
-        /Confirm day · 1 h 35 min/,
+        /Confirm day\s+1 h 35 min/,
         'Confirm day does not say what it confirms',
       );
       await until(
@@ -256,9 +256,9 @@ void describe('My day after the reference', () => {
     const none = { minutes: 0, keyboard_minutes: 0, by_task: [], unattributed_minutes: 0 };
     const h = await open('/my-day', { ...STUB, '/api/v1/me/time': { ...DAY, agent: none } });
     try {
-      // The column holds the editor while a block is in hand (LAI-508): Esc lets go.
+      // The cards live in the drawer (LAI-511): the header's button opens them.
       await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
-      await h.page.keyboard.press('Escape');
+      await h.page.locator('[data-beside-button]').click();
       const hint = h.page.locator('.myday-agent [data-agent-hint]');
       await hint.waitFor({ timeout: 20_000 });
       const text = await hint.innerText();
@@ -286,8 +286,8 @@ void describe('My day after the reference', () => {
       assert.equal(await h.page.locator('.dayline-block.dayline-drafted').count(), 1);
       await until(async () => (await h.page.locator('.dayline-now').count()) === 1);
       assert.equal(await h.page.locator('.dayline-now').count(), 1, 'today has no now line');
-      // The untimed call is not placed somewhere invented; it is counted.
-      assert.match(await h.page.locator('.dayline-untimed').innerText(), /1 block has no set time/);
+      // The untimed call is not placed somewhere invented; it sits in the tray (LAI-505, LAI-512).
+      assert.equal(await h.page.locator('[data-untimed-tray] [data-tray-item]').count(), 1);
 
       // Inside the track, in the order of the day.
       const box = await track.boundingBox();
@@ -317,9 +317,9 @@ void describe('My day after the reference', () => {
   void test('On your plate: in progress, waiting on your review, blocked — each a link', async () => {
     const h = await open('/my-day', STUB);
     try {
-      // The column holds the editor while a block is in hand (LAI-508): Esc lets go.
+      // The cards live in the drawer (LAI-511): the header's button opens them.
       await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
-      await h.page.keyboard.press('Escape');
+      await h.page.locator('[data-beside-button]').click();
       const plate = h.page.locator('.myday-plate');
       await plate.locator('.plate-groups').waitFor({ timeout: 20_000 });
       const group = (id: string) => plate.locator(`[data-plate="${id}"]`);
@@ -353,9 +353,9 @@ void describe('My day after the reference', () => {
     for (const role of ['owner', 'admin'] as const) {
       const h = await open('/my-day', privatePlateStub(role));
       try {
-        // The column holds the editor while a block is in hand (LAI-508): Esc lets go.
+        // The cards live in the drawer (LAI-511): the header's button opens them.
         await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
-        await h.page.keyboard.press('Escape');
+        await h.page.locator('[data-beside-button]').click();
         const progress = h.page.locator('[data-plate="progress"]');
         await progress.getByText('Private Observatory migration', { exact: true }).waitFor({
           timeout: 20_000,
@@ -375,9 +375,9 @@ void describe('My day after the reference', () => {
     for (const role of ['member', 'viewer'] as const) {
       const h = await open('/my-day', privatePlateStub(role));
       try {
-        // The column holds the editor while a block is in hand (LAI-508): Esc lets go.
+        // The cards live in the drawer (LAI-511): the header's button opens them.
         await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
-        await h.page.keyboard.press('Escape');
+        await h.page.locator('[data-beside-button]').click();
         await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
         assert.equal(
           await h.page.getByText('Private Observatory migration', { exact: true }).count(),
@@ -404,9 +404,9 @@ void describe('My day after the reference', () => {
     ] as const) {
       const h = await open('/my-day', privatePlateStub(role, implicit));
       try {
-        // The column holds the editor while a block is in hand (LAI-508): Esc lets go.
+        // The cards live in the drawer (LAI-511): the header's button opens them.
         await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
-        await h.page.keyboard.press('Escape');
+        await h.page.locator('[data-beside-button]').click();
         await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
         if (shown) {
           await h.page
@@ -423,12 +423,12 @@ void describe('My day after the reference', () => {
     }
   });
 
-  void test('two columns on a laptop, one on a phone, in both themes, never sideways', async () => {
+  void test('the drawer beside the page on a laptop, a sheet on a phone, in both themes, never sideways', async () => {
     const h = await open('/my-day', STUB);
     try {
-      // The column holds the editor while a block is in hand (LAI-508): Esc lets go.
+      // The cards live in the drawer (LAI-511): the header's button opens them.
       await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
-      await h.page.keyboard.press('Escape');
+      await h.page.locator('[data-beside-button]').click();
       await h.page.locator('.myday-plate .plate-groups').waitFor({ timeout: 20_000 });
       for (const theme of ['Light', 'Dark']) {
         await h.page.setViewportSize({ width: 1440, height: 900 });
@@ -445,20 +445,32 @@ void describe('My day after the reference', () => {
             { timeout: 5000 },
           );
           const m = await h.page.evaluate(() => {
-            const main = document.querySelector('.myday-main')?.getBoundingClientRect();
-            const side = document.querySelector('.myday-side')?.getBoundingClientRect();
+            const main = document.querySelector('.myday-column')?.getBoundingClientRect();
+            const drawer = document.querySelector('[data-myday-drawer]');
+            const side = drawer?.getBoundingClientRect();
             return {
               overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-              main: main === undefined ? null : { x: main.x, bottom: main.bottom },
-              side: side === undefined ? null : { x: side.x, y: side.y },
+              main: main === undefined ? null : { x: main.x, right: main.right },
+              side:
+                drawer === null || drawer === undefined || side === undefined
+                  ? null
+                  : { x: side.x, bottom: side.bottom, position: getComputedStyle(drawer).position },
             };
           });
           assert.equal(m.overflow, 0, `${theme} at ${String(width)}: page scrolls sideways`);
           assert.ok(m.main !== null && m.side !== null);
           if (width >= 1366) {
-            assert.ok(m.side.x > m.main.x + 200, `${theme} at ${String(width)}: not two columns`);
+            assert.ok(
+              m.side.x >= m.main.right - 1,
+              `${theme} at ${String(width)}: the drawer is not beside the page`,
+            );
           } else {
-            assert.ok(m.side.y >= m.main.bottom - 1, `${theme} at 390: the column is not below`);
+            assert.equal(m.side.position, 'fixed', `${theme} at 390: the drawer is not a sheet`);
+            assert.equal(
+              Math.round(m.side.bottom),
+              height,
+              `${theme} at 390: the sheet is not at the bottom`,
+            );
           }
         }
       }
@@ -525,7 +537,7 @@ void describe('times and durations say their units (LAI-830)', () => {
       // The header total: was `entries · 1:09`.
       assert.equal(
         await confirmed.locator('[data-confirmed-caption]').innerText(),
-        '4 entries · 1 h 9 min',
+        '4 · 1 h 9 min',
       );
 
       // The drafted list, Confirm day, the week strip and the bar say the same.
@@ -536,7 +548,7 @@ void describe('times and durations say their units (LAI-830)', () => {
       assert.equal(await drafted.locator('.myday-row-minutes').innerText(), '1 h 35 min');
       assert.match(
         await h.page.locator('.screen-page .myday-chip-primary').innerText(),
-        /Confirm day · 1 h 35 min/,
+        /Confirm day\s+1 h 35 min/,
       );
       // Today's cell: 75 confirmed and 95 drafted, was `2:50`.
       assert.equal(
@@ -576,14 +588,12 @@ void describe('times and durations say their units (LAI-830)', () => {
       // typed, is read back before anything is saved (the form under the list
       // went with LAI-502).
       await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-day-tab="review"]').click();
       await h.page.locator('[data-select="d1"]').click();
       const panel = h.page.locator('[data-inspector-for="d1"]');
       await panel.waitFor({ timeout: 10_000 });
       // The head's line (LAI-504): when, how long, where from.
-      assert.match(
-        await panel.locator('.inspector-source').innerText(),
-        /^8:40–10:15 AM · 1 h 35 min/,
-      );
+      assert.match(await panel.locator('.editor-sub').innerText(), /^8:40–10:15 AM · 1 h 35 min/);
       const howLong = panel.getByLabel('Length, typed');
       for (const [typed, read] of [
         ['45', '45 min'],

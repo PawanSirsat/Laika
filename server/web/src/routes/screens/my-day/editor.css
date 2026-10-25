@@ -1,0 +1,837 @@
+/*
+ * The editor in the drawer (the owner's `MyDay.dc.html`, LAI-515): a head, a
+ * body that scrolls, a footer fixed at the bottom; sections ruled apart;
+ * mono fields; the design's chips, tiles, bar and date tiles. Tokens only —
+ * `theme-single-source.test.ts` forbids a colour literal — so both themes
+ * follow. The state pills keep `my-day.css`'s `.inspector-kind-*` colours.
+ */
+
+.editor {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  outline: none;
+}
+
+/*
+ * In the drawer the editor takes its height and scrolls its body, so the
+ * footer stays at the bottom. `my-day.css` sizes the old inspector to its
+ * content there (`.myday-drawer-body .inspector { flex: none }`) and pins
+ * its footer sticky; both lose to these.
+ */
+.myday-drawer-body > .editor.inspector {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.editor > .editor-foot {
+  position: static;
+}
+
+/* ---------------------------------------------------------------- head */
+
+.editor-head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding: 0.875rem 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.editor-head-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.75rem;
+}
+
+.editor-head-gap {
+  flex: 1;
+}
+
+.editor-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  font-size: var(--text-small);
+  color: var(--chip-green);
+  white-space: nowrap;
+}
+
+.editor-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.editor-nav-text {
+  margin-right: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.editor-close {
+  border: none;
+  background: transparent;
+  font-size: var(--text-heading-sm);
+  color: var(--text-secondary);
+}
+
+.editor-close:hover {
+  background: var(--bg-card-hover);
+}
+
+.editor-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+}
+
+.editor-title {
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-heavy);
+  line-height: 1.375rem;
+  color: var(--text-primary);
+  text-wrap: pretty;
+}
+
+.editor-key {
+  margin-right: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+}
+
+.editor-sub {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: 1.0625rem;
+  color: var(--text-secondary);
+}
+
+/* A pill the editor adds to `my-day.css`'s: a new entry, and an import. */
+.inspector-kind-new {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.inspector-kind-imported {
+  border-color: var(--chip-purple-border);
+  background: var(--chip-purple-bg);
+  color: var(--chip-purple);
+}
+
+.editor-banner {
+  flex: none;
+  margin: 0.75rem 1.25rem 0;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-card);
+  background: var(--accent-bg);
+  font-size: var(--text-small);
+  line-height: var(--leading-body);
+  color: var(--text-primary);
+  text-wrap: pretty;
+}
+
+.editor-banner-blue {
+  border-color: var(--chip-blue-border);
+  background: var(--chip-blue-bg);
+}
+
+/* ---------------------------------------------------------------- body */
+
+.editor-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 0 1.25rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.editor-section-last {
+  border-bottom: 0;
+}
+
+.editor-label {
+  margin: 0;
+  font-size: var(--text-small);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.editor-label-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.editor-label-row .editor-label {
+  flex: 1;
+}
+
+.editor-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.editor-check input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.editor-hint,
+.editor-note {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+.editor-note {
+  color: var(--text-primary);
+  line-height: var(--leading-body);
+}
+
+.editor-error {
+  margin: 0;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--overdue);
+}
+
+.editor-link {
+  align-self: flex-start;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.editor-link:hover {
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------- fields */
+
+.editor-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.editor-fields-one {
+  grid-template-columns: minmax(0, 8.75rem);
+}
+
+.editor-fields-two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.editor-field-label {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.editor-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.25rem;
+  box-sizing: border-box;
+  padding: 0 0.625rem;
+  border-radius: 0.4375rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+}
+
+.editor-input:read-only {
+  border-color: transparent;
+  background: var(--bg-column);
+}
+
+.editor-input[aria-invalid='true'] {
+  border-color: var(--overdue);
+}
+
+.editor-words {
+  font-family: var(--font-ui);
+}
+
+.editor-textarea {
+  box-sizing: border-box;
+  min-height: 3.5rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.4375rem;
+  font-size: var(--text-small);
+  line-height: var(--leading-body);
+  resize: vertical;
+}
+
+.editor-textarea:read-only {
+  border-color: transparent;
+  background: var(--bg-column);
+}
+
+/* -------------------------------------------------------------- chips */
+
+.editor-chips,
+.editor-kinds,
+.editor-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.editor-chip,
+.editor-kind,
+.editor-preset {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 1.75rem;
+  margin: 0;
+  padding: 0 0.5625rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-chip);
+  background: var(--bg-card);
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition);
+}
+
+.editor-chip {
+  font-family: var(--font-mono);
+}
+
+.editor-chip-words {
+  font-family: var(--font-ui);
+}
+
+.editor-chip-why {
+  font-family: var(--font-ui);
+  font-size: var(--text-small);
+  font-weight: var(--weight-normal);
+  color: var(--text-secondary);
+}
+
+.editor-kind {
+  padding: 0 0.625rem;
+  font-weight: var(--weight-medium);
+}
+
+.editor-preset {
+  padding: 0 0.625rem;
+  border-radius: var(--radius-pill);
+}
+
+.editor-chip:hover:not(:disabled),
+.editor-kind:hover:not(:disabled):not([aria-disabled='true']),
+.editor-preset:hover:not(:disabled) {
+  border-color: var(--accent-border);
+}
+
+.editor-chip[aria-pressed='true'],
+.editor-kind[aria-pressed='true'],
+.editor-preset[aria-pressed='true'] {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+
+.editor-kind[aria-disabled='true'] {
+  cursor: default;
+}
+
+.editor-chip:disabled,
+.editor-kind:disabled,
+.editor-preset:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.editor-chip:focus-visible,
+.editor-kind:focus-visible,
+.editor-preset:focus-visible,
+.editor-date:focus-visible,
+.editor-result:focus-visible,
+.editor-link:focus-visible,
+.editor-primary:focus-visible,
+.editor-act:focus-visible,
+.editor-bar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------- the task */
+
+.editor-task-line {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-primary);
+}
+
+.editor-task-line > * + * {
+  margin-left: 0.5rem;
+}
+
+.editor-task-key {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.editor-task-title {
+  min-width: 0;
+  color: var(--text-secondary);
+}
+
+.editor-notask {
+  margin: 0;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--chip-orange-border);
+  border-radius: 0.4375rem;
+  background: var(--chip-orange-bg);
+  font-size: var(--text-small);
+  line-height: var(--leading-body);
+  color: var(--text-primary);
+  text-wrap: pretty;
+}
+
+.editor-notask b {
+  font-weight: var(--weight-heavy);
+  color: var(--chip-orange);
+}
+
+.editor-search {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.editor-search-box {
+  position: relative;
+}
+
+.editor-search-icon {
+  position: absolute;
+  left: 0.625rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.editor-search-field {
+  padding-left: 1.875rem;
+  font-family: var(--font-ui);
+  font-weight: var(--weight-normal);
+}
+
+.editor-results {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-card);
+  border-radius: 0.4375rem;
+  overflow: hidden;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.editor-results > li + li {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.editor-result-quiet {
+  padding: 0.5rem 0.625rem;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.editor-result {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.5rem 0.625rem;
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.editor-result:hover:not(:disabled) {
+  background: var(--bg-card-hover);
+}
+
+.editor-result-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.editor-result-title {
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+/* ------------------------------------------------- the date tiles */
+
+.editor-dates {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+
+.editor-date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.0625rem;
+  min-width: 0;
+  height: 2.75rem;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-card);
+  border-radius: 0.4375rem;
+  background: var(--bg-card);
+  font: inherit;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.editor-date[aria-checked='true'] {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.editor-date:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.editor-date-name {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+}
+
+.editor-date-number {
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+  font-weight: var(--weight-heavy);
+}
+
+/* A range the head already says: kept for the tests that read it, off the screen. */
+.editor-range-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.editor-gap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.editor-gap-range {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-heading-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+/* -------------------------------------------------------- the bar */
+
+.editor-bar-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+.editor-bar {
+  position: relative;
+  height: 1.875rem;
+  border-radius: 0.4375rem;
+  background: var(--bg-column);
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+.editor-bar-busy {
+  position: absolute;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  border-radius: 0.1875rem;
+  background: var(--border-default);
+}
+
+.editor-bar-busy-confirmed {
+  background: var(--text-muted);
+}
+
+.editor-bar-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--overdue);
+}
+
+.editor-bar-sel {
+  position: absolute;
+  top: 0.125rem;
+  bottom: 0.125rem;
+  min-width: 6px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--accent);
+  border-radius: 0.3125rem;
+  background: var(--accent-bg);
+  cursor: grab;
+}
+
+.editor-bar-sel-bad {
+  border-color: var(--overdue);
+}
+
+.editor-bar-ticks {
+  position: relative;
+  height: 0.875rem;
+}
+
+.editor-bar-ticks > span {
+  position: absolute;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------- the tiles */
+
+.editor-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.375rem;
+}
+
+.editor-tiles-one {
+  grid-template-columns: minmax(0, 6rem);
+}
+
+.editor-tile {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.375rem;
+  background: var(--bg-column);
+}
+
+.editor-tile strong {
+  font-family: var(--font-mono);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.editor-tile span {
+  overflow: hidden;
+  font-size: var(--text-small);
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+}
+
+/* ------------------------------------------------------- the split */
+
+.editor-split {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: var(--text-body);
+  color: var(--text-primary);
+}
+
+.editor-split-field {
+  width: 6rem;
+}
+
+/* ------------------------------------------------------ the history */
+
+.editor-history {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.editor-history-row {
+  display: grid;
+  grid-template-columns: 4.25rem minmax(0, 1fr);
+  gap: 0.625rem;
+  font-size: var(--text-small);
+  line-height: var(--leading-small);
+  color: var(--text-primary);
+}
+
+.editor-history-time {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.editor-history-who {
+  color: var(--text-secondary);
+}
+
+/* ------------------------------------------------------- the footer */
+
+.editor-foot {
+  flex: none;
+  position: static;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+}
+
+.editor-primary,
+.editor-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  margin: 0;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--bg-card);
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition);
+}
+
+.editor-primary {
+  padding: 0 0.875rem;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.editor-primary:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.editor-primary:disabled {
+  border-color: var(--border-subtle);
+  background: var(--bg-column);
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.editor-act:hover:not(:disabled) {
+  border-color: var(--accent-border);
+}
+
+.editor-act:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.editor-act-danger {
+  border-color: var(--overdue-border);
+  color: var(--overdue);
+}
+
+.editor-kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  opacity: 0.8;
+}
+
+/* The phone's sheet: taller controls under a thumb (LAI-511's drawer). */
+@media (max-width: 900px) {
+  .editor-primary,
+  .editor-act {
+    min-height: 2.75rem;
+  }
+
+  .editor-foot {
+    padding-bottom: 1rem;
+  }
+}

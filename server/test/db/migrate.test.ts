@@ -1808,3 +1808,144 @@ describe('D-093 completed_at migration (LAI-822)', () => {
     UPGRADE_TIMEOUT_MS,
   );
 });
+
+describe('0060 maps the kinds onto the design’s eight on a populated database (LAI-516)', () => {
+  it(
+    'rewrites every old kind in place, rebuilds only the timers, keeps every row and refuses the old names',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+      copyMigrations(dir);
+      const journalPath = join(dir, 'meta', '_journal.json');
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+        entries: { idx: number; tag: string; when: number }[];
+      };
+      const at = journal.entries.findIndex((e) => /^\d{4}_time_entry_kinds_design$/.test(e.tag));
+      expect(at, 'the kinds migration is in the journal').toBeGreaterThan(0);
+      const dropped = journal.entries.splice(at).slice(0, 1);
+      writeFileSync(journalPath, JSON.stringify(journal));
+
+      const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: dir });
+        const s = seed(db);
+        const now = Date.now();
+        const day = new Date(now).toISOString().slice(0, 10);
+        // One entry of each of the first eight kinds, each with a revision that
+        // says the same; and a timer on one of the names that goes.
+        const OLD = [
+          'meeting',
+          'call',
+          'review',
+          'planning',
+          'learning',
+          'support',
+          'admin',
+          'other',
+        ];
+        const ids = OLD.map(() => newId());
+        OLD.forEach((kind, i) => {
+          db.run(sql`
+          INSERT INTO time_entries (id, user_id, day, tz, minutes, source, source_ref, kind, revision, created_at, updated_at)
+          VALUES (${ids[i]}, ${s.userId}, ${day}, 'UTC', ${10 + i}, 'manual', NULL, ${kind}, 1, ${now + i}, ${now + i})
+        `);
+          db.run(sql`
+          INSERT INTO time_entry_revisions (id, entry_id, revision, change, changed_by, day, tz, minutes, kind, created_at)
+          VALUES (${newId()}, ${ids[i]}, 1, 'created', ${s.userId}, ${day}, 'UTC', ${10 + i}, ${kind}, ${now + i})
+        `);
+        });
+        db.run(sql`
+        INSERT INTO time_timers (user_id, task_id, kind, title, tz, started_at, resumed_at, paused_at, accumulated_ms, updated_at)
+        VALUES (${s.userId}, NULL, 'planning', 'Sprint shape', 'UTC', ${now}, ${now}, NULL, 0, ${now})
+      `);
+        runMigrations(db, { migrationsFolder: dir });
+
+        const census = () =>
+          Object.fromEntries(
+            db
+              .all<{ name: string; rootpage: number }>(
+                sql`SELECT name, rootpage FROM sqlite_master
+                   WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+                     AND name NOT LIKE '__drizzle%' ORDER BY name`,
+              )
+              .map((t) => [
+                t.name,
+                {
+                  rootpage: t.rootpage,
+                  rows: db.all<Record<string, unknown>>(
+                    sql.raw(`SELECT * FROM "${t.name}" ORDER BY rowid`),
+                  ),
+                },
+              ]),
+          );
+        const before = census();
+        expect(before.time_entries?.rows.map((r) => r.kind)).toEqual(OLD);
+        expect(before.time_entry_revisions?.rows.map((r) => r.kind)).toEqual(OLD);
+        expect(before.time_timers?.rows.map((r) => r.kind)).toEqual(['planning']);
+
+        journal.entries.push(...dropped);
+        writeFileSync(journalPath, JSON.stringify(journal));
+        runMigrations(db, { migrationsFolder: dir });
+
+        const NEW = [
+          'meeting',
+          'meeting',
+          'review',
+          'thinking',
+          'research',
+          'support',
+          'admin',
+          'work',
+        ];
+        const after = census();
+        const {
+          time_entries: entries,
+          time_entry_revisions: revisions,
+          time_timers: timers,
+          ...kept
+        } = after;
+        const {
+          time_entries: entriesBefore,
+          time_entry_revisions: revisionsBefore,
+          time_timers: timersBefore,
+          ...keptBefore
+        } = before;
+        // Nothing else moved; the two tables without a CHECK were not rebuilt.
+        expect(kept).toEqual(keptBefore);
+        expect(entries?.rootpage).toBe(entriesBefore?.rootpage);
+        expect(revisions?.rootpage).toBe(revisionsBefore?.rootpage);
+        const mapped = (rows: Record<string, unknown>[] | undefined) =>
+          rows?.map((r, i) => ({ ...r, kind: NEW[i] }));
+        expect(entries?.rows).toEqual(mapped(entriesBefore?.rows));
+        expect(revisions?.rows).toEqual(mapped(revisionsBefore?.rows));
+        // The timer survived its table's rebuild, on its new name.
+        expect(timers?.rows).toEqual(timersBefore?.rows.map((r) => ({ ...r, kind: 'thinking' })));
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+        // The new CHECK: a design kind is admitted, an old name is not.
+        db.run(sql`UPDATE time_timers SET kind = 'pairing' WHERE user_id = ${s.userId}`);
+        expectSqliteError(
+          () => db.run(sql`UPDATE time_timers SET kind = 'call' WHERE user_id = ${s.userId}`),
+          /CHECK constraint failed/,
+        );
+        // Still kept three years, and its history still append-only — the
+        // trigger the migration dropped for its one UPDATE is back.
+        expectSqliteError(
+          () => db.run(sql`DELETE FROM time_entries WHERE id = ${ids[0] ?? ''}`),
+          /three years/,
+        );
+        expectSqliteError(
+          () =>
+            db.run(
+              sql`UPDATE time_entry_revisions SET kind = 'admin' WHERE entry_id = ${ids[0] ?? ''}`,
+            ),
+          /append-only/,
+        );
+      } finally {
+        sqlite.close();
+        rmSync(dbDir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
