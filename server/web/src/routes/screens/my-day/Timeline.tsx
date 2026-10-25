@@ -668,7 +668,7 @@ export function Timeline({
       d.started = true;
       const edit =
         d.kind === 'move'
-          ? (moveBlock(block, scale.at(x(block.start) + dx), line.length) ?? unchanged(block))
+          ? (moveBlock(block, scale.at(x(block.start) + dx)) ?? unchanged(block))
           : (dragEdge(block, d.kind, minuteAt(event.clientX), limitsIn(line, block)) ??
             unchanged(block));
       setDrag({ id: block.id, kind: d.kind, kbd: false, o0: block.start, o1: block.end, edit });
@@ -701,9 +701,9 @@ export function Timeline({
         event.stopPropagation();
         const by = (event.shiftKey ? 15 : STEP) * (event.key === 'ArrowRight' ? 1 : -1);
         const from = mine ? held.edit : unchanged(block);
-        const span = from.end - from.start;
-        const start = Math.max(0, Math.min(line.length - span, from.start + by));
-        const edit: Edit = { start, end: start + span, minutes: block.minutes };
+        // Not pinned to the day: past midnight, the words say so and Enter bounces it (the design).
+        const start = from.start + by;
+        const edit: Edit = { start, end: start + from.end - from.start, minutes: block.minutes };
         setDrag({ id: block.id, kind: 'move', kbd: true, o0: block.start, o1: block.end, edit });
         const check = checkDrop(edit, line.blocks, block.id, line.length);
         setLive(
@@ -734,7 +734,7 @@ export function Timeline({
       if (item === null || readOnly || busy) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = 'move';
-      const span = trayDropSpan(minuteAt(event.clientX), item.minutes, line.length);
+      const span = trayDropSpan(minuteAt(event.clientX), item.minutes);
       setExt((cur) =>
         cur?.id === item.id && cur.span.start === span.start
           ? cur

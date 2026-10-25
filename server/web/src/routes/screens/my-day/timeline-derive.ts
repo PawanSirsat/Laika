@@ -880,13 +880,15 @@ export function dayFigures(
 
 /**
  * A block moved whole (the owner's `TimelineV2.dc.html`, LAI-512): its start
- * lands on the nearest {@link STEP} of the clock and its span comes with it,
- * clipped to the day; its minutes do not change — a block that held less than
- * its span keeps that. `undefined` when nothing would move.
+ * lands on the nearest {@link STEP} of the clock and its span comes with it;
+ * its minutes do not change — a block that held less than its span keeps
+ * that. **Never pinned to the day:** a move past midnight goes there, so
+ * {@link checkDrop} can refuse it and the block goes back, as the design's
+ * `check` does. `undefined` when nothing would move.
  */
-export function moveBlock(block: Shape, toStart: number, length = 1440): Edit | undefined {
+export function moveBlock(block: Shape, toStart: number): Edit | undefined {
   const span = block.end - block.start;
-  const start = Math.max(0, Math.min(length - span, snap(toStart)));
+  const start = snap(toStart);
   if (start === block.start) return undefined;
   return { start, end: start + span, minutes: block.minutes };
 }
@@ -917,12 +919,14 @@ export function checkDrop(
 }
 
 /**
- * Where a tray item dropped at minute `at` lands: centred on the pointer,
- * on the five-minute grid, and on the day.
+ * Where a tray item dropped at minute `at` lands: centred on the pointer, on
+ * the five-minute grid, at least a step long. Like {@link moveBlock}, never
+ * pinned to the day: one that would cross midnight is {@link checkDrop}'s to
+ * refuse (the design's `onExtOver` and `check`).
  */
-export function trayDropSpan(at: number, minutes: number, length = 1440): Span {
+export function trayDropSpan(at: number, minutes: number): Span {
   const len = Math.max(STEP, minutes);
-  const start = Math.max(0, Math.min(length - len, snap(at - len / 2)));
+  const start = snap(at - len / 2);
   return { start, end: start + len };
 }
 
