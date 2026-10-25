@@ -81,6 +81,8 @@ void describe('a work folder’s chosen name on My day (LAI-866)', () => {
       const h = await openDay();
       try {
         await setTheme(h.page, theme);
+        // To review is a tab (LAI-505); the day opens on Overview (LAI-514).
+        await h.page.locator('[data-day-tab="review"]').click();
 
         // To settle: the untied block says the name.
         const untied = h.page.locator('[data-settle-row="d2"]');

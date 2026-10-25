@@ -89,6 +89,7 @@ void describe('My day: the wheel scrolls the page wherever the pointer is', () =
     const stuck: string[] = [];
     try {
       await h.page.setViewportSize({ width: 1440, height: 900 });
+      await h.page.locator('[data-day-tab="review"]').click();
       await h.page.locator('.myday-drafts [data-settle-row]').first().waitFor({ timeout: 30_000 });
       for (const size of WIDTHS) {
         await h.page.setViewportSize(size);
@@ -133,6 +134,7 @@ void describe('My day: the wheel scrolls the page wherever the pointer is', () =
     const stuck: string[] = [];
     try {
       await h.page.setViewportSize({ width: 1440, height: 900 });
+      await h.page.locator('[data-day-tab="review"]').click();
       await h.page.locator('.myday-drafts [data-settle-row]').first().waitFor({ timeout: 30_000 });
       for (const size of WIDTHS) {
         await h.page.setViewportSize(size);

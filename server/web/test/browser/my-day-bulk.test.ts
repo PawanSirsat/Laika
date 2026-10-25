@@ -37,12 +37,15 @@ const pageBox = (h: Harness) =>
 const count = (h: Harness) => h.page.locator('[data-bulk-count]');
 const said = (h: Harness) => h.page.locator('[data-bulk-said]');
 /** The selection bar's Confirm (LAI-831: *Confirm*, as the owner's design names it). */
-const confirmSelected = (h: Harness) =>
-  h.page.locator('.myday-bulk').getByRole('button', { name: 'Confirm', exact: true });
+const confirmSelected = (h: Harness) => h.page.locator('.myday-bulk [data-bulk-confirm]');
+/** The bar's Confirm when some ticked blocks have no task: `Confirm 9`. */
+const confirmSelected9 = confirmSelected;
 
 async function busy(writes?: (call: StubCall) => unknown): Promise<Harness> {
   const h = await open('/my-day', busyStub(writes));
   await h.page.setViewportSize({ width: 1440, height: 900 });
+  // The day opens on Overview (LAI-514): the drafts are on their tab.
+  await h.page.locator('[data-day-tab="review"]').click();
   await h.page.locator('.myday-drafts [data-settle-row]').first().waitFor({ timeout: 30_000 });
   return h;
 }
@@ -234,7 +237,7 @@ void describe('the drafted blocks', () => {
       await entries.waitFor({ timeout: 5_000 });
       assert.equal(
         await entries.locator('[data-confirmed-caption]').innerText(),
-        '14 entries · 1 h 52 min',
+        '14 · 1 h 52 min',
       );
       assert.equal(await entries.locator('li[data-entry]').count(), 14);
     } finally {
@@ -249,7 +252,18 @@ void describe('the drafted blocks', () => {
       await count(h).waitFor({ timeout: 5_000 });
       // The box takes the whole list (LAI-505): no pages to offer.
       await until(async () => (await count(h).innerText()).startsWith('42'));
-      assert.equal(await count(h).innerText(), '42 selected · 11 h 51 min');
+      assert.equal(await count(h).innerText(), '42 selected');
+      assert.equal(await h.page.locator('.myday-bulk-sum').innerText(), '11 h 51 min');
+      // The bar floats at the foot of the window (the design, LAI-514).
+      const dock = await h.page.locator('.myday-bulk-dock').evaluate((el) => ({
+        position: getComputedStyle(el).position,
+        bottom: Math.round(el.getBoundingClientRect().bottom),
+      }));
+      assert.equal(dock.position, 'sticky');
+      assert.ok(
+        dock.bottom <= 900 - 19 && dock.bottom >= 900 - 21,
+        `the bar sits at ${String(dock.bottom)}`,
+      );
 
       await h.page.getByRole('button', { name: 'Clear' }).click();
       await until(async () => (await count(h).count()) === 0);
@@ -290,9 +304,11 @@ void describe('confirming in bulk', () => {
       // The first ten, as the page of ten used to be (LAI-505): a run of rows.
       await tick(h, 'd01').click();
       await tick(h, 'd10').click({ modifiers: ['Shift'] });
-      assert.equal(
-        await h.page.locator('[data-bulk-needcard]').innerText(),
-        '1 needs a card or General — left out of Confirm',
+      // One of the ten has no task: Confirm says how many it will take.
+      assert.equal(await confirmSelected9(h).innerText(), 'Confirm 9');
+      assert.match(
+        (await confirmSelected9(h).getAttribute('title')) ?? '',
+        /^1 with no task yet stay in To review$/,
       );
       const reads = dayReads(h);
 
@@ -310,7 +326,7 @@ void describe('confirming in bulk', () => {
         'Confirmed 9 blocks. Left out, still selected — 1 needs a card or General: 7:00–7:18 AM.',
       );
       // The one left out stays selected, to be put on a card next.
-      assert.equal(await count(h).innerText(), '1 selected · 18 min');
+      assert.equal(await count(h).innerText(), '1 selected');
       assert.equal(await tick(h, 'd04').isChecked(), true);
 
       // One re-read for the whole batch, not one per block.
@@ -364,6 +380,7 @@ void describe('confirming in bulk', () => {
     );
     try {
       await h.page.setViewportSize({ width: 1440, height: 900 });
+      await h.page.locator('[data-day-tab="review"]').click();
       await pageBox(h).waitFor({ timeout: 30_000 });
       await pageBox(h).click();
       await until(async () => (await count(h).innerText()).startsWith('36 '));
@@ -402,7 +419,7 @@ void describe('confirming in bulk', () => {
       );
       // Only the one left out: the two that changed are not claimed as selected.
       await until(async () => (await count(h).innerText()).startsWith('1 '));
-      assert.equal(await count(h).innerText(), '1 selected · 18 min');
+      assert.equal(await count(h).innerText(), '1 selected');
       assert.equal(await tick(h, 'd02').isChecked(), false);
     } finally {
       await h.close();
@@ -531,10 +548,9 @@ void describe('the bar acts at once, and Undo takes it back (LAI-831)', () => {
         h.calls.filter((c) => c.method === 'PATCH').map((c) => c.path.split('/').pop());
       await tick(h, 'd01').click();
       await tick(h, 'd04').click();
-      await h.page
-        .locator('.myday-bulk')
-        .getByRole('button', { name: 'General', exact: true })
-        .click();
+      // General is *No task* under Assign task (the design, LAI-514).
+      await h.page.locator('.myday-bulk').getByRole('button', { name: 'Assign task' }).click();
+      await h.page.locator('[data-bulk-assign-task="general"]').click();
       await said(h).waitFor({ timeout: 20_000 });
       assert.deepEqual(patches(), ['d01', 'd04']);
       assert.equal(await said(h).innerText(), 'Moved 2 blocks to General.');
@@ -604,6 +620,7 @@ void describe('names a screen reader can tell apart', () => {
     const drafts = DRAFTS.slice(0, 2).map(untimed);
     const h = await open('/my-day', busyStub(undefined, { ...BUSY_DAY, drafts }));
     try {
+      await h.page.locator('[data-day-tab="review"]').click();
       await h.page.locator('li[data-draft]').first().waitFor({ timeout: 30_000 });
       const expected = [
         'Select block 1 of 2, no set time, 15 min, LAI-1 Search matches keys',

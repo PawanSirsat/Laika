@@ -395,19 +395,17 @@ void describe('gaps and breaks (4, D)', () => {
 });
 
 void describe('no signal is not zero hours (3, 4)', () => {
-  void test('a day with no signal says so on its lane and gives no figure, never 0 min', async () => {
+  void test('a day with no signal says so on its card and gives no figure, never 0 min', async () => {
     const h = await openDay(QUIET);
     try {
+      // The designed empty Timeline (LAI-513) carries the no-signal line.
       assert.match(
-        await h.page.locator('[data-no-signal]').innerText(),
+        await h.page.locator('[data-day-empty="past"] [data-no-signal]').innerText(),
         /No signal — nothing reached Laika from your machine\. That is not zero hours/,
       );
-      // The Timeline's header (LAI-888) and its You column give no figure either.
-      for (const stat of ['confirmed', 'drafted', 'needs-card', 'gaps']) {
-        const figure = await h.page.locator(`[data-stat="${stat}"] strong`).innerText();
-        assert.equal(figure, '—', `${stat} reads ${figure}`);
-      }
-      assert.equal(await h.page.locator('[data-you-work]').innerText(), '—');
+      // The header gives no figure either.
+      assert.match(await h.page.locator('[data-day-total]').innerText(), /^—\s+no signal$/);
+      assert.doesNotMatch(await h.page.locator('.screen-page').innerText(), /\b0 min\b/);
     } finally {
       await h.close();
     }
@@ -419,8 +417,15 @@ void describe('confirming leaves out what needs a card (1, 6)', () => {
     const h = await openDay(TODAY);
     try {
       const button = h.page.locator('[data-confirm-day]');
-      assert.equal((await button.innerText()).trim(), `Confirm 3 ready · ${dur(95 + 110 + 25)}`);
-      assert.match((await button.getAttribute('title')) ?? '', /2 need a card .*left out/);
+      // The design's label (LAI-513): Confirm day, and what is ready in mono.
+      assert.match(
+        (await button.innerText()).trim(),
+        new RegExp(`^Confirm day\\s+3 ready · ${dur(95 + 110 + 25)}$`),
+      );
+      assert.match(
+        (await button.getAttribute('title')) ?? '',
+        /2 without a task stay in To review/,
+      );
       await button.click();
       // The summary first (LAI-503): what confirms, what stays, then Confirm.
       const summary = h.page.locator('[data-confirm-summary]');
@@ -443,6 +448,7 @@ void describe('confirming leaves out what needs a card (1, 6)', () => {
   void test('a bulk Confirm leaves out what needs a card, keeps it checked and says so', async () => {
     const h = await openDay(TODAY);
     try {
+      await onTab(h, 'd1');
       await h.page.getByRole('checkbox', { name: 'Select every drafted block' }).check();
       await h.page.locator('.myday-bulk').getByRole('button', { name: 'Confirm' }).click();
       await h.page.locator('[data-toast]').waitFor({ timeout: 5_000 });
@@ -621,9 +627,45 @@ void describe('Undo (B)', () => {
     }
   });
 
+  void test('Assign task puts every ticked block on the picked card, one write each (LAI-514)', async () => {
+    const h = await openDay(TODAY);
+    try {
+      await onTab(h, 'd2');
+      await h.page.locator('[data-settle-row="d2"] .myday-check').check();
+      await h.page.locator('[data-settle-row="d4"] .myday-check').check();
+      // Both have no task: Confirm takes none of them.
+      assert.equal(
+        await h.page.locator('.myday-bulk [data-bulk-confirm]').innerText(),
+        'Confirm 0',
+      );
+      await h.page.locator('.myday-bulk').getByRole('button', { name: 'Assign task' }).click();
+      const offered = await h.page
+        .locator('[data-bulk-assign-task]')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('data-bulk-assign-task')));
+      // The day's cards, then the person's in progress, each once; No task last.
+      assert.ok(offered.includes('LAI-11'), offered.join(','));
+      assert.equal(offered.at(-1), 'general');
+      assert.equal(new Set(offered).size, offered.length, 'a card is offered twice');
+      await h.page.locator('[data-bulk-assign-task="LAI-11"]').click();
+      await until(() => writes(h).length === 2);
+      assert.deepEqual(
+        writes(h).map((c) => [c.method, c.path, c.body]),
+        [
+          ['PATCH', '/api/v1/me/time-drafts/d2', { task: 'LAI-11' }],
+          ['PATCH', '/api/v1/me/time-drafts/d4', { task: 'LAI-11' }],
+        ],
+      );
+      await h.page.locator('[data-toast]').waitFor({ timeout: 5_000 });
+      assert.match(await h.page.locator('[data-toast]').innerText(), /Put 2 blocks on LAI-11\./);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('a bulk Not work is undone block by block, newest first', async () => {
     const h = await openDay(TODAY);
     try {
+      await onTab(h, 'd1');
       await h.page.locator('[data-settle-row="d1"] .myday-check').check();
       await h.page.locator('[data-settle-row="d2"] .myday-check').check();
       await h.page.locator('.myday-bulk').getByRole('button', { name: 'Not work' }).click();

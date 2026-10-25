@@ -537,7 +537,7 @@ void describe('times and durations say their units (LAI-830)', () => {
       // The header total: was `entries · 1:09`.
       assert.equal(
         await confirmed.locator('[data-confirmed-caption]').innerText(),
-        '4 entries · 1 h 9 min',
+        '4 · 1 h 9 min',
       );
 
       // The drafted list, Confirm day, the week strip and the bar say the same.
@@ -588,6 +588,7 @@ void describe('times and durations say their units (LAI-830)', () => {
       // typed, is read back before anything is saved (the form under the list
       // went with LAI-502).
       await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-day-tab="review"]').click();
       await h.page.locator('[data-select="d1"]').click();
       const panel = h.page.locator('[data-inspector-for="d1"]');
       await panel.waitFor({ timeout: 10_000 });

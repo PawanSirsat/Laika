@@ -173,6 +173,9 @@ void describe('an owner reads a member’s day (D-102, LAI-959)', () => {
       // Nothing is in hand on load (LAI-511): the first block, picked.
       await h.page.locator('[data-block-select]').first().click();
       await h.page.locator('[data-inspector="draft"]').waitFor({ timeout: 10_000 });
+      // The boxes are on To review's tab (LAI-514).
+      await h.page.locator('[data-day-tab="review"]').click();
+      await h.page.locator('.myday-drafts').waitFor({ timeout: 5_000 });
       for (const selector of WRITE_CONTROLS) {
         assert.ok((await h.page.locator(selector).count()) > 0, `${selector} is not drawn`);
       }
@@ -203,7 +206,9 @@ void describe('an owner reads a member’s day (D-102, LAI-959)', () => {
       );
       assert.match(await h.page.locator('h1').first().innerText(), /Grace Hopper’s day/);
 
-      // Her drafts are there to read …
+      // Her drafts are there to read, on their tab …
+      await h.page.locator('[data-day-tab="review"]').click();
+      await h.page.locator('[data-settle-row]').first().waitFor({ timeout: 5_000 });
       assert.ok((await h.page.locator('[data-settle-row]').count()) > 0, 'no drafted rows drawn');
       // … and nothing to change them with.
       for (const selector of WRITE_CONTROLS) {
