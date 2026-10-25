@@ -379,3 +379,89 @@ and the PR carries that run's three exit codes.
 - Touch on a touchscreen laptop at 901px and wider: the 24px targets and the
   group taps.
 
+
+## Review round 1 (cross-vendor review of `bf90d696`, FAIL; fixed on the same branch)
+
+1. **Blocking: narrow targets shrank below 24px.** `layoutRow` cut a target
+   against any box beside it, a gap included, and never checked the width
+   again. The unit test accepted 13.3px.
+   - **Fix** (`timeline-derive.ts`):
+     - A narrow block's target is now `HIT_PX`: 28px, which is 24 and 2px
+       either side, so a press 12px off the middle lands inside it, not on
+       its edge.
+     - Two narrow blocks whose targets would overlap clash, so lanes keep
+       them apart and neither is cut.
+     - Gaps, breaks and empty track never cut a target. `layoutRow` no
+       longer takes them; the block's target lies over the gap's hit area
+       and wins there.
+     - The one documented exception is a full-size block, or a closed
+       group, right beside it. The target stops at that box so the
+       neighbour stays clickable and keeps its edge handle. It still covers
+       its own bar and reaches its whole half on the free side.
+   - **Tests:**
+     - Unit: a lone block between gaps keeps 28px (≥ 24, and ±12px inside).
+       Three five-minute blocks back to back take three lanes, each with
+       its whole target (the expectation moved from lanes `[0, 1, 0]` to
+       `[0, 1, 2]`, because the 28px targets now reach two blocks along).
+       The exception beside a full block is asserted explicitly: held at
+       that block's edge, covering its own bar, the free side at
+       `c + HIT_PX / 2`, and exactly its bar between two full blocks.
+     - Browser (`my-day-timeline-groups.test.ts`): at 1×, a press 12px
+       left and 12px right of a lone five-minute block's middle selects it.
+       The crowded fixture gained the lone block `lone` at 3:30 PM.
+2. **Blocking: zooming in from folded Fit could draw the anchor smaller.**
+   Fit's starting factor was the linear whole-day floor, but Fit draws the
+   open hours larger than that.
+   - **Fix:**
+     - `localZoom(scale, minute)` gives the scale Fit draws at a minute.
+     - `zoomBy` handles pinch and Ctrl/Cmd + wheel, and Safari's gesture
+       events through the same path. Leaving Fit, it starts from that local
+       scale. Inward it never draws the anchor smaller and never goes under
+       the floor. Outward, past the floor, it is Fit only where Fit draws
+       the anchor no larger; otherwise it stops at the floor, the whole day
+       linear.
+     - The slider's keys pass the same local scale to `zoomStep`: → from
+       Fit steps past it, and ← into Fit follows the same rule.
+     - `Timeline.tsx` computes Fit's local scale at the anchor minute on
+       each of these paths.
+   - **Tests:**
+     - Unit (new describe "leaving Fit"), on a day folded 6–9 and 17–22:
+       Fit's local scale over the open hours and over a fold; inward never
+       smaller and the anchor kept; outward never larger; the slider-step
+       rules.
+     - Browser: Ctrl + wheel in from Fit on the crowded day, which folds
+       before 9 AM and after 5 PM. The minute under the pointer moves less
+       than 2 minutes, and s1's width (px a minute at the anchor) does not
+       go down.
+3. **Blocking: the slider anchored the selected block only when its middle
+   was in view.**
+   - **Fix:** `sliderAnchor` checks whether the block intersects the view.
+     If any of it shows, it keeps its start in place, or the first minute
+     of it in view when the start is off the left edge.
+   - **Tests:**
+     - Browser: s1 selected at 2× with only its first quarter hour showing
+       at the right edge, its middle off screen. It still intersects the
+       view after the slider goes to 3×, 4×, 1.5×, 1× and 0.75×.
+     - `my-day-v3.test.ts`: the case "the slider keeps a selected block
+       where it is on screen" (added in this PR) now asserts the block's
+       start stays put, not its middle. The anchor point changed by design.
+4. **Non-blocking: proof that a tray drop uses the drop event.**
+   - **Test** (`my-day-timeline-drag.test.ts`, new): one dragover at
+     4:30 PM (the preview says 4:20–4:45), then a 160px scroll with no
+     dragover, then a drop at the same viewport point. It saves 5:20–5:45.
+     The events are sent by hand, because the browser's own drag repeats
+     dragover while the pointer rests.
+
+**Mutation checks**: with each old behaviour put back, its new assertion
+went red and the source was restored. Covered: the target cut to its bar
+(unit and browser), Fit starting at the floor (unit and browser), the
+anchor only at the midpoint (browser), and the drop using the preview
+(browser).
+
+**Focused runs after the fixes, all exit 0:** the unit test file
+`timeline-derive.test.ts` and the browser files `my-day-timeline-groups`,
+`my-day-timeline-drag`, `my-day-timeline-zoom`, `my-day-v3`, `my-day-v2`,
+`my-day-range`, `org-breaks`, `my-day-daylight`, `my-day-signals`,
+`my-day-agents`, `person-day`, `my-day-page-scroll` and `my-day-phone`. The
+full repo-root gate's exit codes after this edit are in the PR and the
+report.
