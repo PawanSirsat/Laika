@@ -220,6 +220,7 @@ void describe('Confirm day’s summary (LAI-503)', () => {
         assert.ok(first.height >= 40, `the pill is ${String(first.height)}px tall`);
         assert.equal(first.ground, first.ink, 'the pill is not the page’s ink');
         // A block ticked: the bulk bar shows, and the toast stands over it.
+        await h.page.locator('[data-day-tab="review"]').click();
         await h.page.locator('[data-settle-row="d2"] .myday-check').check();
         await h.page.locator('[data-bulk-count]').waitFor({ timeout: 5_000 });
         assert.equal((await where())?.up, 92);
@@ -251,8 +252,13 @@ void describe('Confirm day’s summary (LAI-503)', () => {
     const writes: StubCall[] = [];
     const h = await myDay(writes, { note: 'Yesterday’s words', noDrafts: true });
     try {
-      // No drafts: no Confirm day; the day's note has its own button.
-      assert.equal(await h.page.locator('[data-confirm-day]').count(), 0);
+      // No drafts: the design's *Day confirmed*, disabled (LAI-513); the day's
+      // note has its own button.
+      assert.equal(
+        (await h.page.locator('[data-confirm-day]').innerText()).trim(),
+        'Day confirmed',
+      );
+      assert.equal(await h.page.locator('[data-confirm-day]').isDisabled(), true);
       await h.page.locator('[data-day-note-button]').click();
       const summary = h.page.locator('[data-confirm-summary]');
       await summary.waitFor({ timeout: 5_000 });

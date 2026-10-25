@@ -338,11 +338,14 @@ void describe('the editor as designed (LAI-515)', () => {
         await panel.locator(`[data-new-entry-day="${TODAY}"]`).getAttribute('aria-checked'),
         'true',
       );
-      assert.equal(await panel.locator(`[data-new-entry-day="${TOMORROW}"]`).isDisabled(), true);
-      assert.equal(
-        await panel.locator(`[data-new-entry-day="${TOMORROW}"]`).getAttribute('title'),
-        'You can’t add time ahead of the day',
-      );
+      // A day after today, when the week has one (on a Sunday it has none).
+      if ((await panel.locator(`[data-new-entry-day="${TOMORROW}"]`).count()) === 1) {
+        assert.equal(await panel.locator(`[data-new-entry-day="${TOMORROW}"]`).isDisabled(), true);
+        assert.equal(
+          await panel.locator(`[data-new-entry-day="${TOMORROW}"]`).getAttribute('title'),
+          'You can’t add time ahead of the day',
+        );
+      }
       // The sections in the design's order: WHEN, OFF-SCREEN WORK, TASK, KIND, WHAT IT WAS.
       const labels = await panel.locator('.editor-label').allInnerTexts();
       assert.deepEqual(
