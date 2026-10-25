@@ -286,8 +286,8 @@ void describe('My day after the reference', () => {
       assert.equal(await h.page.locator('.dayline-block.dayline-drafted').count(), 1);
       await until(async () => (await h.page.locator('.dayline-now').count()) === 1);
       assert.equal(await h.page.locator('.dayline-now').count(), 1, 'today has no now line');
-      // The untimed call is not placed somewhere invented; it is counted.
-      assert.match(await h.page.locator('.dayline-untimed').innerText(), /1 block has no set time/);
+      // The untimed call is not placed somewhere invented; it sits in the tray (LAI-505, LAI-512).
+      assert.equal(await h.page.locator('[data-untimed-tray] [data-tray-item]').count(), 1);
 
       // Inside the track, in the order of the day.
       const box = await track.boundingBox();

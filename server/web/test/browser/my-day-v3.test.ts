@@ -46,14 +46,18 @@ async function openToday(): Promise<Harness> {
   return h;
 }
 
+/** The design's compact figure (`timeline-core.js`' `dur`): `2h 10m`, `35m`, `1h` (LAI-512). */
 const dur = (minutes: number): string => {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
-  return h === 0
-    ? `${String(m)} min`
-    : m === 0
-      ? `${String(h)} h`
-      : `${String(h)} h ${String(m)} min`;
+  return h === 0 ? `${String(m)}m` : m === 0 ? `${String(h)}h` : `${String(h)}h ${String(m)}m`;
+};
+
+/** The legend's compact figure, as the design's Timeline prints it (LAI-512): `1h 35m`, `35m`. */
+const cmp = (minutes: number): string => {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h === 0 ? `${String(m)}m` : m === 0 ? `${String(h)}h` : `${String(h)}h ${String(m)}m`;
 };
 
 /**
@@ -84,11 +88,18 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
       // Confirmed 30 + 30; drafted on a card 95 + 110 + 25; on nothing 40 + 40; gaps 25 + 30 + 40.
       const figure = async (stat: string): Promise<string> =>
         (await h.page.locator(`[data-stat="${stat}"] strong`).innerText()).trim();
-      assert.equal(await figure('confirmed'), dur(60));
-      assert.equal(await figure('drafted'), dur(230));
-      assert.equal(await figure('needs-card'), dur(80));
-      assert.equal(await figure('gaps'), dur(95));
-      assert.match(await h.page.locator('[data-stat="gaps"]').innerText(), /3 unaccounted/);
+      assert.equal(await figure('confirmed'), cmp(60));
+      assert.equal(await figure('drafted'), cmp(230));
+      assert.equal(await figure('needs-card'), cmp(80));
+      assert.equal(await figure('gaps'), cmp(95));
+      // The legend's words are the design's; the gaps' count is in the button's title (LAI-512).
+      const legend = await h.page.locator('.dayline-totals').innerText();
+      assert.match(legend, /Confirmed[\s\S]*Drafted[\s\S]*No task yet[\s\S]*Gaps/);
+      assert.doesNotMatch(legend, /unaccounted|Needs a card/);
+      assert.match(
+        (await h.page.locator('[data-stat="gaps"]').getAttribute('title')) ?? '',
+        /3 unaccounted/,
+      );
 
       const axis = await h.page.locator('.dayline-axis').boundingBox();
       const row = await h.page.locator('.dayline-row').boundingBox();
@@ -107,16 +118,25 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
       );
 
       assert.equal((await h.page.locator('[data-you-work]').innerText()).trim(), dur(370));
+      assert.match(
+        await h.page.locator('.dayline-label-you').innerText(),
+        new RegExp(`of work · ${dur(60)} confirmed`),
+      );
       assert.equal((await h.page.locator('[data-prompt-total]').innerText()).trim(), '3');
       assert.equal((await h.page.locator('[data-commit-total]').innerText()).trim(), '3');
+      // Marks: the drafts' own, summed (d3 carries one).
+      assert.equal((await h.page.locator('[data-mark-total]').innerText()).trim(), '1');
       assert.equal((await h.page.locator('[data-agent-work]').innerText()).trim(), '14 min');
       assert.equal(
         (await h.page.locator('[data-agent-on-card]').innerText()).trim(),
-        '12 min on a card · never your hours',
+        '12 min on a card',
       );
-      // The footer lists the keys, and says nothing is being edited yet.
-      const keys = await h.page.locator('.dayline-keys kbd').allInnerTexts();
-      assert.deepEqual(keys, ['← →', '↵', 'G', 'X', 'Esc']);
+      assert.match(
+        await h.page.locator('.dayline-label-agents').innerText(),
+        /Beside your day\. Never added to your hours\./,
+      );
+      // No footer (the design embeds the card with `no-footer`, LAI-512): the keys are the sheet's.
+      assert.equal(await h.page.locator('.dayline-foot, .dayline-keys').count(), 0);
     } finally {
       await h.close();
     }
@@ -407,19 +427,14 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
     }
   });
 
-  void test('‹ › and ← → step the selection along every placed block, and the footer says what is being edited', async () => {
+  void test('‹ › and ← → step the selection along every placed block', async () => {
     const h = await openToday();
     try {
       // The day's placed blocks, in order: d1 8:40, d2 10:40, e1 11:30, e2 12:00, d3 1:00, d4 3:30.
       await h.page.locator('[data-block-select="d1"]').click();
       assert.equal(await pressed(h, 'd1'), true);
-      assert.match(await h.page.locator('[data-foot-hint]').innerText(), /^Editing LAI-11 below/);
       await h.page.getByRole('button', { name: 'Next block' }).click();
       await until(() => pressed(h, 'd2'));
-      assert.match(
-        await h.page.locator('[data-foot-hint]').innerText(),
-        /^Editing Needs a card below/,
-      );
       await h.page.keyboard.press('ArrowRight');
       await until(() => pressed(h, 'e1'));
       assert.equal(await h.page.locator('[data-inspector="entry"]').count(), 1);
@@ -475,7 +490,7 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
         assert.equal(await h.page.locator('.dayline-labels').isVisible(), false);
         assert.equal(
           (await h.page.locator('[data-stat="confirmed"] strong').innerText()).trim(),
-          dur(60),
+          cmp(60),
         );
         const sideways = await h.page.evaluate(() => {
           const main = document.querySelector('.shell-main') ?? document.scrollingElement;

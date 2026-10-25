@@ -336,9 +336,13 @@ void describe('gaps and breaks (4, D)', () => {
     try {
       // 11:30–12:00 and 12:45–1:30 count; 4:30–4:45 is a breath.
       assert.equal(await h.page.locator('.dayline-gap').count(), 2);
+      // The legend's compact figure, and the count in the button's title (LAI-512).
       const stat = await h.page.locator('[data-stat="gaps"]').innerText();
-      assert.match(stat, new RegExp(dur(75)));
-      assert.match(stat, /2 unaccounted/);
+      assert.match(stat, /1h 15m/);
+      assert.match(
+        (await h.page.locator('[data-stat="gaps"]').getAttribute('title')) ?? '',
+        /2 unaccounted/,
+      );
       // Which gap, and how long, is in its name whatever fits on the line:
       // CI's fonts draw "+ 30 min" wider than this Mac's, and it is a "+".
       const gaps = h.page.locator('.dayline-gap');
@@ -374,7 +378,10 @@ void describe('gaps and breaks (4, D)', () => {
         ended_at: at(EARLIER, 12, 0),
       });
       assert.equal(await h.page.locator('.dayline-gap').count(), 1);
-      assert.match(await h.page.locator('[data-stat="gaps"]').innerText(), /1 unaccounted/);
+      assert.match(
+        (await h.page.locator('[data-stat="gaps"]').getAttribute('title')) ?? '',
+        /1 unaccounted/,
+      );
       const drawn = h.page.locator('.dayline-break');
       assert.equal(await drawn.getAttribute('aria-label'), 'Break 11:30 AM–12:00 PM — not counted');
       assert.ok(breakShows(await drawn.innerText()), 'the break shows something else');
@@ -951,8 +958,11 @@ void describe('review round 1', () => {
     try {
       // 10:15–10:40, 12:30–1:00 and 2:50–3:30; never 4:10 PM onward.
       const stat = await h.page.locator('[data-stat="gaps"]').innerText();
-      assert.match(stat, new RegExp(dur(25 + 30 + 40)));
-      assert.match(stat, /3 unaccounted/);
+      assert.match(stat, /1h 35m/);
+      assert.match(
+        (await h.page.locator('[data-stat="gaps"]').getAttribute('title')) ?? '',
+        /3 unaccounted/,
+      );
     } finally {
       await h.close();
     }
