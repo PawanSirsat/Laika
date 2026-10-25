@@ -2,11 +2,12 @@
 id: LAI-300
 title: 'My day Timeline: one Time zoom slider, Fit day, and crowded stretches as groups that expand into lanes'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-860
-status: backlog
+status: in-progress
+started: 2026-10-25T09:43:13Z
 ---
 
 ## Goal
