@@ -3380,9 +3380,11 @@ parameter names anybody else.
 - **Confirmed time is never counted twice, by the clock** (LAI-831 review
   round 2). A timed block, with every live timed entry of the person that
   overlaps it — transitively, the whole stretch they join — holds no more
-  minutes than the stretch has of wall clock. It is judged on a draft's new
-  span or minutes, a confirm, *Confirm day*, a timed entry's create, an edit
-  of a timed entry's span or minutes, and an entry Undo brings back; an edit
+  minutes than the stretch has of wall clock. It is judged on a confirm,
+  *Confirm day*, a timed entry's create, an edit of a timed entry's span or
+  minutes, and an entry Undo brings back — **not on a draft's new span or
+  minutes**: a draft may lie over confirmed time while it is a draft (D-112),
+  held only to its span (`422 minutes_over_span`); an edit
   that moves an entry's span is judged as well on every live timed entry its
   old span met, as the edit leaves them. Refused `409 overlaps_confirmed`
   with `started_at`, `ended_at`, `stretch_started_at`, `stretch_ended_at`,

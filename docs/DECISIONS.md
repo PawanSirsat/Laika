@@ -5977,3 +5977,49 @@ and README halves are named edits of one task rather than four files for four
 halves. Filed as LAI-997, the last id of D-100's block; renumbered to LAI-507
 the same day when `master` turned out to hold another session's LAI-997 —
 the first id used from D-109's block.
+
+## D-112 — My day is the owner's *Laika My Day* design as it is: the editor in a drawer, TimelineV2 and its phone twin, the design's eight kinds, drafts that may lie over confirmed time, and a time wheel (LAI-510 – LAI-518)
+
+**Date:** 2026-10-25 · **By:** CHIEF (Belka), on the owner's instruction:
+*"go through this prototype, understand it, click on everything, check the
+positions and responsiveness … match that, do the same as it is"*, and the
+owner's answers: *"I want as per design, also want drag, I want zoom, also
+want side cards to appear when tapped, kinds I want."* Released on *"perfect,
+push everything on master now"* after the owner reviewed it running locally.
+
+The reference is `docs/design/MyDay.dc.html`, `TimelineV2.dc.html` and
+`TimelineMobileV2.dc.html` (LAI-510). It amends D-110 where the two differ:
+
+1. **The editor is a drawer on the right, closed on load** (LAI-511); it
+   opens on picking a block, a gap, a range, a tray item or *Add time*. Under
+   1280px it folds the app's sidebar; at 900px and under it is a bottom sheet.
+   *Agent time* and *On your plate* open in the same drawer from a header
+   button — the side cards appear when tapped.
+2. **The Timeline is TimelineV2** (LAI-512): blocks drag to move and resize,
+   a tray item drops onto the track, Alt+arrows move a block. The zoom
+   stepper and row height stay beside *Fit · 1× · 2×* (the owner: *I want
+   zoom*). A block's prompts and commits are in its tooltip, not a pill on it.
+3. **A gap is five minutes or more** (the design's `gaps()`), not twenty.
+   A drag that begins on a gap draws a range, as one on empty track does.
+4. **A draft may lie over confirmed time** — dragged, resized or typed —
+   as the design's `check` lets it; only a confirmed block or a tray item is
+   refused there. Confirming a draft where it would count confirmed time
+   twice is still refused, `409 overlaps_confirmed`. This amends the probe of
+   LAI-831's review round 1, which refused the move itself.
+5. **The design's eight kinds replace D-108's** (LAI-516): work, meeting,
+   thinking, research, pairing, review, support, admin. Migration 0060 maps
+   call → meeting, planning → thinking, learning → research, other → work, in
+   place, keeping every row. Overview's *By kind* has no General slice: a
+   block with no kind is *Building*, in the design's order and words.
+6. **Restored from D-110 item 11**: *Fill gaps*, the *Who can see this*
+   popover (truthful to D-102), and bulk *Assign task*. Overview gains the
+   *Range* scope over the week's days (D-110 item 4).
+7. **On a phone** the page is the design's (LAI-518): the bar, the day row,
+   the letter week, the summary with Confirm, and the vertical Timeline.
+8. **Start, End and Length take an iPhone-style time wheel** under the field
+   (the owner's ask the same day), on the five-minute grid; typing still
+   works, and on a phone the wheel is the only way in.
+9. **Not built, filed**: a *Not work time* block kept on the day with *Back
+   to review* (LAI-519), the AGENTS lane per agent with *Expand* (LAI-520),
+   the phone's Viewing list as drawn (LAI-521). No calendar still (D-110
+   item 3).
