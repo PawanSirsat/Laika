@@ -224,6 +224,16 @@ function useSpaces(): readonly Project[] | null | undefined {
 }
 
 /** The padlock beside who reads drafts. */
+/** The design's mark beside *Who can see this*: an i in a ring (LAI-513). */
+function InfoMark() {
+  return (
+    <svg className="myday-lock-icon myday-info-icon" viewBox="0 0 14 14" aria-hidden="true">
+      <circle cx="7" cy="7" r="5.6" />
+      <path d="M7 6.2v3.6M7 4.2v.1" />
+    </svg>
+  );
+}
+
 function Padlock() {
   return (
     <svg className="myday-lock-icon" viewBox="0 0 12 12" aria-hidden="true">
@@ -1332,7 +1342,7 @@ export function MyDayScreen({
                   <HeaderPopover
                     trigger={
                       <>
-                        <Padlock />
+                        <InfoMark />
                         Who can see this
                       </>
                     }
