@@ -45,7 +45,14 @@ export function kindChartLabel(kind: EntryKind): string {
   return CHART_LABELS[kind] ?? FACES[kind].label;
 }
 
-/** The timer's kinds (the design's Start a timer popover): Building, Meeting, Thinking. */
+/**
+ * The timer's kinds (the design's Start a timer popover): Building, Meeting,
+ * Thinking — one meeting, not the chart's *Meetings*.
+ */
 export const TIMER_KINDS: readonly KindFace[] = (['work', 'meeting', 'thinking'] as const).map(
-  (kind) => ({ kind, label: kindChartLabel(kind), glyph: FACES[kind].glyph }),
+  (kind) => ({
+    kind,
+    label: kind === 'work' ? kindChartLabel(kind) : FACES[kind].label,
+    glyph: FACES[kind].glyph,
+  }),
 );
