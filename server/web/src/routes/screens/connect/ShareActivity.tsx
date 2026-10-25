@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { ApiError } from '../../../api/errors.ts';
@@ -105,6 +106,7 @@ export function ShareActivity({
   /** This board's address, for the OpenTelemetry block (LAI-773). */
   readonly origin?: string;
 }) {
+  const confirm = useConfirm();
   const [state, setState] = useState<State>({ kind: 'loading' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -178,15 +180,17 @@ export function ShareActivity({
   };
 
   const erase = (): void => {
-    if (
-      !window.confirm(
-        'Delete every daily count and commit key the board holds for you? Your profile’s ' +
-          'activity loses its GitHub and Local history. This cannot be undone. Collection carries ' +
-          'on while your organisation has Developer insights on.',
-      )
-    ) {
-      return;
-    }
+    void confirm({
+      title: 'Delete your activity history?',
+      body: 'Every daily count and commit key the board holds for you goes, and your profile’s activity loses its GitHub and Local history. This cannot be undone. Collection carries on while your organisation has Developer insights on.',
+      confirmLabel: 'Delete history',
+      danger: true,
+    }).then((yes) => {
+      if (yes) eraseNow();
+    });
+  };
+
+  const eraseNow = (): void => {
     setBusy(true);
     setError(undefined);
     deleteOwnLocalActivity()

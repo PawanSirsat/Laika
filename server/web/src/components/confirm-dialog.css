@@ -1,0 +1,178 @@
+/*
+ * The confirmation (LAI-522): a card over a dimmed page, the mark in a
+ * tinted circle, the words, the thing affected, and the two buttons. Above
+ * every other layer (the drawer and the sheet are 60–61). Tokens only.
+ */
+
+.confirm-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.confirm-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+  backdrop-filter: blur(2px);
+  animation: confirm-fade 140ms ease-out;
+}
+
+.confirm {
+  position: relative;
+  width: min(27rem, 100%);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem 1.25rem 1rem;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-column);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+  animation: confirm-in 160ms ease-out;
+}
+
+.confirm-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+}
+
+.confirm-mark {
+  flex: none;
+  width: 2.5rem;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.confirm-danger .confirm-mark {
+  background: color-mix(in srgb, var(--overdue) 14%, transparent);
+  color: var(--overdue);
+}
+
+.confirm-mark svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.confirm-words {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding-top: 0.125rem;
+}
+
+.confirm-title {
+  margin: 0;
+  font-size: var(--text-heading-sm);
+  line-height: var(--leading-heading-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.confirm-body {
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  color: var(--text-secondary);
+}
+
+.confirm-body p {
+  margin: 0;
+}
+
+.confirm-body p + p {
+  margin-top: 0.5rem;
+}
+
+/* The thing affected: a quiet card, as a row of the list it came from. */
+.confirm-detail {
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-column);
+  font-size: var(--text-body);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.confirm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.confirm-field-label {
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.confirm-typed {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.confirm-error {
+  margin: 0;
+  font-size: var(--text-body);
+  color: var(--overdue);
+}
+
+.confirm-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding-top: 0.25rem;
+}
+
+/* On a phone the two are full width, the action above Cancel. */
+@media (max-width: 34rem) {
+  .confirm-layer {
+    align-items: flex-end;
+  }
+
+  .confirm-foot {
+    flex-direction: column-reverse;
+  }
+
+  .confirm-foot > span,
+  .confirm-foot .button {
+    width: 100%;
+  }
+}
+
+@keyframes confirm-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes confirm-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confirm,
+  .confirm-scrim {
+    animation: none;
+  }
+}

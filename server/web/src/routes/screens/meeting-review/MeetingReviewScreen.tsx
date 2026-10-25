@@ -1,4 +1,5 @@
 import { everyPage } from '../../../api/every-page.ts';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
@@ -60,6 +61,7 @@ export interface MeetingReviewScreenProps {
  * decision with a reason, not a convenience that arrives during implementation.
  */
 export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenProps) {
+  const confirm = useConfirm();
   const [reviews, setReviews] = useState<readonly MeetingReview[] | undefined>(undefined);
   const [openId, setOpenId] = useState<string | undefined>(undefined);
   const [detail, setDetail] = useState<MeetingReviewDetail | undefined>(undefined);
@@ -180,13 +182,18 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
 
   const discard = (): void => {
     if (detail === undefined) return;
-    if (
-      !window.confirm(
-        `Discard all ${String(detail.proposals.length)} proposals from this meeting? The set is thrown away and cannot be applied afterwards.`,
-      )
-    ) {
-      return;
-    }
+    void confirm({
+      title: `Discard all ${String(detail.proposals.length)} proposals?`,
+      body: 'The set from this meeting is thrown away and cannot be applied afterwards.',
+      confirmLabel: 'Discard proposals',
+      danger: true,
+    }).then((yes) => {
+      if (yes) discardNow();
+    });
+  };
+
+  const discardNow = (): void => {
+    if (detail === undefined) return;
     discardMeetingReview(detail.id)
       .then(() => getMeetingReview(detail.id))
       .then(setDetail)

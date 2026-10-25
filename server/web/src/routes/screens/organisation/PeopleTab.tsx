@@ -18,7 +18,7 @@ import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import { initials } from '../../../theme/initials.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
-import { ConfirmDialog } from './ConfirmDialog.tsx';
+import { ConfirmDialog } from '../../../components/ConfirmDialog.tsx';
 import {
   SORT_LABELS,
   expiryLabel,

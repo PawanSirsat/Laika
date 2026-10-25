@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { OrgOwnerRef } from '../../../api/org.ts';
-import { ConfirmDialog } from './ConfirmDialog.tsx';
+import { ConfirmDialog } from '../../../components/ConfirmDialog.tsx';
 
 export interface ExtraOwnersProps {
   /** `GET /org`'s `extra_owners` — served to the owner alone (LAI-982). */

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { OrgOwnerInvite } from '../../../api/org.ts';
-import { ConfirmDialog } from './ConfirmDialog.tsx';
+import { ConfirmDialog } from '../../../components/ConfirmDialog.tsx';
 import { expiryLabel } from './people-derive.ts';
 
 export interface OwnerInvitesProps {

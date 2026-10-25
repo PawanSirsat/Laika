@@ -46,7 +46,8 @@ import { DayTabs, type DayTab } from './DayTabs.tsx';
 import { DraftList, type Batch } from './DraftList.tsx';
 import { ConfirmDaySummary } from './ConfirmDaySummary.tsx';
 import { DaySettings } from './DaySettings.tsx';
-import { TimerControl } from './TimerControl.tsx';
+import { TimerControl, timerSeconds } from './TimerControl.tsx';
+import { useConfirm } from '../../../components/ConfirmProvider.tsx';
 import {
   confirmPlan,
   runBulk,
@@ -59,6 +60,7 @@ import { EntryList } from './EntryList.tsx';
 import { OverviewTab } from './OverviewTab.tsx';
 import { UntimedTray } from './UntimedTray.tsx';
 import { clock, duration, span } from './format.ts';
+import { kindLabel } from './entry-kinds.ts';
 import { Inspector, type DraftSaid, type Held, type InspectorActions } from './Inspector.tsx';
 import { MyDayDrawer, type DrawerMode } from './MyDayDrawer.tsx';
 import { DayEmpty, type EmptyAction, type EmptyKind } from './DayEmpty.tsx';
@@ -282,6 +284,8 @@ export function MyDayScreen({
   embedded,
 }: MyDayScreenProps) {
   const tz = readerZone();
+  // Deleting an entry and discarding the timer ask first (LAI-522).
+  const confirm = useConfirm();
   const { org, settled } = useGates(me !== undefined);
   const holds = org(PEOPLE_ANALYTICS);
   /** Whose day: somebody else's only by `?user=` naming another person. */
@@ -928,6 +932,28 @@ export function MyDayScreen({
       input.task === undefined ? 'Timer started.' : `Timer started on ${input.task}.`,
     );
   };
+  /** Discard the timer — the time it ran is lost, so it asks first, naming it (LAI-522). */
+  const timerDiscard = async (): Promise<void> => {
+    const timer = view.timer;
+    if (timer === null) return;
+    const minutes = Math.floor(timerSeconds(timer, Date.now()) / 60);
+    const what =
+      timer.task?.key ?? timer.title ?? (timer.kind === null ? 'The timer' : kindLabel(timer.kind));
+    const yes = await confirm({
+      title: 'Discard the timer?',
+      body: 'The time it has run is not saved anywhere. Stop saves it as an entry instead.',
+      confirmLabel: 'Discard',
+      danger: true,
+      detail: (
+        <span data-confirm-timer>
+          {what} · {minutes < 1 ? 'under a minute' : duration(minutes)} run
+        </span>
+      ),
+    });
+    if (!yes) return;
+    await run('timer', [], () => discardTimer(), 'Timer discarded — nothing saved.');
+  };
+
   const timerStop = async (): Promise<void> => {
     const timer = view.timer;
     if (timer === null) return;
@@ -1135,15 +1161,37 @@ export function MyDayScreen({
       );
     },
     remove: (entry) => {
-      void run(
-        `delete:${entry.id}`,
-        [entry.id],
-        (onUndo) => deleteEntry(entry.id, onUndo),
-        () => ({
-          text: `${duration(entry.minutes)} deleted. The revision history keeps a record.`,
-          undoable: true,
-        }),
-      );
+      const when =
+        entry.started_at === null || entry.ended_at === null
+          ? 'No set time'
+          : span(entry.started_at, entry.ended_at, entry.tz);
+      const what =
+        entry.task !== null
+          ? `${entry.task.key} ${entry.task.title}`
+          : (entry.title ??
+            (entry.kind === undefined || entry.kind === null ? 'General' : kindLabel(entry.kind)));
+      void confirm({
+        title: 'Delete this entry?',
+        body: 'It comes off your confirmed time and the hours your organisation sees. Its history keeps a record, and Undo brings it back for a moment after.',
+        confirmLabel: 'Delete entry',
+        danger: true,
+        detail: (
+          <span data-confirm-entry>
+            {when} · {what} · {duration(entry.minutes)}
+          </span>
+        ),
+      }).then((yes) => {
+        if (!yes) return;
+        void run(
+          `delete:${entry.id}`,
+          [entry.id],
+          (onUndo) => deleteEntry(entry.id, onUndo),
+          () => ({
+            text: `${duration(entry.minutes)} deleted. The revision history keeps a record.`,
+            undoable: true,
+          }),
+        );
+      });
     },
     saveNote: (entry, note) => {
       const text = note.trim();
@@ -1406,12 +1454,7 @@ export function MyDayScreen({
                       void timerStop();
                     }}
                     onDiscard={() => {
-                      void run(
-                        'timer',
-                        [],
-                        () => discardTimer(),
-                        'Timer discarded — nothing saved.',
-                      );
+                      void timerDiscard();
                     }}
                   />
                   <button
@@ -1655,7 +1698,7 @@ export function MyDayScreen({
                     void timerStop();
                   }}
                   onDiscard={() => {
-                    void run('timer', [], () => discardTimer(), 'Timer discarded — nothing saved.');
+                    void timerDiscard();
                   }}
                 />
                 <button
