@@ -74,3 +74,13 @@ export function dayLong(day: string): string {
     month: 'long',
   });
 }
+
+/** `Thu 22 Oct` — the day as the Timeline card's head says it (LAI-513). */
+export function shortDay(day: string): string {
+  return new Date(`${day}T00:00:00Z`).toLocaleDateString('en-GB', {
+    timeZone: 'UTC',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+}

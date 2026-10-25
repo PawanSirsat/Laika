@@ -61,14 +61,10 @@ import { UntimedTray } from './UntimedTray.tsx';
 import { clock, duration, span } from './format.ts';
 import { Inspector, type DraftSaid, type Held, type InspectorActions } from './Inspector.tsx';
 import { MyDayDrawer, type DrawerMode } from './MyDayDrawer.tsx';
-import {
-  DayEmpty,
-  DayError,
-  DayOff,
-  DaySkeleton,
-  type EmptyAction,
-  type EmptyKind,
-} from './DayStates.tsx';
+import { DayEmpty, type EmptyAction, type EmptyKind } from './DayEmpty.tsx';
+import { DayError } from './DayError.tsx';
+import { DayOff } from './DayOff.tsx';
+import { DaySkeleton } from './DaySkeleton.tsx';
 import { HeaderPopover } from './HeaderPopover.tsx';
 import { MyDayPhoneBar } from './MyDayPhoneBar.tsx';
 import { MyDayPhoneHead } from './MyDayPhoneHead.tsx';
