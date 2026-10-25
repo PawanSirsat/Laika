@@ -142,8 +142,20 @@ void describe('the tabs (LAI-505)', () => {
       const tasks = await ov
         .locator('[data-ov-task]')
         .evaluateAll((els) => els.map((el) => el.getAttribute('data-ov-task')));
-      assert.equal(tasks.at(-1), 'No task yet');
       assert.ok(tasks.includes('LAI-11'), tasks.join(','));
+      // Ranked by their time whatever they are, No task yet among them (LAI-510).
+      assert.ok(tasks.includes('No task yet'), tasks.join(','));
+      const figures = await ov.locator('[data-ov-task] .myday-ov-figure').allInnerTexts();
+      const minutes = figures.map((f) => {
+        const h = /(\d+) h/.exec(f)?.[1] ?? '0';
+        const m = /(\d+) min/.exec(f)?.[1] ?? '0';
+        return Number(h) * 60 + Number(m);
+      });
+      assert.deepEqual(
+        minutes,
+        [...minutes].sort((a, b) => b - a),
+        `not largest first: ${figures.join(', ')}`,
+      );
 
       await ov.locator('[data-ov-scope="week"]').click();
       await ov.locator('[data-ov-stat="per-day"]').waitFor({ timeout: 5_000 });

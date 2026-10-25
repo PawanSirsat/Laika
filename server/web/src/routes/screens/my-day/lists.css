@@ -298,11 +298,39 @@
   min-width: 6.5rem;
 }
 
+/*
+ * Day · Week · Range, as the design draws it: a tray with a hairline, its
+ * options in the body face at 26px, the chosen one a raised card.
+ */
+.myday-segments {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-control);
+  background: var(--bg-column);
+}
+
+.myday-segments .myday-segment {
+  height: 1.625rem;
+  padding: 0 0.625rem;
+  border-radius: var(--radius-xs);
+  font-family: inherit;
+  font-size: var(--text-small);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
 .myday-segment[aria-checked='true'] {
   background: var(--bg-card);
   color: var(--text-primary);
   font-weight: var(--weight-semibold);
   box-shadow: var(--shadow-card);
+}
+
+/* *No task yet* and *No task* read as words, in the ink of the rows (the design). */
+.myday-ov-key-none {
+  color: var(--text-primary);
 }
 
 /* ----------------------------------------------------------- on a phone */

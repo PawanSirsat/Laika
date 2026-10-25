@@ -100,17 +100,39 @@ void describe('the week', () => {
 });
 
 void describe('by task', () => {
-  void test('largest first, No task yet last, widths of the busiest', () => {
+  void test('largest first, whatever they are, widths of the busiest (the design, LAI-510)', () => {
     const rows = byTask(
       [entry({ id: 'a', minutes: 30, task: LAI1 }), entry({ id: 'b', minutes: 45 })],
-      [draft({ id: 'c', minutes: 30, task: LAI1 }), draft({ id: 'd', minutes: 10 })],
+      [
+        draft({ id: 'c', minutes: 30, task: LAI1 }),
+        draft({ id: 'd', minutes: 70 }),
+        draft({ id: 'e', minutes: 5, general: true }),
+      ],
     );
     assert.deepEqual(
       rows.map((r) => [r.key, r.title, r.minutes, r.width]),
       [
-        ['LAI-1', 'Search', 60, 1],
-        ['No task yet', '', 55, 55 / 60],
+        ['No task yet', '', 70, 1],
+        ['LAI-1', 'Search', 60, 60 / 70],
+        ['No task', 'logged by kind', 50, 50 / 70],
       ],
+    );
+  });
+
+  void test('the busiest six, as the design shows them', () => {
+    const rows = byTask(
+      Array.from({ length: 8 }, (_, i) =>
+        entry({
+          id: `e${String(i)}`,
+          minutes: 10 + i,
+          task: { id: `t${String(i)}`, key: `LAI-${String(i)}`, title: 'A task' },
+        }),
+      ),
+      [],
+    );
+    assert.deepEqual(
+      rows.map((r) => r.key),
+      ['LAI-7', 'LAI-6', 'LAI-5', 'LAI-4', 'LAI-3', 'LAI-2'],
     );
   });
 });

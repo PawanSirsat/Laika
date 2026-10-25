@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { MyDay } from '../../../api/time.ts';
 import { Dropdown } from '../../../components/Dropdown.tsx';
-import { kindGlyph } from './entry-kinds.ts';
 import { duration } from './format.ts';
 import { weekdayShort } from './my-day-derive.ts';
 import { byTask, dayStats, weekStats, type Stat } from './overview-derive.ts';
@@ -148,12 +147,7 @@ export function OverviewTab({ view }: OverviewTabProps) {
                       className={`myday-ov-dot myday-summary-fill-${k.key}`}
                       aria-hidden="true"
                     />
-                    <span className="myday-ov-name">
-                      {k.key !== 'building' && k.key !== 'general' && (
-                        <span aria-hidden="true">{kindGlyph(k.key)} </span>
-                      )}
-                      {k.label}
-                    </span>
+                    <span className="myday-ov-name">{k.label}</span>
                     <span className="myday-ov-figure">{duration(k.minutes)}</span>
                     <span className="myday-quiet myday-ov-pct">{k.pct}%</span>
                   </li>
@@ -168,7 +162,7 @@ export function OverviewTab({ view }: OverviewTabProps) {
                     <span className="myday-ov-task-line">
                       <span
                         className={
-                          t.key === 'No task yet'
+                          t.key === 'No task yet' || t.key === 'No task'
                             ? 'myday-ov-key myday-ov-key-none'
                             : 'myday-ov-key'
                         }

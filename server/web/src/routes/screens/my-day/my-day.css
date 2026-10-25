@@ -2462,10 +2462,6 @@ p.inspector-length {
   background: var(--accent);
 }
 
-.myday-summary-fill-general {
-  background: var(--text-muted);
-}
-
 .myday-summary-fill-work {
   background: var(--kind-work);
 }
