@@ -2,11 +2,12 @@
 id: LAI-522
 title: 'One confirmation popup, everywhere something is taken away — Delete entry and Discard timer first; every window.confirm replaced'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-515
-status: backlog
+status: in-progress
+started: 2026-10-25T09:21:51Z
 ---
 
 ## Goal
