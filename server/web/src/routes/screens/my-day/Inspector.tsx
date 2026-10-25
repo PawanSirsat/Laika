@@ -459,7 +459,9 @@ export function Inspector({
               midnight={line.midnight}
               tz={view.tz}
               limits={limits}
-              conflicts={conflictsAround(draft.id)}
+              // A draft's times may run over confirmed time (the design's
+              // `setTimes`, LAI-510): confirming it there is what is refused.
+              conflicts={undefined}
               busy={busy}
               readOnly={readOnly}
               onSpan={(next) => {

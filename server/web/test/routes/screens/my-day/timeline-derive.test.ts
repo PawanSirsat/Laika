@@ -15,6 +15,7 @@ import {
   rangeFromDrag,
   gapsOf,
   idleEnds,
+  limitsIn,
   limitsOf,
   moveBlock,
   setLength,
@@ -846,10 +847,29 @@ void describe('whether a block may land where it is (the design’s check)', () 
     });
   });
 
-  void test('over confirmed time it may not, and the refusal names that block', () => {
+  void test('a confirmed block or a tray item over confirmed time may not, and the refusal names that block', () => {
     const check = checkDrop({ start: min(11, 45), end: min(12, 15) }, blocks, 'e1');
     assert.equal(check.ok, false);
     assert.equal(!check.ok && check.why === 'overlap' ? check.over.id : '', 'e2');
+    const tray = checkDrop({ start: min(12), end: min(12, 20) }, blocks, undefined);
+    assert.equal(!tray.ok && tray.why === 'overlap' ? tray.over.id : '', 'e2');
+  });
+
+  void test('a draft may lie over confirmed time — the design’s check, LAI-510; confirming it there is refused', () => {
+    assert.deepEqual(checkDrop({ start: min(11, 30), end: min(12, 10) }, blocks, 'd2'), {
+      ok: true,
+    });
+    // Midnight still binds a draft.
+    assert.deepEqual(checkDrop({ start: min(23, 50), end: min(24, 30) }, blocks, 'd2'), {
+      ok: false,
+      why: 'midnight',
+    });
+  });
+
+  void test('a draft’s edges run the whole day; a confirmed block’s stop at its neighbours', () => {
+    const line = { blocks, length: 1440 };
+    assert.deepEqual(limitsIn(line, d2), { lo: 0, hi: 1440 });
+    assert.deepEqual(limitsIn(line, e1), { lo: 0, hi: min(12) });
   });
 
   void test('its own place is never in its way, and touching end to start is not overlapping', () => {

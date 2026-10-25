@@ -942,12 +942,12 @@ void describe('review round 1', () => {
     }
   });
 
-  void test('a dragged edge stops at the next confirmed block', async () => {
+  void test('a draft’s dragged edge runs over confirmed time — the design lets a draft lie anywhere (LAI-510)', async () => {
     const h = await openDay(TODAY);
     try {
       await h.page.locator('[data-zoom="2"]').click();
       await select(h, 'd2');
-      // 10:40–11:20 drafted; confirmed time starts at 11:30.
+      // 10:40–11:20 drafted; confirmed time starts at 11:30, and the edge goes past it.
       const handle = h.page.locator('[data-block-id="d2"] [data-edge="end"]');
       const from = await centre(handle);
       await h.page.mouse.move(from.x, from.y);
@@ -959,7 +959,7 @@ void describe('review round 1', () => {
         {
           method: 'PATCH',
           path: '/api/v1/me/time-drafts/d2',
-          body: { ended_at: at(TODAY, 11, 30), minutes: 50 },
+          body: { ended_at: at(TODAY, 11, 50), minutes: 70 },
         },
       ]);
     } finally {

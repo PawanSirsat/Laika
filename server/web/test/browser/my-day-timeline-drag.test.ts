@@ -89,6 +89,12 @@ async function show(h: Harness, minute: number): Promise<void> {
   await h.page.locator('.dayline-scroller').evaluate((el, px) => {
     el.scrollLeft = Math.max(0, px);
   }, left);
+  // The scroll event lands a frame later and clears any hover (a scroll moves
+  // what is under the pointer): let it land before the pointer arrives, or a
+  // hover made in between is cleared and the block shows no edges.
+  await h.page.evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+  );
 }
 
 const patches = (writes: StubCall[]) => writes.filter((w) => w.method === 'PATCH');
@@ -281,6 +287,35 @@ void describe('the Timeline card as TimelineV2 draws it (LAI-512)', () => {
     }
   });
 
+  void test('a draft dragged over confirmed time lands there and is written — the design lets a draft go anywhere (LAI-510)', async () => {
+    const writes: StubCall[] = [];
+    const h = await myDay(writes);
+    try {
+      // d2 10:40–11:20, drafted, by +45 min: over e1 11:30–12:00, confirmed.
+      await show(h, 10 * 60);
+      const body = h.page.locator('[data-block-select="d2"]');
+      const box = await body.boundingBox();
+      assert.ok(box !== null);
+      const y = box.y + box.height / 2;
+      await h.page.mouse.move(await xOf(h.page, 11 * 60), y);
+      await h.page.mouse.down();
+      await h.page.mouse.move(await xOf(h.page, 11 * 60 + 45), y, { steps: 8 });
+      await settlesOn(h.page, '[data-drag-label]', /^11:25 AM–12:05 PM · 40 min$/);
+      assert.equal(await h.page.locator('.dayline-conflict').count(), 0);
+      assert.equal(await h.page.locator('[data-block-id="d2"].dayline-drag-bad').count(), 0);
+      await h.page.mouse.up();
+      await until(() => patches(writes).length === 1);
+      assert.deepEqual(patches(writes)[0], {
+        method: 'PATCH',
+        path: '/api/v1/me/time-drafts/d2',
+        body: { minutes: 40, started_at: at(TODAY, 11, 25), ended_at: at(TODAY, 12, 5) },
+      });
+      assert.equal(await h.page.locator('[data-drag-refused]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('Alt+← → move the focused block five minutes, Shift fifteen; Enter saves, Escape cancels', async () => {
     const writes: StubCall[] = [];
     const h = await myDay(writes);
@@ -309,14 +344,22 @@ void describe('the Timeline card as TimelineV2 draws it (LAI-512)', () => {
         writes.some((w) => w.path.endsWith('/confirm')),
         false,
       );
+      // The write has answered (its toast) before the next move: a block does
+      // not move while a write is in flight, so a key pressed then is ignored.
+      await h.page.locator('[data-toast]').waitFor({ timeout: 5_000 });
 
-      // Fifteen at once lands on e1 11:30: the words say so; Escape puts it back.
+      // Fifteen at once lies over e1 11:30, confirmed: a draft may (the design's
+      // check, LAI-510), so the words name no overlap. Escape puts it back.
       await body.focus();
       await h.page.keyboard.press('Alt+Shift+ArrowRight');
       await until(async () =>
-        /^10:55–11:35 AM\. Overlaps LAI-12, 11:30 AM–12:00 PM\. Enter to save, Escape to cancel\.$/.test(
+        /^10:55–11:35 AM\. Enter to save, Escape to cancel\.$/.test(
           await h.page.locator('[data-dayline-live]').innerText(),
         ),
+      );
+      assert.equal(
+        await h.page.locator('[data-dayline-live]').innerText(),
+        '10:55–11:35 AM. Enter to save, Escape to cancel.',
       );
       await h.page.keyboard.press('Escape');
       await until(

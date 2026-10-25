@@ -196,14 +196,13 @@ void describe('the editor (LAI-504)', () => {
         await length.press('Enter');
         await until(() => writes.length === 3);
         assert.deepEqual(writes[2]?.body, { ended_at: at(TODAY, 9, 40), minutes: 60 });
-        // Into the confirmed time after it (e1 at 11:30): refused, in words, nothing sent.
+        // Into the confirmed time after it (e1 at 11:30): a draft may lie there
+        // (the design's `setTimes`, LAI-510) — saved, no words against it.
         await end.fill('11:45');
         await end.press('Enter');
-        assert.match(
-          await editor.locator('[data-when-error]').innerText(),
-          /^Overlaps General, 11:30 AM–12:00 PM\. Confirmed time can’t overlap\.$/,
-        );
-        assert.equal(writes.length, 3);
+        await until(() => writes.length === 4);
+        assert.deepEqual(writes[3]?.body, { ended_at: at(TODAY, 11, 45), minutes: 185 });
+        assert.equal(await editor.locator('[data-when-error]').count(), 0);
 
         // × closes the editor.
         await editor.getByRole('button', { name: 'Close (Esc)' }).click();

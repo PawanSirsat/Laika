@@ -558,11 +558,17 @@ export function limitsOf(block: Span, confirmed: readonly Span[], length = 1440)
   return { lo, hi };
 }
 
-/** {@link limitsOf} a placed block, among the day's other confirmed blocks. */
+/**
+ * {@link limitsOf} a placed block, among the day's other confirmed blocks — a
+ * confirmed block's edges stop at its neighbours; a draft's run the whole
+ * day, as the design's do (LAI-510).
+ */
 export function limitsIn(line: Pick<DayLine, 'blocks' | 'length'>, block: LaneBlock): Limits {
   return limitsOf(
     block,
-    line.blocks.filter((b) => b.kind === 'confirmed' && b.id !== block.id),
+    block.kind === 'confirmed'
+      ? line.blocks.filter((b) => b.kind === 'confirmed' && b.id !== block.id)
+      : [],
     line.length,
   );
 }
@@ -841,9 +847,10 @@ export type DropCheck =
 
 /**
  * Whether `span` may land where it is (the design's `check`): on the day,
- * and over no confirmed block but `selfId` — that time would count twice
- * (review round 1 of LAI-831). Drafts bound nothing; the server's 409 is
- * the backstop.
+ * and — for a confirmed block, or a tray item (`selfId` undefined) — over no
+ * other confirmed block, whose time would count twice (review round 1 of
+ * LAI-831). **A draft may lie anywhere** (the design, LAI-510): confirming
+ * it there is what the server refuses.
  */
 export function checkDrop(
   span: Span,
@@ -852,6 +859,8 @@ export function checkDrop(
   length = 1440,
 ): DropCheck {
   if (span.start < 0 || span.end > length) return { ok: false, why: 'midnight' };
+  const self = selfId === undefined ? undefined : blocks.find((b) => b.id === selfId);
+  if (self !== undefined && self.kind !== 'confirmed') return { ok: true };
   const over = blocks.find(
     (b) => b.kind === 'confirmed' && b.id !== selfId && b.start < span.end && b.end > span.start,
   );
