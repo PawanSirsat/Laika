@@ -4,14 +4,8 @@ import { Spinner } from '../../../components/Spinner.tsx';
 import { duration } from './format.ts';
 import { MyDayDialog } from './MyDayDialog.tsx';
 import { rangeLabel } from './my-day-derive.ts';
-import {
-  daySplit,
-  noteOf,
-  offScreen,
-  splitKeyOf,
-  splitLabel,
-  weekdayOf,
-} from './summary-derive.ts';
+import { daySplit, noteOf, offScreen, weekdayOf } from './summary-derive.ts';
+import { kindLabel } from './entry-kinds.ts';
 import './summary.css';
 
 export const DAY_NOTE_MAX = 500;
@@ -116,7 +110,8 @@ export function ConfirmDaySummary({
               </p>
               <ul className="myday-summary-off-list">
                 {off.map((e) => {
-                  const kind = splitLabel(splitKeyOf(e));
+                  // Its own kind's word, Work when it has none (the design's `offs`).
+                  const kind = kindLabel(e.kind ?? 'work');
                   return (
                     <li key={e.id} className="myday-summary-off-row">
                       <span className="myday-summary-off-range">

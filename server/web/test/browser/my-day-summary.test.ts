@@ -99,7 +99,7 @@ void describe('Confirm day’s summary (LAI-503)', () => {
         const kinds = await summary
           .locator('[data-summary-kind]')
           .evaluateAll((els) => els.map((el) => el.getAttribute('data-summary-kind')));
-        assert.ok(kinds.includes('building'), `no Building bar: ${kinds.join(',')}`);
+        assert.ok(kinds.includes('work'), `no Building bar: ${kinds.join(',')}`);
         await summary.locator('[data-summary-note]').fill('Two meetings ran long.');
         await summary.locator('[data-summary-confirm]').click();
         await until(() => writes.filter((w) => w.path.endsWith('/confirm')).length === 3);
@@ -162,7 +162,7 @@ void describe('Confirm day’s summary (LAI-503)', () => {
         assert.match(await off.innerText(), /30 min Laika couldn’t see, added by you/);
         assert.match(
           (await off.locator('li').first().innerText()).replace(/\s+/g, ' '),
-          /^11:30 AM–12:00 PM Planning call General$/,
+          /^11:30 AM–12:00 PM Planning call Work$/,
         );
         assert.equal(
           await dialog.locator('[data-summary-note]').getAttribute('placeholder'),
