@@ -279,8 +279,8 @@ void describe('My day’s Timeline: crowded stretches as groups that open into l
           check((await crowd.getAttribute('data-group-count')) === '12', `${where}: not 12`);
           check((await small.getAttribute('data-group-count')) === '5', `${where}: not 5`);
           check(
-            /^12 tasks at once, 11:00 AM–12:11 PM/.test(
-              (await crowd.getAttribute('aria-label')) ?? '',
+            ((await crowd.getAttribute('aria-label')) ?? '').startsWith(
+              '12 tasks at once, 11:00 AM–12:11 PM',
             ),
             `${where}: the group does not say what it holds`,
           );
