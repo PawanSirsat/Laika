@@ -292,8 +292,18 @@ describe('bounded reads (D-079 item 5)', () => {
     );
     expect(statements.length).toBeGreaterThan(0);
 
-    const touched = statements.filter((sql) => /\b"?activity"?\b/.test(sql));
-    expect(touched, 'a read of the activity log').toEqual([]);
+    // The one read of the log is the bulk moves (D-093, LAI-823): one
+    // person's rows, through the actor's index, never the whole log.
+    const touched = statements.filter((sql) => /\bfrom "activity"/.test(sql));
+    expect(touched, 'one read of the activity log, for bulk moves').toHaveLength(1);
+    const plan = (
+      t.sqlite
+        .prepare(`EXPLAIN QUERY PLAN ${touched[0]!}`)
+        .all(...Array.from({ length: (touched[0]!.match(/\?/g) ?? []).length }, () => 'x')) as {
+        detail: string;
+      }[]
+    ).map((row) => row.detail);
+    expect(plan.join('\n')).toMatch(/USING INDEX activity_actor_id_idx \(actor_id=\?\)/);
 
     for (const source of statements) {
       const bindings = Array.from({ length: (source.match(/\?/g) ?? []).length }, () => 'x');

@@ -4,7 +4,7 @@ import { loadActor } from '../../auth/resolve-actor.ts';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { type ActivityFeed, type RepeatingTimer } from '../../services/activity-feed.ts';
-import { eventView, parseLastEventId, resumeFrom, visibleTo } from '../../services/events.ts';
+import { eventViews, parseLastEventId, resumeFrom, visibleTo } from '../../services/events.ts';
 import { canSeeProject, requireProjectBySlug } from '../../services/projects.ts';
 import { type AppEnv } from '../context.ts';
 
@@ -174,11 +174,11 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
           const current = currentActor();
           if (current === null) return;
 
-          for (const row of events) {
-            if (projectId !== null && row.projectId !== projectId) continue;
-            if (!visibleTo(current, row)) continue;
-
-            enqueue({ event: row.type, id: String(row.seq), data: JSON.stringify(eventView(row)) });
+          const shown = events.filter(
+            (row) => (projectId === null || row.projectId === projectId) && visibleTo(current, row),
+          );
+          for (const view of eventViews(db, shown)) {
+            enqueue({ event: view.type, id: String(view.seq), data: JSON.stringify(view) });
           }
         },
         // LAI-002: say goodbye rather than vanish, so the client knows this was a
