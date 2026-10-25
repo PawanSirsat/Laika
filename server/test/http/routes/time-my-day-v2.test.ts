@@ -589,23 +589,31 @@ describe('Undo takes back the change it names, never a later one (review round 1
 });
 
 describe('confirmed time is never counted twice (review round 1)', () => {
-  it('the probe: a draft dragged over confirmed time is refused', async () => {
+  it('the probe: a draft dragged over confirmed time stays a draft there, and is not confirmed there', async () => {
     const { onCard, untied } = await drafted();
     await ok(`/api/v1/me/time-drafts/${onCard.id}/confirm`, { method: 'POST' }, 201);
-    // 11:00–11:40, 40 min; its start dragged to 9:30 would count 9:30–10:00 twice.
-    const res = await req(
+    // 11:00–11:40, 40 min; its start dragged to 9:30 lies over 9:30–10:00. The
+    // owner's My Day design lets a draft go anywhere (LAI-510)…
+    await ok(
       `/api/v1/me/time-drafts/${untied.id}`,
       { method: 'PATCH', body: JSON.stringify({ started_at: at(9, 30), minutes: 130 }) },
+      200,
+    );
+    // …and confirming it there would count 9:30–10:00 twice.
+    const res = await req(
+      `/api/v1/me/time-drafts/${untied.id}/confirm`,
+      { method: 'POST' },
       cookie,
     );
     expect(res.status).toBe(409);
     expect((await errorOf(res)).reason).toBe('overlaps_confirmed');
-    // Up to the confirmed block's edge is fine.
+    // Back to the confirmed block's edge, it confirms.
     await ok(
       `/api/v1/me/time-drafts/${untied.id}`,
       { method: 'PATCH', body: JSON.stringify({ started_at: at(10), minutes: 100 }) },
       200,
     );
+    await ok(`/api/v1/me/time-drafts/${untied.id}/confirm`, { method: 'POST' }, 201);
   });
 
   it('a draft over a timed entry is not confirmed — alone or with its day', async () => {
@@ -742,9 +750,15 @@ describe('by the clock: a stretch holds no more minutes than it has (review roun
   it('the blocker-2 drag: the stretch 9:00–11:40 has 160 minutes and would hold 190', async () => {
     const { onCard, untied } = await drafted();
     await ok(`/api/v1/me/time-drafts/${onCard.id}/confirm`, { method: 'POST' }, 201);
-    const res = await req(
+    // The drag stands (LAI-510); the confirm is what the clock refuses.
+    await ok(
       `/api/v1/me/time-drafts/${untied.id}`,
       { method: 'PATCH', body: JSON.stringify({ started_at: at(9, 30), minutes: 130 }) },
+      200,
+    );
+    const res = await req(
+      `/api/v1/me/time-drafts/${untied.id}/confirm`,
+      { method: 'POST' },
       cookie,
     );
     expect(res.status).toBe(409);
