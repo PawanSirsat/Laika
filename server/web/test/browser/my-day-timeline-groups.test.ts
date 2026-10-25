@@ -13,7 +13,8 @@
  *
  * The crowded day: s1 9:00–10:00 alone; p1 and p2 at once from 10:00; twelve
  * hour-long blocks a minute apart from 11:00 (c01–c12); five half-hours a
- * minute apart from 1 PM (f1–f5); a confirmed entry at 4 PM; signals and an
+ * minute apart from 1 PM (f1–f5); a lone five-minute block at 3:30 PM with
+ * gaps either side; a confirmed entry at 4:30 PM; signals and an
  * agent lane, so the lanes are tall enough to scroll once the twelve are
  * open. The sparse day: three blocks, nothing at once.
  */
@@ -100,6 +101,7 @@ function stub(crowded: boolean): ApiStub {
         block('p2', 10, 5, 30, 2),
         ...TWELVE,
         ...FIVE,
+        block('lone', 15, 30, 5, 1),
       ]
     : [block('s1', 9, 0, 60), block('s2', 11, 0, 45, 1), block('s3', 13, 30, 30, 2)];
   const data = weekData();
@@ -601,6 +603,114 @@ void describe('My day’s Timeline: crowded stretches as groups that open into l
       }
     });
   }
+
+  void test('a lone five-minute block at 1× takes a press 12px either side of its middle, over the gaps beside it (review round 1)', async () => {
+    const h = await openDay(true);
+    try {
+      await zoomTo(h.page, 1);
+      await show(h.page, 15 * 60 + 30, 300);
+      const pressed = () =>
+        h.page.locator('[data-block-select="lone"]').getAttribute('aria-pressed');
+      const bar = await h.page.locator('[data-block-id="lone"]').boundingBox();
+      assert.ok(bar !== null);
+      assert.ok(bar.width < 24, `the block is ${String(bar.width)}px wide`);
+      const c = bar.x + bar.width / 2;
+      const y = bar.y + bar.height / 2;
+      for (const dx of [-12, 12]) {
+        // Something else picked first, so the press is what selects it.
+        await h.page.locator('[data-block-select="s1"]').click();
+        await until(async () => (await pressed()) !== 'true');
+        if ((await h.page.locator('[data-myday-drawer]').count()) > 0) {
+          await h.page.keyboard.press('Escape');
+        }
+        await show(h.page, 15 * 60 + 30, 300);
+        const now = await h.page.locator('[data-block-id="lone"]').boundingBox();
+        assert.ok(now !== null);
+        await h.page.mouse.click(now.x + now.width / 2 + dx, y);
+        await until(async () => (await pressed()) === 'true');
+        assert.equal(await pressed(), 'true', `a press ${String(dx)}px off the middle missed`);
+      }
+      assert.ok(Number.isFinite(c));
+      assert.deepEqual(writes(h), []);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Ctrl + wheel in from Fit, on a day with two large idle folds, keeps the minute under the pointer and never draws it smaller (review round 1)', async () => {
+    const h = await openDay(true);
+    try {
+      await zoomTo(h.page, 'fit');
+      // Folded before 9 AM and after 5 PM: the open hours are drawn larger than the floor.
+      assert.equal(await h.page.locator('[data-fold]').count(), 2);
+      const s1 = h.page.locator('[data-block-id="s1"]');
+      const before = await s1.boundingBox();
+      assert.ok(before !== null);
+      // s1 is 9:00–10:00, wholly in the open hours: a minute is its width over 60.
+      const px = before.x + before.width * 0.5;
+      const py = before.y + before.height / 2;
+      const minuteOf = (box: { x: number; width: number }): number =>
+        9 * 60 + ((px - box.x) / box.width) * 60;
+      const m0 = minuteOf(before);
+      await h.page.mouse.move(px, py);
+      await h.page.keyboard.down('Control');
+      await h.page.mouse.wheel(0, -20);
+      await h.page.keyboard.up('Control');
+      await until(async () => (await zoomLevel(h.page)) !== 'fit');
+      await frames(h.page);
+      const after = await s1.boundingBox();
+      assert.ok(after !== null);
+      assert.ok(
+        after.width >= before.width - 0.5,
+        `in from Fit drew s1 smaller: ${String(before.width)} → ${String(after.width)}px`,
+      );
+      const m1 = minuteOf(after);
+      assert.ok(Math.abs(m1 - m0) < 2, `the minute under the pointer moved ${String(m1 - m0)} min`);
+      assert.deepEqual(writes(h), []);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the slider keeps a selected block in view when only part of it is, its middle off the edge (review round 1)', async () => {
+    const h = await openDay(true);
+    try {
+      // At 2× 9 AM is more than a view from the axis's start, so it can sit at the right edge.
+      await zoomTo(h.page, 2);
+      await show(h.page, 9 * 60, 100);
+      await h.page.locator('[data-block-select="s1"]').click();
+      await until(
+        async () =>
+          (await h.page.locator('[data-block-select="s1"]').getAttribute('aria-pressed')) ===
+          'true',
+      );
+      await settle(h.page);
+      const scroller = h.page.locator('[data-dayline-scroller]');
+      // Scrolled so only s1's first quarter hour shows, at the right edge.
+      const width = await scroller.evaluate((el) => el.clientWidth);
+      await show(h.page, 9 * 60 + 15, width);
+      const seen = async (): Promise<{ l: number; r: number; vl: number; vr: number }> => {
+        const b = await h.page.locator('[data-block-id="s1"]').boundingBox();
+        const v = await scroller.boundingBox();
+        assert.ok(b !== null && v !== null);
+        return { l: b.x, r: b.x + b.width, vl: v.x, vr: v.x + v.width };
+      };
+      const s0 = await seen();
+      assert.ok(s0.l < s0.vr && s0.r > s0.vr, 'set-up: s1 is not cut by the right edge');
+      assert.ok((s0.l + s0.r) / 2 > s0.vr, 'set-up: s1’s middle is in view');
+      for (const zoom of [3, 4, 1.5, 1, 0.75]) {
+        await zoomTo(h.page, zoom);
+        const s = await seen();
+        assert.ok(s.r > s.vl + 1 && s.l < s.vr - 1, `at ${String(zoom)}× s1 left the view`);
+      }
+      assert.deepEqual(
+        writes(h).filter((w) => !w.includes('time-drafts/s1')),
+        [],
+      );
+    } finally {
+      await h.close();
+    }
+  });
 
   void test('a drag at 1× and 2×, from a scrolled track and with a scroll mid-drag, saves the times it says; zoom waits; a drag across a group never opens or closes it', async () => {
     const h = await openDay(true);

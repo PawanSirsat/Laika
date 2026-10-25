@@ -425,6 +425,76 @@ void describe('the Timeline card as TimelineV2 draws it (LAI-512)', () => {
     }
   });
 
+  void test('a tray item dropped after the track scrolled under it, with no dragover since, lands where it is let go — not where its last preview was (LAI-300 review round 1)', async () => {
+    const writes: StubCall[] = [];
+    const h = await myDay(writes);
+    try {
+      // d5, 25 min with no set time, over 4:30 PM: its preview says 4:20–4:45.
+      await show(h, 15 * 60 + 30);
+      const row = await h.page.locator('[data-dayline-row]').boundingBox();
+      assert.ok(row !== null);
+      const tx = await xOf(h.page, 16 * 60 + 30);
+      const ty = row.y + row.height * 0.6;
+      // The browser's own drag repeats dragover while the pointer rests, so the
+      // events are sent by hand: one dragover, a scroll, then the drop.
+      await h.page.evaluate(
+        ({ x, y }) => {
+          const item = document.querySelector('[data-tray-item="d5"]');
+          const lane = document.querySelector('[data-dayline-row]');
+          if (item === null || lane === null) throw new Error('no tray item or row');
+          const data = new DataTransfer();
+          (window as unknown as { trayData: DataTransfer }).trayData = data;
+          item.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: data }));
+          lane.dispatchEvent(
+            new DragEvent('dragover', {
+              bubbles: true,
+              cancelable: true,
+              dataTransfer: data,
+              clientX: x,
+              clientY: y,
+            }),
+          );
+        },
+        { x: tx, y: ty },
+      );
+      await settlesOn(h.page, '[data-drag-label]', /^LAI-12 · 4:20–4:45 PM · 25 min$/);
+      // An hour of track (160px at 1×) scrolls under the still pointer.
+      await h.page.locator('.dayline-scroller').evaluate((el) => {
+        el.scrollLeft += 160;
+      });
+      await h.page.evaluate(
+        () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+      );
+      await h.page.evaluate(
+        ({ x, y }) => {
+          const item = document.querySelector('[data-tray-item="d5"]');
+          const lane = document.querySelector('[data-dayline-row]');
+          const data = (window as unknown as { trayData: DataTransfer }).trayData;
+          lane?.dispatchEvent(
+            new DragEvent('drop', {
+              bubbles: true,
+              cancelable: true,
+              dataTransfer: data,
+              clientX: x,
+              clientY: y,
+            }),
+          );
+          item?.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: data }));
+        },
+        { x: tx, y: ty },
+      );
+      await until(() => patches(writes).length === 1);
+      // Where it was let go: 5:30 PM under the pointer now, so 5:20–5:45 — not 4:20.
+      assert.deepEqual(patches(writes)[0], {
+        method: 'PATCH',
+        path: '/api/v1/me/time-drafts/d5',
+        body: { started_at: at(TODAY, 17, 20), ended_at: at(TODAY, 17, 45) },
+      });
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('the running timer is a block on the track from its start to now, and the now line stands at its end', async () => {
     const writes: StubCall[] = [];
     // Started 2:20 PM with 50 minutes on the clock at 3:00 PM: it runs to 3:10.

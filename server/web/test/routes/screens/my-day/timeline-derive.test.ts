@@ -31,6 +31,7 @@ import {
   FOLD_PX,
   BLOCK_PX,
   HIT_MIN_PX,
+  HIT_PX,
   LANE_GAP_PX,
   LANE_MIN_PX,
   OPEN_LANE_PX,
@@ -41,6 +42,8 @@ import {
   groupIdOf,
   keepAt,
   layoutRow,
+  localZoom,
+  zoomBy,
   pxPerHour,
   sliderMax,
   sliderMin,
@@ -819,6 +822,66 @@ void describe('keepAt — zooming around a time (D-113, LAI-300)', () => {
   });
 });
 
+void describe('leaving Fit — from the scale the reader sees, never the floor (review round 1)', () => {
+  // Two large idle folds: 6–9 and 17–22, the open eight hours between them.
+  const folds = [
+    { start: min(6), end: min(9) },
+    { start: min(17), end: min(22) },
+  ];
+  const fit = buildScale(6, 22, 'fit', 1000, folds);
+  const floor = zoomFloor(6, 22, 1000);
+  const open = (1000 - 2 * FOLD_PX) / 8 / 160;
+  const pxPerMinute = (zoom: number | 'fit', minute: number): number => {
+    const s = zoom === 'fit' ? fit : buildScale(6, 22, zoom, 1000);
+    return s.pos(minute + 1) - s.pos(minute);
+  };
+
+  void test('Fit draws the open hours larger than the floor, and the folds smaller', () => {
+    assert.ok(Math.abs(localZoom(fit, min(12)) - open) < 1e-9);
+    assert.ok(open > floor);
+    assert.ok(localZoom(fit, min(7)) < floor);
+    // A one-segment linear scale is its own multiple.
+    assert.ok(Math.abs(localZoom(buildScale(6, 22, 1.5, 1000), min(12)) - 1.5) < 1e-9);
+  });
+
+  void test('a pinch in from Fit never draws the anchor smaller, and keeps it under the pointer', () => {
+    for (const by of [1.001, 1.05, Math.exp(0.25)]) {
+      const next = zoomBy('fit', by, floor, localZoom(fit, min(12)));
+      assert.ok(next !== 'fit' && next >= open, `in by ${String(by)} went to ${String(next)}`);
+      assert.ok(pxPerMinute(next, min(12)) >= pxPerMinute('fit', min(12)) - 1e-9);
+      const offset = fit.pos(min(12)) - 0;
+      const scroll = keepAt(buildScale(6, 22, next, 1000), min(12), offset, 1000);
+      const back = buildScale(6, 22, next, 1000).at(scroll + offset);
+      assert.ok(Math.abs(back - min(12)) < 2, `the anchor moved to ${String(back)}`);
+    }
+    // In over a fold: never under the floor either, so the folded hour grows.
+    const fold = zoomBy('fit', 1.05, floor, localZoom(fit, min(7)));
+    assert.ok(fold !== 'fit' && fold >= floor);
+    assert.ok(pxPerMinute(fold, min(7)) >= pxPerMinute('fit', min(7)));
+  });
+
+  void test('a pinch out never draws the anchor larger: past the floor it is Fit only where Fit is no larger', () => {
+    // From just above the floor, over the open hours Fit would draw larger: the floor.
+    const out = zoomBy(0.5, 0.5, floor, localZoom(fit, min(12)));
+    assert.equal(out, floor);
+    assert.ok(pxPerMinute(floor, min(12)) <= pxPerMinute(0.5, min(12)));
+    // From further in, Fit is no larger there: Fit.
+    assert.equal(zoomBy(0.7, 0.5, floor, localZoom(fit, min(12))), 'fit');
+    // Over a fold, Fit is smaller: Fit.
+    assert.equal(zoomBy(0.5, 0.5, floor, localZoom(fit, min(7))), 'fit');
+    // Within the range, a plain multiple.
+    assert.equal(zoomBy(2, 0.5, floor, open), 1);
+  });
+
+  void test('the slider’s → from Fit steps past the scale Fit draws at the anchor; its ← into Fit only where Fit is no larger', () => {
+    assert.equal(zoomStep('fit', 1, floor, open), 0.75);
+    assert.equal(zoomStep('fit', 1, floor, localZoom(fit, min(7))), 0.5);
+    assert.equal(zoomStep(0.5, -1, floor, open), floor);
+    assert.equal(zoomStep(0.75, -1, floor, open), 0.5);
+    assert.equal(zoomStep(0.5, -1, floor, localZoom(fit, min(7))), 'fit');
+  });
+});
+
 void describe('wheelAction — what a wheel over the Timeline does (D-113 item 2)', () => {
   const wheel = (over: Partial<Parameters<typeof wheelAction>[0]>) => ({
     ctrlKey: false,
@@ -998,23 +1061,26 @@ void describe('layoutRow — crowded stretches as groups that open into lanes (D
     assert.deepEqual(deep.groups, []);
   });
 
-  void test('five-minute blocks back to back at 1×: their targets overlap, so they take lanes', () => {
+  void test('five-minute blocks back to back at 1×: their targets would overlap, so they take lanes and each keeps its whole target', () => {
     const blocks = [
       { id: 't1', start: min(15), end: min(15, 5) },
       { id: 't2', start: min(15, 5), end: min(15, 10) },
       { id: 't3', start: min(15, 10), end: min(15, 15) },
     ];
-    // Five minutes at 1× is 13.3px, under the 24px target.
+    // Five minutes at 1× is 13.3px, under the 24px target; their 28px targets
+    // reach one another two blocks along, so each takes a lane of its own.
     assert.ok(at1(min(15, 5)) - at1(min(15)) < HIT_MIN_PX);
     const row = layoutRow(blocks, at1);
     assert.deepEqual(
       blocks.map((b) => row.placed.get(b.id)?.lane),
-      [0, 1, 0],
+      [0, 1, 2],
     );
     for (const b of blocks) {
       const p = row.placed.get(b.id);
       assert.ok(p?.hit !== undefined, `${b.id} has no target`);
-      assert.ok(p.hit.r - p.hit.l >= HIT_MIN_PX - 1e-9, `${b.id}'s target is narrow`);
+      // Never cut by the other narrow ones: the whole target, at least 24px.
+      assert.ok(Math.abs(p.hit.r - p.hit.l - HIT_PX) < 1e-9, `${b.id}'s target was cut`);
+      assert.ok(p.hit.r - p.hit.l >= 24);
       // Centred on the bar, and the bar inside it.
       const x0 = at1(b.start);
       const x1 = at1(b.end);
@@ -1049,21 +1115,46 @@ void describe('layoutRow — crowded stretches as groups that open into lanes (D
     }
   });
 
-  void test('a narrow target stops at whatever is drawn beside it', () => {
+  void test('beside gaps and empty track a narrow target is whole: at least 24px, centred, over the gap (review round 1)', () => {
+    // A lone five-minute block with gaps either side of it, 10:00–10:30 and 10:35–11:00.
+    const blocks = [
+      { id: 'before', start: min(9, 30), end: min(10) },
+      { id: 'lone', start: min(10, 30), end: min(10, 35) },
+      { id: 'after', start: min(11), end: min(11, 30) },
+    ];
+    const hit = layoutRow(blocks, at1).placed.get('lone')?.hit;
+    const c = (at1(min(10, 30)) + at1(min(10, 35))) / 2;
+    assert.deepEqual(hit, { l: c - HIT_PX / 2, r: c + HIT_PX / 2 });
+    assert.ok(hit !== undefined && hit.r - hit.l >= 24);
+    // Twelve px either side of its middle is inside it.
+    assert.ok(hit.l < c - 12 && hit.r > c + 12);
+  });
+
+  void test('beside a full-size block — the one exception — it stops at that block, covers its own bar and reaches its whole half on the free side (review round 1)', () => {
     const blocks = [
       { id: 'big', start: min(9), end: min(10) },
       { id: 'tiny', start: min(10), end: min(10, 5) },
     ];
-    const gap = { start: min(10, 5), end: min(10, 30) };
-    const row = layoutRow(blocks, at1, new Set(), [gap]);
+    const row = layoutRow(blocks, at1);
     // A big block and a tiny one beside it do not clash: one lane each, the row whole.
     assert.equal(row.placed.get('big')?.lanes, 1);
     const hit = row.placed.get('tiny')?.hit;
-    assert.deepEqual(hit, { l: at1(min(10)), r: at1(min(10, 5)) });
-    // With room on the right, it reaches as far as half the target there.
-    const open = layoutRow(blocks, at1);
-    const c = (at1(min(10)) + at1(min(10, 5))) / 2;
-    assert.deepEqual(open.placed.get('tiny')?.hit, { l: at1(min(10)), r: c + HIT_MIN_PX / 2 });
+    assert.ok(hit !== undefined);
+    const x0 = at1(min(10));
+    const x1 = at1(min(10, 5));
+    const c = (x0 + x1) / 2;
+    // Held at the big block's edge, so it stays clickable and keeps its handle…
+    assert.equal(hit.l, at1(min(10)));
+    // …never inside its own bar…
+    assert.ok(hit.l <= x0 && hit.r >= x1 && hit.r - hit.l >= x1 - x0);
+    // …and the free side reaches all the way.
+    assert.equal(hit.r, c + HIT_PX / 2);
+    // On both sides: its bar, no less.
+    const both = layoutRow(
+      [...blocks, { id: 'next', start: min(10, 5), end: min(11) }],
+      at1,
+    ).placed.get('tiny')?.hit;
+    assert.deepEqual(both, { l: x0, r: x1 });
   });
 
   void test('a closed group drawn narrower than the target gets one, as a block does', () => {
@@ -1075,7 +1166,7 @@ void describe('layoutRow — crowded stretches as groups that open into lanes (D
     const fit = (m: number): number => ((m - 360) * 40) / 60;
     const g = layoutRow(blocks, fit).groups[0];
     assert.ok(g?.hit !== undefined);
-    assert.ok(Math.abs(g.hit.r - g.hit.l - HIT_MIN_PX) < 1e-9);
+    assert.ok(Math.abs(g.hit.r - g.hit.l - HIT_PX) < 1e-9);
     assert.equal(layoutRow(blocks, fit, new Set([groupIdOf('n0')])).groups[0]?.hit, undefined);
   });
 

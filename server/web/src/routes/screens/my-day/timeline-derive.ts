@@ -92,16 +92,57 @@ export const zoomOfSlider = (value: number, floor: number): Zoom =>
  * a pinch left it: in from Fit is the first step past the floor, and out past
  * the floor is Fit. `undefined` past either end.
  */
-export function zoomStep(zoom: Zoom, by: 1 | -1, floor: number): Zoom | undefined {
-  const at = zoomFactor(zoom, floor);
+export function zoomStep(
+  zoom: Zoom,
+  by: 1 | -1,
+  floor: number,
+  here: number = floor,
+): Zoom | undefined {
+  // From Fit, the scale it draws where the step is anchored (review round 1).
+  const at = zoom === 'fit' ? Math.max(floor, here) : zoom;
   if (by > 0) {
-    if (zoom !== 'fit' && at >= ZOOM_MAX) return undefined;
+    if (at >= ZOOM_MAX - 1e-6) return zoom === 'fit' ? ZOOM_MAX : undefined;
     const next = ZOOM_STEPS.find((s) => s > at + 1e-6 && s > floor);
     return next ?? ZOOM_MAX;
   }
   if (zoom === 'fit') return undefined;
   const next = [...ZOOM_STEPS].reverse().find((s) => s < at - 1e-6);
-  return next === undefined || next <= floor ? 'fit' : next;
+  if (next !== undefined && next > floor) return next;
+  // Out to the whole day: Fit, unless Fit draws the anchor larger than now.
+  if (here <= at + 1e-6) return 'fit';
+  return floor < at - 1e-6 ? floor : undefined;
+}
+
+/**
+ * The scale `scale` draws at `minute`, as a multiple of 160px an hour: the
+ * slope of the stretch it falls in. At Fit an open stretch is drawn larger
+ * than the whole day's floor, and a folded one smaller (review round 1).
+ */
+export function localZoom(scale: Scale, minute: number): number {
+  const on = scale.segments.filter((s) => minute >= s.t0 && minute <= s.t1);
+  const s = on.find((g) => !g.folded) ?? on[0] ?? scale.segments[0];
+  if (s === undefined || s.t1 <= s.t0) return ZOOM_STEPS[0];
+  return (((s.p1 - s.p0) / (s.t1 - s.t0)) * 60) / BASE_PX_PER_HOUR;
+}
+
+/**
+ * A pinch or a Ctrl/Cmd + wheel, `by` times the scale, from `zoom`, at a
+ * minute Fit draws at `fitHere` (review round 1): from Fit it starts at the
+ * scale the reader sees there, not the whole day's floor, so **inward never
+ * draws that minute smaller and outward never larger**. In, it is never
+ * under the floor; out past the floor it is Fit — unless Fit would draw the
+ * minute larger, when it stops at the floor, the whole day linear.
+ */
+export function zoomBy(zoom: Zoom, by: number, floor: number, fitHere: number): Zoom {
+  const from = zoom === 'fit' ? fitHere : zoom;
+  if (by >= 1) {
+    if (zoom === 'fit' && by === 1) return 'fit';
+    return Math.min(ZOOM_MAX, Math.max(floor, from * by, from));
+  }
+  const want = from * by;
+  if (want > floor) return want;
+  if (zoom === 'fit' || fitHere <= from + 1e-9) return 'fit';
+  return floor < from ? floor : from;
 }
 
 /** `1.5×`, `1×`, `0.75×` — or `Fit`. */
@@ -536,8 +577,13 @@ export const OPEN_LANE_PX = 28;
  * keep each at {@link LANE_MIN_PX} or more in {@link BLOCK_PX}.
  */
 export const ROW_LANES = Math.floor((BLOCK_PX + LANE_GAP_PX) / (LANE_MIN_PX + LANE_GAP_PX));
-/** A block drawn narrower than this takes the pointer this wide, centred on it (D-113 item 4). */
+/** A block drawn narrower than this gets a wider target (D-113 item 4)… */
 export const HIT_MIN_PX = 24;
+/**
+ * …this wide, centred on it: 24px and 2px either side, so a press 12px off
+ * the block's middle still lands inside it rather than on its very edge.
+ */
+export const HIT_PX = 28;
 
 /** Where a block is drawn in the row (LAI-300). */
 export interface Placed {
@@ -553,8 +599,12 @@ export interface Placed {
   readonly hidden: boolean;
   /**
    * Where it takes the pointer, px along the track, when that is wider than
-   * it is drawn: a block narrower than {@link HIT_MIN_PX}, its target held
-   * off every neighbour beside it.
+   * it is drawn: a block narrower than {@link HIT_MIN_PX} takes
+   * {@link HIT_PX}, centred, over any gap or empty track beside it. Only a
+   * full-size block beside it (or a closed group) holds it back, so that
+   * neighbour stays clickable and keeps its edge handle — and then on that
+   * side alone: it still covers its own bar and reaches its whole half on
+   * the free side (LAI-300 review round 1).
    */
   readonly hit: { readonly l: number; readonly r: number } | undefined;
 }
@@ -600,9 +650,10 @@ export const groupIdOf = (firstId: string): string => `g-${firstId}`;
  * clashes with nothing. A stretch of up to {@link ROW_LANES} lanes shares
  * the row, as LAI-860 drew it; a deeper one is a **group**, closed unless
  * its id is in `open`, and open it takes {@link OPEN_LANE_PX} a lane and the
- * row grows to hold it. A narrow block's target reaches {@link HIT_MIN_PX}
- * but stops at whatever is drawn beside it: blocks, closed groups, and
- * `obstacles` (the gaps and breaks, full height).
+ * row grows to hold it. A narrow block's target is {@link HIT_PX} wide; two
+ * whose targets would overlap clash, so lanes keep them apart and neither
+ * is cut. A gap or empty track never cuts one; a full-size block beside it
+ * does, on that side only (review round 1).
  *
  * Pure, and from the blocks as they are, never as a drag has them, so a
  * drag in flight cannot reshuffle the row under the pointer.
@@ -611,7 +662,6 @@ export function layoutRow(
   blocks: readonly (Span & { readonly id: string })[],
   pos: (minute: number) => number,
   open: ReadonlySet<string> = new Set(),
-  obstacles: readonly Span[] = [],
 ): RowLayout {
   const items = blocks.map((b) => {
     const x0 = pos(b.start);
@@ -623,8 +673,8 @@ export function layoutRow(
       x0,
       x1,
       tiny,
-      e0: tiny ? c - HIT_MIN_PX / 2 : x0,
-      e1: tiny ? c + HIT_MIN_PX / 2 : x1,
+      e0: tiny ? c - HIT_PX / 2 : x0,
+      e1: tiny ? c + HIT_PX / 2 : x1,
     };
   });
   type Item = (typeof items)[number];
@@ -741,7 +791,8 @@ export function layoutRow(
     });
   }
 
-  // What is drawn, as boxes: each block's target, each closed group, each obstacle.
+  // What may hold a narrow target back: each full-size block and each closed
+  // group, as drawn. Never a gap, a break or empty track — the block wins there.
   interface Box {
     readonly key: string;
     readonly l: number;
@@ -752,21 +803,23 @@ export function layoutRow(
   const boxes: Box[] = [];
   for (const item of items) {
     const p = placed.get(item.id);
-    if (p === undefined || p.hidden) continue;
-    boxes.push({ key: item.id, l: item.e0, r: item.e1, t: p.top, b: p.top + p.height });
+    if (p === undefined || p.hidden || item.tiny) continue;
+    boxes.push({ key: item.id, l: item.x0, r: item.x1, t: p.top, b: p.top + p.height });
   }
   for (const g of groups) {
     if (!g.open) boxes.push({ key: g.id, l: pos(g.start), r: pos(g.end), t: 0, b: BLOCK_PX });
   }
-  for (const [i, o] of obstacles.entries()) {
-    boxes.push({ key: `obstacle-${String(i)}`, l: pos(o.start), r: pos(o.end), t: 0, b: BLOCK_PX });
-  }
-  /** `[x0, x1]` widened to HIT_MIN_PX about its middle, then held off every box beside it. */
+  /**
+   * `[x0, x1]` widened to HIT_PX about its middle, then held off a full-size
+   * box beside it — never past its own bar, and only on that box's side.
+   * Another narrow block's target is never in the way: two that would
+   * overlap clashed, and lanes put them apart.
+   */
   const target = (key: string, x0: number, x1: number, t: number, b: number) => {
     if (x1 - x0 >= HIT_MIN_PX) return undefined;
     const c = (x0 + x1) / 2;
-    let l = c - HIT_MIN_PX / 2;
-    let r = c + HIT_MIN_PX / 2;
+    let l = c - HIT_PX / 2;
+    let r = c + HIT_PX / 2;
     for (const o of boxes) {
       if (o.key === key || o.t >= b || o.b <= t) continue;
       if (o.r <= x0 + 1e-6) l = Math.max(l, o.r);

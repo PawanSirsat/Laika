@@ -25,7 +25,6 @@ import {
   axisMarks,
   buildScale,
   checkDrop,
-  clampZoom,
   dayFigures,
   dragEdge,
   keepAt,
@@ -43,7 +42,8 @@ import {
   limitsIn,
   signalsDuring,
   wheelAction,
-  zoomFactor,
+  zoomBy,
+  localZoom,
   zoomFloor,
   zoomOfSlider,
   BLOCK_PX,
@@ -450,7 +450,7 @@ export function Timeline({
   const shaped = line.blocks.map((b) => (drag?.id === b.id ? { ...b, ...drag.edit } : b));
   // Lanes and groups from the blocks as they are — never as a drag has them —
   // so the row holds still under a block in hand (D-113 item 5).
-  const row = layoutRow(line.blocks, x, open, [...line.gaps, ...line.breaks]);
+  const row = layoutRow(line.blocks, x, open);
   const figures = dayFigures(view, line.gaps);
   // No signal is not zero hours: a quiet day, or one to come, has no figure.
   const quiet = view.state === 'no_signal' || view.state === 'future';
@@ -607,20 +607,30 @@ export function Timeline({
       event.clientX >= r.left && event.clientX <= r.right
         ? event.clientX - r.left
         : box.clientWidth / 2;
-    pinchTo((factor) => clampZoom(factor * action.by, floor), offset);
+    pinchTo((z, here) => zoomBy(z, action.by, floor, here), offset);
   };
-  /** A pinch's target, from the scale it was last asked for; drawn on the next frame. */
-  const pinchTo = (target: (factor: number) => Zoom, offset: number): void => {
+  /**
+   * What Fit draws at `minute`, as a multiple (review round 1): a zoom that
+   * leaves Fit starts from the scale the reader sees there, never the floor.
+   */
+  const fitHere = (minute: number): number =>
+    localZoom(zoom === 'fit' ? scale : buildScale(from, to, 'fit', width, idleEnds(line)), minute);
+  /**
+   * A pinch's target, from the scale it was last asked for and what Fit draws
+   * at its minute; drawn on the next frame.
+   */
+  const pinchTo = (step: (from: Zoom, here: number) => Zoom, offset: number): void => {
     if (inDrag()) return;
     const box = scroller.current;
     if (box === null) return;
     const held = pinch.current;
-    const next = target(zoomFactor(held?.zoom ?? asked.current, floor));
+    const minute = held?.minute ?? scale.at(box.scrollLeft + offset);
+    const next = step(held?.zoom ?? asked.current, fitHere(minute));
     if (held !== null) {
       held.zoom = next;
       return;
     }
-    pinch.current = { zoom: next, minute: scale.at(box.scrollLeft + offset), offset };
+    pinch.current = { zoom: next, minute, offset };
     requestAnimationFrame(() => {
       const p = pinch.current;
       pinch.current = null;
@@ -634,7 +644,7 @@ export function Timeline({
     zoomTo(p.zoom, { minute: p.minute, offset: p.offset });
   };
   /** Safari's pinch: gesture events with a scale, not a wheel. */
-  const gesture = useRef<{ base: number; offset: number } | null>(null);
+  const gesture = useRef<{ base: Zoom; here: number; offset: number } | null>(null);
   const onGesture = useRef<(kind: string, event: Event) => void>(() => undefined);
   onGesture.current = (kind, event) => {
     const box = scroller.current;
@@ -644,9 +654,11 @@ export function Timeline({
     if (kind === 'gesturestart') {
       const r = box.getBoundingClientRect();
       const cx = e.clientX ?? r.left + r.width / 2;
+      const offset = Math.max(0, Math.min(box.clientWidth, cx - r.left));
       gesture.current = {
-        base: zoomFactor(asked.current, floor),
-        offset: Math.max(0, Math.min(box.clientWidth, cx - r.left)),
+        base: asked.current,
+        here: fitHere(scale.at(box.scrollLeft + offset)),
+        offset,
       };
       return;
     }
@@ -656,7 +668,7 @@ export function Timeline({
       return;
     }
     if (g === null || e.scale === undefined) return;
-    pinchTo(() => clampZoom(g.base * (e.scale ?? 1), floor), g.offset);
+    pinchTo(() => zoomBy(g.base, e.scale ?? 1, floor, g.here), g.offset);
   };
   useEffect(() => {
     const el = grid.current;
@@ -680,16 +692,23 @@ export function Timeline({
   }, []);
 
   /**
-   * The slider's zoom keeps the selected block where it is on screen while
-   * it is in view, and otherwise the middle of the view (D-113 item 2).
+   * The slider's zoom keeps the selected block on screen while any of it is
+   * in view (D-113 item 2, review round 1): its start, or the first minute of
+   * it in view when its start is off the left edge, stays where it is.
+   * Otherwise the middle of the view.
    */
   const sliderAnchor = (): { minute: number; offset: number } | undefined => {
     const box = scroller.current;
     if (box === null) return undefined;
     if (selectedBlock !== undefined && row.placed.get(selectedBlock.id)?.hidden !== true) {
-      const minute = (selectedBlock.start + selectedBlock.end) / 2;
-      const offset = x(minute) - box.scrollLeft;
-      if (offset >= 0 && offset <= box.clientWidth) return { minute, offset };
+      const a = x(selectedBlock.start);
+      const b = x(selectedBlock.end);
+      const l = box.scrollLeft;
+      const r = l + box.clientWidth;
+      if (b > l && a < r) {
+        const minute = Math.min(selectedBlock.end, Math.max(selectedBlock.start, scale.at(l)));
+        return { minute, offset: x(minute) - l };
+      }
     }
     return middle();
   };
@@ -1531,6 +1550,7 @@ export function Timeline({
                 onKeyDown={(event) => {
                   // The slider's own keys walk LAI-890's steps; a hundredth of a
                   // doubling a key would take a hundred presses to get anywhere.
+                  const anchor = sliderAnchor();
                   const by =
                     event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'PageUp'
                       ? 1
@@ -1546,11 +1566,11 @@ export function Timeline({
                         ? ZOOM_MAX
                         : by === 0
                           ? undefined
-                          : zoomStep(zoom, by, floor);
+                          : zoomStep(zoom, by, floor, fitHere(anchor?.minute ?? from * 60));
                   if (by === 0 && next === undefined) return;
                   event.preventDefault();
                   event.stopPropagation();
-                  if (next !== undefined) zoomTo(next, sliderAnchor());
+                  if (next !== undefined) zoomTo(next, anchor);
                 }}
               />
             </label>

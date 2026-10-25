@@ -303,16 +303,15 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
       });
       const leftOf = async () =>
         (await h.page.locator('[data-block-id="d3"]').boundingBox())?.x ?? Number.NaN;
-      const centreOf = async () => {
-        const box = await h.page.locator('[data-block-id="d3"]').boundingBox();
-        return box === null ? Number.NaN : box.x + box.width / 2;
-      };
       assert.ok(Number.isFinite(await leftOf()), 'd3 is not drawn');
-      const before = await centreOf();
+      // Its start is in view, so its start is what stays put (LAI-300 review round 1).
+      const scroller = await h.page.locator('[data-dayline-scroller]').boundingBox();
+      const before = await leftOf();
+      assert.ok(scroller !== null && before > scroller.x && before < scroller.x + scroller.width);
       await zoomTo(h.page, 2);
-      assert.ok(Math.abs((await centreOf()) - before) <= 2, 'the selected block moved on screen');
+      assert.ok(Math.abs((await leftOf()) - before) <= 2, 'the selected block moved on screen');
       await zoomTo(h.page, 1.5);
-      assert.ok(Math.abs((await centreOf()) - before) <= 2, 'the selected block moved on screen');
+      assert.ok(Math.abs((await leftOf()) - before) <= 2, 'the selected block moved on screen');
     } finally {
       await h.close();
     }
