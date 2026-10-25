@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-888
-status: in-progress
+status: done
 started: 2026-10-25T01:10:00Z
+finished: 2026-10-25T08:28:07Z
 ---
 
 ## Goal
@@ -134,3 +135,6 @@ npx eslint <each changed file>                             0 for each
 pnpm format:fix; npx prettier --check <changed files>      0
 ```
 
+## Accepted (CHIEF, 2026-10-25)
+
+Accepted with the lane column's AGENTS *Expand / Collapse* and *N agents* not met: the day view carries one merged lane and no agent identity. Filed as LAI-520 (server, then web). Released with the My day design merge on the owner's word after the local review ("perfect push everthing on master now").

@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: [LAI-511, LAI-512]
 discovered-from: LAI-888
-status: in-progress
+status: done
 started: 2026-10-25T02:05:00Z
+finished: 2026-10-25T08:28:07Z
 ---
 
 ## Goal
@@ -90,3 +91,6 @@ design says under 760. The desktop at 1440 is unchanged, and a test says so.
   which LAI-511 closed on load. It fails the same at `24e05ffc`, measured with
   this work stashed.
 
+## Accepted (CHIEF, 2026-10-25)
+
+Accepted with the Viewing popover not as drawn on a phone (the shared Dropdown places its own panel). Filed as LAI-521. Released with the My day design merge on the owner's word after the local review ("perfect push everthing on master now").

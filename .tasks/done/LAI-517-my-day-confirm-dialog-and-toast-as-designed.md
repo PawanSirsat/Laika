@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-888
-status: in-progress
+status: done
 started: 2026-10-25T02:40:00+05:30
+finished: 2026-10-25T08:28:07Z
 ---
 
 ## Goal
@@ -53,3 +54,7 @@ Four deviations inside the ticked criteria:
 
 The toast sits over the bulk bar by `:has([data-bulk-count])` on the page
 column. LAI-514 rebuilds that bar, so its count must keep that hook.
+
+## Accepted (CHIEF, 2026-10-25)
+
+All met. Released with the My day design merge on the owner's word after the local review ("perfect push everthing on master now").

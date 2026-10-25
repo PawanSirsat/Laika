@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-888
-status: in-progress
+status: done
 started: 2026-10-25T01:20:00Z
+finished: 2026-10-25T08:28:07Z
 ---
 
 ## Goal
@@ -51,3 +52,7 @@ is a table rebuild, and the web side mirrors the list.
 §4.4: a server half and a web half in one task because both are CHIEF's on
 the owner's word; the SPEC row is a named edit. D-108 and D-110 item 5 are
 amended by this; CHIEF records it in DECISIONS.md on accept.
+
+## Accepted (CHIEF, 2026-10-25)
+
+All met. Released with the My day design merge on the owner's word after the local review ("perfect push everthing on master now").

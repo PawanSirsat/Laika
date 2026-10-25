@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-888
-status: in-progress
+status: done
 started: 2026-10-25T02:10:00Z
+finished: 2026-10-25T08:28:07Z
 ---
 
 ## Goal
@@ -77,3 +78,7 @@ Design: `MyDay.dc.html` — `tabs`, `rvM`, `cfM`, `rvRows`, `cfRows`, `bulk`,
 - Tests: `my-day-tabs` (All, the tray's hint, the head's hint, the pills, the
   widths, Range), `my-day-v2` (Assign task onto a card), and ten suites
   re-aimed at the Overview default and the floating bar.
+
+## Accepted (CHIEF, 2026-10-25)
+
+All met. Released with the My day design merge on the owner's word after the local review ("perfect push everthing on master now").

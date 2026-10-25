@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: [LAI-511]
 discovered-from: LAI-888
-status: in-progress
+status: done
 started: 2026-10-25T01:20:00Z
+finished: 2026-10-25T08:28:07Z
 ---
 
 ## Goal
@@ -48,7 +49,7 @@ the *No set time* label wraps vertically into OFF-SCREEN WORK.
       name that matches no task sets WHAT IT WAS's title and General (no task
       is created, D-110 item 7); suggestion chips with their reason (*In
       progress*, *kepler was building it*, *Card before*, *Card after*).
-- [ ] KIND: the chips as LAI-516's eight, 28px, 4px radius, the current one
+- [x] KIND: the chips as LAI-516's eight, 28px, 4px radius, the current one
       accent-soft.
 - [x] WHAT IT WAS: title and description with the design's placeholders
       (*e.g. Timeline zoom presets* / *Add a description (optional)*),
@@ -96,3 +97,7 @@ Two deviations inside ticked criteria:
   said.
 - The head uses the type scale's steps (16, 14 and 12 px), not the design's
   17, 15 and 12.5 px. `type-floor.test.ts` refuses a size off the scale.
+
+## Accepted (CHIEF, 2026-10-25)
+
+KIND is met now that LAI-516's eight kinds are merged. The head's *× Not work time* pill and *Not work: Back to review* stay unmet: a dismissed draft leaves the day and has no way back. Filed as LAI-519 (server, then web). Released with the My day design merge on the owner's word after the local review ("perfect push everthing on master now").

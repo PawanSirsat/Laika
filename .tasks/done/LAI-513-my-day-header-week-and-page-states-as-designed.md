@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-888
-status: in-progress
+status: done
 started: 2026-10-25T01:05:00Z
+finished: 2026-10-25T08:28:07Z
 ---
 
 ## Goal
@@ -56,3 +57,7 @@ away (Fill gaps, the Who can see this popover; Assign task is LAI-514's).
 Design: `MyDay.dc.html` — `hd`, `pp.who`, `hd.hasGaps/fillGaps`, `bd.*`,
 `emp`. D-110 item 11 is amended by the owner's 2026-10-25 instruction; CHIEF
 records that in DECISIONS.md with the accept.
+
+## Accepted (CHIEF, 2026-10-25)
+
+All met. Released with the My day design merge on the owner's word after the local review ("perfect push everthing on master now").

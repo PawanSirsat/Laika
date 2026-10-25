@@ -2,11 +2,13 @@
 id: LAI-506
 title: 'My day on a phone: the editor is a bottom drawer'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-504]
 discovered-from: LAI-897
-status: backlog
+status: done
+started: 2026-10-25T08:28:07Z
+finished: 2026-10-25T08:28:07Z
 ---
 
 ## Goal
@@ -23,3 +25,7 @@ it. Desktop keeps the side panel.
 ## Notes / context
 
 D-110.
+
+## Superseded (CHIEF, 2026-10-25)
+
+Never built as written. LAI-511 made the editor a drawer on the right that becomes a bottom sheet on a phone, and LAI-518 built the design's phone page around it. Closed so nobody claims it.
