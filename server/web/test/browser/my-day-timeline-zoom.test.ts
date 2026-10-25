@@ -358,7 +358,9 @@ void describe('the Timeline at Fit, 1× and 2× (LAI-860)', () => {
       if (!ok) problems.push(problem);
     };
     try {
-      for (const width of [1440, 390]) {
+      // 901: the narrowest window with this Timeline. At 900 and under a phone
+      // has the vertical one (LAI-518), and `my-day-phone.test.ts` measures it.
+      for (const width of [1440, 901]) {
         await h.page.setViewportSize({ width, height: 900 });
         await settle(h.page);
         for (const theme of ['light', 'dark']) {

@@ -473,8 +473,9 @@ void describe('the Timeline card (LAI-888, the v3 design)', () => {
       for (const theme of ['light', 'dark']) {
         await setTheme(h.page, theme);
         assert.equal(await h.page.locator('.dayline-labels').isVisible(), false);
+        // The phone's Timeline is the vertical one (LAI-518); its legend has the figure.
         assert.equal(
-          (await h.page.locator('[data-stat="confirmed"] strong').innerText()).trim(),
+          (await h.page.locator('[data-mobile-stat="confirmed"] strong').innerText()).trim(),
           dur(60),
         );
         const sideways = await h.page.evaluate(() => {

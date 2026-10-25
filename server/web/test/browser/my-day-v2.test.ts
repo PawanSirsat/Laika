@@ -1035,9 +1035,16 @@ void describe('a phone, and both themes (I)', () => {
             over: el.scrollWidth > el.clientWidth,
             auto: ['auto', 'scroll'].includes(getComputedStyle(el).overflowX),
           }));
-        // A phone shows a letter a day, and the week fits without scrolling (LAI-502).
-        assert.equal((await scrolls('.myday-week-days')).over, false, 'the week overflows');
-        assert.deepEqual(await scrolls('[data-dayline-scroller]'), { over: true, auto: true });
+        // A phone shows a letter a day, and the week fits without scrolling (LAI-502, LAI-518).
+        assert.equal((await scrolls('[data-phone-week]')).over, false, 'the week overflows');
+        // The Timeline is the vertical one, and scrolls down on its own (LAI-518).
+        assert.deepEqual(
+          await h.page.locator('[data-timeline-mobile-scroller]').evaluate((el) => ({
+            over: el.scrollHeight > el.clientHeight,
+            auto: ['auto', 'scroll'].includes(getComputedStyle(el).overflowY),
+          })),
+          { over: true, auto: true },
+        );
         // The editor is a bottom sheet on a phone (LAI-511).
         const sheet = await h.page.locator('[data-myday-drawer]').evaluate((el) => ({
           position: getComputedStyle(el).position,
