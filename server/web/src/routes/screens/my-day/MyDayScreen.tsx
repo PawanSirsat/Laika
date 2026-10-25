@@ -339,7 +339,7 @@ export function MyDayScreen({
     }
   };
   const confirmButton = useRef<HTMLButtonElement | null>(null);
-  const [zoom, setZoom] = useState<Zoom>('1');
+  const [zoom, setZoom] = useState<Zoom>(1);
   const [now, setNow] = useState(() => Date.now());
   const spaces = useSpaces();
   const plate = usePlate(readOnly ? undefined : me, spaces);

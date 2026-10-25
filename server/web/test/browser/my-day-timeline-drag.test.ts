@@ -11,6 +11,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { open, NOW, TODAY } from './my-day-clock.ts';
+import { zoomTo } from './my-day-zoom.ts';
 import { AGENT, at, CARD_A, weekData, weekStub } from './my-day-week.ts';
 
 /**
@@ -65,7 +66,7 @@ async function myDay(
   });
   await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
   await h.page.locator('[data-block-id]').first().waitFor({ timeout: 10_000 });
-  await h.page.locator('[data-zoom="1"]').click();
+  await zoomTo(h.page, 1);
   return h;
 }
 
@@ -119,7 +120,7 @@ after(async () => {
 });
 
 void describe('the Timeline card as TimelineV2 draws it (LAI-512)', () => {
-  void test('one header row, a 16px card, the zoom controls in one group, Marks in the column, nothing in it cut, no footer', async () => {
+  void test('one header row, a 16px card, the D-113 zoom controls, Marks in the column, nothing in it cut, no footer', async () => {
     const writes: StubCall[] = [];
     // With every lane the column names: SIGNALS (the server's times), YOU, AGENTS.
     const h = await myDay(writes, null, {
@@ -141,11 +142,21 @@ void describe('the Timeline card as TimelineV2 draws it (LAI-512)', () => {
         await h.page.locator('[data-dayline]').evaluate((el) => getComputedStyle(el).borderRadius),
         '16px',
       );
-      // The zoom controls in one group beside ‹ Now ›: the stepper, the slider and the three presets.
+      // The zoom controls beside ‹ Now › (D-113, LAI-300): the Time zoom slider,
+      // Fit day and one Expand all toggle — the stepper, the three presets, the
+      // row-height slider and its grip are gone.
       const zooms = h.page.locator('.dayline-zooms');
-      assert.equal(await zooms.locator('[data-zoom-step]').count(), 2);
-      assert.equal(await zooms.locator('[data-zoom-slider]').count(), 1);
-      assert.equal(await zooms.locator('[data-zoom]').count(), 3);
+      assert.equal(await zooms.getByRole('slider', { name: 'Time zoom' }).count(), 1);
+      assert.deepEqual(
+        await zooms.getByRole('button').evaluateAll((els) => els.map((el) => el.textContent)),
+        ['Fit day', 'Expand all'],
+      );
+      assert.equal(
+        await h.page
+          .locator('[data-zoom-step], [data-zoom], [data-row-slider], [data-row-grip]')
+          .count(),
+        0,
+      );
       assert.equal((await h.page.locator('[data-mark-total]').innerText()).trim(), '1');
       assert.equal(await h.page.locator('[data-agent-work]').innerText(), '9 min');
       // Nothing in the lane column is cut at 1440: no cell's words run past
@@ -409,6 +420,76 @@ void describe('the Timeline card as TimelineV2 draws it (LAI-512)', () => {
         /Placed LAI-12 at 4:20–4:45 PM\./,
       );
       assert.equal(await h.page.locator('[data-ext-preview]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a tray item dropped after the track scrolled under it, with no dragover since, lands where it is let go — not where its last preview was (LAI-300 review round 1)', async () => {
+    const writes: StubCall[] = [];
+    const h = await myDay(writes);
+    try {
+      // d5, 25 min with no set time, over 4:30 PM: its preview says 4:20–4:45.
+      await show(h, 15 * 60 + 30);
+      const row = await h.page.locator('[data-dayline-row]').boundingBox();
+      assert.ok(row !== null);
+      const tx = await xOf(h.page, 16 * 60 + 30);
+      const ty = row.y + row.height * 0.6;
+      // The browser's own drag repeats dragover while the pointer rests, so the
+      // events are sent by hand: one dragover, a scroll, then the drop.
+      await h.page.evaluate(
+        ({ x, y }) => {
+          const item = document.querySelector('[data-tray-item="d5"]');
+          const lane = document.querySelector('[data-dayline-row]');
+          if (item === null || lane === null) throw new Error('no tray item or row');
+          const data = new DataTransfer();
+          (window as unknown as { trayData: DataTransfer }).trayData = data;
+          item.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: data }));
+          lane.dispatchEvent(
+            new DragEvent('dragover', {
+              bubbles: true,
+              cancelable: true,
+              dataTransfer: data,
+              clientX: x,
+              clientY: y,
+            }),
+          );
+        },
+        { x: tx, y: ty },
+      );
+      await settlesOn(h.page, '[data-drag-label]', /^LAI-12 · 4:20–4:45 PM · 25 min$/);
+      // An hour of track (160px at 1×) scrolls under the still pointer.
+      await h.page.locator('.dayline-scroller').evaluate((el) => {
+        el.scrollLeft += 160;
+      });
+      await h.page.evaluate(
+        () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+      );
+      await h.page.evaluate(
+        ({ x, y }) => {
+          const item = document.querySelector('[data-tray-item="d5"]');
+          const lane = document.querySelector('[data-dayline-row]');
+          const data = (window as unknown as { trayData: DataTransfer }).trayData;
+          lane?.dispatchEvent(
+            new DragEvent('drop', {
+              bubbles: true,
+              cancelable: true,
+              dataTransfer: data,
+              clientX: x,
+              clientY: y,
+            }),
+          );
+          item?.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: data }));
+        },
+        { x: tx, y: ty },
+      );
+      await until(() => patches(writes).length === 1);
+      // Where it was let go: 5:30 PM under the pointer now, so 5:20–5:45 — not 4:20.
+      assert.deepEqual(patches(writes)[0], {
+        method: 'PATCH',
+        path: '/api/v1/me/time-drafts/d5',
+        body: { started_at: at(TODAY, 17, 20), ended_at: at(TODAY, 17, 45) },
+      });
     } finally {
       await h.close();
     }

@@ -6023,3 +6023,33 @@ The reference is `docs/design/MyDay.dc.html`, `TimelineV2.dc.html` and
    to review* (LAI-519), the AGENTS lane per agent with *Expand* (LAI-520),
    the phone's Viewing list as drawn (LAI-521). No calendar still (D-110
    item 3).
+
+## D-113 — My day's Timeline has one Time zoom slider, Fit day and Expand all; a crowded stretch is a group that expands into lanes (LAI-300)
+
+**Date:** 2026-10-25 · **By:** CHIEF (Belka), on the owner's instruction:
+*"Improve the existing My Day timeline … using the minimal design we agreed
+on … Scope: zoom, dense-task presentation, and group expansion only.
+Preserve every existing feature."*
+
+It **amends D-112 item 2**, which kept the zoom stepper and row height beside
+*Fit · 1× · 2×*:
+
+1. **Three controls.** One *Time zoom* slider, a *Fit day* button and one
+   *Expand all / Collapse all* toggle. The stepper, the presets, the
+   row-height slider and the row grip go. Row height is automatic.
+2. **One zoom state** for the slider, its keys, pinch and Ctrl/Cmd + wheel,
+   which zooms around the pointer's time. A plain trackpad pans both ways, a
+   plain wheel scrolls up and down, Shift + wheel pans sideways.
+3. **A crowded stretch is a group**: a rounded marker with a count and a
+   faint preview of its bars. It expands in place into readable lanes; any
+   number may be open; Fit day collapses them all. The Timeline grows taller
+   and scrolls inside itself rather than thinning its rows; the ruler and the
+   lane labels stay in view.
+4. **A short block is drawn at its true length** and gets a wider, invisible
+   hit target. Detail appears as room allows; the inspector holds the rest.
+5. **Drag is unchanged**, and is protected: a drag never toggles a group,
+   group layout holds still while one is in flight, and zoom waits until it
+   ends.
+
+LAI-300's four options are answered by this entry: groups and a taller row,
+not a cap and not a minimum drawn width.

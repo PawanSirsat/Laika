@@ -27,48 +27,127 @@ export const STEP = 5;
 export const AXIS_FROM = 6;
 export const AXIS_TO = 22;
 
-/** The scales − and + walk, in order (LAI-890): times the design's 160px an hour. */
-export const ZOOM_STEPS = ['0.5', '0.75', '1', '1.5', '2', '3', '4', '5'] as const;
-export type ZoomLevel = (typeof ZOOM_STEPS)[number];
-export type Zoom = 'fit' | ZoomLevel;
+/**
+ * The scale (D-113, LAI-300): `fit` — the whole day in the width there is,
+ * idle hours folded — or a multiple of the design's 160px an hour, anywhere
+ * from where the whole axis would fit to {@link ZOOM_MAX}. One number, so the
+ * *Time zoom* slider, its keys, pinch and Ctrl/Cmd + wheel all move the same
+ * state.
+ */
+export type Zoom = 'fit' | number;
 /** The design's 1×: 160 px an hour (the owner's "Laika App v3" Timeline). */
 export const BASE_PX_PER_HOUR = 160;
-/**
- * Pixels an hour at each level; `fit` is the whole axis in the width there
- * is, idle hours folded.
- */
-export const PX_PER_HOUR: Readonly<Record<Zoom, number | undefined>> = {
-  fit: undefined,
-  '0.5': BASE_PX_PER_HOUR * 0.5,
-  '0.75': BASE_PX_PER_HOUR * 0.75,
-  '1': BASE_PX_PER_HOUR,
-  '1.5': BASE_PX_PER_HOUR * 1.5,
-  '2': BASE_PX_PER_HOUR * 2,
-  '3': BASE_PX_PER_HOUR * 3,
-  '4': BASE_PX_PER_HOUR * 4,
-  '5': BASE_PX_PER_HOUR * 5,
-};
+/** As far in as the scale goes: 5×, the last of LAI-890's steps. */
+export const ZOOM_MAX = 5;
+/** The levels the slider's keys walk, in order (LAI-890's stepper, D-113). */
+export const ZOOM_STEPS = [0.5, 0.75, 1, 1.5, 2, 3, 4, 5] as const;
+
+/** Pixels an hour at `zoom`; `undefined` at Fit, which the width decides. */
+export const pxPerHour = (zoom: Zoom): number | undefined =>
+  zoom === 'fit' ? undefined : BASE_PX_PER_HOUR * zoom;
 
 /**
- * The next level in or out of `zoom` (LAI-890): from Fit, in is 1× and out is
- * nothing; past either end, nothing.
+ * The least multiple worth zooming to: the one at which the whole axis, from
+ * hour `from` to hour `to`, is exactly `width` px. Further out the track is
+ * narrower than its box and shows nothing more. Unmeasured, half — the
+ * smallest of LAI-890's steps.
  */
-export function zoomStep(zoom: Zoom, by: 1 | -1): Zoom | undefined {
-  if (zoom === 'fit') return by > 0 ? '1' : undefined;
-  const at = ZOOM_STEPS.indexOf(zoom);
-  return ZOOM_STEPS[at + by];
+export function zoomFloor(from: number, to: number, width: number): number {
+  if (!(width > 0) || to <= from) return ZOOM_STEPS[0];
+  return Math.min(ZOOM_MAX, width / ((to - from) * BASE_PX_PER_HOUR));
 }
 
-/** The YOU row's block height, dragged by its grip (LAI-891): the design's 80px, up to three times it. */
-export const BLOCK_MIN_PX = 80;
-export const BLOCK_MAX_PX = 240;
-/** ↑ and ↓ on the grip move the height by this much. */
-export const BLOCK_STEP_PX = 8;
-export const clampBlockHeight = (px: number): number =>
-  Math.round(Math.max(BLOCK_MIN_PX, Math.min(BLOCK_MAX_PX, px)));
+/** The multiple `zoom` draws at, Fit counted as its floor. */
+export const zoomFactor = (zoom: Zoom, floor: number): number => (zoom === 'fit' ? floor : zoom);
 
-/** `1.5×`, `1×` — or `Fit`. */
-export const zoomLabel = (zoom: Zoom): string => (zoom === 'fit' ? 'Fit' : `${zoom}×`);
+/**
+ * A multiple held inside the scale's range: at or under the floor it is Fit
+ * — the whole day — and past {@link ZOOM_MAX} it is that.
+ */
+export function clampZoom(factor: number, floor: number): Zoom {
+  if (!Number.isFinite(factor) || factor <= floor) return 'fit';
+  return Math.min(ZOOM_MAX, factor);
+}
+
+/**
+ * The *Time zoom* slider's own units: a hundredth of a doubling, so a drag
+ * across it is even however far in it goes, and 1× and 2× land on 0 and 100
+ * exactly. Its least value is Fit.
+ */
+export const sliderMin = (floor: number): number => Math.floor(Math.log2(floor) * 100);
+export const sliderMax = (): number => Math.round(Math.log2(ZOOM_MAX) * 100);
+export const sliderValue = (zoom: Zoom, floor: number): number =>
+  zoom === 'fit'
+    ? sliderMin(floor)
+    : Math.max(sliderMin(floor), Math.min(sliderMax(), Math.round(Math.log2(zoom) * 100)));
+export const zoomOfSlider = (value: number, floor: number): Zoom =>
+  value <= sliderMin(floor)
+    ? 'fit'
+    : value >= sliderMax()
+      ? ZOOM_MAX
+      : clampZoom(2 ** (value / 100), floor);
+
+/**
+ * The next of {@link ZOOM_STEPS} in or out of `zoom` (LAI-890), from wherever
+ * a pinch left it: in from Fit is the first step past the floor, and out past
+ * the floor is Fit. `undefined` past either end.
+ */
+export function zoomStep(
+  zoom: Zoom,
+  by: 1 | -1,
+  floor: number,
+  here: number = floor,
+): Zoom | undefined {
+  // From Fit, the scale it draws where the step is anchored (review round 1).
+  const at = zoom === 'fit' ? Math.max(floor, here) : zoom;
+  if (by > 0) {
+    if (at >= ZOOM_MAX - 1e-6) return zoom === 'fit' ? ZOOM_MAX : undefined;
+    const next = ZOOM_STEPS.find((s) => s > at + 1e-6 && s > floor);
+    return next ?? ZOOM_MAX;
+  }
+  if (zoom === 'fit') return undefined;
+  const next = [...ZOOM_STEPS].reverse().find((s) => s < at - 1e-6);
+  if (next !== undefined && next > floor) return next;
+  // Out to the whole day: Fit, unless Fit draws the anchor larger than now.
+  if (here <= at + 1e-6) return 'fit';
+  return floor < at - 1e-6 ? floor : undefined;
+}
+
+/**
+ * The scale `scale` draws at `minute`, as a multiple of 160px an hour: the
+ * slope of the stretch it falls in. At Fit an open stretch is drawn larger
+ * than the whole day's floor, and a folded one smaller (review round 1).
+ */
+export function localZoom(scale: Scale, minute: number): number {
+  const on = scale.segments.filter((s) => minute >= s.t0 && minute <= s.t1);
+  const s = on.find((g) => !g.folded) ?? on[0] ?? scale.segments[0];
+  if (s === undefined || s.t1 <= s.t0) return ZOOM_STEPS[0];
+  return (((s.p1 - s.p0) / (s.t1 - s.t0)) * 60) / BASE_PX_PER_HOUR;
+}
+
+/**
+ * A pinch or a Ctrl/Cmd + wheel, `by` times the scale, from `zoom`, at a
+ * minute Fit draws at `fitHere` (review round 1): from Fit it starts at the
+ * scale the reader sees there, not the whole day's floor, so **inward never
+ * draws that minute smaller and outward never larger**. In, it is never
+ * under the floor; out past the floor it is Fit — unless Fit would draw the
+ * minute larger, when it stops at the floor, the whole day linear.
+ */
+export function zoomBy(zoom: Zoom, by: number, floor: number, fitHere: number): Zoom {
+  const from = zoom === 'fit' ? fitHere : zoom;
+  if (by >= 1) {
+    if (zoom === 'fit' && by === 1) return 'fit';
+    return Math.min(ZOOM_MAX, Math.max(floor, from * by, from));
+  }
+  const want = from * by;
+  if (want > floor) return want;
+  if (zoom === 'fit' || fitHere <= from + 1e-9) return 'fit';
+  return floor < from ? floor : from;
+}
+
+/** `1.5×`, `1×`, `0.75×` — or `Fit`. */
+export const zoomLabel = (zoom: Zoom): string =>
+  zoom === 'fit' ? 'Fit' : `${String(Number(zoom.toFixed(zoom < 1 ? 2 : 1)))}×`;
 /** An idle stretch at either end of the day this long or longer folds at Fit (LAI-888). */
 export const FOLD_MIN = 45;
 /** How wide a folded stretch is drawn, in px. */
@@ -480,6 +559,342 @@ export function stackOf(blocks: readonly Span[]): Stack[] {
   return stacks;
 }
 
+/* ---------------------------------------------- lanes and groups (LAI-300) */
+
+/** The YOU row's blocks: the design's 80px. Automatic since D-113 — there is no grip. */
+export const BLOCK_PX = 80;
+/** Lanes sharing the row, and an open group's lanes, lie this far apart. */
+export const LANE_GAP_PX = 2;
+/**
+ * The least a lane is drawn (D-113): one line of label, readable. Lanes that
+ * would each be shorter than this in the row are a group instead.
+ */
+export const LANE_MIN_PX = 24;
+/** Each lane of an open group: a line of label with room around it. */
+export const OPEN_LANE_PX = 28;
+/**
+ * The most lanes the row holds before a stretch becomes a group: as many as
+ * keep each at {@link LANE_MIN_PX} or more in {@link BLOCK_PX}.
+ */
+export const ROW_LANES = Math.floor((BLOCK_PX + LANE_GAP_PX) / (LANE_MIN_PX + LANE_GAP_PX));
+/** A block drawn narrower than this gets a wider target (D-113 item 4)… */
+export const HIT_MIN_PX = 24;
+/**
+ * …this wide, centred on it: 24px and 2px either side, so a press 12px off
+ * the block's middle still lands inside it rather than on its very edge.
+ */
+export const HIT_PX = 28;
+
+/** Where a block is drawn in the row (LAI-300). */
+export interface Placed {
+  /** Its lane in its stretch, and how many lanes the stretch has. */
+  readonly lane: number;
+  readonly lanes: number;
+  /** Px below the top of the blocks, and how tall. */
+  readonly top: number;
+  readonly height: number;
+  /** The group it is in, open or closed. */
+  readonly group: string | undefined;
+  /** In a closed group: not drawn — the group stands for it. */
+  readonly hidden: boolean;
+  /**
+   * Where it takes the pointer, px along the track, when that is wider than
+   * it is drawn: a block narrower than {@link HIT_MIN_PX} takes
+   * {@link HIT_PX}, centred, over any gap or empty track beside it. Only a
+   * full-size block beside it (or a closed group) holds it back, so that
+   * neighbour stays clickable and keeps its edge handle — and then on that
+   * side alone: it still covers its own bar and reaches its whole half on
+   * the free side (LAI-300 review round 1).
+   */
+  readonly hit: { readonly l: number; readonly r: number } | undefined;
+}
+
+/** A crowded stretch drawn as one marker that opens into lanes (D-113 item 3). */
+export interface Group extends Span {
+  /** Stable: from its first block by start, then id — never its place in the day. */
+  readonly id: string;
+  /** Its blocks, by start. */
+  readonly ids: readonly string[];
+  readonly lanes: number;
+  readonly open: boolean;
+  /** Px tall: the row's blocks when closed, its lanes when open. */
+  readonly height: number;
+  /** Each block where it falls and its lane, for the closed marker's faint bars. */
+  readonly preview: readonly (Span & { readonly id: string; readonly lane: number })[];
+  /** As {@link Placed.hit}, for a closed group drawn narrower than {@link HIT_MIN_PX}. */
+  readonly hit: { readonly l: number; readonly r: number } | undefined;
+}
+
+/** "3 at once" above a stretch the row holds in lanes. */
+export interface Strip extends Span {
+  readonly id: string;
+  readonly n: number;
+}
+
+export interface RowLayout {
+  /** Every block, by id. */
+  readonly placed: ReadonlyMap<string, Placed>;
+  readonly groups: readonly Group[];
+  readonly strips: readonly Strip[];
+  /** The blocks' height in px: {@link BLOCK_PX}, or an open group's lanes where taller. */
+  readonly height: number;
+}
+
+/** A group's id, from the id of its first block. */
+export const groupIdOf = (firstId: string): string => `g-${firstId}`;
+
+/**
+ * The YOU row laid out (D-113, LAI-300). Blocks that **clash** — overlap in
+ * time, or both drawn narrower than {@link HIT_MIN_PX} with their targets
+ * overlapping — are one stretch, and each takes the first lane where it
+ * clashes with nothing. A stretch of up to {@link ROW_LANES} lanes shares
+ * the row, as LAI-860 drew it; a deeper one is a **group**, closed unless
+ * its id is in `open`, and open it takes {@link OPEN_LANE_PX} a lane and the
+ * row grows to hold it. A narrow block's target is {@link HIT_PX} wide; two
+ * whose targets would overlap clash, so lanes keep them apart and neither
+ * is cut. A gap or empty track never cuts one; a full-size block beside it
+ * does, on that side only (review round 1).
+ *
+ * Pure, and from the blocks as they are, never as a drag has them, so a
+ * drag in flight cannot reshuffle the row under the pointer.
+ */
+export function layoutRow(
+  blocks: readonly (Span & { readonly id: string })[],
+  pos: (minute: number) => number,
+  open: ReadonlySet<string> = new Set(),
+): RowLayout {
+  const items = blocks.map((b) => {
+    const x0 = pos(b.start);
+    const x1 = pos(b.end);
+    const tiny = x1 - x0 < HIT_MIN_PX;
+    const c = (x0 + x1) / 2;
+    return {
+      ...b,
+      x0,
+      x1,
+      tiny,
+      e0: tiny ? c - HIT_PX / 2 : x0,
+      e1: tiny ? c + HIT_PX / 2 : x1,
+    };
+  });
+  type Item = (typeof items)[number];
+  const clash = (a: Item, b: Item): boolean =>
+    (a.start < b.end && b.start < a.end) || (a.tiny && b.tiny && a.e0 < b.e1 && b.e0 < a.e1);
+  const order = items
+    .map((_, i) => i)
+    .sort((a, b) => {
+      const p = items[a];
+      const q = items[b];
+      if (p === undefined || q === undefined) return 0;
+      return p.start - q.start || p.end - q.end || (p.id < q.id ? -1 : p.id > q.id ? 1 : 0);
+    });
+
+  // One stretch per set of blocks joined by clashes, however the chain runs.
+  const parent = items.map((_, i) => i);
+  const root = (i: number): number => {
+    let r = i;
+    while (parent[r] !== r) r = parent[r] ?? r;
+    parent[i] = r;
+    return r;
+  };
+  for (let a = 0; a < order.length; a += 1) {
+    for (let b = a + 1; b < order.length; b += 1) {
+      const i = order[a] ?? 0;
+      const j = order[b] ?? 0;
+      const p = items[i];
+      const q = items[j];
+      if (p === undefined || q === undefined || !clash(p, q)) continue;
+      const ri = root(i);
+      const rj = root(j);
+      if (ri !== rj) parent[Math.max(ri, rj)] = Math.min(ri, rj);
+    }
+  }
+  const stretches = new Map<number, Item[]>();
+  for (const i of order) {
+    const item = items[i];
+    if (item === undefined) continue;
+    const r = root(i);
+    const list = stretches.get(r) ?? [];
+    list.push(item);
+    stretches.set(r, list);
+  }
+
+  const placed = new Map<string, Placed>();
+  const groups: Group[] = [];
+  const strips: Strip[] = [];
+  let height = BLOCK_PX;
+  for (const members of stretches.values()) {
+    const lanes: Item[][] = [];
+    const laneOf = new Map<Item, number>();
+    for (const item of members) {
+      let lane = lanes.findIndex((l) => l.every((o) => !clash(item, o)));
+      if (lane === -1) {
+        lane = lanes.length;
+        lanes.push([]);
+      }
+      lanes[lane]?.push(item);
+      laneOf.set(item, lane);
+    }
+    const depth = lanes.length;
+    const first = members[0];
+    if (first === undefined) continue;
+    const start = Math.min(...members.map((m) => m.start));
+    const end = Math.max(...members.map((m) => m.end));
+    if (depth <= ROW_LANES) {
+      const h = (BLOCK_PX + LANE_GAP_PX) / depth - LANE_GAP_PX;
+      for (const m of members) {
+        const lane = laneOf.get(m) ?? 0;
+        placed.set(m.id, {
+          lane,
+          lanes: depth,
+          top: lane * (h + LANE_GAP_PX),
+          height: h,
+          group: undefined,
+          hidden: false,
+          hit: undefined,
+        });
+      }
+      if (depth > 1) strips.push({ id: first.id, start, end, n: depth });
+      continue;
+    }
+    const id = groupIdOf(first.id);
+    const isOpen = open.has(id);
+    const tall = depth * (OPEN_LANE_PX + LANE_GAP_PX) - LANE_GAP_PX;
+    if (isOpen) height = Math.max(height, tall);
+    for (const m of members) {
+      const lane = laneOf.get(m) ?? 0;
+      placed.set(m.id, {
+        lane,
+        lanes: depth,
+        top: lane * (OPEN_LANE_PX + LANE_GAP_PX),
+        height: OPEN_LANE_PX,
+        group: id,
+        hidden: !isOpen,
+        hit: undefined,
+      });
+    }
+    groups.push({
+      id,
+      start,
+      end,
+      ids: members.map((m) => m.id),
+      lanes: depth,
+      open: isOpen,
+      height: isOpen ? tall : BLOCK_PX,
+      preview: members.map((m) => ({
+        id: m.id,
+        start: m.start,
+        end: m.end,
+        lane: laneOf.get(m) ?? 0,
+      })),
+      hit: undefined,
+    });
+  }
+
+  // What may hold a narrow target back: each full-size block and each closed
+  // group, as drawn. Never a gap, a break or empty track — the block wins there.
+  interface Box {
+    readonly key: string;
+    readonly l: number;
+    readonly r: number;
+    readonly t: number;
+    readonly b: number;
+  }
+  const boxes: Box[] = [];
+  for (const item of items) {
+    const p = placed.get(item.id);
+    if (p === undefined || p.hidden || item.tiny) continue;
+    boxes.push({ key: item.id, l: item.x0, r: item.x1, t: p.top, b: p.top + p.height });
+  }
+  for (const g of groups) {
+    if (!g.open) boxes.push({ key: g.id, l: pos(g.start), r: pos(g.end), t: 0, b: BLOCK_PX });
+  }
+  /**
+   * `[x0, x1]` widened to HIT_PX about its middle, then held off a full-size
+   * box beside it — never past its own bar, and only on that box's side.
+   * Another narrow block's target is never in the way: two that would
+   * overlap clashed, and lanes put them apart.
+   */
+  const target = (key: string, x0: number, x1: number, t: number, b: number) => {
+    if (x1 - x0 >= HIT_MIN_PX) return undefined;
+    const c = (x0 + x1) / 2;
+    let l = c - HIT_PX / 2;
+    let r = c + HIT_PX / 2;
+    for (const o of boxes) {
+      if (o.key === key || o.t >= b || o.b <= t) continue;
+      if (o.r <= x0 + 1e-6) l = Math.max(l, o.r);
+      else if (o.l >= x1 - 1e-6) r = Math.min(r, o.l);
+    }
+    return { l: Math.min(l, x0), r: Math.max(r, x1) };
+  };
+  for (const item of items) {
+    const p = placed.get(item.id);
+    if (p === undefined || p.hidden || !item.tiny) continue;
+    placed.set(item.id, { ...p, hit: target(item.id, item.x0, item.x1, p.top, p.top + p.height) });
+  }
+  const sized = groups.map((g) =>
+    g.open ? g : { ...g, hit: target(g.id, pos(g.start), pos(g.end), 0, BLOCK_PX) },
+  );
+  return { placed, groups: sized, strips, height };
+}
+
+/**
+ * Where to scroll so `minute` stays `offset` px into a view `viewW` wide on
+ * `scale` (LAI-890, D-113): the anchor of every zoom — the pointer's minute
+ * for a pinch or Ctrl/Cmd + wheel, the selected block or the middle for the
+ * slider — clamped to the track, so a zoom never jumps.
+ */
+export function keepAt(scale: Scale, minute: number, offset: number, viewW: number): number {
+  return Math.max(0, Math.min(Math.max(0, scale.total - viewW), scale.pos(minute) - offset));
+}
+
+/** A wheel event, as much of it as decides what it does. */
+export interface WheelLike {
+  readonly ctrlKey: boolean;
+  readonly metaKey: boolean;
+  readonly shiftKey: boolean;
+  readonly deltaX: number;
+  readonly deltaY: number;
+  /** 0 pixels, 1 lines, 2 pages. */
+  readonly deltaMode: number;
+}
+
+/** What a wheel over the Timeline does (D-113 item 2). */
+export type WheelAction =
+  | { readonly kind: 'zoom'; readonly by: number }
+  | { readonly kind: 'pan'; readonly dx: number }
+  | { readonly kind: 'native' };
+
+/**
+ * A Ctrl + wheel counts this many px of its delta at most: a mouse's notch
+ * (100px) zooms by about a fifth, and a pinch's small deltas count whole.
+ */
+const ZOOM_DELTA_CAP = 25;
+
+/**
+ * Pinch — which a browser sends as a wheel with Ctrl — or Ctrl/Cmd + wheel
+ * zooms, `by` the factor to multiply the scale by, around the pointer.
+ * Shift + wheel pans sideways, but only while the track has room that way
+ * (`room`, px to either edge): at an edge it is the page's. Everything else
+ * is the browser's own — the wheel scrolls down, a trackpad pans — so it
+ * goes on to the page at the Timeline's edges.
+ */
+export function wheelAction(
+  event: WheelLike,
+  room: { readonly left: number; readonly right: number },
+): WheelAction {
+  const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
+  if (event.ctrlKey || event.metaKey) {
+    const dy = Math.max(-ZOOM_DELTA_CAP, Math.min(ZOOM_DELTA_CAP, event.deltaY * unit));
+    return { kind: 'zoom', by: Math.exp(-dy / 100) };
+  }
+  if (event.shiftKey) {
+    const dx = (event.deltaX !== 0 ? event.deltaX : event.deltaY) * unit;
+    if ((dx < 0 && room.left > 0.5) || (dx > 0 && room.right > 0.5)) return { kind: 'pan', dx };
+  }
+  return { kind: 'native' };
+}
+
 /** The nearest step on the clock: 8:42 → 8:40, 8:43 → 8:45. */
 export const snap = (minute: number): number => Math.round(minute / STEP) * STEP;
 
@@ -697,8 +1112,8 @@ export function idleEnds(
 }
 
 /**
- * Where each minute of the axis is drawn (LAI-888). At 1× and 2× the axis is
- * linear at {@link PX_PER_HOUR}. At Fit it is `width` px across, with every
+ * Where each minute of the axis is drawn (LAI-888). At any multiple the axis
+ * is linear at {@link pxPerHour}. At Fit it is `width` px across, with every
  * stretch in `folds` drawn {@link FOLD_PX} wide and the rest sharing what is
  * left — however little that is: Fit fits. A stretch that would be narrower
  * than {@link FOLD_PX} drawn as it is stays as it is. `width` of 0 — not
@@ -714,7 +1129,7 @@ export function buildScale(
 ): Scale {
   const a = from * 60;
   const b = to * 60;
-  const pph = PX_PER_HOUR[zoom];
+  const pph = pxPerHour(zoom);
   const segments: Segment[] = [];
   if (pph !== undefined || folds.length === 0) {
     const k = pph === undefined ? (width > 0 ? width / Math.max(1, b - a) : 1) : pph / 60;
