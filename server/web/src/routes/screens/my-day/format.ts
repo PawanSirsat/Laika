@@ -15,6 +15,18 @@ export function duration(minutes: number): string {
 }
 
 /** An agent's time, minutes however long (D-088 item 8): `142 min`. */
+/**
+ * `1h 20m`, `45m`, `2h` — the short figure the design's Timelines print on
+ * the track and in their legends (`timeline-core.js`' `dur`, LAI-894, LAI-510).
+ * A name for a screen reader keeps {@link duration}.
+ */
+export function compact(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return `${String(m)}m`;
+  return m === 0 ? `${String(h)}h` : `${String(h)}h ${String(m)}m`;
+}
+
 export function agentDuration(minutes: number): string {
   return formatDuration(minutes, { largest: 'min' });
 }

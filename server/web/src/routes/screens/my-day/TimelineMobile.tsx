@@ -3,7 +3,7 @@ import type { MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
 import { BreakGlyph } from '../../../components/BreakGlyph.tsx';
 import { breakKind } from '../break-kinds.ts';
 import { kindGlyph } from './entry-kinds.ts';
-import { agentDuration, clock, duration, hourName, span as spanOf } from './format.ts';
+import { agentDuration, clock, compact, duration, hourName, span as spanOf } from './format.ts';
 import { dayLabel } from './my-day-derive.ts';
 import type { Selection } from './Timeline.tsx';
 import {
@@ -117,7 +117,7 @@ export function TimelineMobile({
   const rangeOf = (a: number, b: number): string => spanOf(at(a), at(b), view.tz);
   const figures = dayFigures(view, line.gaps);
   const quiet = view.state === 'no_signal' || view.state === 'future';
-  const figure = (minutes: number): string => (quiet ? '—' : duration(minutes));
+  const figure = (minutes: number): string => (quiet ? '—' : compact(minutes));
   const prompts = line.signals.filter((s) => s.kind === 'prompt').reduce((n, s) => n + s.count, 0);
   const commits = line.signals.filter((s) => s.kind === 'commit').reduce((n, s) => n + s.count, 0);
   const selectedId =
@@ -314,7 +314,7 @@ export function TimelineMobile({
                   <span className="tlm-fold-text">
                     <span className="tlm-fold-name">{label}</span>
                     <span className="tlm-fold-range">
-                      {rangeOf(s.t0, s.t1)} · {duration(s.t1 - s.t0)}
+                      {rangeOf(s.t0, s.t1)} · {compact(s.t1 - s.t0)}
                     </span>
                   </span>
                 </div>
@@ -410,7 +410,7 @@ export function TimelineMobile({
                         {ICONS.gap}
                       </span>
                       <span className="tlm-text">{fill ? 'Add time' : 'Gap'}</span>
-                      <span className="tlm-dur">{duration(minutes)}</span>
+                      <span className="tlm-dur">{compact(minutes)}</span>
                     </span>
                     {lines.range && (
                       <span className="tlm-line2">{rangeOf(gap.start, gap.end)}</span>
@@ -443,7 +443,7 @@ export function TimelineMobile({
                         {ICONS.break}
                       </span>
                       <span className="tlm-text">Break</span>
-                      <span className="tlm-dur">{duration(brk.end - brk.start)}</span>
+                      <span className="tlm-dur">{compact(brk.end - brk.start)}</span>
                     </span>
                     {mobileBlockLines(place.height).range && (
                       <span className="tlm-line2">{rangeOf(brk.start, brk.end)}</span>
@@ -508,13 +508,13 @@ export function TimelineMobile({
                     <span className={mono ? 'tlm-text tlm-mono' : 'tlm-text'}>{top}</span>
                     {alone && (
                       <span className="tlm-dur" data-mobile-dur>
-                        {duration(block.minutes)}
+                        {compact(block.minutes)}
                       </span>
                     )}
                   </span>
                   {lines.range && (
                     <span className="tlm-line2" data-mobile-range>
-                      {alone ? rangeOf(block.start, block.end) : duration(block.minutes)}
+                      {alone ? rangeOf(block.start, block.end) : compact(block.minutes)}
                     </span>
                   )}
                   {lines.title && title !== '' && alone && (

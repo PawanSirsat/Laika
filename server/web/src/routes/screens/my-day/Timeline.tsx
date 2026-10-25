@@ -18,7 +18,7 @@ import { placeOf } from '../places.ts';
 import { glyphAt, skyPhases, sunTimes } from './daylight.ts';
 import { FitLabel } from './FitLabel.tsx';
 import { needsACard } from './folder.ts';
-import { agentDuration, clock, duration, hourName, span as spanOf } from './format.ts';
+import { agentDuration, clock, compact, duration, hourName, span as spanOf } from './format.ts';
 import { dayLabel, plural } from './my-day-derive.ts';
 import {
   agentsDuring,
@@ -229,14 +229,6 @@ function labelOf(
     title: e.description ?? '',
     card: undefined,
   };
-}
-
-/** `1h 20m`, `45m` — the pill's compact clock, the design's own (LAI-894). */
-function compact(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (h === 0) return `${String(m)}m`;
-  return m === 0 ? `${String(h)}h` : `${String(h)}h ${String(m)}m`;
 }
 
 /** `30m worked`, `worked through`, or `offline` — the window's own word (LAI-894). */

@@ -332,13 +332,14 @@ void describe('My day on a phone (LAI-518)', () => {
           assert.deepEqual(scroller, { h: 340, y: 'auto', x: 'hidden', taller: true }, where);
 
           // The legend and the YOU figure: the API's minutes.
-          assert.match(await card.locator('[data-mobile-stat="confirmed"]').innerText(), /1 h$/);
-          assert.equal(await card.locator('[data-mobile-you-work]').innerText(), '6 h 10 min');
+          // The design's short figure, as the desktop legend prints it (LAI-510).
+          assert.match(await card.locator('[data-mobile-stat="confirmed"]').innerText(), /\b1h$/);
+          assert.equal(await card.locator('[data-mobile-you-work]').innerText(), '6h 10m');
 
           // A long block has all three lines: the key and its length, the range, the title.
           const d1 = card.locator('[data-mobile-block="d1"]');
           assert.equal(await d1.locator('.tlm-text').innerText(), 'LAI-11');
-          assert.equal(await d1.locator('[data-mobile-dur]').innerText(), '1 h 35 min');
+          assert.equal(await d1.locator('[data-mobile-dur]').innerText(), '1h 35m');
           assert.match(await d1.locator('[data-mobile-range]').innerText(), /8:40.*10:15/);
           assert.equal(await d1.locator('[data-mobile-title]').innerText(), 'Search matches keys');
           // Half an hour at Fit is 49px: the range, and no room for a title.
