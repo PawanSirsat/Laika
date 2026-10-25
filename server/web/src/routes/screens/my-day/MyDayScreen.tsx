@@ -751,18 +751,66 @@ export function MyDayScreen({
       ? run(key, [held.draft.id], (onUndo) => updateDraft(held.draft.id, patch, onUndo), said)
       : run(key, [held.entry.id], () => updateEntry(held.entry.id, patch), said);
 
-  const onEdge = (lane: LaneBlock, edit: Edit): void => {
+  /** What a placed block is called in a toast: its card, its space, its title, or General. */
+  const nameOf = (kind: 'drafted' | 'confirmed', id: string): string => {
+    if (kind === 'drafted') {
+      const d = view.drafts.find((x) => x.id === id);
+      return d === undefined
+        ? 'the block'
+        : (d.task?.key ?? d.project?.name ?? (d.general ? 'General' : 'No task yet'));
+    }
+    const e = view.entries.find((x) => x.id === id);
+    return e === undefined
+      ? 'the entry'
+      : (e.task?.key ??
+          (e.title !== null && e.title !== undefined && e.title !== ''
+            ? e.title
+            : (e.project?.name ?? 'General')));
+  };
+
+  // An edge dragged or stepped, or a block moved or resized by its body
+  // (LAI-512): one write of the edges that moved; a drag says so, with Undo
+  // where the server offers it.
+  const onEdge = (lane: LaneBlock, edit: Edit, how?: 'move' | 'resize'): void => {
     if (readOnly) return;
     const patch: { started_at?: number; ended_at?: number; minutes: number } = {
       minutes: edit.minutes,
     };
     if (edit.start !== lane.start) patch.started_at = instant(edit.start);
     if (edit.end !== lane.end) patch.ended_at = instant(edit.end);
+    const said =
+      how === undefined
+        ? undefined
+        : () => ({
+            text: `${how === 'move' ? 'Moved' : 'Changed'} ${nameOf(lane.kind, lane.id)} to ${span(instant(edit.start), instant(edit.end), view.tz)}.`,
+            undoable: lane.kind === 'drafted',
+          });
     if (lane.kind === 'drafted') {
-      void run(`edge:${lane.id}`, [lane.id], (onUndo) => updateDraft(lane.id, patch, onUndo));
+      void run(`edge:${lane.id}`, [lane.id], (onUndo) => updateDraft(lane.id, patch, onUndo), said);
     } else {
-      void run(`edge:${lane.id}`, [lane.id], () => updateEntry(lane.id, patch));
+      void run(`edge:${lane.id}`, [lane.id], () => updateEntry(lane.id, patch), said);
     }
+  };
+
+  // A tray item dropped on the track (LAI-512): the time it landed on, one write.
+  const onDropEntry = (
+    item: { readonly kind: 'draft' | 'entry'; readonly id: string },
+    s: Span,
+  ): void => {
+    if (readOnly) return;
+    const patch = { started_at: instant(s.start), ended_at: instant(s.end) };
+    const text = `Placed ${nameOf(item.kind === 'draft' ? 'drafted' : 'confirmed', item.id)} at ${span(patch.started_at, patch.ended_at, view.tz)}.`;
+    if (item.kind === 'draft') {
+      void run(
+        `place:${item.id}`,
+        [item.id],
+        (onUndo) => updateDraft(item.id, patch, onUndo),
+        () => ({ text, undoable: true }),
+      );
+    } else {
+      void run(`place:${item.id}`, [item.id], () => updateEntry(item.id, patch), text);
+    }
+    setSelection({ kind: item.kind, id: item.id });
   };
 
   const confirmOne = (draft: TimeDraft, said?: DraftSaid): void => {
@@ -1615,6 +1663,12 @@ export function MyDayScreen({
                 else setSelection(next);
               }}
               onEdge={onEdge}
+              onDropEntry={onDropEntry}
+              onTimerClick={() => {
+                // The running timer's controls are the header's pill: a click
+                // on its block hands the keyboard to them.
+                document.querySelector<HTMLElement>('[data-timer] button')?.focus();
+              }}
               busy={busy}
               readOnly={readOnly}
             />
@@ -1626,6 +1680,7 @@ export function MyDayScreen({
                 entries={view.entries}
                 selected={selectedId}
                 readOnly={readOnly}
+                draggable={!readOnly && addable && !busy}
                 onPick={(item) => {
                   setSelection(item);
                 }}

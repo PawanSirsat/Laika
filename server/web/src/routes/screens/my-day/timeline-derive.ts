@@ -875,3 +875,91 @@ export function dayFigures(
     gaps: gaps.reduce((n, g) => n + g.end - g.start, 0),
   };
 }
+
+/* ------------------------------------------------------- drag (LAI-512) */
+
+/**
+ * A block moved whole (the owner's `TimelineV2.dc.html`, LAI-512): its start
+ * lands on the nearest {@link STEP} of the clock and its span comes with it;
+ * its minutes do not change — a block that held less than its span keeps
+ * that. **Never pinned to the day:** a move past midnight goes there, so
+ * {@link checkDrop} can refuse it and the block goes back, as the design's
+ * `check` does. `undefined` when nothing would move.
+ */
+export function moveBlock(block: Shape, toStart: number): Edit | undefined {
+  const span = block.end - block.start;
+  const start = snap(toStart);
+  if (start === block.start) return undefined;
+  return { start, end: start + span, minutes: block.minutes };
+}
+
+/** Why a drop was refused, and the confirmed block it would have lain over. */
+export type DropCheck =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly why: 'midnight' }
+  | { readonly ok: false; readonly why: 'overlap'; readonly over: LaneBlock };
+
+/**
+ * Whether `span` may land where it is (the design's `check`): on the day,
+ * and over no confirmed block but `selfId` — that time would count twice
+ * (review round 1 of LAI-831). Drafts bound nothing; the server's 409 is
+ * the backstop.
+ */
+export function checkDrop(
+  span: Span,
+  blocks: readonly LaneBlock[],
+  selfId: string | undefined,
+  length = 1440,
+): DropCheck {
+  if (span.start < 0 || span.end > length) return { ok: false, why: 'midnight' };
+  const over = blocks.find(
+    (b) => b.kind === 'confirmed' && b.id !== selfId && b.start < span.end && b.end > span.start,
+  );
+  return over === undefined ? { ok: true } : { ok: false, why: 'overlap', over };
+}
+
+/**
+ * Where a tray item dropped at minute `at` lands: centred on the pointer, on
+ * the five-minute grid, at least a step long. Like {@link moveBlock}, never
+ * pinned to the day: one that would cross midnight is {@link checkDrop}'s to
+ * refuse (the design's `onExtOver` and `check`).
+ */
+export function trayDropSpan(at: number, minutes: number): Span {
+  const len = Math.max(STEP, minutes);
+  const start = snap(at - len / 2);
+  return { start, end: start + len };
+}
+
+/** The running timer as a block on the day (LAI-512): where it started and how far it has run. */
+export interface TimerSpan extends Span {
+  /** Minutes it has run, paused time left out. */
+  readonly minutes: number;
+  readonly paused: boolean;
+}
+
+/**
+ * The timer drawn on the track (the design's `S.timer`): from the minute it
+ * started to now — three minutes wide at least, so it can be seen and
+ * clicked — only on the day it started. `undefined` on any other day, or
+ * when there is none.
+ */
+export function timerSpan(
+  timer: {
+    readonly started_at: number;
+    readonly resumed_at: number;
+    readonly paused_at: number | null;
+    readonly accumulated_ms: number;
+  } | null,
+  midnight: number | undefined,
+  length: number,
+  nowMs: number,
+): TimerSpan | undefined {
+  if (timer === null || midnight === undefined) return undefined;
+  const start = Math.round((timer.started_at - midnight) / 60_000);
+  if (start < 0 || start >= length) return undefined;
+  const paused = timer.paused_at !== null;
+  const ran = timer.accumulated_ms + (paused ? 0 : Math.max(0, nowMs - timer.resumed_at));
+  const minutes = Math.floor(ran / 60_000);
+  const end = Math.min(length, start + Math.max(minutes, 3));
+  return { start, end, minutes, paused };
+}

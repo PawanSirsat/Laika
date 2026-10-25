@@ -1,6 +1,8 @@
+import type { DragEvent } from 'react';
 import type { TimeDraft, TimeEntry } from '../../../api/time.ts';
 import { kindLabel } from './entry-kinds.ts';
 import { duration } from './format.ts';
+import { endTrayDrag, startTrayDrag } from './tray-drag.ts';
 
 export interface UntimedTrayProps {
   readonly drafts: readonly TimeDraft[];
@@ -9,6 +11,11 @@ export interface UntimedTrayProps {
   readonly onPick: (item: { readonly kind: 'draft' | 'entry'; readonly id: string }) => void;
   /** Somebody else's day (LAI-959): nothing here can be given a time. */
   readonly readOnly?: boolean;
+  /**
+   * Items may be dragged onto the Timeline to be given a time (the owner's
+   * design, LAI-512): on a desktop, on the person's own day.
+   */
+  readonly draggable?: boolean;
 }
 
 /**
@@ -24,6 +31,7 @@ export function UntimedTray({
   selected,
   onPick,
   readOnly = false,
+  draggable = false,
 }: UntimedTrayProps) {
   const items = [
     ...drafts
@@ -76,7 +84,21 @@ export function UntimedTray({
               data-tray-item={item.id}
               data-tray-kind={item.kind}
               data-tray-minutes={item.minutes}
+              data-tray-draggable={draggable ? 'true' : undefined}
               aria-pressed={selected === item.id}
+              draggable={draggable}
+              onDragStart={(event: DragEvent<HTMLButtonElement>) => {
+                if (!draggable) return;
+                startTrayDrag({
+                  kind: item.kind,
+                  id: item.id,
+                  minutes: item.minutes,
+                  label: item.title,
+                });
+                event.dataTransfer.setData('text/plain', item.id);
+                event.dataTransfer.effectAllowed = 'move';
+              }}
+              onDragEnd={endTrayDrag}
               onClick={() => {
                 onPick({ kind: item.kind, id: item.id });
               }}
