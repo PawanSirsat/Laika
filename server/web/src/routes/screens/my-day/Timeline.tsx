@@ -55,6 +55,7 @@ import {
   workedIn,
   rangeFromDrag,
 } from './timeline-derive.ts';
+import { keepBlockPx, readBlockPx } from './timeline-prefs.ts';
 import { trayDrag } from './tray-drag.ts';
 import './timeline.css';
 
@@ -373,7 +374,12 @@ export function Timeline({
   /** The minute at the middle of the view when the scale last changed — kept there (LAI-890). */
   const keep = useRef<number | undefined>(undefined);
   /** The block height, dragged by the grip under the YOU row (LAI-891). */
-  const [blockPx, setBlockPx] = useState<number>(BLOCK_MIN_PX);
+  // The YOU row at 3× by default, and the person's own once they drag it (timeline-prefs).
+  const [blockPx, setBlockPxState] = useState<number>(readBlockPx);
+  const setBlockPx = (px: number): void => {
+    setBlockPxState(px);
+    keepBlockPx(px);
+  };
   const gripDrag = useRef<{ y: number; px: number } | null>(null);
   const [, setFonts] = useState(0);
 
@@ -1091,8 +1097,8 @@ export function Timeline({
       if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
       event.preventDefault();
       event.stopPropagation();
-      setBlockPx((px) =>
-        clampBlockHeight(px + (event.key === 'ArrowDown' ? BLOCK_STEP_PX : -BLOCK_STEP_PX)),
+      setBlockPx(
+        clampBlockHeight(blockPx + (event.key === 'ArrowDown' ? BLOCK_STEP_PX : -BLOCK_STEP_PX)),
       );
     },
   };
