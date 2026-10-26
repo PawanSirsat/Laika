@@ -57,7 +57,6 @@ const LOOKED = {
 interface Options {
   readonly writes?: StubCall[];
   readonly timer?: TimerRow | null;
-  readonly refuseStop?: boolean;
   readonly draftOff?: boolean;
 }
 
@@ -123,15 +122,6 @@ function stub(opts: Options = {}): ApiStub {
   };
   routes['/api/v1/me/time/timer/stop'] = (call: StubCall) => {
     record(call);
-    if (opts.refuseStop === true) {
-      return reply(409, {
-        error: {
-          code: 'conflict',
-          message: 'That would count confirmed time twice: 11:30–12:00 already holds 30 min.',
-          details: { reason: 'overlaps_confirmed' },
-        },
-      });
-    }
     const made = {
       id: 'from-timer',
       day: TODAY,
@@ -260,41 +250,20 @@ void describe('the header (LAI-502)', () => {
     }
   });
 
-  void test('a running timer on load, and T stops it; a 409 opens the panel with what the timer said', async () => {
+  void test('a running timer on load, and T stops it: its time saves, over confirmed time or not (LAI-528)', async () => {
     const writes: StubCall[] = [];
-    const h = await myDay({ writes, timer: RUNNING, refuseStop: true });
+    const h = await myDay({ writes, timer: RUNNING });
     try {
       const pill = h.page.locator('[data-timer="running"]');
       await pill.waitFor({ timeout: 10_000 });
       assert.equal(await pill.locator('[data-timer-clock]').innerText(), '25:00');
       await h.page.keyboard.press('t');
       await until(() => writes.some((w) => w.path === '/api/v1/me/time/timer/stop'));
-      const panel = h.page.locator('[data-inspector="range"]');
-      await panel.waitFor({ timeout: 10_000 });
-      assert.match(await panel.locator('[data-new-entry-range]').innerText(), /2:35.*3:00/);
-      assert.equal(await panel.locator('[data-entry-title]').inputValue(), 'Keyboard steps');
-      assert.equal(
-        await panel.locator('[data-kind-pick="thinking"]').getAttribute('aria-pressed'),
-        'true',
-      );
-      // The timer stands until the time is in by hand.
-      assert.equal(await h.page.locator('[data-timer]').count(), 1);
-      assert.match(await h.page.locator('[data-toast]').innerText(), /count confirmed time twice/);
-      await panel.locator('[data-range-add]').click();
-      await until(() =>
-        writes.some((w) => w.method === 'DELETE' && w.path === '/api/v1/me/time/timer'),
-      );
-      const added = writes.find((w) => w.path === '/api/v1/me/time-entries');
-      assert.ok(added !== undefined);
-      assert.deepEqual(added.body, {
-        day: TODAY,
-        tz: 'UTC',
-        minutes: 25,
-        started_at: at(TODAY, 14, 35),
-        ended_at: at(TODAY, 15, 0),
-        kind: 'thinking',
-        title: 'Keyboard steps',
-      });
+      await h.page.locator('[data-toast]').waitFor({ timeout: 10_000 });
+      assert.match(await h.page.locator('[data-toast]').innerText(), /saved from the timer/);
+      // Nothing opens to put the time in by hand: the stop wrote it.
+      assert.equal(await h.page.locator('[data-inspector="range"]').count(), 0);
+      assert.equal(writes.filter((w) => w.path === '/api/v1/me/time-entries').length, 0);
     } finally {
       await h.close();
     }

@@ -588,117 +588,16 @@ describe('Undo takes back the change it names, never a later one (review round 1
   });
 });
 
-describe('confirmed time is never counted twice (review round 1)', () => {
-  it('the probe: a draft dragged over confirmed time stays a draft there, and is not confirmed there', async () => {
-    const { onCard, untied } = await drafted();
-    await ok(`/api/v1/me/time-drafts/${onCard.id}/confirm`, { method: 'POST' }, 201);
-    // 11:00–11:40, 40 min; its start dragged to 9:30 lies over 9:30–10:00. The
-    // owner's My Day design lets a draft go anywhere (LAI-510)…
-    await ok(
-      `/api/v1/me/time-drafts/${untied.id}`,
-      { method: 'PATCH', body: JSON.stringify({ started_at: at(9, 30), minutes: 130 }) },
-      200,
-    );
-    // …and confirming it there would count 9:30–10:00 twice.
-    const res = await req(
-      `/api/v1/me/time-drafts/${untied.id}/confirm`,
-      { method: 'POST' },
-      cookie,
-    );
-    expect(res.status).toBe(409);
-    expect((await errorOf(res)).reason).toBe('overlaps_confirmed');
-    // Back to the confirmed block's edge, it confirms.
-    await ok(
-      `/api/v1/me/time-drafts/${untied.id}`,
-      { method: 'PATCH', body: JSON.stringify({ started_at: at(10), minutes: 100 }) },
-      200,
-    );
-    await ok(`/api/v1/me/time-drafts/${untied.id}/confirm`, { method: 'POST' }, 201);
-  });
-
-  it('a draft over a timed entry is not confirmed — alone or with its day', async () => {
-    const { untied } = await drafted();
-    await ok(
-      '/api/v1/me/time-entries',
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          day: today(),
-          tz: 'UTC',
-          minutes: 30,
-          started_at: at(11),
-          ended_at: at(11, 30),
-        }),
-      },
-      201,
-    );
-    const one = await req(
-      `/api/v1/me/time-drafts/${untied.id}/confirm`,
-      { method: 'POST' },
-      cookie,
-    );
-    expect(one.status).toBe(409);
-    expect((await errorOf(one)).reason).toBe('overlaps_confirmed');
-    const day = await req(`/api/v1/me/time/days/${today()}/confirm`, { method: 'POST' }, cookie);
-    expect(day.status).toBe(409);
-    expect((await errorOf(day)).reason).toBe('overlaps_confirmed');
-    expect((await myDay()).entries.map((e) => e.minutes)).toEqual([30]);
-  });
-
-  it('blocks of tasks worked at once — shares of one stretch — still confirm', async () => {
-    const shared = (task: string) => ({
-      start: at(9),
-      end: at(10),
-      minutes: 30,
-      task,
-      signals: { prompts: 1 },
-    });
-    await ok(
-      '/api/v1/me/time-drafts',
-      { method: 'PUT', body: upload([shared('LAI-1'), shared('LAI-2')]) },
-      200,
-      await mint(),
-    );
-    const [a, b] = (await myDay()).drafts;
-    await ok(`/api/v1/me/time-drafts/${a!.id}/confirm`, { method: 'POST' }, 201);
-    await ok(`/api/v1/me/time-drafts/${b!.id}/confirm`, { method: 'POST' }, 201);
-    expect((await myDay()).entries.map((e) => e.minutes)).toEqual([30, 30]);
-  });
-
-  it('a timed entry is neither added nor stretched over another', async () => {
-    const entry = (from: number, to: number, minutes: number) =>
-      req(
-        '/api/v1/me/time-entries',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            day: today(),
-            tz: 'UTC',
-            minutes,
-            started_at: from,
-            ended_at: to,
-          }),
-        },
-        cookie,
-      );
-    expect((await entry(at(9), at(10), 60)).status).toBe(201);
-    const over = await entry(at(9, 30), at(10, 30), 60);
-    expect(over.status).toBe(409);
-    expect((await errorOf(over)).reason).toBe('overlaps_confirmed');
-    const next = await entry(at(10), at(10, 30), 30);
-    expect(next.status).toBe(201);
-    const { id } = (await next.json()) as { id: string };
-    const stretched = await req(
-      `/api/v1/me/time-entries/${id}`,
-      { method: 'PATCH', body: JSON.stringify({ started_at: at(9, 30), minutes: 60 }) },
-      cookie,
-    );
-    expect(stretched.status).toBe(409);
-    expect((await errorOf(stretched)).reason).toBe('overlaps_confirmed');
-  });
-});
-
-describe('by the clock: a stretch holds no more minutes than it has (review round 2)', () => {
+/*
+ * LAI-528, D-113: time recorded at the same time is allowed. The owner, with
+ * a day of eight confirmed entries at once: "we are recording the task at the
+ * same time, simultaneously, then why is it not allowing the drag and drop".
+ * LAI-831 review round 2's clock rule — a stretch holds no more minutes than
+ * it has of wall clock, `409 overlaps_confirmed` — is retired; what still
+ * refuses is a block holding more than its own span and a day holding more
+ * than a day.
+ */
+describe('time recorded at the same time is allowed (LAI-528, D-113)', () => {
   /** A collector block: `minutes` of work somewhere in `from`–`to`. */
   const worked = (from: number, to: number, minutes: number, task: string | null) => ({
     start: from,
@@ -725,92 +624,98 @@ describe('by the clock: a stretch holds no more minutes than it has (review roun
   };
   const confirm = (id: string) =>
     req(`/api/v1/me/time-drafts/${id}/confirm`, { method: 'POST' }, cookie);
+  const minutesHeld = async () =>
+    (await myDay()).entries.map((e) => e.minutes).sort((a, b) => a - b);
 
-  // P4: LAI-1 worked 90 of 9:00–11:00, LAI-2 all of 9:30–10:00 — 120 in 120.
-  const p4 = [worked(at(9), at(11), 90, 'LAI-1'), worked(at(9, 30), at(10), 30, 'LAI-2')];
-
-  it('P4 confirms as a day', async () => {
-    await collect(p4);
-    await ok(`/api/v1/me/time/days/${today()}/confirm`, { method: 'POST' }, 200);
-    expect((await myDay()).entries.map((e) => e.minutes).sort()).toEqual([30, 90]);
-  });
-
-  it('P4 confirms long block first', async () => {
-    await collect(p4);
-    expect((await confirm((await draftOn(at(9))).id)).status).toBe(201);
-    expect((await confirm((await draftOn(at(9, 30))).id)).status).toBe(201);
-  });
-
-  it('P4 confirms short block first', async () => {
-    await collect(p4);
-    expect((await confirm((await draftOn(at(9, 30))).id)).status).toBe(201);
-    expect((await confirm((await draftOn(at(9))).id)).status).toBe(201);
-  });
-
-  it('the blocker-2 drag: the stretch 9:00–11:40 has 160 minutes and would hold 190', async () => {
+  it('a draft dragged over confirmed time confirms there, and both keep their minutes', async () => {
     const { onCard, untied } = await drafted();
     await ok(`/api/v1/me/time-drafts/${onCard.id}/confirm`, { method: 'POST' }, 201);
-    // The drag stands (LAI-510); the confirm is what the clock refuses.
+    // 11:00–11:40, 40 min; its start dragged to 9:30 lies over 9:30–10:00.
     await ok(
       `/api/v1/me/time-drafts/${untied.id}`,
       { method: 'PATCH', body: JSON.stringify({ started_at: at(9, 30), minutes: 130 }) },
       200,
     );
-    const res = await req(
-      `/api/v1/me/time-drafts/${untied.id}/confirm`,
-      { method: 'POST' },
+    // 9:00–11:40 is 160 minutes of clock and now holds 60 + 130: written.
+    expect((await confirm(untied.id)).status).toBe(201);
+    expect(await minutesHeld()).toEqual([60, 130]);
+  });
+
+  it('a draft over a timed entry confirms alone', async () => {
+    const { untied } = await drafted();
+    await typed(at(11), at(11, 30), 30);
+    expect((await confirm(untied.id)).status).toBe(201);
+    expect(await minutesHeld()).toEqual([30, 40]);
+  });
+
+  it('a draft over a timed entry confirms with its day, all of it', async () => {
+    await drafted();
+    await typed(at(11), at(11, 30), 30);
+    await ok(`/api/v1/me/time/days/${today()}/confirm`, { method: 'POST' }, 200);
+    expect(await minutesHeld()).toEqual([30, 40, 60]);
+    expect((await myDay()).drafts).toHaveLength(0);
+  });
+
+  it('blocks of tasks worked at once — shares of one stretch — still confirm', async () => {
+    await collect([worked(at(9), at(10), 30, 'LAI-1'), worked(at(9), at(10), 30, 'LAI-2')]);
+    const [a, b] = (await myDay()).drafts;
+    await ok(`/api/v1/me/time-drafts/${a!.id}/confirm`, { method: 'POST' }, 201);
+    await ok(`/api/v1/me/time-drafts/${b!.id}/confirm`, { method: 'POST' }, 201);
+    expect(await minutesHeld()).toEqual([30, 30]);
+  });
+
+  // P4: LAI-1 worked 90 of 9:00–11:00, LAI-2 all of 9:30–10:00 — in any order.
+  const p4 = [worked(at(9), at(11), 90, 'LAI-1'), worked(at(9, 30), at(10), 30, 'LAI-2')];
+
+  it('P4 confirms as a day', async () => {
+    await collect(p4);
+    await ok(`/api/v1/me/time/days/${today()}/confirm`, { method: 'POST' }, 200);
+    expect(await minutesHeld()).toEqual([30, 90]);
+  });
+
+  it('P4 confirms long block first, and short block first', async () => {
+    await collect(p4);
+    expect((await confirm((await draftOn(at(9))).id)).status).toBe(201);
+    expect((await confirm((await draftOn(at(9, 30))).id)).status).toBe(201);
+    expect(await minutesHeld()).toEqual([30, 90]);
+  });
+
+  it('a timed entry is added over another, and stretched over another', async () => {
+    await typed(at(9), at(10), 60);
+    // 9:30–10:30 over 9:00–10:00, an hour each: two tasks at the same time.
+    await typed(at(9, 30), at(10, 30), 60);
+    const next = (await (await typed(at(10, 30), at(11), 30)).json()) as { id: string };
+    const stretched = await req(
+      `/api/v1/me/time-entries/${next.id}`,
+      { method: 'PATCH', body: JSON.stringify({ started_at: at(9, 30), minutes: 60 }) },
       cookie,
     );
-    expect(res.status).toBe(409);
-    const { error } = (await res.json()) as { error: { details: Record<string, unknown> } };
-    expect(error.details).toMatchObject({
-      reason: 'overlaps_confirmed',
-      stretch_minutes: 160,
-      would_hold: 190,
-    });
+    expect(stretched.status).toBe(200);
+    expect(await minutesHeld()).toEqual([60, 60, 60]);
   });
 
-  // A 9:00–10:00, B 9:45–10:30, C 10:15–11:00: A meets B, B meets C, A never C.
-  it('a three-block stretch is one stretch: A’s slack is B’s room', async () => {
-    await typed(at(9), at(10), 30);
-    await typed(at(10, 15), at(11), 45);
-    await collect([worked(at(9, 45), at(10, 30), 45, null)]);
-    // 30 + 45 + 45 = 120 in 9:00–11:00; B and C alone would be 90 in 75.
-    expect((await confirm((await draftOn(at(9, 45))).id)).status).toBe(201);
-  });
-
-  it('a three-block stretch is one stretch: each pair fits, all three do not', async () => {
+  it('a stretch may hold more than its clock: 60 + 25 + 45 in 120 confirms', async () => {
     await typed(at(9), at(10), 60);
     await typed(at(10, 15), at(11), 45);
     await collect([worked(at(9, 45), at(10, 30), 25, null)]);
-    // A + B = 85 in 90, B + C = 70 in 75 — but 60 + 25 + 45 = 130 in 120.
-    const res = await confirm((await draftOn(at(9, 45))).id);
-    expect(res.status).toBe(409);
-    const { error } = (await res.json()) as { error: { details: Record<string, unknown> } };
-    expect(error.details).toMatchObject({
-      reason: 'overlaps_confirmed',
-      stretch_minutes: 120,
-      would_hold: 130,
-    });
+    expect((await confirm((await draftOn(at(9, 45))).id)).status).toBe(201);
+    expect(await minutesHeld()).toEqual([25, 45, 60]);
   });
 
-  it('Confirm day names the block it refuses, and confirms nothing (all or nothing)', async () => {
-    const { untied } = await drafted();
-    await typed(at(11), at(11, 30), 30);
-    const res = await req(`/api/v1/me/time/days/${today()}/confirm`, { method: 'POST' }, cookie);
-    expect(res.status).toBe(409);
-    const { error } = (await res.json()) as { error: { details: Record<string, unknown> } };
-    expect(error.details).toMatchObject({
-      reason: 'overlaps_confirmed',
-      draft_id: untied.id,
-      stretch_minutes: 40,
-      would_hold: 70,
-    });
-    expect((await myDay()).entries.map((e) => e.minutes)).toEqual([30]);
-    expect((await myDay()).drafts).toHaveLength(2);
+  it('an entry moved off a stretch it held open moves; what it leaves is not judged', async () => {
+    const long = (await (await typed(at(8), at(12), 10)).json()) as { id: string };
+    await typed(at(9), at(9, 30), 30);
+    await typed(at(9, 15), at(9, 45), 30);
+    await ok(
+      `/api/v1/me/time-entries/${long.id}`,
+      { method: 'PATCH', body: JSON.stringify({ started_at: at(11) }) },
+      200,
+    );
+    const moved = (await myDay()).entries.find((e) => e.id === long.id);
+    expect([moved?.started_at, moved?.ended_at]).toEqual([at(11), at(12)]);
   });
 
-  it('P6: more minutes than a block’s own span is 422 minutes_over_span, not 409', async () => {
+  it('still refused: more minutes than a block’s own span, 422 minutes_over_span', async () => {
     const { untied } = await drafted();
     const res = await req(
       `/api/v1/me/time-drafts/${untied.id}`,
@@ -837,29 +742,29 @@ describe('by the clock: a stretch holds no more minutes than it has (review roun
     expect((await errorOf(entry)).reason).toBe('minutes_over_span');
   });
 
-  // 8:00–12:00 holds 10 and gives its slack to two half hours that overlap:
-  // 70 in 240 fits; without it, 60 in 9:00–9:45 does not.
-  it('an entry moved off the stretch it held open is refused: what it leaves must fit too', async () => {
-    const long = (await (await typed(at(8), at(12), 10)).json()) as { id: string };
-    await typed(at(9), at(9, 30), 30);
-    await typed(at(9, 15), at(9, 45), 30);
-    const yesterday = new Date(Date.parse(today()) - 86_400_000).toISOString().slice(0, 10);
-    for (const patch of [{ started_at: at(11) }, { day: yesterday }]) {
-      const res = await req(
-        `/api/v1/me/time-entries/${long.id}`,
-        { method: 'PATCH', body: JSON.stringify(patch) },
+  it('never refused for overlapping: no answer anywhere names overlaps_confirmed', async () => {
+    // The probe the retired rule refused hardest: a confirmed hour, a draft
+    // dragged over it, both confirmed, then the entry stretched back over.
+    const { onCard, untied } = await drafted();
+    await confirm(onCard.id);
+    await ok(
+      `/api/v1/me/time-drafts/${untied.id}`,
+      { method: 'PATCH', body: JSON.stringify({ started_at: at(9), minutes: 160 }) },
+      200,
+    );
+    const answers = [await confirm(untied.id)];
+    const entry = (await myDay()).entries.find((e) => e.minutes === 60);
+    answers.push(
+      await req(
+        `/api/v1/me/time-entries/${entry!.id}`,
+        { method: 'PATCH', body: JSON.stringify({ ended_at: at(11, 40), minutes: 160 }) },
         cookie,
-      );
-      expect(res.status, JSON.stringify(patch)).toBe(409);
-      const { error } = (await res.json()) as { error: { details: Record<string, unknown> } };
-      expect(error.details).toMatchObject({
-        reason: 'overlaps_confirmed',
-        stretch_minutes: 45,
-        would_hold: 60,
-      });
+      ),
+    );
+    for (const res of answers) {
+      expect(res.status).toBeLessThan(300);
+      expect(await res.text()).not.toContain('overlaps_confirmed');
     }
-    const still = (await myDay()).entries.find((e) => e.id === long.id);
-    expect([still?.started_at, still?.ended_at]).toEqual([at(8), at(12)]);
   });
 });
 

@@ -655,10 +655,6 @@
   cursor: grab;
 }
 
-.editor-bar-sel-bad {
-  border-color: var(--overdue);
-}
-
 .editor-bar-ticks {
   position: relative;
   height: 0.875rem;

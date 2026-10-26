@@ -14,7 +14,7 @@ import { Spinner } from '../../../components/Spinner.tsx';
 import type { CardChip, ChipWhy } from './card-chips.ts';
 import { CardLink } from './CardLink.tsx';
 import { EditorFrame, type EditorNav } from './EditorFrame.tsx';
-import { EditorWhen, type BusySpan, type Conflict } from './EditorWhen.tsx';
+import { EditorWhen, type BusySpan } from './EditorWhen.tsx';
 import { KINDS, kindLabel } from './entry-kinds.ts';
 import { folderOf, needsACard } from './folder.ts';
 import { agentDuration, clock, duration, span } from './format.ts';
@@ -24,7 +24,6 @@ import { TaskChips } from './TaskChips.tsx';
 import { TaskSearch } from './TaskSearch.tsx';
 import type { Selection } from './Timeline.tsx';
 import {
-  freeAround,
   instantOf,
   limitsIn,
   splitPoint,
@@ -284,10 +283,6 @@ export function Inspector({
       ? undefined
       : (view.entries.find((e) => e.id === b.id)?.task?.key ??
         view.drafts.find((d) => d.id === b.id)?.task?.key);
-  const conflictsAround = (id: string | undefined): Conflict[] =>
-    line.blocks
-      .filter((b) => b.kind === 'confirmed' && b.id !== id)
-      .map((b) => ({ start: b.start, end: b.end, label: labelOf(b) }));
   const busySpans = (): BusySpan[] =>
     line.blocks.map((b) => ({
       start: b.start,
@@ -352,7 +347,7 @@ export function Inspector({
       const ready = draft.task !== null || draft.project !== null || draft.general;
       const held: Held = { kind: 'draft', draft };
       const limits =
-        block === undefined ? { lo: line.from * 60, hi: line.to * 60 } : limitsIn(line, block);
+        block === undefined ? { lo: line.from * 60, hi: line.to * 60 } : limitsIn(line);
       const spanOf = block === undefined ? undefined : { start: block.start, end: block.end };
       const words =
         draftWords?.id === draft.id
@@ -461,7 +456,6 @@ export function Inspector({
               limits={limits}
               // A draft's times may run over confirmed time (the design's
               // `setTimes`, LAI-510): confirming it there is what is refused.
-              conflicts={undefined}
               busy={busy}
               readOnly={readOnly}
               onSpan={(next) => {
@@ -670,7 +664,7 @@ export function Inspector({
         said.title.trim() !== (entry.title ?? '') ||
         said.description.trim() !== (entry.description ?? '');
       const limits =
-        block === undefined ? { lo: line.from * 60, hi: line.to * 60 } : limitsIn(line, block);
+        block === undefined ? { lo: line.from * 60, hi: line.to * 60 } : limitsIn(line);
       const spanOf = block === undefined ? undefined : { start: block.start, end: block.end };
       const name = entry.title ?? entry.task?.title ?? entry.project?.name ?? 'General';
       const saveWords = (): void => {
@@ -735,7 +729,6 @@ export function Inspector({
               midnight={line.midnight}
               tz={view.tz}
               limits={limits}
-              conflicts={conflictsAround(entry.id)}
               busy={busy}
               readOnly={!changeable}
               onSpan={(next) => {
@@ -924,19 +917,10 @@ export function Inspector({
 
   if (selection?.kind === 'range' || selection?.kind === 'gap') {
     const range: Span = { start: selection.start, end: selection.end };
-    const free = freeAround(
-      range.start,
-      line.blocks.filter((b) => b.kind === 'confirmed'),
-      line.from * 60,
-      line.to * 60,
-    );
     const gaps = line.gaps;
     const gapIndex =
       selection.kind === 'gap' ? gaps.findIndex((g) => g.start === selection.start) : -1;
-    const from: NewEntryFrom =
-      selection.kind === 'gap'
-        ? 'gap'
-        : (selection.from ?? (selection.fromTimer === true ? 'timer' : 'drag'));
+    const from: NewEntryFrom = selection.kind === 'gap' ? 'gap' : (selection.from ?? 'drag');
     return (
       <NewEntryPanel
         key={`${selection.kind}-${String(selection.start)}`}
@@ -961,9 +945,7 @@ export function Inspector({
             : undefined
         }
         untimed={selection.kind === 'range' ? selection.untimed : undefined}
-        prefill={selection.kind === 'range' ? selection.prefill : undefined}
-        limits={{ lo: free?.lo ?? line.from * 60, hi: free?.hi ?? line.to * 60 }}
-        conflicts={conflictsAround(undefined)}
+        limits={limitsIn(line)}
         busySpans={busySpans()}
         now={nowMinute}
         chips={chipsFor(null)}

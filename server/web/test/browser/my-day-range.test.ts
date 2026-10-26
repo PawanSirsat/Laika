@@ -26,7 +26,7 @@ import { SETTINGS, weekData, weekStub } from './my-day-week.ts';
  * before e1 (11:20–11:30), which is too short to be a gap.
  */
 
-const MESSAGE = 'That would count confirmed time twice: 11:30–12:00 already holds 30 min.';
+const MESSAGE = 'A day holds no more than 1440 minutes of a person’s time.';
 const atMs = (h: number, m: number): number =>
   Date.parse(`${TODAY}T00:00:00Z`) + (h * 60 + m) * 60_000;
 
@@ -62,8 +62,8 @@ function stub(opts: { writes?: StubCall[]; refuse?: boolean; typed?: boolean } =
   routes['/api/v1/me/time-entries'] = (call: StubCall) => {
     opts.writes?.push(call);
     if (opts.refuse === true) {
-      return reply(409, {
-        error: { code: 'conflict', message: MESSAGE, details: { reason: 'overlaps_confirmed' } },
+      return reply(422, {
+        error: { code: 'unprocessable', message: MESSAGE, details: { reason: 'day_full' } },
       });
     }
     const body = call.body as Record<string, unknown>;
@@ -159,16 +159,18 @@ void describe('a range dragged on the Timeline (LAI-897)', () => {
     }
   });
 
-  void test('a drag into a confirmed block stops at its edge; one that starts on it makes nothing', async () => {
+  void test('a drag from a gap runs over a confirmed block; one that starts on a block makes no range', async () => {
     const h = await myDay();
     try {
       // Begun inside the 11:20–11:30 gap: a drag on a gap draws a range, as the
-      // design's does (LAI-510); a click on it still picks it (my-day-v2).
+      // design's does (LAI-510); a click on it still picks it (my-day-v2). It
+      // runs on over the confirmed block at 11:30, as the design's range does
+      // (LAI-528, D-113).
       await drag(h, 11 * 60 + 23, 11 * 60 + 50);
       const picked = h.page.locator('.dayline-range-picked');
       await picked.waitFor({ timeout: 10_000 });
       assert.equal(await picked.getAttribute('data-range-start'), '685');
-      assert.equal(await picked.getAttribute('data-range-end'), '690');
+      assert.equal(await picked.getAttribute('data-range-end'), '710');
       await h.page.keyboard.press('Escape');
       await until(async () => (await picked.count()) === 0);
       await drag(h, 11 * 60 + 45, 12 * 60 + 50);
@@ -251,7 +253,7 @@ void describe('a range dragged on the Timeline (LAI-897)', () => {
     }
   });
 
-  void test('a 409 from the server is shown as the server said it', async () => {
+  void test('a refusal from the server is shown as the server said it', async () => {
     const calls: StubCall[] = [];
     const h = await myDay({ writes: calls, refuse: true });
     try {

@@ -16,7 +16,6 @@ import {
   gapsOf,
   idleEnds,
   limitsIn,
-  limitsOf,
   moveBlock,
   setLength,
   signalsDuring,
@@ -288,36 +287,12 @@ void describe('moving an edge, five minutes at a time (C)', () => {
     assert.equal(dragEdge(block, 'end', min(12, 31)), undefined);
   });
 
-  void test('an edge stops at a neighbouring confirmed block (review round 1)', () => {
-    const confirmed = [
-      { start: min(9), end: min(11, 10) },
-      { start: min(12, 40), end: min(13) },
-    ];
-    const limits = limitsOf(block, confirmed);
-    assert.deepEqual(limits, { lo: min(11, 10), hi: min(12, 40) });
-    assert.deepEqual(dragEdge(block, 'start', min(9, 30), limits), {
-      start: min(11, 10),
-      end: min(12, 30),
-      minutes: 80,
-    });
-    assert.deepEqual(dragEdge(block, 'end', min(13, 30), limits), {
-      start: min(12),
-      end: min(12, 40),
-      minutes: 40,
-    });
-    // One that already overlaps the block bounds nothing; the server refuses that confirm.
-    assert.deepEqual(limitsOf(block, [{ start: min(12, 10), end: min(12, 20) }]), {
-      lo: 0,
-      hi: 1440,
-    });
-  });
-
   void test('−/+ move the end and the length together', () => {
     assert.deepEqual(stepEnd(block, 5), { start: min(12), end: min(12, 35), minutes: 35 });
     assert.deepEqual(stepEnd(block, -5), { start: min(12), end: min(12, 25), minutes: 25 });
     assert.equal(stepEnd({ start: min(12), end: min(12, 5), minutes: 5 }, -5), undefined);
     assert.equal(stepEnd({ start: min(23, 50), end: 1440, minutes: 10 }, 5), undefined);
-    // Never past a confirmed block's edge.
+    // Never past the limit it is given.
     assert.equal(stepEnd(block, 5, min(12, 30)), undefined);
   });
 
@@ -768,7 +743,7 @@ void describe('workedIn — the organisation’s window set against the day (LAI
   });
 });
 
-void describe('rangeFromDrag and freeAround — a range dragged on the empty track (LAI-897)', () => {
+void describe('rangeFromDrag and freeAround — a range dragged on the empty track (LAI-897), Add time’s free half hour', () => {
   const span = (start: number, end: number) => ({ start, end });
   const confirmed = [span(540, 600), span(780, 840)];
 
@@ -780,18 +755,21 @@ void describe('rangeFromDrag and freeAround — a range dragged on the empty tra
   });
 
   void test('both ends land on five minutes, in order, whichever way the drag went', () => {
-    assert.deepEqual(rangeFromDrag(843, 898, []), { start: 845, end: 900 });
-    assert.deepEqual(rangeFromDrag(898, 843, []), { start: 845, end: 900 });
+    assert.deepEqual(rangeFromDrag(843, 898), { start: 845, end: 900 });
+    assert.deepEqual(rangeFromDrag(898, 843), { start: 845, end: 900 });
   });
 
-  void test('a drag into a confirmed block stops at its edge', () => {
-    assert.deepEqual(rangeFromDrag(650, 900, confirmed), { start: 650, end: 780 });
-    assert.deepEqual(rangeFromDrag(650, 300, confirmed), { start: 600, end: 650 });
+  void test('a drag runs over confirmed time, as the design’s range does (LAI-528, D-113)', () => {
+    // 10:50 to 3:00 PM runs over 1:00–2:00 PM, confirmed; back to 5:00 AM over 9:00–10:00.
+    assert.equal(confirmed.length, 2);
+    assert.deepEqual(rangeFromDrag(650, 900), { start: 650, end: 900 });
+    assert.deepEqual(rangeFromDrag(650, 300), { start: 300, end: 650 });
   });
 
-  void test('a drag that starts on a confirmed block, or ends up under one step, is nothing', () => {
-    assert.equal(rangeFromDrag(560, 700, confirmed), undefined);
-    assert.equal(rangeFromDrag(650, 652, confirmed), undefined);
+  void test('it stays inside the window it is given, and under one step it is nothing', () => {
+    assert.deepEqual(rangeFromDrag(500, 300, 420, 1440), { start: 420, end: 500 });
+    assert.deepEqual(rangeFromDrag(1400, 1500, 0, 1440), { start: 1400, end: 1440 });
+    assert.equal(rangeFromDrag(650, 652), undefined);
   });
 });
 
@@ -830,66 +808,44 @@ void describe('a block moved whole (the design’s move)', () => {
   void test('past midnight it goes there, unpinned, so the drop can refuse it', () => {
     const late = moveBlock(d3, min(23, 30));
     assert.deepEqual(late, { start: min(23, 30), end: min(25, 20), minutes: 100 });
-    assert.deepEqual(checkDrop(late ?? d3, [], 'd3'), { ok: false, why: 'midnight' });
+    assert.deepEqual(checkDrop(late ?? d3), { ok: false, why: 'midnight' });
   });
 });
 
-void describe('whether a block may land where it is (the design’s check)', () => {
+void describe('whether a block may land where it is (LAI-528: anywhere on its day)', () => {
   const e1 = lane('e1', 'confirmed', min(11, 30), min(12));
   const e2 = lane('e2', 'confirmed', min(12), min(12, 30));
   const d2 = lane('d2', 'drafted', min(10, 40), min(11, 20));
   const blocks = [d2, e1, e2];
 
   void test('on a free stretch of the day, and over drafts, it may', () => {
-    assert.deepEqual(checkDrop({ start: min(9), end: min(10) }, blocks, undefined), { ok: true });
-    assert.deepEqual(checkDrop({ start: min(10, 30), end: min(11) }, blocks, undefined), {
-      ok: true,
-    });
+    assert.deepEqual(checkDrop({ start: min(9), end: min(10) }), { ok: true });
+    assert.deepEqual(checkDrop({ start: min(10, 30), end: min(11) }), { ok: true });
   });
 
-  void test('a confirmed block or a tray item over confirmed time may not, and the refusal names that block', () => {
-    const check = checkDrop({ start: min(11, 45), end: min(12, 15) }, blocks, 'e1');
-    assert.equal(check.ok, false);
-    assert.equal(!check.ok && check.why === 'overlap' ? check.over.id : '', 'e2');
-    const tray = checkDrop({ start: min(12), end: min(12, 20) }, blocks, undefined);
-    assert.equal(!tray.ok && tray.why === 'overlap' ? tray.over.id : '', 'e2');
+  void test('over confirmed time it may — a confirmed block, a draft or a tray item (D-113)', () => {
+    // e1 moved over e2, a draft over e1, a tray item over e2: time recorded at once.
+    assert.deepEqual(checkDrop({ start: min(11, 45), end: min(12, 15) }), { ok: true });
+    assert.deepEqual(checkDrop({ start: min(11, 30), end: min(12, 10) }), { ok: true });
+    assert.deepEqual(checkDrop({ start: min(12), end: min(12, 20) }), { ok: true });
   });
 
-  void test('a draft may lie over confirmed time — the design’s check, LAI-510; confirming it there is refused', () => {
-    assert.deepEqual(checkDrop({ start: min(11, 30), end: min(12, 10) }, blocks, 'd2'), {
-      ok: true,
-    });
-    // Midnight still binds a draft.
-    assert.deepEqual(checkDrop({ start: min(23, 50), end: min(24, 30) }, blocks, 'd2'), {
-      ok: false,
-      why: 'midnight',
-    });
-  });
-
-  void test('a draft’s edges run the whole day; a confirmed block’s stop at its neighbours', () => {
-    const line = { blocks, length: 1440 };
-    assert.deepEqual(limitsIn(line, d2), { lo: 0, hi: 1440 });
-    assert.deepEqual(limitsIn(line, e1), { lo: 0, hi: min(12) });
-  });
-
-  void test('its own place is never in its way, and touching end to start is not overlapping', () => {
-    assert.deepEqual(checkDrop({ start: min(11, 35), end: min(12) }, blocks, 'e1'), { ok: true });
-    assert.deepEqual(checkDrop({ start: min(12, 30), end: min(13) }, blocks, undefined), {
-      ok: true,
-    });
+  void test('a block’s edges run its whole day, whatever lies around it', () => {
+    // e1 sits between d2 and e2, confirmed on both sides: nothing bounds it but its day.
+    assert.equal(blocks.length, 3);
+    assert.deepEqual(limitsIn({ length: 1440 }), { lo: 0, hi: 1440 });
+    // A day with an hour less (a clock change) ends sooner.
+    assert.deepEqual(limitsIn({ length: 1380 }), { lo: 0, hi: 1380 });
   });
 
   void test('across either midnight it may not — before the day, or past its length', () => {
-    assert.deepEqual(checkDrop({ start: -5, end: 20 }, [], undefined), {
-      ok: false,
-      why: 'midnight',
-    });
-    assert.deepEqual(checkDrop({ start: min(23, 50), end: min(24, 10) }, [], undefined), {
+    assert.deepEqual(checkDrop({ start: -5, end: 20 }), { ok: false, why: 'midnight' });
+    assert.deepEqual(checkDrop({ start: min(23, 50), end: min(24, 10) }), {
       ok: false,
       why: 'midnight',
     });
     // A day with an hour less (a clock change) ends sooner.
-    assert.deepEqual(checkDrop({ start: min(22, 50), end: min(23, 10) }, [], undefined, 1380), {
+    assert.deepEqual(checkDrop({ start: min(22, 50), end: min(23, 10) }, 1380), {
       ok: false,
       why: 'midnight',
     });
@@ -911,7 +867,7 @@ void describe('a tray item dropped on the track', () => {
   void test('near midnight it is not pinned to the day: the check refuses it', () => {
     const span = trayDropSpan(5, 40);
     assert.deepEqual(span, { start: -15, end: 25 });
-    assert.deepEqual(checkDrop(span, [], undefined), { ok: false, why: 'midnight' });
+    assert.deepEqual(checkDrop(span), { ok: false, why: 'midnight' });
   });
 });
 

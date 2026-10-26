@@ -303,27 +303,6 @@ export async function runBulk(
 /* ------------------------------------------------------ the header's button */
 
 /**
- * *Confirm day* refused because a block's stretch would hold more minutes
- * than its clock (`409 overlaps_confirmed`, LAI-831 review round 2): which
- * block, as the page shows it, and the two figures — or `undefined`.
- */
-function clashOf(
-  cause: unknown,
-  all: readonly TimeDraft[],
-): { readonly draft: TimeDraft; readonly stretch: number; readonly would: number } | undefined {
-  if (!(cause instanceof ApiError)) return undefined;
-  const d = cause.details as Record<string, unknown> | null;
-  if (d === null || typeof d !== 'object' || d.reason !== 'overlaps_confirmed') return undefined;
-  const draft = all.find((x) => x.id === d.draft_id);
-  const stretch = d.stretch_minutes;
-  const would = d.would_hold;
-  if (draft === undefined || typeof stretch !== 'number' || typeof would !== 'number') {
-    return undefined;
-  }
-  return { draft, stretch, would };
-}
-
-/**
  * After `POST /me/time/days/:day/confirm`: what came back, against what the
  * page showed. The server confirmed what it held when the request arrived,
  * so any difference — blocks that arrived since, blocks that changed, an
@@ -390,13 +369,10 @@ export async function runConfirmDay(
       return { keep: [], ...report, text: report.text + shared };
     } catch (cause) {
       onProgress(all.length, all.length);
-      const clash = clashOf(cause, all);
       const text =
         whyRefused(cause) === 'full'
           ? 'Nothing confirmed: the day would hold more than 24 hours of confirmed time. Shorten or dismiss a block, then confirm again.'
-          : clash !== undefined
-            ? `Nothing confirmed: ${nameBlocks([clash.draft])} would count confirmed time twice — its stretch has ${formatDuration(clash.stretch)} of clock and would hold ${formatDuration(clash.would)}. Shorten it or mark it not work, then confirm again.`
-            : `Nothing confirmed: ${failureMessage(cause)}`;
+          : `Nothing confirmed: ${failureMessage(cause)}`;
       return { keep: [], text, ok: false };
     }
   }

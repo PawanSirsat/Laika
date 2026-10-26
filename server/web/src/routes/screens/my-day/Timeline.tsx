@@ -10,7 +10,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from 'react';
-import type { EntryKind, MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
+import type { MyDay, TimeDraft, TimeEntry } from '../../../api/time.ts';
 import { BreakGlyph } from '../../../components/BreakGlyph.tsx';
 import { breakKind } from '../break-kinds.ts';
 import { kindGlyph } from './entry-kinds.ts';
@@ -66,23 +66,13 @@ export type Selection =
   /**
    * A stretch the person dragged on the empty track (LAI-897), minutes after
    * midnight — or the header's *Add time* (LAI-502): `untimed` when the day
-   * has no free stretch, `prefill` and `fromTimer` after a timer's stop was
-   * refused, so the panel carries what the timer said and the timer is
-   * discarded once the entry is saved.
+   * has no free stretch.
    */
   | {
       readonly kind: 'range';
       readonly start: number;
       readonly end: number;
       readonly untimed?: boolean | undefined;
-      readonly prefill?:
-        | {
-            readonly task?: string | undefined;
-            readonly kind?: EntryKind | undefined;
-            readonly title?: string | undefined;
-          }
-        | undefined;
-      readonly fromTimer?: boolean | undefined;
       /** Where it came from, for the editor's sub line (LAI-515): the header's button, a drag, the timer. */
       readonly from?: 'button' | 'drag' | 'timer' | 'gap' | undefined;
     }
@@ -345,9 +335,9 @@ export function Timeline({
     started: boolean;
   } | null>(null);
   const suppressClick = useRef(false);
-  /** A drop the day refused: its words stay a moment where it would have gone. */
+  /** A drop the day refused (only midnight, since LAI-528): its words stay a moment where it would have gone. */
   const [refused, setRefused] = useState<
-    { readonly label: string; readonly x: number; readonly overId: string | undefined } | undefined
+    { readonly label: string; readonly x: number } | undefined
   >(undefined);
   const bounceTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   /** A tray item over the track (LAI-512). */
@@ -505,7 +495,6 @@ export function Timeline({
   // no-signal overlay is not, and a day with nothing on it should take a
   // drag. Snapped to five minutes and clipped to the free stretch between
   // confirmed blocks; the server's 409 remains the backstop.
-  const confirmedSpans = line.blocks.filter((b) => b.kind === 'confirmed');
   const rangeHandlers = {
     onPointerDown: (event: PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;
@@ -532,9 +521,7 @@ export function Timeline({
         drag.waiting = false;
         event.currentTarget.setPointerCapture(event.pointerId);
       }
-      setRangePreview(
-        rangeFromDrag(drag.anchor, minuteAt(event.clientX), confirmedSpans, from * 60, to * 60),
-      );
+      setRangePreview(rangeFromDrag(drag.anchor, minuteAt(event.clientX), from * 60, to * 60));
     },
     onPointerUp: (event: PointerEvent<HTMLDivElement>) => {
       const drag = rangeDrag.current;
@@ -574,7 +561,7 @@ export function Timeline({
         block,
         edge,
         (edge === 'start' ? block.start : block.end) + by,
-        limitsIn(line, block),
+        limitsIn(line),
       );
       if (edit !== undefined) onEdge(block, edit);
     },
@@ -587,17 +574,12 @@ export function Timeline({
     end: block.end,
     minutes: block.minutes,
   });
-  const reasonOf = (check: DropCheck): string =>
-    check.ok
-      ? ''
-      : check.why === 'midnight'
-        ? 'Can’t cross midnight'
-        : `Overlaps ${labelOf(check.over, drafts, entries).top}, ${rangeOf(check.over)}`;
-  const dragCheck =
-    drag === undefined ? undefined : checkDrop(drag.edit, line.blocks, drag.id, line.length);
-  const bounce = (label: string, mid: number, overId: string | undefined): void => {
+  // Only a day's edge refuses a drop: over confirmed time it lands (LAI-528, D-113).
+  const reasonOf = (check: DropCheck): string => (check.ok ? '' : 'Can’t cross midnight');
+  const dragCheck = drag === undefined ? undefined : checkDrop(drag.edit, line.length);
+  const bounce = (label: string, mid: number): void => {
     if (bounceTimer.current !== undefined) clearTimeout(bounceTimer.current);
-    setRefused({ label, x: mid, overId });
+    setRefused({ label, x: mid });
     bounceTimer.current = setTimeout(() => {
       setRefused(undefined);
     }, BOUNCE_MS);
@@ -609,14 +591,10 @@ export function Timeline({
     setDrag(undefined);
     const block = line.blocks.find((b) => b.id === d.id);
     if (block === undefined) return;
-    const check = checkDrop(d.edit, line.blocks, d.id, line.length);
+    const check = checkDrop(d.edit, line.length);
     if (!check.ok) {
       const reason = reasonOf(check);
-      bounce(
-        `${reason} · moved back`,
-        x((d.edit.start + d.edit.end) / 2),
-        check.why === 'overlap' ? check.over.id : undefined,
-      );
+      bounce(`${reason} · moved back`, x((d.edit.start + d.edit.end) / 2));
       setLive(`${reason}. Moved back.`);
       return;
     }
@@ -630,10 +608,10 @@ export function Timeline({
    * pixels it is a click, which the button's own handler takes. Snapped to
    * five minutes as it goes.
    *
-   * **A move bounces; an edge stops.** A block moved over confirmed time is
-   * refused and goes back (the design's `check`); an edge dragged towards it
-   * stops at it, as LAI-831 made it — that time would count twice. An edge
-   * follows the pointer itself, so it lands where it is let go.
+   * **A move or an edge lands anywhere on its day**, over confirmed time too:
+   * time recorded at the same time is allowed (LAI-528, D-113). Only past
+   * midnight does a move bounce back. An edge follows the pointer itself, so
+   * it lands where it is let go.
    */
   const pointer = (block: LaneBlock, edge?: 'start' | 'end') => ({
     onPointerDown: (event: PointerEvent<HTMLButtonElement>) => {
@@ -667,8 +645,7 @@ export function Timeline({
       const edit =
         d.kind === 'move'
           ? (moveBlock(block, scale.at(x(block.start) + dx)) ?? unchanged(block))
-          : (dragEdge(block, d.kind, minuteAt(event.clientX), limitsIn(line, block)) ??
-            unchanged(block));
+          : (dragEdge(block, d.kind, minuteAt(event.clientX), limitsIn(line)) ?? unchanged(block));
       setDrag({ id: block.id, kind: d.kind, kbd: false, o0: block.start, o1: block.end, edit });
       setHover(undefined);
     },
@@ -703,7 +680,7 @@ export function Timeline({
         const start = from.start + by;
         const edit: Edit = { start, end: start + from.end - from.start, minutes: block.minutes };
         setDrag({ id: block.id, kind: 'move', kbd: true, o0: block.start, o1: block.end, edit });
-        const check = checkDrop(edit, line.blocks, block.id, line.length);
+        const check = checkDrop(edit, line.length);
         setLive(
           `${rangeOf(edit)}. ${check.ok ? '' : `${reasonOf(check)}. `}Enter to save, Escape to cancel.`,
         );
@@ -741,7 +718,7 @@ export function Timeline({
               id: item.id,
               label: item.label,
               span,
-              check: checkDrop(span, line.blocks, undefined, line.length),
+              check: checkDrop(span, line.length),
             },
       );
       setHover(undefined);
@@ -762,11 +739,7 @@ export function Timeline({
       setExt(undefined);
       if (!cur.check.ok) {
         const reason = reasonOf(cur.check);
-        bounce(
-          `${reason} · moved back`,
-          x((cur.span.start + cur.span.end) / 2),
-          cur.check.why === 'overlap' ? cur.check.over.id : undefined,
-        );
+        bounce(`${reason} · moved back`, x((cur.span.start + cur.span.end) / 2));
         setLive(`${reason}. Moved back.`);
         return;
       }
@@ -1797,15 +1770,6 @@ export function Timeline({
                   const same = selectedCard !== undefined && card === selectedCard;
                   const dim = selectedCard !== undefined && !same;
                   const bad = moving && dragCheck !== undefined && !dragCheck.ok;
-                  const conflict =
-                    (dragCheck !== undefined &&
-                      !dragCheck.ok &&
-                      dragCheck.why === 'overlap' &&
-                      dragCheck.over.id === block.id) ||
-                    (ext?.check.ok === false &&
-                      ext.check.why === 'overlap' &&
-                      ext.check.over.id === block.id) ||
-                    refused?.overId === block.id;
                   const entryKind =
                     block.kind === 'confirmed' ? (entries.get(block.id)?.kind ?? null) : null;
                   const icon =
@@ -1831,7 +1795,6 @@ export function Timeline({
                         draggable ? 'dayline-draggable' : '',
                         drag?.id === block.id ? 'dayline-dragging' : '',
                         bad ? 'dayline-drag-bad' : '',
-                        conflict ? 'dayline-conflict' : '',
                       ]
                         .filter((c) => c !== '')
                         .join(' ')}

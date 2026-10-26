@@ -35,14 +35,15 @@ export type WhenRefusal = 'short' | 'midnight' | 'before' | 'after';
 export const WHEN_WORDS: Readonly<Record<WhenRefusal, string>> = {
   short: `An entry needs at least ${String(SHORTEST)} min.`,
   midnight: 'An entry can’t cross midnight. Split it at 12:00 AM.',
-  before: 'That runs into the confirmed time before it.',
-  after: 'That runs into the confirmed time after it.',
+  before: 'That starts before the Timeline does.',
+  after: 'That ends after the Timeline does.',
 };
 
 /**
  * A new start keeps the end; a new end keeps the start; a new length keeps
  * the start. Refused when the span would be under five minutes, cross
- * midnight, or run past `lo` or `hi` — the confirmed time either side.
+ * midnight, or run past `lo` or `hi` — its day, or the Timeline's window for
+ * a block with no set time. Confirmed time is no bound (LAI-528, D-113).
  */
 export function whenFrom(
   current: WhenSpan,

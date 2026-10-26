@@ -158,13 +158,10 @@ describe("the day's note over HTTP", () => {
     expect(await reasonOf(off)).toBe('time_off');
   });
 
-  it('a day the clock refuses keeps no note', async () => {
-    // A confirmed entry 10:00–11:00, then a draft over it: the day's confirm is refused.
-    await ok(
-      '/me/time-entries',
-      json('POST', { day: today(), tz: 'UTC', minutes: 60, started_at: at(10), ended_at: at(11) }),
-      201,
-    );
+  it('a refused day keeps no note', async () => {
+    // A day that would hold more than a day (LAI-528 retired the clock rule
+    // that used to refuse here): 1400 minutes with no set time, then an hour.
+    await ok('/me/time-entries', json('POST', { day: today(), tz: 'UTC', minutes: 1400 }), 201);
     const minted = await ok('/tokens', json('POST', { name: 'Collector', scope: 'full' }), 201);
     const token = String(((await minted.json()) as { secret: string }).secret);
     await ok(
@@ -195,8 +192,8 @@ describe("the day's note over HTTP", () => {
       `/me/time/days/${today()}/confirm`,
       json('POST', { note: 'Never kept' }),
     );
-    expect(refused.status).toBe(409);
-    expect(await reasonOf(refused)).toBe('overlaps_confirmed');
+    expect(refused.status).toBe(422);
+    expect(await reasonOf(refused)).toBe('day_full');
     expect(await noteInDay()).toBeNull();
   });
 });

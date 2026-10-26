@@ -18,11 +18,6 @@ import {
   WHEEL_PERIODS,
 } from './wheel-derive.ts';
 
-/** A confirmed block the span may not cross, named for the refusal. */
-export interface Conflict extends WhenSpan {
-  readonly label: string;
-}
-
 /** Time already logged, drawn grey on the bar. */
 export interface BusySpan extends WhenSpan {
   readonly confirmed: boolean;
@@ -36,10 +31,8 @@ export interface EditorWhenProps {
   /** The instant of the day's midnight and its zone, to print the fields. */
   readonly midnight: number | undefined;
   readonly tz: string;
-  /** How far the span may reach: the confirmed time either side. */
+  /** How far the span may reach: its day, or the Timeline's window for a block with no set time. */
   readonly limits: { readonly lo: number; readonly hi: number };
-  /** The confirmed blocks, so a refusal names the one in the way (LAI-515). */
-  readonly conflicts?: readonly Conflict[] | undefined;
   readonly busy: boolean;
   readonly readOnly?: boolean | undefined;
   /** A span, typed or chosen. */
@@ -77,14 +70,6 @@ const GRID = 5;
 
 const pct = (m: number): number => Math.max(0, Math.min(100, ((m - BAR_START) / BAR_SPAN) * 100));
 
-/** The confirmed block a span runs into, if any. */
-function overlapping(
-  span: WhenSpan,
-  conflicts: readonly Conflict[] | undefined,
-): Conflict | undefined {
-  return conflicts?.find((c) => c.start < span.end && c.end > span.start);
-}
-
 /**
  * WHEN (the owner's design, D-110 item 9, LAI-504, LAI-515): Start, End and
  * Length, typed; each saves when the field is left or Enter pressed, and
@@ -98,7 +83,6 @@ export function EditorWhen({
   midnight,
   tz,
   limits,
-  conflicts,
   busy,
   readOnly = false,
   onSpan,
@@ -127,36 +111,23 @@ export function EditorWhen({
   // On a phone the wheel is the way in, as an iPhone's is: no keyboard over it.
   const phone = usePhone();
 
-  // A compose's range on the bar may sit over confirmed time until it is moved: said, and Add waits.
-  const standing = span === undefined ? undefined : overlapping(span, conflicts);
-  const standingWords =
-    standing === undefined
-      ? undefined
-      : `Overlaps ${standing.label}, ${range(standing)}. Confirmed time can’t overlap.`;
-  const said = refused?.text ?? standingWords ?? error;
+  // Over confirmed time is time recorded at the same time (LAI-528, D-113): nothing waits on it.
+  const said = refused?.text ?? error;
   useEffect(() => {
-    onRefused?.(refused !== undefined || standing !== undefined);
-  }, [refused, standing, onRefused]);
+    onRefused?.(refused !== undefined);
+  }, [refused, onRefused]);
 
   const refuse = (
     next:
       { readonly span: WhenSpan } | { readonly refused: 'short' | 'midnight' | 'before' | 'after' },
-    attempt: WhenSpan,
     field?: 'start' | 'end' | 'length',
   ): WhenSpan | undefined => {
     if (!('refused' in next)) {
       setRefused(undefined);
       return next.span;
     }
-    const into =
-      next.refused === 'before' || next.refused === 'after'
-        ? overlapping(attempt, conflicts)
-        : undefined;
     setRefused({
-      text:
-        into === undefined
-          ? WHEN_WORDS[next.refused]
-          : `Overlaps ${into.label}, ${range(into)}. Confirmed time can’t overlap.`,
+      text: WHEN_WORDS[next.refused],
       ...(field === undefined ? {} : { field }),
     });
     return undefined;
@@ -178,8 +149,7 @@ export function EditorWhen({
         if (read !== minutes) onLength(read);
         return;
       }
-      const attempt = { start: span.start, end: span.start + read };
-      const next = refuse(whenFrom(span, { length: read }, limits), attempt, field);
+      const next = refuse(whenFrom(span, { length: read }, limits), field);
       if (next !== undefined && next.end !== span.end) onSpan(next);
       return;
     }
@@ -195,15 +165,12 @@ export function EditorWhen({
         field === 'start'
           ? { start: read, end: read + minutes }
           : { start: read - minutes, end: read };
-      const next = refuse(whenFrom(attempt, {}, limits), attempt, field);
+      const next = refuse(whenFrom(attempt, {}, limits), field);
       if (next !== undefined) onSpan(next);
       return;
     }
-    const attempt =
-      field === 'start' ? { start: read, end: span.end } : { start: span.start, end: read };
     const next = refuse(
       whenFrom(span, field === 'start' ? { start: read } : { end: read }, limits),
-      attempt,
       field,
     );
     if (next !== undefined && (next.start !== span.start || next.end !== span.end)) onSpan(next);
@@ -222,9 +189,7 @@ export function EditorWhen({
         value={shown(name, value)}
         placeholder={value}
         aria-label={name === 'length' ? 'Length, typed' : `${label} time`}
-        aria-invalid={
-          refused?.field === name || (name === 'end' && standing !== undefined) ? true : undefined
-        }
+        aria-invalid={refused?.field === name ? true : undefined}
         inputMode={phone ? 'none' : 'text'}
         readOnly={readOnly}
         disabled={busy}
@@ -414,10 +379,7 @@ export function EditorWhen({
               onClick={() => {
                 if (span === undefined) onLength(m);
                 else {
-                  const next = refuse(whenFrom(span, { length: m }, limits), {
-                    start: span.start,
-                    end: span.start + m,
-                  });
+                  const next = refuse(whenFrom(span, { length: m }, limits));
                   if (next !== undefined) onSpan(next);
                 }
               }}
@@ -433,7 +395,7 @@ export function EditorWhen({
               disabled={busy}
               onClick={() => {
                 const attempt = { start: now - minutes, end: now };
-                const next = refuse(whenFrom(attempt, {}, limits), attempt);
+                const next = refuse(whenFrom(attempt, {}, limits));
                 if (next !== undefined) onSpan(next);
               }}
             >
@@ -471,9 +433,7 @@ export function EditorWhen({
               <span className="editor-bar-now" style={{ left: `${String(pct(now))}%` }} />
             )}
             <span
-              className={
-                standing === undefined ? 'editor-bar-sel' : 'editor-bar-sel editor-bar-sel-bad'
-              }
+              className="editor-bar-sel"
               data-when-bar-range
               style={{
                 left: `${String(pct(span.start))}%`,
