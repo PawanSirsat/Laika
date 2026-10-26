@@ -497,7 +497,7 @@ void describe('the editor as designed (LAI-515)', () => {
     }
   });
 
-  void test('a confirmed entry: HISTORY from its revisions, Delete entry, and the end refused over confirmed time', async () => {
+  void test('a confirmed entry: HISTORY from its revisions, and Delete entry', async () => {
     const writes: StubCall[] = [];
     const h = await myDay(writes);
     try {

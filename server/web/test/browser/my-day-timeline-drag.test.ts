@@ -254,34 +254,30 @@ void describe('the Timeline card as TimelineV2 draws it (LAI-512)', () => {
     }
   });
 
-  void test('over confirmed time the words turn red and name the block, and the drop bounces back with nothing written', async () => {
+  void test('a confirmed block moved over confirmed time lands there and is written — time recorded at the same time (LAI-528)', async () => {
     const writes: StubCall[] = [];
     const h = await myDay(writes);
     try {
-      // e1 11:30–12:00 (confirmed) by +15 min: over e2 12:00–12:30.
+      // e1 11:30–12:00 (confirmed) by +15 min: over e2 12:00–12:30, confirmed.
       await show(h, 11 * 60);
       const body = h.page.locator('[data-block-select="e1"]');
       const box = await body.boundingBox();
       assert.ok(box !== null);
       const y = box.y + box.height / 2;
-      const before = (await h.page.locator('[data-block-id="e1"]').boundingBox())?.x ?? -1;
       await h.page.mouse.move(await xOf(h.page, 11 * 60 + 45), y);
       await h.page.mouse.down();
       await h.page.mouse.move(await xOf(h.page, 12 * 60), y, { steps: 8 });
-      await settlesOn(h.page, '[data-drag-label]', /^Overlaps LAI-12, 12:00–12:30 PM$/);
-      assert.equal(await h.page.locator('[data-block-id="e2"].dayline-conflict').count(), 1);
-      assert.equal(await h.page.locator('[data-block-id="e1"].dayline-drag-bad').count(), 1);
+      // The words say where it goes, never that it overlaps; nothing turns red.
+      await settlesOn(h.page, '[data-drag-label]', /^11:45 AM–12:15 PM · 30 min$/);
+      assert.equal(await h.page.locator('.dayline-drag-bad').count(), 0);
       await h.page.mouse.up();
-      // Back where it was; the refusal stays a moment, in red; nothing written.
-      await settlesOn(
-        h.page,
-        '[data-drag-refused]',
-        /^Overlaps LAI-12, 12:00–12:30 PM · moved back$/,
-      );
-      const after = (await h.page.locator('[data-block-id="e1"]').boundingBox())?.x ?? -2;
-      assert.ok(Math.abs(after - before) <= 1, 'the block did not bounce back');
-      assert.equal(patches(writes).length, 0);
-      await until(async () => (await h.page.locator('[data-drag-refused]').count()) === 0, 4_000);
+      await until(() => patches(writes).length === 1);
+      assert.deepEqual(patches(writes)[0], {
+        method: 'PATCH',
+        path: '/api/v1/me/time-entries/e1',
+        body: { minutes: 30, started_at: at(TODAY, 11, 45), ended_at: at(TODAY, 12, 15) },
+      });
+      assert.equal(await h.page.locator('[data-drag-refused]').count(), 0);
     } finally {
       await h.close();
     }
@@ -301,7 +297,6 @@ void describe('the Timeline card as TimelineV2 draws it (LAI-512)', () => {
       await h.page.mouse.down();
       await h.page.mouse.move(await xOf(h.page, 11 * 60 + 45), y, { steps: 8 });
       await settlesOn(h.page, '[data-drag-label]', /^11:25 AM–12:05 PM · 40 min$/);
-      assert.equal(await h.page.locator('.dayline-conflict').count(), 0);
       assert.equal(await h.page.locator('[data-block-id="d2"].dayline-drag-bad').count(), 0);
       await h.page.mouse.up();
       await until(() => patches(writes).length === 1);
