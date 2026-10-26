@@ -183,7 +183,7 @@ describe('a timer', () => {
     expect(entriesOn(t.db, owner.userId, '2026-10-20')).toEqual([]);
   });
 
-  it('over confirmed time it is refused as an entry would be, and stays', () => {
+  it('over confirmed time it saves as time recorded at the same time (LAI-528)', () => {
     createEntry(
       t.db,
       owner,
@@ -191,11 +191,14 @@ describe('a timer', () => {
       NOW,
     );
     startTimer(t.db, owner, { tz: 'UTC' }, NOW + 30 * MIN);
-    expect(reason(() => stopTimer(t.db, owner, NOW + 90 * MIN))).toBe(
-      'conflict:overlaps_confirmed',
-    );
-    expect(timerOf(t.db, owner.userId)).not.toBeNull();
-    expect(entriesOn(t.db, owner.userId, '2026-10-20')).toHaveLength(1);
+    const stopped = stopTimer(t.db, owner, NOW + 90 * MIN);
+    expect(stopped.entry).toMatchObject({
+      minutes: 60,
+      started_at: NOW + 30 * MIN,
+      ended_at: NOW + 90 * MIN,
+    });
+    expect(timerOf(t.db, owner.userId)).toBeNull();
+    expect(entriesOn(t.db, owner.userId, '2026-10-20')).toHaveLength(2);
   });
 
   it('past midnight in its zone it saves as the minutes run on the day it started, with no set time', () => {
