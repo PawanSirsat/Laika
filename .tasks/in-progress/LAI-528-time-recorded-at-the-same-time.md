@@ -2,11 +2,12 @@
 id: LAI-528
 title: 'My day: time recorded at the same time is allowed — a drop, a drag, a typed time or a confirm is never refused for overlapping confirmed time'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-26T08:50:52Z
 ---
 
 ## Why
