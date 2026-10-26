@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, setTheme, until, type ApiStub, type StubCall } from './harness.ts';
-import { answerConfirm } from './confirm.ts';
+import { answerConfirm, confirmSettled } from './confirm.ts';
 import { NOW, open } from './my-day-clock.ts';
 import { TODAY, viewOf, weekData, weekStub } from './my-day-week.ts';
 
@@ -96,7 +96,7 @@ void describe('the confirmation (LAI-522)', () => {
         await setTheme(h.page, theme);
         await h.page.getByRole('button', { name: 'Discard timer' }).first().click();
         const dialog = h.page.locator('[data-confirm-dialog]');
-        await dialog.waitFor({ timeout: 5_000 });
+        await confirmSettled(h.page);
         const box = await dialog.boundingBox();
         assert.ok(box !== null);
         // Nothing lies over its middle.
@@ -137,7 +137,7 @@ void describe('the confirmation (LAI-522)', () => {
       await h.page.locator('[data-inspector-for="e2"]').waitFor({ timeout: 5_000 });
       await h.page.locator('[data-entry-delete]').click();
       const dialog = h.page.locator('[data-confirm-dialog]');
-      await dialog.waitFor({ timeout: 5_000 });
+      await confirmSettled(h.page);
       const card = await dialog.boundingBox();
       const ok = await dialog.locator('[data-confirm-ok] button').boundingBox();
       const cancel = await dialog.locator('[data-confirm-cancel] button').boundingBox();
