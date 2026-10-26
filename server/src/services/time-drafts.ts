@@ -12,7 +12,6 @@ import { assertReportDays, latestReportZone } from './local-activity.ts';
 import { canSeeProject } from './projects.ts';
 import { resolveKeys } from './token-usage.ts';
 import {
-  assertFitsTheClock,
   assertSpanOnDay,
   assertWithinSpan,
   entryById,
@@ -897,9 +896,9 @@ export function updateDraft(
     const span = patchedSpan(row, patch);
     const named = patchedFolder(row, patch);
     // A longer or moved block holds no more than its span. It may lie over
-    // confirmed time while it is a draft — the owner's My Day design lets a
-    // draft be dragged anywhere (LAI-510) — and confirming it there is what
-    // is refused: confirmed time is never counted twice (review round 2).
+    // confirmed time — the owner's My Day design lets a draft be dragged
+    // anywhere (LAI-510) — and since LAI-528 it confirms there too: time
+    // recorded at the same time is allowed (D-113).
     const start = span?.startedAt ?? row.startedAt;
     const end = span?.endedAt ?? row.endedAt;
     if (start !== null && end !== null && (span !== undefined || patch.minutes !== undefined)) {
@@ -1028,14 +1027,8 @@ function confirmRow(
   userId: string,
   row: typeof timeDrafts.$inferSelect,
   now: number,
-  judge = true,
   said?: ConfirmSaid,
 ): string {
-  // Confirmed time is never counted twice, by the clock (review round 2).
-  // *Confirm day* judges the day once, when every block of it is in.
-  if (judge && row.startedAt !== null && row.endedAt !== null) {
-    assertFitsTheClock(tx, userId, row.startedAt, row.endedAt, row.minutes, { draftId: row.id });
-  }
   const fields = {
     // An untied block is confirmed as General: the person confirmed it.
     target: { taskId: row.taskId, projectId: row.projectId },
@@ -1097,7 +1090,7 @@ export function confirmDraft(
   assertTimeOn(db);
   const { entryId, undoId } = db.transaction((tx) => {
     const row = pendingRow(tx, actor.userId, id);
-    const made = confirmRow(tx, actor.userId, row, now, true, said);
+    const made = confirmRow(tx, actor.userId, row, now, said);
     return {
       entryId: made,
       undoId: recordUndo(tx, actor.userId, id, { drafts: [row], entriesMade: [made] }, now),
@@ -1140,15 +1133,7 @@ export function confirmDay(
       )
       .orderBy(asc(sql`coalesce(${timeDrafts.startedAt}, ${timeDrafts.createdAt})`))
       .all();
-    const made = rows.map((row) => confirmRow(tx, actor.userId, row, now, false));
-    // **All or nothing, judged on the day as it would stand** (review round 2):
-    // every block's stretch, with every block of the day in it, against the
-    // clock — so the order the blocks are taken in changes nothing. The first
-    // that does not fit is named, and the whole day stays drafted.
-    for (const row of rows) {
-      if (row.startedAt === null || row.endedAt === null) continue;
-      assertFitsTheClock(tx, actor.userId, row.startedAt, row.endedAt, 0, { draftId: row.id });
-    }
+    const made = rows.map((row) => confirmRow(tx, actor.userId, row, now));
     // Undo puts every block of the day back pending (LAI-831).
     return {
       ids: made,

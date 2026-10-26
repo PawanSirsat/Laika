@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, isNotNull, isNull, lt, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/sqlite-core';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
@@ -197,8 +197,7 @@ export function assertSpanOnDay(day: string, tz: string, start: number, end: num
 
 /**
  * A timed block holds no more minutes than its own span — whatever else is
- * confirmed (review round 2): `422 minutes_over_span`, before any stretch is
- * judged.
+ * confirmed (review round 2): `422 minutes_over_span`.
  */
 export function assertWithinSpan(start: number, end: number, minutes: number): void {
   if (minutes > Math.ceil((end - start) / 60_000 - 1e-9)) {
@@ -209,126 +208,16 @@ export function assertWithinSpan(start: number, end: number, minutes: number): v
   }
 }
 
-/**
- * The stretch `[start, end)` joins: it and every live timed entry of the
- * person that overlaps it, **transitively** — A meets B, B meets C, so A, B
- * and C are one stretch though A never meets C. Its extent, and the minutes
- * its entries hold. `except` is an entry being moved.
+/*
+ * **Time recorded at the same time is allowed** (LAI-528, D-113). LAI-831
+ * review round 2 held every stretch of overlapping entries to its wall clock
+ * (`409 overlaps_confirmed`), on a create, an edit, a confirm, *Confirm day*,
+ * a timer's stop and an Undo. The owner retired it: a person's tasks are
+ * recorded at once — agents in parallel, a meeting beside them — and a drop
+ * over confirmed time is that, not a mistake. What still holds: a block keeps
+ * no more minutes than its own span (`assertWithinSpan`) and a day no more
+ * than a day (`assertRoom`, `422 day_full`).
  */
-function stretchAround(
-  tx: Tx | Db,
-  userId: string,
-  start: number,
-  end: number,
-  except?: string,
-): { from: number; to: number; held: number } {
-  let from = start;
-  let to = end;
-  const held = new Map<string, number>();
-  for (;;) {
-    const overlapping = tx
-      .select({
-        id: timeEntries.id,
-        startedAt: timeEntries.startedAt,
-        endedAt: timeEntries.endedAt,
-        minutes: timeEntries.minutes,
-      })
-      .from(timeEntries)
-      .where(
-        and(
-          eq(timeEntries.userId, userId),
-          isNull(timeEntries.deletedAt),
-          isNotNull(timeEntries.startedAt),
-          lt(timeEntries.startedAt, to),
-          gt(timeEntries.endedAt, from),
-          ...(except === undefined ? [] : [ne(timeEntries.id, except)]),
-        ),
-      )
-      .all();
-    let grew = false;
-    for (const e of overlapping) {
-      if (held.has(e.id) || e.startedAt === null || e.endedAt === null) continue;
-      held.set(e.id, e.minutes);
-      if (e.startedAt < from) {
-        from = e.startedAt;
-        grew = true;
-      }
-      if (e.endedAt > to) {
-        to = e.endedAt;
-        grew = true;
-      }
-    }
-    if (!grew) break;
-  }
-  return { from, to, held: [...held.values()].reduce((n, m) => n + m, 0) };
-}
-
-/**
- * **Confirmed time is never counted twice, by the clock** (LAI-831 review
- * round 2) — the collector's own rule (`time-drafts.ts`): the stretch a block
- * joins holds no more minutes than it has of wall clock. `minutes` placed on
- * `[start, end)`, plus every live timed entry in its stretch, must fit the
- * stretch's length. Two tasks worked at once — the collector's blocks that
- * share a stretch, however unevenly — fit in any order; a block dragged over a
- * confirmed hour does not. `409 overlaps_confirmed`, naming the stretch, and
- * the draft when one is being confirmed.
- */
-export function assertFitsTheClock(
-  tx: Tx | Db,
-  userId: string,
-  start: number,
-  end: number,
-  minutes: number,
-  options: { readonly except?: string; readonly draftId?: string } = {},
-): void {
-  const stretch = stretchAround(tx, userId, start, end, options.except);
-  const clock = (stretch.to - stretch.from) / 60_000;
-  const would = stretch.held + minutes;
-  if (would > Math.ceil(clock - 1e-9)) {
-    throw new ApiError(
-      'conflict',
-      `That would count confirmed time twice: the stretch it joins has ${String(Math.round(clock))} minutes of clock and would hold ${String(would)}`,
-      {
-        reason: 'overlaps_confirmed',
-        ...(options.draftId === undefined ? {} : { draft_id: options.draftId }),
-        started_at: start,
-        ended_at: end,
-        stretch_started_at: stretch.from,
-        stretch_ended_at: stretch.to,
-        stretch_minutes: Math.round(clock),
-        would_hold: would,
-      },
-    );
-  }
-}
-
-/**
- * What an entry moved or shortened leaves behind must fit too: every live
- * timed entry `[start, end)` met is judged on the stretch it stands in once
- * the edit is written. An entry that held a stretch open — its slack the room
- * two overlapping blocks share — cannot be moved off and leave them counting
- * twice.
- */
-function assertLeftBehindFits(tx: Tx, userId: string, start: number, end: number): void {
-  const met = tx
-    .select({ startedAt: timeEntries.startedAt, endedAt: timeEntries.endedAt })
-    .from(timeEntries)
-    .where(
-      and(
-        eq(timeEntries.userId, userId),
-        isNull(timeEntries.deletedAt),
-        isNotNull(timeEntries.startedAt),
-        lt(timeEntries.startedAt, end),
-        gt(timeEntries.endedAt, start),
-      ),
-    )
-    .all();
-  for (const e of met) {
-    if (e.startedAt !== null && e.endedAt !== null) {
-      assertFitsTheClock(tx, userId, e.startedAt, e.endedAt, 0);
-    }
-  }
-}
 
 /** The minutes a person's live entries already hold on a day. */
 function minutesOn(tx: Tx | Db, userId: string, day: string, except?: string): number {
@@ -619,7 +508,6 @@ export function createEntry(
   const { id, undoId } = db.transaction((tx) => {
     if (startedAt !== null && endedAt !== null) {
       assertWithinSpan(startedAt, endedAt, input.minutes);
-      assertFitsTheClock(tx, actor.userId, startedAt, endedAt, input.minutes);
     }
     const made = insertEntry(
       tx,
@@ -760,9 +648,6 @@ export function updateEntry(
       (touchesSpan || patch.minutes !== undefined)
     ) {
       assertWithinSpan(next.startedAt, next.endedAt, next.minutes);
-      assertFitsTheClock(tx, actor.userId, next.startedAt, next.endedAt, next.minutes, {
-        except: id,
-      });
     }
     const same =
       next.target.taskId === row.taskId &&
@@ -798,13 +683,6 @@ export function updateEntry(
     tx.insert(timeEntryRevisions)
       .values(revisionRow(id, revision, 'edited', actor.userId, next, now))
       .run();
-    if (
-      row.startedAt !== null &&
-      row.endedAt !== null &&
-      (next.startedAt !== row.startedAt || next.endedAt !== row.endedAt)
-    ) {
-      assertLeftBehindFits(tx, actor.userId, row.startedAt, row.endedAt);
-    }
   });
   return entryById(db, actor.userId, id);
 }
@@ -934,9 +812,6 @@ export function syncEntry(
 export function reviveEntry(tx: Tx, id: string, changedBy: string, now: number): number {
   const row = tx.select().from(timeEntries).where(eq(timeEntries.id, id)).get();
   if (row === undefined) throw ApiError.notFound(`No time entry "${id}"`);
-  if (row.startedAt !== null && row.endedAt !== null) {
-    assertFitsTheClock(tx, row.userId, row.startedAt, row.endedAt, row.minutes, { except: id });
-  }
   return syncEntry(
     tx,
     id,

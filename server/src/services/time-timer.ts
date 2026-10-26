@@ -25,9 +25,9 @@ import { type OnUndo } from './time-undo-log.ts';
  *
  * **Stopping is `POST /me/time-entries` with the clock filled in.** The entry
  * goes through `createEntry`, `source: 'manual'`, with the same checks: on
- * its own day, never over confirmed time (`409 overlaps_confirmed`, and the
- * timer stays so the person can edit or discard), never more than a day
- * (`422 day_full`). A timer that ran past midnight in its zone saves as an
+ * its own day, never more than a day (`422 day_full`, and the timer stays so
+ * the person can edit or discard). Over confirmed time it saves: time
+ * recorded at the same time is allowed (LAI-528, D-113). A timer that ran past midnight in its zone saves as an
  * **untimed** entry on the day it started, the minutes it ran — the minutes
  * are what is known; a span over two days is not one entry — and the answer
  * says so (`crossed_midnight`).
@@ -208,8 +208,8 @@ export interface TimerStopped {
 /**
  * `POST /me/time/timer/stop`: the time run becomes a confirmed entry, and the
  * timer is gone. Under a minute → `422 timer_too_short`, timer kept. Every
- * refusal `createEntry` makes — `409 overlaps_confirmed`, `422 day_full` —
- * passes through with the timer still there.
+ * refusal `createEntry` makes — `422 day_full` — passes through with the
+ * timer still there.
  */
 export function stopTimer(
   db: Db,
