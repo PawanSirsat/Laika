@@ -2,11 +2,12 @@
 id: LAI-529
 title: 'My day: Who looked shows only who is looking right now — one line a person, nothing else'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-526
-status: backlog
+started: 2026-10-26T09:07:50Z
+status: in-progress
 ---
 
 ## Goal
