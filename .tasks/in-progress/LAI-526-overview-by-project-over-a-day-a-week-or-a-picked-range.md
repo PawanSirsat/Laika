@@ -2,11 +2,12 @@
 id: LAI-526
 title: 'Overview shows time by project, and every figure follows Day, Week or a picked range — one summary of any stretch of days from the server'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-514
-status: backlog
+status: in-progress
+started: 2026-10-26T08:06:47Z
 ---
 
 ## Goal
