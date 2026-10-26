@@ -1861,7 +1861,7 @@ p.inspector-length {
   font-weight: var(--weight-semibold);
 }
 
-/* *Who looked at my time* — newest first, who and what on one line, when under it. */
+/* *Who is looking* (LAI-529) — one line a person: avatar, name, how long ago. */
 .myday-looked-list {
   margin: 0;
   padding: 0;
@@ -1870,25 +1870,38 @@ p.inspector-length {
 
 .myday-looked-row {
   display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
+  align-items: center;
+  gap: 0.625rem;
   padding: 0.5rem 0.125rem;
   border-top: 1px solid var(--border-subtle);
   font-size: var(--text-small);
-  color: var(--text-secondary);
   min-width: 0;
 }
 
-.myday-looked-who {
-  overflow-wrap: anywhere;
+.myday-looked-avatar {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  color: var(--on-accent);
+  font-size: var(--text-small);
+  font-weight: var(--weight-bold);
 }
 
-.myday-looked-who strong {
+.myday-looked-who {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-primary);
   font-weight: var(--weight-semibold);
 }
 
 .myday-looked-when {
+  flex: none;
   font-family: var(--font-mono);
   color: var(--text-muted);
 }

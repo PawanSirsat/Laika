@@ -34,21 +34,29 @@ interface TimerRow {
   title: string | null;
 }
 
+/** Two people inside LAI-529's 15 minutes of the pinned 15:00, one look before it. */
 const LOOKED = {
   data: [
     {
-      id: 'v2',
+      id: 'v3',
       viewer: { id: 'u9', name: 'Ada Lovelace' },
       kind: 'time',
-      day: YESTERDAY,
-      viewed_at: at(TODAY, 14, 2),
+      day: TODAY,
+      viewed_at: at(TODAY, 14, 58),
+    },
+    {
+      id: 'v2',
+      viewer: { id: 'u8', name: 'Grace Hopper' },
+      kind: 'local_activity',
+      day: null,
+      viewed_at: at(TODAY, 14, 50),
     },
     {
       id: 'v1',
       viewer: { id: 'u9', name: 'Ada Lovelace' },
-      kind: 'local_activity',
-      day: null,
-      viewed_at: at(YESTERDAY, 9, 10),
+      kind: 'time',
+      day: YESTERDAY,
+      viewed_at: at(TODAY, 14, 2),
     },
   ],
   next_cursor: null,
