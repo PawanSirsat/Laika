@@ -23,7 +23,7 @@ import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { closeBrowser, setTheme, until, type ApiStub, type Harness } from './harness.ts';
 import { NOW, open } from './my-day-clock.ts';
-import { at, TODAY, viewOf, weekData, weekStub, YESTERDAY } from './my-day-week.ts';
+import { at, summaryRoutes, TODAY, viewOf, weekData, weekStub, YESTERDAY } from './my-day-week.ts';
 
 const ADA = {
   id: 'u1',
@@ -108,6 +108,8 @@ function stub(me: typeof ADA, actions: readonly string[]): ApiStub {
           : null,
     });
   }
+  // Her Overview's week and quick picks (LAI-526), on the people route.
+  Object.assign(routes, summaryRoutes(data, [], '/api/v1/people/u2/time/summary'));
   routes['/api/v1/people/u2/local-activity'] = {
     start: YESTERDAY,
     end: TODAY,
@@ -250,6 +252,24 @@ void describe('an owner reads a member’s day (D-102, LAI-959)', () => {
       assert.ok(paths.includes('/api/v1/people/u2/time'), 'her day was not read');
       assert.ok(!paths.includes('/api/v1/me/time'), 'the reader’s own day was read instead');
       assert.ok(!paths.includes('/api/v1/me/analytics-views'), 'the reader’s own list was read');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('her Overview’s week is read from her summary, on the people route, never the reader’s own', async () => {
+    const h = await openAt(`/my-day?user=u2&day=${TODAY}`, stub(ADA, HOLDS));
+    try {
+      await h.page.locator('[data-myday-ready]').waitFor({ timeout: 20_000 });
+      await h.page.locator('[data-viewing-banner]').waitFor({ timeout: 10_000 });
+      const ov = h.page.locator('[data-overview]');
+      await ov.waitFor({ timeout: 10_000 });
+      await ov.locator('[data-ov-scope="week"]').click();
+      await ov.locator('[data-ov-stat="per-day"]').waitFor({ timeout: 10_000 });
+      const paths = h.calls.map((c) => c.path);
+      assert.ok(paths.includes('/api/v1/people/u2/time/summary'), 'her summary was not read');
+      assert.ok(!paths.includes('/api/v1/me/time/summary'), 'the reader’s own summary was read');
+      assert.equal(await ov.locator('[data-ov-day]').count(), 7);
     } finally {
       await h.close();
     }

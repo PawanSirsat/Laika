@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-514
-status: in-progress
+status: done
 started: 2026-10-26T08:06:47Z
+finished: 2026-10-26T08:45:26Z
 ---
 
 ## Goal
@@ -21,19 +22,19 @@ days.
 
 ## Acceptance criteria
 
-- [ ] `GET /me/time/summary?from=&to=` (and `GET /people/:id/time/summary`
+- [x] `GET /me/time/summary?from=&to=` (and `GET /people/:id/time/summary`
       for a reader with `people.analytics.read`, logged as a look): over the
       days `from`–`to`, at most 92, the confirmed and drafted minutes, the
       meeting and off-screen minutes, the active days, and the minutes by
       day, by project, by task and by kind — read with the day view's own
       readers, so a task the reader cannot read is never named. SPEC §6.4.
-- [ ] Overview: *By project* beside *By kind* and *By task* — each project's
+- [x] Overview: *By project* beside *By kind* and *By task* — each project's
       time, its share, a bar; *No project* for time on none.
-- [ ] Day, Week and Range all show every figure — stats, by kind, by project,
+- [x] Day, Week and Range all show every figure — stats, by kind, by project,
       by task, and by day over several. Range is any stretch the reader picks:
       quick picks (last 7 days, last 30, this month, last month) or two dates.
-- [ ] Loading and a failed read are drawn in the card; both themes; a phone.
-- [ ] Server tests for the sums, the bounds and the people read; browser tests
+- [x] Loading and a failed read are drawn in the card; both themes; a phone.
+- [x] Server tests for the sums, the bounds and the people read; browser tests
       for the three scopes and the picker.
 
 ## Notes / context
@@ -41,3 +42,16 @@ days.
 Area is web and server both (D-033: the owner directed one task for the whole
 change). `services/time-summary.ts` (new), `http/routes/time.ts`,
 `http/routes/people.ts`; `api/time.ts`, `OverviewTab.tsx`, `overview-derive.ts`.
+
+## Build notes and acceptance (CHIEF, 2026-10-26)
+
+- `services/time-summary.ts` (new) reads a stretch day by day with
+  `entriesOn` and `draftsOn`, so nothing is named that the day view would
+  not name; `GET /people/:id/time/summary` is logged as a look with no day.
+  Task rows carry `untied`, keeping *No task yet* apart from *No task*.
+- Overview is one shape for every scope: `summaryOfDay` converts the open day
+  on the page; the week and a range come from the summary. *By project*
+  joins By kind and By task; Range is four quick picks or two dates.
+- `my-day-week.ts`'s `summaryFor` builds the stub from the same days, so a
+  test's week cannot drift from what the page draws for a day.
+- Released on the owner's word: "push it".

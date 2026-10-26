@@ -3,12 +3,16 @@ import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { listAnalyticsViews } from '../../services/analytics-views.ts';
 import { ACTIVITY_RANGES, getPeopleActivity } from '../../services/people-activity.ts';
-import { getPersonDay, getPersonLocalActivity } from '../../services/people-analytics.ts';
+import {
+  getPersonDay,
+  getPersonLocalActivity,
+  getPersonSummary,
+} from '../../services/people-analytics.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery } from '../pagination.ts';
 import { parseQuery, strictObject, z } from '../validation.ts';
 import { PreviewQuery } from './local-activity.ts';
-import { MyDayQuery } from './time.ts';
+import { MyDayQuery, SummaryQuery } from './time.ts';
 
 /**
  * `GET /api/v1/people/:id/activity?range=12w|52w` (SPEC §6.4, D-079, LAI-751):
@@ -51,6 +55,12 @@ export function peopleRoutes(options: { db: Db }): Hono<AppEnv> {
     const actor = requireActor(c);
     const query = parseQuery(MyDayQuery, c.req.query());
     return c.json(getPersonDay(db, actor, c.req.param('id'), query));
+  });
+
+  app.get('/:id/time/summary', (c) => {
+    const actor = requireActor(c);
+    const query = parseQuery(SummaryQuery, c.req.query());
+    return c.json(getPersonSummary(db, actor, c.req.param('id'), query));
   });
 
   app.get('/:id/local-activity', (c) => {

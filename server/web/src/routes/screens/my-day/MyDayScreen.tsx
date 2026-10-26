@@ -71,6 +71,7 @@ import { HeaderPopover } from './HeaderPopover.tsx';
 import { MyDayPhoneBar } from './MyDayPhoneBar.tsx';
 import { MyDayPhoneHead } from './MyDayPhoneHead.tsx';
 import { TimelineMobile } from './TimelineMobile.tsx';
+import { keepZoom, readZoom } from './timeline-prefs.ts';
 import { usePhone } from './use-phone.ts';
 import { initials } from '../../../theme/initials.ts';
 import { avatarColorSolid } from '../../../theme/avatar-color.ts';
@@ -339,7 +340,12 @@ export function MyDayScreen({
     }
   };
   const confirmButton = useRef<HTMLButtonElement | null>(null);
-  const [zoom, setZoom] = useState<Zoom>('1');
+  // 3× by default, and the person's own once they change it (timeline-prefs).
+  const [zoom, setZoomState] = useState<Zoom>(readZoom);
+  const setZoom = (next: Zoom): void => {
+    setZoomState(next);
+    keepZoom(next);
+  };
   const [now, setNow] = useState(() => Date.now());
   const spaces = useSpaces();
   const plate = usePlate(readOnly ? undefined : me, spaces);
@@ -1982,7 +1988,7 @@ export function MyDayScreen({
                 onPick={pickTab}
               />
             )}
-            {showLists && inTab('overview') && <OverviewTab view={view} />}
+            {showLists && inTab('overview') && <OverviewTab view={view} subjectId={subjectId} />}
             {showLists && inTab('review') && (
               <DraftList
                 // A new day starts with nothing ticked.

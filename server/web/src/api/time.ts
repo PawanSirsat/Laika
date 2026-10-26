@@ -385,6 +385,72 @@ export function setOrgBreaks(breaks: readonly BreakWindow[]): Promise<TimeSettin
   return request<TimeSettings>('/org/time/breaks', { method: 'PUT', body: { breaks } });
 }
 
+/** One day of a stretch (LAI-526). Mirrors `services/time-summary.ts`' `SummaryDayView`. */
+export interface SummaryDay {
+  readonly day: string;
+  readonly confirmed_minutes: number;
+  readonly drafted_minutes: number;
+}
+
+/** One project's time over a stretch; `project` null for time on none. */
+export interface SummaryProject {
+  readonly project: ProjectRef | null;
+  readonly confirmed_minutes: number;
+  readonly drafted_minutes: number;
+}
+
+/**
+ * One task's time over a stretch; `task` null for time on no task — `untied`
+ * for drafted time nobody has put on anything yet (*No task yet*).
+ */
+export interface SummaryTask {
+  readonly task: TaskRef | null;
+  readonly project: ProjectRef | null;
+  readonly untied: boolean;
+  readonly confirmed_minutes: number;
+  readonly drafted_minutes: number;
+}
+
+/** One kind's time; `kind` null for time nobody named — Building's. */
+export interface SummaryKind {
+  readonly kind: EntryKind | null;
+  readonly minutes: number;
+}
+
+/**
+ * `GET /me/time/summary?from=&to=` (LAI-526): a stretch of at most 92 days —
+ * what Overview draws for a week or a picked range. Mirrors
+ * `services/time-summary.ts`' `TimeSummaryView`.
+ */
+export interface TimeSummary {
+  readonly from: string;
+  readonly to: string;
+  readonly days: number;
+  readonly active_days: number;
+  readonly confirmed_minutes: number;
+  readonly drafted_minutes: number;
+  /** Confirmed time of the meeting kind. */
+  readonly meeting_minutes: number;
+  /** Confirmed time typed or run on a timer — what Laika could not see. */
+  readonly manual_minutes: number;
+  readonly by_day: readonly SummaryDay[];
+  readonly by_project: readonly SummaryProject[];
+  readonly by_task: readonly SummaryTask[];
+  readonly by_kind: readonly SummaryKind[];
+}
+
+/** The longest stretch one summary covers, the server's `SUMMARY_MAX_DAYS`. */
+export const SUMMARY_MAX_DAYS = 92;
+
+export function getTimeSummary(
+  from: string,
+  to: string,
+  signal?: AbortSignal,
+): Promise<TimeSummary> {
+  const query = new URLSearchParams({ from, to }).toString();
+  return request<TimeSummary>(`/me/time/summary?${query}`, opts(signal));
+}
+
 export function getMyDay(day: string, tz: string, signal?: AbortSignal): Promise<MyDay> {
   const query = new URLSearchParams({ day, tz }).toString();
   return request<MyDay>(`/me/time?${query}`, opts(signal));

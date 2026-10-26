@@ -11,6 +11,13 @@
  * does.
  */
 
+import type { TimeDraft, TimeEntry, TimeSummary } from '../../src/api/time.ts';
+import {
+  presetRange,
+  summaryOfDay,
+  weekOf,
+  type DayRange,
+} from '../../src/routes/screens/my-day/overview-derive.ts';
 import type { ApiStub } from './harness.ts';
 import { TODAY } from './my-day-clock.ts';
 
@@ -253,6 +260,8 @@ export function weekStub(data: Map<string, DayData> = weekData()): ApiStub {
     days[`/api/v1/me/time?day=${day}`] = () => viewOf(day, data);
   }
   return {
+    // Overview's week and quick picks (LAI-526), from the same days.
+    ...summaryRoutes(data),
     '/api/v1/me': {
       id: 'u1',
       email: 'a@example.com',
@@ -308,4 +317,99 @@ export function weekStub(data: Map<string, DayData> = weekData()): ApiStub {
       truncated: false,
     },
   };
+}
+
+/**
+ * `GET /me/time/summary` over `range`, from `data` (LAI-526): each day as the
+ * page converts its own, merged — the server's shape, so a stub cannot drift
+ * from what the Overview draws for a day.
+ */
+export function summaryFor(range: DayRange, data: Map<string, DayData> = weekData()): TimeSummary {
+  const days: string[] = [];
+  for (let d = range.from; d <= range.to; d = addDays(d, 1)) days.push(d);
+  interface Row {
+    confirmed_minutes: number;
+    drafted_minutes: number;
+  }
+  const projects = new Map<string, TimeSummary['by_project'][number] & Row>();
+  const tasks = new Map<string, TimeSummary['by_task'][number] & Row>();
+  const kinds = new Map<string | null, number>();
+  const byDay = days.map((day) => {
+    const own = data.get(day);
+    const one = summaryOfDay({
+      day,
+      drafts: (own?.drafts ?? []) as unknown as TimeDraft[],
+      entries: (own?.entries ?? []) as unknown as TimeEntry[],
+    });
+    for (const p of one.by_project) {
+      const k = p.project?.id ?? '';
+      const was = projects.get(k);
+      projects.set(
+        k,
+        was === undefined
+          ? { ...p }
+          : {
+              ...was,
+              confirmed_minutes: was.confirmed_minutes + p.confirmed_minutes,
+              drafted_minutes: was.drafted_minutes + p.drafted_minutes,
+            },
+      );
+    }
+    for (const t of one.by_task) {
+      const k = t.task?.id ?? `none:${t.project?.id ?? ''}`;
+      const was = tasks.get(k);
+      tasks.set(
+        k,
+        was === undefined
+          ? { ...t }
+          : {
+              ...was,
+              confirmed_minutes: was.confirmed_minutes + t.confirmed_minutes,
+              drafted_minutes: was.drafted_minutes + t.drafted_minutes,
+            },
+      );
+    }
+    for (const k of one.by_kind) kinds.set(k.kind, (kinds.get(k.kind) ?? 0) + k.minutes);
+    return { one, day };
+  });
+  const sum = (f: (x: TimeSummary) => number): number => byDay.reduce((n, d) => n + f(d.one), 0);
+  const total = (r: Row): number => r.confirmed_minutes + r.drafted_minutes;
+  return {
+    from: range.from,
+    to: range.to,
+    days: days.length,
+    active_days: byDay.filter((d) => d.one.active_days > 0).length,
+    confirmed_minutes: sum((x) => x.confirmed_minutes),
+    drafted_minutes: sum((x) => x.drafted_minutes),
+    meeting_minutes: sum((x) => x.meeting_minutes),
+    manual_minutes: sum((x) => x.manual_minutes),
+    by_day: byDay.flatMap((d) => d.one.by_day),
+    by_project: [...projects.values()].sort((a, b) => total(b) - total(a)),
+    by_task: [...tasks.values()].sort((a, b) => total(b) - total(a)),
+    by_kind: [...kinds.entries()]
+      .map(([kind, minutes]) => ({ kind: kind as TimeSummary['by_kind'][number]['kind'], minutes }))
+      .sort((a, b) => b.minutes - a.minutes),
+  };
+}
+
+/**
+ * The summary routes Overview asks for around today (LAI-526): the open
+ * week's and every quick pick's, each keyed by its query, plus any `extra`.
+ */
+export function summaryRoutes(
+  data: Map<string, DayData> = weekData(),
+  extra: readonly DayRange[] = [],
+  base = '/api/v1/me/time/summary',
+): ApiStub {
+  const ranges: DayRange[] = [
+    weekOf(TODAY),
+    presetRange('last7', TODAY),
+    presetRange('last30', TODAY),
+    presetRange('thisMonth', TODAY),
+    presetRange('lastMonth', TODAY),
+    ...extra,
+  ];
+  return Object.fromEntries(
+    ranges.map((r) => [`${base}?from=${r.from}&to=${r.to}`, () => summaryFor(r, data)]),
+  );
 }
