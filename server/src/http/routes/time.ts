@@ -3,6 +3,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { getMyDay } from '../../services/my-day.ts';
+import { getMySummary } from '../../services/time-summary.ts';
 import { addBreak, removeBreak } from '../../services/time-breaks.ts';
 import {
   confirmDay,
@@ -267,6 +268,9 @@ const UndoBody = strictObject({ id: z.string().min(1).max(64) });
 
 export const MyDayQuery = strictObject({ day: day.optional(), tz: zone.optional() });
 
+/** A stretch of days for `GET /me/time/summary` (LAI-526); its bounds are the service's. */
+export const SummaryQuery = strictObject({ from: day, to: day });
+
 // The Solidtime bridge (LAI-788). **No field can hold a description**: an
 // entry carries the key the CLI read from it, or none, and a digest.
 const solidtimeId = z.string().trim().min(1).max(64);
@@ -437,6 +441,12 @@ export function meTimeRoutes(options: { db: Db }): Hono<AppEnv> {
   app.get('/time', (c) => {
     const actor = requireActor(c);
     return c.json(getMyDay(db, actor, parseQuery(MyDayQuery, c.req.query())));
+  });
+
+  // Overview over a week or a picked range (LAI-526).
+  app.get('/time/summary', (c) => {
+    const actor = requireActor(c);
+    return c.json(getMySummary(db, actor, parseQuery(SummaryQuery, c.req.query())));
   });
 
   // The timer (§4.61, LAI-500): one per person, kept here so it survives a reload.
