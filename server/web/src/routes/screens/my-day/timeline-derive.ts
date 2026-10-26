@@ -499,17 +499,11 @@ export interface Limits {
 }
 
 /**
- * The room a block has (review round 1): back to the end of the confirmed
- * block before it, on to the start of the one after it, and never off the
- * day — so a drag or a + cannot lay it over confirmed time, which would count
- * that time twice. A confirmed block that already overlaps it bounds nothing:
- * moving an edge cannot fix that, and the server refuses its confirm.
- */
-/**
  * The free stretch around minute `at` among the confirmed blocks (LAI-897):
  * from the end of the last confirmed block before it to the start of the
- * first after, within the day. `undefined` when `at` lies inside one — there
- * is no free stretch to make a range in.
+ * first after, within the day. `undefined` when `at` lies inside one. *Add
+ * time* starts in it, as the last free half hour before now (LAI-502); it
+ * bounds nothing — time may be added over confirmed time (LAI-528).
  */
 export function freeAround(
   at: number,
@@ -529,48 +523,32 @@ export function freeAround(
 
 /**
  * A drag from `anchor` to `to` on the empty track (LAI-897): both ends on the
- * five-minute step, in order, clipped to the free stretch the anchor sits in.
- * `undefined` for a drag that starts on a confirmed block or ends up shorter
- * than one step — nothing to add.
+ * five-minute step, in order, inside `[from, length]` — over confirmed time
+ * too, as the design's range runs (LAI-528, D-113). `undefined` for a drag
+ * that ends up shorter than one step — nothing to add. A drag begun on a block
+ * moves the block and is never a range.
  */
 export function rangeFromDrag(
   anchor: number,
   to: number,
-  confirmed: readonly Span[],
   from = 0,
   length = 1440,
 ): Span | undefined {
-  const free = freeAround(anchor, confirmed, from, length);
-  if (free === undefined) return undefined;
   const grid = (m: number): number => Math.round(m / STEP) * STEP;
-  const a = Math.max(free.lo, Math.min(free.hi, grid(Math.min(anchor, to))));
-  const b = Math.max(free.lo, Math.min(free.hi, grid(Math.max(anchor, to))));
+  const a = Math.max(from, Math.min(length, grid(Math.min(anchor, to))));
+  const b = Math.max(from, Math.min(length, grid(Math.max(anchor, to))));
   return b - a < STEP ? undefined : { start: a, end: b };
 }
 
-export function limitsOf(block: Span, confirmed: readonly Span[], length = 1440): Limits {
-  let lo = 0;
-  let hi = length;
-  for (const c of confirmed) {
-    if (c.end <= block.start) lo = Math.max(lo, c.end);
-    else if (c.start >= block.end) hi = Math.min(hi, c.start);
-  }
-  return { lo, hi };
-}
-
 /**
- * {@link limitsOf} a placed block, among the day's other confirmed blocks — a
- * confirmed block's edges stop at its neighbours; a draft's run the whole
- * day, as the design's do (LAI-510).
+ * How far a placed block's edges may go: the whole of its day, whatever lies
+ * around it. A draft's always did (the design, LAI-510); **a confirmed block's
+ * did not** — they stopped at its confirmed neighbours, so that no time
+ * counted twice (review round 1 of LAI-831) — until the owner retired that
+ * rule: time recorded at the same time is allowed (LAI-528, D-113).
  */
-export function limitsIn(line: Pick<DayLine, 'blocks' | 'length'>, block: LaneBlock): Limits {
-  return limitsOf(
-    block,
-    block.kind === 'confirmed'
-      ? line.blocks.filter((b) => b.kind === 'confirmed' && b.id !== block.id)
-      : [],
-    line.length,
-  );
+export function limitsIn(line: Pick<DayLine, 'length'>): Limits {
+  return { lo: 0, hi: line.length };
 }
 
 /**
@@ -839,32 +817,19 @@ export function moveBlock(block: Shape, toStart: number): Edit | undefined {
   return { start, end: start + span, minutes: block.minutes };
 }
 
-/** Why a drop was refused, and the confirmed block it would have lain over. */
-export type DropCheck =
-  | { readonly ok: true }
-  | { readonly ok: false; readonly why: 'midnight' }
-  | { readonly ok: false; readonly why: 'overlap'; readonly over: LaneBlock };
+/** Why a drop was refused: only a day's edge refuses one now. */
+export type DropCheck = { readonly ok: true } | { readonly ok: false; readonly why: 'midnight' };
 
 /**
- * Whether `span` may land where it is (the design's `check`): on the day,
- * and — for a confirmed block, or a tray item (`selfId` undefined) — over no
- * other confirmed block, whose time would count twice (review round 1 of
- * LAI-831). **A draft may lie anywhere** (the design, LAI-510): confirming
- * it there is what the server refuses.
+ * Whether `span` may land where it is: on its day, `[0, length]`. Anywhere
+ * on it, over anything — a block moved, an edge dragged or a tray item
+ * dropped over confirmed time is time recorded at the same time (the owner,
+ * LAI-528, D-113). The design's `check` also refused a confirmed block or a
+ * tray item over confirmed time (review round 1 of LAI-831); the owner
+ * retired that, and the server no longer refuses it either.
  */
-export function checkDrop(
-  span: Span,
-  blocks: readonly LaneBlock[],
-  selfId: string | undefined,
-  length = 1440,
-): DropCheck {
-  if (span.start < 0 || span.end > length) return { ok: false, why: 'midnight' };
-  const self = selfId === undefined ? undefined : blocks.find((b) => b.id === selfId);
-  if (self !== undefined && self.kind !== 'confirmed') return { ok: true };
-  const over = blocks.find(
-    (b) => b.kind === 'confirmed' && b.id !== selfId && b.start < span.end && b.end > span.start,
-  );
-  return over === undefined ? { ok: true } : { ok: false, why: 'overlap', over };
+export function checkDrop(span: Span, length = 1440): DropCheck {
+  return span.start < 0 || span.end > length ? { ok: false, why: 'midnight' } : { ok: true };
 }
 
 /**

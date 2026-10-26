@@ -2,7 +2,7 @@ import { useState, type KeyboardEvent } from 'react';
 import type { EntryKind, MyDay, NewEntry } from '../../../api/time.ts';
 import type { CardChip } from './card-chips.ts';
 import { EditorFrame } from './EditorFrame.tsx';
-import { EditorWhen, type BusySpan, type Conflict } from './EditorWhen.tsx';
+import { EditorWhen, type BusySpan } from './EditorWhen.tsx';
 import { KINDS, kindLabel } from './entry-kinds.ts';
 import { duration, span as spanLabel } from './format.ts';
 import { atClock, dayLabel, weekdayShort } from './my-day-derive.ts';
@@ -38,18 +38,9 @@ export interface NewEntryPanelProps {
    * has no free stretch): a length alone, posted without a span.
    */
   readonly untimed?: boolean | undefined;
-  /** What a stopped timer already said (LAI-502): its card, kind and title. */
-  readonly prefill?:
-    | {
-        readonly task?: string | undefined;
-        readonly kind?: EntryKind | undefined;
-        readonly title?: string | undefined;
-      }
-    | undefined;
-  /** How far the span may reach on the open day: the confirmed time either side. */
+  /** How far the span may reach on the open day: the whole day (LAI-528). */
   readonly limits: { readonly lo: number; readonly hi: number };
   /** The open day's confirmed blocks, named: a span over one is refused in their name. */
-  readonly conflicts: readonly Conflict[];
   /** The open day's blocks, for the bar's grey. */
   readonly busySpans: readonly BusySpan[];
   /** Now, in minutes after midnight, when the day is today: for *Ends now* and the bar. */
@@ -85,9 +76,7 @@ export function NewEntryPanel({
   gap,
   gapNav,
   untimed: startUntimed = false,
-  prefill,
   limits,
-  conflicts,
   busySpans,
   now,
   chips,
@@ -101,10 +90,10 @@ export function NewEntryPanel({
   const [placed, setPlaced] = useState<Span>(range);
   const [untimed, setUntimed] = useState(startUntimed);
   const [minutes, setMinutes] = useState(range.end - range.start);
-  const [kind, setKind] = useState<EntryKind | undefined>(prefill?.kind);
-  const [title, setTitle] = useState(prefill?.title ?? '');
+  const [kind, setKind] = useState<EntryKind | undefined>(undefined);
+  const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [card, setCard] = useState<string>(prefill?.task ?? 'general');
+  const [card, setCard] = useState<string>('general');
   const [error, setError] = useState<string | undefined>(undefined);
   const [refused, setRefused] = useState(false);
   const isGap = gap !== undefined;
@@ -304,7 +293,6 @@ export function NewEntryPanel({
             midnight={midnight}
             tz={view.tz}
             limits={onOpenDay ? limits : { lo: 0, hi: 1440 }}
-            conflicts={onOpenDay ? conflicts : []}
             busy={busy}
             chips
             now={onOpenDay ? now : undefined}

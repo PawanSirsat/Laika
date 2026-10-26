@@ -893,7 +893,7 @@ export function MyDayScreen({
       void write(held, { minutes }, key);
       return;
     }
-    const edit = setLength(placed, minutes, limitsIn(line, placed).hi);
+    const edit = setLength(placed, minutes, limitsIn(line).hi);
     if (edit === undefined) {
       say(
         `${duration(minutes)} would run past the end of the day or into confirmed time — shorten it, or move the block first.`,
@@ -918,11 +918,6 @@ export function MyDayScreen({
       }),
     );
     if (made === undefined) return false;
-    // A timer whose stop the clock refused (LAI-502) is done once its time is in by hand.
-    if (selection?.kind === 'range' && selection.fromTimer === true && view.timer !== null) {
-      await discardTimer().catch(() => undefined);
-      reload();
-    }
     // Fill gaps (LAI-513): the next gap, until there is none.
     if (fillRun && selection?.kind === 'gap') {
       const filled = selection.start;
@@ -994,28 +989,9 @@ export function MyDayScreen({
         setJustStopped(stopped.entry.id);
       }
     } catch (cause) {
-      if (cause instanceof ApiError && cause.code === 'conflict' && line.midnight !== undefined) {
-        // Over confirmed time: the timer stays, and its span opens beside the
-        // Timeline with what it said, for the person to adjust and add.
-        const minute = (ms: number): number =>
-          Math.max(0, Math.min(1440, Math.round((ms - line.midnight!) / 60_000 / STEP) * STEP));
-        const start = minute(timer.started_at);
-        const end = Math.max(start + STEP, minute(timer.paused_at ?? Date.now()));
-        say(`${cause.message} Adjust the time beside the Timeline, then add it.`, 'warn');
-        setSelection({
-          kind: 'range',
-          start,
-          end,
-          prefill: {
-            ...(timer.task === null ? {} : { task: timer.task.key }),
-            ...(timer.kind === null ? {} : { kind: timer.kind }),
-            ...(timer.title === null ? {} : { title: timer.title }),
-          },
-          fromTimer: true,
-        });
-      } else {
-        say(messageOf(cause), 'error');
-      }
+      // The timer stands on a refusal — a day that would hold more than a day
+      // (`422 day_full`). Over confirmed time it saves (LAI-528, D-113).
+      say(messageOf(cause), 'error');
     } finally {
       setPending(undefined);
     }
@@ -1148,7 +1124,7 @@ export function MyDayScreen({
         return;
       }
       // On the five-minute grid, and never into the confirmed block after it.
-      const edit = stepEnd(placed, by, limitsIn(line, placed).hi);
+      const edit = stepEnd(placed, by, limitsIn(line).hi);
       if (edit !== undefined) {
         void write(held, { minutes: edit.minutes, ended_at: instant(edit.end) }, `step:${item.id}`);
       }
