@@ -2,11 +2,12 @@
 id: LAI-524
 title: 'My day loads as the page it becomes — a skeleton of the header, week, Timeline, tray, tabs and rows under one shimmer; the loading, error and refused states back in the page''s column'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-513
-status: backlog
+status: in-progress
+started: 2026-10-26T06:06:59Z
 ---
 
 ## Goal
