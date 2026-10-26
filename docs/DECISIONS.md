@@ -6023,3 +6023,41 @@ The reference is `docs/design/MyDay.dc.html`, `TimelineV2.dc.html` and
    to review* (LAI-519), the AGENTS lane per agent with *Expand* (LAI-520),
    the phone's Viewing list as drawn (LAI-521). No calendar still (D-110
    item 3).
+
+## D-113 — Time recorded at the same time is allowed: nothing on My day or the server refuses a write for overlapping confirmed time (LAI-528)
+
+**Date:** 2026-10-26 · **By:** CHIEF (Belka), on the owner's instruction
+
+The owner hit *"Overlaps LAIKA-754, 4:41–4:42 PM · moved back"* moving a
+confirmed block on My day — the block in the way was a one-minute confirmed
+entry, about three pixels wide at 1× — and showed the same day's 12–2 AM,
+eight confirmed entries at once from agents working in parallel:
+
+> "then what is this — we are recording the task at the same time,
+> simultaneously, then why is it not allowing the drag and drop. I know it's
+> an issue, resolve that."
+
+The refusal was LAI-831 review round 2's clock rule: every stretch of a
+person's overlapping entries held to its wall clock, `409
+overlaps_confirmed`, enforced by the server on a create, an edit, a confirm,
+*Confirm day*, a timer's stop and an Undo, and mirrored by My day's drop
+check, a confirmed block's edge limits, the editor's typed times and a range
+drawn on the track. Asked which way to resolve it, the owner restated that
+the refusal itself is the issue.
+
+1. **A person's confirmed entries may overlap one another.** None of those
+   writes is refused for it; `409 overlaps_confirmed` is gone, and so is
+   D-112 item 4's refusal of a draft's confirm over confirmed time.
+2. **On My day a block moved or resized, a *No set time* item dropped, a
+   typed Start, End or Length, and a range dragged on the track all land
+   over confirmed time.** Only crossing midnight bounces a drop. This
+   departs from the design's `check` (`TimelineV2.dc.html`), which refused a
+   confirmed block or a tray item there; the owner's instruction is later
+   and specific.
+3. **What still holds**: a block keeps no more minutes than its own span
+   (`422 minutes_over_span`) and a person's day holds at most 1440 minutes
+   (`422 day_full`).
+4. **Consequence, accepted**: overlapping entries each count their own
+   minutes, so a day's confirmed total may exceed the hours its clock covers,
+   and the collector's draft of a session a timer already recorded is no
+   longer refused at confirm — the person sees both and decides.

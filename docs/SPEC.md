@@ -2273,9 +2273,10 @@ entry is written by the same code, `source: 'manual'` (`time_entries.source`'s
 CHECK cannot be widened without rebuilding the table, and the title and kind
 already say what it was), spanning `started_at` to the stop — or to
 `paused_at`, when stopped paused — with the minutes run, and the row is
-deleted. Every refusal that path makes leaves the timer standing: over
-confirmed time `409 overlaps_confirmed`; a day that would hold more than a day
-`422 day_full`; under a minute `422 timer_too_short`. A timer that ran past
+deleted. Every refusal that path makes leaves the timer standing: a day that
+would hold more than a day `422 day_full`; under a minute `422
+timer_too_short`. Over confirmed time it saves — time recorded at the same
+time is allowed (LAI-528, D-113). A timer that ran past
 midnight in `tz` saves as an **untimed** entry on the day it started, the
 minutes it ran, and the answer carries `crossed_midnight: true` — the minutes
 are what is known, and a span over two days is not one entry. The entry's
@@ -3395,24 +3396,20 @@ parameter names anybody else.
   at most 1440 minutes of a person's live entries (`422 day_full`). All of
   these are **session only**: no token reads, confirms or writes a person's
   time.
-- **Confirmed time is never counted twice, by the clock** (LAI-831 review
-  round 2). A timed block, with every live timed entry of the person that
-  overlaps it — transitively, the whole stretch they join — holds no more
-  minutes than the stretch has of wall clock. It is judged on a confirm,
-  *Confirm day*, a timed entry's create, an edit of a timed entry's span or
-  minutes, and an entry Undo brings back — **not on a draft's new span or
-  minutes**: a draft may lie over confirmed time while it is a draft (D-112),
-  held only to its span (`422 minutes_over_span`); an edit
-  that moves an entry's span is judged as well on every live timed entry its
-  old span met, as the edit leaves them. Refused `409 overlaps_confirmed`
-  with `started_at`, `ended_at`, `stretch_started_at`, `stretch_ended_at`,
-  `stretch_minutes` and `would_hold`, and `draft_id` when a draft is being
-  confirmed. Blocks of tasks worked at once may share a stretch, however
-  unevenly, as long as together they fit it. *Confirm day* is **all or
-  nothing**: every block of the day is written, then every block's stretch is
-  judged on the day as it would stand, so their order changes nothing, and
-  the first that does not fit refuses the whole day by its `draft_id`. A
-  timed entry's create is held to its span as well (`422 minutes_over_span`).
+- **Time recorded at the same time is allowed** (LAI-528, D-113). A
+  person's confirmed entries may overlap one another — agents working in
+  parallel, a meeting beside them — so a confirm, *Confirm day*, a timed
+  entry's create, an edit of a timed entry's span or minutes, a timer's stop
+  and an entry Undo brings back are **never refused for overlapping confirmed
+  time**. This retires LAI-831 review round 2's clock rule (a stretch of
+  overlapping entries held to its wall clock, `409 overlaps_confirmed`) and
+  D-112 item 4's refusal of a draft's confirm over confirmed time; neither the
+  code nor the reason exists any more. What still holds: a block keeps no
+  more minutes than its own span (`422 minutes_over_span`, on a draft's new
+  span or minutes and a timed entry's create or edit) and a person's live
+  entries on a day sum to at most 1440 minutes (`422 day_full`, on every
+  write, *Confirm day* all or nothing). Overlapping entries each count their
+  own minutes, so a day's total may exceed the hours its clock covers.
 - **Undo (LAI-831, CHIEF's addition B).** Every change My day can take back
   answers with an `X-Undo-Id` header naming **that change**: `PATCH
   /me/time-drafts/:id`, `…/split`, `…/dismiss`, `…/confirm`, `POST
@@ -3432,7 +3429,7 @@ parameter names anybody else.
   — that one comes off first, by its own id, so changes come off newest
   first, as a stack; `404` for a change older than two minutes
   (`UNDO_WINDOW_MS`), already undone, or anybody else's. An entry brought back
-  is judged as any other (`409 overlaps_confirmed`, `422 day_full`). Nothing
+  is judged as any other (`422 day_full`). Nothing
   is undone on a refusal. Needs `time_drafts.manage_own` and
   `time_entries.write_own`, and the organisation's *Time* not `off` (`403
   time_off`).
