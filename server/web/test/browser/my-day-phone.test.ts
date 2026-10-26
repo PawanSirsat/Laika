@@ -267,8 +267,16 @@ void describe('My day on a phone (LAI-518)', () => {
           'the day row does not name yesterday',
         );
         assert.equal(await h.page.locator('.myday-phone-word').innerText(), 'Past');
-        await h.page.locator(`[data-phone-week] [data-day="${TODAY}"]`).click();
-        await soon(() => h.page.url().includes(`day=${TODAY}`), 'a letter did not walk to its day');
+        // Today's letter when yesterday's week holds it; on a Monday yesterday is
+        // last week's, so another of that week's letters (LAI-525).
+        const letters = await h.page
+          .locator('[data-phone-week] [data-day]')
+          .evaluateAll((els) => els.map((el) => el.getAttribute('data-day') ?? ''));
+        const to = letters.includes(TODAY)
+          ? TODAY
+          : (letters.find((d) => d !== YESTERDAY && d !== '') ?? TODAY);
+        await h.page.locator(`[data-phone-week] [data-day="${to}"]`).click();
+        await soon(() => h.page.url().includes(`day=${to}`), 'a letter did not walk to its day');
       } finally {
         await h.close();
       }
