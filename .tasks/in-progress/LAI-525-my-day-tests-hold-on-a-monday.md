@@ -2,11 +2,12 @@
 id: LAI-525
 title: 'Two My day browser tests hold on a Monday — Add time''s past day and the phone''s letter week no longer assume yesterday is this week'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-524
-status: backlog
+status: in-progress
+started: 2026-10-26T06:15:25Z
 ---
 
 ## Goal
