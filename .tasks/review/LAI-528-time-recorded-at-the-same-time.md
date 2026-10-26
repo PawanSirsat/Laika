@@ -6,7 +6,8 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
+finished: 2026-10-26T09:14:02Z
 started: 2026-10-26T08:50:52Z
 ---
 
@@ -34,22 +35,22 @@ fail on any stretch a person overlapped. So the rule is retired; D-113.
 
 ## Acceptance criteria
 
-- [ ] A block moved or resized, or a *No set time* item dropped, over
+- [x] A block moved or resized, or a *No set time* item dropped, over
       confirmed time lands there; only crossing midnight still bounces.
-- [ ] A confirmed block's edges run the whole day, as a draft's do.
-- [ ] The editor takes a typed Start, End or Length over confirmed time, for
+- [x] A confirmed block's edges run the whole day, as a draft's do.
+- [x] The editor takes a typed Start, End or Length over confirmed time, for
       an entry and for a new one; no *"Confirmed time can't overlap"*.
-- [ ] The server writes a timed entry's create, edit, a draft's confirm,
+- [x] The server writes a timed entry's create, edit, a draft's confirm,
       *Confirm day*, a timer's stop and an Undo over confirmed time; `409
       overlaps_confirmed` is gone. Still refused: minutes over the span
       (`422 minutes_over_span`) and a day over 1440 minutes (`422 day_full`).
-- [ ] SPEC §6.4's clock rule and the timer paragraph say so; D-113 records
+- [x] SPEC §6.4's clock rule and the timer paragraph say so; D-113 records
       the change and what it amends (LAI-831 review round 2, D-112 item 4).
-- [ ] Tests: the server suites that asserted `overlaps_confirmed` assert the
+- [x] Tests: the server suites that asserted `overlaps_confirmed` assert the
       write instead, and that `day_full` and `minutes_over_span` still
       refuse; `timeline-derive.test.ts` and the drag browser suite assert a
       drop over confirmed time lands.
-- [ ] Gate: root `pnpm test`, `pnpm lint`, `pnpm format` all exit 0.
+- [x] Gate: root `pnpm test`, `pnpm lint`, `pnpm format` all exit 0.
 
 ## Notes
 
@@ -59,3 +60,23 @@ Built by CHIEF on the owner's direct instruction, in worktree
 `time-timer.ts` and their tests; `docs/SPEC.md` §6.4; `docs/DECISIONS.md`.
 No owner data enters a fixture: My day refuses token reads, and the
 reproduction is from the screenshots' shapes.
+
+## Review (CHIEF, 2026-10-26)
+
+Built and reviewed by the same session on the owner's instruction:
+
+- Cause found first (systematic debugging): the lane's stacking is
+  LAI-860's and works; the banner was `checkDrop` refusing a confirmed block
+  over a one-minute confirmed entry, the server's `assertFitsTheClock` its
+  backstop. Red first: the eight server tests failed on `409
+  overlaps_confirmed`, the four derive tests on the refusal and the limits.
+- Drops, moves, edges, tray items, typed times and ranges over confirmed
+  time: `timeline-derive.test.ts`, `my-day-timeline-drag.test.ts` (a
+  confirmed block over another is PATCHed, nothing red, no bounce),
+  `my-day-range.test.ts` (a range from a gap runs over the block).
+- Server: create, edit, confirm, *Confirm day*, timer stop over confirmed
+  time all written; `minutes_over_span` still 422; a refused *Confirm day*
+  keeps no note, now on `day_full`.
+- SPEC §6.4, the timer paragraph and Undo; D-113.
+- Root gate on the branch: cli 604 / web 3366 / server 3903, `pnpm test` 0,
+  `pnpm lint` 0, `pnpm format` 0.
