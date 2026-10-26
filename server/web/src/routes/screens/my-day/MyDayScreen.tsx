@@ -66,7 +66,7 @@ import { MyDayDrawer, type DrawerMode } from './MyDayDrawer.tsx';
 import { DayEmpty, type EmptyAction, type EmptyKind } from './DayEmpty.tsx';
 import { DayError } from './DayError.tsx';
 import { DayOff } from './DayOff.tsx';
-import { DaySkeleton } from './DaySkeleton.tsx';
+import { DaySkeleton, DaySkeletonActions } from './DaySkeleton.tsx';
 import { HeaderPopover } from './HeaderPopover.tsx';
 import { MyDayPhoneBar } from './MyDayPhoneBar.tsx';
 import { MyDayPhoneHead } from './MyDayPhoneHead.tsx';
@@ -660,19 +660,26 @@ export function MyDayScreen({
       )}
     </p>
   );
-  const shell = (body: ReactNode) =>
+  // The page is a row — its column, then the drawer (LAI-511) — so a state
+  // with no drawer still sits in the column, header over body (LAI-524).
+  const shell = (body: ReactNode, actions?: ReactNode) =>
     embedded === undefined ? (
       <div className="myday-page">
-        <ScreenHeader variant="page" title={title} description={dayLong(selectedDay)}>
-          {switcher}
-        </ScreenHeader>
-        {banner}
-        <div className="myday">{body}</div>
+        <div className="myday-column">
+          <ScreenHeader variant="page" title={title} description={dayLong(selectedDay)}>
+            {switcher}
+            {actions}
+          </ScreenHeader>
+          {banner}
+          <div className="myday">{body}</div>
+        </div>
       </div>
     ) : (
       <div className="myday-page myday-embedded">
-        {banner}
-        <div className="myday">{body}</div>
+        <div className="myday-column">
+          {banner}
+          <div className="myday">{body}</div>
+        </div>
       </div>
     );
 
@@ -712,6 +719,8 @@ export function MyDayScreen({
       ) : (
         <DaySkeleton label={readOnly ? `Reading ${subjectName}’s day` : 'Loading your day'} />
       ),
+      // While loading, the header's buttons stand beside Viewing in skeleton (LAI-524).
+      load.kind === 'error' || readOnly ? undefined : <DaySkeletonActions />,
     );
   }
 

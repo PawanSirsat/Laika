@@ -12,7 +12,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { open, TODAY } from './my-day-clock.ts';
-import { at, weekData, weekStub, YESTERDAY, TOMORROW } from './my-day-week.ts';
+import { at, weekData, weekStub, TOMORROW } from './my-day-week.ts';
 
 /**
  * The editor as the design draws it (D-110 items 5, 7, 8 and 9, LAI-504):
@@ -413,7 +413,14 @@ void describe('the editor as designed (LAI-515)', () => {
         labels.map((l) => l.trim().toLowerCase()),
         ['when', 'off-screen work', 'task', 'kind', 'what it was'],
       );
-      await panel.locator(`[data-new-entry-day="${YESTERDAY}"]`).click();
+      // The latest past day this week has — none on a Monday, when it is today (LAI-525).
+      const open = await tiles.evaluateAll((els) =>
+        els
+          .filter((el) => !(el as HTMLButtonElement).disabled)
+          .map((el) => el.getAttribute('data-new-entry-day') ?? ''),
+      );
+      const picked = open.filter((d) => d < TODAY).at(-1) ?? TODAY;
+      await panel.locator(`[data-new-entry-day="${picked}"]`).click();
       await panel.locator('[data-preset="Interview"]').click();
       await panel.locator('[data-range-add]').click();
       await until(() => writes.some((w) => w.path === '/api/v1/me/time-entries'));
@@ -422,7 +429,7 @@ void describe('the editor as designed (LAI-515)', () => {
         title: string;
         kind: string;
       };
-      assert.equal(body.day, YESTERDAY);
+      assert.equal(body.day, picked);
       assert.equal(body.title, 'Interview');
       assert.equal(body.kind, 'meeting');
     } finally {
