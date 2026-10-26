@@ -610,6 +610,37 @@ const PAIRS: readonly Pair[] = [
     client: 'MyDayWeekDay',
     clientFile: 'time.ts',
   },
+  // Overview over a stretch of days (LAI-526).
+  {
+    server: 'TimeSummaryView',
+    serverFile: 'services/time-summary.ts',
+    client: 'TimeSummary',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'SummaryDayView',
+    serverFile: 'services/time-summary.ts',
+    client: 'SummaryDay',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'SummaryProjectView',
+    serverFile: 'services/time-summary.ts',
+    client: 'SummaryProject',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'SummaryTaskView',
+    serverFile: 'services/time-summary.ts',
+    client: 'SummaryTask',
+    clientFile: 'time.ts',
+  },
+  {
+    server: 'SummaryKindView',
+    serverFile: 'services/time-summary.ts',
+    client: 'SummaryKind',
+    clientFile: 'time.ts',
+  },
   // The day's note (LAI-501), served in the day and by `PUT /me/time/days/:day/note`.
   {
     server: 'DayNoteView',

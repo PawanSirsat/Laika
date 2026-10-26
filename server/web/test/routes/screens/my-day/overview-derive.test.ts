@@ -1,15 +1,21 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import type { TimeDraft, TimeEntry } from '../../../../src/api/time.ts';
+import type { TimeDraft, TimeEntry, TimeSummary } from '../../../../src/api/time.ts';
 import {
-  byTask,
-  dayStats,
-  meetingMinutes,
+  dayBars,
+  daysIn,
+  kindRows,
+  presetRange,
+  projectRows,
+  rangeProblem,
   share,
-  weekStats,
+  statsOf,
+  summaryOfDay,
+  taskRows,
+  weekOf,
 } from '../../../../src/routes/screens/my-day/overview-derive.ts';
 
-/** The Overview's figures (LAI-505): the day's, the week's, by task. */
+/** The Overview's figures (LAI-505; LAI-526): one shape for a day, a week and a range. */
 
 const entry = (over: Partial<TimeEntry>): TimeEntry => ({
   id: 'e',
@@ -47,92 +53,170 @@ const draft = (over: Partial<TimeDraft>): TimeDraft =>
     ...over,
   }) as TimeDraft;
 
-const LAI1 = { id: 't1', key: 'LAI-1', title: 'Search' } as never;
+const LAIKA = { id: 'p1', slug: 'laika', name: 'Laika' };
+const SKY = { id: 'p2', slug: 'skynet', name: 'Skynet' };
+const LAI1 = { id: 't1', key: 'LAI-1', title: 'Search' };
+const SKY1 = { id: 't2', key: 'SKY-1', title: 'Webhooks' };
 
-void describe('the day', () => {
-  void test('tracked, to review, meetings as a share, and off-screen', () => {
-    const stats = dayStats({
-      entries: [
-        entry({ id: 'a', minutes: 60, kind: 'meeting', source: 'manual' }),
-        entry({ id: 'b', minutes: 30, kind: 'meeting' }),
-        entry({ id: 'c', minutes: 30, task: LAI1 }),
-      ],
-      drafts: [draft({ id: 'd', minutes: 80 })],
-    });
+const DAY = summaryOfDay({
+  day: '2026-10-22',
+  entries: [
+    entry({ id: 'a', minutes: 60, kind: 'meeting', source: 'manual' }),
+    entry({ id: 'b', minutes: 30, kind: 'meeting', task: SKY1, project: SKY }),
+    entry({ id: 'c', minutes: 30, task: LAI1, project: LAIKA }),
+  ],
+  drafts: [
+    draft({ id: 'd', minutes: 80 }),
+    draft({ id: 'f', minutes: 20, task: LAI1, project: LAIKA }),
+  ],
+});
+
+void describe('the open day, in a summary’s shape', () => {
+  void test('totals, meetings, off-screen, one active day', () => {
     assert.deepEqual(
-      stats.map((s) => [s.key, s.value, s.sub]),
+      [DAY.days, DAY.active_days, DAY.confirmed_minutes, DAY.drafted_minutes],
+      [1, 1, 120, 100],
+    );
+    assert.equal(DAY.meeting_minutes, 90);
+    assert.equal(DAY.manual_minutes, 60);
+    assert.deepEqual(DAY.by_day, [
+      { day: '2026-10-22', confirmed_minutes: 120, drafted_minutes: 100 },
+    ]);
+  });
+
+  void test('by project, largest first, null for time on none', () => {
+    assert.deepEqual(
+      DAY.by_project.map((p) => [p.project?.slug ?? null, p.confirmed_minutes, p.drafted_minutes]),
       [
-        ['tracked', 200, '120 confirmed'],
-        ['review', 80, 'drafts waiting'],
-        ['meetings', 90, '45% of tracked'],
+        [null, 60, 80],
+        ['laika', 30, 20],
+        ['skynet', 30, 0],
+      ],
+    );
+  });
+
+  void test('by kind: a draft has none yet', () => {
+    assert.deepEqual(DAY.by_kind, [
+      { kind: null, minutes: 130 },
+      { kind: 'meeting', minutes: 90 },
+    ]);
+  });
+});
+
+void describe('the figures', () => {
+  void test('stats: four for a day, and Per active day over several', () => {
+    assert.deepEqual(
+      statsOf(DAY).map((s) => [s.key, s.value, s.sub]),
+      [
+        ['tracked', 220, '120 confirmed'],
+        ['review', 100, 'drafts waiting'],
+        ['meetings', 90, '41% of tracked'],
         ['off', 60, 'added by you'],
       ],
     );
-    assert.equal(share(1, 0), 0);
-    assert.equal(meetingMinutes([]), 0);
+    const week: TimeSummary = { ...DAY, days: 7, active_days: 2 };
+    assert.deepEqual(statsOf(week).at(-1), {
+      key: 'per-day',
+      label: 'Per active day',
+      value: 110,
+      sub: '2 of 7 days',
+    });
+  });
+
+  void test('by kind: what nobody named is Building’s, in the design’s order', () => {
+    assert.deepEqual(
+      kindRows(DAY.by_kind).map((k) => [k.key, k.label, k.minutes, k.pct]),
+      [
+        ['work', 'Building', 130, 59],
+        ['meeting', 'Meetings', 90, 41],
+      ],
+    );
+  });
+
+  void test('by project: No project for time on none, shares of what was tracked, bars of the busiest', () => {
+    assert.deepEqual(
+      projectRows(DAY.by_project).map((p) => [p.label, p.minutes, p.pct, p.width]),
+      [
+        ['No project', 140, 64, 1],
+        ['Laika', 50, 23, 50 / 140],
+        ['Skynet', 30, 14, 30 / 140],
+      ],
+    );
+  });
+
+  void test('by task: a card; time typed on none is No task, drafted time on nothing yet No task yet', () => {
+    assert.deepEqual(
+      taskRows(DAY.by_task).map((t) => [t.key, t.title, t.minutes]),
+      [
+        ['No task yet', '', 80],
+        ['No task', 'logged by kind', 60],
+        ['LAI-1', 'Search', 50],
+        ['SKY-1', 'Webhooks', 30],
+      ],
+    );
+    const drafted = summaryOfDay({
+      day: '2026-10-22',
+      entries: [],
+      drafts: [draft({ minutes: 15 })],
+    });
+    assert.deepEqual(
+      taskRows(drafted.by_task).map((t) => [t.key, t.title]),
+      [['No task yet', '']],
+    );
+  });
+
+  void test('by day: each day of the busiest; an empty day is a zero bar', () => {
+    const bars = dayBars({
+      ...DAY,
+      days: 2,
+      by_day: [
+        { day: '2026-10-21', confirmed_minutes: 0, drafted_minutes: 0 },
+        { day: '2026-10-22', confirmed_minutes: 120, drafted_minutes: 100 },
+      ],
+    });
+    assert.deepEqual(
+      bars.map((b) => [b.day, b.height]),
+      [
+        ['2026-10-21', 0],
+        ['2026-10-22', 1],
+      ],
+    );
+  });
+
+  void test('a share of nothing is nothing', () => {
+    assert.equal(share(10, 0), 0);
   });
 });
 
-void describe('the week', () => {
-  void test('tracked, to review, per active day, and a bar a day of the busiest', () => {
-    const week = weekStats([
-      { day: '2026-10-19', confirmed_minutes: 120, drafted_minutes: 0, state: 'confirmed' },
-      { day: '2026-10-20', confirmed_minutes: 0, drafted_minutes: 0, state: 'no_signal' },
-      { day: '2026-10-21', confirmed_minutes: 60, drafted_minutes: 60, state: 'drafted' },
-    ]);
-    assert.deepEqual(
-      week.stats.map((s) => [s.key, s.value, s.sub]),
-      [
-        ['tracked', 240, '180 confirmed'],
-        ['review', 60, 'drafts waiting'],
-        ['per-day', 120, '2 of 3 days'],
-      ],
-    );
-    assert.deepEqual(
-      week.days.map((d) => [d.day, d.height]),
-      [
-        ['2026-10-19', 1],
-        ['2026-10-20', 0],
-        ['2026-10-21', 1],
-      ],
-    );
-  });
-});
-
-void describe('by task', () => {
-  void test('largest first, whatever they are, widths of the busiest (the design, LAI-510)', () => {
-    const rows = byTask(
-      [entry({ id: 'a', minutes: 30, task: LAI1 }), entry({ id: 'b', minutes: 45 })],
-      [
-        draft({ id: 'c', minutes: 30, task: LAI1 }),
-        draft({ id: 'd', minutes: 70 }),
-        draft({ id: 'e', minutes: 5, general: true }),
-      ],
-    );
-    assert.deepEqual(
-      rows.map((r) => [r.key, r.title, r.minutes, r.width]),
-      [
-        ['No task yet', '', 70, 1],
-        ['LAI-1', 'Search', 60, 60 / 70],
-        ['No task', 'logged by kind', 50, 50 / 70],
-      ],
-    );
+void describe('the stretch', () => {
+  void test('the week is Monday to Sunday, whatever day is open', () => {
+    assert.deepEqual(weekOf('2026-10-22'), { from: '2026-10-19', to: '2026-10-25' });
+    assert.deepEqual(weekOf('2026-10-26'), { from: '2026-10-26', to: '2026-11-01' });
   });
 
-  void test('the busiest six, as the design shows them', () => {
-    const rows = byTask(
-      Array.from({ length: 8 }, (_, i) =>
-        entry({
-          id: `e${String(i)}`,
-          minutes: 10 + i,
-          task: { id: `t${String(i)}`, key: `LAI-${String(i)}`, title: 'A task' },
-        }),
-      ),
-      [],
-    );
-    assert.deepEqual(
-      rows.map((r) => r.key),
-      ['LAI-7', 'LAI-6', 'LAI-5', 'LAI-4', 'LAI-3', 'LAI-2'],
-    );
+  void test('the quick picks, counted back from today', () => {
+    assert.deepEqual(presetRange('last7', '2026-10-26'), { from: '2026-10-20', to: '2026-10-26' });
+    assert.deepEqual(presetRange('last30', '2026-10-26'), { from: '2026-09-27', to: '2026-10-26' });
+    assert.deepEqual(presetRange('thisMonth', '2026-10-26'), {
+      from: '2026-10-01',
+      to: '2026-10-26',
+    });
+    assert.deepEqual(presetRange('lastMonth', '2026-10-26'), {
+      from: '2026-09-01',
+      to: '2026-09-30',
+    });
+    assert.deepEqual(presetRange('lastMonth', '2026-03-05'), {
+      from: '2026-02-01',
+      to: '2026-02-28',
+    });
+  });
+
+  void test('a picked range is read only when it can be: both days, in order, a quarter at most', () => {
+    assert.equal(rangeProblem({ from: '2026-10-01', to: '2026-10-26' }), undefined);
+    assert.match(rangeProblem({ from: '', to: '2026-10-26' }) ?? '', /both days/);
+    assert.match(rangeProblem({ from: '2026-10-27', to: '2026-10-26' }) ?? '', /before the first/);
+    assert.equal(daysIn('2026-07-02', '2026-10-01'), 92);
+    assert.equal(rangeProblem({ from: '2026-07-02', to: '2026-10-01' }), undefined);
+    assert.match(rangeProblem({ from: '2026-07-01', to: '2026-10-01' }) ?? '', /92 days or fewer/);
   });
 });

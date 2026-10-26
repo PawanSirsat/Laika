@@ -1982,7 +1982,7 @@ export function MyDayScreen({
                 onPick={pickTab}
               />
             )}
-            {showLists && inTab('overview') && <OverviewTab view={view} />}
+            {showLists && inTab('overview') && <OverviewTab view={view} subjectId={subjectId} />}
             {showLists && inTab('review') && (
               <DraftList
                 // A new day starts with nothing ticked.
