@@ -63,8 +63,34 @@ const permissions = (role: string, actions: readonly string[]) => ({
 
 const HOLDS = ['people.analytics.read', 'profile.read', 'profile.activity.read'];
 
+/**
+ * Newest first, as the endpoint answers. The pinned clock is 15:00 (LAI-954):
+ * Ada read the day and its local activity 5 minutes ago and Grace 8, inside
+ * LAI-529's 15; Ada's look of 14:02 and yesterday's are not *now*.
+ */
 const LOOKED = {
   data: [
+    {
+      id: 'v5',
+      viewer: { id: 'u1', name: 'Ada Lovelace' },
+      kind: 'time',
+      day: TODAY,
+      viewed_at: at(TODAY, 14, 55),
+    },
+    {
+      id: 'v4',
+      viewer: { id: 'u1', name: 'Ada Lovelace' },
+      kind: 'local_activity',
+      day: null,
+      viewed_at: at(TODAY, 14, 55),
+    },
+    {
+      id: 'v3',
+      viewer: { id: 'u3', name: 'Linus Torvalds' },
+      kind: 'time',
+      day: TODAY,
+      viewed_at: at(TODAY, 14, 52),
+    },
     {
       id: 'v2',
       viewer: { id: 'u1', name: 'Ada Lovelace' },
@@ -74,7 +100,7 @@ const LOOKED = {
     },
     {
       id: 'v1',
-      viewer: { id: 'u1', name: 'Ada Lovelace' },
+      viewer: { id: 'u4', name: 'Margaret Hamilton' },
       kind: 'local_activity',
       day: null,
       viewed_at: at(YESTERDAY, 9, 10),
@@ -348,27 +374,26 @@ void describe('a reader without it (D-102 rule 6)', () => {
 });
 
 void describe('who looked at my time (D-102 rule 3)', () => {
-  void test('the person’s own My day lists who looked, at what, and when', async () => {
+  void test('the person’s own My day shows who is looking now, one line a person (LAI-529)', async () => {
     const me = { ...GRACE };
     const h = await openAt(`/my-day?day=${TODAY}`, stub(me, ['local_activity.read_own']));
     try {
-      // Who looked is a header button since LAI-502: the eye, with how many looks.
+      // Who looked is a header button since LAI-502: the eye, with how many people.
       const eye = h.page.locator('[data-who-looked] > button');
       await eye.waitFor({ timeout: 20_000 });
       await until(async () => (await h.page.locator('[data-looked-count]').count()) === 1);
       assert.equal(await h.page.locator('[data-looked-count]').innerText(), '2');
       await eye.click();
       await h.page.locator('[data-looked]').first().waitFor({ timeout: 20_000 });
+      // Ada's two looks are one line; her 14:02 look and Margaret's are not now.
       const rows = await h.page.locator('[data-looked]').allInnerTexts();
       assert.equal(rows.length, 2);
-      assert.match(rows[0] ?? '', /Ada Lovelace looked at your day for/);
-      assert.match(rows[0] ?? '', /2:02 PM today/);
-      assert.match(rows[1] ?? '', /Ada Lovelace looked at your shared local activity/);
-      // Who can look, in the words the rest of My day uses (LAI-968).
-      assert.match(
-        await h.page.locator('[data-who-looked]').innerText(),
-        /can be read by owners, admins and anyone the owner lets see everyone’s analytics/,
-      );
+      assert.match(rows[0] ?? '', /Ada Lovelace\s*5 min ago/);
+      assert.match(rows[1] ?? '', /Linus Torvalds\s*8 min ago/);
+      // Nothing else: no kind of read, no list order, no paragraph.
+      const words = await h.page.locator('[data-who-looked] .myday-pop-panel').innerText();
+      assert.match(words, /^Looking now\s/);
+      assert.doesNotMatch(words, /looked at|Newest first|Show more|can be read by|Margaret/);
       assert.ok(h.calls.some((c) => c.path === '/api/v1/me/analytics-views'));
     } finally {
       await h.close();

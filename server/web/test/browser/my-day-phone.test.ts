@@ -56,8 +56,9 @@ function stub(timer: typeof RUNNING | null = null): Record<string, unknown> {
         id: 'v1',
         viewer: { id: 'u9', name: 'Grace Hopper' },
         kind: 'time',
-        day: YESTERDAY,
-        viewed_at: at(TODAY, 9, 12),
+        day: TODAY,
+        // Inside LAI-529's 15 minutes of the pinned 15:00.
+        viewed_at: at(TODAY, 14, 57),
       },
     ],
     next_cursor: null,

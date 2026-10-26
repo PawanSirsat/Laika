@@ -1434,14 +1434,7 @@ export function MyDayScreen({
       <MyDayPhoneBar>
         {/* Not in the design's bar, which has no other way to Agent time and On your plate. */}
         {phoneBeside}
-        {!readOnly && (
-          <WhoLooked
-            tz={view.tz}
-            today={view.today}
-            open={lookedOpen}
-            onOpenChange={setLookedOpen}
-          />
-        )}
+        {!readOnly && <WhoLooked open={lookedOpen} onOpenChange={setLookedOpen} />}
         {switcher}
         {avatar}
       </MyDayPhoneBar>
@@ -1616,7 +1609,7 @@ export function MyDayScreen({
                       </>
                     }
                     label="Who can see this"
-                    title={`Drafts: you, owners and admins. Your drafts can be read by you and by ${DRAFT_READERS}. Every look is listed under Who looked.`}
+                    title={`Drafts: you, owners and admins. Your drafts can be read by you and by ${DRAFT_READERS}. Who looked in the last 15 minutes shows under the eye.`}
                     triggerClassName="myday-lock myday-lock-link myday-who-trigger"
                     width="who"
                     align="left"
@@ -1823,14 +1816,7 @@ export function MyDayScreen({
                 }
               />
             )}
-            {!readOnly && (
-              <WhoLooked
-                tz={view.tz}
-                today={view.today}
-                open={lookedOpen}
-                onOpenChange={setLookedOpen}
-              />
-            )}
+            {!readOnly && <WhoLooked open={lookedOpen} onOpenChange={setLookedOpen} />}
             <button
               type="button"
               className="myday-chip myday-head-icon"

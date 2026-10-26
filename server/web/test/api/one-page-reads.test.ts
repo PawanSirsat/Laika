@@ -98,12 +98,16 @@ const ALLOWED: ReadonlyMap<string, { readonly names: readonly string[]; readonly
     ],
     /*
      * LAI-959: who looked at a person's time is every look ever logged, kept
-     * 400 days, so My day reads the newest page and walks `next_cursor` on
-     * *Show more* — none is passed off as all.
+     * 400 days. Since LAI-529 My day shows only who looked in the last 15
+     * minutes, so it walks `next_cursor` only while a page can still reach
+     * into that window — all of the window, none of the rest.
      */
     [
       'routes/screens/my-day/WhoLooked.tsx',
-      { names: ['listAnalyticsViews'], why: 'a page per *Show more*, walking `next_cursor`' },
+      {
+        names: ['listAnalyticsViews'],
+        why: 'the newest pages, walking `next_cursor` until one reaches past the window',
+      },
     ],
   ]);
 
