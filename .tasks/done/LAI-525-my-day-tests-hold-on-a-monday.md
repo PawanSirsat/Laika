@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-524
-status: in-progress
+status: done
 started: 2026-10-26T06:15:25Z
+finished: 2026-10-26T06:29:17Z
 ---
 
 ## Goal
@@ -21,8 +22,13 @@ week's strip does not hold.
 
 ## Acceptance criteria
 
-- [ ] Add time posts the latest past day this week has, today's on a Monday,
+- [x] Add time posts the latest past day this week has, today's on a Monday,
       and says so.
-- [ ] The phone test clicks today's letter when the shown week holds it, and
+- [x] The phone test clicks today's letter when the shown week holds it, and
       another of that week's letters when it does not.
-- [ ] Both pass on a Monday (2026-10-26) and on any other day.
+- [x] Both pass on a Monday (2026-10-26) and on any other day.
+
+## Build notes and acceptance (CHIEF, 2026-10-26)
+
+- Found while gating LAI-524 on Monday 2026-10-26: red on `master` too.
+  Both tests now take a day the shown week holds. Released with LAI-524.
