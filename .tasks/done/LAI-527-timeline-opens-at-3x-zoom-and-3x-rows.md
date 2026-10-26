@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-526
-status: in-progress
+status: done
 started: 2026-10-26T08:45:12Z
+finished: 2026-10-26T08:45:26Z
 ---
 
 ## Goal
@@ -18,10 +19,16 @@ hour) with its YOU row at the design's 80px blocks.
 
 ## Acceptance criteria
 
-- [ ] With nothing kept, the Timeline opens at 3× zoom and its rows at 240px
+- [x] With nothing kept, the Timeline opens at 3× zoom and its rows at 240px
       (3× the design's 80px, the grip's top).
-- [ ] A zoom or row height the person picks is kept in their browser, as the
+- [x] A zoom or row height the person picks is kept in their browser, as the
       tab is; a private window opens at the defaults.
-- [ ] Every My day suite still runs at 1× — `my-day-clock`'s `open` keeps
+- [x] Every My day suite still runs at 1× — `my-day-clock`'s `open` keeps
       1× and 80px when nothing is kept — and a test opens without that to see
       the 3× defaults and a kept change survive a reload.
+
+## Build notes and acceptance (CHIEF, 2026-10-26)
+
+- `timeline-prefs.ts` (new): 3× zoom and 240px rows by default, a change
+  kept under `laika.my-day.zoom` and `laika.my-day.row-height`.
+- Released with LAI-526 on the owner's word.
