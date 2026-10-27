@@ -8,6 +8,7 @@ import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { projects, sprints, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
+import { assertClaimFence } from './claims.ts';
 import { assertCan } from '../policy/can.ts';
 import { requireProjectBySlug } from './projects.ts';
 import { getTask, type TaskView } from './tasks.ts';
@@ -557,6 +558,12 @@ export function addTasksToSprint(
       );
     }
 
+    // The claim fence (LAI-541) for every task that would move, before any
+    // does — one claimed task refuses the whole request, as a foreign one does.
+    for (const row of rows) {
+      if (row.sprintId !== sprintId) assertClaimFence(db, actor, row.id, now);
+    }
+
     for (const row of rows) {
       if (row.sprintId === sprintId) continue;
 
@@ -594,6 +601,7 @@ export function removeTaskFromSprint(
       });
     }
 
+    assertClaimFence(db, actor, taskId, now);
     db.update(tasks).set({ sprintId: null, updatedAt: now }).where(eq(tasks.id, taskId)).run();
 
     recordTaskMove(db, project, actor, taskId, sprintId, null, now);

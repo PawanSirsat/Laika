@@ -137,6 +137,9 @@ export const SYSTEM_ACTIONS = [
   // §11.6: time retention — drafts after 30 days, entries after three years
   // (D-088 item 11, LAI-787).
   'system.time.prune',
+  // §11.6: a claim whose lease lapsed is marked `expired` (proposal §4.2,
+  // LAI-541) — nobody did it, so nobody is the actor.
+  'system.claim.expire',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];

@@ -35,6 +35,75 @@ export interface Env {
    * built the SPA — see LAI-204.
    */
   readonly publicDir: string | undefined;
+  /**
+   * The claim timings of §9.1 (proposal §4.2, LAI-541), in milliseconds —
+   * each its own `LAIKA_CLAIM_*_SECONDS` variable, defaulting to the
+   * proposal's 30 s / 90 s / 5 min / 30 s.
+   */
+  readonly claims: {
+    heartbeatMs: number;
+    suspectMs: number;
+    expireMs: number;
+    scanMs: number;
+  };
+}
+
+/** §9.1's defaults, in seconds (LAI-541). */
+const CLAIM_DEFAULT_SECONDS = { heartbeat: 30, suspect: 90, expire: 300, scan: 30 } as const;
+
+function parseSeconds(variable: string, raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw === '') return fallback;
+  // The shape first, as `PORT` does: `Number()` would take `1e3` and ` 30 `.
+  if (!/^\d+$/.test(raw) || Number(raw) < 1 || Number(raw) > 86_400) {
+    throw new EnvError(variable, raw, 'a whole number of seconds between 1 and 86400');
+  }
+  return Number(raw);
+}
+
+/**
+ * `LAIKA_CLAIM_*_SECONDS` (§11.7). One cross-check: a claim that lapses before
+ * its next heartbeat is due would expire while its session is perfectly well,
+ * so the expiry must be longer than the heartbeat.
+ *
+ * All four are read before any is judged, so a bad first one still leaves the
+ * others read — what `env-contract.test.ts` measures.
+ */
+function readClaimTimings(source: NodeJS.ProcessEnv): Env['claims'] {
+  const raw = {
+    heartbeat: source.LAIKA_CLAIM_HEARTBEAT_SECONDS,
+    suspect: source.LAIKA_CLAIM_SUSPECT_SECONDS,
+    expire: source.LAIKA_CLAIM_EXPIRE_SECONDS,
+    scan: source.LAIKA_CLAIM_SCAN_SECONDS,
+  };
+  const heartbeat = parseSeconds(
+    'LAIKA_CLAIM_HEARTBEAT_SECONDS',
+    raw.heartbeat,
+    CLAIM_DEFAULT_SECONDS.heartbeat,
+  );
+  const suspect = parseSeconds(
+    'LAIKA_CLAIM_SUSPECT_SECONDS',
+    raw.suspect,
+    CLAIM_DEFAULT_SECONDS.suspect,
+  );
+  const expire = parseSeconds(
+    'LAIKA_CLAIM_EXPIRE_SECONDS',
+    raw.expire,
+    CLAIM_DEFAULT_SECONDS.expire,
+  );
+  const scan = parseSeconds('LAIKA_CLAIM_SCAN_SECONDS', raw.scan, CLAIM_DEFAULT_SECONDS.scan);
+  if (expire <= heartbeat) {
+    throw new EnvError(
+      'LAIKA_CLAIM_EXPIRE_SECONDS',
+      String(expire),
+      `more seconds than LAIKA_CLAIM_HEARTBEAT_SECONDS (${String(heartbeat)})`,
+    );
+  }
+  return {
+    heartbeatMs: heartbeat * 1000,
+    suspectMs: suspect * 1000,
+    expireMs: expire * 1000,
+    scanMs: scan * 1000,
+  };
 }
 
 const DEFAULT_PORT = 3000;
@@ -221,5 +290,6 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
       source.LAIKA_PUBLIC_DIR === undefined || source.LAIKA_PUBLIC_DIR === ''
         ? undefined
         : resolve(source.LAIKA_PUBLIC_DIR),
+    claims: readClaimTimings(source),
   };
 }

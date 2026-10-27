@@ -42,6 +42,16 @@ import { CATEGORY_LABELS, statusForCategory, type StatusRef } from '../db/projec
 import { projects, projectStatuses, taskDependencies, tasks, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, effectiveProjectRole } from '../policy/can.ts';
+import {
+  assertClaimFence,
+  claimView,
+  hasOpenWorkRequest,
+  liveClaim,
+  registeredAgent,
+  releaseLiveClaim,
+  takeClaim,
+  type TaskClaimView,
+} from './claims.ts';
 import { addComment, commentCounts } from './comments.ts';
 import {
   freezeEstimateAtStart,
@@ -1357,7 +1367,6 @@ export function updateTask(
   const selecting =
     input.selected_agent_id !== undefined && input.selected_agent_id !== task.selectedAgentId;
   if (selecting) {
-    assertSelectionChangeAllowed(db, task);
     if (input.selected_agent_id !== null && input.selected_agent_id !== undefined) {
       assertAgentSelectable(db, actor, project, input.selected_agent_id);
     }
@@ -1371,6 +1380,11 @@ export function updateTask(
   // first read.
   return db.transaction(
     () => {
+      // The claim fence (LAI-541), under the write lock and before anything
+      // is written, so a stale holder changes nothing at all.
+      assertClaimFence(db, actor, taskId, now);
+      if (selecting) assertSelectionChangeAllowed(db, task);
+
       // Under the write lock, so two writes cannot both find it free.
       if (typeof changes.externalRef === 'string') {
         assertOutsideIdFree(db, project.id, changes.externalRef, taskId);
@@ -1491,27 +1505,25 @@ export function updateTask(
 /** Where a claim may take a task from (§5, M7, D-082). */
 const CLAIMABLE: readonly TaskStatus[] = [...READY_STATUSES, 'in_progress'];
 
-/**
- * Claim: compare-and-swap (SPEC §5, AC3).
- *
- * The API twin of the file-move lock the build sessions use by hand — getting it
- * wrong puts two agents on one task. The swap runs inside `BEGIN IMMEDIATE` and
- * the `UPDATE` itself carries `assignee_id IS NULL`, so the check and the write
- * cannot be separated by another writer. A loser is told **who** holds it, since
- * "conflict" alone does not tell an agent what to do next.
- */
-export function claimTask(
-  sqlite: Database.Database,
-  db: Db,
-  actor: ResolvedActor,
-  taskId: string,
-  now: number = Date.now(),
+/** What `start_working` and `POST /tasks/:id/claim` answer (§5, LAI-541). */
+export interface StartedWork {
+  task: TaskView;
+  /**
+   * The exclusive claim a registered agent's session now holds (§4.66), whose
+   * `generation` it sends with every change. Null for a person or a legacy
+   * token: they claim by assignee alone, as before.
+   */
+  claim: TaskClaimView | null;
+}
+
+export interface StartWorkingOptions {
+  now?: number;
   /**
    * The branch the work is on, when the agent says (`start_working`'s
    * `branch`, LAI-770): kept on the task, so the board shows where the work
    * is and a branch named for the key ties the session's tokens to it.
    */
-  branch?: string,
+  branch?: string | undefined;
   /**
    * The claimant's own size and confidence (`start_working`'s `estimate`,
    * D-085 item 4, LAI-772): kept best effort after the claim's activity row,
@@ -1520,15 +1532,65 @@ export function claimTask(
    * holder's own call on a task already under way — is not a claim and keeps
    * none.
    */
-  estimate?: ClaimEstimateInput,
-): TaskView {
+  estimate?: ClaimEstimateInput | undefined;
+  /** A registered agent's session to claim under (§4.65); absent opens one. */
+  sessionId?: string | undefined;
+}
+
+/**
+ * Claim: compare-and-swap (SPEC §5, AC3) — and, for a registered agent, the
+ * exclusive claim (§4.66, LAI-541).
+ *
+ * The API twin of the file-move lock the build sessions use by hand — getting it
+ * wrong puts two agents on one task. The swap runs inside `BEGIN IMMEDIATE` and
+ * the `UPDATE` itself carries the assignee it read, so the check and the write
+ * cannot be separated by another writer. A loser is told **who** holds it, since
+ * "conflict" alone does not tell an agent what to do next.
+ *
+ * ## A registered agent's claim (LAI-541)
+ *
+ * On top of everything above, its session takes the task's one live claim
+ * (`takeClaim`). **The human assignee is never moved for it** (D-114 item 7):
+ * an unassigned task is assigned to the agent's owner exactly as any claim
+ * assigns it, recorded on the claim's `task.status_changed` row; a task the
+ * owner already holds stays theirs; and a task held by **someone else** may be
+ * claimed only when a work request asks this agent for it — and stays theirs.
+ * A legacy token cannot claim a task an agent's session holds (D-114 item 6).
+ */
+export function startWorking(
+  sqlite: Database.Database,
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  options: StartWorkingOptions = {},
+): StartedWork {
+  const now = options.now ?? Date.now();
+  const { estimate } = options;
   const { project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'task.claim', { projectId: project.id });
-  const onBranch = branch?.trim() === '' ? undefined : branch?.trim();
+  const onBranch = options.branch?.trim() === '' ? undefined : options.branch?.trim();
+  const agent = registeredAgent(actor);
 
   return immediateTransaction(sqlite, () => {
     const before = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
     const from = statusRow(db, project.id, before.statusId)!;
+
+    // D-114 item 6: a token with no agent cannot take what a session holds.
+    if (agent === null && actor.token !== null && actor.token !== undefined) {
+      const live = liveClaim(db, taskId);
+      if (live !== undefined) {
+        throw new ApiError('conflict', 'A registered agent holds this task', {
+          reason: 'claim_held',
+          task_id: taskId,
+          agent_id: live.agentId,
+        });
+      }
+    }
+
+    // Asked for this agent by a work request (LAI-535): it may work a task
+    // somebody else is accountable for, without becoming accountable itself.
+    const requested = agent !== null && hasOpenWorkRequest(db, taskId, agent.id);
+    const holdsIt = before.assigneeId === actor.userId || (requested && before.assigneeId !== null);
 
     // The holder's own claim of a task already under way is a **mark, not a
     // move** (LAI-770 review, B2, the owner's decision): a session resuming the
@@ -1536,22 +1598,48 @@ export function claimTask(
     // its tokens tied to nothing. It keeps the branch it is given and changes
     // nothing else — no status, no activity row, `started_at` and the frozen
     // estimate untouched. Anyone else, and a holder whose task is not in
-    // progress, still hear who has it below.
-    if (before.assigneeId === actor.userId && before.status === 'in_progress') {
+    // progress, still hear who has it below. A registered agent's session
+    // takes — or resumes — its claim here too, and a claim it newly takes is
+    // recorded as the field it is (D-027's shape), so it is never silent.
+    if (holdsIt && before.status === 'in_progress') {
+      const taken =
+        agent === null ? null : takeClaim(db, actor, before, { sessionId: options.sessionId, now });
       if (onBranch !== undefined && onBranch !== before.branch) {
         db.update(tasks)
           .set({ branch: onBranch, updatedAt: now })
           .where(eq(tasks.id, taskId))
           .run();
       }
-      return viewOne(
-        db,
-        db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
-        project.prefix,
-      );
+      if (taken !== null && !taken.resumed) {
+        appendActivity(db, {
+          orgId: project.orgId,
+          projectId: project.id,
+          taskId,
+          ...activityActor(actor),
+          type: 'task.updated',
+          payload: {
+            field: 'claim',
+            from: null,
+            to: { generation: taken.claim.generation, session_id: taken.claim.sessionId },
+          },
+          now,
+        });
+      }
+      return {
+        task: viewOne(
+          db,
+          db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+          project.prefix,
+        ),
+        claim: taken === null ? null : claimView(taken.claim),
+      };
     }
-    // Held first, so a second claimant still hears **who** has it (AC3).
-    if (before.assigneeId !== null) {
+    // Held first, so a second claimant still hears **who** has it (AC3). An
+    // agent asked by a work request, or acting for the person who holds it,
+    // goes on (LAI-541); a person keeps today's rule — an assigned task is
+    // somebody's.
+    const mayTakeAssigned = agent !== null && holdsIt;
+    if (before.assigneeId !== null && !mayTakeAssigned) {
       throw new ApiError('conflict', 'That task is already claimed', {
         assignee_id: before.assigneeId,
         status: before.status,
@@ -1571,15 +1659,22 @@ export function claimTask(
         { from: before.status, to: 'in_progress', allowed_from: CLAIMABLE },
       );
     }
+    // The agent's claim before the task moves, so a refusal leaves the task
+    // exactly as it was.
+    const taken =
+      agent === null ? null : takeClaim(db, actor, before, { sessionId: options.sessionId, now });
     // A released task stays in the in-progress status it was in; anything else
     // lands in the project's first visible one (LAI-738).
     const to =
       before.status === 'in_progress' ? from : statusForCategory(db, project.id, 'in_progress');
+    // Never moved for a claim: an unassigned task becomes its claimant's (or
+    // its claimant's owner's), an assigned one stays whose it is.
+    const assignee = before.assigneeId ?? actor.userId;
 
     const changed = db
       .update(tasks)
       .set({
-        assigneeId: actor.userId,
+        assigneeId: assignee,
         status: 'in_progress',
         statusId: to.id,
         // The **first** entry to `in_progress` (§4.5), as `changeStatus`
@@ -1590,7 +1685,14 @@ export function claimTask(
         ...(onBranch === undefined ? {} : { branch: onBranch }),
         updatedAt: now,
       })
-      .where(and(eq(tasks.id, taskId), isNull(tasks.assigneeId)))
+      .where(
+        and(
+          eq(tasks.id, taskId),
+          before.assigneeId === null
+            ? isNull(tasks.assigneeId)
+            : eq(tasks.assigneeId, before.assigneeId),
+        ),
+      )
       .run();
 
     if (changed.changes === 0) {
@@ -1615,8 +1717,9 @@ export function claimTask(
         from: before.status,
         to: 'in_progress',
         ...statusPayload(from, to),
-        assignee_id: actor.userId,
+        assignee_id: assignee,
         via: 'claim',
+        ...(taken === null ? {} : { claim_generation: taken.claim.generation }),
       },
       now,
     });
@@ -1629,8 +1732,27 @@ export function claimTask(
     if (before.startedAt === null) freezeEstimateAtStart(db, taskId, now);
     else if (estimate !== undefined) refreshEstimate(db, taskId, now);
 
-    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+    return {
+      task: viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix),
+      claim: taken === null ? null : claimView(taken.claim),
+    };
   });
+}
+
+/**
+ * {@link startWorking}, answering the task alone — the shape every caller had
+ * before LAI-541, kept so none of them changes.
+ */
+export function claimTask(
+  sqlite: Database.Database,
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  now: number = Date.now(),
+  branch?: string,
+  estimate?: ClaimEstimateInput,
+): TaskView {
+  return startWorking(sqlite, db, actor, taskId, { now, branch, estimate }).task;
 }
 
 export function changeStatus(
@@ -1654,6 +1776,9 @@ export function changeStatus(
   const { task, project } = requireTask(db, taskId);
   const scoped = withProject(actor, project.id);
   assertCan(scoped, 'task.write', { projectId: project.id });
+  // Every move — the holder's finish, a person's accept or send-back — passes
+  // the claim fence first (LAI-541).
+  assertClaimFence(db, actor, taskId, now);
 
   const from = statusRow(db, project.id, task.statusId)!;
   // A bare `done` from an agent is the D-082 refusal even when the task is
@@ -1769,6 +1894,10 @@ export function changeStatus(
     })
     .where(eq(tasks.id, taskId))
     .run();
+
+  // Out of `in_progress`, nobody works it under the claim it had (§5,
+  // LAI-541): released, and its generation refused from here on.
+  if (task.status === 'in_progress') releaseLiveClaim(db, taskId, now);
 
   appendActivity(db, {
     orgId: project.orgId,
@@ -1889,6 +2018,7 @@ export function addTaskDependency(
 ): TaskView {
   const { project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'task.dependency.write', { projectId: project.id });
+  assertClaimFence(db, actor, taskId, now);
 
   // Both ends must exist, or a typo silently creates an unsatisfiable blocker.
   requireTask(db, dependsOnTaskId);
@@ -1936,6 +2066,7 @@ export function removeTaskDependency(
 ): TaskView {
   const { project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'task.dependency.write', { projectId: project.id });
+  assertClaimFence(db, actor, taskId, now);
 
   const removed = db
     .delete(taskDependencies)
@@ -2012,6 +2143,7 @@ export function reorderTask(
   const now = input.now ?? Date.now();
 
   return immediateTransaction(sqlite, () => {
+    assertClaimFence(db, actor, taskId, now);
     // Neighbours from before LAI-472 get places first, so there is an order
     // to read. A no-op on a running server, where the boot backfill has run.
     backfillTaskPositions(db, project.id);

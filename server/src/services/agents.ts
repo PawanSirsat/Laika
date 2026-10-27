@@ -8,6 +8,7 @@ import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { requireOrgId } from '../db/orgs.ts';
 import { agentProjectGrants, agents, tokens } from '../db/schema.ts';
+import { endSessionsOfRevokedAgent } from './claims.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, forcedTokenScope } from '../policy/can.ts';
 import {
@@ -342,6 +343,8 @@ export function revokeAgent(
       .where(and(eq(tokens.agentId, row.id), isNull(tokens.revokedAt)))
       .all();
     for (const token of live) revokeTokenRow(db, actor, token, now);
+    // D-114 item 2: its sessions end with it (LAI-541); its claims lapse.
+    endSessionsOfRevokedAgent(db, row.id, now);
   });
 
   return agentView(db, { ...row, status: 'revoked', revokedAt: now });
