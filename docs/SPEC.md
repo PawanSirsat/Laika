@@ -2454,6 +2454,15 @@ Token scope narrows afterwards: `read_only` permits every `GET` the user's role
 allows and nothing else; `project_ids_json`, when set, restricts the token to
 those projects. A Viewer's token can never write, whatever its scope says.
 
+**A token pinned to projects is refused org-wide admin actions** (audit H4).
+When `project_ids_json` is set, the token keeps only the org-level reads every
+member has and its own-record actions (its own tokens, heartbeats, unlisted
+work, activity sharing, time settings and drafts); every other org-scoped
+action — settings, projects, invites, members, other people's tokens,
+org-wide history and usage — is refused, whatever the user's role. The pin
+narrows, exactly as §3.3 says a token only ever can; a project-scoped
+credential is not an org credential with a project filter.
+
 ### 6.3 Conventions
 
 - **Pagination**: `?limit=` (default 50, max 200) and `?cursor=` (opaque,
@@ -2496,7 +2505,8 @@ those projects. A Viewer's token can never write, whatever its scope says.
 
   **A finer reason travels in `details.reason`, never as a new code** (D-079):
   `session_required` when a token is refused only because §3.1 says *session
-  only*; `local_activity_off`, `day_out_of_range` and `invalid_tz` on a local
+  only*; `project_pinned` when a token pinned to projects is refused an
+  org-wide action it does not keep (§6.2, H4); `local_activity_off`, `day_out_of_range` and `invalid_tz` on a local
   activity report (§6.4); `token_required` on a heartbeat (§9.1);
   `protobuf_not_supported` and `otlp_invalid` on OpenTelemetry metrics
   (LAI-773). The status

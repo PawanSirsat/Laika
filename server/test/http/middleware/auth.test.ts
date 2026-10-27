@@ -570,6 +570,70 @@ describe('a project whitelist narrows which projects', () => {
     expect((await withToken('/api/v1/projects/outside', secret)).status).toBe(403);
     expect((await withCookie('/api/v1/projects/outside', ownerCookie)).status).toBe(200);
   });
+
+  /**
+   * SPEC §6.2 (audit H4): a token pinned to projects is refused org-wide
+   * admin actions, whatever the user's role. Through the real chain, on the
+   * three the audit named — a project, the organisation, an invite — against
+   * the same bodies on an unpinned token of the same Owner, so the `403` is
+   * the pin's. And the every-member read still answers, so the allow-list is
+   * exercised over HTTP and not only in `can()`.
+   */
+  it('is refused org-wide admin actions with project_pinned, and keeps the org read (§6.2, H4)', async () => {
+    const inside = await makeProject('inside');
+    const pinned = await mint({ name: 'pinned', project_ids: [inside] });
+    const unpinned = await mint({ name: 'unpinned' });
+
+    const adminWrites = [
+      {
+        action: 'project.create',
+        path: '/api/v1/projects',
+        method: 'POST',
+        body: { name: 'Nope', slug: 'nope', prefix: 'NOP' },
+        unpinnedStatus: 201,
+      },
+      {
+        action: 'org.settings.edit',
+        path: '/api/v1/org',
+        method: 'PATCH',
+        body: { name: 'Renamed' },
+        unpinnedStatus: 200,
+      },
+      {
+        action: 'user.invite',
+        path: '/api/v1/invites',
+        method: 'POST',
+        body: { email: 'new@example.test', org_role: 'member' },
+        unpinnedStatus: 201,
+      },
+    ] as const;
+
+    for (const write of adminWrites) {
+      const refused = await withToken(write.path, pinned, {
+        method: write.method,
+        body: JSON.stringify(write.body),
+      });
+      expect(refused.status, `${write.method} ${write.path} pinned`).toBe(403);
+      const { error } = (await refused.json()) as {
+        error: { code: string; details: { action: string; reason: string } };
+      };
+      expect(error.code, write.path).toBe('forbidden');
+      expect(error.details, write.path).toMatchObject({
+        action: write.action,
+        reason: 'project_pinned',
+      });
+
+      // The same body on the same Owner's unpinned token: today's answer.
+      const allowed = await withToken(write.path, unpinned, {
+        method: write.method,
+        body: JSON.stringify(write.body),
+      });
+      expect(allowed.status, `${write.method} ${write.path} unpinned`).toBe(write.unpinnedStatus);
+    }
+
+    // The every-member org read is kept by the pin.
+    expect((await withToken('/api/v1/org', pinned)).status).toBe(200);
+  });
 });
 
 describe('last_used_at (§7.2)', () => {

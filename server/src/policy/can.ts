@@ -31,6 +31,7 @@ import {
   type Action,
   isReadAction,
   type OrgAction,
+  PINNED_TOKEN_ORG_ACTIONS,
   type ProjectAction,
   SESSION_ONLY_ACTIONS,
   type SystemAction,
@@ -132,6 +133,11 @@ const PROJECT_ACTION_SET: ReadonlySet<string> = new Set(PROJECT_ACTIONS);
 
 function isOrgAction(action: Action): action is OrgAction {
   return ORG_ACTION_SET.has(action);
+}
+
+/** §6.2 (audit H4): the org actions a project-pinned token keeps. */
+function isPinnedTokenOrgAction(action: OrgAction): boolean {
+  return PINNED_TOKEN_ORG_ACTIONS.has(action);
 }
 
 function isProjectAction(action: Action): action is ProjectAction {
@@ -731,8 +737,19 @@ function tokenAllows(actor: Actor, action: Action, resource: Resource): boolean 
   // Owner's full, unscoped token — and that is the token that matters.
   if (SESSION_ONLY_ACTIONS.has(action)) return false;
 
+  // §6.2 (audit H4): a token pinned to projects is refused org-wide admin
+  // actions, whatever the user's role. The pin used to be read only against a
+  // project, so an Admin's token pinned to one project still invited, created
+  // projects and edited the organisation — a project filter on an org
+  // credential, which §3.3 says a token never is. The classification is the
+  // one `can()` already dispatches on, never re-derived from the name.
+  if (token.projectIds !== null && isOrgAction(action) && !isPinnedTokenOrgAction(action)) {
+    return false;
+  }
+
   // A token may be pinned to a subset of the user's projects (§4.9). An action
-  // with no project is org-scoped and unaffected by that whitelist.
+  // with no project is org-scoped and answered above; one with a project is
+  // answered by the whitelist.
   if (token.projectIds !== null && resource.projectId !== undefined) {
     if (!token.projectIds.includes(resource.projectId)) return false;
   }
@@ -855,6 +872,28 @@ export function assertCan(principal: Principal, action: Action, resource: Resour
       action,
       reason: 'session_required',
     });
+  }
+
+  // §6.2's pin (audit H4), said as such for the same reason: the person may,
+  // and the same token unpinned may, so the pin is why not — a caller told
+  // only `forbidden` cannot tell "mint a token without a project list" from
+  // "you may never". Compared against the token unpinned rather than the
+  // person, so a `read_only` pinned token refused a write is told nothing
+  // the pin did not do.
+  if (
+    !isSystem(principal) &&
+    principal.token !== null &&
+    principal.token !== undefined &&
+    principal.token.projectIds !== null &&
+    isOrgAction(action) &&
+    !isPinnedTokenOrgAction(action) &&
+    can({ ...principal, token: { ...principal.token, projectIds: null } }, action, resource)
+  ) {
+    throw new ApiError(
+      'forbidden',
+      'This token is pinned to projects and cannot act on the organisation',
+      { action, reason: 'project_pinned' },
+    );
   }
 
   // D-103's two space rules, said as such for the same reason: an agent told
