@@ -2,11 +2,12 @@
 id: LAI-566
 title: 'endpoint-coverage goes red on GET /agents/me/work-requests: name it in NO_BROWSER_CALLER (agent tokens only, no browser caller ever)'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-535]
 discovered-from: LAI-535
-status: backlog
+status: in-progress
+started: 2026-10-27T21:51:41Z
 ---
 
 Filed by CORE (Belka, dispatched by CHIEF) from CHIEF's block, 2026-10-28.
@@ -57,3 +58,14 @@ The last line is this task's. The other five are LAI-561's.
 §4.4: rides with LAI-561 and LAI-538. CHIEF merges LAI-535 into local `master`
 unpushed, then SHELL merges it, lands this and pushes. Nothing reaches
 `origin/master` red.
+
+## Notes
+
+- **Claimed by SHELL (polly dispatch, Belka), 2026-10-28.** Worktree
+  `Laika-agent-field`, branch `LAI-538-drawer-agent-field`, base `2b229e1e`:
+  LAI-535 head `38ab6851` (draft PR #105, on #102, on #98/#96) with LAI-537
+  (#104) and LAI-536 (#101) merged in. Must not merge before them.
+- **Deviation, recorded as §2 asks:** the `depends-on` tasks are in
+  `.tasks/review/`, not `done/`. CHIEF dispatched this against them, stacked.
+- **D-114** approved in substance; authorised-account record pending, so the PR
+  stays a draft.

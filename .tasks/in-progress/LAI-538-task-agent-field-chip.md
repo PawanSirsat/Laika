@@ -2,11 +2,12 @@
 id: LAI-538
 title: 'Task drawer Agent field, agent chip on cards, list column + filter, owner + agent in activity, client mirror of agent_selected'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-535, LAI-536]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-27T21:51:41Z
 ---
 
 Implements **proposal §6 (Cards, task drawer), §3** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -72,3 +73,14 @@ P0 — board priority `p1` + tag `p0`.
 ## Migration / rollout notes
 
 Second half of the `agent_selected` three-owner merge (§4.4 step 4): merge CHIEF's local `master` carrying LAI-535, complete against a green gate.
+
+## Notes
+
+- **Claimed by SHELL (polly dispatch, Belka), 2026-10-28.** Worktree
+  `Laika-agent-field`, branch `LAI-538-drawer-agent-field`, base `2b229e1e`:
+  LAI-535 head `38ab6851` (draft PR #105, on #102, on #98/#96) with LAI-537
+  (#104) and LAI-536 (#101) merged in. Must not merge before them.
+- **Deviation, recorded as §2 asks:** the `depends-on` tasks are in
+  `.tasks/review/`, not `done/`. CHIEF dispatched this against them, stacked.
+- **D-114** approved in substance; authorised-account record pending, so the PR
+  stays a draft.
