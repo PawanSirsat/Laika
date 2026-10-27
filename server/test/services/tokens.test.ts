@@ -221,6 +221,104 @@ describe('project scoping is validated, never silently narrowed', () => {
   });
 });
 
+/**
+ * SPEC §6.2 (audit H4, LAI-562): a token keeps `token.create_own` when pinned,
+ * so what it mints must stay inside its pin. Without this, a token pinned to
+ * one project asks for `project_ids: null` and gets back a token reaching every
+ * project its owner can — the pin escaped in one request.
+ */
+describe('a pinned token mints only inside its pin (§6.2, LAI-562)', () => {
+  let inside: string;
+  let alsoInside: string;
+  let outside: string;
+
+  beforeEach(() => {
+    const make = (slug: string) =>
+      createProject(t.sqlite, t.db, actor(ownerId), {
+        name: slug,
+        slug,
+        prefix: slug.slice(0, 3).toUpperCase(),
+      }).id;
+    inside = make('inside');
+    alsoInside = make('also');
+    outside = make('outside');
+  });
+
+  function onToken(projectIds: readonly string[] | null): ResolvedActor {
+    return { ...actor(ownerId), token: { id: newId(), scope: 'full', projectIds } };
+  }
+
+  function refusal(fn: () => unknown): ApiError {
+    try {
+      fn();
+    } catch (error) {
+      if (error instanceof ApiError) return error;
+      throw error;
+    }
+    return expect.unreachable('should have thrown') as never;
+  }
+
+  it('refuses an unpinned token to a pinned one, with project_pinned', () => {
+    const error = refusal(() =>
+      createToken(t.sqlite, t.db, onToken([inside]), { name: 'escape', scope: 'full' }),
+    );
+
+    expect(error.code).toBe('forbidden');
+    expect(error.details).toMatchObject({ action: 'token.create_own', reason: 'project_pinned' });
+    // Nothing was written: not a narrowed token, not an activity row.
+    expect(t.db.select().from(tokens).all()).toHaveLength(0);
+    expect(rowsOfType('token.created')).toHaveLength(0);
+  });
+
+  it('refuses a list reaching outside the pin, naming the ids outside it', () => {
+    const error = refusal(() =>
+      createToken(t.sqlite, t.db, onToken([inside]), {
+        name: 'wider',
+        scope: 'full',
+        projectIds: [inside, outside],
+      }),
+    );
+
+    expect(error.code).toBe('forbidden');
+    expect(error.details).toMatchObject({
+      action: 'token.create_own',
+      reason: 'project_pinned',
+      project_ids: [outside],
+    });
+    expect(t.db.select().from(tokens).all()).toHaveLength(0);
+  });
+
+  it('mints the same pin or a subset of it', () => {
+    const pinned = onToken([inside, alsoInside]);
+
+    const same = createToken(t.sqlite, t.db, pinned, {
+      name: 'same',
+      scope: 'full',
+      projectIds: [alsoInside, inside],
+    });
+    const subset = createToken(t.sqlite, t.db, pinned, {
+      name: 'subset',
+      scope: 'full',
+      projectIds: [inside],
+    });
+
+    expect(same.token.project_ids).toEqual([alsoInside, inside]);
+    expect(subset.token.project_ids).toEqual([inside]);
+  });
+
+  it('leaves an unpinned token and a session as they were', () => {
+    const fromToken = createToken(t.sqlite, t.db, onToken(null), { name: 'all', scope: 'full' });
+    const fromSession = createToken(t.sqlite, t.db, actor(ownerId), {
+      name: 'session',
+      scope: 'full',
+      projectIds: [outside],
+    });
+
+    expect(fromToken.token.project_ids).toBeNull();
+    expect(fromSession.token.project_ids).toEqual([outside]);
+  });
+});
+
 describe('expiry', () => {
   it('is optional', () => {
     const { token } = createToken(t.sqlite, t.db, actor(ownerId), { name: 'n', scope: 'full' });
