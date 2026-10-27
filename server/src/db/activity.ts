@@ -67,6 +67,7 @@ export function appendActivity(db: Db, entry: AppendActivity): Activity {
     actorId: entry.actorId ?? null,
     actorKind: entry.actorKind,
     actorTokenId: entry.actorTokenId ?? null,
+    agentId: agentOfToken(db, entry.actorTokenId ?? null),
     type: entry.type,
     payloadJson: JSON.stringify(entry.payload ?? {}),
     createdAt: entry.now ?? Date.now(),
@@ -78,6 +79,23 @@ export function appendActivity(db: Db, entry: AppendActivity): Activity {
   });
 
   return row;
+}
+
+/**
+ * The registered agent a token is the credential of, or null (D-114 item 4,
+ * LAI-535). **Read here, from `tokens.agent_id`, and from nothing else** — not
+ * from the caller, so no call site can forget it or name a different agent,
+ * and no request can put one in a header, a parameter or a body. Null for a
+ * session, a legacy token and the system principal.
+ */
+function agentOfToken(db: Db, tokenId: string | null): string | null {
+  if (tokenId === null) return null;
+  const row = db
+    .select({ agentId: tokens.agentId })
+    .from(tokens)
+    .where(eq(tokens.id, tokenId))
+    .get();
+  return row?.agentId ?? null;
 }
 
 /**
@@ -341,7 +359,7 @@ export function listActivity(db: Db, filter: ListActivityFilter): ActivityEvent[
  * This is what the row literally says. For what a client should be shown, use
  * {@link apiPayload} — see there for why the two differ.
  */
-export function readPayload(row: Activity): unknown {
+export function readPayload(row: Pick<Activity, 'payloadJson'>): unknown {
   try {
     return JSON.parse(row.payloadJson);
   } catch {
