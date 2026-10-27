@@ -578,12 +578,14 @@ describe('the parser itself', () => {
     // LAI-833's is a session's five minutes of agent time. LAI-500's timer
     // is keyed by its person: one per person, and the row *is* the timer.
     // LAI-501's note is keyed by the person's day: one note per day.
+    // LAI-534's grant is keyed by its pair: one per agent per project.
     const withoutId = [...specTables.entries()]
       .filter(([, fields]) => !fields.includes('id'))
       .map(([table]) => table)
       .sort();
 
     expect(withoutId).toEqual([
+      'agent_project_grants',
       'agent_time_buckets',
       'agent_time_days',
       'board_activity_days',

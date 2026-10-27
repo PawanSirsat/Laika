@@ -59,6 +59,8 @@ import {
   TOKEN_ALERT_KINDS,
   TOKEN_SCOPES,
   TOKEN_SESSION_SOURCES,
+  AGENT_GRANT_SCOPES,
+  AGENT_STATUSES,
   AGENT_TIME_KINDS,
   ANALYTICS_VIEW_KINDS,
   TIME_DRAFT_SOURCES,
@@ -831,11 +833,88 @@ export const tokens = sqliteTable(
     expiresAt: integer('expires_at'),
     revokedAt: integer('revoked_at'),
     createdAt,
+    /**
+     * The registered agent this token is the credential of (§4.9, D-114), or
+     * null for a legacy token — which keeps working exactly as before.
+     *
+     * **Cascade, never set null.** A null here means "a person's own token",
+     * the wider credential: setting it null when an agent row went away would
+     * hand that agent's token its owner's whole authority. Agents are revoked,
+     * not deleted, so the cascade runs only when the owner's row itself goes.
+     */
+    agentId: text('agent_id').references((): AnySQLiteColumn => agents.id, {
+      onDelete: 'cascade',
+    }),
   },
   (t) => [
     uniqueIndex('tokens_token_hash_unique').on(t.tokenHash),
     index('tokens_user_id_idx').on(t.userId),
+    index('tokens_agent_id_idx').on(t.agentId),
     check('tokens_scope_check', oneOf('scope', TOKEN_SCOPES)),
+  ],
+);
+
+// ---------------------------------------------------------- §4.63 agents
+
+/**
+ * A registered agent (§4.63, D-114): a named identity owned by one person,
+ * acting through its own tokens and never with more access than its owner.
+ *
+ * `harness` and `device_label` are **self-reported** and shown as such; they
+ * decide nothing. `harness` is an `AGENT_CLIENTS` slug, validated at the API
+ * and deliberately left without a CHECK: the client list grows, and a CHECK
+ * would make every new client a rebuild of a table whose rows `tokens`
+ * cascades from.
+ */
+export const agents = sqliteTable(
+  'agents',
+  {
+    id: text('id').primaryKey(),
+    orgId: text('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    ownerUserId: text('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    displayName: text('display_name').notNull(),
+    harness: text('harness').notNull(),
+    deviceLabel: text('device_label'),
+    status: text('status', { enum: AGENT_STATUSES }).notNull().default('active'),
+    createdAt,
+    revokedAt: integer('revoked_at'),
+    /** Stamped on authenticated requests, at most once a minute (§4.63). */
+    lastSeenAt: integer('last_seen_at'),
+  },
+  (t) => [
+    index('agents_org_id_idx').on(t.orgId),
+    index('agents_owner_user_id_idx').on(t.ownerUserId),
+    check('agents_status_check', oneOf('status', AGENT_STATUSES)),
+  ],
+);
+
+// ---------------------------------------------- §4.64 agent_project_grants
+
+/**
+ * What one agent may do in one project (§4.64, D-114). No row is no access:
+ * an agent reaches only the projects it holds a grant for, and a `read_only`
+ * grant keeps the reads. The owner's own role still caps both.
+ */
+export const agentProjectGrants = sqliteTable(
+  'agent_project_grants',
+  {
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    scope: text('scope', { enum: AGENT_GRANT_SCOPES }).notNull(),
+    createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.agentId, t.projectId] }),
+    index('agent_project_grants_project_id_idx').on(t.projectId),
+    check('agent_project_grants_scope_check', oneOf('scope', AGENT_GRANT_SCOPES)),
   ],
 );
 

@@ -12,6 +12,8 @@ import { newId } from '../../src/db/ids.ts';
 import { activity, comments, taskDependencies, tasks } from '../../src/db/schema.ts';
 import { createLogger } from '../../src/log.ts';
 import { statusForCategory } from '../../src/db/project-statuses.ts';
+import { resolveTokenActor } from '../../src/auth/resolve-actor.ts';
+import { hashToken, newTokenSecret } from '../../src/auth/tokens.ts';
 
 /**
  * The append-only guarantee survives a table rebuild (SPEC §4.8, LAI-118).
@@ -1941,6 +1943,88 @@ describe('0060 maps the kinds onto the design’s eight on a populated database 
             ),
           /append-only/,
         );
+      } finally {
+        sqlite.close();
+        rmSync(dbDir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+describe('0061 adds registered agents to a populated database with legacy tokens (LAI-534)', () => {
+  it(
+    'adds a nullable tokens.agent_id without rebuilding tokens, and legacy tokens still resolve',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+      copyMigrations(dir);
+      const journalPath = join(dir, 'meta', '_journal.json');
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+        entries: { idx: number; tag: string; when: number }[];
+      };
+      const at = journal.entries.findIndex((e) => /^\d{4}_registered_agents$/.test(e.tag));
+      expect(at, 'the agents migration is in the journal').toBeGreaterThan(0);
+      const dropped = journal.entries.splice(at);
+      // The guard on this guard: the cut is exactly this migration.
+      expect(dropped.map((e) => e.tag)).toEqual([expect.stringMatching(/_registered_agents$/)]);
+      writeFileSync(journalPath, JSON.stringify(journal));
+
+      const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: dir });
+        const s = seed(db);
+        const now = Date.now();
+        const secret = newTokenSecret();
+        const tokenId = newId();
+        // Written as the pre-0061 schema has it: no agent_id column to name.
+        db.run(sql`
+          INSERT INTO tokens (id, user_id, name, prefix, token_hash, scope, project_ids_json, created_at)
+          VALUES (${tokenId}, ${s.userId}, 'legacy', ${secret.slice(0, 8)}, ${hashToken(secret)}, 'full', NULL, ${now})
+        `);
+        db.run(sql`
+          INSERT INTO activity (id, org_id, project_id, actor_id, actor_kind, actor_token_id, type, payload_json, created_at)
+          VALUES (${newId()}, ${s.orgId}, NULL, ${s.userId}, 'agent', ${tokenId}, 'token.created', '{}', ${now})
+        `);
+
+        const rootpage = (name: string) =>
+          db.get<{ rootpage: number }>(
+            sql`SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = ${name}`,
+          )?.rootpage;
+        const tokensBefore = db.all<Record<string, unknown>>(sql`SELECT * FROM tokens`);
+        const activityBefore = db.all<Record<string, unknown>>(sql`SELECT * FROM activity`);
+        const tokensPage = rootpage('tokens');
+
+        journal.entries.push(...dropped);
+        writeFileSync(journalPath, JSON.stringify(journal));
+        runMigrations(db, { migrationsFolder: dir });
+
+        // Additive: the same table, every row kept, the new column null.
+        expect(rootpage('tokens')).toBe(tokensPage);
+        expect(db.all(sql`SELECT * FROM tokens`)).toEqual(
+          tokensBefore.map((row) => ({ ...row, agent_id: null })),
+        );
+        // The attribution that a rebuild of `tokens` would have nulled is intact.
+        expect(db.all(sql`SELECT * FROM activity`)).toEqual(activityBefore);
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+
+        // The legacy token resolves exactly as before, with no agent.
+        const actor = resolveTokenActor(db, secret, now);
+        expect(actor.userId).toBe(s.userId);
+        expect(actor.token).toMatchObject({ id: tokenId, scope: 'full', projectIds: null });
+        expect(actor.token?.agent ?? null).toBeNull();
+
+        // And the reference landed with its cascade: an agent row removed takes
+        // its tokens with it, never leaving them as their owner's own.
+        const agentId = newId();
+        db.run(sql`
+          INSERT INTO agents (id, org_id, owner_user_id, display_name, harness, status, created_at)
+          VALUES (${agentId}, ${s.orgId}, ${s.userId}, 'a', 'other', 'active', ${now})
+        `);
+        db.run(sql`UPDATE tokens SET agent_id = ${agentId} WHERE id = ${tokenId}`);
+        db.run(sql`DELETE FROM agents WHERE id = ${agentId}`);
+        expect(db.all(sql`SELECT id FROM tokens WHERE id = ${tokenId}`)).toEqual([]);
       } finally {
         sqlite.close();
         rmSync(dbDir, { recursive: true, force: true });

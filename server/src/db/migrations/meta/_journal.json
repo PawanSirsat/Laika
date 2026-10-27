@@ -421,6 +421,13 @@
       "when": 1792870006508,
       "tag": "0060_time_entry_kinds_design",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "6",
+      "when": 1793130358330,
+      "tag": "0061_registered_agents",
+      "breakpoints": true
     }
   ]
 }
