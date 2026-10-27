@@ -238,3 +238,40 @@ describe('LAIKA_PUBLIC_DIR (LAI-204)', () => {
     expect(isAbsolute(readEnv({ ...SECRET, LAIKA_PUBLIC_DIR: 'rel/spa' }).publicDir!)).toBe(true);
   });
 });
+
+describe('LAIKA_CLAIM_*_SECONDS (§11.7, §9.1.1, LAI-541)', () => {
+  it('defaults to the proposal’s 30 s / 90 s / 5 min / 30 s', () => {
+    expect(readEnv({ ...SECRET }).claims).toEqual({
+      heartbeatMs: 30_000,
+      suspectMs: 90_000,
+      expireMs: 300_000,
+      scanMs: 30_000,
+    });
+  });
+
+  it('takes each from its own variable, per deployment', () => {
+    expect(
+      readEnv({
+        ...SECRET,
+        LAIKA_CLAIM_HEARTBEAT_SECONDS: '10',
+        LAIKA_CLAIM_SUSPECT_SECONDS: '40',
+        LAIKA_CLAIM_EXPIRE_SECONDS: '900',
+        LAIKA_CLAIM_SCAN_SECONDS: '5',
+      }).claims,
+    ).toEqual({ heartbeatMs: 10_000, suspectMs: 40_000, expireMs: 900_000, scanMs: 5_000 });
+  });
+
+  it('refuses a value that is not whole seconds, naming the variable', () => {
+    for (const value of ['0', '-1', '1.5', '1e3', ' 30', '86401', 'soon']) {
+      expect(() => readEnv({ ...SECRET, LAIKA_CLAIM_SCAN_SECONDS: value }), value).toThrow(
+        /LAIKA_CLAIM_SCAN_SECONDS/,
+      );
+    }
+  });
+
+  it('refuses an expiry no longer than the heartbeat: every claim would lapse between beats', () => {
+    expect(() =>
+      readEnv({ ...SECRET, LAIKA_CLAIM_HEARTBEAT_SECONDS: '60', LAIKA_CLAIM_EXPIRE_SECONDS: '60' }),
+    ).toThrow(/LAIKA_CLAIM_EXPIRE_SECONDS/);
+  });
+});

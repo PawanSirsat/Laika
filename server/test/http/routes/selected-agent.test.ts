@@ -296,11 +296,7 @@ describe('selecting an agent', () => {
     });
   });
 
-  it('TODO(LAI-541, LAI-546): changes freely while the task is held, because claims do not exist yet', async () => {
-    // Today's behaviour, pinned on purpose. Once LAI-541 adds `task_claims`, a
-    // change while a session holds the live claim must go through a hand-off
-    // (proposal §3) and this test is the one that has to become a refusal.
-    // `assertSelectionChangeAllowed` in services/work-requests.ts is the seam.
+  it('changes freely while a person holds the task: an assignee is not a claim (LAI-541)', async () => {
     const first = await register([{ project_id: alpha, scope: 'full' }], bob.cookie, 'First');
     const second = await register([{ project_id: alpha, scope: 'full' }], bob.cookie, 'Second');
     const taskId = await newTask('alpha');
@@ -312,6 +308,26 @@ describe('selecting an agent', () => {
     const view = await ok(await patch(taskId, { selected_agent_id: second.agent.id }));
     expect((view.selected_agent as { id: string }).id).toBe(second.agent.id);
     expect(view.assignee_id).toBe(bob.id);
+  });
+
+  it('is refused while an agent session holds the live claim: that change is a hand-off (LAI-541, LAI-546)', async () => {
+    const first = await register([{ project_id: alpha, scope: 'full' }], bob.cookie, 'First');
+    const second = await register([{ project_id: alpha, scope: 'full' }], bob.cookie, 'Second');
+    const taskId = await newTask('alpha');
+    await ok(await patch(taskId, { selected_agent_id: first.agent.id }));
+    await ok(
+      await req(`/api/v1/tasks/${taskId}/claim`, { method: 'POST' }, { bearer: first.secret }),
+    );
+
+    expect(await refusal(await patch(taskId, { selected_agent_id: second.agent.id }))).toEqual({
+      status: 409,
+      code: 'conflict',
+      field: 'selected_agent_id',
+      reason: 'claim_held',
+    });
+    expect(h.db.select().from(tasks).where(eq(tasks.id, taskId)).get()?.selectedAgentId).toBe(
+      first.agent.id,
+    );
   });
 });
 
