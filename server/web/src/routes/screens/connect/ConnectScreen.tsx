@@ -1050,8 +1050,11 @@ function AgentTile({
  * One copyable block, with its file, its warning and its note. The line that
  * holds the real token is highlighted; the text itself is untouched, so what
  * the reader sees, selects and copies are the same characters.
+ *
+ * Exported for Developer access → Agents (LAI-537), whose step 4 shows the
+ * same blocks carrying the agent's own token rather than the reader's.
  */
-function SetupBlockView({
+export function SetupBlockView({
   block,
   secret,
   main = false,

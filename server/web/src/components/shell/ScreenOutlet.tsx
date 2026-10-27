@@ -344,7 +344,7 @@ function InsightsRoute() {
 }
 
 /**
- * Developer access (LAI-796; four tabs since LAI-507): Connect, Projects,
+ * Developer access (LAI-796; five tabs since LAI-537): Connect, Agents, Projects,
  * Activity, Tokens. `?agent=` and `?step=` still carry the wizard's state,
  * which is why the route hands the whole query down.
  */
