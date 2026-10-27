@@ -166,6 +166,8 @@ are not part of this.
 | Join a `public` project | ✓ | ✓ | ✓ (as member) | ✓ (as viewer) |
 | Generate, read and revoke own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |
 | List / revoke **anyone's** token | ✓ | ✓ | — | — |
+| Read own agents | ✓ | ✓ | ✓ | ✓ |
+| Register and manage own agents | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Log own unlisted work | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
 | Send own heartbeat | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
 | Export audit log | ✓ | ✓ | — | — |
@@ -863,6 +865,7 @@ where the instance itself was created.
 | `last_used_at`, `expires_at`, `revoked_at` | nullable |
 | `last_mcp_at`, `last_client`, `last_client_name` | nullable (D-076). `last_mcp_at` is the last authenticated `/mcp` request, stamped at most once a minute like `last_used_at`. **Not stamped while §4.2's `presence_enabled` is off.** `last_client` is an `AGENT_CLIENTS` slug and `last_client_name` the client's own `clientInfo.name` (Unicode `Other` characters and line/paragraph separators stripped, at most 64 characters), both from the last `initialize` that named an agent: a generic name such as `mcp` fills a blank but never replaces a known client. Display and presence only; **never an authorisation input** |
 | `last_rest_write_at` | nullable (D-081). The last REST request on this token that writes — any method but `GET`, `HEAD` and `OPTIONS`, under `/api/` — stamped at most once a minute like `last_mcp_at`, and **not while `presence_enabled` is off**. Presence only (§9.3); a read never moves it |
+| `agent_id` | nullable FK `agents` (§4.63), cascade (D-114, LAI-534). Set, the token is that registered agent's credential and its access is narrowed by the agent's grants (§4.64); null is a **legacy** token, which works exactly as before and carries no agent. **Cascade, never set null**: null is the wider value, so losing an agent row must remove its tokens rather than turn them into their owner's own. Indexed. The agent comes from this column and nothing else — no header, parameter or body field can name one |
 
 Token format `lai_<40 base62>`. **The secret is never stored and is shown exactly
 once, at creation.**
@@ -2308,6 +2311,70 @@ behind `time_entries.write_own`, session only (§3.1): the note is the person's
 own account of their own time. §11.6 prunes it with the entries, after three
 years.
 
+### 4.63 `agents`
+
+A registered agent (D-114, LAI-534): a named identity owned by one person,
+acting through its own tokens (§4.9 `agent_id`) and **never with more access
+than its owner**. D-010 still holds — an agent acts as its owner, under its
+owner's role; this table only makes it distinguishable, and lets its access be
+narrowed (§4.64).
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `org_id` | FK `orgs`, cascade |
+| `owner_user_id` | FK `users`, cascade — the one person whose agent it is; their current permissions cap it |
+| `display_name` | 1 to 80 characters, trimmed. An agent's tokens carry it as their `name`, and renaming the agent renames them |
+| `harness` | **self-reported**: an `AGENT_CLIENTS` slug or `other`, checked at the API. No CHECK, so a new client needs no rebuild. Decides nothing |
+| `device_label` | nullable, at most 80 characters, **self-reported**. Decides nothing |
+| `status` | `active` \| `revoked` (CHECK). `revoked` is terminal |
+| `created_at` | |
+| `revoked_at` | nullable — when it was revoked |
+| `last_seen_at` | nullable — the last request on one of its tokens, stamped at most once a minute as `tokens.last_used_at` is |
+
+Indexes: `(org_id)`, `(owner_user_id)`.
+
+**Revoking an agent** sets `revoked` and revokes every live token it holds, in
+one transaction; `resolve-actor.ts` refuses an agent's token whose agent is not
+`active` before any handler runs, whatever the token row says. **Rotating** one
+of its tokens mints a new token and revokes the old one in one transaction,
+keeping the old one's scope and project pin; the agent, its grants and its
+history are unchanged, and the owner's other tokens are untouched. Both, and
+registering, renaming and granting, are behind `agent.manage_own`, session only
+(§3.1): no token, an agent's own included, can mint itself more access.
+Reading is `agent.read_own`. Every query reaches the caller's own agents only,
+and another person's agent is a `404`. **No new §4.8 verb**: minting and
+revoking an agent's token write `token.created` and `token.revoked`, the rows
+here are the record of the rest, and historic activity is never back-filled
+with an agent. No retention: an agent row lives as long as its owner.
+
+### 4.64 `agent_project_grants`
+
+What one agent may do in one project (D-114, LAI-534). **No row is no access.**
+
+| field | notes |
+| --- | --- |
+| `agent_id` | FK `agents`, cascade — with `project_id`, the primary key: one grant per agent per project |
+| `project_id` | FK `projects`, cascade |
+| `scope` | `read_only` \| `full` (CHECK) — the same two words a token's scope uses, narrowing the same way |
+| `created_at` | |
+
+Indexes: the primary key `(agent_id, project_id)`, and `(project_id)`. A grant
+may name only a project the owner can read when it is set; `PUT
+/agents/:id/grants` replaces the whole set.
+
+**An agent's effective access is the intersection** of its owner's current
+permissions, its grant for the project, and its token's scope and project pin —
+enforced in `can()`'s token narrowing, so every REST route and every MCP tool
+applies it the same way. **An agent's token is pinned to its grants**: in a
+project it holds no grant for it is refused (`403`, `reason: agent_not_granted`),
+a `read_only` grant keeps the reads (`reason: agent_read_only`), and of the org
+actions it keeps only a pinned token's (§6.2) less minting a token and revoking
+one of its owner's (`reason: agent_token`). An owner who loses a permission
+loses it for every agent at once, because the role is read on every request.
+The project's hand-off policy, when it exists, narrows delegation and transfer
+only — never a read or a comment.
+
 ## 5. Task lifecycle
 
 ```
@@ -2690,6 +2757,11 @@ GET    /api/v1/activity/history              ?actor=&project=&type=&since=&until
                                              ?format=csv — the same filters and gate, every row as one streamed text/csv file (no limit or cursor; LAI-984)
 GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id
 GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)
+GET    /api/v1/agents                        POST /api/v1/agents  body { display_name, harness, device_label?, grants[{ project_id, scope }], expires_at? } → 201 { agent, token, secret }  (§4.63, session only)
+GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { display_name?, harness?, device_label? }
+PUT    /api/v1/agents/:id/grants             body { grants[{ project_id, scope }] } — replaces the set (§4.64)
+POST   /api/v1/agents/:id/rotate-token       body { token_id, expires_at? } → 201 { agent, token, secret }; the old token is revoked in the same transaction
+POST   /api/v1/agents/:id/revoke             the agent and every live token it holds; idempotent
 POST   /api/v1/heartbeats                    202, token auth only
 GET    /api/v1/presence                      GET /api/v1/capacity
 GET    /api/v1/permissions                   every org and project action: label, scope, which roles hold it, conditions; and the caller's own grants (viewer+; LAI-885) — answered under the organisation's grants (LAI-958)
@@ -3790,7 +3862,7 @@ matched.
 
 | Tool | Input | Returns |
 | --- | --- | --- |
-| `laika_whoami` | `{}` | the identity this token acts as — `user_id`, `name`, `email`, `org_role`, `token_scope` — and `how_to_work`, the same text as the server's `instructions`, for clients that drop those (D-076). Reads nothing, changes nothing |
+| `laika_whoami` | `{}` | the identity this token acts as — `user_id`, `name`, `email`, `org_role`, `token_scope`, `agent` (the registered agent this token is the credential of — `id`, `display_name`, `harness`, `device_label`, `status` — or `null` for a legacy token; D-114) — and `how_to_work`, the same text as the server's `instructions`, for clients that drop those (D-076). Reads nothing, changes nothing |
 | `list_projects` | `{}` | projects the user can read |
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age |
 | `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`), and `estimate` — the size, its *why*, the forecast frozen at start and the actual, as `GET /tasks/:id/estimate` answers (D-085), with the token forecast, what was said at claim, *scope grew* and the split suggestion (LAI-772) — and `similar`: up to five similar finished tasks in the project, closest first, each `{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }` — why it was sent back, and nobody's name |
