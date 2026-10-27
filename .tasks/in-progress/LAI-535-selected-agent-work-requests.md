@@ -2,11 +2,12 @@
 id: LAI-535
 title: 'Selected agent and work requests on tasks; activity.agent_id attribution; verb agent_selected'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-534]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-27T21:02:11Z
 ---
 
 Implements **proposal §3, §4.1 (attribution), §4.4 (verbs)** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -70,3 +71,16 @@ P0 — board priority `p1` + tag `p0`.
 ## Migration / rollout notes
 
 Additive, nullable. Three-owner merge per CLAUDE.md §4.4: CHIEF merges this half to local `master` unpushed; LAI-538 merges it and completes the client mirror; CHIEF pushes both as one green state.
+
+## Notes
+
+- **Claimed by CORE (polly dispatch), 2026-10-28.** Worktree
+  `Laika-selected-agent`, branch `LAI-535-selected-agent-work-requests` (the
+  dispatch's name, not the `LAI-535-selected-agent` this file suggests), cut
+  from LAI-534's head `63dff7e3` (draft PR #102, itself on #98 and #96).
+- **Deviation, recorded as §2 asks:** `depends-on: [LAI-534]` is in
+  `.tasks/review/`, not `done/`. CHIEF dispatched this against it, stacked on
+  #102; the PR must not merge before #102.
+- **D-114** is approved in substance (2026-10-28); the authorised-account
+  record is pending, so the PR stays a draft.
+
