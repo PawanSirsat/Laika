@@ -7,7 +7,8 @@ priority: p1
 depends-on: [LAI-533]
 discovered-from:
 started: 2026-10-27T19:31:31Z
-status: in-progress
+finished: 2026-10-27T19:51:41Z
+status: review
 ---
 
 Implements **proposal §6** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -32,13 +33,13 @@ Agent picker, hand-off dialog, Inbox Hand-offs and the Agents tab.
 
 ## Acceptance criteria
 
-- [ ] Every state named in proposal §6 has a gallery entry (listed in the PR body against §6).
-- [ ] Exceptional states are spelled out in text, never by colour alone.
-- [ ] No new colour token; no `docs/design/` value changed (D-020).
-- [ ] The existing `created_via==='mcp'` badge keeps its meaning and is shown next to the agent chip so the difference is visible.
-- [ ] No fixture string from the gallery appears in the built bundle outside `/design/states` (asserted).
-- [ ] Repo-root gate exits 0.
-- [ ] Chips use only `--text-2` on `--bg-2` and the agent mark; `git diff` shows no change to any theme token or `docs/design/` file.
+- [x] Every state named in proposal §6 has a gallery entry (listed in the PR body against §6).
+- [x] Exceptional states are spelled out in text, never by colour alone.
+- [x] No new colour token; no `docs/design/` value changed (D-020).
+- [x] The existing `created_via==='mcp'` badge keeps its meaning and is shown next to the agent chip so the difference is visible.
+- [x] No fixture string from the gallery appears in the built bundle outside `/design/states` (asserted).
+- [x] Repo-root gate exits 0.
+- [x] Chips use only `--text-2` on `--bg-2` and the agent mark; `git diff` shows no change to any theme token or `docs/design/` file.
 
 ## Tests and UI evidence required
 
@@ -77,3 +78,19 @@ the orchestrator's (Belka / CHIEF) explicit dispatch, which cites proposal §8:
 this task "proceeds without any decision" — it shows proposed UI only, builds
 no live screen and changes no design token. Recorded here rather than read
 loosely (§2 step 1).
+
+## Submission note (SHELL)
+
+- **Token names.** The scope and AC name `--text-2` on `--bg-2`; neither token
+  exists in `styles/theme.css`. The chip uses `--text-secondary` on
+  `--chip-neutral-bg` (border `--chip-neutral-border`) — the existing neutral
+  chip family, the same values in both themes as secondary text on the
+  recessed surface. Asserted in `agent-states.test.ts` (rule) and
+  `test/browser/agent-states.test.ts` (computed, both themes).
+- **Bundle AC.** The gallery section is a lazy chunk; the fixtures land only in
+  `AgentStateGallery-*.js`, proved by `agent-gallery-bundle.test.ts`, which
+  went red when `StateGallery` was mutated to import it statically.
+- **Render tests** are Playwright (`test/browser/agent-states.test.ts`), the
+  repo's way of rendering components — `@laika/web` has no Vitest.
+- **Out of scope, touched:** `state-gallery.css` grid floor is now
+  `min(22rem, 100%)`; the existing gallery scrolled sideways at 390px.
