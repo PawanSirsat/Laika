@@ -220,6 +220,11 @@ const UNPAIRED = new Map<string, string>([
   // LAI-976's leave answer; the Space settings screen (LAI-977) brings the
   // mirror, and this entry leaves the way the rest do.
   ['LeaveProjectView', 'no client type exists'],
+  // LAI-534's registered agents (D-114); the Agents tab (LAI-537) brings the
+  // mirror, and these leave the way the rest do.
+  ['AgentView', 'no client type exists'],
+  ['AgentGrantView', 'no client type exists'],
+  ['CreatedAgentToken', 'no client type exists'],
 ]);
 
 /**
