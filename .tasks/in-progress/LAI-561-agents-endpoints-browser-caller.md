@@ -2,11 +2,12 @@
 id: LAI-561
 title: 'endpoint-coverage goes red on LAI-534''s five /agents endpoints: name them in NO_BROWSER_CALLER until LAI-537 calls them'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-534]
 discovered-from: LAI-534
-status: backlog
+status: in-progress
+started: 2026-10-27T21:00:12Z
 ---
 
 Filed by CORE (Belka, dispatched by CHIEF) from CHIEF's block, 2026-10-28.
