@@ -6,8 +6,9 @@ assignee: core
 priority: p1
 depends-on: [LAI-533]
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-28T12:00:00+02:00
+finished: 2026-10-28T15:30:00+02:00
 ---
 
 Implements **proposal §4.1, §3** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -35,13 +36,13 @@ project's policy. `laika_whoami` says which agent is calling.
 
 ## Acceptance criteria
 
-- [ ] A token with `agent_id` set cannot reach a project the agent has no grant for: REST answers `403` with the §6.3 `code`, and the equivalent MCP tool returns the same `code`.
-- [ ] A `read_only` grant on a `full` token refuses a write, and a `full` grant on a `read_only` token refuses a write — both asserted on REST and MCP.
-- [ ] Rotate returns a new secret once, revokes the old token in the same transaction, and leaves the owner's other tokens usable (asserted).
-- [ ] A revoked agent's tokens are refused by `resolve-actor.ts` before any handler runs.
-- [ ] Legacy tokens (no `agent_id`) behave exactly as before; existing auth tests stay green unchanged.
-- [ ] Token secrets never appear in activity payloads, logs or responses other than the one-time reveal (asserted by grep over the activity rows written in the test).
-- [ ] Every new endpoint calls `can()` with a §3.1/§3.2 action; `parity.test.ts` and the SPEC drift guards are green with no new exemption.
+- [x] A token with `agent_id` set cannot reach a project the agent has no grant for: REST answers `403` with the §6.3 `code`, and the equivalent MCP tool returns the same `code`.
+- [x] A `read_only` grant on a `full` token refuses a write, and a `full` grant on a `read_only` token refuses a write — both asserted on REST and MCP.
+- [x] Rotate returns a new secret once, revokes the old token in the same transaction, and leaves the owner's other tokens usable (asserted).
+- [x] A revoked agent's tokens are refused by `resolve-actor.ts` before any handler runs.
+- [x] Legacy tokens (no `agent_id`) behave exactly as before; existing auth tests stay green unchanged.
+- [x] Token secrets never appear in activity payloads, logs or responses other than the one-time reveal (asserted by grep over the activity rows written in the test).
+- [x] Every new endpoint calls `can()` with a §3.1/§3.2 action; `parity.test.ts` and the SPEC drift guards are green with no new exemption.
 - [ ] Repo-root gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
 
 ## Tests and UI evidence required
@@ -96,3 +97,57 @@ Additive migration; all new columns nullable. **Interaction with H4 (LAIKA-457, 
   hand-off policy applies only to delegation/transfer actions (none here) and
   never narrows reads or comments; agent identity comes solely from
   `tokens.agent_id`; legacy tokens unchanged; no back-fill of historic activity.
+
+## Review notes from the builder (CORE, 2026-10-28)
+
+**Base.** Built on 28b879a9 (LAI-532 task files, PR #98, + PR #96's H4 merge).
+**Must not merge before #96 is merged and its permission tests pass**; then
+merge `master` in and re-gate. D-114 is approved in substance; its
+authorised-account record is pending, so the PR is a draft.
+
+**The last criterion is not ticked, and that is §4.4, not an omission.** The
+repo-root `pnpm test` exits `1` on exactly one assertion, in SHELL's area,
+which CORE did not reach across to change:
+
+```
+server/web test: not ok 1 - no endpoint is served, uncalled and unexplained
+served with no caller and no entry in NO_BROWSER_CALLER — build it, or say why not
++ [ 'api/v1/agents', 'api/v1/agents/*', 'api/v1/agents/*/grants',
++   'api/v1/agents/*/revoke', 'api/v1/agents/*/rotate-token' ]
+```
+
+(`server/web/test/api/endpoint-coverage.test.ts`). **LAI-561** (SHELL, board
+LAIKA-813) turns it green. Every server test passes; `pnpm lint` and
+`pnpm format` exit 0.
+
+**What later tasks must match.**
+- Actions: `agent.read_own` (every role, a read, token-allowed, in
+  `PINNED_TOKEN_ORG_ACTIONS`), `agent.manage_own` (every role, **session
+  only**: register, rename, grants, rotate, revoke). New set
+  `AGENT_TOKEN_ORG_ACTIONS` = pinned set minus `token.create_own`,
+  `token.revoke_own`.
+- Tables: `agents` (`id`, `org_id`, `owner_user_id`, `display_name`,
+  `harness`, `device_label`, `status` active|revoked, `created_at`,
+  `revoked_at`, `last_seen_at`), `agent_project_grants` (`agent_id`,
+  `project_id`, `scope` full|read_only, `created_at`; PK the pair),
+  `tokens.agent_id` nullable FK, ON DELETE cascade. Migration `0061_registered_agents`.
+- Endpoints: `GET/POST /api/v1/agents`, `GET/PATCH /api/v1/agents/:id`,
+  `PUT /api/v1/agents/:id/grants`, `POST /api/v1/agents/:id/rotate-token`
+  (`{ token_id, expires_at? }`), `POST /api/v1/agents/:id/revoke`.
+  Register and rotate answer `201 { agent, token, secret }`.
+- Refusal reasons (403 `forbidden`, `details.reason`): `agent_not_granted`,
+  `agent_read_only`, `agent_token`. Resolver rejection (logged, off the wire):
+  `agent_revoked`.
+- `laika_whoami` → `agent: { id, display_name, harness, device_label, status } | null`.
+
+**Deviations and limits.**
+- Two type-only fixture lines in `test/auth/tokens.test.ts` gained
+  `agentId: null` (the row type grew a column); no assertion changed.
+- No new activity verb: agent tokens write `token.created` / `token.revoked`.
+- Open SSE streams on a revoked agent's tokens **do not close yet**: that is
+  LAI-539 (not on this base). Revocation itself is immediate for new requests.
+- `response-type-coverage.test.ts` names `AgentView`, `AgentGrantView`,
+  `CreatedAgentToken` in `UNPAIRED` until LAI-537 mirrors them (CORE's file;
+  not a parity or SPEC-drift exemption).
+- Found and filed **LAI-562**: a legacy pinned token can mint an unpinned one
+  (H4 territory). Closed here for agent tokens only.
