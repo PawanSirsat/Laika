@@ -6,7 +6,8 @@ assignee: chief-delegated
 priority: p1
 depends-on: [LAI-533]
 discovered-from:
-status: in-progress
+status: review
+finished: 2026-10-27T23:09:45Z
 started: 2026-10-27T22:33:22Z
 ---
 
@@ -34,12 +35,12 @@ behaviour, so LAI-541 builds against one text.
 
 ## Acceptance criteria
 
-- [ ] Every default in proposal §4.2's table appears in SPEC §9.1 and is named as configurable per deployment.
-- [ ] SPEC states two agents of the same human are fenced from each other.
-- [ ] SPEC §4.8 carries `claim_expired`, naming LAI-541 (enum) and LAI-543 (client mirror).
-- [ ] Repo-root gate exits 0 after the last edit.
-- [ ] SPEC states an expired claim's generation is invalid for good — `409 stale_claim` even if the same session's heartbeats resume — and that only the explicit reclaim gives the old session a new claim at `generation + 1`.
-- [ ] SPEC §4.8 carries `claim_reclaimed`, naming LAI-541 (enum) and LAI-543 (client mirror).
+- [x] Every default in proposal §4.2's table appears in SPEC §9.1 and is named as configurable per deployment.
+- [x] SPEC states two agents of the same human are fenced from each other.
+- [x] SPEC §4.8 carries `claim_expired`, naming LAI-541 (enum) and LAI-543 (client mirror).
+- [x] Repo-root gate exits 0 after the last edit.
+- [x] SPEC states an expired claim's generation is invalid for good — `409 stale_claim` even if the same session's heartbeats resume — and that only the explicit reclaim gives the old session a new claim at `generation + 1`.
+- [x] SPEC §4.8 carries `claim_reclaimed`, naming LAI-541 (enum) and LAI-543 (client mirror).
 
 ## Tests and UI evidence required
 
@@ -76,3 +77,31 @@ Docs only.
 - SPEC written as named crossings in LAI-541's branch
   (`LAI-541-sessions-exclusive-claims`, base `38ab6851`), by CORE on CHIEF's
   authorisation; assignee `chief-delegated`.
+
+## Delivered
+
+SPEC was written as named crossings in LAI-541's branch, in commit
+`cff5b9ca` on `LAI-541-sessions-exclusive-claims`. Sections touched:
+
+- §4.65 `agent_sessions` and §4.66 `task_claims`
+- §4.8 rows for `task.claim_expired` and `task.claim_reclaimed`, each naming
+  LAI-541 (enum) and LAI-543 (mirror)
+- §5: the claim-state table and how claims relate to task status
+- §6.3: the fence's reasons and the `X-Laika-Claim-Generation` header
+- §6.4: the session and reclaim endpoints
+- §7.1 and §7.2: `claim_generation` and `start_working { session_id,
+  reclaim }`
+- §9.1.1: the full timing-defaults table, configurable per deployment; the
+  trade-off between recovery speed and disconnects; reconnecting and expiry;
+  server restart and the boot grace
+- §11.6: the claim-expiry scan
+- §3.4 and §11.7: rows outside the named list, flagged for CHIEF
+
+**Two deliberate departures from this task's scope:**
+
+- **`claim_paused` and `stale_claim` are `details.reason` values under `409
+  conflict`, not new §6.3 codes.** D-079 forbids new codes.
+- **The session endpoints are documented in §6.4 and §9.1.1.** §7.2 says why
+  there are no MCP session tools.
+
+The gate is LAI-541's; its numbers are in that task file.
