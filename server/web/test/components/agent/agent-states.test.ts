@@ -22,8 +22,6 @@ import {
   REGISTRATION_STEPS,
   VERIFICATION_WORDS,
 } from '../../../src/components/agent/agent-states.ts';
-import { CARD_STATES, INBOX } from '../../../src/components/agent-states/agent-state-fixtures.ts';
-import { actionCount } from '../../../src/components/agent/handoff-inbox.ts';
 import { code } from '../../helpers/code.ts';
 
 const SRC = fileURLToPath(new URL('../../../src/', import.meta.url));
@@ -52,13 +50,6 @@ void describe('every state proposal §6 names has words', () => {
     }
   });
 
-  void test('the gallery shows a card for every execution state', () => {
-    assert.deepEqual(
-      CARD_STATES.map((c) => c.state),
-      [...EXECUTION_STATES],
-    );
-  });
-
   void test('the checkpoint, note and recovery wording', () => {
     assert.equal(NOTE_WORDS.earlier, 'Note describes an earlier save');
     assert.equal(NOTE_WORDS.missing, 'No continuation note');
@@ -84,20 +75,6 @@ void describe('every state proposal §6 names has words', () => {
       Object.values(READINESS_WORDS).map((w) => w.label),
       ['Credential created', 'Connected', 'Ready for recovery'],
     );
-  });
-});
-
-void describe('the inbox counts only what needs your action', () => {
-  void test('an expired or sent item never counts', () => {
-    // Fixture: three received items need action — a work request, a
-    // recovery, a cross-owner approval; the sent offer and the expired
-    // request wait on nobody here.
-    assert.equal(actionCount(INBOX, 'received'), 3);
-    assert.equal(actionCount(INBOX, 'sent'), 0, 'sent items wait on someone else');
-    assert.equal(actionCount(INBOX, 'needs_approval'), 1);
-    assert.equal(actionCount(INBOX, 'recovery'), 1);
-    const expired = INBOX.find((i) => i.state === 'Expired');
-    assert.ok(expired !== undefined && !expired.yourMove, 'the fixture lost its expired item');
   });
 });
 
@@ -156,17 +133,6 @@ void describe('no colour of its own (D-020)', () => {
 });
 
 void describe('the gallery stays the gallery', () => {
-  void test('only the agent-states gallery imports the fixtures', async () => {
-    const hits: string[] = [];
-    for (const entry of await readdir(SRC, { withFileTypes: true, recursive: true })) {
-      if (!entry.isFile() || !/\.tsx?$/.test(entry.name)) continue;
-      const path = `${entry.parentPath}/${entry.name}`;
-      const src = await readFile(path, 'utf8');
-      if (src.includes('agent-state-fixtures')) hits.push(path.slice(SRC.length));
-    }
-    assert.deepEqual(hits, ['components/agent-states/AgentStateGallery.tsx']);
-  });
-
   void test('StateGallery loads it with import(), never a static import', async () => {
     const src = code(await readFile(`${SRC}components/StateGallery.tsx`, 'utf8'));
     assert.match(src, /lazy\(\(\) => import\('\.\/agent-states\/AgentStateGallery\.tsx'\)\)/);

@@ -1,7 +1,8 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { AgentChip } from '../agent/AgentChip.tsx';
 import { AgentPicker, choiceLabel, NO_AGENT } from '../agent/AgentPicker.tsx';
-import { AgentReadiness, RegistrationSteps } from '../agent/AgentRegistration.tsx';
+import { AgentReadiness } from '../agent/AgentReadiness.tsx';
+import { RegistrationSteps } from '../agent/RegistrationSteps.tsx';
 import { ExecutionPanel, type PanelAgent } from '../agent/ExecutionPanel.tsx';
 import { ExecutionStateLine } from '../agent/ExecutionStateLine.tsx';
 import { HandoffDialog } from '../agent/HandoffDialog.tsx';
