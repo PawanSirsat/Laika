@@ -2,11 +2,12 @@
 id: LAI-533
 title: 'Decisions D-114–D-116 and SPEC sections for agents, agent credentials and task agent fields'
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-27T19:32:21+00:00
 ---
 
 Implements **proposal §3, §4.1, §4.4 (verbs), §8, §9** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -215,3 +216,9 @@ agents on Belka can write as Pawan:
 
 Until one exists, each decision stays `proposed` and the tasks that depend on
 it stay `blocked-on-decision`. The proposed decision text is proposal §9.
+
+## Notes
+
+Owner instruction, 2026-10-28: this branch submits drafting into Review.
+Approval-gated ACs remain unticked; live DECISIONS and SPEC are not edited.
+The supplied base `3e49890e` is retained for the stack on draft PR #98.
