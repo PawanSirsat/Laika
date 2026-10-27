@@ -119,15 +119,14 @@ function agentsApi(initial: AgentRow[] = [], over: Partial<ApiStub> = {}) {
   const one = (call: StubCall): AgentRow | undefined =>
     agents.find((a) => call.path.split('/')[4] === a.id);
   const find = (call: StubCall) => {
-    const agent = one(call);
-    return agent === undefined ? refuse(404, 'not_found', 'No agent with that id') : agent;
+    return one(call) ?? refuse(404, 'not_found', 'No agent with that id');
   };
 
   // The owner is busy the whole time: a session open, a token of their own
   // used a moment ago. Neither may complete step 5.
   const ownerToken = { ...tokenRow('t-owner', 'my laptop', 10), last_used_at: Date.now() };
 
-  const stub: ApiStub = {
+  const stub: Record<string, unknown> = {
     '/api/v1/me': ME,
     '/api/v1/projects': {
       data: [project('p1', 'ONR', 'OnRoute'), project('p2', 'SKY', 'Skynet')],
@@ -208,7 +207,7 @@ function agentsApi(initial: AgentRow[] = [], over: Partial<ApiStub> = {}) {
     };
   }
 
-  return { stub, agents };
+  return { stub: stub as ApiStub, agents };
 }
 
 function existing(over: Partial<AgentRow> = {}): AgentRow {
@@ -264,10 +263,7 @@ void describe('the Agents tab (LAI-537)', () => {
     const { stub } = agentsApi();
     const h = await open('/developer?tab=agents', stub);
     try {
-      await h.page
-        .locator('.agents .state-empty')
-        .first()
-        .waitFor({ timeout: 20_000 });
+      await h.page.locator('.agents .state-empty').first().waitFor({ timeout: 20_000 });
       const tabs = (await h.page.locator('.page-tab').allInnerTexts()).map((t) => t.trim());
       assert.deepEqual(tabs, ['Connect', 'Agents', 'Projects', 'Activity', 'Tokens']);
       assert.match(await h.page.locator('.agents').innerText(), /No agents registered yet/);

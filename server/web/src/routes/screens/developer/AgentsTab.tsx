@@ -396,6 +396,8 @@ function RegisterWizard({
   };
 
   // Step 5: ask the agent's own row until a request authenticated as it shows.
+  const registeredRef = useRef(onRegistered);
+  registeredRef.current = onRegistered;
   const agentId = created?.agent.id;
   const minted = created?.token;
   useEffect(() => {
@@ -413,7 +415,7 @@ function RegisterWizard({
           if (next.kind !== 'watching') {
             stopped = true;
             clearInterval(timer);
-            if (next.kind === 'verified') onRegistered(agent);
+            if (next.kind === 'verified') registeredRef.current(agent);
           }
         })
         .catch((cause: unknown) => {
@@ -431,8 +433,7 @@ function RegisterWizard({
       clearInterval(timer);
       controller.abort();
     };
-    // `onRegistered` is the parent's stable fold; `round` restarts the watch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // `round` restarts the watch; the parent's fold is read through a ref.
   }, [step, agentId, minted, round]);
 
   const canForward = ((): boolean => {
@@ -873,7 +874,7 @@ function AgentRow({
   const live = liveToken(agent, now);
   // The list is the reader's own (the server filters it), so the owner is
   // the reader — named from `/me`, never assumed.
-  const owner = me !== undefined && me.id === agent.owner_user_id ? `${me.name} (you)` : '—';
+  const owner = me?.id === agent.owner_user_id ? `${me.name} (you)` : '—';
 
   const closePanel = (back: RefObject<HTMLButtonElement | null>): void => {
     setPanel('none');
