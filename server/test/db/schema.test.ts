@@ -89,6 +89,8 @@ describe('migrations', () => {
     'github_checks',
     'github_commits',
     'github_pull_requests',
+    // LAI-535: work requests, the §4.4 offer shape (LAI-546 widens it).
+    'handoff_offers',
     'heartbeats',
     'idempotency_keys',
     'invites',

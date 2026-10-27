@@ -47,6 +47,7 @@ import {
   updateTask,
 } from '../../src/services/tasks.ts';
 import { createToken, revokeOwnToken } from '../../src/services/tokens.ts';
+import { registerAgent } from '../../src/services/agents.ts';
 import { dismissUnlisted, logUnlistedWork, promoteUnlisted } from '../../src/services/unlisted.ts';
 import {
   setOrgRole,
@@ -529,6 +530,14 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       });
       updateTask(t.db, owner(), task.id, { tags: ['core', 'agent'] });
       updateTask(t.db, owner(), task.id, { assignee_id: memberId });
+
+      // --- work-requests.ts via tasks.ts: task.agent_selected (LAI-535) ----
+      const { agent } = registerAgent(t.sqlite, t.db, owner(), {
+        displayName: 'Sweep agent',
+        harness: 'claude-code',
+        grants: [{ projectId: task.project_id, scope: 'full' }],
+      });
+      updateTask(t.db, owner(), task.id, { selected_agent_id: agent.id });
 
       addTaskDependency(t.sqlite, t.db, owner(), task.id, other.id);
       removeTaskDependency(t.db, owner(), task.id, other.id);

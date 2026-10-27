@@ -1,9 +1,9 @@
 import { serve } from '@hono/node-server';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { orgs, tokens, users } from '../../src/db/schema.ts';
+import { activity, orgs, tokens, users } from '../../src/db/schema.ts';
 import {
   type AuthHarness,
   authHarness,
@@ -259,6 +259,93 @@ describe('laika_whoami', () => {
     const me = await whoami(client);
     expect(me).toMatchObject({ email: 'bob@example.test', token_scope: 'full', agent: null });
     await succeeded(client, 'create_task', { project: 'beta', title: 'legacy reaches beta' });
+    await client.close();
+  });
+});
+
+describe('selecting an agent over MCP (LAI-535)', () => {
+  async function newTask(): Promise<{ id: string; key: string }> {
+    const body = await must(
+      '/api/v1/projects/alpha/tasks',
+      { method: 'POST', body: JSON.stringify({ title: 'Work' }) },
+      bob.cookie,
+    );
+    return { id: body.id as string, key: body.key as string };
+  }
+
+  it('update_task { agent } is PATCH selected_agent_id: same refusal, same row, no assignee', async () => {
+    const worker = await register([{ project_id: alpha, scope: 'full' }]);
+    const caller = await register([{ project_id: alpha, scope: 'full' }]);
+    const unGranted = await register([]);
+    const task = await newTask();
+    const client = await connect(caller.secret);
+
+    expect(
+      await refused(client, 'update_task', { task: task.key, agent: unGranted.agent.id }),
+    ).toEqual({ code: 'unprocessable', reason: 'agent_not_granted' });
+
+    const result = await succeeded(client, 'update_task', {
+      task: task.key,
+      agent: worker.agent.id,
+    });
+    const view = (result.structuredContent as { task: Record<string, unknown> }).task;
+    expect(view.assignee_id).toBeNull();
+    expect((view.selected_agent as { id: string }).id).toBe(worker.agent.id);
+
+    const rows = h.db
+      .select()
+      .from(activity)
+      .where(and(eq(activity.taskId, task.id), eq(activity.type, 'task.agent_selected')))
+      .all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ actorKind: 'agent', agentId: caller.agent.id });
+    expect(JSON.parse(rows[0]!.payloadJson)).toEqual({ from: null, to: worker.agent.id });
+
+    await client.close();
+  });
+
+  it('list_ready_tasks carries the agent’s work requests; a legacy token gets no such field', async () => {
+    const worker = await register([{ project_id: alpha, scope: 'full' }]);
+    const task = await newTask();
+    await must(
+      `/api/v1/tasks/${task.id}`,
+      { method: 'PATCH', body: JSON.stringify({ selected_agent_id: worker.agent.id }) },
+      bob.cookie,
+      200,
+    );
+
+    const client = await connect(worker.secret);
+    const result = await succeeded(client, 'list_ready_tasks', {});
+    const body = result.structuredContent as { work_requests?: { task_key: string }[] };
+    expect(body.work_requests?.map((r) => r.task_key)).toEqual([task.key]);
+    await client.close();
+
+    const legacy = (await must(
+      '/api/v1/tokens',
+      { method: 'POST', body: JSON.stringify({ name: 'cli', scope: 'full' }) },
+      bob.cookie,
+    )) as { secret: string };
+    const plain = await connect(legacy.secret);
+    const answer = await succeeded(plain, 'list_ready_tasks', {});
+    expect(answer.structuredContent).not.toHaveProperty('work_requests');
+    await plain.close();
+  });
+
+  it('get_task_context says who it is requested of, apart from the assignee', async () => {
+    const worker = await register([{ project_id: alpha, scope: 'full' }]);
+    const task = await newTask();
+    await must(
+      `/api/v1/tasks/${task.id}`,
+      { method: 'PATCH', body: JSON.stringify({ selected_agent_id: worker.agent.id }) },
+      bob.cookie,
+      200,
+    );
+
+    const client = await connect(worker.secret);
+    const result = await succeeded(client, 'get_task_context', { task: task.key });
+    const text = (result.content as { text: string }[])[0]?.text ?? '';
+    expect(text).toContain('Requested of agent **Bob’s Codex**');
+    expect(text).toContain('it claims nothing');
     await client.close();
   });
 });
