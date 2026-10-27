@@ -2,11 +2,12 @@
 id: LAI-543
 title: 'Working / Connection lost / Waiting for agent states on cards + drawer execution panel; delete demo/agent-runtime.ts fakes'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-541, LAI-538]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-27T23:20:09Z
 ---
 
 Implements **proposal §6 (Cards, task drawer), §2 (FAKE row)** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -66,3 +67,14 @@ P0 — board priority `p1` + tag `p0`.
 ## Migration / rollout notes
 
 Removes demo-only UI from demo builds.
+
+## Notes
+
+- Claimed 2026-10-27T23:20:09Z by SHELL (dispatched by polly on Belka). Worktree
+  `Laika-exec-states`, branch `LAI-543-execution-states`, base `6bab5f7d` =
+  LAI-541 head `3e17cfad` (draft PR #107) with LAI-538 (#106, on #105/#104/#101)
+  merged. Stacked; must not merge before #107 and #106. D-114 approved in
+  substance, record pending -> draft PR.
+- **Deviation recorded:** `depends-on` LAI-541 and LAI-538 are in review, not
+  done; the stack is the dispatcher's instruction. LAI-543 and LAI-567 ride
+  together (§4.4 client half of the LAI-541 verbs and endpoints).
