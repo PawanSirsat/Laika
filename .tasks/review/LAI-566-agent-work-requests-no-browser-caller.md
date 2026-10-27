@@ -6,8 +6,9 @@ assignee: shell
 priority: p1
 depends-on: [LAI-535]
 discovered-from: LAI-535
-status: in-progress
+status: review
 started: 2026-10-27T21:51:41Z
+finished: 2026-10-27T22:15:24Z
 ---
 
 Filed by CORE (Belka, dispatched by CHIEF) from CHIEF's block, 2026-10-28.
@@ -49,9 +50,9 @@ The last line is this task's. The other five are LAI-561's.
 
 ## Acceptance criteria
 
-- [ ] `endpoint-coverage.test.ts` is green with LAI-535 merged, and the entry
+- [x] `endpoint-coverage.test.ts` is green with LAI-535 merged, and the entry
       gives the reason above.
-- [ ] Repo-root gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
+- [x] Repo-root gate: `pnpm test`, `pnpm lint`, `pnpm format` each exit 0.
 
 ## Merge order
 
@@ -69,3 +70,12 @@ unpushed, then SHELL merges it, lands this and pushes. Nothing reaches
   `.tasks/review/`, not `done/`. CHIEF dispatched this against them, stacked.
 - **D-114** approved in substance; authorised-account record pending, so the PR
   stays a draft.
+
+## Submitted (SHELL, 2026-10-28)
+
+- `server/web/test/api/endpoint-coverage.test.ts`: one `NO_BROWSER_CALLER`
+  entry, `api/v1/agents/me/work-requests`, with the reason this file gives.
+  Commit `e404f30b`, in LAI-538's branch and PR.
+- LAI-561's five `/agents` paths were already called by LAI-537's
+  `api/agents.ts` on this base, so `no endpoint is served, uncalled and
+  unexplained` is green with this one entry.
