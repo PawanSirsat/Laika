@@ -255,7 +255,7 @@ describe('a pinned token mints only inside its pin (§6.2, LAI-562)', () => {
       if (error instanceof ApiError) return error;
       throw error;
     }
-    return expect.unreachable('should have thrown') as never;
+    return expect.unreachable('should have thrown');
   }
 
   it('refuses an unpinned token to a pinned one, with project_pinned', () => {
