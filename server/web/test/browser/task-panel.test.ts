@@ -241,6 +241,8 @@ void describe('the task panel', () => {
        */
       assert.deepEqual(labels, [
         'assignee',
+        // The agent meant to do the work, under the person accountable (LAI-538).
+        'agent',
         'priority',
         'parent',
         'due date',
