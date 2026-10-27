@@ -14,6 +14,7 @@ import type { TaskSummary } from '../../../api/tasks.ts';
 import { AgentChip } from '../../../components/agent/AgentChip.tsx';
 import { AgentPicker, NO_AGENT } from '../../../components/agent/AgentPicker.tsx';
 import { ExecutionStateLine } from '../../../components/agent/ExecutionStateLine.tsx';
+import { cardExecutionState } from '../../../components/agent/execution-derive.ts';
 
 export interface AgentRowProps {
   readonly task: TaskSummary;
@@ -46,8 +47,10 @@ type Load =
  * assignee above is untouched and stays visible: the person is accountable,
  * the agent is meant to do the work, and the two are different facts.
  *
- * Phase 1 has no claim, so a selected agent reads **Waiting for agent** and
- * nothing more — this row never says *working*.
+ * A selected agent on a task not started reads **Waiting for agent** — the
+ * card's rule (LAI-543): once a claim starts the work the task is in
+ * progress, and the line goes. This row never says *working*; whether a
+ * session is checking in is not served yet (LAI-568).
  *
  * A refusal is said in words — the server's `details.reason`, mapped — and
  * the field goes back to what the server holds, so the screen never shows a
@@ -156,8 +159,8 @@ export function AgentRow({ task, meName, mayEdit, agentsAllowed, onChanged }: Ag
         </>
       )}
 
-      {/* Phase 1: picked, not accepted. Never "working" — there is no claim yet. */}
-      {current !== null && pending === undefined && (
+      {/* Picked, not yet taken. Never "working" — see above. */}
+      {current !== null && pending === undefined && cardExecutionState(task) !== null && (
         <ExecutionStateLine
           state="waiting_for_agent"
           detail={`${current.owner.name}’s ${agentLabel(current)}`}

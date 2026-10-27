@@ -21,7 +21,6 @@ import type { Theme } from '../../../theme/theme.ts';
 import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
-import type { DemoAgentBuild, DemoClaimLock } from '../../../demo/agent-runtime.ts';
 import './task-panel.css';
 
 export interface TaskMetaProps {
@@ -49,8 +48,6 @@ export interface TaskMetaProps {
   readonly moving: boolean;
   /** Real: who is watching. */
   readonly watchers: readonly string[] | undefined;
-  readonly claimLock: DemoClaimLock | undefined;
-  readonly agentBuild: DemoAgentBuild | undefined;
   /** The parent, resolved by the panel (it may be outside `byId`). */
   readonly parent: TaskSummary | undefined;
   /** How many of this task's subtasks are still open — for the warning under a `done` status. */
@@ -137,8 +134,6 @@ export function TaskMeta({
   mayEdit,
   moving,
   watchers,
-  claimLock,
-  agentBuild,
   parent,
   openSubtasks,
   changesCount,
@@ -312,10 +307,6 @@ export function TaskMeta({
                     : { style: { background: ink.background, color: ink.foreground } })}
                 >
                   {assignee === undefined ? '—' : initials(assignee.name)}
-                  {/* The bot mark the design puts on an agent-held avatar. */}
-                  {claimLock !== undefined && (
-                    <span className="meta-avatar-bot" aria-hidden="true" />
-                  )}
                 </span>
                 <AssignControl
                   task={task}
@@ -336,18 +327,6 @@ export function TaskMeta({
                   </PersonLink>
                 )}
               </div>
-              {/*
-                **The claim's deadline is invented and the line says so.** The
-                claim itself is real — `POST /tasks/:id/claim` is a
-                compare-and-swap — but it has no TTL, so an hour here comes
-                from `demo/agent-runtime.ts` and cannot reach a production build.
-              */}
-              {claimLock !== undefined && (
-                <p className="meta-sub meta-sub-claim">
-                  agent has the claim lock until {claimLock.label}
-                  <span className="meta-placeholder">placeholder</span>
-                </p>
-              )}
             </div>
 
             {/* The agent meant to do the work, under the person accountable
@@ -506,14 +485,7 @@ export function TaskMeta({
                 {task.created_by_client === null
                   ? task.created_via
                   : `Agent · ${task.created_by_client}`}
-                {agentBuild !== undefined && ` ${agentBuild.version}`}
               </p>
-              {agentBuild !== undefined && (
-                <p className="meta-sub meta-mono">
-                  scope {agentBuild.scope}
-                  <span className="meta-placeholder">placeholder</span>
-                </p>
-              )}
             </div>
 
             <OutsideIdRow

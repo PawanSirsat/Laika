@@ -39,6 +39,7 @@ import { useEvents } from '../../api/use-events.ts';
 import { listSprints, type Sprint } from '../../api/sprints.ts';
 import { everyPage } from '../../api/every-page.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
+import { executionSignal } from '../../components/agent/execution-derive.ts';
 import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
 import { useBoard, type BoardPresenter } from '../../api/use-board.ts';
 import { isPriority, isTagName } from '../../api/task-filter.ts';
@@ -1767,6 +1768,7 @@ export function BoardScreen({
         <TaskDrawerContent>
           <TaskDetailPanel
             slug={slug}
+            executionSignal={executionSignal(stream.recent, openTask.id)}
             sprints={sprints}
             agentsAllowed={project?.agents_allowed}
             /*
