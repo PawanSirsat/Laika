@@ -2,11 +2,12 @@
 id: LAI-534
 title: 'Registered agents and per-agent credentials: tables, rotate/revoke REST, effective access in can(), laika_whoami reports the agent'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-533]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-28T12:00:00+02:00
 ---
 
 Implements **proposal §4.1, §3** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -74,3 +75,24 @@ P0 — board priority `p1` + tag `p0`.
 ## Migration / rollout notes
 
 Additive migration; all new columns nullable. **Interaction with H4 (LAIKA-457, branch `H4-pinned-token-org-actions`, unmerged):** both edit the token-narrowing step of `can()`. If H4 lands first, rebase onto it; if not, record the conflict in the task file and coordinate the merge via CHIEF. Rollback: the columns are nullable and unused by legacy tokens.
+
+## Notes
+
+- **Claimed against unmerged PR #96 on CHIEF/owner direction 2026-10-28; must
+  not merge before #96 lands.** Base: LAI-532 programme branch (3e49890e, PR #98)
+  with PR #96's `H4-pinned-token-org-actions` (097b197e) merged in at 28b879a9.
+  A deliberate deviation from CLAUDE.md §2 step 1 (`depends-on` in `done/`),
+  directed by CHIEF. D-114 approved in substance by the owner 2026-10-28; the
+  authorised-account record is pending, so the PR stays draft.
+- **Named crossings authorised by CHIEF (D-033/D-034):** `docs/SPEC.md` new §4
+  subsections for `agents` and `agent_project_grants` (next free §4 numbers);
+  §4.9 (`tokens.agent_id`); §3.1 rows for the new agent actions; §6.4 endpoint
+  entries for agent register/list/get/rename/grants/rotate-token/revoke; §7.1
+  row for `laika_whoami` (reports the agent). Nothing else in `docs/`.
+- Owner clarifications, binding: revoking an agent disables all its tokens (and
+  Phase 2 sessions) and closes open streams; rotating one token mints new +
+  revokes old atomically, keeping agent identity and history; effective access
+  = owner ∩ agent grant ∩ token scope/pin in `can()`'s token-narrowing step; the
+  hand-off policy applies only to delegation/transfer actions (none here) and
+  never narrows reads or comments; agent identity comes solely from
+  `tokens.agent_id`; legacy tokens unchanged; no back-fill of historic activity.
