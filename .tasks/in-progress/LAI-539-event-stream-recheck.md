@@ -2,11 +2,12 @@
 id: LAI-539
 title: 'Open event streams re-check token expiry/revocation, agent status and project limit'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-27T19:31:22.043108+00:00
 ---
 
 Implements **proposal §2 (SSE defect), §4.6** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -67,3 +68,9 @@ P0 — board priority `p1` + tag `p0`.
 ## Migration / rollout notes
 
 No schema change. Behaviour change for clients holding revoked tokens only.
+
+## Implementation notes
+
+Owner directly assigned CORE on Belka to branch
+`LAI-539-open-streams-recheck-credentials`, based on programme head `3e49890e`
+(draft PR #98). This is the authorized base rather than merging master.
