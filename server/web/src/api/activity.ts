@@ -2,7 +2,12 @@ import { STATUS_LABELS } from './board-derive.ts';
 import { withPage, type PageQuery } from './every-page.ts';
 import { API_BASE, request } from './client.ts';
 import { projectRoleLabel } from './members.ts';
+import { describeAgentSelected, type SelectedAgent } from './selected-agent.ts';
 import type { Page } from './tasks.ts';
+
+/** What naming an agent needs: its harness, its name and its device. */
+type AgentNaming = Pick<SelectedAgent, 'harness' | 'display_name' | 'device_label'>;
+const NO_AGENTS: ReadonlyMap<string, AgentNaming> = new Map();
 
 /**
  * The activity feed (SPEC §4.8, LAI-055).
@@ -27,6 +32,13 @@ export interface ActivityEvent {
    */
   readonly actor_kind: 'user' | 'agent' | 'system';
   readonly actor_token_id: string | null;
+  /**
+   * The registered agent that wrote the row (D-114 item 4, LAI-535), read from
+   * the token at write time. Null for a person, Laika, a **legacy** token and
+   * every row older than the column — never back-filled. Optional because a
+   * row served before LAI-535 has none (`agentVia` reads both as null).
+   */
+  readonly agent_id?: string | null;
   readonly payload: unknown;
   readonly created_at: number;
 }
@@ -164,6 +176,9 @@ const LABELS: Readonly<Record<string, string>> = {
   'task.dependency_added': 'added a dependency',
   'task.dependency_removed': 'removed a dependency',
   'task.stale_flagged': 'flagged this task as stale',
+  // A work request, not a claim (LAI-535): `describeEvent` names the agent
+  // when the reader can; this is the line when it cannot.
+  'task.agent_selected': 'changed the agent for this task',
 
   'comment.added': 'commented',
   'comment.edited': 'edited a comment',
@@ -296,8 +311,16 @@ function describeMembership(event: Pick<ActivityEvent, 'type' | 'payload'>): str
   return undefined;
 }
 
-export function describeEvent(event: ActivityEvent): string {
+export function describeEvent(
+  event: ActivityEvent,
+  agents: ReadonlyMap<string, AgentNaming> = NO_AGENTS,
+): string {
   if (isGrantsChange(event)) return 'changed who can do what';
+  // The agent by name where this reader can name it (LAI-538).
+  if (event.type === 'task.agent_selected') {
+    const line = describeAgentSelected(event.payload, agents);
+    if (line !== undefined) return line;
+  }
   const membership = describeMembership(event);
   if (membership !== undefined) return membership;
   // A reorder is `task.updated` too, and *edited this task* says something

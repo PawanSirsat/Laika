@@ -7,6 +7,7 @@ import type { PageTab } from '../../page-tabs.ts';
 import { ConnectScreen } from '../connect/ConnectScreen.tsx';
 import { ShareActivity } from '../connect/ShareActivity.tsx';
 import { TokensScreen } from '../tokens/TokensScreen.tsx';
+import { AgentsTab } from './AgentsTab.tsx';
 import { ProjectsTab } from './ProjectsTab.tsx';
 import './developer.css';
 
@@ -22,11 +23,14 @@ export interface DeveloperScreenProps {
 
 /**
  * Developer access (LAI-796): connecting an agent and your own tokens, on one
- * page — four tabs since LAI-507, in the order a new developer meets them.
+ * page — four tabs since LAI-507, five since LAI-537, in the order a new
+ * developer meets them.
  *
  * - **Connect** is the wizard itself (LAI-740), embedded: its header gives up
  *   its band and hands the board's address to this page's header, as every
  *   embedded screen does. Everything in it is **once per machine**.
+ * - **Agents** is the reader's registered agents (LAI-537, D-114): each its
+ *   own identity and credential, registered by a five-step wizard.
  * - **Projects** is what is **once per project**: the block for the agent's
  *   instructions file and the short prompt that writes it.
  * - **Activity** is what the organisation collects from the machine, once.
@@ -69,6 +73,11 @@ export function DeveloperScreen({
         <EmbeddedScreen slot={slot}>
           <ConnectScreen me={me} origin={origin} params={params} setParams={setParams} />
         </EmbeddedScreen>
+      )}
+      {current === 'agents' && (
+        <div className="dev-body">
+          <AgentsTab me={me} origin={origin} />
+        </div>
       )}
       {current === 'projects' && (
         <div className="dev-body">

@@ -54,4 +54,7 @@ export const STREAM_TYPES: readonly string[] = [
   'task.stale_flagged',
   'invite.expired',
   'meeting_review.expired',
+  // A task's selected agent changed (LAI-535). Dotted like every verb here;
+  // the proposal's `agent_selected` is this one.
+  'task.agent_selected',
 ];

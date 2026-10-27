@@ -1,0 +1,135 @@
+---
+id: LAI-537
+title: 'Developer access → Agents tab: registration wizard, per-agent one-time token, harness instructions, verify from THIS agent, rename/access/rotate/revoke'
+area: web
+assignee: shell
+priority: p1
+depends-on: [LAI-534, LAI-536]
+discovered-from:
+status: review
+started: 2026-10-27T20:36:34Z
+finished: 2026-10-27T20:59:45Z
+---
+
+Implements **proposal §6 (Developer access → Agents), §4.1** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
+
+## Goal
+
+A human registers an agent from Developer access in five steps and
+can see it verified as *that agent* — not just as themselves — then rename it,
+change its project access, rotate or revoke its credential.
+
+## Scope
+
+- New `Agents` tab in `page-tabs.ts` under Developer access.
+- Wizard adapted from Connect: name, harness and device → projects and permissions → credential (one-time reveal) → harness instructions → verify a request from this agent.
+- Verify matches the **agent** id from `laika_whoami`, not the user (fixing the `connect-live.ts` user-only match for this flow).
+- Agent list with rename, access, rotate and revoke; three states kept apart: credential created, connected, ready for recovery.
+
+## Out of scope
+
+- The task drawer and cards (LAI-538).
+- Recovery readiness beyond showing the state (Phase 3).
+
+## Acceptance criteria
+
+- [x] The token secret is shown once, never in a URL, never re-fetchable, and is absent from the DOM after the dialog closes (asserted).
+- [x] Verify stays pending until a request authenticated as this agent arrives; a request from the owner's other token does not complete it (asserted).
+- [x] Rotate shows the new secret once and the old token is refused afterwards (e2e against a real server).
+- [x] Revoke asks for confirmation through `useDialogFocus` and the agent shows as revoked.
+- [x] Both themes, keyboard-only operation of every step, and 390 px layout work.
+- [x] Every value on the tab comes from an API response; no hardcoded agent names.
+- [x] Repo-root gate exits 0.
+
+## Tests and UI evidence required
+
+Vitest component tests; Playwright e2e against a real server on your own port (§4.3) for register → verify → rotate → revoke; screenshots light/dark/narrow attached.
+
+## Dependencies
+
+`depends-on: [LAI-534, LAI-536]`.
+
+**Blocked on decision D-114 (proposed).** Do not start until D-114 is approved as proposal §8 describes (a web-session comment with `actor_kind: user` on the LAI-532 card, or an Approved GitHub review by PawanSirsat). Board tag `blocked-on-decision`.
+
+## Role / machine
+
+SHELL on Belka. Owner area: `web` (SHELL).
+
+## Priority
+
+P0 — board priority `p1` + tag `p0`.
+
+## Effort
+
+2–3 days, confidence M.
+
+## Branch
+
+`LAI-537-agents-tab`
+
+## Migration / rollout notes
+
+None server-side. The Connect wizard is unchanged for human tokens.
+
+## Claim notes (SHELL, 2026-10-28)
+
+- **Deviation from §2 step 1, on CHIEF's direction.** Neither LAI-534 nor
+  LAI-536 is in `.tasks/done/` on `master`. CHIEF dispatched this claim on a
+  branch cut from LAI-534's head (`63dff7e3`, draft PR #102), so the PR is
+  stacked on #102 and must not merge before it. LAI-536 (PR #101) is **not**
+  on this base: the agent components it builds are not copied here; this task
+  builds the minimum it needs and unification follows when both land.
+- **D-114**: approved in substance by the owner on 2026-10-28; the
+  authorised-account record is still pending, so the PR stays a draft.
+
+## Submission notes (SHELL, 2026-10-28)
+
+**What landed** (`server/web/` only):
+`src/api/agents.ts` (client types and calls for all seven `/api/v1/agents`
+routes, plus `agentState` and `seenSince`);
+`src/routes/screens/developer/AgentsTab.tsx`, `agent-wizard.ts` and
+`agents.css`; the `agents` entry in `DEVELOPER_TABS`; `SetupBlockView`
+exported from `ConnectScreen.tsx` so step 4 reuses Connect's harness blocks.
+
+**How each criterion was proved:**
+
+- *Secret once:* `agents-tab.test.ts` scans the whole `outerHTML`, the URL,
+  `history.state`, `localStorage` and `sessionStorage` after registering
+  (address and storage) and after closing (everything). A mutant that left a
+  copy on `<body>` went red on the `DOM` entry. The secret is not
+  re-fetchable: there is no route for it, and the real-server run checked
+  that `GET /agents` does not contain it.
+- *Verify is this agent only:* the rule is `seenSince`, and unit tests cover
+  stamps before the mint, the agent's revoked token, and a revoked agent.
+  The browser test keeps the owner busy (presence session plus a freshly
+  used own token) and asserts `watching`; a mutant `seenSince` went red.
+  Against the real server, a request on the owner's own token left step 5
+  `watching` through a full poll, and a request on the agent's token
+  completed it.
+- *Rotate, old token refused, against a real server:* this is a
+  **deviation**. The committed browser tests use the harness's stubs, as
+  every browser test here does (`harness.ts` explains why). The real-server
+  proof is a scratch Playwright run on its own port (:3537) and DB, not
+  committed: old token 401, new token 200, agent token refused registration
+  403, after revoke 401. The server side is also asserted in CORE's
+  `server/test/http/routes/agents.test.ts`.
+- *Revoke through `useDialogFocus`:* `useConfirm` and `ConfirmDialog` were
+  asserted for focus in (Cancel), Escape keeping the agent, focus restored to
+  Revoke, and the row showing Revoked.
+- *Themes, keyboard, 390 px:* every wizard step is driven by focus and keys
+  only; the test asserts no sideways scroll at 390 px for the list and all
+  five steps. Screenshots in light and dark at 1440 and 390 are in
+  `.polly/evidence/LAI-537/` (not committed); secrets are masked.
+- *Values from the API:* names, harness, device, grants, stamps and the
+  owner's name all come from responses. "Ready for recovery" is shown as
+  *Not available yet*, because no API reports it before Phase 3.
+
+**Limits.** Verify reads `agents.last_seen_at` and the minted token's
+`last_used_at`. Both are throttled to a minute, but a `null` stamp is written
+at once, so the first request on a new token is seen within one poll. Verify
+proves the credential reached the board, not which program sent it; the tab
+says so. "Current work" is not shown: no API serves it yet.
+
+**Not done here:** pairing the agent types in `view-type-drift.test.ts` needs
+both owners, because CORE's `UNPAIRED` list would go stale; filed as LAI-564.
+Unifying with LAI-536's components is filed as LAI-565.

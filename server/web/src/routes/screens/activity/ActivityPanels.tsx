@@ -118,6 +118,8 @@ export function ActivityPanels({
                   </span>
                   <span className="rail-feed-what">
                     <b>{actor.name}</b>
+                    {/* Which agent, in words (LAI-538). */}
+                    {actor.via !== undefined && <> via {actor.via}</>}
                     {/* Only the qualifier is hidden text — the name is already
                         rendered, and repeating it here reads it twice aloud.
                         This is what carries the badge for a reader who cannot
