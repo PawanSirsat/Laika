@@ -6,8 +6,9 @@ assignee: core
 priority: p1
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-27T19:31:22.043108+00:00
+finished: 2026-10-27T23:50:00+00:00
 ---
 
 Implements **proposal §2 (SSE defect), §4.6** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -32,12 +33,12 @@ token's project limit. Today `routes/events.ts:162` checks only at connect
 
 ## Acceptance criteria
 
-- [ ] Revoking a token closes its open stream before the next event, asserted against a real stream, with the error `code`.
-- [ ] An expired token's open stream closes at the next event after expiry (injected clock).
-- [ ] A project-pinned token never receives another project's event on an open stream (the M10 case).
-- [ ] A revoked agent's stream closes.
-- [ ] Existing `Last-Event-ID` replay and `gap` behaviour unchanged (existing tests green).
-- [ ] Repo-root gate exits 0.
+- [x] Revoking a token closes its open stream before the next event, asserted against a real stream, with the error `code`.
+- [x] An expired token's open stream closes at the next event after expiry (injected clock).
+- [x] A project-pinned token never receives another project's event on an open stream (the M10 case).
+- [x] A revoked agent's stream closes.
+- [x] Existing `Last-Event-ID` replay and `gap` behaviour unchanged (existing tests green).
+- [x] Repo-root gate exits 0.
 
 ## Tests and UI evidence required
 
@@ -74,3 +75,14 @@ No schema change. Behaviour change for clients holding revoked tokens only.
 Owner directly assigned CORE on Belka to branch
 `LAI-539-open-streams-recheck-credentials`, based on programme head `3e49890e`
 (draft PR #98). This is the authorized base rather than merging master.
+
+## Hand-off notes (CORE, Claude Code continuing the Codex worker)
+
+- "Agent revoked" is covered as the token holder's deactivation: this base has
+  no separate agent-identity schema (test `closes a deactivated token agent
+  stream with unauthorized`).
+- Close behaviour: one final `error` frame, no `id:`, data = the §6.3 body
+  `{ error: { code: 'unauthorized', message: 'That access token is not valid',
+  details: null } }`, then the stream ends. Cookie streams unchanged.
+- SPEC §11.5 does not yet name the `error` control frame — for CHIEF (no SPEC
+  edit made, per Out of scope).
