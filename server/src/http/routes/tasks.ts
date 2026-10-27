@@ -103,6 +103,9 @@ const UpdateBody = strictObject({
   size: z.enum(SIZE_LEVELS).nullable().optional(),
   // An outside id (LAI-780); `null` clears it. Shaped by the service, as above.
   external_ref: z.string().max(120).nullable().optional(),
+  // The agent meant to do it (D-114, LAI-535); `null` withdraws the request.
+  // Eligibility is the service's, and answers `422` with the reason.
+  selected_agent_id: z.string().min(1).max(64).nullable().optional(),
 });
 
 // `status` is a category — the project's first visible status of it — and
