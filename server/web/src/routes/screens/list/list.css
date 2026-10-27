@@ -96,9 +96,8 @@
      the page; inside its own card that was blank space under the last row. */
   flex: none;
   /* The design's 64rem plus the Due column (D-066), so Summary keeps its room,
-     plus the 1rem the priority icon added to PRI (LAI-705), plus the Agent
-     column's 8.75rem (LAI-538). */
-  min-width: 80.5rem;
+     plus the 1rem the priority icon added to PRI (LAI-705). */
+  min-width: 71.75rem;
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
@@ -137,13 +136,31 @@
 .list-col-spr {
   width: 2.875rem;
 }
-/* `Claude Code · laptop-1` (LAI-538); the chip ellipsises past it. */
-.list-col-agent {
-  width: 8.75rem;
+/* The agent's mark and device (LAI-538); a long device ellipsises. Drawn
+   only in a space that uses agents, and then **added** to the minimum, so
+   SUMMARY keeps its room — the table scrolls in its card instead. */
+.list-with-agent {
+  min-width: 78.25rem;
 }
-.list-agent {
+.list-col-agent {
+  width: 6.5rem;
+}
+.list-agent-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.3125rem;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+.list-agent-cell .agent-mark {
+  flex: none;
+}
+.list-agent-text {
   min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* **Wide enough for the longest date, on one line** (LAI-491). The design's
    84px was sized for `6d`; D-065's labels run to `25 Aug 2025, 01:01` — 18

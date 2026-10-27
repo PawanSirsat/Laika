@@ -1061,9 +1061,15 @@ export function BoardScreen({
           agentOnly={agentOnly}
           selectedAgent={agentFilter}
           agentChoices={agentChoices}
-          onSelectedAgent={(value) => {
-            setParam('selected_agent', value);
-          }}
+          // The field is offered once a task in the space has an agent, or
+          // when a link already sets it — never as an empty list.
+          onSelectedAgent={
+            agentChoices.length > 0 || agentFilter !== undefined
+              ? (value) => {
+                  setParam('selected_agent', value);
+                }
+              : undefined
+          }
           tags={knownTags}
           members={[...members.values()]}
           group={group}
@@ -1594,6 +1600,7 @@ export function BoardScreen({
           {view === 'list' ? (
             <ListView
               tasks={tasks}
+              showAgent={agentChoices.length > 0}
               byId={board.byId}
               members={members}
               sprintLabels={sprintLabels}

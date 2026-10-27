@@ -27,8 +27,8 @@ import {
 } from './list-bulk.ts';
 import { anchorOf, ListMenu, type MenuAnchor } from './ListMenu.tsx';
 import { BulkBar } from './BulkBar.tsx';
-import { AgentChip } from '../../../components/agent/AgentChip.tsx';
-import { agentDevice, selectedHarness } from '../../../api/selected-agent.ts';
+import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
+import { agentDevice, agentProductName, selectedHarness } from '../../../api/selected-agent.ts';
 import './list.css';
 
 /**
@@ -42,6 +42,12 @@ const ROWS_PER_PAGE = 50;
 
 export interface ListViewProps {
   readonly tasks: readonly TaskSummary[];
+  /**
+   * Draw the Agent column (LAI-538) — when any task in the space has a
+   * selected agent. A space that uses none keeps the List it had, with no
+   * empty column taking SUMMARY's room.
+   */
+  readonly showAgent?: boolean | undefined;
   readonly byId: ReadonlyMap<string, TaskSummary>;
   readonly members: ReadonlyMap<string, Member>;
   readonly sprintLabels: ReadonlyMap<string, { readonly label: string }>;
@@ -140,6 +146,7 @@ function applyAction(action: BulkAction, task: TaskSummary): Promise<unknown> {
  */
 export function ListView({
   tasks,
+  showAgent = false,
   byId,
   members,
   sprintLabels,
@@ -299,7 +306,7 @@ export function ListView({
     <div className="list-pane">
       <div className="list-card">
         <div className="list-scroll">
-          <table className="list">
+          <table className={showAgent ? 'list list-with-agent' : 'list'}>
             {/* The design's widths, declared once. `SUMMARY` takes what is left. */}
             <colgroup>
               {mayEdit && <col className="list-col-check" />}
@@ -309,7 +316,7 @@ export function ListView({
               <col className="list-col-pri" />
               <col className="list-col-size" />
               <col className="list-col-assignee" />
-              <col className="list-col-agent" />
+              {showAgent && <col className="list-col-agent" />}
               <col className="list-col-spr" />
               <col className="list-col-due" />
               <col className="list-col-created" />
@@ -336,38 +343,40 @@ export function ListView({
                     />
                   </th>
                 )}
-                {LIST_COLUMNS.map((column) => (
-                  <th
-                    key={column.key}
-                    scope="col"
-                    aria-sort={
-                      sort.key === column.key
-                        ? sort.ascending
-                          ? 'ascending'
-                          : 'descending'
-                        : 'none'
-                    }
-                  >
-                    <button
-                      type="button"
-                      className="list-sort"
-                      title={`Sort by ${column.label}`}
-                      onClick={() => {
-                        onSort(nextSort(sort, column.key));
-                      }}
+                {LIST_COLUMNS.filter((column) => showAgent || column.key !== 'agent').map(
+                  (column) => (
+                    <th
+                      key={column.key}
+                      scope="col"
+                      aria-sort={
+                        sort.key === column.key
+                          ? sort.ascending
+                            ? 'ascending'
+                            : 'descending'
+                          : 'none'
+                      }
                     >
-                      {column.label}
-                      {/* The active arrow is text; the resting glyph on every
+                      <button
+                        type="button"
+                        className="list-sort"
+                        title={`Sort by ${column.label}`}
+                        onClick={() => {
+                          onSort(nextSort(sort, column.key));
+                        }}
+                      >
+                        {column.label}
+                        {/* The active arrow is text; the resting glyph on every
                         other sortable header is CSS (`list.css`), so it never
                         enters a header's name for a screen reader or a test. */}
-                      {sort.key === column.key && (
-                        <span className="list-sort-arrow" aria-hidden="true">
-                          {sort.ascending ? '▲' : '▼'}
-                        </span>
-                      )}
-                    </button>
-                  </th>
-                ))}
+                        {sort.key === column.key && (
+                          <span className="list-sort-arrow" aria-hidden="true">
+                            {sort.ascending ? '▲' : '▼'}
+                          </span>
+                        )}
+                      </button>
+                    </th>
+                  ),
+                )}
               </tr>
             </thead>
 
@@ -522,16 +531,28 @@ export function ListView({
                       </span>
                     </td>
 
-                    {/* The selected agent (LAI-538): the card's chip, or nothing. */}
-                    <td className="list-agent">
-                      {row.agent !== null && (
-                        <AgentChip
-                          client={selectedHarness(row.agent)}
-                          device={agentDevice(row.agent)}
-                          owner={row.agent.owner.name}
-                        />
-                      )}
-                    </td>
+                    {/* The selected agent (LAI-538), compact: its mark and its
+                      device, the product's name read aloud and on hover. The
+                      card's whole chip would not fit without the table
+                      scrolling sideways at 1440. */}
+                    {showAgent && (
+                      <td className="list-agent">
+                        {row.agent !== null && (
+                          <span
+                            className="list-agent-cell"
+                            title={`${row.agentLabel} — ${row.agent.owner.name}’s agent`}
+                          >
+                            <AgentMark client={selectedHarness(row.agent)} size="sm" />
+                            <span className="list-agent-text">
+                              <span className="visually-hidden">
+                                {agentProductName(row.agent)} ·{' '}
+                              </span>
+                              {agentDevice(row.agent)}
+                            </span>
+                          </span>
+                        )}
+                      </td>
+                    )}
 
                     <td className="list-spr">{row.sprintTag}</td>
 

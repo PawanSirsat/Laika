@@ -649,7 +649,11 @@ void describe('the List’s Agent column and the agent filter', () => {
       await header.waitFor({ timeout: 20_000 });
       assert.equal(await header.getAttribute('aria-sort'), 'none');
       const t2 = h.page.locator('tbody tr[data-task-id="t2"] .list-agent');
-      assert.equal((await t2.innerText()).trim(), 'Claude Code · laptop-1');
+      // The mark and the device on screen; the product's name read aloud.
+      assert.equal(
+        ((await t2.textContent()) ?? '').replace(/\s+/g, ' ').trim(),
+        'Claude Code · laptop-1',
+      );
       // The assignee column still names the person, not the agent.
       assert.match(await h.page.locator('tbody tr[data-task-id="t2"]').innerText(), /Ada Lovelace/);
 
@@ -718,6 +722,34 @@ void describe('the List’s Agent column and the agent filter', () => {
         'Claude Code · laptop-1',
         'Codex · desktop-2',
       ]);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('a space that uses no agents', () => {
+  void test('draws no Agent column and offers no Agent filter', async () => {
+    const { stub, tasks } = world();
+    for (const t of tasks) t.selected_agent = null;
+    const h = await open('/list?project=laika-core', stub);
+    try {
+      await h.page.locator('tbody .list-row').first().waitFor({ timeout: 20_000 });
+      const headers = await h.page.getByRole('columnheader').allInnerTexts();
+      assert.ok(
+        headers.some((t) => /Assignee/i.test(t)),
+        'the headers did not render',
+      );
+      assert.ok(
+        !headers.some((t) => /^Agent/i.test(t.trim())),
+        `an Agent column: ${headers.join()}`,
+      );
+      await h.page
+        .getByRole('button', { name: /^Filter/ })
+        .first()
+        .click();
+      await h.page.getByRole('combobox', { name: 'Assignee' }).waitFor({ timeout: 5_000 });
+      assert.equal(await h.page.getByRole('combobox', { name: 'Agent' }).count(), 0);
     } finally {
       await h.close();
     }
