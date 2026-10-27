@@ -2,11 +2,12 @@
 id: LAI-541
 title: 'Agent sessions, exclusive claims with lease + generation, 409 stale_claim on REST+MCP, heartbeat renewal, expiry scanner, claim_expired'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-535, LAI-540]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-27T22:33:22Z
 ---
 
 Implements **proposal §4.2** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -77,3 +78,13 @@ P0 — board priority `p1` + tag `p0`.
 ## Migration / rollout notes
 
 Additive. Existing human claims (`assignee_id` compare-and-swap, `services/tasks.ts:1448`) keep working for human-only tasks. Three-owner merge for `claim_expired`.
+
+## Notes
+
+- Claimed 2026-10-28 by CORE (dispatched by polly on Belka). Worktree
+  `Laika-claims`, branch `LAI-541-sessions-exclusive-claims`, cut from LAI-535
+  head `38ab6851` — stacked on draft PR #105 → #102 → #98/#96; must not merge
+  before #105. D-114 approved in substance, record pending → draft PR.
+- **Deviation recorded:** `depends-on` LAI-535 is in review, not done, and
+  LAI-540 is written in this same branch as named crossings; the stack is the
+  dispatcher's instruction.

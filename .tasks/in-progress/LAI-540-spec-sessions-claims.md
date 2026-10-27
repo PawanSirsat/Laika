@@ -2,11 +2,12 @@
 id: LAI-540
 title: 'SPEC: agent sessions, claim lease/generation fencing, timing defaults, restart behaviour'
 area: docs
-assignee: unclaimed
+assignee: chief-delegated
 priority: p1
 depends-on: [LAI-533]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-27T22:33:22Z
 ---
 
 Implements **proposal §4.2, §4.4 (claim_expired)** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -69,3 +70,9 @@ P0 — board priority `p1` + tag `p0`.
 ## Migration / rollout notes
 
 Docs only.
+
+## Notes
+
+- SPEC written as named crossings in LAI-541's branch
+  (`LAI-541-sessions-exclusive-claims`, base `38ab6851`), by CORE on CHIEF's
+  authorisation; assignee `chief-delegated`.
