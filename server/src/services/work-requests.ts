@@ -5,6 +5,7 @@ import { newId } from '../db/ids.ts';
 import { agentProjectGrants, agents, handoffOffers, projects, tasks, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
+import { requireProjectBySlug } from './projects.ts';
 
 /**
  * A task's selected agent and the work request it opens (D-114 item 7,
@@ -216,6 +217,13 @@ export interface ListWorkRequestsOptions {
   limit: number;
   /** Keyset position, `(created_at, id)`, matching the ORDER BY below. */
   cursor: { sortKey: string | number; id: string } | null;
+  /**
+   * One project only, by slug — `?project=` on REST, `project` on MCP's
+   * `list_ready_tasks`, so a scoped call never answers with another
+   * project's requests. A project the agent may not read is refused as any
+   * read of it is, not answered empty.
+   */
+  projectSlug?: string | null | undefined;
 }
 
 /**
@@ -245,9 +253,14 @@ export function listOwnWorkRequests(
   // Filtered in SQL rather than after the page is cut, so a page is never
   // short while more remain. The agent's grants bound it; its owner's
   // current role bounds those.
-  const readable = [...agent.grants.keys()].filter((projectId) =>
+  let readable = [...agent.grants.keys()].filter((projectId) =>
     can(withProject(actor, projectId), 'project.read', { projectId }),
   );
+  if (options.projectSlug !== undefined && options.projectSlug !== null) {
+    const project = requireProjectBySlug(db, options.projectSlug);
+    assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
+    readable = readable.filter((projectId) => projectId === project.id);
+  }
   if (readable.length === 0) return [];
 
   const conditions: SQL[] = [
