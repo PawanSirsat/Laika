@@ -2222,3 +2222,40 @@
   outline-offset: 2px;
   border-radius: var(--radius-chip);
 }
+
+/* ------------------------------------------------- the Agent row (LAI-538) */
+
+/* The rail stacks label over value; LAI-536's picker is a two-column grid
+   by default, so here it takes the rail's shape. */
+.meta-row-agent .agent-picker {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.375rem;
+}
+
+.meta-row-agent .agent-row-label {
+  padding-top: 0;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.meta-row-agent .exec-state {
+  margin-top: 0.5rem;
+}
+
+.meta-agent {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.meta-muted {
+  color: var(--text-muted);
+  font-size: var(--text-small);
+}
+
+.meta-agent-error {
+  margin-top: 0.375rem;
+  color: var(--overdue);
+}

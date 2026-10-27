@@ -63,6 +63,8 @@ export function AgentPicker({ agents, value, onChange, disabled }: AgentPickerPr
     ...agents.map((agent): DropdownOption => ({
       value: agent.id,
       label: choiceLabel(agent),
+      // Found by owner or device as well as by name (LAI-538).
+      keywords: `${agent.owner} ${agent.device}`,
       icon: <AgentMark client={agent.client} size="sm" />,
       detail: choiceDetail(agent),
       disabled: agent.availability === 'unavailable',
@@ -87,6 +89,9 @@ export function AgentPicker({ agents, value, onChange, disabled }: AgentPickerPr
           aria-labelledby={labelId}
           aria-describedby={helpId}
           noun="agents"
+          // Searchable however few there are: the list grows with every
+          // device a person registers, and the field reads the same either way.
+          searchable
           disabled={disabled}
         />
         <p id={helpId} className="agent-picker-help">
