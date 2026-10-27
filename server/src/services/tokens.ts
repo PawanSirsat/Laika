@@ -91,7 +91,7 @@ type TokenRow = typeof tokens.$inferSelect;
  * it: the object is built field by field, so a column added to the table does
  * not appear on the wire until someone writes the line that puts it there.
  */
-function toView(row: TokenRow): TokenView {
+export function tokenView(row: TokenRow): TokenView {
   return {
     id: row.id,
     name: row.name,
@@ -174,41 +174,66 @@ export function createToken(
   const projectIds = assertReadableProjects(db, actor, input.projectIds ?? null);
   const scope = forcedTokenScope(actor.orgRole, input.scope);
 
+  return immediateTransaction(sqlite, () =>
+    insertToken(db, actor, { name, scope, projectIds, expiresAt, agentId: null, now }),
+  );
+}
+
+export interface InsertTokenInput {
+  name: string;
+  scope: TokenScope;
+  projectIds: readonly string[] | null;
+  expiresAt: number | null;
+  /** The registered agent this token is the credential of, or null (D-114). */
+  agentId: string | null;
+  now: number;
+}
+
+/**
+ * Mint the row and its `token.created` event, **inside the caller's
+ * transaction** — the one place a secret is made, shared by `createToken`
+ * and by an agent's registration and rotation (LAI-534), so an agent's
+ * credential is a token in every respect but its `agent_id`.
+ *
+ * The payload is the one `createToken` has always written: id, name, scope,
+ * prefix. **Never the secret**, and no agent field — attributing activity to
+ * an agent is LAI-535's, and the verb's payload is a contract the client reads.
+ */
+export function insertToken(db: Db, actor: ResolvedActor, input: InsertTokenInput): CreatedToken {
   const secret = newTokenSecret();
   const row: TokenRow = {
     id: newId(),
     userId: actor.userId,
-    name,
+    name: input.name,
     prefix: tokenDisplayPrefix(secret),
     tokenHash: hashToken(secret),
-    scope,
-    projectIdsJson: projectIds === null ? null : JSON.stringify(projectIds),
+    scope: input.scope,
+    projectIdsJson: input.projectIds === null ? null : JSON.stringify(input.projectIds),
     lastUsedAt: null,
     lastMcpAt: null,
     lastRestWriteAt: null,
     lastClient: null,
     lastClientName: null,
-    expiresAt,
+    expiresAt: input.expiresAt,
     revokedAt: null,
-    createdAt: now,
+    createdAt: input.now,
+    agentId: input.agentId,
   };
 
-  immediateTransaction(sqlite, () => {
-    db.insert(tokens).values(row).run();
+  db.insert(tokens).values(row).run();
 
-    appendActivity(db, {
-      orgId: requireOrgId(db),
-      // Org-scoped: a token is not a project's business, and §3.1 puts reading
-      // these rows behind the audit-log cell (`visibleTo` in services/events).
-      projectId: null,
-      ...activityActor(actor),
-      type: 'token.created',
-      payload: { token_id: row.id, name: row.name, scope: row.scope, prefix: row.prefix },
-      now,
-    });
+  appendActivity(db, {
+    orgId: requireOrgId(db),
+    // Org-scoped: a token is not a project's business, and §3.1 puts reading
+    // these rows behind the audit-log cell (`visibleTo` in services/events).
+    projectId: null,
+    ...activityActor(actor),
+    type: 'token.created',
+    payload: { token_id: row.id, name: row.name, scope: row.scope, prefix: row.prefix },
+    now: input.now,
   });
 
-  return { token: toView(row), secret };
+  return { token: tokenView(row), secret };
 }
 
 export interface ListTokensOptions {
@@ -302,7 +327,7 @@ function selectTokens(db: Db, userId: string, options: ListTokensOptions): Token
     .orderBy(desc(tokens.createdAt), desc(tokens.id))
     .limit(options.limit + 1)
     .all()
-    .map(toView);
+    .map(tokenView);
 }
 
 function requireToken(db: Db, tokenId: string): TokenRow {
@@ -334,16 +359,25 @@ function revoke(
   if (row.revokedAt !== null) return;
 
   immediateTransaction(sqlite, () => {
-    db.update(tokens).set({ revokedAt: now }).where(eq(tokens.id, row.id)).run();
+    revokeTokenRow(db, actor, row, now);
+  });
+}
 
-    appendActivity(db, {
-      orgId: requireOrgId(db),
-      projectId: null,
-      ...activityActor(actor),
-      type: 'token.revoked',
-      payload: { token_id: row.id, name: row.name, prefix: row.prefix, owner_id: row.userId },
-      now,
-    });
+/**
+ * Revoke one live row and write its `token.revoked`, **inside the caller's
+ * transaction** — shared with an agent's rotation and revocation (LAI-534),
+ * so each revoked credential leaves the event a revoked token always has.
+ */
+export function revokeTokenRow(db: Db, actor: ResolvedActor, row: TokenRow, now: number): void {
+  db.update(tokens).set({ revokedAt: now }).where(eq(tokens.id, row.id)).run();
+
+  appendActivity(db, {
+    orgId: requireOrgId(db),
+    projectId: null,
+    ...activityActor(actor),
+    type: 'token.revoked',
+    payload: { token_id: row.id, name: row.name, prefix: row.prefix, owner_id: row.userId },
+    now,
   });
 }
 
@@ -360,7 +394,7 @@ function revoke(
  * the actor's role, and an Owner has implicit lead everywhere — including on an
  * id that names no project at all, which would otherwise sail through.
  */
-function assertReadableProjects(
+export function assertReadableProjects(
   db: Db,
   actor: ResolvedActor,
   requested: readonly string[] | null,
