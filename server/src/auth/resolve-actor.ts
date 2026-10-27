@@ -14,10 +14,12 @@ import {
 import { DEFAULT_GRANTS } from '../policy/grants.ts';
 import { type Auth } from './auth.ts';
 import {
+  findTokenById,
   findTokenBySecret,
   looksLikePlaceholder,
   PLACEHOLDER_MESSAGE,
   TokenAuthError,
+  type TokenRejection,
   touchTokenUsage,
   tokenProjectIds,
 } from './tokens.ts';
@@ -193,6 +195,53 @@ export function resolveTokenActor(
       projectIds: tokenProjectIds(found.row),
     },
   };
+}
+
+/**
+ * An actor resolved earlier → the same actor as it stands at `now`, or why it
+ * no longer may act (LAI-539, audit M10).
+ *
+ * For a credential that outlives its request: an open event stream. Two things
+ * the request-time resolution settled can change under it, and both must be
+ * read again rather than trusted:
+ *
+ *  - **The person** — role, memberships, grants, active status — as
+ *    `loadActor` reads them.
+ *  - **The token**, when the actor arrived on one. Re-reading only the person
+ *    is the defect this exists to fix: `loadActor` returns `token: null`, so a
+ *    stream that refreshed its actor that way silently became a cookie stream,
+ *    escaped the token's project whitelist and scope, and outlived revocation
+ *    and expiry.
+ *
+ * Token checks come first, in the order `resolveTokenActor` applies them, so a
+ * revoked token on a deactivated account reports `revoked` either way.
+ */
+export function reloadActor(
+  db: Db,
+  previous: ResolvedActor,
+  now: number,
+): { ok: true; actor: ResolvedActor } | { ok: false; reason: TokenRejection } {
+  const presented = previous.token;
+  let token: ResolvedActor['token'] = null;
+
+  if (presented !== null && presented !== undefined) {
+    const found = findTokenById(db, presented.id, now);
+    if (!found.ok) return found;
+    // A token belongs to one person for life; a row naming somebody else is
+    // not this credential, whatever its id.
+    if (found.row.userId !== previous.userId) return { ok: false, reason: 'unknown' };
+    token = {
+      id: found.row.id,
+      scope: found.row.scope,
+      projectIds: tokenProjectIds(found.row),
+    };
+  }
+
+  const fresh = loadActor(db, previous.userId);
+  if (fresh === null) return { ok: false, reason: 'unknown' };
+  if (!fresh.isActive) return { ok: false, reason: 'inactive_user' };
+
+  return { ok: true, actor: { ...fresh, token } };
 }
 
 /**

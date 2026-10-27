@@ -1,17 +1,18 @@
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadActor } from '../../../src/auth/resolve-actor.ts';
+import { loadActor, resolveTokenActor } from '../../../src/auth/resolve-actor.ts';
 import { appendActivity } from '../../../src/db/activity.ts';
 import { type ActivityType } from '../../../src/db/enums.ts';
 import { newId } from '../../../src/db/ids.ts';
-import { orgs, users } from '../../../src/db/schema.ts';
+import { orgs, tokens, users } from '../../../src/db/schema.ts';
 import { type AppEnv } from '../../../src/http/context.ts';
 import { createErrorHandler } from '../../../src/http/error-handler.ts';
 import { eventRoutes, RECONNECT_MS } from '../../../src/http/routes/events.ts';
 import { ActivityFeed, type RepeatingTimer } from '../../../src/services/activity-feed.ts';
 import { MAX_REPLAY } from '../../../src/services/events.ts';
 import { addMember, createProject } from '../../../src/services/projects.ts';
+import { createToken, revokeOwnToken } from '../../../src/services/tokens.ts';
 import { captureLog } from '../../helpers/app.ts';
 import { authHarness, cookieFrom, jsonHeaders, type AuthHarness } from '../../helpers/auth.ts';
 import { freshDb, type TestDb } from '../../helpers/db.ts';
@@ -158,7 +159,7 @@ function write(projectId: string | null, type: ActivityType = 'task.created'): v
  */
 function bareApp(
   userId: string | null,
-  options: { shippedKeepalive?: boolean } = {},
+  options: { shippedKeepalive?: boolean; token?: string; now?: () => number } = {},
 ): Hono<AppEnv> {
   const log = captureLog();
   const app = new Hono<AppEnv>();
@@ -166,7 +167,14 @@ function bareApp(
   app.use('*', async (c, next) => {
     c.set('log', log.logger);
     c.set('requestId', 'test');
-    c.set('actor', userId === null ? null : actor(userId));
+    c.set(
+      'actor',
+      options.token === undefined
+        ? userId === null
+          ? null
+          : actor(userId)
+        : resolveTokenActor(t.db, options.token, options.now?.() ?? Date.now()),
+    );
     await next();
   });
 
@@ -177,6 +185,7 @@ function bareApp(
     eventRoutes({
       db: t.db,
       feed,
+      ...(options.now === undefined ? {} : { now: options.now }),
       // Omitted entirely rather than passed as `undefined`: under
       // `exactOptionalPropertyTypes` those are different things, and only the
       // omission reaches the `?? KEEPALIVE_MS` default.
@@ -526,6 +535,149 @@ describe('a permission change reaches an open stream', () => {
 
     expect(await client.nextOrEnd()).toBeNull();
     expect(feed.subscriberCount()).toBe(0);
+  });
+});
+
+describe('open token streams re-check credentials (LAI-539)', () => {
+  async function open(
+    options: { projectIds?: string[]; expiresAt?: number; now?: () => number } = {},
+  ) {
+    const minted = createToken(t.sqlite, t.db, actor(ownerId), {
+      name: 'SSE regression',
+      scope: 'read_only',
+      ...options,
+      now: options.now?.() ?? Date.now(),
+    });
+    const res = await bareApp(ownerId, {
+      token: minted.secret,
+      ...(options.now === undefined ? {} : { now: options.now }),
+    }).request('/api/v1/events');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toContain('text/event-stream');
+    const client = sseClient(res);
+    expect((await client.next()).event).toBe('ready');
+    // A positive delivery proves that authentication and the subscription work.
+    write(laikaId);
+    feed.poll();
+    expect((await client.next()).event).toBe('task.created');
+    return { minted, client };
+  }
+
+  async function unauthorized(client: ReturnType<typeof sseClient>) {
+    const frame = await client.next();
+    expect(frame.event).toBe('error');
+    expect(frame.id).toBeNull();
+    expect(JSON.parse(frame.data)).toEqual({
+      error: {
+        code: 'unauthorized',
+        message: 'That access token is not valid',
+        details: null,
+      },
+    });
+    expect(await client.nextOrEnd()).toBeNull();
+    expect(feed.subscriberCount()).toBe(0);
+    expect(timers.cleared).toBe(1);
+  }
+
+  it('closes a revoked token stream with unauthorized before the next event', async () => {
+    const { minted, client } = await open();
+    try {
+      revokeOwnToken(t.sqlite, t.db, actor(ownerId), minted.token.id);
+      write(laikaId);
+      feed.poll();
+      await unauthorized(client);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('closes an expired token stream with unauthorized at the injected expiry boundary', async () => {
+    let now = Date.now();
+    const expiresAt = now + 60_000;
+    const { client } = await open({ expiresAt, now: () => now });
+    try {
+      now = expiresAt - 1;
+      write(laikaId);
+      feed.poll();
+      expect((await client.next()).event).toBe('task.created');
+      now = expiresAt;
+      write(laikaId);
+      feed.poll();
+      await unauthorized(client);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('never delivers another project or org rows to a project-pinned token', async () => {
+    const { client } = await open({ projectIds: [laikaId] });
+    try {
+      write(otherId);
+      write(null, 'token.created');
+      write(laikaId);
+      feed.poll();
+      const frame = await client.next();
+      expect(frame.event).toBe('task.created');
+      expect(JSON.parse(frame.data)).toMatchObject({ project_id: laikaId });
+      timers.fire();
+      expect((await client.next()).comment).toBe('keepalive');
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('closes a deactivated token agent stream with unauthorized', async () => {
+    const { client } = await open();
+    try {
+      t.db.update(users).set({ isActive: 0 }).where(eq(users.id, ownerId)).run();
+      write(laikaId);
+      feed.poll();
+      await unauthorized(client);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('re-checks revocation before writing an already queued batch', async () => {
+    const { minted, client } = await open();
+    try {
+      write(laikaId);
+      feed.poll();
+      revokeOwnToken(t.sqlite, t.db, actor(ownerId), minted.token.id);
+      await unauthorized(client);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('closes an idle revoked token stream on the keepalive check', async () => {
+    const { minted, client } = await open();
+    try {
+      revokeOwnToken(t.sqlite, t.db, actor(ownerId), minted.token.id);
+      timers.fire();
+      await unauthorized(client);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('honours a narrowed project pin on the next batch', async () => {
+    const { minted, client } = await open();
+    try {
+      t.db
+        .update(tokens)
+        .set({ projectIdsJson: JSON.stringify([laikaId]) })
+        .where(eq(tokens.id, minted.token.id))
+        .run();
+      write(otherId);
+      write(laikaId);
+      feed.poll();
+      expect(JSON.parse((await client.next()).data)).toMatchObject({ project_id: laikaId });
+      timers.fire();
+      expect((await client.next()).comment).toBe('keepalive');
+    } finally {
+      await client.disconnect();
+    }
   });
 });
 
