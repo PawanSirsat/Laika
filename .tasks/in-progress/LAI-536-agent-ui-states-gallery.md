@@ -2,11 +2,12 @@
 id: LAI-536
 title: 'Reviewable states for agent UI on /design/states — gallery only, no live screens'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-533]
 discovered-from:
-status: backlog
+started: 2026-10-27T19:31:31Z
+status: in-progress
 ---
 
 Implements **proposal §6** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -68,3 +69,11 @@ P0 — board priority `p1` + tag `p0`.
 ## Migration / rollout notes
 
 None; gallery only.
+
+## Claim note — dependency deviation (SHELL, 2026-10-28)
+
+`depends-on: [LAI-533]` is not in `.tasks/done/` on any branch. Claimed on
+the orchestrator's (Belka / CHIEF) explicit dispatch, which cites proposal §8:
+this task "proceeds without any decision" — it shows proposed UI only, builds
+no live screen and changes no design token. Recorded here rather than read
+loosely (§2 step 1).
