@@ -28,6 +28,7 @@ let baseUrl: URL;
 let ownerCookie: string;
 let bob: { cookie: string; id: string };
 let alpha: string;
+let beta: string;
 
 interface ErrorBody {
   error: { code: string; message: string; details: { reason?: unknown } | null };
@@ -127,6 +128,7 @@ beforeEach(async () => {
       ownerCookie,
     );
     if (slug === 'alpha') alpha = created.id as string;
+    else beta = created.id as string;
     await must(
       `/api/v1/projects/${slug}/members`,
       { method: 'POST', body: JSON.stringify({ user_id: bob.id, role: 'member' }) },
@@ -329,6 +331,56 @@ describe('selecting an agent over MCP (LAI-535)', () => {
     const answer = await succeeded(plain, 'list_ready_tasks', {});
     expect(answer.structuredContent).not.toHaveProperty('work_requests');
     await plain.close();
+  });
+
+  it('list_ready_tasks applies `project` and `limit` to work_requests, exactly as the REST twin does', async () => {
+    const worker = await register([
+      { project_id: alpha, scope: 'full' },
+      { project_id: beta, scope: 'full' },
+    ]);
+    const select = async (slug: 'alpha' | 'beta') => {
+      const body = await must(
+        `/api/v1/projects/${slug}/tasks`,
+        { method: 'POST', body: JSON.stringify({ title: 'Work' }) },
+        bob.cookie,
+      );
+      await must(
+        `/api/v1/tasks/${String(body.id)}`,
+        { method: 'PATCH', body: JSON.stringify({ selected_agent_id: worker.agent.id }) },
+        bob.cookie,
+        200,
+      );
+      return body.key as string;
+    };
+    const alphaKeys = [await select('alpha'), await select('alpha')];
+    const betaKey = await select('beta');
+
+    const rest = async (query: string) => {
+      const res = await h.app.request(`/api/v1/agents/me/work-requests${query}`, {
+        headers: jsonHeaders({ Authorization: `Bearer ${worker.secret}` }),
+      });
+      expect(res.status, await res.clone().text()).toBe(200);
+      return ((await res.json()) as { data: { task_key: string }[] }).data.map((r) => r.task_key);
+    };
+
+    const client = await connect(worker.secret);
+    const mcp = async (args: Record<string, unknown>) => {
+      const result = await succeeded(client, 'list_ready_tasks', args);
+      return (
+        result.structuredContent as { work_requests: { task_key: string }[] }
+      ).work_requests.map((r) => r.task_key);
+    };
+
+    // Scoped: nothing from beta leaks into an alpha call, on either surface.
+    expect((await mcp({ project: 'alpha' })).sort()).toEqual([...alphaKeys].sort());
+    expect(await mcp({ project: 'alpha' })).toEqual(await rest('?project=alpha'));
+    expect(await mcp({ project: 'beta' })).toEqual([betaKey]);
+    // Limited: the same newest-first prefix the REST page gives.
+    expect(await mcp({ limit: 1 })).toEqual(await rest('?limit=1'));
+    expect(await mcp({ limit: 1 })).toHaveLength(1);
+    expect(await mcp({})).toHaveLength(3);
+
+    await client.close();
   });
 
   it('get_task_context says who it is requested of, apart from the assignee', async () => {

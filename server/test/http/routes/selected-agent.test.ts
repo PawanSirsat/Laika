@@ -512,6 +512,72 @@ describe('GET /agents/me/work-requests', () => {
     expect(page.data).toEqual([]);
   });
 
+  it('pages through equal timestamps by (created_at, id): no duplicate, no skip', async () => {
+    const { agent, secret } = await register([{ project_id: alpha, scope: 'full' }]);
+    const asked: string[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      const taskId = await newTask('alpha');
+      await ok(await patch(taskId, { selected_agent_id: agent.id }));
+      asked.push(taskId);
+    }
+    // Every request at one instant: only the id can order them now.
+    h.db.update(handoffOffers).set({ createdAt: 1_800_000_000_000 }).run();
+    const expected = h.db
+      .select({ id: handoffOffers.id })
+      .from(handoffOffers)
+      .all()
+      .map((r) => r.id)
+      .sort()
+      .reverse();
+
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const query: string = cursor === null ? '?limit=2' : `?limit=2&cursor=${cursor}`;
+      const page = await ok(
+        await req(`/api/v1/agents/me/work-requests${query}`, {}, { bearer: secret }),
+      );
+      const data = page.data as { id: string; task_id: string }[];
+      expect(data.length).toBeLessThanOrEqual(2);
+      seen.push(...data.map((r) => r.id));
+      cursor = page.next_cursor as string | null;
+      pages += 1;
+      expect(pages, 'the cursor never ends').toBeLessThan(10);
+    } while (cursor !== null);
+
+    // Newest first, ties broken by id descending, each exactly once.
+    expect(seen).toEqual(expected);
+    expect(pages).toBe(3);
+    expect(new Set(seen).size).toBe(asked.length);
+  });
+
+  it('?project= narrows to one project; another the agent cannot read is refused, not empty', async () => {
+    const { agent, secret } = await register([
+      { project_id: alpha, scope: 'full' },
+      { project_id: beta, scope: 'full' },
+    ]);
+    const a = await newTask('alpha');
+    const b = await newTask('beta');
+    await ok(await patch(a, { selected_agent_id: agent.id }));
+    await ok(await patch(b, { selected_agent_id: agent.id }));
+
+    const onlyBeta = await ok(
+      await req('/api/v1/agents/me/work-requests?project=beta', {}, { bearer: secret }),
+    );
+    expect((onlyBeta.data as { task_id: string }[]).map((r) => r.task_id)).toEqual([b]);
+
+    const narrow = await register([{ project_id: alpha, scope: 'full' }], bob.cookie, 'Narrow');
+    expect(
+      await refusal(
+        await req('/api/v1/agents/me/work-requests?project=beta', {}, { bearer: narrow.secret }),
+      ),
+    ).toMatchObject({ status: 403, code: 'forbidden', reason: 'agent_not_granted' });
+    expect(
+      (await req('/api/v1/agents/me/work-requests?project=nope', {}, { bearer: secret })).status,
+    ).toBe(404);
+  });
+
   it('is 403 not_an_agent for a session and for a legacy token', async () => {
     const legacy = await ok(
       await req(
