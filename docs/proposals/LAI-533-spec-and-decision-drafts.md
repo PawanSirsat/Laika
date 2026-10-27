@@ -70,6 +70,9 @@ task, so the agent has to be something the board can name.
    - **cannot bypass a session claim**: when a registered agent's session holds
      a task's active claim, a legacy token's task change is refused exactly
      like any non-holder's (LAI-541).
+   Agent grants do not narrow a legacy token, because it has no agent; it
+   keeps exactly the access it has today. The rollout plan (LAI-560) proposes
+   a date after which new legacy tokens are discouraged in the UI.
 7. **Three separate facts.** The **human assignee**, the **selected agent**
    and the **active claim** are kept apart.
    - Selecting an agent creates a work request. It does not claim the task, it
@@ -152,108 +155,181 @@ It is scoped to one task, and anyone who can read that task can see it.
 
 ---
 
-## D-116 — A checkpoint is proved by signed push deliveries, ordered by the ref's own history, and acknowledged by the receiver; Laika still never calls GitHub (D-083)
+## D-116 — A checkpoint is proved by signed push deliveries, judged per ref, and acknowledged by the receiver; Laika still never calls GitHub (D-083)
 
 **Date:** 2026-10-28 · **Status:** revised for approval (owner review of
-2026-10-28)
+2026-10-28; second revision after an independent review of the GitHub facts)
 
-**In one line:** the server learns, from signed deliveries, that a commit
-*was* pushed. The supported helper confirms that it is *still* there before it
-accepts. When the server cannot establish order, it says so and stops the
-transfer until the order is reconciled.
+**In one line:** signed deliveries tell the server that a commit *was*
+pushed. The supported helper confirms that it is *still* there before
+accepting it. When the server cannot tell what happened to a ref, it says so
+and blocks transfer until the ref is re-tagged.
 
-**Context.** D-083 keeps Laika from calling GitHub. Checkpoints have to be
-trustworthy anyway: a receiver must not continue from a commit that never
+**Context.** D-083 keeps Laika from calling GitHub, but a checkpoint still has
+to be trustworthy: a receiver must never continue from a commit that never
 reached the remote.
+
+Three GitHub behaviours shape this decision:
+
+- GitHub creates no push event when more than three tags are pushed, or
+  deleted, at once.
+- A redelivery carries the original `X-GitHub-Delivery` id.
+- Failed deliveries are never redelivered automatically, and a person can
+  redeliver them only for 3 days.
+
+Sources:
+<https://docs.github.com/en/webhooks/webhook-events-and-payloads#push>,
+<https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks>,
+<https://docs.github.com/en/webhooks/using-webhooks/handling-failed-webhook-deliveries>,
+<https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/redelivering-webhooks>.
 
 **Decision.**
 
-1. **Push, then register.** The helper pushes the work branch and then a
-   lightweight tag, `laika-ckpt/<LAI-NNN>/<checkpoint-id>`, at the checkpoint
-   SHA. Only after that does it register the checkpoint. Registration is
-   idempotent by key, so a push that succeeded followed by a registration that
-   failed is simply retried.
-2. **Protecting the tags.** Operators protect `refs/tags/laika-ckpt/*` with a
-   repository ruleset that blocks **both update and deletion**, so no one can
-   move or remove a checkpoint tag while it is retained. Deleting a tag after
-   retention is a deliberate act by an operator, under the ruleset's bypass. It
-   is never done by Laika. Whether this works on GitHub is Documented, not
-   tested: LAI-545 tests it on the configured repo.
-3. **What counts as proof.** A checkpoint is `verified` only by signed `push`
-   deliveries for the project's configured repo. Laika never marks a
-   checkpoint verified because an agent says so.
-4. **Ordering.** Webhook **arrival order is not event order**, so Laika never
-   uses arrival order. Each delivery for a checkpoint ref is treated as a
-   transition `before → after`, using the payload's `before` and `after` SHAs.
-   The all-zero SHA means the ref is absent. The ref's state is the end of the
-   **chain** these transitions form, starting from "absent".
-   - **The chain links up.** The checkpoint is `verified` if the end of the
-     chain is the checkpoint SHA, and `ref_deleted` if the end is "absent"
-     after a deletion.
-   - **A delivery that is already part of the chain** is a delayed duplicate.
-     It is ignored, so a late, older delivery can never overwrite a newer
-     state.
-   - **The chain cannot be linked.** If a transition starts from a SHA the
-     chain never reached, the ref was modified at all, or a ref was deleted and
-     then created again, the checkpoint becomes `uncertain`. An `uncertain`
-     checkpoint **cannot be offered or accepted**, and the transfer stays
-     blocked until it is reconciled (step 6).
-   - Exact repeats of the same delivery are discarded by their
-     `X-GitHub-Delivery` id.
-5. **What the UI says.**
-   - `pending` → **"Verification pending"**.
-   - Still `pending` after 10 minutes (configurable) → **"Verification pending
-     — no push notice from GitHub yet"**. This message is also shown to owners
-     and admins.
-   - `uncertain` → **"Save needs attention — GitHub's notices disagree"**.
-   - A `pending` or `uncertain` checkpoint cannot be offered or accepted. An
-     automatic recovery offer uses the latest **verified** checkpoint and shows
-     any newer one beside it as unverified.
-6. **Recovering when the webhook missed** — the procedure is tested in LAI-545,
-   on a real repo.
-   1. **Redeliver.** An owner or admin opens the webhook's recent deliveries in
-      GitHub and uses *Redeliver*. Redelivered payloads are processed exactly
-      like originals: their id is new, but their transition is already in the
-      chain or extends it, so they are safe to replay.
-   2. **Re-tag.** If the delivery is not available to redeliver, the agent or
-      its owner runs `laika agent checkpoint reverify <id>`. That pushes a
-      **fresh** tag, `laika-ckpt/<LAI-NNN>/<checkpoint-id>-r<n>`, at the same
-      SHA. The new ref has a clean chain from "absent", so its own delivery can
-      verify the checkpoint. The server never calls GitHub to do this.
-   3. **Reconcile.** Re-tagging is also how an `uncertain` checkpoint is
-      reconciled. A checkpoint that cannot be reconciled stays unusable for
-      transfer, and the task falls back to the human recovery path (§4.4: no
-      checkpoint).
-7. **What the receiver's SHA proves.**
-   - The **supported receiver helper** fetches the checkpoint ref, checks that
-     it resolves to exactly the recorded SHA, and checks that commit out into a
-     fresh worktree. Only then does it send `verified_commit_sha` with the
-     accept.
-   - The server checks that the submitted SHA equals the checkpoint's. It
-     refuses a mismatch with `422 checkpoint_mismatch`, and an unverified or
-     uncertain checkpoint with `409 checkpoint_unverified`.
-   - The server **cannot independently prove that a fetch happened**. The
-     submitted SHA is recorded as the **receiver's acknowledgement**, not as
-     proof, and the UI labels it that way: "Receiver confirmed commit …".
-     Fetch-and-check is enforced by the supported helper. Any other client
-     that submits the SHA is taking responsibility for having checked it.
+1. **Push, then register.**
+   - The helper pushes the work branch.
+   - It then pushes **one** lightweight tag, `laika-ckpt/<LAI-NNN>/<checkpoint-id>`,
+     at the checkpoint commit, **alone in its own `git push`**. GitHub creates
+     no event when more than three tags are pushed at once.
+   - It never creates an annotated tag. For an annotated tag the delivery's
+     `after` is the tag object's SHA, not the commit's, so the checkpoint would
+     become `uncertain` (step 4).
+   - Only then does the helper register the checkpoint. Registration is
+     idempotent by key, so a push that succeeded followed by a registration
+     that failed is simply retried.
+2. **Protecting tags.**
+   - Operators protect checkpoint tags with a tag ruleset that targets
+     `laika-ckpt/**/*` and enables **Restrict updates** and **Restrict
+     deletions**.
+   - The pattern needs `**` because a ruleset's `*` does not match `/`.
+   - A private repository needs GitHub Pro, Team or Enterprise Cloud to use
+     rulesets.
+   - Sources:
+     <https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/creating-rulesets-for-a-repository>,
+     <https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets>.
+   - A checkpoint tag is retained for 90 days after its task reaches Done or
+     Cancelled, the same period Laika keeps its own checkpoint records
+     (D-115).
+   - After that, an operator may delete the tag deliberately under the
+     ruleset's bypass. Laika never deletes one.
+3. **Proof.** A checkpoint is `verified` only by signed `push` deliveries for
+   the project's configured repo. It is never verified because an agent says
+   so.
+4. **Judging each ref, not reading arrival order.** Laika keeps every
+   delivered transition `before → after` for each checkpoint ref; the all-zero
+   SHA means "absent". From that set alone:
 
-**Limitations — what keeping D-083 costs.**
+   | The transitions seen for the ref | State |
+   | --- | --- |
+   | Exactly one, `0000→<checkpoint commit SHA>` | `verified` |
+   | That one, plus exactly one deletion `<checkpoint SHA>→0000` | `ref_deleted` |
+   | No transition yet | `pending` |
+   | Anything else (see below) | `uncertain` |
+
+   "Anything else" covers a ref that ends at a different SHA, an update, a
+   second creation, and a deletion with no creation seen.
+
+   The state depends only on which transitions have been seen, never on the
+   order they arrived in. Two further rules keep it that way:
+   - **`uncertain` is final for that ref.** A later delivery cannot turn it
+     back into `verified`. Only re-tagging (step 6) clears it, and it does so
+     through a new ref.
+   - **One delivery at a time per ref.** Deliveries for the same ref are
+     applied serially, inside one database transaction each, so concurrent
+     handlers cannot bring arrival order back in.
+5. **Repeats.**
+   - Laika records a delivery's `X-GitHub-Delivery` id **in the same
+     transaction** that applies its transition.
+   - A delivery that was recorded is ignored when it repeats.
+   - A delivery that failed before it was applied leaves no record. When it is
+     redelivered (redeliveries reuse the id), it is processed.
+6. **What the UI says.**
+
+   | State | Wording |
+   | --- | --- |
+   | `pending` | **"Verification pending"** |
+   | `pending` for more than 10 minutes (configurable) | **"Verification pending — no push notice from GitHub yet"**, also shown to owners and admins |
+   | `uncertain` | **"Save needs attention — GitHub's notices do not match a single clean save"** |
+
+   A `pending` or `uncertain` checkpoint can be neither offered nor accepted.
+   An automatic recovery offer uses the latest **verified** checkpoint, and
+   shows any newer one beside it as unverified.
+7. **Recovering a checkpoint that cannot be verified.**
+   1. **Redeliver.** A person with admin rights on the GitHub repository uses
+      *Redeliver* on the webhook's recent deliveries. This is possible only for
+      deliveries from the past 3 days. It fixes a delivery GitHub sent but
+      Laika did not apply.
+   2. **Re-tag.** At any time, and the only remedy after 3 days, for a
+      delivery that was never created, or for an `uncertain` ref: the agent,
+      or its owner, runs `laika agent checkpoint reverify <id>`.
+      - It pushes a **new** tag, `laika-ckpt/<LAI-NNN>/<checkpoint-id>-r<n>`,
+        at the same commit, alone in its own push.
+      - The new ref starts from "absent", so its own delivery can verify the
+        checkpoint.
+      - The server never calls GitHub to do this.
+   3. **Which ref counts.** A checkpoint's state is the state of its **newest**
+      ref (`-r<n>` if any), and the receiver fetches that ref.
+
+   As long as the webhook itself works, re-tagging always produces a fresh
+   delivery, so a pushed commit is never left unusable indefinitely. The one
+   case re-tagging cannot fix is a webhook that is down or misconfigured. Then
+   the operator repairs the webhook and re-tags.
+8. **What the receiver's SHA proves.**
+   - The **supported receiver helper**:
+     1. fetches the checkpoint's newest ref;
+     2. refuses locally, before sending anything, if the ref is missing or
+        resolves to a different SHA;
+     3. checks the commit out into a fresh worktree;
+     4. only then sends `verified_commit_sha` with the accept.
+   - The server checks that the submitted SHA equals the checkpoint's. It
+     refuses a mismatch with `422 checkpoint_mismatch`, and a checkpoint that
+     is not verified (`pending` or `uncertain`) with `409
+     checkpoint_unverified`.
+   - The server **cannot independently prove that a fetch happened**, so the
+     submitted SHA is recorded as the **receiver's acknowledgement**, not as
+     proof. The UI labels it "Receiver confirmed commit …".
+   - Fetch-and-check is enforced by the supported helper. Any other client that
+     submits the SHA takes responsibility for having checked it.
+
+**Testing.**
+
+The procedure in step 7 and the rules in steps 2, 4 and 5 are **untested** at
+the time of writing. LAI-545 carries one acceptance criterion for each of
+these:
+
+- (a) redelivery of a delivery that failed before it was applied;
+- (b) re-tagging after the 3-day window;
+- (c) clearing `uncertain` by re-tagging;
+- (d) one tag per push, and a push of four tags producing no event;
+- (e) an annotated tag giving `uncertain`;
+- (f) the ruleset refusing to move or delete a checkpoint tag;
+- (g) deliveries for one ref applied one at a time.
+
+These run against a real configured repository on the owner's account.
+Approving this decision approves the design. The claim that recovery is
+*tested* stands only once those criteria pass and are recorded on LAIKA-797.
+
+**Limitations: what keeping D-083 costs.**
 
 1. **No live check of availability.** The server never checks whether a
-   commit is still available. Only the receiver's helper does that, at the
-   moment it accepts.
-2. **Late or missing deliveries.** A deletion or a modification is seen only
-   when its delivery arrives. Until then the board can show `verified` for a
-   ref that is gone. The receiver's fetch catches it (`checkpoint_mismatch`, or
-   a fetch error), and the offer then shows "Save needs attention".
+   commit is still there. Only the receiver's helper does, when it accepts.
+2. **Deletions can go unreported.** A deletion or modification is seen only
+   when its delivery arrives, and some never arrive:
+   - GitHub creates no event when more than three tags are deleted at once;
+   - GitHub does not redeliver failed deliveries by itself.
+
+   Until a receiver fetches, the board can show `verified` for a ref that is
+   gone. The receiver's helper catches this (step 8), and the offer then shows
+   "Save needs attention".
 3. **Webhook outage.** While the webhook is down, new checkpoints stay
-   `pending` until someone redelivers or re-tags them (step 6). Automatic
-   recovery quietly uses older verified checkpoints in the meantime.
+   `pending` until someone redelivers them (within 3 days) or re-tags them.
+   Meanwhile, automatic recovery uses older verified checkpoints.
 4. **One repo.** Verification is limited to the project's single configured
    repo. Any other repo is refused with `422 repo_not_configured`.
-5. **Repo access.** Being able to fetch depends on the receiver's own Git
-   credentials. Access to Laika grants no access to the repo.
-6. **Retention.** Tags stay only as long as the ruleset protects them, and
-   only if no one with bypass rights deletes them early. Laika cannot see a
-   ruleset that is missing; LAI-560's operator checklist checks for it.
+5. **Fetch access is the receiver's own.** It depends on the receiver's Git
+   credentials. Access to Laika grants no access to the repository.
+6. **Protection depends on the plan and on people.**
+   - Tags are protected only if the ruleset exists, which needs a qualifying
+     plan for a private repository.
+   - Anyone with bypass rights can still delete a tag early.
+   - Laika cannot see a missing ruleset. LAI-560's operator checklist checks
+     for one, and step 8 catches the consequence.
