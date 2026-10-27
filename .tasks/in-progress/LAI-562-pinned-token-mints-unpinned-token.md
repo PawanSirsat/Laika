@@ -2,11 +2,12 @@
 id: LAI-562
 title: 'A project-pinned token can mint an unpinned token, escaping its pin (token.create_own with project_ids null)'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
 discovered-from: LAI-534
-status: backlog
+status: in-progress
+started: 2026-10-27T20:36:13Z
 ---
 
 Filed by CORE (Belka, dispatched by CHIEF) from CHIEF's block, 2026-10-28.
