@@ -650,6 +650,8 @@ describe('a project whitelist narrows which projects', () => {
       { name: 'unpinned', scope: 'full' },
       { name: 'wider', scope: 'full', project_ids: [inside, outside] },
       { name: 'elsewhere', scope: 'read_only', project_ids: [outside] },
+      // Explicit `null` reaches the service by the same road as omitted.
+      { name: 'explicit-null', scope: 'full', project_ids: null },
     ];
     for (const body of asks) {
       const res = await withToken('/api/v1/tokens', pinned, {
@@ -676,6 +678,34 @@ describe('a project whitelist narrows which projects', () => {
     const minted = ((await res.json()) as { secret: string }).secret;
     expect((await withToken('/api/v1/projects/inside', minted)).status).toBe(200);
     expect((await withToken('/api/v1/projects/outside', minted)).status).toBe(403);
+  });
+
+  /**
+   * LAI-562: no project-id enumeration through a pinned token. An id that
+   * names no project must answer exactly as an existing project outside the
+   * pin does — `403 project_pinned` — and never the existence check's `422`,
+   * which would tell the caller which ids are real. Its own test, so the
+   * guard's order is the only thing that can turn it red.
+   */
+  it('refuses an unknown project id as project_pinned, not 422 (LAI-562)', async () => {
+    const inside = await makeProject('inside');
+    const pinned = await mint({ name: 'pinned', project_ids: [inside] });
+
+    const res = await withToken('/api/v1/tokens', pinned, {
+      method: 'POST',
+      body: JSON.stringify({ name: 'phantom', scope: 'full', project_ids: ['does-not-exist'] }),
+    });
+
+    expect(res.status).toBe(403);
+    const { error } = (await res.json()) as {
+      error: { code: string; details: { action: string; reason: string; project_ids: string[] } };
+    };
+    expect(error.code).toBe('forbidden');
+    expect(error.details).toMatchObject({
+      action: 'token.create_own',
+      reason: 'project_pinned',
+      project_ids: ['does-not-exist'],
+    });
   });
 
   /**
