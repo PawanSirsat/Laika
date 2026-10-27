@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { streamSSE, type SSEMessage } from 'hono/streaming';
 import { reloadActor, type ResolvedActor } from '../../auth/resolve-actor.ts';
 import { TokenAuthError, type TokenRejection } from '../../auth/tokens.ts';
+import { type ActivityEvent } from '../../db/activity.ts';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { type ActivityFeed, type RepeatingTimer } from '../../services/activity-feed.ts';
@@ -33,8 +34,11 @@ import { type AppEnv } from '../context.ts';
  * ## A token stream that loses its token says so, then closes (LAI-539)
  *
  * A stream opened on a token re-checks that token — revoked, expired, its
- * holder deactivated — before each batch of events is filtered, again before
- * that batch is written, and on every keepalive. The moment it no longer
+ * holder deactivated — immediately before **every** frame is written, whatever
+ * the frame: `ready`, `gap`, each activity row (live or replayed), and each
+ * keepalive. Writes are asynchronous and wait on the client, so a frame can sit
+ * queued for as long as the client is slow to read; a check made when it was
+ * queued says nothing about the moment it reaches the wire. The moment it no longer
  * holds, the stream sends one final `error` frame whose data is the §6.3 error
  * body a request on that token would now get — `401`, code `unauthorized`,
  * the same message, the reason off the wire as `TokenAuthError` keeps it —
@@ -42,9 +46,19 @@ import { type AppEnv } from '../context.ts';
  * its last id resumes exactly where the data stopped, and is refused at the
  * door if its token is still bad.
  *
- * Every event is also held to the token's project whitelist as it stands now,
- * so a pinned token never receives another project's rows, nor org-level
- * ones (audit M10).
+ * Each activity row is held, at that same moment, to the token's project
+ * whitelist and to `visibleTo` as they stand **then**, so a pinned token never
+ * receives another project's rows, nor org-level ones (audit M10), and a pin
+ * narrowed while a row was queued applies to that row.
+ *
+ * **The cost is one `reloadActor` per frame on token streams** — a token row by
+ * primary key, the user, their memberships, grants and project rules: a handful
+ * of indexed synchronous SQLite reads. Correctness was chosen over a cheaper
+ * in-process "credential version" counter, because that counter would have to
+ * be bumped at every site that can change the answer — revoke, deactivate, pin
+ * and membership edits, direct database writes — and expiry is a clock, not a
+ * write. A site that forgot to bump it would be a silent leak; a read cannot
+ * forget.
  *
  * A cookie stream is unchanged: a deactivated session's stream ends without a
  * frame, as it always has.
@@ -151,8 +165,6 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
       const onToken = actor.token !== null && actor.token !== undefined;
       /** Set once the credential is refused; nothing but the `error` frame follows. */
       let refused = false;
-      /** The actor as of the last re-check, which `insidePin` reads at write time. */
-      let latest: ResolvedActor = actor;
 
       // Writes are serialised through one chain: `writeSSE` is async, and two
       // overlapping calls interleave halves of two frames on the wire.
@@ -160,18 +172,31 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
       let queued = 0;
 
       /**
-       * `projectId` marks an activity frame, which is held to the token's
-       * whitelist again when it is written; `recheck` marks the first frame of
-       * a batch, where a token stream re-checks its credential once more. A
-       * batch is filtered synchronously, but written later, and a revoke can
-       * land in between.
+       * `row` marks an activity frame, which a token stream filters again
+       * against the actor it reloads at write time. `refusal` marks the one
+       * frame that is written after the credential has failed.
        */
       interface Outgoing {
         frame: SSEMessage | string;
-        projectId?: string | null;
-        recheck?: boolean;
+        row?: ActivityEvent;
         refusal?: boolean;
       }
+
+      /**
+       * May this frame be written **now**? Asked as the frame reaches the
+       * front of the queue, never when it joined it (LAI-539 review): a
+       * cookie stream keeps its connect-and-batch checks unchanged.
+       */
+      const writable = (item: Outgoing): boolean => {
+        if (item.refusal === true) return true;
+        if (refused) return false;
+        if (!onToken) return true;
+
+        const current = currentActor();
+        if (current === null) return false;
+        if (item.row === undefined) return true;
+        return insidePin(current, item.row.projectId) && visibleTo(current, item.row);
+      };
 
       const enqueue = (frame: SSEMessage | string, meta: Omit<Outgoing, 'frame'> = {}): void => {
         if (ended) return;
@@ -186,9 +211,7 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
         queued += 1;
         queue = queue
           .then(async () => {
-            if (item.recheck === true && !refused) currentActor();
-            if (refused && item.refusal !== true) return;
-            if (item.projectId !== undefined && !insidePin(latest, item.projectId)) return;
+            if (!writable(item)) return;
             if (typeof item.frame === 'string') await stream.write(item.frame);
             else await stream.writeSSE(item.frame);
           })
@@ -249,7 +272,6 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
           refuse(fresh.reason);
           return null;
         }
-        latest = fresh.actor;
         return fresh.actor;
       };
 
@@ -259,7 +281,6 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
           const current = currentActor();
           if (current === null) return;
 
-          let first = true;
           for (const row of events) {
             if (projectId !== null && row.projectId !== projectId) continue;
             if (!insidePin(current, row.projectId)) continue;
@@ -267,9 +288,8 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
 
             enqueue(
               { event: row.type, id: String(row.seq), data: JSON.stringify(eventView(row)) },
-              { projectId: row.projectId, recheck: onToken && first },
+              { row },
             );
-            first = false;
           }
         },
         // LAI-002: say goodbye rather than vanish, so the client knows this was a

@@ -159,7 +159,13 @@ function write(projectId: string | null, type: ActivityType = 'task.created'): v
  */
 function bareApp(
   userId: string | null,
-  options: { shippedKeepalive?: boolean; token?: string; now?: () => number } = {},
+  options: {
+    shippedKeepalive?: boolean;
+    token?: string;
+    now?: () => number;
+    /** Runs after the actor is resolved and before the stream starts. */
+    afterAuth?: () => void;
+  } = {},
 ): Hono<AppEnv> {
   const log = captureLog();
   const app = new Hono<AppEnv>();
@@ -175,6 +181,7 @@ function bareApp(
           : actor(userId)
         : resolveTokenActor(t.db, options.token, options.now?.() ?? Date.now()),
     );
+    options.afterAuth?.();
     await next();
   });
 
@@ -675,6 +682,232 @@ describe('open token streams re-check credentials (LAI-539)', () => {
       expect(JSON.parse((await client.next()).data)).toMatchObject({ project_id: laikaId });
       timers.fire();
       expect((await client.next()).comment).toBe('keepalive');
+    } finally {
+      await client.disconnect();
+    }
+  });
+});
+
+describe('every frame on a token stream is checked as it is written (LAI-539)', () => {
+  // ## How a write is held
+  //
+  // `streamSSE` writes through a `TransformStream` whose readable side has a
+  // high-water mark of 0: once one frame sits unread, the **next** write does not
+  // resolve until the client reads. So a frame the test leaves unread holds the
+  // write behind it, and the frames behind that are still queued — which is the
+  // window a credential can change in, made deterministic rather than raced.
+
+  function mint(options: { projectIds?: string[]; expiresAt?: number; now?: number } = {}) {
+    return createToken(t.sqlite, t.db, actor(ownerId), {
+      name: 'SSE per-frame regression',
+      scope: 'read_only',
+      ...options,
+      now: options.now ?? Date.now(),
+    });
+  }
+
+  async function connectToken(
+    secret: string,
+    options: { query?: string; now?: () => number; afterAuth?: () => void } = {},
+  ) {
+    const res = await bareApp(ownerId, {
+      token: secret,
+      ...(options.now === undefined ? {} : { now: options.now }),
+      ...(options.afterAuth === undefined ? {} : { afterAuth: options.afterAuth }),
+    }).request(`/api/v1/events${options.query ?? ''}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toContain('text/event-stream');
+    return sseClient(res);
+  }
+
+  /** The close a refused credential produces, and then nothing. */
+  async function expectRefusal(client: ReturnType<typeof sseClient>): Promise<void> {
+    const frame = await client.next();
+    expect(frame.event).toBe('error');
+    expect(frame.id).toBeNull();
+    expect(JSON.parse(frame.data)).toEqual({
+      error: { code: 'unauthorized', message: 'That access token is not valid', details: null },
+    });
+    expect(await client.nextOrEnd()).toBeNull();
+    expect(feed.subscriberCount()).toBe(0);
+  }
+
+  async function activity(client: ReturnType<typeof sseClient>, projectId: string) {
+    const frame = await client.next();
+    expect(frame.event).toBe('task.created');
+    expect(JSON.parse(frame.data)).toMatchObject({ project_id: projectId });
+    return Number(frame.id);
+  }
+
+  interface Change {
+    name: string;
+    /** Where the second row of the held batch is written. */
+    second: () => string;
+    change: (ctx: { tokenId: string; setNow: (n: number) => void; expiresAt: number }) => void;
+  }
+
+  const refusing: Change[] = [
+    {
+      name: 'revoked',
+      second: () => laikaId,
+      change: ({ tokenId }) => {
+        revokeOwnToken(t.sqlite, t.db, actor(ownerId), tokenId);
+      },
+    },
+    {
+      name: 'expired (injected clock)',
+      second: () => laikaId,
+      change: ({ setNow, expiresAt }) => {
+        setNow(expiresAt);
+      },
+    },
+    {
+      name: 'its holder deactivated',
+      second: () => laikaId,
+      change: () => {
+        t.db.update(users).set({ isActive: 0 }).where(eq(users.id, ownerId)).run();
+      },
+    },
+  ];
+
+  async function heldLive(change: Change) {
+    let clock = Date.now();
+    const expiresAt = clock + 60_000;
+    const minted = mint({ expiresAt, now: clock });
+    const client = await connectToken(minted.secret, { now: () => clock });
+    expect((await client.next()).event).toBe('ready');
+
+    write(laikaId); // X: written and left unread, so the next write is held
+    feed.poll();
+    await settle();
+    write(laikaId); // A: checked, then held in the write
+    write(change.second()); // B: still queued behind A
+    feed.poll();
+    await settle();
+
+    change.change({
+      tokenId: minted.token.id,
+      setNow: (n) => {
+        clock = n;
+      },
+      expiresAt,
+    });
+
+    const x = await activity(client, laikaId);
+    expect(await activity(client, laikaId)).toBe(x + 1);
+    // Let B's turn in the queue run before anything else refreshes the actor.
+    await settle();
+    return client;
+  }
+
+  for (const change of refusing) {
+    it(`a live batch: a token ${change.name} after the first write closes before row two`, async () => {
+      const client = await heldLive(change);
+      try {
+        await expectRefusal(client);
+      } finally {
+        await client.disconnect();
+      }
+    });
+  }
+
+  it('a live batch: a pin narrowed after the first write drops row two and stays open', async () => {
+    const client = await heldLive({
+      name: 'narrowed',
+      second: () => otherId,
+      change: ({ tokenId }) => {
+        t.db
+          .update(tokens)
+          .set({ projectIdsJson: JSON.stringify([laikaId]) })
+          .where(eq(tokens.id, tokenId))
+          .run();
+      },
+    });
+    try {
+      // B (the other project) never arrives; the next frame is the next row in.
+      write(laikaId);
+      feed.poll();
+      await activity(client, laikaId);
+      timers.fire();
+      expect((await client.next()).comment).toBe('keepalive');
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  for (const change of refusing) {
+    it(`a replay: a token ${change.name} after the first replayed write closes before row two`, async () => {
+      let clock = Date.now();
+      const expiresAt = clock + 60_000;
+      // Minted first: minting writes its own `token.created` row.
+      const minted = mint({ expiresAt, now: clock });
+
+      const { client: warm } = await connect(ownerId);
+      const ready = JSON.parse((await warm.next()).data) as { seq: number };
+      await warm.disconnect();
+
+      write(laikaId); // A
+      write(change.second()); // B
+
+      // `ready` is written and left unread, so A's write is held and B queued.
+      const client = await connectToken(minted.secret, {
+        query: `?last_event_id=${String(ready.seq)}`,
+        now: () => clock,
+      });
+      await settle();
+      change.change({
+        tokenId: minted.token.id,
+        setNow: (n) => {
+          clock = n;
+        },
+        expiresAt,
+      });
+
+      try {
+        expect((await client.next()).event).toBe('ready');
+        expect(await activity(client, laikaId)).toBe(ready.seq + 1);
+        await expectRefusal(client);
+      } finally {
+        await client.disconnect();
+      }
+    });
+  }
+
+  it('a queued keepalive is not written after the token is revoked', async () => {
+    const minted = mint();
+    const client = await connectToken(minted.secret);
+    expect((await client.next()).event).toBe('ready');
+    try {
+      write(laikaId); // X: unread
+      feed.poll();
+      await settle();
+      write(laikaId); // A: held
+      feed.poll();
+      await settle();
+      timers.fire(); // the keepalive passes its own check and is queued behind A
+      revokeOwnToken(t.sqlite, t.db, actor(ownerId), minted.token.id);
+
+      const x = await activity(client, laikaId);
+      expect(await activity(client, laikaId)).toBe(x + 1);
+      await expectRefusal(client);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('a queued gap is not written after the token is revoked', async () => {
+    for (let i = 0; i < MAX_REPLAY + 2; i++) write(laikaId);
+    const minted = mint();
+    // Revoked after authentication and before the stream's first write: `ready`
+    // and `gap` are both queued, and neither may reach the wire.
+    const client = await connectToken(minted.secret, {
+      query: '?last_event_id=1',
+      afterAuth: () => {
+        revokeOwnToken(t.sqlite, t.db, actor(ownerId), minted.token.id);
+      },
+    });
+    try {
+      await expectRefusal(client);
     } finally {
       await client.disconnect();
     }
