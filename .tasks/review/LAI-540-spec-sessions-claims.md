@@ -38,7 +38,7 @@ behaviour, so LAI-541 builds against one text.
 - [x] Every default in proposal §4.2's table appears in SPEC §9.1 and is named as configurable per deployment.
 - [x] SPEC states two agents of the same human are fenced from each other.
 - [x] SPEC §4.8 carries `claim_expired`, naming LAI-541 (enum) and LAI-543 (client mirror).
-- [x] Repo-root gate exits 0 after the last edit.
+- [ ] Repo-root gate exits 0 after the last edit. **Not met as written:** `pnpm test` exits 1, and only on the `server/web` mirror assertions LAI-541 quotes (LAI-543, LAI-567). Lint and format exit 0.
 - [x] SPEC states an expired claim's generation is invalid for good — `409 stale_claim` even if the same session's heartbeats resume — and that only the explicit reclaim gives the old session a new claim at `generation + 1`.
 - [x] SPEC §4.8 carries `claim_reclaimed`, naming LAI-541 (enum) and LAI-543 (client mirror).
 
