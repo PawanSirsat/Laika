@@ -96,8 +96,9 @@
      the page; inside its own card that was blank space under the last row. */
   flex: none;
   /* The design's 64rem plus the Due column (D-066), so Summary keeps its room,
-     plus the 1rem the priority icon added to PRI (LAI-705). */
-  min-width: 71.75rem;
+     plus the 1rem the priority icon added to PRI (LAI-705), plus the Agent
+     column's 8.75rem (LAI-538). */
+  min-width: 80.5rem;
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
@@ -135,6 +136,14 @@
 }
 .list-col-spr {
   width: 2.875rem;
+}
+/* `Claude Code · laptop-1` (LAI-538); the chip ellipsises past it. */
+.list-col-agent {
+  width: 8.75rem;
+}
+.list-agent {
+  min-width: 0;
+  overflow: hidden;
 }
 /* **Wide enough for the longest date, on one line** (LAI-491). The design's
    84px was sized for `6d`; D-065's labels run to `25 Aug 2025, 01:01` — 18

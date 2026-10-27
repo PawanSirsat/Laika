@@ -27,6 +27,8 @@ import {
 } from './list-bulk.ts';
 import { anchorOf, ListMenu, type MenuAnchor } from './ListMenu.tsx';
 import { BulkBar } from './BulkBar.tsx';
+import { AgentChip } from '../../../components/agent/AgentChip.tsx';
+import { agentDevice, selectedHarness } from '../../../api/selected-agent.ts';
 import './list.css';
 
 /**
@@ -307,6 +309,7 @@ export function ListView({
               <col className="list-col-pri" />
               <col className="list-col-size" />
               <col className="list-col-assignee" />
+              <col className="list-col-agent" />
               <col className="list-col-spr" />
               <col className="list-col-due" />
               <col className="list-col-created" />
@@ -517,6 +520,17 @@ export function ListView({
                           {row.who}
                         </span>
                       </span>
+                    </td>
+
+                    {/* The selected agent (LAI-538): the card's chip, or nothing. */}
+                    <td className="list-agent">
+                      {row.agent !== null && (
+                        <AgentChip
+                          client={selectedHarness(row.agent)}
+                          device={agentDevice(row.agent)}
+                          owner={row.agent.owner.name}
+                        />
+                      )}
                     </td>
 
                     <td className="list-spr">{row.sprintTag}</td>
