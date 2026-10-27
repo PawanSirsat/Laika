@@ -435,6 +435,13 @@
       "when": 1793135026166,
       "tag": "0062_selected_agent_work_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "6",
+      "when": 1793140820600,
+      "tag": "0063_agent_sessions_task_claims",
+      "breakpoints": true
     }
   ]
 }

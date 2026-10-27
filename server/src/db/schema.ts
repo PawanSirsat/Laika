@@ -40,6 +40,7 @@ import {
   EVIDENCE_KINDS,
   HANDOFF_OFFER_KINDS,
   HANDOFF_OFFER_STATES,
+  TASK_CLAIM_STATES,
   EVIDENCE_STATES,
   GITHUB_CHECK_KINDS,
   GRANTABLE_ROLES,
@@ -62,6 +63,7 @@ import {
   TOKEN_SCOPES,
   TOKEN_SESSION_SOURCES,
   AGENT_GRANT_SCOPES,
+  AGENT_SESSION_END_REASONS,
   AGENT_STATUSES,
   AGENT_TIME_KINDS,
   ANALYTICS_VIEW_KINDS,
@@ -986,6 +988,90 @@ export const handoffOffers = sqliteTable(
       .where(sql`kind = 'work_request' AND state = 'open'`),
     check('handoff_offers_kind_check', oneOf('kind', HANDOFF_OFFER_KINDS)),
     check('handoff_offers_state_check', oneOf('state', HANDOFF_OFFER_STATES)),
+  ],
+);
+
+// --------------------------------------------------- §4.65 agent_sessions
+
+/**
+ * One running process of a registered agent (§4.65, proposal §4.2, LAI-541).
+ *
+ * Opened by `POST /agent-sessions` or by an agent token's `start_working`,
+ * kept alive by heartbeats, ended by the agent or by revoking it (D-114 item
+ * 2). A session holds claims (§4.66); it never holds a task by itself.
+ * `client_version` and `model` are **self-reported** and decide nothing.
+ */
+export const agentSessions = sqliteTable(
+  'agent_sessions',
+  {
+    id: text('id').primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    /** The credential that opened it. A rotation does not end it (§4.65). */
+    tokenId: text('token_id')
+      .notNull()
+      .references(() => tokens.id, { onDelete: 'cascade' }),
+    startedAt: integer('started_at').notNull(),
+    lastHeartbeatAt: integer('last_heartbeat_at').notNull(),
+    endedAt: integer('ended_at'),
+    endReason: text('end_reason', { enum: AGENT_SESSION_END_REASONS }),
+    clientVersion: text('client_version'),
+    model: text('model'),
+    /** Nullable until the delivery work reads it (proposal §4.6). */
+    contextRevisionSeen: integer('context_revision_seen'),
+  },
+  (t) => [
+    index('agent_sessions_agent_id_idx').on(t.agentId),
+    index('agent_sessions_token_id_idx').on(t.tokenId),
+    check('agent_sessions_end_reason_check', oneOfOrNull('end_reason', AGENT_SESSION_END_REASONS)),
+    // Both or neither: an ended session says why, and a live one has no reason.
+    check('agent_sessions_end_check', sql`(ended_at IS NULL) = (end_reason IS NULL)`),
+  ],
+);
+
+// ------------------------------------------------------ §4.66 task_claims
+
+/**
+ * An agent session's exclusive hold on a task (§4.66, proposal §4.2, LAI-541).
+ *
+ * **One live row per task** — the partial unique index is the lock. Each new
+ * claim on a task takes the next `generation`, which only goes up, and every
+ * task change the holder makes carries it (`X-Laika-Claim-Generation`,
+ * `claim_generation`); a stale one is `409`. `lease_expires_at` is server
+ * time, renewed by heartbeats; the expiry scan marks a lapsed claim `expired`,
+ * and **nothing ever makes it live again** — reclaiming inserts a new row.
+ */
+export const taskClaims = sqliteTable(
+  'task_claims',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => agentSessions.id, { onDelete: 'cascade' }),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    generation: integer('generation').notNull(),
+    leaseExpiresAt: integer('lease_expires_at').notNull(),
+    state: text('state', { enum: TASK_CLAIM_STATES }).notNull(),
+    createdAt,
+    /** When it stopped being live; null while it is. */
+    endedAt: integer('ended_at'),
+  },
+  (t) => [
+    uniqueIndex('task_claims_task_generation_idx').on(t.taskId, t.generation),
+    uniqueIndex('task_claims_one_live_per_task')
+      .on(t.taskId)
+      .where(sql`state IN ('active', 'paused')`),
+    index('task_claims_session_id_idx').on(t.sessionId),
+    index('task_claims_agent_id_idx').on(t.agentId),
+    index('task_claims_state_lease_idx').on(t.state, t.leaseExpiresAt),
+    check('task_claims_state_check', oneOf('state', TASK_CLAIM_STATES)),
+    check('task_claims_generation_check', sql`generation >= 1`),
   ],
 );
 
