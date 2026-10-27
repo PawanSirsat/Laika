@@ -475,18 +475,19 @@ export function assertClaimFence(db: Db, actor: ServiceCaller, taskId: string, n
   }
 
   // A generation was sent: it must be the live claim's, held by this agent.
-  if (live === undefined || live.generation !== generation || live.agentId !== agent.id) {
-    if (live?.agentId !== undefined && live.agentId !== agent.id) {
-      throw claimConflict('claim_held', 'Another agent session holds this task', {
-        task_id: taskId,
-        agent_id: live.agentId,
-      });
-    }
-    throw claimConflict('stale_claim', 'That claim generation is no longer valid', {
+  const stale = () =>
+    claimConflict('stale_claim', 'That claim generation is no longer valid', {
       task_id: taskId,
       claim_generation: generation,
     });
+  if (live === undefined) throw stale();
+  if (live.agentId !== agent.id) {
+    throw claimConflict('claim_held', 'Another agent session holds this task', {
+      task_id: taskId,
+      agent_id: live.agentId,
+    });
   }
+  if (live.generation !== generation) throw stale();
   if (live.state === 'paused') {
     throw claimConflict('claim_paused', 'This claim is paused while a hand-off is open', {
       task_id: taskId,
