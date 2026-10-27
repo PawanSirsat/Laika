@@ -128,7 +128,14 @@ export const PLACEHOLDER_MESSAGE =
   'The Authorization header carries an unexpanded variable placeholder, not a token. Set the variable in the agent’s environment, or check how this client writes environment variables.';
 
 /** Why a presented token was refused. Logged, never returned (§6.1). */
-export type TokenRejection = 'malformed' | 'unknown' | 'expired' | 'revoked' | 'inactive_user';
+export type TokenRejection =
+  | 'malformed'
+  | 'unknown'
+  | 'expired'
+  | 'revoked'
+  | 'inactive_user'
+  // The token's registered agent is revoked (D-114, LAI-534).
+  | 'agent_revoked';
 
 /**
  * A refused token — `401`, with the reason **off the wire**.

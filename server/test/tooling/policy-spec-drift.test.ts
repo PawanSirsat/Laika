@@ -53,6 +53,8 @@ const ORG_MATRIX = '3.1 Org-level permission matrix';
 const PROJECT_MATRIX = '3.2 Project-level permission matrix';
 /** §6.2 carries one prose rule of its own (audit H4); see `PROSE_RULES`. */
 const AUTHORISATION = '6.2 Authorisation';
+/** §4.64 carries D-114's agent narrowing (LAI-534); see `PROSE_RULES`. */
+const AGENT_GRANTS = '4.64 `agent_project_grants`';
 
 // --------------------------------------------------------- the declared link
 
@@ -79,6 +81,9 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
     ['token.create_own', 'token.read_own', 'token.revoke_own'],
   ],
   ["List / revoke anyone's token", ['token.list_any', 'token.revoke_any']],
+  // D-114 (LAI-534): a person's registered agents.
+  ['Read own agents', ['agent.read_own']],
+  ['Register and manage own agents', ['agent.manage_own']],
   ['Log own unlisted work', ['unlisted.log_own']],
   ['Send own heartbeat', ['heartbeat.send_own']],
   ['Export audit log', ['audit_log.export']],
@@ -196,6 +201,11 @@ const PROSE_RULES: readonly {
     section: AUTHORISATION,
     phrase: 'A token pinned to projects is refused org-wide admin actions',
     why: "Audit H4. Not a cell: it narrows every §3.1 row for a token whose `project_ids_json` is set, as a `read_only` scope narrows the writes, and `tokenAllows` in `can()` implements it against `PINNED_TOKEN_ORG_ACTIONS`. `can.test.ts`'s H4 table holds it against every `ORG_ACTIONS` entry for a pinned owner and admin, pinned against unpinned; the plain-cell check in this file passes no token, so it is unaffected.",
+  },
+  {
+    section: AGENT_GRANTS,
+    phrase: "An agent's effective access is the intersection",
+    why: "D-114 (LAI-534). Not a cell: it narrows every §3.1 and §3.2 row for a token whose `agent_id` is set — pinned to the agent's grants, `read_only` grants keeping the reads — as H4's pin and a `read_only` scope narrow, and `agentRefusal` in `can()`'s token step implements it. `can.test.ts`'s agent tables hold it against every action; the plain-cell check in this file passes no token, so it is unaffected.",
   },
 ];
 

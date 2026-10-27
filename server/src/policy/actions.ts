@@ -36,6 +36,10 @@ export const ORG_ACTIONS = [
   'token.revoke_own',
   'token.list_any',
   'token.revoke_any',
+  // D-114 (LAI-534): a person's registered agents — reading them, and
+  // registering, renaming, granting, rotating and revoking them.
+  'agent.read_own',
+  'agent.manage_own',
   'unlisted.log_own',
   'heartbeat.send_own',
   'audit_log.export',
@@ -160,6 +164,8 @@ export const READ_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'capacity.read',
   'member_list.read',
   'token.read_own',
+  // A person's own agents, grants included (D-114, LAI-534).
+  'agent.read_own',
   'audit_log.export',
   'project.read',
   // A collector reads whether it may send before it does — with whatever
@@ -212,6 +218,7 @@ export const PINNED_TOKEN_ORG_ACTIONS: ReadonlySet<OrgAction> = new Set<OrgActio
   'token.create_own',
   'token.read_own',
   'token.revoke_own',
+  'agent.read_own',
   'unlisted.log_own',
   'heartbeat.send_own',
   'activity_sharing.read_own',
@@ -303,4 +310,24 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // **A reset link is the person's account** (D-104 item 4, LAI-983): an
   // agent's token that could mint one could sign in as anybody it named.
   'user.reset_password',
+  // **Who an agent is and what it may reach are its owner's, signed in**
+  // (D-114, LAI-534): a token that could register an agent, widen a grant or
+  // rotate a credential could mint itself — or a sibling — more access.
+  'agent.manage_own',
 ]);
+
+/**
+ * The org-scoped actions a registered agent's token keeps (D-114, LAI-534).
+ *
+ * An agent's token is **always pinned** — to the projects its grants name —
+ * so it starts from {@link PINNED_TOKEN_ORG_ACTIONS}, and loses the two that
+ * would let it out of its grants: minting a token (which would be its owner's
+ * legacy credential, with no grant to narrow it) and revoking one of its
+ * owner's other tokens. Its own credential is rotated or revoked by its owner,
+ * signed in (`agent.manage_own`).
+ */
+export const AGENT_TOKEN_ORG_ACTIONS: ReadonlySet<OrgAction> = new Set<OrgAction>(
+  [...PINNED_TOKEN_ORG_ACTIONS].filter(
+    (action) => action !== 'token.create_own' && action !== 'token.revoke_own',
+  ),
+);
