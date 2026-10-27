@@ -2,11 +2,12 @@
 id: LAI-537
 title: 'Developer access → Agents tab: registration wizard, per-agent one-time token, harness instructions, verify from THIS agent, rename/access/rotate/revoke'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-534, LAI-536]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-28T20:36:34Z
 ---
 
 Implements **proposal §6 (Developer access → Agents), §4.1** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
@@ -68,3 +69,14 @@ P0 — board priority `p1` + tag `p0`.
 ## Migration / rollout notes
 
 None server-side. The Connect wizard is unchanged for human tokens.
+
+## Claim notes (SHELL, 2026-10-28)
+
+- **Deviation from §2 step 1, on CHIEF's direction.** Neither LAI-534 nor
+  LAI-536 is in `.tasks/done/` on `master`. CHIEF dispatched this claim on a
+  branch cut from LAI-534's head (`63dff7e3`, draft PR #102), so the PR is
+  stacked on #102 and must not merge before it. LAI-536 (PR #101) is **not**
+  on this base: the agent components it builds are not copied here; this task
+  builds the minimum it needs and unification follows when both land.
+- **D-114**: approved in substance by the owner on 2026-10-28; the
+  authorised-account record is still pending, so the PR stays a draft.
