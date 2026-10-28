@@ -2,11 +2,12 @@
 id: LAI-586
 title: 'The selected agent owns the claim (D-119) and sessions carry harness, version and model (D-118) — server half'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-535, LAI-541]
 discovered-from: LAI-532
-status: backlog
+status: in-progress
+started: 2026-10-28T20:54:12Z
 ---
 
 Implements **D-119** and the server half of **D-118**, both *proposed* in
