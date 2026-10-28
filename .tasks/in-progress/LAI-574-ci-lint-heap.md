@@ -2,11 +2,12 @@
 id: LAI-574
 title: 'CI lint dies out of memory (exit 134) on the smaller runner since the repo went private'
 area: ops
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+started: 2026-10-28T09:06:02Z
+status: in-progress
 ---
 
 ## Goal
