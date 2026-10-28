@@ -634,6 +634,102 @@ describe('a project whitelist narrows which projects', () => {
     // The every-member org read is kept by the pin.
     expect((await withToken('/api/v1/org', pinned)).status).toBe(200);
   });
+
+  /**
+   * LAI-562: the pin keeps `token.create_own`, so what it mints must stay
+   * inside the pin. Before this, `{ project_ids: null }` from a pinned token
+   * answered `201` with a token reaching every project — and that token then
+   * read `outside`, which is the escape this asserts is gone.
+   */
+  it('mints only inside its own pin, refusing wider with project_pinned (LAI-562)', async () => {
+    const inside = await makeProject('inside');
+    const outside = await makeProject('outside');
+    const pinned = await mint({ name: 'pinned', project_ids: [inside] });
+
+    const asks = [
+      { name: 'unpinned', scope: 'full' },
+      { name: 'wider', scope: 'full', project_ids: [inside, outside] },
+      { name: 'elsewhere', scope: 'read_only', project_ids: [outside] },
+      // Explicit `null` reaches the service by the same road as omitted.
+      { name: 'explicit-null', scope: 'full', project_ids: null },
+    ];
+    for (const body of asks) {
+      const res = await withToken('/api/v1/tokens', pinned, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      expect(res.status, body.name).toBe(403);
+      const { error } = (await res.json()) as {
+        error: { code: string; details: { action: string; reason: string } };
+      };
+      expect(error.code, body.name).toBe('forbidden');
+      expect(error.details, body.name).toMatchObject({
+        action: 'token.create_own',
+        reason: 'project_pinned',
+      });
+    }
+
+    // A subset of the pin is still the pin's to mint, and it works.
+    const res = await withToken('/api/v1/tokens', pinned, {
+      method: 'POST',
+      body: JSON.stringify({ name: 'same', scope: 'full', project_ids: [inside] }),
+    });
+    expect(res.status, await res.clone().text()).toBe(201);
+    const minted = ((await res.json()) as { secret: string }).secret;
+    expect((await withToken('/api/v1/projects/inside', minted)).status).toBe(200);
+    expect((await withToken('/api/v1/projects/outside', minted)).status).toBe(403);
+  });
+
+  /**
+   * LAI-562: no project-id enumeration through a pinned token. An id that
+   * names no project must answer exactly as an existing project outside the
+   * pin does — `403 project_pinned` — and never the existence check's `422`,
+   * which would tell the caller which ids are real. Its own test, so the
+   * guard's order is the only thing that can turn it red.
+   */
+  it('refuses an unknown project id as project_pinned, not 422 (LAI-562)', async () => {
+    const inside = await makeProject('inside');
+    const pinned = await mint({ name: 'pinned', project_ids: [inside] });
+
+    const res = await withToken('/api/v1/tokens', pinned, {
+      method: 'POST',
+      body: JSON.stringify({ name: 'phantom', scope: 'full', project_ids: ['does-not-exist'] }),
+    });
+
+    expect(res.status).toBe(403);
+    const { error } = (await res.json()) as {
+      error: { code: string; details: { action: string; reason: string; project_ids: string[] } };
+    };
+    expect(error.code).toBe('forbidden');
+    expect(error.details).toMatchObject({
+      action: 'token.create_own',
+      reason: 'project_pinned',
+      project_ids: ['does-not-exist'],
+    });
+  });
+
+  /**
+   * LAI-562's second criterion, which holds today without new code:
+   * `token.create_own` is not in `READ_ACTIONS`, so a `read_only` token is
+   * refused minting at all — `full` or `read_only`. Pinned here so a future
+   * edit to that set has to face it.
+   */
+  it('a read_only token cannot mint, so cannot mint a full one (LAI-562)', async () => {
+    const readOnly = await mint({ name: 'ro', scope: 'read_only' });
+
+    for (const scope of ['full', 'read_only']) {
+      const res = await withToken('/api/v1/tokens', readOnly, {
+        method: 'POST',
+        body: JSON.stringify({ name: 'up', scope }),
+      });
+      expect(res.status, scope).toBe(403);
+      const { error } = (await res.json()) as {
+        error: { code: string; details: { action: string } };
+      };
+      expect(error.code, scope).toBe('forbidden');
+      expect(error.details.action, scope).toBe('token.create_own');
+    }
+  });
 });
 
 describe('last_used_at (§7.2)', () => {
