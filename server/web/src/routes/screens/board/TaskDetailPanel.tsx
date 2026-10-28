@@ -42,11 +42,8 @@ import { CommentComposer } from '../task/CommentComposer.tsx';
 import { EvidenceSection } from '../task/EvidenceSection.tsx';
 import { ForecastSection } from '../task/ForecastSection.tsx';
 import { TokensSection } from '../task/TokensSection.tsx';
-import {
-  demoAgentBuild,
-  demoClaimLock,
-  DEMO_HANDOFF_ENABLED,
-} from '../../../demo/agent-runtime.ts';
+import { ExecutionPanel } from '../../../components/agent/ExecutionPanel.tsx';
+import { executionView, hasExecution } from '../../../components/agent/execution-derive.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { avatarColorSolid } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -56,6 +53,11 @@ import './task-detail.css';
 
 export interface TaskDetailPanelProps {
   readonly slug: string;
+  /**
+   * The newest live frame that changes this task's execution (LAI-543), by
+   * `seq`. When it moves the panel re-reads its activity quietly.
+   */
+  readonly executionSignal?: number | undefined;
   /** The space's `agents_allowed`, for the Agent row (LAI-538); absent reads as allowed. */
   readonly agentsAllowed?: boolean | undefined;
   /**
@@ -189,8 +191,22 @@ export function TaskDetailPanel({
   onOpen,
   listReadAt = null,
   listReadOrder = 0,
+  executionSignal,
 }: TaskDetailPanelProps) {
   const detail = useTaskDetail(slug, task.id);
+  /*
+   * A claim taken, lapsed or taken back while the drawer is open (LAI-543):
+   * re-read the activity **quietly**, so the panel follows it without a
+   * loading state, a re-render of the thread, or the focus moving. The first
+   * value is what the drawer opened with, which the first read already has.
+   */
+  const { refresh: refreshDetail } = detail;
+  const seenSignal = useRef(executionSignal);
+  useEffect(() => {
+    if (executionSignal === seenSignal.current) return;
+    seenSignal.current = executionSignal;
+    refreshDetail();
+  }, [executionSignal, refreshDetail]);
   /*
    * **The texts, read on open** (LAI-795). Until they land the two sections
    * hold their place rather than drawing an empty description someone could
@@ -314,17 +330,9 @@ export function TaskDetailPanel({
   );
   const panelRef = useRef<HTMLDivElement>(null);
   const [overflowOpen, setOverflowOpen] = useState(false);
-  const [handoff, setHandoff] = useState<string | undefined>(undefined);
   const statusRef = useRef<HTMLButtonElement | null>(null);
   const { theme } = useTheme();
   const now = Date.now();
-  /*
-   * The claim's deadline and the agent's build are the only things on this
-   * panel Laika cannot answer — see `demo/agent-runtime.ts`. Both are
-   * `undefined` in a production build, and every reader below treats that as
-   * "no such thing" rather than "not loaded yet".
-   */
-  const claimLock = demoClaimLock(task, now);
 
   /**
    * Who is watching, read once and used twice — the header's Watch button and
@@ -378,7 +386,6 @@ export function TaskDetailPanel({
     detail.status === 'ready'
       ? detail.activity.filter((event) => event.type.startsWith('webhook.'))
       : [];
-  const agentBuild = demoAgentBuild(task.created_by_client, task.id);
   /**
    * The reader's own agents, read once for the drawer (LAI-538): the Agent
    * row's choices, and half of what names an agent in the activity below.
@@ -410,6 +417,11 @@ export function TaskDetailPanel({
     }
     return found;
   }, [detail, agentNames]);
+  /** The execution panel's facts: the task view, and its claim rows (LAI-543). */
+  const execution = useMemo(
+    () => executionView(task, detail.status === 'ready' ? detail.activity : [], agentNames),
+    [task, detail, agentNames],
+  );
   /**
    * Which tab is showing.
    *
@@ -1190,8 +1202,6 @@ export function TaskDetailPanel({
             mayEdit={mayEdit === true}
             moving={moving}
             watchers={watchers}
-            claimLock={claimLock}
-            agentBuild={agentBuild}
             parent={parent}
             openSubtasks={openSubtasks}
             changesCount={changes.length}
@@ -1206,31 +1216,23 @@ export function TaskDetailPanel({
             readOrder={listReadOrder}
           />
 
-          {DEMO_HANDOFF_ENABLED && (
-            <div className="panel-side-actions">
-              <button
-                type="button"
-                className="panel-action panel-action-primary"
-                onClick={() => {
-                  /*
-                    The refusal lives here, not in `demo/`: it is the screen's
-                    own explanation, and a sentence in that directory reaches
-                    the production bundle — `DEMO_ENABLED` is a runtime value,
-                    so the minifier keeps the text even when the behaviour is
-                    gone.
-                  */
-                  setHandoff(
-                    'Laika has no endpoint that hands a task to a runtime yet, so nothing was queued. This button is part of the imported design.',
-                  );
-                }}
-              >
-                <span aria-hidden="true">▷</span> Hand to my agent
-              </button>
-              {handoff !== undefined && (
-                <p className="panel-alert" role="status">
-                  {handoff}
-                </p>
-              )}
+          {/*
+            **Execution, from real data only** (LAI-543): the agent picked
+            beside the one that last took the work, and that claim as the
+            task's activity records it — an expired one in words. Whether a session is
+            checking in *now* is not served yet (LAI-568), so neither
+            *Working* nor *Connection lost* is drawn from a guess.
+          */}
+          {hasExecution(execution) && (
+            <div className="panel-side-exec">
+              <ExecutionPanel
+                /* The Agent row above carries *Waiting for agent*. */
+                state={null}
+                intended={execution.intended}
+                claim={execution.claim}
+                claimExpired={execution.claimExpired}
+                generation={execution.generation}
+              />
             </div>
           )}
         </div>

@@ -24,6 +24,7 @@ import {
 import { AgentChip } from '../../../components/agent/AgentChip.tsx';
 import { AgentPicker, NO_AGENT } from '../../../components/agent/AgentPicker.tsx';
 import { ExecutionStateLine } from '../../../components/agent/ExecutionStateLine.tsx';
+import { cardExecutionState } from '../../../components/agent/execution-derive.ts';
 
 export interface AgentRowProps {
   readonly task: TaskSummary;
@@ -85,8 +86,10 @@ const UNCONFIRMED_WORDS = 'Couldn’t confirm the agent was saved — reload to 
  * assignee above is untouched and stays visible: the person is accountable,
  * the agent is meant to do the work, and the two are different facts.
  *
- * Phase 1 has no claim, so a selected agent reads **Waiting for agent** and
- * nothing more — this row never says *working*.
+ * A selected agent on a task not started reads **Waiting for agent** — the
+ * card's rule (LAI-543): once a claim starts the work the task is in
+ * progress, and the line goes. This row never says *working*; whether a
+ * session is checking in is not served yet (LAI-568).
  *
  * A refusal is said in words — the server's `details.reason`, mapped — and
  * the field goes back to what the server holds, so the screen never shows a
@@ -300,13 +303,17 @@ export function AgentRow({
         </p>
       )}
 
-      {/* Phase 1: picked, not accepted. Never "working" — there is no claim yet. */}
-      {current !== null && !savingHere && (
-        <ExecutionStateLine
-          state="waiting_for_agent"
-          detail={`${current.owner.name}’s ${agentLabel(current)}`}
-        />
-      )}
+      {/* Picked, not yet taken. Never "working" — see above. The agent is the
+          row's own `current`, which a confirmed write can put ahead of the
+          task copy the board last read. */}
+      {current !== null &&
+        !savingHere &&
+        cardExecutionState({ status: task.status, selected_agent: current }) !== null && (
+          <ExecutionStateLine
+            state="waiting_for_agent"
+            detail={`${current.owner.name}’s ${agentLabel(current)}`}
+          />
+        )}
 
       {error !== undefined && (
         <p className="meta-sub meta-agent-error" role="alert">

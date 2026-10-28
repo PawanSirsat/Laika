@@ -55,6 +55,17 @@ export const EXECUTION_STATE_WORDS: Readonly<
   },
 };
 
+/**
+ * A claim the expiry scan marked `expired` (LAI-541, LAI-543). Not one of the
+ * states above: it is a fact about the claim, and what follows it — a
+ * recovery offer — is Phase 3 (LAI-546). Nothing gives the claim back by
+ * itself, and the words say so.
+ */
+export const CLAIM_EXPIRED_WORDS = {
+  label: 'Claim expired',
+  meaning: 'The agent must reclaim explicitly; nothing was restored automatically.',
+} as const;
+
 /** How a picked agent can be reached, as the Agent picker says it. */
 export type AgentAvailability = 'available' | 'offline' | 'unavailable';
 

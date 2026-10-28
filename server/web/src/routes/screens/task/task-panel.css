@@ -761,18 +761,6 @@
   color: var(--text-primary);
 }
 
-.panel-action-primary {
-  color: var(--on-accent);
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.panel-action-primary:hover,
-.panel-action-primary:focus-visible {
-  color: var(--on-accent);
-  filter: brightness(1.06);
-}
-
 .panel-action:disabled {
   opacity: 0.55;
   cursor: default;
@@ -1052,17 +1040,6 @@
   border: 1.5px dashed var(--border-default);
 }
 
-.meta-avatar-bot {
-  position: absolute;
-  right: -3px;
-  bottom: -3px;
-  width: 13px;
-  height: 13px;
-  border-radius: 4px;
-  background: var(--chip-pink);
-  border: 2px solid var(--bg-canvas);
-}
-
 /* The rail's controls read as values with a chevron, not as form controls —
    the design's fields are text you can change, not a settings page. Each is
    `Dropdown`'s bare trigger since LAI-726, styled as its select was. */
@@ -1205,52 +1182,22 @@
   color: var(--text-muted);
 }
 
-.meta-mono,
-.meta-sub-claim {
+.meta-mono {
   font-family: var(--font-mono);
   font-size: var(--text-small);
 }
 
-/* A placeholder says so beside itself, never only in a notice further away —
-   a reader who took the hour at face value would wait for a lock that does
-   not lapse. */
-.meta-placeholder {
-  font-family: var(--font-ui);
-  font-size: var(--text-small);
-  font-weight: var(--weight-heavy);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--chip-orange);
-  background: var(--chip-orange-bg);
-  border: 1px solid var(--chip-orange-border);
-  border-radius: 4px;
-  padding: 0.125rem 0.25rem;
-}
+/* --------------------------------------------- the execution panel (LAI-543) */
 
-/* ------------------------------------------------------- the rail's foot */
-
-.panel-side-actions {
-  margin-top: auto;
+.panel-side-exec {
   padding: 0.875rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
 }
 
-.panel-side-actions .panel-action {
-  width: 100%;
-  justify-content: center;
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.625rem 0.75rem;
-}
-
-/* The design's primary is purple here, not the accent blue: handing work to an
-   agent is the one action on this panel that leaves the board. */
-.panel-side-actions .panel-action-primary {
-  background: var(--chip-pink);
-  border-color: var(--chip-pink);
+/* The rail is narrower than the panel was drawn for, so each fact stacks —
+   label over value — and the agent's chip keeps its full name. */
+.panel-side-exec .exec-facts > div {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.125rem;
 }
 
 /* ------------------------------------------------- stacked, on a narrow window */

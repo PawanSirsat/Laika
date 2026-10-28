@@ -11,6 +11,8 @@ import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { SizeChip } from '../../../components/SizeChip.tsx';
 import { AgentChip } from '../../../components/agent/AgentChip.tsx';
 import { agentDevice, selectedAgentOf, selectedHarness } from '../../../api/selected-agent.ts';
+import { ExecutionStateLine } from '../../../components/agent/ExecutionStateLine.tsx';
+import { cardExecutionState } from '../../../components/agent/execution-derive.ts';
 
 export interface TaskCardProps {
   readonly task: TaskSummary;
@@ -93,6 +95,9 @@ export function TaskCard({
   // `?? null`: a view served before LAI-771 has no `size`, and absent is unsized.
   const size = fields.size ? (task.size ?? null) : null;
   const agent = fields.agent ? selectedAgentOf(task) : null;
+  // What the agent's work is doing, in words (LAI-543). Rides the `agent`
+  // field: a reader who hid the chip hid the agent, and its state with it.
+  const execution = fields.agent ? cardExecutionState(task) : null;
 
   return (
     <article
@@ -172,6 +177,11 @@ export function TaskCard({
           )}
         </p>
       )}
+
+      {/* One quiet line, words beside a shape — never a colour alone. Only
+          what the task view serves: *Working* and *Connection lost* wait on
+          the live claim (LAI-568). */}
+      {execution !== null && <ExecutionStateLine state={execution} />}
 
       <div className="card-foot">
         {/* Jira's priority icons (LAI-705): an up chevron, an equals sign, a

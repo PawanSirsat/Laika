@@ -177,6 +177,12 @@ const LABELS: Readonly<Record<string, string>> = {
   // A work request, not a claim (LAI-535): `describeEvent` names the agent
   // when the reader can; this is the line when it cannot.
   'task.agent_selected': 'changed the agent for this task',
+  // An agent session's claim lost its lease (LAI-541). Written by the system:
+  // nobody did it, and nothing gives the claim back by itself (proposal §4.2).
+  'task.claim_expired':
+    'expired an agent’s claim — the agent must reclaim explicitly; nothing was restored automatically',
+  // The same agent took the task back on purpose, at the next generation.
+  'task.claim_reclaimed': 'reclaimed this task after its claim expired',
 
   'comment.added': 'commented',
   'comment.edited': 'edited a comment',
