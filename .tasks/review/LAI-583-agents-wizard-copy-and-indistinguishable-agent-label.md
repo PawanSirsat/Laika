@@ -58,7 +58,8 @@ one machine.
 the screen holds collide, each becomes `Claude Code · laptop-1 (polly
 workers)`, or the id's last four when the registered name adds nothing.
 Wired into the picker (the reader's agents), the card chip (the board's
-tasks, cached per map), the List (its tasks; the cell shows the differing
+tasks, cached per map; the chip shows the differing name in place of the
+device, which its ellipsis would cut), the List (its tasks; the cell shows the differing
 name, the full label read aloud and on hover), the drawer field, History
 and the agent filter (`agentNamesFrom`, `agentsOnTasks`).
 
