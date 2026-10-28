@@ -11,6 +11,7 @@ import {
   expireClaims,
   heartbeatAgentSession,
   leaseLapsed,
+  liveClaimViews,
   reclaimTask,
   startAgentSession,
 } from '../../src/services/claims.ts';
@@ -678,17 +679,81 @@ describe('the live claim on a task read (LAI-568)', () => {
     const { id } = claimedOnDevice();
     t.db.update(taskClaims).set({ state: 'paused' }).where(eq(taskClaims.taskId, id)).run();
     // A paused claim is not lapsed by its lease: the scan expires only `active`.
-    expect(reads(id, T0 + LEASE + MIN).single).toMatchObject({ state: 'paused', generation: 1 });
+    const { single, listed } = reads(id, T0 + LEASE + MIN);
+    expect(single).toMatchObject({ state: 'paused', generation: 1 });
+    expect(listed).toEqual(single);
   });
 
   it('is suspect while a revoked agent’s claim waits to lapse: its session has ended', () => {
     const { a, id } = claimedOnDevice();
     revokeAgent(t.sqlite, t.db, owner, a.id, T0 + MIN);
-    expect(reads(id, T0 + 2 * MIN).single).toMatchObject({
-      generation: 1,
-      state: 'active',
-      connection: 'suspect',
+    const { single, listed } = reads(id, T0 + 2 * MIN);
+    expect(single).toMatchObject({ generation: 1, state: 'active', connection: 'suspect' });
+    expect(listed).toEqual(single);
+  });
+
+  it('after a reclaim, serves only the live generation’s session and heartbeat', () => {
+    const { a, id, claim: old } = claimedOnDevice();
+    expect(expireClaims(t.db, T0 + LEASE).changed).toBe(1);
+
+    const fresh = startAgentSession(t.db, a.actor, {}, T0 + LEASE + MIN);
+    const taken = reclaimTask(t.sqlite, t.db, a.actor, id, {
+      sessionId: fresh.id,
+      now: T0 + LEASE + MIN,
     });
+    expect(taken.claim).toMatchObject({ generation: 2, session_id: fresh.id });
+    // The old session keeps beating, later than the new one: its heartbeat is
+    // the newest on the task, and still not the claim's.
+    heartbeatAgentSession(t.sqlite, t.db, a.actor, old.session_id, T0 + LEASE + 2 * MIN);
+    expect(fresh.id).not.toBe(old.session_id);
+
+    const { single, listed } = reads(id, T0 + LEASE + 2 * MIN);
+    expect(single).toMatchObject({
+      generation: 2,
+      state: 'active',
+      session_id: fresh.id,
+      last_heartbeat_at: T0 + LEASE + MIN,
+      lease_expires_at: T0 + LEASE + MIN + LEASE,
+      connection: 'live',
+    });
+    expect(listed).toEqual(single);
+    expect(claimsOf(id).map((c) => [c.generation, c.state])).toEqual([
+      [1, 'expired'],
+      [2, 'active'],
+    ]);
+  });
+
+  it('reads the claims of a page in one statement, however many tasks it holds', () => {
+    /** The statements prepared during `run` — the driver instrumented as LAI-091's test does. */
+    function statementsDuring(run: () => void): string[] {
+      const recorded: string[] = [];
+      const real = t.sqlite.prepare.bind(t.sqlite);
+      (t.sqlite as unknown as { prepare: typeof real }).prepare = (source: string) => {
+        recorded.push(source);
+        return real(source);
+      };
+      try {
+        run();
+      } finally {
+        (t.sqlite as unknown as { prepare: typeof real }).prepare = real;
+      }
+      return recorded;
+    }
+
+    const one = [claimedOnDevice().id];
+    const five = [...one, ...[1, 2, 3, 4].map(() => claimedOnDevice().id)];
+
+    let small = new Map<string, unknown>();
+    let large = new Map<string, unknown>();
+    const forOne = statementsDuring(() => (small = liveClaimViews(t.db, one, T0 + MIN)));
+    const forFive = statementsDuring(() => (large = liveClaimViews(t.db, five, T0 + MIN)));
+
+    // The census is real: every task came back with its claim.
+    expect(small.size).toBe(1);
+    expect(large.size).toBe(5);
+    expect(forOne).toHaveLength(1);
+    expect(forFive).toHaveLength(1);
+    expect(forFive[0]).toMatch(/from "task_claims"/);
   });
 
   it('reads every claim on a page together: each task gets its own', () => {
