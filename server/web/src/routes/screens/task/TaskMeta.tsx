@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { AssignControl } from '../board/AssignControl.tsx';
 import { TagPicker } from '../board/TagPicker.tsx';
 import { AgentRow } from './AgentRow.tsx';
+import type { MyAgents } from '../../../api/use-my-agents.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
 import { statusNameOf } from '../../../api/status-derive.ts';
 import { statusOptions } from '../board/status-options.ts';
@@ -74,6 +75,8 @@ export interface TaskMetaProps {
    * Absent reads as allowed; the server refuses `agents_off` either way.
    */
   readonly agentsAllowed?: boolean | undefined;
+  /** The reader's own agents, read once by the drawer (LAI-538). */
+  readonly myAgents: MyAgents;
 }
 
 /** `4m`, `6d` — the design's short form beside a field. */
@@ -149,6 +152,7 @@ export function TaskMeta({
   onOpen,
   statusRef,
   agentsAllowed,
+  myAgents,
 }: TaskMetaProps) {
   const now = Date.now();
   const assignee = task.assignee_id === null ? undefined : members.get(task.assignee_id);
@@ -358,6 +362,7 @@ export function TaskMeta({
               meName={meId === undefined ? undefined : members.get(meId)?.name}
               mayEdit={mayEdit}
               agentsAllowed={agentsAllowed !== false}
+              myAgents={myAgents}
               onChanged={onTaskEdited}
             />
 

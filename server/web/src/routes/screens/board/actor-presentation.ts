@@ -1,6 +1,6 @@
 import type { ActivityEvent } from '../../../api/activity.ts';
 import type { Member } from '../../../api/tasks.ts';
-import { agentVia, type SelectedAgent } from '../../../api/selected-agent.ts';
+import { agentVia, type AgentNaming } from '../../../api/selected-agent.ts';
 
 /**
  * Who did this, and how it is marked (SPEC §7, LAI-411).
@@ -45,7 +45,6 @@ export interface ActorPresentation {
   readonly via: string | undefined;
 }
 
-type AgentNaming = Pick<SelectedAgent, 'harness' | 'display_name' | 'device_label'>;
 const NO_AGENTS: ReadonlyMap<string, AgentNaming> = new Map();
 
 /** *Pawan via Claude Code · laptop-1*, or the name alone on a person's row. */
@@ -66,7 +65,7 @@ const UNKNOWN_NAME = 'Someone';
 export function describeActor(
   event: Pick<ActivityEvent, 'actor_id' | 'actor_kind' | 'agent_id'>,
   members: ReadonlyMap<string, Member>,
-  agents: ReadonlyMap<string, AgentNaming> = NO_AGENTS,
+  agents: ReadonlyMap<string, AgentNaming> | undefined = NO_AGENTS,
 ): ActorPresentation {
   switch (event.actor_kind) {
     case 'system':

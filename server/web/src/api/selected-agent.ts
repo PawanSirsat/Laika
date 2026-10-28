@@ -282,6 +282,25 @@ export function agentFilterLabel(
 
 // ------------------------------------------------------------------ who wrote a row
 
+/** What naming an agent takes: its harness, its own name and its device. */
+export type AgentNaming = Pick<SelectedAgent, 'harness' | 'display_name' | 'device_label'>;
+
+/**
+ * Every agent **this reader may see**, by id: their own (`GET /agents`, which
+ * answers the caller's agents and nobody else's) and the agents selected on
+ * tasks they hold (`TaskView.selected_agent`, which the server sent them). A
+ * row by any other agent stays *a registered agent* — nothing here guesses.
+ */
+export function agentNamesFrom(
+  own: readonly Pick<RegisteredAgent, 'id' | 'harness' | 'display_name' | 'device_label'>[],
+  tasks: readonly Pick<TaskSummary, 'selected_agent'>[],
+): ReadonlyMap<string, AgentNaming> {
+  const names = new Map<string, AgentNaming>();
+  for (const agent of agentsOnTasks(tasks)) names.set(agent.id, agent);
+  for (const agent of own) names.set(agent.id, agent);
+  return names;
+}
+
 /** What an agent-written row says after the person: an agent we can name, or what we know. */
 export const UNREGISTERED_AGENT = 'agent (unregistered token)';
 export const UNNAMED_AGENT = 'a registered agent';
