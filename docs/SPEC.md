@@ -2487,8 +2487,10 @@ backlog ──▶ todo ───────────────────
   to `in_progress` writes `task.status_changed` with `via: "claim"` and
   `claim_generation`, and **no `assignee_id`**; a claim on a task already in
   progress writes `task.updated` with `field: "claim"`. For §5's review rule
-  below, **the agent holding the live claim answers as the assignee would**,
-  so it can finish an unassigned task into review.
+  below, on a task **nobody is assigned to**, the agent holding the live claim
+  answers as the assignee would, so it can finish it into review; on a task
+  **another person is assigned to**, the rule is asked of the agent's owner,
+  and an agent is never more than its owner (D-114).
 
   | claim state | live? | how it is reached | the task |
   | --- | --- | --- | --- |
@@ -2508,7 +2510,8 @@ backlog ──▶ todo ───────────────────
   progress ends that state. The reclaim takes back a task **still in
   progress** only.
 - Moving to `review` requires the assignee, a project `lead`, or org Admin/Owner.
-  The agent holding the task's live claim answers as the assignee (LAI-541).
+  On an unassigned task, the agent holding its live claim answers as the
+  assignee; on an assigned one, the rule is asked of the agent's owner (LAI-541).
 
   **This restricts people. It does not restrict the system principal** (§3.4,
   D-051). The rule exists because *agents do not self-certify* — the bullet
@@ -2723,8 +2726,9 @@ credential is not an org credential with a project filter.
   is touched: deleting a sprint (its tasks' `sprint_id`), deleting a status
   (its tasks move), renaming or deleting a tag (its tasks' tags), removing or
   deactivating a member with `open_tasks` (their tasks' assignee). A presence
-  heartbeat (§9.1) still lands, but **does not write its branch onto a claimed
-  task** unless the beat is from the holder's agent.
+  heartbeat's branch write (§9.1) **passes the same fence** — the holder sends
+  its generation in `X-Laika-Claim-Generation` as on any request — and where
+  the fence refuses, the beat still lands (`202`) and the task is untouched.
 - **Idempotency**: `POST` accepts `Idempotency-Key`; replays within 24h return
   the original response. Same key with a different body is `conflict`.
   **One route keeps its own key** (LAI-746): `POST /users/:id/ratings`, which
