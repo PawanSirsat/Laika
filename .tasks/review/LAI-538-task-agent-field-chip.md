@@ -161,3 +161,37 @@ dates.
 Belka's load was 83–103 on 10 cores, so the full gate was not run by
 instruction. Mutation checks: each of the three fixes, plus the Activity
 screen's name wiring, was reverted in turn, and its test went red.
+
+## Round-2 fixes (Codex review of PR #106 at `1e8769ce`, SHELL, 2026-10-28)
+
+Round 2 confirmed findings 2 and 3 as fixed. It found finding 1 only partly
+fixed and raised one more. Both are fixed in new commits (`f12acbd3`,
+`f07c9504`):
+
+1. **One shared pending slot.** Every selection request now takes a fresh id
+   (`nextReq`). `active` is the one request this drawer visit is waiting on, and
+   moving to another task forgets it, along with that visit's pending, error and
+   confirmed state. An answer whose id is not `active` changes nothing. Test:
+   pick on A (held) → pick on B → back to A → pick on A again; the old A
+   request then rejects. The newer A selection survives and no error shows.
+2. **A confirmed PATCH waited on the refresh.** A 200 now applies the task the
+   PATCH returned (`confirmed`, against the task's `updated_at` at send time)
+   and clears pending at once. If the follow-up read fails, the field shows the
+   confirmed agent and the next pick goes out. Once the props move on, the
+   applied answer gives way to them. Test: PATCH 200, then every follow-up read
+   is answered 500.
+
+Non-blocking, done: a Viewer whose `GET /agents` is refused with 403 still sees
+the chip, with no picker and no error (browser test). Filed **LAI-570** (card
+LAIKA-822): the Dashboard feed and Organisation → Activity name the agent.
+
+Break-the-fix checks, each restored by SHA-256 checksum:
+- accepting any answer turns the A→B→A test red;
+- not applying the PATCH answer turns the failed-read test red;
+- keeping pending until the refresh turns the failed-read test red.
+
+**Limit:** the confirmed answer is applied in the drawer's row, not written to
+the board's task store, which `useBoard` does not expose for this. So when the
+follow-up read fails, the card chip catches up only on the next successful read.
+
+**The full repo gate is still owed.** CHIEF runs it after this round.
