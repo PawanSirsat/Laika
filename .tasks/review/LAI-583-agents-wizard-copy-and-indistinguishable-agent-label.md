@@ -78,3 +78,18 @@ Tests: unit `selected-agent.test.ts` (+4); browser `agent-field.test.ts`
 List tells them apart*, `agents-tab.test.ts` step 1 hint and step 4 badge.
 Red without the source change (browser 0/3, unit fails to import), green
 with it.
+
+## Review round 1 (cross-vendor, #128) — fixed
+
+1. **Marks could still collide.** Two agents named alike with ids ending
+   alike both read `(1234)`; a fallback could equal another's registered
+   name. `twinNames` now keeps a registered name only when it is unique in
+   its group, grows id tails until the group differs, and checks the final
+   labels across every agent given (whole id for any still alike). Unit
+   tests reproduce both cases, a device that already reads like a mark,
+   order independence, middle-cut names, and 343 combinations. Broken on
+   purpose (fixed 4-char tail, no final check): 4 red.
+2. **The picker could cut the mark at 390.** The mark is now the option's
+   badge (`flex: none`, never cut); the label stays the whole name. Browser
+   test at 390, both themes, measures the badge on screen and that the
+   label is in fact cut; with the badge removed it fails.
