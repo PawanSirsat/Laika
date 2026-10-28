@@ -2729,13 +2729,19 @@ credential is not an org credential with a project filter.
   heartbeat's branch write (§9.1) **passes the same fence** — the holder sends
   its generation in `X-Laika-Claim-Generation` as on any request — and where
   the fence refuses, the beat still lands (`202`) and the task is untouched.
-- **Idempotency**: `POST` accepts `Idempotency-Key`; replays within 24h return
-  the original response. Same key with a different body is `conflict`.
-  **One route keeps its own key** (LAI-746): `POST /users/:id/ratings`, which
-  is session-only (§3.1). The shared store answers before the route runs, keyed
-  by user rather than credential, and keeps the response body — which there is
-  a private note — so that route stores the key on the rating and answers a
-  retry from it after `can()`. Its keys are per rater and do not expire.
+- **Idempotency**: `POST` accepts `Idempotency-Key`. Only these create routes
+  keep a response: `POST /projects`, `/projects/:slug/tasks`,
+  `/projects/:slug/sprints`, `/tasks/:id/comments`, `/tasks/:id/dependencies`,
+  `/agent-sessions`. Before a replay, the route's own permission is asked again
+  of the caller as they are now — for dependencies including the claim fence —
+  and if refused the route runs instead. A token replays only its own answers,
+  and an answer carrying a one-time secret is never stored. Same key with a
+  different body is `conflict`. **One route keeps its own key** (LAI-746):
+  `POST /users/:id/ratings`, which is session-only (§3.1). The shared store
+  answers before the route runs, keyed by user rather than credential, and keeps
+  the response body — which there is a private note — so that route stores the
+  key on the rating and answers a retry from it after `can()`. Its keys are per
+  rater and do not expire.
 - **Rate limits**: in-process token bucket — 120 req/min per token, 600/min per
   session, 30/min for heartbeats, and for local-activity reports (`PUT
   /me/local-activity`, D-079) a bucket of **30, refilled one every 120
