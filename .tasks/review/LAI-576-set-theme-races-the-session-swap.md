@@ -31,9 +31,10 @@ that is wrong.
 
 - [x] The cause is shown, not assumed: the user-menu trigger's box at 390px in
       both themes, with the navigation closed and opened.
-- [x] If the harness races: `setTheme` picks and acts on its control in one
-      step, so a swap between choosing and clicking cannot send the click to
-      the other control; what the `fits` tests assert is unchanged.
+- [x] If the harness races: `setTheme` gives each control its own locator and
+      re-chooses until the theme turns, so a swap between choosing and
+      clicking cannot send the click to the other control; what the `fits`
+      tests assert is unchanged.
 - [x] Shown to matter: the old `setTheme` fails under a forced swap and the
       new one passes; `organisation-pulse.test.ts` passes at least 5 runs.
 - [x] The repo gate (`pnpm test`, `pnpm lint`, `pnpm format`) exits 0.
