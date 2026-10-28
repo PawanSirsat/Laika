@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { loadActor } from '../../src/auth/resolve-actor.ts';
+import { loadActor, type ResolvedActor, resolveTokenActor } from '../../src/auth/resolve-actor.ts';
 import {
   hashRequest,
   IDEMPOTENCY_TTL_MS,
@@ -315,58 +315,157 @@ describe('Idempotency-Key over HTTP', () => {
   });
 
   /**
-   * Each entry's question equals its route's, for an actor the route allows
-   * and one it refuses — so a stored answer is replayed exactly when a fresh
-   * request would be allowed. A route whose `can()` changes without its entry
+   * Each entry's question gives its route's answer, across the narrowings that
+   * tell neighbouring actions apart (Codex round 3): a refused role, a space
+   * whose task creation is lead-only (where `task.create` and `task.write`
+   * differ), a `read_only` token, and a token pinned to another project. So a
+   * stored answer is replayed exactly when a fresh request would be allowed,
+   * for these cases; an entry whose action drifts to one of its neighbours
    * goes red here.
    */
   describe('every allow-listed route asks again what its route asks', () => {
-    it('agrees with the route for an allowed and a refused actor, every entry', async () => {
+    interface Cred {
+      label: string;
+      auth: { cookie?: string; bearer?: string };
+      actor: () => ResolvedActor;
+    }
+
+    it('agrees with the route for each allowed and refused credential, every entry', async () => {
+      // A second space whose task creation is lead-only, with Bob a member.
+      const lead = await must(
+        await req(
+          '/api/v1/projects',
+          { method: 'POST', body: JSON.stringify({ name: 'Lead', slug: 'lead', prefix: 'LED' }) },
+          { cookie: owner.cookie },
+        ),
+      );
+      await must(
+        await req(
+          '/api/v1/projects/lead',
+          { method: 'PATCH', body: JSON.stringify({ task_create_min_role: 'lead' }) },
+          { cookie: owner.cookie },
+        ),
+        200,
+      );
+      await must(
+        await req(
+          '/api/v1/projects/lead/members',
+          { method: 'POST', body: JSON.stringify({ user_id: bob.id, role: 'member' }) },
+          { cookie: owner.cookie },
+        ),
+      );
+
+      const mint = async (label: string, body: unknown): Promise<Cred> => {
+        const minted = await must(
+          await req(
+            '/api/v1/tokens',
+            { method: 'POST', body: JSON.stringify(body) },
+            {
+              cookie: owner.cookie,
+            },
+          ),
+        );
+        const secret = minted.secret as string;
+        return {
+          label,
+          auth: { bearer: secret },
+          actor: () => resolveTokenActor(h.db, secret, Date.now()),
+        };
+      };
+      const session = (label: string, who: { cookie: string; id: string }): Cred => ({
+        label,
+        auth: { cookie: who.cookie },
+        actor: () => loadActor(h.db, who.id)!,
+      });
+
+      const ownerSession = session('owner session', owner);
+      const ownerToken = await mint('owner full token', { name: 'full', scope: 'full' });
+      const readOnly = await mint('owner read_only token', { name: 'ro', scope: 'read_only' });
+      const pinnedElsewhere = await mint('owner token pinned to another space', {
+        name: 'pinned',
+        scope: 'full',
+        project_ids: [lead.id],
+      });
+      const viewer = session('project viewer', carol);
+      const member = session('org member', bob);
+      const leadOnlyMember = session('member where creating is lead-only', bob);
+
       const task = await must(await createTask(undefined, 'target', { cookie: owner.cookie }));
       const blocker = await must(await createTask(undefined, 'blocker', { cookie: owner.cookie }));
-      const cases: [path: string, body: unknown, refused: { cookie: string; id: string }][] = [
-        ['/api/v1/projects', { name: 'X', slug: 'xx', prefix: 'XX' }, bob],
-        ['/api/v1/projects/core/tasks', { title: 't' }, carol],
-        ['/api/v1/projects/core/sprints', { name: 's', starts_on: 1, ends_on: 86_400_000 }, carol],
-        [`/api/v1/tasks/${String(task.id)}/comments`, { body_md: 'hi' }, carol],
-        [
-          `/api/v1/tasks/${String(task.id)}/dependencies`,
-          { blocked_by_task_id: blocker.id },
-          carol,
-        ],
+      let n = 0;
+      const cases: { path: string; body: () => unknown; refused: Cred[]; allowed: Cred[] }[] = [
+        {
+          path: '/api/v1/projects',
+          body: () => ({
+            name: `X${String(++n)}`,
+            slug: `xx${String(n)}`,
+            prefix: `XQ${String(n)}`,
+          }),
+          refused: [member, readOnly, pinnedElsewhere],
+          allowed: [ownerSession],
+        },
+        {
+          path: '/api/v1/projects/core/tasks',
+          body: () => ({ title: 't' }),
+          refused: [viewer, readOnly, pinnedElsewhere],
+          allowed: [ownerSession, ownerToken],
+        },
+        {
+          // `task.create`, not `task.write`: a member may write here, not create.
+          path: '/api/v1/projects/lead/tasks',
+          body: () => ({ title: 't' }),
+          refused: [leadOnlyMember],
+          allowed: [ownerSession],
+        },
+        {
+          path: '/api/v1/projects/core/sprints',
+          body: () => ({ name: 's', starts_on: 1, ends_on: 86_400_000 }),
+          refused: [viewer, member, readOnly, pinnedElsewhere],
+          allowed: [ownerSession],
+        },
+        {
+          path: `/api/v1/tasks/${String(task.id)}/comments`,
+          body: () => ({ body_md: 'hi' }),
+          refused: [viewer, readOnly, pinnedElsewhere],
+          allowed: [ownerSession, ownerToken],
+        },
+        {
+          path: `/api/v1/tasks/${String(task.id)}/dependencies`,
+          body: () => ({ blocked_by_task_id: blocker.id }),
+          refused: [viewer, readOnly, pinnedElsewhere],
+          allowed: [ownerSession],
+        },
       ];
       // Every entry is exercised: a new one without a case fails here.
-      expect(
-        CACHEABLE_ROUTES.map((r) => cases.findIndex(([p]) => r.pattern.test(p))).sort(),
-      ).toEqual(cases.map((_, i) => i));
+      for (const route of CACHEABLE_ROUTES) {
+        expect(
+          cases.some((c) => route.pattern.test(c.path)),
+          String(route.pattern),
+        ).toBe(true);
+      }
 
-      for (const [path, body, refused] of cases) {
+      for (const { path, body, refused, allowed } of cases) {
         const listed = cacheableRoute(path);
         expect(listed, path).not.toBeNull();
-        const ownerActor = loadActor(h.db, owner.id)!;
-        const refusedActor = loadActor(h.db, refused.id)!;
 
-        const no = await req(
-          path,
-          { method: 'POST', body: JSON.stringify(body) },
-          { cookie: refused.cookie },
-        );
-        expect(no.status, `${path} refused fresh`).toBe(403);
-        expect(
-          listed?.route.mayStill(h.db, refusedActor, listed.param),
-          `${path} refused replay`,
-        ).toBe(false);
-
-        const yes = await req(
-          path,
-          { method: 'POST', body: JSON.stringify(body) },
-          { cookie: owner.cookie },
-        );
-        expect(yes.status, `${path} allowed fresh: ${await yes.clone().text()}`).toBe(201);
-        expect(
-          listed?.route.mayStill(h.db, ownerActor, listed.param),
-          `${path} allowed replay`,
-        ).toBe(true);
+        for (const cred of refused) {
+          const no = await req(path, { method: 'POST', body: JSON.stringify(body()) }, cred.auth);
+          expect(no.status, `${path} · ${cred.label} · fresh`).toBe(403);
+          expect(
+            listed?.route.mayStill(h.db, cred.actor(), listed.param),
+            `${path} · ${cred.label} · replay`,
+          ).toBe(false);
+        }
+        for (const cred of allowed) {
+          const yes = await req(path, { method: 'POST', body: JSON.stringify(body()) }, cred.auth);
+          expect(yes.status, `${path} · ${cred.label} · fresh: ${await yes.clone().text()}`).toBe(
+            201,
+          );
+          expect(
+            listed?.route.mayStill(h.db, cred.actor(), listed.param),
+            `${path} · ${cred.label} · replay`,
+          ).toBe(true);
+        }
       }
     });
   });
