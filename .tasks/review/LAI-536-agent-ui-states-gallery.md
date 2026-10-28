@@ -94,3 +94,10 @@ loosely (§2 step 1).
   repo's way of rendering components — `@laika/web` has no Vitest.
 - **Out of scope, touched:** `state-gallery.css` grid floor is now
   `min(22rem, 100%)`; the existing gallery scrolled sideways at 390px.
+
+## Review round 1 — Codex (cross-vendor), fixed on the same branch (SHELL)
+
+- **Blocking 1, §6 coverage:** added Settings → Access hand-off policy (§4.5; defaults and other-owners-allowed), project context revisions with received-only wording (§4.6), and one specimen per wizard step plus verify waiting / verified / failed.
+- **Blocking 2, disabled agents unreadable:** `Dropdown` gains opt-in `reachDisabled`; `AgentPicker` uses it. Tested: the arrow lands on a disabled agent, its accessible name carries the reason, Enter and Space do not choose it.
+- **Suggestion:** `reason` is required by the type when `availability` is `unavailable` (compile-time test).
+- **Non-blocking:** screenshots of the open picker with a disabled agent active, and of each inbox filter, light/dark × 1440/390.
