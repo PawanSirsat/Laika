@@ -346,7 +346,7 @@ void describe('the task panel', () => {
        * where the fixture serves no activity row to say either.
        */
       assert.ok(
-        m.names.some((n) => / via an agent$/.test(n)),
+        m.names.some((n) => n.endsWith(' via an agent')),
         `no agent attribution: ${m.names.join(', ')}`,
       );
       assert.ok(
