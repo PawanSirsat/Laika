@@ -47,6 +47,7 @@ import {
   findHarness,
   isAlive,
   isDeadState,
+  liveness,
   procReader,
   PS_ENV,
   PS_TIMEOUT_MS,
@@ -59,6 +60,7 @@ import {
   startSession,
   statePath,
   writeCredential,
+  UNKNOWN,
   writeState,
 } from '../src/agent-session.ts';
 
@@ -560,6 +562,10 @@ void describe('installing the hooks', () => {
 /* Review round 1 (PR #108): each a finding the reviewer reproduced            */
 /* -------------------------------------------------------------------------- */
 
+/** A process `ps` answered for, or `undefined` — never {@link UNKNOWN}. */
+const known = (info: ReturnType<typeof readProc>): ProcInfo | undefined =>
+  info === UNKNOWN ? undefined : info;
+
 const pause = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 void describe('a zombie harness is dead', () => {
@@ -573,11 +579,11 @@ void describe('a zombie harness is dead', () => {
       const pid = await new Promise<number>((resolve) => {
         parent.stdout.once('data', (c: Buffer) => resolve(Number(c.toString().trim())));
       });
-      const before = readProc(pid);
+      const before = known(readProc(pid));
       assert.ok(before !== undefined && !isDeadState(before.state), 'the child was running');
       const after = await (async () => {
         for (let i = 0; i < 50; i += 1) {
-          const info = readProc(pid);
+          const info = known(readProc(pid));
           if (info?.state.startsWith('Z') === true) return info;
           await pause(100);
         }
@@ -911,23 +917,42 @@ void describe('what reaches the model is checked and bounded', () => {
 /* Review round 2 (PR #108)                                                    */
 /* -------------------------------------------------------------------------- */
 
-void describe('the shell launcher hands the token to its consumer only', () => {
-  const AGENT = 'lai_AGENT_SENTINEL_launcher';
-  const PERSON = 'lai_PERSON_SENTINEL_launcher';
-  const LAUNCHER = fileURLToPath(new URL('../../plugin/scripts/laika-agent-hook', import.meta.url));
+const AGENT = 'lai_AGENT_SENTINEL_launcher';
+const PERSON = 'lai_PERSON_SENTINEL_launcher';
+const LAUNCHER = fileURLToPath(new URL('../../plugin/scripts/laika-agent-hook', import.meta.url));
 
-  void test('readlink, find and head see neither token; the node entry sees the agent’s only', () => {
-    const root = temp();
-    const dumps = join(root, 'dumps');
-    mkdirSync(dumps);
-    // The checkout's shape: plugin/scripts/<launcher> beside cli/{src,dist}.
-    mkdirSync(join(root, 'plugin', 'scripts'), { recursive: true });
-    const script = join(root, 'plugin', 'scripts', 'laika-agent-hook');
-    copyFileSync(LAUNCHER, script);
-    chmodSync(script, 0o755);
+interface LauncherRun {
+  readonly status: number | null;
+  readonly stderr: string;
+  /** Each utility's environment, by `<name>.<pid>`. */
+  readonly utilities: Readonly<Record<string, string>>;
+  readonly consumerEnv?: Record<string, string>;
+  readonly consumerStdin?: string;
+}
+
+/**
+ * Run the real launcher from a scratch checkout: plugin/scripts/<launcher>
+ * beside cli/{src,dist}, reached through a symlink so readlink runs, with a
+ * PATH shim for every utility it might run that dumps its environment, and
+ * a consumer entry that records its own environment and stdin.
+ */
+function runLauncher(options: {
+  root: string;
+  shell?: readonly string[];
+  env?: Readonly<Record<string, string>>;
+  withCli?: boolean;
+  omit?: readonly string[];
+}): LauncherRun {
+  const { root } = options;
+  const dumps = join(root, 'dumps');
+  mkdirSync(dumps);
+  mkdirSync(join(root, 'plugin', 'scripts'), { recursive: true });
+  const script = join(root, 'plugin', 'scripts', 'laika-agent-hook');
+  copyFileSync(LAUNCHER, script);
+  chmodSync(script, 0o755);
+  if (options.withCli !== false) {
     mkdirSync(join(root, 'cli', 'src'), { recursive: true });
     mkdirSync(join(root, 'cli', 'dist'), { recursive: true });
-    // The consumer: records what it was given — its env and its stdin.
     const consumer = [
       "import { readFileSync, writeFileSync } from 'node:fs';",
       `writeFileSync(${JSON.stringify(join(dumps, 'consumer.env'))}, JSON.stringify(process.env));`,
@@ -937,68 +962,169 @@ void describe('the shell launcher hands the token to its consumer only', () => {
     writeFileSync(join(root, 'cli', 'dist', 'agent-main.js'), consumer);
     const later = new Date(Date.now() + 60_000);
     utimesSync(join(root, 'cli', 'dist', 'agent-main.js'), later, later);
-    // Reached through a symlink, so readlink runs.
-    mkdirSync(join(root, 'bin'));
-    const link = join(root, 'bin', 'laika-agent-hook');
-    symlinkSync(script, link);
+  }
+  mkdirSync(join(root, 'bin'));
+  const link = join(root, 'bin', 'laika-agent-hook');
+  symlinkSync(script, link);
 
-    // A shim for every utility the launcher may run: dump the env, then the real one.
-    const shims = join(root, 'shims');
-    mkdirSync(shims);
-    const UTILITIES = ['readlink', 'find', 'head', 'dirname', 'cat', 'sed', 'env'];
-    for (const name of UTILITIES) {
-      let real = '';
-      try {
-        real = execFileSync('/bin/sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).trim();
-      } catch {
-        continue;
-      }
-      writeFileSync(
-        join(shims, name),
-        `#!/bin/sh\n/usr/bin/env > "${dumps}/${name}.$$"\nexec "${real}" "$@"\n`,
-        { mode: 0o755 },
-      );
+  const shims = join(root, 'shims');
+  mkdirSync(shims);
+  for (const name of ['readlink', 'find', 'head', 'dirname', 'cat', 'sed', 'env', 'pwd']) {
+    let real = '';
+    try {
+      real = execFileSync('/bin/sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).trim();
+    } catch {
+      continue;
     }
+    if (!real.startsWith('/')) continue;
+    writeFileSync(
+      join(shims, name),
+      `#!/bin/sh\n/usr/bin/env > "${dumps}/${name}.$$"\nexec "${real}" "$@"\n`,
+      { mode: 0o755 },
+    );
+  }
 
-    const payload = JSON.stringify({ session_id: 'hs-launcher', hook_event_name: 'PostToolUse' });
-    const run = spawnSync('/bin/sh', [link, 'tool', 'claude-code'], {
-      input: payload,
-      encoding: 'utf8',
-      env: {
-        PATH: `${shims}:${dirname(process.execPath)}:/usr/bin:/bin`,
-        HOME: root,
-        LAIKA_AGENT_TOKEN: AGENT,
-        LAIKA_TOKEN: PERSON,
-      },
-    });
+  const [shell = '/bin/sh', ...flags] = options.shell ?? [];
+  const env: Record<string, string> = {
+    PATH: `${shims}:${dirname(process.execPath)}:/usr/bin:/bin`,
+    HOME: root,
+    LAIKA_AGENT_TOKEN: AGENT,
+    LAIKA_TOKEN: PERSON,
+    ...options.env,
+  };
+  for (const name of options.omit ?? []) delete env[name];
+  const run = spawnSync(shell, [...flags, link, 'tool', 'claude-code'], {
+    input: PAYLOAD,
+    encoding: 'utf8',
+    env,
+  });
+
+  const utilities: Record<string, string> = {};
+  for (const file of readdirSync(dumps).filter((f) => !f.startsWith('consumer.'))) {
+    utilities[file] = readFileSync(join(dumps, file), 'utf8');
+  }
+  const has = (f: string) => readdirSync(dumps).includes(f);
+  return {
+    status: run.status,
+    stderr: run.stderr,
+    utilities,
+    ...(has('consumer.env')
+      ? {
+          consumerEnv: JSON.parse(readFileSync(join(dumps, 'consumer.env'), 'utf8')) as Record<
+            string,
+            string
+          >,
+          consumerStdin: readFileSync(join(dumps, 'consumer.stdin'), 'utf8'),
+        }
+      : {}),
+  };
+}
+
+const PAYLOAD = JSON.stringify({ session_id: 'hs-launcher', hook_event_name: 'PostToolUse' });
+
+function assertNoUtilitySaw(run: LauncherRun, secrets: readonly string[]): void {
+  for (const [file, text] of Object.entries(run.utilities)) {
+    for (const secret of secrets) assert.ok(!text.includes(secret), `${secret} reached ${file}`);
+  }
+}
+
+void describe('the shell launcher hands the token to its consumer only', () => {
+  void test('readlink, find and head see neither token; the node entry sees the agent’s only', () => {
+    const run = runLauncher({ root: temp() });
     assert.equal(run.status, 0);
-
-    const files = readdirSync(dumps);
+    const names = Object.keys(run.utilities);
     // The instruments ran: the utilities the launcher uses each left a dump.
     for (const used of ['readlink', 'find', 'head']) {
       assert.ok(
-        files.some((f) => f.startsWith(`${used}.`)),
+        names.some((f) => f.startsWith(`${used}.`)),
         `${used} never ran`,
       );
     }
-    for (const file of files.filter((f) => !f.startsWith('consumer.'))) {
-      const text = readFileSync(join(dumps, file), 'utf8');
-      assert.ok(!text.includes(AGENT), `the agent token reached ${file}`);
-      assert.ok(!text.includes(PERSON), `the person’s token reached ${file}`);
-    }
-    const consumerEnv = JSON.parse(readFileSync(join(dumps, 'consumer.env'), 'utf8')) as Record<
-      string,
-      string
-    >;
-    assert.equal(consumerEnv.LAIKA_AGENT_TOKEN, AGENT, 'the consumer must get the agent token');
-    assert.equal(consumerEnv.LAIKA_TOKEN, undefined, 'the person’s token is never passed on');
-    assert.equal(readFileSync(join(dumps, 'consumer.stdin'), 'utf8'), payload);
+    assertNoUtilitySaw(run, [AGENT, PERSON]);
+    assert.equal(
+      run.consumerEnv?.LAIKA_AGENT_TOKEN,
+      AGENT,
+      'the consumer must get the agent token',
+    );
+    assert.equal(run.consumerEnv?.LAIKA_TOKEN, undefined, 'the person’s token is never passed on');
+    assert.equal(run.consumerStdin, PAYLOAD);
   });
 
   void test('a harness that passes no token gets none invented', () => {
-    const text = readFileSync(LAUNCHER, 'utf8');
-    assert.match(text, /AGENT_TOKEN_SET="\$\{LAIKA_AGENT_TOKEN\+set\}"/);
-    assert.match(text, /if \[ "\$AGENT_TOKEN_SET" = set \]; then/);
+    const run = runLauncher({ root: temp(), omit: ['LAIKA_AGENT_TOKEN'] });
+    assert.equal(run.status, 0);
+    assert.ok(run.consumerEnv !== undefined, 'the consumer ran');
+    assert.equal('LAIKA_AGENT_TOKEN' in run.consumerEnv, false);
+  });
+});
+
+void describe('the launcher under tracing and pre-exported names', () => {
+  const traced = (run: LauncherRun): void => {
+    // The positive control: tracing was really on when the launcher began.
+    assert.match(run.stderr, /^\+/m, 'tracing never started, so this proves nothing');
+    assert.ok(!run.stderr.includes(AGENT), 'the agent token was traced to stderr');
+    assert.ok(!run.stderr.includes(PERSON), 'the person’s token was traced to stderr');
+  };
+
+  void test('sh -x prints neither token', () => {
+    const run = runLauncher({ root: temp(), shell: ['/bin/sh', '-x'] });
+    assert.equal(run.status, 0);
+    traced(run);
+    assertNoUtilitySaw(run, [AGENT, PERSON]);
+    assert.equal(run.consumerEnv?.LAIKA_AGENT_TOKEN, AGENT);
+  });
+
+  void test('sh -x on the early exit path prints neither token', () => {
+    const run = runLauncher({ root: temp(), shell: ['/bin/sh', '-x'], withCli: false });
+    assert.equal(run.status, 0);
+    assert.equal(run.consumerEnv, undefined, 'there is no CLI to reach');
+    traced(run);
+  });
+
+  void test('inherited SHELLOPTS=xtrace (bash) prints neither token', (t) => {
+    let bash = '';
+    try {
+      bash = execFileSync('/bin/sh', ['-c', 'command -v bash'], { encoding: 'utf8' }).trim();
+    } catch {
+      t.skip('no bash on this machine');
+      return;
+    }
+    const run = runLauncher({ root: temp(), shell: [bash], env: { SHELLOPTS: 'xtrace' } });
+    assert.equal(run.status, 0);
+    traced(run);
+  });
+
+  void test('set -a inherited through SHELLOPTS=allexport exports nothing to the utilities', (t) => {
+    let bash = '';
+    try {
+      bash = execFileSync('/bin/sh', ['-c', 'command -v bash'], { encoding: 'utf8' }).trim();
+    } catch {
+      t.skip('no bash on this machine');
+      return;
+    }
+    const run = runLauncher({ root: temp(), shell: [bash], env: { SHELLOPTS: 'allexport' } });
+    assert.equal(run.status, 0);
+    assertNoUtilitySaw(run, [AGENT, PERSON]);
+  });
+
+  void test('a scratch name already exported does not carry the token to the utilities', () => {
+    const run = runLauncher({
+      root: temp(),
+      env: {
+        _laika_agent_token: 'decoy',
+        _laika_agent_token_set: 'decoy',
+        AGENT_TOKEN: 'decoy',
+        AGENT_TOKEN_SET: 'decoy',
+      },
+    });
+    assert.equal(run.status, 0);
+    assert.ok(
+      Object.values(run.utilities).some((text) => text.includes('AGENT_TOKEN=decoy')),
+      'the decoys were in the environment the utilities inherited',
+    );
+    assertNoUtilitySaw(run, [AGENT, PERSON]);
+    assert.equal(run.consumerEnv?._laika_agent_token, undefined);
+    assert.equal(run.consumerEnv?.LAIKA_AGENT_TOKEN, AGENT);
   });
 });
 
@@ -1151,15 +1277,97 @@ void describe('a notice is rendered from checked data at delivery', () => {
   });
 });
 
-void describe('a hung ps', () => {
-  void test('is bounded by a timeout and counts as no answer', () => {
-    const seen: { timeout?: number }[] = [];
-    const reader = procReader((_file, _args, options) => {
-      seen.push({ timeout: options.timeout! });
-      throw Object.assign(new Error('spawnSync ps ETIMEDOUT'), { code: 'ETIMEDOUT' });
+void describe('a liveness check that cannot complete is unknown, not death', () => {
+  const timeout = (): never => {
+    throw Object.assign(new Error('spawnSync ps ETIMEDOUT'), {
+      code: 'ETIMEDOUT',
+      status: null,
+      signal: 'SIGKILL',
     });
-    assert.equal(reader(process.pid), undefined);
+  };
+
+  void test('ps: a timeout or unreadable output is UNKNOWN; "no such process" is undefined', () => {
+    const seen: { timeout?: number }[] = [];
+    const hung = procReader((_file, _args, options) => {
+      seen.push({ timeout: options.timeout! });
+      return timeout();
+    });
+    assert.equal(hung(process.pid), UNKNOWN);
     assert.equal(seen[0]?.timeout, PS_TIMEOUT_MS);
-    assert.ok(PS_TIMEOUT_MS > 0 && PS_TIMEOUT_MS <= 10_000);
+    assert.equal(procReader(() => 'garbage that is not a ps line\n')(process.pid), UNKNOWN);
+    const killed = procReader(() => {
+      throw Object.assign(new Error('killed'), { status: null, signal: 'SIGTERM', stdout: '' });
+    });
+    assert.equal(killed(process.pid), UNKNOWN);
+    // The real ps, for a PID that is not running: a plain "none".
+    assert.equal(readProc(2_147_483_000), undefined);
+    assert.equal(liveness(2_147_483_000, 'x'), 'dead');
+  });
+
+  void test('one timeout skips that beat only; the next healthy check renews the same session', async () => {
+    const home = temp();
+    const w = world(home);
+    await startSession(w.deps, request());
+    const path = statePath(home, 'claude-code', 'hs-1');
+    let answers: ('timeout' | 'ok')[] = ['timeout', 'ok'];
+    const deps: Deps = {
+      ...w.deps,
+      proc: (pid) => {
+        if (pid !== HARNESS.pid) return undefined;
+        return answers.shift() === 'timeout' ? UNKNOWN : HARNESS;
+      },
+    };
+    assert.equal(await beatOnce(deps, path, CRED), 'unknown');
+    assert.equal(readState(path)?.status, 'live');
+    assert.deepEqual(w.calls, ['start'], 'nothing sent on an unknown check');
+    assert.equal(await beatOnce(deps, path, CRED), 'renewed');
+    assert.equal(readState(path)?.session_id, S1);
+    assert.deepEqual(w.calls, ['start', 'beat']);
+    answers = [];
+  });
+
+  void test('persistent timeouts: the watcher keeps checking, sends nothing, abandons nothing', async () => {
+    const home = temp();
+    const w = world(home);
+    await startSession(w.deps, request());
+    const path = statePath(home, 'claude-code', 'hs-1');
+    const state = readState(path)!;
+    state.watcher_pid = 77;
+    state.watcher_started = 'w';
+    writeState(home, state);
+    let checks = 0;
+    let statusDuring: string | undefined;
+    const deps: Deps = {
+      ...w.deps,
+      proc: (pid) => {
+        if (pid !== HARNESS.pid) return undefined;
+        checks += 1;
+        // Ten unknown checks, then a confirmed death so the loop ends.
+        return checks <= 10 ? UNKNOWN : undefined;
+      },
+      sleep: (ms) => {
+        w.clock.now += ms;
+        if (checks === 10) statusDuring = readState(path)?.status;
+        return Promise.resolve();
+      },
+    };
+    const outcome = await runWatcher(deps, path, CRED, { pid: 77, started: 'w' }, 30_000);
+    assert.equal(statusDuring, 'live', 'ten unknown checks did not abandon the session');
+    assert.deepEqual(w.calls, ['start'], 'no heartbeat was sent on an unknown check');
+    assert.equal(checks, 11);
+    // Only the confirmed death abandons it.
+    assert.equal(outcome, 'harness_gone');
+    assert.equal(readState(path)?.status, 'abandoned');
+  });
+
+  void test('a hung ps never renews, through the real reader too', async () => {
+    const home = temp();
+    const w = world(home);
+    await startSession(w.deps, request());
+    const path = statePath(home, 'claude-code', 'hs-1');
+    const deps: Deps = { ...w.deps, proc: procReader(timeout) };
+    assert.equal(await beatOnce(deps, path, CRED), 'unknown');
+    assert.deepEqual(w.calls, ['start']);
+    assert.equal(readState(path)?.status, 'live');
   });
 });

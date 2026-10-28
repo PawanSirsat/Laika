@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { after, before, describe, test } from 'node:test';
 
 import { agentHookCommand, type AgentHookEvent } from '../src/agent-hooks.ts';
-import { readProc, type SessionState, startSession } from '../src/agent-session.ts';
+import { readProc, type SessionState, startSession, UNKNOWN } from '../src/agent-session.ts';
 import { must, type RealBoard, seed, type Seeded, startRealBoard } from './support/real-board.ts';
 
 const ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url));
@@ -363,7 +363,8 @@ void describe('laika agent, against a real board', () => {
         return res;
       },
     };
-    const self = readProc(process.pid);
+    const found = readProc(process.pid);
+    const self = found === UNKNOWN ? undefined : found;
     assert.ok(self !== undefined);
     const outcome = await startSession(deps, {
       harness: 'claude-code',

@@ -190,7 +190,14 @@ export interface ProcInfo {
   readonly state: string;
 }
 
-export type ProcReader = (pid: number) => ProcInfo | undefined;
+/**
+ * `ps` could not say: it timed out, failed, or printed something unreadable.
+ * Not the same as "no such process" (`undefined`), which `ps` says plainly.
+ */
+export const UNKNOWN = 'unknown' as const;
+
+/** A process, `undefined` when `ps` says there is none, or {@link UNKNOWN}. */
+export type ProcReader = (pid: number) => ProcInfo | undefined | typeof UNKNOWN;
 
 const PS_LINE =
   /^\s*(\d+)\s+(\S+)\s+([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(.+?)\s*$/;
@@ -222,14 +229,19 @@ export function isDeadState(state: string): boolean {
   return /^[ZX]/.test(state) || state.includes('E');
 }
 
-/** `ps` for one PID, or `undefined` when there is no such process. */
+/**
+ * `ps` for one PID. **Three answers, kept apart**: the process; `undefined`
+ * only when `ps` ran to completion and said there is none (exit 1, nothing
+ * printed); and {@link UNKNOWN} for anything else — a timeout, a signal, a
+ * missing `ps`, output it cannot read. Only the second is evidence of death.
+ */
 export function procReader(exec: Exec = execFileSync): ProcReader {
   return (pid) => {
     if (!Number.isInteger(pid) || pid <= 0) return undefined;
     let out: string;
     try {
-      // A `ps` that hangs is killed and counts as no answer — fail closed:
-      // nothing is renewed on a liveness check that did not complete.
+      // A `ps` that hangs is killed and is UNKNOWN: nothing is renewed on a
+      // check that did not complete, and nothing is abandoned on one either.
       out = exec(
         'ps',
         ['-o', 'ppid=', '-o', 'stat=', '-o', 'lstart=', '-o', 'comm=', '-p', String(pid)],
@@ -241,11 +253,13 @@ export function procReader(exec: Exec = execFileSync): ProcReader {
           killSignal: 'SIGKILL',
         },
       );
-    } catch {
-      return undefined;
+    } catch (cause) {
+      const e = cause as { status?: unknown; signal?: unknown; stdout?: unknown };
+      const said = e.status === 1 && e.signal === null && (e.stdout ?? '') === '';
+      return said ? undefined : UNKNOWN;
     }
     const match = PS_LINE.exec(out.split('\n')[0] ?? '');
-    if (match === null) return undefined;
+    if (match === null) return UNKNOWN;
     return {
       pid,
       ppid: Number(match[1]),
@@ -273,12 +287,13 @@ export function findHarness(
   const named = env.LAIKA_AGENT_HARNESS_PID;
   if (named !== undefined && named !== '') {
     const info = /^\d+$/.test(named) ? proc(Number(named)) : undefined;
-    return info === undefined || isDeadState(info.state) ? undefined : info;
+    return info === undefined || info === UNKNOWN || isDeadState(info.state) ? undefined : info;
   }
   let pid = from;
   for (let depth = 0; depth < 16 && pid > 1; depth += 1) {
     const info = proc(pid);
-    if (info === undefined) return undefined;
+    // Unknown is not good enough to bind a session to.
+    if (info === undefined || info === UNKNOWN) return undefined;
     if (HARNESS_COMM[harness].test(info.comm)) return isDeadState(info.state) ? undefined : info;
     pid = info.ppid;
   }
@@ -291,8 +306,24 @@ export function findHarness(
  * reaped keeps its PID and start time — and must not keep its claims.
  */
 export function isAlive(pid: number, started: string, proc: ProcReader = readProc): boolean {
+  return liveness(pid, started, proc) === 'alive';
+}
+
+/**
+ * `dead` only on evidence: no such process, a different start time (the PID
+ * was reused), or a zombie, dead or exiting state. A check that could not
+ * complete is `unknown` — it renews nothing, and abandons nothing.
+ */
+export function liveness(
+  pid: number,
+  started: string,
+  proc: ProcReader = readProc,
+): 'alive' | 'dead' | 'unknown' {
   const info = proc(pid);
-  return info?.started === started && !isDeadState(info.state);
+  if (info === UNKNOWN) return 'unknown';
+  // Absent, a reused PID, or a zombie: each is evidence.
+  if (info?.started !== started || isDeadState(info.state)) return 'dead';
+  return 'alive';
 }
 
 /* -------------------------------------------------------------------------- */
@@ -688,6 +719,11 @@ export type BeatOutcome =
   | 'renewed'
   /** The harness is gone: nothing was sent, and the session is abandoned. */
   | 'harness_gone'
+  /**
+   * The liveness check could not complete: nothing was sent this beat, and the
+   * session is kept for the next. If it never completes, the lease expires.
+   */
+  | 'unknown'
   /** The board says the session has ended (`409 stale_claim`) or is not this agent's. */
   | 'ended'
   /** The credential was refused. */
@@ -749,7 +785,14 @@ export async function beatOnce(
   const state = readState(path);
   if (state?.status !== 'live' || state.session_id === undefined) return 'idle';
 
-  if (!isAlive(state.harness_pid, state.harness_started, deps.proc)) {
+  const harness = liveness(state.harness_pid, state.harness_started, deps.proc);
+  if (harness === 'unknown') {
+    state.last_error = 'harness liveness unknown (ps did not answer); not renewed this beat';
+    writeState(deps.home, state);
+    log(deps.home, `beat ${state.session_id}: liveness unknown, skipped`);
+    return 'unknown';
+  }
+  if (harness === 'dead') {
     state.status = 'abandoned';
     state.last_error = 'harness exited';
     writeState(deps.home, state);
@@ -842,7 +885,7 @@ export async function runWatcher(
     if (state === undefined) return 'idle';
     if (state.watcher_pid !== self.pid || state.watcher_started !== self.started) return 'idle';
     const outcome = await beatOnce(deps, path, credential);
-    if (outcome !== 'renewed' && outcome !== 'retry') return outcome;
+    if (outcome !== 'renewed' && outcome !== 'retry' && outcome !== 'unknown') return outcome;
     const failures = readState(path)?.failures ?? 0;
     // A failed beat is tried again sooner, never later than the interval.
     const wait =

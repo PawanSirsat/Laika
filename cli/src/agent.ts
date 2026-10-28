@@ -27,6 +27,7 @@ import {
   runWatcher,
   type SessionState,
   startSession,
+  UNKNOWN,
   statePath,
   writeState,
 } from './agent-session.ts';
@@ -234,7 +235,13 @@ async function open(
   credential: AgentCredential,
   pid?: number,
 ): Promise<{ state?: SessionState; why?: string }> {
-  const proc = pid === undefined ? findHarness(harness, process.ppid, io.env) : readProc(pid);
+  const named = pid === undefined ? undefined : readProc(pid);
+  const proc =
+    pid === undefined
+      ? findHarness(harness, process.ppid, io.env)
+      : named === UNKNOWN
+        ? undefined
+        : named;
   if (proc === undefined) {
     log(io.home, `start ${harness}: no ${harness} process found above this hook — not opened`);
     return { why: `no running ${NAMES[harness]} process was found to bind the session to` };
@@ -434,7 +441,8 @@ async function child(
     return 0;
   }
 
-  const self = readProc(process.pid);
+  const found = readProc(process.pid);
+  const self = found === UNKNOWN ? undefined : found;
   const state = readState(path);
   if (self === undefined || state?.status !== 'live') return 0;
   // Take the slot; an older watcher sees it is no longer named and stops.

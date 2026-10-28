@@ -1,4 +1,8 @@
 #!/bin/sh
+# No tracing, no echoing, no auto-export, before anything else runs: `sh -x`,
+# `SHELLOPTS=xtrace` (bash imports it) or `set -a` must not print or export
+# the token below. This is the first command on purpose.
+set +x +v +a
 #
 # laika-agent-hook <session-start|prompt|tool|session-end> <claude-code|codex>
 #
@@ -26,8 +30,14 @@
 # consumes it — and the person's never. The hook's JSON stays on stdin,
 # untouched by anything before node: every utility reads /dev/null.
 
-AGENT_TOKEN_SET="${LAIKA_AGENT_TOKEN+set}"
-AGENT_TOKEN="${LAIKA_AGENT_TOKEN-}"
+#
+# The scratch variables are unset before they are assigned: a name already
+# in the environment keeps its export attribute through an assignment, and
+# would carry the token to every utility below. `set +a` above keeps a fresh
+# assignment from being exported.
+unset _laika_agent_token _laika_agent_token_set
+_laika_agent_token_set="${LAIKA_AGENT_TOKEN+set}"
+_laika_agent_token="${LAIKA_AGENT_TOKEN-}"
 unset LAIKA_AGENT_TOKEN LAIKA_TOKEN
 
 SELF="$0"
@@ -53,10 +63,10 @@ fi
 command -v node >/dev/null 2>&1 || exit 0
 
 # The consumer, and only the consumer, gets the agent's token back.
-if [ "$AGENT_TOKEN_SET" = set ]; then
-  LAIKA_AGENT_TOKEN="$AGENT_TOKEN"
+if [ "$_laika_agent_token_set" = set ]; then
+  LAIKA_AGENT_TOKEN="$_laika_agent_token"
   export LAIKA_AGENT_TOKEN
 fi
-AGENT_TOKEN=""
+unset _laika_agent_token _laika_agent_token_set
 node "$ENTRY" hook "$@" 2>/dev/null
 exit 0
