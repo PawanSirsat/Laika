@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   type AgentCredential,
+  asLost,
   beatOnce,
   type Deps,
   endSession,
@@ -18,6 +19,8 @@ import {
   isLaikaId,
   listStates,
   log,
+  type LostClaim,
+  lostNotice,
   readCredential,
   readProc,
   readState,
@@ -281,8 +284,19 @@ export async function hook(io: AgentIo, event: HookEvent, harness: Harness): Pro
   }
 
   state = readState(path);
-  if (state?.notice !== undefined && event !== 'session-start') {
-    notes.push(state.notice);
+  if (
+    state !== undefined &&
+    event !== 'session-start' &&
+    (state.pending_lost !== undefined || state.notice !== undefined)
+  ) {
+    // Re-checked here, not trusted from the file: what reaches the model is
+    // only what passes `asLost` now, rendered by `lostNotice`.
+    const lost = (state.pending_lost ?? [])
+      .slice(0, 50)
+      .map(asLost)
+      .filter((c): c is LostClaim => c !== undefined);
+    if (lost.length > 0) notes.push(lostNotice(lost));
+    delete state.pending_lost;
     delete state.notice;
     writeState(io.home, state);
   }

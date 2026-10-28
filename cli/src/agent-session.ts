@@ -206,6 +206,8 @@ export const PS_ENV: Readonly<Record<string, string>> = {
   LANG: 'C',
 };
 
+export const PS_TIMEOUT_MS = 5000;
+
 export type Exec = (
   file: string,
   args: readonly string[],
@@ -226,10 +228,18 @@ export function procReader(exec: Exec = execFileSync): ProcReader {
     if (!Number.isInteger(pid) || pid <= 0) return undefined;
     let out: string;
     try {
+      // A `ps` that hangs is killed and counts as no answer — fail closed:
+      // nothing is renewed on a liveness check that did not complete.
       out = exec(
         'ps',
         ['-o', 'ppid=', '-o', 'stat=', '-o', 'lstart=', '-o', 'comm=', '-p', String(pid)],
-        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: { ...PS_ENV } },
+        {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          env: { ...PS_ENV },
+          timeout: PS_TIMEOUT_MS,
+          killSignal: 'SIGKILL',
+        },
       );
     } catch {
       return undefined;
@@ -333,7 +343,16 @@ export interface SessionState {
   claims: { task_id: string; generation: number; lease_expires_at: number }[];
   /** Every lost claim already told to the agent, `id:generation`. */
   noticed: string[];
-  /** A notice not yet shown; the next hook that can add context shows it once. */
+  /**
+   * Lost claims not yet shown to the model, as data. The next hook that can
+   * add context renders them through {@link lostNotice} after checking each
+   * again with {@link asLost}, and clears them.
+   */
+  pending_lost?: LostClaim[];
+  /**
+   * Rendered text an older helper kept here. **Never shown** — it was written
+   * before the checks — and dropped at the next hook.
+   */
   notice?: string;
   end_reason?: string;
 }
@@ -566,24 +585,39 @@ export async function startSession(deps: Deps, request: StartRequest): Promise<S
 
 const LOCK_WAIT_TRIES = 100;
 
+/**
+ * Worth sending again: the network, or an answer that says "not now" — 5xx,
+ * 408, 429. Any other 4xx is the board refusing, and resending will not change it.
+ */
+function retryable(result: ApiResult): boolean {
+  if (result.kind === 'network') return true;
+  if (result.kind === 'ok') return false;
+  return result.status >= 500 || result.status === 408 || result.status === 429;
+}
+
 /** Must hold the start lock. */
 async function startLocked(deps: Deps, request: StartRequest, path: string): Promise<StartOutcome> {
   const existing = readState(path);
   if (existing !== undefined && reusable(existing, request.harnessProc)) {
     return { kind: 'reused', state: existing };
   }
-  // A failed start of this same harness process keeps its key; anything else
-  // — a new process, an ended or abandoned session — is a new start.
+  // **One key per logical start, until the board confirms a session.** Any
+  // earlier attempt of this same harness process that was never confirmed —
+  // dropped, answered 5xx, refused, or interrupted — may have made a session,
+  // so its key is reused, whatever came after it. Only a confirmed session
+  // (since ended or abandoned) or a different harness process starts afresh.
+  // Reusing a key that made nothing is harmless: the board keeps only
+  // successful answers.
   const resumable =
-    existing?.status === 'starting' &&
-    existing.start_key !== undefined &&
+    existing?.start_key !== undefined &&
+    existing.session_id === undefined &&
     existing.harness_pid === request.harnessProc.pid &&
     existing.harness_started === request.harnessProc.started
       ? existing
       : undefined;
 
   {
-    const state: SessionState = resumable ?? {
+    const fresh: SessionState = {
       version: 1,
       harness: request.harness,
       harness_session_id: request.harnessSessionId,
@@ -598,6 +632,8 @@ async function startLocked(deps: Deps, request: StartRequest, path: string): Pro
       claims: [],
       noticed: [],
     };
+    const state: SessionState =
+      resumable === undefined ? fresh : { ...resumable, status: 'starting' };
     // The key is on disk before anything is sent.
     writeState(deps.home, state);
     const key = { 'Idempotency-Key': state.start_key ?? '' };
@@ -615,7 +651,7 @@ async function startLocked(deps: Deps, request: StartRequest, path: string): Pro
       if (result.kind === 'ok' && !(isRecord(result.body) && isLaikaId(result.body.id))) {
         result = { kind: 'network', sent: true, message: 'no session id in the answer' };
       }
-      if (result.kind !== 'network') break;
+      if (result.kind === 'ok' || !retryable(result)) break;
       state.failures += 1;
     }
 
@@ -634,9 +670,10 @@ async function startLocked(deps: Deps, request: StartRequest, path: string): Pro
 
     const why = describe(result);
     state.last_error = why;
-    // A network failure stays `starting`, retried with its key by the next
-    // hook. A refusal is final.
-    state.status = result.kind === 'network' ? 'starting' : 'failed';
+    // Retryable — the network, 5xx, 408, 429 — stays `starting`, tried again
+    // by the next hook. A refusal is `failed`, tried again only by the next
+    // `SessionStart`. **Both keep the key** (see `resumable`).
+    state.status = retryable(result) ? 'starting' : 'failed';
     writeState(deps.home, state);
     log(deps.home, `start ${request.harness} failed: ${why} -> ${state.status}`);
     return { kind: 'failed', state, why };
@@ -759,7 +796,7 @@ export async function beatOnce(
         ...current.noticed,
         ...fresh.map((c) => `${c.id}:${String(c.generation)}`),
       ].slice(-200);
-      current.notice = lostNotice(fresh);
+      current.pending_lost = [...(current.pending_lost ?? []), ...fresh].slice(-50);
       log(deps.home, `lost ${current.session_id ?? ''}: ${String(fresh.length)} claim(s)`);
     }
     // `end` may have landed while this was being built: never write it back to live.
