@@ -11,6 +11,7 @@ import {
 } from '../../src/http/idempotency.ts';
 import { CACHEABLE_ROUTES, cacheableRoute } from '../../src/http/middleware/idempotency.ts';
 import { pruneIdempotencyKeys } from '../../src/jobs/jobs.ts';
+import { DEFAULT_CLAIM_TIMINGS, expireClaims } from '../../src/services/claims.ts';
 import {
   agentSessions,
   agents,
@@ -332,7 +333,7 @@ describe('Idempotency-Key over HTTP', () => {
       const listed = cacheableRoute('/api/v1/agent-sessions');
       expect(listed).not.toBeNull();
       const live = resolveTokenActor(h.db, agent.secret, Date.now());
-      expect(listed?.route.mayStill(h.db, live, listed.param)).toBe(true);
+      expect(listed?.route.mayStill(h.db, live, listed.param, Date.now())).toBe(true);
       // The same credential with its agent gone, as a revoked agent's would be
       // if the token row had somehow kept `revoked_at` null.
       h.db.update(agents).set({ status: 'revoked' }).where(eq(agents.id, agent.id)).run();
@@ -341,8 +342,56 @@ describe('Idempotency-Key over HTTP', () => {
           h.db,
           { ...live, token: { ...live.token!, agent: null } },
           listed.param,
+          Date.now(),
         ),
       ).toBe(false);
+    });
+  });
+
+  // **A dependency's replay passes the claim fence too** (integration of
+  // LAI-534 and LAI-541): `addTaskDependency` asks `task.dependency.write` and
+  // then the fence, so a stored answer earned under a live claim is not handed
+  // back once that claim has lapsed — the route runs and refuses it.
+  describe('POST /tasks/:id/dependencies replays only through the claim fence', () => {
+    it('a retry under a claim generation that has lapsed is refused stale_claim, not replayed', async () => {
+      const agent = await registerAgent('Claude');
+      const target = await must(await createTask(undefined, 'target', { cookie: owner.cookie }));
+      const blocker = await must(await createTask(undefined, 'blocker', { cookie: owner.cookie }));
+      const claimed = await req(
+        `/api/v1/tasks/${String(target.id)}/claim`,
+        { method: 'POST', body: '' },
+        { bearer: agent.secret },
+      );
+      expect(claimed.status, await claimed.clone().text()).toBe(200);
+      const generation = claimed.headers.get('X-Laika-Claim-Generation') ?? '';
+      expect(generation).toBe('1');
+
+      const add = () =>
+        req(
+          `/api/v1/tasks/${String(target.id)}/dependencies`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ blocked_by_task_id: blocker.id }),
+            headers: { 'Idempotency-Key': 'dep-1', 'X-Laika-Claim-Generation': generation },
+          },
+          { bearer: agent.secret },
+        );
+      const first = await must(await add());
+      // While the claim is live, the retry is the stored answer.
+      const live = await add();
+      expect(live.status).toBe(201);
+      expect(live.headers.get('Idempotent-Replay')).toBe('true');
+      expect(((await live.json()) as { id: string }).id).toBe(first.id);
+
+      // The lease lapses and the scan expires it: generation 1 holds nothing.
+      expect(expireClaims(h.db, Date.now() + DEFAULT_CLAIM_TIMINGS.expireMs + 1).changed).toBe(1);
+
+      const stale = await add();
+      expect(stale.headers.get('Idempotent-Replay')).toBeNull();
+      expect(stale.status).toBe(409);
+      expect(
+        ((await stale.json()) as { error: { code: string; details: { reason: string } } }).error,
+      ).toMatchObject({ code: 'conflict', details: { reason: 'stale_claim' } });
     });
   });
 
@@ -559,7 +608,7 @@ describe('Idempotency-Key over HTTP', () => {
           const no = await req(path, { method: 'POST', body: JSON.stringify(body()) }, cred.auth);
           expect(no.status, `${path} · ${cred.label} · fresh`).toBe(403);
           expect(
-            listed?.route.mayStill(h.db, cred.actor(), listed.param),
+            listed?.route.mayStill(h.db, cred.actor(), listed.param, Date.now()),
             `${path} · ${cred.label} · replay`,
           ).toBe(false);
         }
@@ -569,7 +618,7 @@ describe('Idempotency-Key over HTTP', () => {
             201,
           );
           expect(
-            listed?.route.mayStill(h.db, cred.actor(), listed.param),
+            listed?.route.mayStill(h.db, cred.actor(), listed.param, Date.now()),
             `${path} · ${cred.label} · replay`,
           ).toBe(true);
         }

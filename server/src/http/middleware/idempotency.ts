@@ -4,7 +4,7 @@ import { type ResolvedActor, withProject } from '../../auth/resolve-actor.ts';
 import { type Db } from '../../db/client.ts';
 import { projects, tasks } from '../../db/schema.ts';
 import { type ProjectAction, can } from '../../policy/can.ts';
-import { registeredAgent } from '../../services/claims.ts';
+import { claimFenceRefusal, registeredAgent } from '../../services/claims.ts';
 import { type AppEnv } from '../context.ts';
 import { AUTH_BASE_PATH } from '../../auth/auth.ts';
 import { conflictError, hashRequest, idempotencyOwner, lookup, remember } from '../idempotency.ts';
@@ -93,7 +93,12 @@ export function tokenMayReplay(path: string, storedBody: string): boolean {
 interface CacheableRoute {
   readonly pattern: RegExp;
   /** The route's own `can()`, against the actor as it stands now. */
-  readonly mayStill: (db: Db, actor: ResolvedActor, param: string | undefined) => boolean;
+  readonly mayStill: (
+    db: Db,
+    actor: ResolvedActor,
+    param: string | undefined,
+    now: number,
+  ) => boolean;
 }
 
 function inProjectBySlug(action: ProjectAction) {
@@ -134,10 +139,16 @@ export const CACHEABLE_ROUTES: readonly CacheableRoute[] = [
   },
   // `addComment`: `comment.create` in the task's project.
   { pattern: /^\/api\/v1\/tasks\/([^/]+)\/comments$/, mayStill: inTaskProject('comment.create') },
-  // `addTaskDependency`: `task.dependency.write` in the task's project.
+  // `addTaskDependency`: `task.dependency.write` in the task's project, then
+  // the claim fence on the task (LAI-541) — so an answer stored under a live
+  // claim is not replayed once that claim has lapsed, been reclaimed, or is
+  // another agent's (integration of LAI-534 and LAI-541).
   {
     pattern: /^\/api\/v1\/tasks\/([^/]+)\/dependencies$/,
-    mayStill: inTaskProject('task.dependency.write'),
+    mayStill: (db, actor, taskId, now) =>
+      inTaskProject('task.dependency.write')(db, actor, taskId) &&
+      taskId !== undefined &&
+      claimFenceRefusal(db, actor, taskId, now) === null,
   },
   // `startAgentSession`: `heartbeat.send_own`, and only a registered agent's
   // token (`not_an_agent` otherwise). The session helper retries a start whose
@@ -237,7 +248,7 @@ export function idempotencyMiddleware(db: Db, now: () => number = Date.now) {
     if (
       found.kind === 'replay' &&
       found.response !== undefined &&
-      !listed.route.mayStill(db, actor, listed.param)
+      !listed.route.mayStill(db, actor, listed.param, now())
     ) {
       await next();
       return undefined;
