@@ -32,7 +32,10 @@ its connection, or is still waited for, and the demo hand-off fakes are gone.
 
 ## Acceptance criteria
 
-- [x] Each state is driven by an API field, asserted with a server fixture, never by a demo module.
+- [ ] Each state is driven by an API field, asserted with a server fixture, never by a demo module.
+  **Not delivered — deferred to LAI-568 (CORE) for *Working* and *Connection
+  lost*.** Met for the states this task draws (*Waiting for agent*, the
+  expired claim); see Delivered.
 - [x] `demo/agent-runtime.ts` is deleted and the no-demo-string bundle test still passes.
 - [x] States are spelled in text, not colour alone; both themes; 390 px.
 - [x] `claim_expired` is mirrored; drift check green against LAI-541.
@@ -118,8 +121,10 @@ serve the live claim on task reads. A browser test asserts neither state is
 drawn. *Recovery available*, *Save needs attention* and *Waiting for approval*
 are Phase 3 and are not shown.
 
-**AC 1 is ticked for every state the board draws.** The Scope's *Working* and
-*Connection lost* card states wait on LAI-568 and are not delivered here.
+**AC 1 is not ticked.** It holds for every state the board draws, but the
+Scope's *Working* and *Connection lost* card states, and the evidence item
+"Playwright e2e … showing Connection lost then expiry", wait on LAI-568 and
+are **not delivered** here. The e2e shows expiry only.
 
 **Demo fakes removed.** `src/demo/agent-runtime.ts` is deleted with every
 caller: the claim deadline, the "agent has the claim lock until" line, the
