@@ -195,3 +195,46 @@ the board's task store, which `useBoard` does not expose for this. So when the
 follow-up read fails, the card chip catches up only on the next successful read.
 
 **The full repo gate is still owed.** CHIEF runs it after this round.
+
+## Round-3 fixes (Codex review of PR #106 at `8e87114e`, SHELL, 2026-10-28)
+
+Round 3 confirmed as fixed:
+- stale answers no longer overwrite newer confirmations;
+- a PATCH success frees the picker without waiting on a refresh;
+- newer SSE data supersedes the confirmed answer;
+- the Viewer 403 case;
+- the card chip lagging during a failed read (accepted).
+
+It found two races, both fixed in new commits (`9418a2ad`, `070e54e1`):
+
+1. **The confirmed answer expired against the send-time version.** It now holds
+   until the props reach or pass the `updated_at` the PATCH *returned*. Confirm
+   X → send Y → the read reaches X → Y confirms: the drawer shows Y, and
+   *No agent* for a withdraw.
+2. **Overlapping writes across visits.** A write in flight is recorded per task
+   in a module-level set (`useSyncExternalStore`), so it outlives drawer visits,
+   and the next write on that task waits for it to settle:
+   - This visit's own write is guarded without disabling, so focus stays.
+   - A write sent on an earlier visit disables the picker and shows *Saving
+     agent…*.
+   - When that earlier write settles, the drawer reads the task again.
+
+   An old withdraw can no longer land after a newer selection.
+
+Test quality:
+- The fixture's PATCH advances `updated_at` as the server does; a fixed value
+  hid race 1.
+- Every in-flight test awaits the real responses (the held request, its 422
+  or 200, a GET that returned 500) and asserts settled UI, with no fixed
+  sleeps.
+- New regressions: the version race for a select and for a withdraw; an old
+  withdraw held across a revisit, after which the server holds the reader's
+  last pick.
+
+Break-the-fix checks, each restored by SHA-256 checksum:
+- expiring the answer against the send-time version turns both version tests
+  red (they show `ag-laptop` where `ag-desktop` was confirmed);
+- dropping the per-task serialisation turns both cross-visit tests red (*a
+  second write on LC-1 could start*).
+
+**The full repo gate is still owed**; CHIEF runs it.
