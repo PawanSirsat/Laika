@@ -661,8 +661,13 @@ data and checked again when shown; text an older helper kept there is dropped
 unread.
 
 **Alive, dead, or unknown.** The liveness check has three answers. *Dead*
-needs evidence: `ps` ran and found no such process, the start time differs
-(the PID was reused), or the state is a zombie, dead or exiting. *Unknown* —
+needs evidence: the kernel says there is no such process (`kill(pid, 0)`
+answers `ESRCH`), the start time differs (the PID was reused), or the state is
+a zombie, dead or exiting. **A failed `ps` is never evidence by itself** — it
+exits 1 with nothing printed for a missing PID, but also when it cannot
+allocate or initialise — so every failed run asks the kernel, and a process
+that exists (`kill` succeeds, or `EPERM`) is *unknown*, not alive: renewal
+still needs a `ps` answer with the right start time. *Unknown* —
 `ps` timed out (5 s), was killed, failed, or printed something unreadable —
 renews nothing that beat and abandons nothing: the session is kept and checked
 again at the next beat. A check that never comes back simply lets the lease
