@@ -129,3 +129,35 @@ Second half of the `agent_selected` three-owner merge (§4.4 step 4): merge CHIE
 by the column, so at 1440 it scrolls inside its card (SUMMARY keeps its
 200px). No execution state past Waiting for agent (LAI-543). Comments carry
 no `agent_id` of their own; attribution comes from the activity row.
+
+## Cross-review fixes (Codex review of PR #106, SHELL, 2026-10-28)
+
+The review FAILED on three blocking points. All three are fixed in new
+commits (`9c216332`, `b2eb804f`, `3bbe701c`); no history was rewritten.
+
+1. **Stale async selection.** Pending and error state in `AgentRow.tsx` are
+   tagged with the task id that started the request. A late answer for a task
+   the drawer has left is discarded (only its own hold is released), and the
+   picker on a task with nothing in flight is never held. `AgentRow` stays
+   un-keyed on purpose, so the test exercises this guard and not a remount.
+2. **"via a registered agent" everywhere.** Names now come from
+   `agentNamesFrom`: the reader's own agents (`GET /agents`, §3.1
+   `agent.read_own`, every role) plus agents selected on tasks they hold. Used in
+   the drawer's History, Changes and comments, and on the Activity screen (which
+   passed no names at all before). Any other agent stays *a registered agent*.
+   The drawer reads `GET /agents` once (`useMyAgents`) and hands it to the
+   Agent row, so a Viewer now reads their own agents too (no picker).
+3. **Legacy tokens.** An agent comment reads *Ada via …*: the agent by name;
+   *agent (unregistered token)* when its `comment.added` row has no
+   `agent_id`; *an agent* when no row is loaded. Never *Ada's agent*. The
+   pinned *'s agent* assertion in `task-panel.test.ts` now asserts this rule.
+
+**Non-blocking, filed:** LAI-569 (card LAIKA-821). The List with the Agent
+column scrolls sideways at 1440. It is filed rather than fixed because fitting
+it means re-deciding widths against SUMMARY's 200px floor and LAI-491's one-line
+dates.
+
+**Checked by:** the targeted files only. **The full repo gate is still owed**:
+Belka's load was 83–103 on 10 cores, so the full gate was not run by
+instruction. Mutation checks: each of the three fixes, plus the Activity
+screen's name wiring, was reverted in turn, and its test went red.
