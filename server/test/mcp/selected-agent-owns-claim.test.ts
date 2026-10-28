@@ -354,3 +354,55 @@ describe('start_working by an agent holding a claim it is not selected for', () 
     await client.close();
   });
 });
+
+describe('review round 2 over MCP', () => {
+  function adaId(): string {
+    return h.db.select().from(users).where(eq(users.email, 'ada@example.test')).get()!.id;
+  }
+
+  it('a task assigned to another person: a non-selected agent hears selected_for_another_agent', async () => {
+    const polly = await register('Polly · Belka');
+    const direct = await register('Claude Code · Belka');
+    const task = await newTask();
+    await must(
+      `/api/v1/tasks/${task.id}`,
+      { method: 'PATCH', body: JSON.stringify({ assignee_id: adaId() }) },
+      bob.cookie,
+      200,
+    );
+    await select(task.id, polly.agent.id);
+    const client = await connect(direct.secret);
+
+    const r = await refused(client, 'start_working', { task: task.key });
+
+    expect([r.code, r.reason]).toEqual(['conflict', 'selected_for_another_agent']);
+    expect(r.details?.selected_agent_id).toBe(polly.agent.id);
+    expect(claimsOf(task.id)).toEqual([]);
+    await client.close();
+  });
+
+  it('reclaim: true accepts the work request re-issued while the claim was expired', async () => {
+    const polly = await register('Polly · Belka');
+    const direct = await register('Claude Code · Belka');
+    const task = await newTask();
+    await select(task.id, polly.agent.id);
+    const client = await connect(polly.secret);
+    await succeeded(client, 'start_working', { task: task.key });
+    expireClaims(h.db, Date.now() + LEASE + 1);
+    await select(task.id, direct.agent.id);
+    await select(task.id, polly.agent.id);
+
+    await succeeded(client, 'start_working', { task: task.key, reclaim: true });
+
+    expect(requests(task.id)).toEqual([
+      { toAgentId: polly.agent.id, state: 'accepted' },
+      { toAgentId: direct.agent.id, state: 'cancelled' },
+      { toAgentId: polly.agent.id, state: 'accepted' },
+    ]);
+    expect(claimsOf(task.id)).toEqual([
+      { agentId: polly.agent.id, state: 'expired' },
+      { agentId: polly.agent.id, state: 'active' },
+    ]);
+    await client.close();
+  });
+});
