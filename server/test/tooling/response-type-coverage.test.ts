@@ -234,6 +234,11 @@ const UNPAIRED = new Map<string, string>([
   ['AgentSessionView', 'no client type exists'],
   ['TaskClaimView', 'no client type exists'],
   ['ReclaimView', 'no client type exists'],
+  // LAI-586's session line (D-118): `GET /agents/:id` with its sessions, and
+  // the session snapshot on an activity row. The agent line in the drawer and
+  // activity (LAI-587) brings the mirror, and these leave the way the rest do.
+  ['AgentDetailView', 'no client type exists'],
+  ['ActivitySessionView', 'no client type exists'],
 ]);
 
 /**
