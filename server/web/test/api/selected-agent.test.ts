@@ -17,6 +17,7 @@ import {
   AGENT_FILTER_NONE,
   agentFilterLabel,
   agentLabel,
+  agentNamesFrom,
   agentsOnTasks,
   agentVia,
   AVAILABLE_WITHIN_MS,
@@ -268,5 +269,23 @@ void describe('who an agent’s row says acted', () => {
       'selected an agent for this task',
     );
     assert.equal(describeAgentSelected(null, agents), undefined);
+  });
+
+  void test('names come from the reader’s own agents and the tasks they hold, nothing else', () => {
+    const names = agentNamesFrom(
+      [registered({ id: 'mine', harness: 'cursor', device_label: 'tablet' })],
+      [{ selected_agent: selected({ id: 'onTask', harness: 'codex', device_label: 'desktop-2' }) }],
+    );
+    assert.deepEqual([...names.keys()].sort(), ['mine', 'onTask']);
+    assert.equal(agentVia({ actor_kind: 'agent', agent_id: 'mine' }, names), 'Cursor · tablet');
+    assert.equal(agentVia({ actor_kind: 'agent', agent_id: 'onTask' }, names), 'Codex · desktop-2');
+    assert.equal(
+      agentVia({ actor_kind: 'agent', agent_id: 'theirs' }, names),
+      'a registered agent',
+    );
+    assert.equal(
+      agentVia({ actor_kind: 'agent', agent_id: null }, names),
+      'agent (unregistered token)',
+    );
   });
 });

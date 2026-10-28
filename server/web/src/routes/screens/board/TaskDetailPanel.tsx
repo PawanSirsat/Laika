@@ -19,7 +19,8 @@ import { useTaskText } from '../../../api/use-task-text.ts';
 import { useDelayed } from '../../../components/use-delayed.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
 import { actorLine, describeActor } from './actor-presentation.ts';
-import { agentsOnTasks, agentVia } from '../../../api/selected-agent.ts';
+import { agentNamesFrom, agentVia } from '../../../api/selected-agent.ts';
+import { agentsOf, useMyAgents } from '../../../api/use-my-agents.ts';
 import {
   getTask,
   listWatchers,
@@ -125,6 +126,8 @@ export interface TaskDetailPanelProps {
    * description is tried again at the next one (LAI-795 review, B1).
    */
   readonly listReadAt?: number | null | undefined;
+  /** When the read behind `task` started, in the page's order (LAI-538). */
+  readonly listReadOrder?: number | undefined;
 }
 
 /**
@@ -187,6 +190,7 @@ export function TaskDetailPanel({
   onAssigned,
   onOpen,
   listReadAt = null,
+  listReadOrder = 0,
   executionSignal,
 }: TaskDetailPanelProps) {
   const detail = useTaskDetail(slug, task.id);
@@ -383,23 +387,30 @@ export function TaskDetailPanel({
       ? detail.activity.filter((event) => event.type.startsWith('webhook.'))
       : [];
   /**
-   * Agents this reader can name (LAI-538): every one selected on a task the
-   * board holds — this one's included. A row by an agent outside it reads *a
-   * registered agent*, which is true, rather than a guess.
+   * The reader's own agents, read once for the drawer (LAI-538): the Agent
+   * row's choices, and half of what names an agent in the activity below.
+   */
+  const myAgents = useMyAgents();
+  /**
+   * Agents this reader may see, by id (LAI-538 review): their own, and every
+   * one selected on a task the board holds — this one's included. A row by
+   * any other agent reads *a registered agent*, which is true, not a guess.
    */
   const agentNames = useMemo(
-    () => new Map(agentsOnTasks([task, ...byId.values()]).map((a) => [a.id, a])),
-    [task, byId],
+    () => agentNamesFrom(agentsOf(myAgents), [task, ...byId.values()]),
+    [myAgents, task, byId],
   );
   /**
-   * Which registered agent wrote each comment, from its `comment.added` row:
+   * Which agent wrote each agent comment, from its `comment.added` row:
    * `CommentView` carries no `agent_id`, and the activity row does (LAI-535).
+   * A row with none is a legacy token's — *agent (unregistered token)*, never
+   * an agent's name (D-114).
    */
   const commentAgents = useMemo(() => {
     const found = new Map<string, string>();
     if (detail.status !== 'ready') return found;
     for (const event of detail.activity) {
-      if (event.type !== 'comment.added' || (event.agent_id ?? null) === null) continue;
+      if (event.type !== 'comment.added') continue;
       const id = (event.payload as { comment_id?: unknown } | null)?.comment_id;
       const via = agentVia(event, agentNames);
       if (typeof id === 'string' && via !== undefined) found.set(id, via);
@@ -516,14 +527,14 @@ export function TaskDetailPanel({
               was written *by a tool running as* somebody; the possessive is
               the honest attribution and it is what the design writes.
             */}
-            {/* A registered agent's comment names the agent (LAI-538); a
-                legacy token's keeps the possessive, which is all it can say. */}
+            {/* The person, and the agent they acted through (LAI-538): named
+                where this reader may see it, *agent (unregistered token)* for
+                a legacy token's. An agent comment whose activity row is not
+                loaded says only *an agent* — it is never given a name. */}
             <span className="cmt-who">
-              {commentAgents.has(comment.id)
-                ? `${who} via ${commentAgents.get(comment.id) ?? ''}`
-                : agent
-                  ? `${who}'s agent`
-                  : who}
+              {agent || commentAgents.has(comment.id)
+                ? `${who} via ${commentAgents.get(comment.id) ?? 'an agent'}`
+                : who}
             </span>
             {agent && <span className="cmt-agent">AGENT</span>}
             {comment.edited_at !== null && <span className="cmt-edited">edited</span>}
@@ -1201,6 +1212,8 @@ export function TaskDetailPanel({
             onOpen={onOpen}
             statusRef={statusRef}
             agentsAllowed={agentsAllowed}
+            myAgents={myAgents}
+            readOrder={listReadOrder}
           />
 
           {/*

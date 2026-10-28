@@ -2,11 +2,9 @@ import { STATUS_LABELS } from './board-derive.ts';
 import { withPage, type PageQuery } from './every-page.ts';
 import { API_BASE, request } from './client.ts';
 import { projectRoleLabel } from './members.ts';
-import { describeAgentSelected, type SelectedAgent } from './selected-agent.ts';
+import { describeAgentSelected, type AgentNaming } from './selected-agent.ts';
 import type { Page } from './tasks.ts';
 
-/** What naming an agent needs: its harness, its name and its device. */
-type AgentNaming = Pick<SelectedAgent, 'harness' | 'display_name' | 'device_label'>;
 const NO_AGENTS: ReadonlyMap<string, AgentNaming> = new Map();
 
 /**
@@ -319,7 +317,7 @@ function describeMembership(event: Pick<ActivityEvent, 'type' | 'payload'>): str
 
 export function describeEvent(
   event: ActivityEvent,
-  agents: ReadonlyMap<string, AgentNaming> = NO_AGENTS,
+  agents: ReadonlyMap<string, AgentNaming> | undefined = NO_AGENTS,
 ): string {
   if (isGrantsChange(event)) return 'changed who can do what';
   // The agent by name where this reader can name it (LAI-538).

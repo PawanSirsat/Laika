@@ -312,7 +312,7 @@ void describe('the server still writes these shapes (LAI-541)', () => {
 
   void test("a claim's status change carries via: 'claim' and claim_generation", async () => {
     const tasks = await readFile(`${SERVER}tasks.ts`, 'utf8');
-    assert.match(tasks, /via: 'claim',\s*\.\.\.\(taken === null \? \{\} : \{ claim_generation:/);
+    assert.match(tasks, /via: 'claim',\s*claim_generation: taken\.claim\.generation,/);
     assert.match(tasks, /field: 'claim',\s*from: null,\s*to: \{ generation:/);
   });
 });

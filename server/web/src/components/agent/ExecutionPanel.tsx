@@ -1,5 +1,5 @@
 import type { AgentClient } from '../../api/agent-clients.ts';
-import { AgentChip } from './AgentChip.tsx';
+import { AgentChip, type AgentChipProps } from './AgentChip.tsx';
 import { ExecutionStateLine } from './ExecutionStateLine.tsx';
 import {
   CLAIM_EXPIRED_WORDS,
@@ -31,8 +31,11 @@ export interface PanelCheckpoint {
 
 /** The latest claim the task's activity records (LAI-543): a history, not a heartbeat. */
 export interface PanelClaim {
-  /** Who took it, worded: a chip when the agent can be named, else words. */
-  readonly agent: PanelAgent | string;
+  /**
+   * Who took it: a chip when the agent can be named, else words. The owner is
+   * there only when the reader can know it (the task's selected agent).
+   */
+  readonly agent: AgentChipProps | string;
   /** "took it", "reclaimed it", "held it until its claim expired". */
   readonly verb: string;
   /** When, worded: "14:02". */

@@ -3,11 +3,13 @@ import {
   agentDevice,
   selectedHarness,
   UNNAMED_AGENT,
+  type AgentNaming,
   type SelectedAgent,
 } from '../../api/selected-agent.ts';
 import type { TaskSummary } from '../../api/tasks.ts';
 import { clockTime } from '../../api/time-label.ts';
 import type { ExecutionState } from './agent-states.ts';
+import type { AgentChipProps } from './AgentChip.tsx';
 import type { PanelAgent, PanelClaim } from './ExecutionPanel.tsx';
 
 /**
@@ -169,6 +171,11 @@ export function panelAgentOf(agent: SelectedAgent): PanelAgent {
   return { client: selectedHarness(agent), device: agentDevice(agent), owner: agent.owner.name };
 }
 
+/** An agent this reader can name, as a chip; its owner only when it is known. */
+function chipOf(agent: AgentNaming, owner: string | undefined): AgentChipProps {
+  return { client: selectedHarness(agent), device: agentDevice(agent), owner };
+}
+
 const CLAIM_VERBS: Readonly<
   Record<ClaimHistory['kind'], Readonly<Record<ClaimFact['kind'], string>>>
 > = {
@@ -194,7 +201,7 @@ export interface ExecutionView {
 export function executionView(
   task: Pick<TaskSummary, 'status' | 'selected_agent'>,
   activity: readonly ActivityEvent[],
-  agents: ReadonlyMap<string, SelectedAgent>,
+  agents: ReadonlyMap<string, AgentNaming>,
 ): ExecutionView {
   const selected = task.selected_agent ?? null;
   const history = claimHistory(activity);
@@ -207,7 +214,15 @@ export function executionView(
       fact === undefined || history.kind === 'none'
         ? undefined
         : {
-            agent: named === undefined ? UNNAMED_AGENT : panelAgentOf(named),
+            agent:
+              named === undefined
+                ? UNNAMED_AGENT
+                : chipOf(
+                    named,
+                    selected !== null && selected.id === fact.agentId
+                      ? selected.owner.name
+                      : undefined,
+                  ),
             verb: CLAIM_VERBS[history.kind][fact.kind],
             when: clockTime(fact.at),
             sessionId: fact.sessionId,

@@ -1793,6 +1793,7 @@ export function BoardScreen({
             onOpen={openTaskInUrl}
             task={openTask}
             listReadAt={board.state.asOf}
+            listReadOrder={board.state.readOrder}
             byId={board.byId}
             members={members}
             moving={board.movingId === openTask.id}

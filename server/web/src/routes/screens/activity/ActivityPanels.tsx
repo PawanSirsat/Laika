@@ -1,3 +1,4 @@
+import type { AgentNaming } from '../../../api/selected-agent.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { staleFor } from '../../../api/board-derive.ts';
 import { describeEvent } from '../../../api/activity.ts';
@@ -19,6 +20,8 @@ export interface ActivityPanelsProps {
   readonly events: readonly ActivityEvent[];
   readonly gapped: boolean;
   readonly members: ReadonlyMap<string, Member>;
+  /** Agents this reader may see, by id, so a row says which (LAI-538). */
+  readonly agentNames?: ReadonlyMap<string, AgentNaming> | undefined;
   /** `undefined` while the first read is in flight (LAI-440). */
   readonly presence: PresenceView | undefined;
   /**
@@ -50,6 +53,7 @@ export function ActivityPanels({
   events,
   gapped,
   members,
+  agentNames,
   presence,
   stale,
 }: ActivityPanelsProps) {
@@ -89,7 +93,7 @@ export function ActivityPanels({
               // One place decides who acted and how it is marked, because this
               // and the task detail render the same rows and disagreed about
               // them — see `actor-presentation.ts`.
-              const actor = describeActor(event, members);
+              const actor = describeActor(event, members, agentNames);
               const ink = avatarColor(event.actor_id ?? event.id, theme);
 
               return (
@@ -127,7 +131,7 @@ export function ActivityPanels({
                     {actor.badge !== undefined && (
                       <span className="visually-hidden"> ({actor.badge})</span>
                     )}{' '}
-                    {describeEvent(event)}
+                    {describeEvent(event, agentNames)}
                   </span>
                 </li>
               );

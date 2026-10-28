@@ -144,7 +144,7 @@ const claimTaken = (generation: number, at: number) =>
       to: 'in_progress',
       from_status_id: 'st-todo',
       to_status_id: 'st-progress',
-      assignee_id: 'u1',
+      // No `assignee_id`: a claim does not assign (LAI-541 round 2).
       via: 'claim',
       claim_generation: generation,
     },

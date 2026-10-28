@@ -1,7 +1,8 @@
 import { agentClientName, AGENT_CLIENTS, type AgentClient } from './agent-clients.ts';
 import type { RegisteredAgent } from './agents.ts';
 import { ApiError } from './errors.ts';
-import { updateTask, type Task, type TaskSummary } from './tasks.ts';
+import { request } from './client.ts';
+import type { Task, TaskEdit, TaskSummary } from './tasks.ts';
 
 /**
  * A task's **selected agent** (proposal §3, D-114 item 7; API by LAI-535,
@@ -65,9 +66,22 @@ export function selectedAgentOf(task: Pick<TaskSummary, 'selected_agent'>): Sele
 
 // ------------------------------------------------------------------ selecting
 
-/** `PATCH /tasks/:id { selected_agent_id }`. `null` withdraws; the same id twice is a no-op. */
-export function selectTaskAgent(taskId: string, agentId: string | null): Promise<Task> {
-  return updateTask(taskId, { selected_agent_id: agentId });
+/**
+ * `PATCH /tasks/:id { selected_agent_id }`. `null` withdraws; the same id
+ * twice is a no-op. `signal` ends a request that never answers
+ * (`agent-writes.ts`).
+ */
+export function selectTaskAgent(
+  taskId: string,
+  agentId: string | null,
+  signal?: AbortSignal,
+): Promise<Task> {
+  const edit: TaskEdit = { selected_agent_id: agentId };
+  return request<Task>(`/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'PATCH',
+    body: edit,
+    ...(signal === undefined ? {} : { signal }),
+  });
 }
 
 /** The server's refusals, by `details.reason` (LAI-535). §6.3's codes are closed, so it is a reason. */
@@ -281,6 +295,25 @@ export function agentFilterLabel(
 }
 
 // ------------------------------------------------------------------ who wrote a row
+
+/** What naming an agent takes: its harness, its own name and its device. */
+export type AgentNaming = Pick<SelectedAgent, 'harness' | 'display_name' | 'device_label'>;
+
+/**
+ * Every agent **this reader may see**, by id: their own (`GET /agents`, which
+ * answers the caller's agents and nobody else's) and the agents selected on
+ * tasks they hold (`TaskView.selected_agent`, which the server sent them). A
+ * row by any other agent stays *a registered agent* — nothing here guesses.
+ */
+export function agentNamesFrom(
+  own: readonly Pick<RegisteredAgent, 'id' | 'harness' | 'display_name' | 'device_label'>[],
+  tasks: readonly Pick<TaskSummary, 'selected_agent'>[],
+): ReadonlyMap<string, AgentNaming> {
+  const names = new Map<string, AgentNaming>();
+  for (const agent of agentsOnTasks(tasks)) names.set(agent.id, agent);
+  for (const agent of own) names.set(agent.id, agent);
+  return names;
+}
 
 /** What an agent-written row says after the person: an agent we can name, or what we know. */
 export const UNREGISTERED_AGENT = 'agent (unregistered token)';

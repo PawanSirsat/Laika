@@ -129,3 +129,214 @@ Second half of the `agent_selected` three-owner merge (§4.4 step 4): merge CHIE
 by the column, so at 1440 it scrolls inside its card (SUMMARY keeps its
 200px). No execution state past Waiting for agent (LAI-543). Comments carry
 no `agent_id` of their own; attribution comes from the activity row.
+
+## Cross-review fixes (Codex review of PR #106, SHELL, 2026-10-28)
+
+The review FAILED on three blocking points. All three are fixed in new
+commits (`9c216332`, `b2eb804f`, `3bbe701c`); no history was rewritten.
+
+1. **Stale async selection.** Pending and error state in `AgentRow.tsx` are
+   tagged with the task id that started the request. A late answer for a task
+   the drawer has left is discarded (only its own hold is released), and the
+   picker on a task with nothing in flight is never held. `AgentRow` stays
+   un-keyed on purpose, so the test exercises this guard and not a remount.
+2. **"via a registered agent" everywhere.** Names now come from
+   `agentNamesFrom`: the reader's own agents (`GET /agents`, §3.1
+   `agent.read_own`, every role) plus agents selected on tasks they hold. Used in
+   the drawer's History, Changes and comments, and on the Activity screen (which
+   passed no names at all before). Any other agent stays *a registered agent*.
+   The drawer reads `GET /agents` once (`useMyAgents`) and hands it to the
+   Agent row, so a Viewer now reads their own agents too (no picker).
+3. **Legacy tokens.** An agent comment reads *Ada via …*: the agent by name;
+   *agent (unregistered token)* when its `comment.added` row has no
+   `agent_id`; *an agent* when no row is loaded. Never *Ada's agent*. The
+   pinned *'s agent* assertion in `task-panel.test.ts` now asserts this rule.
+
+**Non-blocking, filed:** LAI-569 (card LAIKA-821). The List with the Agent
+column scrolls sideways at 1440. It is filed rather than fixed because fitting
+it means re-deciding widths against SUMMARY's 200px floor and LAI-491's one-line
+dates.
+
+**Checked by:** the targeted files only. **The full repo gate is still owed**:
+Belka's load was 83–103 on 10 cores, so the full gate was not run by
+instruction. Mutation checks: each of the three fixes, plus the Activity
+screen's name wiring, was reverted in turn, and its test went red.
+
+## Round-2 fixes (Codex review of PR #106 at `1e8769ce`, SHELL, 2026-10-28)
+
+Round 2 confirmed findings 2 and 3 as fixed. It found finding 1 only partly
+fixed and raised one more. Both are fixed in new commits (`f12acbd3`,
+`f07c9504`):
+
+1. **One shared pending slot.** Every selection request now takes a fresh id
+   (`nextReq`). `active` is the one request this drawer visit is waiting on, and
+   moving to another task forgets it, along with that visit's pending, error and
+   confirmed state. An answer whose id is not `active` changes nothing. Test:
+   pick on A (held) → pick on B → back to A → pick on A again; the old A
+   request then rejects. The newer A selection survives and no error shows.
+2. **A confirmed PATCH waited on the refresh.** A 200 now applies the task the
+   PATCH returned (`confirmed`, against the task's `updated_at` at send time)
+   and clears pending at once. If the follow-up read fails, the field shows the
+   confirmed agent and the next pick goes out. Once the props move on, the
+   applied answer gives way to them. Test: PATCH 200, then every follow-up read
+   is answered 500.
+
+Non-blocking, done: a Viewer whose `GET /agents` is refused with 403 still sees
+the chip, with no picker and no error (browser test). Filed **LAI-570** (card
+LAIKA-822): the Dashboard feed and Organisation → Activity name the agent.
+
+Break-the-fix checks, each restored by SHA-256 checksum:
+- accepting any answer turns the A→B→A test red;
+- not applying the PATCH answer turns the failed-read test red;
+- keeping pending until the refresh turns the failed-read test red.
+
+**Limit:** the confirmed answer is applied in the drawer's row, not written to
+the board's task store, which `useBoard` does not expose for this. So when the
+follow-up read fails, the card chip catches up only on the next successful read.
+
+**The full repo gate is still owed.** CHIEF runs it after this round.
+
+## Round-3 fixes (Codex review of PR #106 at `8e87114e`, SHELL, 2026-10-28)
+
+Round 3 confirmed as fixed:
+- stale answers no longer overwrite newer confirmations;
+- a PATCH success frees the picker without waiting on a refresh;
+- newer SSE data supersedes the confirmed answer;
+- the Viewer 403 case;
+- the card chip lagging during a failed read (accepted).
+
+It found two races, both fixed in new commits (`9418a2ad`, `070e54e1`):
+
+1. **The confirmed answer expired against the send-time version.** It now holds
+   until the props reach or pass the `updated_at` the PATCH *returned*. Confirm
+   X → send Y → the read reaches X → Y confirms: the drawer shows Y, and
+   *No agent* for a withdraw.
+2. **Overlapping writes across visits.** A write in flight is recorded per task
+   in a module-level set (`useSyncExternalStore`), so it outlives drawer visits,
+   and the next write on that task waits for it to settle:
+   - This visit's own write is guarded without disabling, so focus stays.
+   - A write sent on an earlier visit disables the picker and shows *Saving
+     agent…*.
+   - When that earlier write settles, the drawer reads the task again.
+
+   An old withdraw can no longer land after a newer selection.
+
+Test quality:
+- The fixture's PATCH advances `updated_at` as the server does; a fixed value
+  hid race 1.
+- Every in-flight test awaits the real responses (the held request, its 422
+  or 200, a GET that returned 500) and asserts settled UI, with no fixed
+  sleeps.
+- New regressions: the version race for a select and for a withdraw; an old
+  withdraw held across a revisit, after which the server holds the reader's
+  last pick.
+
+Break-the-fix checks, each restored by SHA-256 checksum:
+- expiring the answer against the send-time version turns both version tests
+  red (they show `ag-laptop` where `ag-desktop` was confirmed);
+- dropping the per-task serialisation turns both cross-visit tests red (*a
+  second write on LC-1 could start*).
+
+**The full repo gate is still owed**; CHIEF runs it.
+
+## Round-4 fixes (Codex review of PR #106 at `145005d7`, SHELL, 2026-10-28)
+
+Round 4 confirmed as fixed:
+- the confirmed-version override, including withdraw;
+- same-task writes serialised across visits;
+- release on success, sync error, 422, 401 and AbortError;
+- the test-quality changes;
+- `role=status` on *Saving agent…*;
+- focus kept on own-visit saves.
+
+One blocking issue remained, plus a P2. Both are fixed in new commits (`eb727f35`, `4525407f`, `47ea971d`).
+
+1. **A write that never settles locked its task for the session.** The record
+   moved to `server/web/src/api/agent-writes.ts`, and every record now ends in
+   one of three ways:
+   - it settles;
+   - `AGENT_SAVE_DEADLINE_MS` (30 s) aborts its request with `'deadline'`;
+   - the session ends. `setStoreUser` calls `resetAgentWrites`, which aborts
+     every write with `'reset'` on sign-out or a user change.
+
+   At the deadline the outcome is **uncertain**, so `AgentRow` reads the task
+   back (that read has its own deadline) and shows the server's agent before
+   the next write may go. If that read fails, the record ends marked uncertain
+   and the row says *Couldn't confirm the agent was saved — reload to check.*
+   It does not hold the picker. Each record has a token, so only the request
+   holding it may end it. Timers are injectable.
+2. **Tie (P2).** On an equal `updated_at`, props that disagree with the
+   confirmed answer no longer win.
+
+Tests:
+- `test/api/agent-writes.test.ts` (new, the module's mirror) runs on a fake
+  clock.
+- `agent-field.test.ts` uses Playwright's `page.clock` (no real 30 s waits)
+  and covers:
+  - a hung PATCH → deadline → read back → picker shows the server's agent;
+  - a failed read-back → the could-not-confirm text, and the picker is free;
+  - a hung PATCH, then sign-out and sign-in → the picker is free with no clock
+    moved;
+  - a drawer closed and reopened mid-hang → still held, then freed at the
+    deadline;
+  - a version tie, where the PATCH answer is fulfilled with the props' own
+    `updated_at`.
+
+Break-the-fix checks, each restored by SHA-256 checksum:
+
+| What was broken | Tests that went red |
+| --- | --- |
+| No deadline | 3 hung-PATCH tests |
+| Release at the deadline without reading back | 2 tests |
+| No session reset | the sign-out test |
+| No uncertain mark | the failed-read-back test |
+| Tie favours props | the tie test |
+| Token check ignored | the unit token test |
+
+No org switch exists in the app (one organisation per instance), so
+`setStoreUser` is the only session boundary.
+
+**The full repo gate is still owed**; CHIEF runs it.
+
+## Round-5 fixes (Codex review of PR #106 at `ecca7b2b`, SHELL, 2026-10-28)
+
+Round 5 verified the deadline, reset and token fixes. One blocking issue
+remained, and it came from round 4's P2: *"on a tie, prefer the confirmed
+result"* was wrong. The reviewer withdrew it.
+
+**On a timestamp tie, a read started after the save is the truth**
+(`d9fb583b`, `ee179b71`, `c5ae1167`). The server stamps `updated_at` with
+`Date.now()`, not a revision, so the round-4 rule let a confirmed agent ignore,
+for good, a later read of another write made in the same millisecond. Now:
+- `server/web/src/api/read-order.ts` hands out one rising number per page.
+- The task store tags each list read with the number it **started** at
+  (`readOrder`). `asOf` stays the time the read answered.
+- A save takes a number when it **completes**.
+- On a tie, props from a read that started after the save completed retire the
+  confirmed answer, whatever agent they name. Only a snapshot that predates the
+  completion may be ignored, unless it agrees.
+
+Tests: the tie test is now two cases.
+- An equal-timestamp snapshot started before the save completed (taken with
+  `route.fetch` while the PATCH is held, delivered after) does not overturn the
+  confirmation.
+- The read the save itself triggers, with the same timestamp and a different
+  agent, does overturn it.
+
+Break-the-fix checks, each restored by SHA-256 checksum:
+
+| What was broken | Test that went red |
+| --- | --- |
+| Ignore the read order | the fresh-read test (`ag-laptop` shown where `ag-desktop` was read) |
+| Props win every tie | the old-snapshot test |
+| Order stamped when a read *answers*, not when it starts | the old-snapshot test |
+
+**Known limitation: the read-back is not a write fence.** At the deadline the
+client aborts the PATCH and reads the task back, but an aborted request is not
+a cancelled write. If the server still executes that PATCH *after* the
+read-back, it can overwrite a later pick, and nothing on the client can prevent
+it. Only a server-enforced precondition (`If-Match` or an expected
+`updated_at`/revision on `PATCH /tasks/:id`) would guarantee the order. Filed as
+**LAI-571** (CORE, card LAIKA-823), file only.
+
+**The full repo gate is still owed**; CHIEF runs it.
