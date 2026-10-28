@@ -26,6 +26,7 @@ import {
   type StubCall,
 } from './harness.ts';
 import { offered, pick } from './dropdown.ts';
+import { AGENT_SAVE_DEADLINE_MS } from '../../src/api/agent-writes.ts';
 
 const HOUR = 3_600_000;
 const NOW = Date.now();
@@ -1190,6 +1191,217 @@ void describe('a selection still in flight when the drawer moves on', () => {
       }
     });
   }
+
+  /** Move the stub's copy of a task to what the server now holds, one version on. */
+  const serverHolds = (tasks: Record<string, unknown>[], id: string, agent: string | null) => {
+    const task = tasks.find((t) => t.id === id);
+    if (task === undefined) throw new Error(`no task ${id}`);
+    Object.assign(task, {
+      selected_agent: agent === null ? null : viewOf(agent),
+      updated_at: Math.max(Number(task.updated_at) + 1, Date.now()),
+    });
+  };
+
+  /** A PATCH on `id` that never answers the first time; later ones go through. */
+  const hangFirstPatch = (id: string, counter: { n: number }) => async (page: Page) => {
+    await page.clock.install();
+    await page.route(`**/api/v1/tasks/${id}`, async (route) => {
+      if (route.request().method() === 'PATCH') {
+        counter.n += 1;
+        // Never answered: no continue, no fulfil.
+        if (counter.n === 1) return;
+      }
+      await route.continue();
+    });
+  };
+
+  void test('a PATCH that never answers: at the deadline the task is read back, and the picker shows the server’s agent', async () => {
+    const { stub, tasks } = world();
+    const sent = { n: 0 };
+    const h = await open('/board?project=laika-core&task=t1', stub, {
+      before: hangFirstPatch('t1', sent),
+    });
+    try {
+      const box = await agentBox(h);
+      await pick(box, 'ag-laptop');
+      await until(() => sent.n === 1);
+      const row = await agentRow(h);
+      await until(async () => (await row.innerText()).includes('Saving agent…'));
+      assert.match(await row.innerText(), /Saving agent…/);
+      // Whatever happened on the server, it now holds Codex — not what was asked.
+      serverHolds(tasks, 't1', 'ag-desktop');
+
+      const readBack = nextResponse(h, 'GET', '/api/v1/tasks/t1', 200);
+      await h.page.clock.fastForward(AGENT_SAVE_DEADLINE_MS + 1_000);
+      await readBack;
+      await settledRow(h, 'ag-desktop', DESKTOP_LINE);
+
+      // And the next write goes.
+      const next = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 200);
+      await pick(box, 'ag-laptop');
+      await next;
+      await settledRow(h, 'ag-laptop', LAPTOP_LINE);
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('when the read-back fails too, the row says it could not confirm, and does not hold the picker', async () => {
+    const { stub } = world();
+    const sent = { n: 0 };
+    let failReads = false;
+    const h = await open('/board?project=laika-core&task=t1', stub, {
+      before: async (page) => {
+        await hangFirstPatch('t1', sent)(page);
+        await page.route('**/api/v1/tasks/t1', async (route) => {
+          if (route.request().method() === 'GET' && failReads) {
+            return route.fulfill({
+              status: 500,
+              contentType: 'application/json',
+              body: '{"error":{"code":"internal","message":"down"}}',
+            });
+          }
+          return route.fallback();
+        });
+      },
+    });
+    try {
+      const box = await agentBox(h);
+      await pick(box, 'ag-laptop');
+      await until(() => sent.n === 1);
+      failReads = true;
+      const failed = nextResponse(h, 'GET', '/api/v1/tasks/t1', 500);
+      await h.page.clock.fastForward(AGENT_SAVE_DEADLINE_MS + 1_000);
+      await failed;
+
+      const row = await agentRow(h);
+      const alert = row.getByRole('alert');
+      await alert.waitFor({ timeout: 10_000 });
+      assert.equal(
+        (await alert.innerText()).trim(),
+        'Couldn’t confirm the agent was saved — reload to check.',
+      );
+      await until(async () => !(await row.innerText()).includes('Saving agent'));
+      assert.doesNotMatch(await row.innerText(), /Saving agent/);
+      assert.equal(await box.isDisabled(), false);
+
+      const next = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 200);
+      await pick(box, 'ag-desktop');
+      await next;
+      await settledRow(h, 'ag-desktop', DESKTOP_LINE);
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('a PATCH that never answers does not outlive the session: sign out, sign in, and the picker is free', async () => {
+    const { stub } = world();
+    const sent = { n: 0 };
+    let signedIn = true;
+    const me = stub['/api/v1/me'];
+    const h = await open(
+      '/board?project=laika-core&task=t1',
+      {
+        ...stub,
+        '/api/v1/me': () => (signedIn ? me : refuse(401, 'unauthorized', 'Sign in to continue.')),
+        '/api/v1/auth/sign-out': () => {
+          signedIn = false;
+          return reply(200, {});
+        },
+        '/api/v1/auth/sign-in/email': () => {
+          signedIn = true;
+          return reply(200, {});
+        },
+      },
+      { before: hangFirstPatch('t1', sent) },
+    );
+    try {
+      const box = await agentBox(h);
+      await pick(box, 'ag-laptop');
+      await until(() => sent.n === 1);
+
+      await h.page.locator('.user-menu-trigger').dispatchEvent('click');
+      await h.page.locator('.user-menu-signout').dispatchEvent('click');
+      await h.page.waitForURL((url) => url.pathname === '/login', { timeout: 10_000 });
+      await h.page.locator('input[type="email"]').fill('me@example.com');
+      await h.page.locator('input[type="password"]').fill('correct horse battery');
+      await h.page.getByRole('button', { name: 'Sign in' }).click();
+      await h.page.waitForURL((url) => url.pathname !== '/login', { timeout: 10_000 });
+
+      // No clock moved: only the session reset can have freed it.
+      await navigateInApp(h.page, '/board?project=laika-core&task=t1');
+      await settledRow(h, '', null);
+      const next = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 200);
+      await pick(await agentBox(h), 'ag-desktop');
+      await next;
+      await settledRow(h, 'ag-desktop', DESKTOP_LINE);
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('the drawer closed and reopened while a PATCH hangs: still held, then freed at the deadline with the server’s agent', async () => {
+    const { stub, tasks } = world();
+    const sent = { n: 0 };
+    const h = await open('/board?project=laika-core&task=t1', stub, {
+      before: hangFirstPatch('t1', sent),
+    });
+    try {
+      await pick(await agentBox(h), 'ag-laptop');
+      await until(() => sent.n === 1);
+
+      await navigateInApp(h.page, '/board?project=laika-core');
+      await h.page.locator('.meta-row-agent').waitFor({ state: 'detached', timeout: 10_000 });
+      await navigateInApp(h.page, '/board?project=laika-core&task=t1');
+      const box = await agentBox(h);
+      const row = await agentRow(h);
+      await until(async () => (await row.innerText()).includes('Saving agent…'));
+      assert.equal(await box.isDisabled(), true, 'a remounted row let a second write start');
+
+      serverHolds(tasks, 't1', 'ag-desktop');
+      const readBack = nextResponse(h, 'GET', '/api/v1/tasks/t1', 200);
+      await h.page.clock.fastForward(AGENT_SAVE_DEADLINE_MS + 1_000);
+      await readBack;
+      await settledRow(h, 'ag-desktop', DESKTOP_LINE);
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('on a version tie the confirmed answer shows, not props that disagree with it', async () => {
+    // The PATCH answers with the same `updated_at` the props already carry,
+    // and the server's copy (what every read returns) still says no agent.
+    const { stub, tasks } = world();
+    const t1 = tasks.find((t) => t.id === 't1');
+    const h = await open('/board?project=laika-core&task=t1', stub, {
+      before: async (page) => {
+        await page.route('**/api/v1/tasks/t1', async (route) => {
+          if (route.request().method() !== 'PATCH') return route.continue();
+          return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ ...t1, selected_agent: viewOf('ag-laptop') }),
+          });
+        });
+      },
+    });
+    try {
+      const box = await agentBox(h);
+      const confirmed = nextResponse(h, 'PATCH', '/api/v1/tasks/t1', 200);
+      const tiedRead = nextResponse(h, 'GET', /\/api\/v1\/projects\/laika-core\/tasks$/, 200);
+      await pick(box, 'ag-laptop');
+      await confirmed;
+      await tiedRead;
+      await settledRow(h, 'ag-laptop', LAPTOP_LINE);
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
 
   void test('a confirmed write shows, and the picker stays usable, when the follow-up read fails', async () => {
     const { stub } = world();
