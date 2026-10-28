@@ -226,3 +226,34 @@ gets a 5 s timeout, and a hung one counts as no answer (mutant → red).
 **Gate this round** (touched files only): `tsc --noEmit` 0;
 `node --test test/agent-session.test.ts test/agent-session-e2e.test.ts
 test/cli.test.ts` 0 (63 tests, 63 pass); `pnpm lint` 0; `pnpm format` 0.
+
+## Review round 3 (Codex at `56317c97`: FAIL, two blocking)
+
+Both fixed as new commits: `e9e0f3ba` (code) and `13b2380e` (docs). Each fix
+was broken on purpose to confirm its test goes red, then restored by checksum.
+
+1. **The launcher leaked under tracing and through exported names.** Its first
+   command is now `set +x +v +a`. Its scratch variables are renamed
+   (`_laika_agent_token`, `_laika_agent_token_set`), unset before they are
+   assigned, and unset again after the hand-back. Regressions, each with a
+   positive control (a trace line appeared; the decoys were inherited):
+   `sh -x` on the normal path and on the early-exit path; bash with
+   `SHELLOPTS=xtrace`; bash with `SHELLOPTS=allexport`; scratch names
+   pre-exported as decoys. Mutants: no `set +x` → *"the agent token was
+   traced to stderr"*; no first `unset` → the token reached `find`; no `+a`
+   → the token reached `find`.
+2. **One `ps` timeout abandoned a live session.** Liveness is now three-way.
+   `dead` needs evidence: absent (`ps` exit 1, nothing printed), a different
+   start time, or a zombie/dead/exiting state. A timeout, kill, failure or
+   unreadable output is `unknown`: that beat sends nothing and abandons
+   nothing, and the next beat checks again. Persistent unknowns let the lease
+   expire. A `ps` failure still never renews. Regressions: a timeout, then a
+   healthy check, renews the same session; ten unknowns send nothing and the
+   session stays `live`, and only the confirmed death abandons it; garbage
+   output and a kill are `unknown`; the real `ps` for a missing PID is
+   `dead`. Mutants: unknown abandons → red; absent read as unknown → red;
+   garbage read as absent → red; zombie or start-time check dropped → red.
+
+**Gate this round** (touched files only): `tsc --noEmit` 0;
+`node --test test/agent-session.test.ts test/agent-session-e2e.test.ts
+test/cli.test.ts` 0 (71 tests, 71 pass); `pnpm lint` 0; `pnpm format` 0.
