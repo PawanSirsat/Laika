@@ -6,7 +6,7 @@ import { presenceEnabled } from '../db/orgs.ts';
 import { heartbeats, projects, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { agentsMay, assertCan } from '../policy/can.ts';
-import { claimFenceRefusal, holdsLiveClaim } from './claims.ts';
+import { claimFenceRefusal } from './claims.ts';
 
 /**
  * Presence (SPEC §9.1, §4.10, D-005, D-023).
@@ -494,16 +494,16 @@ export function recordHeartbeat(
   // task is a change in that task's space, so a space whose agents are off
   // keeps it (D-103 item 7, LAI-976 review).
   //
-  // **And a claimed task keeps it from anyone but its holder** (LAI-541): a
-  // sibling agent's or a legacy token's beat would otherwise rewrite the
-  // branch of work another session holds. The beat still lands; only the
-  // branch is not written. A presence beat carries no generation, so the
-  // holder is recognised by its agent alone.
+  // **And the branch write passes the claim fence like any task write**
+  // (LAI-541): a sibling agent, a legacy token, a holder with a stale
+  // generation or a lapsed lease would otherwise rewrite the branch of work
+  // the live claim holds. The holder sends its generation as on any request
+  // (`X-Laika-Claim-Generation`). Refused, the beat still lands — presence is
+  // the sender's own — and only the task is left alone.
   if (
     matched !== null &&
     agentsMay(actor, 'task.write', { projectId: matched.projectId }) &&
-    (claimFenceRefusal(db, actor, matched.taskId, now) === null ||
-      holdsLiveClaim(db, actor, matched.taskId))
+    claimFenceRefusal(db, actor, matched.taskId, now) === null
   ) {
     // §9.2 stores the branch on the task as well. **Last seen, not a history** —
     // overwriting is correct, and the history is `activity`. No activity row: a
