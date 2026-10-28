@@ -575,7 +575,7 @@ void describe('the Agents tab (LAI-537)', () => {
       // the old name on screen and failed the read below under a full gate.
       // Focus comes back in the same answer, so it is asserted after.
       const rowName = page.locator('.agents-row-name');
-      await until(async () => /codex builder/.test(await rowName.innerText()), 20_000);
+      await until(async () => (await rowName.innerText()).includes('codex builder'), 20_000);
       assert.match(await rowName.innerText(), /codex builder/);
       assert.equal(await focusedText(page), 'Rename');
 
