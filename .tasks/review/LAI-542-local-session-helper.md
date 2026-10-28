@@ -257,3 +257,37 @@ was broken on purpose to confirm its test goes red, then restored by checksum.
 **Gate this round** (touched files only): `tsc --noEmit` 0;
 `node --test test/agent-session.test.ts test/agent-session-e2e.test.ts
 test/cli.test.ts` 0 (71 tests, 71 pass); `pnpm lint` 0; `pnpm format` 0.
+
+## Review round 4 (Codex at `da22fd6e`: FAIL, one blocking)
+
+Fixed as new commits: `9e13c972` (code) and `e75cef12` (docs). Each fix was
+broken on purpose to confirm its test goes red, then restored by checksum.
+
+**A failed `ps` was read as death.** `ps` exits 1 with an empty stdout for a
+missing PID, but also when Apple's `ps` fails to allocate or procps-ng fails
+to initialise. Every failed run now asks the kernel with `kill(pid, 0)`, which
+sends no signal. Only `ESRCH` means absent. Success or `EPERM` means a process
+exists, which is *unknown*, never alive: renewal still needs a `ps` answer
+with a matching start time and a live state. Any other error is unknown. A
+start-time mismatch and a `Z`/`X`/`E` state stay dead.
+
+Regressions:
+- a `ps` that fails to start (exit 1, empty stdout) for a live process is
+  `UNKNOWN`, and stays `UNKNOWN` when the probe answers present, `EPERM` or
+  unknown; the same failure for a kernel-confirmed absent PID is absent;
+- a real live harness whose first `ps` fails is skipped (nothing sent, still
+  `live`), then the next healthy check renews the same session;
+- `probeKill` against the real kernel: this process is present, and PID 1 is
+  present (`EPERM`, not `ESRCH`).
+
+P2: the absence test now uses a reaped child's PID. The made-up PID
+2147483000 is refused by macOS `ps` as "process id too large", which is not
+the same answer.
+
+Mutants, each red on the intended tests: the round-3 exit-1 rule restored
+(the reviewer's repro); every failure treated as absent; `EPERM` treated as
+absent; never absent.
+
+**Gate this round** (touched files only): `tsc --noEmit` 0;
+`node --test test/agent-session.test.ts test/agent-session-e2e.test.ts
+test/cli.test.ts` 0 (73 tests, 73 pass); `pnpm lint` 0; `pnpm format` 0.
