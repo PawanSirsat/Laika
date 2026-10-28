@@ -2,12 +2,13 @@
 id: LAI-582
 title: 'Live acceptance of agent identities Phases 1+2'
 area: chief
-assignee: unclaimed
+assignee: chief
 priority: p0
 parent: LAIKA-785
 depends-on: []
 discovered-from: LAI-532
-status: backlog
+status: in-progress
+started: 2026-10-28T19:18:41Z
 ---
 
 ## Goal
