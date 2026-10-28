@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { newId } from '../../../src/db/ids.ts';
-import { tasks, users } from '../../../src/db/schema.ts';
+import { activity, tasks, users } from '../../../src/db/schema.ts';
 import { flagStaleTasks, STALE_AFTER_MS } from '../../../src/jobs/jobs.ts';
 import { MAX_TAGS_PER_TASK } from '../../../src/services/tags.ts';
 import {
@@ -37,7 +37,13 @@ async function post(path: string, body: unknown): Promise<Response> {
 async function newTask(title = 'Do the thing', extra: Record<string, unknown> = {}) {
   const res = await post('/api/v1/projects/laika/tasks', { title, ...extra });
   expect(res.status).toBe(201);
-  return (await res.json()) as { id: string; key: string; status: string; ready: boolean };
+  return (await res.json()) as {
+    id: string;
+    key: string;
+    status: string;
+    ready: boolean;
+    updated_at: number;
+  };
 }
 
 beforeEach(async () => {
@@ -271,6 +277,146 @@ describe('patch', () => {
     const body = (await patched.json()) as { title: string; assignee_id: string | null };
     expect(body.title).toBe('Renamed');
     expect(body.assignee_id).toBeNull();
+  });
+
+  it('refuses a stale If-Match with the current task and changes nothing', async () => {
+    const task = await newTask('Original');
+    const read = await req(`/api/v1/tasks/${task.id}`);
+    expect(read.status).toBe(200);
+    const stale = read.headers.get('etag');
+    expect(stale).toBe(`"${String(task.updated_at)}"`);
+
+    const first = await req(`/api/v1/tasks/${task.id}`, {
+      method: 'PATCH',
+      headers: { 'If-Match': stale! },
+      body: JSON.stringify({ title: 'Current' }),
+    });
+    expect(first.status).toBe(200);
+
+    const rowBefore = h.db.select().from(tasks).where(eq(tasks.id, task.id)).get();
+    const activityBefore = h.db.select().from(activity).where(eq(activity.taskId, task.id)).all();
+    const refused = await req(`/api/v1/tasks/${task.id}`, {
+      method: 'PATCH',
+      headers: { 'If-Match': stale! },
+      body: JSON.stringify({ title: 'Late write', tags: ['should-not-land'] }),
+    });
+
+    expect(refused.status).toBe(409);
+    const error = (await refused.json()) as {
+      error: { code: string; details: { current: { title: string; updated_at: number } } };
+    };
+    expect(error.error.code).toBe('conflict');
+    expect(error.error.details.current).toMatchObject({
+      title: 'Current',
+      updated_at: rowBefore?.updatedAt,
+    });
+    expect(h.db.select().from(tasks).where(eq(tasks.id, task.id)).get()).toEqual(rowBefore);
+    expect(h.db.select().from(activity).where(eq(activity.taskId, task.id)).all()).toEqual(
+      activityBefore,
+    );
+    const after = await req(`/api/v1/tasks/${task.id}`);
+    expect(after.status).toBe(200);
+    expect(((await after.json()) as { tags: string[] }).tags).toEqual([]);
+  });
+
+  it('refuses an If-Match that names no updated_at with 400', async () => {
+    const task = await newTask('Original');
+    for (const bad of ['*', 'W/"1"', String(task.updated_at), '"01"', '"x"']) {
+      const res = await req(`/api/v1/tasks/${task.id}`, {
+        method: 'PATCH',
+        headers: { 'If-Match': bad },
+        body: JSON.stringify({ title: 'Never' }),
+      });
+      expect(res.status, bad).toBe(400);
+      expect(((await res.json()) as { error: { code: string } }).error.code, bad).toBe(
+        'bad_request',
+      );
+    }
+    const after = await req(`/api/v1/tasks/${task.id}`);
+    expect(after.status).toBe(200);
+    expect(((await after.json()) as { title: string }).title).toBe('Original');
+  });
+
+  it('accepts a current If-Match and returns its new validator', async () => {
+    const task = await newTask('Original');
+    const read = await req(`/api/v1/tasks/${task.id}`);
+    expect(read.status).toBe(200);
+    const etag = read.headers.get('etag');
+    expect(etag).toBe(`"${String(task.updated_at)}"`);
+
+    const patched = await req(`/api/v1/tasks/${task.id}`, {
+      method: 'PATCH',
+      headers: { 'If-Match': etag! },
+      body: JSON.stringify({ title: 'Guarded' }),
+    });
+
+    expect(patched.status).toBe(200);
+    const body = (await patched.json()) as { title: string; updated_at: number };
+    expect(body.title).toBe('Guarded');
+    expect(body.updated_at).toBeGreaterThan(task.updated_at);
+    expect(patched.headers.get('etag')).toBe(`"${String(body.updated_at)}"`);
+  });
+
+  it('allows exactly one of two same-millisecond writes with one If-Match', async () => {
+    const task = await newTask('Original');
+    const read = await req(`/api/v1/tasks/${task.id}`);
+    expect(read.status).toBe(200);
+    const etag = read.headers.get('etag');
+    expect(etag).toBe(`"${String(task.updated_at)}"`);
+    const activityBefore = h.db
+      .select()
+      .from(activity)
+      .where(eq(activity.taskId, task.id))
+      .all().length;
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(task.updated_at);
+
+    try {
+      const writes = await Promise.all(
+        ['First', 'Second'].map((title) =>
+          req(`/api/v1/tasks/${task.id}`, {
+            method: 'PATCH',
+            headers: { 'If-Match': etag! },
+            body: JSON.stringify({ title }),
+          }),
+        ),
+      );
+      expect(writes.map((response) => response.status).sort()).toEqual([200, 409]);
+
+      const success = writes.find((response) => response.status === 200)!;
+      const conflict = writes.find((response) => response.status === 409)!;
+      const winner = (await success.json()) as { title: string; updated_at: number };
+      const loser = (await conflict.json()) as {
+        error: { code: string; details: { current: { title: string; updated_at: number } } };
+      };
+      expect(winner.updated_at).toBe(task.updated_at + 1);
+      expect(success.headers.get('etag')).toBe(`"${String(winner.updated_at)}"`);
+      expect(loser.error.code).toBe('conflict');
+      expect(loser.error.details.current).toMatchObject(winner);
+      expect(h.db.select().from(activity).where(eq(activity.taskId, task.id)).all().length).toBe(
+        activityBefore + 1,
+      );
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('keeps the same-millisecond update behaviour without If-Match', async () => {
+    const task = await newTask('Original');
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(task.updated_at);
+
+    try {
+      const patched = await req(`/api/v1/tasks/${task.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ title: 'Unguarded' }),
+      });
+      expect(patched.status).toBe(200);
+      expect(await patched.json()).toMatchObject({
+        title: 'Unguarded',
+        updated_at: task.updated_at,
+      });
+    } finally {
+      clock.mockRestore();
+    }
   });
 });
 
