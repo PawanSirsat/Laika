@@ -1,5 +1,9 @@
+import { eq } from 'drizzle-orm';
 import { createMiddleware } from 'hono/factory';
+import { type ResolvedActor, withProject } from '../../auth/resolve-actor.ts';
 import { type Db } from '../../db/client.ts';
+import { projects, tasks } from '../../db/schema.ts';
+import { type ProjectAction, can } from '../../policy/can.ts';
 import { type AppEnv } from '../context.ts';
 import { AUTH_BASE_PATH } from '../../auth/auth.ts';
 import { conflictError, hashRequest, idempotencyOwner, lookup, remember } from '../idempotency.ts';
@@ -59,10 +63,99 @@ export function tokenMayReplay(path: string, storedBody: string): boolean {
 }
 
 /**
+ * **The POSTs whose answers the store keeps — an allow-list** (LAI-534 round
+ * 2, Codex review of PR #102).
+ *
+ * The store replays before the route runs, so a stored answer is handed back
+ * without the route's `can()` being asked again. Each entry therefore names
+ * the question its route asks, and {@link idempotencyMiddleware} asks it again
+ * of the actor as it is **now** — role, membership, agent grant, token scope
+ * and pin — before replaying. Refused, the route runs instead and gives the
+ * answer a fresh request gets.
+ *
+ * **An allow-list rather than a deny-list of secret routes**, because of which
+ * way each is wrong when somebody forgets. A route left off this list loses
+ * deduplication of retries, visibly and harmlessly. A secret route left off a
+ * deny-list would persist its secret and replay it before `can()` — the defect
+ * this replaced. `markOneTimeSecret` stays as the second lock: a marked answer
+ * is never stored even if its route is listed here.
+ *
+ * Each entry is a route that **creates** something, where a retried request
+ * would otherwise make a second one, and whose route asks exactly one
+ * project-scoped (or org) `can()` — so the question can be stated here and
+ * held equal to the route's by `test/http/idempotency.test.ts`. A route
+ * needing more than that does not belong on the list.
+ */
+interface CacheableRoute {
+  readonly pattern: RegExp;
+  /** The route's own `can()`, against the actor as it stands now. */
+  readonly mayStill: (db: Db, actor: ResolvedActor, param: string | undefined) => boolean;
+}
+
+function inProjectBySlug(action: ProjectAction) {
+  return (db: Db, actor: ResolvedActor, slug: string | undefined): boolean => {
+    if (slug === undefined) return false;
+    const project = db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(eq(projects.slug, slug))
+      .get();
+    if (project === undefined) return false;
+    return can(withProject(actor, project.id), action, { projectId: project.id });
+  };
+}
+
+function inTaskProject(action: ProjectAction) {
+  return (db: Db, actor: ResolvedActor, taskId: string | undefined): boolean => {
+    if (taskId === undefined) return false;
+    const task = db
+      .select({ projectId: tasks.projectId })
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .get();
+    if (task === undefined) return false;
+    return can(withProject(actor, task.projectId), action, { projectId: task.projectId });
+  };
+}
+
+export const CACHEABLE_ROUTES: readonly CacheableRoute[] = [
+  // `createProject`: `project.create`, an org action.
+  { pattern: /^\/api\/v1\/projects$/, mayStill: (_db, actor) => can(actor, 'project.create') },
+  // `createTask`: `task.create` in the project.
+  { pattern: /^\/api\/v1\/projects\/([^/]+)\/tasks$/, mayStill: inProjectBySlug('task.create') },
+  // `createSprint`: `sprint.manage` in the project.
+  {
+    pattern: /^\/api\/v1\/projects\/([^/]+)\/sprints$/,
+    mayStill: inProjectBySlug('sprint.manage'),
+  },
+  // `addComment`: `comment.create` in the task's project.
+  { pattern: /^\/api\/v1\/tasks\/([^/]+)\/comments$/, mayStill: inTaskProject('comment.create') },
+  // `addTaskDependency`: `task.dependency.write` in the task's project.
+  {
+    pattern: /^\/api\/v1\/tasks\/([^/]+)\/dependencies$/,
+    mayStill: inTaskProject('task.dependency.write'),
+  },
+];
+
+/** The listed route a path is, and its parameter — or `null`: not stored. */
+export function cacheableRoute(
+  path: string,
+): { route: CacheableRoute; param: string | undefined } | null {
+  for (const route of CACHEABLE_ROUTES) {
+    const match = route.pattern.exec(path);
+    if (match !== null) {
+      const raw = match[1];
+      return { route, param: raw === undefined ? undefined : decodeURIComponent(raw) };
+    }
+  }
+  return null;
+}
+
+/**
  * Replay-safe POSTs (SPEC §6.3).
  *
- * Only POST, and only when the caller supplies the header — the feature is
- * opt-in per request, because a client that has not thought about idempotency
+ * Only POST, only a route on {@link CACHEABLE_ROUTES}, and only when the
+ * caller supplies the header — the feature is opt-in per request, because a client that has not thought about idempotency
  * gets no benefit from a key the server invented for it.
  *
  * Only successful responses are stored. Replaying a 500 would pin a transient
@@ -98,6 +191,14 @@ export function idempotencyMiddleware(db: Db, now: () => number = Date.now) {
       return undefined;
     }
 
+    // Only the allow-list is stored or replayed (LAI-534 round 2). Anything
+    // else runs as though no key had been sent.
+    const listed = cacheableRoute(c.req.path);
+    if (listed === null) {
+      await next();
+      return undefined;
+    }
+
     const body = await c.req.raw.clone().text();
     const fingerprint = hashRequest(c.req.method, c.req.path, body);
     const owner = idempotencyOwner(actor);
@@ -114,6 +215,18 @@ export function idempotencyMiddleware(db: Db, now: () => number = Date.now) {
     ) {
       // The route answers this token itself, and nothing is stored over the
       // session's row: the key stays the session's.
+      await next();
+      return undefined;
+    }
+
+    // **Asked again, of the actor as it is now** (LAI-534 round 2): a stored
+    // answer is not a permission. Refused, the route runs and gives the answer
+    // a fresh request gets; the stored row stays the one that was earned.
+    if (
+      found.kind === 'replay' &&
+      found.response !== undefined &&
+      !listed.route.mayStill(db, actor, listed.param)
+    ) {
       await next();
       return undefined;
     }
