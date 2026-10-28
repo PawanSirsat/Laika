@@ -2,11 +2,12 @@
 id: LAI-570
 title: 'The Dashboard feed and Organisation → Activity name which agent wrote a row, as the drawer does'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-538]
 discovered-from: LAI-538
-status: backlog
+started: 2026-10-28T21:44:46Z
+status: in-progress
 ---
 
 Filed by SHELL (Belka, dispatched by CHIEF) from the Codex round-2 review of
