@@ -244,3 +244,45 @@ Mutations, each restored by checksum, each red:
 - R5: the job skips expiry
 - R6: unversioned owner (old rows become reachable)
 - R7: the job does not run at boot
+
+## Review round 3 — Codex review of PR #102 at 74d0a56a: fixes (CORE, 2026-10-28)
+
+New commits only: `03043dcf`, `da2996d1` (plus these notes).
+
+1. **The upgrade purge was not a startup barrier** (blocking). It moved into
+   `runMigrations`' protected window (`db/backfill.ts`
+   `purgeUnversionedIdempotencyKeys`), which `index.ts` runs before `serve()`.
+   A failure fails the boot (exit 1, nothing listening). The hourly
+   `idempotency.retention` job keeps running it with the expiry sweep.
+   `test/tooling/build.test.ts` boots the built server on a seeded database:
+   the purge is logged (`db.idempotency_purged`) before `server.listening`
+   and the row is gone; with the purge made to fail, the process exits 1 and
+   never logs `server.listening`. `migrate.test.ts` and `backfill.test.ts`
+   cover the same in-process.
+2. **The parity test claimed too much** (required). It now covers every entry
+   with a refused role, a member where task creation is lead-only (so
+   `task.create` and `task.write` differ), a `read_only` token, and a token
+   pinned to another space, plus allowed session and token credentials. Its
+   comment is narrowed to what those cases prove.
+
+Mutations, each restored by checksum, each red:
+- P1: the task entry asks `task.write` (Codex's mutation). It fails on
+  `/projects/lead/tasks · member where creating is lead-only`.
+- P2: the replay check drops the token (2 red).
+- B1: no purge at boot. Both built-server cases go red with a compiling
+  mutant, and the migrate cases go red too.
+- B2: a failing purge is swallowed (in-process case and built-server case
+  red).
+- B3: the purge keeps old rows (3 red).
+
+**Cross-PR follow-ups (not this PR), from Codex.** When #102 is merged under
+#107/#108:
+- `POST /api/v1/agent-sessions` needs an allow-list entry whose recheck
+  matches `startAgentSession` (`can(actor,'heartbeat.send_own')` and
+  registered-agent eligibility), with a test that retries after a lost
+  response.
+- The dependency replay entry must also apply #107's `assertClaimFence`, or
+  a stale claim holder gets cached success.
+
+SPEC §6.3's promise that every POST takes `Idempotency-Key` must be updated
+by CHIEF before release.
