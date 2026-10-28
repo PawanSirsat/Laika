@@ -70,13 +70,26 @@ export function highlight(label: string, query: string): Run[] {
  * Where Up, Down, Home, End, PageUp and PageDown move the active option.
  * Disabled options are stepped over; the ends do not wrap, as the APG's
  * select-only combobox does not.
+ *
+ * `reachDisabled` keeps disabled options in the walk (LAI-536). A list whose
+ * disabled rows **say why** — the Agent picker's "Not granted on this space" —
+ * wants them reachable, or the reason is visible to the eye and never read to a
+ * screen reader: the APG's advice for disabled controls a reader should still
+ * learn about. Selecting one is still refused; that is `Dropdown`'s `choose`.
  */
 export type Move = 'next' | 'previous' | 'first' | 'last' | 'page-down' | 'page-up';
 
 export const PAGE = 10;
 
-export function move(options: readonly ModelOption[], from: number, how: Move): number {
-  const enabled = options.map((o, i) => (o.disabled === true ? -1 : i)).filter((i) => i !== -1);
+export function move(
+  options: readonly ModelOption[],
+  from: number,
+  how: Move,
+  reachDisabled = false,
+): number {
+  const enabled = options
+    .map((o, i) => (o.disabled === true && !reachDisabled ? -1 : i))
+    .filter((i) => i !== -1);
   if (enabled.length === 0) return -1;
   const first = enabled[0]!;
   const last = enabled[enabled.length - 1]!;
@@ -98,12 +111,18 @@ export function move(options: readonly ModelOption[], from: number, how: Move): 
 
 /**
  * Type-ahead: the next option whose label starts with what was typed.
+ * Disabled options are skipped unless `reachDisabled`, as for {@link move}.
  *
  * Searches from the option **after** the current one, so pressing the same
  * letter again walks through every name starting with it — the way a native
  * select does. A buffer of one repeated letter is treated as that letter.
  */
-export function typeahead(options: readonly ModelOption[], from: number, buffer: string): number {
+export function typeahead(
+  options: readonly ModelOption[],
+  from: number,
+  buffer: string,
+  reachDisabled = false,
+): number {
   if (buffer === '') return -1;
   const repeated = [...buffer].every((c) => c === buffer[0]);
   const needle = fold(repeated ? buffer[0]! : buffer);
@@ -113,7 +132,7 @@ export function typeahead(options: readonly ModelOption[], from: number, buffer:
   for (let k = 0; k < n; k += 1) {
     const i = (start + k) % n;
     const o = options[i]!;
-    if (o.disabled !== true && fold(o.label).startsWith(needle)) return i;
+    if ((o.disabled !== true || reachDisabled) && fold(o.label).startsWith(needle)) return i;
   }
   return -1;
 }

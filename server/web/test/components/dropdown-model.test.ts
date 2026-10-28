@@ -94,6 +94,21 @@ void describe('dropdown keyboard movement (LAI-726)', () => {
     assert.equal(move([], 0, 'next'), -1);
   });
 
+  void test('reachDisabled stops on disabled options too (LAI-536)', () => {
+    assert.equal(move(opts, 0, 'next', true), 1, 'Down skipped the disabled option');
+    assert.equal(move(opts, 2, 'previous', true), 1);
+    assert.equal(move(opts, 1, 'next', true), 2);
+    assert.equal(move(opts, -1, 'next', true), 0);
+    // The default is unchanged: every other list still steps over it.
+    assert.equal(move(opts, 0, 'next'), 2);
+    const out: ModelOption[] = [
+      { value: 'x', label: 'xa' },
+      { value: 'y', label: 'yb', disabled: true },
+    ];
+    assert.equal(typeahead(out, 0, 'y'), -1);
+    assert.equal(typeahead(out, 0, 'y', true), 1);
+  });
+
   void test('type-ahead walks names with the same first letter, then refines', () => {
     const names: ModelOption[] = [
       { value: '1', label: 'ai' },

@@ -83,6 +83,13 @@ export interface DropdownProps<V extends string = string> {
   /** Submitted with a form under this name, as a `<select name>` was. */
   readonly name?: string | undefined;
   readonly triggerRef?: Ref<HTMLButtonElement> | undefined;
+  /**
+   * Arrow keys, Home, End and type-ahead stop on disabled options too, so a
+   * screen reader reads them and the reason in their `detail` (LAI-536). They
+   * still cannot be chosen. Off by default: most lists grey out an option that
+   * needs no explaining, and stepping over it is the quicker path there.
+   */
+  readonly reachDisabled?: boolean | undefined;
 }
 
 /** About 18rem, the owner's brief. */
@@ -175,6 +182,7 @@ export function Dropdown<V extends string = string>({
   title,
   name,
   triggerRef,
+  reachDisabled = false,
 }: DropdownProps<V>) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -419,7 +427,7 @@ export function Dropdown<V extends string = string>({
   }, [open, hide]);
 
   const step = (how: Move): void => {
-    const next = move(shown, activeIndex, how);
+    const next = move(shown, activeIndex, how, reachDisabled);
     if (next !== -1) setActive(shown[next]!.value);
   };
 
@@ -429,7 +437,7 @@ export function Dropdown<V extends string = string>({
     const t = typed.current;
     t.buffer = now - t.at > TYPEAHEAD_MS ? key : t.buffer + key;
     t.at = now;
-    const hit = typeahead(shown, from, t.buffer);
+    const hit = typeahead(shown, from, t.buffer, reachDisabled);
     if (hit !== -1) setActive(shown[hit]!.value);
   };
 
@@ -625,7 +633,9 @@ export function Dropdown<V extends string = string>({
                 .filter((c) => c !== '')
                 .join(' ')}
               onMouseMove={() => {
-                if (!isActive && option.disabled !== true) setActive(option.value);
+                if (!isActive && (option.disabled !== true || reachDisabled)) {
+                  setActive(option.value);
+                }
               }}
               onClick={() => {
                 choose(option);

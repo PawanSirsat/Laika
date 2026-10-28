@@ -2,23 +2,35 @@ import { useId } from 'react';
 import { agentClientName, type AgentClient } from '../../api/agent-clients.ts';
 import { AgentMark } from '../agent-mark/AgentMark.tsx';
 import { Dropdown, type DropdownOption } from '../Dropdown.tsx';
-import { AVAILABILITY_WORDS, type AgentAvailability } from './agent-states.ts';
+import { AVAILABILITY_WORDS } from './agent-states.ts';
 import './agent.css';
 
-/** One agent the picker can offer — the shape a real `GET` will be read into. */
-export interface AgentChoice {
+interface AgentChoiceBase {
   readonly id: string;
   readonly client: AgentClient;
   /** The agent's owner, by name. */
   readonly owner: string;
   readonly device: string;
-  readonly availability: AgentAvailability;
-  /**
-   * Why it cannot be picked — required for `unavailable`, and shown in words,
-   * not only as a greyed row: "Not granted on this space", "Revoked".
-   */
-  readonly reason?: string | undefined;
 }
+
+/**
+ * One agent the picker can offer — the shape a real `GET` will be read into.
+ *
+ * **An agent that cannot be picked must say why**, so `reason` is required
+ * exactly when `availability` is `unavailable`, and absent otherwise: a greyed
+ * row with no words would leave the reader guessing, and the type will not
+ * compile one.
+ */
+export type AgentChoice =
+  | (AgentChoiceBase & {
+      readonly availability: 'available' | 'offline';
+      readonly reason?: undefined;
+    })
+  | (AgentChoiceBase & {
+      readonly availability: 'unavailable';
+      /** In words: "Not granted on this space", "Revoked". */
+      readonly reason: string;
+    });
 
 /** The value for "no agent": the task stays human-only (proposal §3). */
 export const NO_AGENT = '';
@@ -37,10 +49,9 @@ export function choiceLabel(agent: AgentChoice): string {
 
 /** What the option says after its label: the availability, or the reason it is out. */
 export function choiceDetail(agent: AgentChoice): string {
-  if (agent.availability === 'unavailable') {
-    return agent.reason ?? AVAILABILITY_WORDS.unavailable;
-  }
-  return AVAILABILITY_WORDS[agent.availability];
+  return agent.availability === 'unavailable'
+    ? agent.reason
+    : AVAILABILITY_WORDS[agent.availability];
 }
 
 /**
@@ -51,6 +62,11 @@ export function choiceDetail(agent: AgentChoice): string {
  * device**, and says whether it can be reached; an agent that cannot be picked
  * is still listed, disabled, **with the reason in words** — a greyed row alone
  * would leave the reader guessing why.
+ *
+ * **`reachDisabled`**, so the arrow keys stop on those rows too: the reason is
+ * in the option's text, and an option that is never active is never read out
+ * (WAI-ARIA APG, focusability of disabled controls). Enter on one does
+ * nothing; the list stays open.
  *
  * Picking an agent is a work request, not a claim (proposal §3): the line under
  * the field says so, so nobody reads a selection as work having started.
@@ -88,6 +104,7 @@ export function AgentPicker({ agents, value, onChange, disabled }: AgentPickerPr
           aria-describedby={helpId}
           noun="agents"
           disabled={disabled}
+          reachDisabled
         />
         <p id={helpId} className="agent-picker-help">
           {selected === undefined
