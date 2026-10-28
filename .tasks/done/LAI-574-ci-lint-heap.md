@@ -8,7 +8,8 @@ depends-on: []
 discovered-from:
 started: 2026-10-28T09:06:02Z
 finished: 2026-10-28T10:05:37Z
-status: review
+status: done
+accepted: 2026-10-28T17:48:00Z
 ---
 
 ## Goal

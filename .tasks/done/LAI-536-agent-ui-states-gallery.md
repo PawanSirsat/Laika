@@ -8,7 +8,8 @@ depends-on: [LAI-533]
 discovered-from:
 started: 2026-10-27T19:31:31Z
 finished: 2026-10-27T19:51:41Z
-status: review
+status: done
+accepted: 2026-10-28T17:48:00Z
 ---
 
 Implements **proposal §6** — `docs/proposals/LAI-532-agent-identities-and-handoff.md`.
