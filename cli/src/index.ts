@@ -29,6 +29,8 @@ const USAGE = [
   '  laika time folder        name a work folder; its blocks carry the name, never the path',
   '  laika time connect       keep your Solidtime key on this machine (never sent to Laika)',
   '  laika time push|pull     confirmed time to Solidtime, and what was logged there back',
+  '  laika agent session ...  a registered agent’s session, renewed while its harness runs',
+  '  laika agent hooks on     open one per Claude Code / Codex session (opt-in; laika agent --help)',
   '',
   '`init` writes your Claude Code user settings; `connect` keeps the token in',
   '~/.laika/env. Both are outside any repository, so a token cannot be committed',
@@ -50,6 +52,11 @@ async function main(argv: readonly string[]): Promise<number> {
   if (command === 'connect') return connect(argv.slice(1));
   if (command === 'activity') return activity(argv.slice(1));
   if (command === 'time') return time(argv.slice(1));
+  if (command === 'agent') {
+    // Loaded on demand: the hook path has its own entry (agent-main.ts).
+    const { agent } = await import('./agent.ts');
+    return agent(argv.slice(1));
+  }
 
   process.stderr.write(`laika: unknown command "${command}"\n\n${USAGE}\n`);
   return 1;

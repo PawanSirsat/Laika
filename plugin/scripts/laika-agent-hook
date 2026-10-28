@@ -1,0 +1,39 @@
+#!/bin/sh
+#
+# laika-agent-hook <session-start|prompt|tool|session-end> <claude-code|codex>
+#
+# The agent-session hook (LAI-542). Installed into Claude Code's and Codex's
+# hook config by `laika agent hooks on`, removed by `laika agent hooks off`;
+# this script's name is how ours are told from anyone else's.
+#
+# It hands the hook's stdin to `laika agent hook`, which opens the agent's
+# session at SessionStart, keeps a background watcher renewing it only while
+# the harness process lives, and ends it at SessionEnd. It prints nothing but
+# the documented `hookSpecificOutput` JSON, and always exits 0: a hook must
+# never fail the session it serves. The agent's token never passes through
+# here — the helper reads it from ~/.laika/agents/<harness>.json.
+#
+# Runs the CLI's own small entry, not `laika` (which loads every command):
+# built output when it is newer than the source, the source otherwise, as
+# cli/bin/laika does.
+
+SELF="$0"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in
+    /*) SELF="$LINK" ;;
+    *) SELF="$(dirname "$SELF")/$LINK" ;;
+  esac
+done
+CLI_DIR="$(cd "$(dirname "$SELF")/../../cli" 2>/dev/null && pwd)" || exit 0
+
+ENTRY="$CLI_DIR/src/agent-main.ts"
+if [ -r "$CLI_DIR/dist/agent-main.js" ] &&
+  [ -z "$(find "$CLI_DIR/src" -newer "$CLI_DIR/dist/agent-main.js" 2>/dev/null | head -1)" ]; then
+  ENTRY="$CLI_DIR/dist/agent-main.js"
+fi
+[ -r "$ENTRY" ] || exit 0
+command -v node >/dev/null 2>&1 || exit 0
+
+node "$ENTRY" hook "$@" 2>/dev/null
+exit 0
