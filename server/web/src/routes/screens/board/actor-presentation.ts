@@ -1,5 +1,6 @@
 import type { ActivityEvent } from '../../../api/activity.ts';
 import type { Member } from '../../../api/tasks.ts';
+import { agentLine } from '../../../api/agent-session.ts';
 import { agentVia, type AgentNaming } from '../../../api/selected-agent.ts';
 
 /**
@@ -41,6 +42,9 @@ export interface ActorPresentation {
    * where the reader can name it, *a registered agent* where they cannot, and
    * *agent (unregistered token)* for a legacy token, whose rows carry no
    * `agent_id`. The person stays the name — the agent acted *for* them.
+   * When the row kept its session's snapshot (D-118, LAI-587) the session's
+   * harness and model follow: *Claude Code · Belka · Codex · gpt-5.5*; an
+   * older row is the agent alone.
    */
   readonly via: string | undefined;
 }
@@ -63,7 +67,7 @@ const SYSTEM_NAME = 'Laika';
 const UNKNOWN_NAME = 'Someone';
 
 export function describeActor(
-  event: Pick<ActivityEvent, 'actor_id' | 'actor_kind' | 'agent_id'>,
+  event: Pick<ActivityEvent, 'actor_id' | 'actor_kind' | 'agent_id' | 'agent_session'>,
   members: ReadonlyMap<string, Member>,
   agents: ReadonlyMap<string, AgentNaming> | undefined = NO_AGENTS,
 ): ActorPresentation {
@@ -74,7 +78,7 @@ export function describeActor(
       return {
         name: nameOf(event.actor_id, members),
         badge: 'agent',
-        via: agentVia(event, agents),
+        via: viaLine(event, agents),
       };
     case 'user':
       return { name: nameOf(event.actor_id, members), badge: undefined, via: undefined };
@@ -84,4 +88,13 @@ export function describeActor(
 function nameOf(id: string | null, members: ReadonlyMap<string, Member>): string {
   if (id === null) return UNKNOWN_NAME;
   return members.get(id)?.name ?? UNKNOWN_NAME;
+}
+
+/** The agent's name and what its session said ran, or `undefined` on a row no agent wrote. */
+export function viaLine(
+  event: Pick<ActivityEvent, 'actor_kind' | 'agent_id' | 'agent_session'>,
+  agents: ReadonlyMap<string, AgentNaming>,
+): string | undefined {
+  const via = agentVia(event, agents);
+  return via === undefined ? undefined : agentLine(via, event.agent_session);
 }
