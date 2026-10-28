@@ -6,6 +6,7 @@ import { presenceEnabled } from '../db/orgs.ts';
 import { heartbeats, projects, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { agentsMay, assertCan } from '../policy/can.ts';
+import { claimFenceRefusal, holdsLiveClaim } from './claims.ts';
 
 /**
  * Presence (SPEC §9.1, §4.10, D-005, D-023).
@@ -492,7 +493,18 @@ export function recordHeartbeat(
   // The beat is the token's own and always lands; the branch it writes onto a
   // task is a change in that task's space, so a space whose agents are off
   // keeps it (D-103 item 7, LAI-976 review).
-  if (matched !== null && agentsMay(actor, 'task.write', { projectId: matched.projectId })) {
+  //
+  // **And a claimed task keeps it from anyone but its holder** (LAI-541): a
+  // sibling agent's or a legacy token's beat would otherwise rewrite the
+  // branch of work another session holds. The beat still lands; only the
+  // branch is not written. A presence beat carries no generation, so the
+  // holder is recognised by its agent alone.
+  if (
+    matched !== null &&
+    agentsMay(actor, 'task.write', { projectId: matched.projectId }) &&
+    (claimFenceRefusal(db, actor, matched.taskId, now) === null ||
+      holdsLiveClaim(db, actor, matched.taskId))
+  ) {
     // §9.2 stores the branch on the task as well. **Last seen, not a history** —
     // overwriting is correct, and the history is `activity`. No activity row: a
     // heartbeat is presence, not an audited action, and an agent beating every
