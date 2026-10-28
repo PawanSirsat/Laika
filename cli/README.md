@@ -572,3 +572,84 @@ board.
 (`--switch` stops a running one first) and `laika time stop` stops it. Only a
 person starts one: it refuses in CI, under `LAIKA_ACTIVITY_SKIP` and in an
 Omnigent agent's session, and nothing starts one when an agent claims a card.
+
+## `laika agent` — a registered agent's session, bound to its harness (LAI-542)
+
+A registered agent (D-114, LAI-534) acts through **its own token**, never its
+owner's. `laika agent` opens that agent's session on the board when a Claude
+Code or Codex session starts, renews it every 30 s **only while that harness
+process is alive**, and closes it when the harness session ends (proposal
+§4.2, §4.7; SPEC §9.1.1).
+
+```
+laika agent login claude-code --url https://board.example < agent-token   # once; stdin, never argv
+laika agent hooks on --harness claude-code                                 # opt-in
+laika agent session status                                                 # what is open here
+```
+
+`login` refuses a person's token (the board answers `403 not_an_agent`), and
+keeps the agent's in `~/.laika/agents/<harness>.json` (0600, directory 0700).
+`LAIKA_AGENT_TOKEN` (with `LAIKA_AGENT_URL`) overrides it; `LAIKA_TOKEN` is
+never read. `hooks on` merges four entries into `~/.claude/settings.json` or
+`~/.codex/hooks.json`, recognised by `laika-agent-hook` in the command, and
+`hooks off` removes exactly those. Codex runs a new hook only after you trust
+it in `/hooks`.
+
+### How it stays bound to the harness
+
+| Event | What the hook does |
+| --- | --- |
+| `SessionStart` | finds the harness process (the nearest ancestor named `claude` / `codex`; `LAIKA_AGENT_HARNESS_PID` overrides), records its PID **and start time**, opens the session (or reuses the one already open for this harness session), starts a detached watcher, and tells the model the `session_id` to pass to `start_working` |
+| `UserPromptSubmit`, `PostToolUse` | no network: opens the session if `SessionStart` never did, restarts a dead watcher while the harness lives, and shows a pending lost-claim notice once |
+| `SessionEnd` | hands `end` to a background process (the harness gives a hook 1–3 s); the board records `end_reason: ended` |
+
+**Why a watcher and not `PostToolUse` beats.** Hooks fire only at a prompt or a
+tool call. A model thinking for five minutes, or a person reading, fires none,
+and the server expires a claim five minutes after its last renewal — so
+tool-call beats alone drop working sessions. The watcher beats on a timer and
+checks the harness before every beat; the hooks are the backstop. The cost is
+one small background process per harness session.
+
+**When the harness dies** — crash, `kill -9`, closed terminal — the watcher
+sends nothing more and exits; the session is marked `abandoned`, not ended, so
+its claims **lapse and expire** (the recovery path) rather than being released
+as finished. A PID the OS later reuses is not mistaken for the harness: the
+start time must match too. Nothing reclaims automatically; a lost claim is
+shown to the model once, bounded to three tasks, and taking it back is an
+explicit reclaim.
+
+**Network failures** retry the same session and never open another. A start is
+retried only when its request provably never left (connection refused, name
+unresolved); one that may have reached the board (reset, timeout) is marked
+`start_unknown` and not sent again, because resending it is how a second
+session gets made.
+
+**The token** is sent as a header and handed to background children on stdin.
+It is never in argv, a child's environment, a state file
+(`~/.laika/agent-sessions/`, 0600), the helper log, or hook output.
+
+### Harness capability matrix
+
+Cells: **Verified-and-tested** (run on the version shown, against a real
+board), **Documented-not-tested** (in the harness's docs, not run here),
+**Unsupported**, **Unverified**. Docs read 2026-10-28:
+code.claude.com/docs/en/hooks, learn.chatgpt.com/docs/hooks.
+
+| Capability | Claude Code 2.1.280 | Codex 0.162.1 |
+| --- | --- | --- |
+| Agent credential | Verified-and-tested (`laika agent login`, own file; not `headers`) | Documented-not-tested (same file, or `LAIKA_AGENT_TOKEN` in the env Codex passes to hooks) |
+| `SessionStart` opens the session | Verified-and-tested (`claude -p`) | Documented-not-tested |
+| Harness found by PID walk from the hook | Verified-and-tested (real `claude` process) | Documented-not-tested (expects a process named `codex*`) |
+| Detached watcher outlives the hook | Verified-and-tested (13 beats over a 15 s `claude -p`) | Documented-not-tested |
+| Inject (`hookSpecificOutput.additionalContext`) at `SessionStart` | Verified-and-tested (the model repeated the session id) | Documented-not-tested |
+| `UserPromptSubmit` / `PostToolUse` backstop | Documented-not-tested (installed and run by `claude -p`; no observable effect when the session is live) | Documented-not-tested |
+| Inject at `PostToolUse` / `UserPromptSubmit` (lost-claim notice) | Documented-not-tested (the output is unit-tested, not shown to a real model) | Documented-not-tested |
+| `SessionEnd` ends the session | Verified-and-tested (`end_reason: ended`) | Documented-not-tested (advisory, best-effort: a missed end leaves the claim to expire) |
+| Renewal stops when the harness dies | Verified-and-tested with a fake harness named `claude` killed mid-session (`agent-session-e2e.test.ts`) | same test (the logic does not depend on the harness) |
+| Headless | Verified-and-tested (`claude -p --settings`) | Unverified: `codex exec` needs hook trust, given only interactively in `/hooks` or by `--dangerously-bypass-hook-trust`, which this run was not permitted to use |
+
+What is **not** guaranteed: a harness that exits without firing `SessionEnd`
+(a crash, Codex's advisory end) leaves the session open on the board until its
+claims expire; the watcher can be killed by the OS (sleep, an OOM) and nothing
+renews until the next prompt or tool call restarts it; `start_unknown` needs a
+person (`laika agent session status`) when a start's answer was lost.
