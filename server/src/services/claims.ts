@@ -692,8 +692,7 @@ export function takeClaim(
   // session renewing its claim is not a new claim, and is left to the checks
   // below — every other call is one.
   const held = liveClaim(db, task.id);
-  const renewing =
-    held !== undefined && held.agentId === agent.id && held.sessionId === input.sessionId;
+  const renewing = held?.agentId === agent.id && held.sessionId === input.sessionId;
   if (!renewing) assertSelectedAgentMayClaim(db, actor, task.id, agent.id);
 
   const session =
