@@ -35,7 +35,7 @@ change its project access, rotate or revoke its credential.
 
 - [x] The token secret is shown once, never in a URL, never re-fetchable, and is absent from the DOM after the dialog closes (asserted).
 - [x] Verify stays pending until a request authenticated as this agent arrives; a request from the owner's other token does not complete it (asserted).
-- [x] Rotate shows the new secret once and the old token is refused afterwards (e2e against a real server).
+- [ ] Rotate shows the new secret once and the old token is refused afterwards (e2e against a real server).
 - [x] Revoke asks for confirmation through `useDialogFocus` and the agent shows as revoked.
 - [x] Both themes, keyboard-only operation of every step, and 390 px layout work.
 - [x] Every value on the tab comes from an API response; no hardcoded agent names.
@@ -133,3 +133,41 @@ says so. "Current work" is not shown: no API serves it yet.
 **Not done here:** pairing the agent types in `view-type-drift.test.ts` needs
 both owners, because CORE's `UNPAIRED` list would go stale; filed as LAI-564.
 Unifying with LAI-536's components is filed as LAI-565.
+
+## Review round 1 (Codex, FAIL on 381eb70b) — fixed on this branch, new commits only
+
+1. **Close unmounted before the blanking render committed.** Close now blanks
+   the secret, drops it, and unmounts only once both renders have committed;
+   the hook also overwrites the held secret in place on unmount. *Proved:*
+   closing from step 4, the wizard's last DOM frame before removal has no
+   secret (a mutant that unmounts at once goes red), and after Close or
+   leaving the tab the secret is in neither the DOM nor anything React's root
+   reaches. *Not proved:* the unmount scrub itself — React 19 detaches an
+   unmounted subtree, so the walk is clean with or without it (measured). It
+   stays as defence and says so.
+2. **Rotation while the wizard held the original secret.** The row of the
+   agent the open wizard registered offers no rotate or revoke until the
+   wizard closes. Verify is bound to **the token id the wizard minted**:
+   `mintedTokenSeen` reads only that token's own stamps, never the agent's
+   `last_seen_at`. A token found revoked moves step 5 to *replaced* and blanks
+   the stale secret. Tested both ways; the mutants (the row not held,
+   `last_seen_at` accepted, a revoked token not treated as gone) all go red.
+3. **Unloaded projects wiped grants.** *Save access* is enabled only once the
+   projects list has loaded; a failed load is shown with a retry and is no
+   longer discarded. Tested with a failed load and a held (delayed) one; the
+   mutant that reads an unloaded list as `[]` goes red.
+4. **Polling had no deadline for stalled requests.** Step 5 now chains
+   timeouts: one request in flight at a time, each abandoned after 10 s, and
+   the whole watch ends 180 s after it started by wall-clock time. Tested
+   with every poll stalled and Playwright's fake clock: 3–14 polls, never two
+   in flight at once, *spent* at the deadline, and none afterwards. Mutants
+   with no per-request timeout and with no deadline both go red.
+
+**Unticked: "Rotate … (e2e against a real server)".** No committed web test
+here runs against a real server: `test/browser/harness.ts` stubs the API by
+design, and the only real-server suites are CORE's under `server/test/`.
+Rotation was checked against a real server by an uncommitted scratch run
+(old token 401, new token 200), and CORE's
+`server/test/http/routes/agents.test.ts` asserts the 401 server-side. Neither
+is a committed web e2e, so the criterion is not ticked; it is CHIEF's to
+accept on that evidence or to file the harness work.
