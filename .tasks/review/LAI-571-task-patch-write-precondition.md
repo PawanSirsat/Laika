@@ -93,8 +93,7 @@ case `updated_at` alone could not tell apart. Header-only, so no new
 in the same millisecond as the stamp a client holds (a claim, a status move, a
 PATCH without `If-Match`) stamps `now`, which can equal that token, so the
 client's guarded write would still pass. That needs every task writer to stamp
-monotonically and is outside this task; worth a follow-up if the drawer's
-30 s window ever makes it reachable.
+monotonically and is outside this task: filed as LAI-317.
 
 **What changed.**
 - `server/src/http/routes/tasks.ts` — `taskEtag`, `parseIfMatch` (only `"N"`,
