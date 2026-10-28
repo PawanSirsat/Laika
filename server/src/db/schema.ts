@@ -38,6 +38,8 @@ import {
   CHECK_OUTCOMES,
   ESTIMATE_SOURCES,
   EVIDENCE_KINDS,
+  HANDOFF_OFFER_KINDS,
+  HANDOFF_OFFER_STATES,
   EVIDENCE_STATES,
   GITHUB_CHECK_KINDS,
   GRANTABLE_ROLES,
@@ -589,6 +591,16 @@ export const tasks = sqliteTable(
      * recompute that would change nothing costs nothing.
      */
     estimateHash: text('estimate_hash'),
+    /**
+     * The agent intended to do the work (§4.5, D-114 item 7, LAI-535) — **not**
+     * who holds it (`assignee_id`) and not who is working it (a claim,
+     * LAI-541). Selecting one opens a work request in `handoff_offers`; it
+     * claims nothing and starts nothing. `set null`: the selection is a wish,
+     * and a task outlives the agent it was wished on.
+     */
+    selectedAgentId: text('selected_agent_id').references((): AnySQLiteColumn => agents.id, {
+      onDelete: 'set null',
+    }),
     createdAt,
     updatedAt,
   },
@@ -610,6 +622,7 @@ export const tasks = sqliteTable(
     index('tasks_estimate_id_idx').on(t.estimateId),
     index('tasks_estimate_at_start_id_idx').on(t.estimateAtStartId),
     index('tasks_size_override_id_idx').on(t.sizeOverrideId),
+    index('tasks_selected_agent_id_idx').on(t.selectedAgentId),
     // A card found by its outside id, and the prefixes of the ids served
     // (LAI-780). Partial: most tasks carry none, and neither read wants them.
     index('tasks_external_ref_idx')
@@ -775,6 +788,16 @@ export const activity = sqliteTable(
     actorKind: text('actor_kind', { enum: ACTOR_KINDS }).notNull(),
     /** *Which* token, for audit (§4.8). */
     actorTokenId: text('actor_token_id'),
+    /**
+     * *Which* registered agent wrote this row (§4.8, D-114 item 4, LAI-535),
+     * read from `tokens.agent_id` by `appendActivity` and from nothing else.
+     * Null for a session, a legacy token, a system actor and **every row
+     * written before the column existed** — never back-filled with a guess.
+     * `restrict` for LAI-135's reason: a `set null` would be an UPDATE.
+     */
+    agentId: text('agent_id').references((): AnySQLiteColumn => agents.id, {
+      onDelete: 'restrict',
+    }),
     type: text('type', { enum: ACTIVITY_TYPES }).notNull(),
     payloadJson: text('payload_json').notNull().default('{}'),
     createdAt,
@@ -784,6 +807,7 @@ export const activity = sqliteTable(
     index('activity_task_created_at_idx').on(t.taskId, t.createdAt),
     index('activity_org_created_at_idx').on(t.orgId, t.createdAt),
     index('activity_actor_id_idx').on(t.actorId),
+    index('activity_agent_id_idx').on(t.agentId),
     check('activity_actor_kind_check', oneOf('actor_kind', ACTOR_KINDS)),
     check('activity_type_check', oneOf('type', ACTIVITY_TYPES)),
     // D-022, both directions: a system event has no actor, and a non-system
@@ -915,6 +939,53 @@ export const agentProjectGrants = sqliteTable(
     primaryKey({ columns: [t.agentId, t.projectId] }),
     index('agent_project_grants_project_id_idx').on(t.projectId),
     check('agent_project_grants_scope_check', oneOf('scope', AGENT_GRANT_SCOPES)),
+  ],
+);
+
+// ---------------------------------------------------- handoff_offers
+
+/**
+ * Work offered to an agent (proposal §4.4, D-114 item 7, LAI-535).
+ *
+ * **Only work requests exist yet.** Selecting an agent on a task opens one
+ * (`kind = 'work_request'`, `state = 'open'`) addressed to that agent; clearing
+ * or changing the selection cancels it. It claims nothing, starts nothing and
+ * never touches `tasks.assignee_id`.
+ *
+ * The §4.4 shape, cut to what a work request needs, so that LAI-546 adds
+ * columns — `from_session_id`, `checkpoint_id`, `reason`, `note_hash`,
+ * approval and expiry — rather than migrating rows out of a narrower table.
+ * The partial unique index is the rule a work request has: at most one open
+ * per task.
+ */
+export const handoffOffers = sqliteTable(
+  'handoff_offers',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: HANDOFF_OFFER_KINDS }).notNull(),
+    /** Null means any eligible agent — recovery's case (§4.4); a work request always names one. */
+    toAgentId: text('to_agent_id').references(() => agents.id, { onDelete: 'cascade' }),
+    state: text('state', { enum: HANDOFF_OFFER_STATES }).notNull(),
+    /** The person who asked — the selector, whatever credential they used. */
+    createdByUserId: text('created_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt,
+    /** When it left `open` (or the approval state); null while it is live. */
+    closedAt: integer('closed_at'),
+  },
+  (t) => [
+    index('handoff_offers_task_id_idx').on(t.taskId),
+    index('handoff_offers_to_agent_state_idx').on(t.toAgentId, t.state),
+    index('handoff_offers_created_by_user_id_idx').on(t.createdByUserId),
+    uniqueIndex('handoff_offers_one_open_work_request')
+      .on(t.taskId)
+      .where(sql`kind = 'work_request' AND state = 'open'`),
+    check('handoff_offers_kind_check', oneOf('kind', HANDOFF_OFFER_KINDS)),
+    check('handoff_offers_state_check', oneOf('state', HANDOFF_OFFER_STATES)),
   ],
 );
 

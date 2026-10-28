@@ -14,6 +14,7 @@ import {
   setAgentGrants,
   updateAgent,
 } from '../../services/agents.ts';
+import { listOwnWorkRequests } from '../../services/work-requests.ts';
 import { type AppEnv } from '../context.ts';
 import { markOneTimeSecret } from '../idempotency.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
@@ -103,6 +104,20 @@ export function agentRoutes(options: AgentRouteOptions): Hono<AppEnv> {
     });
     markOneTimeSecret(c);
     return c.json<CreatedAgentToken>(created, 201);
+  });
+
+  // The calling agent's open work requests (LAI-535). Registered before
+  // `/:id` so `me` is never read as an agent id.
+  app.get('/me/work-requests', (c) => {
+    const actor = requireActor(c);
+    const query = c.req.query();
+    const { limit, cursor } = parsePageQuery(query);
+    const rows = listOwnWorkRequests(db, actor, {
+      limit,
+      cursor,
+      projectSlug: query.project ?? null,
+    });
+    return c.json(buildPage(rows, limit, (row) => ({ sortKey: row.created_at, id: row.id })));
   });
 
   app.get('/:id', (c) => {

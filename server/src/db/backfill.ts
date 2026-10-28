@@ -70,12 +70,17 @@ interface Recovered {
 
 /** The transitions a task's history records, oldest first. */
 function transitionsByTask(db: Db): Map<string, Recovered> {
-  // The whole row, because `readPayload` takes an `Activity` — reading the
-  // payload through the module that owns its format is the point (LAI-045), and
-  // hand-listing columns to satisfy the type would be the second reader this
-  // avoids.
+  // Through `readPayload`, the module that owns the payload's format (LAI-045)
+  // — but only the columns this reads. This runs at **every boot, after the
+  // migrations**, and a whole-row select names every column the *code* knows:
+  // on any database a migration has not yet given one (a cut-back upgrade
+  // test, LAI-535's `activity.agent_id`), it fails before anything is read.
   const rows = db
-    .select()
+    .select({
+      taskId: activity.taskId,
+      payloadJson: activity.payloadJson,
+      createdAt: activity.createdAt,
+    })
     .from(activity)
     .where(eq(activity.type, 'task.status_changed'))
     .orderBy(asc(activity.createdAt), asc(activity.id))

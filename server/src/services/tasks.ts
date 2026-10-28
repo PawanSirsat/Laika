@@ -70,6 +70,13 @@ import {
   type SendBackView,
 } from './rounds.ts';
 import {
+  assertAgentSelectable,
+  assertSelectionChangeAllowed,
+  moveSelection,
+  selectedAgentViews,
+  type SelectedAgentView,
+} from './work-requests.ts';
+import {
   assertTransition,
   isReady,
   READY_STATUSES,
@@ -236,6 +243,13 @@ export interface TaskSummaryView {
    * one. The *why* is `GET /tasks/:id/estimate`'s, not every list's.
    */
   size: SizeView | null;
+  /**
+   * The agent meant to do the work, or null (§4.5, D-114 item 7, LAI-535) —
+   * **not** the assignee, and not a claim: selecting one opens a work request
+   * and changes nothing else. Its owner rides with it, so "whose agent" never
+   * needs a second read.
+   */
+  selected_agent: SelectedAgentView | null;
   created_at: number;
   updated_at: number;
 }
@@ -287,6 +301,8 @@ interface ViewContext {
   readonly sendBacks: ReadonlyMap<string, SendBackView>;
   /** The size in force per task (D-085) — one query whatever the page. */
   readonly sizes: ReadonlyMap<string, SizeView>;
+  /** The selected agent per agent id (LAI-535) — one query whatever the page. */
+  readonly selectedAgents: ReadonlyMap<string, SelectedAgentView>;
 }
 
 function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
@@ -333,6 +349,7 @@ function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
     ),
     sendBacks: activeSendBacks(db, rows),
     sizes: sizeViews(db, rows),
+    selectedAgents: selectedAgentViews(db, rows),
   };
 }
 
@@ -380,6 +397,10 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     blocks: context.edges.blocks.get(row.id) ?? [],
     send_back: sendBackOf(context.sendBacks.get(row.id)),
     size: context.sizes.get(row.id) ?? null,
+    selected_agent:
+      row.selectedAgentId === null
+        ? null
+        : (context.selectedAgents.get(row.selectedAgentId) ?? null),
     comment_count: context.comments.get(row.id) ?? 0,
     tags: context.tags.get(row.id) ?? [],
     started_at: row.startedAt,
@@ -1271,6 +1292,11 @@ export interface UpdateTaskInput {
   size?: SizeLevel | null | undefined;
   /** An outside id (LAI-780), upper-cased; `null` clears it. */
   external_ref?: string | null | undefined;
+  /**
+   * The agent meant to do it (D-114 item 7, LAI-535): an id selects and opens
+   * a work request, `null` withdraws it. Never moves the assignee.
+   */
+  selected_agent_id?: string | null | undefined;
   now?: number;
 }
 
@@ -1324,6 +1350,17 @@ export function updateTask(
     assertCan(scoped, 'task.assign_other', { projectId: project.id });
     if (typeof input.assignee_id === 'string') assertMayHold(db, input.assignee_id, project.id);
     changes.assigneeId = input.assignee_id;
+  }
+
+  // The selection is not in `changes`: it writes its own verb, and a reader
+  // asking "when was this asked of that agent" should not open a payload.
+  const selecting =
+    input.selected_agent_id !== undefined && input.selected_agent_id !== task.selectedAgentId;
+  if (selecting) {
+    assertSelectionChangeAllowed(db, task);
+    if (input.selected_agent_id !== null && input.selected_agent_id !== undefined) {
+      assertAgentSelectable(db, actor, project, input.selected_agent_id);
+    }
   }
 
   // **One write, whole or not at all** (LAI-771 review, B1). The tags, the
@@ -1382,6 +1419,24 @@ export function updateTask(
           payload: reassigning
             ? { from: task.assigneeId, to: input.assignee_id ?? null }
             : { changed: apiFieldNames(tasks, Object.keys(changes)) },
+          now,
+        });
+      }
+
+      if (selecting) {
+        const to = input.selected_agent_id ?? null;
+        db.update(tasks)
+          .set({ selectedAgentId: to, updatedAt: now })
+          .where(eq(tasks.id, taskId))
+          .run();
+        moveSelection(db, actor, taskId, to, now);
+        appendActivity(db, {
+          orgId: project.orgId,
+          projectId: project.id,
+          taskId,
+          ...activityActor(actor),
+          type: 'task.agent_selected',
+          payload: { from: task.selectedAgentId, to },
           now,
         });
       }

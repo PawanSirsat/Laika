@@ -205,6 +205,13 @@ export const ACTIVITY_TYPES = [
   'task.stale_flagged',
   'invite.expired',
   'meeting_review.expired',
+  // D-114 item 7, LAI-535: a task's selected agent set, changed or cleared —
+  // one verb for every direction, as `task.assigned` is for the assignee. Not
+  // `task.updated`: "when was this asked of that agent, and by whom" is the
+  // question, and §4.8's test is that a reader need not open a payload.
+  // Dotted like every verb here; the proposal's `agent_selected` is this one.
+  // Three owners (CLAUDE.md §4.4): §4.8's row, this, and LAI-538's mirror.
+  'task.agent_selected',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
@@ -224,6 +231,30 @@ export type AgentStatus = (typeof AGENT_STATUSES)[number];
  */
 export const AGENT_GRANT_SCOPES = TOKEN_SCOPES;
 export type AgentGrantScope = TokenScope;
+
+/**
+ * What a `handoff_offers` row offers (proposal §4.4, LAI-535). Only
+ * `work_request` is written today — selecting an agent asks it to take a task
+ * that nobody has worked yet. `handoff` and `recovery` are LAI-546's, listed
+ * now so that adding them is not a rebuild of a table with rows in it.
+ */
+export const HANDOFF_OFFER_KINDS = ['work_request', 'handoff', 'recovery'] as const;
+export type HandoffOfferKind = (typeof HANDOFF_OFFER_KINDS)[number];
+
+/**
+ * An offer's life cycle (proposal §4.4). A work request is written `open` and
+ * leaves it only as `cancelled` — the selection was cleared or changed —
+ * today; acceptance, approval and expiry arrive with LAI-541 and LAI-546.
+ */
+export const HANDOFF_OFFER_STATES = [
+  'pending_approval',
+  'open',
+  'accepted',
+  'declined',
+  'cancelled',
+  'expired',
+] as const;
+export type HandoffOfferState = (typeof HANDOFF_OFFER_STATES)[number];
 
 export const AI_PROVIDERS = ['anthropic', 'openai_compatible'] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];

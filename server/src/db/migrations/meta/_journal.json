@@ -428,6 +428,13 @@
       "when": 1793130358330,
       "tag": "0061_registered_agents",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "6",
+      "when": 1793135026166,
+      "tag": "0062_selected_agent_work_requests",
+      "breakpoints": true
     }
   ]
 }

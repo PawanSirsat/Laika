@@ -666,6 +666,7 @@ which is the check working on the document it exists to pin.
 | `estimate_at_start_id` | nullable FK `task_estimates` — the model's estimate in force when work **first** started, set when `started_at` is and never moved again (D-085 item 5). Every estimate-versus-actual reads this copy |
 | `size_override_id` | nullable FK `task_estimates` — the `person` row in force; null when nobody has set a size |
 | `estimate_hash` | nullable — a hash of everything the model read for the current estimate (title, description, acceptance, tags, what blocks it, its children and the project's model version), so a recompute that would change nothing costs nothing |
+| `selected_agent_id` | nullable FK `agents` (§4.63), `ON DELETE SET NULL` — the registered agent **meant to do the work** (D-114 item 7, LAI-535). Not the assignee and not a claim: selecting one opens a **work request** addressed to it, and changes neither `assignee_id`, `status` nor anything a claim holds; a task can stay human-only. Set by `PATCH /tasks/:id` and `update_task` (§6.4, §7.1) by anyone who may edit the task, to **their own** agent only — active, granted `full` on the project, in a space whose agents may write (the hand-off policy's defaults, proposal §4.5; other members' agents wait for LAI-546). `null` withdraws the request. Served on `TaskView` as `selected_agent` |
 
 **`started_at`** is set the first time a task enters `in_progress` and is never
 moved again. **`completed_at`** is set on **every** arrival at `done`, and is
@@ -748,6 +749,7 @@ gave for sending the task back from review (D-082).
 | `actor_id` | **nullable, and only when `actor_kind = 'system'`** (D-022) |
 | `actor_kind` | `user` (cookie) \| `agent` (token) \| `system` (no human — cron or webhook) |
 | `actor_token_id` | nullable — *which* token, for audit |
+| `agent_id` | nullable FK `agents` (§4.63), `restrict` — *which* registered agent wrote the row (D-114 item 4, LAI-535), read by the activity writer from the token's `agent_id` and from nothing else. Null for a session, a legacy token, the system and **every row written before the column existed: never back-filled** |
 | `type` | closed vocabulary, below |
 | `payload_json` | the before/after diff or details |
 | `created_at` | |
@@ -782,7 +784,13 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `user.deactivated`, `user.reactivated`, `user.signed_out`,
 `org.ownership_transferred`, `task.stale_flagged`,
 `heartbeat.pruned`, `invite.expired`, `meeting_review.expired`,
-`meeting_review.discarded`.
+`meeting_review.discarded`, `task.agent_selected`.
+
+**`task.agent_selected`** (D-114 item 7, LAI-535) is a task's selected agent
+set, changed or cleared — one verb for every direction, payload `{ from, to }`,
+as `task.assigned` is for the assignee. Its own verb rather than `task.updated`
+because *"when was this asked of that agent, and by whom"* is the question
+§4.8's test asks. The proposal's working name was `agent_selected`.
 
 **The nine verbs added 2026-09-01 are the same argument, four more times.**
 Sprints, the project context document, unlisted-work triage and deactivation
@@ -2762,6 +2770,7 @@ GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { di
 PUT    /api/v1/agents/:id/grants             body { grants[{ project_id, scope }] } — replaces the set (§4.64)
 POST   /api/v1/agents/:id/rotate-token       body { token_id, expires_at? } → 201 { agent, token, secret }; the old token is revoked in the same transaction
 POST   /api/v1/agents/:id/revoke             the agent and every live token it holds; idempotent
+GET    /api/v1/agents/me/work-requests       ?project= optional — the calling agent's open work requests (LAI-535); an agent's token only
 POST   /api/v1/heartbeats                    202, token auth only
 GET    /api/v1/presence                      GET /api/v1/capacity
 GET    /api/v1/permissions                   every org and project action: label, scope, which roles hold it, conditions; and the caller's own grants (viewer+; LAI-885) — answered under the organisation's grants (LAI-958)
@@ -2780,7 +2789,7 @@ GET    /api/v1/health
 
 `PATCH /tasks/:id` accepts a partial
 `{ title, description_md, acceptance_md, tags, priority, assignee_id,
-parent_task_id, due_on, planned_start, external_ref }`.
+parent_task_id, due_on, planned_start, external_ref, selected_agent_id }`.
 **`null` clears a field; absent leaves it alone** — they are different requests,
 and `acceptance_md`, `assignee_id`, `parent_task_id` and both dates draw the
 distinction. `tags` replaces the whole set. `POST /projects/:slug/tasks` takes
@@ -2795,6 +2804,27 @@ counts — or it is `422` with `details: { field: 'assignee_id', reason:
 'not_on_project', assignee_id }`; MCP's `assignee` reaches the same check
 (LAI-962). `?parent=<id>` on the list returns that task's
 subtasks only, and pages with `cursor` like any other filter (D-066).
+
+**`selected_agent_id`** (§4.5, D-114 item 7, LAI-535) selects the agent meant
+to do the task and opens a work request for it; `null` withdraws the request,
+and the same id again changes nothing and writes nothing. It never moves
+`assignee_id`. An agent that cannot be selected is `422` with `details: {
+field: 'selected_agent_id', reason, selected_agent_id }`, `reason` one of
+`agent_not_found`, `agent_other_owner`, `agent_wrong_org`, `agent_revoked`,
+`agent_not_granted`, `agent_read_only` or `agents_off`. Changing it while a
+claim is live will go through a hand-off once claims exist (LAI-541, LAI-546);
+until then it is free to change. `GET /agents/me/work-requests` is the calling
+agent's open requests, newest first, paged like any list, each `{ id, kind,
+state, task_id, task_key, task_title, project_id, agent_id, requested_by,
+created_at }`, limited to the projects the agent may read now — and to one with
+`?project=<slug>`, which is looked up **only among those**: a slug the agent
+may not use, real or made up, gets one refusal, identical byte for byte — `403
+forbidden`, `reason: agent_not_granted`, no slug or id in the body — so the
+answer never discloses whether the project exists. MCP's `list_ready_tasks`
+`project` argument answers an agent's token the same way, before its task list
+is read; a token that is
+not a registered agent's — or a session — is `403` with `reason:
+not_an_agent`.
 
 **A slim list: `?fields=slim`** (LAI-795). The task list answers every field
 of the task view below **except `description_md` and `acceptance_md`**, the
@@ -3612,6 +3642,7 @@ same shape without `description_md` and `acceptance_md` (LAI-795):
 | `blocked_by`, `blocks` | **both directions of §4.6** — see §4.5. `ready` depends only on `blocked_by` |
 | `send_back` | `{ reason_md, decided_by, created_at }` of the task's current send-back (§4.27), or `null` (D-082) |
 | `size` | the estimate in force (§4.32): `{ level, computed, overridden, weight, build_p50_ms, build_p80_ms, subtasks }` — `level` is a person's size when one is set and `computed` is Laika's beside it — or `null` before one is computed (D-085) |
+| `selected_agent` | §4.5's `selected_agent_id`, **served in its place**: `{ id, display_name, harness, device_label, status, owner: { id, name } }` of the agent the work is requested of (§4.63), or `null` — never a token or a grant (LAI-535) |
 
 `created_at` and `updated_at` are on every view and are not listed per endpoint.
 
@@ -3864,13 +3895,13 @@ matched.
 | --- | --- | --- |
 | `laika_whoami` | `{}` | the identity this token acts as — `user_id`, `name`, `email`, `org_role`, `token_scope`, `agent` (the registered agent this token is the credential of — `id`, `display_name`, `harness`, `device_label`, `status` — or `null` for a legacy token; D-114) — and `how_to_work`, the same text as the server's `instructions`, for clients that drop those (D-076). Reads nothing, changes nothing |
 | `list_projects` | `{}` | projects the user can read |
-| `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age |
+| `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age. On a registered agent's token, also `work_requests`: its open work requests, ready or not, newest first, under the same `project` and `limit`, as `GET /agents/me/work-requests?project=&limit=` answers (LAI-535) — a request, not a claim |
 | `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`), and `estimate` — the size, its *why*, the forecast frozen at start and the actual, as `GET /tasks/:id/estimate` answers (D-085), with the token forecast, what was said at claim, *scope grew* and the split suggestion (LAI-772) — and `similar`: up to five similar finished tasks in the project, closest first, each `{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }` — why it was sent back, and nobody's name |
 | `get_project_context` | `{ project }` | `context_md`, its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770) |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
 | `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
-| `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size?, external_ref? }` | task. Every field optional; an omitted one is left alone; `null` on `parent`, a date, `size` or `external_ref` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085) |
+| `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size?, external_ref?, agent? }` | task. Every field optional; an omitted one is left alone; `null` on `parent`, a date, `size`, `external_ref` or `agent` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085). `agent` is a registered agent's id and is `PATCH`'s `selected_agent_id` (§6.4): a work request, never an assignment (LAI-535) |
 | `start_working` | `{ task, branch?, estimate? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770). `estimate` is the claimant's own `{ size?, confidence? }` — `XS`–`XL` and `green` \| `yellow` \| `red` — kept in §4.34, scored against what happens, and blended into the forecast only once estimates here beat the project median (LAI-772); a resume keeps none. **The holder's own call on a task already in progress succeeds** as a no-op that keeps the branch it is given and returns the task — no status change, no `activity` row, `started_at` and the frozen estimate untouched — so a session resuming its task can mark it (LAI-770 review, B2); anyone else, and a holder whose task is not in progress, still get `409` |
 | `update_status` | `{ task, status, note? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
 | `set_task_sprint` | `{ task, sprint }` | task. `sprint: null` takes it out of whichever it is in |

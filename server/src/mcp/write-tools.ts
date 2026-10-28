@@ -568,7 +568,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Edit a task',
       description:
-        'Change a task after it exists: its title, prose, priority, tags, who holds it, which sprint it sits in, its parent, its due and planned-start dates, its effort (`size`), and the outside id it carries. Every field is optional and an omitted one is left alone; `null` on `parent`, `due_on`, `planned_start`, `size` or `external_ref` clears it. **Status is not here** — moving a task is `update_status`, because §5 validates transitions and a field edit would route around the table.',
+        'Change a task after it exists: its title, prose, priority, tags, who holds it, which sprint it sits in, its parent, its due and planned-start dates, its effort (`size`), the outside id it carries, and the registered `agent` selected to do it. Every field is optional and an omitted one is left alone; `null` on `parent`, `due_on`, `planned_start`, `size` or `external_ref` clears it. **Status is not here** — moving a task is `update_status`, because §5 validates transitions and a field edit would route around the table.',
       inputSchema: z.strictObject({
         task: TASK_REF,
         title: TASK_FIELDS.title.optional(),
@@ -590,6 +590,15 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           .optional()
           .describe('Override the effort Laika computed; `null` goes back to the computed one.'),
         external_ref: TASK_FIELDS.external_ref.nullable().optional(),
+        agent: z
+          .string()
+          .min(1)
+          .max(64)
+          .nullable()
+          .optional()
+          .describe(
+            'Select a registered agent (its id) to do this task — a work request; it does not assign or claim it. Only your own agents, active and granted full access here. `null` withdraws the request.',
+          ),
       }),
     },
     ({
@@ -606,6 +615,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
       planned_start,
       size,
       external_ref,
+      agent,
     }) => {
       try {
         const id = resolveTaskRef(db, task, actor);
@@ -635,6 +645,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           ...(planned_start === undefined ? {} : { planned_start }),
           ...(size === undefined ? {} : { size }),
           ...(external_ref === undefined ? {} : { external_ref }),
+          ...(agent === undefined ? {} : { selected_agent_id: agent }),
           now,
         });
 

@@ -225,6 +225,10 @@ const UNPAIRED = new Map<string, string>([
   ['AgentView', 'no client type exists'],
   ['AgentGrantView', 'no client type exists'],
   ['CreatedAgentToken', 'no client type exists'],
+  // LAI-535's selected agent on `TaskView` and the agent's work requests; the
+  // task drawer's Agent field (LAI-538) brings the mirror.
+  ['SelectedAgentView', 'no client type exists'],
+  ['WorkRequestView', 'no client type exists'],
 ]);
 
 /**

@@ -1,9 +1,9 @@
 import { serve } from '@hono/node-server';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { orgs, tokens, users } from '../../src/db/schema.ts';
+import { activity, orgs, tokens, users } from '../../src/db/schema.ts';
 import {
   type AuthHarness,
   authHarness,
@@ -28,6 +28,7 @@ let baseUrl: URL;
 let ownerCookie: string;
 let bob: { cookie: string; id: string };
 let alpha: string;
+let beta: string;
 
 interface ErrorBody {
   error: { code: string; message: string; details: { reason?: unknown } | null };
@@ -127,6 +128,7 @@ beforeEach(async () => {
       ownerCookie,
     );
     if (slug === 'alpha') alpha = created.id as string;
+    else beta = created.id as string;
     await must(
       `/api/v1/projects/${slug}/members`,
       { method: 'POST', body: JSON.stringify({ user_id: bob.id, role: 'member' }) },
@@ -259,6 +261,205 @@ describe('laika_whoami', () => {
     const me = await whoami(client);
     expect(me).toMatchObject({ email: 'bob@example.test', token_scope: 'full', agent: null });
     await succeeded(client, 'create_task', { project: 'beta', title: 'legacy reaches beta' });
+    await client.close();
+  });
+});
+
+describe('selecting an agent over MCP (LAI-535)', () => {
+  async function newTask(): Promise<{ id: string; key: string }> {
+    const body = await must(
+      '/api/v1/projects/alpha/tasks',
+      { method: 'POST', body: JSON.stringify({ title: 'Work' }) },
+      bob.cookie,
+    );
+    return { id: body.id as string, key: body.key as string };
+  }
+
+  it('update_task { agent } is PATCH selected_agent_id: same refusal, same row, no assignee', async () => {
+    const worker = await register([{ project_id: alpha, scope: 'full' }]);
+    const caller = await register([{ project_id: alpha, scope: 'full' }]);
+    const unGranted = await register([]);
+    const task = await newTask();
+    const client = await connect(caller.secret);
+
+    expect(
+      await refused(client, 'update_task', { task: task.key, agent: unGranted.agent.id }),
+    ).toEqual({ code: 'unprocessable', reason: 'agent_not_granted' });
+
+    const result = await succeeded(client, 'update_task', {
+      task: task.key,
+      agent: worker.agent.id,
+    });
+    const view = (result.structuredContent as { task: Record<string, unknown> }).task;
+    expect(view.assignee_id).toBeNull();
+    expect((view.selected_agent as { id: string }).id).toBe(worker.agent.id);
+
+    const rows = h.db
+      .select()
+      .from(activity)
+      .where(and(eq(activity.taskId, task.id), eq(activity.type, 'task.agent_selected')))
+      .all();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ actorKind: 'agent', agentId: caller.agent.id });
+    expect(JSON.parse(rows[0]!.payloadJson)).toEqual({ from: null, to: worker.agent.id });
+
+    await client.close();
+  });
+
+  it('list_ready_tasks carries the agent’s work requests; a legacy token gets no such field', async () => {
+    const worker = await register([{ project_id: alpha, scope: 'full' }]);
+    const task = await newTask();
+    await must(
+      `/api/v1/tasks/${task.id}`,
+      { method: 'PATCH', body: JSON.stringify({ selected_agent_id: worker.agent.id }) },
+      bob.cookie,
+      200,
+    );
+
+    const client = await connect(worker.secret);
+    const result = await succeeded(client, 'list_ready_tasks', {});
+    const body = result.structuredContent as { work_requests?: { task_key: string }[] };
+    expect(body.work_requests?.map((r) => r.task_key)).toEqual([task.key]);
+    await client.close();
+
+    const legacy = (await must(
+      '/api/v1/tokens',
+      { method: 'POST', body: JSON.stringify({ name: 'cli', scope: 'full' }) },
+      bob.cookie,
+    )) as { secret: string };
+    const plain = await connect(legacy.secret);
+    const answer = await succeeded(plain, 'list_ready_tasks', {});
+    expect(answer.structuredContent).not.toHaveProperty('work_requests');
+    await plain.close();
+  });
+
+  it('list_ready_tasks applies `project` and `limit` to work_requests, exactly as the REST twin does', async () => {
+    const worker = await register([
+      { project_id: alpha, scope: 'full' },
+      { project_id: beta, scope: 'full' },
+    ]);
+    const select = async (slug: 'alpha' | 'beta') => {
+      const body = await must(
+        `/api/v1/projects/${slug}/tasks`,
+        { method: 'POST', body: JSON.stringify({ title: 'Work' }) },
+        bob.cookie,
+      );
+      await must(
+        `/api/v1/tasks/${String(body.id)}`,
+        { method: 'PATCH', body: JSON.stringify({ selected_agent_id: worker.agent.id }) },
+        bob.cookie,
+        200,
+      );
+      return body.key as string;
+    };
+    const alphaKeys = [await select('alpha'), await select('alpha')];
+    const betaKey = await select('beta');
+
+    const rest = async (query: string) => {
+      const res = await h.app.request(`/api/v1/agents/me/work-requests${query}`, {
+        headers: jsonHeaders({ Authorization: `Bearer ${worker.secret}` }),
+      });
+      expect(res.status, await res.clone().text()).toBe(200);
+      return ((await res.json()) as { data: { task_key: string }[] }).data.map((r) => r.task_key);
+    };
+
+    const client = await connect(worker.secret);
+    const mcp = async (args: Record<string, unknown>) => {
+      const result = await succeeded(client, 'list_ready_tasks', args);
+      return (
+        result.structuredContent as { work_requests: { task_key: string }[] }
+      ).work_requests.map((r) => r.task_key);
+    };
+
+    // Scoped: nothing from beta leaks into an alpha call, on either surface.
+    expect((await mcp({ project: 'alpha' })).sort()).toEqual([...alphaKeys].sort());
+    expect(await mcp({ project: 'alpha' })).toEqual(await rest('?project=alpha'));
+    expect(await mcp({ project: 'beta' })).toEqual([betaKey]);
+    // Limited: the same newest-first prefix the REST page gives.
+    expect(await mcp({ limit: 1 })).toEqual(await rest('?limit=1'));
+    expect(await mcp({ limit: 1 })).toHaveLength(1);
+    expect(await mcp({})).toHaveLength(3);
+
+    await client.close();
+  });
+
+  it('list_ready_tasks answers a real-but-ungranted project and a made-up one identically', async () => {
+    const { secret } = await register([{ project_id: alpha, scope: 'full' }]);
+    const client = await connect(secret);
+    const ask = async (project: string) => {
+      const result = await client.callTool({ name: 'list_ready_tasks', arguments: { project } });
+      expect(result.isError, JSON.stringify(result)).toBe(true);
+      return { content: result.content, structured: result.structuredContent };
+    };
+
+    const real = await ask('beta');
+    const madeUp = await ask('no-such-project');
+
+    expect(JSON.stringify(real)).toBe(JSON.stringify(madeUp));
+    expect((real.structured as ErrorBody).error).toMatchObject({
+      code: 'forbidden',
+      details: { reason: 'agent_not_granted' },
+    });
+    await client.close();
+  });
+
+  async function refusalFor(secret: string, project: string) {
+    const client = await connect(secret);
+    try {
+      const result = await client.callTool({ name: 'list_ready_tasks', arguments: { project } });
+      expect(result.isError, JSON.stringify(result)).toBe(true);
+      return JSON.stringify({ content: result.content, structured: result.structuredContent });
+    } finally {
+      await client.close();
+    }
+  }
+
+  it('list_ready_tasks: the owner losing read access gives the made-up slug’s refusal', async () => {
+    const { secret } = await register([
+      { project_id: alpha, scope: 'full' },
+      { project_id: beta, scope: 'full' },
+    ]);
+    const before = await connect(secret);
+    await succeeded(before, 'list_ready_tasks', { project: 'beta' });
+    await before.close();
+
+    await must(`/api/v1/projects/beta/members/${bob.id}`, { method: 'DELETE' }, ownerCookie, 200);
+
+    expect(await refusalFor(secret, 'beta')).toBe(await refusalFor(secret, 'no-such-project'));
+  });
+
+  it('list_ready_tasks: a token pinned narrower than the grants gives the same refusal outside the pin', async () => {
+    const { secret, token } = await register([
+      { project_id: alpha, scope: 'full' },
+      { project_id: beta, scope: 'full' },
+    ]);
+    h.db
+      .update(tokens)
+      .set({ projectIdsJson: JSON.stringify([alpha]) })
+      .where(eq(tokens.id, token.id))
+      .run();
+
+    expect(await refusalFor(secret, 'beta')).toBe(await refusalFor(secret, 'no-such-project'));
+    const inside = await connect(secret);
+    await succeeded(inside, 'list_ready_tasks', { project: 'alpha' });
+    await inside.close();
+  });
+
+  it('get_task_context says who it is requested of, apart from the assignee', async () => {
+    const worker = await register([{ project_id: alpha, scope: 'full' }]);
+    const task = await newTask();
+    await must(
+      `/api/v1/tasks/${task.id}`,
+      { method: 'PATCH', body: JSON.stringify({ selected_agent_id: worker.agent.id }) },
+      bob.cookie,
+      200,
+    );
+
+    const client = await connect(worker.secret);
+    const result = await succeeded(client, 'get_task_context', { task: task.key });
+    const text = (result.content as { text: string }[])[0]?.text ?? '';
+    expect(text).toContain('Requested of agent **Bob’s Codex**');
+    expect(text).toContain('it claims nothing');
     await client.close();
   });
 });
