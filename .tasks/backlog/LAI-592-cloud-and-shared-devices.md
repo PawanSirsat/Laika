@@ -14,7 +14,7 @@ owners (§4.4): **docs** — a proposed decision and the SPEC rows — and **COR
 — the server rule. Named docs edits this task authorises (D-033): a new
 proposal section in `docs/proposals/LAI-532-agent-identity-model.md` (or a
 sibling proposal file) and SPEC §4.63 and §4.9; nothing else under `docs/`.
-Board card: parent LAIKA-785.
+Board card: LAIKA-846, parent LAIKA-785.
 
 ## Goal
 

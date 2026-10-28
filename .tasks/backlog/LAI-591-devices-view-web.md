@@ -11,7 +11,7 @@ status: backlog
 
 Phase 2.5 slice from `docs/proposals/LAI-532-phase-index.md` (PR #121). The
 server half is LAI-590; this screen calls only what LAI-590 serves (§5.1).
-Board card: parent LAIKA-785.
+Board card: LAIKA-845, parent LAIKA-785.
 
 ## Goal
 
