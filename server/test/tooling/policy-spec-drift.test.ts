@@ -154,7 +154,11 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
  * the code and the document, not a design decision, and the staleness test below
  * removes an entry the moment §3 grows a row for it.
  */
-const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map([
+const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map<Action, string>([
+  [
+    'system.idempotency.prune',
+    "LAI-534 (Codex review of PR #102, round 2): the §11.6 sweep of the idempotency store's expired rows and of its pre-LAI-534 rows, which may hold secrets. CORE's half; CHIEF's §3.4 row retires this entry, and the staleness test below says so the day it lands.",
+  ],
   // Empty, and it should stay that way: an action `can()` allows and §3 never
   // grants is a permission with no written source.
   //

@@ -83,8 +83,21 @@ void describe('the List row', () => {
       LIST_COLUMNS.map((c) => c.label),
       // `Due` joined them with D-066: the plan beside the two actuals. The
       // size with D-085, beside the priority it is not, called `Effort` since
-      // LAI-785.
-      ['Key', 'Summary', 'Status', 'Pri', 'Effort', 'Assignee', 'Spr', 'Due', 'Created', 'Updated'],
+      // LAI-785. The selected agent with LAI-538, beside the person and never
+      // in their column.
+      [
+        'Key',
+        'Summary',
+        'Status',
+        'Pri',
+        'Effort',
+        'Assignee',
+        'Agent',
+        'Spr',
+        'Due',
+        'Created',
+        'Updated',
+      ],
     );
   });
 
@@ -269,6 +282,42 @@ void describe('sorting', () => {
     assert.deepEqual(
       sortRows(rows, byId, 'key', false).map((r) => r.key),
       ['LC-2', 'LC-1'],
+    );
+  });
+});
+
+void describe('the Agent column (LAI-538)', () => {
+  const agent = (id: string, device: string) => ({
+    id,
+    display_name: device,
+    harness: 'claude-code',
+    device_label: device,
+    status: 'active' as const,
+    owner: { id: 'u1', name: 'Ada Lovelace' },
+  });
+  const tasks = [
+    task({ id: 'a', key: 'LC-1' }),
+    task({ id: 'b', key: 'LC-2', selected_agent: agent('ag2', 'laptop-2') }),
+    task({ id: 'c', key: 'LC-3', selected_agent: agent('ag1', 'desktop-1') }),
+  ];
+
+  void test('names the agent in its own column and leaves the assignee alone', () => {
+    const { rows } = rowsFor(tasks);
+    const row = rows.find((r) => r.key === 'LC-2');
+    assert.equal(row?.agentLabel, 'Claude Code · laptop-2');
+    assert.equal(row?.who, 'Unassigned', 'an agent was counted as the assignee');
+    assert.equal(rows.find((r) => r.key === 'LC-1')?.agent, null);
+  });
+
+  void test('sorts by label, no agent last in both directions', () => {
+    const { rows, byId } = rowsFor(tasks);
+    assert.deepEqual(
+      sortRows(rows, byId, 'agent', true).map((r) => r.key),
+      ['LC-3', 'LC-2', 'LC-1'],
+    );
+    assert.deepEqual(
+      sortRows(rows, byId, 'agent', false).map((r) => r.key),
+      ['LC-2', 'LC-3', 'LC-1'],
     );
   });
 });

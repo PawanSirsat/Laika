@@ -7,6 +7,7 @@ import {
   orgs,
   projects,
   tasks,
+  tokens,
   users,
 } from '../../../src/db/schema.ts';
 import {
@@ -526,6 +527,159 @@ describe('GET /agents/me/work-requests', () => {
 
     const page = await ok(await req('/api/v1/agents/me/work-requests', {}, { bearer: secret }));
     expect(page.data).toEqual([]);
+  });
+
+  it('pages through equal timestamps by (created_at, id): no duplicate, no skip', async () => {
+    const { agent, secret } = await register([{ project_id: alpha, scope: 'full' }]);
+    const asked: string[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      const taskId = await newTask('alpha');
+      await ok(await patch(taskId, { selected_agent_id: agent.id }));
+      asked.push(taskId);
+    }
+    // Every request at one instant: only the id can order them now.
+    h.db.update(handoffOffers).set({ createdAt: 1_800_000_000_000 }).run();
+    const expected = h.db
+      .select({ id: handoffOffers.id })
+      .from(handoffOffers)
+      .all()
+      .map((r) => r.id)
+      .sort()
+      .reverse();
+
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+    do {
+      const query: string = cursor === null ? '?limit=2' : `?limit=2&cursor=${cursor}`;
+      const page = await ok(
+        await req(`/api/v1/agents/me/work-requests${query}`, {}, { bearer: secret }),
+      );
+      const data = page.data as { id: string; task_id: string }[];
+      expect(data.length).toBeLessThanOrEqual(2);
+      seen.push(...data.map((r) => r.id));
+      cursor = page.next_cursor as string | null;
+      pages += 1;
+      expect(pages, 'the cursor never ends').toBeLessThan(10);
+    } while (cursor !== null);
+
+    // Newest first, ties broken by id descending, each exactly once.
+    expect(seen).toEqual(expected);
+    expect(pages).toBe(3);
+    expect(new Set(seen).size).toBe(asked.length);
+  });
+
+  it('answers a real-but-ungranted slug and a made-up one byte for byte alike: existence is not disclosed', async () => {
+    const { secret } = await register([{ project_id: alpha, scope: 'full' }]);
+    const ask = async (slug: string) => {
+      const res = await req(
+        `/api/v1/agents/me/work-requests?project=${slug}`,
+        {},
+        { bearer: secret },
+      );
+      return { status: res.status, body: await res.text() };
+    };
+
+    const real = await ask('beta');
+    const madeUp = await ask('no-such-project');
+
+    expect(real).toEqual(madeUp);
+    expect(real.status).toBe(403);
+    expect(JSON.parse(real.body)).toEqual({
+      error: {
+        code: 'forbidden',
+        message: 'This agent has no access to this project',
+        details: { action: 'project.read', reason: 'agent_not_granted' },
+      },
+    });
+    // The body names neither the slug asked for nor any project id.
+    expect(real.body).not.toContain('beta');
+    expect(real.body).not.toContain(beta);
+  });
+
+  /** What a made-up slug answers this token: the one refusal everything below must equal. */
+  async function uniformRefusal(secret: string) {
+    const res = await req(
+      '/api/v1/agents/me/work-requests?project=no-such-project',
+      {},
+      { bearer: secret },
+    );
+    return { status: res.status, body: await res.text() };
+  }
+
+  it('the owner losing read access to a granted project gives the same refusal as a made-up slug', async () => {
+    const { agent, secret } = await register([
+      { project_id: alpha, scope: 'full' },
+      { project_id: beta, scope: 'full' },
+    ]);
+    const taskId = await newTask('beta');
+    await ok(await patch(taskId, { selected_agent_id: agent.id }));
+    // Granted, and readable — so the refusal below is the owner's loss, nothing else.
+    await ok(await req('/api/v1/agents/me/work-requests?project=beta', {}, { bearer: secret }));
+
+    await ok(
+      await req(
+        `/api/v1/projects/beta/members/${bob.id}`,
+        { method: 'DELETE' },
+        { cookie: ownerCookie },
+      ),
+    );
+
+    const res = await req('/api/v1/agents/me/work-requests?project=beta', {}, { bearer: secret });
+    const lost = { status: res.status, body: await res.text() };
+    expect(lost).toEqual(await uniformRefusal(secret));
+    expect(lost.status).toBe(403);
+  });
+
+  it('a token pinned narrower than its agent’s grants gives the same refusal outside the pin', async () => {
+    const { agent, secret, token } = await register([
+      { project_id: alpha, scope: 'full' },
+      { project_id: beta, scope: 'full' },
+    ]);
+    const taskId = await newTask('beta');
+    await ok(await patch(taskId, { selected_agent_id: agent.id }));
+    // The grant reaches beta; the token's own pin does not.
+    h.db
+      .update(tokens)
+      .set({ projectIdsJson: JSON.stringify([alpha]) })
+      .where(eq(tokens.id, token.id))
+      .run();
+
+    const res = await req('/api/v1/agents/me/work-requests?project=beta', {}, { bearer: secret });
+    const pinned = { status: res.status, body: await res.text() };
+    expect(pinned).toEqual(await uniformRefusal(secret));
+    expect(pinned.status).toBe(403);
+    // Inside the pin it still answers.
+    await ok(await req('/api/v1/agents/me/work-requests?project=alpha', {}, { bearer: secret }));
+  });
+
+  it('?project= narrows to one project; another the agent cannot read is refused, not empty', async () => {
+    const { agent, secret } = await register([
+      { project_id: alpha, scope: 'full' },
+      { project_id: beta, scope: 'full' },
+    ]);
+    const a = await newTask('alpha');
+    const b = await newTask('beta');
+    await ok(await patch(a, { selected_agent_id: agent.id }));
+    await ok(await patch(b, { selected_agent_id: agent.id }));
+
+    const onlyBeta = await ok(
+      await req('/api/v1/agents/me/work-requests?project=beta', {}, { bearer: secret }),
+    );
+    expect((onlyBeta.data as { task_id: string }[]).map((r) => r.task_id)).toEqual([b]);
+
+    const narrow = await register([{ project_id: alpha, scope: 'full' }], bob.cookie, 'Narrow');
+    expect(
+      await refusal(
+        await req('/api/v1/agents/me/work-requests?project=beta', {}, { bearer: narrow.secret }),
+      ),
+    ).toMatchObject({ status: 403, code: 'forbidden', reason: 'agent_not_granted' });
+    // A slug nobody owns is the same refusal, never a 404 (no existence probe).
+    expect(
+      await refusal(
+        await req('/api/v1/agents/me/work-requests?project=nope', {}, { bearer: secret }),
+      ),
+    ).toMatchObject({ status: 403, code: 'forbidden', reason: 'agent_not_granted' });
   });
 
   it('is 403 not_an_agent for a session and for a legacy token', async () => {

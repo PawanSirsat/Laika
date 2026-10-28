@@ -154,6 +154,10 @@ const EVERY_ROLE_ORG = [
   // Everyone may sign themselves out everywhere (LAI-981): conditional, and
   // `/permissions` lists a conditional action the caller holds about themselves.
   'user.sign_out',
+  // A person's own registered agents (D-114, LAI-534): every role's, and
+  // managing them is a signed-in session's, which a browser always is.
+  'agent.read_own',
+  'agent.manage_own',
 ] as const;
 const ADMIN_UP_ORG = [
   'org.settings.edit',

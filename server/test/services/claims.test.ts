@@ -1,9 +1,20 @@
 import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, resolveTokenActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
-import { activity, agentSessions, handoffOffers, taskClaims } from '../../src/db/schema.ts';
+import {
+  activity,
+  agentSessions,
+  handoffOffers,
+  sprints,
+  taskClaims,
+  tasks,
+  tokens,
+  users,
+} from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
+import { newId } from '../../src/db/ids.ts';
 import { registerAgent, revokeAgent, setAgentGrants } from '../../src/services/agents.ts';
+import { addMember } from '../../src/services/projects.ts';
 import {
   configureClaims,
   DEFAULT_CLAIM_TIMINGS,
@@ -16,7 +27,9 @@ import {
   startAgentSession,
 } from '../../src/services/claims.ts';
 import { addComment } from '../../src/services/comments.ts';
+import { createSprint, deleteSprint } from '../../src/services/sprints.ts';
 import {
+  changeStatus,
   createTask,
   finishTask,
   getTask,
@@ -122,8 +135,15 @@ describe('taking a claim', () => {
       .where(eq(agentSessions.id, started.claim!.session_id))
       .get();
     expect(session).toMatchObject({ agentId: a.id, startedAt: T0, endedAt: null });
-    // Unassigned, so it becomes the owner's — recorded on the claim's row.
-    expect(started.task).toMatchObject({ assignee_id: owner.userId, status: 'in_progress' });
+    // A claim never assigns (D-114 item 7): unassigned stays unassigned.
+    expect(started.task).toMatchObject({ assignee_id: null, status: 'in_progress' });
+    const [moved] = t.db
+      .select()
+      .from(activity)
+      .where(and(eq(activity.taskId, id), eq(activity.type, 'task.status_changed')))
+      .all();
+    expect(JSON.parse(moved!.payloadJson)).not.toHaveProperty('assignee_id');
+    expect(JSON.parse(moved!.payloadJson)).toMatchObject({ via: 'claim', claim_generation: 1 });
   });
 
   it('a person or a legacy token claims by assignee alone: no claim row', () => {
@@ -460,8 +480,10 @@ describe('the explicit reclaim', () => {
 
   it('refuses a token without full scope: token_read_only', () => {
     const { a, id } = expired();
-    const readOnly = { ...a.actor, token: { ...a.actor.token!, scope: 'read_only' as const } };
-    expect(refusal(() => reclaimTask(t.sqlite, t.db, readOnly, id, { now: T0 + LEASE }))).toEqual({
+    // Narrowed in the database after the request's actor was resolved: the
+    // reclaim reads the row, not the actor it was handed.
+    t.db.update(tokens).set({ scope: 'read_only' }).where(eq(tokens.id, a.actor.token!.id)).run();
+    expect(refusal(() => reclaimTask(t.sqlite, t.db, a.actor, id, { now: T0 + LEASE }))).toEqual({
       code: 'forbidden',
       reason: 'token_read_only',
     });
@@ -767,5 +789,237 @@ describe('the live claim on a task read (LAI-568)', () => {
     expect(byId.get(second.id)?.session_id).toBe(second.claim.session_id);
     expect(first.claim.session_id).not.toBe(second.claim.session_id);
     expect(byId.get(free)).toBeNull();
+  });
+});
+
+describe('LAI-541 review: the bypasses, each closed', () => {
+  function expiredClaim() {
+    const a = agent();
+    const id = task();
+    const claim = startWorking(t.sqlite, t.db, a.actor, id, { now: T0 }).claim!;
+    expireClaims(t.db, T0 + LEASE);
+    return { a, id, claim };
+  }
+
+  function legacyActor(): ResolvedActor {
+    return resolveTokenActor(
+      t.db,
+      createToken(t.sqlite, t.db, owner, { name: 'legacy', scope: 'full' }).secret,
+      T0,
+    );
+  }
+
+  it('B1: an expired holder that omits the generation is still refused, stale_claim with reclaim', () => {
+    const { a, id } = expiredClaim();
+    let caught: ApiError | undefined;
+    try {
+      updateTask(t.db, a.actor, id, { title: 'Sneaked', now: T0 + LEASE + 1 });
+    } catch (err) {
+      caught = err as ApiError;
+    }
+    expect(caught?.code).toBe('conflict');
+    expect(caught?.details).toMatchObject({
+      reason: 'stale_claim',
+      reclaim: true,
+      claim_generation: 1,
+    });
+    expect(getTask(t.db, owner, id).title).toBe('Work');
+  });
+
+  it('B1: a lapsed claim refuses every other token too — sibling agent and legacy token are claim_held', () => {
+    const { id } = expiredClaim();
+    const sibling = agent('Sibling');
+    for (const caller of [sibling.actor, legacyActor()]) {
+      expect(
+        refusal(() => updateTask(t.db, caller, id, { title: 'X', now: T0 + LEASE + 1 })),
+      ).toEqual({ code: 'conflict', reason: 'claim_held' });
+    }
+    // A person keeps explicit control.
+    expect(updateTask(t.db, owner, id, { title: 'Human', now: T0 + LEASE + 1 }).title).toBe(
+      'Human',
+    );
+  });
+
+  it('B1: once a person moves the task out of progress, the lapsed claim no longer holds it', () => {
+    const { a, id } = expiredClaim();
+    changeStatus(t.db, owner, id, 'todo', T0 + LEASE + 1);
+    expect(updateTask(t.db, a.actor, id, { title: 'After', now: T0 + LEASE + 2 }).title).toBe(
+      'After',
+    );
+  });
+
+  it('B1: a released claim leaves the task free; a generation sent with no live claim is stale_claim', () => {
+    const a = agent();
+    const id = task();
+    const claim = startWorking(t.sqlite, t.db, a.actor, id, { now: T0 }).claim!;
+    endAgentSession(t.sqlite, t.db, a.actor, claim.session_id, T0 + MIN);
+    expect(updateTask(t.db, a.actor, id, { title: 'Free', now: T0 + 2 * MIN }).title).toBe('Free');
+    expect(
+      refusal(() => updateTask(t.db, at(a.actor, 1), id, { title: 'Gen', now: T0 + 2 * MIN })),
+    ).toEqual({ code: 'conflict', reason: 'stale_claim' });
+  });
+
+  it('B2b: a token cannot delete the sprint of a claimed task; sprint and sprint_id survive', () => {
+    const a = agent();
+    const id = task();
+    const sprint = createSprint(t.sqlite, t.db, owner, 'laika', {
+      name: 'S',
+      starts_on: Date.UTC(2026, 0, 1),
+      ends_on: Date.UTC(2026, 0, 14),
+    });
+    t.db.update(tasks).set({ sprintId: sprint.id }).where(eq(tasks.id, id)).run();
+    startWorking(t.sqlite, t.db, a.actor, id, { now: T0 });
+
+    expect(refusal(() => deleteSprint(t.sqlite, t.db, legacyActor(), sprint.id, T0 + MIN))).toEqual(
+      { code: 'conflict', reason: 'claim_held' },
+    );
+    expect(t.db.select().from(tasks).where(eq(tasks.id, id)).get()?.sprintId).toBe(sprint.id);
+    expect(t.db.select().from(sprints).where(eq(sprints.id, sprint.id)).get()).toBeDefined();
+  });
+
+  it('B3: reclaim reloads the owner — a person deactivated after the request resolved is owner_inactive', () => {
+    const { a, id } = expiredClaim();
+    t.db.update(users).set({ isActive: 0 }).where(eq(users.id, owner.userId)).run();
+    expect(refusal(() => reclaimTask(t.sqlite, t.db, a.actor, id, { now: T0 + LEASE }))).toEqual({
+      code: 'forbidden',
+      reason: 'owner_inactive',
+    });
+    expect(claimsOf(id)).toHaveLength(1);
+  });
+
+  it('B3: reclaim reloads the token — one revoked after the request resolved is token_revoked', () => {
+    const { a, id } = expiredClaim();
+    t.db
+      .update(tokens)
+      .set({ revokedAt: T0 + LEASE - 1 })
+      .where(eq(tokens.id, a.actor.token!.id))
+      .run();
+    expect(refusal(() => reclaimTask(t.sqlite, t.db, a.actor, id, { now: T0 + LEASE }))).toEqual({
+      code: 'forbidden',
+      reason: 'token_revoked',
+    });
+    expect(claimsOf(id)).toHaveLength(1);
+  });
+
+  it('B4: a task a person moved to review since the claim expired cannot be reclaimed: task_not_claimable', () => {
+    const { a, id } = expiredClaim();
+    changeStatus(t.db, owner, id, 'review', T0 + LEASE + 1);
+    expect(
+      refusal(() => reclaimTask(t.sqlite, t.db, a.actor, id, { now: T0 + LEASE + 2 })),
+    ).toEqual({ code: 'conflict', reason: 'task_not_claimable' });
+    expect(claimsOf(id).map((c) => c.state)).toEqual(['expired']);
+  });
+
+  it('B5: a claim never writes the assignee — not on a work request, not on an unassigned task', () => {
+    const a = agent();
+    const id = task();
+    updateTask(t.db, owner, id, { selected_agent_id: a.id, now: T0 });
+
+    startWorking(t.sqlite, t.db, a.actor, id, { now: T0 });
+
+    expect(t.db.select().from(tasks).where(eq(tasks.id, id)).get()?.assigneeId).toBeNull();
+    expect(t.db.select().from(handoffOffers).where(eq(handoffOffers.taskId, id)).get()?.state).toBe(
+      'accepted',
+    );
+  });
+
+  it('B5: the holder of the live claim answers the review rule — it finishes an unassigned task', () => {
+    const a = agent();
+    const id = task();
+    startWorking(t.sqlite, t.db, a.actor, id, { now: T0 });
+
+    const done = finishTask(t.sqlite, t.db, at(a.actor, 1), id, { summary: 'Done', now: T0 + MIN });
+
+    expect(done).toMatchObject({ status: 'review', assignee_id: null });
+  });
+
+  it('non-blocking: the scan writes a claim’s state and its row in one transaction — both or neither', () => {
+    const a = agent();
+    const id = task();
+    startWorking(t.sqlite, t.db, a.actor, id, { now: T0 });
+    // The activity insert fails; the state change must roll back with it.
+    t.sqlite.exec(`CREATE TRIGGER no_expiry_rows BEFORE INSERT ON activity
+      WHEN NEW.type = 'task.claim_expired' BEGIN SELECT RAISE(ABORT, 'refused for the test'); END`);
+
+    expect(() => expireClaims(t.db, T0 + LEASE)).toThrow(/refused for the test/);
+
+    expect(claimsOf(id)[0]?.state).toBe('active');
+    expect(rows(id, 'task.claim_expired')).toEqual([]);
+    t.sqlite.exec('DROP TRIGGER no_expiry_rows');
+    expect(expireClaims(t.db, T0 + LEASE).changed).toBe(1);
+  });
+});
+
+describe('LAI-541 review round 2: an agent is never more than its owner on the review rule', () => {
+  /** A Member of the project — not a lead, not an admin — with a fully granted agent of their own. */
+  function memberWithAgent() {
+    const id = newId();
+    t.db
+      .insert(users)
+      .values({
+        id,
+        email: `member-${id}@example.test`,
+        name: 'Member',
+        orgRole: 'member',
+        createdAt: new Date(T0),
+        updatedAt: new Date(T0),
+      })
+      .run();
+    addMember(t.db, owner, 'laika', id, 'member', T0);
+    const member = loadActor(t.db, id)!;
+    const created = registerAgent(t.sqlite, t.db, member, {
+      displayName: 'Member’s agent',
+      harness: 'claude-code',
+      grants: [{ projectId: s.projectId, scope: 'full' }],
+    });
+    return {
+      member,
+      agentId: created.agent.id,
+      agent: resolveTokenActor(t.db, created.secret, T0),
+    };
+  }
+
+  it('a Member’s agent may select itself onto and claim another person’s task — as its owner could edit it', () => {
+    const m = memberWithAgent();
+    const id = task();
+    updateTask(t.db, owner, id, { assignee_id: owner.userId, now: T0 });
+    // Selecting needs task.write, which a Member holds; it opens a work request.
+    updateTask(t.db, m.member, id, { selected_agent_id: m.agentId, now: T0 });
+
+    const started = startWorking(t.sqlite, t.db, m.agent, id, { now: T0 });
+
+    expect(started.claim?.generation).toBe(1);
+    expect(started.task.assignee_id).toBe(owner.userId);
+  });
+
+  it('but cannot finish it: the rule is asked of the owner, who is neither its assignee nor a lead', () => {
+    const m = memberWithAgent();
+    const id = task();
+    updateTask(t.db, owner, id, { assignee_id: owner.userId, now: T0 });
+    updateTask(t.db, m.member, id, { selected_agent_id: m.agentId, now: T0 });
+    startWorking(t.sqlite, t.db, m.agent, id, { now: T0 });
+
+    // The owner, a Member, is refused this move on someone else's task…
+    expect(refusal(() => changeStatus(t.db, m.member, id, 'review', T0 + MIN))).toEqual({
+      code: 'forbidden',
+      reason: undefined,
+    });
+    // …and so is the agent, claim or no claim.
+    expect(
+      refusal(() =>
+        finishTask(t.sqlite, t.db, at(m.agent, 1), id, { summary: 'Done', now: T0 + MIN }),
+      ),
+    ).toEqual({ code: 'forbidden', reason: undefined });
+    expect(t.db.select().from(tasks).where(eq(tasks.id, id)).get()?.status).toBe('in_progress');
+  });
+
+  it('and can finish an unassigned task it holds: there the holder answers as the assignee', () => {
+    const m = memberWithAgent();
+    const id = task();
+    startWorking(t.sqlite, t.db, m.agent, id, { now: T0 });
+
+    expect(
+      finishTask(t.sqlite, t.db, at(m.agent, 1), id, { summary: 'Done', now: T0 + MIN }),
+    ).toMatchObject({ status: 'review', assignee_id: null });
   });
 });

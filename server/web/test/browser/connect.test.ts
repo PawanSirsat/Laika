@@ -1265,7 +1265,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
         assert.doesNotMatch(page, /Invite a teammate/, `${role}: an invite entry is drawn`);
         assert.deepEqual(
           (await h.page.locator('.page-tab').allInnerTexts()).map((t) => t.trim()),
-          ['Connect', 'Projects', 'Activity', 'Tokens'],
+          ['Connect', 'Agents', 'Projects', 'Activity', 'Tokens'],
           role,
         );
       } finally {
