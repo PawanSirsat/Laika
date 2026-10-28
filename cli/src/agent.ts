@@ -47,9 +47,8 @@ import {
  * installed mid-session, or a start that failed on the network, retried with
  * its key), restart a watcher that has died while its harness lives (a laptop
  * sleep can kill it), and deliver, once, a notice that a claim was lost.
- * `SessionEnd` hands the
- * end to a background process, so the harness's one-to-three-second budget
- * never cuts it short.
+ * `SessionEnd` hands the end to a background process, so the harness's
+ * one-to-three-second budget never cuts it short.
  *
  * The trade-off: one more process per session, and a session whose watcher
  * dies goes unrenewed until the next prompt or tool call restarts it.
