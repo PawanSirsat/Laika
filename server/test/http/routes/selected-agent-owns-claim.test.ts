@@ -396,7 +396,7 @@ describe('D-119: the selected agent owns the claim', () => {
         .from(activity)
         .where(and(eq(activity.taskId, taskId), eq(activity.actorKind, 'system')))
         .all();
-      expect(ended.map((r) => [r.type, JSON.parse(r.payloadJson)])).toEqual([
+      expect(ended.map((r) => [r.type, JSON.parse(r.payloadJson) as unknown])).toEqual([
         [
           'task.updated',
           {
