@@ -1,7 +1,8 @@
 import { agentClientName, AGENT_CLIENTS, type AgentClient } from './agent-clients.ts';
 import type { RegisteredAgent } from './agents.ts';
 import { ApiError } from './errors.ts';
-import { updateTask, type Task, type TaskSummary } from './tasks.ts';
+import { request } from './client.ts';
+import type { Task, TaskEdit, TaskSummary } from './tasks.ts';
 
 /**
  * A task's **selected agent** (proposal §3, D-114 item 7; API by LAI-535,
@@ -65,9 +66,22 @@ export function selectedAgentOf(task: Pick<TaskSummary, 'selected_agent'>): Sele
 
 // ------------------------------------------------------------------ selecting
 
-/** `PATCH /tasks/:id { selected_agent_id }`. `null` withdraws; the same id twice is a no-op. */
-export function selectTaskAgent(taskId: string, agentId: string | null): Promise<Task> {
-  return updateTask(taskId, { selected_agent_id: agentId });
+/**
+ * `PATCH /tasks/:id { selected_agent_id }`. `null` withdraws; the same id
+ * twice is a no-op. `signal` ends a request that never answers
+ * (`agent-writes.ts`).
+ */
+export function selectTaskAgent(
+  taskId: string,
+  agentId: string | null,
+  signal?: AbortSignal,
+): Promise<Task> {
+  const edit: TaskEdit = { selected_agent_id: agentId };
+  return request<Task>(`/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'PATCH',
+    body: edit,
+    ...(signal === undefined ? {} : { signal }),
+  });
 }
 
 /** The server's refusals, by `details.reason` (LAI-535). §6.3's codes are closed, so it is a reason. */
