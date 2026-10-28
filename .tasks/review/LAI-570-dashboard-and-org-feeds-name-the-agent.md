@@ -7,7 +7,8 @@ priority: p2
 depends-on: [LAI-538]
 discovered-from: LAI-538
 started: 2026-10-28T21:44:46Z
-status: in-progress
+status: review
+finished: 2026-10-28T21:53:24Z
 ---
 
 Filed by SHELL (Belka, dispatched by CHIEF) from the Codex round-2 review of
@@ -39,10 +40,28 @@ Dashboard or the org history is the one most likely to ask.
 
 ## Acceptance criteria
 
-- [ ] A row by a registered agent the reader may see reads *Person via
+- [x] A row by a registered agent the reader may see reads *Person via
       Product · device* on both screens (browser test each).
-- [ ] A legacy token's row reads *via agent (unregistered token)*; an agent
+- [x] A legacy token's row reads *via agent (unregistered token)*; an agent
       the reader may not see reads *via a registered agent*.
-- [ ] The existing badge, chip and screen-reader text keep working
+- [x] The existing badge, chip and screen-reader text keep working
       (`dashboard-feed.test.ts`, `organisation-activity.test.ts` green).
-- [ ] Both themes; repo-root gate exits 0.
+- [x] Both themes; repo-root gate exits 0.
+
+## Outcome (SHELL, Belka, 2026-10-29)
+
+- `ActivityFeed.tsx` takes `agentNames` and prints `via …` after the person,
+  from `agentVia` — the drawer's function, so the words cannot drift.
+  `DashboardScreen.tsx` builds the map with `agentNamesFrom(agentsOf(
+  useMyAgents()), tasks)`; the hook sits above the early returns.
+- `OrgActivity.tsx` builds it from the reader's own agents only
+  (`agentNamesFrom(…, [])`): the history spans every space and holds no task
+  set, so another member's agent stays *a registered agent*.
+- The corner dot, the hidden *(by an agent)* and the *Agent* chip are kept.
+- In the organisation history the `via` line takes its own line under the
+  name and chip (`.oh-who:has(.oh-via)` wraps): the first screenshot showed
+  the 11rem column breaking *Ada Lovelace* and *AGENT* mid-word.
+
+Test: `test/browser/feeds-name-the-agent.test.ts`, one per screen, both
+themes; red without the source change (0/2), green with it (2/2).
+`dashboard-feed.test.ts` and `organisation-activity.test.ts`: 21/21.
