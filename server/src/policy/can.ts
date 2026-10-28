@@ -22,6 +22,8 @@
 
 import { ApiError } from '../errors.ts';
 import {
+  type AgentGrantScope,
+  type AgentStatus,
   type OrgRole,
   type ProjectRole,
   type TaskCreateMinRole,
@@ -29,8 +31,10 @@ import {
 } from '../db/enums.ts';
 import {
   type Action,
+  AGENT_TOKEN_ORG_ACTIONS,
   isReadAction,
   type OrgAction,
+  PINNED_TOKEN_ORG_ACTIONS,
   type ProjectAction,
   SESSION_ONLY_ACTIONS,
   type SystemAction,
@@ -47,6 +51,23 @@ export interface TokenContext {
   scope: TokenScope;
   /** `null` = every project the user can reach. Otherwise a whitelist. */
   projectIds: readonly string[] | null;
+  /**
+   * The registered agent this token is the credential of (D-114, LAI-534), or
+   * absent / `null` for a legacy token. Loaded from `tokens.agent_id` and
+   * nothing else: no header, parameter or body field can put one here.
+   */
+  agent?: AgentContext | null | undefined;
+}
+
+/** A registered agent, as the token that carries it presents it (§4.63). */
+export interface AgentContext {
+  id: string;
+  displayName: string;
+  harness: string;
+  deviceLabel: string | null;
+  status: AgentStatus;
+  /** Project id → the agent's grant there (§4.64). Absent = no access. */
+  grants: ReadonlyMap<string, AgentGrantScope>;
 }
 
 export interface Actor {
@@ -134,6 +155,11 @@ function isOrgAction(action: Action): action is OrgAction {
   return ORG_ACTION_SET.has(action);
 }
 
+/** §6.2 (audit H4): the org actions a project-pinned token keeps. */
+function isPinnedTokenOrgAction(action: OrgAction): boolean {
+  return PINNED_TOKEN_ORG_ACTIONS.has(action);
+}
+
 function isProjectAction(action: Action): action is ProjectAction {
   return PROJECT_ACTION_SET.has(action);
 }
@@ -217,6 +243,8 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.local_activity.prune',
   'system.estimate.refit',
   'system.time.prune',
+  'system.idempotency.prune',
+  'system.claim.expire',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',
@@ -386,6 +414,17 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'token.read_own':
     case 'token.revoke_own':
       return resource.ownerId === actor.userId;
+
+    // | Read own agents | ✓ | ✓ | ✓ | ✓ |
+    // | Register and manage own agents | ✓ (session only) | … | ✓ (session only) |
+    //
+    // D-114 (LAI-534): **a person's agents are their own**, every role, and
+    // nobody else's — the service reads and writes the caller's own rows only,
+    // as for time entries, so no row lets anyone reach another's agent. What
+    // stops an agent from managing itself or a sibling is `SESSION_ONLY_ACTIONS`.
+    case 'agent.read_own':
+    case 'agent.manage_own':
+      return true;
 
     // | List / revoke **anyone's** token | ✓ | ✓ | — | — |
     //
@@ -731,13 +770,66 @@ function tokenAllows(actor: Actor, action: Action, resource: Resource): boolean 
   // Owner's full, unscoped token — and that is the token that matters.
   if (SESSION_ONLY_ACTIONS.has(action)) return false;
 
+  // §6.2 (audit H4): a token pinned to projects is refused org-wide admin
+  // actions, whatever the user's role. The pin used to be read only against a
+  // project, so an Admin's token pinned to one project still invited, created
+  // projects and edited the organisation — a project filter on an org
+  // credential, which §3.3 says a token never is. The classification is the
+  // one `can()` already dispatches on, never re-derived from the name.
+  if (token.projectIds !== null && isOrgAction(action) && !isPinnedTokenOrgAction(action)) {
+    return false;
+  }
+
   // A token may be pinned to a subset of the user's projects (§4.9). An action
-  // with no project is org-scoped and unaffected by that whitelist.
+  // with no project is org-scoped and answered above; one with a project is
+  // answered by the whitelist.
   if (token.projectIds !== null && resource.projectId !== undefined) {
     if (!token.projectIds.includes(resource.projectId)) return false;
   }
 
+  if (!agentGrantAllows(token, action, resource)) return false;
+
   return effectiveTokenScope(actor, token) === 'full' || isReadAction(action);
+}
+
+/** Why an agent's grant refuses an action, or `null` when it does not (D-114). */
+export type AgentRefusal = 'agent_token' | 'agent_not_granted' | 'agent_read_only';
+
+/**
+ * D-114's agent step, inside the token narrowing: effective access is the
+ * owner's permissions ∩ the agent's grant for the project ∩ the token's scope
+ * and pin. The owner's half is the role decision `can()` already made; the
+ * token's is the rest of `tokenAllows`; this is the grant's.
+ *
+ * - **An agent's token is always pinned** — to the projects its grants name —
+ *   so of the org actions it keeps only {@link AGENT_TOKEN_ORG_ACTIONS}.
+ * - **A project action needs a grant for that project**, and a `read_only`
+ *   grant keeps the reads, as a `read_only` token does.
+ * - **A project action with no project is refused**: there is no grant to read.
+ *
+ * The project's hand-off policy (proposal §4.5) is not read here: it governs
+ * delegation and transfer only, none of which exists yet, and it must never
+ * narrow a read or a comment.
+ */
+export function agentRefusal(
+  token: TokenContext,
+  action: Action,
+  resource: Resource,
+): AgentRefusal | null {
+  const agent = token.agent;
+  if (agent === undefined || agent === null) return null;
+
+  if (isOrgAction(action)) return AGENT_TOKEN_ORG_ACTIONS.has(action) ? null : 'agent_token';
+  if (!isProjectAction(action)) return 'agent_token';
+
+  const grant = resource.projectId === undefined ? undefined : agent.grants.get(resource.projectId);
+  if (grant === undefined) return 'agent_not_granted';
+  if (grant === 'read_only' && !isReadAction(action)) return 'agent_read_only';
+  return null;
+}
+
+function agentGrantAllows(token: TokenContext, action: Action, resource: Resource): boolean {
+  return agentRefusal(token, action, resource) === null;
 }
 
 /**
@@ -857,6 +949,49 @@ export function assertCan(principal: Principal, action: Action, resource: Resour
     });
   }
 
+  // §6.2's pin (audit H4), said as such for the same reason: the person may,
+  // and the same token unpinned may, so the pin is why not — a caller told
+  // only `forbidden` cannot tell "mint a token without a project list" from
+  // "you may never". Compared against the token unpinned rather than the
+  // person, so a `read_only` pinned token refused a write is told nothing
+  // the pin did not do.
+  if (
+    !isSystem(principal) &&
+    principal.token !== null &&
+    principal.token !== undefined &&
+    principal.token.projectIds !== null &&
+    isOrgAction(action) &&
+    !isPinnedTokenOrgAction(action) &&
+    can({ ...principal, token: { ...principal.token, projectIds: null } }, action, resource)
+  ) {
+    throw new ApiError(
+      'forbidden',
+      'This token is pinned to projects and cannot act on the organisation',
+      { action, reason: 'project_pinned' },
+    );
+  }
+
+  // D-114's agent grant, said as such for the same reason: the person may,
+  // and the same token with no agent may, so the agent's grant is why not. An
+  // agent told only `forbidden` cannot tell "ask your owner for this project"
+  // from "your owner may not either".
+  if (
+    !isSystem(principal) &&
+    principal.token?.agent !== null &&
+    principal.token?.agent !== undefined
+  ) {
+    const refusal = agentRefusal(principal.token, action, resource);
+    if (
+      refusal !== null &&
+      can({ ...principal, token: { ...principal.token, agent: null } }, action, resource)
+    ) {
+      throw new ApiError('forbidden', AGENT_REFUSAL_MESSAGES[refusal], {
+        action,
+        reason: refusal,
+      });
+    }
+  }
+
   // D-103's two space rules, said as such for the same reason: an agent told
   // only `forbidden` cannot tell "this space keeps agents out" from "you may
   // not", and a member cannot tell "space admins only" from either.
@@ -888,6 +1023,12 @@ export function assertCan(principal: Principal, action: Action, resource: Resour
     action,
   });
 }
+
+const AGENT_REFUSAL_MESSAGES: Readonly<Record<AgentRefusal, string>> = {
+  agent_token: "An agent's token cannot do this; its owner can, signed in",
+  agent_not_granted: 'This agent has no access to this project',
+  agent_read_only: 'This agent may only read in this project',
+};
 
 /** Exhaustiveness guard: adding an action without a case fails the build. */
 function assertNever(value: never): false {

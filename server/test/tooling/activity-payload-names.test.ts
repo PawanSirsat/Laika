@@ -6,7 +6,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { reportDiscovery } from '../helpers/discovery.ts';
 import * as schema from '../../src/db/schema.ts';
 import { apiFieldNames, apiPayload, appendActivity, readPayload } from '../../src/db/activity.ts';
-import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
+import { loadActor, resolveTokenActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { ACTIVITY_TYPES, CAPABILITIES, type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
 import {
@@ -44,9 +44,12 @@ import {
   claimTask,
   createTask,
   removeTaskDependency,
+  startWorking,
   updateTask,
 } from '../../src/services/tasks.ts';
+import { expireClaims, reclaimTask } from '../../src/services/claims.ts';
 import { createToken, revokeOwnToken } from '../../src/services/tokens.ts';
+import { registerAgent } from '../../src/services/agents.ts';
 import { dismissUnlisted, logUnlistedWork, promoteUnlisted } from '../../src/services/unlisted.ts';
 import {
   setOrgRole,
@@ -529,6 +532,28 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       });
       updateTask(t.db, owner(), task.id, { tags: ['core', 'agent'] });
       updateTask(t.db, owner(), task.id, { assignee_id: memberId });
+
+      // --- work-requests.ts via tasks.ts: task.agent_selected (LAI-535) ----
+      const { agent } = registerAgent(t.sqlite, t.db, owner(), {
+        displayName: 'Sweep agent',
+        harness: 'claude-code',
+        grants: [{ projectId: task.project_id, scope: 'full' }],
+      });
+      updateTask(t.db, owner(), task.id, { selected_agent_id: agent.id });
+
+      // --- claims.ts: task.claim_expired, task.claim_reclaimed (LAI-541) ----
+      // The agent's own token takes the claim; the scan, with a clock past
+      // the lease, expires it; the agent reclaims. Real services, real rows.
+      const claimer = registerAgent(t.sqlite, t.db, owner(), {
+        displayName: 'Claim sweep agent',
+        harness: 'claude-code',
+        grants: [{ projectId: task.project_id, scope: 'full' }],
+      });
+      const asAgent = resolveTokenActor(t.db, claimer.secret, Date.now());
+      const claimed = createTask(t.sqlite, t.db, owner(), 'core', { title: 'Claimed by an agent' });
+      startWorking(t.sqlite, t.db, asAgent, claimed.id);
+      expireClaims(t.db, Date.now() + 60 * 60 * 1000);
+      reclaimTask(t.sqlite, t.db, asAgent, claimed.id);
 
       addTaskDependency(t.sqlite, t.db, owner(), task.id, other.id);
       removeTaskDependency(t.db, owner(), task.id, other.id);

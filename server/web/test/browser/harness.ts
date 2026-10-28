@@ -154,6 +154,10 @@ const EVERY_ROLE_ORG = [
   // Everyone may sign themselves out everywhere (LAI-981): conditional, and
   // `/permissions` lists a conditional action the caller holds about themselves.
   'user.sign_out',
+  // A person's own registered agents (D-114, LAI-534): every role's, and
+  // managing them is a signed-in session's, which a browser always is.
+  'agent.read_own',
+  'agent.manage_own',
 ] as const;
 const ADMIN_UP_ORG = [
   'org.settings.edit',
@@ -739,27 +743,49 @@ export async function setTheme(page: Page, theme: string) {
   const wantDark = theme.toLowerCase() === 'dark';
   const reads = () => document.documentElement.getAttribute('data-theme') !== 'light';
 
-  const isDark = await page.evaluate(reads);
-  if (wantDark !== isDark) {
-    /*
-     * **Two real controls since LAI-796.** Signed in, the theme is an item in
-     * the user menu at the foot of the sidebar; before a session there is no
-     * sidebar and the header carries `ThemeSwitch`. Both write the one store.
-     *
-     * The menu's clicks are dispatched rather than pointed: on a phone the
-     * sidebar is off-canvas, so its button is outside the viewport, and the
-     * question here is the theme, not whether the off-canvas menu is open.
-     */
-    const control = page.locator('.theme-switch, .user-menu-trigger').first();
-    await control.waitFor({ state: 'attached', timeout: 10_000 });
-    if ((await control.getAttribute('class'))?.includes('theme-switch') === true) {
-      await control.click();
-    } else {
-      await control.dispatchEvent('click');
+  /*
+   * **Two real controls since LAI-796.** Signed in, the theme is an item in
+   * the user menu at the foot of the sidebar; before a session there is no
+   * sidebar and the header carries `ThemeSwitch`. Both write the one store.
+   *
+   * The menu's clicks are dispatched rather than pointed: on a phone the
+   * sidebar is off-canvas, so its button is outside the viewport, and the
+   * question here is the theme, not whether the off-canvas menu is open.
+   *
+   * **Each control has its own locator, and the choice is re-made until the
+   * theme turns** (LAI-576). A test calls this straight after `open`, while
+   * `/me` may still be in flight, so the header's switch can be detached by
+   * the signed-in shell between being chosen and being clicked. One locator
+   * for both then re-resolved to the user menu and *pointed* at it, which on
+   * a phone waited thirty seconds for a button that is off-canvas by design.
+   */
+  const deadline = Date.now() + 20_000;
+  while ((await page.evaluate(reads)) !== wantDark && Date.now() < deadline) {
+    if ((await page.locator('.user-menu-trigger').count()) > 0) {
       const item = page.locator('.user-menu-theme');
-      await item.waitFor({ state: 'attached', timeout: 5_000 });
-      await item.dispatchEvent('click');
+      if ((await item.count()) === 0) {
+        await page
+          .locator('.user-menu-trigger')
+          .dispatchEvent('click', undefined, { timeout: 2_000 })
+          .catch(() => undefined);
+      }
+      await item.dispatchEvent('click', undefined, { timeout: 2_000 }).catch(() => undefined);
+    } else if ((await page.locator('.theme-switch').count()) > 0) {
+      // Pointed, so a switch that cannot be clicked still fails. If the session
+      // detaches it mid-wait, this times out and the next pass takes the menu.
+      await page
+        .locator('.theme-switch')
+        .click({ timeout: 2_000 })
+        .catch(() => undefined);
     }
+    await page
+      .waitForFunction(
+        (want: boolean) =>
+          (document.documentElement.getAttribute('data-theme') !== 'light') === want,
+        wantDark,
+        { timeout: 1_000 },
+      )
+      .catch(() => undefined);
   }
 
   await page.waitForFunction(

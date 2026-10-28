@@ -15,6 +15,7 @@ import { startScheduler } from './jobs/scheduler.ts';
 import { readEnv } from './env.ts';
 import { createLogger } from './log.ts';
 import { ActivityFeed } from './services/activity-feed.ts';
+import { configureClaims } from './services/claims.ts';
 import { applyKeepAlive } from './http/keep-alive.ts';
 import { createRuntimeShutdown } from './shutdown.ts';
 import { readVersion } from './version.ts';
@@ -97,6 +98,9 @@ function main(): void {
   // still passed.
   // §11.6's cron. After the port is bound — a job is not a reason to delay
   // serving — and handed to the shutdown path, which stops it with the streams.
+  // §9.1's timings, and the boot grace measured from now (LAI-541): before
+  // the scheduler, whose expiry scan reads both.
+  configureClaims({ timings: env.claims, bootedAt: Date.now() });
   const scheduler = startScheduler({
     db,
     sqlite,

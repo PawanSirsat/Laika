@@ -45,7 +45,7 @@ const MOVES: readonly (readonly [string, string, string, string, string | null])
   ['/unlisted', '/inbox', '?tab=unlisted', 'Inbox', 'Unlisted work'],
   ['/capacity', '/insights', '?tab=capacity', 'Insights', 'Capacity'],
   ['/usage', '/insights', '?tab=usage', 'Insights', 'Usage & cost'],
-  // Developer access is four tabs since LAI-507: Tokens is one of them.
+  // Developer access is tabs since LAI-507 (five since LAI-537): Tokens is one of them.
   ['/tokens', '/developer', '?tab=tokens', 'Developer access', 'Tokens'],
 ];
 

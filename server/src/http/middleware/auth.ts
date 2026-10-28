@@ -118,7 +118,10 @@ export function authMiddleware(options: { auth: Auth; db: Db }) {
       throw err;
     }
 
-    c.set('actor', actor);
+    c.set(
+      'actor',
+      actor === null ? null : withClaimGeneration(actor, c.req.header(CLAIM_GENERATION_HEADER)),
+    );
 
     // A token's REST write is presence, like its `/mcp` call (D-081). A web
     // session never counts: it has no token. **Never fails the request.** It is
@@ -180,3 +183,22 @@ export const anonymousAuth = createMiddleware<AppEnv>(async (c, next) => {
   c.set('actor', null);
   await next();
 });
+
+/**
+ * The claim generation a request acts under (proposal §4.2, §6.3, LAI-541).
+ * Carried on the actor so the fence in the shared task service reads it the
+ * same way whichever transport set it — MCP sets `claim_generation` there.
+ */
+export const CLAIM_GENERATION_HEADER = 'X-Laika-Claim-Generation';
+
+function withClaimGeneration(actor: ResolvedActor, raw: string | undefined): ResolvedActor {
+  if (raw === undefined) return actor;
+  // A positive integer and nothing else: `Number()` would take `1e3`, `0x1`
+  // and ` 7 `, none of which a client meant.
+  if (!/^[1-9]\d{0,15}$/.test(raw.trim())) {
+    throw ApiError.badRequest(`${CLAIM_GENERATION_HEADER} must be a positive integer`, {
+      header: CLAIM_GENERATION_HEADER,
+    });
+  }
+  return { ...actor, claimGeneration: Number(raw.trim()) };
+}

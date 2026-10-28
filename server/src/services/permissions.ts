@@ -78,6 +78,8 @@ export const ACTION_LABELS: Readonly<Record<CatalogueAction, string | null>> = {
   'token.revoke_own': 'Generate, read and revoke own tokens',
   'token.list_any': "List / revoke anyone's token",
   'token.revoke_any': "List / revoke anyone's token",
+  'agent.read_own': 'Read own agents',
+  'agent.manage_own': 'Register and manage own agents',
   'unlisted.log_own': 'Log own unlisted work',
   'heartbeat.send_own': 'Send own heartbeat',
   'audit_log.export': 'Export audit log',
@@ -277,6 +279,22 @@ export interface PermissionsView {
   };
 }
 
+/**
+ * The projects this credential may reach: a token's pin, and for a registered
+ * agent's token its grants as well (D-114) — the agent is pinned to them.
+ */
+function projectScope(actor: ResolvedActor): readonly string[] | null {
+  const token = actor.token;
+  if (token === undefined || token === null) return null;
+  const agent = token.agent;
+  if (agent === undefined || agent === null) return token.projectIds;
+
+  const granted = [...agent.grants.keys()];
+  return token.projectIds === null
+    ? granted
+    : granted.filter((id) => token.projectIds?.includes(id) === true);
+}
+
 /** A project id no real project has; project actions need one to be asked. */
 const SYNTHETIC_PROJECT = 'synthetic-project';
 const SYNTHETIC_USER = 'synthetic-user';
@@ -377,7 +395,7 @@ export function permissionsCatalogue(actor: ResolvedActor | null): PermissionsVi
     ];
   });
 
-  const whitelist = actor.token?.projectIds ?? null;
+  const whitelist = projectScope(actor);
 
   return {
     org_roles: [...ORG_ROLES],

@@ -36,6 +36,10 @@ export const ORG_ACTIONS = [
   'token.revoke_own',
   'token.list_any',
   'token.revoke_any',
+  // D-114 (LAI-534): a person's registered agents — reading them, and
+  // registering, renaming, granting, rotating and revoking them.
+  'agent.read_own',
+  'agent.manage_own',
   'unlisted.log_own',
   'heartbeat.send_own',
   'audit_log.export',
@@ -133,6 +137,12 @@ export const SYSTEM_ACTIONS = [
   // §11.6: time retention — drafts after 30 days, entries after three years
   // (D-088 item 11, LAI-787).
   'system.time.prune',
+  // §11.6: the idempotency store's expired rows, and the rows written before
+  // LAI-534 excluded one-time secrets from it (Codex review of PR #102).
+  'system.idempotency.prune',
+  // §11.6: a claim whose lease lapsed is marked `expired` (proposal §4.2,
+  // LAI-541) — nobody did it, so nobody is the actor.
+  'system.claim.expire',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];
@@ -160,6 +170,8 @@ export const READ_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'capacity.read',
   'member_list.read',
   'token.read_own',
+  // A person's own agents, grants included (D-114, LAI-534).
+  'agent.read_own',
   'audit_log.export',
   'project.read',
   // A collector reads whether it may send before it does — with whatever
@@ -177,6 +189,49 @@ export const READ_ACTIONS: ReadonlySet<Action> = new Set<Action>([
 export function isReadAction(action: Action): boolean {
   return READ_ACTIONS.has(action);
 }
+
+/**
+ * The org-scoped actions a token **pinned to projects** keeps (SPEC §6.2,
+ * audit H4): *"A token pinned to projects is refused org-wide admin actions.
+ * When `project_ids_json` is set, the token keeps only the org-level reads
+ * every member has and its own-record actions (its own tokens, heartbeats,
+ * unlisted work, activity sharing, time settings and drafts); every other
+ * org-scoped action — settings, projects, invites, members, other people's
+ * tokens, org-wide history and usage — is refused, whatever the user's role."*
+ *
+ * An allow-list in `READ_ACTIONS`' style, and for the same reason: an org
+ * action added without thought is refused to a pinned token, which is the safe
+ * direction to be wrong in. `tokenAllows` in `can.ts` consults it for every
+ * org action once the session-only check has run, so a session-only action
+ * never needs an entry here — it is refused to every token before this list
+ * is reached.
+ *
+ * **Three actions are deliberately not here.** `audit_log.export` and
+ * `usage.read_org` are org-wide — the whole organisation's history and
+ * figures, the opposite of a pin — and `project.join_public` changes a
+ * membership outside the pin. A pinned token reads its projects' usage with
+ * `usage.read_project` and their feeds through `project.read`, as a member
+ * who is not an admin does.
+ */
+export const PINNED_TOKEN_ORG_ACTIONS: ReadonlySet<OrgAction> = new Set<OrgAction>([
+  // The org-level reads every member holds (§3.1).
+  'org.read',
+  'presence.read',
+  'capacity.read',
+  'member_list.read',
+  // The token's own record: its own tokens, heartbeats, unlisted work,
+  // activity sharing, time settings and drafts.
+  'token.create_own',
+  'token.read_own',
+  'token.revoke_own',
+  'agent.read_own',
+  'unlisted.log_own',
+  'heartbeat.send_own',
+  'activity_sharing.read_own',
+  'local_activity.send_own',
+  'time_settings.read_own',
+  'time_drafts.send_own',
+]);
 
 /**
  * Actions no personal access token may perform, whatever its scope or project
@@ -261,4 +316,24 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   // **A reset link is the person's account** (D-104 item 4, LAI-983): an
   // agent's token that could mint one could sign in as anybody it named.
   'user.reset_password',
+  // **Who an agent is and what it may reach are its owner's, signed in**
+  // (D-114, LAI-534): a token that could register an agent, widen a grant or
+  // rotate a credential could mint itself — or a sibling — more access.
+  'agent.manage_own',
 ]);
+
+/**
+ * The org-scoped actions a registered agent's token keeps (D-114, LAI-534).
+ *
+ * An agent's token is **always pinned** — to the projects its grants name —
+ * so it starts from {@link PINNED_TOKEN_ORG_ACTIONS}, and loses the two that
+ * would let it out of its grants: minting a token (which would be its owner's
+ * legacy credential, with no grant to narrow it) and revoking one of its
+ * owner's other tokens. Its own credential is rotated or revoked by its owner,
+ * signed in (`agent.manage_own`).
+ */
+export const AGENT_TOKEN_ORG_ACTIONS: ReadonlySet<OrgAction> = new Set<OrgAction>(
+  [...PINNED_TOKEN_ORG_ACTIONS].filter(
+    (action) => action !== 'token.create_own' && action !== 'token.revoke_own',
+  ),
+);

@@ -205,11 +205,93 @@ export const ACTIVITY_TYPES = [
   'task.stale_flagged',
   'invite.expired',
   'meeting_review.expired',
+  // D-114 item 7, LAI-535: a task's selected agent set, changed or cleared —
+  // one verb for every direction, as `task.assigned` is for the assignee. Not
+  // `task.updated`: "when was this asked of that agent, and by whom" is the
+  // question, and §4.8's test is that a reader need not open a payload.
+  // Dotted like every verb here; the proposal's `agent_selected` is this one.
+  // Three owners (CLAUDE.md §4.4): §4.8's row, this, and LAI-538's mirror.
+  'task.agent_selected',
+  // Proposal §4.2, LAI-541: an agent session's claim on a task lost its lease
+  // and the expiry scan marked it `expired` — written by the system (§3.4),
+  // because nobody did it. The generation it carried is invalid for good.
+  // Three owners (CLAUDE.md §4.4): §4.8's row, this, and LAI-543's mirror.
+  'task.claim_expired',
+  // Proposal §4.2, LAI-541: the agent whose claim expired took the task back
+  // explicitly, at `generation + 1`. Its own verb, not a quiet new claim:
+  // "who took it back, after what gap" is the question. Three owners as above.
+  'task.claim_reclaimed',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 
 export const TOKEN_SCOPES = ['full', 'read_only'] as const;
 export type TokenScope = (typeof TOKEN_SCOPES)[number];
+
+/**
+ * A registered agent's status (§4.63, D-114). `revoked` is terminal: a revoked
+ * agent's tokens are refused before any handler runs, and nothing reactivates it.
+ */
+export const AGENT_STATUSES = ['active', 'revoked'] as const;
+export type AgentStatus = (typeof AGENT_STATUSES)[number];
+
+/**
+ * An agent's grant on one project (§4.64, D-114): the same two words a token's
+ * scope uses, because it narrows the same way — `read_only` keeps the reads.
+ */
+export const AGENT_GRANT_SCOPES = TOKEN_SCOPES;
+export type AgentGrantScope = TokenScope;
+
+/**
+ * What a `handoff_offers` row offers (proposal §4.4, LAI-535). Only
+ * `work_request` is written today — selecting an agent asks it to take a task
+ * that nobody has worked yet. `handoff` and `recovery` are LAI-546's, listed
+ * now so that adding them is not a rebuild of a table with rows in it.
+ */
+export const HANDOFF_OFFER_KINDS = ['work_request', 'handoff', 'recovery'] as const;
+export type HandoffOfferKind = (typeof HANDOFF_OFFER_KINDS)[number];
+
+/**
+ * An offer's life cycle (proposal §4.4). A work request is written `open` and
+ * leaves it only as `cancelled` — the selection was cleared or changed —
+ * today; acceptance, approval and expiry arrive with LAI-541 and LAI-546.
+ */
+export const HANDOFF_OFFER_STATES = [
+  'pending_approval',
+  'open',
+  'accepted',
+  'declined',
+  'cancelled',
+  'expired',
+] as const;
+export type HandoffOfferState = (typeof HANDOFF_OFFER_STATES)[number];
+
+/**
+ * A claim's life (proposal §4.2, §4.66, LAI-541). `active` and `paused` are
+ * **live** — at most one live claim per task, by a partial unique index — and
+ * the other three are terminal. `expired` is written only by the lease scan
+ * (and by a heartbeat that finds its lease already lapsed), and **nothing
+ * moves a claim out of it**: the explicit reclaim inserts a new row.
+ * `paused` and `transferred` are LAI-546's hand-off states, listed now so
+ * adding them is not a rebuild of a table with rows in it.
+ */
+export const TASK_CLAIM_STATES = [
+  'active',
+  'paused',
+  'released',
+  'expired',
+  'transferred',
+] as const;
+export type TaskClaimState = (typeof TASK_CLAIM_STATES)[number];
+
+/** The states that hold a task (§4.66): the partial unique index's predicate. */
+export const LIVE_CLAIM_STATES = ['active', 'paused'] as const satisfies readonly TaskClaimState[];
+
+/**
+ * Why an agent session ended (§4.65, LAI-541): the agent said so, or its
+ * agent was revoked (D-114 item 2: revoking an agent ends its sessions).
+ */
+export const AGENT_SESSION_END_REASONS = ['ended', 'agent_revoked'] as const;
+export type AgentSessionEndReason = (typeof AGENT_SESSION_END_REASONS)[number];
 
 export const AI_PROVIDERS = ['anthropic', 'openai_compatible'] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];

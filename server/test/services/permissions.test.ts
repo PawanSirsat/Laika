@@ -9,6 +9,7 @@ import {
   ALL_ACTIONS,
   type OrgAction,
   ORG_ACTIONS,
+  PINNED_TOKEN_ORG_ACTIONS,
   type ProjectAction,
   PROJECT_ACTIONS,
   READ_ACTIONS,
@@ -123,6 +124,10 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'token.revoke_own': 'CCCC',
   'token.list_any': 'YYNN',
   'token.revoke_any': 'YYNN',
+  // D-114 (LAI-534): every role reads and manages its own agents; the
+  // service reaches only the caller's own rows.
+  'agent.read_own': 'YYYY',
+  'agent.manage_own': 'YYYY',
   'unlisted.log_own': 'YYYY',
   'heartbeat.send_own': 'YYYY',
   'audit_log.export': 'YYNN',
@@ -504,6 +509,22 @@ describe("the caller's own grants", () => {
     expect(me.projects.map((p) => p.project_id)).toEqual(['p1']);
     expect(me.projects[0]!.actions).toContain('task.write');
     expect(JSON.stringify(me)).not.toContain('p2');
+  });
+
+  it('loses the org-wide admin actions and keeps the every-member reads on a pinned token (§6.2, H4)', () => {
+    const admin = { orgRole: 'admin' as const, memberships: TWO_PROJECTS };
+    const unpinned = permissionsCatalogue(
+      actor({ ...admin, token: { id: 't1', scope: 'full', projectIds: null } }),
+    ).me;
+    const pinned = permissionsCatalogue(
+      actor({ ...admin, token: { id: 't1', scope: 'full', projectIds: ['p1'] } }),
+    ).me;
+
+    expect(unpinned.actions).toContain('user.invite');
+    expect(pinned.actions).not.toContain('user.invite');
+    expect(pinned.actions).toContain('member_list.read');
+    // Exactly the unpinned answer narrowed by the allow-list — nothing else moves.
+    expect(pinned.actions).toEqual(unpinned.actions.filter((a) => PINNED_TOKEN_ORG_ACTIONS.has(a)));
   });
 });
 

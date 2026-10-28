@@ -109,6 +109,7 @@ and how to set them, and it never prints your token.
 | MCP tools — **eighteen**, §7.1 | ✅ served at `${LAIKA_URL}/mcp` |
 | Heartbeat hooks | ✅ LAI-418 — `SessionStart`, `Stop`, throttled `PostToolUse` (per session, 90 s — LAI-752) |
 | Local activity hooks | ✅ LAI-752 — `scripts/laika-activity-hook`, installed by `laika activity on`; automated sessions skipped (LAI-757) |
+| Agent-session hooks | LAI-542 — `scripts/laika-agent-hook`, installed by `laika agent hooks on` (opt-in, not in `hooks.json`); a registered agent's session renewed only while its harness runs — `cli/README.md` has the harness matrix |
 | `laika init` | ✅ LAI-422 — writes both variables to `~/.claude/settings.json` |
 | `/laika:status` | ✅ |
 | `/laika:setup`, `/laika:tasks`, `/laika:standup` | LAI-420 |
