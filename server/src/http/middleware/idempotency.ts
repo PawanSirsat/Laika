@@ -4,6 +4,7 @@ import { type ResolvedActor, withProject } from '../../auth/resolve-actor.ts';
 import { type Db } from '../../db/client.ts';
 import { projects, tasks } from '../../db/schema.ts';
 import { type ProjectAction, can } from '../../policy/can.ts';
+import { registeredAgent } from '../../services/claims.ts';
 import { type AppEnv } from '../context.ts';
 import { AUTH_BASE_PATH } from '../../auth/auth.ts';
 import { conflictError, hashRequest, idempotencyOwner, lookup, remember } from '../idempotency.ts';
@@ -84,7 +85,10 @@ export function tokenMayReplay(path: string, storedBody: string): boolean {
  * would otherwise make a second one, and whose route asks exactly one
  * project-scoped (or org) `can()` — so the question can be stated here and
  * held equal to the route's by `test/http/idempotency.test.ts`. A route
- * needing more than that does not belong on the list.
+ * needing more than that does not belong on the list. The one entry whose
+ * question is not a single `can()` is `POST /agent-sessions`, whose route asks
+ * `heartbeat.send_own` and that the token is a registered agent's — both
+ * stated in its entry and held to the route by the same test.
  */
 interface CacheableRoute {
   readonly pattern: RegExp;
@@ -134,6 +138,14 @@ export const CACHEABLE_ROUTES: readonly CacheableRoute[] = [
   {
     pattern: /^\/api\/v1\/tasks\/([^/]+)\/dependencies$/,
     mayStill: inTaskProject('task.dependency.write'),
+  },
+  // `startAgentSession`: `heartbeat.send_own`, and only a registered agent's
+  // token (`not_an_agent` otherwise). The session helper retries a start whose
+  // reply was lost with the same key and must get the same session back
+  // (LAI-542), not a second one (integration of LAI-534 and LAI-541).
+  {
+    pattern: /^\/api\/v1\/agent-sessions$/,
+    mayStill: (_db, actor) => can(actor, 'heartbeat.send_own') && registeredAgent(actor) !== null,
   },
 ];
 

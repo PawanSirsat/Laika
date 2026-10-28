@@ -11,7 +11,15 @@ import {
 } from '../../src/http/idempotency.ts';
 import { CACHEABLE_ROUTES, cacheableRoute } from '../../src/http/middleware/idempotency.ts';
 import { pruneIdempotencyKeys } from '../../src/jobs/jobs.ts';
-import { idempotencyKeys, orgs, projects, tasks, users } from '../../src/db/schema.ts';
+import {
+  agentSessions,
+  agents,
+  idempotencyKeys,
+  orgs,
+  projects,
+  tasks,
+  users,
+} from '../../src/db/schema.ts';
 import {
   type AuthHarness,
   authHarness,
@@ -252,6 +260,92 @@ describe('Idempotency-Key over HTTP', () => {
     expect(JSON.stringify(rows())).not.toContain(sessionToken);
   });
 
+  /** Register an agent as the owner, granted `full` on Core; its id and secret. */
+  async function registerAgent(name: string): Promise<{ id: string; secret: string }> {
+    const core = h.db.select().from(projects).where(eq(projects.slug, 'core')).get();
+    const created = await must(
+      await req(
+        '/api/v1/agents',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            display_name: name,
+            harness: 'claude-code',
+            grants: [{ project_id: core?.id, scope: 'full' }],
+          }),
+        },
+        { cookie: owner.cookie },
+      ),
+    );
+    return { id: (created.agent as { id: string }).id, secret: created.secret as string };
+  }
+
+  function startSession(secret: string, key: string) {
+    return req(
+      '/api/v1/agent-sessions',
+      {
+        method: 'POST',
+        body: JSON.stringify({ client_version: '1.0.0' }),
+        headers: { 'Idempotency-Key': key },
+      },
+      { bearer: secret },
+    );
+  }
+
+  // **A session start is retried with its key** (integration of LAI-534 and
+  // LAI-542): the helper resends `POST /agent-sessions` with the same
+  // `Idempotency-Key` when the reply is lost, so the route is on the
+  // allow-list — and, like every entry, asks its question again first.
+  describe('POST /agent-sessions replays to a lost-reply retry, and only to a live agent', () => {
+    it('a retry with the same key answers the same session, and opens no second one', async () => {
+      const agent = await registerAgent('Claude');
+      const first = await must(await startSession(agent.secret, 'start-1'));
+      const retry = await startSession(agent.secret, 'start-1');
+
+      expect(retry.status).toBe(201);
+      expect(retry.headers.get('Idempotent-Replay')).toBe('true');
+      expect(((await retry.json()) as { id: string }).id).toBe(first.id);
+      expect(h.db.select().from(agentSessions).all()).toHaveLength(1);
+    });
+
+    it('a revoked agent retrying the key is refused, gets no replay, and opens nothing', async () => {
+      const agent = await registerAgent('Claude');
+      await must(await startSession(agent.secret, 'start-1'));
+      await must(
+        await req(
+          `/api/v1/agents/${agent.id}/revoke`,
+          { method: 'POST' },
+          { cookie: owner.cookie },
+        ),
+        200,
+      );
+
+      const retry = await startSession(agent.secret, 'start-1');
+      expect(retry.status).toBe(401);
+      expect(retry.headers.get('Idempotent-Replay')).toBeNull();
+      expect(((await retry.json()) as { error: { code: string } }).error.code).toBe('unauthorized');
+      expect(h.db.select().from(agentSessions).all()).toHaveLength(1);
+    });
+
+    it('the replay check refuses a token that is not a live agent’s, as the route does', async () => {
+      const agent = await registerAgent('Claude');
+      const listed = cacheableRoute('/api/v1/agent-sessions');
+      expect(listed).not.toBeNull();
+      const live = resolveTokenActor(h.db, agent.secret, Date.now());
+      expect(listed?.route.mayStill(h.db, live, listed.param)).toBe(true);
+      // The same credential with its agent gone, as a revoked agent's would be
+      // if the token row had somehow kept `revoked_at` null.
+      h.db.update(agents).set({ status: 'revoked' }).where(eq(agents.id, agent.id)).run();
+      expect(
+        listed?.route.mayStill(
+          h.db,
+          { ...live, token: { ...live.token!, agent: null } },
+          listed.param,
+        ),
+      ).toBe(false);
+    });
+  });
+
   describe('a replay is authorised again, against the actor as it is now (round 2)', () => {
     it('the same agent token after its grant was removed: the fresh 403, not the stored 201', async () => {
       const agent = await must(
@@ -389,6 +483,12 @@ describe('Idempotency-Key over HTTP', () => {
       const viewer = session('project viewer', carol);
       const member = session('org member', bob);
       const leadOnlyMember = session('member where creating is lead-only', bob);
+      const agent = await registerAgent('Parity');
+      const agentToken: Cred = {
+        label: 'registered agent token',
+        auth: { bearer: agent.secret },
+        actor: () => resolveTokenActor(h.db, agent.secret, Date.now()),
+      };
 
       const task = await must(await createTask(undefined, 'target', { cookie: owner.cookie }));
       const blocker = await must(await createTask(undefined, 'blocker', { cookie: owner.cookie }));
@@ -434,6 +534,13 @@ describe('Idempotency-Key over HTTP', () => {
           body: () => ({ blocked_by_task_id: blocker.id }),
           refused: [viewer, readOnly, pinnedElsewhere],
           allowed: [ownerSession],
+        },
+        {
+          // `heartbeat.send_own`, and only a registered agent's token.
+          path: '/api/v1/agent-sessions',
+          body: () => ({}),
+          refused: [ownerSession, ownerToken],
+          allowed: [agentToken],
         },
       ];
       // Every entry is exercised: a new one without a case fails here.
