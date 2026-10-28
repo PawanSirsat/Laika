@@ -526,6 +526,72 @@ const EXEMPT: Record<string, string> = {
     'comments are never fenced — a person or an agent may always say something',
 };
 
+describe('the live claim on task reads (LAI-568)', () => {
+  /** The task's `claim` from `GET /tasks/:id`, the full list and the slim list. */
+  async function claimOnReads(taskId: string) {
+    const single = await ok(await req(`/api/v1/tasks/${taskId}`, {}, { cookie: bob.cookie }));
+    const reads = [single.claim];
+    for (const query of ['', '?fields=slim']) {
+      const page = (await ok(
+        await req(`/api/v1/projects/alpha/tasks${query}`, {}, { cookie: bob.cookie }),
+      )) as unknown as { data: { id: string; claim: unknown }[] };
+      const listed = page.data.find((v) => v.id === taskId);
+      expect(listed, `task on the list${query}`).toBeDefined();
+      reads.push(listed!.claim);
+    }
+    return reads;
+  }
+
+  it('a person reads the holder’s session, heartbeat, connection and generation', async () => {
+    const { agent, secret } = await register();
+    const taskId = await newTask();
+    const free = await newTask('Free');
+    const taken = await claim(taskId, secret);
+
+    const reads = await claimOnReads(taskId);
+    for (const read of reads) {
+      expect(read).toEqual({
+        generation: taken.generation,
+        state: 'active',
+        agent_id: agent.id,
+        session_id: taken.session,
+        lease_expires_at: expect.any(Number) as number,
+        last_heartbeat_at: expect.any(Number) as number,
+        connection: 'live',
+        suspect_after_ms: DEFAULT_CLAIM_TIMINGS.suspectMs,
+        device_label: null,
+      });
+    }
+    // The claim response itself carries it too: the same view.
+    expect(taken.task.claim).toMatchObject({ session_id: taken.session, generation: 1 });
+    expect(await claimOnReads(free)).toEqual([null, null, null]);
+  });
+
+  it('is null on every read once the holder finishes: the claim is released', async () => {
+    const { secret } = await register();
+    const taskId = await newTask();
+    const taken = await claim(taskId, secret);
+
+    await ok(
+      await req(
+        `/api/v1/tasks/${taskId}/finish`,
+        { method: 'POST', body: JSON.stringify({ summary: 'Done' }) },
+        { bearer: secret, generation: taken.generation },
+      ),
+    );
+    expect(await claimOnReads(taskId)).toEqual([null, null, null]);
+  });
+
+  it('is null on every read once the scan expires it', async () => {
+    const { secret } = await register();
+    const taskId = await newTask();
+    await claim(taskId, secret);
+
+    expect(expireClaims(h.db, Date.now() + LEASE + 1).changed).toBe(1);
+    expect(await claimOnReads(taskId)).toEqual([null, null, null]);
+  });
+});
+
 describe('the census: every task-changing route is fenced or named', () => {
   it('the routes read from the source are exactly FENCED and EXEMPT', () => {
     const declared = declaredTaskRoutes();

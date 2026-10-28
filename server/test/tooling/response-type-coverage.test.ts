@@ -234,6 +234,10 @@ const UNPAIRED = new Map<string, string>([
   ['AgentSessionView', 'no client type exists'],
   ['TaskClaimView', 'no client type exists'],
   ['ReclaimView', 'no client type exists'],
+  // LAI-568's live claim on `TaskView`; SHELL's mirror of `TaskView.claim`
+  // (LAI-543's Working / Connection lost) pairs it, and this entry leaves the
+  // way the rest do.
+  ['TaskLiveClaimView', 'no client type exists'],
 ]);
 
 /**
