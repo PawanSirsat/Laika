@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import {
   appendFileSync,
@@ -249,7 +249,7 @@ export function isAlive(pid: number, started: string, proc: ProcReader = readPro
 /* -------------------------------------------------------------------------- */
 
 export type SessionStatus =
-  /** Being opened; a start that hit a network error it can safely retry stays here. */
+  /** Being opened, or a start that failed on the network: retried with its key. */
   | 'starting'
   /** Open and renewed by the watcher. */
   | 'live'
@@ -258,9 +258,7 @@ export type SessionStatus =
   /** The harness died; nothing renews it, and its claims lapse. */
   | 'abandoned'
   /** The board refused the credential or the session; nothing retries. */
-  | 'failed'
-  /** The start's request may have reached the board: never retried, so never doubled. */
-  | 'start_unknown';
+  | 'failed';
 
 export interface LostClaim {
   readonly id: string;
@@ -276,6 +274,12 @@ export interface SessionState {
   readonly url: string;
   status: SessionStatus;
   session_id?: string;
+  /**
+   * The start's `Idempotency-Key` (SPEC §6.3), written before the first
+   * attempt: every retry of this start sends it, so the board answers a retry
+   * of a start that did arrive with the session it already made.
+   */
+  start_key?: string;
   harness_pid: number;
   harness_started: string;
   watcher_pid?: number;
@@ -372,6 +376,7 @@ export async function callBoard(
   credential: AgentCredential,
   path: string,
   body?: unknown,
+  headers: Readonly<Record<string, string>> = {},
   timeoutMs = 10_000,
 ): Promise<ApiResult> {
   let response: Response;
@@ -381,6 +386,7 @@ export async function callBoard(
       headers: {
         Authorization: `Bearer ${credential.token}`,
         'Content-Type': 'application/json',
+        ...headers,
       },
       body: body === undefined ? '' : JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
@@ -484,10 +490,11 @@ function reusable(state: SessionState, proc: ProcInfo): boolean {
  *
  * **Idempotent per harness session**: a second `SessionStart` (resume,
  * compact, a racing hook) for the same harness process finds the live session
- * in the state file and uses it. **A start is retried only when its request
- * provably never left** — refused, unresolvable — because a start that may have
- * reached the board and is sent again is exactly how a second session is made.
- * One that may have is marked `start_unknown` and left for a person.
+ * in the state file and uses it. **A start that fails on the network is
+ * retried with the same `Idempotency-Key`** — here, and by the next hook if
+ * these attempts all fail — so a start whose answer was lost after the board
+ * made the session gets that same session back (the board replays a keyed
+ * `POST` for 24 h) rather than a second one.
  */
 export async function startSession(deps: Deps, request: StartRequest): Promise<StartOutcome> {
   const path = statePath(deps.home, request.harness, request.harnessSessionId);
@@ -495,25 +502,28 @@ export async function startSession(deps: Deps, request: StartRequest): Promise<S
   if (existing !== undefined && reusable(existing, request.harnessProc)) {
     return { kind: 'reused', state: existing };
   }
-  if (
-    existing?.status === 'start_unknown' &&
+  // A failed start of this same harness process keeps its key; anything else
+  // — a new process, an ended or abandoned session — is a new start.
+  const resumable =
+    existing?.status === 'starting' &&
+    existing.start_key !== undefined &&
     existing.harness_pid === request.harnessProc.pid &&
     existing.harness_started === request.harnessProc.started
-  ) {
-    return { kind: 'failed', state: existing, why: existing.last_error ?? 'start_unknown' };
-  }
+      ? existing
+      : undefined;
 
   privateDir(join(deps.home, '.laika'));
   privateDir(sessionsDir(deps.home));
   if (!takeLock(`${path}.lock`, deps.now())) return { kind: 'busy' };
 
   try {
-    const state: SessionState = {
+    const state: SessionState = resumable ?? {
       version: 1,
       harness: request.harness,
       harness_session_id: request.harnessSessionId,
       url: request.credential.url,
       status: 'starting',
+      start_key: `laika-agent-start-${randomUUID()}`,
       harness_pid: request.harnessProc.pid,
       harness_started: request.harnessProc.started,
       started_at: deps.now(),
@@ -522,7 +532,9 @@ export async function startSession(deps: Deps, request: StartRequest): Promise<S
       claims: [],
       noticed: [],
     };
+    // The key is on disk before anything is sent.
     writeState(deps.home, state);
+    const key = { 'Idempotency-Key': state.start_key ?? '' };
 
     const body = {
       ...(request.clientVersion === undefined ? {} : { client_version: request.clientVersion }),
@@ -531,8 +543,8 @@ export async function startSession(deps: Deps, request: StartRequest): Promise<S
     let result: ApiResult = { kind: 'network', sent: false, message: 'not tried' };
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (attempt > 0) await deps.sleep(500 * 2 ** (attempt - 1));
-      result = await callBoard(deps.fetch, request.credential, '/api/v1/agent-sessions', body);
-      if (result.kind !== 'network' || result.sent) break;
+      result = await callBoard(deps.fetch, request.credential, '/api/v1/agent-sessions', body, key);
+      if (result.kind !== 'network') break;
       state.failures += 1;
     }
 
@@ -551,10 +563,9 @@ export async function startSession(deps: Deps, request: StartRequest): Promise<S
 
     const why = describe(result);
     state.last_error = why;
-    // Never sent: `starting` stays retryable by the next hook. Possibly sent:
-    // never retried. Refused: nothing to retry.
-    state.status =
-      result.kind === 'network' ? (result.sent ? 'start_unknown' : 'starting') : 'failed';
+    // A network failure stays `starting`, retried with its key by the next
+    // hook. A refusal is final.
+    state.status = result.kind === 'network' ? 'starting' : 'failed';
     writeState(deps.home, state);
     log(deps.home, `start ${request.harness} failed: ${why} -> ${state.status}`);
     return { kind: 'failed', state, why };
@@ -661,6 +672,8 @@ export async function beatOnce(
       current.notice = lostNotice(fresh);
       log(deps.home, `lost ${current.session_id ?? ''}: ${String(fresh.length)} claim(s)`);
     }
+    // `end` may have landed while this was being built: never write it back to live.
+    if (readState(path)?.status !== 'live') return 'ended';
     writeState(deps.home, current);
     return 'renewed';
   }
@@ -758,6 +771,8 @@ export async function endSession(
     if (result.kind !== 'network') break;
   }
   const after = readState(path) ?? state;
+  // A renewal racing this end may have written `live` back; the end decides.
+  after.status = 'ended';
   if (result.kind === 'ok' && isRecord(result.body)) {
     after.end_reason =
       typeof result.body.end_reason === 'string' ? result.body.end_reason : 'ended';

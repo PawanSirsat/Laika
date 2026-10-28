@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { after, before, describe, test } from 'node:test';
 
 import { agentHookCommand, type AgentHookEvent } from '../src/agent-hooks.ts';
-import { type SessionState } from '../src/agent-session.ts';
+import { readProc, type SessionState, startSession } from '../src/agent-session.ts';
 import { must, type RealBoard, seed, type Seeded, startRealBoard } from './support/real-board.ts';
 
 const ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url));
@@ -36,7 +36,7 @@ const HOOK = fileURLToPath(new URL('../../plugin/scripts/laika-agent-hook', impo
 const FAKE = fileURLToPath(new URL('./support/fake-harness.ts', import.meta.url));
 
 const INTERVAL_MS = 1000;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 let board: RealBoard;
 let seeded: Seeded;
@@ -336,6 +336,48 @@ void describe('laika agent, against a real board', () => {
     assert.equal(body.error.details.reason, 'stale_claim');
     assert.equal(body.error.details.end_reason, 'ended');
     harness.child.kill('SIGKILL');
+  });
+
+  void test('a start whose answer is lost after the board made it is retried onto the same session', async () => {
+    // The real server's Idempotency-Key store, not a fake: the first answer is
+    // thrown away after it arrived, as a reset connection would.
+    const seenStarts: { replay: boolean; id: string }[] = [];
+    let dropped = false;
+    const deps = {
+      home,
+      env: {},
+      proc: readProc,
+      now: () => Date.now(),
+      sleep: (ms: number) => sleep(ms),
+      fetch: async (input: string, init: RequestInit) => {
+        const res = await fetch(input, init);
+        if (input.endsWith('/agent-sessions')) {
+          const body = (await res.clone().json()) as { id: string };
+          seenStarts.push({ replay: res.headers.get('Idempotent-Replay') === 'true', id: body.id });
+          if (!dropped) {
+            dropped = true;
+            throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } });
+          }
+        }
+        return res;
+      },
+    };
+    const self = readProc(process.pid);
+    assert.ok(self !== undefined);
+    const outcome = await startSession(deps, {
+      harness: 'claude-code',
+      harnessSessionId: 'hs-lost',
+      harnessProc: self,
+      credential: { url: board.url, token: seeded.agentToken },
+    });
+    assert.equal(outcome.kind, 'started');
+    assert.equal(seenStarts.length, 2);
+    assert.deepEqual(
+      seenStarts.map((s) => s.replay),
+      [false, true],
+    );
+    assert.equal(seenStarts[0]?.id, seenStarts[1]?.id);
+    assert.equal(readStateOf('hs-lost').session_id, seenStarts[0]?.id);
   });
 
   void test('the token is in no hook output, state file, log or command line', () => {

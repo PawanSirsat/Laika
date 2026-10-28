@@ -63,7 +63,8 @@ interface World {
   clock: { now: number };
 }
 
-type Step = 'ok' | 'refused' | 'reset' | 'timeout' | Response;
+/** `lost`: the board makes the session, and its answer never arrives. */
+type Step = 'ok' | 'refused' | 'reset' | 'timeout' | 'lost' | Response;
 
 function networkError(code?: string): Error {
   const error = new TypeError('fetch failed');
@@ -77,6 +78,9 @@ function world(
 ): World {
   let created = 0;
   let alive = true;
+  // The board's Idempotency-Key store (SPEC §6.3): a keyed POST it answered
+  // successfully is answered the same way again.
+  const keyed = new Map<string, string>();
   const calls: string[] = [];
   const clock = { now: 1_000_000 };
   const json = (status: number, body: unknown) =>
@@ -101,14 +105,22 @@ function world(
           ? 'beat'
           : 'end';
       calls.push(kind);
+      const key = new Headers(init.headers).get('idempotency-key');
+      // The network fails first, replay or not.
       const step = take(kind);
       if (step === 'refused') return Promise.reject(networkError('ECONNREFUSED'));
       if (step === 'reset') return Promise.reject(networkError('ECONNRESET'));
       if (step === 'timeout') return Promise.reject(new DOMException('timed out', 'TimeoutError'));
+      if (kind === 'start' && key !== null && keyed.has(key)) {
+        return Promise.resolve(json(201, { id: keyed.get(key), connection: 'live' }));
+      }
       if (step instanceof Response) return Promise.resolve(step);
       if (kind === 'start') {
         created += 1;
-        return Promise.resolve(json(201, { id: `S${String(created)}`, connection: 'live' }));
+        const id = `S${String(created)}`;
+        if (key !== null) keyed.set(key, id);
+        if (step === 'lost') return Promise.reject(networkError('ECONNRESET'));
+        return Promise.resolve(json(201, { id, connection: 'live' }));
       }
       if (kind === 'beat') return Promise.resolve(json(200, { session: {}, claims: [], lost: [] }));
       return Promise.resolve(json(200, { id: 'S1', end_reason: 'ended', connection: 'ended' }));
@@ -281,15 +293,32 @@ void describe('network failures', () => {
     assert.equal(unknown.kind === 'network' && unknown.sent, false);
   });
 
-  void test('a start that may have arrived is never sent again', async () => {
+  void test('a start whose answer was lost is retried with its key and gets the same session', async () => {
     const home = temp();
-    const w = world(home, { start: ['reset'] });
+    const w = world(home, { start: ['lost'] });
+    const outcome = await startSession(w.deps, request());
+    assert.equal(outcome.kind, 'started');
+    assert.deepEqual(w.calls, ['start', 'start']);
+    assert.equal(w.created(), 1);
+    assert.equal(readState(statePath(home, 'claude-code', 'hs-1'))?.session_id, 'S1');
+  });
+
+  void test('a start that failed every attempt keeps its key for the next hook', async () => {
+    const home = temp();
+    const w = world(home, { start: ['lost', 'reset', 'timeout'] });
     const first = await startSession(w.deps, request());
     assert.equal(first.kind, 'failed');
-    assert.equal(readState(statePath(home, 'claude-code', 'hs-1'))?.status, 'start_unknown');
+    const path = statePath(home, 'claude-code', 'hs-1');
+    const key = readState(path)?.start_key;
+    assert.match(key ?? '', /^laika-agent-start-/);
+    assert.equal(readState(path)?.status, 'starting');
+
+    // The next hook: same harness process, same key, and the board's stored answer.
     const second = await startSession(w.deps, request());
-    assert.equal(second.kind, 'failed');
-    assert.deepEqual(w.calls, ['start']);
+    assert.equal(second.kind, 'started');
+    assert.equal(readState(path)?.start_key, key);
+    assert.equal(readState(path)?.session_id, 'S1');
+    assert.equal(w.created(), 1);
   });
 
   void test('a second start for the same harness session reuses the live one', async () => {

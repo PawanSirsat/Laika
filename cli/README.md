@@ -618,11 +618,11 @@ start time must match too. Nothing reclaims automatically; a lost claim is
 shown to the model once, bounded to three tasks, and taking it back is an
 explicit reclaim.
 
-**Network failures** retry the same session and never open another. A start is
-retried only when its request provably never left (connection refused, name
-unresolved); one that may have reached the board (reset, timeout) is marked
-`start_unknown` and not sent again, because resending it is how a second
-session gets made.
+**Network failures** retry the same session and never open another. A start
+carries an `Idempotency-Key` written to the state file before the first
+attempt, and every retry of it — in the same hook or the next — sends the same
+key, so a start whose answer was lost after the board made the session gets
+that session back (the board replays a keyed `POST` for 24 h, SPEC §6.3).
 
 **The token** is sent as a header and handed to background children on stdin.
 It is never in argv, a child's environment, a state file
@@ -651,5 +651,6 @@ code.claude.com/docs/en/hooks, learn.chatgpt.com/docs/hooks.
 What is **not** guaranteed: a harness that exits without firing `SessionEnd`
 (a crash, Codex's advisory end) leaves the session open on the board until its
 claims expire; the watcher can be killed by the OS (sleep, an OOM) and nothing
-renews until the next prompt or tool call restarts it; `start_unknown` needs a
-person (`laika agent session status`) when a start's answer was lost.
+renews until the next prompt or tool call restarts it; and a start that keeps
+failing for more than 24 h (the key's replay window) opens a new session when it
+finally gets through.
