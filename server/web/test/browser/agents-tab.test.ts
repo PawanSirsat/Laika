@@ -267,7 +267,8 @@ async function secretSurvives(page: Page, secret: string): Promise<string[]> {
  * **finds** the secret while it is showing — a walker that cannot see it
  * would report a leak as clean.
  */
-async function secretInReact(page: Page, secret: string): Promise<'found' | 'clean' | string> {
+/** `'found'`, `'clean'`, or why the walk could not run. */
+async function secretInReact(page: Page, secret: string): Promise<string> {
   return page.evaluate((s: string) => {
     const root = document.getElementById('root') as (HTMLElement & Record<string, unknown>) | null;
     if (root === null) return 'no #root';

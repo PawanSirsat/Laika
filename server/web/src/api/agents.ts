@@ -209,7 +209,8 @@ export function mintedTokenSeen(
   token: Pick<TokenView, 'id' | 'created_at'>,
 ): TokenSeen {
   const minted = agent.tokens.find((t) => t.id === token.id);
-  if (agent.status !== 'active' || minted === undefined || minted.revoked_at !== null) {
+  // `?.`: a token the agent no longer lists reads as not-null, so as gone.
+  if (agent.status !== 'active' || minted?.revoked_at !== null) {
     return 'gone';
   }
   const after = (at: number | null): boolean => at !== null && at >= token.created_at;
