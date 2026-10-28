@@ -6,7 +6,8 @@ assignee: chief
 priority: p0
 depends-on: []
 discovered-from: LAI-532
-status: in-progress
+status: review
+finished: 2026-10-28T19:54:18Z
 started: 2026-10-28T19:08:03Z
 ---
 
@@ -25,7 +26,7 @@ integration-* pushes and workflow_dispatch. Lint and Format block everywhere.
 - [x] Triggers, timeouts, Lint, Format, build, deploy needs/if and rollback are unchanged.
 - [x] A second backlog task tracks restoring blocking tests, depends on LAI-577 (the LAI-538 withdraw-race fix) and LAI-576, and both board cards carry external_ref.
 - [x] YAML parses; actionlint runs if installed; pnpm lint and pnpm format each run separately with their own log and exit code.
-- [ ] Branch is pushed and a non-draft PR targets master; the PR's CI conclusion and head SHA are reported without merging or pushing master.
+- [x] Branch is pushed and a non-draft PR targets master; the PR's CI conclusion and head SHA are reported without merging or pushing master.
 
 ## Notes / context
 
@@ -58,6 +59,15 @@ Board cards created via MCP: LAIKA-832 (external_ref LAI-579) and LAIKA-833
 - Local `pnpm test` is unaffected by this workflow-only change and was not
   rerun. All cases remain; PR CI runs the full blocking Test step.
 
-PR opening and CI reporting remain pending; the final criterion will be
-checked after the first PR run completes. Review submission will record that
-run, and the resulting final head's CI will also be awaited.
+PR: https://github.com/PawanSirsat/Laika/pull/118 (non-draft, base master).
+First PR CI: https://github.com/PawanSirsat/Laika/actions/runs/40752067926,
+head `068f10bbda2e5d7202db072730ea9ce9aac6da49`, conclusion **success**.
+Lint, Format and Test passed; Build and Deploy were skipped. The CI conclusion
+and head SHA were reported in chat before submitting this task for review.
+
+This submission changes task metadata only. CI for its resulting final head
+will also be awaited and its conclusion attached to the PR and board evidence.
+The unmerged temporary worktree is retained under CLAUDE.md §4.2.
+
+- `pnpm --filter @laika/server exec vitest run test/tooling/task-file-state.test.ts > /tmp/LAI-579-task-state.log 2>&1`: exit 0 after moving to review; file set `server/test/tooling/task-file-state.test.ts`.
+- `python3 -c 'import yaml; yaml.safe_load(open(".github/workflows/deploy.yml"))'`: exit 0; file set `.github/workflows/deploy.yml`.
