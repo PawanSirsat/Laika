@@ -193,3 +193,54 @@ Mutation checks (each restored by checksum): M1 store ignores the flag → red;
 M2 `POST /tokens` unmarked → red; M3 key by person → 2 red; M4 branch write
 without `can()` → red; M5 link without `project.read` → 2 red; M6 resolver
 drops agent revocation → 2 red; M7 better-auth answers stored → red.
+
+## Review round 2 — Codex review of PR #102 at b5bc2966: fixes (CORE, 2026-10-28)
+
+New commits only: `ab4f71b0`, `8870d148` (plus these notes). `ab4f71b0`'s test
+file imports `pruneIdempotencyKeys` from `8870d148`, so `ab4f71b0` alone does
+not typecheck; the pair does. Recorded rather than amended (stacked branches).
+
+1. **Replay bypassed current permissions** (blocking). The store now keeps and
+   replays only `CACHEABLE_ROUTES` (`http/middleware/idempotency.ts`):
+   `POST /projects` (`project.create`), `POST /projects/:slug/tasks`
+   (`task.create`), `POST /projects/:slug/sprints` (`sprint.manage`),
+   `POST /tasks/:id/comments` (`comment.create`), `POST /tasks/:id/dependencies`
+   (`task.dependency.write`). Each entry carries its route's `can()`, asked of
+   the actor as it is now before any replay; refused, the route runs and gives
+   the fresh answer, and the earned row is kept. Every other POST is neither
+   stored nor replayed.
+   **Design: allow-list, as Codex suggested.** A forgotten allow-list entry
+   loses deduplication, visibly and harmlessly; a forgotten secret marker
+   persisted a secret and replayed it before `can()`. Re-authorising also needs
+   a per-route question, which only an allow-list can carry. `markOneTimeSecret`
+   stays as a second lock (no listed route marks today, so it is not
+   separately tested). A parity test holds each entry's question equal to its
+   route's, for an allowed and a refused actor, every entry.
+2. **Old plaintext secrets stayed and expired rows were never deleted**
+   (blocking). Owners are versioned (`v2:token:<id>`, `v2:user:<id>`), so a
+   pre-fix row is never looked up. The new `idempotency.retention` job
+   (`system.idempotency.prune`; hourly, and at boot) deletes every
+   unversioned row and every expired row. **No migration**, because the
+   stacked branches already use 0062/0063; the boot run is the upgrade step.
+
+**Docs halves for CHIEF** (not named crossings, not edited):
+- §3.4: a row for `system.idempotency.prune`. Until then it sits in
+  `ACTIONS_WITHOUT_A_ROW` (`policy-spec-drift.test.ts`), which the staleness
+  test retires.
+- §11.6: the `idempotency.retention` job.
+- §6.3: `Idempotency-Key` is honoured only on the five allow-listed POSTs (it
+  says every POST), replays are re-authorised, and a token's keys are its own.
+
+**Merge prerequisite (not this PR):** SSE reload still uses `loadActor()`
+without token context (`events.ts`). When #100 (LAI-539) and #102 are
+combined, `reloadActor` must build its token with `tokenContextFor`, so the
+stream applies agent grants and agent revocation.
+
+Mutations, each restored by checksum, each red:
+- R1: replay without re-asking `can()`
+- R2: task-project entries always allow
+- R3: every POST cached
+- R4: the job skips the pre-fix purge
+- R5: the job skips expiry
+- R6: unversioned owner (old rows become reachable)
+- R7: the job does not run at boot
