@@ -64,7 +64,7 @@ const taken = (generation: number, at: number) =>
     payload: {
       from: 'todo',
       to: 'in_progress',
-      assignee_id: 'u1',
+      // No `assignee_id`: a claim does not assign (LAI-541 round 2).
       via: 'claim',
       claim_generation: generation,
     },
@@ -145,8 +145,11 @@ void describe('claimHistory', () => {
   });
 
   void test('an expiry after the take is expired, and is never undone by time alone', () => {
-    // Newest first, as the feed serves them.
-    const history = claimHistory([expired(1, 20), taken(1, 10)]);
+    // Written in order (so `seq` rises with time, as on the server), then
+    // handed over newest first, as the feed serves them.
+    const take = taken(1, 10);
+    const lapse = expired(1, 20);
+    const history = claimHistory([lapse, take]);
     assert.equal(history.kind, 'expired');
     assert.equal(history.kind === 'expired' && history.fact.agentId, 'ag-laptop');
   });
@@ -172,13 +175,19 @@ void describe('claimHistory', () => {
   });
 
   void test('leaving In progress ends a claim, live or expired', () => {
-    const out = row({
-      type: 'task.status_changed',
-      payload: { from: 'in_progress', to: 'review' },
-      created_at: 40,
-    });
-    assert.equal(claimHistory([taken(1, 10), out]).kind, 'released');
-    assert.equal(claimHistory([taken(1, 10), expired(1, 20), out]).kind, 'released');
+    // Each history written in order, so `seq` rises with time as on the server.
+    const out = () =>
+      row({
+        type: 'task.status_changed',
+        payload: { from: 'in_progress', to: 'review' },
+        created_at: 40,
+      });
+    const live = [taken(1, 10)];
+    live.push(out());
+    const lapsed = [taken(1, 10), expired(1, 20)];
+    lapsed.push(out());
+    assert.equal(claimHistory(live).kind, 'released');
+    assert.equal(claimHistory(lapsed).kind, 'released');
   });
 
   void test('an ordinary edit or a person’s claim records no agent claim', () => {
@@ -247,6 +256,88 @@ void describe('executionView', () => {
       ),
       true,
     );
+  });
+});
+
+void describe('rows written in the same millisecond replay in seq order, not by id', () => {
+  // The LAI-543 review: an expiry and a reclaim land in one millisecond, and a
+  // ULID is random within one, so the later row's id can sort first.
+  const T = 50_000;
+
+  /** One `created_at`, and ids that sort the **opposite** way to `seq`. */
+  function tied(rows: readonly ActivityEvent[]): ActivityEvent[] {
+    return rows.map((r, i) => ({
+      ...r,
+      created_at: T,
+      id: `01ZZ${String(rows.length - i).padStart(4, '0')}`,
+    }));
+  }
+
+  /** The feed's order (newest first) and the reverse — the answer must not depend on it. */
+  function bothOrders(rows: readonly ActivityEvent[]): ActivityEvent[][] {
+    return [[...rows].reverse(), [...rows]];
+  }
+
+  /** The setup really is adversarial: within the tie, a later `seq` has a smaller id. */
+  function assertReversed(rows: readonly ActivityEvent[]): void {
+    for (let i = 1; i < rows.length; i += 1) {
+      const before = rows[i - 1];
+      const after = rows[i];
+      assert.ok(before !== undefined && after !== undefined);
+      assert.equal(before.created_at, after.created_at);
+      assert.ok(before.seq < after.seq, 'seq must rise');
+      assert.ok(before.id > after.id, 'the id must sort the other way');
+    }
+  }
+
+  const moved = (to: string) =>
+    row({ type: 'task.status_changed', payload: { from: 'in_progress', to } });
+
+  void test('expire then reclaim: generation 2, no expired notice', () => {
+    const start = taken(1, T - 10_000);
+    const tie = tied([expired(1, T), reclaimed(2, T)]);
+    assertReversed(tie);
+    for (const rows of bothOrders([start, ...tie])) {
+      const history = claimHistory(rows);
+      assert.equal(history.kind, 'recorded');
+      assert.equal(history.kind === 'recorded' && history.fact.kind, 'reclaimed');
+      const view = executionView({ status: 'in_progress', selected_agent: LAPTOP }, rows, AGENTS);
+      assert.equal(view.generation, 2);
+      assert.equal(view.claimExpired, false);
+    }
+  });
+
+  void test('expire then moved to Done: no expired notice', () => {
+    const start = taken(1, T - 10_000);
+    const tie = tied([expired(1, T), moved('done')]);
+    assertReversed(tie);
+    for (const rows of bothOrders([start, ...tie])) {
+      assert.equal(claimHistory(rows).kind, 'released');
+      const view = executionView({ status: 'done', selected_agent: LAPTOP }, rows, AGENTS);
+      assert.equal(view.claimExpired, false);
+    }
+  });
+
+  void test('reclaim then expire: expired, at generation 2', () => {
+    const start = [taken(1, T - 20_000), expired(1, T - 10_000)];
+    const tie = tied([reclaimed(2, T), expired(2, T)]);
+    assertReversed(tie);
+    for (const rows of bothOrders([...start, ...tie])) {
+      const view = executionView({ status: 'in_progress', selected_agent: LAPTOP }, rows, AGENTS);
+      assert.equal(view.claimExpired, true);
+      assert.equal(view.generation, 2);
+    }
+  });
+
+  void test('rows without a numeric seq fall back to created_at, all of them', () => {
+    const rows = [taken(1, 10), expired(1, 20), reclaimed(2, 30)].map(
+      // Larger ids and seqs on the older rows, then seq removed: only time is left.
+      (r, i) => ({ ...r, id: `01ZZ${String(9 - i)}`, seq: undefined }) as unknown as ActivityEvent,
+    );
+    for (const order of bothOrders(rows)) {
+      const history = claimHistory(order);
+      assert.equal(history.kind === 'recorded' && history.fact.generation, 2);
+    }
   });
 });
 

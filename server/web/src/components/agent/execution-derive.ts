@@ -137,13 +137,25 @@ function leavesProgress(event: ActivityEvent): boolean {
 }
 
 /**
- * The task's claim history, whatever order the rows arrive in — the feed is
- * newest first, and a test may hand them oldest first.
+ * The rows in the order they were written, oldest first, whatever order they
+ * arrive in — the feed is newest first, and a test may hand them oldest first.
+ *
+ * **By `seq`, not by time and id.** `seq` is the server's `rowid`, strictly
+ * increasing in insert order (`server/src/db/activity.ts`), so an expiry and a
+ * reclaim written in the same millisecond still replay in the order they
+ * happened. The row id is a ULID, random within a millisecond, so it cannot
+ * break that tie (LAI-543 review). If any row arrives without a numeric `seq`,
+ * the whole list falls back to `created_at` — one key for every pair, so the
+ * comparison stays consistent.
  */
+function inWriteOrder(events: readonly ActivityEvent[]): ActivityEvent[] {
+  const bySeq = events.every((event) => typeof event.seq === 'number');
+  return [...events].sort(bySeq ? (a, b) => a.seq - b.seq : (a, b) => a.created_at - b.created_at);
+}
+
+/** The task's claim history, replayed in write order ({@link inWriteOrder}). */
 export function claimHistory(events: readonly ActivityEvent[]): ClaimHistory {
-  const ordered = [...events].sort(
-    (a, b) => a.created_at - b.created_at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
-  );
+  const ordered = inWriteOrder(events);
   let state: ClaimHistory = { kind: 'none' };
   for (const event of ordered) {
     const fact = claimFactOf(event);
