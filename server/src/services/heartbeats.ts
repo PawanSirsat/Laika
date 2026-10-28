@@ -1,11 +1,11 @@
 import { and, eq } from 'drizzle-orm';
-import { type ResolvedActor } from '../auth/resolve-actor.ts';
+import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
 import { presenceEnabled } from '../db/orgs.ts';
 import { heartbeats, projects, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { agentsMay, assertCan } from '../policy/can.ts';
+import { assertCan, can } from '../policy/can.ts';
 
 /**
  * Presence (SPEC §9.1, §4.10, D-005, D-023).
@@ -475,7 +475,27 @@ export function recordHeartbeat(
     };
   }
 
-  const matched = resolveBranchTask(db, repo, branch);
+  // **The task the branch names is linked, and written, only as far as the
+  // sender may** (M4, LAIKA-537; D-114, LAI-534). `can()` with the whole actor
+  // — the owner's role in that project, a registered agent's grant, the
+  // token's scope and pin, and the space's agent rule — exactly as a REST or
+  // MCP write would be asked. A sender who may not read the project does not
+  // attach presence to its task, which would keep the task fresh and show a
+  // beat on it to people the sender cannot see; one who may read and not
+  // write is linked and changes nothing. The beat itself is the sender's own
+  // record (`heartbeat.send_own`) and always lands.
+  const branchTask = resolveBranchTask(db, repo, branch);
+  const sender = branchTask === null ? null : withProject(actor, branchTask.projectId);
+  const matched =
+    branchTask !== null &&
+    sender !== null &&
+    can(sender, 'project.read', { projectId: branchTask.projectId })
+      ? branchTask
+      : null;
+  const mayWriteBranch =
+    matched !== null &&
+    sender !== null &&
+    can(sender, 'task.write', { projectId: matched.projectId });
 
   const row: typeof heartbeats.$inferInsert = {
     id: newId(),
@@ -490,9 +510,10 @@ export function recordHeartbeat(
   db.insert(heartbeats).values(row).run();
 
   // The beat is the token's own and always lands; the branch it writes onto a
-  // task is a change in that task's space, so a space whose agents are off
-  // keeps it (D-103 item 7, LAI-976 review).
-  if (matched !== null && agentsMay(actor, 'task.write', { projectId: matched.projectId })) {
+  // task is a change in that task's space, so it is the sender's only if
+  // `task.write` is (above) — which includes a space whose agents are off
+  // (D-103 item 7, LAI-976 review).
+  if (matched !== null && mayWriteBranch) {
     // §9.2 stores the branch on the task as well. **Last seen, not a history** —
     // overwriting is correct, and the history is `activity`. No activity row: a
     // heartbeat is presence, not an audited action, and an agent beating every
