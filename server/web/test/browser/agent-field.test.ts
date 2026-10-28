@@ -868,7 +868,10 @@ void describe('the List’s Agent column and the agent filter', () => {
       await cell.waitFor({ timeout: 20_000 });
       const width = async (selector: string) =>
         Math.round((await h.page.locator(selector).first().boundingBox())?.width ?? -1);
+      const sideways = () =>
+        h.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
       for (const theme of ['light', 'dark']) {
+        await h.page.setViewportSize({ width: 1440, height: 900 });
         await setTheme(h.page, theme);
         const spare = () =>
           h.page
@@ -884,13 +887,12 @@ void describe('the List’s Agent column and the agent filter', () => {
           await width('.list-created'),
           'CREATED ≠ UPDATED',
         );
+        // A phone is no worse, in this theme too: the table scrolls in its
+        // card, never the page.
+        await h.page.setViewportSize({ width: 390, height: 844 });
+        await until(async () => (await sideways()) === 0);
+        assert.equal(await sideways(), 0, `${theme}: the page scrolls sideways at 390`);
       }
-      // A phone is no worse: the table scrolls in its card, never the page.
-      await h.page.setViewportSize({ width: 390, height: 844 });
-      const sideways = () =>
-        h.page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-      await until(async () => (await sideways()) === 0);
-      assert.equal(await sideways(), 0, 'the page scrolls sideways at 390');
       // Still named: on hover, and read aloud with its product and device.
       assert.match((await cell.getAttribute('title')) ?? '', /^Claude Code · laptop-1 — /);
       assert.equal(
