@@ -17,11 +17,13 @@ import {
   highlight,
   move,
   noMatches,
+  openingOption,
   outOfView,
   placeWithin,
   typeahead,
   type Area,
   type Move,
+  type OpenAt,
 } from './dropdown-model.ts';
 import './dropdown.css';
 
@@ -230,21 +232,14 @@ export function Dropdown<V extends string = string>({
       : undefined;
 
   const show = useCallback(
-    (start: 'selected' | 'first' | 'last' = 'selected') => {
+    (start: OpenAt = 'selected') => {
       if (disabled) return;
       setQuery('');
       reveal.current = true;
-      const pool = ordered.filter((o) => o.disabled !== true);
-      const pick =
-        start === 'first'
-          ? pool[0]
-          : start === 'last'
-            ? pool[pool.length - 1]
-            : (ordered.find((o) => o.value === value && o.disabled !== true) ?? pool[0]);
-      setActive(pick?.value);
+      setActive(openingOption(ordered, value, start, reachDisabled)?.value);
       setOpen(true);
     },
-    [disabled, ordered, value],
+    [disabled, ordered, value, reachDisabled],
   );
 
   /** Closed, and — unless the reader went somewhere else — focus back on the trigger. */

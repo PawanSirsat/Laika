@@ -315,6 +315,38 @@ void describe('agent states on /design/states (LAI-536)', () => {
     }
   });
 
+  void test('a closed picker opens on End at the disabled last agent, and on Home at the first (round 2)', async () => {
+    const h = await gallery();
+    try {
+      const box = specimen(h.page, 'picker').getByRole('combobox', { name: 'Agent' });
+      const activeValue = async (): Promise<string | null> => {
+        const id = await box.getAttribute('aria-activedescendant');
+        return id === null ? null : h.page.locator(`[id="${id}"]`).getAttribute('data-value');
+      };
+      await box.focus();
+      assert.equal(await box.getAttribute('aria-expanded'), 'false');
+      await h.page.keyboard.press('End');
+      await until(async () => (await box.getAttribute('aria-expanded')) === 'true');
+      // The last agent is OpenCode, which is revoked: End lands on it, not on
+      // the last one that can be picked.
+      assert.equal(await activeValue(), 'ag-old');
+      await h.page.keyboard.press('Enter');
+      await h.page.waitForTimeout(150);
+      assert.equal(
+        await box.getAttribute('data-value'),
+        'ag-laptop',
+        'End then Enter chose a disabled agent',
+      );
+      await h.page.keyboard.press('Escape');
+      await until(async () => (await box.getAttribute('aria-expanded')) === 'false');
+      await h.page.keyboard.press('Home');
+      await until(async () => (await box.getAttribute('aria-expanded')) === 'true');
+      assert.equal(await activeValue(), '', 'Home did not open on "No agent"');
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('the hand-off dialog holds focus, says the receiver must accept, and gives focus back', async () => {
     const h = await gallery();
     try {

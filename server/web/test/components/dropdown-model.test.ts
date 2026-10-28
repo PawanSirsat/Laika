@@ -11,6 +11,7 @@ import {
   filterOptions,
   highlight,
   move,
+  openingOption,
   noMatches,
   place,
   placeWithin,
@@ -107,6 +108,24 @@ void describe('dropdown keyboard movement (LAI-726)', () => {
     ];
     assert.equal(typeahead(out, 0, 'y'), -1);
     assert.equal(typeahead(out, 0, 'y', true), 1);
+  });
+
+  void test('a closed list opens on Home and End past disabled ends only with reachDisabled (LAI-536 round 2)', () => {
+    // Disabled at both boundaries: Home's and End's target is the disabled one.
+    const ends: ModelOption[] = [
+      { value: 'first', label: 'first', disabled: true },
+      { value: 'mid', label: 'mid' },
+      { value: 'last', label: 'last', disabled: true },
+    ];
+    assert.equal(openingOption(ends, 'mid', 'first', true)?.value, 'first');
+    assert.equal(openingOption(ends, 'mid', 'last', true)?.value, 'last');
+    assert.equal(openingOption(ends, 'mid', 'selected', true)?.value, 'mid');
+    // Off — every other dropdown — skips them exactly as before.
+    assert.equal(openingOption(ends, 'mid', 'first')?.value, 'mid');
+    assert.equal(openingOption(ends, 'mid', 'last')?.value, 'mid');
+    assert.equal(openingOption(ends, 'last', 'selected')?.value, 'mid');
+    assert.equal(openingOption(ends, 'nowhere', 'selected')?.value, 'mid');
+    assert.equal(openingOption([], 'x', 'first'), undefined);
   });
 
   void test('type-ahead walks names with the same first letter, then refines', () => {

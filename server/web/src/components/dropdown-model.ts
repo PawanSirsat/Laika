@@ -109,6 +109,29 @@ export function move(
   }
 }
 
+/** Where a list opens: on the selected option, or at the first or last (Home, End). */
+export type OpenAt = 'selected' | 'first' | 'last';
+
+/**
+ * The option a list opens on. Disabled options are passed over unless
+ * `reachDisabled`, as for {@link move} — so a closed picker's End lands on the
+ * same option an open one's End does (LAI-536 review round 2). With it off,
+ * this is exactly the rule `Dropdown` always had.
+ */
+export function openingOption<T extends ModelOption>(
+  options: readonly T[],
+  value: string,
+  start: OpenAt,
+  reachDisabled = false,
+): T | undefined {
+  const pool = reachDisabled ? options : options.filter((o) => o.disabled !== true);
+  if (start === 'first') return pool[0];
+  if (start === 'last') return pool[pool.length - 1];
+  return (
+    options.find((o) => o.value === value && (reachDisabled || o.disabled !== true)) ?? pool[0]
+  );
+}
+
 /**
  * Type-ahead: the next option whose label starts with what was typed.
  * Disabled options are skipped unless `reachDisabled`, as for {@link move}.
