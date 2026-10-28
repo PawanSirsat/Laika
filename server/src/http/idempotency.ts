@@ -19,7 +19,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { and, eq, lt } from 'drizzle-orm';
+import { and, eq, lt, notLike } from 'drizzle-orm';
 import { type Context } from 'hono';
 import { type Db } from '../db/client.ts';
 import { idempotencyKeys } from '../db/schema.ts';
@@ -125,9 +125,16 @@ export function idempotencyOwner(actor: {
   token?: { id: string } | null | undefined;
 }): string {
   return actor.token === null || actor.token === undefined
-    ? actor.userId
-    : `token:${actor.token.id}`;
+    ? `${IDEMPOTENCY_OWNER_VERSION}:user:${actor.userId}`
+    : `${IDEMPOTENCY_OWNER_VERSION}:token:${actor.token.id}`;
 }
+
+/**
+ * The owner format's version (LAI-534, round 2). A row without it was written
+ * before secrets were excluded, may carry one, is never looked up, and is
+ * deleted by {@link purgeUnversioned}.
+ */
+export const IDEMPOTENCY_OWNER_VERSION = 'v2';
 
 export function conflictError(key: string): ApiError {
   return new ApiError(
@@ -137,7 +144,25 @@ export function conflictError(key: string): ApiError {
   );
 }
 
-/** For the cron sweep of §11.6. */
-export function pruneExpired(db: Db, now: number): void {
-  db.delete(idempotencyKeys).where(lt(idempotencyKeys.expiresAt, now)).run();
+/** For the cron sweep of §11.6. Returns how many rows it deleted. */
+export function pruneExpired(db: Db, now: number): number {
+  return db.delete(idempotencyKeys).where(lt(idempotencyKeys.expiresAt, now)).run().changes;
+}
+
+/**
+ * Delete every row written before LAI-534's owner format, and return how many
+ * (Codex review of PR #102, round 2).
+ *
+ * **Those rows may hold plaintext secrets**: until LAI-534 every 2xx was
+ * stored, `POST /tokens` and the invite, reset-link and webhook routes
+ * included. They are already unreachable — every lookup now asks for an owner
+ * that starts with {@link IDEMPOTENCY_OWNER_VERSION} — but unreachable is not
+ * deleted, and a database file with a token in it is a token. Run at boot and
+ * hourly with the expiry sweep, so it costs nothing once the table is clean.
+ */
+export function purgeUnversioned(db: Db): number {
+  return db
+    .delete(idempotencyKeys)
+    .where(notLike(idempotencyKeys.actorId, `${IDEMPOTENCY_OWNER_VERSION}:%`))
+    .run().changes;
 }

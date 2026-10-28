@@ -137,6 +137,9 @@ export const SYSTEM_ACTIONS = [
   // §11.6: time retention — drafts after 30 days, entries after three years
   // (D-088 item 11, LAI-787).
   'system.time.prune',
+  // §11.6: the idempotency store's expired rows, and the rows written before
+  // LAI-534 excluded one-time secrets from it (Codex review of PR #102).
+  'system.idempotency.prune',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];

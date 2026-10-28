@@ -2,6 +2,7 @@ import { and, eq, gt, isNotNull, isNull, lt, lte, sql } from 'drizzle-orm';
 import { appendActivity } from '../db/activity.ts';
 import { assertCan, systemPrincipal } from '../policy/can.ts';
 import { type Db } from '../db/client.ts';
+import { pruneExpired, purgeUnversioned } from '../http/idempotency.ts';
 import { AGENT_BUCKET_MS } from '../services/agent-time.ts';
 import {
   agentTimeBuckets,
@@ -455,6 +456,21 @@ export function expireMeetingReviews(db: Db, now: number): JobResult {
   }
 
   return { changed: doomed.length };
+}
+
+/**
+ * The idempotency store's retention (§6.3, §11.6; LAI-534 round 2).
+ *
+ * Two deletions. **Expired rows**: §6.3 replays within 24 hours, and a lookup
+ * already treats an older row as unseen, but nothing deleted one, so the
+ * table only grew — and kept every response body it was ever given.
+ * **Rows from before LAI-534's owner format**, which may hold plaintext
+ * secrets (`purgeUnversioned`). Hourly and once at boot, so a deploy deletes
+ * them the moment it starts.
+ */
+export function pruneIdempotencyKeys(db: Db, now: number): JobResult {
+  assertCan(SYSTEM, 'system.idempotency.prune');
+  return { changed: pruneExpired(db, now) + purgeUnversioned(db) };
 }
 
 /**
