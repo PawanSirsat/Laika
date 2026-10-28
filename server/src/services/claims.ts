@@ -157,6 +157,41 @@ export interface HeartbeatView {
   lost: TaskClaimView[];
 }
 
+/**
+ * A task's live claim as every reader of the task sees it (§4.5, LAI-568) —
+ * the board's *Working* and *Connection lost*. Null on the task when nothing
+ * live holds it: an expired, released or transferred claim is history, and
+ * its record is the task's activity.
+ */
+export interface TaskLiveClaimView {
+  generation: number;
+  state: 'active' | 'paused';
+  agent_id: string;
+  session_id: string;
+  lease_expires_at: number;
+  /** The holding session's. */
+  last_heartbeat_at: number;
+  /**
+   * `suspect` once `last_heartbeat_at` is `suspect_after_ms` old, as
+   * {@link AgentSessionView} computes it — and for a session that ended while
+   * the claim stayed live (a revoked agent's, left to lapse), which nothing
+   * will renew. Shown, decides nothing.
+   */
+  connection: 'live' | 'suspect';
+  /**
+   * §9.1's suspect interval, so a client can move `live` to `suspect` on its
+   * own clock: heartbeats write no activity, so no event re-reads the task.
+   */
+  suspect_after_ms: number;
+  /** The holding agent's, for "Claude Code · laptop-1". */
+  device_label: string | null;
+}
+
+/** Whether a heartbeat this old is suspect at `now` — one rule for every view. */
+function isSuspect(lastHeartbeatAt: number, now: number): boolean {
+  return now - lastHeartbeatAt >= settings.timings.suspectMs;
+}
+
 function sessionView(row: SessionRow, now: number): AgentSessionView {
   return {
     id: row.id,
@@ -168,11 +203,7 @@ function sessionView(row: SessionRow, now: number): AgentSessionView {
     client_version: row.clientVersion,
     model: row.model,
     connection:
-      row.endedAt !== null
-        ? 'ended'
-        : now - row.lastHeartbeatAt >= settings.timings.suspectMs
-          ? 'suspect'
-          : 'live',
+      row.endedAt !== null ? 'ended' : isSuspect(row.lastHeartbeatAt, now) ? 'suspect' : 'live',
   };
 }
 
@@ -251,6 +282,59 @@ export function liveClaim(db: Db, taskId: string): ClaimRow | undefined {
     .from(taskClaims)
     .where(and(eq(taskClaims.taskId, taskId), inArray(taskClaims.state, [...LIVE_CLAIM_STATES])))
     .get();
+}
+
+/**
+ * The live claim of each task on a page, keyed by task id — **one query
+ * whatever the page size**, as LAI-091 keeps every other part of a task view.
+ *
+ * An `active` claim whose lease has lapsed is left out before the scan
+ * catches it ({@link leaseLapsed}, so the boot grace holds here too): the
+ * fence already refuses its generation, and a card must not say *Working*
+ * for a claim nobody can use.
+ */
+export function liveClaimViews(
+  db: Db,
+  taskIds: readonly string[],
+  now: number,
+): Map<string, TaskLiveClaimView> {
+  if (taskIds.length === 0) return new Map();
+
+  const found = db
+    .select({
+      claim: taskClaims,
+      lastHeartbeatAt: agentSessions.lastHeartbeatAt,
+      sessionEndedAt: agentSessions.endedAt,
+      deviceLabel: agents.deviceLabel,
+    })
+    .from(taskClaims)
+    .innerJoin(agentSessions, eq(agentSessions.id, taskClaims.sessionId))
+    .innerJoin(agents, eq(agents.id, taskClaims.agentId))
+    .where(
+      and(
+        inArray(taskClaims.taskId, [...taskIds]),
+        inArray(taskClaims.state, [...LIVE_CLAIM_STATES]),
+      ),
+    )
+    .all();
+
+  const views = new Map<string, TaskLiveClaimView>();
+  for (const { claim, lastHeartbeatAt, sessionEndedAt, deviceLabel } of found) {
+    if (claim.state === 'active' && leaseLapsed(claim.leaseExpiresAt, now)) continue;
+    views.set(claim.taskId, {
+      generation: claim.generation,
+      // The query's predicate: only the live states reach here.
+      state: claim.state as TaskLiveClaimView['state'],
+      agent_id: claim.agentId,
+      session_id: claim.sessionId,
+      lease_expires_at: claim.leaseExpiresAt,
+      last_heartbeat_at: lastHeartbeatAt,
+      connection: sessionEndedAt !== null || isSuspect(lastHeartbeatAt, now) ? 'suspect' : 'live',
+      suspect_after_ms: settings.timings.suspectMs,
+      device_label: deviceLabel,
+    });
+  }
+  return views;
 }
 
 /** The task's newest claim of any state — the highest generation. */

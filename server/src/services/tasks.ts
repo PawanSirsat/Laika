@@ -47,10 +47,12 @@ import {
   claimView,
   hasOpenWorkRequest,
   liveClaim,
+  liveClaimViews,
   registeredAgent,
   releaseLiveClaim,
   takeClaim,
   type TaskClaimView,
+  type TaskLiveClaimView,
 } from './claims.ts';
 import { addComment, commentCounts } from './comments.ts';
 import {
@@ -260,6 +262,13 @@ export interface TaskSummaryView {
    * needs a second read.
    */
   selected_agent: SelectedAgentView | null;
+  /**
+   * The session holding the task now, or null (§4.5, §4.66, LAI-568): its
+   * live claim — `active` or `paused` — with the holder's last heartbeat and
+   * whether it is still checking in. An expired, released or transferred
+   * claim is never this; the task's activity is where those are told.
+   */
+  claim: TaskLiveClaimView | null;
   created_at: number;
   updated_at: number;
 }
@@ -313,9 +322,15 @@ interface ViewContext {
   readonly sizes: ReadonlyMap<string, SizeView>;
   /** The selected agent per agent id (LAI-535) — one query whatever the page. */
   readonly selectedAgents: ReadonlyMap<string, SelectedAgentView>;
+  /** The live claim per task (LAI-568) — one query whatever the page. */
+  readonly claims: ReadonlyMap<string, TaskLiveClaimView>;
 }
 
-function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
+/**
+ * `now` is the read's clock: a claim's `connection` and whether its lease has
+ * lapsed are answers about a moment (LAI-568), so a test can ask about one.
+ */
+function loadViewContext(db: Db, rows: readonly TaskRow[], now: number): ViewContext {
   const edges = dependencyEdges(
     db,
     rows.map((row) => row.id),
@@ -360,6 +375,7 @@ function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
     sendBacks: activeSendBacks(db, rows),
     sizes: sizeViews(db, rows),
     selectedAgents: selectedAgentViews(db, rows),
+    claims: liveClaimViews(db, ids, now),
   };
 }
 
@@ -411,6 +427,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
       row.selectedAgentId === null
         ? null
         : (context.selectedAgents.get(row.selectedAgentId) ?? null),
+    claim: context.claims.get(row.id) ?? null,
     comment_count: context.comments.get(row.id) ?? 0,
     tags: context.tags.get(row.id) ?? [],
     started_at: row.startedAt,
@@ -439,8 +456,9 @@ export function viewTasks(
   db: Db,
   rows: readonly TaskRow[],
   prefixes: ReadonlyMap<string, string>,
+  now: number = Date.now(),
 ): TaskView[] {
-  const context = loadViewContext(db, rows);
+  const context = loadViewContext(db, rows, now);
   return rows.map((row) => toView(row, prefixes.get(row.projectId) ?? '', context));
 }
 
@@ -502,8 +520,8 @@ export function assertMayCloseReview(
 }
 
 /** One task's view, loading only what that task needs. */
-function viewOne(db: Db, row: TaskRow, prefix: string): TaskView {
-  return toView(row, prefix, loadViewContext(db, [row]));
+function viewOne(db: Db, row: TaskRow, prefix: string, now: number): TaskView {
+  return toView(row, prefix, loadViewContext(db, [row], now));
 }
 
 /** Load a task and the project it belongs to, or 404. */
@@ -758,11 +776,16 @@ function resolveStatus(db: Db, projectId: string, target: StatusTarget): StatusR
   return { ...match, hidden: match.hidden === 1 };
 }
 
-export function getTask(db: Db, actor: ResolvedActor, taskId: string): TaskView {
+export function getTask(
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  now: number = Date.now(),
+): TaskView {
   const { task, project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
 
-  return viewOne(db, task, project.prefix);
+  return viewOne(db, task, project.prefix, now);
 }
 
 export interface CreateTaskInput {
@@ -909,7 +932,7 @@ export function createTask(
       now,
     });
 
-    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, id)).get()!, project.prefix);
+    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, id)).get()!, project.prefix, now);
   });
 }
 
@@ -931,6 +954,8 @@ export interface ListTasksFilter {
   updatedSince?: number | null;
   limit: number;
   cursor: { sortKey: string | number; id: string } | null;
+  /** The read's clock, for each task's `claim` (LAI-568). Defaults to now. */
+  now?: number | undefined;
 }
 
 export function listTasks(
@@ -1003,8 +1028,9 @@ function readTaskPage(
   db: Db,
   conditions: readonly SQL[],
   prefixOf: (projectId: string) => string,
-  filter: Pick<ListTasksFilter, 'ready' | 'limit' | 'cursor'>,
+  filter: Pick<ListTasksFilter, 'ready' | 'limit' | 'cursor' | 'now'>,
 ): TaskView[] {
+  const now = filter.now ?? Date.now();
   // One over the limit, so the route can tell whether another page exists.
   const wanted = filter.limit + 1;
 
@@ -1036,7 +1062,7 @@ function readTaskPage(
       .limit(size)
       .all();
 
-    const context = loadViewContext(db, rows);
+    const context = loadViewContext(db, rows, now);
     return rows.map((row) => toView(row, prefixOf(row.projectId), context));
   };
 
@@ -1075,6 +1101,8 @@ export interface ListAllTasksFilter {
   updatedSince?: number | null;
   limit: number;
   cursor: { sortKey: string | number; id: string } | null;
+  /** The read's clock, for each task's `claim` (LAI-568). Defaults to now. */
+  now?: number | undefined;
 }
 
 /**
@@ -1096,6 +1124,7 @@ export function listAllTasks(db: Db, actor: ResolvedActor, filter: ListAllTasksF
   return readTaskPage(db, scope.conditions, (id) => scope.prefixes.get(id) ?? '', {
     limit: filter.limit,
     cursor: filter.cursor,
+    now: filter.now,
   });
 }
 
@@ -1496,6 +1525,7 @@ export function updateTask(
         db,
         db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
         project.prefix,
+        now,
       );
     },
     { behavior: 'immediate' },
@@ -1630,6 +1660,7 @@ export function startWorking(
           db,
           db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
           project.prefix,
+          now,
         ),
         claim: taken === null ? null : claimView(taken.claim),
       };
@@ -1733,7 +1764,12 @@ export function startWorking(
     else if (estimate !== undefined) refreshEstimate(db, taskId, now);
 
     return {
-      task: viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix),
+      task: viewOne(
+        db,
+        db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+        project.prefix,
+        now,
+      ),
       claim: taken === null ? null : claimView(taken.claim),
     };
   });
@@ -1829,7 +1865,12 @@ export function changeStatus(
       now,
     });
 
-    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+    return viewOne(
+      db,
+      db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+      project.prefix,
+      now,
+    );
   }
 
   // §5's table, widened for a person and unchanged for a program (LAI-266).
@@ -1919,7 +1960,12 @@ export function changeStatus(
     refreshEstimate(db, task.parentTaskId, now);
   }
 
-  return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+  return viewOne(
+    db,
+    db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+    project.prefix,
+    now,
+  );
 }
 
 /**
@@ -2202,7 +2248,7 @@ export function reorderTask(
 
     const current = task.position!;
     const alreadyThere = (lower === null || lower < current) && (upper === null || current < upper);
-    if (alreadyThere) return viewOne(db, task, project.prefix);
+    if (alreadyThere) return viewOne(db, task, project.prefix, now);
 
     const position = keyBetween(lower, upper);
     db.update(tasks).set({ position, updatedAt: now }).where(eq(tasks.id, taskId)).run();
@@ -2220,6 +2266,11 @@ export function reorderTask(
       now,
     });
 
-    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+    return viewOne(
+      db,
+      db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+      project.prefix,
+      now,
+    );
   });
 }
