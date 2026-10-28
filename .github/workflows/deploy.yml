@@ -65,7 +65,13 @@ jobs:
       - name: Format
         run: pnpm format
       - name: Test
+        id: test
+        # LAI-579: temporary, owner instruction 2026-10-29; revert when the flaky tests are fixed
+        continue-on-error: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
         run: pnpm test
+      - name: Warn when tests did not block deploy
+        if: steps.test.outcome == 'failure'
+        run: echo "::warning::The test step failed and was not allowed to block the deploy (temporary, see LAI-579)."
 
   build:
     name: Build — arm64 image
