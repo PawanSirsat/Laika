@@ -155,10 +155,10 @@ export function ExecutionPanel({
             <dt>Claim generation</dt>
             <dd>{generation === null ? 'No claim' : String(generation)}</dd>
           </div>
-          {claim !== undefined && claim.sessionId !== null && (
+          {(claim?.sessionId ?? null) !== null && (
             <div>
               <dt>Session</dt>
-              <dd className="exec-sha">{claim.sessionId}</dd>
+              <dd className="exec-sha">{claim?.sessionId}</dd>
             </div>
           )}
           {checkpoint !== undefined && checkpoint !== null && (

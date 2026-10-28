@@ -43,8 +43,7 @@ const NOT_STARTED: ReadonlySet<string> = new Set(['backlog', 'todo']);
 export function cardExecutionState(
   task: Pick<TaskSummary, 'status' | 'selected_agent'>,
 ): ExecutionState | null {
-  const agent = task.selected_agent ?? null;
-  if (agent === null || agent.status !== 'active') return null;
+  if (task.selected_agent?.status !== 'active') return null;
   return NOT_STARTED.has(task.status) ? 'waiting_for_agent' : null;
 }
 
