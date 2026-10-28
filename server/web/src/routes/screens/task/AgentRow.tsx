@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { MyAgents } from '../../../api/use-my-agents.ts';
 import {
   agentLabel,
@@ -45,13 +45,38 @@ interface Pending {
 
 /**
  * What the server confirmed, applied before the drawer's own read catches
- * up — and **only against the task as it was when the write was sent**
- * (`basis`): once the props move on, they are the truth again.
+ * up — **until the props reach the version the PATCH returned** (`version`,
+ * its `updated_at`). Props older than that are the read that was already on
+ * its way; props at or past it are the truth, the reader's write included.
  */
 interface Confirmed {
   readonly taskId: string;
   readonly agent: SelectedAgent | null;
-  readonly basis: number;
+  readonly version: number;
+}
+
+/*
+ * **One write per task at a time, across every visit** (LAI-538 review,
+ * round 3). Request ids stop a stale *answer* from changing the screen, but
+ * not a stale *write* from landing: a withdraw sent on one visit and a select
+ * sent on the next both reach the server, and whichever lands last wins. So
+ * the record of a write in flight lives here, outside the component, keyed
+ * by task, and the next write on that task waits for it to settle.
+ */
+const saving = new Set<string>();
+const savingListeners = new Set<() => void>();
+
+function subscribeSaving(listener: () => void): () => void {
+  savingListeners.add(listener);
+  return () => {
+    savingListeners.delete(listener);
+  };
+}
+
+function markSaving(taskId: string, on: boolean): void {
+  if (on) saving.add(taskId);
+  else saving.delete(taskId);
+  for (const listener of savingListeners) listener();
 }
 
 /**
@@ -101,19 +126,24 @@ export function AgentRow({
 
   const pending = pendingWrite?.taskId === task.id ? pendingWrite.agentId : undefined;
   const error = errorFor?.taskId === task.id ? errorFor.words : undefined;
+  /** A write on this task is in flight — this visit's, or one sent before it. */
+  const savingHere = useSyncExternalStore(subscribeSaving, () => saving.has(task.id));
+  /** In flight from an earlier visit: the field waits for it, and says so. */
+  const savingElsewhere = savingHere && pending === undefined;
   /*
    * **A confirmed write shows at once**, from the PATCH's own answer, rather
    * than waiting on the drawer's next read — a read that fails would
    * otherwise leave the field showing the old agent for good.
    */
   const overlay =
-    confirmed?.taskId === task.id && confirmed.basis === task.updated_at ? confirmed : undefined;
+    confirmed?.taskId === task.id && task.updated_at < confirmed.version ? confirmed : undefined;
   const current = overlay === undefined ? selectedAgentOf(task) : overlay.agent;
-  const served = selectedAgentOf(task)?.id ?? null;
-  // The read caught up: the props say it themselves now.
+  // The props reached the confirmed version, or passed it: they are the truth.
   useEffect(() => {
-    if (overlay !== undefined && (overlay.agent?.id ?? null) === served) setConfirmed(undefined);
-  }, [overlay, served]);
+    if (confirmed?.taskId === task.id && task.updated_at >= confirmed.version) {
+      setConfirmed(undefined);
+    }
+  }, [confirmed, task.id, task.updated_at]);
 
   const choices = useMemo(
     () =>
@@ -133,30 +163,41 @@ export function AgentRow({
   const choose = async (id: string): Promise<void> => {
     const to = id === NO_AGENT ? null : id;
     const taskId = task.id;
-    const basis = task.updated_at;
-    // One write at a time on this visit. Not by disabling the field: a
-    // disabled button drops focus to <body>, and the reader who just chose is
-    // left nowhere.
-    if (pending !== undefined || to === (current?.id ?? null)) return;
+    // One write per task, whichever visit sent it. This visit's own write is
+    // guarded without disabling the field — a disabled button drops focus to
+    // <body> under the reader who just chose; a write from an earlier visit
+    // disables it, with the reason in words (below).
+    if (saving.has(taskId) || to === (current?.id ?? null)) return;
     nextReq.current += 1;
     const req = nextReq.current;
     active.current = req;
     setError(undefined);
     setPending({ req, taskId, agentId: id });
+    markSaving(taskId, true);
     const mine = (): boolean => active.current === req;
     try {
       const written = await selectTaskAgent(taskId, to);
-      if (!mine()) return;
+      if (!mine()) {
+        // Settled after the reader left: read the task again, so whoever
+        // looks at it next sees what the server now holds.
+        onChanged();
+        return;
+      }
       active.current = null;
       // Settled by the server's own answer, whatever the follow-up read does.
-      setConfirmed({ taskId, agent: selectedAgentOf(written), basis });
+      setConfirmed({ taskId, agent: selectedAgentOf(written), version: written.updated_at });
       setPending(undefined);
       onChanged();
     } catch (cause) {
-      if (!mine()) return;
+      if (!mine()) {
+        onChanged();
+        return;
+      }
       active.current = null;
       setPending(undefined);
       setError({ taskId, words: selectionErrorWords(cause) });
+    } finally {
+      markSaving(taskId, false);
     }
   };
 
@@ -168,6 +209,7 @@ export function AgentRow({
         <AgentPicker
           agents={choices}
           value={value}
+          disabled={savingElsewhere}
           onChange={(id) => {
             void choose(id);
           }}
@@ -198,8 +240,15 @@ export function AgentRow({
         </>
       )}
 
+      {/* A write on this task is on its way; the next waits for it. */}
+      {savingHere && (
+        <p className="meta-sub meta-agent-saving" role="status">
+          Saving agent…
+        </p>
+      )}
+
       {/* Phase 1: picked, not accepted. Never "working" — there is no claim yet. */}
-      {current !== null && pending === undefined && (
+      {current !== null && !savingHere && (
         <ExecutionStateLine
           state="waiting_for_agent"
           detail={`${current.owner.name}’s ${agentLabel(current)}`}
