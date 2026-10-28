@@ -12,7 +12,7 @@ status: backlog
 Phase 2.5 slice from `docs/proposals/LAI-532-phase-index.md` (PR #121,
 branch `LAI-532-identity-model-decisions`). Builds on D-118 (*one agent per
 harness per device*, proposed in `docs/proposals/LAI-532-agent-identity-model.md`).
-The web half is LAI-591. Board card: parent LAIKA-785.
+The web half is LAI-591. Board card: LAIKA-844, parent LAIKA-785.
 
 ## Goal
 
