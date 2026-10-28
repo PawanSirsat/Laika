@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../../src/errors.ts';
 import { type OrgRole, type ProjectRole } from '../../src/db/enums.ts';
-import { ALL_ACTIONS, isReadAction } from '../../src/policy/actions.ts';
+import {
+  AGENT_TOKEN_ORG_ACTIONS,
+  ALL_ACTIONS,
+  isReadAction,
+  type OrgAction,
+  ORG_ACTIONS,
+  PINNED_TOKEN_ORG_ACTIONS,
+  READ_ACTIONS,
+  SESSION_ONLY_ACTIONS,
+} from '../../src/policy/actions.ts';
 import {
   type Actor,
   assertCan,
@@ -10,8 +19,10 @@ import {
   effectiveTokenScope,
   forcedTokenScope,
   projectRoleOnJoin,
+  type AgentContext,
   type TokenContext,
 } from '../../src/policy/can.ts';
+import { PROJECT_ACTIONS } from '../../src/policy/actions.ts';
 
 function actor(
   orgRole: OrgRole,
@@ -110,11 +121,157 @@ describe('token scope narrows and never widens (SPEC §6.2, §3.3 rule 4)', () =
     expect(can(pinned, 'project.read', { projectId: 'p2' })).toBe(false);
   });
 
-  it('leaves org-scoped actions alone when a token is project-pinned', () => {
-    const pinned = actor('admin', null, { id: 'tok_pinned', scope: 'full', projectIds: ['p1'] });
+  /**
+   * SPEC §6.2 (audit H4): a token pinned to projects is refused org-wide admin
+   * actions, whatever the user's role. Until H4 this file asserted the
+   * opposite — *"leaves org-scoped actions alone when a token is
+   * project-pinned"* — and an Admin's token pinned to one project invited,
+   * created projects and edited the organisation.
+   *
+   * A table over the real `ORG_ACTIONS` export, every entry, for a pinned
+   * Owner and a pinned Admin — and the same actors unpinned, so the refusal is
+   * provably the pin's and not the role's or the token's.
+   */
+  describe('a project-pinned token is refused org-wide admin actions (§6.2, H4)', () => {
+    const pinnedToken: TokenContext = { id: 'tok_pinned', scope: 'full', projectIds: ['p1'] };
+    const unpinnedToken: TokenContext = { id: 'tok_full', scope: 'full', projectIds: null };
+    // A resource every own-record and conditional org row holds against, and
+    // no project — so the org branch is the one under test.
+    const ownAndHolding = {
+      ownerId: 'u1',
+      visibility: 'public' as const,
+      targetOrgRole: 'member' as const,
+      targetUserId: 'u2',
+    };
 
-    expect(can(pinned, 'member_list.read')).toBe(true);
-    expect(can(pinned, 'user.invite')).toBe(true);
+    for (const role of ['owner', 'admin'] as const) {
+      it(`${role}: every ORG_ACTION, pinned against unpinned`, () => {
+        let refusedByThePin = 0;
+
+        for (const action of ORG_ACTIONS) {
+          const session = can(actor(role), action, ownAndHolding);
+          const unpinned = can(actor(role, null, unpinnedToken), action, ownAndHolding);
+          const pinned = can(actor(role, null, pinnedToken), action, ownAndHolding);
+
+          // Today's answer for an unpinned full token: the role's, less §3.1's
+          // session-only cells — unchanged by H4.
+          expect(unpinned, `${role} / ${action} / unpinned`).toBe(
+            session && !SESSION_ONLY_ACTIONS.has(action),
+          );
+          // The pin keeps the allow-list and refuses the rest.
+          expect(pinned, `${role} / ${action} / pinned`).toBe(
+            unpinned && PINNED_TOKEN_ORG_ACTIONS.has(action),
+          );
+
+          if (unpinned && !pinned) refusedByThePin += 1;
+        }
+
+        // Not vacuous: the pin refuses something the same token unpinned may do.
+        expect(refusedByThePin).toBeGreaterThan(0);
+      });
+    }
+
+    it('names the admin actions the audit found: invite, create a project, edit the org', () => {
+      const admin = actor('admin', null, pinnedToken);
+      const unpinnedAdmin = actor('admin', null, unpinnedToken);
+
+      for (const action of ['user.invite', 'project.create', 'org.settings.edit'] as const) {
+        expect(can(unpinnedAdmin, action, ownAndHolding), `${action} unpinned`).toBe(true);
+        expect(can(admin, action, ownAndHolding), `${action} pinned`).toBe(false);
+      }
+      // The decided refusals: org-wide reads, and a membership change outside the pin.
+      for (const action of ['audit_log.export', 'usage.read_org', 'project.join_public'] as const) {
+        expect(can(unpinnedAdmin, action, ownAndHolding), `${action} unpinned`).toBe(true);
+        expect(can(admin, action, ownAndHolding), `${action} pinned`).toBe(false);
+      }
+      // And what it keeps: the every-member read and its own record.
+      expect(can(admin, 'member_list.read')).toBe(true);
+      expect(can(admin, 'token.read_own', { ownerId: 'u1' })).toBe(true);
+    });
+
+    it('is told why: project_pinned, as session_required is said', () => {
+      const admin = actor('admin', null, pinnedToken);
+
+      expect(() => assertCan(admin, 'user.invite', { targetOrgRole: 'member' })).toThrowError(
+        ApiError,
+      );
+      try {
+        assertCan(admin, 'user.invite', { targetOrgRole: 'member' });
+      } catch (error) {
+        expect(error).toBeInstanceOf(ApiError);
+        expect((error as ApiError).code).toBe('forbidden');
+        expect((error as ApiError).details).toMatchObject({
+          action: 'user.invite',
+          reason: 'project_pinned',
+        });
+      }
+
+      // The reason is the pin's alone: a pinned `read_only` token refused a
+      // write is refused by its scope, and told no reason.
+      const readOnlyPinned = actor('admin', null, { ...pinnedToken, scope: 'read_only' });
+      try {
+        assertCan(readOnlyPinned, 'user.invite', { targetOrgRole: 'member' });
+        expect.unreachable('should have thrown');
+      } catch (error) {
+        expect((error as ApiError).details).toEqual({ action: 'user.invite' });
+      }
+      // And a Member's pinned token refused `user.invite` is refused by the
+      // role, which the pin did not do.
+      try {
+        assertCan(actor('member', null, pinnedToken), 'user.invite', { targetOrgRole: 'member' });
+        expect.unreachable('should have thrown');
+      } catch (error) {
+        expect((error as ApiError).details).toEqual({ action: 'user.invite' });
+      }
+    });
+
+    it('the allow-list is a strict subset of ORG_ACTIONS holding no write beyond own-record', () => {
+      // Invariant 1 — every entry is an org action, and not all of them are.
+      const org: ReadonlySet<string> = new Set(ORG_ACTIONS);
+      for (const action of PINNED_TOKEN_ORG_ACTIONS) {
+        expect(org.has(action), action).toBe(true);
+      }
+      expect(PINNED_TOKEN_ORG_ACTIONS.size).toBeLessThan(ORG_ACTIONS.length);
+
+      // Invariant 2 — "the org-level reads every member has and its own-record
+      // actions": an entry is either one of §3.1's four every-member reads or
+      // carries the `_own` suffix. The suffix is the naming convention
+      // `ORG_ACTIONS` uses for own-record rows, so this holds the name and not
+      // the semantics: an action named `_own` that acted on somebody else's
+      // record would pass it, and is caught by the matrix tests, not here.
+      const everyMemberReads: ReadonlySet<string> = new Set([
+        'org.read',
+        'presence.read',
+        'capacity.read',
+        'member_list.read',
+      ]);
+      for (const action of PINNED_TOKEN_ORG_ACTIONS) {
+        const isEveryMemberRead = everyMemberReads.has(action) && READ_ACTIONS.has(action);
+        expect(isEveryMemberRead || action.endsWith('_own'), action).toBe(true);
+        // And every-member means it: a Viewer on a session holds it.
+        if (isEveryMemberRead) expect(can(actor('viewer'), action), action).toBe(true);
+      }
+      // Both ways: every every-member read is kept, so dropping one from the
+      // list — which the loop above cannot see, inspecting only what remains —
+      // goes red here.
+      for (const action of everyMemberReads) {
+        expect(PINNED_TOKEN_ORG_ACTIONS.has(action as OrgAction), action).toBe(true);
+      }
+
+      // Invariant 3 — a session-only action is refused to every token before
+      // this list is reached, so listing one would be a claim nothing enforces.
+      for (const action of PINNED_TOKEN_ORG_ACTIONS) {
+        expect(SESSION_ONLY_ACTIONS.has(action), action).toBe(false);
+      }
+
+      // Invariant 4 — the sentence's other half: every own-record org action a
+      // token may use at all is one a pinned token keeps.
+      for (const action of ORG_ACTIONS) {
+        if (action.endsWith('_own') && !SESSION_ONLY_ACTIONS.has(action)) {
+          expect(PINNED_TOKEN_ORG_ACTIONS.has(action), action).toBe(true);
+        }
+      }
+    });
   });
 
   it('applies scope after the role decision, never instead of it', () => {
@@ -350,6 +507,9 @@ describe('the cases LAI-004 calls out by name', () => {
       // D-103 item 5 (LAI-976): leaving a space removes their own membership
       // and writes nothing about the space's work.
       const ownMembership = action === 'project.leave';
+      // D-114 (LAI-534): registering and managing their own agents, signed
+      // in. An agent of theirs can never write more than they can.
+      const ownAgents = action === 'agent.manage_own';
 
       expect(allowed, `${action} allowed for viewer`).toBe(
         selfToken ||
@@ -361,7 +521,8 @@ describe('the cases LAI-004 calls out by name', () => {
           ownUsage ||
           ownTokenData ||
           ownTime ||
-          ownMembership,
+          ownMembership ||
+          ownAgents,
       );
     }
   });
@@ -466,5 +627,138 @@ describe('time refuses every token but where a collector or an agent acts (LAI-7
   it('gives a member no organisation switch', () => {
     expect(can(actor('member', null), 'org.time.set')).toBe(false);
     expect(can(actor('viewer', null), 'org.time.set')).toBe(false);
+  });
+});
+
+/**
+ * D-114's agent step (LAI-534): owner ∩ grant ∩ token, inside the token
+ * narrowing. Tables over the real action lists, every entry, so an action
+ * added later is decided here without anybody remembering to.
+ */
+describe('a registered agent’s token is narrowed by its grants (D-114)', () => {
+  function agent(grants: Record<string, 'full' | 'read_only'>): AgentContext {
+    return {
+      id: 'ag1',
+      displayName: 'Claude',
+      harness: 'claude-code',
+      deviceLabel: null,
+      status: 'active',
+      grants: new Map(Object.entries(grants)),
+    };
+  }
+  const legacy: TokenContext = { id: 't1', scope: 'full', projectIds: null };
+  const withAgent = (grants: Record<string, 'full' | 'read_only'>): TokenContext => ({
+    ...legacy,
+    agent: agent(grants),
+  });
+  const resource = (projectId: string) => ({
+    projectId,
+    ownerId: 'u1',
+    createdBy: 'u1',
+    visibility: 'public' as const,
+    targetOrgRole: 'member' as const,
+  });
+
+  it('in a granted full project, answers exactly as the legacy token does', () => {
+    for (const role of ['owner', 'admin', 'member'] as const) {
+      const projectRole = role === 'member' ? 'member' : null;
+      for (const action of PROJECT_ACTIONS) {
+        expect(
+          can(actor(role, projectRole, withAgent({ p1: 'full' })), action, resource('p1')),
+          `${role} / ${action}`,
+        ).toBe(can(actor(role, projectRole, legacy), action, resource('p1')));
+      }
+    }
+  });
+
+  it('in a project with no grant, refuses every project action — reads included', () => {
+    const owner = actor('owner', null, withAgent({ p1: 'full' }));
+    for (const action of PROJECT_ACTIONS) {
+      expect(can(owner, action, resource('p2')), action).toBe(false);
+    }
+  });
+
+  it('a read_only grant keeps exactly the reads the legacy token has', () => {
+    const owner = actor('owner', null, withAgent({ p1: 'read_only' }));
+    for (const action of PROJECT_ACTIONS) {
+      const expected =
+        isReadAction(action) && can(actor('owner', null, legacy), action, resource('p1'));
+      expect(can(owner, action, resource('p1')), action).toBe(expected);
+    }
+  });
+
+  it('a full grant never widens a read_only token', () => {
+    const owner = actor('owner', null, { ...withAgent({ p1: 'full' }), scope: 'read_only' });
+    for (const action of ALL_ACTIONS) {
+      if (can(owner, action, resource('p1'))) expect(isReadAction(action), action).toBe(true);
+    }
+  });
+
+  it('a full grant never widens its owner: a project viewer’s agent writes nothing', () => {
+    const viewer = actor('member', 'viewer', withAgent({ p1: 'full' }));
+    expect(can(viewer, 'task.write', resource('p1'))).toBe(false);
+    expect(can(viewer, 'project.read', resource('p1'))).toBe(true);
+  });
+
+  it('keeps only AGENT_TOKEN_ORG_ACTIONS of the org actions, for every role', () => {
+    for (const role of ['owner', 'admin', 'member', 'viewer'] as const) {
+      for (const action of ORG_ACTIONS) {
+        const res = { ownerId: 'u1', targetUserId: 'u2', visibility: 'public' as const };
+        const unpinned = can(actor(role, null, legacy), action, res);
+        expect(
+          can(actor(role, null, withAgent({ p1: 'full' })), action, res),
+          `${role} / ${action}`,
+        ).toBe(unpinned && AGENT_TOKEN_ORG_ACTIONS.has(action));
+      }
+    }
+  });
+
+  it('refuses minting or revoking a token, which would escape the grants', () => {
+    expect(AGENT_TOKEN_ORG_ACTIONS.has('token.create_own')).toBe(false);
+    expect(AGENT_TOKEN_ORG_ACTIONS.has('token.revoke_own')).toBe(false);
+    for (const action of AGENT_TOKEN_ORG_ACTIONS) {
+      expect(PINNED_TOKEN_ORG_ACTIONS.has(action), action).toBe(true);
+    }
+  });
+
+  it('a legacy token is untouched by the step', () => {
+    for (const action of ALL_ACTIONS) {
+      expect(
+        can(actor('owner', null, { ...legacy, agent: null }), action, resource('p2')),
+        action,
+      ).toBe(can(actor('owner', null, legacy), action, resource('p2')));
+    }
+  });
+
+  it('says why: agent_not_granted, agent_read_only and agent_token', () => {
+    const reasonOf = (a: Actor, action: Parameters<typeof assertCan>[1], r: object) => {
+      try {
+        assertCan(a, action, r);
+        return 'allowed';
+      } catch (err) {
+        expect(err).toBeInstanceOf(ApiError);
+        expect((err as ApiError).code).toBe('forbidden');
+        return ((err as ApiError).details as { reason?: string }).reason;
+      }
+    };
+    const owner = (grants: Record<string, 'full' | 'read_only'>) =>
+      actor('owner', null, withAgent(grants));
+
+    expect(reasonOf(owner({ p1: 'full' }), 'task.write', { projectId: 'p2' })).toBe(
+      'agent_not_granted',
+    );
+    expect(reasonOf(owner({ p1: 'read_only' }), 'task.write', { projectId: 'p1' })).toBe(
+      'agent_read_only',
+    );
+    expect(reasonOf(owner({ p1: 'full' }), 'token.create_own', {})).toBe('agent_token');
+    expect(reasonOf(owner({ p1: 'full' }), 'project.create', {})).toBe('agent_token');
+    // The owner may not either: no agent reason, because the grant is not why.
+    expect(
+      reasonOf(actor('member', 'viewer', withAgent({ p1: 'full' })), 'task.write', {
+        projectId: 'p1',
+      }),
+    ).toBe(undefined);
+    // Session-only stays session-only, said as such.
+    expect(reasonOf(owner({ p1: 'full' }), 'agent.manage_own', {})).toBe('session_required');
   });
 });

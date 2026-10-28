@@ -13,6 +13,7 @@ import {
   requireProjectBySlug,
 } from '../services/projects.ts';
 import { listTaskRounds, type RoundView } from '../services/rounds.ts';
+import { listOwnWorkRequests, type WorkRequestView } from '../services/work-requests.ts';
 import {
   getTaskEstimate,
   similarFinishedTasks,
@@ -188,7 +189,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
     {
       title: 'List ready tasks',
       description:
-        'Tasks that can be picked up right now: unassigned, not blocked by anything unfinished, in backlog or todo (§4.5). Sorted p1 first, then oldest. This is the answer to "what should I work on".',
+        'Tasks that can be picked up right now: unassigned, not blocked by anything unfinished, in backlog or todo (§4.5). Sorted p1 first, then oldest. This is the answer to "what should I work on". On a registered agent\'s token it also returns `work_requests`: the tasks a person selected this agent for, ready or not, newest first, under the same `project` and `limit` — a request, not a claim; `start_working` still claims.',
       inputSchema: z.strictObject({
         project: PROJECT_REF.optional().describe(
           'Restrict to one project. Omit to search every project you can read.',
@@ -198,6 +199,21 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
     },
     ({ project, limit }) => {
       try {
+        // The REST twin is `GET /agents/me/work-requests?project=&limit=`
+        // (LAI-535): the same `project` and the same `limit` as the ready list
+        // below, newest first. Only an agent's own token has requests; anyone
+        // else's answer is unchanged. **First**, so an agent naming a project
+        // it may not use gets the work-request refusal — one answer for a real
+        // and a made-up slug — before the task list's lookup can tell them apart.
+        const requests: WorkRequestView[] =
+          actor.token?.agent === null || actor.token?.agent === undefined
+            ? []
+            : listOwnWorkRequests(db, actor, {
+                limit: limit ?? 25,
+                cursor: null,
+                projectSlug: project ?? null,
+              }).slice(0, limit ?? 25);
+
         const slugs =
           project === undefined
             ? everyRow(
@@ -233,9 +249,26 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
             ),
             'Nothing is ready. Everything is either assigned, blocked, or already moving.',
           ),
+          ...(requests.length === 0
+            ? []
+            : [
+                '',
+                `## Requested of you (${String(requests.length)})`,
+                '',
+                bullets(
+                  requests.map(
+                    (r) =>
+                      `\`${r.task_key}\` **${r.task_title}** — requested ${ago(r.created_at, now)}`,
+                  ),
+                  '',
+                ),
+              ]),
         ].join('\n');
 
-        return answer(markdown, { tasks: ordered });
+        return answer(markdown, {
+          tasks: ordered,
+          ...(actor.token?.agent ? { work_requests: requests } : {}),
+        });
       } catch (error) {
         return toolError(error);
       }
@@ -363,6 +396,14 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           `## \`${view.key}\` ${view.title}`,
           '',
           `${view.priority} · ${statusText(view)} · assigned to ${nameOf(view.assignee_id)} · ${view.ready ? 'ready' : 'not ready'}`,
+          // The selected agent is a request, not a claim (D-114 item 7): said
+          // apart from the assignee so neither is read as the other.
+          ...(view.selected_agent === null
+            ? []
+            : [
+                '',
+                `Requested of agent **${view.selected_agent.display_name}** (${view.selected_agent.owner.name}'s${view.selected_agent.status === 'revoked' ? ', revoked' : ''}) — a work request; it claims nothing.`,
+              ]),
           '',
           '### Description',
           view.description_md ?? '_None._',

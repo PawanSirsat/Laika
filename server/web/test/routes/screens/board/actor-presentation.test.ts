@@ -15,7 +15,10 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { describeActor } from '../../../../src/routes/screens/board/actor-presentation.ts';
+import {
+  actorLine,
+  describeActor,
+} from '../../../../src/routes/screens/board/actor-presentation.ts';
 import type { ActorBadge } from '../../../../src/routes/screens/board/actor-presentation.ts';
 import type { Member } from '../../../../src/api/tasks.ts';
 
@@ -46,15 +49,19 @@ void describe('a system row is the system, not an anonymous person', () => {
 void describe('all three kinds are distinguishable', () => {
   void test('an agent is badged and keeps the person the token belongs to', () => {
     // `actor_id` is the person, not the agent — the token is what makes it an
-    // agent, and naming *which* agent needs a field the API does not send
-    // (LAI-093). "agent" is the honest label until it does.
+    // agent. A row with no `agent_id` is a legacy token's (LAI-535), and says
+    // so rather than naming an agent it cannot (LAI-538).
     const actor = describeActor({ actor_id: ADA, actor_kind: 'agent' }, members);
-    assert.deepEqual(actor, { name: 'Ada Lovelace', badge: 'agent' });
+    assert.deepEqual(actor, {
+      name: 'Ada Lovelace',
+      badge: 'agent',
+      via: 'agent (unregistered token)',
+    });
   });
 
   void test('an ordinary person carries no badge', () => {
     const actor = describeActor({ actor_id: ADA, actor_kind: 'user' }, members);
-    assert.deepEqual(actor, { name: 'Ada Lovelace', badge: undefined });
+    assert.deepEqual(actor, { name: 'Ada Lovelace', badge: undefined, via: undefined });
   });
 
   void test('no two kinds produce the same badge', () => {
@@ -74,6 +81,38 @@ void describe('all three kinds are distinguishable', () => {
     for (const badge of ['agent', 'system'] satisfies ActorBadge[]) {
       assert.match(badge, /^[a-z]+$/);
     }
+  });
+});
+
+void describe('which agent wrote it (LAI-538)', () => {
+  const claude = { harness: 'claude-code', display_name: 'Laptop agent', device_label: 'laptop-1' };
+  const agents = new Map([['ag1', claude]]);
+
+  void test('a registered agent is named after the person: Ada via Claude Code · laptop-1', () => {
+    const actor = describeActor(
+      { actor_id: ADA, actor_kind: 'agent', agent_id: 'ag1' },
+      members,
+      agents,
+    );
+    assert.equal(actor.name, 'Ada Lovelace');
+    assert.equal(actor.via, 'Claude Code · laptop-1');
+    assert.equal(actorLine(actor), 'Ada Lovelace via Claude Code · laptop-1');
+  });
+
+  void test('a registered agent this reader cannot name is not guessed at', () => {
+    const actor = describeActor(
+      { actor_id: ADA, actor_kind: 'agent', agent_id: 'ag9' },
+      members,
+      agents,
+    );
+    assert.equal(actorLine(actor), 'Ada Lovelace via a registered agent');
+  });
+
+  void test('a legacy token reads as an unregistered one, and a person’s row has no via', () => {
+    const legacy = describeActor({ actor_id: ADA, actor_kind: 'agent', agent_id: null }, members);
+    assert.equal(actorLine(legacy), 'Ada Lovelace via agent (unregistered token)');
+    const person = describeActor({ actor_id: ADA, actor_kind: 'user', agent_id: null }, members);
+    assert.equal(actorLine(person), 'Ada Lovelace');
   });
 });
 

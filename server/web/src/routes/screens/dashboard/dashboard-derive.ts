@@ -199,6 +199,14 @@ const PROJECT_LABELS: Readonly<Record<string, string>> = {
   'task.stale_flagged': 'flagged this task as stale',
   'invite.expired': 'expired an invite',
   'meeting_review.expired': 'expired a meeting review',
+  // A person picked the agent meant to do a task, or withdrew it (LAI-535,
+  // LAI-538). A work request, not work: "picked", never "assigned".
+  'task.agent_selected': 'picked an agent for a task',
+  // LAI-541's two claim verbs (LAI-543). Shown, not in FEED_SILENT, for the
+  // reason `task.stale_flagged` is: "why did the agent stop" is a question a
+  // person asks, and the expiry is its answer.
+  'task.claim_expired': 'expired an agent’s claim on a task',
+  'task.claim_reclaimed': 'reclaimed a task after its claim expired',
 };
 
 /**

@@ -1,0 +1,72 @@
+#!/bin/sh
+# No tracing, no echoing, no auto-export, before anything else runs: `sh -x`,
+# `SHELLOPTS=xtrace` (bash imports it) or `set -a` must not print or export
+# the token below. This is the first command on purpose.
+set +x +v +a
+#
+# laika-agent-hook <session-start|prompt|tool|session-end> <claude-code|codex>
+#
+# The agent-session hook (LAI-542). Installed into Claude Code's and Codex's
+# hook config by `laika agent hooks on`, removed by `laika agent hooks off`;
+# this script's name is how ours are told from anyone else's.
+#
+# It hands the hook's stdin to `laika agent hook`, which opens the agent's
+# session at SessionStart, keeps a background watcher renewing it only while
+# the harness process lives, and ends it at SessionEnd. It prints nothing but
+# the documented `hookSpecificOutput` JSON, and always exits 0: a hook must
+# never fail the session it serves.
+#
+# Runs the CLI's own small entry, not `laika` (which loads every command):
+# built output when it is newer than the source, the source otherwise, as
+# cli/bin/laika does.
+#
+# ## Credentials (PR #108 review round 2)
+#
+# The harness may hand this script `LAIKA_AGENT_TOKEN` in its environment
+# (Codex's documented mechanism), and the person's `LAIKA_TOKEN` may be there
+# too. **Both are taken out of the environment on the first line of work**,
+# before any utility runs, so `readlink`, `find` and `head` never see them.
+# The agent's token is put back for one process only — the node entry that
+# consumes it — and the person's never. The hook's JSON stays on stdin,
+# untouched by anything before node: every utility reads /dev/null.
+
+#
+# The scratch variables are unset before they are assigned: a name already
+# in the environment keeps its export attribute through an assignment, and
+# would carry the token to every utility below. `set +a` above keeps a fresh
+# assignment from being exported.
+unset _laika_agent_token _laika_agent_token_set
+_laika_agent_token_set="${LAIKA_AGENT_TOKEN+set}"
+_laika_agent_token="${LAIKA_AGENT_TOKEN-}"
+unset LAIKA_AGENT_TOKEN LAIKA_TOKEN
+
+SELF="$0"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF" </dev/null)"
+  case "$LINK" in
+    /*) SELF="$LINK" ;;
+    *) SELF="${SELF%/*}/$LINK" ;;
+  esac
+done
+case "$SELF" in
+  */*) SCRIPT_DIR="${SELF%/*}" ;;
+  *) SCRIPT_DIR="." ;;
+esac
+CLI_DIR="$(cd "$SCRIPT_DIR/../../cli" 2>/dev/null && pwd)" || exit 0
+
+ENTRY="$CLI_DIR/src/agent-main.ts"
+if [ -r "$CLI_DIR/dist/agent-main.js" ] &&
+  [ -z "$(find "$CLI_DIR/src" -newer "$CLI_DIR/dist/agent-main.js" </dev/null 2>/dev/null | head -1)" ]; then
+  ENTRY="$CLI_DIR/dist/agent-main.js"
+fi
+[ -r "$ENTRY" ] || exit 0
+command -v node >/dev/null 2>&1 || exit 0
+
+# The consumer, and only the consumer, gets the agent's token back.
+if [ "$_laika_agent_token_set" = set ]; then
+  LAIKA_AGENT_TOKEN="$_laika_agent_token"
+  export LAIKA_AGENT_TOKEN
+fi
+unset _laika_agent_token _laika_agent_token_set
+node "$ENTRY" hook "$@" 2>/dev/null
+exit 0

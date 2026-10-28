@@ -38,6 +38,9 @@ import {
   CHECK_OUTCOMES,
   ESTIMATE_SOURCES,
   EVIDENCE_KINDS,
+  HANDOFF_OFFER_KINDS,
+  HANDOFF_OFFER_STATES,
+  TASK_CLAIM_STATES,
   EVIDENCE_STATES,
   GITHUB_CHECK_KINDS,
   GRANTABLE_ROLES,
@@ -59,6 +62,9 @@ import {
   TOKEN_ALERT_KINDS,
   TOKEN_SCOPES,
   TOKEN_SESSION_SOURCES,
+  AGENT_GRANT_SCOPES,
+  AGENT_SESSION_END_REASONS,
+  AGENT_STATUSES,
   AGENT_TIME_KINDS,
   ANALYTICS_VIEW_KINDS,
   TIME_DRAFT_SOURCES,
@@ -587,6 +593,16 @@ export const tasks = sqliteTable(
      * recompute that would change nothing costs nothing.
      */
     estimateHash: text('estimate_hash'),
+    /**
+     * The agent intended to do the work (§4.5, D-114 item 7, LAI-535) — **not**
+     * who holds it (`assignee_id`) and not who is working it (a claim,
+     * LAI-541). Selecting one opens a work request in `handoff_offers`; it
+     * claims nothing and starts nothing. `set null`: the selection is a wish,
+     * and a task outlives the agent it was wished on.
+     */
+    selectedAgentId: text('selected_agent_id').references((): AnySQLiteColumn => agents.id, {
+      onDelete: 'set null',
+    }),
     createdAt,
     updatedAt,
   },
@@ -608,6 +624,7 @@ export const tasks = sqliteTable(
     index('tasks_estimate_id_idx').on(t.estimateId),
     index('tasks_estimate_at_start_id_idx').on(t.estimateAtStartId),
     index('tasks_size_override_id_idx').on(t.sizeOverrideId),
+    index('tasks_selected_agent_id_idx').on(t.selectedAgentId),
     // A card found by its outside id, and the prefixes of the ids served
     // (LAI-780). Partial: most tasks carry none, and neither read wants them.
     index('tasks_external_ref_idx')
@@ -773,6 +790,16 @@ export const activity = sqliteTable(
     actorKind: text('actor_kind', { enum: ACTOR_KINDS }).notNull(),
     /** *Which* token, for audit (§4.8). */
     actorTokenId: text('actor_token_id'),
+    /**
+     * *Which* registered agent wrote this row (§4.8, D-114 item 4, LAI-535),
+     * read from `tokens.agent_id` by `appendActivity` and from nothing else.
+     * Null for a session, a legacy token, a system actor and **every row
+     * written before the column existed** — never back-filled with a guess.
+     * `restrict` for LAI-135's reason: a `set null` would be an UPDATE.
+     */
+    agentId: text('agent_id').references((): AnySQLiteColumn => agents.id, {
+      onDelete: 'restrict',
+    }),
     type: text('type', { enum: ACTIVITY_TYPES }).notNull(),
     payloadJson: text('payload_json').notNull().default('{}'),
     createdAt,
@@ -782,6 +809,7 @@ export const activity = sqliteTable(
     index('activity_task_created_at_idx').on(t.taskId, t.createdAt),
     index('activity_org_created_at_idx').on(t.orgId, t.createdAt),
     index('activity_actor_id_idx').on(t.actorId),
+    index('activity_agent_id_idx').on(t.agentId),
     check('activity_actor_kind_check', oneOf('actor_kind', ACTOR_KINDS)),
     check('activity_type_check', oneOf('type', ACTIVITY_TYPES)),
     // D-022, both directions: a system event has no actor, and a non-system
@@ -831,11 +859,219 @@ export const tokens = sqliteTable(
     expiresAt: integer('expires_at'),
     revokedAt: integer('revoked_at'),
     createdAt,
+    /**
+     * The registered agent this token is the credential of (§4.9, D-114), or
+     * null for a legacy token — which keeps working exactly as before.
+     *
+     * **Cascade, never set null.** A null here means "a person's own token",
+     * the wider credential: setting it null when an agent row went away would
+     * hand that agent's token its owner's whole authority. Agents are revoked,
+     * not deleted, so the cascade runs only when the owner's row itself goes.
+     */
+    agentId: text('agent_id').references((): AnySQLiteColumn => agents.id, {
+      onDelete: 'cascade',
+    }),
   },
   (t) => [
     uniqueIndex('tokens_token_hash_unique').on(t.tokenHash),
     index('tokens_user_id_idx').on(t.userId),
+    index('tokens_agent_id_idx').on(t.agentId),
     check('tokens_scope_check', oneOf('scope', TOKEN_SCOPES)),
+  ],
+);
+
+// ---------------------------------------------------------- §4.63 agents
+
+/**
+ * A registered agent (§4.63, D-114): a named identity owned by one person,
+ * acting through its own tokens and never with more access than its owner.
+ *
+ * `harness` and `device_label` are **self-reported** and shown as such; they
+ * decide nothing. `harness` is an `AGENT_CLIENTS` slug, validated at the API
+ * and deliberately left without a CHECK: the client list grows, and a CHECK
+ * would make every new client a rebuild of a table whose rows `tokens`
+ * cascades from.
+ */
+export const agents = sqliteTable(
+  'agents',
+  {
+    id: text('id').primaryKey(),
+    orgId: text('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    ownerUserId: text('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    displayName: text('display_name').notNull(),
+    harness: text('harness').notNull(),
+    deviceLabel: text('device_label'),
+    status: text('status', { enum: AGENT_STATUSES }).notNull().default('active'),
+    createdAt,
+    revokedAt: integer('revoked_at'),
+    /** Stamped on authenticated requests, at most once a minute (§4.63). */
+    lastSeenAt: integer('last_seen_at'),
+  },
+  (t) => [
+    index('agents_org_id_idx').on(t.orgId),
+    index('agents_owner_user_id_idx').on(t.ownerUserId),
+    check('agents_status_check', oneOf('status', AGENT_STATUSES)),
+  ],
+);
+
+// ---------------------------------------------- §4.64 agent_project_grants
+
+/**
+ * What one agent may do in one project (§4.64, D-114). No row is no access:
+ * an agent reaches only the projects it holds a grant for, and a `read_only`
+ * grant keeps the reads. The owner's own role still caps both.
+ */
+export const agentProjectGrants = sqliteTable(
+  'agent_project_grants',
+  {
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    scope: text('scope', { enum: AGENT_GRANT_SCOPES }).notNull(),
+    createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.agentId, t.projectId] }),
+    index('agent_project_grants_project_id_idx').on(t.projectId),
+    check('agent_project_grants_scope_check', oneOf('scope', AGENT_GRANT_SCOPES)),
+  ],
+);
+
+// ---------------------------------------------------- handoff_offers
+
+/**
+ * Work offered to an agent (proposal §4.4, D-114 item 7, LAI-535).
+ *
+ * **Only work requests exist yet.** Selecting an agent on a task opens one
+ * (`kind = 'work_request'`, `state = 'open'`) addressed to that agent; clearing
+ * or changing the selection cancels it. It claims nothing, starts nothing and
+ * never touches `tasks.assignee_id`.
+ *
+ * The §4.4 shape, cut to what a work request needs, so that LAI-546 adds
+ * columns — `from_session_id`, `checkpoint_id`, `reason`, `note_hash`,
+ * approval and expiry — rather than migrating rows out of a narrower table.
+ * The partial unique index is the rule a work request has: at most one open
+ * per task.
+ */
+export const handoffOffers = sqliteTable(
+  'handoff_offers',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    kind: text('kind', { enum: HANDOFF_OFFER_KINDS }).notNull(),
+    /** Null means any eligible agent — recovery's case (§4.4); a work request always names one. */
+    toAgentId: text('to_agent_id').references(() => agents.id, { onDelete: 'cascade' }),
+    state: text('state', { enum: HANDOFF_OFFER_STATES }).notNull(),
+    /** The person who asked — the selector, whatever credential they used. */
+    createdByUserId: text('created_by_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt,
+    /** When it left `open` (or the approval state); null while it is live. */
+    closedAt: integer('closed_at'),
+  },
+  (t) => [
+    index('handoff_offers_task_id_idx').on(t.taskId),
+    index('handoff_offers_to_agent_state_idx').on(t.toAgentId, t.state),
+    index('handoff_offers_created_by_user_id_idx').on(t.createdByUserId),
+    uniqueIndex('handoff_offers_one_open_work_request')
+      .on(t.taskId)
+      .where(sql`kind = 'work_request' AND state = 'open'`),
+    check('handoff_offers_kind_check', oneOf('kind', HANDOFF_OFFER_KINDS)),
+    check('handoff_offers_state_check', oneOf('state', HANDOFF_OFFER_STATES)),
+  ],
+);
+
+// --------------------------------------------------- §4.65 agent_sessions
+
+/**
+ * One running process of a registered agent (§4.65, proposal §4.2, LAI-541).
+ *
+ * Opened by `POST /agent-sessions` or by an agent token's `start_working`,
+ * kept alive by heartbeats, ended by the agent or by revoking it (D-114 item
+ * 2). A session holds claims (§4.66); it never holds a task by itself.
+ * `client_version` and `model` are **self-reported** and decide nothing.
+ */
+export const agentSessions = sqliteTable(
+  'agent_sessions',
+  {
+    id: text('id').primaryKey(),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    /** The credential that opened it. A rotation does not end it (§4.65). */
+    tokenId: text('token_id')
+      .notNull()
+      .references(() => tokens.id, { onDelete: 'cascade' }),
+    startedAt: integer('started_at').notNull(),
+    lastHeartbeatAt: integer('last_heartbeat_at').notNull(),
+    endedAt: integer('ended_at'),
+    endReason: text('end_reason', { enum: AGENT_SESSION_END_REASONS }),
+    clientVersion: text('client_version'),
+    model: text('model'),
+    /** Nullable until the delivery work reads it (proposal §4.6). */
+    contextRevisionSeen: integer('context_revision_seen'),
+  },
+  (t) => [
+    index('agent_sessions_agent_id_idx').on(t.agentId),
+    index('agent_sessions_token_id_idx').on(t.tokenId),
+    check('agent_sessions_end_reason_check', oneOfOrNull('end_reason', AGENT_SESSION_END_REASONS)),
+    // Both or neither: an ended session says why, and a live one has no reason.
+    check('agent_sessions_end_check', sql`(ended_at IS NULL) = (end_reason IS NULL)`),
+  ],
+);
+
+// ------------------------------------------------------ §4.66 task_claims
+
+/**
+ * An agent session's exclusive hold on a task (§4.66, proposal §4.2, LAI-541).
+ *
+ * **One live row per task** — the partial unique index is the lock. Each new
+ * claim on a task takes the next `generation`, which only goes up, and every
+ * task change the holder makes carries it (`X-Laika-Claim-Generation`,
+ * `claim_generation`); a stale one is `409`. `lease_expires_at` is server
+ * time, renewed by heartbeats; the expiry scan marks a lapsed claim `expired`,
+ * and **nothing ever makes it live again** — reclaiming inserts a new row.
+ */
+export const taskClaims = sqliteTable(
+  'task_claims',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => agentSessions.id, { onDelete: 'cascade' }),
+    agentId: text('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    generation: integer('generation').notNull(),
+    leaseExpiresAt: integer('lease_expires_at').notNull(),
+    state: text('state', { enum: TASK_CLAIM_STATES }).notNull(),
+    createdAt,
+    /** When it stopped being live; null while it is. */
+    endedAt: integer('ended_at'),
+  },
+  (t) => [
+    uniqueIndex('task_claims_task_generation_idx').on(t.taskId, t.generation),
+    uniqueIndex('task_claims_one_live_per_task')
+      .on(t.taskId)
+      .where(sql`state IN ('active', 'paused')`),
+    index('task_claims_session_id_idx').on(t.sessionId),
+    index('task_claims_agent_id_idx').on(t.agentId),
+    index('task_claims_state_lease_idx').on(t.state, t.leaseExpiresAt),
+    check('task_claims_state_check', oneOf('state', TASK_CLAIM_STATES)),
+    check('task_claims_generation_check', sql`generation >= 1`),
   ],
 );
 

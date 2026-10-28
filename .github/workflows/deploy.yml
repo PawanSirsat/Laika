@@ -44,7 +44,8 @@ jobs:
   gate:
     name: Gate — test, lint, format
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # Private-repo runner is 2 CPU / 8 GB; the full gate takes ~36-40 min.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -57,6 +58,9 @@ jobs:
         run: pnpm --filter @laika/web exec playwright install --with-deps chromium
       # Three steps, three exit codes — the rule in CLAUDE.md §5, kept here.
       - name: Lint
+        # Type-aware eslint outgrows Node's default ~2 GB heap (LAI-574).
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: pnpm lint
       - name: Format
         run: pnpm format

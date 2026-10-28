@@ -885,6 +885,15 @@
   display: flex;
 }
 
+/* The selected agent (LAI-538): shrinks and ellipsises before the avatar
+   would, so a long device name never pushes the person off the card. */
+.card-agent {
+  flex: 0 1 auto;
+  display: flex;
+  min-width: 0;
+  max-width: 10.5rem;
+}
+
 .card-bot {
   position: absolute;
   right: -3px;

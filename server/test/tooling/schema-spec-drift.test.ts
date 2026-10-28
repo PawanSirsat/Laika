@@ -473,6 +473,10 @@ const TABLES_NOT_IN_SPEC = new Map<string, string>([
     'idempotency_keys',
     'transport bookkeeping for the `Idempotency-Key` header (§6.3, LAI-006), not product data — no endpoint reads it and a cron sweep empties it',
   ],
+  [
+    'handoff_offers',
+    "LAI-535 writes only its work requests (proposal §4.4's shape, cut down); §4's section for the table is LAI-544's (CHIEF), which documents it whole with LAI-546's columns — the staleness guard below drops this entry the day §4 describes it. §4.5's `selected_agent_id` row and §6.4 already say what a work request is",
+  ],
 ]);
 
 /**
@@ -578,12 +582,14 @@ describe('the parser itself', () => {
     // LAI-833's is a session's five minutes of agent time. LAI-500's timer
     // is keyed by its person: one per person, and the row *is* the timer.
     // LAI-501's note is keyed by the person's day: one note per day.
+    // LAI-534's grant is keyed by its pair: one per agent per project.
     const withoutId = [...specTables.entries()]
       .filter(([, fields]) => !fields.includes('id'))
       .map(([table]) => table)
       .sort();
 
     expect(withoutId).toEqual([
+      'agent_project_grants',
       'agent_time_buckets',
       'agent_time_days',
       'board_activity_days',

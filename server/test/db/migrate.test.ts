@@ -1,17 +1,20 @@
 import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { appendActivity } from '../../src/db/activity.ts';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDb } from '../../src/db/client.ts';
+import { type Db, openDb } from '../../src/db/client.ts';
 import { ensureActivityTriggers, MIGRATIONS_FOLDER, runMigrations } from '../../src/db/migrate.ts';
 import { expectSqliteError, freshDb, seed, type TestDb } from '../helpers/db.ts';
 import { eq } from 'drizzle-orm';
 import { newId } from '../../src/db/ids.ts';
-import { activity, comments, taskDependencies, tasks } from '../../src/db/schema.ts';
+import { comments, idempotencyKeys, taskDependencies, tasks } from '../../src/db/schema.ts';
 import { createLogger } from '../../src/log.ts';
 import { statusForCategory } from '../../src/db/project-statuses.ts';
+import { resolveTokenActor } from '../../src/auth/resolve-actor.ts';
+import { hashToken, newTokenSecret } from '../../src/auth/tokens.ts';
 
 /**
  * The append-only guarantee survives a table rebuild (SPEC §4.8, LAI-118).
@@ -311,6 +314,15 @@ const UPGRADE_BUDGET_MS = 60_000;
  * core, copying the whole folder took 1.1 to 1.6 s per case; without them, 0.6
  * to 0.8 s — and there is that much less for the case to delete afterwards.
  */
+/**
+ * Every row of a table, through SQL rather than the Drizzle table (LAI-535).
+ * A cut-back database lacks the columns added after its cut, and a schema
+ * select names them all; this reads whatever the table has.
+ */
+function rawRows(db: Db, table: 'tasks' | 'activity'): Record<string, unknown>[] {
+  return db.all<Record<string, unknown>>(sql.raw(`SELECT * FROM ${table} ORDER BY rowid`));
+}
+
 function copyMigrations(dir: string): void {
   cpSync(MIGRATIONS_FOLDER, dir, {
     recursive: true,
@@ -483,7 +495,12 @@ describe('0029 adds the member profile to a populated 0028 database (LAI-743)', 
         INSERT INTO tasks (id, project_id, number, title, status, status_id, priority, assignee_id, created_by, created_via, created_at, updated_at)
         VALUES (${newId()}, ${s.projectId}, 1, 'A', 'todo', ${statusForCategory(db, s.projectId, 'todo').id}, 'p2', ${member}, ${s.userId}, 'api', ${now}, ${now})
       `);
-        appendActivity(db, { orgId: s.orgId, actorKind: 'system', type: 'webhook.commit' });
+        // Raw, as the rows above: `appendActivity` names every column the
+        // current schema has, and this database is cut back before them (LAI-535).
+        db.run(sql`
+        INSERT INTO activity (id, org_id, actor_kind, type, payload_json, created_at)
+        VALUES (${newId()}, ${s.orgId}, 'system', 'webhook.commit', '{}', ${now})
+      `);
         // What hangs off a person and would go with a rebuilt `users` (LAI-746):
         // better-auth's account and session rows cascade from it, and a token is
         // how their agents reach the board.
@@ -1587,23 +1604,14 @@ describe('D-093 completed_at migration (LAI-822)', () => {
     const task = (status: 'done' | 'review', completedAt: number | null = null) => {
       number += 1;
       const id = newId();
-      handle.db
-        .insert(tasks)
-        .values({
-          id,
-          projectId: seeded.projectId,
-          number,
-          title: 'Snapshot fixture',
-          status,
-          statusId: statusForCategory(handle.db, seeded.projectId, status).id,
-          createdBy: seeded.userId,
-          createdVia: 'api',
-          position: `k${String(number)}`,
-          createdAt: 1000,
-          updatedAt: 2000,
-          completedAt,
-        })
-        .run();
+      // Raw SQL, never the Drizzle table: this database is cut back before
+      // TAG, and a schema insert names every column added since (LAI-535).
+      handle.db.run(sql`
+        INSERT INTO tasks (id, project_id, number, title, status, status_id, created_by, created_via, position, created_at, updated_at, completed_at)
+        VALUES (${id}, ${seeded.projectId}, ${number}, 'Snapshot fixture', ${status},
+                ${statusForCategory(handle.db, seeded.projectId, status).id}, ${seeded.userId}, 'api',
+                ${`k${String(number)}`}, 1000, 2000, ${completedAt})
+      `);
       return id;
     };
     const moved = (
@@ -1613,32 +1621,19 @@ describe('D-093 completed_at migration (LAI-822)', () => {
       now: number,
       type: 'task.status_changed' | 'task.updated' = 'task.status_changed',
     ) => {
-      appendActivity(handle.db, {
-        orgId: seeded.orgId,
-        projectId: seeded.projectId,
-        taskId,
-        actorId: seeded.userId,
-        actorKind: 'user',
-        type,
-        payload: { from, to },
-        now,
-      });
+      handle.db.run(sql`
+        INSERT INTO activity (id, org_id, project_id, task_id, actor_id, actor_kind, type, payload_json, created_at)
+        VALUES (${newId()}, ${seeded.orgId}, ${seeded.projectId}, ${taskId}, ${seeded.userId}, 'user',
+                ${type}, ${JSON.stringify({ from, to })}, ${now})
+      `);
     };
     const createdDone = task('done');
     // The old boot recovery ignores unreadable payloads too: no date to recover.
-    handle.db
-      .insert(activity)
-      .values({
-        id: newId(),
-        orgId: seeded.orgId,
-        projectId: seeded.projectId,
-        taskId: createdDone,
-        actorKind: 'system',
-        type: 'task.status_changed',
-        payloadJson: '{invalid',
-        createdAt: 16_000,
-      })
-      .run();
+    handle.db.run(sql`
+      INSERT INTO activity (id, org_id, project_id, task_id, actor_kind, type, payload_json, created_at)
+      VALUES (${newId()}, ${seeded.orgId}, ${seeded.projectId}, ${createdDone}, 'system',
+              'task.status_changed', '{invalid', 16000)
+    `);
     const historical = task('done');
     // Deliberately out of insertion order: latest means timestamp, not rowid.
     moved(historical, 'review', 'done', 9000);
@@ -1729,11 +1724,7 @@ describe('D-093 completed_at migration (LAI-822)', () => {
           { event: 'db.completed_at_backfilled', migration: TAG, count: 4 },
         ]);
         const count = (db: typeof copy.db) =>
-          db
-            .select()
-            .from(tasks)
-            .all()
-            .filter((r) => r.status === 'done' && r.completedAt === null).length;
+          rawRows(db, 'tasks').filter((r) => r.status === 'done' && r.completed_at === null).length;
         expect(count(f.db)).toBe(4);
         expect(count(copy.db)).toBe(0);
         const snapshot = openDb({
@@ -1744,13 +1735,13 @@ describe('D-093 completed_at migration (LAI-822)', () => {
         } finally {
           snapshot.sqlite.close();
         }
-        const after = copy.db.select().from(tasks).all();
+        const after = rawRows(copy.db, 'tasks');
         runMigrations(copy.db, {
           logger,
           backup: { sqlite: copy.sqlite, dir: backupDir, now: 30_000 },
         });
         expect(messages()).toHaveLength(1);
-        expect(copy.db.select().from(tasks).all()).toEqual(after);
+        expect(rawRows(copy.db, 'tasks')).toEqual(after);
         expect(copy.sqlite.prepare(migrationSql()).run().changes).toBe(0);
       } finally {
         copy.sqlite.close();
@@ -1766,16 +1757,13 @@ describe('D-093 completed_at migration (LAI-822)', () => {
     () => {
       const f = fixture();
       try {
-        const before = f.db.select().from(tasks).all();
-        const history = f.db.select().from(activity).all();
+        const before = rawRows(f.db, 'tasks');
+        const history = rawRows(f.db, 'activity');
         const refs = f.db.select().from(taskDependencies).all();
         const notes = f.db.select().from(comments).all();
         const missing = () =>
-          f.db
-            .select()
-            .from(tasks)
-            .all()
-            .filter((r) => r.status === 'done' && r.completedAt === null).length;
+          rawRows(f.db, 'tasks').filter((r) => r.status === 'done' && r.completed_at === null)
+            .length;
         expect(missing()).toBe(4);
         expect(f.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
         const schemaVersionBefore = f.sqlite.pragma('schema_version', { simple: true });
@@ -1783,8 +1771,8 @@ describe('D-093 completed_at migration (LAI-822)', () => {
         expect(applied.changes).toBe(4);
         expect(missing()).toBe(0);
         expect(f.sqlite.pragma('schema_version', { simple: true })).toBe(schemaVersionBefore);
-        const after = f.db.select().from(tasks).all();
-        const expected = new Map([
+        const after = rawRows(f.db, 'tasks');
+        const expected = new Map<unknown, number | null>([
           [f.createdDone, 1000],
           [f.historical, 9000],
           [f.sameCategoryOnly, 1000],
@@ -1793,13 +1781,13 @@ describe('D-093 completed_at migration (LAI-822)', () => {
           [f.reopenedStamped, 4000],
           [f.unrelated, 1000],
         ]);
-        expect(after).toEqual(before.map((r) => ({ ...r, completedAt: expected.get(r.id) })));
-        expect(f.db.select().from(activity).all()).toEqual(history);
+        expect(after).toEqual(before.map((r) => ({ ...r, completed_at: expected.get(r.id) })));
+        expect(rawRows(f.db, 'activity')).toEqual(history);
         expect(f.db.select().from(taskDependencies).all()).toEqual(refs);
         expect(f.db.select().from(comments).all()).toEqual(notes);
         expect(f.sqlite.pragma('foreign_key_check')).toEqual([]);
         expect(f.sqlite.prepare(migrationSql()).run().changes).toBe(0);
-        expect(f.db.select().from(tasks).all()).toEqual(after);
+        expect(rawRows(f.db, 'tasks')).toEqual(after);
       } finally {
         f.sqlite.close();
         rmSync(f.dir, { recursive: true, force: true });
@@ -1941,6 +1929,400 @@ describe('0060 maps the kinds onto the design’s eight on a populated database 
             ),
           /append-only/,
         );
+      } finally {
+        sqlite.close();
+        rmSync(dbDir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+describe('0061 adds registered agents to a populated database with legacy tokens (LAI-534)', () => {
+  it(
+    'adds a nullable tokens.agent_id without rebuilding tokens, and legacy tokens still resolve',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+      copyMigrations(dir);
+      const journalPath = join(dir, 'meta', '_journal.json');
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+        entries: { idx: number; tag: string; when: number }[];
+      };
+      const at = journal.entries.findIndex((e) => /^\d{4}_registered_agents$/.test(e.tag));
+      expect(at, 'the agents migration is in the journal').toBeGreaterThan(0);
+      // 0061 alone comes back, as 0043's case does: 0062 (LAI-535) rebuilds
+      // `activity`, which is not this census's business.
+      const dropped = journal.entries.splice(at).slice(0, 1);
+      // The guard on this guard: the cut is exactly this migration.
+      expect(dropped.map((e) => e.tag)).toEqual([expect.stringMatching(/_registered_agents$/)]);
+      writeFileSync(journalPath, JSON.stringify(journal));
+
+      const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+      try {
+        runMigrations(db, { migrationsFolder: dir });
+        const s = seed(db);
+        const now = Date.now();
+        const secret = newTokenSecret();
+        const tokenId = newId();
+        // Written as the pre-0061 schema has it: no agent_id column to name.
+        db.run(sql`
+          INSERT INTO tokens (id, user_id, name, prefix, token_hash, scope, project_ids_json, created_at)
+          VALUES (${tokenId}, ${s.userId}, 'legacy', ${secret.slice(0, 8)}, ${hashToken(secret)}, 'full', NULL, ${now})
+        `);
+        db.run(sql`
+          INSERT INTO activity (id, org_id, project_id, actor_id, actor_kind, actor_token_id, type, payload_json, created_at)
+          VALUES (${newId()}, ${s.orgId}, NULL, ${s.userId}, 'agent', ${tokenId}, 'token.created', '{}', ${now})
+        `);
+
+        const rootpage = (name: string) =>
+          db.get<{ rootpage: number }>(
+            sql`SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = ${name}`,
+          )?.rootpage;
+        const tokensBefore = db.all<Record<string, unknown>>(sql`SELECT * FROM tokens`);
+        const activityBefore = db.all<Record<string, unknown>>(sql`SELECT * FROM activity`);
+        const tokensPage = rootpage('tokens');
+
+        journal.entries.push(...dropped);
+        writeFileSync(journalPath, JSON.stringify(journal));
+        runMigrations(db, { migrationsFolder: dir });
+
+        // Additive: the same table, every row kept, the new column null.
+        expect(rootpage('tokens')).toBe(tokensPage);
+        expect(db.all(sql`SELECT * FROM tokens`)).toEqual(
+          tokensBefore.map((row) => ({ ...row, agent_id: null })),
+        );
+        // The attribution that a rebuild of `tokens` would have nulled is intact.
+        expect(db.all(sql`SELECT * FROM activity`)).toEqual(activityBefore);
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+
+        // The legacy token resolves exactly as before, with no agent.
+        const actor = resolveTokenActor(db, secret, now);
+        expect(actor.userId).toBe(s.userId);
+        expect(actor.token).toMatchObject({ id: tokenId, scope: 'full', projectIds: null });
+        expect(actor.token?.agent ?? null).toBeNull();
+
+        // And the reference landed with its cascade: an agent row removed takes
+        // its tokens with it, never leaving them as their owner's own.
+        const agentId = newId();
+        db.run(sql`
+          INSERT INTO agents (id, org_id, owner_user_id, display_name, harness, status, created_at)
+          VALUES (${agentId}, ${s.orgId}, ${s.userId}, 'a', 'other', 'active', ${now})
+        `);
+        db.run(sql`UPDATE tokens SET agent_id = ${agentId} WHERE id = ${tokenId}`);
+        db.run(sql`DELETE FROM agents WHERE id = ${agentId}`);
+        expect(db.all(sql`SELECT id FROM tokens WHERE id = ${tokenId}`)).toEqual([]);
+      } finally {
+        sqlite.close();
+        rmSync(dbDir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+describe('runMigrations purges pre-LAI-534 idempotency rows before the port is bound (round 3)', () => {
+  function seedRows(db: TestDb['db']): void {
+    for (const actorId of ['01OLDUSER', 'v2:user:01NEWUSER']) {
+      db.insert(idempotencyKeys)
+        .values({
+          actorId,
+          key: 'k',
+          requestHash: 'h',
+          responseStatus: 201,
+          responseBody: actorId === '01OLDUSER' ? '{"secret":"lai_old"}' : '{}',
+          createdAt: 1,
+          expiresAt: Date.now() + 60_000,
+        })
+        .run();
+    }
+  }
+
+  it('deletes them on a boot with nothing to migrate, and says so', () => {
+    const t2 = freshDb();
+    try {
+      seedRows(t2.db);
+      const lines: string[] = [];
+      runMigrations(t2.db, { logger: createLogger((line) => lines.push(line)) });
+      expect(
+        t2.db
+          .select()
+          .from(idempotencyKeys)
+          .all()
+          .map((r) => r.actorId),
+      ).toEqual(['v2:user:01NEWUSER']);
+      expect(lines.map((l) => JSON.parse(l) as { event: string; rows?: number })).toContainEqual(
+        expect.objectContaining({ event: 'db.idempotency_purged', rows: 1 }),
+      );
+    } finally {
+      t2.close();
+    }
+  });
+
+  it('fails the boot when the purge fails, rather than serving with them on disk', () => {
+    const t2 = freshDb();
+    try {
+      seedRows(t2.db);
+      t2.db.run(sql`
+        CREATE TRIGGER refuse_purge BEFORE DELETE ON idempotency_keys
+        BEGIN SELECT RAISE(ABORT, 'purge refused for the test'); END
+      `);
+      expect(() => runMigrations(t2.db)).toThrow(/purge refused for the test/);
+      expect(t2.db.select().from(idempotencyKeys).all()).toHaveLength(2);
+    } finally {
+      t2.close();
+    }
+  });
+});
+
+describe('0062 selects agents and attributes activity on a populated database (LAI-535)', () => {
+  it('never back-fills activity.agent_id: the copy step does not name it', () => {
+    const file = readdirSync(MIGRATIONS_FOLDER).find((f) =>
+      /^\d{4}_selected_agent_work_requests\.sql$/.test(f),
+    );
+    expect(file, 'the LAI-535 migration exists').toBeDefined();
+    const text = readFileSync(join(MIGRATIONS_FOLDER, file!), 'utf8');
+
+    const copy = text.split('\n').find((line) => line.startsWith('INSERT INTO `__new_activity`'));
+    expect(copy, 'the rebuild copies activity').toBeDefined();
+    // The column exists in the new table and is never written by the copy, so
+    // every old row lands with it null — no invented agent (D-114 item 6).
+    expect(text).toMatch(/`agent_id` text,/);
+    expect(copy).not.toContain('agent_id');
+    // And nothing else in the migration writes it.
+    expect(text).not.toMatch(/UPDATE\s+`?activity`?/i);
+  });
+
+  it(
+    'keeps every activity row and its rowid with agent_id null, adds tasks.selected_agent_id in place',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+      copyMigrations(dir);
+      const journalPath = join(dir, 'meta', '_journal.json');
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+        entries: { idx: number; tag: string; when: number }[];
+      };
+      const at = journal.entries.findIndex((e) =>
+        /^\d{4}_selected_agent_work_requests$/.test(e.tag),
+      );
+      expect(at, 'the LAI-535 migration is in the journal').toBeGreaterThan(0);
+      // This one alone comes back, so a later migration is not read as its change.
+      const dropped = journal.entries.splice(at).slice(0, 1);
+      // The guard on this guard: the cut is exactly this migration.
+      expect(dropped.map((e) => e.tag)).toEqual([
+        expect.stringMatching(/_selected_agent_work_requests$/),
+      ]);
+      writeFileSync(journalPath, JSON.stringify(journal));
+
+      const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+      try {
+        // drizzle's own migrator for the cut-back database: `runMigrations`
+        // follows the pass with boot backfills that read `activity` through
+        // the *current* schema, which names a column this database does not
+        // have yet. The upgrade below is `runMigrations`, as a boot is.
+        migrate(db, { migrationsFolder: dir });
+        const s = seed(db);
+        const now = Date.now();
+        const agentId = newId();
+        const tokenId = newId();
+        const taskId = newId();
+        const statusId = db.get<{ id: string }>(
+          sql`SELECT id FROM project_statuses WHERE project_id = ${s.projectId} AND category = 'backlog' LIMIT 1`,
+        ).id;
+
+        // Written as the pre-0062 schema has it. The token *is* an agent's —
+        // and its old activity row must still not be credited to the agent.
+        db.run(sql`
+          INSERT INTO agents (id, org_id, owner_user_id, display_name, harness, status, created_at)
+          VALUES (${agentId}, ${s.orgId}, ${s.userId}, 'a', 'other', 'active', ${now})
+        `);
+        db.run(sql`
+          INSERT INTO tokens (id, user_id, name, prefix, token_hash, scope, project_ids_json, created_at, agent_id)
+          VALUES (${tokenId}, ${s.userId}, 'a', 'lai_abcd', ${newId()}, 'full', NULL, ${now}, ${agentId})
+        `);
+        db.run(sql`
+          INSERT INTO tasks (id, project_id, number, title, status, status_id, priority, created_by, created_via, created_at, updated_at)
+          VALUES (${taskId}, ${s.projectId}, 1, 'Old', 'backlog', ${statusId}, 'p2', ${s.userId}, 'api', ${now}, ${now})
+        `);
+        for (const kind of ['user', 'agent'] as const) {
+          db.run(sql`
+            INSERT INTO activity (id, org_id, project_id, task_id, actor_id, actor_kind, actor_token_id, type, payload_json, created_at)
+            VALUES (${newId()}, ${s.orgId}, ${s.projectId}, ${taskId}, ${s.userId}, ${kind},
+                    ${kind === 'agent' ? tokenId : null}, 'task.updated', '{}', ${now})
+          `);
+        }
+
+        const rootpage = (name: string) =>
+          db.get<{ rootpage: number }>(
+            sql`SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = ${name}`,
+          )?.rootpage;
+        const activityBefore = db.all<Record<string, unknown>>(
+          sql`SELECT rowid AS seq, * FROM activity ORDER BY rowid`,
+        );
+        const tasksBefore = db.all<Record<string, unknown>>(sql`SELECT * FROM tasks`);
+        const tasksPage = rootpage('tasks');
+
+        journal.entries.push(...dropped);
+        writeFileSync(journalPath, JSON.stringify(journal));
+        runMigrations(db, { migrationsFolder: dir });
+
+        // activity: rebuilt for the CHECK, every row and rowid kept, agent_id null.
+        expect(db.all(sql`SELECT rowid AS seq, * FROM activity ORDER BY rowid`)).toEqual(
+          activityBefore.map((row) => ({ ...row, agent_id: null })),
+        );
+        // tasks: altered in place, not rebuilt.
+        expect(rootpage('tasks')).toBe(tasksPage);
+        expect(db.all(sql`SELECT * FROM tasks`)).toEqual(
+          // `position` is the boot backfill's (LAI-472), which the upgrade runs.
+          tasksBefore.map((row) => ({
+            ...row,
+            selected_agent_id: null,
+            position: expect.any(String) as unknown,
+          })),
+        );
+        expect(db.all(sql`SELECT * FROM handoff_offers`)).toEqual([]);
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+
+        // The rebuild did not cost the append-only guarantee.
+        // On the driver, not through drizzle, whose wrapper hides the message.
+        expect(() => sqlite.prepare(`UPDATE activity SET payload_json = '{"x":1}'`).run()).toThrow(
+          /append-only/,
+        );
+        // The new verb is accepted.
+        db.run(sql`
+          INSERT INTO activity (id, org_id, project_id, task_id, actor_id, actor_kind, agent_id, type, payload_json, created_at)
+          VALUES (${newId()}, ${s.orgId}, ${s.projectId}, ${taskId}, ${s.userId}, 'agent', ${agentId}, 'task.agent_selected', '{}', ${now})
+        `);
+        // And the selection is a wish: losing the agent clears it, not the task.
+        // (Via a second agent with no activity: `activity.agent_id` restricts.)
+        const spare = newId();
+        db.run(sql`
+          INSERT INTO agents (id, org_id, owner_user_id, display_name, harness, status, created_at)
+          VALUES (${spare}, ${s.orgId}, ${s.userId}, 'b', 'other', 'active', ${now})
+        `);
+        db.run(sql`UPDATE tasks SET selected_agent_id = ${spare} WHERE id = ${taskId}`);
+        db.run(sql`DELETE FROM agents WHERE id = ${spare}`);
+        expect(db.get(sql`SELECT selected_agent_id AS v FROM tasks WHERE id = ${taskId}`)).toEqual({
+          v: null,
+        });
+      } finally {
+        sqlite.close();
+        rmSync(dbDir, { recursive: true, force: true });
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+describe('0063 adds agent sessions and task claims on a populated database (LAI-541)', () => {
+  it(
+    'keeps every activity row, its rowid and its agent_id; the new tables start empty and hold their rules',
+    { timeout: UPGRADE_BUDGET_MS },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+      copyMigrations(dir);
+      const journalPath = join(dir, 'meta', '_journal.json');
+      const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+        entries: { idx: number; tag: string; when: number }[];
+      };
+      const at = journal.entries.findIndex((e) => /^\d{4}_agent_sessions_task_claims$/.test(e.tag));
+      expect(at, 'the LAI-541 migration is in the journal').toBeGreaterThan(0);
+      const dropped = journal.entries.splice(at).slice(0, 1);
+      expect(dropped.map((e) => e.tag)).toEqual([
+        expect.stringMatching(/_agent_sessions_task_claims$/),
+      ]);
+      writeFileSync(journalPath, JSON.stringify(journal));
+
+      const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+      const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+      try {
+        migrate(db, { migrationsFolder: dir });
+        const s = seed(db);
+        const now = Date.now();
+        const agentId = newId();
+        const tokenId = newId();
+        const taskId = newId();
+        const statusId = db.get<{ id: string }>(
+          sql`SELECT id FROM project_statuses WHERE project_id = ${s.projectId} AND category = 'in_progress' LIMIT 1`,
+        ).id;
+
+        // As the 0062 schema has them: an agent, its token, a task, and
+        // history credited to the agent — which the rebuild must carry over.
+        db.run(sql`
+          INSERT INTO agents (id, org_id, owner_user_id, display_name, harness, status, created_at)
+          VALUES (${agentId}, ${s.orgId}, ${s.userId}, 'a', 'other', 'active', ${now})
+        `);
+        db.run(sql`
+          INSERT INTO tokens (id, user_id, name, prefix, token_hash, scope, project_ids_json, created_at, agent_id)
+          VALUES (${tokenId}, ${s.userId}, 'a', 'lai_abcd', ${newId()}, 'full', NULL, ${now}, ${agentId})
+        `);
+        db.run(sql`
+          INSERT INTO tasks (id, project_id, number, title, status, status_id, priority, created_by, created_via, created_at, updated_at)
+          VALUES (${taskId}, ${s.projectId}, 1, 'Held', 'in_progress', ${statusId}, 'p2', ${s.userId}, 'api', ${now}, ${now})
+        `);
+        for (const kind of ['user', 'agent'] as const) {
+          db.run(sql`
+            INSERT INTO activity (id, org_id, project_id, task_id, actor_id, actor_kind, actor_token_id, agent_id, type, payload_json, created_at)
+            VALUES (${newId()}, ${s.orgId}, ${s.projectId}, ${taskId}, ${s.userId}, ${kind},
+                    ${kind === 'agent' ? tokenId : null}, ${kind === 'agent' ? agentId : null},
+                    'task.agent_selected', '{}', ${now})
+          `);
+        }
+        const activityBefore = db.all<Record<string, unknown>>(
+          sql`SELECT rowid AS seq, * FROM activity ORDER BY rowid`,
+        );
+
+        journal.entries.push(...dropped);
+        writeFileSync(journalPath, JSON.stringify(journal));
+        runMigrations(db, { migrationsFolder: dir });
+
+        // activity: rebuilt for the CHECK — every row, rowid and agent_id kept.
+        expect(db.all(sql`SELECT rowid AS seq, * FROM activity ORDER BY rowid`)).toEqual(
+          activityBefore,
+        );
+        expect(activityBefore.some((r) => r.agent_id === agentId)).toBe(true);
+        expect(db.all(sql`SELECT * FROM agent_sessions`)).toEqual([]);
+        expect(db.all(sql`SELECT * FROM task_claims`)).toEqual([]);
+        expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+        expect(() => sqlite.prepare(`UPDATE activity SET payload_json = '{"x":1}'`).run()).toThrow(
+          /append-only/,
+        );
+
+        // The two new verbs are accepted.
+        for (const type of ['task.claim_expired', 'task.claim_reclaimed']) {
+          db.run(sql`
+            INSERT INTO activity (id, org_id, project_id, task_id, actor_id, actor_kind, type, payload_json, created_at)
+            VALUES (${newId()}, ${s.orgId}, ${s.projectId}, ${taskId}, NULL, 'system', ${type}, '{}', ${now})
+          `);
+        }
+
+        // One live claim per task, by the partial unique index; a terminal one
+        // beside it is fine.
+        const sessionId = newId();
+        sqlite
+          .prepare(
+            `INSERT INTO agent_sessions (id, agent_id, token_id, started_at, last_heartbeat_at) VALUES (?, ?, ?, ?, ?)`,
+          )
+          .run(sessionId, agentId, tokenId, now, now);
+        const claim = sqlite.prepare(
+          `INSERT INTO task_claims (id, task_id, session_id, agent_id, generation, lease_expires_at, state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        );
+        claim.run(newId(), taskId, sessionId, agentId, 1, now, 'expired', now);
+        claim.run(newId(), taskId, sessionId, agentId, 2, now, 'active', now);
+        expect(() => claim.run(newId(), taskId, sessionId, agentId, 3, now, 'paused', now)).toThrow(
+          /UNIQUE/,
+        );
+        // A generation is per task and never reused.
+        expect(() =>
+          claim.run(newId(), taskId, sessionId, agentId, 2, now, 'released', now),
+        ).toThrow(/UNIQUE/);
+        // An ended session says why, and only an ended one does.
+        expect(() =>
+          sqlite.prepare(`UPDATE agent_sessions SET ended_at = ? WHERE id = ?`).run(now, sessionId),
+        ).toThrow(/CHECK/);
       } finally {
         sqlite.close();
         rmSync(dbDir, { recursive: true, force: true });

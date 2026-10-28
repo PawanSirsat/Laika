@@ -166,6 +166,8 @@ are not part of this.
 | Join a `public` project | ✓ | ✓ | ✓ (as member) | ✓ (as viewer) |
 | Generate, read and revoke own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |
 | List / revoke **anyone's** token | ✓ | ✓ | — | — |
+| Read own agents | ✓ | ✓ | ✓ | ✓ |
+| Register and manage own agents | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Log own unlisted work | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
 | Send own heartbeat | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
 | Export audit log | ✓ | ✓ | — | — |
@@ -502,6 +504,7 @@ holds; this is something no person can be granted. It holds exactly:
 | `system.local_activity.prune` | §11.6: local-activity retention (D-079) |
 | `system.estimate.refit` | §11.6: the nightly refit of sizes and forecasts (D-085) |
 | `system.time.prune` | §11.6: time retention — drafts after 30 days, entries after three years (D-088) |
+| `system.claim.expire` | §11.6: a claim whose lease lapsed becomes `expired` (§4.66, §9.1, LAI-541) |
 
 **Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
 does for §3.1 and §3.2.
@@ -664,6 +667,7 @@ which is the check working on the document it exists to pin.
 | `estimate_at_start_id` | nullable FK `task_estimates` — the model's estimate in force when work **first** started, set when `started_at` is and never moved again (D-085 item 5). Every estimate-versus-actual reads this copy |
 | `size_override_id` | nullable FK `task_estimates` — the `person` row in force; null when nobody has set a size |
 | `estimate_hash` | nullable — a hash of everything the model read for the current estimate (title, description, acceptance, tags, what blocks it, its children and the project's model version), so a recompute that would change nothing costs nothing |
+| `selected_agent_id` | nullable FK `agents` (§4.63), `ON DELETE SET NULL` — the registered agent **meant to do the work** (D-114 item 7, LAI-535). Not the assignee and not a claim: selecting one opens a **work request** addressed to it, and changes neither `assignee_id`, `status` nor anything a claim holds; a task can stay human-only. Set by `PATCH /tasks/:id` and `update_task` (§6.4, §7.1) by anyone who may edit the task, to **their own** agent only — active, granted `full` on the project, in a space whose agents may write (the hand-off policy's defaults, proposal §4.5; other members' agents wait for LAI-546). `null` withdraws the request. Served on `TaskView` as `selected_agent` |
 
 **`started_at`** is set the first time a task enters `in_progress` and is never
 moved again. **`completed_at`** is set on **every** arrival at `done`, and is
@@ -746,6 +750,7 @@ gave for sending the task back from review (D-082).
 | `actor_id` | **nullable, and only when `actor_kind = 'system'`** (D-022) |
 | `actor_kind` | `user` (cookie) \| `agent` (token) \| `system` (no human — cron or webhook) |
 | `actor_token_id` | nullable — *which* token, for audit |
+| `agent_id` | nullable FK `agents` (§4.63), `restrict` — *which* registered agent wrote the row (D-114 item 4, LAI-535), read by the activity writer from the token's `agent_id` and from nothing else. Null for a session, a legacy token, the system and **every row written before the column existed: never back-filled** |
 | `type` | closed vocabulary, below |
 | `payload_json` | the before/after diff or details |
 | `created_at` | |
@@ -780,7 +785,31 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `user.deactivated`, `user.reactivated`, `user.signed_out`,
 `org.ownership_transferred`, `task.stale_flagged`,
 `heartbeat.pruned`, `invite.expired`, `meeting_review.expired`,
-`meeting_review.discarded`.
+`meeting_review.discarded`, `task.agent_selected`, `task.claim_expired`,
+`task.claim_reclaimed`.
+
+**`task.agent_selected`** (D-114 item 7, LAI-535) is a task's selected agent
+set, changed or cleared — one verb for every direction, payload `{ from, to }`,
+as `task.assigned` is for the assignee. Its own verb rather than `task.updated`
+because *"when was this asked of that agent, and by whom"* is the question
+§4.8's test asks. The proposal's working name was `agent_selected`.
+
+**`task.claim_expired`** (proposal §4.2, §4.4, LAI-541) is an agent session's
+claim on the task losing its lease: the expiry scan (§11.6) — or a heartbeat
+that arrived after the lease lapsed — marked it `expired` (§4.66). Written by
+the **system** (§3.4), because nobody did it; payload `{ generation,
+session_id, agent_id, lease_expires_at }`. Its own verb because *"when did the
+work on this stop being held, and whose was it"* is the question, and its
+generation is invalid for good from that row on. Three owners (CLAUDE.md §4.4):
+this row (LAI-540), the enum and CHECK (LAI-541), and the client mirror and its
+wording (LAI-543).
+
+**`task.claim_reclaimed`** (proposal §4.2, LAI-541) is the agent whose claim
+expired taking the task back explicitly, at the next generation; payload `{
+from_generation, generation, session_id, agent_id }`. Its own verb rather than a
+quiet new claim: *"who took it back, after what gap"* is the question. Three
+owners as above: this row (LAI-540), the enum (LAI-541), the client mirror
+(LAI-543).
 
 **The nine verbs added 2026-09-01 are the same argument, four more times.**
 Sprints, the project context document, unlisted-work triage and deactivation
@@ -863,6 +892,7 @@ where the instance itself was created.
 | `last_used_at`, `expires_at`, `revoked_at` | nullable |
 | `last_mcp_at`, `last_client`, `last_client_name` | nullable (D-076). `last_mcp_at` is the last authenticated `/mcp` request, stamped at most once a minute like `last_used_at`. **Not stamped while §4.2's `presence_enabled` is off.** `last_client` is an `AGENT_CLIENTS` slug and `last_client_name` the client's own `clientInfo.name` (Unicode `Other` characters and line/paragraph separators stripped, at most 64 characters), both from the last `initialize` that named an agent: a generic name such as `mcp` fills a blank but never replaces a known client. Display and presence only; **never an authorisation input** |
 | `last_rest_write_at` | nullable (D-081). The last REST request on this token that writes — any method but `GET`, `HEAD` and `OPTIONS`, under `/api/` — stamped at most once a minute like `last_mcp_at`, and **not while `presence_enabled` is off**. Presence only (§9.3); a read never moves it |
+| `agent_id` | nullable FK `agents` (§4.63), cascade (D-114, LAI-534). Set, the token is that registered agent's credential and its access is narrowed by the agent's grants (§4.64); null is a **legacy** token, which works exactly as before and carries no agent. **Cascade, never set null**: null is the wider value, so losing an agent row must remove its tokens rather than turn them into their owner's own. Indexed. The agent comes from this column and nothing else — no header, parameter or body field can name one |
 
 Token format `lai_<40 base62>`. **The secret is never stored and is shown exactly
 once, at creation.**
@@ -2308,6 +2338,126 @@ behind `time_entries.write_own`, session only (§3.1): the note is the person's
 own account of their own time. §11.6 prunes it with the entries, after three
 years.
 
+### 4.63 `agents`
+
+A registered agent (D-114, LAI-534): a named identity owned by one person,
+acting through its own tokens (§4.9 `agent_id`) and **never with more access
+than its owner**. D-010 still holds — an agent acts as its owner, under its
+owner's role; this table only makes it distinguishable, and lets its access be
+narrowed (§4.64).
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `org_id` | FK `orgs`, cascade |
+| `owner_user_id` | FK `users`, cascade — the one person whose agent it is; their current permissions cap it |
+| `display_name` | 1 to 80 characters, trimmed. An agent's tokens carry it as their `name`, and renaming the agent renames them |
+| `harness` | **self-reported**: an `AGENT_CLIENTS` slug or `other`, checked at the API. No CHECK, so a new client needs no rebuild. Decides nothing |
+| `device_label` | nullable, at most 80 characters, **self-reported**. Decides nothing |
+| `status` | `active` \| `revoked` (CHECK). `revoked` is terminal |
+| `created_at` | |
+| `revoked_at` | nullable — when it was revoked |
+| `last_seen_at` | nullable — the last request on one of its tokens, stamped at most once a minute as `tokens.last_used_at` is |
+
+Indexes: `(org_id)`, `(owner_user_id)`.
+
+**Revoking an agent** sets `revoked` and revokes every live token it holds, in
+one transaction; `resolve-actor.ts` refuses an agent's token whose agent is not
+`active` before any handler runs, whatever the token row says. **Rotating** one
+of its tokens mints a new token and revokes the old one in one transaction,
+keeping the old one's scope and project pin; the agent, its grants and its
+history are unchanged, and the owner's other tokens are untouched. Both, and
+registering, renaming and granting, are behind `agent.manage_own`, session only
+(§3.1): no token, an agent's own included, can mint itself more access.
+Reading is `agent.read_own`. Every query reaches the caller's own agents only,
+and another person's agent is a `404`. **No new §4.8 verb**: minting and
+revoking an agent's token write `token.created` and `token.revoked`, the rows
+here are the record of the rest, and historic activity is never back-filled
+with an agent. No retention: an agent row lives as long as its owner.
+
+### 4.64 `agent_project_grants`
+
+What one agent may do in one project (D-114, LAI-534). **No row is no access.**
+
+| field | notes |
+| --- | --- |
+| `agent_id` | FK `agents`, cascade — with `project_id`, the primary key: one grant per agent per project |
+| `project_id` | FK `projects`, cascade |
+| `scope` | `read_only` \| `full` (CHECK) — the same two words a token's scope uses, narrowing the same way |
+| `created_at` | |
+
+Indexes: the primary key `(agent_id, project_id)`, and `(project_id)`. A grant
+may name only a project the owner can read when it is set; `PUT
+/agents/:id/grants` replaces the whole set.
+
+**An agent's effective access is the intersection** of its owner's current
+permissions, its grant for the project, and its token's scope and project pin —
+enforced in `can()`'s token narrowing, so every REST route and every MCP tool
+applies it the same way. **An agent's token is pinned to its grants**: in a
+project it holds no grant for it is refused (`403`, `reason: agent_not_granted`),
+a `read_only` grant keeps the reads (`reason: agent_read_only`), and of the org
+actions it keeps only a pinned token's (§6.2) less minting a token and revoking
+one of its owner's (`reason: agent_token`). An owner who loses a permission
+loses it for every agent at once, because the role is read on every request.
+The project's hand-off policy, when it exists, narrows delegation and transfer
+only — never a read or a comment.
+
+### 4.65 `agent_sessions`
+
+One running process of a registered agent (proposal §4.2, LAI-541). Opened by
+`POST /agent-sessions` or by the agent's own `start_working` (§7.1), kept alive
+by heartbeats (§9.1), ended by the agent or by revoking it. A session holds
+claims (§4.66); it never holds a task by itself.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `agent_id` | FK `agents` (§4.63), cascade |
+| `token_id` | FK `tokens` (§4.9), cascade — the credential that opened it. Rotating the agent's token does not end it |
+| `started_at` | |
+| `last_heartbeat_at` | renewed by every heartbeat; the session is **suspect** once it is older than §9.1's suspect interval — shown, decides nothing |
+| `ended_at` | nullable — set with `end_reason`; both or neither (CHECK) |
+| `end_reason` | nullable — `ended` (the agent said so) \| `agent_revoked` (D-114 item 2) (CHECK) |
+| `client_version` | nullable, **self-reported**, at most 64 characters. Decides nothing |
+| `model` | nullable, **self-reported**, at most 120 characters. Decides nothing |
+| `context_revision_seen` | nullable — the project brief's revision the session last read, for the delivery work (proposal §4.6); written by nothing yet |
+
+Indexes: `(agent_id)`, `(token_id)`. **No activity row**: a session is presence,
+as a heartbeat is (§9.1), and the claims it holds are what §4.8 records.
+Another agent's session is a `404`.
+
+### 4.66 `task_claims`
+
+An agent session's **exclusive** hold on a task (proposal §4.2, LAI-541) — the
+third of the three facts D-114 item 7 keeps apart: `assignee_id` is who is
+accountable, `selected_agent_id` who the work is asked of, and the live claim is
+**which running session holds it now**.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `task_id` | FK `tasks`, cascade |
+| `session_id` | FK `agent_sessions` (§4.65), cascade |
+| `agent_id` | FK `agents` (§4.63), cascade — the session's agent, kept on the row so the fence asks one table |
+| `generation` | a per-task number, ≥ 1, that **only goes up**: each new claim on a task takes the next one. `(task_id, generation)` is unique |
+| `lease_expires_at` | server time. Set to *now + the claim expiry* (§9.1) when the claim is taken and on every renewal |
+| `state` | `active` \| `paused` \| `released` \| `expired` \| `transferred` (CHECK). `active` and `paused` are **live**; the other three are terminal |
+| `created_at` | |
+| `ended_at` | nullable — when it stopped being live |
+
+Indexes: a **partial unique index on `(task_id)` where `state IN ('active',
+'paused')` — one live claim per task**, which is the lock; `(task_id,
+generation)` unique; `(session_id)`, `(agent_id)`, `(state, lease_expires_at)`
+for the expiry scan.
+
+**How a claim ends.** `released` — the task left `in_progress` (the holder's
+`finish_task`, a person's move) or the session ended; `expired` — the lease
+lapsed and the expiry scan (§11.6), or a heartbeat that arrived too late, marked
+it, writing `task.claim_expired`; `paused` and `transferred` are the hand-off's
+(LAI-546) and are written by nothing yet. **Nothing moves a claim out of
+`expired`**: reclaiming inserts a new row at the next generation (§5, §9.1).
+Rows are never deleted; they are the task's claim history.
+
 ## 5. Task lifecycle
 
 ```
@@ -2325,7 +2475,43 @@ backlog ──▶ todo ───────────────────
   API-level twin of the file-move lock the build sessions use by hand. The
   holder's own claim of a task already in progress is not a second claim: it
   changes nothing but the branch it is given (§7.1, LAI-770).
+- **A registered agent's claim is exclusive and fenced** (proposal §4.2,
+  LAI-541). Its `start_working` also takes the task's one live claim (§4.66)
+  for its session, at the next `generation`, with a lease. **An agent's claim
+  never writes `assignee_id`** (D-114 item 7: changing the assignee is always a
+  separate, explicit act): an unassigned task **stays unassigned** — the claim
+  is the lock, not the assignee — a task its owner holds stays theirs, and a
+  task held by **someone else** may be claimed only when an open work request
+  asks this agent for it (§4.5), and stays theirs. Claiming answers that work
+  request, `open` → `accepted`, and assigns nobody. A claim that moves the task
+  to `in_progress` writes `task.status_changed` with `via: "claim"` and
+  `claim_generation`, and **no `assignee_id`**; a claim on a task already in
+  progress writes `task.updated` with `field: "claim"`. For §5's review rule
+  below, on a task **nobody is assigned to**, the agent holding the live claim
+  answers as the assignee would, so it can finish it into review; on a task
+  **another person is assigned to**, the rule is asked of the agent's owner,
+  and an agent is never more than its owner (D-114).
+
+  | claim state | live? | how it is reached | the task |
+  | --- | --- | --- | --- |
+  | `active` | yes | `start_working`, or the explicit reclaim | `in_progress` |
+  | `paused` | yes | a hand-off is open (LAI-546) | `in_progress` |
+  | `released` | no | the task left `in_progress`, or the session ended | any |
+  | `expired` | no | the lease lapsed (§9.1) | stays `in_progress` — **never reassigned silently** |
+  | `transferred` | no | a hand-off was accepted (LAI-546) | `in_progress`, under the receiver's claim |
+
+  **Leaving `in_progress` releases the live claim** — the holder's `finish_task`
+  into review, a person's move — and its generation is refused from then on.
+  A task whose newest claim **lapsed** — `expired` or `transferred` — while it
+  stayed in progress is held by that lapse: it can be claimed again only by the
+  explicit reclaim of the agent that held it, **every token's change to it is
+  refused** (§6.3) — the old holder `stale_claim` with or without a
+  generation, anyone else `claim_held` — and only a person moving it out of
+  progress ends that state. The reclaim takes back a task **still in
+  progress** only.
 - Moving to `review` requires the assignee, a project `lead`, or org Admin/Owner.
+  On an unassigned task, the agent holding its live claim answers as the
+  assignee; on an assigned one, the rule is asked of the agent's owner (LAI-541).
 
   **This restricts people. It does not restrict the system principal** (§3.4,
   D-051). The rule exists because *agents do not self-certify* — the bullet
@@ -2454,6 +2640,15 @@ Token scope narrows afterwards: `read_only` permits every `GET` the user's role
 allows and nothing else; `project_ids_json`, when set, restricts the token to
 those projects. A Viewer's token can never write, whatever its scope says.
 
+**A token pinned to projects is refused org-wide admin actions** (audit H4).
+When `project_ids_json` is set, the token keeps only the org-level reads every
+member has and its own-record actions (its own tokens, heartbeats, unlisted
+work, activity sharing, time settings and drafts); every other org-scoped
+action — settings, projects, invites, members, other people's tokens,
+org-wide history and usage — is refused, whatever the user's role. The pin
+narrows, exactly as §3.3 says a token only ever can; a project-scoped
+credential is not an org credential with a project filter.
+
 ### 6.3 Conventions
 
 - **Pagination**: `?limit=` (default 50, max 200) and `?cursor=` (opaque,
@@ -2496,18 +2691,57 @@ those projects. A Viewer's token can never write, whatever its scope says.
 
   **A finer reason travels in `details.reason`, never as a new code** (D-079):
   `session_required` when a token is refused only because §3.1 says *session
-  only*; `local_activity_off`, `day_out_of_range` and `invalid_tz` on a local
+  only*; `project_pinned` when a token pinned to projects is refused an
+  org-wide action it does not keep (§6.2, H4); `local_activity_off`, `day_out_of_range` and `invalid_tz` on a local
   activity report (§6.4); `token_required` on a heartbeat (§9.1);
   `protobuf_not_supported` and `otlp_invalid` on OpenTelemetry metrics
-  (LAI-773). The status
+  (LAI-773); and the claim fence's three (below). The status
   and `code` stay the vocabulary above, so a client that branches on `code`
   keeps working, and one that needs the reason has it.
-- **Idempotency**: `POST` accepts `Idempotency-Key`; replays within 24h return
-  the original response. Same key with a different body is `conflict`.
-  **One route keeps its own key** (LAI-746): `POST /users/:id/ratings`, which
-  is session-only (§3.1). The shared store answers before the route runs, keyed
-  by user rather than credential, and keeps the response body — which there is
-  a private note — so that route stores the key on the rating and answers a
+- **The claim fence** (proposal §4.2, §4.66, LAI-541). A registered agent's
+  change to a task carries the generation of the claim its session holds:
+  REST's request header **`X-Laika-Claim-Generation`** (a positive integer;
+  anything else is `400 bad_request`), MCP's `claim_generation` argument (§7.2).
+  The check is in the shared task service, so both transports answer alike.
+  Every refusal is **`409 conflict`** — D-079: a finer reason never becomes a
+  code — with `details.reason` one of:
+
+  | `reason` | when |
+  | --- | --- |
+  | `stale_claim` | the generation is not the task's live claim's — older, newer, released or **expired** — or the live claim's lease has lapsed, or the holder's own agent sent none; the caller's own claim on the task **lapsed**, whether or not it sent a generation; a generation sent where no claim is live; also a session that has ended. `details.reclaim: true` when the caller's own claim expired and the explicit reclaim is the way back |
+  | `claim_held` | another session holds the live claim — **another agent of the same person included**, which is fenced exactly as another person's is — or a token with no agent (a legacy token) tried to change or claim a task a registered agent's session holds (D-114 item 6), or the task's claim lapsed and is waiting for recovery (any token but the old holder's) |
+  | `claim_paused` | the live claim is paused while a hand-off is open (LAI-546) |
+
+  **The rule, in order.** (1) The system (§3.4) and **a person signed in** are
+  never fenced — people keep explicit control, and their change is recorded
+  as theirs (§4.8). (2) A task with a **live** claim: only its holder's agent,
+  with the live generation and an unlapsed lease. (3) A task whose newest
+  claim **lapsed** while it stayed in progress: no token at all — **omitting
+  the generation is not a way round it**. (4) A task nobody holds: a token
+  may change it without a generation. **Reads and comments are never fenced**,
+  for anyone.
+
+  **Indirect changes count.** A change that reaches a claimed task without
+  naming it passes the same fence for every task it would touch, before any
+  is touched: deleting a sprint (its tasks' `sprint_id`), deleting a status
+  (its tasks move), renaming or deleting a tag (its tasks' tags), removing or
+  deactivating a member with `open_tasks` (their tasks' assignee). A presence
+  heartbeat's branch write (§9.1) **passes the same fence** — the holder sends
+  its generation in `X-Laika-Claim-Generation` as on any request — and where
+  the fence refuses, the beat still lands (`202`) and the task is untouched.
+- **Idempotency**: `POST` accepts `Idempotency-Key`. Only these create routes
+  keep a response: `POST /projects`, `/projects/:slug/tasks`,
+  `/projects/:slug/sprints`, `/tasks/:id/comments`, `/tasks/:id/dependencies`,
+  `/agent-sessions`. Before a replay, the route's own permission is asked again
+  of the caller as they are now — for dependencies including the claim fence —
+  and if refused the route runs instead. A token replays only its own answers,
+  and an answer carrying a one-time secret is never stored. Same key with a
+  different body is `conflict`. **One route keeps its own key** (LAI-746):
+  `POST /users/:id/ratings`, which is session-only (§3.1). Requests made with a
+  token are keyed by that token, so one credential never replays another's
+  answer; requests made with a browser session are keyed by the user. The shared
+  store answers before the route runs and keeps the response body — which there
+  is a private note — so that route stores the key on the rating and answers a
   retry from it after `can()`. Its keys are per rater and do not expire.
 - **Rate limits**: in-process token bucket — 120 req/min per token, 600/min per
   session, 30/min for heartbeats, and for local-activity reports (`PUT
@@ -2652,8 +2886,12 @@ GET    /api/v1/tasks                         ?project=&status=&assignee=&sprint=
 GET    /api/v1/tasks/summary                 /tasks' filters, same set → { total, by_status, by_assignee: [{ user_id|null|'others', name, count }] (top 10, then others), overdue, blocked, unassigned } (LAI-974)
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
 POST   /api/v1/tasks/:id/claim               POST /api/v1/tasks/:id/status
-                                             claim: body { branch?, estimate? }, optional — the branch is kept
-                                             on the task (LAI-770); estimate { size?, confidence? } (§4.34)
+                                             claim: body { branch?, estimate?, session_id? }, optional — the branch is kept
+                                             on the task (LAI-770); estimate { size?, confidence? } (§4.34); on a registered
+                                             agent's token it takes the exclusive claim (§5, §4.66) under session_id, or a
+                                             new session, and answers X-Laika-Claim-Generation and X-Laika-Agent-Session
+POST   /api/v1/tasks/:id/claim/reclaim       body { session_id? } → { claim, session, from_generation } — the explicit reclaim
+                                             (§9.1, LAI-541); a registered agent's token only
 POST   /api/v1/tasks/:id/finish              body { summary, checklist?, commits?, branch?, pull_request?, tests? }
                                              → review, with a round and its proof (finish_task's twin, D-082)
 GET    /api/v1/tasks/:id/rounds              { rounds (newest first), send_back }
@@ -2680,7 +2918,16 @@ GET    /api/v1/activity/history              ?actor=&project=&type=&since=&until
                                              ?format=csv — the same filters and gate, every row as one streamed text/csv file (no limit or cursor; LAI-984)
 GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id
 GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)
+GET    /api/v1/agents                        POST /api/v1/agents  body { display_name, harness, device_label?, grants[{ project_id, scope }], expires_at? } → 201 { agent, token, secret }  (§4.63, session only)
+GET    /api/v1/agents/:id                    PATCH /api/v1/agents/:id  body { display_name?, harness?, device_label? }
+PUT    /api/v1/agents/:id/grants             body { grants[{ project_id, scope }] } — replaces the set (§4.64)
+POST   /api/v1/agents/:id/rotate-token       body { token_id, expires_at? } → 201 { agent, token, secret }; the old token is revoked in the same transaction
+POST   /api/v1/agents/:id/revoke             the agent and every live token it holds; idempotent
+GET    /api/v1/agents/me/work-requests       ?project= optional — the calling agent's open work requests (LAI-535); an agent's token only
 POST   /api/v1/heartbeats                    202, token auth only
+POST   /api/v1/agent-sessions                body { client_version?, model? } → 201 session (§4.65); an agent's token only (LAI-541)
+POST   /api/v1/agent-sessions/:id/heartbeat  → { session, claims, lost } — renews the session's active claims (§9.1)
+POST   /api/v1/agent-sessions/:id/end        → session; its live claims are released
 GET    /api/v1/presence                      GET /api/v1/capacity
 GET    /api/v1/permissions                   every org and project action: label, scope, which roles hold it, conditions; and the caller's own grants (viewer+; LAI-885) — answered under the organisation's grants (LAI-958)
 GET    /api/v1/unlisted                      ?user=&since=  — work logged outside any project
@@ -2698,7 +2945,7 @@ GET    /api/v1/health
 
 `PATCH /tasks/:id` accepts a partial
 `{ title, description_md, acceptance_md, tags, priority, assignee_id,
-parent_task_id, due_on, planned_start, external_ref }`.
+parent_task_id, due_on, planned_start, external_ref, selected_agent_id }`.
 **`null` clears a field; absent leaves it alone** — they are different requests,
 and `acceptance_md`, `assignee_id`, `parent_task_id` and both dates draw the
 distinction. `tags` replaces the whole set. `POST /projects/:slug/tasks` takes
@@ -2713,6 +2960,51 @@ counts — or it is `422` with `details: { field: 'assignee_id', reason:
 'not_on_project', assignee_id }`; MCP's `assignee` reaches the same check
 (LAI-962). `?parent=<id>` on the list returns that task's
 subtasks only, and pages with `cursor` like any other filter (D-066).
+
+**`selected_agent_id`** (§4.5, D-114 item 7, LAI-535) selects the agent meant
+to do the task and opens a work request for it; `null` withdraws the request,
+and the same id again changes nothing and writes nothing. It never moves
+`assignee_id`. An agent that cannot be selected is `422` with `details: {
+field: 'selected_agent_id', reason, selected_agent_id }`, `reason` one of
+`agent_not_found`, `agent_other_owner`, `agent_wrong_org`, `agent_revoked`,
+`agent_not_granted`, `agent_read_only` or `agents_off`. **Changing it while
+an agent session holds the task's live claim is `409 conflict`, `reason:
+claim_held`** — that change is a hand-off (LAI-546); with no live claim it is
+free to change (LAI-541). `GET /agents/me/work-requests` is the calling
+agent's open requests, newest first, paged like any list, each `{ id, kind,
+state, task_id, task_key, task_title, project_id, agent_id, requested_by,
+created_at }`, limited to the projects the agent may read now — and to one with
+`?project=<slug>`, which is looked up **only among those**: a slug the agent
+may not use, real or made up, gets one refusal, identical byte for byte — `403
+forbidden`, `reason: agent_not_granted`, no slug or id in the body — so the
+answer never discloses whether the project exists. MCP's `list_ready_tasks`
+`project` argument answers an agent's token the same way, before its task list
+is read; a token that is
+not a registered agent's — or a session — is `403` with `reason:
+not_an_agent`.
+
+**Agent sessions and claims** (§4.65, §4.66, §9.1, LAI-541). A session is `{
+id, agent_id, started_at, last_heartbeat_at, ended_at, end_reason,
+client_version, model, connection }`, `connection` one of `live`, `suspect`
+(silent past §9.1's suspect interval) or `ended`; a claim is `{ id, task_id,
+session_id, agent_id, generation, state, lease_expires_at, created_at, ended_at
+}`. A heartbeat answers `{ session, claims, lost }`: the live claims it renewed,
+and the session's claims that are no longer live — **an expired one stays in
+`lost`; a heartbeat never brings it back**. A heartbeat to an ended session is
+`409`, `reason: stale_claim`. All three `/agent-sessions` routes are under
+`heartbeat.send_own` and refuse a session or a legacy token `403`, `reason:
+not_an_agent`; another agent's session is `404`. **The reclaim** reads
+everything again **inside its `BEGIN IMMEDIATE`**, from the database, not from
+the request's resolved actor — the agent's status (`403`, `reason:
+agent_revoked`), the token (`token_revoked`; `token_read_only` if it is not
+`full`), the owner (`owner_inactive`), the agent's grant (`agent_not_granted`,
+`agent_read_only`) and the owner's `task.claim` under today's role. A task no
+longer in progress is `409`, `reason: task_not_claimable`; a live claim is `409
+claim_held`; a task whose newest claim is not this agent's expired one is
+`409`, `reason: nothing_to_reclaim`. The offer steps — refusing
+`409 offer_taken` when an offer was accepted, cancelling open and
+pending-approval offers with reason `reclaimed` — arrive with the offers
+(LAI-546).
 
 **A slim list: `?fields=slim`** (LAI-795). The task list answers every field
 of the task view below **except `description_md` and `acceptance_md`**, the
@@ -3530,6 +3822,7 @@ same shape without `description_md` and `acceptance_md` (LAI-795):
 | `blocked_by`, `blocks` | **both directions of §4.6** — see §4.5. `ready` depends only on `blocked_by` |
 | `send_back` | `{ reason_md, decided_by, created_at }` of the task's current send-back (§4.27), or `null` (D-082) |
 | `size` | the estimate in force (§4.32): `{ level, computed, overridden, weight, build_p50_ms, build_p80_ms, subtasks }` — `level` is a person's size when one is set and `computed` is Laika's beside it — or `null` before one is computed (D-085) |
+| `selected_agent` | §4.5's `selected_agent_id`, **served in its place**: `{ id, display_name, harness, device_label, status, owner: { id, name } }` of the agent the work is requested of (§4.63), or `null` — never a token or a grant (LAI-535) |
 
 `created_at` and `updated_at` are on every view and are not listed per endpoint.
 
@@ -3709,10 +4002,10 @@ a new activity verb: each writes `task.status_changed` with `via: "accept"` or
 `comment.added`.
 
 **A token never replays a session's answer it could not have had** (§6.3).
-Idempotency keys are the person's, not the credential's (LAI-748), so a
-stored answer to the same key and body is found by the same person's token.
-For a review decision, and for any stored task in a done category, the route
-runs instead and answers the token itself.
+Requests made with a token are keyed by that token, so a session's stored answer
+is never found by a token (LAI-534). As a second lock, for a review decision,
+and for any stored task in a done category, the route runs instead and answers
+the token itself.
 
 **Project statuses (§4.20)** are served as
 `{ id, project_id, name, category, position, hidden, created_at, task_count }`,
@@ -3780,20 +4073,20 @@ matched.
 
 | Tool | Input | Returns |
 | --- | --- | --- |
-| `laika_whoami` | `{}` | the identity this token acts as — `user_id`, `name`, `email`, `org_role`, `token_scope` — and `how_to_work`, the same text as the server's `instructions`, for clients that drop those (D-076). Reads nothing, changes nothing |
+| `laika_whoami` | `{}` | the identity this token acts as — `user_id`, `name`, `email`, `org_role`, `token_scope`, `agent` (the registered agent this token is the credential of — `id`, `display_name`, `harness`, `device_label`, `status` — or `null` for a legacy token; D-114) — and `how_to_work`, the same text as the server's `instructions`, for clients that drop those (D-076). Reads nothing, changes nothing |
 | `list_projects` | `{}` | projects the user can read |
-| `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age |
+| `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age. On a registered agent's token, also `work_requests`: its open work requests, ready or not, newest first, under the same `project` and `limit`, as `GET /agents/me/work-requests?project=&limit=` answers (LAI-535) — a request, not a claim |
 | `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`), and `estimate` — the size, its *why*, the forecast frozen at start and the actual, as `GET /tasks/:id/estimate` answers (D-085), with the token forecast, what was said at claim, *scope grew* and the split suggestion (LAI-772) — and `similar`: up to five similar finished tasks in the project, closest first, each `{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }` — why it was sent back, and nobody's name |
 | `get_project_context` | `{ project }` | `context_md`, its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770) |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
 | `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size?, external_ref? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only. `external_ref` is an outside id (§4.5). `blocked_by` is resolved before anything is created: a blocker that is ambiguous or names no task refuses the call, and no task is filed |
-| `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size?, external_ref? }` | task. Every field optional; an omitted one is left alone; `null` on `parent`, a date, `size` or `external_ref` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085) |
-| `start_working` | `{ task, branch?, estimate? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770). `estimate` is the claimant's own `{ size?, confidence? }` — `XS`–`XL` and `green` \| `yellow` \| `red` — kept in §4.34, scored against what happens, and blended into the forecast only once estimates here beat the project median (LAI-772); a resume keeps none. **The holder's own call on a task already in progress succeeds** as a no-op that keeps the branch it is given and returns the task — no status change, no `activity` row, `started_at` and the frozen estimate untouched — so a session resuming its task can mark it (LAI-770 review, B2); anyone else, and a holder whose task is not in progress, still get `409` |
-| `update_status` | `{ task, status, note? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
-| `set_task_sprint` | `{ task, sprint }` | task. `sprint: null` takes it out of whichever it is in |
+| `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size?, external_ref?, agent?, claim_generation? }` | task. Every field optional; an omitted one is left alone; `null` on `parent`, a date, `size`, `external_ref` or `agent` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085). `agent` is a registered agent's id and is `PATCH`'s `selected_agent_id` (§6.4): a work request, never an assignment (LAI-535) |
+| `start_working` | `{ task, branch?, estimate?, session_id?, reclaim? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770). `estimate` is the claimant's own `{ size?, confidence? }` — `XS`–`XL` and `green` \| `yellow` \| `red` — kept in §4.34, scored against what happens, and blended into the forecast only once estimates here beat the project median (LAI-772); a resume keeps none. **The holder's own call on a task already in progress succeeds** as a no-op that keeps the branch it is given and returns the task — no status change, no `activity` row, `started_at` and the frozen estimate untouched — so a session resuming its task can mark it (LAI-770 review, B2); anyone else, and a holder whose task is not in progress, still get `409`. **On a registered agent's token** it also takes the task's exclusive claim (§5, §4.66) and answers `claim` — `{ session_id, generation, lease_expires_at, … }` — beside the task, and **never writes the assignee** (§5); `session_id?` names the session to claim under (absent opens one), and the holder's session calling again renews the lease. A second session — the same agent's, or another agent of the same person — is `409`, `reason: claim_held`. **`reclaim: true`** is the explicit reclaim, `POST /tasks/:id/claim/reclaim`'s twin (§9.1, LAI-541): only it gives an agent whose claim expired a claim again, at `generation + 1` |
+| `update_status` | `{ task, status, note?, claim_generation? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
+| `set_task_sprint` | `{ task, sprint, claim_generation? }` | task. `sprint: null` takes it out of whichever it is in |
 | `add_comment` | `{ task, body }` | comment |
-| `finish_task` | `{ task, summary, checklist?, commits?, branch?, pull_request?, tests? }` | task → **`review`**, summary posted as a comment, and a round with the proof, each item `claimed` until GitHub's deliveries confirm it (§4.25, D-082, D-083) |
+| `finish_task` | `{ task, summary, checklist?, commits?, branch?, pull_request?, tests?, claim_generation? }` | task → **`review`**, summary posted as a comment, and a round with the proof, each item `claimed` until GitHub's deliveries confirm it (§4.25, D-082, D-083). Releases the session's claim (§5) |
 | `create_sprint` | `{ project, name, goal?, start_date, end_date, status? }` | created sprint, with the id the other sprint tools take |
 | `update_sprint` | `{ sprint, name?, goal?, start_date?, end_date?, status? }` | sprint. Completing one **does not move its tasks** (§4.15, D-013) |
 | `update_project_context` | `{ project, context_md, mode }` | the document's new length. `mode` is `replace` or `append` |
@@ -3903,6 +4196,13 @@ and each disagreed:
 - `finish_task` stops at `review` by design — agents do not close their own work.
   No tool reaches `done`: `update_status` refuses any done status to an agent
   (§5, D-082), and accepting is a person's, in the web app.
+- **`claim_generation` is the claim fence's argument** (§6.3, LAI-541): every
+  tool that changes a task — `update_task`, `update_status`, `finish_task`,
+  `set_task_sprint` — takes it, and it is REST's `X-Laika-Claim-Generation`
+  set for that one call. A stale one is `conflict`, `reason: stale_claim`.
+  `add_comment` does not take it: comments are never fenced. There are no
+  session tools: an MCP-only agent renews by calling `start_working` again
+  from its session, and a helper heartbeats over REST (`/agent-sessions`).
 - Inputs are zod schemas exported as JSON Schema; unknown fields are rejected.
 - Errors are MCP tool errors carrying the §6.3 `code`, so an agent can branch on
   `conflict` versus `forbidden` rather than parse prose.
@@ -4039,6 +4339,80 @@ match: a person working in a monorepo genuinely is present on both projects, and
 attributing to nobody would make presence empty for exactly the arrangement §4.3
 permits. A repo no project tracks is accepted and attributed to none — §9.2's
 rule that unmatched input degrades and never errors applies here too.
+
+### 9.1.1 Claim leases: agent-session heartbeats (LAI-541)
+
+A registered agent's session (§4.65) has heartbeats of its own,
+`POST /agent-sessions/:id/heartbeat`, separate from the presence heartbeat above
+and unchanged by it. **They come from the working process**: the local helper
+renews only while the harness process holding the session is alive, which it
+checks by PID, so a helper that outlives its harness stops renewing (proposal
+§4.2, LAI-542). Each heartbeat stamps the session and **renews the lease of each
+of its active claims** to *now + the claim expiry*. An MCP-only agent renews by
+calling `start_working` again from its session (§7.1).
+
+**The timings** — proposal §4.2's defaults, **each configurable per
+deployment** through §11.7's variables:
+
+| setting | default | variable | what it does |
+| --- | --- | --- | --- |
+| Heartbeat | every 30 s | `LAIKA_CLAIM_HEARTBEAT_SECONDS` | how often a session is expected to heartbeat; also the boot grace |
+| Connection suspect | after 90 s | `LAIKA_CLAIM_SUSPECT_SECONDS` | a session silent this long is shown `suspect` — shown, decides nothing |
+| Claim expires | after 5 min | `LAIKA_CLAIM_EXPIRE_SECONDS` | the lease: how long after its last renewal a claim lapses. Must be longer than the heartbeat |
+| Expiry scan | every 30 s | `LAIKA_CLAIM_SCAN_SECONDS` | how often §11.6's scan marks lapsed claims `expired` |
+| Checkpoint warning | after 5 min | — | LAI-544/LAI-545's, not yet read |
+| Offer expires | after 30 min | — | LAI-546's, not yet read |
+| Completed hand-offs per task | at most 3 | — | LAI-546's, not yet read |
+
+The last three are listed so the table is the proposal's whole; they become
+variables with the work that reads them. Tests use an injected clock.
+
+**Fencing.** Every change an agent session makes to a task carries its claim's
+generation (§6.3: `X-Laika-Claim-Generation`, `claim_generation`). A stale
+generation, or a lease that has lapsed, is `409`, `reason: stale_claim`. **Two
+agents of the same human are fenced from each other** exactly as two people's
+agents are: the live claim names one session of one agent, and every other is
+refused `claim_held`.
+
+**An expired claim is never restored by itself.** Once a claim is `expired`,
+its generation is **invalid for good**: any request carrying it is `409
+stale_claim`, **even if the same session's heartbeats start again** — a
+heartbeat reports it in `lost` and renews nothing, and a heartbeat that arrives
+after the lease lapsed but before the scan expires it there rather than reviving
+it. A plain `start_working` does not take it back either, and **omitting the
+generation is no way round it**: every token's change to the task is refused
+while the lapsed claim holds it (§6.3). **Only the explicit
+reclaim** — `POST /tasks/:id/claim/reclaim`, or `start_working` with `reclaim:
+true` — gives the agent whose claim expired a **new** claim, at `generation +
+1`, in one `BEGIN IMMEDIATE` operation that re-checks the owner's permission,
+the agent's status and grant and the token's scope, and appends
+`task.claim_reclaimed`. The helper then carries the new generation; the old one
+never becomes valid again. Any other agent is refused and waits for recovery
+(LAI-546).
+
+**Recovery speed versus disconnects.** A short expiry recovers abandoned work
+quickly, but it also turns a laptop lid closed for six minutes into an expired
+claim. Nothing is lost when that happens: expiry opens a recovery offer
+(LAI-546) — **never a silent reassignment** — and the task stays in progress,
+assigned as it was. The laptop's owner reclaims explicitly for as long as
+nobody has accepted that offer. A deployment whose agents sleep often lengthens
+`LAIKA_CLAIM_EXPIRE_SECONDS`; one that wants abandoned work back fast shortens
+it.
+
+**Reconnecting.** A session whose heartbeats were merely late — inside the
+lease — carries on: the next heartbeat renews from then. A session whose claim
+expired sees it in `lost`, stops writing under it, and reclaims if it still
+wants the task. A session that **ended** (its agent said so, or was revoked)
+cannot heartbeat (`409 stale_claim`); its claims were released when it ended,
+or — for a revoked agent, whose token is refused at the door anyway — lapse and
+expire like any other.
+
+**Server restart.** Leases are stored as timestamps, so nothing about a claim
+lives only in memory. **During a boot grace of one heartbeat interval nothing
+lapses** — a server that was down did not hear the heartbeats it was sent, and
+a session that heartbeats inside the grace keeps its claim, its overdue lease
+renewed from then. After the grace, the first expiry scan catches everything
+still overdue.
 
 ### 9.2 Branch names carry task ids
 
@@ -5031,6 +5405,13 @@ One interval-driven scheduler in the same process:
   `staleTasks()`, which filters by `isStale`, longest-flagged first; the List's
   amber Updated cell calls `isStale` itself
 - invite expiry, meeting-review expiry (7 days)
+- **claim expiry** (§4.66, §9.1.1, LAI-541) — every `LAIKA_CLAIM_SCAN_SECONDS`
+  (30 s by default), each `active` claim whose lease has lapsed becomes
+  `expired`, with one `task.claim_expired` row per claim — each is a different
+  task's history — under §3.4's `system.claim.expire`. **Each claim's state
+  and its row are one transaction**: both land or neither does. **Nothing lapses during
+  the boot grace** (one heartbeat interval after start); the first scan after
+  it catches everything overdue. Not run at boot, for the same reason
 - **estimate refit** (D-085) — every live project's size model fitted again
   from its history and every open task recomputed against it, daily **and once
   at boot**, so a deploy starts with every task estimated. It writes no
@@ -5057,6 +5438,10 @@ compose file or systemd unit.
 | `LAIKA_DB_PATH` | `$LAIKA_DATA_DIR/laika.db` | |
 | `LAIKA_PUBLIC_URL` | `http://localhost:$PORT` in development; **required in production** | invite links and webhook URLs — a localhost default that escapes into production sends people invite links they cannot open |
 | `LAIKA_PUBLIC_DIR` | `server/public` | where the built SPA is served from. Primarily a test and packaging affordance; deployments do not normally set it |
+| `LAIKA_CLAIM_HEARTBEAT_SECONDS` | `30` | §9.1.1: how often an agent session is expected to heartbeat, and the boot grace. Whole seconds, 1–86400 |
+| `LAIKA_CLAIM_SUSPECT_SECONDS` | `90` | §9.1.1: a session silent this long is shown suspect |
+| `LAIKA_CLAIM_EXPIRE_SECONDS` | `300` | §9.1.1: a claim's lease. **Must be longer than the heartbeat** — a startup failure otherwise, since every claim would lapse between heartbeats |
+| `LAIKA_CLAIM_SCAN_SECONDS` | `30` | §11.6: how often the claim-expiry scan runs |
 
 **This table is the deployment contract.** Anything the server reads from the
 environment belongs in it, and anything in it must be read. It drifted in both

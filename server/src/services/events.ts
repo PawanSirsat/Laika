@@ -34,6 +34,12 @@ export interface EventView {
    */
   actor_kind: ActorKind;
   actor_token_id: string | null;
+  /**
+   * The registered agent that wrote it (D-114 item 4, LAI-535), read from the
+   * token at write time. Null for a person, a legacy token, the system, and
+   * every row older than the column — never back-filled.
+   */
+  agent_id: string | null;
   payload: unknown;
   created_at: number;
 }
@@ -48,6 +54,7 @@ export function eventView(row: ActivityEvent): EventView {
     actor_id: row.actorId,
     actor_kind: row.actorKind,
     actor_token_id: row.actorTokenId,
+    agent_id: row.agentId,
     // `apiPayload`, not `readPayload`: rows written before LAI-045 name Drizzle
     // properties, and this is the one boundary every client passes through.
     payload: apiPayload(row),

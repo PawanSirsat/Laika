@@ -7,7 +7,6 @@ import {
   changeStatus,
   CLAIM_CONFIDENCES,
   CREATED_VIA,
-  claimTask,
   createTask,
   finishTask,
   getTask,
@@ -15,6 +14,7 @@ import {
   listTasks,
   removeTaskDependency,
   reorderTask,
+  startWorking,
   SIZE_LEVELS,
   summariseAllTasks,
   summaryOf,
@@ -25,6 +25,7 @@ import {
   type TaskSummaryView,
   type TaskView,
 } from '../../services/tasks.ts';
+import { reclaimTask, type ReclaimView } from '../../services/claims.ts';
 import { EVIDENCE_LIMITS, listTaskRounds } from '../../services/rounds.ts';
 import { acceptTask, sendBackTask } from '../../services/review.ts';
 import { getTaskEstimate, type TaskEstimateView } from '../../services/estimates.ts';
@@ -103,6 +104,9 @@ const UpdateBody = strictObject({
   size: z.enum(SIZE_LEVELS).nullable().optional(),
   // An outside id (LAI-780); `null` clears it. Shaped by the service, as above.
   external_ref: z.string().max(120).nullable().optional(),
+  // The agent meant to do it (D-114, LAI-535); `null` withdraws the request.
+  // Eligibility is the service's, and answers `422` with the reason.
+  selected_agent_id: z.string().min(1).max(64).nullable().optional(),
 });
 
 // `status` is a category — the project's first visible status of it — and
@@ -143,7 +147,28 @@ const ClaimBody = strictObject({
     size: z.enum(SIZE_LEVELS).optional(),
     confidence: z.enum(CLAIM_CONFIDENCES).optional(),
   }).optional(),
+  // A registered agent's session to claim under (§4.65, LAI-541); absent
+  // opens one. Ignored for a person and a legacy token, who hold no claims.
+  session_id: z.string().min(1).max(64).optional(),
 });
+
+/** The reclaim's body (LAI-541): which of the agent's sessions takes it back. */
+const ReclaimBody = strictObject({ session_id: z.string().min(1).max(64).optional() });
+
+/**
+ * Read a body that may be absent: none is `{}`, anything else must be JSON.
+ * The claim's rule, shared with the reclaim beside it.
+ */
+async function optionalJson(c: { req: { text: () => Promise<string> } }): Promise<unknown> {
+  const text = await c.req.text();
+  if (text.trim() === '') return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Not JSON: refused by `parseBody` with the 422 every other body gets.
+    return null;
+  }
+}
 
 const UsageQuery = strictObject({ tz: z.string().min(1).max(64).optional() });
 
@@ -348,20 +373,33 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
 
   app.post('/:id/claim', async (c) => {
     const actor = requireActor(c);
-    const text = await c.req.text();
-    let json: unknown = {};
-    if (text.trim() !== '') {
-      try {
-        json = JSON.parse(text);
-      } catch {
-        // Not JSON: refused below with the 422 every other body gets.
-        json = null;
-      }
-    }
-    const body = parseBody(ClaimBody, json);
+    const body = parseBody(ClaimBody, await optionalJson(c));
 
-    return c.json(
-      claimTask(sqlite, db, actor, c.req.param('id'), Date.now(), body.branch, body.estimate),
+    const started = startWorking(sqlite, db, actor, c.req.param('id'), {
+      branch: body.branch,
+      estimate: body.estimate,
+      sessionId: body.session_id,
+    });
+    // The body stays the task, as it always was; a registered agent's claim
+    // travels in the two headers it sends back (§6.4, LAI-541).
+    if (started.claim !== null) {
+      c.header('X-Laika-Claim-Generation', String(started.claim.generation));
+      c.header('X-Laika-Agent-Session', started.claim.session_id);
+    }
+    return c.json(started.task);
+  });
+
+  /**
+   * The explicit reclaim (§6.4, proposal §4.2, LAI-541): the agent whose
+   * claim expired takes the task back at `generation + 1`. A registered
+   * agent's token only; the old generation stays refused.
+   */
+  app.post('/:id/claim/reclaim', async (c) => {
+    const actor = requireActor(c);
+    const body = parseBody(ReclaimBody, await optionalJson(c));
+
+    return c.json<ReclaimView>(
+      reclaimTask(sqlite, db, actor, c.req.param('id'), { sessionId: body.session_id }),
     );
   });
 

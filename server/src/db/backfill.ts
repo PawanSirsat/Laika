@@ -1,7 +1,7 @@
-import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, notLike, sql } from 'drizzle-orm';
 import { readPayload } from './activity.ts';
 import { type Db } from './client.ts';
-import { activity, tasks } from './schema.ts';
+import { activity, idempotencyKeys, tasks } from './schema.ts';
 import { keysInOrder } from './order-key.ts';
 
 /**
@@ -70,12 +70,17 @@ interface Recovered {
 
 /** The transitions a task's history records, oldest first. */
 function transitionsByTask(db: Db): Map<string, Recovered> {
-  // The whole row, because `readPayload` takes an `Activity` — reading the
-  // payload through the module that owns its format is the point (LAI-045), and
-  // hand-listing columns to satisfy the type would be the second reader this
-  // avoids.
+  // Through `readPayload`, the module that owns the payload's format (LAI-045)
+  // — but only the columns this reads. This runs at **every boot, after the
+  // migrations**, and a whole-row select names every column the *code* knows:
+  // on any database a migration has not yet given one (a cut-back upgrade
+  // test, LAI-535's `activity.agent_id`), it fails before anything is read.
   const rows = db
-    .select()
+    .select({
+      taskId: activity.taskId,
+      payloadJson: activity.payloadJson,
+      createdAt: activity.createdAt,
+    })
     .from(activity)
     .where(eq(activity.type, 'task.status_changed'))
     .orderBy(asc(activity.createdAt), asc(activity.id))
@@ -229,4 +234,32 @@ export function backfillTaskPositions(db: Db, projectId?: string): number {
   }
 
   return missing.length;
+}
+
+/**
+ * The idempotency store's owner format version (LAI-534; Codex review of PR
+ * #102). `http/idempotency.ts` writes every row's `actor_id` as
+ * `v2:token:<id>` or `v2:user:<id>`. A row without it was written before
+ * one-time secrets were excluded from the store, and may hold one.
+ */
+export const IDEMPOTENCY_OWNER_VERSION = 'v2';
+
+/**
+ * Delete every idempotency row without the current owner version, and return
+ * how many (LAI-534, round 3).
+ *
+ * **A boot barrier, not only a job**: `runMigrations` runs it before the port
+ * is bound, and a failure fails the boot — a server must not answer requests
+ * with plaintext tokens, links or webhook secrets still on disk. The hourly
+ * `idempotency.retention` job runs it again, which finds nothing once clean.
+ *
+ * Those rows are never looked up — every lookup asks for a versioned owner —
+ * but unreachable is not deleted, and a database file holding a token is a
+ * token.
+ */
+export function purgeUnversionedIdempotencyKeys(db: Db): number {
+  return db
+    .delete(idempotencyKeys)
+    .where(notLike(idempotencyKeys.actorId, `${IDEMPOTENCY_OWNER_VERSION}:%`))
+    .run().changes;
 }

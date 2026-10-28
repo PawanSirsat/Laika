@@ -128,7 +128,14 @@ export const PLACEHOLDER_MESSAGE =
   'The Authorization header carries an unexpanded variable placeholder, not a token. Set the variable in the agent’s environment, or check how this client writes environment variables.';
 
 /** Why a presented token was refused. Logged, never returned (§6.1). */
-export type TokenRejection = 'malformed' | 'unknown' | 'expired' | 'revoked' | 'inactive_user';
+export type TokenRejection =
+  | 'malformed'
+  | 'unknown'
+  | 'expired'
+  | 'revoked'
+  | 'inactive_user'
+  // The token's registered agent is revoked (D-114, LAI-534).
+  | 'agent_revoked';
 
 /**
  * A refused token — `401`, with the reason **off the wire**.
@@ -190,10 +197,40 @@ export function findTokenBySecret(
     return { ok: false, reason: 'unknown' };
   }
 
-  if (row.revokedAt !== null) return { ok: false, reason: 'revoked' };
-  if (row.expiresAt !== null && row.expiresAt <= now) return { ok: false, reason: 'expired' };
+  const rejected = lapsed(row, now);
+  if (rejected !== null) return { ok: false, reason: rejected };
 
   return { ok: true, row };
+}
+
+/**
+ * A token already presented once → its row again, or why it no longer holds.
+ *
+ * For a credential that outlives its request — an open event stream (LAI-539,
+ * audit M10). The stream authenticated at connect and keeps the token's **id**,
+ * never its secret, so this looks up by primary key and re-applies the same
+ * revocation and expiry rules as `findTokenBySecret`, through the same
+ * `lapsed`, so the two cannot disagree about what "still valid" means.
+ */
+export function findTokenById(
+  db: Db,
+  id: string,
+  now: number,
+): { ok: true; row: typeof tokens.$inferSelect } | { ok: false; reason: TokenRejection } {
+  const row = db.select().from(tokens).where(eq(tokens.id, id)).get();
+  if (row === undefined) return { ok: false, reason: 'unknown' };
+
+  const rejected = lapsed(row, now);
+  if (rejected !== null) return { ok: false, reason: rejected };
+
+  return { ok: true, row };
+}
+
+/** Revoked, expired, or `null` while the row is still good at `now`. */
+function lapsed(row: typeof tokens.$inferSelect, now: number): TokenRejection | null {
+  if (row.revokedAt !== null) return 'revoked';
+  if (row.expiresAt !== null && row.expiresAt <= now) return 'expired';
+  return null;
 }
 
 /**

@@ -72,10 +72,16 @@ describe('migrations', () => {
   const EXPECTED_TABLES = [
     'accounts',
     'activity',
+    // LAI-534, D-114: what each registered agent may reach.
+    'agent_project_grants',
+    // LAI-541: an agent's running processes, and the claims they hold.
+    'agent_sessions',
     // LAI-833: when the agent worked, by session and five minutes.
     'agent_time_buckets',
     // LAI-787, D-088: Claude Code's active time, agent minutes.
     'agent_time_days',
+    // LAI-534, D-114: registered agents.
+    'agents',
     // LAI-957, D-102: who looked at a person's analytics.
     'analytics_views',
     'board_activity_days',
@@ -85,6 +91,8 @@ describe('migrations', () => {
     'github_checks',
     'github_commits',
     'github_pull_requests',
+    // LAI-535: work requests, the §4.4 offer shape (LAI-546 widens it).
+    'handoff_offers',
     'heartbeats',
     'idempotency_keys',
     'invites',
@@ -114,6 +122,7 @@ describe('migrations', () => {
     'tags',
     // LAI-772, D-085: what a claimant said at claim, as append-only history.
     'task_claim_estimates',
+    'task_claims',
     'task_dependencies',
     // LAI-771, D-085: sizes and forecasts, as append-only history.
     'task_estimates',
