@@ -19,6 +19,7 @@ import {
   open,
   reply,
   navigateInApp,
+  refuse,
   until,
   type ApiStub,
   type Harness,
@@ -954,6 +955,156 @@ void describe('a selection still in flight when the drawer moves on', () => {
     } finally {
       release();
       await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('an old request on a task, answered after a newer one there, changes nothing', async () => {
+    // A → B → back to A, then a second pick on A. The first A request rejects
+    // last; the newer A selection and no error must survive it.
+    const { stub } = world();
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let t1Patches = 0;
+    const h = await open('/board?project=laika-core&task=t1', stub, {
+      before: async (page) => {
+        await page.route('**/api/v1/tasks/t1', async (route) => {
+          if (route.request().method() !== 'PATCH') return route.continue();
+          t1Patches += 1;
+          if (t1Patches > 1) return route.continue();
+          await gate;
+          return route.fulfill({
+            status: 422,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              error: {
+                code: 'unprocessable',
+                message: 'stale',
+                details: { field: 'selected_agent_id', reason: 'agent_read_only' },
+              },
+            }),
+          });
+        });
+      },
+    });
+    try {
+      const box = await agentBox(h);
+      await pick(box, 'ag-desktop');
+      await until(() => t1Patches === 1);
+      assert.equal(t1Patches, 1, 'the first LC-1 request was never sent');
+
+      await navigateInApp(h.page, '/board?project=laika-core&task=t2');
+      await h.page
+        .getByRole('dialog')
+        .filter({ hasText: 'Chip on the card' })
+        .waitFor({ timeout: 10_000 });
+      await until(async () => (await box.getAttribute('data-value')) === 'ag-laptop');
+      await pick(box, 'ag-desktop');
+      await until(() => patches(h, 't2').length > 0);
+
+      await navigateInApp(h.page, '/board?project=laika-core&task=t1');
+      await h.page
+        .getByRole('dialog')
+        .filter({ hasText: 'Wire the agent field' })
+        .waitFor({ timeout: 10_000 });
+      await until(async () => (await box.getAttribute('data-value')) === '');
+      await pick(box, 'ag-laptop');
+      await until(() => patches(h, 't1').length > 0);
+      assert.equal(t1Patches, 2, 'the newer LC-1 request was blocked');
+      const row = await agentRow(h);
+      await until(async () => (await row.innerText()).includes('Waiting for agent'));
+
+      // Now the first LC-1 request answers, late, with a refusal.
+      release();
+      await h.page.waitForTimeout(500);
+      assert.equal(await box.getAttribute('data-value'), 'ag-laptop');
+      assert.equal(await row.getByRole('alert').count(), 0, 'the stale refusal was shown');
+      assert.match(
+        await row.innerText(),
+        /Waiting for agent · Ada Lovelace’s Claude Code · laptop-1/,
+      );
+    } finally {
+      release();
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('a confirmed write shows, and the picker stays usable, when the follow-up read fails', async () => {
+    const { stub } = world();
+    let failReads = false;
+    const fail = {
+      status: 500,
+      contentType: 'application/json',
+      body: '{"error":{"code":"internal","message":"down"}}',
+    };
+    const h = await open('/board?project=laika-core&task=t1', stub, {
+      before: async (page) => {
+        await page.route('**/api/v1/tasks/t1', async (route) => {
+          if (route.request().method() === 'PATCH') {
+            await route.continue();
+            failReads = true;
+            return;
+          }
+          return failReads ? route.fulfill(fail) : route.continue();
+        });
+        await page.route('**/api/v1/projects/laika-core/tasks**', async (route) =>
+          failReads ? route.fulfill(fail) : route.continue(),
+        );
+      },
+    });
+    try {
+      const box = await agentBox(h);
+      await pick(box, 'ag-laptop');
+      await until(() => patches(h, 't1').length === 1);
+      const row = await agentRow(h);
+      await until(async () => (await row.innerText()).includes('Waiting for agent'));
+      assert.equal(await box.getAttribute('data-value'), 'ag-laptop');
+      assert.match(
+        await row.innerText(),
+        /Waiting for agent · Ada Lovelace’s Claude Code · laptop-1/,
+      );
+      assert.ok(failReads, 'the follow-up read was never made to fail — nothing was tested');
+
+      // Not held by a refresh that will never come: the next pick goes out.
+      await pick(box, 'ag-desktop');
+      await until(() => patches(h, 't1').length === 2);
+      assert.deepEqual(patches(h, 't1')[1]?.body, { selected_agent_id: 'ag-desktop' });
+      await until(async () => (await box.getAttribute('data-value')) === 'ag-desktop');
+      assert.equal(await box.getAttribute('data-value'), 'ag-desktop');
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+});
+
+void describe('a Viewer whose own agents cannot be read', () => {
+  void test('still sees the selected agent, gets no picker, and no error', async () => {
+    const { stub } = world({ role: 'viewer' });
+    const refused = {
+      ...stub,
+      '/api/v1/agents': refuse(403, 'forbidden', 'You may not read agents'),
+    };
+    const h = await open('/board?project=laika-core&task=t2', refused);
+    try {
+      const row = await agentRow(h);
+      await until(() => h.calls.some((c) => c.path === '/api/v1/agents'));
+      assert.ok(
+        h.calls.some((c) => c.path === '/api/v1/agents'),
+        'GET /agents was never asked — the 403 was not tested',
+      );
+      await until(async () => (await row.innerText()).includes('laptop-1'));
+      assert.match(await row.innerText(), /Claude Code · laptop-1/);
+      assert.equal(await row.getByRole('combobox').count(), 0);
+      assert.equal(await row.getByRole('alert').count(), 0);
+      assert.doesNotMatch(
+        await h.page.getByRole('dialog').first().innerText(),
+        /Could not load your agents|forbidden|You may not read agents/i,
+      );
+    } finally {
       await h.close();
     }
   });
