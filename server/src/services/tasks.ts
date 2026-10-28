@@ -486,14 +486,17 @@ export function assertMayCloseReview(
   to: 'review' | 'done',
   /**
    * The caller's agent holds the task's live claim (LAI-541). A claim does not
-   * assign (D-114 item 7), so the agent working the task answers this rule as
-   * its assignee would; the fence has already checked its generation.
+   * assign (D-114 item 7), so on a task **nobody is assigned to** the agent
+   * working it answers this rule as an assignee would; the fence has already
+   * checked its generation. On a task another person is assigned to it does
+   * not: the rule is asked of the agent's owner (`actor.userId`), and an agent
+   * is never more than its owner (D-114).
    */
   holdsClaim = false,
 ): void {
   if (isSystemPrincipal(actor)) return;
   const scoped = withProject(actor, task.projectId);
-  const isAssignee = task.assigneeId === actor.userId || holdsClaim;
+  const isAssignee = task.assigneeId === actor.userId || (holdsClaim && task.assigneeId === null);
   // The effective role: a lead by membership, or by *Open every project*
   // (§3, LAI-958) — which is what an owner and, by default, an admin hold.
   const isLeadOrAbove = effectiveProjectRole(scoped) === 'lead';
