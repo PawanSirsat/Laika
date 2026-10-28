@@ -237,17 +237,22 @@ export function isDeadState(state: string): boolean {
  */
 export type Probe = (pid: number) => 'absent' | 'present' | 'unknown';
 
-export const probeKill: Probe = (pid) => {
-  try {
-    process.kill(pid, 0);
-    return 'present';
-  } catch (cause) {
-    const code = (cause as { code?: unknown }).code;
-    if (code === 'ESRCH') return 'absent';
-    if (code === 'EPERM') return 'present';
-    return 'unknown';
-  }
-};
+/** A {@link Probe} over a given `kill`, so its errno handling can be tested without the kernel. */
+export function probeWith(kill: (pid: number, signal: 0) => unknown): Probe {
+  return (pid) => {
+    try {
+      kill(pid, 0);
+      return 'present';
+    } catch (cause) {
+      const code = (cause as { code?: unknown }).code;
+      if (code === 'ESRCH') return 'absent';
+      if (code === 'EPERM') return 'present';
+      return 'unknown';
+    }
+  };
+}
+
+export const probeKill: Probe = probeWith((pid, signal) => process.kill(pid, signal));
 
 /**
  * `ps` for one PID. **Three answers, kept apart**: the process, as `ps`

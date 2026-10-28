@@ -52,6 +52,7 @@ import {
   PS_ENV,
   PS_TIMEOUT_MS,
   probeKill,
+  probeWith,
   readProc,
   lostNotice,
   type ProcInfo,
@@ -1303,13 +1304,61 @@ void describe('a liveness check that cannot complete is unknown, not death', () 
     // A real PID that is no longer running: a child that exited and was
     // reaped. (Not a huge made-up PID — macOS ps refuses one as "process id
     // too large", which is not the same answer.)
-    const child = spawn('/usr/bin/true', [], { stdio: 'ignore' });
-    const gone = child.pid ?? 0;
-    await new Promise((resolve) => child.once('exit', resolve));
-    await pause(50);
-    assert.equal(probeKill(gone), 'absent', 'the kernel confirms the child is gone');
-    assert.equal(readProc(gone), undefined);
-    assert.equal(liveness(gone, 'x'), 'dead');
+    // Node emits 'exit' only after libuv has reaped the child, so the PID is
+    // free at once — no delay, which would only widen the window for the OS
+    // to hand it to something else. If it has been reused anyway, that
+    // attempt says nothing about this code: try a fresh child, a few times.
+    const ATTEMPTS = 5;
+    /** Is the PID in use, asked of the kernel directly — not through the code under test. */
+    const inUse = (pid: number): boolean => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch (cause) {
+        return (cause as { code?: unknown }).code !== 'ESRCH';
+      }
+    };
+    let checked: { pid: number; probe: string; proc: unknown; live: string } | undefined;
+    for (let attempt = 0; attempt < ATTEMPTS && checked === undefined; attempt += 1) {
+      const child = spawn('/usr/bin/true', [], { stdio: 'ignore' });
+      const pid = child.pid ?? 0;
+      await new Promise((resolve) => child.once('exit', resolve));
+      const result = { pid, probe: probeKill(pid), proc: readProc(pid), live: liveness(pid, 'x') };
+      // Retry only on a real reuse, seen by the kernel after the checks: then
+      // this attempt said nothing about the code. Otherwise its answer stands.
+      if (inUse(pid)) continue;
+      checked = result;
+    }
+    assert.ok(
+      checked !== undefined,
+      `the reaped PID was reused in all ${String(ATTEMPTS)} attempts`,
+    );
+    assert.equal(checked.probe, 'absent', 'the kernel confirms the child is gone');
+    assert.equal(checked.proc, undefined);
+    assert.equal(checked.live, 'dead');
+  });
+
+  void test('probeKill: each errno from kill(pid, 0), injected', () => {
+    const throwing = (code: string) => () => {
+      throw Object.assign(new Error(code), { code });
+    };
+    const seen: [number, number][] = [];
+    const ok = probeWith((pid, signal) => {
+      seen.push([pid, signal]);
+      return true;
+    });
+    assert.equal(ok(4242), 'present');
+    assert.deepEqual(seen, [[4242, 0]], 'signal 0 only: nothing is sent');
+    assert.equal(probeWith(throwing('EPERM'))(4242), 'present');
+    assert.equal(probeWith(throwing('ESRCH'))(4242), 'absent');
+    assert.equal(probeWith(throwing('EINVAL'))(4242), 'unknown');
+    assert.equal(probeWith(throwing('EAGAIN'))(4242), 'unknown');
+    assert.equal(
+      probeWith(() => {
+        throw new Error('no code at all');
+      })(4242),
+      'unknown',
+    );
   });
 
   /** `ps` failing as on a resource or init failure: exit 1, nothing on stdout. */
@@ -1324,8 +1373,10 @@ void describe('a liveness check that cannot complete is unknown, not death', () 
     assert.equal(procReader(resourceFailure, () => 'unknown')(4242), UNKNOWN);
     assert.equal(procReader(resourceFailure, () => 'absent')(4242), undefined);
     // probeKill's three answers, from the real kernel.
+    // The real kernel, for a process that certainly exists. (Not PID 1: as
+    // root, kill(1, 0) succeeds rather than EPERM — the errno cases are
+    // covered deterministically by the injected test above.)
     assert.equal(probeKill(process.pid), 'present');
-    assert.equal(probeKill(1), 'present', 'launchd/init exists: EPERM, not ESRCH');
   });
 
   void test('a live harness whose ps fails to start is skipped, then renewed on the next healthy check', async () => {
