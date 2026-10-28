@@ -211,6 +211,20 @@ export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 export const TOKEN_SCOPES = ['full', 'read_only'] as const;
 export type TokenScope = (typeof TOKEN_SCOPES)[number];
 
+/**
+ * A registered agent's status (§4.63, D-114). `revoked` is terminal: a revoked
+ * agent's tokens are refused before any handler runs, and nothing reactivates it.
+ */
+export const AGENT_STATUSES = ['active', 'revoked'] as const;
+export type AgentStatus = (typeof AGENT_STATUSES)[number];
+
+/**
+ * An agent's grant on one project (§4.64, D-114): the same two words a token's
+ * scope uses, because it narrows the same way — `read_only` keeps the reads.
+ */
+export const AGENT_GRANT_SCOPES = TOKEN_SCOPES;
+export type AgentGrantScope = TokenScope;
+
 export const AI_PROVIDERS = ['anthropic', 'openai_compatible'] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 

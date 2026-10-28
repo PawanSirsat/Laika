@@ -124,6 +124,10 @@ const EXPECTED: Readonly<Record<OrgAction | ProjectAction, string>> = {
   'token.revoke_own': 'CCCC',
   'token.list_any': 'YYNN',
   'token.revoke_any': 'YYNN',
+  // D-114 (LAI-534): every role reads and manages its own agents; the
+  // service reaches only the caller's own rows.
+  'agent.read_own': 'YYYY',
+  'agent.manage_own': 'YYYY',
   'unlisted.log_own': 'YYYY',
   'heartbeat.send_own': 'YYYY',
   'audit_log.export': 'YYNN',

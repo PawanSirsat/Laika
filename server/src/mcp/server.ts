@@ -106,6 +106,29 @@ export interface McpRequestContext {
  * `can()` runs inside the service against the token's user and a tool cannot
  * answer differently from the endpoint beside it.
  */
+/**
+ * The registered agent this token is the credential of (D-114, LAI-534), or
+ * `null` for a legacy token. Read from the resolved token — which read it from
+ * `tokens.agent_id` — and from nothing the caller sent.
+ */
+function whoamiAgent(actor: McpRequestContext['actor']): {
+  id: string;
+  display_name: string;
+  harness: string;
+  device_label: string | null;
+  status: string;
+} | null {
+  const agent = actor.token?.agent;
+  if (agent === undefined || agent === null) return null;
+  return {
+    id: agent.id,
+    display_name: agent.displayName,
+    harness: agent.harness,
+    device_label: agent.deviceLabel,
+    status: agent.status,
+  };
+}
+
 export function createMcpServer(context: McpRequestContext): McpServer {
   const server = new McpServer(
     { name: MCP_SERVER_NAME, version: context.version },
@@ -119,7 +142,7 @@ export function createMcpServer(context: McpRequestContext): McpServer {
     {
       title: 'Who am I',
       description:
-        'The identity this token is acting as, and `how_to_work`: the rules for working this board. Call it first. Reads nothing and changes nothing — it exists to confirm the connection is authenticated as the person you expect.',
+        'The identity this token is acting as — and `agent`, the registered agent this token belongs to, or null for a personal token — and `how_to_work`: the rules for working this board. Call it first. Reads nothing and changes nothing — it exists to confirm the connection is authenticated as the person you expect.',
       inputSchema: {},
     },
     () => {
@@ -135,6 +158,7 @@ export function createMcpServer(context: McpRequestContext): McpServer {
               email: actor.email,
               org_role: actor.orgRole,
               token_scope: actor.token?.scope ?? null,
+              agent: whoamiAgent(actor),
               how_to_work: MCP_INSTRUCTIONS,
             }),
           },

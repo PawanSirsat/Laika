@@ -74,6 +74,7 @@ describe('the jobs §11.6 names', () => {
       'db.vacuum',
       'estimate.refit',
       'heartbeat.retention',
+      'idempotency.retention',
       'invite.expiry',
       'local_activity.retention',
       'meeting_review.expiry',
@@ -94,6 +95,14 @@ describe('the jobs §11.6 names', () => {
     const refit = buildJobs(deps()).find((j) => j.name === 'estimate.refit');
     expect(refit?.everyMs).toBe(day);
     expect(refit?.atStart).toBe(true);
+  });
+
+  it('sweeps the idempotency store hourly and once at boot (LAI-534 round 2)', () => {
+    const hour = 60 * 60 * 1000;
+    const job = buildJobs(deps()).find((j) => j.name === 'idempotency.retention');
+    expect(job?.everyMs).toBe(hour);
+    // At boot, so a deploy deletes the pre-LAI-534 rows that may hold secrets.
+    expect(job?.atStart).toBe(true);
   });
 
   it('runs local-activity retention daily (LAI-751)', () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ApiError } from '../../src/errors.ts';
 import { type OrgRole, type ProjectRole } from '../../src/db/enums.ts';
 import {
+  AGENT_TOKEN_ORG_ACTIONS,
   ALL_ACTIONS,
   isReadAction,
   type OrgAction,
@@ -18,8 +19,10 @@ import {
   effectiveTokenScope,
   forcedTokenScope,
   projectRoleOnJoin,
+  type AgentContext,
   type TokenContext,
 } from '../../src/policy/can.ts';
+import { PROJECT_ACTIONS } from '../../src/policy/actions.ts';
 
 function actor(
   orgRole: OrgRole,
@@ -504,6 +507,9 @@ describe('the cases LAI-004 calls out by name', () => {
       // D-103 item 5 (LAI-976): leaving a space removes their own membership
       // and writes nothing about the space's work.
       const ownMembership = action === 'project.leave';
+      // D-114 (LAI-534): registering and managing their own agents, signed
+      // in. An agent of theirs can never write more than they can.
+      const ownAgents = action === 'agent.manage_own';
 
       expect(allowed, `${action} allowed for viewer`).toBe(
         selfToken ||
@@ -515,7 +521,8 @@ describe('the cases LAI-004 calls out by name', () => {
           ownUsage ||
           ownTokenData ||
           ownTime ||
-          ownMembership,
+          ownMembership ||
+          ownAgents,
       );
     }
   });
@@ -620,5 +627,138 @@ describe('time refuses every token but where a collector or an agent acts (LAI-7
   it('gives a member no organisation switch', () => {
     expect(can(actor('member', null), 'org.time.set')).toBe(false);
     expect(can(actor('viewer', null), 'org.time.set')).toBe(false);
+  });
+});
+
+/**
+ * D-114's agent step (LAI-534): owner ∩ grant ∩ token, inside the token
+ * narrowing. Tables over the real action lists, every entry, so an action
+ * added later is decided here without anybody remembering to.
+ */
+describe('a registered agent’s token is narrowed by its grants (D-114)', () => {
+  function agent(grants: Record<string, 'full' | 'read_only'>): AgentContext {
+    return {
+      id: 'ag1',
+      displayName: 'Claude',
+      harness: 'claude-code',
+      deviceLabel: null,
+      status: 'active',
+      grants: new Map(Object.entries(grants)),
+    };
+  }
+  const legacy: TokenContext = { id: 't1', scope: 'full', projectIds: null };
+  const withAgent = (grants: Record<string, 'full' | 'read_only'>): TokenContext => ({
+    ...legacy,
+    agent: agent(grants),
+  });
+  const resource = (projectId: string) => ({
+    projectId,
+    ownerId: 'u1',
+    createdBy: 'u1',
+    visibility: 'public' as const,
+    targetOrgRole: 'member' as const,
+  });
+
+  it('in a granted full project, answers exactly as the legacy token does', () => {
+    for (const role of ['owner', 'admin', 'member'] as const) {
+      const projectRole = role === 'member' ? 'member' : null;
+      for (const action of PROJECT_ACTIONS) {
+        expect(
+          can(actor(role, projectRole, withAgent({ p1: 'full' })), action, resource('p1')),
+          `${role} / ${action}`,
+        ).toBe(can(actor(role, projectRole, legacy), action, resource('p1')));
+      }
+    }
+  });
+
+  it('in a project with no grant, refuses every project action — reads included', () => {
+    const owner = actor('owner', null, withAgent({ p1: 'full' }));
+    for (const action of PROJECT_ACTIONS) {
+      expect(can(owner, action, resource('p2')), action).toBe(false);
+    }
+  });
+
+  it('a read_only grant keeps exactly the reads the legacy token has', () => {
+    const owner = actor('owner', null, withAgent({ p1: 'read_only' }));
+    for (const action of PROJECT_ACTIONS) {
+      const expected =
+        isReadAction(action) && can(actor('owner', null, legacy), action, resource('p1'));
+      expect(can(owner, action, resource('p1')), action).toBe(expected);
+    }
+  });
+
+  it('a full grant never widens a read_only token', () => {
+    const owner = actor('owner', null, { ...withAgent({ p1: 'full' }), scope: 'read_only' });
+    for (const action of ALL_ACTIONS) {
+      if (can(owner, action, resource('p1'))) expect(isReadAction(action), action).toBe(true);
+    }
+  });
+
+  it('a full grant never widens its owner: a project viewer’s agent writes nothing', () => {
+    const viewer = actor('member', 'viewer', withAgent({ p1: 'full' }));
+    expect(can(viewer, 'task.write', resource('p1'))).toBe(false);
+    expect(can(viewer, 'project.read', resource('p1'))).toBe(true);
+  });
+
+  it('keeps only AGENT_TOKEN_ORG_ACTIONS of the org actions, for every role', () => {
+    for (const role of ['owner', 'admin', 'member', 'viewer'] as const) {
+      for (const action of ORG_ACTIONS) {
+        const res = { ownerId: 'u1', targetUserId: 'u2', visibility: 'public' as const };
+        const unpinned = can(actor(role, null, legacy), action, res);
+        expect(
+          can(actor(role, null, withAgent({ p1: 'full' })), action, res),
+          `${role} / ${action}`,
+        ).toBe(unpinned && AGENT_TOKEN_ORG_ACTIONS.has(action));
+      }
+    }
+  });
+
+  it('refuses minting or revoking a token, which would escape the grants', () => {
+    expect(AGENT_TOKEN_ORG_ACTIONS.has('token.create_own')).toBe(false);
+    expect(AGENT_TOKEN_ORG_ACTIONS.has('token.revoke_own')).toBe(false);
+    for (const action of AGENT_TOKEN_ORG_ACTIONS) {
+      expect(PINNED_TOKEN_ORG_ACTIONS.has(action), action).toBe(true);
+    }
+  });
+
+  it('a legacy token is untouched by the step', () => {
+    for (const action of ALL_ACTIONS) {
+      expect(
+        can(actor('owner', null, { ...legacy, agent: null }), action, resource('p2')),
+        action,
+      ).toBe(can(actor('owner', null, legacy), action, resource('p2')));
+    }
+  });
+
+  it('says why: agent_not_granted, agent_read_only and agent_token', () => {
+    const reasonOf = (a: Actor, action: Parameters<typeof assertCan>[1], r: object) => {
+      try {
+        assertCan(a, action, r);
+        return 'allowed';
+      } catch (err) {
+        expect(err).toBeInstanceOf(ApiError);
+        expect((err as ApiError).code).toBe('forbidden');
+        return ((err as ApiError).details as { reason?: string }).reason;
+      }
+    };
+    const owner = (grants: Record<string, 'full' | 'read_only'>) =>
+      actor('owner', null, withAgent(grants));
+
+    expect(reasonOf(owner({ p1: 'full' }), 'task.write', { projectId: 'p2' })).toBe(
+      'agent_not_granted',
+    );
+    expect(reasonOf(owner({ p1: 'read_only' }), 'task.write', { projectId: 'p1' })).toBe(
+      'agent_read_only',
+    );
+    expect(reasonOf(owner({ p1: 'full' }), 'token.create_own', {})).toBe('agent_token');
+    expect(reasonOf(owner({ p1: 'full' }), 'project.create', {})).toBe('agent_token');
+    // The owner may not either: no agent reason, because the grant is not why.
+    expect(
+      reasonOf(actor('member', 'viewer', withAgent({ p1: 'full' })), 'task.write', {
+        projectId: 'p1',
+      }),
+    ).toBe(undefined);
+    // Session-only stays session-only, said as such.
+    expect(reasonOf(owner({ p1: 'full' }), 'agent.manage_own', {})).toBe('session_required');
   });
 });

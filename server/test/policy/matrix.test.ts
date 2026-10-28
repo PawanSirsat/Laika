@@ -74,6 +74,10 @@ const ORG_MATRIX: OrgRow[] = [
   ['token.create_own', true, true, true, true],
   // | List / revoke anyone's token | ✓ | ✓ | — | — |
   ['token.list_any', true, true, false, false],
+  // D-114 (LAI-534): a person's own agents, every role — the service reaches
+  // only the caller's rows, and managing is session only.
+  ['agent.read_own', true, true, true, true],
+  ['agent.manage_own', true, true, true, true],
   ['token.revoke_any', true, true, false, false],
   // | Log own unlisted work | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
   // Every role: it is your own record about your own work, creating nothing in
@@ -352,6 +356,7 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.local_activity.prune', {}],
     ['system.estimate.refit', {}],
     ['system.time.prune', {}],
+    ['system.idempotency.prune', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
   ];

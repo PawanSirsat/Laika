@@ -5,6 +5,7 @@ import { refitEstimates } from '../services/estimates.ts';
 import { snapshot } from './backup.ts';
 import {
   expireInvites,
+  pruneIdempotencyKeys,
   expireMeetingReviews,
   flagStaleTasks,
   pruneHeartbeats,
@@ -90,6 +91,14 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
     { name: 'time.retention', everyMs: DAY, run: (now) => pruneTime(db, now), atStart: true },
     { name: 'task.stale', everyMs: DAY, run: (now) => flagStaleTasks(db, now) },
     { name: 'invite.expiry', everyMs: HOUR, run: (now) => expireInvites(db, now) },
+    // Expired keys, and the pre-LAI-534 rows that may hold secrets — once at
+    // boot so a deploy deletes those at once.
+    {
+      name: 'idempotency.retention',
+      everyMs: HOUR,
+      run: (now) => pruneIdempotencyKeys(db, now),
+      atStart: true,
+    },
     { name: 'meeting_review.expiry', everyMs: HOUR, run: (now) => expireMeetingReviews(db, now) },
     { name: 'db.vacuum', everyMs: 7 * DAY, run: () => vacuum(db) },
     // Sizes and forecasts refitted from each project's history (D-085), and

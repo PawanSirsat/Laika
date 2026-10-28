@@ -244,6 +244,7 @@ describe('last_used_at is throttled (§7.2)', () => {
       expiresAt: null,
       revokedAt: null,
       createdAt: 0,
+      agentId: null,
     };
   }
 
@@ -282,6 +283,7 @@ describe('the project whitelist errs closed', () => {
       expiresAt: null,
       revokedAt: null,
       createdAt: 0,
+      agentId: null,
     };
   }
 
