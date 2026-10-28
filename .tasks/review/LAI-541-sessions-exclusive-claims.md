@@ -221,3 +221,16 @@ All six blocking findings are fixed in new commits only, with no rebase, amend o
 | B: reclaim status check off | B4 |
 | C: sprint-delete fence off | B2b (run with `-t`; the whole file timed out under a load average of 120–150) |
 | D: owner-active check weakened | B3, owner_inactive |
+
+## Review round 2 (Codex, #107 at `98dfe7f1`: FAIL on two)
+
+1. **The heartbeat's branch write bypassed the fence.** `holdsLiveClaim` checked only the agent's identity, so a write went through with a stale generation, an overdue lease, or the generation from before a reclaim. That override is gone: the branch write passes `claimFenceRefusal` like any task write. The holder sends `X-Laika-Claim-Generation` on its beat. When the fence refuses, the beat still answers `202` and the task is untouched. Tests in `agent-sessions.test.ts`: no generation, stale generation, overdue lease with the live generation, and the old generation after reclaim each leave the branch unchanged; the new generation writes it.
+2. **The review rule let a claim exceed its owner.** The holder now answers as the assignee **only on a task with no human assignee**. On an assigned task the rule is asked of the agent's owner (D-114: never more than its owner). Tests in `claims.test.ts`, round 2: a Member's agent cannot finish another person's task it holds (the owner is refused the same move); it can finish an unassigned task it holds.
+
+**Is selecting and claiming another person's task itself allowed for a Member's agent? Yes, and it gives no more than the owner has.** Selecting needs `task.write`, which a Member holds on any task in the space, and opens a work request; the claim then takes that work request. A Member could already edit that task and move it within progress themselves. What the claim adds is that other tokens are fenced off the task; people and the assignee signed in are not. Moving it to review or done stays the assignee's, a lead's or an admin's.
+
+**Mutation checks** (each file restored, `shasum` verified):
+- E: the identity override put back in heartbeats → the three new holder-branch tests went red.
+- F: the review rule's `assigneeId === null` condition dropped → "but cannot finish it" went red.
+
+**Merge with #102:** LAI-534's `5f29601b` (now on origin, not merged here) rewrites this same branch write to `matched !== null && mayWriteBranch`, where `mayWriteBranch` is `can(task.write)` for the whole actor. The merge must keep **both** guards: `matched !== null && mayWriteBranch && claimFenceRefusal(db, actor, matched.taskId, now) === null`.
