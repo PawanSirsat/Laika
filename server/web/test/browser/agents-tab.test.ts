@@ -65,6 +65,7 @@ const project = (id: string, prefix: string, name: string) => ({
 
 const SECRET = 'lai_FirstSecretOfTheTestAgent_ZZ9';
 const ROTATED = 'lai_SecondSecretAfterRotation_QQ7';
+const laterSecret = (seq: number): string => `lai_LaterAgentSecret_${String(seq)}_KK1`;
 
 interface TokenRow {
   id: string;
@@ -162,7 +163,8 @@ function agentsApi(initial: AgentRow[] = [], over: Partial<ApiStub> = {}) {
           last_seen_at: null,
         };
         agents.unshift(agent);
-        return reply(201, { agent, token, secret: SECRET });
+        // The first registration's secret is SECRET; each later one has its own.
+        return reply(201, { agent, token, secret: seq === 1 ? SECRET : laterSecret(seq) });
       }
       return { data: agents, next_cursor: null };
     },
@@ -754,6 +756,166 @@ void describe('the Agents tab (LAI-537)', () => {
         await page.locator('.agents [role="status"]').innerText(),
         /never shown and nobody holds it/,
       );
+    } finally {
+      await h.close();
+    }
+  });
+
+  /**
+   * Hold the register POST (and, when `holdList` is armed, list reads) at the
+   * page. A held list read is **fetched at once and answered later**, so its
+   * answer is a picture of the server from before the held POST reached it —
+   * the stale read review round 3 found.
+   */
+  async function holdRequests(page: Page) {
+    let releasePost: () => void = () => undefined;
+    const postGate = new Promise<void>((done) => {
+      releasePost = done;
+    });
+    let releaseList: () => void = () => undefined;
+    const listGate = new Promise<void>((done) => {
+      releaseList = done;
+    });
+    const state = { posts: 0, holdPosts: 1, holdList: false, heldLists: 0 };
+    await page.route(
+      (url) => url.pathname === '/api/v1/agents',
+      async (route) => {
+        const method = route.request().method();
+        if (method === 'POST') {
+          state.posts += 1;
+          if (state.posts <= state.holdPosts) await postGate;
+          await route.fallback();
+          return;
+        }
+        if (method === 'GET' && state.holdList) {
+          state.heldLists += 1;
+          const answer = await route.fetch();
+          await listGate;
+          await route.fulfill({ response: answer });
+          return;
+        }
+        await route.fallback();
+      },
+    );
+    return { state, releasePost, releaseList };
+  }
+
+  async function toStep3(page: Page, name: string): Promise<void> {
+    await page.getByRole('button', { name: '+ Register an agent' }).waitFor({ timeout: 20_000 });
+    await press(page, '+ Register an agent');
+    const field = page.locator('.agents-wizard input').first();
+    await field.focus();
+    await page.keyboard.press('ControlOrMeta+A');
+    await page.keyboard.type(name);
+    await press(page, 'Continue', '.agents-wizard');
+    await page.locator('.agents-grant').first().waitFor();
+    await press(page, 'Continue', '.agents-wizard');
+  }
+
+  void test('a list read asked before a late registration answers never erases its row', async () => {
+    const api = agentsApi();
+    const h = await open('/developer?tab=agents', api.stub);
+    const { page } = h;
+    try {
+      const held = await holdRequests(page);
+      await toStep3(page, 'late bot');
+      await press(page, 'Register and create its credential');
+      await until(() => held.state.posts === 1);
+
+      // Cancel's reload is asked now — before the agent exists — and held.
+      held.state.holdList = true;
+      await press(page, 'Cancel', '.agents-wizard');
+      await page.locator('.agents-wizard').waitFor({ state: 'detached' });
+      await until(() => held.state.heldLists >= 1);
+      assert.ok(held.state.heldLists >= 1, 'the Cancel reload was never asked');
+
+      // The registration answers: the row appears, unlocked.
+      held.releasePost();
+      const row = page.locator('.agents-row[data-agent="a1"]');
+      await row.waitFor({ timeout: 15_000 });
+
+      // Then the older read lands. It must not erase the newer row.
+      held.releaseList();
+      await page.waitForTimeout(500);
+      assert.equal(await row.count(), 1, 'the older list read erased the late row');
+      assert.equal(await row.getByRole('button', { name: 'Rotate token' }).isDisabled(), false);
+      assert.equal(await row.getByRole('button', { name: 'Revoke' }).isDisabled(), false);
+      assert.match(await page.locator('.agents [role="status"]').innerText(), /late bot/);
+
+      // Rotating the unseen token is acting on the notice: it goes.
+      held.state.holdList = false;
+      await press(page, 'Rotate token', '.agents-row[data-agent="a1"]');
+      await confirmSettled(page);
+      await page.locator('[data-confirm-ok] button').click();
+      await page.locator('[data-testid="agent-secret"]').waitFor();
+      assert.equal(await page.locator('.agents [role="status"]').count(), 0, 'the notice stayed');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('registration pending, tab left and come back: the agent is listed, nothing leaks', async () => {
+    const api = agentsApi();
+    const h = await open('/developer?tab=agents', api.stub);
+    const { page } = h;
+    try {
+      const held = await holdRequests(page);
+      await toStep3(page, 'wandering bot');
+      await press(page, 'Register and create its credential');
+      await until(() => held.state.posts === 1);
+
+      await page.locator('.page-tab', { hasText: 'Projects' }).click();
+      await page.locator('[data-testid="agents-tab"]').waitFor({ state: 'detached' });
+      // It answers while nobody is looking.
+      held.releasePost();
+      await until(() => api.agents.length === 1);
+
+      await page.locator('.page-tab', { hasText: 'Agents' }).click();
+      const row = page.locator('.agents-row[data-agent="a1"]');
+      await row.waitFor({ timeout: 15_000 });
+      assert.equal(await page.locator('.agents-wizard').count(), 0);
+      assert.equal(await row.getByRole('button', { name: 'Rotate token' }).isDisabled(), false);
+      assert.deepEqual(await secretSurvives(page, SECRET), []);
+      assert.equal(await secretInReact(page, SECRET), 'clean');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('two wizard lifetimes: a late first answer leaves the second wizard alone', async () => {
+    const api = agentsApi();
+    const h = await open('/developer?tab=agents', api.stub);
+    const { page } = h;
+    try {
+      const held = await holdRequests(page);
+      // The first wizard registers and is cancelled while its request is held.
+      await toStep3(page, 'first bot');
+      await press(page, 'Register and create its credential');
+      await until(() => held.state.posts === 1);
+      await press(page, 'Cancel', '.agents-wizard');
+      await page.locator('.agents-wizard').waitFor({ state: 'detached' });
+
+      // The second registers and gets its secret first: it reaches the server
+      // first, so it is a1 and holds SECRET.
+      await toStep3(page, 'second bot');
+      await press(page, 'Register and create its credential');
+      await page.locator('[data-testid="agent-secret"]').waitFor();
+      assert.equal(await page.locator('[data-testid="agent-secret"]').innerText(), SECRET);
+
+      // Now the first answers late, as a2, with a secret nobody may see.
+      held.releasePost();
+      const late = page.locator('.agents-row[data-agent="a2"]');
+      await late.waitFor({ timeout: 15_000 });
+
+      // The second wizard is untouched: same secret, its own row still held.
+      assert.equal(await page.locator('[data-testid="agent-secret"]').innerText(), SECRET);
+      const own = page.locator('.agents-row[data-agent="a1"]');
+      assert.equal(await own.getByRole('button', { name: 'Rotate token' }).isDisabled(), true);
+      // The late one is unlocked, announced, and its secret is nowhere.
+      assert.equal(await late.getByRole('button', { name: 'Rotate token' }).isDisabled(), false);
+      assert.match(await page.locator('.agents [role="status"]').innerText(), /first bot/);
+      assert.deepEqual(await secretSurvives(page, laterSecret(2)), []);
+      assert.equal(await secretInReact(page, laterSecret(2)), 'clean');
     } finally {
       await h.close();
     }

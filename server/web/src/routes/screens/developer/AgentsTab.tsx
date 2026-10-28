@@ -14,6 +14,7 @@ import {
   getAgent,
   listAgents,
   liveToken,
+  overlayWrites,
   registerAgent,
   revokeAgent,
   mintedTokenSeen,
@@ -21,6 +22,7 @@ import {
   setAgentGrants,
   updateAgent,
   type AgentGrant,
+  type AgentWrite,
   type CreatedAgentToken,
   type RegisteredAgent,
 } from '../../../api/agents.ts';
@@ -95,17 +97,44 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
    * credential.
    */
   const [wizardAgent, setWizardAgent] = useState<string | undefined>(undefined);
-  /** An agent whose registration answered after its wizard closed. */
-  const [abandoned, setAbandoned] = useState<string | undefined>(undefined);
+  /**
+   * An agent whose registration answered after its wizard closed, and the
+   * token nobody saw. The notice about it goes once that token is replaced or
+   * the agent revoked — the reader has acted on it.
+   */
+  const [abandoned, setAbandoned] = useState<
+    { readonly id: string; readonly name: string; readonly tokenId: string | undefined } | undefined
+  >(undefined);
   const [actionError, setActionError] = useState<string | undefined>(undefined);
   const registerButton = useRef<HTMLButtonElement | null>(null);
 
+  /**
+   * **An older answer never overwrites a newer one** (review round 3). Cancel
+   * starts a reload; a registration that answers late then adds its row; and
+   * the reload, asked before that row existed, used to land last and erase
+   * it. So:
+   *
+   * - each read carries a generation, and one that lands after a newer read
+   *   has been applied is dropped;
+   * - each row the screen writes is numbered (`put`), and a read lays every
+   *   write made since it began over what it got (`overlayWrites`).
+   */
+  const readGen = useRef(0);
+  const appliedGen = useRef(0);
+  const writeSeq = useRef(0);
+  const writes = useRef(new Map<string, AgentWrite>());
+
   const reload = useCallback((signal?: AbortSignal): void => {
+    readGen.current += 1;
+    const gen = readGen.current;
+    const since = writeSeq.current;
     everyPage((cursor) =>
       listAgents(signal, cursor === undefined ? { limit: 100 } : { limit: 100, cursor }),
     )
       .then(({ items }) => {
-        setAgents(items);
+        if (gen < appliedGen.current) return;
+        appliedGen.current = gen;
+        setAgents(overlayWrites(items, writes.current.values(), since));
         setLoadError(null);
         setNow(Date.now());
       })
@@ -150,6 +179,8 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
 
   /** One agent's fresh row, folded in without refetching the list. */
   const put = (agent: RegisteredAgent): void => {
+    writeSeq.current += 1;
+    writes.current.set(agent.id, { agent, seq: writeSeq.current });
     setAgents((current) => {
       if (current === undefined) return [agent];
       const at = current.findIndex((a) => a.id === agent.id);
@@ -175,6 +206,13 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
   };
 
   const viewer = me?.org_role === 'viewer';
+
+  // The notice stands until that agent is revoked or its unseen token replaced.
+  const abandonedRow =
+    abandoned === undefined ? undefined : agents?.find((a) => a.id === abandoned.id);
+  const abandonedStands =
+    abandonedRow === undefined ||
+    (abandonedRow.status === 'active' && abandonedRow.tokens[0]?.id === abandoned?.tokenId);
 
   const revoke = (agent: RegisteredAgent): void => {
     void confirm({
@@ -248,16 +286,16 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
             // Created on the server after the wizard was gone: listed, never
             // locked, and its secret was never kept (review round 2).
             put(agent);
-            setAbandoned(agent.display_name);
+            setAbandoned({ id: agent.id, name: agent.display_name, tokenId: agent.tokens[0]?.id });
           }}
           onClose={closeWizard}
         />
       )}
 
-      {abandoned !== undefined && (
+      {abandoned !== undefined && abandonedStands && (
         <p className="agents-note" role="status">
-          “{abandoned}” was registered after you cancelled, so its credential was never shown and
-          nobody holds it. Rotate its token to get one, or revoke it.
+          “{abandoned.name}” was registered after you cancelled, so its credential was never shown
+          and nobody holds it. Rotate its token to get one, or revoke it.
         </p>
       )}
 

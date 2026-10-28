@@ -216,3 +216,34 @@ export function mintedTokenSeen(
   const after = (at: number | null): boolean => at !== null && at >= token.created_at;
   return after(minted.last_used_at) || after(minted.last_mcp_at) ? 'seen' : 'unseen';
 }
+
+/** One row the screen changed itself, numbered in the order it happened. */
+export interface AgentWrite {
+  readonly agent: RegisteredAgent;
+  readonly seq: number;
+}
+
+/**
+ * A list read with every write made **since that read began** laid over it
+ * (LAI-537 review round 3).
+ *
+ * A read is a picture of the server when it was asked. A row the screen wrote
+ * afterwards — a registration that answered late, a rotation, a revoke — is
+ * newer than that picture, so the picture must not erase or roll it back: the
+ * write replaces its row, or is added at the top when the read predates it.
+ * Writes from before the read began are already in it and are left alone.
+ */
+export function overlayWrites(
+  read: readonly RegisteredAgent[],
+  writes: Iterable<AgentWrite>,
+  since: number,
+): RegisteredAgent[] {
+  const newer = [...writes].filter((w) => w.seq > since).sort((a, b) => a.seq - b.seq);
+  const rows = [...read];
+  for (const { agent } of newer) {
+    const at = rows.findIndex((row) => row.id === agent.id);
+    if (at === -1) rows.unshift(agent);
+    else rows[at] = agent;
+  }
+  return rows;
+}

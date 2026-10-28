@@ -17,6 +17,7 @@ import {
   agentState,
   liveToken,
   mintedTokenSeen,
+  overlayWrites,
   type RegisteredAgent,
 } from '../../src/api/agents.ts';
 import type { TokenView } from '../../src/api/tokens.ts';
@@ -144,5 +145,50 @@ void describe('reading one agent', () => {
   void test('a harness the client does not know reads as other, never as itself', () => {
     assert.equal(agentHarness({ harness: 'codex' }), 'codex');
     assert.equal(agentHarness({ harness: '<script>' }), 'other');
+  });
+});
+
+void describe('overlayWrites: an older list read never erases a newer write', () => {
+  const a1 = agent({ id: 'a1', display_name: 'one' });
+  const a2 = agent({ id: 'a2', display_name: 'two' });
+
+  void test('a row written after the read began is added, though the read lacks it', () => {
+    // Review round 3: Cancel's reload was asked before the late registration
+    // existed, and used to land last and erase its row.
+    const late = agent({ id: 'a3', display_name: 'late' });
+    const rows = overlayWrites([a1, a2], [{ agent: late, seq: 5 }], 4);
+    assert.deepEqual(
+      rows.map((r) => r.id),
+      ['a3', 'a1', 'a2'],
+    );
+  });
+
+  void test('a row changed after the read began keeps its change', () => {
+    const revoked = agent({ id: 'a1', display_name: 'one', status: 'revoked' });
+    const rows = overlayWrites([a1, a2], [{ agent: revoked, seq: 2 }], 1);
+    assert.equal(rows.find((r) => r.id === 'a1')?.status, 'revoked');
+  });
+
+  void test('a write from before the read began is already in it, and left alone', () => {
+    const stale = agent({ id: 'a1', display_name: 'old name' });
+    const rows = overlayWrites([a1], [{ agent: stale, seq: 3 }], 3);
+    assert.equal(rows[0]?.display_name, 'one');
+  });
+
+  void test('several new rows land newest first', () => {
+    const x = agent({ id: 'x' });
+    const y = agent({ id: 'y' });
+    const rows = overlayWrites(
+      [a1],
+      [
+        { agent: y, seq: 7 },
+        { agent: x, seq: 6 },
+      ],
+      5,
+    );
+    assert.deepEqual(
+      rows.map((r) => r.id),
+      ['y', 'x', 'a1'],
+    );
   });
 });
