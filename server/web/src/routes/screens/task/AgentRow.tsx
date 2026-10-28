@@ -8,6 +8,7 @@ import {
   selectionErrorWords,
   selectTaskAgent,
   agentDevice,
+  type SelectedAgent,
 } from '../../../api/selected-agent.ts';
 import type { TaskSummary } from '../../../api/tasks.ts';
 import { AgentChip } from '../../../components/agent/AgentChip.tsx';
@@ -35,10 +36,22 @@ export interface AgentRowProps {
   readonly onChanged: () => void;
 }
 
-/** A selection on its way to the server, and **the task it was made on**. */
+/** A selection on its way to the server: which request, on which task. */
 interface Pending {
+  readonly req: number;
   readonly taskId: string;
   readonly agentId: string;
+}
+
+/**
+ * What the server confirmed, applied before the drawer's own read catches
+ * up — and **only against the task as it was when the write was sent**
+ * (`basis`): once the props move on, they are the truth again.
+ */
+interface Confirmed {
+  readonly taskId: string;
+  readonly agent: SelectedAgent | null;
+  readonly basis: number;
 }
 
 /**
@@ -65,25 +78,42 @@ export function AgentRow({
   myAgents: load,
   onChanged,
 }: AgentRowProps) {
-  const current = selectedAgentOf(task);
   const [pendingWrite, setPending] = useState<Pending | undefined>(undefined);
   const [errorFor, setError] = useState<{ taskId: string; words: string } | undefined>(undefined);
+  const [confirmed, setConfirmed] = useState<Confirmed | undefined>(undefined);
   /*
-   * **Everything in flight belongs to the task that started it** (LAI-538
-   * review). The drawer keeps this row mounted when it moves to another task,
-   * so a selection still on its way for the last one must neither show on
-   * this one nor block a pick here — and its answer, arriving late, must not
-   * write anything into a task the reader is no longer looking at.
+   * **Each request is its own, and only the newest one on this visit may
+   * answer** (LAI-538 review, two rounds). The drawer keeps this row mounted
+   * as it moves between tasks, so one shared slot let an old request on
+   * task A — sent before the reader went to B and came back — clear a newer
+   * selection on A and show its stale error. Every request takes a fresh id;
+   * `active` is the one this visit is waiting on, and moving to another task
+   * forgets it. An answer whose id is not `active` changes nothing.
    */
+  const nextReq = useRef(0);
+  const active = useRef<number | null>(null);
+  useEffect(() => {
+    active.current = null;
+    setPending(undefined);
+    setError(undefined);
+    setConfirmed(undefined);
+  }, [task.id]);
+
   const pending = pendingWrite?.taskId === task.id ? pendingWrite.agentId : undefined;
   const error = errorFor?.taskId === task.id ? errorFor.words : undefined;
-  const shownTask = useRef(task.id);
-  shownTask.current = task.id;
-
-  // The server caught up with the choice: stop holding it locally.
+  /*
+   * **A confirmed write shows at once**, from the PATCH's own answer, rather
+   * than waiting on the drawer's next read — a read that fails would
+   * otherwise leave the field showing the old agent for good.
+   */
+  const overlay =
+    confirmed?.taskId === task.id && confirmed.basis === task.updated_at ? confirmed : undefined;
+  const current = overlay === undefined ? selectedAgentOf(task) : overlay.agent;
+  const served = selectedAgentOf(task)?.id ?? null;
+  // The read caught up: the props say it themselves now.
   useEffect(() => {
-    if (pending !== undefined && (current?.id ?? NO_AGENT) === pending) setPending(undefined);
-  }, [current?.id, pending]);
+    if (overlay !== undefined && (overlay.agent?.id ?? null) === served) setConfirmed(undefined);
+  }, [overlay, served]);
 
   const choices = useMemo(
     () =>
@@ -103,26 +133,30 @@ export function AgentRow({
   const choose = async (id: string): Promise<void> => {
     const to = id === NO_AGENT ? null : id;
     const taskId = task.id;
-    // One write at a time **on this task**. Not by disabling the field: a
+    const basis = task.updated_at;
+    // One write at a time on this visit. Not by disabling the field: a
     // disabled button drops focus to <body>, and the reader who just chose is
     // left nowhere.
     if (pending !== undefined || to === (current?.id ?? null)) return;
+    nextReq.current += 1;
+    const req = nextReq.current;
+    active.current = req;
     setError(undefined);
-    setPending({ taskId, agentId: id });
-    // The answer is this task's. Once the drawer has moved on it is
-    // discarded — only the hold it placed on its own task is let go, so going
-    // back to that task finds it as the server has it.
-    const stillHere = (): boolean => shownTask.current === taskId;
-    const release = (): void => {
-      setPending((held) => (held?.taskId === taskId ? undefined : held));
-    };
+    setPending({ req, taskId, agentId: id });
+    const mine = (): boolean => active.current === req;
     try {
-      await selectTaskAgent(taskId, to);
-      if (stillHere()) onChanged();
-      else release();
+      const written = await selectTaskAgent(taskId, to);
+      if (!mine()) return;
+      active.current = null;
+      // Settled by the server's own answer, whatever the follow-up read does.
+      setConfirmed({ taskId, agent: selectedAgentOf(written), basis });
+      setPending(undefined);
+      onChanged();
     } catch (cause) {
-      release();
-      if (stillHere()) setError({ taskId, words: selectionErrorWords(cause) });
+      if (!mine()) return;
+      active.current = null;
+      setPending(undefined);
+      setError({ taskId, words: selectionErrorWords(cause) });
     }
   };
 
