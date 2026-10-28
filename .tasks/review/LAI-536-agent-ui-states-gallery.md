@@ -101,3 +101,7 @@ loosely (§2 step 1).
 - **Blocking 2, disabled agents unreadable:** `Dropdown` gains opt-in `reachDisabled`; `AgentPicker` uses it. Tested: the arrow lands on a disabled agent, its accessible name carries the reason, Enter and Space do not choose it.
 - **Suggestion:** `reason` is required by the type when `availability` is `unavailable` (compile-time test).
 - **Non-blocking:** screenshots of the open picker with a disabled agent active, and of each inbox filter, light/dark × 1440/390.
+
+## Review round 2 — Codex, fixed on the same branch (SHELL)
+
+- **Blocking:** a closed `Dropdown`'s Home/End ignored `reachDisabled` (`show()` filtered disabled options out of its opening pool). Now `openingOption()` in `dropdown-model.ts` honours it; flag off is unchanged and unit-tested. Browser: closed End on the picker lands on the revoked agent and Enter does not choose it.
