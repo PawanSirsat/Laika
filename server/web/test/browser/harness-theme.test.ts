@@ -85,7 +85,7 @@ void describe('a phone', () => {
 void describe('setTheme', () => {
   for (const theme of ['dark', 'light']) {
     void test(`390px, to ${theme}: the session arriving mid-click does not strand it`, async () => {
-      let release = () => {};
+      let release: () => void = () => undefined;
       const held = new Promise<void>((resolve) => (release = resolve));
       const h = await open('/organisation', STUB, {
         before: async (page) => {
