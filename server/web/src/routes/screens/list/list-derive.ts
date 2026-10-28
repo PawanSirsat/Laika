@@ -6,7 +6,15 @@ import { dateLabel, isOverdue } from '../../../api/date-only.ts';
 import { parentOf } from '../../../api/subtask-derive.ts';
 import type { Member, TaskSummary } from '../../../api/tasks.ts';
 import { sizeRank } from '../../../api/estimates.ts';
-import { agentLabel, selectedAgentOf, type SelectedAgent } from '../../../api/selected-agent.ts';
+import {
+  agentLabel,
+  agentDevice,
+  distinctDevices,
+  selectedAgentOf,
+  shownAs,
+  twinNames,
+  type SelectedAgent,
+} from '../../../api/selected-agent.ts';
 
 /**
  * One row of the List view, decided (prototype lines 166–203, `listRows` at
@@ -52,6 +60,13 @@ export interface ListRow {
   readonly agent: SelectedAgent | null;
   /** *Claude Code · laptop-1*, or empty: the sort reads this. */
   readonly agentLabel: string;
+  /** The device the agent reported, before any telling-apart: *laptop-1*. */
+  readonly agentPlace: string;
+  /**
+   * What tells this agent from another here with its harness and device —
+   * *polly workers* — or undefined when nothing collides (LAI-583).
+   */
+  readonly agentTwin: string | undefined;
   /** `S2`, or empty when the task is in no sprint. */
   readonly sprintTag: string;
   /** The task's tags, joined as the design joins them. */
@@ -158,6 +173,17 @@ export function listRows({
   statuses = [],
 }: ListRowInput): readonly ListRow[] {
   const byStatusId = new Map(statuses.map((s) => [s.id, s]));
+  // Two agents on these tasks that share a harness and a device are told apart (LAI-583).
+  const selected = tasks.flatMap((task) => {
+    const agent = selectedAgentOf(task);
+    return agent === null ? [] : [agent];
+  });
+  const devices = distinctDevices(selected);
+  const twins = twinNames(selected);
+  const agentOf = (task: TaskSummary): SelectedAgent | null => {
+    const agent = selectedAgentOf(task);
+    return agent === null ? null : shownAs(agent, devices);
+  };
   return tasks.map((task) => {
     const member = task.assignee_id === null ? undefined : members.get(task.assignee_id);
     const blocked = blockedState(task, byId) === true;
@@ -190,10 +216,18 @@ export function listRows({
       assigned: member !== undefined,
       assigneeId: task.assignee_id ?? '',
       initials: member === undefined ? '—' : initialsOf(member.name),
-      agent: selectedAgentOf(task),
+      agent: agentOf(task),
       agentLabel: (() => {
-        const agent = selectedAgentOf(task);
+        const agent = agentOf(task);
         return agent === null ? '' : agentLabel(agent);
+      })(),
+      agentPlace: (() => {
+        const agent = selectedAgentOf(task);
+        return agent === null ? '' : agentDevice(agent);
+      })(),
+      agentTwin: (() => {
+        const agent = selectedAgentOf(task);
+        return agent === null ? undefined : twins.get(agent.id);
       })(),
       sprintTag: task.sprint_id === null ? '' : (sprintLabels.get(task.sprint_id)?.label ?? ''),
       labels: task.tags.join(', '),

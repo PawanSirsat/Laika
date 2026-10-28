@@ -22,6 +22,8 @@ import {
   agentVia,
   AVAILABLE_WITHIN_MS,
   describeAgentSelected,
+  devicesOnTasks,
+  distinctDevices,
   ineligibleReason,
   matchesAgentFilter,
   pickerChoices,
@@ -286,6 +288,86 @@ void describe('who an agent’s row says acted', () => {
     assert.equal(
       agentVia({ actor_kind: 'agent', agent_id: null }, names),
       'agent (unregistered token)',
+    );
+  });
+});
+
+/*
+ * **Two agents that share a harness and a device can be told apart**
+ * (LAI-583). Measured live in LAI-582: the label is `harness · device`, so two
+ * Claude Code agents on Belka read the same on the card, in the picker, in the
+ * List and in History. D-118 keeps that name; only a collision adds the name
+ * the owner registered.
+ */
+void describe('two agents that share a harness and a device', () => {
+  const polly = registered({ id: 'ag-0001', display_name: 'polly workers', device_label: 'Belka' });
+  const direct = registered({ id: 'ag-0002', display_name: 'by hand', device_label: 'Belka' });
+  const strelka = registered({ id: 'ag-0003', display_name: 'x', device_label: 'Strelka' });
+
+  void test('alone, an agent is its harness and device; a pair gets its registered name', () => {
+    const devices = distinctDevices([polly, direct, strelka]);
+    assert.equal(devices.get('ag-0001'), 'Belka (polly workers)');
+    assert.equal(devices.get('ag-0002'), 'Belka (by hand)');
+    assert.equal(devices.get('ag-0003'), 'Strelka');
+    assert.equal(distinctDevices([polly]).get('ag-0001'), 'Belka');
+  });
+
+  void test('a name that adds nothing falls back to the id, so the pair still differs', () => {
+    const a = registered({
+      id: 'ag-aaaa',
+      display_name: 'Claude Code · Belka',
+      device_label: 'Belka',
+    });
+    const b = registered({
+      id: 'ag-bbbb',
+      display_name: 'Claude Code · Belka',
+      device_label: 'Belka',
+    });
+    const devices = distinctDevices([a, b]);
+    assert.equal(devices.get('ag-aaaa'), 'Belka (aaaa)');
+    assert.equal(devices.get('ag-bbbb'), 'Belka (bbbb)');
+  });
+
+  void test('the same agent listed twice is not a collision', () => {
+    assert.equal(distinctDevices([polly, { ...polly }]).get('ag-0001'), 'Belka');
+  });
+
+  void test('the picker, the filter, the cards and History all tell them apart', () => {
+    const rows = pickerChoices({
+      agents: [polly, direct],
+      ownerName: 'Pawan',
+      projectId: 'p1',
+      agentsAllowed: true,
+      current: null,
+      now: NOW,
+    });
+    assert.deepEqual(rows.map((r) => r.device).sort(), [
+      'Belka (by hand)',
+      'Belka (polly workers)',
+    ]);
+
+    const onPolly = { selected_agent: selected({ ...polly, id: 'ag-0001' }) };
+    const onDirect = { selected_agent: selected({ ...direct, id: 'ag-0002' }) };
+    assert.deepEqual(agentsOnTasks([onPolly, onDirect]).map(agentLabel), [
+      'Claude Code · Belka (by hand)',
+      'Claude Code · Belka (polly workers)',
+    ]);
+    const board = new Map([
+      ['t1', onPolly],
+      ['t2', onDirect],
+    ]);
+    assert.equal(devicesOnTasks(board).get('ag-0001'), 'Belka (polly workers)');
+    assert.equal(devicesOnTasks(board), devicesOnTasks(board), 'kept per board, not per card');
+
+    // History: one is on a task, the other is only the reader's own.
+    const names = agentNamesFrom([direct], [onPolly]);
+    assert.equal(
+      agentVia({ actor_kind: 'agent', agent_id: 'ag-0001' }, names),
+      'Claude Code · Belka (polly workers)',
+    );
+    assert.equal(
+      agentVia({ actor_kind: 'agent', agent_id: 'ag-0002' }, names),
+      'Claude Code · Belka (by hand)',
     );
   });
 });

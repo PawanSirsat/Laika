@@ -8,6 +8,8 @@ import {
   selectionErrorWords,
   selectTaskAgent,
   agentDevice,
+  distinctDevices,
+  shownAs,
   type SelectedAgent,
 } from '../../../api/selected-agent.ts';
 import { getTask, type TaskSummary } from '../../../api/tasks.ts';
@@ -165,6 +167,22 @@ export function AgentRow({
     if (retired) setConfirmed(undefined);
   }, [retired]);
 
+  /** The current agent as the picker names it: told apart from another of the reader's (LAI-583). */
+  const shown = useMemo(
+    () =>
+      current === null
+        ? null
+        : shownAs(
+            current,
+            distinctDevices(
+              load.kind === 'ready'
+                ? [...load.agents.filter((a) => a.status !== 'revoked'), current]
+                : [current],
+            ),
+          ),
+    [current, load],
+  );
+
   const choices = useMemo(
     () =>
       load.kind === 'ready'
@@ -278,13 +296,13 @@ export function AgentRow({
               <span className="meta-muted" role="status">
                 Loading your agents…
               </span>
-            ) : current === null ? (
+            ) : shown === null ? (
               <span className="meta-muted">No agent</span>
             ) : (
               <AgentChip
-                client={selectedHarness(current)}
-                device={agentDevice(current)}
-                owner={current.owner.name}
+                client={selectedHarness(shown)}
+                device={agentDevice(shown)}
+                owner={shown.owner.name}
               />
             )}
           </div>
@@ -311,7 +329,7 @@ export function AgentRow({
         cardExecutionState({ status: task.status, selected_agent: current }) !== null && (
           <ExecutionStateLine
             state="waiting_for_agent"
-            detail={`${current.owner.name}’s ${agentLabel(current)}`}
+            detail={`${current.owner.name}’s ${agentLabel(shown ?? current)}`}
           />
         )}
 

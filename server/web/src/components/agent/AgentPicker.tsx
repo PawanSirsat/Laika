@@ -43,8 +43,14 @@ export interface AgentPickerProps {
   readonly disabled?: boolean | undefined;
 }
 
+/**
+ * *Claude Code · laptop-1 — Ada Lovelace*: the agent's name first (D-118), so
+ * a narrow list cuts the owner, never the part that tells two agents apart
+ * (LAI-583 — with the owner first, two Claude Code agents on one laptop both
+ * read *Claude Code — Ada Lovelace · laptop-…*).
+ */
 export function choiceLabel(agent: AgentChoice): string {
-  return `${agentClientName(agent.client)} — ${agent.owner} · ${agent.device}`;
+  return `${agentClientName(agent.client)} · ${agent.device} — ${agent.owner}`;
 }
 
 /** What the option says after its label: the availability, or the reason it is out. */

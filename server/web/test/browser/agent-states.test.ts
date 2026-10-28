@@ -212,11 +212,11 @@ void describe('agent states on /design/states (LAI-536)', () => {
       );
       assert.deepEqual(options, [
         { text: 'No agent Human only', disabled: false },
-        { text: 'Claude Code — Ada Okafor · laptop-1 Available', disabled: false },
-        { text: 'Codex — Ada Okafor · desktop-2 Offline', disabled: false },
-        { text: 'Cursor — Sam Reyes · studio-mac Available', disabled: false },
-        { text: 'Gemini CLI — Ada Okafor · ci-runner Not granted on this space', disabled: true },
-        { text: 'OpenCode — Sam Reyes · old-laptop Revoked', disabled: true },
+        { text: 'Claude Code · laptop-1 — Ada Okafor Available', disabled: false },
+        { text: 'Codex · desktop-2 — Ada Okafor Offline', disabled: false },
+        { text: 'Cursor · studio-mac — Sam Reyes Available', disabled: false },
+        { text: 'Gemini CLI · ci-runner — Ada Okafor Not granted on this space', disabled: true },
+        { text: 'OpenCode · old-laptop — Sam Reyes Revoked', disabled: true },
       ]);
       // Down from Claude Code lands on Codex; Enter takes it.
       await h.page.keyboard.press('ArrowDown');
@@ -272,7 +272,7 @@ void describe('agent states on /design/states (LAI-536)', () => {
       assert.equal(await (await active()).getAttribute('data-value'), 'ag-old');
       assert.match(
         (await (await active()).innerText()).replace(/\s+/g, ' '),
-        /OpenCode — Sam Reyes · old-laptop Revoked/,
+        /OpenCode · old-laptop — Sam Reyes Revoked/,
       );
       await h.page.keyboard.press('Space');
       await h.page.waitForTimeout(150);

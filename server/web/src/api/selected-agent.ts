@@ -59,6 +59,87 @@ export function agentLabel(
   return `${agentProductName(agent)} · ${agentDevice(agent)}`;
 }
 
+// ------------------------------------------------------------------ telling two apart
+
+/** What naming an agent apart from another takes: its id as well. */
+type Peer = Pick<SelectedAgent, 'id' | 'harness' | 'display_name' | 'device_label'>;
+
+/**
+ * **The device each agent shows, told apart only where two collide**
+ * (LAI-583). D-118 names an agent `<harness> · <device>` — *Claude Code ·
+ * Belka* — and that is what every screen shows. When two of the agents a
+ * screen holds share both, each gets the name its owner registered after the
+ * device: *Belka (polly workers)*. If that name says nothing more — it is the
+ * label itself, the device, or another of the pair's name — the id's last
+ * four characters do it instead, so two agents never read the same.
+ *
+ * By id, for every agent given. An agent listed twice is one agent.
+ */
+export function distinctDevices(agents: Iterable<Peer>): ReadonlyMap<string, string> {
+  const all = [...agents];
+  const twins = twinNames(all);
+  return new Map(
+    all.map((agent) => {
+      const twin = twins.get(agent.id);
+      const device = agentDevice(agent);
+      return [agent.id, twin === undefined ? device : `${device} (${twin})`] as const;
+    }),
+  );
+}
+
+/**
+ * Just the words that tell a colliding agent apart — *polly workers* — by id,
+ * and only for agents that collide. The List shows these where its narrow
+ * cell would cut the device's tail off.
+ */
+export function twinNames(agents: Iterable<Peer>): ReadonlyMap<string, string> {
+  const byId = new Map<string, Peer>();
+  for (const agent of agents) byId.set(agent.id, agent);
+  const groups = new Map<string, Peer[]>();
+  for (const agent of byId.values()) {
+    const key = agentLabel(agent).toLowerCase();
+    groups.set(key, [...(groups.get(key) ?? []), agent]);
+  }
+  const out = new Map<string, string>();
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    for (const agent of group) {
+      const name = agent.display_name.trim();
+      const same = (text: string): boolean => text.toLowerCase() === name.toLowerCase();
+      const plain =
+        name === '' ||
+        same(agentLabel(agent)) ||
+        same(agentDevice(agent)) ||
+        group.some((other) => other.id !== agent.id && same(other.display_name.trim()));
+      out.set(agent.id, plain ? agent.id.slice(-4) : name);
+    }
+  }
+  return out;
+}
+
+/** `agent` with the device {@link distinctDevices} gave it, so every label built from it agrees. */
+export function shownAs<T extends Peer>(agent: T, devices: ReadonlyMap<string, string>): T {
+  const device = devices.get(agent.id);
+  return device === undefined || device === agentDevice(agent)
+    ? agent
+    : { ...agent, device_label: device };
+}
+
+/**
+ * The devices for the agents selected on a set of tasks — the board's
+ * cards. Kept per map, since every card asks of the same one.
+ */
+const onTasks = new WeakMap<object, ReadonlyMap<string, string>>();
+export function devicesOnTasks(
+  tasks: ReadonlyMap<string, Pick<TaskSummary, 'selected_agent'>>,
+): ReadonlyMap<string, string> {
+  const known = onTasks.get(tasks);
+  if (known !== undefined) return known;
+  const devices = distinctDevices(selectedOn([...tasks.values()]));
+  onTasks.set(tasks, devices);
+  return devices;
+}
+
 /** A task's selected agent; a view served before LAI-535 carries none. */
 export function selectedAgentOf(task: Pick<TaskSummary, 'selected_agent'>): SelectedAgent | null {
   return task.selected_agent ?? null;
@@ -220,16 +301,18 @@ export function pickerChoices(input: {
   readonly now: number;
 }): readonly PickerChoice[] {
   const { agents, ownerName, projectId, agentsAllowed, current, now } = input;
+  // Told apart among what the picker lists (LAI-583).
+  const listed = agents.filter((a) => a.status !== 'revoked' || a.id === current?.id);
+  const devices = distinctDevices(current === null ? listed : [...listed, current]);
   const rows: PickerChoice[] = [];
-  for (const agent of agents) {
-    if (agent.status === 'revoked' && agent.id !== current?.id) continue;
+  for (const agent of listed) {
     const refusal = ineligibleReason(agent, projectId, agentsAllowed);
     const view = { harness: agent.harness, display_name: agent.display_name };
     const base = {
       id: agent.id,
       client: selectedHarness(view),
       owner: ownerName,
-      device: agentDevice(agent),
+      device: devices.get(agent.id) ?? agentDevice(agent),
     };
     rows.push(
       refusal === undefined
@@ -250,7 +333,7 @@ export function pickerChoices(input: {
       id: current.id,
       client: selectedHarness(current),
       owner: current.owner.name,
-      device: agentDevice(current),
+      device: devices.get(current.id) ?? agentDevice(current),
       availability: 'unavailable',
       reason:
         current.status === 'revoked' ? INELIGIBLE_SHORT.agent_revoked : 'Another member’s agent',
@@ -285,12 +368,22 @@ export function matchesAgentFilter(
 export function agentsOnTasks(
   tasks: readonly Pick<TaskSummary, 'selected_agent'>[],
 ): readonly SelectedAgent[] {
+  const seen = selectedOn(tasks);
+  // Two that share a harness and a device are told apart (LAI-583).
+  const devices = distinctDevices(seen);
+  return seen
+    .map((agent) => shownAs(agent, devices))
+    .sort((a, b) => agentLabel(a).localeCompare(agentLabel(b)));
+}
+
+/** Each agent selected on `tasks`, once, as the server sent it. */
+function selectedOn(tasks: readonly Pick<TaskSummary, 'selected_agent'>[]): SelectedAgent[] {
   const seen = new Map<string, SelectedAgent>();
   for (const task of tasks) {
     const agent = selectedAgentOf(task);
     if (agent !== null && !seen.has(agent.id)) seen.set(agent.id, agent);
   }
-  return [...seen.values()].sort((a, b) => agentLabel(a).localeCompare(agentLabel(b)));
+  return [...seen.values()];
 }
 
 /** The filter's chip and the List's empty state: `Agent: Claude Code · laptop-1`. */
@@ -321,10 +414,12 @@ export function agentNamesFrom(
   own: readonly Pick<RegisteredAgent, 'id' | 'harness' | 'display_name' | 'device_label'>[],
   tasks: readonly Pick<TaskSummary, 'selected_agent'>[],
 ): ReadonlyMap<string, AgentNaming> {
-  const names = new Map<string, AgentNaming>();
-  for (const agent of agentsOnTasks(tasks)) names.set(agent.id, agent);
+  const names = new Map<string, Peer>();
+  for (const agent of selectedOn(tasks)) names.set(agent.id, agent);
   for (const agent of own) names.set(agent.id, agent);
-  return names;
+  // Told apart across both sources, so History never names two agents alike (LAI-583).
+  const devices = distinctDevices(names.values());
+  return new Map([...names].map(([id, agent]) => [id, shownAs(agent, devices)] as const));
 }
 
 /** What an agent-written row says after the person: an agent we can name, or what we know. */
