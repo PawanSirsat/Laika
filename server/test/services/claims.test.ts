@@ -12,7 +12,9 @@ import {
   users,
 } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
+import { newId } from '../../src/db/ids.ts';
 import { registerAgent, revokeAgent, setAgentGrants } from '../../src/services/agents.ts';
+import { addMember } from '../../src/services/projects.ts';
 import {
   configureClaims,
   DEFAULT_CLAIM_TIMINGS,
@@ -744,5 +746,79 @@ describe('LAI-541 review: the bypasses, each closed', () => {
     expect(rows(id, 'task.claim_expired')).toEqual([]);
     t.sqlite.exec('DROP TRIGGER no_expiry_rows');
     expect(expireClaims(t.db, T0 + LEASE).changed).toBe(1);
+  });
+});
+
+describe('LAI-541 review round 2: an agent is never more than its owner on the review rule', () => {
+  /** A Member of the project — not a lead, not an admin — with a fully granted agent of their own. */
+  function memberWithAgent() {
+    const id = newId();
+    t.db
+      .insert(users)
+      .values({
+        id,
+        email: `member-${id}@example.test`,
+        name: 'Member',
+        orgRole: 'member',
+        createdAt: new Date(T0),
+        updatedAt: new Date(T0),
+      })
+      .run();
+    addMember(t.db, owner, 'laika', id, 'member', T0);
+    const member = loadActor(t.db, id)!;
+    const created = registerAgent(t.sqlite, t.db, member, {
+      displayName: 'Member’s agent',
+      harness: 'claude-code',
+      grants: [{ projectId: s.projectId, scope: 'full' }],
+    });
+    return {
+      member,
+      agentId: created.agent.id,
+      agent: resolveTokenActor(t.db, created.secret, T0),
+    };
+  }
+
+  it('a Member’s agent may select itself onto and claim another person’s task — as its owner could edit it', () => {
+    const m = memberWithAgent();
+    const id = task();
+    updateTask(t.db, owner, id, { assignee_id: owner.userId, now: T0 });
+    // Selecting needs task.write, which a Member holds; it opens a work request.
+    updateTask(t.db, m.member, id, { selected_agent_id: m.agentId, now: T0 });
+
+    const started = startWorking(t.sqlite, t.db, m.agent, id, { now: T0 });
+
+    expect(started.claim?.generation).toBe(1);
+    expect(started.task.assignee_id).toBe(owner.userId);
+  });
+
+  it('but cannot finish it: the rule is asked of the owner, who is neither its assignee nor a lead', () => {
+    const m = memberWithAgent();
+    const id = task();
+    updateTask(t.db, owner, id, { assignee_id: owner.userId, now: T0 });
+    updateTask(t.db, m.member, id, { selected_agent_id: m.agentId, now: T0 });
+    startWorking(t.sqlite, t.db, m.agent, id, { now: T0 });
+
+    // The owner, a Member, is refused this move on someone else's task…
+    expect(refusal(() => changeStatus(t.db, m.member, id, 'review', T0 + MIN))).toEqual({
+      code: 'forbidden',
+      reason: undefined,
+    });
+    // …and so is the agent, claim or no claim.
+    expect(
+      refusal(() =>
+        finishTask(t.sqlite, t.db, at(m.agent, 1), id, { summary: 'Done', now: T0 + MIN }),
+      ),
+    ).toEqual({ code: 'forbidden', reason: undefined });
+    expect(t.db.select().from(tasks).where(eq(tasks.id, id)).get()?.status).toBe('in_progress');
+  });
+
+  it('and can finish an unassigned task it holds: there the holder answers as the assignee', () => {
+    const m = memberWithAgent();
+    const id = task();
+    startWorking(t.sqlite, t.db, m.agent, id, { now: T0 });
+
+    expect(
+      finishTask(t.sqlite, t.db, at(m.agent, 1), id, { summary: 'Done', now: T0 + MIN }),
+    ).toMatchObject({ status: 'review', assignee_id: null });
   });
 });

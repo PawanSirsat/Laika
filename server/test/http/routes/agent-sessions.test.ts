@@ -826,7 +826,7 @@ describe('the census: every mounted mutating route is fenced or named', () => {
     });
   }
 
-  it(`${BRANCH_WRITE}: a sibling agent and a legacy token cannot rewrite a claimed task’s branch; its holder can`, async () => {
+  async function branchFixture() {
     const f = await fixture();
     await ok(
       await req('/api/v1/projects/alpha', json('PATCH', { repo: 'acme/alpha' }), {
@@ -834,15 +834,67 @@ describe('the census: every mounted mutating route is fenced or named', () => {
       }),
     );
     const branchOf = () => h.db.select().from(tasks).where(eq(tasks.id, f.taskId)).get()?.branch;
+    const beat = (secret: string, branch: string, generation?: number) =>
+      req(
+        '/api/v1/heartbeats',
+        json('POST', { repo: 'acme/alpha', branch: `${f.key.toLowerCase()}-${branch}` }),
+        { bearer: secret, ...(generation === undefined ? {} : { generation }) },
+      );
+    return { f, branchOf, beat };
+  }
+
+  it(`${BRANCH_WRITE}: a sibling agent and a legacy token cannot rewrite a claimed task’s branch; its holder can, with its generation`, async () => {
+    const { f, branchOf, beat } = await branchFixture();
     const before = branchOf();
-    const beat = (secret: string, branch: string) =>
-      req('/api/v1/heartbeats', json('POST', { repo: 'acme/alpha', branch }), { bearer: secret });
 
     for (const secret of [f.siblingSecret, f.bobLegacy]) {
-      expect((await beat(secret, `${f.key.toLowerCase()}-hijack`)).status).toBe(202);
+      expect((await beat(secret, 'hijack')).status).toBe(202);
       expect(branchOf()).toBe(before);
     }
-    expect((await beat(f.agentSecret, `${f.key.toLowerCase()}-mine`)).status).toBe(202);
+    expect((await beat(f.agentSecret, 'mine', 1)).status).toBe(202);
     expect(branchOf()).toBe(`${f.key.toLowerCase()}-mine`);
+  });
+
+  it(`${BRANCH_WRITE}: the holder with no generation or a stale one writes nothing — the beat still lands`, async () => {
+    const { f, branchOf, beat } = await branchFixture();
+    const before = branchOf();
+
+    for (const generation of [undefined, 2]) {
+      expect((await beat(f.agentSecret, 'stale', generation)).status).toBe(202);
+      expect(branchOf()).toBe(before);
+    }
+  });
+
+  it(`${BRANCH_WRITE}: the holder whose lease is overdue writes nothing, even with the live generation`, async () => {
+    const { f, branchOf, beat } = await branchFixture();
+    const before = branchOf();
+    // Lapsed, not yet scanned: the fence's own lapse test refuses it.
+    h.db
+      .update(taskClaims)
+      .set({ leaseExpiresAt: Date.now() - 1 })
+      .where(eq(taskClaims.taskId, f.taskId))
+      .run();
+
+    expect((await beat(f.agentSecret, 'overdue', 1)).status).toBe(202);
+    expect(branchOf()).toBe(before);
+  });
+
+  it(`${BRANCH_WRITE}: after a reclaim the old generation writes nothing; the new one does`, async () => {
+    const { f, branchOf, beat } = await branchFixture();
+    const before = branchOf();
+    expect(expireClaims(h.db, Date.now() + LEASE + 1).changed).toBe(1);
+    const reclaimed = await ok(
+      await req(
+        `/api/v1/tasks/${f.taskId}/claim/reclaim`,
+        { method: 'POST' },
+        { bearer: f.agentSecret },
+      ),
+    );
+    expect(reclaimed).toMatchObject({ from_generation: 1, claim: { generation: 2 } });
+
+    expect((await beat(f.agentSecret, 'old', 1)).status).toBe(202);
+    expect(branchOf()).toBe(before);
+    expect((await beat(f.agentSecret, 'new', 2)).status).toBe(202);
+    expect(branchOf()).toBe(`${f.key.toLowerCase()}-new`);
   });
 });
