@@ -201,3 +201,37 @@ restored and its checksum matched.
 
 **The full gate is owed at this head**; only the touched tests, lint and
 format were run, because the machine is under heavy load.
+
+## Review round 3 (Codex FAIL on 7bbc3f12; round-2 fixes confirmed)
+
+**An older list read erasing a newer row.** Cancel starts a reload. When the
+late registration then added its row, the reload — asked before that agent
+existed — landed last and replaced the list, so the row (with its Rotate and
+Revoke) vanished while the notice stayed.
+
+Now:
+- every row the screen writes is numbered;
+- a list read lays every write made since it began over what it got
+  (`overlayWrites` in `api/agents.ts`, unit-tested);
+- a read that lands after a newer read has been applied is dropped.
+
+*Proved:* the new browser test fetches Cancel's reload at once but answers it
+only after the late registration has landed; the row stays, with Rotate and
+Revoke. With the overlay removed, the row is erased and the test goes red;
+the file was restored and its checksum matched. *Not separately tested:* the
+generation drop for two crossing reads.
+
+**Also done (non-blocking):**
+- The "registered after you cancelled" notice goes once that agent's unseen
+  token is replaced or the agent revoked. Tested; it goes red with the
+  clearing removed.
+- New tests:
+  - registration pending, tab left, the answer arrives, tab revisited: the
+    agent is listed and unlocked, and the secret leaks nowhere;
+  - two wizard lifetimes: a late answer from the first leaves the second's
+    secret and its row lock alone, and its own secret is nowhere.
+- *Limit:* if the answer arrives after the tab has been left and not yet
+  revisited, nothing on screen says so; the agent appears on the next load.
+
+**The full gate is owed at this head**; only the touched tests, typecheck,
+lint and format were run.
