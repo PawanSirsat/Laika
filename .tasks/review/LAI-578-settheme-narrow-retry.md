@@ -33,7 +33,7 @@ the control between choosing it and acting on it.
 - [x] Breaking the fix on purpose turns the new test red.
 - [x] The repo gate (`pnpm test`, `pnpm lint`, `pnpm format`) exits 0.
 
-## Build notes (SHELL, 2026-10-29)
+## Build notes (SHELL, 2026-10-28)
 
 - `test/browser/harness.ts`: `setTheme` holds the chosen control as an
   `ElementHandle`. `replacedDuring(control, act)` retries only if `act`
