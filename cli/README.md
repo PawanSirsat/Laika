@@ -622,11 +622,34 @@ explicit reclaim.
 carries an `Idempotency-Key` written to the state file before the first
 attempt, and every retry of it — in the same hook or the next — sends the same
 key, so a start whose answer was lost after the board made the session gets
-that session back (the board replays a keyed `POST` for 24 h, SPEC §6.3).
+that session back (the board replays a keyed `POST` for 24 h, SPEC §6.3). **A
+success whose body did not arrive whole, or names no valid session, is the same
+ambiguous case**: retried with the key, never taken as done. Concurrent starts
+take a lock *before* reading the state, so a second starter waits and then
+finds the first one's session.
 
 **The token** is sent as a header and handed to background children on stdin.
 It is never in argv, a child's environment, a state file
 (`~/.laika/agent-sessions/`, 0600), the helper log, or hook output.
+
+**Every subprocess the helper starts**, and the environment each gets:
+
+| Subprocess | Started by | Environment |
+| --- | --- | --- |
+| `ps -o ppid=,stat=,lstart=,comm= -p <pid>` | the liveness check and the harness walk | a fixed `PATH=/usr/bin:/bin:/usr/sbin:/sbin`, `LC_ALL=C`, `LANG=C`, and nothing of the caller's |
+| `node agent-main.(ts\|js) _watch <harness> <id>` | `SessionStart`, and a hook restarting a dead watcher | an allowlist: `HOME`, `PATH`, `TMPDIR`, `LANG`, `LC_ALL`, `LAIKA_AGENT_HEARTBEAT_SECONDS`; the credential on stdin |
+| `node agent-main.(ts\|js) _end <harness> <id>` | `SessionEnd` | the same allowlist; the credential on stdin |
+
+**A zombie is dead.** A harness that has exited but not yet been reaped keeps
+its PID and start time. The liveness check also reads the process state, and
+`Z`, `X` or an exiting `E` count as gone.
+
+**What reaches the model is checked.** The session id must be a ULID, or it is
+not repeated. A lost claim is named only when its ids are ULIDs, its generation
+is a positive integer, and its state is `paused`, `released`, `expired` or
+`transferred`; anything else is dropped. At most three are named, quoted, in a
+line that says they are board data rather than instructions, and a hook's whole
+context is capped at 1,200 characters.
 
 ### Harness capability matrix
 
@@ -645,7 +668,7 @@ code.claude.com/docs/en/hooks, learn.chatgpt.com/docs/hooks.
 | `UserPromptSubmit` / `PostToolUse` backstop | Documented-not-tested (installed and run by `claude -p`; no observable effect when the session is live) | Documented-not-tested |
 | Inject at `PostToolUse` / `UserPromptSubmit` (lost-claim notice) | Documented-not-tested (the output is unit-tested, not shown to a real model) | Documented-not-tested |
 | `SessionEnd` ends the session | Verified-and-tested (`end_reason: ended`) | Documented-not-tested (advisory, best-effort: a missed end leaves the claim to expire) |
-| Renewal stops when the harness dies | Verified-and-tested with a fake harness named `claude` killed mid-session (`agent-session-e2e.test.ts`) | same test (the logic does not depend on the harness) |
+| Renewal stops when the harness dies | Verified-and-tested with a fake harness named `claude` killed mid-session (`agent-session-e2e.test.ts`) | Documented-not-tested. The engine is shared and that test covers it, but that is evidence about the shared code, **not certification of Codex**: no Codex process was killed |
 | Headless | Verified-and-tested (`claude -p --settings`) | Unverified: `codex exec` needs hook trust, given only interactively in `/hooks` or by `--dangerously-bypass-hook-trust`, which this run was not permitted to use |
 
 What is **not** guaranteed: a harness that exits without firing `SessionEnd`
