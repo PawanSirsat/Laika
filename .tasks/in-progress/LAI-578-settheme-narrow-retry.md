@@ -2,11 +2,12 @@
 id: LAI-578
 title: 'web: setTheme retries only when the session replaced its control, and propagates every other failure'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
+started: 2026-10-28T18:29:15Z
 discovered-from: LAI-576
-status: backlog
+status: in-progress
 ---
 
 ## Goal
