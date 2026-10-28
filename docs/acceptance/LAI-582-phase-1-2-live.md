@@ -354,7 +354,11 @@ re-running the installer.
 All against production, from Belka:
 
 - Playwright (the browser plugin's Chrome, signed in by Pawan) for every UI
-  step; screenshots at 1440 × 900 and 390 × 844, light and dark.
+  step. The Agents list, the drawer's Agent field, the List filter and Claim
+  expired are captured light and dark at 1440 × 900 and 390 × 844; the board
+  chip and the claimed drawer light and dark at 1440; the wizard steps, rename,
+  access, rotate, revoke and accept screens light at 1440 only. Themes were set
+  through `data-theme` for the capture.
 - `curl` with header files (`-H @file`, 0600) for REST, so no token reached a
   command line; a small JSON-RPC script for MCP `tools/call`.
 - `laika agent login claude-code|codex` (exit 0, 0), `laika agent session
