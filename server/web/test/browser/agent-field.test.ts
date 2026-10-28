@@ -500,16 +500,47 @@ void describe('the drawer’s Agent row', () => {
     }
   });
 
+  // **Reached, read and refused** (LAI-536's reviewed rule, WAI-ARIA APG
+  // combobox; decided for the integration of LAI-536 and LAI-538): a disabled
+  // agent is not stepped over — the keys reach it so its reason is announced —
+  // and it cannot be chosen. The agent above it still can.
   void test('a disabled agent cannot be taken by the keyboard either', async () => {
     const { stub } = world();
     const h = await open('/board?project=laika-core&task=t1', stub);
     try {
       const box = await agentBox(h);
+      const before = await box.getAttribute('data-value');
+      const active = async () => {
+        const id = await box.getAttribute('aria-activedescendant');
+        assert.ok(id !== null, 'nothing is active');
+        return h.page.locator(`[id="${id}"]`);
+      };
       await box.focus();
       await h.page.keyboard.press('ArrowDown');
       await until(async () => (await box.getAttribute('aria-expanded')) === 'true');
-      // Past the last pickable agent, as far as the keys go.
+      // Past the last pickable agent, as far as the keys go: the read-only one.
       for (let i = 0; i < 6; i += 1) await h.page.keyboard.press('ArrowDown');
+      const last = await active();
+      assert.equal(await last.getAttribute('data-value'), 'ag-ro');
+      assert.equal(await last.getAttribute('aria-disabled'), 'true');
+      assert.match(
+        (await last.innerText()).replace(/\s+/g, ' '),
+        /Read-only on this space/,
+        'the reason is not read with it',
+      );
+      // Enter there chooses nothing: no request, the field unchanged, still open.
+      await h.page.keyboard.press('Enter');
+      await h.page.waitForTimeout(150);
+      assert.deepEqual(patches(h, 't1'), [], 'the read-only agent was sent');
+      assert.equal(await box.getAttribute('data-value'), before);
+      assert.equal(await box.getAttribute('aria-expanded'), 'true');
+      // Home and End reach the ends, End the disabled one as well.
+      await h.page.keyboard.press('Home');
+      assert.equal(await (await active()).getAttribute('data-value'), '');
+      await h.page.keyboard.press('End');
+      assert.equal(await (await active()).getAttribute('data-value'), 'ag-ro');
+      // One up is the last pickable agent, and the keyboard takes it.
+      await h.page.keyboard.press('ArrowUp');
       await h.page.keyboard.press('Enter');
       await until(() => patches(h, 't1').length > 0);
       assert.deepEqual(
@@ -517,6 +548,53 @@ void describe('the drawer’s Agent row', () => {
         [{ selected_agent_id: 'ag-desktop' }],
         'the read-only agent was sent',
       );
+    } finally {
+      await h.close();
+    }
+  });
+
+  // **Search keeps the rule** (LAI-538's search, LAI-536's reachability):
+  // typing on the field starts the search; a disabled agent that matches is
+  // still reached and named, by the search box now, and still not taken.
+  void test('a search reaches a disabled match and reads its reason, and Enter takes nothing', async () => {
+    const { stub } = world();
+    const h = await open('/board?project=laika-core&task=t1', stub);
+    try {
+      const box = await agentBox(h);
+      const before = await box.getAttribute('data-value');
+      await box.focus();
+      await h.page.keyboard.press('ArrowDown');
+      await until(async () => (await box.getAttribute('aria-expanded')) === 'true');
+      // Open, and focus is still on the field, which names the active agent.
+      assert.ok((await box.getAttribute('aria-activedescendant')) !== null);
+
+      // The device, which is a keyword and not in the name's first words.
+      await h.page.keyboard.type('tablet');
+      const search = h.page.getByRole('combobox', { name: 'Search agents' });
+      await until(async () => (await search.inputValue()) === 'tablet');
+      await until(async () => {
+        const values = (await optionsOpen(h.page, box)).map((o) => o.value);
+        return values.includes('ag-ro') && !values.includes('ag-laptop');
+      });
+      // One element names the active option: the one with focus.
+      assert.equal(await box.getAttribute('aria-activedescendant'), null);
+
+      await h.page.keyboard.press('Alt+ArrowDown');
+      const id = await search.getAttribute('aria-activedescendant');
+      assert.ok(id !== null, 'the search box names no active agent');
+      const match = h.page.locator(`[id="${id}"]`);
+      assert.equal(await match.getAttribute('data-value'), 'ag-ro');
+      assert.equal(await match.getAttribute('aria-disabled'), 'true');
+      const listId = (await box.getAttribute('aria-controls')) ?? '';
+      const named = h.page
+        .locator(`[id="${listId}"]`)
+        .getByRole('option', { name: /Cursor .*Read-only on this space/ });
+      assert.equal(await named.getAttribute('id'), id, 'the reason is not in its accessible name');
+
+      await h.page.keyboard.press('Enter');
+      await h.page.waitForTimeout(150);
+      assert.deepEqual(patches(h, 't1'), [], 'the read-only agent was sent');
+      assert.equal(await box.getAttribute('data-value'), before);
     } finally {
       await h.close();
     }

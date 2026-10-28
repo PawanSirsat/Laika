@@ -92,6 +92,14 @@ export interface DropdownProps<V extends string = string> {
    * needs no explaining, and stepping over it is the quicker path there.
    */
   readonly reachDisabled?: boolean | undefined;
+  /**
+   * With a search box: opening keeps focus on the trigger — the select-only
+   * combobox, whose arrows, Home and End walk the list — and the first
+   * printable key moves focus into the search box with that character
+   * (integration of LAI-536 and LAI-538). Off by default, where opening moves
+   * focus into the search box at once.
+   */
+  readonly searchOnType?: boolean | undefined;
 }
 
 /** About 18rem, the owner's brief. */
@@ -185,9 +193,14 @@ export function Dropdown<V extends string = string>({
   name,
   triggerRef,
   reachDisabled = false,
+  searchOnType = false,
 }: DropdownProps<V>) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  /** The search box has focus — so it, and not the trigger, names the active option. */
+  const [inSearchBox, setInSearchBox] = useState(false);
+  /** `searchOnType`: a key typed on the trigger is to carry focus into the search box. */
+  const [searchWanted, setSearchWanted] = useState(false);
   const [active, setActive] = useState<V | undefined>(undefined);
   const trigger = useRef<HTMLButtonElement | null>(null);
   const panel = useRef<HTMLDivElement | null>(null);
@@ -230,11 +243,14 @@ export function Dropdown<V extends string = string>({
     open && activeIndex !== -1
       ? optionId(indexOf.get(shown[activeIndex]!.value) ?? activeIndex)
       : undefined;
+  /** Focus stays on the trigger while open: no search box, or one not yet typed into. */
+  const triggerLeads = !withSearch || (searchOnType && !inSearchBox);
 
   const show = useCallback(
     (start: OpenAt = 'selected') => {
       if (disabled) return;
       setQuery('');
+      setSearchWanted(false);
       reveal.current = true;
       setActive(openingOption(ordered, value, start, reachDisabled)?.value);
       setOpen(true);
@@ -246,6 +262,7 @@ export function Dropdown<V extends string = string>({
   const hide = useCallback((refocus: boolean) => {
     setOpen(false);
     setQuery('');
+    setSearchWanted(false);
     // A new session types from scratch (LAI-726 round 1).
     typed.current = { buffer: '', at: 0 };
     if (refocus) trigger.current?.focus();
@@ -259,9 +276,33 @@ export function Dropdown<V extends string = string>({
 
   // Focus into the search box on open, where there is one — not on a touch
   // screen, where it would raise the keyboard over the list (round 1).
+  // With `searchOnType`, only once a key has been typed on the trigger.
   useEffect(() => {
-    if (open && withSearch && !coarsePointer()) search.current?.focus({ preventScroll: true });
-  }, [open, withSearch]);
+    if (!open || !withSearch || (searchOnType && !searchWanted)) return;
+    if (searchWanted || !coarsePointer()) search.current?.focus({ preventScroll: true });
+  }, [open, withSearch, searchOnType, searchWanted]);
+
+  /** The option a search for `next` makes active: the first real match, not "Any". */
+  const activeFor = (next: string): V | undefined => {
+    const hits = filterOptions(ordered, next);
+    const first =
+      next.trim() === ''
+        ? hits.find((o) => o.value === value)
+        : hits.find((o) => o.pinned !== true && o.disabled !== true);
+    return (first ?? hits[0])?.value;
+  };
+
+  /**
+   * `searchOnType`: a key typed on the trigger goes into the search. Appended,
+   * because keys typed quickly can reach the trigger before focus has moved —
+   * and the query is empty whenever the panel has just opened.
+   */
+  const typeIntoSearch = (key: string): void => {
+    const next = query + key;
+    setQuery(next);
+    setActive(activeFor(next));
+    setSearchWanted(true);
+  };
 
   /*
    * **Placed before it is painted**, against what is on screen, and again
@@ -454,6 +495,10 @@ export function Dropdown<V extends string = string>({
       } else if (event.key === 'Home' || event.key === 'End') {
         handled(event);
         show(event.key === 'Home' ? 'first' : 'last');
+      } else if (printable && withSearch && searchOnType) {
+        handled(event);
+        show();
+        typeIntoSearch(event.key);
       } else if (printable && !withSearch) {
         handled(event);
         show();
@@ -524,7 +569,10 @@ export function Dropdown<V extends string = string>({
         choose(shown[activeIndex]);
         return;
       default:
-        if (printable && !inSearch) {
+        if (printable && !inSearch && withSearch && searchOnType) {
+          handled(event);
+          typeIntoSearch(event.key);
+        } else if (printable && !inSearch) {
           handled(event);
           ahead(event.key);
         }
@@ -577,15 +625,14 @@ export function Dropdown<V extends string = string>({
               const next = event.target.value;
               setQuery(next);
               // The first real match, not "Any", is what Enter should take.
-              const hits = filterOptions(ordered, next);
-              const first =
-                next.trim() === ''
-                  ? hits.find((o) => o.value === value)
-                  : hits.find((o) => o.pinned !== true && o.disabled !== true);
-              setActive((first ?? hits[0])?.value);
+              setActive(activeFor(next));
             }}
             onKeyDown={onKey}
+            onFocus={() => {
+              setInSearchBox(true);
+            }}
             onBlur={(event) => {
+              setInSearchBox(false);
               const to = event.relatedTarget as Node | null;
               // The trigger is being pressed: its click decides (see `pressing`).
               if (pressing.current) {
@@ -689,7 +736,7 @@ export function Dropdown<V extends string = string>({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
-        aria-activedescendant={open && !withSearch ? activeId : undefined}
+        aria-activedescendant={open && triggerLeads ? activeId : undefined}
         aria-label={ariaLabel}
         aria-labelledby={labelledBy}
         aria-describedby={describedBy}
@@ -714,7 +761,7 @@ export function Dropdown<V extends string = string>({
           if (event.key === ' ') event.preventDefault();
         }}
         onBlur={(event) => {
-          if (!open || withSearch) return;
+          if (!open || (withSearch && !searchOnType)) return;
           const to = event.relatedTarget as Node | null;
           if (to !== null && panel.current?.contains(to) === true) return;
           setOpen(false);

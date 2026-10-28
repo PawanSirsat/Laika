@@ -108,6 +108,10 @@ export function AgentPicker({ agents, value, onChange, disabled }: AgentPickerPr
           // Searchable however few there are: the list grows with every
           // device a person registers, and the field reads the same either way.
           searchable
+          // Opening keeps focus on the field, so arrows, Home and End reach
+          // every agent — a disabled one too, read with its reason (LAI-536,
+          // APG combobox); typing starts the search (LAI-538).
+          searchOnType
           disabled={disabled}
           reachDisabled
         />
