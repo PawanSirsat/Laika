@@ -2,11 +2,11 @@
  * Registered agents on the client (LAI-537): the rules the Agents tab reads
  * an agent's row by, without a browser.
  *
- * The one that matters most is {@link seenSince}: step 5 of the wizard must
- * stay pending until a request authenticated **as this agent** arrives. The
- * owner's own activity — their session, their other tokens, their other
- * agents — lives on rows this function never reads, and the fixtures below
- * put fresh stamps on exactly those to prove it.
+ * The one that matters most is {@link mintedTokenSeen}: step 5 of the wizard
+ * must stay pending until **the token the wizard minted** is used. The owner's
+ * own activity, and the agent's *other* credentials, live on rows or fields
+ * this function never reads, and the fixtures below put fresh stamps on
+ * exactly those to prove it.
  */
 
 import assert from 'node:assert/strict';
@@ -16,7 +16,7 @@ import {
   agentHarness,
   agentState,
   liveToken,
-  seenSince,
+  mintedTokenSeen,
   type RegisteredAgent,
 } from '../../src/api/agents.ts';
 import type { TokenView } from '../../src/api/tokens.ts';
@@ -58,42 +58,55 @@ function agent(over: Partial<RegisteredAgent> = {}): RegisteredAgent {
   };
 }
 
-void describe('seenSince: only this agent completes step 5', () => {
-  void test('a fresh agent is not seen', () => {
-    assert.equal(seenSince(agent(), token()), false);
+void describe('mintedTokenSeen: only the minted token completes step 5', () => {
+  void test('a fresh agent is unseen', () => {
+    assert.equal(mintedTokenSeen(agent(), token()), 'unseen');
   });
 
-  void test("the agent's own last_seen_at at or after the mint completes it", () => {
-    assert.equal(seenSince(agent({ last_seen_at: MINT }), token()), true);
-    assert.equal(seenSince(agent({ last_seen_at: MINT + 5 }), token()), true);
+  void test("the minted token's own use, or its MCP stamp, at or after the mint completes it", () => {
+    assert.equal(
+      mintedTokenSeen(agent({ tokens: [token({ last_used_at: MINT })] }), token()),
+      'seen',
+    );
+    assert.equal(
+      mintedTokenSeen(agent({ tokens: [token({ last_mcp_at: MINT + 1 })] }), token()),
+      'seen',
+    );
   });
 
-  void test("the minted token's own use completes it", () => {
-    const used = agent({ tokens: [token({ last_used_at: MINT + 1 })] });
-    assert.equal(seenSince(used, token()), true);
+  void test("the agent's last_seen_at alone does not: any of its credentials moves it", () => {
+    // Review round 1: rotated elsewhere, the replacement is used, the agent is
+    // stamped — and the setup the wizard shows still holds the old secret.
+    assert.equal(mintedTokenSeen(agent({ last_seen_at: MINT + 5 }), token()), 'unseen');
   });
 
   void test('a stamp from before the mint is not this credential', () => {
-    // After a rotation the agent may carry a last_seen_at from its old token.
-    assert.equal(seenSince(agent({ last_seen_at: MINT - 1 }), token()), false);
     const old = agent({ tokens: [token({ last_used_at: MINT - 1 })] });
-    assert.equal(seenSince(old, token()), false);
+    assert.equal(mintedTokenSeen(old, token()), 'unseen');
   });
 
-  void test("another token's use — the owner's, or the agent's revoked one — does not", () => {
-    const others = agent({
+  void test('rotated away: the minted token revoked, the replacement used — gone, never seen', () => {
+    const rotated = agent({
+      last_seen_at: MINT + 9,
       tokens: [
-        token(),
-        // The previous credential, revoked by the rotation, used afterwards
-        // (which the server would refuse) must not count for the new one.
-        token({ id: 't-old', created_at: MINT - 10, revoked_at: MINT, last_used_at: MINT + 9 }),
+        token({ id: 't-new', created_at: MINT + 5, last_used_at: MINT + 9 }),
+        token({ revoked_at: MINT + 5 }),
       ],
     });
-    assert.equal(seenSince(others, token()), false);
+    assert.equal(mintedTokenSeen(rotated, token()), 'gone');
   });
 
-  void test('a revoked agent is never verified', () => {
-    assert.equal(seenSince(agent({ status: 'revoked', last_seen_at: MINT + 1 }), token()), false);
+  void test('a revoked agent, or a token it no longer lists, is gone', () => {
+    const revoked = agent({ status: 'revoked', tokens: [token({ last_used_at: MINT + 1 })] });
+    assert.equal(mintedTokenSeen(revoked, token()), 'gone');
+    assert.equal(mintedTokenSeen(agent({ tokens: [] }), token()), 'gone');
+  });
+
+  void test("the owner's own token, however fresh, is not on the agent at all", () => {
+    const busyOwner = agent({
+      tokens: [token(), token({ id: 't-owner', created_at: 1, last_used_at: MINT + 100 })],
+    });
+    assert.equal(mintedTokenSeen(busyOwner, token()), 'unseen');
   });
 });
 

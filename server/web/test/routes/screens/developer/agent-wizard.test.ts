@@ -16,9 +16,15 @@ import {
   grantsFrom,
   nameProblem,
   sameGrants,
+  VERIFY_BUDGET_MS,
+  VERIFY_POLL_MS,
+  VERIFY_REQUEST_TIMEOUT_MS,
   verifyStateFrom,
 } from '../../../../src/routes/screens/developer/agent-wizard.ts';
-import { LIVE_TICKS } from '../../../../src/routes/screens/connect/connect-live.ts';
+import {
+  LIVE_BUDGET_MS,
+  LIVE_POLL_MS,
+} from '../../../../src/routes/screens/connect/connect-live.ts';
 
 void describe('the five steps', () => {
   void test('are the proposal’s five, in its order', () => {
@@ -47,7 +53,10 @@ void describe('the five steps', () => {
 
   void test('the footer says what is pending, never that it is verified before it is', () => {
     assert.match(agentFooterHint(3, false, false), /Create the credential/);
-    assert.equal(agentFooterHint(5, true, false), 'Waiting for a request from this agent');
+    assert.equal(
+      agentFooterHint(5, true, false),
+      'Waiting for a request from this agent’s credential',
+    );
     assert.equal(agentFooterHint(5, true, true), 'Verified');
   });
 });
@@ -102,10 +111,18 @@ void describe('step 2: grants', () => {
   });
 });
 
-void describe('step 5: the watch ends', () => {
-  void test('seen is verified; unseen watches until Connect’s budget, then is spent', () => {
-    assert.deepEqual(verifyStateFrom(true, 3), { kind: 'verified' });
-    assert.deepEqual(verifyStateFrom(false, 1), { kind: 'watching', ticks: 1 });
-    assert.deepEqual(verifyStateFrom(false, LIVE_TICKS), { kind: 'spent' });
+void describe('step 5: the watch ends by the clock', () => {
+  void test('seen is verified, gone is replaced, unseen watches until the deadline', () => {
+    assert.deepEqual(verifyStateFrom('seen', 3), { kind: 'verified' });
+    assert.deepEqual(verifyStateFrom('gone', 3), { kind: 'replaced' });
+    assert.deepEqual(verifyStateFrom('unseen', VERIFY_BUDGET_MS - 1), { kind: 'watching' });
+    assert.deepEqual(verifyStateFrom('unseen', VERIFY_BUDGET_MS), { kind: 'spent' });
+  });
+
+  void test("Connect's budget and spacing, and a request timeout that fits inside the budget", () => {
+    assert.equal(VERIFY_BUDGET_MS, LIVE_BUDGET_MS);
+    assert.equal(VERIFY_BUDGET_MS, 180_000);
+    assert.equal(VERIFY_POLL_MS, LIVE_POLL_MS);
+    assert.ok(VERIFY_REQUEST_TIMEOUT_MS > 0 && VERIFY_REQUEST_TIMEOUT_MS < VERIFY_BUDGET_MS);
   });
 });

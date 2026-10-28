@@ -16,8 +16,8 @@ import {
   liveToken,
   registerAgent,
   revokeAgent,
+  mintedTokenSeen,
   rotateAgentToken,
-  seenSince,
   setAgentGrants,
   updateAgent,
   type AgentGrant,
@@ -30,7 +30,6 @@ import { useGates } from '../../../api/permissions.ts';
 import { isTombstone, listProjects, type Project } from '../../../api/projects.ts';
 import { lastUsedLabel } from '../../../api/tokens.ts';
 import { AGENT_GUIDES, guideFor, setupBlocks } from '../connect/connect-agents.ts';
-import { LIVE_POLL_MS } from '../connect/connect-live.ts';
 import { suggestTokenName } from '../connect/connect-token-name.ts';
 import { SetupBlockView } from '../connect/ConnectScreen.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
@@ -44,6 +43,9 @@ import {
   grantsFrom,
   nameProblem,
   sameGrants,
+  VERIFY_BUDGET_MS,
+  VERIFY_POLL_MS,
+  VERIFY_REQUEST_TIMEOUT_MS,
   verifyStateFrom,
   type AgentStep,
   type GrantChoice,
@@ -86,6 +88,13 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
   const [projectsError, setProjectsError] = useState<unknown>(null);
   const [now, setNow] = useState(() => Date.now());
   const [wizard, setWizard] = useState(false);
+  /**
+   * The agent the open wizard registered, whose secret the wizard still
+   * shows. Its row offers no rotate or revoke meanwhile (review round 1): a
+   * rotation there would leave the wizard showing, and verifying, a revoked
+   * credential.
+   */
+  const [wizardAgent, setWizardAgent] = useState<string | undefined>(undefined);
   const [actionError, setActionError] = useState<string | undefined>(undefined);
   const registerButton = useRef<HTMLButtonElement | null>(null);
 
@@ -104,14 +113,17 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
       });
   }, []);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    reload(controller.signal);
+  /**
+   * The projects the reader can see. **Unloaded is not empty** (review round
+   * 1): until this answers, `projects` stays `undefined`, a failure is kept
+   * and shown with a retry, and nothing that writes grants is enabled — a
+   * grants payload built from a list that never loaded would replace every
+   * grant with none.
+   */
+  const loadProjects = useCallback((signal?: AbortSignal): void => {
+    setProjectsError(null);
     everyPage((cursor) =>
-      listProjects(
-        cursor === undefined ? { limit: 100 } : { limit: 100, cursor },
-        controller.signal,
-      ),
+      listProjects(cursor === undefined ? { limit: 100 } : { limit: 100, cursor }, signal),
     )
       .then(({ items }) => {
         setProjects(items.filter((p): p is Project => !isTombstone(p)));
@@ -120,10 +132,19 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
         setProjectsError(cause);
       });
+  }, []);
+  const retryProjects = useCallback((): void => {
+    loadProjects();
+  }, [loadProjects]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    reload(controller.signal);
+    loadProjects(controller.signal);
     return () => {
       controller.abort();
     };
-  }, [reload]);
+  }, [reload, loadProjects]);
 
   /** One agent's fresh row, folded in without refetching the list. */
   const put = (agent: RegisteredAgent): void => {
@@ -147,6 +168,7 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
   const closeWizard = (): void => {
     refocus.current = true;
     setWizard(false);
+    setWizardAgent(undefined);
     reload();
   };
 
@@ -214,8 +236,12 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
           origin={origin}
           projects={projects}
           projectsError={projectsError}
+          onRetryProjects={retryProjects}
           viewer={viewer}
-          onRegistered={put}
+          onRegistered={(agent) => {
+            setWizardAgent(agent.id);
+            put(agent);
+          }}
           onClose={closeWizard}
         />
       )}
@@ -252,8 +278,11 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
               now={now}
               me={me}
               projects={projects}
+              projectsError={projectsError}
+              onRetryProjects={retryProjects}
               viewer={viewer}
               canManage={canManage}
+              heldByWizard={agent.id === wizardAgent}
               onChanged={put}
               onRevoke={revoke}
               confirmRotate={confirm}
@@ -267,21 +296,75 @@ export function AgentsTab({ me, origin }: AgentsTabProps) {
 
 // ------------------------------------------------------------------ the secret
 
+/** A reveal's copy of the answer: the one object that carries the plaintext. */
+interface HeldSecret {
+  readonly agent: RegisteredAgent;
+  readonly token: CreatedAgentToken['token'];
+  secret: string;
+}
+
 /**
- * A plaintext held for one reveal. `forget` blanks it **through state** and
- * then drops it on the next tick — `TokensScreen`'s measured pattern: set
- * straight to `undefined`, React's previous hook state still holds the
- * string; overwritten first, neither the current nor the retained tree does.
+ * A plaintext held for one reveal.
+ *
+ * - **`forget`** blanks it **through state** and then drops it on the next
+ *   tick — `TokensScreen`'s measured pattern: set straight to `undefined`,
+ *   React's previous hook state still holds the string; overwritten first,
+ *   neither the current nor the retained tree does. A caller that unmounts
+ *   afterwards waits for `held` to be `undefined` — both renders committed —
+ *   before it does (review round 1: unmounting at once meant the blanking
+ *   render never committed).
+ * - **`retire`** blanks it and keeps the rest, for a credential that stopped
+ *   working while its screen stays open.
+ * - **On unmount** — a tab change, a route change — no render can run, so
+ *   the held object's own `secret` is overwritten in place, and anything
+ *   still referencing that object finds `''`.
+ *
+ * **What the tests prove, and what they do not.** `agents-tab.test.ts` shows
+ * that after Close the wizard's last frame was already blank (a mutant that
+ * unmounts at once goes red), and that after Close or leaving the tab the
+ * secret is in neither the DOM nor anything React's root still reaches. The
+ * unmount scrub is **not** proved by them: React 19 detaches an unmounted
+ * subtree itself, and the walk comes back clean with or without the scrub
+ * (measured). It stays as defence for a reference no walk can see, such as a
+ * closure, and makes no stronger claim than that.
  */
 function useOnceSecret() {
-  const [held, setHeld] = useState<CreatedAgentToken | undefined>(undefined);
-  const forget = useCallback((): void => {
-    setHeld((current) => (current === undefined ? undefined : { ...current, secret: '' }));
-    setTimeout(() => {
-      setHeld(undefined);
-    }, 0);
+  const [held, setHeldState] = useState<HeldSecret | undefined>(undefined);
+  const box = useRef<HeldSecret | undefined>(undefined);
+  const scrub = (): void => {
+    if (box.current !== undefined) box.current.secret = '';
+  };
+  const hold = useCallback((answer: CreatedAgentToken): void => {
+    scrub();
+    const copy: HeldSecret = { agent: answer.agent, token: answer.token, secret: answer.secret };
+    box.current = copy;
+    setHeldState(copy);
   }, []);
-  return [held, setHeld, forget] as const;
+  const retire = useCallback((): void => {
+    setHeldState((current) => {
+      if (current === undefined) return undefined;
+      const blank: HeldSecret = { ...current, secret: '' };
+      scrub();
+      box.current = blank;
+      return blank;
+    });
+  }, []);
+  const forget = useCallback((): void => {
+    retire();
+    setTimeout(() => {
+      scrub();
+      box.current = undefined;
+      setHeldState(undefined);
+    }, 0);
+  }, [retire]);
+  useEffect(
+    () => () => {
+      scrub();
+      box.current = undefined;
+    },
+    [],
+  );
+  return { held, hold, retire, forget } as const;
 }
 
 function SecretPanel({
@@ -290,7 +373,7 @@ function SecretPanel({
   onDone,
   doneLabel = 'Done',
 }: {
-  readonly created: CreatedAgentToken;
+  readonly created: HeldSecret;
   readonly title: string;
   readonly onDone?: (() => void) | undefined;
   readonly doneLabel?: string;
@@ -329,6 +412,7 @@ interface WizardProps {
   readonly origin: string;
   readonly projects: readonly Project[] | undefined;
   readonly projectsError: unknown;
+  readonly onRetryProjects: () => void;
   readonly viewer: boolean;
   readonly onRegistered: (agent: RegisteredAgent) => void;
   readonly onClose: () => void;
@@ -339,6 +423,7 @@ function RegisterWizard({
   origin,
   projects,
   projectsError,
+  onRetryProjects,
   viewer,
   onRegistered,
   onClose,
@@ -352,12 +437,15 @@ function RegisterWizard({
   const [choices, setChoices] = useState<Map<string, GrantChoice>>(() => new Map());
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-  const [created, setCreated, forget] = useOnceSecret();
-  const [verify, setVerify] = useState<VerifyState>({ kind: 'watching', ticks: 0 });
+  const { held: created, hold, retire, forget } = useOnceSecret();
+  const [closing, setClosing] = useState(false);
+  const [verify, setVerify] = useState<VerifyState>({ kind: 'watching' });
   const [round, setRound] = useState(0);
   const titleRef = useRef<HTMLHeadingElement | null>(null);
 
   const registered = created !== undefined;
+  // `''` once retired or forgotten: a placeholder in the blocks, never a token.
+  const secret = created === undefined || created.secret === '' ? undefined : created.secret;
   const order = (projects ?? []).map((p) => p.id);
   const grants = grantsFrom(choices, order, viewer);
   const nameError = nameProblem(name);
@@ -369,10 +457,20 @@ function RegisterWizard({
     titleRef.current?.focus();
   }, [step]);
 
+  /**
+   * Close in three commits, never one: blank the secret, drop it, and only
+   * then unmount — the effect below waits for `created` to be gone.
+   */
   const close = (): void => {
+    if (closing) return;
     forget();
-    onClose();
+    setClosing(true);
   };
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    if (closing && created === undefined) closeRef.current();
+  }, [closing, created]);
 
   const register = (): void => {
     setPending(true);
@@ -384,7 +482,7 @@ function RegisterWizard({
       grants,
     })
       .then((answer) => {
-        setCreated(answer);
+        hold(answer);
         onRegistered(answer.agent);
       })
       .catch((cause: unknown) => {
@@ -395,43 +493,81 @@ function RegisterWizard({
       });
   };
 
-  // Step 5: ask the agent's own row until a request authenticated as it shows.
+  // Step 5: ask the agent's row until the token minted here shows a request.
+  // A chain of timeouts, not an interval: the next request is scheduled only
+  // once the last one settled, each is abandoned after a timeout, and the
+  // whole watch ends at a wall-clock deadline (review round 1).
   const registeredRef = useRef(onRegistered);
   registeredRef.current = onRegistered;
+  const retireRef = useRef(retire);
+  retireRef.current = retire;
   const agentId = created?.agent.id;
   const minted = created?.token;
   useEffect(() => {
     if (step !== 5 || agentId === undefined || minted === undefined) return;
-    const controller = new AbortController();
-    let ticks = 0;
+    const started = Date.now();
     let stopped = false;
-    const ask = (): void => {
-      getAgent(agentId, controller.signal)
+    let inflight: AbortController | undefined;
+    let next: ReturnType<typeof setTimeout> | undefined;
+
+    const finish = (state: VerifyState): void => {
+      stopped = true;
+      clearTimeout(next);
+      clearTimeout(deadline);
+      inflight?.abort();
+      setVerify(state);
+    };
+    const deadline = setTimeout(() => {
+      finish({ kind: 'spent' });
+    }, VERIFY_BUDGET_MS);
+    const schedule = (): void => {
+      if (!stopped) next = setTimeout(ask, VERIFY_POLL_MS);
+    };
+    function ask(): void {
+      if (stopped) return;
+      const controller = new AbortController();
+      inflight = controller;
+      const timeout = setTimeout(() => {
+        controller.abort();
+      }, VERIFY_REQUEST_TIMEOUT_MS);
+      getAgent(agentId ?? '', controller.signal)
         .then((agent) => {
-          if (stopped) return;
-          ticks += 1;
-          const next = verifyStateFrom(seenSince(agent, minted), ticks);
-          setVerify(next);
-          if (next.kind !== 'watching') {
-            stopped = true;
-            clearInterval(timer);
-            if (next.kind === 'verified') registeredRef.current(agent);
+          if (stopped || minted === undefined) return;
+          const state = verifyStateFrom(mintedTokenSeen(agent, minted), Date.now() - started);
+          if (state.kind === 'watching') {
+            schedule();
+            return;
+          }
+          finish(state);
+          if (state.kind === 'verified') registeredRef.current(agent);
+          if (state.kind === 'replaced') {
+            // The setup shown can no longer work: take its secret off the page.
+            retireRef.current();
+            registeredRef.current(agent);
           }
         })
         .catch((cause: unknown) => {
-          if (cause instanceof DOMException && cause.name === 'AbortError') return;
-          stopped = true;
-          clearInterval(timer);
-          setVerify({ kind: 'error', error: cause });
+          if (stopped) return;
+          // A request the timeout abandoned is a miss, not a failure.
+          if (cause instanceof DOMException && cause.name === 'AbortError') {
+            schedule();
+            return;
+          }
+          finish({ kind: 'error', error: cause });
+        })
+        .finally(() => {
+          clearTimeout(timeout);
+          if (inflight === controller) inflight = undefined;
         });
-    };
-    setVerify({ kind: 'watching', ticks: 0 });
+    }
+
+    setVerify({ kind: 'watching' });
     ask();
-    const timer = setInterval(ask, LIVE_POLL_MS);
     return () => {
       stopped = true;
-      clearInterval(timer);
-      controller.abort();
+      clearTimeout(next);
+      clearTimeout(deadline);
+      inflight?.abort();
     };
     // `round` restarts the watch; the parent's fold is read through a ref.
   }, [step, agentId, minted, round]);
@@ -459,9 +595,7 @@ function RegisterWizard({
   const blocks =
     created === undefined
       ? []
-      : setupBlocks(guide.id, { origin, secret: created.secret }).filter(
-          (b) => b.group !== 'alternative',
-        );
+      : setupBlocks(guide.id, { origin, secret }).filter((b) => b.group !== 'alternative');
 
   return (
     <section className="agents-wizard" aria-labelledby="agents-step-title" data-step={step}>
@@ -565,6 +699,7 @@ function RegisterWizard({
             <GrantEditor
               projects={projects}
               projectsError={projectsError}
+              onRetry={onRetryProjects}
               choices={choices}
               viewer={viewer}
               onChange={setChoices}
@@ -614,8 +749,14 @@ function RegisterWizard({
                   </button>
                 </>
               )}
-              {created !== undefined && (
+              {created !== undefined && secret !== undefined && (
                 <SecretPanel created={created} title="Copy this now — it is not shown again" />
+              )}
+              {created !== undefined && secret === undefined && !closing && (
+                <p className="agents-note" role="alert">
+                  This credential has been rotated or revoked, so it is no longer shown. Close this
+                  and use the agent’s current credential.
+                </p>
               )}
             </div>
           )}
@@ -627,7 +768,7 @@ function RegisterWizard({
                 them on the machine the agent works from.
               </p>
               {blocks.map((block) => (
-                <SetupBlockView key={block.key} block={block} secret={created.secret} />
+                <SetupBlockView key={block.key} block={block} secret={secret} />
               ))}
             </div>
           )}
@@ -650,7 +791,7 @@ function RegisterWizard({
         </div>
 
         <footer className="agents-card-foot">
-          <button type="button" className="bar-control" onClick={close}>
+          <button type="button" className="bar-control" disabled={closing} onClick={close}>
             {registered ? 'Close' : 'Cancel'}
           </button>
           <span className="agents-foot-hint">
@@ -679,7 +820,12 @@ function RegisterWizard({
               Continue
             </button>
           ) : (
-            <button type="button" className="bar-control bar-control-primary" onClick={close}>
+            <button
+              type="button"
+              className="bar-control bar-control-primary"
+              disabled={closing}
+              onClick={close}
+            >
               Done
             </button>
           )}
@@ -727,6 +873,13 @@ function VerifyPanel({
           </button>
         </>
       )}
+      {state.kind === 'replaced' && (
+        <p className="agents-verify-line" role="alert">
+          The credential created here was rotated or revoked before <strong>{agentName}</strong>{' '}
+          used it, so this setup can no longer connect. Close this and set the agent up with its
+          current credential.
+        </p>
+      )}
       {state.kind === 'error' && (
         <ApiErrorState error={state.error} resource="this agent" onRetry={onRetry} />
       )}
@@ -743,6 +896,7 @@ function VerifyPanel({
 function GrantEditor({
   projects,
   projectsError,
+  onRetry,
   choices,
   viewer,
   onChange,
@@ -750,13 +904,14 @@ function GrantEditor({
 }: {
   readonly projects: readonly Project[] | undefined;
   readonly projectsError: unknown;
+  readonly onRetry: () => void;
   readonly choices: ReadonlyMap<string, GrantChoice>;
   readonly viewer: boolean;
   readonly onChange: (next: Map<string, GrantChoice>) => void;
   readonly disabled?: boolean;
 }) {
   if (projectsError !== null) {
-    return <ApiErrorState error={projectsError} resource="your projects" />;
+    return <ApiErrorState error={projectsError} resource="your projects" onRetry={onRetry} />;
   }
   if (projects === undefined)
     return <LoadingState shape="row" count={2} label="Loading projects" />;
@@ -841,8 +996,12 @@ interface RowProps {
   readonly now: number;
   readonly me: MeProfile | undefined;
   readonly projects: readonly Project[] | undefined;
+  readonly projectsError: unknown;
+  readonly onRetryProjects: () => void;
   readonly viewer: boolean;
   readonly canManage: boolean;
+  /** The open wizard is still showing this agent's first secret. */
+  readonly heldByWizard: boolean;
   readonly onChanged: (agent: RegisteredAgent) => void;
   readonly onRevoke: (agent: RegisteredAgent) => void;
   readonly confirmRotate: ReturnType<typeof useConfirm>;
@@ -855,8 +1014,11 @@ function AgentRow({
   now,
   me,
   projects,
+  projectsError,
+  onRetryProjects,
   viewer,
   canManage,
+  heldByWizard,
   onChanged,
   onRevoke,
   confirmRotate,
@@ -867,7 +1029,7 @@ function AgentRow({
   const [panel, setPanel] = useState<Panel>('none');
   const [error, setError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
-  const [rotated, setRotated, forget] = useOnceSecret();
+  const { held: rotated, hold: holdRotated, forget } = useOnceSecret();
   const renameButton = useRef<HTMLButtonElement | null>(null);
   const accessButton = useRef<HTMLButtonElement | null>(null);
   const rotateButton = useRef<HTMLButtonElement | null>(null);
@@ -883,7 +1045,7 @@ function AgentRow({
   };
 
   const rotate = (): void => {
-    if (live === undefined) return;
+    if (live === undefined || heldByWizard) return;
     void confirmRotate({
       title: `Rotate “${agent.display_name}”’s credential?`,
       body: 'A new token is created and the current one stops working at once. The agent keeps its name, grants and history; you give it the new token.',
@@ -895,7 +1057,7 @@ function AgentRow({
       setError(undefined);
       rotateAgentToken(agent.id, live.id)
         .then((answer) => {
-          setRotated(answer);
+          holdRotated(answer);
           onChanged(answer.agent);
         })
         .catch((cause: unknown) => {
@@ -981,7 +1143,8 @@ function AgentRow({
             type="button"
             className="bar-control"
             ref={rotateButton}
-            disabled={busy || live === undefined}
+            disabled={busy || live === undefined || heldByWizard}
+            {...(heldByWizard ? { 'aria-describedby': `agents-held-${agent.id}` } : {})}
             onClick={rotate}
           >
             {busy && <Spinner size="sm" />}
@@ -990,12 +1153,19 @@ function AgentRow({
           <button
             type="button"
             className="bar-control agents-danger"
+            disabled={heldByWizard}
+            {...(heldByWizard ? { 'aria-describedby': `agents-held-${agent.id}` } : {})}
             onClick={() => {
               onRevoke(agent);
             }}
           >
             Revoke
           </button>
+          {heldByWizard && (
+            <span className="agents-hint" id={`agents-held-${agent.id}`}>
+              Finish or close its registration above to rotate or revoke it.
+            </span>
+          )}
         </div>
       )}
 
@@ -1016,6 +1186,8 @@ function AgentRow({
         <AccessForm
           agent={agent}
           projects={projects}
+          projectsError={projectsError}
+          onRetryProjects={onRetryProjects}
           viewer={viewer}
           onSaved={(next) => {
             onChanged(next);
@@ -1128,12 +1300,16 @@ function RenameForm({
 function AccessForm({
   agent,
   projects,
+  projectsError,
+  onRetryProjects,
   viewer,
   onSaved,
   onCancel,
 }: {
   readonly agent: RegisteredAgent;
   readonly projects: readonly Project[] | undefined;
+  readonly projectsError: unknown;
+  readonly onRetryProjects: () => void;
   readonly viewer: boolean;
   readonly onSaved: (agent: RegisteredAgent) => void;
   readonly onCancel: () => void;
@@ -1141,14 +1317,23 @@ function AccessForm({
   const [choices, setChoices] = useState(() => choicesFrom(agent.grants));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-  const visible = (projects ?? []).map((p) => p.id);
+  /**
+   * **Nothing is written until the projects have loaded** (review round 1).
+   * An unloaded list read as `[]` made every grant "hidden", enabled *Save*,
+   * and sent `grants: []` — wiping the agent's access. `loaded` is the list
+   * itself, so a payload can only be built from projects that arrived.
+   */
+  const loaded = projectsError === null ? projects : undefined;
+  const visible = loaded?.map((p) => p.id);
   // A grant on a project the reader can no longer see reaches nothing — the
   // agent never has more than its owner — and the server refuses to write
   // one (422), so saving drops it, and the form says so first.
-  const hidden = agent.grants.filter((g) => !visible.includes(g.project_id));
-  const next = grantsFrom(choices, visible, viewer);
-  const unchanged = sameGrants(next, agent.grants);
+  const hidden =
+    visible === undefined ? [] : agent.grants.filter((g) => !visible.includes(g.project_id));
+  const next = visible === undefined ? undefined : grantsFrom(choices, visible, viewer);
+  const unchanged = next === undefined || sameGrants(next, agent.grants);
   const save = (): void => {
+    if (next === undefined) return;
     setPending(true);
     setError(undefined);
     setAgentGrants(agent.id, next)
@@ -1169,7 +1354,8 @@ function AccessForm({
     >
       <GrantEditor
         projects={projects}
-        projectsError={null}
+        projectsError={projectsError}
+        onRetry={onRetryProjects}
         choices={choices}
         viewer={viewer}
         onChange={setChoices}

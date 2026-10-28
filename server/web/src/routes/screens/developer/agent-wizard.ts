@@ -1,5 +1,5 @@
-import type { AgentGrant, AgentGrantScope } from '../../../api/agents.ts';
-import { LIVE_TICKS } from '../connect/connect-live.ts';
+import type { AgentGrant, AgentGrantScope, TokenSeen } from '../../../api/agents.ts';
+import { LIVE_BUDGET_MS, LIVE_POLL_MS } from '../connect/connect-live.ts';
 
 /**
  * Registering an agent, as five steps (proposal §6, LAI-537): name, harness
@@ -88,19 +88,39 @@ export function sameGrants(a: readonly AgentGrant[], b: readonly AgentGrant[]): 
 }
 
 /**
- * Step 5's watch, given where it has got to. The rule for *seen* is
- * `seenSince` in `api/agents.ts`; this only bounds the asking, with Connect's
- * budget (`connect-live.ts`) so neither page polls forever.
+ * Step 5's watch (LAI-537 review round 1).
+ *
+ * **Bounded by the clock, not by answers.** The first version counted
+ * *answered* polls against Connect's budget, so a request that never answered
+ * never counted, and the interval it ran on kept firing — a reviewer saw
+ * 1,001 polls. Now:
+ *
+ * - the watch ends at {@link VERIFY_BUDGET_MS} after it started, by
+ *   wall-clock time, whatever the requests are doing;
+ * - each request is abandoned after {@link VERIFY_REQUEST_TIMEOUT_MS};
+ * - the next request is scheduled only once the last one has settled, so
+ *   two are never in flight.
+ *
+ * The budget is Connect's (`LIVE_BUDGET_MS`, three minutes) and the spacing
+ * is Connect's (`LIVE_POLL_MS`), so neither page polls forever.
  */
+export const VERIFY_BUDGET_MS = LIVE_BUDGET_MS;
+export const VERIFY_POLL_MS = LIVE_POLL_MS;
+export const VERIFY_REQUEST_TIMEOUT_MS = 10_000;
+
 export type VerifyState =
-  | { readonly kind: 'watching'; readonly ticks: number }
+  | { readonly kind: 'watching' }
   | { readonly kind: 'verified' }
+  /** The wizard's token was rotated or revoked meanwhile: its setup cannot work. */
+  | { readonly kind: 'replaced' }
   | { readonly kind: 'spent' }
   | { readonly kind: 'error'; readonly error: unknown };
 
-export function verifyStateFrom(seen: boolean, ticksSoFar: number): VerifyState {
-  if (seen) return { kind: 'verified' };
-  return ticksSoFar >= LIVE_TICKS ? { kind: 'spent' } : { kind: 'watching', ticks: ticksSoFar };
+/** One answer, `elapsedMs` after the watch started. */
+export function verifyStateFrom(seen: TokenSeen, elapsedMs: number): VerifyState {
+  if (seen === 'seen') return { kind: 'verified' };
+  if (seen === 'gone') return { kind: 'replaced' };
+  return elapsedMs >= VERIFY_BUDGET_MS ? { kind: 'spent' } : { kind: 'watching' };
 }
 
 /** The muted line in the footer. */
@@ -117,6 +137,6 @@ export function agentFooterHint(step: AgentStep, registered: boolean, verified: 
     case 4:
       return 'Configure the harness, then continue';
     case 5:
-      return verified ? 'Verified' : 'Waiting for a request from this agent';
+      return verified ? 'Verified' : 'Waiting for a request from this agent’s credential';
   }
 }

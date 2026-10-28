@@ -176,27 +176,42 @@ export const AGENT_STATE_LABELS: Readonly<Record<AgentState, string>> = {
 };
 
 /**
- * Whether **this agent** has made a request since `token` was minted — the
- * wizard's step 5.
+ * What the wizard's step 5 reads from one answer about the agent: whether
+ * **the token the wizard minted** has been used, has been replaced, or not
+ * yet (LAI-537 review round 1).
  *
- * Two signals, both on the agent's own rows: the agent's `last_seen_at`, which
- * only a request authenticated as the agent moves, and the minted token's own
- * `last_used_at`. Either must be **at or after the mint**; a stamp from before
- * it cannot be this credential's. The owner's own session, the owner's other
- * tokens and the owner's other agents move neither — the false positive
- * Connect's presence watch has (`connect-live.ts`) is not reachable here.
+ * **Bound to that one token, never to the agent.** The first version also
+ * accepted the agent's `last_seen_at`, which any of the agent's credentials
+ * moves — so after a rotation elsewhere, activity on the *replacement*
+ * credential verified a setup holding the revoked original. Only the minted
+ * token's own stamps count now: `last_used_at` (any request) or `last_mcp_at`
+ * (an MCP request), at or after its mint.
  *
- * **The limit, said once:** both stamps are throttled to a minute on the
- * server, and a `null` one is written at once. A fresh token's `last_used_at`
- * starts `null`, so the first request on it is seen within one poll — after a
- * registration and after a rotation alike. The page cannot see *which* request
- * it was: a `curl` with the agent's token proves the credential works, not
- * that the harness is configured. That is the most the API exposes.
+ * - `seen` — that token made a request, and is still live.
+ * - `gone` — that token is revoked, missing, or the agent is revoked: the
+ *   setup the wizard shows can no longer work, whatever else happens.
+ * - `unseen` — keep waiting.
+ *
+ * The owner's own session and other tokens, and the agent's other tokens,
+ * move none of this.
+ *
+ * **The limit, said once:** the stamps are throttled to a minute on the
+ * server, and a `null` one is written at once. A fresh token's stamps start
+ * `null`, so its first request is seen within one poll. The page cannot see
+ * *which* program sent it: a `curl` with the agent's token proves the
+ * credential works, not that the harness is configured. That is the most the
+ * API exposes.
  */
-export function seenSince(agent: RegisteredAgent, token: Pick<TokenView, 'id' | 'created_at'>) {
-  if (agent.status !== 'active') return false;
-  const after = (at: number | null): boolean => at !== null && at >= token.created_at;
-  if (after(agent.last_seen_at)) return true;
+export type TokenSeen = 'seen' | 'unseen' | 'gone';
+
+export function mintedTokenSeen(
+  agent: RegisteredAgent,
+  token: Pick<TokenView, 'id' | 'created_at'>,
+): TokenSeen {
   const minted = agent.tokens.find((t) => t.id === token.id);
-  return minted !== undefined && after(minted.last_used_at);
+  if (agent.status !== 'active' || minted === undefined || minted.revoked_at !== null) {
+    return 'gone';
+  }
+  const after = (at: number | null): boolean => at !== null && at >= token.created_at;
+  return after(minted.last_used_at) || after(minted.last_mcp_at) ? 'seen' : 'unseen';
 }

@@ -255,6 +255,90 @@ async function secretSurvives(page: Page, secret: string): Promise<string[]> {
   }, secret);
 }
 
+/**
+ * Whether the secret is still reachable **from React's own tree** — every
+ * object the root container's fibre graph reaches, hooks and props of the
+ * current and the retained (alternate) trees included. DOM nodes are skipped
+ * (the DOM has its own check); closures cannot be walked from script.
+ *
+ * `TokensScreen` measured the defect this exists for by walking the fibre tree
+ * by hand (a hook still holding `{ token, secret }` after dismissal). This is
+ * that walk as an instrument, and every test that uses it first proves it
+ * **finds** the secret while it is showing — a walker that cannot see it
+ * would report a leak as clean.
+ */
+async function secretInReact(page: Page, secret: string): Promise<'found' | 'clean' | string> {
+  return page.evaluate((s: string) => {
+    const root = document.getElementById('root') as (HTMLElement & Record<string, unknown>) | null;
+    if (root === null) return 'no #root';
+    const key = Object.keys(root).find((k) => k.startsWith('__reactContainer$'));
+    if (key === undefined) return 'no React container';
+    const seen = new Set<object>();
+    const queue: unknown[] = [root[key]];
+    let visited = 0;
+    while (queue.length > 0) {
+      const value = queue.pop();
+      if (typeof value === 'string') {
+        if (value.includes(s)) return 'found';
+        continue;
+      }
+      if (typeof value !== 'object' || value === null) continue;
+      if (seen.has(value) || value instanceof Node || value === window) continue;
+      seen.add(value);
+      visited += 1;
+      if (visited > 3_000_000) return 'budget exhausted';
+      if (value instanceof Map || value instanceof Set) for (const item of value) queue.push(item);
+      let keys: string[];
+      try {
+        keys = Object.keys(value);
+      } catch {
+        continue;
+      }
+      for (const k of keys) {
+        try {
+          queue.push((value as Record<string, unknown>)[k]);
+        } catch {
+          // A getter that throws holds nothing we can read.
+        }
+      }
+    }
+    return 'clean';
+  }, secret);
+}
+
+/**
+ * Watch the wizard until it leaves, remembering whether **the last DOM it had
+ * before it was removed** still carried the secret (review round 1). Closing
+ * must commit a blanked render first and unmount after; unmounting at once
+ * removes a wizard whose last frame still shows the token. The answer is read
+ * with {@link lastWizardFrameHadSecret}.
+ */
+async function watchWizardFrames(page: Page, secret: string): Promise<void> {
+  await page.evaluate((s: string) => {
+    const w = window as unknown as { __wizardHadSecret?: boolean; __wizardGone?: boolean };
+    w.__wizardGone = false;
+    const look = (): void => {
+      const wizard = document.querySelector('.agents-wizard');
+      if (wizard === null) {
+        w.__wizardGone = true;
+        observer.disconnect();
+        return;
+      }
+      w.__wizardHadSecret = (wizard.textContent ?? '').includes(s);
+    };
+    const observer = new MutationObserver(look);
+    observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+    look();
+  }, secret);
+}
+
+async function lastWizardFrameHadSecret(page: Page): Promise<boolean | 'still open'> {
+  return page.evaluate(() => {
+    const w = window as unknown as { __wizardHadSecret?: boolean; __wizardGone?: boolean };
+    return w.__wizardGone === true ? w.__wizardHadSecret === true : 'still open';
+  });
+}
+
 const focusedText = (page: Page) =>
   page.evaluate(() => (document.activeElement as HTMLElement | null)?.innerText.trim() ?? '');
 
@@ -323,6 +407,16 @@ void describe('the Agents tab (LAI-537)', () => {
       await press(page, 'Continue', '.agents-wizard');
       await page.locator('.agents-setup .conn-setup').first().waitFor();
       assert.match(await page.locator('.agents-setup').innerText(), new RegExp(SECRET));
+      // The walker's positive control: while it shows, React holds it.
+      assert.equal(await secretInReact(page, SECRET), 'found');
+
+      // While the wizard holds this agent's secret, its row cannot rotate or
+      // revoke it (review round 1).
+      const row = page.locator('.agents-row[data-agent="a1"]');
+      await row.waitFor();
+      assert.equal(await row.getByRole('button', { name: 'Rotate token' }).isDisabled(), true);
+      assert.equal(await row.getByRole('button', { name: 'Revoke' }).isDisabled(), true);
+      assert.match(await row.innerText(), /Finish or close its registration above/);
 
       // Step 5 — the owner is active, the agent is not: still waiting.
       await press(page, 'Continue', '.agents-wizard');
@@ -333,10 +427,20 @@ void describe('the Agents tab (LAI-537)', () => {
       assert.equal(await page.locator('.agents-verify').getAttribute('data-state'), 'watching');
       assert.match(await page.locator('.agents-verify').innerText(), /Waiting for a request/);
 
-      // A request authenticated as this agent arrives.
+      // The agent is stamped — but not through the token minted here. That is
+      // what any of its other credentials would do; it must not verify.
       const agent = api.agents[0];
       assert.ok(agent !== undefined);
       agent.last_seen_at = Date.now();
+      const before = polls().length;
+      await until(() => polls().length >= before + 1, 15_000);
+      await page.waitForTimeout(200);
+      assert.equal(await page.locator('.agents-verify').getAttribute('data-state'), 'watching');
+
+      // A request on the minted token itself arrives.
+      const minted = agent.tokens[0];
+      assert.ok(minted !== undefined);
+      minted.last_used_at = Date.now();
       await until(
         async () =>
           (await page.locator('.agents-verify').getAttribute('data-state')) === 'verified',
@@ -345,10 +449,25 @@ void describe('the Agents tab (LAI-537)', () => {
       assert.equal(await page.locator('.agents-verify').getAttribute('data-state'), 'verified');
 
       // Done — the secret leaves the page with the wizard, and focus goes back.
+      // Blanked first, then removed: the wizard's last frame has no secret.
+      await watchWizardFrames(page, SECRET);
+      assert.equal(await lastWizardFrameHadSecret(page), 'still open');
       await press(page, 'Done', '.agents-wizard');
       await page.locator('.agents-wizard').waitFor({ state: 'detached' });
+      assert.equal(
+        await lastWizardFrameHadSecret(page),
+        false,
+        'the wizard was removed while still showing the secret',
+      );
       assert.deepEqual(await secretSurvives(page, SECRET), [], 'the secret survived closing');
+      assert.equal(await secretInReact(page, SECRET), 'clean', 'React still holds the secret');
       await until(async () => (await focusedText(page)) === '+ Register an agent');
+      // Released: the row can rotate and revoke again.
+      assert.equal(
+        await row.getByRole('button', { name: 'Rotate token' }).isDisabled(),
+        false,
+        'rotate stayed disabled after the wizard closed',
+      );
       assert.equal(await focusedText(page), '+ Register an agent');
       assert.match(await page.locator('.agents-row').innerText(), /reviewer bot/);
       assert.match(await page.locator('.agents-row .agents-state').innerText(), /Connected/);
@@ -382,9 +501,12 @@ void describe('the Agents tab (LAI-537)', () => {
       assert.equal(await page.locator('[data-testid="agent-secret"]').innerText(), ROTATED);
       assert.equal(api.agents[0]?.tokens.find((t) => t.id === 't-a1')?.revoked_at !== null, true);
 
+      assert.equal(await secretInReact(page, ROTATED), 'found');
       await press(page, 'Done', '.agents-row');
       await page.locator('[data-testid="agent-secret"]').waitFor({ state: 'detached' });
       assert.deepEqual(await secretSurvives(page, ROTATED), []);
+      await until(async () => (await secretInReact(page, ROTATED)) === 'clean');
+      assert.equal(await secretInReact(page, ROTATED), 'clean');
       await until(async () => (await focusedText(page)) === 'Rotate token');
       assert.equal(await focusedText(page), 'Rotate token');
     } finally {
@@ -535,6 +657,243 @@ void describe('the Agents tab (LAI-537)', () => {
         }
         if (step < 5) await press(page, 'Continue', '.agents-wizard');
       }
+    } finally {
+      await h.close();
+    }
+  });
+
+  /** Register through the UI and stop at `step` (4 or 5), keyboard only. */
+  async function registerTo(page: Page, step: 4 | 5): Promise<void> {
+    await page.getByRole('button', { name: '+ Register an agent' }).waitFor({ timeout: 20_000 });
+    await press(page, '+ Register an agent');
+    await press(page, 'Continue', '.agents-wizard');
+    await page.locator('.agents-grant').first().waitFor();
+    await press(page, 'Continue', '.agents-wizard');
+    await press(page, 'Register and create its credential');
+    await page.locator('[data-testid="agent-secret"]').waitFor();
+    await press(page, 'Continue', '.agents-wizard');
+    await page.locator('.agents-setup .conn-setup').first().waitFor();
+    if (step === 5) {
+      await press(page, 'Continue', '.agents-wizard');
+      await page.locator('.agents-verify').waitFor();
+    }
+  }
+
+  void test('Close on a step showing the secret blanks it, commits, and only then unmounts', async () => {
+    const api = agentsApi();
+    const h = await open('/developer?tab=agents', api.stub);
+    const { page } = h;
+    try {
+      await registerTo(page, 4);
+      assert.match(await page.locator('.agents-wizard').innerText(), new RegExp(SECRET));
+      await watchWizardFrames(page, SECRET);
+      assert.equal(await lastWizardFrameHadSecret(page), 'still open');
+
+      await press(page, 'Close', '.agents-wizard');
+      await page.locator('.agents-wizard').waitFor({ state: 'detached' });
+      assert.equal(
+        await lastWizardFrameHadSecret(page),
+        false,
+        'the wizard was removed while still showing the secret',
+      );
+      assert.deepEqual(await secretSurvives(page, SECRET), []);
+      await until(async () => (await secretInReact(page, SECRET)) === 'clean');
+      assert.equal(await secretInReact(page, SECRET), 'clean');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('leaving the tab mid-wizard takes the secret off the page and out of React', async () => {
+    const api = agentsApi();
+    const h = await open('/developer?tab=agents', api.stub);
+    const { page } = h;
+    try {
+      await registerTo(page, 4);
+      assert.equal(await secretInReact(page, SECRET), 'found');
+
+      // Away, through the page's own tab — the wizard unmounts with no close.
+      await page.locator('.page-tab', { hasText: 'Projects' }).click();
+      await page.locator('[data-testid="agents-tab"]').waitFor({ state: 'detached' });
+      assert.deepEqual(await secretSurvives(page, SECRET), [], 'the secret survived leaving');
+      await until(async () => (await secretInReact(page, SECRET)) === 'clean');
+      assert.equal(await secretInReact(page, SECRET), 'clean', 'React still holds the secret');
+
+      // And back: nothing to see again.
+      await page.locator('.page-tab', { hasText: 'Agents' }).click();
+      await page.locator('.agents-row').waitFor();
+      assert.equal(await page.locator('.agents-wizard').count(), 0);
+      assert.deepEqual(await secretSurvives(page, SECRET), []);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a credential replaced while verifying is never verified, and its secret leaves', async () => {
+    const api = agentsApi();
+    const h = await open('/developer?tab=agents', api.stub);
+    const { page } = h;
+    try {
+      await registerTo(page, 5);
+      assert.equal(await page.locator('.agents-verify').getAttribute('data-state'), 'watching');
+
+      // Rotated elsewhere (another tab, the CLI): the minted token is revoked,
+      // and the replacement is used at once — the agent is stamped.
+      const agent = api.agents[0];
+      const minted = agent?.tokens[0];
+      assert.ok(agent !== undefined && minted !== undefined);
+      const now = Date.now();
+      minted.revoked_at = now;
+      agent.tokens.unshift({
+        ...tokenRow('t-elsewhere', agent.display_name, now),
+        last_used_at: now,
+      });
+      agent.last_seen_at = now;
+
+      await until(
+        async () =>
+          (await page.locator('.agents-verify').getAttribute('data-state')) === 'replaced',
+        15_000,
+      );
+      assert.equal(await page.locator('.agents-verify').getAttribute('data-state'), 'replaced');
+      assert.match(await page.locator('.agents-verify').innerText(), /rotated or revoked/);
+      // The stale secret is no longer on the page, in the setup blocks either.
+      assert.deepEqual(await secretSurvives(page, SECRET), [], 'the revoked secret is still shown');
+      await press(page, 'Back', '.agents-wizard');
+      await page.locator('.agents-setup').waitFor();
+      assert.doesNotMatch(await page.locator('.agents-setup').innerText(), new RegExp(SECRET));
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Manage access: a failed project load shows a retry, and nothing can be saved', async () => {
+    // Every read of the list fails until the test says otherwise — the
+    // sidebar reads it too, so "the first call" is not this tab's.
+    let failing = true;
+    const api = agentsApi([existing()], {
+      '/api/v1/projects': () => {
+        return failing
+          ? refuse(503, 'unavailable', 'Try again')
+          : {
+              data: [project('p1', 'ONR', 'OnRoute'), project('p2', 'SKY', 'Skynet')],
+              next_cursor: null,
+            };
+      },
+    });
+    const h = await open('/developer?tab=agents', api.stub);
+    const { page } = h;
+    try {
+      await page.locator('.agents-row').waitFor({ timeout: 20_000 });
+      await press(page, 'Manage access', '.agents-row');
+      const panel = page.locator('.agents-panel');
+      await panel.locator('.state').waitFor();
+      assert.match(await panel.innerText(), /your projects/);
+      assert.equal(await panel.getByRole('button', { name: 'Save access' }).isDisabled(), true);
+      // The agent's grant is not reported as on a project the reader cannot see.
+      assert.doesNotMatch(await panel.innerText(), /cannot see any more/);
+
+      failing = false;
+      await panel.locator('.state-retry').click();
+      await panel.locator('input[name="grant-p2"]').first().waitFor();
+      // Loaded, unchanged: still nothing to save.
+      assert.equal(await panel.getByRole('button', { name: 'Save access' }).isDisabled(), true);
+      assert.equal(h.calls.filter((c) => c.method === 'PUT').length, 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Manage access while projects are still loading: Save stays off, no grants sent', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((done) => {
+      release = done;
+    });
+    const api = agentsApi([existing()]);
+    const h = await open('/developer?tab=agents', api.stub, {
+      before: async (p) => {
+        await p.route('**/api/v1/projects**', async (route) => {
+          await gate;
+          await route.fallback();
+        });
+      },
+    });
+    const { page } = h;
+    try {
+      await page.locator('.agents-row').waitFor({ timeout: 20_000 });
+      await press(page, 'Manage access', '.agents-row');
+      const panel = page.locator('.agents-panel');
+      await panel.waitFor();
+      assert.equal(await panel.locator('.agents-grant').count(), 0);
+      const save = panel.getByRole('button', { name: 'Save access' });
+      assert.equal(await save.isDisabled(), true, 'Save is enabled before projects loaded');
+      await save.click({ force: true });
+      assert.equal(h.calls.filter((c) => c.method === 'PUT').length, 0);
+
+      release();
+      await panel.locator('input[name="grant-p2"]').first().waitFor();
+      await panel.locator('input[name="grant-p2"]').nth(1).check();
+      assert.equal(await save.isDisabled(), false);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a stalled verify request ends at the deadline: no overlap, no pile-up', async () => {
+    const api = agentsApi();
+    const h = await open('/developer?tab=agents', api.stub, {
+      before: async (p) => {
+        await p.clock.install();
+      },
+    });
+    const { page } = h;
+    let asked = 0;
+    let open_ = 0;
+    let most = 0;
+    const isPoll = (url: string, method: string) =>
+      method === 'GET' && new URL(url).pathname === '/api/v1/agents/a1';
+    try {
+      await registerTo(page, 4);
+      // From here every poll hangs: the server never answers.
+      await page.route('**/api/v1/agents/a1', async (route) => {
+        if (route.request().method() !== 'GET') {
+          await route.fallback();
+          return;
+        }
+        asked += 1;
+        open_ += 1;
+        most = Math.max(most, open_);
+        // Never fulfilled; the page's own timeout abandons it.
+      });
+      page.on('requestfailed', (request) => {
+        if (isPoll(request.url(), request.method())) open_ -= 1;
+      });
+
+      await press(page, 'Continue', '.agents-wizard');
+      await page.locator('.agents-verify[data-state="watching"]').waitFor();
+      // Three minutes and a bit, in steps, so each abandoned request settles
+      // and the next is scheduled as it would be in real time.
+      for (let t = 0; t < 185_000; t += 2_500) {
+        await page.clock.runFor(2_500);
+        await page.waitForTimeout(15);
+      }
+      await until(
+        async () => (await page.locator('.agents-verify').getAttribute('data-state')) === 'spent',
+      );
+      assert.equal(await page.locator('.agents-verify').getAttribute('data-state'), 'spent');
+      // 10s timeout + 5s spacing over 180s is twelve; the first fix's
+      // interval would have fired 36 times and the original 1,001.
+      assert.ok(asked >= 3, `only ${String(asked)} polls: the watch stopped retrying`);
+      assert.ok(asked <= 14, `${String(asked)} polls in three minutes: it is piling up`);
+      assert.equal(most, 1, 'two polls were in flight at once');
+
+      // And it stays stopped.
+      const after = asked;
+      for (let t = 0; t < 30_000; t += 5_000) {
+        await page.clock.runFor(5_000);
+        await page.waitForTimeout(15);
+      }
+      assert.equal(asked, after, 'it kept polling after the deadline');
     } finally {
       await h.close();
     }
