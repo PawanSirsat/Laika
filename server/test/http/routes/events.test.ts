@@ -8,7 +8,7 @@ import { newId } from '../../../src/db/ids.ts';
 import { orgs, tokens, users } from '../../../src/db/schema.ts';
 import { type AppEnv } from '../../../src/http/context.ts';
 import { createErrorHandler } from '../../../src/http/error-handler.ts';
-import { eventRoutes, RECONNECT_MS } from '../../../src/http/routes/events.ts';
+import { eventRoutes, MAX_QUEUED_FRAMES, RECONNECT_MS } from '../../../src/http/routes/events.ts';
 import { ActivityFeed, type RepeatingTimer } from '../../../src/services/activity-feed.ts';
 import { MAX_REPLAY } from '../../../src/services/events.ts';
 import { addMember, createProject } from '../../../src/services/projects.ts';
@@ -890,6 +890,106 @@ describe('every frame on a token stream is checked as it is written (LAI-539)', 
       const x = await activity(client, laikaId);
       expect(await activity(client, laikaId)).toBe(x + 1);
       await expectRefusal(client);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  /** Every frame to the end of the stream, so a test can count what arrived. */
+  async function rest(client: ReturnType<typeof sseClient>): Promise<Frame[]> {
+    const frames: Frame[] = [];
+    for (;;) {
+      const frame = await client.nextOrEnd();
+      if (frame === null) return frames;
+      frames.push(frame);
+    }
+  }
+
+  const UNAUTHORIZED = {
+    error: { code: 'unauthorized', message: 'That access token is not valid', details: null },
+  };
+
+  it('a refusal found while a shutdown drains the queue is still written, once, last', async () => {
+    const minted = mint();
+    const client = await connectToken(minted.secret);
+    expect((await client.next()).event).toBe('ready');
+    try {
+      write(laikaId); // X: unread
+      feed.poll();
+      await settle();
+      write(laikaId); // A: checked, then held
+      feed.poll();
+      await settle();
+      write(laikaId); // B: queued, not yet checked
+      feed.poll();
+      revokeOwnToken(t.sqlite, t.db, actor(ownerId), minted.token.id);
+      // The shutdown ends the stream first; B is checked only while it drains.
+      feed.closeAll();
+
+      const frames = await rest(client);
+      expect(frames.map((f) => f.event)).toEqual(['task.created', 'task.created', 'error']);
+      expect(frames[2]?.id).toBeNull();
+      expect(JSON.parse(frames[2]?.data ?? 'null')).toEqual(UNAUTHORIZED);
+      expect(feed.subscriberCount()).toBe(0);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('a refusal with the queue at its cap is still written, once, last', async () => {
+    const minted = mint();
+    const client = await connectToken(minted.secret);
+    try {
+      // Let `ready`'s write complete first: until it does, `ready` itself
+      // counts as queued. Then the first keepalive is checked and held in its
+      // write (nothing is read), and the rest queue behind it — exactly
+      // `MAX_QUEUED_FRAMES` frames, at the cap and not past it.
+      await settle();
+      for (let i = 0; i < MAX_QUEUED_FRAMES; i++) timers.fire();
+      await settle();
+      // Precondition: full, and still open.
+      expect(feed.subscriberCount()).toBe(1);
+      revokeOwnToken(t.sqlite, t.db, actor(ownerId), minted.token.id);
+      timers.fire(); // finds the revoke, with no room left in the queue
+
+      // The held keepalive passed its check before the revoke; every one
+      // queued behind it is checked after and dropped.
+      const frames = await rest(client);
+      expect(frames.map((f) => f.event ?? f.comment)).toEqual(['ready', 'keepalive', 'error']);
+      expect(JSON.parse(frames[2]?.data ?? 'null')).toEqual(UNAUTHORIZED);
+      expect(feed.subscriberCount()).toBe(0);
+    } finally {
+      await client.disconnect();
+    }
+  });
+
+  it('a gap queued behind a written ready is refused by its own check', async () => {
+    for (let i = 0; i < MAX_REPLAY + 2; i++) write(laikaId);
+    const minted = mint();
+    // Each read of the clock is one credential check. The first is the test
+    // app's authentication, the second `ready`'s write-time check, the third
+    // `gap`'s: revoking inside the third lands after `ready` was written and
+    // before `gap` is. A backpressure hold cannot do this — `ready` is the
+    // first write, into an empty stream, so it never blocks the frame behind.
+    let reads = 0;
+    const client = await connectToken(minted.secret, {
+      query: '?last_event_id=1',
+      now: () => {
+        reads += 1;
+        if (reads === 3) revokeOwnToken(t.sqlite, t.db, actor(ownerId), minted.token.id);
+        return Date.now();
+      },
+    });
+    try {
+      expect((await client.next()).event).toBe('ready');
+      // Frame by frame, not `rest()`: a gap that slipped through would leave
+      // the stream open, and this must fail on the frame, not on a timeout.
+      const second = await client.next();
+      expect(second.event).toBe('error');
+      expect(JSON.parse(second.data)).toEqual(UNAUTHORIZED);
+      expect(await client.nextOrEnd()).toBeNull();
+      // The instrument ran as described: exactly the three checks above.
+      expect(reads).toBe(3);
     } finally {
       await client.disconnect();
     }

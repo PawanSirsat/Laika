@@ -172,14 +172,27 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
       let queued = 0;
 
       /**
+       * The refusal frame's own slot, outside the queue (LAI-539 review 2).
+       *
+       * Not an ordinary `enqueue`, because both of `enqueue`'s refusals would
+       * swallow it: a stream already `ended` by a shutdown, whose queued frames
+       * are only now draining and being checked, and a queue at
+       * `MAX_QUEUED_FRAMES`. Chained after the queue's current tail, so it
+       * follows the write in flight; every frame still queued behind that sees
+       * `refused` and is skipped, and `enqueue` takes nothing once refused, so
+       * this is the last frame on the wire. Set once, and awaited before the
+       * response closes.
+       */
+      let terminal: Promise<void> | null = null;
+      const terminalWritten = (): Promise<void> => terminal ?? Promise.resolve();
+
+      /**
        * `row` marks an activity frame, which a token stream filters again
-       * against the actor it reloads at write time. `refusal` marks the one
-       * frame that is written after the credential has failed.
+       * against the actor it reloads at write time.
        */
       interface Outgoing {
         frame: SSEMessage | string;
         row?: ActivityEvent;
-        refusal?: boolean;
       }
 
       /**
@@ -188,7 +201,6 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
        * cookie stream keeps its connect-and-batch checks unchanged.
        */
       const writable = (item: Outgoing): boolean => {
-        if (item.refusal === true) return true;
         if (refused) return false;
         if (!onToken) return true;
 
@@ -199,7 +211,7 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
       };
 
       const enqueue = (frame: SSEMessage | string, meta: Omit<Outgoing, 'frame'> = {}): void => {
-        if (ended) return;
+        if (ended || refused) return;
 
         if (queued >= MAX_QUEUED_FRAMES) {
           log.warn('events.slow_client', { user_id: actor.userId, queued });
@@ -244,11 +256,17 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
           token_id: actor.token?.id ?? null,
           reason,
         });
-        if (onToken) {
-          enqueue(
-            { event: 'error', data: JSON.stringify(new TokenAuthError(reason).toBody()) },
-            { refusal: true },
-          );
+        if (onToken && terminal === null) {
+          const frame = {
+            event: 'error',
+            data: JSON.stringify(new TokenAuthError(reason).toBody()),
+          };
+          terminal = queue
+            .then(() => stream.writeSSE(frame))
+            .then(
+              () => undefined,
+              () => undefined,
+            );
         }
         end();
       };
@@ -318,6 +336,9 @@ export function eventRoutes(options: EventRoutesOptions): Hono<AppEnv> {
         // Let whatever is already queued reach the wire — the `closing` frame is
         // the one that matters — before `streamSSE` closes the response.
         await queue;
+        // A frame checked while the queue drained may have refused the
+        // credential and filled the terminal slot; it is written before close.
+        await terminalWritten();
       }
     });
   });

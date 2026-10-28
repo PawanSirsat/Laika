@@ -86,3 +86,9 @@ Owner directly assigned CORE on Belka to branch
   details: null } }`, then the stream ends. Cookie streams unchanged.
 - SPEC §11.5 does not yet name the `error` control frame — for CHIEF (no SPEC
   edit made, per Out of scope).
+
+## Review rounds (CORE)
+
+- **Round 1 (Codex, FAIL at `cc08aee6`), fixed in `6491f7f3`:** credentials were re-read only on the first frame of each batch; `gap` and keepalive frames were not checked when written. Every token-stream frame is now checked as it is written.
+- **Round 2 (Codex, FAIL at `6491f7f3`), fixed in the next commit:** the refusal frame could be lost during a shutdown drain or at the queue cap. It now has its own terminal slot, awaited before close. Added a gap test that refuses after `ready` has been written.
+- **Integration with #102:** `reloadActor()` must call `tokenContextFor()`, propagate its `agent_revoked` failure, and use its `token`. See the PR body.
