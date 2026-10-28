@@ -1,8 +1,14 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { and, eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { activity, orgs, taskClaims, tasks, users } from '../../../src/db/schema.ts';
+import {
+  activity,
+  orgs,
+  taskClaims,
+  taskDependencies,
+  tasks,
+  taskTags,
+  users,
+} from '../../../src/db/schema.ts';
 import { DEFAULT_CLAIM_TIMINGS, expireClaims } from '../../../src/services/claims.ts';
 import {
   type AuthHarness,
@@ -290,7 +296,8 @@ describe('claiming over REST', () => {
 
     expect(taken.generation).toBe(1);
     expect(taken.session).not.toBe('');
-    expect(taken.task).toMatchObject({ id: taskId, status: 'in_progress', assignee_id: bob.id });
+    // A claim never assigns (D-114 item 7): unassigned stays unassigned.
+    expect(taken.task).toMatchObject({ id: taskId, status: 'in_progress', assignee_id: null });
   });
 
   it('two sessions of the same person race for one task: exactly one wins, the other is claim_held', async () => {
@@ -442,151 +449,452 @@ describe('expiry and the explicit reclaim', () => {
 // ---------------------------------------------------------------- the census
 
 /**
- * Every non-`GET` route the task, sprint and comment routers declare on a
- * task, **read from the source files** — so a route added later appears here
- * without anyone remembering this file, and must be classified.
+ * **Every mounted mutating route, read from the app's own route table** —
+ * `h.app.routes`, what Hono actually serves, not a regex over the route files
+ * (LAI-541 review). A route added anywhere, under any prefix, appears here
+ * and must be classified: FENCED (probed below, the task left exactly as it
+ * was) or NOT_FENCED with the reason. The reasons say why the route cannot
+ * change a claimed task through a token, which is the property.
  */
-function declaredTaskRoutes(): string[] {
-  const read = (file: string) =>
-    readFileSync(
-      fileURLToPath(new URL(`../../../src/http/routes/${file}`, import.meta.url)),
-      'utf8',
-    );
-  const found: string[] = [];
-  const scan = (file: string, prefix: string, keep: (path: string) => boolean) => {
-    for (const m of read(file).matchAll(/app\.(post|patch|put|delete)\('([^']+)'/g)) {
-      const path = m[2]!;
-      if (keep(path)) found.push(`${m[1]!.toUpperCase()} ${prefix}${path}`);
-    }
-  };
-  scan('tasks.ts', '/tasks', (p) => p.startsWith('/:id'));
-  scan('sprints.ts', '/sprints', (p) => p.includes('/tasks'));
-  scan('comments.ts', '/tasks', (p) => p.includes('/comments'));
-  return found.sort();
+function mountedMutations(): string[] {
+  const methods = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+  return [
+    ...new Set(
+      h.app.routes.filter((r) => methods.has(r.method)).map((r) => `${r.method} ${r.path}`),
+    ),
+  ].sort();
 }
 
 interface Fixture {
   taskId: string;
+  key: string;
   other: string;
   sprint: string;
-  secret: string;
+  otherSprint: string;
+  statusId: string;
+  spareStatusId: string;
+  agentSecret: string;
+  siblingSecret: string;
+  adaLegacy: string;
+  bobLegacy: string;
 }
 
-/** Each fenced route, with the request that would change the claimed task. */
-const FENCED: Record<string, (f: Fixture, auth: Auth) => Promise<Response>> = {
-  'PATCH /tasks/:id': (f, a) => patch(f.taskId, { title: 'Stale' }, a),
-  'POST /tasks/:id/finish': (f, a) =>
-    req(
-      `/api/v1/tasks/${f.taskId}/finish`,
-      { method: 'POST', body: JSON.stringify({ summary: 'x' }) },
-      a,
-    ),
-  'POST /tasks/:id/status': (f, a) =>
-    req(
-      `/api/v1/tasks/${f.taskId}/status`,
-      { method: 'POST', body: JSON.stringify({ status: 'review' }) },
-      a,
-    ),
-  'POST /tasks/:id/reorder': (f, a) =>
-    req(
-      `/api/v1/tasks/${f.taskId}/reorder`,
-      { method: 'POST', body: JSON.stringify({ after_task_id: f.other }) },
-      a,
-    ),
-  'POST /tasks/:id/dependencies': (f, a) =>
-    req(
-      `/api/v1/tasks/${f.taskId}/dependencies`,
-      { method: 'POST', body: JSON.stringify({ blocked_by_task_id: f.other }) },
-      a,
-    ),
-  'DELETE /tasks/:id/dependencies/:depId': (f, a) =>
-    req(`/api/v1/tasks/${f.taskId}/dependencies/${f.other}`, { method: 'DELETE' }, a),
-  'POST /sprints/:id/tasks': (f, a) =>
-    req(
-      `/api/v1/sprints/${f.sprint}/tasks`,
-      { method: 'POST', body: JSON.stringify({ task_ids: [f.taskId] }) },
-      a,
-    ),
-  'DELETE /sprints/:id/tasks/:taskId': (f, a) =>
-    req(`/api/v1/sprints/${f.sprint}/tasks/${f.taskId}`, { method: 'DELETE' }, a),
+type Probe = (f: Fixture) => Promise<Response>;
+
+/** A stale generation from the holder's own agent. */
+const asHolder = (f: Fixture): Auth => ({ bearer: f.agentSecret, generation: 2 });
+/** The owner's legacy token — the token that may administer the space. */
+const asAdmin = (f: Fixture): Auth => ({ bearer: f.adaLegacy });
+
+const json = (method: string, body: unknown): RequestInit => ({
+  method,
+  body: JSON.stringify(body),
+});
+
+/** Each fenced route, with the request that would change the claimed task, and the reason it is refused with. */
+const FENCED: Record<string, { probe: Probe; reason: 'stale_claim' | 'claim_held' }> = {
+  'PATCH /api/v1/tasks/:id': {
+    probe: (f) => patch(f.taskId, { title: 'Stale' }, asHolder(f)),
+    reason: 'stale_claim',
+  },
+  'POST /api/v1/tasks/:id/finish': {
+    probe: (f) =>
+      req(`/api/v1/tasks/${f.taskId}/finish`, json('POST', { summary: 'x' }), asHolder(f)),
+    reason: 'stale_claim',
+  },
+  'POST /api/v1/tasks/:id/status': {
+    probe: (f) =>
+      req(`/api/v1/tasks/${f.taskId}/status`, json('POST', { status: 'review' }), asHolder(f)),
+    reason: 'stale_claim',
+  },
+  'POST /api/v1/tasks/:id/reorder': {
+    probe: (f) =>
+      req(
+        `/api/v1/tasks/${f.taskId}/reorder`,
+        json('POST', { after_task_id: f.other }),
+        asHolder(f),
+      ),
+    reason: 'stale_claim',
+  },
+  'POST /api/v1/tasks/:id/dependencies': {
+    probe: (f) =>
+      req(
+        `/api/v1/tasks/${f.taskId}/dependencies`,
+        json('POST', { blocked_by_task_id: f.other }),
+        asHolder(f),
+      ),
+    reason: 'stale_claim',
+  },
+  'DELETE /api/v1/tasks/:id/dependencies/:depId': {
+    probe: (f) =>
+      req(`/api/v1/tasks/${f.taskId}/dependencies/${f.other}`, { method: 'DELETE' }, asHolder(f)),
+    reason: 'stale_claim',
+  },
+  'POST /api/v1/sprints/:id/tasks': {
+    probe: (f) =>
+      // Into the *other* sprint: moving it is the change.
+      req(
+        `/api/v1/sprints/${f.otherSprint}/tasks`,
+        json('POST', { task_ids: [f.taskId] }),
+        asHolder(f),
+      ),
+    reason: 'stale_claim',
+  },
+  'DELETE /api/v1/sprints/:id/tasks/:taskId': {
+    probe: (f) =>
+      req(`/api/v1/sprints/${f.sprint}/tasks/${f.taskId}`, { method: 'DELETE' }, asHolder(f)),
+    reason: 'stale_claim',
+  },
+  // Indirect: each of these changes the claimed task without naming it.
+  'DELETE /api/v1/sprints/:id': {
+    probe: (f) => req(`/api/v1/sprints/${f.sprint}`, { method: 'DELETE' }, asAdmin(f)),
+    reason: 'claim_held',
+  },
+  'DELETE /api/v1/projects/:slug/statuses/:id': {
+    probe: (f) =>
+      req(
+        `/api/v1/projects/alpha/statuses/${f.statusId}`,
+        json('DELETE', { move_to: f.spareStatusId }),
+        asAdmin(f),
+      ),
+    reason: 'claim_held',
+  },
+  'PATCH /api/v1/projects/:slug/tags/:name': {
+    probe: (f) =>
+      req('/api/v1/projects/alpha/tags/held', json('PATCH', { name: 'renamed' }), asAdmin(f)),
+    reason: 'claim_held',
+  },
+  'DELETE /api/v1/projects/:slug/tags/:name': {
+    probe: (f) => req('/api/v1/projects/alpha/tags/held', { method: 'DELETE' }, asAdmin(f)),
+    reason: 'claim_held',
+  },
+  'DELETE /api/v1/projects/:slug/members/:userId': {
+    probe: (f) =>
+      req(
+        `/api/v1/projects/alpha/members/${bob.id}`,
+        json('DELETE', { open_tasks: 'unassign' }),
+        asAdmin(f),
+      ),
+    reason: 'claim_held',
+  },
+  'PATCH /api/v1/users/:id': {
+    probe: (f) =>
+      req(
+        `/api/v1/users/${bob.id}`,
+        json('PATCH', { is_active: false, open_tasks: 'unassign' }),
+        asAdmin(f),
+      ),
+    reason: 'claim_held',
+  },
 };
 
-/** Routes that change something about a task and are deliberately not fenced, and why. */
-const EXEMPT: Record<string, string> = {
-  'POST /tasks/:id/claim':
-    'takes the claim — its own refusals (claim_held, stale_claim) are asserted above',
-  'POST /tasks/:id/claim/reclaim': 'issues the next generation — asserted above',
-  'POST /tasks/:id/accept':
+/**
+ * The presence heartbeat writes the matched task's branch. It never fails —
+ * a beat always lands (§9.1) — so for a claimed task the branch is simply not
+ * written, for anyone but the holder. Probed separately below.
+ */
+const BRANCH_WRITE = 'POST /api/v1/heartbeats';
+
+/** Every other mutating route, and why it cannot change a claimed task through a token. */
+const NOT_FENCED: Record<string, string> = {
+  'POST /api/v1/tasks/:id/claim':
+    'takes the claim — its refusals (claim_held, stale_claim) are asserted above',
+  'POST /api/v1/tasks/:id/claim/reclaim':
+    'issues the next generation — asserted above and in services/claims.test.ts',
+  'POST /api/v1/tasks/:id/accept':
     'session only (§3.1): no token reaches it, and a person is never fenced',
-  'POST /tasks/:id/send-back':
+  'POST /api/v1/tasks/:id/send-back':
     'session only (§3.1): no token reaches it, and a person is never fenced',
-  'PUT /tasks/:id/watch': "the caller's own subscription; changes no field of the task",
-  'DELETE /tasks/:id/watch': "the caller's own subscription; changes no field of the task",
-  'POST /tasks/:id/comments':
-    'comments are never fenced — a person or an agent may always say something',
+  'PUT /api/v1/tasks/:id/budget': 'session only (budget.set, §3.1)',
+  'PUT /api/v1/tasks/:id/watch': "the caller's own subscription; changes no field of the task",
+  'DELETE /api/v1/tasks/:id/watch': "the caller's own subscription; changes no field of the task",
+  'POST /api/v1/tasks/:id/comments':
+    'comments are never fenced (§6.3) — anyone who may read may speak',
+  'PATCH /api/v1/comments/:id': 'comments are never fenced (§6.3)',
+  'DELETE /api/v1/comments/:id': 'comments are never fenced (§6.3)',
+  'POST /api/v1/projects/:slug/tasks': 'creates a task — nothing holds it yet',
+  'POST /api/v1/unlisted/:id/promote': 'creates a task — nothing holds it yet',
+  'POST /api/v1/meeting-reviews/:id/apply':
+    'session-driven, and applies through createTask, changeStatus and updateTask — each of which runs the fence itself',
+  'POST /api/v1/meeting-reviews/:id/discard': 'changes the review, not a task',
+  'POST /webhooks/github': 'the system principal (§3.4, §10.1): evidence, not work — never fenced',
+  'POST /webhooks/transcript': 'files a meeting review, not a task change',
+  'PATCH /api/v1/sprints/:id':
+    'the sprint’s own fields; completing it does not touch its tasks (§7.1)',
+  'PUT /api/v1/sprints/:id/budget': 'session only (budget.set, §3.1)',
+  'POST /api/v1/projects/:slug/sprints': 'a new sprint holds no task',
+  'POST /api/v1/projects/:slug/statuses': 'a new status holds no task',
+  'PATCH /api/v1/projects/:slug/statuses/:id':
+    'a status’s name and visibility; no task row changes',
+  'PUT /api/v1/projects/:slug/statuses/order': 'column order only; no task row changes',
+  'PATCH /api/v1/projects/:slug': 'project fields and archiving; no task row changes',
+  'PATCH /api/v1/projects/:slug/context': 'the project brief, not a task',
+  'PUT /api/v1/projects/:slug/budget': 'session only (budget.set, §3.1)',
+  'POST /api/v1/projects': 'a new project holds no task',
+  'POST /api/v1/projects/:slug/join': 'a membership; no task row changes',
+  'POST /api/v1/projects/:slug/leave': 'a membership; leaving moves none of the leaver’s tasks',
+  'POST /api/v1/projects/:slug/members': 'a membership; no task row changes',
+  'PATCH /api/v1/projects/:slug/members/:userId': 'a role; no task row changes',
+  'POST /api/v1/agent-sessions': 'the agent’s own session (§4.65)',
+  'POST /api/v1/agent-sessions/:id/heartbeat': 'renews only the session’s own claims',
+  'POST /api/v1/agent-sessions/:id/end': 'releases only the session’s own claims',
+  'POST /api/v1/agents': 'session only (agent.manage_own)',
+  'PATCH /api/v1/agents/:id': 'session only (agent.manage_own)',
+  'PUT /api/v1/agents/:id/grants': 'session only (agent.manage_own)',
+  'POST /api/v1/agents/:id/rotate-token': 'session only (agent.manage_own)',
+  'POST /api/v1/agents/:id/revoke': 'session only (agent.manage_own); its claims lapse, never move',
+  'POST /api/v1/tokens': 'a credential, not a task',
+  'DELETE /api/v1/tokens/:id': 'a credential, not a task',
+  'DELETE /api/v1/users/:id/tokens/:tokenId': 'a credential, not a task',
+  'POST /api/v1/users/:id/ratings': 'session only; a profile, not a task',
+  'POST /api/v1/users/:id/reset-link': 'session only; an account, not a task',
+  'POST /api/v1/users/:id/sign-out': 'ends sessions; no task row changes',
+  'PATCH /api/v1/users/:id/profile': 'session only; a profile, not a task',
+  'POST /api/v1/heartbeats': 'see BRANCH_WRITE: the beat lands, the claimed branch is not written',
+  'POST /api/v1/invites': 'an invite, not a task',
+  'POST /api/v1/invites/:id/reissue': 'an invite, not a task',
+  'POST /api/v1/invites/accept': 'an account, not a task',
+  'DELETE /api/v1/invites/:id': 'an invite, not a task',
+  'DELETE /api/v1/unlisted/:id': 'unlisted work belongs to no task',
+  'POST /api/v1/setup': 'first boot; no task exists',
+  'POST /api/v1/password-resets/consume': 'an account, not a task',
+  'POST /api/v1/auth/*': 'sign-in and sign-out, not a task',
+  'PATCH /api/v1/org': 'organisation settings, not a task',
+  'PUT /api/v1/org/permissions': 'session only (org.permissions.manage)',
+  'POST /api/v1/org/transfer-ownership': 'session only (org.transfer_ownership)',
+  'POST /api/v1/org/github-webhook': 'a webhook secret, not a task',
+  'DELETE /api/v1/org/github-webhook': 'a webhook secret, not a task',
+  'PUT /api/v1/org/model-prices/:model': 'session only (org.model_prices.set)',
+  'DELETE /api/v1/org/model-prices/:model': 'session only (org.model_prices.set)',
+  'PUT /api/v1/org/time': 'session only (org.time.set)',
+  'PUT /api/v1/org/time/breaks': 'session only (org.time.set)',
+  'PUT /api/v1/org/time/solidtime/import': 'session only (time_sync.import_all); time, not a task',
+  'PUT /api/v1/org/time/solidtime/people': 'session only (time_sync.map)',
+  'PUT /api/v1/org/time/solidtime/projects': 'session only (time_sync.map)',
+  'POST /api/v1/otlp/v1/logs': 'telemetry, not a task',
+  'POST /api/v1/otlp/v1/metrics': 'telemetry, not a task',
+  'POST /api/v1/otlp/v1/traces': 'telemetry, not a task',
+  'PUT /api/v1/me/activity-sharing': 'the caller’s own settings',
+  'PUT /api/v1/me/local-activity': 'the caller’s own local counts',
+  'DELETE /api/v1/me/local-activity': 'the caller’s own local counts',
+  'PUT /api/v1/me/plan-limit': 'the caller’s own settings',
+  'DELETE /api/v1/me/plan-limit': 'the caller’s own settings',
+  'POST /api/v1/me/token-alerts/:id/dismiss': 'the caller’s own alerts',
+  'PUT /api/v1/me/time-settings': 'the caller’s own time',
+  'PUT /api/v1/me/time-drafts': 'the caller’s own time',
+  'POST /api/v1/me/time-drafts': 'the caller’s own time',
+  'DELETE /api/v1/me/time-drafts': 'the caller’s own time',
+  'PATCH /api/v1/me/time-drafts/:id': 'the caller’s own time',
+  'POST /api/v1/me/time-drafts/:id/split': 'the caller’s own time',
+  'POST /api/v1/me/time-drafts/:id/dismiss': 'the caller’s own time',
+  'POST /api/v1/me/time-drafts/:id/confirm': 'the caller’s own time',
+  'POST /api/v1/me/time/days/:day/confirm': 'the caller’s own time',
+  'PUT /api/v1/me/time/days/:day/note': 'the caller’s own time',
+  'POST /api/v1/me/time/timer': 'the caller’s own time',
+  'POST /api/v1/me/time/timer/pause': 'the caller’s own time',
+  'POST /api/v1/me/time/timer/resume': 'the caller’s own time',
+  'POST /api/v1/me/time/timer/stop': 'the caller’s own time',
+  'DELETE /api/v1/me/time/timer': 'the caller’s own time',
+  'POST /api/v1/me/time/undo': 'the caller’s own time',
+  'POST /api/v1/me/time-breaks': 'the caller’s own time',
+  'DELETE /api/v1/me/time-breaks/:id': 'the caller’s own time',
+  'POST /api/v1/me/time-entries': 'the caller’s own time',
+  'PATCH /api/v1/me/time-entries/:id': 'the caller’s own time',
+  'DELETE /api/v1/me/time-entries/:id': 'the caller’s own time',
+  'PUT /api/v1/me/time/solidtime/links': 'the caller’s own time',
+  'PUT /api/v1/me/time/solidtime/import': 'the caller’s own time',
 };
 
-describe('the census: every task-changing route is fenced or named', () => {
-  it('the routes read from the source are exactly FENCED and EXEMPT', () => {
-    const declared = declaredTaskRoutes();
-    expect(declared.length, 'no routes parsed — the census is vacuous').toBeGreaterThan(10);
-    expect(declared).toEqual([...Object.keys(FENCED), ...Object.keys(EXEMPT)].sort());
-  });
+async function bearerSecret(cookie: string, name: string): Promise<string> {
+  return (
+    await ok(await req('/api/v1/tokens', json('POST', { name, scope: 'full' }), { cookie }), 201)
+  ).secret as string;
+}
 
-  async function fixture(): Promise<Fixture> {
-    const { secret } = await register();
-    const taskId = await newTask('Claimed');
-    const other = await newTask('Other');
-    const sprint = (
-      await ok(
-        await req(
-          '/api/v1/projects/alpha/sprints',
-          {
-            method: 'POST',
-            body: JSON.stringify({
-              name: 'S1',
-              starts_on: Date.UTC(2026, 0, 1),
-              ends_on: Date.UTC(2026, 0, 14),
-            }),
-          },
-          { cookie: ownerCookie },
-        ),
-        201,
-      )
-    ).id as string;
-    await claim(taskId, secret);
-    // What the DELETE routes remove, put there by a person — who is not fenced.
+/**
+ * A claimed task with everything an indirect change could reach: assigned to
+ * Bob (whose agent holds it), in a sprint, tagged, blocked by another task,
+ * in a status a second one of the same category could absorb.
+ */
+async function fixture(): Promise<Fixture> {
+  const agentSecret = (await register('Holder')).secret;
+  const siblingSecret = (await register('Sibling')).secret;
+  const adaLegacy = await bearerSecret(ownerCookie, 'ada-legacy');
+  const bobLegacy = await bearerSecret(bob.cookie, 'bob-legacy');
+
+  const created = await ok(
+    await req('/api/v1/projects/alpha/tasks', json('POST', { title: 'Claimed', tags: ['held'] }), {
+      cookie: bob.cookie,
+    }),
+    201,
+  );
+  const taskId = created.id as string;
+  const other = await newTask('Other');
+  const sprint = (
     await ok(
       await req(
-        `/api/v1/tasks/${taskId}/dependencies`,
-        { method: 'POST', body: JSON.stringify({ blocked_by_task_id: other }) },
-        { cookie: bob.cookie },
+        '/api/v1/projects/alpha/sprints',
+        json('POST', {
+          name: 'S1',
+          starts_on: Date.UTC(2026, 0, 1),
+          ends_on: Date.UTC(2026, 0, 14),
+        }),
+        { cookie: ownerCookie },
       ),
       201,
-    );
-    return { taskId, other, sprint, secret };
-  }
+    )
+  ).id as string;
+  const otherSprint = (
+    await ok(
+      await req(
+        '/api/v1/projects/alpha/sprints',
+        json('POST', {
+          name: 'S2',
+          starts_on: Date.UTC(2026, 0, 15),
+          ends_on: Date.UTC(2026, 0, 28),
+        }),
+        { cookie: ownerCookie },
+      ),
+      201,
+    )
+  ).id as string;
+  await ok(await patch(taskId, { assignee_id: bob.id }, { cookie: bob.cookie }));
+  await ok(
+    await req(`/api/v1/sprints/${sprint}/tasks`, json('POST', { task_ids: [taskId] }), {
+      cookie: bob.cookie,
+    }),
+  );
+  await ok(
+    await req(`/api/v1/tasks/${taskId}/dependencies`, json('POST', { blocked_by_task_id: other }), {
+      cookie: bob.cookie,
+    }),
+    201,
+  );
+  await claim(taskId, agentSecret);
+  const spare = await ok(
+    await req(
+      '/api/v1/projects/alpha/statuses',
+      json('POST', { name: 'Doing too', category: 'in_progress' }),
+      {
+        cookie: ownerCookie,
+      },
+    ),
+    201,
+  );
+  const statusId = h.db.select().from(tasks).where(eq(tasks.id, taskId)).get()!.statusId;
+  return {
+    taskId,
+    key: created.key as string,
+    other,
+    sprint,
+    statusId,
+    spareStatusId: (spare.data as { id: string; name: string }[]).find(
+      (st) => st.name === 'Doing too',
+    )!.id,
+    otherSprint,
+    agentSecret,
+    siblingSecret,
+    adaLegacy,
+    bobLegacy,
+  };
+}
 
-  for (const route of Object.keys(FENCED)) {
-    it(`${route} refuses a stale generation with stale_claim`, async () => {
+/** What a fenced request must leave exactly as it was. */
+function snapshot(taskId: string) {
+  return {
+    task: h.db.select().from(tasks).where(eq(tasks.id, taskId)).get(),
+    tags: h.db.select().from(taskTags).where(eq(taskTags.taskId, taskId)).all(),
+    deps: h.db.select().from(taskDependencies).where(eq(taskDependencies.taskId, taskId)).all(),
+  };
+}
+
+describe('the census: every mounted mutating route is fenced or named', () => {
+  it('the app’s route table is exactly FENCED and NOT_FENCED', () => {
+    const mounted = mountedMutations();
+    expect(mounted.length, 'no routes read — the census is vacuous').toBeGreaterThan(50);
+    expect(mounted).toEqual([...Object.keys(FENCED), ...Object.keys(NOT_FENCED)].sort());
+    expect(Object.keys(NOT_FENCED)).toContain(BRANCH_WRITE);
+  });
+
+  for (const [route, { probe, reason }] of Object.entries(FENCED)) {
+    it(`${route} is refused ${reason}, and changes nothing`, async () => {
       const f = await fixture();
-      if (route === 'DELETE /sprints/:id/tasks/:taskId') {
-        await ok(
-          await req(
-            `/api/v1/sprints/${f.sprint}/tasks`,
-            { method: 'POST', body: JSON.stringify({ task_ids: [f.taskId] }) },
-            { cookie: bob.cookie },
-          ),
-        );
-      }
-      const before = h.db.select().from(tasks).where(eq(tasks.id, f.taskId)).get();
+      const before = snapshot(f.taskId);
 
-      expect(await refusal(await FENCED[route]!(f, { bearer: f.secret, generation: 2 }))).toEqual({
-        status: 409,
-        code: 'conflict',
-        reason: 'stale_claim',
-      });
-      expect(h.db.select().from(tasks).where(eq(tasks.id, f.taskId)).get()).toEqual(before);
+      expect(await refusal(await probe(f))).toEqual({ status: 409, code: 'conflict', reason });
+      expect(snapshot(f.taskId)).toEqual(before);
     });
   }
+
+  async function branchFixture() {
+    const f = await fixture();
+    await ok(
+      await req('/api/v1/projects/alpha', json('PATCH', { repo: 'acme/alpha' }), {
+        cookie: ownerCookie,
+      }),
+    );
+    const branchOf = () => h.db.select().from(tasks).where(eq(tasks.id, f.taskId)).get()?.branch;
+    const beat = (secret: string, branch: string, generation?: number) =>
+      req(
+        '/api/v1/heartbeats',
+        json('POST', { repo: 'acme/alpha', branch: `${f.key.toLowerCase()}-${branch}` }),
+        { bearer: secret, ...(generation === undefined ? {} : { generation }) },
+      );
+    return { f, branchOf, beat };
+  }
+
+  it(`${BRANCH_WRITE}: a sibling agent and a legacy token cannot rewrite a claimed task’s branch; its holder can, with its generation`, async () => {
+    const { f, branchOf, beat } = await branchFixture();
+    const before = branchOf();
+
+    for (const secret of [f.siblingSecret, f.bobLegacy]) {
+      expect((await beat(secret, 'hijack')).status).toBe(202);
+      expect(branchOf()).toBe(before);
+    }
+    expect((await beat(f.agentSecret, 'mine', 1)).status).toBe(202);
+    expect(branchOf()).toBe(`${f.key.toLowerCase()}-mine`);
+  });
+
+  it(`${BRANCH_WRITE}: the holder with no generation or a stale one writes nothing — the beat still lands`, async () => {
+    const { f, branchOf, beat } = await branchFixture();
+    const before = branchOf();
+
+    for (const generation of [undefined, 2]) {
+      expect((await beat(f.agentSecret, 'stale', generation)).status).toBe(202);
+      expect(branchOf()).toBe(before);
+    }
+  });
+
+  it(`${BRANCH_WRITE}: the holder whose lease is overdue writes nothing, even with the live generation`, async () => {
+    const { f, branchOf, beat } = await branchFixture();
+    const before = branchOf();
+    // Lapsed, not yet scanned: the fence's own lapse test refuses it.
+    h.db
+      .update(taskClaims)
+      .set({ leaseExpiresAt: Date.now() - 1 })
+      .where(eq(taskClaims.taskId, f.taskId))
+      .run();
+
+    expect((await beat(f.agentSecret, 'overdue', 1)).status).toBe(202);
+    expect(branchOf()).toBe(before);
+  });
+
+  it(`${BRANCH_WRITE}: after a reclaim the old generation writes nothing; the new one does`, async () => {
+    const { f, branchOf, beat } = await branchFixture();
+    const before = branchOf();
+    expect(expireClaims(h.db, Date.now() + LEASE + 1).changed).toBe(1);
+    const reclaimed = await ok(
+      await req(
+        `/api/v1/tasks/${f.taskId}/claim/reclaim`,
+        { method: 'POST' },
+        { bearer: f.agentSecret },
+      ),
+    );
+    expect(reclaimed).toMatchObject({ from_generation: 1, claim: { generation: 2 } });
+
+    expect((await beat(f.agentSecret, 'old', 1)).status).toBe(202);
+    expect(branchOf()).toBe(before);
+    expect((await beat(f.agentSecret, 'new', 2)).status).toBe(202);
+    expect(branchOf()).toBe(`${f.key.toLowerCase()}-new`);
+  });
 });
