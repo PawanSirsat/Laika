@@ -230,12 +230,38 @@ export function isDeadState(state: string): boolean {
 }
 
 /**
- * `ps` for one PID. **Three answers, kept apart**: the process; `undefined`
- * only when `ps` ran to completion and said there is none (exit 1, nothing
- * printed); and {@link UNKNOWN} for anything else — a timeout, a signal, a
- * missing `ps`, output it cannot read. Only the second is evidence of death.
+ * Does a process with this PID exist, by the kernel's word? `kill(pid, 0)`
+ * sends nothing; `ESRCH` is the one answer that means there is none. Success
+ * or `EPERM` means one exists — which says nothing about whether it is *ours*
+ * or healthy, so it is never used to renew; anything else is unknown.
  */
-export function procReader(exec: Exec = execFileSync): ProcReader {
+export type Probe = (pid: number) => 'absent' | 'present' | 'unknown';
+
+export const probeKill: Probe = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return 'present';
+  } catch (cause) {
+    const code = (cause as { code?: unknown }).code;
+    if (code === 'ESRCH') return 'absent';
+    if (code === 'EPERM') return 'present';
+    return 'unknown';
+  }
+};
+
+/**
+ * `ps` for one PID. **Three answers, kept apart**: the process, as `ps`
+ * printed it; `undefined` only when the kernel confirms there is no such
+ * process; and {@link UNKNOWN} for anything else.
+ *
+ * **A failed `ps` is never evidence of death by itself.** `ps` exits 1 with
+ * nothing on stdout for a missing PID — and also when it fails to start
+ * (Apple's on an allocation failure, procps-ng's on an init failure). So
+ * every failed run asks the kernel, through {@link Probe}: only `ESRCH`
+ * means absent. A process that exists but that `ps` could not describe is
+ * unknown — renewal still needs a `ps` answer with the right start time.
+ */
+export function procReader(exec: Exec = execFileSync, probe: Probe = probeKill): ProcReader {
   return (pid) => {
     if (!Number.isInteger(pid) || pid <= 0) return undefined;
     let out: string;
@@ -253,10 +279,8 @@ export function procReader(exec: Exec = execFileSync): ProcReader {
           killSignal: 'SIGKILL',
         },
       );
-    } catch (cause) {
-      const e = cause as { status?: unknown; signal?: unknown; stdout?: unknown };
-      const said = e.status === 1 && e.signal === null && (e.stdout ?? '') === '';
-      return said ? undefined : UNKNOWN;
+    } catch {
+      return probe(pid) === 'absent' ? undefined : UNKNOWN;
     }
     const match = PS_LINE.exec(out.split('\n')[0] ?? '');
     if (match === null) return UNKNOWN;

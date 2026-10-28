@@ -51,6 +51,7 @@ import {
   procReader,
   PS_ENV,
   PS_TIMEOUT_MS,
+  probeKill,
   readProc,
   lostNotice,
   type ProcInfo,
@@ -1286,7 +1287,7 @@ void describe('a liveness check that cannot complete is unknown, not death', () 
     });
   };
 
-  void test('ps: a timeout or unreadable output is UNKNOWN; "no such process" is undefined', () => {
+  void test('ps: a timeout or unreadable output is UNKNOWN; "no such process" is undefined', async () => {
     const seen: { timeout?: number }[] = [];
     const hung = procReader((_file, _args, options) => {
       seen.push({ timeout: options.timeout! });
@@ -1299,9 +1300,66 @@ void describe('a liveness check that cannot complete is unknown, not death', () 
       throw Object.assign(new Error('killed'), { status: null, signal: 'SIGTERM', stdout: '' });
     });
     assert.equal(killed(process.pid), UNKNOWN);
-    // The real ps, for a PID that is not running: a plain "none".
-    assert.equal(readProc(2_147_483_000), undefined);
-    assert.equal(liveness(2_147_483_000, 'x'), 'dead');
+    // A real PID that is no longer running: a child that exited and was
+    // reaped. (Not a huge made-up PID — macOS ps refuses one as "process id
+    // too large", which is not the same answer.)
+    const child = spawn('/usr/bin/true', [], { stdio: 'ignore' });
+    const gone = child.pid ?? 0;
+    await new Promise((resolve) => child.once('exit', resolve));
+    await pause(50);
+    assert.equal(probeKill(gone), 'absent', 'the kernel confirms the child is gone');
+    assert.equal(readProc(gone), undefined);
+    assert.equal(liveness(gone, 'x'), 'dead');
+  });
+
+  /** `ps` failing as on a resource or init failure: exit 1, nothing on stdout. */
+  const resourceFailure = (): never => {
+    throw Object.assign(new Error('Command failed: ps'), { status: 1, signal: null, stdout: '' });
+  };
+
+  void test('a ps that fails to start, for a live process, is UNKNOWN — the kernel says it exists', () => {
+    // The live process is this one. The same failure for a confirmed-absent PID is absent.
+    assert.equal(procReader(resourceFailure)(process.pid), UNKNOWN);
+    assert.equal(procReader(resourceFailure, () => 'present')(4242), UNKNOWN, 'EPERM: exists');
+    assert.equal(procReader(resourceFailure, () => 'unknown')(4242), UNKNOWN);
+    assert.equal(procReader(resourceFailure, () => 'absent')(4242), undefined);
+    // probeKill's three answers, from the real kernel.
+    assert.equal(probeKill(process.pid), 'present');
+    assert.equal(probeKill(1), 'present', 'launchd/init exists: EPERM, not ESRCH');
+  });
+
+  void test('a live harness whose ps fails to start is skipped, then renewed on the next healthy check', async () => {
+    const harness = spawn('/bin/sh', ['-c', 'exec sleep 30'], { stdio: 'ignore' });
+    try {
+      await pause(100);
+      const info = known(readProc(harness.pid ?? 0));
+      assert.ok(info !== undefined, 'the harness is running');
+      const home = temp();
+      const w = world(home);
+      await startSession(w.deps, { ...request(), harnessProc: { ...info, comm: 'claude' } });
+      const path = statePath(home, 'claude-code', 'hs-1');
+      let failures = 1;
+      const deps: Deps = {
+        ...w.deps,
+        // The real ps and the real kernel — except the first run, which fails
+        // the way ps does when it cannot allocate.
+        proc: procReader((file, args, options) => {
+          if (failures > 0) {
+            failures -= 1;
+            return resourceFailure();
+          }
+          return execFileSync(file, args, options);
+        }),
+      };
+      assert.equal(await beatOnce(deps, path, CRED), 'unknown');
+      assert.equal(readState(path)?.status, 'live', 'not abandoned');
+      assert.deepEqual(w.calls, ['start'], 'nothing renewed on the failed check');
+      assert.equal(await beatOnce(deps, path, CRED), 'renewed');
+      assert.equal(readState(path)?.session_id, S1);
+      assert.deepEqual(w.calls, ['start', 'beat']);
+    } finally {
+      harness.kill('SIGKILL');
+    }
   });
 
   void test('one timeout skips that beat only; the next healthy check renews the same session', async () => {
@@ -1365,7 +1423,8 @@ void describe('a liveness check that cannot complete is unknown, not death', () 
     const w = world(home);
     await startSession(w.deps, request());
     const path = statePath(home, 'claude-code', 'hs-1');
-    const deps: Deps = { ...w.deps, proc: procReader(timeout) };
+    // The harness exists (the kernel says so); its ps hangs.
+    const deps: Deps = { ...w.deps, proc: procReader(timeout, () => 'present') };
     assert.equal(await beatOnce(deps, path, CRED), 'unknown');
     assert.deepEqual(w.calls, ['start']);
     assert.equal(readState(path)?.status, 'live');
